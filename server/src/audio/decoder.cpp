@@ -16,6 +16,7 @@ extern "C" {
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cstdio>
 #include <cstdint>
 #include <cstring>
 #include <cstdlib>
@@ -84,6 +85,13 @@ std::uint32_t read_be32(const std::uint8_t* data) {
     return (static_cast<std::uint32_t>(data[0]) << 24) |
            (static_cast<std::uint32_t>(data[1]) << 16) |
            (static_cast<std::uint32_t>(data[2]) << 8) | data[3];
+}
+
+std::uint32_t read_le32(const std::uint8_t* data) {
+    return static_cast<std::uint32_t>(data[0]) |
+           (static_cast<std::uint32_t>(data[1]) << 8) |
+           (static_cast<std::uint32_t>(data[2]) << 16) |
+           (static_cast<std::uint32_t>(data[3]) << 24);
 }
 
 bool read_midi_variable(const std::vector<std::uint8_t>& data, std::size_t& position,
@@ -245,24 +253,28 @@ bool reset_midi_player(MidiDataSource& source) {
 ma_result midi_on_read(ma_data_source* data_source, void* output, ma_uint64 frame_count,
                        ma_uint64* frames_read) {
     auto& source = *reinterpret_cast<MidiDataSource*>(data_source);
-    if (fluid_player_get_status(source.player) == FLUID_PLAYER_DONE &&
-        fluid_synth_get_active_voice_count(source.synth) == 0) {
+    if ((source.length > 0 && source.cursor >= source.length) ||
+        (source.length == 0 && fluid_player_get_status(source.player) == FLUID_PLAYER_DONE &&
+         fluid_synth_get_active_voice_count(source.synth) == 0)) {
         if (frames_read) *frames_read = 0;
         return MA_AT_END;
     }
 
+    const ma_uint64 count = source.length > 0
+        ? std::min(frame_count, source.length - source.cursor) : frame_count;
+
     float* pcm = static_cast<float*>(output);
     if (!pcm) {
-        source.scratch.resize(static_cast<std::size_t>(frame_count) * 2);
+        source.scratch.resize(static_cast<std::size_t>(count) * 2);
         pcm = source.scratch.data();
     }
-    if (fluid_synth_write_float(source.synth, static_cast<int>(frame_count),
+    if (fluid_synth_write_float(source.synth, static_cast<int>(count),
                                 pcm, 0, 2, pcm, 1, 2) != FLUID_OK) {
         if (frames_read) *frames_read = 0;
         return MA_ERROR;
     }
-    source.cursor += frame_count;
-    if (frames_read) *frames_read = frame_count;
+    source.cursor += count;
+    if (frames_read) *frames_read = count;
     return MA_SUCCESS;
 }
 
@@ -315,7 +327,7 @@ ma_result open_midi(const std::filesystem::path& path, ma_data_source** backend)
     std::transform(extension.begin(), extension.end(), extension.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     if (extension != ".mid" && extension != ".midi" && extension != ".smf" &&
-        extension != ".kar") {
+        extension != ".kar" && extension != ".rmi") {
         return MA_NO_BACKEND;
     }
 
@@ -334,6 +346,30 @@ ma_result open_midi(const std::filesystem::path& path, ma_data_source** backend)
     if (!input.read(reinterpret_cast<char*>(source->midi.data()), size)) {
         delete source;
         return MA_IO_ERROR;
+    }
+    if (extension == ".rmi") {
+        const auto& riff = source->midi;
+        if (riff.size() < 20 || std::memcmp(riff.data(), "RIFF", 4) != 0 ||
+            std::memcmp(riff.data() + 8, "RMID", 4) != 0) {
+            delete source;
+            return MA_INVALID_FILE;
+        }
+        std::vector<std::uint8_t> midi;
+        for (std::size_t position = 12; position + 8 <= riff.size();) {
+            const std::uint32_t chunk_size = read_le32(riff.data() + position + 4);
+            position += 8;
+            if (chunk_size > riff.size() - position) break;
+            if (std::memcmp(riff.data() + position - 8, "data", 4) == 0) {
+                midi.assign(riff.begin() + position, riff.begin() + position + chunk_size);
+                break;
+            }
+            position += chunk_size + (chunk_size & 1u);
+        }
+        if (midi.empty()) {
+            delete source;
+            return MA_INVALID_FILE;
+        }
+        source->midi = std::move(midi);
     }
 
     source->settings = new_fluid_settings();
@@ -687,6 +723,256 @@ std::filesystem::path playlist_path(const std::filesystem::path& playlist,
     auto path = util::utf8_to_path(value);
     if (path.is_relative()) path = playlist.parent_path() / path;
     return path.lexically_normal();
+}
+
+constexpr ma_uint64 cdda_frames_per_sector = 588;
+constexpr ma_uint64 cdda_bytes_per_frame = 4;
+
+struct CueTrack {
+    std::filesystem::path file;
+    bool binary = false;
+    bool audio = false;
+    bool has_index = false;
+    ma_uint64 sector = 0;
+};
+
+struct CddaSegment {
+    std::filesystem::path file;
+    ma_uint64 start = 0;
+    ma_uint64 length = 0;
+};
+
+bool cue_sector(std::string_view value, ma_uint64& sector) {
+    unsigned minutes = 0;
+    unsigned seconds = 0;
+    unsigned frames = 0;
+    if (std::sscanf(std::string{value}.c_str(), "%u:%u:%u", &minutes, &seconds, &frames) != 3 ||
+        seconds >= 60 || frames >= 75) return false;
+    sector = (static_cast<ma_uint64>(minutes) * 60 + seconds) * 75 + frames;
+    return true;
+}
+
+std::vector<CddaSegment> parse_cdda_cue(const std::filesystem::path& cue) {
+    std::ifstream input(cue);
+    if (!input) return {};
+    std::vector<CueTrack> tracks;
+    std::filesystem::path current_file;
+    bool current_binary = false;
+    std::string line;
+    while (std::getline(input, line)) {
+        line = trim(std::move(line));
+        std::string lower = line;
+        std::transform(lower.begin(), lower.end(), lower.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (lower.starts_with("file ")) {
+            std::string value = line.substr(5);
+            std::string type;
+            if (value.starts_with('"')) {
+                const auto quote = value.find('"', 1);
+                if (quote == std::string::npos) continue;
+                type = trim(value.substr(quote + 1));
+                value.resize(quote + 1);
+            } else if (const auto space = value.find(' '); space != std::string::npos) {
+                type = trim(value.substr(space + 1));
+                value.resize(space);
+            }
+            std::transform(type.begin(), type.end(), type.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            current_file = playlist_path(cue, std::move(value));
+            current_binary = type == "binary";
+        } else if (lower.starts_with("track ") && !current_file.empty()) {
+            tracks.push_back({current_file, current_binary,
+                              lower.find(" audio") != std::string::npos, false, 0});
+        } else if (lower.starts_with("index 01 ") && !tracks.empty()) {
+            tracks.back().has_index = cue_sector(line.substr(9), tracks.back().sector);
+        }
+    }
+
+    std::vector<CddaSegment> segments;
+    for (std::size_t index = 0; index < tracks.size(); ++index) {
+        const auto& track = tracks[index];
+        if (!track.binary || !track.audio || !track.has_index) continue;
+        std::error_code error;
+        const ma_uint64 file_bytes = std::filesystem::file_size(track.file, error);
+        if (error) continue;
+        ma_uint64 end_sector = file_bytes / (cdda_frames_per_sector * cdda_bytes_per_frame);
+        for (std::size_t next = index + 1; next < tracks.size(); ++next) {
+            if (tracks[next].file != track.file) break;
+            if (tracks[next].has_index) {
+                end_sector = tracks[next].sector;
+                break;
+            }
+        }
+        if (track.sector >= end_sector) continue;
+        segments.push_back({track.file, track.sector * cdda_frames_per_sector,
+                            (end_sector - track.sector) * cdda_frames_per_sector});
+    }
+    return segments;
+}
+
+struct CddaDataSource {
+    ma_data_source_base base{};
+    std::vector<CddaSegment> segments;
+    std::size_t index = 0;
+    ma_uint64 segment_cursor = 0;
+    ma_uint64 cursor = 0;
+    ma_uint64 length = 0;
+    std::ifstream file;
+    std::vector<std::uint8_t> bytes;
+    std::vector<float> scratch;
+};
+
+bool open_cdda_segment(CddaDataSource& source) {
+    source.file.close();
+    if (source.index >= source.segments.size()) return false;
+    source.file.open(source.segments[source.index].file, std::ios::binary);
+    if (!source.file) return false;
+    const ma_uint64 frame = source.segments[source.index].start + source.segment_cursor;
+    if (frame > static_cast<ma_uint64>(std::numeric_limits<std::streamoff>::max()) /
+                    cdda_bytes_per_frame) return false;
+    source.file.seekg(static_cast<std::streamoff>(frame * cdda_bytes_per_frame));
+    return static_cast<bool>(source.file);
+}
+
+ma_result cdda_on_read(ma_data_source* data_source, void* output,
+                       ma_uint64 frame_count, ma_uint64* frames_read) {
+    auto& source = *reinterpret_cast<CddaDataSource*>(data_source);
+    float* pcm = static_cast<float*>(output);
+    if (!pcm) {
+        source.scratch.resize(static_cast<std::size_t>(frame_count) * 2);
+        pcm = source.scratch.data();
+    }
+    ma_uint64 total = 0;
+    while (total < frame_count && source.index < source.segments.size()) {
+        const auto& segment = source.segments[source.index];
+        if (source.segment_cursor >= segment.length) {
+            ++source.index;
+            source.segment_cursor = 0;
+            if (source.index < source.segments.size() && !open_cdda_segment(source)) break;
+            continue;
+        }
+        const ma_uint64 count = std::min<ma_uint64>(
+            {frame_count - total, segment.length - source.segment_cursor, 16384});
+        source.bytes.resize(static_cast<std::size_t>(count * cdda_bytes_per_frame));
+        source.file.read(reinterpret_cast<char*>(source.bytes.data()),
+                         static_cast<std::streamsize>(source.bytes.size()));
+        const ma_uint64 read = static_cast<ma_uint64>(source.file.gcount()) /
+                               cdda_bytes_per_frame;
+        for (ma_uint64 frame = 0; frame < read; ++frame) {
+            for (ma_uint64 channel = 0; channel < 2; ++channel) {
+                const std::size_t byte = static_cast<std::size_t>(frame * 4 + channel * 2);
+                const std::uint16_t bits = static_cast<std::uint16_t>(source.bytes[byte]) |
+                    (static_cast<std::uint16_t>(source.bytes[byte + 1]) << 8);
+                pcm[(total + frame) * 2 + channel] =
+                    static_cast<float>(static_cast<std::int16_t>(bits)) / 32768.0f;
+            }
+        }
+        source.segment_cursor += read;
+        source.cursor += read;
+        total += read;
+        if (read < count) source.segment_cursor = segment.length;
+    }
+    if (frames_read) *frames_read = total;
+    return total == 0 ? MA_AT_END : MA_SUCCESS;
+}
+
+ma_result cdda_on_seek(ma_data_source* data_source, ma_uint64 frame_index) {
+    auto& source = *reinterpret_cast<CddaDataSource*>(data_source);
+    if (frame_index > source.length) return MA_BAD_SEEK;
+    ma_uint64 offset = frame_index;
+    source.index = 0;
+    while (source.index < source.segments.size() &&
+           offset >= source.segments[source.index].length) {
+        offset -= source.segments[source.index++].length;
+    }
+    source.cursor = frame_index;
+    source.segment_cursor = offset;
+    source.file.close();
+    if (source.index == source.segments.size()) return MA_SUCCESS;
+    return open_cdda_segment(source) ? MA_SUCCESS : MA_BAD_SEEK;
+}
+
+ma_result cdda_on_get_format(ma_data_source*, ma_format* format, ma_uint32* channels,
+                             ma_uint32* sample_rate, ma_channel* channel_map,
+                             size_t channel_map_capacity) {
+    if (format) *format = ma_format_f32;
+    if (channels) *channels = 2;
+    if (sample_rate) *sample_rate = 44100;
+    if (channel_map && channel_map_capacity > 0) {
+        ma_channel_map_init_standard(ma_standard_channel_map_default, channel_map,
+                                     std::min<std::size_t>(2, channel_map_capacity), 2);
+    }
+    return MA_SUCCESS;
+}
+
+ma_result cdda_on_get_cursor(ma_data_source* data_source, ma_uint64* cursor) {
+    if (!cursor) return MA_INVALID_ARGS;
+    *cursor = reinterpret_cast<CddaDataSource*>(data_source)->cursor;
+    return MA_SUCCESS;
+}
+
+ma_result cdda_on_get_length(ma_data_source* data_source, ma_uint64* length) {
+    if (!length) return MA_INVALID_ARGS;
+    *length = reinterpret_cast<CddaDataSource*>(data_source)->length;
+    return MA_SUCCESS;
+}
+
+ma_data_source_vtable cdda_data_source_vtable{
+    cdda_on_read, cdda_on_seek, cdda_on_get_format, cdda_on_get_cursor,
+    cdda_on_get_length, nullptr, 0};
+
+ma_result open_cdda(const std::filesystem::path& path, ma_data_source** backend) {
+    std::string extension = path.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (extension != ".cue") return MA_NO_BACKEND;
+    auto segments = parse_cdda_cue(path);
+    if (segments.empty()) return MA_NO_BACKEND;
+    auto* source = new (std::nothrow) CddaDataSource{};
+    if (!source) return MA_OUT_OF_MEMORY;
+    source->segments = std::move(segments);
+    for (const auto& segment : source->segments) {
+        if (segment.length > std::numeric_limits<ma_uint64>::max() - source->length) {
+            delete source;
+            return MA_INVALID_FILE;
+        }
+        source->length += segment.length;
+    }
+    if (!open_cdda_segment(*source)) {
+        delete source;
+        return MA_IO_ERROR;
+    }
+    ma_data_source_config config = ma_data_source_config_init();
+    config.vtable = &cdda_data_source_vtable;
+    const ma_result result = ma_data_source_init(&config, &source->base);
+    if (result != MA_SUCCESS) {
+        delete source;
+        return result;
+    }
+    *backend = source;
+    return MA_SUCCESS;
+}
+
+ma_result cdda_backend_init_file(void*, const char* path,
+                                 const ma_decoding_backend_config*,
+                                 const ma_allocation_callbacks*, ma_data_source** backend) {
+    if (!path) return MA_INVALID_ARGS;
+    return open_cdda(std::filesystem::path{path}, backend);
+}
+
+ma_result cdda_backend_init_file_w(void*, const wchar_t* path,
+                                   const ma_decoding_backend_config*,
+                                   const ma_allocation_callbacks*, ma_data_source** backend) {
+    if (!path) return MA_INVALID_ARGS;
+    return open_cdda(std::filesystem::path{path}, backend);
+}
+
+void cdda_backend_uninit(void*, ma_data_source* backend,
+                         const ma_allocation_callbacks*) {
+    if (!backend) return;
+    auto* source = reinterpret_cast<CddaDataSource*>(backend);
+    ma_data_source_uninit(&source->base);
+    delete source;
 }
 
 std::vector<std::filesystem::path> parse_playlist(const std::filesystem::path& path) {
@@ -1341,15 +1627,19 @@ ma_decoding_backend_vtable vgmstream_backend{
 ma_decoding_backend_vtable playlist_backend{
     nullptr, playlist_backend_init_file, playlist_backend_init_file_w,
     nullptr, playlist_backend_uninit};
+ma_decoding_backend_vtable cdda_backend{
+    nullptr, cdda_backend_init_file, cdda_backend_init_file_w,
+    nullptr, cdda_backend_uninit};
 ma_decoding_backend_vtable* backends[] = {
-    &playlist_backend, &midi_backend, &gme_backend, &vgmstream_backend, &ffmpeg_backend};
+    &cdda_backend, &playlist_backend, &midi_backend, &gme_backend,
+    &vgmstream_backend, &ffmpeg_backend};
 
 } // namespace
 
 ma_decoder_config decoder_config(ma_format format, ma_uint32 channels, ma_uint32 sample_rate) {
     ma_decoder_config config = ma_decoder_config_init(format, channels, sample_rate);
     config.ppCustomBackendVTables = backends;
-    config.customBackendCount = 5;
+    config.customBackendCount = 6;
     return config;
 }
 

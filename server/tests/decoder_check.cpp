@@ -4,11 +4,62 @@
 #include <cctype>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <numbers>
 #include <string>
 #include <vector>
 
 namespace fs = std::filesystem;
+
+std::vector<fs::path> self_test_files() {
+    const auto directory = fs::temp_directory_path() / "liveplay-decoder-self-test";
+    fs::remove_all(directory);
+    fs::create_directories(directory);
+
+    const std::vector<unsigned char> midi{
+        'M', 'T', 'h', 'd', 0, 0, 0, 6, 0, 0, 0, 1, 0, 96,
+        'M', 'T', 'r', 'k', 0, 0, 0, 15,
+        0, 0xc0, 0, 0, 0x90, 60, 100, 96, 0x80, 60, 0, 0, 0xff, 0x2f, 0};
+    std::ofstream rmi(directory / "note.rmi", std::ios::binary);
+    const std::uint32_t riff_size = static_cast<std::uint32_t>(12 + midi.size());
+    const std::uint32_t data_size = static_cast<std::uint32_t>(midi.size());
+    rmi.write("RIFF", 4);
+    rmi.write(reinterpret_cast<const char*>(&riff_size), 4);
+    rmi.write("RMIDdata", 8);
+    rmi.write(reinterpret_cast<const char*>(&data_size), 4);
+    rmi.write(reinterpret_cast<const char*>(midi.data()), midi.size());
+    rmi.close();
+
+    std::ofstream bin(directory / "disc.bin", std::ios::binary);
+    for (int frame = 0; frame < 44100; ++frame) {
+        const auto sample = static_cast<std::int16_t>(
+            std::sin(2.0 * std::numbers::pi * 440.0 * frame / 44100.0) * 12000.0);
+        bin.write(reinterpret_cast<const char*>(&sample), sizeof(sample));
+        bin.write(reinterpret_cast<const char*>(&sample), sizeof(sample));
+    }
+    bin.close();
+    std::ofstream cue(directory / "disc.cue");
+    cue << "FILE \"disc.bin\" BINARY\n"
+           "  TRACK 01 AUDIO\n"
+           "    INDEX 01 00:00:00\n";
+    cue.close();
+
+    std::ofstream mixed(directory / "mixed.bin", std::ios::binary);
+    const std::vector<char> data_track(150 * 2352, 0);
+    mixed.write(data_track.data(), data_track.size());
+    std::ifstream audio_track(directory / "disc.bin", std::ios::binary);
+    mixed << audio_track.rdbuf();
+    mixed.close();
+    std::ofstream mixed_cue(directory / "mixed.cue");
+    mixed_cue << "FILE \"mixed.bin\" BINARY\n"
+                 "  TRACK 01 MODE1/2352\n"
+                 "    INDEX 01 00:00:00\n"
+                 "  TRACK 02 AUDIO\n"
+                 "    INDEX 01 00:02:00\n";
+    mixed_cue.close();
+    return {directory / "note.rmi", directory / "disc.cue", directory / "mixed.cue"};
+}
 
 int main(int argc, char** argv) {
     if (argc < 2) {
@@ -16,9 +67,16 @@ int main(int argc, char** argv) {
         return 2;
     }
 
+    const std::vector<fs::path> self_tests =
+        argc == 2 && std::string_view{argv[1]} == "--self-test"
+            ? self_test_files() : std::vector<fs::path>{};
+    std::vector<fs::path> files = self_tests;
+    if (files.empty()) {
+        for (int i = 1; i < argc; ++i) files.emplace_back(argv[i]);
+    }
+
     int failures = 0;
-    for (int i = 1; i < argc; ++i) {
-        const fs::path path{argv[i]};
+    for (const fs::path& path : files) {
         std::size_t before_count = 0;
         for (const auto& entry : fs::directory_iterator{path.parent_path()}) {
             if (entry.is_regular_file()) ++before_count;
@@ -64,7 +122,8 @@ int main(int argc, char** argv) {
         std::transform(extension.begin(), extension.end(), extension.begin(),
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         const bool is_midi = extension == ".mid" || extension == ".midi" ||
-                             extension == ".smf" || extension == ".kar";
+                             extension == ".smf" || extension == ".kar" ||
+                             extension == ".rmi";
         const bool is_playlist = extension == ".m3u" || extension == ".m3u8" ||
                                  extension == ".pls" || extension == ".ram" ||
                                  extension == ".cue" || extension == ".xspf" ||
@@ -87,6 +146,11 @@ int main(int argc, char** argv) {
             }
             if (result != MA_AT_END) {
                 std::cerr << path << ": did not reach its natural end\n";
+                ++failures;
+            }
+            if (is_midi && total != length) {
+                std::cerr << path << ": ended at " << total
+                          << " frames instead of its declared " << length << " frames\n";
                 ++failures;
             }
         }
