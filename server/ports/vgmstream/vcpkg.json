@@ -1,0 +1,13 @@
+{
+  "name": "vgmstream",
+  "version-date": "2026-07-10",
+  "description": "Library for streamed video game audio formats",
+  "homepage": "https://github.com/vgmstream/vgmstream",
+  "license": "ISC",
+  "dependencies": [
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    }
+  ]
+}

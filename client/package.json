@@ -117,6 +117,18 @@
         {
           "from": "../server/build/Release/miniz.dll",
           "to": "server-bin/miniz.dll"
+        },
+        {
+          "from": "../server/assets/TimGM6mb.sf2",
+          "to": "server-bin/TimGM6mb.sf2"
+        },
+        {
+          "from": "../server/assets/TimGM6mb.NOTICE.md",
+          "to": "server-bin/TimGM6mb.NOTICE.md"
+        },
+        {
+          "from": "../server/assets/TimGM6mb.GPL-2.0.txt",
+          "to": "server-bin/TimGM6mb.GPL-2.0.txt"
         }
       ]
     },
@@ -148,6 +160,18 @@
         {
           "from": "../server/build/liveplay-server",
           "to": "server-bin/liveplay-server"
+        },
+        {
+          "from": "../server/assets/TimGM6mb.sf2",
+          "to": "server-bin/TimGM6mb.sf2"
+        },
+        {
+          "from": "../server/assets/TimGM6mb.NOTICE.md",
+          "to": "server-bin/TimGM6mb.NOTICE.md"
+        },
+        {
+          "from": "../server/assets/TimGM6mb.GPL-2.0.txt",
+          "to": "server-bin/TimGM6mb.GPL-2.0.txt"
         }
       ]
     },
@@ -203,6 +227,18 @@
         {
           "from": "../server/build/liveplay-server",
           "to": "server-bin/liveplay-server"
+        },
+        {
+          "from": "../server/assets/TimGM6mb.sf2",
+          "to": "server-bin/TimGM6mb.sf2"
+        },
+        {
+          "from": "../server/assets/TimGM6mb.NOTICE.md",
+          "to": "server-bin/TimGM6mb.NOTICE.md"
+        },
+        {
+          "from": "../server/assets/TimGM6mb.GPL-2.0.txt",
+          "to": "server-bin/TimGM6mb.GPL-2.0.txt"
         }
       ]
     }

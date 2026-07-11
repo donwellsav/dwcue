@@ -2175,10 +2175,7 @@ ipcMain.handle('select-project-file', async () => {
 
 ipcMain.handle('select-audio-files', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openFile', 'multiSelections'],
-    filters: [
-      { name: 'Audio Files', extensions: ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac'] }
-    ]
+    properties: ['openFile', 'multiSelections']
   });
 
   if (!result.canceled && result.filePaths.length > 0) {

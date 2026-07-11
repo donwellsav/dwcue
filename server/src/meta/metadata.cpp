@@ -3,6 +3,7 @@
 // duration. See metadata.hpp for the contract.
 // ============================================================================
 #include "liveplay/meta/metadata.hpp"
+#include "liveplay/audio/decoder.hpp"
 #include "liveplay/logger.hpp"
 #include "liveplay/util/unicode_path.hpp"
 
@@ -23,15 +24,9 @@ std::string tstring_to_utf8(const TagLib::String& s) {
 
 // Best-effort duration via miniaudio when TagLib's AudioProperties is missing.
 std::chrono::milliseconds duration_via_miniaudio(const std::filesystem::path& path) noexcept {
-    ma_decoder_config cfg = ma_decoder_config_init(ma_format_f32, 0, 0);
+    ma_decoder_config cfg = audio::decoder_config(ma_format_f32, 0, 0);
     ma_decoder decoder{};
-#if defined(_WIN32)
-    const std::wstring pw = path.wstring();
-    if (ma_decoder_init_file_w(pw.c_str(), &cfg, &decoder) != MA_SUCCESS) return {};
-#else
-    const std::string p = path.string();
-    if (ma_decoder_init_file(p.c_str(), &cfg, &decoder) != MA_SUCCESS) return {};
-#endif
+    if (audio::decoder_init_file(path, cfg, decoder) != MA_SUCCESS) return {};
     ma_uint64 length_frames = 0;
     ma_uint32 sample_rate   = 0;
     ma_decoder_get_length_in_pcm_frames(&decoder, &length_frames);

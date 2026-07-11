@@ -1,0 +1,14 @@
+{
+  "name": "game-music-emu",
+  "version": "0.6.5",
+  "description": "Video game music file emulator and player library",
+  "homepage": "https://github.com/libgme/game-music-emu",
+  "license": "LGPL-2.1-or-later",
+  "dependencies": [
+    "zlib",
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    }
+  ]
+}

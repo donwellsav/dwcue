@@ -2,6 +2,7 @@
 // waveform.cpp — see waveform.hpp.
 // ============================================================================
 #include "liveplay/meta/waveform.hpp"
+#include "liveplay/audio/decoder.hpp"
 #include "liveplay/logger.hpp"
 #include "liveplay/util/unicode_path.hpp"
 
@@ -18,21 +19,13 @@ Waveform compute_waveform(const std::filesystem::path& path,
     Waveform out;
     bucket_count = std::clamp<std::uint32_t>(bucket_count, 16, 16384);
 
-    ma_decoder_config cfg = ma_decoder_config_init(ma_format_f32, 0, 0);
+    ma_decoder_config cfg = audio::decoder_config(ma_format_f32, 0, 0);
     ma_decoder decoder{};
     const std::string p = util::path_to_utf8(path);   // for log messages
-#if defined(_WIN32)
-    const std::wstring pw = path.wstring();
-    if (ma_decoder_init_file_w(pw.c_str(), &cfg, &decoder) != MA_SUCCESS) {
+    if (audio::decoder_init_file(path, cfg, decoder) != MA_SUCCESS) {
         Logger::warn("compute_waveform: cannot decode '{}'", p);
         return out;
     }
-#else
-    if (ma_decoder_init_file(p.c_str(), &cfg, &decoder) != MA_SUCCESS) {
-        Logger::warn("compute_waveform: cannot decode '{}'", p);
-        return out;
-    }
-#endif
 
     ma_uint32 channels    = 0;
     ma_uint32 sample_rate = 0;

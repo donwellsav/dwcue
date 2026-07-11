@@ -1,0 +1,10 @@
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index ab7abc0..1b5300e 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -71,1 +71,5 @@
+ setup_target(libvgmstream)
++include(GNUInstallDirs)
++install(TARGETS libvgmstream ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
++install(FILES libvgmstream.h libvgmstream_streamfile.h
++        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vgmstream)

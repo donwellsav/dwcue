@@ -2,6 +2,7 @@
 // playback_item.cpp — see playback_item.hpp.
 // ============================================================================
 #include "liveplay/audio/playback_item.hpp"
+#include "liveplay/audio/decoder.hpp"
 #include "liveplay/logger.hpp"
 #include "liveplay/util/unicode_path.hpp"
 
@@ -72,7 +73,7 @@ bool PlaybackItem::load() {
     }
 
     decoder_ = std::make_unique<ma_decoder>();
-    ma_decoder_config cfg = ma_decoder_config_init(
+    ma_decoder_config cfg = decoder_config(
         ma_format_f32,
         /*channels (0 = native)*/ 0,
         desc_.mix_sample_rate);
@@ -93,13 +94,7 @@ bool PlaybackItem::load() {
         return false;
     }
 
-#if defined(_WIN32)
-    const std::wstring path_w = desc_.file_path.wstring();
-    const ma_result rv = ma_decoder_init_file_w(path_w.c_str(), &cfg, decoder_.get());
-#else
-    const std::string path_str = desc_.file_path.string();
-    const ma_result rv = ma_decoder_init_file(path_str.c_str(), &cfg, decoder_.get());
-#endif
+    const ma_result rv = decoder_init_file(desc_.file_path, cfg, *decoder_);
     if (rv != MA_SUCCESS) {
         Logger::error("PlaybackItem[{}] decoder init failed for '{}': {}",
                       desc_.id.value, path_utf8, ma_result_description(rv));

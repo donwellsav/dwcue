@@ -25,6 +25,26 @@
     {
       "name": "miniz",
       "version>=": "3.0.2"
+    },
+    {
+      "name": "ffmpeg",
+      "default-features": false,
+      "features": [
+        "avcodec",
+        "avformat",
+        "openmpt",
+        "swresample"
+      ]
+    },
+    {
+      "name": "fluidsynth",
+      "default-features": false
+    },
+    {
+      "name": "game-music-emu"
+    },
+    {
+      "name": "vgmstream"
     }
   ],
   "builtin-baseline": "22d9c655dc24ad24c6cac27607005e619ce46740"

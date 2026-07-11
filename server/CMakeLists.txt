@@ -10,6 +10,7 @@ endif()
 # Read version from vcpkg.json to keep build version in sync with package manifest
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg.json" VCPKG_JSON_CONTENT)
 string(JSON LIVEPLAY_VERSION GET "${VCPKG_JSON_CONTENT}" "version-string")
+set(VCPKG_OVERLAY_PORTS "${CMAKE_CURRENT_SOURCE_DIR}/ports" CACHE STRING "Local vcpkg ports")
 
 project(liveplay-server
     VERSION ${LIVEPLAY_VERSION}
@@ -77,6 +78,12 @@ endif()
 find_path(MINIAUDIO_INCLUDE_DIR miniaudio.h REQUIRED)
 # miniz — used for .lpa (zip) packaging of project exports/imports.
 find_package(miniz CONFIG REQUIRED)
+find_package(FFMPEG REQUIRED)
+find_package(FluidSynth CONFIG REQUIRED)
+find_path(GME_INCLUDE_DIR gme/gme.h REQUIRED)
+find_library(GME_LIBRARY NAMES gme REQUIRED)
+find_path(VGMSTREAM_INCLUDE_DIR vgmstream/libvgmstream.h REQUIRED)
+find_library(VGMSTREAM_LIBRARY NAMES vgmstream REQUIRED)
 
 # ---------------------------------------------------------------------------
 # miniaudio implementation translation unit
@@ -128,6 +135,7 @@ add_executable(liveplay-server
 
     # Milestone 2 — audio engine
     src/audio/meter.cpp
+    src/audio/decoder.cpp
     src/audio/limiter.cpp
     src/audio/ltc_generator.cpp
     src/audio/mixer_channel.cpp
@@ -148,7 +156,12 @@ add_executable(liveplay-server
 target_include_directories(liveplay-server
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${FFMPEG_INCLUDE_DIRS}
+        ${GME_INCLUDE_DIR}
+        ${VGMSTREAM_INCLUDE_DIR}
 )
+
+target_link_directories(liveplay-server PRIVATE ${FFMPEG_LIBRARY_DIRS})
 
 target_link_libraries(liveplay-server
     PRIVATE
@@ -157,6 +170,10 @@ target_link_libraries(liveplay-server
         Crow::Crow
         liveplay_miniaudio
         miniz::miniz
+        ${FFMPEG_LIBRARIES}
+        FluidSynth::libfluidsynth
+        ${GME_LIBRARY}
+        ${VGMSTREAM_LIBRARY}
 )
 
 # Link TagLib under whichever target name vcpkg exposed.
@@ -178,10 +195,43 @@ endif()
 target_compile_definitions(liveplay-server PRIVATE
     LIVEPLAY_SERVER_VERSION="${PROJECT_VERSION}"
     LIVEPLAY_SERVER_NAME="${PROJECT_NAME}"
+    LIVEPLAY_DEFAULT_SOUNDFONT="${CMAKE_CURRENT_SOURCE_DIR}/assets/TimGM6mb.sf2"
 )
+
+foreach(asset TimGM6mb.sf2 TimGM6mb.NOTICE.md TimGM6mb.GPL-2.0.txt)
+    add_custom_command(TARGET liveplay-server POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/${asset}"
+            "$<TARGET_FILE_DIR:liveplay-server>/${asset}")
+endforeach()
 
 # ---------------------------------------------------------------------------
 # Install rules — used by CI when staging the artifact directory.
 # ---------------------------------------------------------------------------
 include(GNUInstallDirs)
 install(TARGETS liveplay-server RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES
+    assets/TimGM6mb.sf2
+    assets/TimGM6mb.NOTICE.md
+    assets/TimGM6mb.GPL-2.0.txt
+    DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(decoder-check
+        tests/decoder_check.cpp
+        src/audio/decoder.cpp
+    )
+    target_include_directories(decoder-check PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${FFMPEG_INCLUDE_DIRS}
+        ${GME_INCLUDE_DIR}
+        ${VGMSTREAM_INCLUDE_DIR}
+    )
+    target_link_directories(decoder-check PRIVATE ${FFMPEG_LIBRARY_DIRS})
+    target_link_libraries(decoder-check PRIVATE
+        liveplay_miniaudio ${FFMPEG_LIBRARIES} FluidSynth::libfluidsynth
+        ${GME_LIBRARY} ${VGMSTREAM_LIBRARY})
+    target_compile_definitions(decoder-check PRIVATE
+        LIVEPLAY_DEFAULT_SOUNDFONT="${CMAKE_CURRENT_SOURCE_DIR}/assets/TimGM6mb.sf2")
+endif()

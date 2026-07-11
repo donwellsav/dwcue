@@ -17,6 +17,8 @@ if (process.platform !== 'darwin') {
 
 const projectRoot = path.join(__dirname, '..');
 const serverBinaryPath = path.join(projectRoot, 'server', 'build', 'liveplay-server');
+const soundfontFiles = ['TimGM6mb.sf2', 'TimGM6mb.NOTICE.md', 'TimGM6mb.GPL-2.0.txt'];
+const serverAssetsPath = path.join(projectRoot, 'server', 'assets');
 const serverIconPath = path.join(projectRoot, 'client', 'assets', 'icons', '4092w', 'liveplay-server4092w.png');
 const appBundlePath = path.join(projectRoot, 'server', 'build', 'LivePlay Server.app');
 const contentsPath = path.join(appBundlePath, 'Contents');
@@ -56,6 +58,9 @@ try {
   console.log('[build-server-app-mac] Copying server binary...');
   fs.copyFileSync(serverBinaryPath, path.join(macOsPath, 'liveplay-server'));
   execSync(`chmod +x "${path.join(macOsPath, 'liveplay-server')}"`, { stdio: 'inherit' });
+  for (const file of soundfontFiles) {
+    fs.copyFileSync(path.join(serverAssetsPath, file), path.join(macOsPath, file));
+  }
 
   // Create the launcher shell script.
   // When the user double-clicks the .app, macOS runs this script rather than

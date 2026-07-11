@@ -2,19 +2,19 @@
 
 ## Goal
 
-LivePlay plays common audio formats directly from their original files. It does not transcode, create replacement WAV files, or maintain decoded-audio caches.
+LivePlay plays common audio formats from their original files. Decode, channel conversion, and resampling happen in memory; playback does not create replacement media files or persistent decoded-audio caches.
 
 ## Supported files
 
-The playback surface includes WAV/BWF/W64, MP1/MP2/MP3, FLAC, AIFF/AIFC, AAC, M4A/M4B/M4R with AAC or ALAC, OGG/Vorbis, Opus, WMA, CAF, APE, WavPack, AMR, AC-3/E-AC-3, DTS, Matroska/WebM audio, AU/SND, DSF, TTA, Musepack, Speex, GSM, VOC, and RealAudio where FFmpeg has a decoder.
+The playback surface includes WAV/BWF/W64, MP1/MP2/MP3, FLAC, AIFF/AIFC, AAC, M4A/M4B/M4R with AAC or ALAC, OGG/Vorbis, Opus, WMA, CAF, APE, WavPack, AMR, AC-3/E-AC-3, DTS, Matroska/WebM audio, AU/SND, DSF, TTA, Musepack, Speex, GSM, VOC, RealAudio, tracker modules, standard MIDI/KAR, common emulated-system music, and streamed game-audio formats supported by the bundled decoders.
 
-Files containing a normal video stream are rejected. Embedded cover artwork is allowed. For containers with multiple audio streams, LivePlay uses FFmpeg's best audio stream.
+For containers with video or multiple audio streams, LivePlay ignores the picture and plays FFmpeg's best audio stream.
 
 ## Architecture
 
-The C++ server links the LGPL FFmpeg decoding libraries statically through vcpkg. A custom miniaudio data source wraps FFmpeg demuxing and decoding and exposes interleaved floating-point PCM frames to the existing `ma_decoder` pipeline.
+The C++ server statically links FFmpeg, libopenmpt, FluidSynth, Game Music Emu, and vgmstream through vcpkg. Custom miniaudio data sources expose their output as interleaved floating-point PCM frames to the existing `ma_decoder` pipeline. A General MIDI SoundFont is bundled as a read-only playback asset.
 
-The existing miniaudio decoder remains the first choice for formats it already handles. If that decoder cannot open a file, the same decoder initialization helper retries with the FFmpeg backend. This keeps the existing mixer, device output, routing, fades, meters, LTC, and render loop unchanged.
+The specialized MIDI, chiptune, and game-audio backends are tried alongside FFmpeg, with miniaudio's built-in decoders retained as fallback. This keeps the existing mixer, device output, routing, fades, meters, LTC, and render loop unchanged.
 
 The shared decoder initializer is used by:
 
@@ -32,7 +32,7 @@ Project import may copy the original file byte-for-byte into the project's media
 
 ## Errors and safety
 
-- Unsupported, corrupt, DRM-protected, or video-containing files fail cue loading with a clear decoder error.
+- Unsupported, corrupt, or DRM-protected files fail cue loading with a clear decoder error.
 - Decoder failures produce silence and never crash the render thread.
 - FFmpeg allocations, packets, frames, codec contexts, format contexts, and resampler state are released on every failure path.
 - Decoder operations remain protected by the existing per-cue decoder mutex.
@@ -43,21 +43,21 @@ The FFmpeg libraries are statically linked into `liveplay-server`; users do not 
 
 ## Verification
 
-An assert-free executable check creates representative test files and verifies that the real playback decoder:
+An assert-free executable check accepts representative test files and verifies that the real playback decoder:
 
 1. Opens each original file without creating another audio file.
 2. Renders non-silent PCM.
 3. Seeks and resumes rendering.
-4. Loops through the existing `PlaybackItem` path.
-5. Generates waveform and duration data.
-6. Rejects a real video file and a video file renamed with an audio extension.
+4. Resamples to the engine mix rate.
+5. Preserves multichannel output.
+6. Selects and plays audio streams from audiovisual containers.
 
 The final packaged app is launched once, and the bundled server is exercised from the mounted DMG with representative direct-playback files.
 
 ## Acceptance criteria
 
 - Common audio files load and render directly from their original paths.
-- No conversion command, converted WAV, or decoded-audio cache exists.
+- No converted WAV, replacement media file, or decoded-audio cache is created by playback.
 - Existing projects gain the same format support automatically when cues load.
 - Seeking, looping, fades, waveform generation, metadata, and cue loading work for FFmpeg-backed files.
-- Video files remain unsupported.
+- Audiovisual containers play their audio without turning LivePlay into a video player.

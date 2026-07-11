@@ -114,22 +114,6 @@ public:
     }
 };
 
-// File extensions we accept as cue audio files.
-const std::set<std::string>& audio_extensions() {
-    static const std::set<std::string> exts {
-        ".wav", ".aiff", ".aif", ".flac", ".mp3", ".ogg", ".m4a", ".aac",
-        ".opus", ".wma", ".caf"
-    };
-    return exts;
-}
-
-bool is_audio_file(const fs::path& p) {
-    auto e = p.extension().string();
-    std::transform(e.begin(), e.end(), e.begin(),
-                   [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
-    return audio_extensions().count(e) > 0;
-}
-
 crow::response json_ok(const json& body) {
     crow::response r{200, body.dump()};
     r.add_header("Content-Type", "application/json");
@@ -1205,7 +1189,7 @@ void ControlServer::install_routes() {
     //   path  ""  → "computer" root: enumerate logical drives on Windows,
     //                 "/" on POSIX. Each drive is reported with kind=="drive".
     //   filter:
-    //     "audio" (default) — only show known audio file extensions
+    //     "audio" (default) — show files and let the decoder inspect them
     //     "all"             — list every regular file
     //     ".liveplay,.lpa"  — comma-separated extension allow-list
     CROW_ROUTE(app, "/api/fs/list").methods(crow::HTTPMethod::Get)
@@ -1369,10 +1353,8 @@ void ControlServer::install_routes() {
                 // Build the extension allow-list.
                 std::set<std::string> allow;
                 bool allow_all = false;
-                if (filter == "all") {
+                if (filter == "all" || filter == "audio") {
                     allow_all = true;
-                } else if (filter == "audio") {
-                    allow = audio_extensions();
                 } else {
                     // Custom comma-separated list, e.g. ".liveplay,.lpa".
                     std::string token;
