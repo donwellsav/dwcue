@@ -405,6 +405,15 @@ const handleKeydown = (e: KeyboardEvent) => {
     return;
   }
 
+  const ctrl = e.ctrlKey || e.metaKey;
+  const key = e.key.toLowerCase();
+  const destructiveShortcut = e.key === 'Delete' || e.key === 'Backspace' ||
+    (ctrl && !e.altKey && (key === 'd' || key === 'v'));
+  if (uiMode.value === 'playback' && !isTextInputFocused() && destructiveShortcut) {
+    e.preventDefault();
+    return;
+  }
+
   // Delete / Backspace removes the current selection. A multi-selection opens
   // the confirm dialog; a single item is removed outright. Must defer to
   // native editing inside text fields.
@@ -416,10 +425,7 @@ const handleKeydown = (e: KeyboardEvent) => {
 
   // Selection / clipboard shortcuts. These all require a project and must not
   // fire while editing text (so native Ctrl+A/C/V keep working in inputs).
-  const ctrl = e.ctrlKey || e.metaKey;
   if (!ctrl || e.altKey || !currentProject.value || isTextInputFocused()) return;
-
-  const key = e.key.toLowerCase();
 
   if (key === 'a') {
     e.preventDefault();

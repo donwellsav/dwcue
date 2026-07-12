@@ -36,7 +36,7 @@ const LIVEPLAY_LOCK_FILENAME   = 'liveplay-server.lock';
 let liveplayServerProc = null;
 let liveplayServerPid  = null;
 let liveplayServerPort = LIVEPLAY_DEFAULT_PORT;
-let liveplayServerExitTimer = null;
+let liveplayServerStartPromise = null;
 
 function liveplayConfigPath() {
   return path.join(app.getPath('userData'), LIVEPLAY_CONFIG_FILENAME);
@@ -73,6 +73,30 @@ function isPidAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try { process.kill(pid, 0); return true; }
   catch (e) { return e.code === 'EPERM'; /* process exists but we lack permission */ }
+}
+
+async function terminateLiveplayPid(pid) {
+  if (!isPidAlive(pid)) return true;
+
+  try {
+    if (process.platform === 'win32') {
+      await new Promise((resolve) => exec(`taskkill /pid ${pid} /T /F`, resolve));
+    } else {
+      process.kill(pid, 'SIGINT');
+      const deadline = Date.now() + 2000;
+      while (isPidAlive(pid) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      if (isPidAlive(pid)) {
+        process.kill(pid, 'SIGKILL');
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+  } catch (e) {
+    console.error('[liveplay-server] kill failed:', e);
+  }
+
+  return !isPidAlive(pid);
 }
 
 async function probeServerHealth(port, timeoutMs = 1000) {
@@ -342,11 +366,29 @@ async function tryReattachLiveplayServer() {
     notifyServerStateChange();
     return;
   }
-  // Stale — process gone or unhealthy. Clear the lock so future writes start clean.
+  // An unhealthy process must be gone before its replacement starts. If it
+  // cannot be stopped, retain its PID so startLiveplayServer will not overlap it.
+  if (isPidAlive(lock.pid) && !(await terminateLiveplayPid(lock.pid))) {
+    console.error('[liveplay-server] unhealthy pid could not be stopped:', lock.pid);
+    liveplayServerPid  = lock.pid;
+    liveplayServerPort = lock.port;
+    notifyServerStateChange();
+    return;
+  }
   deleteLiveplayLock();
 }
 
 async function startLiveplayServer() {
+  if (liveplayServerStartPromise) return liveplayServerStartPromise;
+  liveplayServerStartPromise = startLiveplayServerOnce();
+  try {
+    return await liveplayServerStartPromise;
+  } finally {
+    liveplayServerStartPromise = null;
+  }
+}
+
+async function startLiveplayServerOnce() {
   // Already managing one in this process — nothing to do.
   if (liveplayServerProc || liveplayServerPid) return;
 
@@ -443,10 +485,9 @@ async function startLiveplayServer() {
   try { liveplayServerProc.unref(); } catch {}
   liveplayServerProc = null;   // discard the launcher handle
 
-  // Poll the pidfile so the renderer (and onStateChange listeners) learn
-  // the real PID. Don't await — this returns to the caller immediately;
-  // ensureRunning() handles the "wait until healthy" gate.
-  void pollPidfileForServerPid(lockPath);
+  // Adopt the real PID before completing this launch so a concurrent stop or
+  // restart cannot miss the new server in the pidfile handoff window.
+  await pollPidfileForServerPid(lockPath);
 
   notifyServerStateChange();
 }
@@ -473,31 +514,21 @@ async function pollPidfileForServerPid(lockPath) {
 // Stop the local server. Since the server now always runs as an external
 // process (visible terminal, written PID via pidfile), we only have a PID
 // to work with — there is no ChildProcess handle.
-function stopLiveplayServer() {
-  const pid = liveplayServerPid;
+async function stopLiveplayServer() {
+  if (liveplayServerStartPromise) await liveplayServerStartPromise;
+  const pid = liveplayServerPid ?? readLiveplayLock()?.pid;
   if (!pid) {
     deleteLiveplayLock();
     notifyServerStateChange();
-    return;
+    return true;
   }
   console.log('[liveplay-server] stopping pid', pid);
-  try {
-    if (process.platform === 'win32') {
-      // /T also closes the console window the server was hosted in.
-      exec(`taskkill /pid ${pid} /T /F`, () => {});
-    } else {
-      try { process.kill(pid, 'SIGINT'); } catch {}
-      liveplayServerExitTimer = setTimeout(() => {
-        try { process.kill(pid, 'SIGKILL'); } catch {}
-      }, 2000);
-    }
-  } catch (e) {
-    console.error('[liveplay-server] kill failed:', e);
-  }
-  deleteLiveplayLock();
+  const stopped = await terminateLiveplayPid(pid);
+  if (stopped) deleteLiveplayLock();
   liveplayServerProc = null;
-  liveplayServerPid  = null;
+  liveplayServerPid  = stopped ? null : pid;
   notifyServerStateChange();
+  return stopped;
 }
 
 function liveplayServerStatus() {
@@ -518,7 +549,7 @@ function notifyServerStateChange() {
 // IPC: renderer reads/writes config and queries state.
 ipcMain.handle('liveplay-server:get-config', () => readLiveplayConfig());
 
-ipcMain.handle('liveplay-server:set-config', (_e, incoming) => {
+ipcMain.handle('liveplay-server:set-config', async (_e, incoming) => {
   const next = { ...readLiveplayConfig(), ...incoming };
   // Sanity: clamp port to a valid TCP range.
   if (!Number.isInteger(next.localPort) || next.localPort < 1 || next.localPort > 65535) {
@@ -529,7 +560,7 @@ ipcMain.handle('liveplay-server:set-config', (_e, incoming) => {
   writeLiveplayConfig(next);
 
   // If switching to remote, stop any running local server.
-  if (next.mode === 'remote' && (liveplayServerProc || liveplayServerPid)) stopLiveplayServer();
+  if (next.mode === 'remote' && (liveplayServerProc || liveplayServerPid)) await stopLiveplayServer();
   // Do NOT auto-start in local mode here — the caller (ensure-running) is
   // responsible for starting the server so it isn't spawned twice.
 
@@ -557,26 +588,24 @@ ipcMain.handle('app:exit', () => {
 // has decided it calls `app:confirm-quit`. We stop the local server only
 // when asked, flip quitConfirmed so the next `close` is allowed through,
 // then quit for real.
-ipcMain.handle('app:confirm-quit', (_e, opts) => {
-  if (opts && opts.stopServer) stopLiveplayServer();
+ipcMain.handle('app:confirm-quit', async (_e, opts) => {
+  if (opts && opts.stopServer) await stopLiveplayServer();
   quitConfirmed = true;
   app.quit();
   return true;
 });
 
-ipcMain.handle('liveplay-server:restart', () => {
-  stopLiveplayServer();
-  // Defer the restart to let the kill complete.
-  setTimeout(() => startLiveplayServer(), 500);
+ipcMain.handle('liveplay-server:restart', async () => {
+  if (!(await stopLiveplayServer())) return false;
+  await startLiveplayServer();
   return true;
 });
 
 // Explicit shutdown — the server is now detached, so quitting the
 // renderer no longer kills it. The user (or the about-to-quit prompt)
 // invokes this when they really want it gone.
-ipcMain.handle('liveplay-server:shutdown', () => {
-  stopLiveplayServer();
-  return true;
+ipcMain.handle('liveplay-server:shutdown', async () => {
+  return stopLiveplayServer();
 });
 
 // Start the server (if not already running) and wait until /api/health

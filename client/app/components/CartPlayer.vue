@@ -96,6 +96,10 @@ const isTextInputFocused = (): boolean => {
 const handleCartKeydown = (e: KeyboardEvent) => {
   if (e.key !== 'Delete' && e.key !== 'Backspace') return;
   if (isTextInputFocused() || !currentProject.value) return;
+  if (showMode.value) {
+    e.preventDefault();
+    return;
+  }
   if (requestDeleteFromKeyboard()) e.preventDefault();
 };
 
