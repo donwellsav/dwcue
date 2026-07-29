@@ -21,7 +21,7 @@
           :class="{ active: activeTab === 'midi' }"
           @click="activeTab = 'midi'"
         >
-          <span class="tab-icon">&#x1F3B9;</span> {{ t('controls.tabMidi') }}
+          <span class="tab-icon material-symbols-rounded">piano</span> {{ t('controls.tabMidi') }}
         </button>
       </div>
 
@@ -200,6 +200,8 @@ const PLAYBACK_ACTIONS: { id: PlaybackKeyAction; labelKey: string }[] = [
   { id: 'play-next',     labelKey: 'controls.playNext'     },
   { id: 'pause-resume',  labelKey: 'controls.pauseResume'  },
   { id: 'toggle-loop',   labelKey: 'controls.toggleLoop'   },
+  { id: 'cue-to-continue', labelKey: 'controls.cueToContinue' },
+  { id: 'jump-cue',      labelKey: 'controls.jumpCue'      },
   { id: 'stop-all',      labelKey: 'controls.stopAll'      },
   { id: 'select-up',     labelKey: 'controls.selectUp'     },
   { id: 'select-down',   labelKey: 'controls.selectDown'   },
@@ -568,7 +570,12 @@ onUnmounted(() => {
   border-bottom-color: var(--color-accent, #3b82f6);
 }
 
-.tab-icon { font-size: 15px; }
+.tab-icon {
+  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 
 /* Body */
 .config-body {

@@ -9,6 +9,11 @@
         </div>
       </div>
 
+      <!-- The detached cart window fires cues too, so it needs the same
+           lockout: without it, cart pads here would keep accepting presses
+           that silently never reach the server. -->
+      <ConnectionLostModal />
+
       <!-- Multi-item delete confirm, also needed in the detached cart window -->
       <DeleteSelectionModal
         :visible="deleteDialogVisible"
@@ -115,6 +120,10 @@
 
     <!-- Persistent disconnect → ask the user how to recover -->
     <ConnectionLostModal />
+
+    <!-- Reconnected, but the server no longer holds our project (it restarted)
+         → resume from where we left off, or go back to the welcome screen. -->
+    <SessionRecoveryModal />
 
     <!-- App-quit confirmation: unsaved changes, then (in local mode) whether
          to also shut the local audio server down. -->

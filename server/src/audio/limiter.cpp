@@ -80,7 +80,19 @@ void Limiter::recompute_window_max() noexcept {
 
 void Limiter::process(Sample* samples, std::size_t frame_count) noexcept {
     if (!samples || frame_count == 0) return;
-    if (peak_window_.empty() || delay_.empty()) return;   // not configured
+    if (peak_window_.empty() || delay_.empty()) {
+        // Not configured — still provide a safety backstop rather than passing
+        // audio through untouched: sanitise non-finite samples and hard-clip to
+        // 0 dBFS so an unconfigured limiter can never leak overs to the hardware.
+        for (std::size_t i = 0; i < frame_count; ++i) {
+            float x = samples[i];
+            if (!finite_and_finite_enough(x)) x = 0.0f;
+            if (x >  1.0f) x =  1.0f;
+            if (x < -1.0f) x = -1.0f;
+            samples[i] = x;
+        }
+        return;
+    }
 
     const std::size_t window_size = peak_window_.size();
     const float       ceiling     = ceiling_lin_;

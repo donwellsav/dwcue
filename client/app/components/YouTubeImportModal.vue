@@ -98,7 +98,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useProject } from '~/composables/useProject';
-import { applyAutoProcessing } from '~/utils/audio';
+import { applyAutoProcessing, parseWaveformFileData } from '~/utils/audio';
 import { useOutputTarget } from '~/composables/useOutputTarget';
 
 const { t } = useLocalization();
@@ -286,7 +286,9 @@ const generateWaveformAsync = async (audioItem: any) => {
     if (result.success) {
       const waveformFile = await window.electronAPI.readFile(resolveProjectPath(audioItem.waveformPath));
       if (waveformFile.success && waveformFile.data) {
-        audioItem.waveform = JSON.parse(waveformFile.data);
+        // Accepts both the server's per-channel cache and legacy ffmpeg files.
+        const parsed = parseWaveformFileData(JSON.parse(waveformFile.data));
+        if (parsed) audioItem.waveform = parsed;
         if (consumePendingAutoProcess(audioItem.uuid)) {
           const settings = (currentProject.value as any)?.settings;
           if (!settings?.disableAutoVolumeAndTrim) {

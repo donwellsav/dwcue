@@ -18,7 +18,12 @@ client/dist-electron/
 .vscode/*
 !.vscode/extensions.json
 .idea
+# Lockfiles are committed so CI builds are reproducible. The root lockfile
+# covers the client workspace too — client/package-lock.json is never read by
+# npm (the workspace prefix resolves to the repo root) and stays ignored.
 package-lock.json
+!/package-lock.json
+!/docs-site/package-lock.json
 build/
 !client/build/
 out/

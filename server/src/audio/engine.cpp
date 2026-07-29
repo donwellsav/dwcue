@@ -18,6 +18,12 @@
 #  include <windows.h>   // SetThreadPriority
 #endif
 
+#if defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__) || defined(__i386__)
+#  include <xmmintrin.h>   // _MM_SET_FLUSH_ZERO_MODE
+#  include <pmmintrin.h>   // _MM_SET_DENORMALS_ZERO_MODE
+#  define LIVEPLAY_HAVE_SSE_DENORMAL 1
+#endif
+
 namespace liveplay::audio {
 
 namespace {
@@ -143,16 +149,25 @@ void AudioEngine::rebuild_topology_locked() {
         const ChannelCount n_src = item->source_channel_count();
         entry.per_source_channel.resize(n_src);
 
-        // Find sends for this item.
+        // Find sends for this item, expanding kAllMixerLanes into one send
+        // per concrete lane so the render loop never branches on it.
         auto it = pending_.item_sources.find(id_str);
         if (it != pending_.item_sources.end()) {
             const auto& isr = it->second.by_source_channel;
             for (ChannelIndex c = 0; c < n_src; ++c) {
                 if (c >= isr.size()) continue;
-                for (const auto& [mixer_id, gain_lin] : isr[c]) {
-                    auto mit = mixers_.find(mixer_id.value);
+                for (const auto& send : isr[c]) {
+                    auto mit = mixers_.find(send.mixer.value);
                     if (mit == mixers_.end()) continue;
-                    entry.per_source_channel[c].sends.emplace_back(mit->second, gain_lin);
+                    if (send.lane == kAllMixerLanes) {
+                        for (ChannelIndex l = 0; l < kMixerLanes; ++l) {
+                            entry.per_source_channel[c].sends.push_back(
+                                {mit->second, l, send.gain_lin});
+                        }
+                    } else if (send.lane < kMixerLanes) {
+                        entry.per_source_channel[c].sends.push_back(
+                            {mit->second, send.lane, send.gain_lin});
+                    }
                 }
             }
         }
@@ -168,9 +183,17 @@ void AudioEngine::rebuild_topology_locked() {
     for (auto& [mixer_id_str, master_sends] : pending_.mixer_to_master) {
         auto mit = mixers_.find(mixer_id_str);
         if (mit == mixers_.end()) continue;
-        for (auto& [master_idx, gain_lin] : master_sends) {
-            if (master_idx >= cfg_.master_channels) continue;
-            snap->masters[master_idx].sends.emplace_back(mit->second, gain_lin);
+        for (auto& send : master_sends) {
+            if (send.master >= cfg_.master_channels) continue;
+            if (send.lane == kAllMixerLanes) {
+                for (ChannelIndex l = 0; l < kMixerLanes; ++l) {
+                    snap->masters[send.master].sends.push_back(
+                        {mit->second, l, send.gain_lin});
+                }
+            } else if (send.lane < kMixerLanes) {
+                snap->masters[send.master].sends.push_back(
+                    {mit->second, send.lane, send.gain_lin});
+            }
         }
     }
 
@@ -410,6 +433,9 @@ CueId AudioEngine::load_cue(const std::filesystem::path& file_path,
 
     {
         std::lock_guard lock{mutex_};
+        item->set_meter_ballistics(meter_ballistics_);
+        item->set_true_peak_metering(meter_true_peak_);
+        item->set_loudness_metering(meter_loudness_);
         items_[item->id().value] = item;
         pending_.item_sources[item->id().value]
             .by_source_channel
@@ -437,11 +463,18 @@ CueId AudioEngine::load_cue_no_route(const std::filesystem::path& file_path,
     // load into O(N²) work. The caller is responsible for invoking
     // ensure_default_routing() once after the batch finishes.
     std::lock_guard lock{mutex_};
+    item->set_meter_ballistics(meter_ballistics_);
+    item->set_true_peak_metering(meter_true_peak_);
+    item->set_loudness_metering(meter_loudness_);
     items_[item->id().value] = item;
     pending_.item_sources[item->id().value]
         .by_source_channel
         .resize(item->source_channel_count());
     return item->id();
+}
+
+CueId AudioEngine::new_cue_id() const {
+    return CueId{gen_uuid_like()};
 }
 
 void AudioEngine::unload_cue(const CueId& id) {
@@ -553,15 +586,16 @@ void AudioEngine::ensure_default_routing() {
                 pending_.master_destinations[i] = dest;
             }
         }
-        // Step 4: route Main mixer → master 0 + 1 (mono → both, stereo → L/R).
+        // Step 4: route Main mixer lanes → masters (lane 0 → master 0 = L,
+        // lane 1 → master 1 = R) so the strip's stereo image survives.
         auto& m2m = pending_.mixer_to_master[main_mixer.value];
         bool has_m0 = false, has_m1 = false;
-        for (auto& p : m2m) {
-            if (p.first == 0) has_m0 = true;
-            if (p.first == 1) has_m1 = true;
+        for (auto& s : m2m) {
+            if (s.master == 0) has_m0 = true;
+            if (s.master == 1) has_m1 = true;
         }
-        if (!has_m0) m2m.emplace_back(0, 1.0f);
-        if (!has_m1) m2m.emplace_back(1, 1.0f);
+        if (!has_m0) m2m.push_back({0, 0, 1.0f});
+        if (!has_m1) m2m.push_back({1, 1, 1.0f});
 
         // Step 5: auto-route every loaded cue's source channels → Main, but
         // ONLY for cues that have no routes yet. Cues that were explicitly
@@ -590,7 +624,12 @@ void AudioEngine::ensure_default_routing() {
             }
             if (has_any_existing_route) continue;
             for (ChannelIndex ch = 0; ch < audio_count; ++ch) {
-                srcs[ch].emplace_back(main_mixer, 1.0f);
+                // Mono cues fan out to every lane (centre image); multi-channel
+                // cues map even channels → lane 0 (L), odd → lane 1 (R).
+                const ChannelIndex lane = (audio_count == 1)
+                    ? kAllMixerLanes
+                    : static_cast<ChannelIndex>(ch % kMixerLanes);
+                srcs[ch].push_back({main_mixer, lane, 1.0f});
             }
         }
 
@@ -608,6 +647,9 @@ MixerChannelId AudioEngine::create_mixer_channel(std::string display_name) {
     auto ch = std::make_shared<MixerChannel>(id, std::move(display_name));
     ch->configure(cfg_.mix_sample_rate, cfg_.render_block);
     std::lock_guard lock{mutex_};
+    ch->configure_meters(meter_ballistics_);        // inherit project settings
+    ch->set_true_peak_enabled(meter_true_peak_);
+    ch->set_loudness_enabled(meter_loudness_);
     mixers_[id.value] = ch;
     rebuild_topology_locked();
     return id;
@@ -620,7 +662,7 @@ void AudioEngine::remove_mixer_channel(const MixerChannelId& id) {
     for (auto& [_, item_routes] : pending_.item_sources) {
         for (auto& sends : item_routes.by_source_channel) {
             sends.erase(std::remove_if(sends.begin(), sends.end(),
-                                       [&](auto& p){ return p.first == id; }),
+                                       [&](auto& s){ return s.mixer == id; }),
                         sends.end());
         }
     }
@@ -639,7 +681,8 @@ MixerChannel* AudioEngine::find_mixer_channel(const MixerChannelId& id) const {
 void AudioEngine::route_item_source_to_mixer(const CueId& cue,
                                              ChannelIndex source_channel,
                                              const MixerChannelId& mixer,
-                                             float gain_db) {
+                                             float gain_db,
+                                             ChannelIndex lane) {
     std::lock_guard lock{mutex_};
     auto it = items_.find(cue.value);
     if (it == items_.end()) return;
@@ -648,12 +691,14 @@ void AudioEngine::route_item_source_to_mixer(const CueId& cue,
     auto& routes = pending_.item_sources[cue.value].by_source_channel;
     if (source_channel >= routes.size()) routes.resize(source_channel + 1);
 
+    // One send per (source_channel, mixer) pair — re-routing replaces the
+    // existing send's gain and lane rather than stacking a second feed.
     auto& sends = routes[source_channel];
     auto sit = std::find_if(sends.begin(), sends.end(),
-                            [&](auto& p){ return p.first == mixer; });
+                            [&](auto& s){ return s.mixer == mixer; });
     const float gl = db_to_lin(gain_db);
-    if (sit != sends.end()) sit->second = gl;
-    else sends.emplace_back(mixer, gl);
+    if (sit != sends.end()) { sit->gain_lin = gl; sit->lane = lane; }
+    else sends.push_back({mixer, lane, gl});
 
     rebuild_topology_locked();
 }
@@ -668,7 +713,7 @@ void AudioEngine::unroute_item_source_from_mixer(const CueId& cue,
     if (source_channel >= routes.size()) return;
     auto& sends = routes[source_channel];
     sends.erase(std::remove_if(sends.begin(), sends.end(),
-                               [&](auto& p){ return p.first == mixer; }),
+                               [&](auto& s){ return s.mixer == mixer; }),
                 sends.end());
     rebuild_topology_locked();
 }
@@ -686,16 +731,19 @@ void AudioEngine::unroute_item_from_all_mixers(const CueId& cue) {
 
 void AudioEngine::route_mixer_to_master(const MixerChannelId& mixer,
                                         MasterChannelIndex master,
-                                        float gain_db) {
+                                        float gain_db,
+                                        ChannelIndex lane) {
     if (master >= cfg_.master_channels) return;
     std::lock_guard lock{mutex_};
     if (mixers_.find(mixer.value) == mixers_.end()) return;
+    // One send per (mixer, master) pair — re-routing replaces the existing
+    // send's gain and lane rather than stacking a second feed.
     auto& v = pending_.mixer_to_master[mixer.value];
     auto vit = std::find_if(v.begin(), v.end(),
-                            [&](auto& p){ return p.first == master; });
+                            [&](auto& s){ return s.master == master; });
     const float gl = db_to_lin(gain_db);
-    if (vit != v.end()) vit->second = gl;
-    else v.emplace_back(master, gl);
+    if (vit != v.end()) { vit->gain_lin = gl; vit->lane = lane; }
+    else v.push_back({master, lane, gl});
     rebuild_topology_locked();
 }
 
@@ -706,7 +754,7 @@ void AudioEngine::unroute_mixer_from_master(const MixerChannelId& mixer,
     if (it == pending_.mixer_to_master.end()) return;
     auto& v = it->second;
     v.erase(std::remove_if(v.begin(), v.end(),
-                           [&](auto& p){ return p.first == master; }), v.end());
+                           [&](auto& s){ return s.master == master; }), v.end());
     rebuild_topology_locked();
 }
 
@@ -776,9 +824,44 @@ float AudioEngine::output_channel_gain_db(MasterChannelIndex ch) const noexcept 
     return 20.0f * std::log10(lin);
 }
 
+void AudioEngine::set_meter_ballistics(const MeterBallistics& b) {
+    std::lock_guard lock{mutex_};
+    meter_ballistics_ = b;
+    for (auto& ms : master_state_) {
+        if (ms.meter) ms.meter->configure(cfg_.mix_sample_rate, b);
+    }
+    for (auto& [_, m] : mixers_) m->configure_meters(b);
+    for (auto& [_, item] : items_) item->set_meter_ballistics(b);
+}
+
+void AudioEngine::set_true_peak_metering(bool enabled) {
+    std::lock_guard lock{mutex_};
+    meter_true_peak_ = enabled;
+    for (auto& ms : master_state_) {
+        if (ms.meter) ms.meter->set_true_peak_enabled(enabled);
+    }
+    for (auto& [_, m] : mixers_) m->set_true_peak_enabled(enabled);
+    for (auto& [_, item] : items_) item->set_true_peak_metering(enabled);
+}
+
+void AudioEngine::set_loudness_metering(bool enabled) {
+    std::lock_guard lock{mutex_};
+    meter_loudness_ = enabled;
+    for (auto& ms : master_state_) {
+        if (ms.meter) ms.meter->set_loudness_enabled(enabled);
+    }
+    for (auto& [_, m] : mixers_) m->set_loudness_enabled(enabled);
+    for (auto& [_, item] : items_) item->set_loudness_metering(enabled);
+}
+
 MeterSnapshot AudioEngine::read_master_meter(MasterChannelIndex master) const {
     if (master >= master_state_.size()) return {};
     return master_state_[master].meter->snapshot();
+}
+
+MeterSnapshot AudioEngine::read_master_meter_consume(MasterChannelIndex master) {
+    if (master >= master_state_.size()) return {};
+    return master_state_[master].meter->snapshot_consume_max();
 }
 
 float AudioEngine::read_master_gain_reduction_db(MasterChannelIndex master) const {
@@ -810,6 +893,14 @@ float AudioEngine::read_master_gain_reduction_db(MasterChannelIndex master) cons
 //     "preview without an output device assigned" case).
 void AudioEngine::render_loop() {
     Logger::debug("Render thread started.");
+#if defined(LIVEPLAY_HAVE_SSE_DENORMAL)
+    // Flush-to-zero + denormals-are-zero for this thread. The limiter and meter
+    // states decay exponentially toward zero during silence and can enter
+    // denormal range, which incurs large per-sample CPU penalties on x86;
+    // FTZ/DAZ makes those flush to zero with no audible consequence.
+    _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
+    _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
+#endif
     const auto block_duration =
         std::chrono::nanoseconds{static_cast<long long>(cfg_.render_block) * 1'000'000'000LL /
                                  static_cast<long long>(cfg_.mix_sample_rate)};
@@ -894,8 +985,11 @@ void AudioEngine::render_one_block(const Topology& topo) {
         for (auto& [_, m] : mixers_) active_mixers.emplace_back(m);
         channel_gains_snapshot = output_channel_gains_;
     }
-    if (mixer_accumulators_.size() < active_mixers.size()) {
-        mixer_accumulators_.resize(active_mixers.size(),
+    // One accumulator per mixer *lane* (stereo strips: L and R stay separate
+    // all the way to the masters).
+    const std::size_t lane_buf_count = active_mixers.size() * kMixerLanes;
+    if (mixer_accumulators_.size() < lane_buf_count) {
+        mixer_accumulators_.resize(lane_buf_count,
                                    std::vector<Sample>(block, 0.0f));
     }
     for (auto& mb : mixer_accumulators_) {
@@ -934,14 +1028,14 @@ void AudioEngine::render_one_block(const Topology& topo) {
 
         entry.item->render_block(ptrs.data(), n_src, block);
 
-        // Route each source channel to its destination mixers.
+        // Route each source channel to its destination mixer lanes.
         for (ChannelCount c = 0; c < n_src && c < entry.per_source_channel.size(); ++c) {
-            for (const auto& [mixer_ptr, gain_lin] : entry.per_source_channel[c].sends) {
-                auto mit = mixer_index.find(mixer_ptr->id().value);
+            for (const auto& send : entry.per_source_channel[c].sends) {
+                auto mit = mixer_index.find(send.mixer->id().value);
                 if (mit == mixer_index.end()) continue;
-                Sample* acc = mixer_accumulators_[mit->second].data();
+                Sample* acc = mixer_accumulators_[mit->second * kMixerLanes + send.lane].data();
                 const Sample* src = chbufs[c].data();
-                for (std::size_t s = 0; s < block; ++s) acc[s] += src[s] * gain_lin;
+                for (std::size_t s = 0; s < block; ++s) acc[s] += src[s] * send.gain;
             }
         }
     }
@@ -952,22 +1046,29 @@ void AudioEngine::render_one_block(const Topology& topo) {
 
     for (std::size_t i = 0; i < active_mixers.size(); ++i) {
         auto& m = active_mixers[i];
-        const float gain_lin = m->current_gain_linear();
+        // Advance the strip's fade envelope by exactly one render block, then
+        // read the resulting gain. peek_gain_linear() is side-effect-free, so
+        // the read may be repeated (metering, gain application) without the
+        // fade running at a multiple of its configured speed.
+        m->advance_block();
+        const float gain_lin = m->peek_gain_linear();
         const bool  audible  = !m->is_muted() && (!any_soloed || m->is_soloed());
         const float effective = audible ? gain_lin : 0.0f;
-        Sample* buf = mixer_accumulators_[i].data();
-        for (std::size_t s = 0; s < block; ++s) buf[s] *= effective;
-        m->update_meter(buf, block);
+        for (ChannelIndex lane = 0; lane < kMixerLanes; ++lane) {
+            Sample* buf = mixer_accumulators_[i * kMixerLanes + lane].data();
+            for (std::size_t s = 0; s < block; ++s) buf[s] *= effective;
+            m->update_meter(lane, buf, block);
+        }
     }
 
     // ---- Tier-2 → Tier-3 mix into master accumulators ----
     for (MasterChannelIndex mc = 0; mc < cfg_.master_channels; ++mc) {
         Sample* acc = master_accumulators_[mc].data();
-        for (const auto& [mixer_ptr, gain_lin] : topo.masters[mc].sends) {
-            auto mit = mixer_index.find(mixer_ptr->id().value);
+        for (const auto& send : topo.masters[mc].sends) {
+            auto mit = mixer_index.find(send.mixer->id().value);
             if (mit == mixer_index.end()) continue;
-            const Sample* src = mixer_accumulators_[mit->second].data();
-            for (std::size_t s = 0; s < block; ++s) acc[s] += src[s] * gain_lin;
+            const Sample* src = mixer_accumulators_[mit->second * kMixerLanes + send.lane].data();
+            for (std::size_t s = 0; s < block; ++s) acc[s] += src[s] * send.gain;
         }
     }
 

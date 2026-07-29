@@ -116,6 +116,16 @@ function createClient() {
     return () => playbackSnapshotSubscribers.delete(cb);
   }
 
+  // Subscribers notified when the socket comes back *after* the connection was
+  // declared lost. Distinct from a plain `connected` watch, which also fires on
+  // the first connect of the session.
+  type ReconnectedSubscriber = () => void;
+  const reconnectedSubscribers = new Set<ReconnectedSubscriber>();
+  function onReconnected(cb: ReconnectedSubscriber): () => void {
+    reconnectedSubscribers.add(cb);
+    return () => reconnectedSubscribers.delete(cb);
+  }
+
   // Subscribers for multi-client doc_patch fan-out events.
   // Payload: { type: 'doc_patch', op: 'item_added'|'item_updated'|... , ... }
   type DocPatchSubscriber = (p: any) => void;
@@ -134,14 +144,34 @@ function createClient() {
   // — those don't change just because the WS bounced.
   let hasEverConnected = false;
   // Count of consecutive failed reconnect attempts. Resets on every onopen.
-  // Used to gate the "we're really down" UI signal: a single bounce shouldn't
-  // pop a modal, but four failed retries with growing backoff almost certainly
-  // means the server is gone.
+  // Informational only (surfaced in the modal) — the "we're really down"
+  // decision is time-based, see below.
   const failedReconnectAttempts = ref(0);
   // True once we've decided the server is gone. Cleared on a successful
-  // reconnect. UI binds to this to show the connection-lost modal.
+  // reconnect. UI binds to this to show the connection-lost modal and to
+  // freeze every control that would otherwise mutate unreachable state.
   const connectionLost = ref(false);
-  const CONNECTION_LOST_THRESHOLD = 4;
+  // Grace period before we shout about it. A WS bounce that heals inside this
+  // window is invisible to the operator; anything longer gets the modal.
+  // Time-based rather than attempt-based so the delay is predictable no matter
+  // where the exponential backoff happens to be.
+  const CONNECTION_LOST_DELAY_MS = 3000;
+  let connectionLostTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function armConnectionLostTimer() {
+    if (connectionLostTimer || connectionLost.value) return;
+    connectionLostTimer = setTimeout(() => {
+      connectionLostTimer = null;
+      if (!connected.value) connectionLost.value = true;
+    }, CONNECTION_LOST_DELAY_MS);
+  }
+
+  function clearConnectionLostTimer() {
+    if (connectionLostTimer) {
+      clearTimeout(connectionLostTimer);
+      connectionLostTimer = null;
+    }
+  }
 
   function scheduleReconnect() {
     if (reconnectTimer) return;
@@ -153,14 +183,15 @@ function createClient() {
     }, reconnectDelay);
   }
 
-  // Force an immediate reconnect attempt. Resets backoff and the
-  // "connection lost" flag so the UI dismisses the disconnect modal.
-  // Used by the Reconnect button.
+  // Force an immediate reconnect attempt, resetting the backoff so the retry
+  // happens now instead of up to 10 s from now. Used by the Reconnect button.
+  // Deliberately does NOT clear `connectionLost`: the modal stays up until we
+  // are actually back, otherwise a failed retry would flash the UI open and
+  // then re-lock it a moment later.
   function forceReconnect() {
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     reconnectDelay = 1500;
     failedReconnectAttempts.value = 0;
-    connectionLost.value = false;
     disconnect();
     connect();
   }
@@ -187,7 +218,18 @@ function createClient() {
       reconnectDelay = 1500;
       lastError.value = null;
       failedReconnectAttempts.value = 0;
+      clearConnectionLostTimer();
+      const wasLost = connectionLost.value;
       connectionLost.value = false;
+      // Fires only on a recovery, never on the very first connect. Subscribers
+      // (useConnectionGuard) use this to verify the server still holds the
+      // session we think it does — a restarted server accepts the socket but
+      // has forgotten the project.
+      if (wasLost) {
+        for (const cb of reconnectedSubscribers) {
+          try { cb(); } catch (e) { console.warn('[liveplay] reconnect handler threw:', e); }
+        }
+      }
       // Only refresh REST-backed catalogues on the very first connection.
       // Reconnects (e.g. transient Crow WS close-frame issues) don't change
       // those tables, so re-fetching every time produced a request storm
@@ -213,16 +255,14 @@ function createClient() {
     ws.onclose = () => {
       const wasConnected = connected.value;
       connected.value = false;
-      // Only count this as a "failed reconnect" if we never successfully
-      // connected before *this* attempt — i.e., the WebSocket just bounced
-      // straight to close without an onopen in between. Pre-handshake
-      // failures are the strong "server is gone" signal we want to catch.
-      if (!wasConnected && hasEverConnected) {
-        failedReconnectAttempts.value++;
-        if (failedReconnectAttempts.value >= CONNECTION_LOST_THRESHOLD) {
-          connectionLost.value = true;
-        }
-      }
+      // Count pre-handshake closes — the socket bounced straight to close
+      // without an onopen in between. Purely for display in the modal.
+      if (!wasConnected && hasEverConnected) failedReconnectAttempts.value++;
+      // Start (or keep) the grace-period countdown to the "connection lost"
+      // lockout. Only meaningful once we've had a connection to lose: at cold
+      // boot the welcome screen is the right place to notice a dead server,
+      // not a modal over an empty app.
+      if (hasEverConnected) armConnectionLostTimer();
       scheduleReconnect();
     };
 
@@ -313,6 +353,9 @@ function createClient() {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
+    // An intentional teardown isn't a lost connection. Any in-flight grace
+    // period is void; a genuine failure after this re-arms it from onclose.
+    clearConnectionLostTimer();
     if (ws) {
       ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
       try { ws.close(); } catch {}
@@ -617,6 +660,27 @@ function createClient() {
   // end-behavior fires "next". Pass null to clear.
   function setNextItem(uuid: string | null) {
     wsSend({ type: 'set_next_item', item_uuid: uuid ?? '' });
+  }
+
+  // ---- Shared operator UI state --------------------------------------
+  // Selection, Show Mode and the display locale live on the server so every
+  // client and control surface (Bitfocus Companion) agrees on them. These
+  // senders are fire-and-forget: the server echoes the change back as a
+  // doc_patch, and that echo — not the local call — is what updates state.
+  function setSelection(uuid: string | null) {
+    wsSend({ type: 'set_selection', item_uuid: uuid ?? '' });
+  }
+  function stepSelection(delta: number) {
+    wsSend({ type: 'select_step', delta });
+  }
+  // Omit `enabled` to toggle.
+  function setShowMode(enabled?: boolean) {
+    wsSend(enabled === undefined
+      ? { type: 'set_show_mode' }
+      : { type: 'set_show_mode', enabled });
+  }
+  function setServerLocale(locale: string) {
+    wsSend({ type: 'set_locale', locale });
   }
   // Low-latency seek over the WebSocket so scrub bars feel responsive. The
   // REST endpoint is still available for callers that want a guaranteed
@@ -927,6 +991,7 @@ function createClient() {
     connected,
     reconnecting,
     connectionLost,
+    failedReconnectAttempts,
     lastError,
     cues,
     mixerChannels,
@@ -945,6 +1010,7 @@ function createClient() {
     onCueState,
     onDocPatch,
     onPlaybackSnapshot,
+    onReconnected,
 
     // transport
     play,
@@ -1015,6 +1081,13 @@ function createClient() {
     pauseItem,
     resumeItem,
     setNextItem,
+
+    // shared operator UI state (server-owned; mirrored to every client)
+    setSelection,
+    stepSelection,
+    setShowMode,
+    setServerLocale,
+
     seekItem,
     seekCueId,
     seekItemREST,

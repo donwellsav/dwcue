@@ -51,6 +51,8 @@ PlaybackItem::PlaybackItem(PlaybackItemDesc desc)
     : desc_(std::move(desc)) {
     gain_target_linear_.store(1.0f);
     gain_current_linear_.store(1.0f);
+    fade_in_ms_.store(desc_.fade_in_duration.count());
+    fade_out_ms_.store(desc_.fade_out_duration.count());
     ltc_enabled_atomic_.store(desc_.ltc_enabled);
     ltc_offset_ns_.store(desc_.ltc_offset.count());
     if (desc_.ltc_enabled) {
@@ -64,9 +66,13 @@ PlaybackItem::~PlaybackItem() {
 }
 
 bool PlaybackItem::load() {
+    // Never swap the decoder out from under active playback — reset transport,
+    // playhead and fade state first (mirrors unload()'s stop_now()).
+    stop_now();
     std::lock_guard lock{decoder_mutex_};
 
     decoder_ready_ = false;
+    decode_error_.store(false, std::memory_order_relaxed);
     if (decoder_) {
         ma_decoder_uninit(decoder_.get());
         decoder_.reset();
@@ -110,6 +116,12 @@ bool PlaybackItem::load() {
     const ChannelCount total = file_channels_ + (desc_.ltc_enabled ? 1u : 0u);
     resize_meters(total);
 
+    // Pre-size the interleaved decode staging buffer so render_block() doesn't
+    // allocate on the audio thread for the common fixed-block-size case.
+    interleave_buf_.assign(
+        static_cast<std::size_t>(desc_.render_block) *
+            std::max<ChannelCount>(1u, file_channels_), 0.0f);
+
     decoder_ready_ = true;
     Logger::info("PlaybackItem[{}] loaded '{}' ({} ch, {} Hz mix-rate, LTC={})",
                  desc_.id.value, path_utf8, file_channels_,
@@ -147,6 +159,11 @@ MeterSnapshot PlaybackItem::source_meter(ChannelIndex ch) const noexcept {
     return source_meters_[ch]->snapshot();
 }
 
+MeterSnapshot PlaybackItem::source_meter_consume(ChannelIndex ch) noexcept {
+    if (ch >= source_meters_.size() || !source_meters_[ch]) return {};
+    return source_meters_[ch]->snapshot_consume_max();
+}
+
 void PlaybackItem::play() {
     if (!decoder_ready_) {
         Logger::warn("PlaybackItem[{}] play() ignored — decoder not ready", desc_.id.value);
@@ -154,16 +171,27 @@ void PlaybackItem::play() {
     }
     const TransportState st = transport_.load(std::memory_order_acquire);
     if (st == TransportState::Playing || st == TransportState::FadingIn) return;
+    // A paused cue resumes in place — don't restart the fade envelope (which
+    // would snap the gain and re-run the fade-in).
+    if (st == TransportState::Paused) { resume(); return; }
 
     // Reset natural-end flags so take_natural_end() doesn't fire for a
     // stale previous play on this same item.
     stopped_naturally_.store(false, std::memory_order_release);
     fading_out_naturally_.store(false, std::memory_order_release);
 
+    // Fade in from the CURRENT gain, not a hardcoded 0. Re-triggering a cue that
+    // is mid stop-fade (FadingOut) would otherwise dip to silence before fading
+    // back up — an audible click/dip. From Stopped the current gain is whatever
+    // stop_now() left (the target), so start from 0 to actually fade in.
+    const float from = (st == TransportState::FadingOut)
+                           ? gain_current_linear_.load(std::memory_order_acquire)
+                           : 0.0f;
+
     // Begin a fade-in if configured; otherwise jump straight to full gain.
     const auto fade = desc_.fade_in_duration;
     if (fade.count() > 0) {
-        start_fade(/*from*/ 0.0f,
+        start_fade(/*from*/ from,
                    /*to*/   gain_target_linear_.load(),
                    fade,
                    TransportState::FadingIn,
@@ -230,12 +258,25 @@ void PlaybackItem::resume() {
 
 void PlaybackItem::seek_seconds(double seconds) {
     if (seconds < 0) seconds = 0;
-    const auto frame = static_cast<ma_uint64>(seconds * desc_.mix_sample_rate);
+    ma_uint64 frame = static_cast<ma_uint64>(seconds * desc_.mix_sample_rate);
     {
         std::lock_guard lock{decoder_mutex_};
-        if (decoder_) ma_decoder_seek_to_pcm_frame(decoder_.get(), frame);
+        if (decoder_) {
+            const ma_result r = ma_decoder_seek_to_pcm_frame(decoder_.get(), frame);
+            if (r != MA_SUCCESS) {
+                // Seek failed (e.g. seeking past the true end of a VBR file whose
+                // reported duration overshoots the decodable length). Resync the
+                // playhead to the decoder's actual cursor so out-point / loop
+                // checks and UI reporting don't drift for the rest of the cue.
+                ma_uint64 cursor = 0;
+                if (ma_decoder_get_cursor_in_pcm_frames(decoder_.get(), &cursor) == MA_SUCCESS)
+                    frame = cursor;
+            }
+        }
+        // Store inside the lock so the audio thread can't decode from the new
+        // decoder position while still reading the pre-seek playhead value.
+        playhead_frames_.store(frame, std::memory_order_release);
     }
-    playhead_frames_.store(frame, std::memory_order_release);
     if (ltc_) {
         // LTC resyncs lazily inside render_block(), but a hint here keeps the
         // generator's internal frame counter from doing a full rebuild on the
@@ -299,9 +340,14 @@ void PlaybackItem::set_out_point_seconds(double seconds) noexcept {
 
 void PlaybackItem::set_loop(bool enabled, double in_seconds) noexcept {
     const auto rate = static_cast<double>(desc_.mix_sample_rate);
-    const auto in_frames = (in_seconds <= 0.0)
+    auto in_frames = (in_seconds <= 0.0)
         ? std::uint64_t{0}
         : static_cast<std::uint64_t>(in_seconds * rate);
+    // A loop-in point at or past the out-point would make render_block() re-hit
+    // the out-point on every block — a rapid Stopped/loop retrigger with silence
+    // and high seek churn. Fall back to looping from the start in that case.
+    const auto out_pt = out_point_frames_.load(std::memory_order_acquire);
+    if (out_pt > 0 && in_frames >= out_pt) in_frames = 0;
     loop_in_frames_.store(in_frames, std::memory_order_release);
     loop_enabled_.store(enabled, std::memory_order_release);
 }
@@ -378,10 +424,10 @@ void PlaybackItem::start_fade(float from_lin, float to_lin,
     gain_current_linear_.store(from_lin, std::memory_order_release);
     transport_.store(during, std::memory_order_release);
 
-    // We pre-store `after_complete` into a static-ish slot by encoding it in
-    // a sign convention: positive duration + transport==FadingIn → Playing
-    // afterwards; FadingOut → Stopped afterwards. Render block reads transport_
-    // to decide. So we don't need to store after_complete separately.
+    // `after_complete` is intentionally not stored: render_block() derives the
+    // post-fade transport purely from `during` (FadingIn → Playing, FadingOut →
+    // Stopped). The parameter is kept for call-site readability only. All
+    // current callers pass the matching pair, so the two never disagree.
     (void)after_complete;
 }
 
@@ -389,7 +435,37 @@ void PlaybackItem::resize_meters(ChannelCount n) {
     source_meters_.resize(n);
     for (ChannelCount i = 0; i < n; ++i) {
         if (!source_meters_[i]) source_meters_[i] = std::make_unique<Meter>();
-        source_meters_[i]->configure(desc_.mix_sample_rate);
+        source_meters_[i]->configure(desc_.mix_sample_rate, meter_ballistics_);
+        source_meters_[i]->set_true_peak_enabled(meter_true_peak_);
+        source_meters_[i]->set_loudness_enabled(meter_loudness_);
+    }
+}
+
+// The three meter setters below iterate source_meters_, which resize_meters()
+// (called from load()/set_ltc_enabled() under decoder_mutex_) can reallocate.
+// Take the same lock so a concurrent reload/LTC-toggle can't invalidate the
+// vector mid-iteration.
+void PlaybackItem::set_meter_ballistics(const MeterBallistics& b) noexcept {
+    std::lock_guard lock{decoder_mutex_};
+    meter_ballistics_ = b;
+    for (auto& m : source_meters_) {
+        if (m) m->configure(desc_.mix_sample_rate, b);
+    }
+}
+
+void PlaybackItem::set_true_peak_metering(bool enabled) noexcept {
+    std::lock_guard lock{decoder_mutex_};
+    meter_true_peak_ = enabled;
+    for (auto& m : source_meters_) {
+        if (m) m->set_true_peak_enabled(enabled);
+    }
+}
+
+void PlaybackItem::set_loudness_metering(bool enabled) noexcept {
+    std::lock_guard lock{decoder_mutex_};
+    meter_loudness_ = enabled;
+    for (auto& m : source_meters_) {
+        if (m) m->set_loudness_enabled(enabled);
     }
 }
 
@@ -414,19 +490,27 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
     if (!lock.owns_lock() || !decoder_) return 0;
 
     // ---- Decode interleaved file audio ----
-    static thread_local std::vector<Sample> interleaved;
+    // interleave_buf_ is pre-sized in load(); the resize here is only a fallback
+    // for a larger-than-configured block. We hold decoder_mutex_, so this can't
+    // race load()/resize_meters().
     const std::size_t needed = frame_count * static_cast<std::size_t>(file_channels_);
-    if (interleaved.size() < needed) interleaved.resize(needed);
+    if (interleave_buf_.size() < needed) interleave_buf_.resize(needed);
 
     ma_uint64 frames_read = 0;
     const ma_result rv = ma_decoder_read_pcm_frames(
         decoder_.get(),
-        interleaved.data(),
+        interleave_buf_.data(),
         static_cast<ma_uint64>(frame_count),
         &frames_read);
-    if (rv != MA_SUCCESS && rv != MA_AT_END) frames_read = 0;
+    if (rv != MA_SUCCESS && rv != MA_AT_END) {
+        // Unexpected decoder error mid-playback (distinct from clean EOF, which
+        // is MA_AT_END). Flag it so the control thread can surface a "file
+        // dropped out" warning; no logging on the audio path.
+        frames_read = 0;
+        decode_error_.store(true, std::memory_order_relaxed);
+    }
 
-    deinterleave_to(interleaved.data(),
+    deinterleave_to(interleave_buf_.data(),
                     static_cast<std::size_t>(frames_read),
                     file_channels_,
                     out_channel_buffers,
@@ -439,10 +523,13 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
             static_cast<long long>(playhead_frames_.load(std::memory_order_relaxed));
         const auto playhead_ns = std::chrono::nanoseconds{
             playhead_frames * 1'000'000'000LL / static_cast<long long>(desc_.mix_sample_rate)};
-        // Refresh offset in case the control thread changed it.
-        ltc_->configure(desc_.mix_sample_rate, desc_.ltc_frame_rate,
-                        std::chrono::nanoseconds{ltc_offset_ns_.load(std::memory_order_acquire)},
-                        /*amplitude*/ 0.5f);
+        // Refresh offset in case the control thread changed it. Use set_offset()
+        // — NOT configure() — so we don't reset the encoder state every block
+        // (that would force polarity back to +1 each block and corrupt the
+        // biphase-mark signal). Sample-rate / frame-rate / enable changes go
+        // through configure() from their dedicated setters instead.
+        ltc_->set_offset(
+            std::chrono::nanoseconds{ltc_offset_ns_.load(std::memory_order_acquire)});
         ltc_->render_block(out_channel_buffers[file_channels_], frame_count, playhead_ns);
     }
 
@@ -581,7 +668,8 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
             const auto cur = transport_.load(std::memory_order_acquire);
             if (cur == TransportState::Playing || cur == TransportState::FadingIn) {
                 fading_out_naturally_.store(true, std::memory_order_release);
-                const auto fade = desc_.fade_out_duration;
+                const auto fade = std::chrono::milliseconds{
+                    fade_out_ms_.load(std::memory_order_acquire)};
                 if (fade.count() > 0) {
                     start_fade(gain_current_linear_.load(), 0.0f, fade,
                                TransportState::FadingOut, TransportState::Stopped);

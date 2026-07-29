@@ -11,9 +11,22 @@
 // =====================================================================
 import { defineNuxtPlugin } from 'nuxt/app';
 import { useLiveplayServer } from '~/composables/useLiveplayServer';
+import { useShowControl } from '~/composables/useShowControl';
+import { useConnectionGuard } from '~/composables/useConnectionGuard';
 
 export default defineNuxtPlugin(async () => {
   const server = useLiveplayServer();
+
+  // Installs the while-disconnected input freeze and the post-reconnect
+  // "does the server still have our project?" probe. Wired before the socket
+  // opens so the very first reconnect is covered.
+  useConnectionGuard();
+
+  // Subscribe to the server-owned operator state (selection / Show Mode /
+  // locale) before the socket opens, so the first playback_snapshot is not
+  // missed. Wiring it here rather than in a component means it stays live
+  // even in windows that never mount the playlist (the detached cart player).
+  useShowControl();
 
   // Electron exposes window.electronAPI.liveplayServer via the preload
   // bridge. In a non-Electron / pure-web context we just fall back to

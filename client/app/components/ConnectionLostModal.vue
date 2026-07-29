@@ -8,12 +8,23 @@
         </div>
         <p class="clm-body">
           {{ t('connectionLost.message', { url: server.serverUrl }) }}
-          <span v-if="reconnecting">{{ t('connectionLost.attempting') }}</span>
         </p>
+
+        <!-- Retry pulse: the reconnect loop never stops on its own, so the
+             animation is the honest signal that work is still happening.
+             Without it a stalled-looking modal reads as "app has hung". -->
+        <p class="clm-retry">
+          <span class="material-symbols-rounded clm-spinner">progress_activity</span>
+          <span>{{ t('connectionLost.attempting') }}</span>
+          <span v-if="attempts > 0" class="clm-attempts">
+            {{ t('connectionLost.attemptCount', { count: attempts }) }}
+          </span>
+        </p>
+        <p class="clm-locked">{{ t('connectionLost.locked') }}</p>
         <p v-if="server.lastError" class="clm-error">{{ server.lastError }}</p>
 
         <div class="clm-actions">
-          <button class="clm-btn primary" :disabled="reconnecting" @click="onReconnect">
+          <button class="clm-btn primary" @click="onReconnect">
             <span class="material-symbols-rounded">sync</span>
             <span>{{ t('connectionLost.reconnect') }}</span>
           </button>
@@ -40,7 +51,7 @@
 const { t } = useLocalization();
 const server = useLiveplayServer();
 const visible = computed(() => !!server.connectionLost);
-const reconnecting = computed(() => !!server.reconnecting);
+const attempts = computed(() => Number(server.failedReconnectAttempts) || 0);
 
 function onReconnect() {
   try {
@@ -78,7 +89,11 @@ async function onExit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 2000;
+  /* Above every content modal (import, file picker, welcome overlays — all in
+     the 9000s), because none of them can complete without the server. Server
+     Settings deliberately sits higher still: retargeting the URL is one of the
+     ways out of this state. */
+  z-index: 9500;
 }
 .clm-dialog {
   background: var(--color-surface);
@@ -109,6 +124,26 @@ async function onExit() {
   border-radius: 4px;
   font-size: 12px;
   color: var(--color-text-primary);
+}
+.clm-retry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  margin: 12px 0 6px;
+}
+.clm-spinner {
+  font-size: 18px;
+  color: var(--color-accent, #0f62fe);
+  animation: clm-spin 1.1s linear infinite;
+}
+@keyframes clm-spin { to { transform: rotate(360deg); } }
+.clm-attempts { color: var(--color-text-secondary); font-size: 12px; }
+.clm-locked {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin: 0 0 4px;
 }
 .clm-error {
   font-size: 12px;

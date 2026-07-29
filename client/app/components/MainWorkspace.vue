@@ -16,8 +16,8 @@
       <div
         v-if="!cartDetached"
         class="resize-handle"
-        :class="{ 'collapsed-left': cartFullscreen, 'collapsed-right': cartClosed }"
-        @mousedown="startResize"
+        :class="{ 'collapsed-left': cartFullscreen, 'collapsed-right': cartClosed, dragging: isResizing }"
+        @pointerdown="startResize"
       ></div>
 
       <div v-if="!cartClosed && !cartDetached" class="cart-section" :style="{ width: cartFullscreen ? '100%' : `${cartWidth}px` }">
@@ -100,19 +100,30 @@ const cartClosed = ref(false);
 const cartFullscreen = ref(false);
 const cartDetached = ref(false);
 
-const startResize = (e: MouseEvent) => {
+// Pointer events (not mouse events) so the splitter is draggable by touch and
+// pen as well as mouse. Pointer capture keeps the drag alive when the finger
+// slides off the 5px bar — without it a touch drag died on the first move,
+// which is why the divider was effectively immovable on touch devices. The
+// handle also carries `touch-action: none` so the browser doesn't claim the
+// gesture for scrolling before we ever see a pointermove.
+const startResize = (e: PointerEvent) => {
+  // Ignore secondary mouse buttons and any second finger landing on the bar —
+  // a concurrent drag would register a duplicate set of document listeners.
+  if (isResizing.value || !e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const handle = e.currentTarget as HTMLElement | null;
   isResizing.value = true;
   e.preventDefault();
-  
-  const handleMouseMove = (e: MouseEvent) => {
+  try { handle?.setPointerCapture(e.pointerId); } catch { /* capture is best-effort */ }
+
+  const handleMouseMove = (e: PointerEvent) => {
     if (!isResizing.value) return;
-    
+
     const container = document.querySelector('.workspace-content');
     if (!container) return;
-    
+
     const rect = container.getBoundingClientRect();
     const newWidth = rect.right - e.clientX;
-    
+
     // Snap zones
     const snapThreshold = 100; // pixels from edge to trigger snap
     const minWidth = 300;
@@ -140,12 +151,18 @@ const startResize = (e: MouseEvent) => {
   
   const handleMouseUp = () => {
     isResizing.value = false;
-    document.removeEventListener('mousemove', handleMouseMove);
-    document.removeEventListener('mouseup', handleMouseUp);
+    try { handle?.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+    document.removeEventListener('pointermove', handleMouseMove);
+    document.removeEventListener('pointerup', handleMouseUp);
+    document.removeEventListener('pointercancel', handleMouseUp);
   };
-  
-  document.addEventListener('mousemove', handleMouseMove);
-  document.addEventListener('mouseup', handleMouseUp);
+
+  document.addEventListener('pointermove', handleMouseMove);
+  document.addEventListener('pointerup', handleMouseUp);
+  // A touch drag interrupted by the OS (gesture takeover, call, etc.) fires
+  // pointercancel instead of pointerup — without this the handle stayed "stuck"
+  // to the finger and kept resizing on the next touch anywhere.
+  document.addEventListener('pointercancel', handleMouseUp);
 };
 
 // Listen for menu events
@@ -487,15 +504,44 @@ onUnmounted(() => {
   transition: background-color var(--transition-fast);
   position: relative;
   z-index: 10;
-  
+  flex: 0 0 auto;
+  /* Claim the gesture outright: without this the browser treats a touch-drag
+     on the bar as a pan and never delivers pointermove to us. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+
+  /* Invisible grab zone. A 5px bar is a fine mouse target but far below the
+     ~24px a finger can reliably hit, so widen the *hit* area without moving the
+     pixels the user sees. Only on touch-capable displays — on a pure mouse
+     setup the extra 20px would sit over the playlist's scrollbar for no gain,
+     and mouse dragging already works at 5px. */
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+  }
+
+  @media (any-pointer: coarse) {
+    &::before {
+      left: -10px;
+      right: -10px;
+    }
+  }
+
   &:hover {
     background-color: var(--color-accent);
   }
-  
-  &:active {
+
+  &:active,
+  &.dragging {
     background-color: var(--color-accent);
   }
-  
+
   &.collapsed-left {
     /* When cart is fullscreen, show handle at left edge */
     position: absolute;
@@ -504,7 +550,16 @@ onUnmounted(() => {
     bottom: 0;
     width: 8px;
     background-color: transparent;
-    
+
+    /* Collapsed states float ON TOP of a panel, so the grab zone may only grow
+       inward — growing outward too would swallow taps on the panel behind it. */
+    @media (any-pointer: coarse) {
+      &::before {
+        left: 0;
+        right: -16px;
+      }
+    }
+
     &::after {
       content: '';
       position: absolute;
@@ -531,7 +586,14 @@ onUnmounted(() => {
     bottom: 0;
     width: 8px;
     background-color: transparent;
-    
+
+    @media (any-pointer: coarse) {
+      &::before {
+        left: -16px;
+        right: 0;
+      }
+    }
+
     &::after {
       content: '';
       position: absolute;

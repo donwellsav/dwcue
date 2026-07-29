@@ -164,7 +164,10 @@ function close() { emit('close'); }
   position: fixed; inset: 0;
   background: rgba(0, 0, 0, 0.6);
   display: flex; align-items: center; justify-content: center;
-  z-index: 9000;
+  // Above ConnectionLostModal (9500) and SessionRecoveryModal (9600):
+  // pointing the client at a different server is one of the ways out of a
+  // lost connection, so this dialog has to stay usable underneath them.
+  z-index: 9700;
 }
 .modal {
   width: min(520px, 90vw);

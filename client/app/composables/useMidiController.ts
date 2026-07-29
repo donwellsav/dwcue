@@ -13,7 +13,7 @@ export type MidiActionId =
   | 'trigger-slot-4' | 'trigger-slot-5' | 'trigger-slot-6' | 'trigger-slot-7'
   | 'trigger-slot-8' | 'trigger-slot-9' | 'trigger-slot-10' | 'trigger-slot-11'
   | 'trigger-slot-12' | 'trigger-slot-13' | 'trigger-slot-14' | 'trigger-slot-15'
-  | 'pause-resume' | 'toggle-loop' | 'stop-all' | 'master-volume'
+  | 'pause-resume' | 'toggle-loop' | 'cue-to-continue' | 'jump-cue' | 'stop-all' | 'master-volume'
   | 'select-up' | 'select-down' | 'play-selected' | 'play-next';
 
 // Config stored in midi-config.json
@@ -39,6 +39,8 @@ export const MIDI_ACTIONS: { id: MidiActionId; labelKey: string; category: strin
   // Playback
   { id: 'pause-resume',  labelKey: 'controls.pauseResume',  category: 'Playback', continuous: false },
   { id: 'toggle-loop',   labelKey: 'controls.toggleLoop',   category: 'Playback', continuous: false },
+  { id: 'cue-to-continue', labelKey: 'controls.cueToContinue', category: 'Playback', continuous: false },
+  { id: 'jump-cue',      labelKey: 'controls.jumpCue',      category: 'Playback', continuous: false },
   { id: 'stop-all',      labelKey: 'controls.stopAll',      category: 'Playback', continuous: false },
   { id: 'select-up',     labelKey: 'controls.selectUp',     category: 'Playback', continuous: false },
   { id: 'select-down',   labelKey: 'controls.selectDown',   category: 'Playback', continuous: false },
@@ -110,8 +112,28 @@ const preferredDevice = computed(() => config.value.preferredDevice ?? null);
 
 export const useMidiController = () => {
   const { getCartItem } = useCartItems();
-  const { playCue, stopCue, pauseCue, resumeCue, stopAllCues, activeCues, setMasterGain, masterGainDb, nextItemOverrideUuid, autoNextItemUuid, setNextItem, triggerGroup } = useAudioEngine();
-  const { selectedItem, selectedItems, saveProject, currentProject, getAllItemsFlat, toggleItemSelection, findItemByUuid: findProjectItem } = useProject();
+  const { playCue, stopCue, pauseCue, resumeCue, stopAllCues, activeCues, setMasterGain, masterGainDb, nextItemOverrideUuid, autoNextItemUuid, setNextItem, triggerGroup, queueLoopContinuation, jumpCue } = useAudioEngine();
+  const { selectedItem, selectedItems, saveProject, currentProject, getAllItemsFlat, toggleItemSelection, findItemByUuid: findProjectItem, findItemByIndex } = useProject();
+
+  // Same active-cue-then-selection fallback toggle-loop/pause-resume use
+  // above, factored out since cue-to-continue/jump-cue need it too.
+  const getLoopTargetItem = (): AudioItem | null => {
+    if (activeCues.value.size > 0) {
+      const firstUuid = activeCues.value.keys().next().value;
+      if (firstUuid) {
+        const { findItemByUuid } = useProject();
+        const found = findItemByUuid(firstUuid);
+        if (found && found.type === 'audio') return found as AudioItem;
+        const { getCartOnlyItem } = useCartItems();
+        const cartItem = getCartOnlyItem(firstUuid);
+        if (cartItem) return cartItem;
+      }
+    }
+    if (selectedItem.value && selectedItem.value.type === 'audio') {
+      return selectedItem.value as AudioItem;
+    }
+    return null;
+  };
 
   /**
    * Dispatch a discrete action.
@@ -193,6 +215,20 @@ export const useMidiController = () => {
       return;
     }
 
+    if (actionId === 'cue-to-continue') {
+      const item = getLoopTargetItem();
+      if (!item) return;
+      queueLoopContinuation(item, resolveLoopContinuationTarget(item));
+      return;
+    }
+
+    if (actionId === 'jump-cue') {
+      const item = getLoopTargetItem();
+      if (!item) return;
+      jumpCue(item);
+      return;
+    }
+
     if (actionId === 'stop-all') {
       stopAllCues();
       return;
@@ -268,6 +304,12 @@ export const useMidiController = () => {
   const handleMidiMessage = (event: MIDIMessageEvent) => {
     const data = event.data;
     if (!data) return;
+
+    // Every MIDI action ends up as a command to the server. While the
+    // connection is lost those drop silently, so ignore the surface entirely
+    // rather than letting the operator believe a fader move landed. MIDI Learn
+    // is exempt below — it only writes local config.
+    if (useLiveplayServer().connectionLost && learning.value === null) return;
 
     // Filter to preferred device if one is selected
     if (config.value.preferredDevice) {

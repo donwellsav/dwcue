@@ -48,7 +48,7 @@ export const eventToBinding = (e: KeyboardEvent): CartSlotKeyBinding => ({
 export const useCartHotkeys = () => {
   const { currentProject, selectedItem, selectedItems, saveProject, getAllItemsFlat, toggleItemSelection, findItemByUuid } = useProject();
   const { getCartItem } = useCartItems();
-  const { playCue, stopCue, pauseCue, resumeCue, stopAllCues, activeCues, nextItemOverrideUuid, autoNextItemUuid, setNextItem, triggerGroup } = useAudioEngine();
+  const { playCue, stopCue, pauseCue, resumeCue, stopAllCues, activeCues, nextItemOverrideUuid, autoNextItemUuid, setNextItem, triggerGroup, queueLoopContinuation, jumpCue } = useAudioEngine();
 
   const keyMappings = computed(() =>
     currentProject.value?.cartSlotKeys ?? { ...DEFAULT_CART_SLOT_KEYS }
@@ -154,6 +154,20 @@ export const useCartHotkeys = () => {
         item.endBehavior = { action: 'loop' };
       }
       saveProject();
+      return;
+    }
+
+    if (action === 'cue-to-continue') {
+      const item = getTargetItem();
+      if (!item) return;
+      queueLoopContinuation(item, resolveLoopContinuationTarget(item));
+      return;
+    }
+
+    if (action === 'jump-cue') {
+      const item = getTargetItem();
+      if (!item) return;
+      jumpCue(item);
       return;
     }
 

@@ -189,7 +189,7 @@ import type { AudioItem } from '~/types/project';
 import ActionButton from './ActionButton.vue';
 import AudioImportModal from './AudioImportModal.vue';
 import { useOutputTarget, METER_COLORS } from '~/composables/useOutputTarget';
-import { calculatePerceivedLoudness } from '~/utils/audio';
+import { calculatePerceivedLoudness, parseWaveformFileData } from '~/utils/audio';
 
 const props = defineProps<{
   slot: number;
@@ -691,8 +691,9 @@ const startWaveformPolling = () => {
       try {
         const result = await window.electronAPI.readFile(resolveProjectPath(audioItem.waveformPath));
         if (result.success && result.data) {
-          const waveformData = JSON.parse(result.data);
-          if (waveformData.peaks && waveformData.peaks.length > 0) {
+          // Accepts both the server's per-channel cache and legacy ffmpeg files.
+          const waveformData = parseWaveformFileData(JSON.parse(result.data));
+          if (waveformData) {
             audioItem.waveform = waveformData;
             
             // Update duration from waveform data if available

@@ -459,6 +459,34 @@ int main(int argc, char** argv) {
     install_crash_handlers((exe_dir / "crash-logs").string());
     set_crash_exe_info(exe_path_str, restart_args);
 
+    // Mirror the session to a persistent, size-rotated log file so operators
+    // have history even when stdout isn't captured (server launched by the
+    // Electron client). Best-effort; console logging is unaffected on failure.
+    Logger::set_log_file((exe_dir / "logs" / "liveplay-server.log").string());
+
+    // Crash-loop protection. Read the persisted consecutive-crash count left by
+    // any crashing predecessor; after kMaxConsecutiveCrashes back-to-back
+    // crashes the handler stops auto-restarting so a deterministic fault (e.g. a
+    // bad crash-resume project) can't relaunch forever. The count is reset once
+    // this instance has run healthily (see the heartbeat loop) or shuts cleanly.
+    constexpr int kMaxConsecutiveCrashes = 5;
+    constexpr int kCrashGuardHealthySec  = 30;
+    int prior_crash_count = 0;
+    {
+        std::ifstream cf{(exe_dir / ".crash-count").string()};
+        int v = 0;
+        if (cf && (cf >> v) && v > 0) prior_crash_count = v;
+    }
+    set_crash_restart_guard((exe_dir / ".crash-count").string(),
+                            prior_crash_count, kMaxConsecutiveCrashes);
+    if (prior_crash_count > 0) {
+        Logger::warn("Recovered from a crash ({} consecutive). Auto-restart disables after {}.",
+                     prior_crash_count, kMaxConsecutiveCrashes);
+    }
+    // Keep only the most recent crash logs in the fallback dir (project /logs/
+    // crash logs are pruned by the project itself).
+    prune_crash_logs((exe_dir / "crash-logs").string(), 20);
+
     // ------------------------------------------------------------------
     // Check for a crash-resume file left by a previous crashed instance.
     // ------------------------------------------------------------------
@@ -686,11 +714,23 @@ int main(int argc, char** argv) {
     // Heartbeat loop. Every 30 s we tick a debug line so operators can confirm
     // the process is alive over long sessions. SIGINT/SIGTERM flips g_running.
     using clock = std::chrono::steady_clock;
+    const auto program_start = clock::now();
+    bool crash_guard_reset   = false;
     auto last_heartbeat   = clock::now();
     auto last_resume_snap = clock::now();
     while (g_running.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
         const auto now = clock::now();
+
+        // Once we've been up long enough to be considered "healthy", clear the
+        // consecutive-crash counter so isolated crashes over a long session
+        // don't accumulate toward the auto-restart give-up threshold.
+        if (!crash_guard_reset &&
+            std::chrono::duration_cast<std::chrono::seconds>(now - program_start).count()
+                >= kCrashGuardHealthySec) {
+            reset_crash_restart_guard();
+            crash_guard_reset = true;
+        }
 
         // ---- crash-resume: play item once audio has fully loaded ------------
         if (pending_resume) {
@@ -745,6 +785,9 @@ int main(int argc, char** argv) {
 
     Logger::raw("");
     Logger::info("Shutdown signal received — stopping cleanly.");
+    // A clean exit is not a crash — clear the consecutive-crash counter so the
+    // next launch starts fresh.
+    reset_crash_restart_guard();
     if (beacon) beacon->stop();
     beacon.reset();
     server->stop();

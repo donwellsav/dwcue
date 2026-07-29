@@ -49,6 +49,15 @@ public:
     // Set the minimum level that will be emitted (default: Info; Debug below).
     static void set_min_level(LogLevel level);
 
+    // Mirror every log line (plain text, ANSI-stripped) to a persistent file so
+    // operators have session history even when stdout isn't captured (e.g. the
+    // server launched by the Electron client). If the file already exceeds
+    // `max_bytes`, it is rotated to "<path>.1" first (single generation). Pass
+    // an empty path to disable file logging. Best-effort: a file-open failure is
+    // logged once and never blocks console logging.
+    static void set_log_file(const std::string& path,
+                             std::size_t max_bytes = 10u * 1024 * 1024);
+
     // -------------------- primary API ---------------------------------------
     template <typename... Args>
     static void debug(std::format_string<Args...> fmt, Args&&... args) {

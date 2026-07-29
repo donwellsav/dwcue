@@ -7,6 +7,8 @@
 #include <chrono>
 #include <cstdio>
 #include <ctime>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <mutex>
 #include <string>
@@ -55,6 +57,13 @@ struct RingBuffer {
 RingBuffer& ring_buffer() {
     static RingBuffer rb;
     return rb;
+}
+
+// Optional persistent log file. Guarded by Logger::mutex() (same lock that
+// serialises console writes and the ring buffer).
+std::ofstream& log_file() {
+    static std::ofstream f;
+    return f;
 }
 
 LoggerState& state() {
@@ -181,6 +190,34 @@ void Logger::set_min_level(LogLevel level) {
     state().min_level.store(level);
 }
 
+void Logger::set_log_file(const std::string& path, std::size_t max_bytes) {
+    std::lock_guard lock{mutex()};
+    auto& lf = log_file();
+    if (lf.is_open()) lf.close();
+    if (path.empty()) return;
+
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path p{path};
+    if (p.has_parent_path()) fs::create_directories(p.parent_path(), ec);
+
+    // Single-generation size rotation: if the current file is already large,
+    // move it aside before reopening so the active log doesn't grow unbounded.
+    const auto sz = fs::file_size(p, ec);
+    if (!ec && sz >= max_bytes) {
+        fs::path rotated = p;
+        rotated += ".1";
+        fs::remove(rotated, ec);
+        fs::rename(p, rotated, ec);
+    }
+
+    lf.open(path, std::ios::binary | std::ios::app);
+    if (!lf) {
+        // Never throw from logging setup; console logging still works.
+        std::cerr << "[logger] failed to open log file: " << path << '\n';
+    }
+}
+
 bool Logger::color_enabled() {
     return state().color_enabled.load();
 }
@@ -201,6 +238,10 @@ void Logger::log(LogLevel level, std::string_view msg) {
 
     std::lock_guard lock{mutex()};
     ring_buffer().push(plain_line);
+    if (auto& lf = log_file(); lf.is_open()) {
+        lf << plain_line << '\n';
+        lf.flush();
+    }
     if (colored) {
         stream << style.color << ansi::dim << '[' << ts << ']' << ansi::reset << ' '
                << style.color << ansi::bold << '[' << style.tag << ']' << ansi::reset << ' '

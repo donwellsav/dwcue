@@ -261,11 +261,19 @@ static void register_download_token(const std::string& token, fs::path path) {
 
 static std::optional<fs::path> redeem_download_token(const std::string& token) {
     std::lock_guard lock{g_download_tokens_mutex};
-    // GC any expired entries while we're here.
+    // GC any expired entries while we're here. An expired-and-unclaimed token
+    // still has its .lpa sitting on disk (redeem is the only path that deletes
+    // it), so remove the file before dropping the entry — otherwise abandoned
+    // exports leak temp files indefinitely.
     const auto now = std::chrono::steady_clock::now();
     for (auto it = g_download_tokens.begin(); it != g_download_tokens.end();) {
-        if (it->second.expires_at <= now) it = g_download_tokens.erase(it);
-        else ++it;
+        if (it->second.expires_at <= now) {
+            std::error_code ec;
+            fs::remove(it->second.path, ec);
+            it = g_download_tokens.erase(it);
+        } else {
+            ++it;
+        }
     }
     auto it = g_download_tokens.find(token);
     if (it == g_download_tokens.end()) return std::nullopt;
@@ -350,6 +358,14 @@ bool ControlServer::start() {
         });
     });
 
+    // Shared operator UI state (selection / Show Mode / locale). ProjectState
+    // hands us a ready-made doc_patch payload; we only have to fan it out, so
+    // a Companion button, a touch tablet and the operator's laptop all end up
+    // showing the same selected cue and the same view mode.
+    state_.set_ui_state_broadcaster([this](const json& patch) {
+        broadcast_doc_patch(patch);
+    });
+
     // Crow's SimpleApp::run() blocks; we shove it on a worker thread.
     impl_->app_thread = std::thread([this] {
         try {
@@ -380,7 +396,9 @@ void ControlServer::stop() {
 }
 
 // ---------------------------------------------------------------------------
-// Meter broadcaster (~60 fps) + cue_state edge events
+// Meter broadcaster (cfg_.meter_broadcast_hz) + cue_state edge events.
+// Uses CONSUMING meter reads (snapshot_consume_max) — this loop must remain
+// the only consumer or readers would steal each other's peaks.
 // ---------------------------------------------------------------------------
 void ControlServer::broadcast_loop() {
     using clock = std::chrono::steady_clock;
@@ -391,8 +409,18 @@ void ControlServer::broadcast_loop() {
     // exactly once on each transition (rather than every tick).
     std::unordered_map<std::string, audio::TransportState> prev_transports;
 
+    // Absolute-deadline schedule. sleep_for(period - work) systematically
+    // undershoots the target rate on Windows (~15.6 ms sleep granularity
+    // rounds every sleep up); sleep_until against an advancing deadline
+    // self-corrects, so the average rate converges on meter_broadcast_hz.
+    auto next_tick = clock::now() + period;
+
     while (running_.load(std::memory_order_acquire)) {
-        const auto start = clock::now();
+        // Guard the entire tick: an exception escaping this thread would call
+        // std::terminate() and take the whole audio process down mid-show.
+        // Log-and-continue instead so a transient fault (e.g. a flaky media
+        // share throwing out of a filesystem call) just drops one meter frame.
+        try {
 
         // Build the meters payload.
         json payload;
@@ -413,8 +441,14 @@ void ControlServer::broadcast_loop() {
             m["playhead_seconds"]  = stats.playhead_seconds;
             json srcs = json::array();
             for (audio::ChannelIndex c = 0; c < item->source_channel_count(); ++c) {
-                auto snap = item->source_meter(c);
-                srcs.push_back(json{{"peak_db", snap.peak_db}, {"rms_db", snap.rms_db}});
+                auto snap = item->source_meter_consume(c);
+                srcs.push_back(json{{"peak_db", snap.peak_db},
+                                    {"rms_db", snap.rms_db},
+                                    {"peak_max_db", snap.peak_max_db},
+                                    {"true_peak_db", snap.true_peak_db},
+                                    {"true_peak_max_db", snap.true_peak_max_db},
+                                    {"kw_ms", snap.kw_ms},
+                                    {"kw_ms_s", snap.kw_ms_s}});
             }
             m["sources"] = std::move(srcs);
             item_meters.push_back(std::move(m));
@@ -430,11 +464,16 @@ void ControlServer::broadcast_loop() {
         json mixer_meters = json::array();
         for (auto& mch : state_.list_mixer_channels()) {
             if (auto* m = engine_.find_mixer_channel(mch.id)) {
-                auto s = m->meter_snapshot();
+                auto s = m->meter_snapshot_consume();
                 mixer_meters.push_back(json{
-                    {"mixer_id", mch.id.value},
-                    {"peak_db",  s.peak_db},
-                    {"rms_db",   s.rms_db},
+                    {"mixer_id",         mch.id.value},
+                    {"peak_db",          s.peak_db},
+                    {"rms_db",           s.rms_db},
+                    {"peak_max_db",      s.peak_max_db},
+                    {"true_peak_db",     s.true_peak_db},
+                    {"true_peak_max_db", s.true_peak_max_db},
+                    {"kw_ms",            s.kw_ms},
+                    {"kw_ms_s",          s.kw_ms_s},
                 });
             }
         }
@@ -442,14 +481,21 @@ void ControlServer::broadcast_loop() {
 
         json master_meters = json::array();
         for (audio::MasterChannelIndex i = 0; i < engine_.config().master_channels; ++i) {
-            auto s = engine_.read_master_meter(i);
+            auto s = engine_.read_master_meter_consume(i);
             const float gr = engine_.read_master_gain_reduction_db(i);
             // Only include non-silent channels to keep the payload light.
-            if (s.peak_db > -119.0f || gr < -0.05f) {
+            // (peak_max_db is checked too so an isolated transient inside an
+            // otherwise-silent frame still gets reported.)
+            if (s.peak_db > -119.0f || s.peak_max_db > -119.0f || gr < -0.05f) {
                 master_meters.push_back(json{
-                    {"index",   i},
-                    {"peak_db", s.peak_db},
-                    {"rms_db",  s.rms_db},
+                    {"index",            i},
+                    {"peak_db",          s.peak_db},
+                    {"rms_db",           s.rms_db},
+                    {"peak_max_db",      s.peak_max_db},
+                    {"true_peak_db",     s.true_peak_db},
+                    {"true_peak_max_db", s.true_peak_max_db},
+                    {"kw_ms",            s.kw_ms},
+                    {"kw_ms_s",          s.kw_ms_s},
                     {"gain_reduction_db", gr},
                 });
             }
@@ -460,8 +506,9 @@ void ControlServer::broadcast_loop() {
         try { serialized = payload.dump(); }
         catch (const std::exception& e) {
             Logger::error("broadcast_loop: failed to serialize meters: {}", e.what());
-            const auto used = clock::now() - start;
-            if (used < period) std::this_thread::sleep_for(period - used);
+            std::this_thread::sleep_until(next_tick);
+            next_tick += period;
+            if (next_tick < clock::now()) next_tick = clock::now() + period;
             continue;
         }
 
@@ -524,9 +571,22 @@ void ControlServer::broadcast_loop() {
             catch (...) { /* connection will be cleaned up by onclose */ }
         }
 
-        // Sleep to maintain the broadcast cadence.
-        const auto used = clock::now() - start;
-        if (used < period) std::this_thread::sleep_for(period - used);
+        // Sleep to maintain the broadcast cadence (absolute deadline; see
+        // next_tick comment above). After a long stall, re-anchor instead of
+        // burst-firing to catch up.
+        std::this_thread::sleep_until(next_tick);
+        next_tick += period;
+        if (next_tick < clock::now()) next_tick = clock::now() + period;
+
+        } catch (const std::exception& e) {
+            Logger::error("broadcast_loop: unhandled exception (continuing): {}", e.what());
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            next_tick = clock::now() + period;
+        } catch (...) {
+            Logger::error("broadcast_loop: unknown exception (continuing).");
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            next_tick = clock::now() + period;
+        }
     }
 }
 
@@ -566,18 +626,23 @@ void ControlServer::waveform_worker() {
             impl_->waveform_q.pop_front();
         }
 
+        // Guard the whole task: an exception here (e.g. the throwing fs::exists
+        // overload faulting on a disconnected network share, or compute_waveform
+        // throwing) would escape this thread and std::terminate() the process.
+        try {
+
+        std::error_code fs_ec;
         const fs::path json_file = task.waveforms_dir.empty()
             ? fs::path{}
             : task.waveforms_dir / (task.item_uuid + ".json");
 
         // Remove stale cache entry when a forced regeneration is requested.
-        if (task.force && !json_file.empty() && fs::exists(json_file)) {
-            std::error_code ec;
-            fs::remove(json_file, ec);
+        if (task.force && !json_file.empty() && fs::exists(json_file, fs_ec)) {
+            fs::remove(json_file, fs_ec);
         }
 
         // Serve from disk cache when available (skips full audio decode).
-        if (!json_file.empty() && fs::exists(json_file)) {
+        if (!json_file.empty() && fs::exists(json_file, fs_ec)) {
             try {
                 std::ifstream cache_f(json_file);
                 const auto cached = json::parse(cache_f);
@@ -647,6 +712,12 @@ void ControlServer::waveform_worker() {
 
         broadcast_doc_patch(std::move(patch));
         Logger::info("waveform_worker: done for item_uuid '{}'", task.item_uuid);
+
+        } catch (const std::exception& e) {
+            Logger::error("waveform_worker: unhandled exception (skipping task): {}", e.what());
+        } catch (...) {
+            Logger::error("waveform_worker: unknown exception (skipping task).");
+        }
     }
 }
 
@@ -683,11 +754,36 @@ static json build_playback_snapshot(audio::AudioEngine& engine,
         {"next_item_uuid",      state.next_item_override()},
         {"master_gain_db",      engine.master_gain_db()},
         {"output_channel_gains", std::move(out_gains)},
+        // Shared operator UI state, so a client (or control surface) that joins
+        // mid-show adopts the running selection / view mode instead of
+        // imposing its own stale local one.
+        {"selected_item_uuid",  state.selected_item_uuid()},
+        {"show_mode",           state.show_mode()},
+        {"locale",              state.ui_locale()},
         {"preview", json{
             {"item_uuid", state.current_preview_item_uuid()},
             {"cue_id",    state.current_preview_cue_id().value},
         }},
     };
+}
+
+// uuids of every item that is currently sounding, in cue-registration order.
+// Used as the fallback anchor for selection stepping: with nothing selected,
+// "select down" should continue from what the operator is hearing rather than
+// snapping back to the top of the playlist. Returns empty when something IS
+// already selected — an explicit selection always wins, and skipping the walk
+// keeps the common case free.
+static std::vector<std::string> selection_anchors(audio::AudioEngine& engine,
+                                                  core::ProjectState& state) {
+    std::vector<std::string> playing;
+    if (!state.selected_item_uuid().empty()) return playing;
+    for (auto& cue : state.list_cues()) {
+        auto* item = engine.find_cue(cue.id);
+        if (!item) continue;
+        if (item->stats().transport == audio::TransportState::Stopped) continue;
+        if (auto uuid = state.cue_to_item_uuid(cue.id)) playing.push_back(*uuid);
+    }
+    return playing;
 }
 
 // ---------------------------------------------------------------------------
@@ -786,9 +882,15 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
                                      cue->value);
                     if (type == "pause") pi->pause();
                     else                 pi->resume();
+                } else {
+                    Logger::warn("WS {}: cue_id={} not live in engine", type, cue->value);
+                    return json({{"type", "error"},
+                                 {"message", type + ": cue not loaded into engine"}}).dump();
                 }
             } else {
                 Logger::warn("WS {}: no valid cue target", type);
+                return json({{"type", "error"},
+                             {"message", type + ": no valid cue target"}}).dump();
             }
         }
         else if (type == "stop_all") {
@@ -801,6 +903,17 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
             Logger::playback("STOP ALL (fade {})",
                              fade ? std::to_string(*fade) + "ms" : "project default");
             state.stop_all_cues(fade);
+        }
+        else if (type == "go") {
+            // Play whatever is armed as "Up Next" (override first, else the
+            // playing item's endBehavior target). Same semantics as
+            // POST /api/transport/go.
+            const auto uuid = state.go();
+            if (uuid.empty()) {
+                Logger::warn("WS go: nothing armed or derivable to play");
+                return json({{"type", "error"}, {"message", "nothing armed to GO to"}}).dump();
+            }
+            Logger::playback("GO: {}", item_playback_info(uuid, state));
         }
         else if (type == "gain") {
             auto cue = resolve_cue(j);
@@ -829,7 +942,15 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
                 Logger::playback("SEEK {:.2f}s → cue_id={}", secs, cue->value);
                 if (auto* pi = engine.find_cue(*cue)) {
                     pi->seek_seconds(secs);
+                } else {
+                    Logger::warn("WS seek: cue_id={} not live in engine", cue->value);
+                    return json({{"type", "error"},
+                                 {"message", "seek: cue not loaded into engine"}}).dump();
                 }
+            } else {
+                Logger::warn("WS seek: no valid cue target");
+                return json({{"type", "error"},
+                             {"message", "seek: no valid cue target"}}).dump();
             }
         }
         else if (type == "set_next_item") {
@@ -845,6 +966,37 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
             state.set_next_item_override(uuid);
             // Fan-out to every client happens in the .onmessage wrapper
             // (which has access to the ControlServer for broadcast).
+        }
+        else if (type == "set_selection") {
+            // Shared playlist selection. Empty/absent item_uuid clears it.
+            // ProjectState broadcasts the change (including back to the sender,
+            // which is what keeps two clients from diverging).
+            std::string uuid;
+            if (j.contains("item_uuid") && j["item_uuid"].is_string())
+                uuid = j["item_uuid"].get<std::string>();
+            state.set_selected_item(uuid);
+        }
+        else if (type == "select_step") {
+            // Move the shared selection through the flattened playlist.
+            //
+            // With nothing selected we hand ProjectState the items that are
+            // currently sounding, so the step continues from what the operator
+            // is hearing instead of snapping back to the top of the show. This
+            // only applies when there is no selection — an explicit selection
+            // always wins.
+            const int delta = j.value("delta", 0);
+            if (delta != 0) state.step_selection(delta, selection_anchors(engine, state));
+        }
+        else if (type == "set_show_mode") {
+            // Omit "enabled" to toggle.
+            if (j.contains("enabled") && j["enabled"].is_boolean())
+                state.set_show_mode(j["enabled"].get<bool>());
+            else
+                state.toggle_show_mode();
+        }
+        else if (type == "set_locale") {
+            if (j.contains("locale") && j["locale"].is_string())
+                state.set_ui_locale(j["locale"].get<std::string>());
         }
         else if (type == "ping") {
             return json({{"type", "pong"}}).dump();
@@ -875,6 +1027,25 @@ void ControlServer::install_routes() {
     static CrowLogBridge crow_log_bridge;
     crow::logger::setHandler(&crow_log_bridge);
     crow::logger::setLogLevel(crow::LogLevel::Warning);
+
+    // Central exception handler: any route that throws past its own try/catch
+    // (or has none) lands here instead of Crow's bare 500. Crow invokes this
+    // from inside a catch(...) block, so a `throw;` re-raises the active
+    // exception, letting us recover its message. We reply with the same JSON +
+    // CORS shape as json_err() so browser clients never see an opaque,
+    // CORS-less 500.
+    app.exception_handler([](crow::response& res){
+        std::string message = "internal server error";
+        try {
+            throw;
+        } catch (const std::exception& e) {
+            message = e.what();
+            Logger::error("Uncaught exception in route handler: {}", e.what());
+        } catch (...) {
+            Logger::error("Uncaught non-std exception in route handler.");
+        }
+        res = json_err(500, message);
+    });
 
     // Permissive CORS preflight for everything (the Electron client is on a
     // different origin).
@@ -977,17 +1148,22 @@ void ControlServer::install_routes() {
 
     CROW_ROUTE(app, "/api/cues/<string>").methods(crow::HTTPMethod::Delete)
         ([this](std::string id) {
+            // remove_cue() returns void, so probe existence first and 404 if
+            // the target cue is unknown (mirrors the item play/stop routes).
+            if (!state_.find_cue(audio::CueId{id})) return json_err(404, "not found");
             state_.remove_cue(audio::CueId{id});
             return json_ok(json({{"ok", true}}));
         });
 
     CROW_ROUTE(app, "/api/cues/<string>/play").methods(crow::HTTPMethod::Post)
         ([this](std::string id) {
+            if (!engine_.find_cue(audio::CueId{id})) return json_err(404, "not found");
             engine_.play(audio::CueId{id});
             return json_ok(json({{"ok", true}}));
         });
     CROW_ROUTE(app, "/api/cues/<string>/stop").methods(crow::HTTPMethod::Post)
         ([this](std::string id) {
+            if (!engine_.find_cue(audio::CueId{id})) return json_err(404, "not found");
             engine_.stop(audio::CueId{id});
             return json_ok(json({{"ok", true}}));
         });
@@ -1061,6 +1237,209 @@ void ControlServer::install_routes() {
             } catch (const std::exception& e) { return json_err(400, e.what()); }
         });
 
+    // ---- External-control surface (Bitfocus Companion, custom remotes) ----
+    // Compact machine-readable transport summary. Control surfaces fetch this
+    // once on connect (and after a project_changed doc_patch), then keep it
+    // fresh from the /ws push stream — no polling.
+    CROW_ROUTE(app, "/api/state/summary").methods(crow::HTTPMethod::Get)
+        ([this] {
+            try {
+                json s = state_.state_summary();
+                s["server"] = json{
+                    {"version", std::string{
+#ifdef LIVEPLAY_SERVER_VERSION
+                        LIVEPLAY_SERVER_VERSION
+#else
+                        "0.0.0"
+#endif
+                    }},
+                    {"meterBroadcastHz", cfg_.meter_broadcast_hz},
+                };
+                return json_ok(s);
+            } catch (const std::exception& e) { return json_err(500, e.what()); }
+            catch (...) { return json_err(500, "internal error"); }
+        });
+
+    // GO — play whatever is armed as "Up Next" (user override first, else the
+    // playing item's endBehavior target). GET is accepted as well as POST so
+    // the URL can be fired from a browser or a plain `curl`.
+    CROW_ROUTE(app, "/api/transport/go")
+        .methods(crow::HTTPMethod::Post, crow::HTTPMethod::Get)
+        ([this](const crow::request& req){
+            Logger::api_request("Client ({}) -> Server ({}) : {} /api/transport/go",
+                                req.remote_ip_address, impl_->server_addr,
+                                crow::method_name(req.method));
+            const std::string uuid = state_.go();
+            if (uuid.empty()) {
+                Logger::warn("GO — nothing armed or derivable to play");
+                return json_err(404, "nothing armed or playing to GO to");
+            }
+            Logger::playback("GO: {}", item_playback_info(uuid, state_));
+            return json_ok(json({{"ok", true}, {"uuid", uuid}}));
+        });
+
+    // ---- Shared operator UI state (selection / Show Mode / locale) --------
+    // These back the control-surface equivalents of the client's arrow keys,
+    // Show Mode switch and language picker. Every mutation is broadcast as a
+    // doc_patch, so the on-screen playlist and a Companion button can never
+    // disagree about what is selected.
+
+    CROW_ROUTE(app, "/api/selection").methods(crow::HTTPMethod::Get)
+        ([this]{
+            const auto uuid = state_.selected_item_uuid();
+            return json_ok(json({{"itemUuid", uuid}}));
+        });
+
+    // Body: { "itemUuid": "..." } to select (empty string clears), or
+    //       { "delta": -1 | 1 }  to step through the flattened playlist.
+    CROW_ROUTE(app, "/api/selection").methods(crow::HTTPMethod::Post)
+        ([this](const crow::request& req){
+            try {
+                auto j = json::parse(req.body.empty() ? std::string{"{}"} : req.body);
+                std::string uuid;
+                if (j.contains("delta") && j["delta"].is_number_integer()) {
+                    const int delta = j["delta"].get<int>();
+                    if (delta == 0) return json_err(400, "delta must be non-zero");
+                    uuid = state_.step_selection(delta, selection_anchors(engine_, state_));
+                    if (uuid.empty()) return json_err(404, "playlist is empty");
+                } else if (j.contains("itemUuid") && j["itemUuid"].is_string()) {
+                    uuid = j["itemUuid"].get<std::string>();
+                    state_.set_selected_item(uuid);
+                } else {
+                    return json_err(400, "expected \"itemUuid\" or \"delta\"");
+                }
+                return json_ok(json({{"ok", true}, {"itemUuid", uuid}}));
+            } catch (const std::exception& e) { return json_err(400, e.what()); }
+        });
+
+    // Arm the selected item as "Up Next" — the control-surface equivalent of
+    // the client's "Set As Next" context action.
+    CROW_ROUTE(app, "/api/transport/arm_selected")
+        .methods(crow::HTTPMethod::Post, crow::HTTPMethod::Get)
+        ([this]{
+            const auto uuid = state_.selected_item_uuid();
+            if (uuid.empty()) return json_err(404, "nothing is selected");
+            state_.set_next_item_override(uuid);
+            Logger::playback("ARM SELECTED: {}", item_playback_info(uuid, state_));
+            return json_ok(json({{"ok", true}, {"itemUuid", uuid}}));
+        });
+
+    // Trigger the selected item (the client's Enter / "Play Selected" key).
+    CROW_ROUTE(app, "/api/transport/play_selected")
+        .methods(crow::HTTPMethod::Post, crow::HTTPMethod::Get)
+        ([this]{
+            const auto uuid = state_.selected_item_uuid();
+            if (uuid.empty()) return json_err(404, "nothing is selected");
+            Logger::playback("PLAY SELECTED: {}", item_playback_info(uuid, state_));
+            if (!state_.trigger_item(uuid))
+                return json_err(404, "item not loaded into engine");
+            return json_ok(json({{"ok", true}, {"itemUuid", uuid}}));
+        });
+
+    // Pause / resume everything on air in one press — the control-surface
+    // equivalent of the client's Pause/Resume key. Resumes if anything is
+    // paused, otherwise pauses everything sounding; that way a single button
+    // is never ambiguous about which way it will go.
+    CROW_ROUTE(app, "/api/transport/pause_toggle")
+        .methods(crow::HTTPMethod::Post, crow::HTTPMethod::Get)
+        ([this]{
+            const json summary = state_.state_summary();
+            std::vector<std::string> paused, sounding;
+            for (const auto& p : summary.value("playing", json::array())) {
+                const auto uuid = p.value("itemUuid", std::string{});
+                if (uuid.empty()) continue;
+                if (p.value("paused", false)) paused.push_back(uuid);
+                else                          sounding.push_back(uuid);
+            }
+            if (paused.empty() && sounding.empty())
+                return json_err(404, "nothing is on air");
+            const bool resuming = !paused.empty();
+            for (const auto& uuid : resuming ? paused : sounding) {
+                if (auto cue = state_.item_to_cue_id(uuid)) {
+                    if (auto* pi = engine_.find_cue(*cue)) {
+                        if (resuming) pi->resume(); else pi->pause();
+                    }
+                }
+            }
+            Logger::playback("PAUSE TOGGLE: {} {} item(s)",
+                             resuming ? "resumed" : "paused",
+                             resuming ? paused.size() : sounding.size());
+            return json_ok(json({{"ok", true}, {"resumed", resuming}}));
+        });
+
+    CROW_ROUTE(app, "/api/ui/showmode").methods(crow::HTTPMethod::Get)
+        ([this]{ return json_ok(json({{"enabled", state_.show_mode()}})); });
+
+    // Body: { "enabled": bool }; omit the field (or send an empty body) to toggle.
+    CROW_ROUTE(app, "/api/ui/showmode").methods(crow::HTTPMethod::Post)
+        ([this](const crow::request& req){
+            try {
+                auto j = json::parse(req.body.empty() ? std::string{"{}"} : req.body);
+                bool enabled;
+                if (j.contains("enabled") && j["enabled"].is_boolean()) {
+                    enabled = j["enabled"].get<bool>();
+                    state_.set_show_mode(enabled);
+                } else {
+                    enabled = state_.toggle_show_mode();
+                }
+                return json_ok(json({{"ok", true}, {"enabled", enabled}}));
+            } catch (const std::exception& e) { return json_err(400, e.what()); }
+        });
+
+    CROW_ROUTE(app, "/api/ui/locale").methods(crow::HTTPMethod::Get)
+        ([this]{ return json_ok(json({{"locale", state_.ui_locale()}})); });
+
+    CROW_ROUTE(app, "/api/ui/locale").methods(crow::HTTPMethod::Post)
+        ([this](const crow::request& req){
+            try {
+                auto j = json::parse(req.body.empty() ? std::string{"{}"} : req.body);
+                if (!j.contains("locale") || !j["locale"].is_string())
+                    return json_err(400, "expected \"locale\"");
+                state_.set_ui_locale(j["locale"].get<std::string>());
+                return json_ok(json({{"ok", true}, {"locale", state_.ui_locale()}}));
+            } catch (const std::exception& e) { return json_err(400, e.what()); }
+        });
+
+    // First-class body-addressed variant of /api/project/items/by-index/…
+    // Body: { "index": [1, 11] } — an index path descending into groups.
+    CROW_ROUTE(app, "/api/transport/play_index").methods(crow::HTTPMethod::Post)
+        ([this](const crow::request& req){
+            try {
+                auto j = json::parse(req.body);
+                std::vector<int> path;
+                if (j.contains("index") && j["index"].is_array()) {
+                    for (const auto& v : j["index"]) {
+                        if (!v.is_number_integer() || v.get<int>() < 0)
+                            return json_err(400, "index must contain non-negative integers");
+                        path.push_back(v.get<int>());
+                    }
+                }
+                if (path.empty())
+                    return json_err(400, "index must be a non-empty array of child indices");
+                const std::string uuid = state_.item_uuid_by_index(path);
+                if (uuid.empty()) return json_err(404, "no item at that index");
+                Logger::playback("TRIGGER: {}", item_playback_info(uuid, state_));
+                if (!state_.trigger_item(uuid))
+                    return json_err(404, "item not loaded into engine");
+                return json_ok(json({{"ok", true}, {"uuid", uuid}, {"index", path}}));
+            } catch (const std::exception& e) { return json_err(400, e.what()); }
+        });
+
+    // Trigger the item bound to a cart slot. GET accepted for curl/browser.
+    CROW_ROUTE(app, "/api/transport/cart/<int>/play")
+        .methods(crow::HTTPMethod::Post, crow::HTTPMethod::Get)
+        ([this](const crow::request& req, int slot){
+            Logger::api_request("Client ({}) -> Server ({}) : {} /api/transport/cart/{}/play",
+                                req.remote_ip_address, impl_->server_addr,
+                                crow::method_name(req.method), slot);
+            const std::string uuid = state_.cart_slot_item_uuid(slot);
+            if (uuid.empty()) return json_err(404, "cart slot is empty");
+            Logger::playback("CART {}: {}", slot, item_playback_info(uuid, state_));
+            if (!state_.trigger_item(uuid))
+                return json_err(404, "item not loaded into engine");
+            return json_ok(json({{"ok", true}, {"slot", slot}, {"uuid", uuid}}));
+        });
+
     CROW_ROUTE(app, "/api/master/ceiling").methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req){
             try {
@@ -1076,13 +1455,41 @@ void ControlServer::install_routes() {
         ([this](const crow::request& req){
             try {
                 auto j = json::parse(req.body);
-                const float db = j.value("db", 0.0f);
+                // "db" sets an absolute gain; "delta" nudges the current gain
+                // (control-surface increment/decrement without a read-modify-
+                // write race on the caller's side). "db" wins if both present.
+                float db;
+                if (!j.contains("db") && j.contains("delta") && j["delta"].is_number())
+                    db = engine_.master_gain_db() + j["delta"].get<float>();
+                else
+                    db = j.value("db", 0.0f);
                 engine_.set_master_gain_db(db);
                 broadcast_doc_patch(json{
                     {"type", "doc_patch"}, {"op", "master_gain_changed"},
                     {"db", engine_.master_gain_db()},
                 });
                 return json_ok(json({{"ok", true}, {"db", engine_.master_gain_db()}}));
+            } catch (const std::exception& e) { return json_err(400, e.what()); }
+        });
+
+    // Master brickwall limiter enable/bypass. POST body { "enabled": bool };
+    // omitting "enabled" toggles the current state (single-button surfaces).
+    CROW_ROUTE(app, "/api/master/limiter").methods(crow::HTTPMethod::Get)
+        ([this]{ return json_ok(json({{"enabled", engine_.limiter_enabled()}})); });
+    CROW_ROUTE(app, "/api/master/limiter").methods(crow::HTTPMethod::Post)
+        ([this](const crow::request& req){
+            try {
+                auto j = json::parse(req.body.empty() ? std::string{"{}"} : req.body);
+                const bool enabled =
+                    (j.contains("enabled") && j["enabled"].is_boolean())
+                        ? j["enabled"].get<bool>()
+                        : !engine_.limiter_enabled();
+                engine_.set_limiter_enabled(enabled);
+                broadcast_doc_patch(json{
+                    {"type", "doc_patch"}, {"op", "limiter_changed"},
+                    {"enabled", enabled},
+                });
+                return json_ok(json({{"ok", true}, {"enabled", enabled}}));
             } catch (const std::exception& e) { return json_err(400, e.what()); }
         });
 
@@ -1142,6 +1549,9 @@ void ControlServer::install_routes() {
 
     CROW_ROUTE(app, "/api/mixers/<string>").methods(crow::HTTPMethod::Delete)
         ([this](std::string id){
+            // remove_mixer_channel() returns void; probe first and 404 if absent.
+            if (!engine_.find_mixer_channel(audio::MixerChannelId{id}))
+                return json_err(404, "not found");
             engine_.remove_mixer_channel(audio::MixerChannelId{id});
             return json_ok(json({{"ok", true}}));
         });
@@ -1151,11 +1561,14 @@ void ControlServer::install_routes() {
         ([this](const crow::request& req){
             try {
                 auto j = json::parse(req.body);
+                // "lane": destination strip lane (0 = L, 1 = R). Omitted →
+                // every lane (legacy mono-bus behaviour / mono sources).
                 engine_.route_item_source_to_mixer(
                     audio::CueId{j.at("cue").get<std::string>()},
                     j.value("source_channel", (audio::ChannelIndex)0),
                     audio::MixerChannelId{j.at("mixer").get<std::string>()},
-                    j.value("gain_db", 0.0f));
+                    j.value("gain_db", 0.0f),
+                    j.value("lane", audio::kAllMixerLanes));
                 return json_ok(json({{"ok", true}}));
             } catch (const std::exception& e) { return json_err(400, e.what()); }
         });
@@ -1164,10 +1577,13 @@ void ControlServer::install_routes() {
         ([this](const crow::request& req){
             try {
                 auto j = json::parse(req.body);
+                // "lane": source strip lane feeding this master (0 = L,
+                // 1 = R). Omitted → sum of every lane (mono downmix; legacy).
                 engine_.route_mixer_to_master(
                     audio::MixerChannelId{j.at("mixer").get<std::string>()},
                     j.value("master_channel", (audio::MasterChannelIndex)0),
-                    j.value("gain_db", 0.0f));
+                    j.value("gain_db", 0.0f),
+                    j.value("lane", audio::kAllMixerLanes));
                 return json_ok(json({{"ok", true}}));
             } catch (const std::exception& e) { return json_err(400, e.what()); }
         });
@@ -1843,27 +2259,36 @@ void ControlServer::install_routes() {
     // a temp dir server-side.
     CROW_ROUTE(app, "/api/file/download").methods(crow::HTTPMethod::Get)
         ([this](const crow::request& req){
-            const char* token = req.url_params.get("token");
-            if (!token) return json_err(400, "missing ?token=");
-            auto path_opt = redeem_download_token(token);
-            if (!path_opt) return json_err(404, "token expired or invalid");
-            const fs::path& p = *path_opt;
-            std::ifstream f{p, std::ios::binary | std::ios::ate};
-            if (!f) return json_err(500, "failed to open archive");
-            const auto size = f.tellg();
-            f.seekg(0, std::ios::beg);
-            std::string body(static_cast<std::size_t>(size), '\0');
-            f.read(body.data(), size);
+            try {
+                const char* token = req.url_params.get("token");
+                if (!token) return json_err(400, "missing ?token=");
+                auto path_opt = redeem_download_token(token);
+                if (!path_opt) return json_err(404, "token expired or invalid");
+                const fs::path& p = *path_opt;
+                std::ifstream f{p, std::ios::binary | std::ios::ate};
+                if (!f) return json_err(500, "failed to open archive");
+                const auto size = f.tellg();
+                f.seekg(0, std::ios::beg);
+                std::string body(static_cast<std::size_t>(size), '\0');
+                f.read(body.data(), size);
 
-            crow::response r{200, std::move(body)};
-            r.add_header("Content-Type", "application/octet-stream");
-            r.add_header("Content-Disposition",
-                         "attachment; filename=\"" + p.filename().string() + "\"");
-            r.add_header("Access-Control-Allow-Origin", "*");
-            // The temp file has served its purpose; delete it to bound disk
-            // usage on the server.
-            std::error_code ec; fs::remove(p, ec);
-            return r;
+                crow::response r{200, std::move(body)};
+                r.add_header("Content-Type", "application/octet-stream");
+                // Encode the filename via path_to_utf8 rather than the native
+                // .string() (which decodes through the active code page and can
+                // throw on non-representable Unicode names).
+                r.add_header("Content-Disposition",
+                             "attachment; filename=\""
+                                 + liveplay::util::path_to_utf8(p.filename()) + "\"");
+                r.add_header("Access-Control-Allow-Origin", "*");
+                // The temp file has served its purpose; delete it to bound disk
+                // usage on the server.
+                std::error_code ec; fs::remove(p, ec);
+                return r;
+            } catch (const std::exception& e) {
+                Logger::error("GET /api/file/download threw: {}", e.what());
+                return json_err(400, e.what());
+            }
         });
 
     // Import a .lpa archive that the client uploaded via multipart, OR an
@@ -2275,6 +2700,34 @@ void ControlServer::install_routes() {
                                  req.remote_ip_address, impl_->server_addr, uuid);
             return json_ok(json({{"ok", true}}));
         });
+    // Pause / resume hold the playhead without unloading. REST mirror of the
+    // WS "pause"/"resume" messages so stateless control surfaces can use them.
+    CROW_ROUTE(app, "/api/project/items/<string>/pause").methods(crow::HTTPMethod::Post)
+        ([this](const crow::request& req, std::string uuid){
+            Logger::api_request("Client ({}) -> Server ({}) : POST /api/project/items/{}/pause",
+                                req.remote_ip_address, impl_->server_addr, uuid);
+            const auto cue = state_.item_to_cue_id(uuid);
+            if (!cue) return json_err(404, "item not loaded into engine");
+            if (auto* pi = engine_.find_cue(*cue)) {
+                Logger::playback("PAUSE: {}", item_playback_info(uuid, state_));
+                pi->pause();
+                return json_ok(json({{"ok", true}}));
+            }
+            return json_err(404, "item not loaded into engine");
+        });
+    CROW_ROUTE(app, "/api/project/items/<string>/resume").methods(crow::HTTPMethod::Post)
+        ([this](const crow::request& req, std::string uuid){
+            Logger::api_request("Client ({}) -> Server ({}) : POST /api/project/items/{}/resume",
+                                req.remote_ip_address, impl_->server_addr, uuid);
+            const auto cue = state_.item_to_cue_id(uuid);
+            if (!cue) return json_err(404, "item not loaded into engine");
+            if (auto* pi = engine_.find_cue(*cue)) {
+                Logger::playback("RESUME: {}", item_playback_info(uuid, state_));
+                pi->resume();
+                return json_ok(json({{"ok", true}}));
+            }
+            return json_err(404, "item not loaded into engine");
+        });
     CROW_ROUTE(app, "/api/project/items/<string>/seek").methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req, std::string uuid){
             try {
@@ -2328,7 +2781,11 @@ void ControlServer::install_routes() {
         ([this](const crow::request& req, int slot){
             Logger::api_request("Client ({}) -> Server ({}) : DELETE /api/project/cart/{}",
                                 req.remote_ip_address, impl_->server_addr, slot);
-            state_.clear_cart_slot(slot);
+            // clear_cart_slot() returns false when the slot held no binding.
+            if (!state_.clear_cart_slot(slot)) {
+                Logger::warn("DELETE /api/project/cart/{} — no binding at slot", slot);
+                return json_err(404, "no binding at slot");
+            }
             Logger::api_response("Client ({}) <- Server ({}) : DELETE /api/project/cart/{} OK",
                                  req.remote_ip_address, impl_->server_addr, slot);
             broadcast_doc_patch(json{

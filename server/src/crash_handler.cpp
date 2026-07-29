@@ -1,9 +1,27 @@
 // ============================================================================
 // crash_handler.cpp — see crash_handler.hpp.
+// ----------------------------------------------------------------------------
+// Two crash-emit paths:
+//   * emit_crash_report()      — rich report (session history, symbolised
+//                                stack). Used from contexts where it is safe to
+//                                allocate / lock / touch the filesystem:
+//                                Windows SEH + CRT handlers, and std::terminate.
+//   * async_signal_crash()     — POSIX-only, async-signal-SAFE path used from
+//                                the fatal-signal handler (SIGSEGV/ABRT/…). Uses
+//                                only write()/open()/backtrace_symbols_fd()/fork/
+//                                execve, never malloc / mutex / iostream, so it
+//                                can't deadlock on a crash that happened while
+//                                the faulting thread held the malloc arena lock.
+//
+// Both paths share a persisted consecutive-crash counter so a deterministic
+// crash can't relaunch the server forever (crash-loop protection), and both
+// read crash-resume state from a lock-free double buffer that is never observed
+// half-written.
 // ============================================================================
 #include "liveplay/crash_handler.hpp"
 #include "liveplay/logger.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -32,6 +50,8 @@
 #    include <execinfo.h>
 #    define LIVEPLAY_HAVE_EXECINFO 1
 #  endif
+#  include <cerrno>
+#  include <fcntl.h>
 #  include <unistd.h>
 #  include <sys/types.h>
 #  include <sys/wait.h>
@@ -52,17 +72,43 @@ constexpr std::size_t kPathBuf = 4096;
 constexpr std::size_t kArgBuf  = 8192;
 constexpr std::size_t kUuidBuf = 256;
 
-char g_exe_path[kPathBuf]           = {};
-char g_restart_args[kArgBuf]        = {};
-char g_project_dir[kPathBuf]        = {};
-char g_resume_project_file[kPathBuf]= {};
-char g_resume_item_uuid[kUuidBuf]   = {};
-// Plain double is fine here; worst case: a torn read gives a slightly wrong
-// seek position — acceptable in a crash-resume scenario.
-double g_resume_position_sec        = 0.0;
+char g_exe_path[kPathBuf]     = {};
+char g_restart_args[kArgBuf]  = {};
+char g_project_dir[kPathBuf]  = {};
+
+// Pre-resolved + pre-created crash-log directory. Refreshed in safe context
+// (install / set_crash_project_dir) so the signal handler never has to call
+// create_directories(). Empty until first refresh.
+char g_crash_log_dir_buf[kPathBuf] = {};
+
+// ---- Crash-loop protection -------------------------------------------------
+char             g_counter_file[kPathBuf] = {};
+std::atomic<int> g_crash_count{0};       // consecutive crashes so far
+std::atomic<int> g_max_consecutive{0};   // 0 = guard disabled (always restart)
+
+// ---- Crash-resume state (lock-free double buffer) --------------------------
+// The writer fills the inactive buffer completely, then atomically flips the
+// active index. A reader (the crash handler) only ever reads the active index,
+// which always points at a fully-written record — even if the crashing thread
+// was interrupted mid-write, it was writing the *inactive* buffer.
+struct ResumeState {
+    char   project_file[kPathBuf] = {};
+    char   item_uuid[kUuidBuf]    = {};
+    double position_sec           = 0.0;
+};
+ResumeState      g_resume[2];
+std::atomic<int> g_resume_active{-1};   // -1 = no record yet
+
+long long current_pid() {
+#if defined(_WIN32)
+    return static_cast<long long>(GetCurrentProcessId());
+#else
+    return static_cast<long long>(::getpid());
+#endif
+}
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Helpers (safe context)
 // ---------------------------------------------------------------------------
 std::string timestamp_for_filename() {
     using clock = std::chrono::system_clock;
@@ -74,20 +120,21 @@ std::string timestamp_for_filename() {
     localtime_r(&now, &tm);
 #endif
     char buf[32];
-    // Format: YYYY_MM_DD-HHMM  (as requested)
-    std::snprintf(buf, sizeof(buf), "%04d_%02d_%02d-%02d%02d",
+    // Seconds resolution + PID keep filenames unique across a fast crash loop
+    // (minute resolution + O_TRUNC used to overwrite prior logs).
+    std::snprintf(buf, sizeof(buf), "%04d_%02d_%02d-%02d%02d%02d",
                   tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
-                  tm.tm_hour, tm.tm_min);
+                  tm.tm_hour, tm.tm_min, tm.tm_sec);
     return std::string{buf};
 }
 
-std::filesystem::path resolve_crash_log_path() {
+// Recompute + create the crash-log directory into g_crash_log_dir_buf. Safe
+// context only (allocates / touches the filesystem).
+void refresh_log_dir() {
     namespace fs = std::filesystem;
     std::error_code ec;
-
     fs::path dir;
     if (g_project_dir[0] != '\0') {
-        // Preferred: <project_dir>/logs/
         dir = fs::path{g_project_dir} / "logs";
     } else if (!g_crash_log_dir.empty()) {
         dir = g_crash_log_dir;
@@ -96,7 +143,18 @@ std::filesystem::path resolve_crash_log_path() {
         if (ec) dir = ".";
     }
     fs::create_directories(dir, ec);
-    return dir / ("liveplay-crash-" + timestamp_for_filename() + ".log");
+    const std::string s = dir.string();
+    std::strncpy(g_crash_log_dir_buf, s.c_str(), kPathBuf - 1);
+    g_crash_log_dir_buf[kPathBuf - 1] = '\0';
+}
+
+std::filesystem::path resolve_crash_log_path() {
+    namespace fs = std::filesystem;
+    fs::path dir = g_crash_log_dir_buf[0] ? fs::path{g_crash_log_dir_buf} : fs::path{"."};
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+    return dir / ("liveplay-crash-" + timestamp_for_filename() + "-" +
+                  std::to_string(current_pid()) + ".log");
 }
 
 // Minimal JSON string escaper — safe to call from the crash handler.
@@ -112,6 +170,19 @@ std::string json_escape(const char* s) {
         }
     }
     return out;
+}
+
+// Increment the persisted consecutive-crash counter and report whether the
+// server should still auto-restart. Safe context (uses ofstream).
+bool bump_counter_and_should_restart() {
+    const int new_count = g_crash_count.load(std::memory_order_acquire) + 1;
+    g_crash_count.store(new_count, std::memory_order_release);
+    if (g_counter_file[0] != '\0') {
+        std::ofstream cf{g_counter_file, std::ios::binary | std::ios::trunc};
+        if (cf) cf << new_count;
+    }
+    const int maxc = g_max_consecutive.load(std::memory_order_acquire);
+    return !(maxc > 0 && new_count > maxc);
 }
 
 // ---------------------------------------------------------------------------
@@ -216,14 +287,19 @@ std::string format_stack_trace_posix() {
 #endif
 
 // ---------------------------------------------------------------------------
-// Core: write crash log + console output + restart after 5 s.
+// Rich crash report — SAFE contexts only (Windows SEH/CRT, std::terminate).
 // ---------------------------------------------------------------------------
 void emit_crash_report(const std::string& reason, const std::string& trace) {
+    const bool will_restart = bump_counter_and_should_restart();
+
     // 1. Console output — visible to the operator while the window is up.
     try {
         Logger::error("==================== SERVER CRASH ====================");
         Logger::error("Reason : {}", reason);
-        Logger::error("Restart: server will relaunch in 5 seconds.");
+        if (will_restart)
+            Logger::error("Restart: server will relaunch in 5 seconds.");
+        else
+            Logger::error("Restart: DISABLED — too many consecutive crashes; not relaunching.");
         Logger::error("Log    : see liveplay-crash-*.log in the project /logs/ folder.");
         Logger::error("Stack trace:");
         std::istringstream is{trace};
@@ -242,6 +318,7 @@ void emit_crash_report(const std::string& reason, const std::string& trace) {
             f << "LivePlay Server — Crash Report\n"
               << "================================\n"
               << "Time   : " << timestamp_for_filename() << "\n"
+              << "PID    : " << current_pid() << "\n"
               << "Reason : " << reason << "\n\n"
               << "Stack trace:\n" << trace << "\n"
               << "================================\n"
@@ -254,30 +331,30 @@ void emit_crash_report(const std::string& reason, const std::string& trace) {
 
     // 3. Persist resume state so the new instance can reopen the project and
     //    resume playback from approximately where it stopped.
-    if (g_exe_path[0] != '\0' && g_resume_project_file[0] != '\0') {
+    const int ri = g_resume_active.load(std::memory_order_acquire);
+    if (g_exe_path[0] != '\0' && ri >= 0 && g_resume[ri].project_file[0] != '\0') {
         try {
             namespace fs = std::filesystem;
-
-            // Store next to the exe so the new instance finds it at startup.
             const fs::path resume_path =
                 fs::path{g_exe_path}.parent_path() / ".crash-resume.json";
             std::ofstream rf{resume_path, std::ios::binary | std::ios::trunc};
             if (rf) {
                 char pos_buf[64];
-                std::snprintf(pos_buf, sizeof(pos_buf), "%.3f", g_resume_position_sec);
+                std::snprintf(pos_buf, sizeof(pos_buf), "%.3f", g_resume[ri].position_sec);
                 rf << "{\n"
-                   << "  \"projectFile\": \""  << json_escape(g_resume_project_file) << "\",\n"
-                   << "  \"itemUuid\": \""      << json_escape(g_resume_item_uuid)    << "\",\n"
-                   << "  \"positionSec\": "     << pos_buf                            << "\n"
+                   << "  \"projectFile\": \""  << json_escape(g_resume[ri].project_file) << "\",\n"
+                   << "  \"itemUuid\": \""      << json_escape(g_resume[ri].item_uuid)    << "\",\n"
+                   << "  \"positionSec\": "     << pos_buf                                << "\n"
                    << "}\n";
             }
         } catch (...) {}
     }
 
+    if (!will_restart) return;
+
     // 4. Relaunch the server, then exit so the OS releases our listening port.
-    //    Rather than sleeping here (which would hold the port for 5 s and race
-    //    the new instance for it), we spawn immediately and pass --start-delay-ms
-    //    so the *new* instance waits before binding — by which point we're gone.
+    //    We spawn immediately and pass --start-delay-ms so the *new* instance
+    //    waits before binding — by which point we're gone.
 #if defined(_WIN32)
     if (g_exe_path[0] != '\0') {
         std::string cmd = std::string{"\""} + g_exe_path + "\"";
@@ -297,14 +374,11 @@ void emit_crash_report(const std::string& reason, const std::string& trace) {
         if (pi.hThread)  CloseHandle(pi.hThread);
     }
 #else
-    // Fork a child that sleeps then execs the server; the crashing parent exits.
     if (g_exe_path[0] != '\0') {
         const pid_t pid = ::fork();
         if (pid == 0) {
-            // Child: sleep 5 s then exec the original binary.
             ::sleep(5);
             if (g_restart_args[0] != '\0') {
-                // Use sh to re-parse the arg string.
                 std::string cmd = std::string{g_exe_path} + " " + g_restart_args;
                 ::execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
             } else {
@@ -312,10 +386,163 @@ void emit_crash_report(const std::string& reason, const std::string& trace) {
             }
             ::_exit(1);
         }
-        // Parent falls through and exits normally below.
     }
 #endif
 }
+
+// ---------------------------------------------------------------------------
+// Async-signal-safe crash emit — POSIX fatal-signal path ONLY.
+// ---------------------------------------------------------------------------
+#if !defined(_WIN32)
+// Small async-signal-safe output primitives (no malloc / stdio / locale).
+struct AsBuf { char* p; std::size_t cap; std::size_t len; };
+
+void as_append(AsBuf& b, const char* s) {
+    while (*s && b.len + 1 < b.cap) b.p[b.len++] = *s++;
+    b.p[b.len] = '\0';
+}
+void as_append_ll(AsBuf& b, long long v) {
+    char t[32]; int i = static_cast<int>(sizeof(t));
+    const bool neg = v < 0;
+    unsigned long long u = neg ? (0ULL - static_cast<unsigned long long>(v))
+                               : static_cast<unsigned long long>(v);
+    if (u == 0) t[--i] = '0';
+    while (u) { t[--i] = static_cast<char>('0' + u % 10); u /= 10; }
+    if (neg) t[--i] = '-';
+    for (; i < static_cast<int>(sizeof(t)) && b.len + 1 < b.cap; ++i) b.p[b.len++] = t[i];
+    b.p[b.len] = '\0';
+}
+void as_write(int fd, const char* s, std::size_t n) {
+    while (n > 0) {
+        const ssize_t w = ::write(fd, s, n);
+        if (w <= 0) { if (errno == EINTR) continue; break; }
+        s += w; n -= static_cast<std::size_t>(w);
+    }
+}
+void as_write_str(int fd, const char* s) {
+    std::size_t n = 0; while (s[n]) ++n; as_write(fd, s, n);
+}
+void as_write_ll(int fd, long long v) {
+    char t[32]; AsBuf b{t, sizeof(t), 0}; t[0] = '\0';
+    as_append_ll(b, v); as_write(fd, t, b.len);
+}
+void as_write_escaped(int fd, const char* s) {
+    for (; *s; ++s) {
+        switch (*s) {
+            case '"':  as_write(fd, "\\\"", 2); break;
+            case '\\': as_write(fd, "\\\\", 2); break;
+            case '\n': as_write(fd, "\\n", 2);  break;
+            case '\r': as_write(fd, "\\r", 2);  break;
+            default:   as_write(fd, s, 1);      break;
+        }
+    }
+}
+void as_write_fixed3(int fd, double v) {
+    bool neg = v < 0; if (neg) v = -v;
+    long long whole = static_cast<long long>(v);
+    long long frac  = static_cast<long long>((v - static_cast<double>(whole)) * 1000.0 + 0.5);
+    if (frac >= 1000) { whole += 1; frac -= 1000; }
+    if (neg) as_write(fd, "-", 1);
+    as_write_ll(fd, whole);
+    as_write(fd, ".", 1);
+    char f[3] = { static_cast<char>('0' + (frac / 100) % 10),
+                  static_cast<char>('0' + (frac / 10) % 10),
+                  static_cast<char>('0' + frac % 10) };
+    as_write(fd, f, 3);
+}
+
+void async_signal_crash(const char* reason) {
+    const long long epoch = static_cast<long long>(::time(nullptr));
+    const long long pid   = static_cast<long long>(::getpid());
+
+    // Build "<dir>/liveplay-crash-<epoch>-<pid>.log" without allocating.
+    char path[kPathBuf]; AsBuf pb{path, sizeof(path), 0}; path[0] = '\0';
+    if (g_crash_log_dir_buf[0]) { as_append(pb, g_crash_log_dir_buf); as_append(pb, "/"); }
+    as_append(pb, "liveplay-crash-");
+    as_append_ll(pb, epoch); as_append(pb, "-"); as_append_ll(pb, pid);
+    as_append(pb, ".log");
+
+    const int fd = ::open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd >= 0) {
+        as_write_str(fd, "LivePlay Server — Crash Report\n"
+                         "================================\n"
+                         "Time (epoch): ");
+        as_write_ll(fd, epoch);
+        as_write_str(fd, "\nPID    : "); as_write_ll(fd, pid);
+        as_write_str(fd, "\nReason : "); as_write_str(fd, reason);
+        as_write_str(fd, "\n\nStack trace:\n");
+#if defined(LIVEPLAY_HAVE_EXECINFO)
+        void* bt[64];
+        const int n = backtrace(bt, 64);
+        backtrace_symbols_fd(bt, n, fd);   // async-signal-safe (no malloc)
+#else
+        as_write_str(fd, "(stack trace unavailable: execinfo.h not present)\n");
+#endif
+        as_write_str(fd, "\n(session history is in the rolling server log, if enabled)\n");
+        ::close(fd);
+    }
+
+    // Visible operator signal on stderr.
+    as_write_str(STDERR_FILENO, "\n==================== SERVER CRASH ====================\n");
+    as_write_str(STDERR_FILENO, reason);
+    as_write_str(STDERR_FILENO, "\nCrash log: "); as_write_str(STDERR_FILENO, path);
+    as_write_str(STDERR_FILENO, "\n");
+
+    // Persist crash-resume state from the double buffer (always complete).
+    const int ri = g_resume_active.load(std::memory_order_acquire);
+    if (g_exe_path[0] && ri >= 0 && g_resume[ri].project_file[0]) {
+        char rpath[kPathBuf]; AsBuf rb{rpath, sizeof(rpath), 0}; rpath[0] = '\0';
+        as_append(rb, g_exe_path);
+        // Trim to the executable's parent directory.
+        std::size_t cut = rb.len;
+        while (cut > 0 && rpath[cut - 1] != '/') --cut;
+        rb.len = cut; rpath[rb.len] = '\0';
+        as_append(rb, ".crash-resume.json");
+        const int rfd = ::open(rpath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (rfd >= 0) {
+            as_write_str(rfd, "{\n  \"projectFile\": \"");
+            as_write_escaped(rfd, g_resume[ri].project_file);
+            as_write_str(rfd, "\",\n  \"itemUuid\": \"");
+            as_write_escaped(rfd, g_resume[ri].item_uuid);
+            as_write_str(rfd, "\",\n  \"positionSec\": ");
+            as_write_fixed3(rfd, g_resume[ri].position_sec);
+            as_write_str(rfd, "\n}\n");
+            ::close(rfd);
+        }
+    }
+
+    // Crash-loop guard: persist the incremented counter and decide.
+    const int new_count = g_crash_count.load(std::memory_order_acquire) + 1;
+    if (g_counter_file[0]) {
+        const int cfd = ::open(g_counter_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (cfd >= 0) { as_write_ll(cfd, new_count); ::close(cfd); }
+    }
+    const int maxc = g_max_consecutive.load(std::memory_order_acquire);
+    if (maxc > 0 && new_count > maxc) {
+        as_write_str(STDERR_FILENO,
+                     "Auto-restart DISABLED — too many consecutive crashes.\n");
+        return;
+    }
+
+    // Relaunch: fork a child that waits then re-execs; the parent returns and
+    // the caller re-raises the signal so the OS frees our listening port.
+    if (g_exe_path[0]) {
+        const pid_t child = ::fork();
+        if (child == 0) {
+            ::sleep(5);
+            if (g_restart_args[0]) {
+                char cmd[kArgBuf + kPathBuf + 8];
+                AsBuf cb{cmd, sizeof(cmd), 0}; cmd[0] = '\0';
+                as_append(cb, g_exe_path); as_append(cb, " "); as_append(cb, g_restart_args);
+                ::execl("/bin/sh", "sh", "-c", cmd, static_cast<char*>(nullptr));
+            } else {
+                ::execl(g_exe_path, g_exe_path, static_cast<char*>(nullptr));
+            }
+            ::_exit(127);
+        }
+    }
+}
+#endif // !_WIN32
 
 // ---------------------------------------------------------------------------
 // Platform handlers
@@ -404,7 +631,8 @@ extern "C" void posix_fatal_signal(int sig) {
 #  endif
         default: break;
     }
-    emit_crash_report(name, format_stack_trace_posix());
+    // Async-signal-safe path: no malloc / mutex / iostream / filesystem.
+    async_signal_crash(name);
     std::signal(sig, SIG_DFL);
     std::raise(sig);
 }
@@ -418,6 +646,7 @@ extern "C" void posix_fatal_signal(int sig) {
 void install_crash_handlers(const std::string& log_dir) {
     std::call_once(g_install_flag, [&]{
         g_crash_log_dir = log_dir;
+        refresh_log_dir();
 
         std::set_terminate(&terminate_handler);
 
@@ -456,14 +685,68 @@ void set_crash_exe_info(const std::string& exe_path,
 
 void set_crash_project_dir(const std::string& project_dir) {
     std::strncpy(g_project_dir, project_dir.c_str(), kPathBuf - 1);
+    g_project_dir[kPathBuf - 1] = '\0';
+    refresh_log_dir();
 }
 
 void update_crash_resume_state(const std::string& project_file,
                                 const std::string& playing_item_uuid,
                                 double             position_sec) {
-    std::strncpy(g_resume_project_file, project_file.c_str(),        kPathBuf - 1);
-    std::strncpy(g_resume_item_uuid,    playing_item_uuid.c_str(),   kUuidBuf - 1);
-    g_resume_position_sec = position_sec;
+    // Fill the inactive buffer, then publish it by flipping the active index.
+    const int active = g_resume_active.load(std::memory_order_acquire);
+    const int next   = (active == 0) ? 1 : 0;   // -1 or 1 → 0; 0 → 1
+    ResumeState& b = g_resume[next];
+    std::strncpy(b.project_file, project_file.c_str(),      kPathBuf - 1);
+    b.project_file[kPathBuf - 1] = '\0';
+    std::strncpy(b.item_uuid,    playing_item_uuid.c_str(), kUuidBuf - 1);
+    b.item_uuid[kUuidBuf - 1] = '\0';
+    b.position_sec = position_sec;
+    g_resume_active.store(next, std::memory_order_release);
+}
+
+void set_crash_restart_guard(const std::string& counter_file,
+                             int consecutive_so_far,
+                             int max_consecutive) {
+    std::strncpy(g_counter_file, counter_file.c_str(), kPathBuf - 1);
+    g_counter_file[kPathBuf - 1] = '\0';
+    g_crash_count.store(consecutive_so_far < 0 ? 0 : consecutive_so_far,
+                        std::memory_order_release);
+    g_max_consecutive.store(max_consecutive, std::memory_order_release);
+}
+
+void reset_crash_restart_guard() {
+    g_crash_count.store(0, std::memory_order_release);
+    if (g_counter_file[0] != '\0') {
+        std::ofstream cf{g_counter_file, std::ios::binary | std::ios::trunc};
+        if (cf) cf << 0;
+    }
+}
+
+void prune_crash_logs(const std::string& dir, std::size_t keep) {
+    namespace fs = std::filesystem;
+    try {
+        std::error_code ec;
+        if (!fs::is_directory(dir, ec)) return;
+        std::vector<fs::path> logs;
+        for (const auto& entry : fs::directory_iterator(dir, ec)) {
+            if (ec) break;
+            const auto& p = entry.path();
+            const std::string fn = p.filename().string();
+            if (fn.rfind("liveplay-crash-", 0) == 0 && p.extension() == ".log")
+                logs.push_back(p);
+        }
+        if (logs.size() <= keep) return;
+        std::sort(logs.begin(), logs.end(), [](const fs::path& a, const fs::path& b) {
+            std::error_code e1, e2;
+            return fs::last_write_time(a, e1) < fs::last_write_time(b, e2);
+        });
+        for (std::size_t i = 0; i + keep < logs.size(); ++i) {
+            std::error_code rec;
+            fs::remove(logs[i], rec);
+        }
+    } catch (...) {
+        // Best-effort pruning — never let it affect startup.
+    }
 }
 
 } // namespace liveplay

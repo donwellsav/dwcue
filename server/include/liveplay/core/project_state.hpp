@@ -25,6 +25,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <deque>
 #include <filesystem>
 #include <functional>
 #include <mutex>
@@ -33,6 +35,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace liveplay::core {
@@ -67,12 +70,18 @@ struct RouteSendV2 {
     audio::ChannelIndex source_channel;
     audio::MixerChannelId destination_mixer;
     float gain_db;
+    // Destination strip lane (0 = L, 1 = R); kAllMixerLanes = every lane.
+    // Documents written before lanes existed load as kAllMixerLanes, which
+    // reproduces the old mono-bus behaviour.
+    audio::ChannelIndex lane = audio::kAllMixerLanes;
 };
 
 struct MixerToMasterV2 {
     audio::MixerChannelId mixer;
     audio::MasterChannelIndex master_channel;
     float gain_db;
+    // Source strip lane feeding the master; kAllMixerLanes = sum of lanes.
+    audio::ChannelIndex lane = audio::kAllMixerLanes;
 };
 
 struct MasterAssignment {
@@ -166,6 +175,13 @@ public:
     // separate `cartOnlyItems` array (cart slots, not the playlist) so a
     // cart-bound cue never leaks into the playlist tree. Returns the cue_id
     // of the newly engine-loaded audio item, or empty for groups / on failure.
+    //
+    // The returned CueId is valid immediately, but the audio decode happens on
+    // a background loader thread: adding a large or network-mounted file must
+    // never stall play_item / stop / state requests (#43). The cue appears in
+    // list_cues()/find_cue() straight away; the engine's PlaybackItem shows up
+    // when the decode finishes. play_item() waits for a still-loading cue's own
+    // decode (and only that one), so an immediate play after add still works.
     audio::CueId add_item(const json& item, const std::string& parent_uuid = "",
                           bool cart_only = false);
     bool         update_item(const std::string& uuid, const json& patch);
@@ -233,10 +249,84 @@ public:
     // endBehavior.action == "next", this uuid is consumed (and cleared)
     // before falling back to the static sibling order. Pass empty string to
     // clear without consuming. Safe to call at any time.
-    void set_next_item_override(const std::string& uuid);
+    //
+    // `manual` records WHO armed it. An operator-set arming (the default —
+    // every client/REST call means the operator picked it) is sticky: the
+    // server's own auto-arming never clobbers it. An arming the server derived
+    // itself (arm_next_after_stop / arm_first_item_on_open) passes false, so a
+    // later auto-arm may replace it once it goes stale. Without this
+    // distinction, an auto-arming left over from "open project" or from an
+    // earlier stop blocked ALL subsequent auto-arming — e.g. jumping into a
+    // group left "Up Next" stuck on the old item and never armed the group's
+    // 2nd child when its 1st finished.
+    void set_next_item_override(const std::string& uuid, bool manual = true);
     // Current "Up Next" override, or empty if none. Used by the control
     // server to seed newly-connected clients with the live override state.
     std::string next_item_override() const;
+
+    // ---- Show-control surface (shared operator UI state) -----------------
+    // The server owns the operator-facing UI state that every client AND
+    // every control surface has to agree on: which playlist item is selected,
+    // whether Show Mode is engaged, and the display locale. Clients push
+    // changes here and re-render from the broadcast, so a Companion button and
+    // the on-screen playlist can never disagree about what is selected.
+    // Each setter returns true when the value actually changed (no-ops are
+    // never broadcast) and fans the change out via the ui_state_broadcaster.
+
+    // uuid of the selected playlist item, or empty when nothing is selected.
+    std::string selected_item_uuid() const;
+    // Select an item by uuid. Pass an empty string to clear the selection.
+    bool set_selected_item(const std::string& uuid);
+    // Move the selection `delta` places through the flattened playlist — the
+    // same depth-first order (group node, then its children) that the client's
+    // Select Up / Select Down keys walk. The ends clamp rather than wrap.
+    // Returns the newly selected uuid, or empty when the playlist has no items.
+    //
+    // With nothing selected, `anchor_candidates` (the items currently playing)
+    // supplies the notional current position and the step is taken from there,
+    // so a control surface pressing Select Down mid-show lands on the cue
+    // *after* the one that's playing rather than jumping back to the top of the
+    // playlist. When several are playing we take the one furthest down the
+    // playlist — a show advances downward, so that's the operator's position.
+    // With nothing selected and nothing playing, the step starts from the top.
+    std::string step_selection(int delta,
+                               const std::vector<std::string>& anchor_candidates = {});
+
+    // Show Mode: the simplified, touch-friendly playback view. Server-owned so
+    // a Companion button, a tablet and the operator's laptop stay in step.
+    bool show_mode() const;
+    void set_show_mode(bool enabled);
+    bool toggle_show_mode();   // returns the resulting state
+
+    // Display locale (a code from the client's locale set, e.g. "en", "el").
+    // Mirrored so control surfaces can label their own buttons in the
+    // operator's language.
+    std::string ui_locale() const;
+    void set_ui_locale(const std::string& code);
+
+    // Install a callback invoked whenever any of the above changes. Called
+    // with a complete doc_patch payload, with no ProjectState lock held. The
+    // control server installs this to fan the change out to every client.
+    void set_ui_state_broadcaster(std::function<void(const json&)> cb);
+
+    // ---- External-control surface (Bitfocus Companion, custom remotes) ----
+    // Compact machine-readable transport summary: project header facts, every
+    // on-air item (name, colour, index path, elapsed/remaining), the effective
+    // "Up Next" target, selection + Show Mode, master gain/limiter state and
+    // cart-slot bindings. Built for polling-free control surfaces — fetch once
+    // on connect, then keep it fresh from the /ws push messages (cue_state,
+    // meters, doc_patch).
+    json state_summary() const;
+
+    // GO: trigger whatever is armed as "Up Next". Uses the user-set override
+    // when present (consumed on success), otherwise derives the target from
+    // the currently-playing item's endBehavior — mirroring the client's GO
+    // button. Returns the uuid triggered, or empty if nothing was armed /
+    // derivable / loaded.
+    std::string go();
+
+    // Item uuid bound to a cart slot, or empty if the slot is unbound.
+    std::string cart_slot_item_uuid(int slot) const;
 
     // ---- Per-device routing ---------------------------------------------
     // Ensure a "device mixer" exists for `device_name` (the user-visible
@@ -347,6 +437,23 @@ private:
     // cleared when the currently-playing item's end-behavior fires "next".
     // Guarded by mutex_.
     std::string next_item_override_;
+    // True when next_item_override_ was set by the operator rather than derived
+    // by the server. See set_next_item_override(). Guarded by mutex_.
+    bool next_item_override_manual_{false};
+
+    // Shared operator UI state (see the Show-control surface above). All
+    // guarded by mutex_.
+    std::string selected_item_uuid_;
+    bool        show_mode_ = false;
+    std::string ui_locale_ = "en";
+
+    // Trigger ordering: every play_item() stamps the item with the next value
+    // of trigger_seq_counter_, so control surfaces can tell which of several
+    // on-air items was fired LAST (what an operator means by "currently
+    // playing") rather than which sits highest in the playlist. Guarded by
+    // mutex_; entries are dropped when the project resets.
+    std::unordered_map<std::string, long long> item_trigger_seq_;
+    long long                                  trigger_seq_counter_ = 0;
 
     // Background "audio mirror is still in progress" state. Exposed to
     // clients via /api/project so the UI can show a progress bar without
@@ -480,6 +587,7 @@ public:
 private:
     std::function<void(const json&)> external_action_handler_;
     std::function<void(const std::string&)> next_item_broadcaster_;
+    std::function<void(const json&)> ui_state_broadcaster_;
 
     // Backward-compat translator: takes a legacy 1.x project document and
     // produces a v2-flavoured one with the equivalent routing matrix.
@@ -504,6 +612,51 @@ private:
     // immediately and audio loading proceeds in the background.
     void start_async_mirror();
 
+    // ---- Single-item async audio load (#43) --------------------------------
+    // add_item() / update_item() used to run mirror_items_to_engine_locked()
+    // while holding mutex_, so the synchronous audio decode of ONE new file
+    // blocked every other request (play_item, stop, state, WS/HTTP handlers)
+    // for its full duration. Instead they now reserve the CueId under the lock,
+    // register a placeholder CueMeta, and hand the decode to a background
+    // loader thread which publishes the finished cue afterwards.
+
+    // Reserve a cue id for `uuid`, register the placeholder CueMeta, and queue
+    // the decode. Caller MUST hold mutex_. Returns the reserved id (never empty
+    // unless `path` is empty). `item` is the document node, used for the
+    // placeholder's display name / duration and re-read when the load lands.
+    audio::CueId begin_item_load_locked(const std::string& uuid,
+                                        const std::filesystem::path& path,
+                                        const json& item);
+
+    // Loader thread body: decode queued items and publish them.
+    void loader_loop();
+    void stop_loaders();
+
+    // Apply one document item's engine-visible properties (gain, fades,
+    // out point, LTC) to its PlaybackItem. Caller must hold mutex_. Shared by
+    // mirror_items_to_engine_locked() and the loader's publish step so the two
+    // paths can't drift apart.
+    void apply_item_properties_locked(const json& item, const audio::CueId& cue);
+
+    // Block until `uuid`'s queued decode has finished (or `timeout` elapses).
+    // Call with NO lock held. Returns true if the item is no longer pending.
+    // Only ever waits on that one item — unrelated requests are untouched.
+    bool wait_for_item_load(const std::string& uuid,
+                            std::chrono::milliseconds timeout);
+
+    struct LoadRequest {
+        std::string           uuid;
+        audio::CueId          cue_id;
+        std::filesystem::path path;
+    };
+    std::deque<LoadRequest>         load_queue_;
+    std::unordered_set<std::string> pending_load_uuids_;
+    std::mutex                      loader_mutex_;      // guards both of the above
+    std::condition_variable         loader_cv_;         // work available
+    std::condition_variable         loader_done_cv_;    // a pending load finished
+    std::thread                     loader_thread_;
+    bool                            loaders_stop_ = false;
+
     // Walk the items tree calling `visit(item_json, parent_uuid)` for each.
     static void for_each_item(json& doc,
                               const std::function<void(json& /*item*/,
@@ -525,6 +678,11 @@ private:
     // groups), or empty if the playlist has no audio items. Caller must hold
     // mutex_. Used by the server-side "Up Next" arming.
     std::string first_playable_item_uuid_locked() const;
+
+    // Every playlist item uuid in the client's flat selection order: each node
+    // followed by its children, depth-first. Groups are included (they are
+    // selectable and triggerable). Caller must hold mutex_.
+    std::vector<std::string> flat_item_uuids_locked() const;
 
     // Re-apply the in-memory state to the AudioEngine (post-load or reset).
     void apply_to_engine_locked();

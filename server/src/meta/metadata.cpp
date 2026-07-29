@@ -87,6 +87,15 @@ AudioFileMetadata read_metadata(const std::filesystem::path& path) noexcept {
         out.duration = duration_via_miniaudio(path);
         out.valid    = out.duration.count() > 0;
         return out;
+    } catch (...) {
+        // read_metadata is declared noexcept; a non-std throw from TagLib on a
+        // corrupt file must not escape and terminate the process (e.g. during a
+        // bulk library scan). Degrade to the miniaudio fallback for this file.
+        Logger::error("read_metadata unknown (non-std) exception for '{}'", utf8);
+        out.title    = util::path_to_utf8(path.stem());
+        out.duration = duration_via_miniaudio(path);
+        out.valid    = out.duration.count() > 0;
+        return out;
     }
 }
 

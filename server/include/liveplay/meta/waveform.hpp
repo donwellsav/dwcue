@@ -1,10 +1,19 @@
 // ============================================================================
 // liveplay/meta/waveform.hpp
 // ----------------------------------------------------------------------------
-// Headless waveform downsampler. Decodes a file (via miniaudio), takes
-// abs-peak + RMS per "bucket", and emits exactly N (default 1000) sample
+// Headless waveform downsampler. Decodes a file (via miniaudio) exactly ONCE,
+// takes abs-peak + RMS per "bucket", and emits exactly N (default 1000) sample
 // pairs covering the file's full duration. The client renders these as a
 // canvas/SVG waveform with no audio decoder of its own.
+//
+// Every channel of the source is measured independently, so a stereo file
+// yields separate L/R peak+RMS arrays (the renderer decides whether to draw
+// them as lanes or combine them).
+//
+// The decode never probes the file length first: for formats without a frame
+// count in a header (notably MP3) miniaudio answers that by decoding the whole
+// file, which used to double the cost of every waveform. See the comment in
+// compute_waveform() for how bucket boundaries are resolved instead.
 //
 // Output format is intentionally tiny: two float arrays per channel, plus
 // channel layout + duration metadata. The control server JSON-encodes this

@@ -243,7 +243,16 @@ const { uiMode } = useUiMode();
 // and warnings identical to edit mode.
 const showMode = computed(() => uiMode.value === 'playback');
 
-const isExpanded = ref(props.item.type === 'group' ? props.item.isExpanded : false);
+const { isRevealed, forgetReveal } = usePlaylistReveal();
+
+// A group is open either because the operator left it open (persisted on the
+// item) or because the playlist is temporarily holding it open to expose an
+// off-screen selection. Derived rather than a local ref: the reveal is driven
+// from outside this component, and a ref seeded from the prop at mount would
+// never see it.
+const isExpanded = computed(() =>
+  props.item.type === 'group' && (props.item.isExpanded || isRevealed(props.item.uuid)),
+);
 const waveformCanvas = ref<HTMLCanvasElement | null>(null);
 const dragPosition = ref<'top' | 'bottom' | 'group' | null>(null);
 
@@ -603,10 +612,12 @@ const handleDelete = () => {
 };
 
 const toggleExpand = () => {
-  if (props.item.type === 'group') {
-    isExpanded.value = !isExpanded.value;
-    props.item.isExpanded = isExpanded.value;
-  }
+  if (props.item.type !== 'group') return;
+  const open = isExpanded.value;
+  // Collapsing by hand also drops any temporary reveal — otherwise a group
+  // still holding the selection would spring straight back open.
+  if (open) forgetReveal(props.item.uuid);
+  props.item.isExpanded = !open;
 };
 
 const handleDragStart = (e: DragEvent) => {

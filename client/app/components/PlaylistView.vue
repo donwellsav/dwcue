@@ -51,14 +51,19 @@ import Btn from './Btn.vue';
 import { triggerRef } from 'vue';
 import type { AudioItem, GroupItem } from '~/types/project';
 import { DEFAULT_AUDIO_ITEM, DEFAULT_GROUP_ITEM, transitionDefaultsForImport, anchorStartNextMarker } from '~/types/project';
-import { applyAutoProcessing } from '~/utils/audio';
+import { applyAutoProcessing, buildWaveformFromChannels, parseWaveformFileData } from '~/utils/audio';
 import { useOutputTarget } from '~/composables/useOutputTarget';
 
-const { currentProject, addItem, consumePendingAutoProcess, updateIndices, saveProject, triggerWaveformUpdate, isLoading, getAllItemsFlat, resolveProjectPath, findItemByUuid } = useProject();
+const { currentProject, addItem, consumePendingAutoProcess, updateIndices, saveProject, triggerWaveformUpdate, isLoading, getAllItemsFlat, resolveProjectPath, findItemByUuid, projectEpoch } = useProject();
 const { t } = useLocalization();
 const { levels: outputTargetLevels } = useOutputTarget();
-const { activeCues } = useAudioEngine();
+const { activeCues, nextItemOverrideUuid } = useAudioEngine();
 const { uiMode } = useUiMode();
+const { revealSelection, commitReveal, clearReveals } = usePlaylistReveal();
+// Same useState key useProject/useShowControl bind to — watching the uuid (not
+// the `selectedItem` computed) means we react to the selection MOVING, not to
+// the item object being rebuilt by a server-pushed document.
+const selectedItemUuid = useState<string | null>('selectedItemUuid', () => null);
 const showMode = computed(() => uiMode.value === 'playback');
 const scrollContainer = ref<HTMLElement | null>(null);
 
@@ -138,12 +143,12 @@ const primaryPlayingUuid = computed<string | null>(() => {
   return keys.length ? keys[keys.length - 1]! : null;
 });
 
-function scrollItemIntoView(uuid: string) {
+function scrollItemIntoView(uuid: string, block: ScrollLogicalPosition = 'center') {
   const container = scrollContainer.value;
   if (!container) return;
   const el = container.querySelector<HTMLElement>(`[data-item-uuid="${uuid}"]`);
   if (el) {
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    el.scrollIntoView({ block, behavior: 'smooth' });
     return;
   }
   // Row not mounted yet (progressive mount window / nested group): bump the
@@ -152,7 +157,7 @@ function scrollItemIntoView(uuid: string) {
   const topIndex = item?.index?.[0];
   if (typeof topIndex === 'number' && topIndex >= renderLimit.value) {
     renderLimit.value = topIndex + 1;
-    nextTick(() => scrollItemIntoView(uuid));
+    nextTick(() => scrollItemIntoView(uuid, block));
   }
 }
 
@@ -163,6 +168,39 @@ watch(
     nextTick(() => scrollItemIntoView(uuid));
   },
 );
+
+// ---------------------------------------------------------------------------
+// Keep the selection reachable.
+// ---------------------------------------------------------------------------
+// The selection can be moved from off-screen — the select-up/select-down key
+// bindings, MIDI, or a Companion surface via the server — and those walk the
+// flattened tree, so the target may be scrolled away or buried in a collapsed
+// group. Hold the group open (see usePlaylistReveal), then scroll.
+//
+// `block: 'nearest'` rather than 'center': it is a no-op when the row is
+// already fully visible, so ordinary mouse clicks never jerk the list around,
+// and an off-screen selection is brought in with the smallest move that works.
+watch(selectedItemUuid, (uuid) => {
+  revealSelection(uuid);
+  if (!uuid) return;
+  // A revealed group renders its children on the next flush, so the row we
+  // want to scroll to does not exist yet at this point.
+  nextTick(() => scrollItemIntoView(uuid, 'nearest'));
+});
+
+// Playing a cue or arming one as Up Next is a commitment: the group it lives
+// in stops being a temporary peek and becomes normally expanded, staying open
+// until the operator collapses it by hand. nextItemOverrideUuid covers both an
+// operator arming and the server's own arming after a cue ends.
+// Keyed on the joined uuids, not the array: activeCues is rewritten on every
+// playhead tick, and an array getter would re-fire the tree walk ~20x/sec.
+watch(
+  () => [...activeCues.value.keys()].join('|'),
+  (keys) => { for (const uuid of keys.split('|')) if (uuid) commitReveal(uuid); },
+);
+watch(nextItemOverrideUuid, (uuid) => {
+  if (uuid) commitReveal(uuid);
+});
 
 onUnmounted(() => {
   if (raf !== null) { cancelAnimationFrame(raf); raf = null; }
@@ -218,10 +256,21 @@ watch(
     currentProject.value?.folderPath ?? '',
     currentProject.value?.name ?? '',
     currentProject.value?.items?.length ?? 0,
+    projectEpoch.value,
   ],
-  ([folder, name], [prevFolder, prevName] = ['', '', 0]) => {
-    // Reset the "already requested" tracker when the project changes.
-    if (folder !== prevFolder || name !== prevName) requestedWaveformUuids.clear();
+  ([folder, name, , epoch], [prevFolder, prevName, , prevEpoch] = ['', '', 0, 0]) => {
+    // Reset the "already requested" tracker when the project changes. Temporary
+    // group reveals go with it — they point at uuids from the old document.
+    //
+    // The epoch check covers reloads of the SAME project, where folderPath and
+    // name are both unchanged: session recovery re-hydrates from the server
+    // with fresh items that carry no peaks, and without a reset every uuid
+    // would still be marked "already requested" from before the disconnect, so
+    // nothing would ever ask the server for them again.
+    if (folder !== prevFolder || name !== prevName || epoch !== prevEpoch) {
+      requestedWaveformUuids.clear();
+      clearReveals();
+    }
     if (waveformScanTimer) clearTimeout(waveformScanTimer);
     waveformScanTimer = setTimeout(scanForMissingWaveforms, 150);
   },
@@ -374,10 +423,12 @@ const generateWaveformAsync = async (item: AudioItem) => {
         try {
           const server = (await import('~/composables/useLiveplayServer')).useLiveplayServer();
           const serverWf = await server.fetchWaveformByPath(item.mediaServerPath);
-          const peaks = serverWf.channels[0]?.peak ?? [];
           const duration = serverWf.duration_ms / 1000;
-          if (peaks.length > 0) {
-            item.waveform = { peaks, length: peaks.length, duration };
+          // All source channels, not just the left one (#47).
+          const built = buildWaveformFromChannels(serverWf.channels, duration);
+          const peaks = built?.peaks ?? [];
+          if (built && peaks.length > 0) {
+            item.waveform = built;
             if (duration > 0) { item.duration = duration; item.outPoint = duration; }
             maybeAutoProcess(item);
             triggerWaveformUpdate();
@@ -399,10 +450,10 @@ const generateWaveformAsync = async (item: AudioItem) => {
     const existingWaveform = await window.electronAPI.readFile(resolveProjectPath(item.waveformPath));
     if (existingWaveform.success && existingWaveform.data) {
       try {
-        const waveformData = JSON.parse(existingWaveform.data);
+        // Accepts both the server's per-channel cache and legacy ffmpeg files.
+        const waveformData = parseWaveformFileData(JSON.parse(existingWaveform.data));
 
-        // Validate waveform format (duration field is optional now)
-        if (waveformData.peaks && waveformData.peaks.length > 0) {
+        if (waveformData) {
           item.waveform = waveformData;
 
           // Update duration from waveform data if available (more accurate than Audio API)
@@ -430,11 +481,12 @@ const generateWaveformAsync = async (item: AudioItem) => {
         try {
           const server = (await import('~/composables/useLiveplayServer')).useLiveplayServer();
           const serverWf = await server.fetchWaveformByPath(item.mediaServerPath);
-          // Flatten multi-channel peaks to a single array (use ch0, fall back to empty)
-          const peaks = serverWf.channels[0]?.peak ?? [];
+          // Keep every channel; `peaks` is their per-bucket max (#47).
           const duration = serverWf.duration_ms / 1000;
-          if (peaks.length > 0) {
-            item.waveform = { peaks, length: peaks.length, duration };
+          const built = buildWaveformFromChannels(serverWf.channels, duration);
+          const peaks = built?.peaks ?? [];
+          if (built && peaks.length > 0) {
+            item.waveform = built;
             if (duration > 0) {
               item.duration = duration;
               item.outPoint = duration;
@@ -464,10 +516,9 @@ const generateWaveformAsync = async (item: AudioItem) => {
         try {
           const waveformFile = await window.electronAPI.readFile(resolveProjectPath(item.waveformPath));
           if (waveformFile.success && waveformFile.data) {
-            const waveformData = JSON.parse(waveformFile.data);
+            const waveformData = parseWaveformFileData(JSON.parse(waveformFile.data));
 
-            // Validate waveform format (duration field is optional)
-            if (waveformData.peaks && waveformData.peaks.length > 0) {
+            if (waveformData) {
               item.waveform = waveformData;
 
               // Update duration from waveform data if available (more accurate than Audio API)

@@ -25,6 +25,9 @@
     </div>
 
     <div ref="rightRef" class="header-right">
+      <!-- Appears the moment the socket drops; spins for as long as we retry. -->
+      <ConnectionStatusPill />
+
       <Btn icon="tune" :text="t('settings.title')" @click="showProjectSettings = true" />
       <Btn icon="keyboard" :text="t('controls.shortcutBtn')" @click="showControlConfig = true" />
 

@@ -41,23 +41,30 @@ export const useLocalization = () => {
     loadLocales();
   }
 
-  const t = (key: string, params?: Record<string, string | number>): string => {
-    const keys = key.split('.');
-    let value: any = locales.value[currentLocale.value];
-
-    if (!value) {
-      return key; // Return key if locale not loaded yet
-    }
-
+  // Walk a dotted key through one locale's tree. Returns null when the key
+  // isn't there, so the caller can decide what to fall back to.
+  const lookup = (locale: any, keys: string[]): string | null => {
+    let value: any = locale;
+    if (!value) return null;
     for (const k of keys) {
       if (value && typeof value === 'object' && k !== '_metadata') {
         value = value[k];
       } else {
-        return key; // Return key if translation not found
+        return null;
       }
     }
+    return typeof value === 'string' ? value : null;
+  };
 
-    let result = typeof value === 'string' ? value : key;
+  const t = (key: string, params?: Record<string, string | number>): string => {
+    const keys = key.split('.');
+    // Fall back to English rather than showing the raw key: a string added
+    // ahead of its translations should still read as English everywhere,
+    // not as "connectionLost.locked".
+    const translated = lookup(locales.value[currentLocale.value], keys)
+                    ?? lookup(locales.value.en, keys);
+
+    let result = translated ?? key;
     if (params) {
       for (const [param, val] of Object.entries(params)) {
         result = result.replace(`{${param}}`, String(val));

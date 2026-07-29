@@ -206,6 +206,47 @@ foreach(asset TimGM6mb.sf2 TimGM6mb.NOTICE.md TimGM6mb.GPL-2.0.txt)
 endforeach()
 
 # ---------------------------------------------------------------------------
+# Tests (opt-in; framework-free assertion binaries)
+# ---------------------------------------------------------------------------
+option(LIVEPLAY_BUILD_TESTS "Build the liveplay test binaries" OFF)
+if(LIVEPLAY_BUILD_TESTS)
+    enable_testing()
+    add_executable(liveplay-meter-tests
+        tests/meter_test.cpp
+        src/audio/meter.cpp
+    )
+    target_include_directories(liveplay-meter-tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    add_test(NAME meter COMMAND liveplay-meter-tests)
+
+    # Mixer strip gain / fade envelope (peek vs. advance).
+    add_executable(liveplay-mixer-tests
+        tests/mixer_channel_test.cpp
+        src/audio/mixer_channel.cpp
+        src/audio/meter.cpp
+    )
+    target_include_directories(liveplay-mixer-tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    add_test(NAME mixer COMMAND liveplay-mixer-tests)
+
+    # Waveform downsampler (single-pass decode, per-channel traces).
+    add_executable(liveplay-waveform-tests
+        tests/waveform_test.cpp
+        src/meta/waveform.cpp
+        src/logger.cpp
+    )
+    target_include_directories(liveplay-waveform-tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(liveplay-waveform-tests
+        PRIVATE liveplay_miniaudio Threads::Threads
+    )
+    add_test(NAME waveform COMMAND liveplay-waveform-tests)
+endif()
+
+# ---------------------------------------------------------------------------
 # Install rules — used by CI when staging the artifact directory.
 # ---------------------------------------------------------------------------
 include(GNUInstallDirs)

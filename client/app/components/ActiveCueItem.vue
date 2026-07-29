@@ -20,13 +20,29 @@
           >
             <span class="material-symbols-rounded">pause</span>
           </button>
-          <button 
-            v-if="cue.isPaused" 
-            class="action-btn resume-btn" 
-            @click="handleResume" 
+          <button
+            v-if="cue.isPaused"
+            class="action-btn resume-btn"
+            @click="handleResume"
             :title="t('actions.resume')"
           >
             <span class="material-symbols-rounded">play_arrow</span>
+          </button>
+          <button
+            v-if="isLooping"
+            class="action-btn continue-btn"
+            @click="handleContinue"
+            :title="t('actions.cueToContinue')"
+          >
+            <span class="material-symbols-rounded">skip_next</span>
+          </button>
+          <button
+            v-if="isLooping"
+            class="action-btn jump-cue-btn"
+            @click="handleJumpCue"
+            :title="t('actions.jumpCue')"
+          >
+            <span class="material-symbols-rounded">last_page</span>
           </button>
           <button class="action-btn stop-btn" @click="handleStop" :title="t('actions.stop')">
             <span class="material-symbols-rounded">stop</span>
@@ -92,6 +108,8 @@
 </template>
 
 <script setup lang="ts">
+import type { AudioItem } from '~/types/project';
+
 // Projection of the server's view of an active cue. Owned by useAudioEngine
 // which rebuilds it from cue_state / playback_snapshot / meters broadcasts.
 // No client-side playback state lives here.
@@ -111,9 +129,18 @@ const props = defineProps<{
   cue: ActiveCueState;
 }>();
 
-const { stopCue, pauseCue, resumeCue, seekCue } = useAudioEngine();
+const { stopCue, pauseCue, resumeCue, seekCue, queueLoopContinuation, jumpCue } = useAudioEngine();
 const { t } = useLocalization();
 const { findItemByUuid } = useProject();
+
+// The underlying project item — endBehavior lives here, not on the
+// server-projected ActiveCueState.
+const audioItem = computed<AudioItem | null>(() => {
+  const item = findItemByUuid(props.cue.uuid);
+  return item && item.type === 'audio' ? (item as AudioItem) : null;
+});
+
+const isLooping = computed(() => audioItem.value?.endBehavior.action === 'loop');
 
 // Start Next marker (absolute file time) from the project item, if armed.
 const startNextTime = computed<number | null>(() => {
@@ -203,6 +230,16 @@ const handlePause = () => {
 
 const handleResume = () => {
   resumeCue(props.cue.uuid);
+};
+
+const handleContinue = () => {
+  if (!audioItem.value) return;
+  queueLoopContinuation(audioItem.value, resolveLoopContinuationTarget(audioItem.value));
+};
+
+const handleJumpCue = () => {
+  if (!audioItem.value) return;
+  jumpCue(audioItem.value);
 };
 
 const handleSeek = (e: MouseEvent) => {
@@ -326,7 +363,15 @@ const formatTime = (seconds: number): string => {
   &.pause-btn, &.resume-btn {
     background-color: #ff9800; /* Orange color for pause/resume */
   }
-  
+
+  &.continue-btn {
+    background-color: #16a34a; /* Green: let the loop finish, then advance */
+  }
+
+  &.jump-cue-btn {
+    background-color: #0284c7; /* Blue: cut now, advance now */
+  }
+
   &.stop-btn {
     background-color: var(--color-danger);
   }

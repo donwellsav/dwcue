@@ -130,17 +130,30 @@ struct EngineConfig {
 // ---------------------------------------------------------------------------
 struct ItemRouteEntry {
     std::shared_ptr<PlaybackItem>   item;
-    // For each source channel of the item, a list of (mixer channel ptr, gain).
+    // For each source channel of the item, a list of sends into mixer lanes.
+    // Lanes are concrete here (0..kMixerLanes-1) — kAllMixerLanes routes are
+    // expanded into one send per lane when the snapshot is built.
+    struct Send {
+        std::shared_ptr<MixerChannel> mixer;
+        ChannelIndex                  lane = 0;
+        float                         gain = 1.0f;
+    };
     struct SendList {
-        std::vector<std::pair<std::shared_ptr<MixerChannel>, float>> sends;
+        std::vector<Send> sends;
     };
     std::vector<SendList> per_source_channel;
 };
 
 struct MasterRouteEntry {
     MasterChannelIndex index = kInvalidMasterChannel;
-    // Per master-channel: list of mixer channels feeding it, with gain.
-    std::vector<std::pair<std::shared_ptr<MixerChannel>, float>> sends;
+    // Per master-channel: list of mixer lanes feeding it, with gain. Lanes are
+    // concrete here (kAllMixerLanes expanded at snapshot-build time).
+    struct Send {
+        std::shared_ptr<MixerChannel> mixer;
+        ChannelIndex                  lane = 0;
+        float                         gain = 1.0f;
+    };
+    std::vector<Send> sends;
     // Where this master channel lands on hardware. Empty optional = bus is
     // logically defined but not yet assigned to a hardware output (silent).
     std::optional<MasterDestination> destination;
@@ -193,6 +206,12 @@ public:
     CueId load_cue_no_route(const std::filesystem::path& file_path,
                             std::optional<CueId> requested_id = std::nullopt);
 
+    // Mint a fresh, unused CueId without loading anything. Lets a caller hand
+    // out the id of a cue synchronously and pass it back as `requested_id` when
+    // the (slow) decode finishes on a worker thread. See
+    // ProjectState::begin_item_load_locked.
+    CueId new_cue_id() const;
+
     void unload_cue(const CueId& id);
     PlaybackItem* find_cue(const CueId& id) const;
 
@@ -209,10 +228,10 @@ public:
     // ---- Sensible-default routing ---------------------------------------
     // Brings the engine into a usable state without explicit routing
     // calls: opens the default device if no device is open, creates a
-    // "Main" mixer if no mixer exists, wires master 0/1 to the default
-    // device hardware channels 0/1, and routes every loaded cue's first
-    // two source channels through Main. Idempotent — safe to call any
-    // number of times.
+    // "Main" mixer if no mixer exists, wires Main lane 0/1 → master 0/1 →
+    // default device hardware channels 0/1, and routes every loaded cue's
+    // source channels through Main (stereo → lanes L/R, mono → both lanes).
+    // Idempotent — safe to call any number of times.
     void ensure_default_routing();
 
     // ---- Mixer channels --------------------------------------------------
@@ -221,10 +240,16 @@ public:
     MixerChannel* find_mixer_channel(const MixerChannelId& id) const;
 
     // ---- Routing matrix --------------------------------------------------
+    // `lane` selects which mixer strip lane the source channel feeds
+    // (0 = L, 1 = R). kAllMixerLanes fans the channel across every lane —
+    // right for mono sources; also the legacy pre-lane behaviour.
+    // Routing the same (source_channel, mixer) pair again replaces the
+    // existing send's gain and lane.
     void route_item_source_to_mixer(const CueId& cue,
                                     ChannelIndex source_channel,
                                     const MixerChannelId& mixer,
-                                    float gain_db = 0.0f);
+                                    float gain_db = 0.0f,
+                                    ChannelIndex lane = kAllMixerLanes);
 
     void unroute_item_source_from_mixer(const CueId& cue,
                                         ChannelIndex source_channel,
@@ -237,9 +262,15 @@ public:
     // device. No-op if the cue has no routes.
     void unroute_item_from_all_mixers(const CueId& cue);
 
+    // `lane` selects which mixer strip lane feeds this master channel
+    // (0 = L, 1 = R). kAllMixerLanes sums every lane into the master —
+    // a mono downmix of the strip; also the legacy pre-lane behaviour.
+    // Routing the same (mixer, master) pair again replaces the existing
+    // send's gain and lane.
     void route_mixer_to_master(const MixerChannelId& mixer,
                                MasterChannelIndex master,
-                               float gain_db = 0.0f);
+                               float gain_db = 0.0f,
+                               ChannelIndex lane = kAllMixerLanes);
 
     void unroute_mixer_from_master(const MixerChannelId& mixer,
                                    MasterChannelIndex master);
@@ -270,8 +301,25 @@ public:
     void  set_output_channel_gain_db(MasterChannelIndex ch, float db);
     float output_channel_gain_db(MasterChannelIndex ch) const noexcept;
 
+    // ---- Metering config ---------------------------------------------------
+    // Retune the ballistics of EVERY meter in the engine (per-item source
+    // meters, mixer strip lanes, masters) and remember them so meters created
+    // later inherit the setting. Safe mid-playback.
+    void set_meter_ballistics(const MeterBallistics& b);
+
+    // Toggle 4× oversampled true-peak detection on every meter (same
+    // fan-out + remember semantics). Gated by the project's meter mode —
+    // the extra DSP only runs when the operator is looking at dBTP.
+    void set_true_peak_metering(bool enabled);
+
+    // Toggle K-weighted loudness (BS.1770 momentary) on every meter (same
+    // fan-out + remember semantics). Gated on meter mode == LUFS.
+    void set_loudness_metering(bool enabled);
+
     // ---- Metering reads --------------------------------------------------
     MeterSnapshot read_master_meter(MasterChannelIndex master) const;
+    // Consuming read (resets the master's max-since-read). Broadcaster only.
+    MeterSnapshot read_master_meter_consume(MasterChannelIndex master);
     float         read_master_gain_reduction_db(MasterChannelIndex master) const;
 
     // ---- Introspection ---------------------------------------------------
@@ -308,15 +356,26 @@ private:
     std::vector<std::unique_ptr<Device>>         devices_;
 
     // Pending route description — the source-of-truth that topology rebuilds from.
+    // Lanes here may be kAllMixerLanes (expanded when the snapshot is built).
     struct PendingRoute {
-        // item-to-mixer: cue → (source_channel → [(mixer, gainLin), ...])
+        // item-to-mixer: cue → (source_channel → [sends])
+        struct ItemMixerSend {
+            MixerChannelId mixer;
+            ChannelIndex   lane = kAllMixerLanes;
+            float          gain_lin = 1.0f;
+        };
         struct ItemSourceRoutes {
-            std::vector<std::vector<std::pair<MixerChannelId, float>>> by_source_channel;
+            std::vector<std::vector<ItemMixerSend>> by_source_channel;
         };
         std::unordered_map<std::string, ItemSourceRoutes> item_sources;
 
-        // mixer-to-master: mixerId → [(master, gainLin), ...]
-        std::unordered_map<std::string, std::vector<std::pair<MasterChannelIndex, float>>> mixer_to_master;
+        // mixer-to-master: mixerId → [sends]
+        struct MasterSend {
+            MasterChannelIndex master = kInvalidMasterChannel;
+            ChannelIndex       lane = kAllMixerLanes;
+            float              gain_lin = 1.0f;
+        };
+        std::unordered_map<std::string, std::vector<MasterSend>> mixer_to_master;
 
         // master-to-device: masterIdx → MasterDestination
         std::vector<std::optional<MasterDestination>> master_destinations;
@@ -334,6 +393,12 @@ private:
     };
     std::vector<MasterChannelState>  master_state_;
 
+    // Current meter ballistics + feature flags (project settings). Guarded by
+    // mutex_; applied to meters created after the corresponding setter ran.
+    MeterBallistics meter_ballistics_{};
+    bool            meter_true_peak_ = false;
+    bool            meter_loudness_  = false;
+
     // Render thread plumbing.
     std::atomic<bool>                running_{false};
     std::thread                      render_thread_;
@@ -344,7 +409,7 @@ private:
     std::atomic<std::uint32_t>       consumption_counter_{0};
 
     // Scratch buffers reused by the render thread (allocated once at start()).
-    std::vector<std::vector<Sample>> mixer_accumulators_;  // [mixer_index][frame]
+    std::vector<std::vector<Sample>> mixer_accumulators_;  // [mixer_index * kMixerLanes + lane][frame]
     std::vector<std::vector<Sample>> master_accumulators_; // [master_index][frame]
     // Per-item per-source-channel deinterleaved buffers. Indexed by item index
     // in the current topology snapshot; reallocated when topology changes.

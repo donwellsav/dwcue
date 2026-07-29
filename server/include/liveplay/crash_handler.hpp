@@ -8,6 +8,7 @@
 // ============================================================================
 #pragma once
 
+#include <cstddef>
 #include <string>
 
 namespace liveplay {
@@ -15,6 +16,26 @@ namespace liveplay {
 // Call once early in main(). Idempotent. `log_dir` is the fallback directory
 // for crash logs when no project dir is known; if empty, cwd is used.
 void install_crash_handlers(const std::string& log_dir = "");
+
+// Configure crash-loop protection. `counter_file` is a path where the
+// consecutive-crash count is persisted across restarts; `consecutive_so_far`
+// is the count read from that file at startup; `max_consecutive` is the number
+// of back-to-back crashes after which the handler stops auto-restarting (so a
+// deterministic crash can't relaunch forever). Call once at startup, after
+// set_crash_exe_info().
+void set_crash_restart_guard(const std::string& counter_file,
+                             int consecutive_so_far,
+                             int max_consecutive);
+
+// Reset the consecutive-crash count to zero (in memory and on disk). Call once
+// the process has been running healthily for a while, and on clean shutdown, so
+// isolated crashes over a long session don't accumulate toward the give-up
+// threshold.
+void reset_crash_restart_guard();
+
+// Delete all but the newest `keep` crash-log files in `dir`. Best-effort;
+// safe to call at startup (never from a signal handler).
+void prune_crash_logs(const std::string& dir, std::size_t keep);
 
 // Tell the crash handler where the server executable lives and what arguments
 // it was started with (so it can relaunch after a crash). Call once after

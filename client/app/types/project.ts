@@ -44,11 +44,19 @@ export interface AudioItem extends BaseItem {
   ltcFrameRate?: number;        // 0=24, 1=25, 2=29.97NDF, 3=29.97DF, 4=30 (default 4)
 }
 
-// Waveform data format (from ffmpeg/audiowaveform)
+// Waveform data format (from the server's decoder, or legacy ffmpeg files)
 export interface WaveformData {
   length: number;
   duration: number;
-  peaks: number[]; // Normalized values between 0 and 1
+  // Combined trace: the per-bucket maximum across every source channel.
+  // Normalized 0..1. This is what analysis (auto-trim, perceived loudness) and
+  // the compact row/cart renderers use — taking channel 0 instead meant a
+  // stereo file was measured and drawn from its LEFT channel only (#47).
+  peaks: number[];
+  // Per-channel traces, in source channel order (stereo = [L, R]). Present for
+  // waveforms produced by the server; absent for legacy single-array data.
+  // Renderers with room for it (the trimmer) draw one lane per channel.
+  channelPeaks?: number[][];
 }
 
 // Group item properties
@@ -118,6 +126,8 @@ export interface CartSlotKeyBinding {
 export type PlaybackKeyAction =
   | 'pause-resume'
   | 'toggle-loop'
+  | 'cue-to-continue'
+  | 'jump-cue'
   | 'stop-all'
   | 'select-up'
   | 'select-down'

@@ -76,6 +76,15 @@ public:
                    std::chrono::nanoseconds offset = std::chrono::nanoseconds{0},
                    float amplitude_lin = 0.5f);
 
+    // Update ONLY the timecode offset without disturbing the running encoder
+    // state. This is the per-block hot path: unlike configure()/reset() it does
+    // not rewind current_frame_number_ or force polarity_, so biphase-mark
+    // continuity across block boundaries is preserved. render_block() will still
+    // resync naturally on the block where the resulting frame number changes.
+    void set_offset(std::chrono::nanoseconds offset) noexcept {
+        offset_ns_ = offset.count();
+    }
+
     // Reset the encoder to the beginning of the cue (playhead == 0).
     void reset(std::chrono::nanoseconds offset = std::chrono::nanoseconds{0}) noexcept;
 
