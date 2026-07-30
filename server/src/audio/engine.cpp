@@ -345,7 +345,10 @@ std::vector<DeviceInfo> AudioEngine::enumerate_devices() const {
                      opened_index < opened->size(); ++opened_index) {
                     const auto& dev = (*opened)[opened_index];
                     if (dev->closing.load(std::memory_order_acquire) ||
-                        dev->display_name != info.display_name) {
+                        !dev->ma_dev ||
+                        !ma_device_id_equal(
+                            &dev->ma_dev->playback.id,
+                            &playback_infos[i].id)) {
                         continue;
                     }
                     opened_matched[opened_index] = true;
@@ -597,7 +600,6 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
     dev->channels     = output_channels;
     dev->sample_rate  = cfg_.mix_sample_rate;
     dev->display_name = name_substring.empty() ? "Default Output" : name_substring;
-    dev->opened_as_default = name_substring.empty();
     dev->ma_dev       = std::make_unique<ma_device>();
     dev->ring         = std::make_unique<ma_pcm_rb>();
     dev->engine       = this;                       // for callback → consumption_counter_
@@ -647,53 +649,33 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
     ma_context ctx;
     ma_device_id matched_id;
     bool         have_match = false;
-    if (!name_substring.empty() && ma_context_init(nullptr, 0, nullptr, &ctx) == MA_SUCCESS) {
-        ma_device_info* infos = nullptr;
-        ma_uint32       count = 0;
-        if (ma_context_get_devices(&ctx, &infos, &count, nullptr, nullptr) == MA_SUCCESS) {
-            std::string needle = name_substring;
-            std::transform(needle.begin(), needle.end(), needle.begin(),
-                           [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
-            for (ma_uint32 i = 0; i < count; ++i) {
-                std::string haystack = infos[i].name;
-                std::transform(haystack.begin(), haystack.end(), haystack.begin(),
+    if (!name_substring.empty()) {
+        if (ma_context_init(nullptr, 0, nullptr, &ctx) == MA_SUCCESS) {
+            ma_device_info* infos = nullptr;
+            ma_uint32       count = 0;
+            if (ma_context_get_devices(&ctx, &infos, &count, nullptr, nullptr) == MA_SUCCESS) {
+                std::string needle = name_substring;
+                std::transform(needle.begin(), needle.end(), needle.begin(),
                                [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
-                if (haystack.find(needle) != std::string::npos) {
-                    matched_id     = infos[i].id;
-                    cfg.playback.pDeviceID = &matched_id;
-                    dev->display_name = infos[i].name;
-                    have_match = true;
-                    break;
+                for (ma_uint32 i = 0; i < count; ++i) {
+                    std::string haystack = infos[i].name;
+                    std::transform(haystack.begin(), haystack.end(), haystack.begin(),
+                                   [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+                    if (haystack.find(needle) != std::string::npos) {
+                        matched_id     = infos[i].id;
+                        cfg.playback.pDeviceID = &matched_id;
+                        dev->display_name = infos[i].name;
+                        have_match = true;
+                        break;
+                    }
                 }
             }
+            ma_context_uninit(&ctx);
         }
-        ma_context_uninit(&ctx);
         if (!have_match) {
-            Logger::warn("Device matching '{}' not found, falling back to default.",
-                         name_substring);
-            dev->opened_as_default = true;
-        }
-    }
-
-    // Opening the same physical output twice creates doubled/echoing audio and
-    // makes close semantics ambiguous. The lifecycle mutex makes this
-    // idempotence check cover simultaneous API requests too.
-    {
-        std::lock_guard lock{mutex_};
-        const auto existing = std::find_if(
-            devices_.begin(), devices_.end(),
-            [&](const std::shared_ptr<Device>& candidate) {
-                if (candidate->closing.load(std::memory_order_acquire)) {
-                    return false;
-                }
-                return (dev->opened_as_default &&
-                        candidate->opened_as_default) ||
-                       candidate->display_name == dev->display_name;
-            });
-        if (existing != devices_.end()) {
-            const auto existing_id = (*existing)->id;
+            Logger::warn("Device matching '{}' not found.", name_substring);
             ma_pcm_rb_uninit(dev->ring.get());
-            return existing_id;
+            return {};
         }
     }
 
@@ -705,6 +687,29 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
     if (dev->ma_dev->playback.name[0] != '\0') {
         dev->display_name = dev->ma_dev->playback.name;
     }
+
+    // Resolve the native device first: "default" and an explicit device name
+    // can address the same hardware, which a request-string comparison misses.
+    // Opening it twice produces doubled/echoing audio.
+    {
+        std::lock_guard lock{mutex_};
+        const auto existing = std::find_if(
+            devices_.begin(), devices_.end(),
+            [&](const std::shared_ptr<Device>& candidate) {
+                return !candidate->closing.load(std::memory_order_acquire) &&
+                       candidate->ma_dev &&
+                       ma_device_id_equal(
+                           &candidate->ma_dev->playback.id,
+                           &dev->ma_dev->playback.id);
+            });
+        if (existing != devices_.end()) {
+            const auto existing_id = (*existing)->id;
+            ma_device_uninit(dev->ma_dev.get());
+            ma_pcm_rb_uninit(dev->ring.get());
+            return existing_id;
+        }
+    }
+
     dev->scratch.assign(cfg_.render_block * output_channels, 0.0f);
     if (ma_device_start(dev->ma_dev.get()) != MA_SUCCESS) {
         Logger::error("ma_device_start failed for '{}'", dev->display_name);

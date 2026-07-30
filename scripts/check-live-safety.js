@@ -56,7 +56,7 @@ assert.match(engine, /render_block \* 4\)/, 'output ring must not add hundreds o
 assert.match(engine, /info\.id = dev\.id;/,
   'opened device rows must expose the instance id accepted by close');
 assert.match(engine,
-  /device_lifecycle_mutex_[\s\S]*candidate->display_name == dev->display_name/,
+  /device_lifecycle_mutex_[\s\S]*ma_device_id_equal\([\s\S]*playback\.id/,
   'simultaneous requests must not open the same physical output twice');
 
 const liveplayClient = read('client/app/composables/useLiveplayServer.ts');
@@ -81,6 +81,23 @@ assert.match(
   audioClient,
   /watch\(\[[\s\S]*currentProject\.value\?\.items\?\.length[\s\S]*server\.cues[\s\S]*Sweep server\.cues/,
   'active playback must rebuild whether project pages or the reconnect catalogue arrives last',
+);
+
+const welcome = read('client/app/components/WelcomeScreen.vue');
+assert.match(
+  welcome,
+  /discovered-rescan[\s\S]*:aria-label="t\('welcome\.rescan'\)"/,
+  'the icon-only server rescan control must have an explicit accessible name',
+);
+assert.match(
+  welcome,
+  /class="name-dialog"[\s\S]*role="dialog"[\s\S]*aria-modal="true"[\s\S]*:aria-labelledby/,
+  'the new-project prompt must expose native dialog semantics',
+);
+assert.match(
+  welcome,
+  /watch\(stage,[\s\S]*queueStageFocus\(s\)[\s\S]*function queueStageFocus[\s\S]*remoteAddressInput[\s\S]*newProjectButton/,
+  'welcome-stage changes must place keyboard focus in the newly rendered stage',
 );
 
 const playbackItem = read('server/src/audio/playback_item.cpp');

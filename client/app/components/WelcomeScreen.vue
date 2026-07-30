@@ -22,13 +22,15 @@
         <p class="stage-subtitle">{{ t('welcome.modeSubtitle') }}</p>
         <div class="welcome-actions">
           <button
+            ref="localModeButton"
             class="welcome-button primary"
+            type="button"
             :disabled="connecting"
             @click="chooseLocal"
           >
             <span class="button-icon">
-              <span v-if="connecting && mode === 'local'" class="material-symbols-rounded spin">progress_activity</span>
-              <span v-else class="material-symbols-rounded">computer</span>
+              <span v-if="connecting && mode === 'local'" class="material-symbols-rounded spin" aria-hidden="true">progress_activity</span>
+              <span v-else class="material-symbols-rounded" aria-hidden="true">computer</span>
             </span>
             <span class="button-label">
               <span class="button-label-line">
@@ -38,15 +40,21 @@
             </span>
           </button>
 
-          <button class="welcome-button" :disabled="connecting" @click="chooseRemote">
-            <span class="button-icon"><span class="material-symbols-rounded">lan</span></span>
+          <button class="welcome-button" type="button" :disabled="connecting" @click="chooseRemote">
+            <span class="button-icon"><span class="material-symbols-rounded" aria-hidden="true">lan</span></span>
             <span class="button-label">
               <span class="button-label-line">{{ t('welcome.remoteMode') }}</span>
               <span class="button-label-sub">{{ t('welcome.remoteModeDescription') }}</span>
             </span>
           </button>
         </div>
-        <p v-if="connectionError" class="remote-error">{{ connectionError }}</p>
+        <p
+          v-if="connectionError"
+          class="remote-error"
+          role="alert"
+          aria-live="assertive"
+          aria-atomic="true"
+        >{{ connectionError }}</p>
       </div>
 
       <!-- Stage 2: remote address entry. -->
@@ -57,14 +65,20 @@
         <!-- Auto-discovered servers on this LAN. Populated by the UDP beacon
              and active solicitation. Header always shown so the user can
              rescan even when nothing has been found yet. -->
-        <div class="discovered-servers">
-          <div class="discovered-header">
-            <span class="material-symbols-rounded" :class="{ spin: scanning }">radar</span>
-            <span>{{ t('welcome.serversOnThisNetwork') }}</span>
-            <button class="discovered-rescan" :disabled="scanning" @click="rescan" :title="t('welcome.rescan')">
-              <span class="material-symbols-rounded">refresh</span>
-            </button>
-          </div>
+          <div class="discovered-servers" :aria-busy="scanning ? 'true' : 'false'">
+            <div class="discovered-header">
+              <span class="material-symbols-rounded" :class="{ spin: scanning }" aria-hidden="true">radar</span>
+              <span>{{ t('welcome.serversOnThisNetwork') }}</span>
+              <button
+                class="discovered-rescan"
+                :disabled="scanning"
+                :title="t('welcome.rescan')"
+                :aria-label="t('welcome.rescan')"
+                @click="rescan"
+              >
+                <span class="material-symbols-rounded" aria-hidden="true">refresh</span>
+              </button>
+            </div>
           <button
             v-for="srv in discoveredServers"
             :key="srv.instanceId"
@@ -72,7 +86,7 @@
             @click="connectToDiscovered(srv)"
             :disabled="connecting"
           >
-            <span class="material-symbols-rounded discovered-icon">dns</span>
+            <span class="material-symbols-rounded discovered-icon" aria-hidden="true">dns</span>
             <span class="discovered-main">
               <span class="discovered-name">{{ srv.name }}</span>
               <span class="discovered-meta">
@@ -82,9 +96,15 @@
                 </span>
               </span>
             </span>
-            <span class="material-symbols-rounded discovered-arrow">arrow_forward</span>
+            <span class="material-symbols-rounded discovered-arrow" aria-hidden="true">arrow_forward</span>
           </button>
-          <p v-if="discoveredServers.length === 0" class="discovered-empty">
+          <p
+            v-if="discoveredServers.length === 0"
+            class="discovered-empty"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          >
             {{ scanning ? t('welcome.scanning') : t('welcome.noServersFound') }}
           </p>
         </div>
@@ -93,36 +113,52 @@
              can't reach a server (different subnet, VPN, locked-down WiFi). -->
         <div v-if="recentServers.length > 0" class="discovered-servers">
           <div class="discovered-header">
-            <span class="material-symbols-rounded">history</span>
+            <span class="material-symbols-rounded" aria-hidden="true">history</span>
             <span>{{ t('welcome.recentServers') }}</span>
           </div>
-          <button
+          <div
             v-for="srv in recentServers"
             :key="srv.url"
-            class="discovered-row"
-            @click="connectToRecent(srv)"
-            :disabled="connecting"
+            class="discovered-row-group"
           >
-            <span class="material-symbols-rounded discovered-icon">lan</span>
-            <span class="discovered-main">
-              <span class="discovered-name">{{ srv.name || srv.host || srv.url }}</span>
-              <span class="discovered-meta">{{ srv.host }}:{{ srv.port }}</span>
-            </span>
-            <span class="material-symbols-rounded discovered-remove" @click.stop="forgetRecent(srv)" :title="t('welcome.forget')">close</span>
-          </button>
+            <button
+              class="discovered-row"
+              :disabled="connecting"
+              @click="connectToRecent(srv)"
+            >
+              <span class="material-symbols-rounded discovered-icon" aria-hidden="true">lan</span>
+              <span class="discovered-main">
+                <span class="discovered-name">{{ srv.name || srv.host || srv.url }}</span>
+                <span class="discovered-meta">{{ srv.host }}:{{ srv.port }}</span>
+              </span>
+            </button>
+            <button
+              class="discovered-forget"
+              type="button"
+              :disabled="connecting"
+              :title="t('welcome.forget')"
+              :aria-label="`${t('welcome.forget')} ${srv.name || srv.host || srv.url}`"
+              @click="forgetRecent(srv)"
+            >
+              <span class="material-symbols-rounded discovered-remove" aria-hidden="true">close</span>
+            </button>
+          </div>
         </div>
 
         <div class="remote-form">
-          <label class="remote-field-label">{{ t('welcome.serverAddress') }}</label>
+          <label class="remote-field-label" for="welcome-remote-address">{{ t('welcome.serverAddress') }}</label>
           <input
+            id="welcome-remote-address"
+            ref="remoteAddressInput"
             v-model="remoteAddress"
             type="text"
             class="remote-field-input"
             :placeholder="t('welcome.serverAddressPlaceholder')"
             @keydown.enter="connectToRemote"
           />
-          <label class="remote-field-label">Access token</label>
+          <label class="remote-field-label" for="welcome-remote-access-token">Access token</label>
           <input
+            id="welcome-remote-access-token"
             v-model="remoteAccessToken"
             type="password"
             class="remote-field-input"
@@ -130,19 +166,26 @@
             placeholder="Required by LAN servers"
             @keydown.enter="connectToRemote"
           />
-          <p v-if="connectionError" class="remote-error">{{ connectionError }}</p>
+          <p
+            v-if="connectionError"
+            class="remote-error"
+            role="alert"
+            aria-live="assertive"
+            aria-atomic="true"
+          >{{ connectionError }}</p>
         </div>
         <div class="remote-actions">
-          <button class="welcome-button" @click="stage = 'mode'">
-            <span class="material-symbols-rounded">arrow_back</span>
+          <button class="welcome-button" type="button" @click="stage = 'mode'">
+            <span class="material-symbols-rounded" aria-hidden="true">arrow_back</span>
             <span>{{ t('welcome.back') }}</span>
           </button>
           <button
             class="welcome-button primary"
+            type="button"
             :disabled="!remoteAddress || connecting"
             @click="connectToRemote"
           >
-            <span class="material-symbols-rounded">link</span>
+            <span class="material-symbols-rounded" aria-hidden="true">link</span>
             <span>{{ connecting ? t('welcome.connecting') : t('welcome.connect') }}</span>
           </button>
         </div>
@@ -151,46 +194,60 @@
       <!-- Stage 3: project picker. -->
       <div v-else-if="stage === 'project'" class="welcome-stage">
         <p class="stage-subtitle connection-summary">
-          <span class="material-symbols-rounded connection-icon">{{ mode === 'remote' ? 'lan' : 'computer' }}</span>
+          <span class="material-symbols-rounded connection-icon" aria-hidden="true">{{ mode === 'remote' ? 'lan' : 'computer' }}</span>
           {{ mode === 'remote'
               ? t('welcome.connectedTo', { url: serverUrlDisplay })
               : t('welcome.connectedLocal') }}
-          <button class="link-button" @click="changeMode">{{ t('welcome.changeMode') }}</button>
+          <button
+            ref="changeModeButton"
+            class="link-button"
+            type="button"
+            @click="changeMode"
+          >{{ t('welcome.changeMode') }}</button>
         </p>
         <div class="welcome-actions">
-          <button class="welcome-button primary" @click="handleNewProject">
-            <span class="button-icon"><span class="material-symbols-rounded">add</span></span>
+          <button ref="newProjectButton" class="welcome-button primary" type="button" @click="handleNewProject">
+            <span class="button-icon"><span class="material-symbols-rounded" aria-hidden="true">add</span></span>
             <span>{{ t('welcome.newProject') }}</span>
           </button>
 
-          <button class="welcome-button" @click="handleOpenProject">
-            <span class="button-icon"><span class="material-symbols-rounded">folder</span></span>
+          <button class="welcome-button" type="button" @click="handleOpenProject">
+            <span class="button-icon"><span class="material-symbols-rounded" aria-hidden="true">folder</span></span>
             <span>{{ t('welcome.openProject') }}</span>
           </button>
         </div>
 
         <div v-if="recentProjects.length > 0" class="discovered-servers recent-projects">
           <div class="discovered-header">
-            <span class="material-symbols-rounded">history</span>
+            <span class="material-symbols-rounded" aria-hidden="true">history</span>
             <span>{{ t('menu.openRecent') }}</span>
           </div>
-          <button
+          <div
             v-for="project in recentProjects"
             :key="project.path"
-            class="discovered-row recent-project-row"
-            @click="openRecentProject(project)"
+            class="discovered-row-group"
           >
-            <span class="material-symbols-rounded discovered-icon">description</span>
-            <span class="discovered-main">
-              <span class="discovered-name">{{ project.name || projectBasename(project.path) }}</span>
-              <span class="discovered-meta">{{ project.folderPath || projectFolder(project.path) }}</span>
-            </span>
-            <span
-              class="material-symbols-rounded discovered-remove"
-              @click.stop="removeRecentProject(project)"
+            <button
+              class="discovered-row recent-project-row"
+              type="button"
+              @click="openRecentProject(project)"
+            >
+              <span class="material-symbols-rounded discovered-icon" aria-hidden="true">description</span>
+              <span class="discovered-main">
+                <span class="discovered-name">{{ project.name || projectBasename(project.path) }}</span>
+                <span class="discovered-meta">{{ project.folderPath || projectFolder(project.path) }}</span>
+              </span>
+            </button>
+            <button
+              class="discovered-forget"
+              type="button"
               :title="t('welcome.forget')"
-            >close</span>
-          </button>
+              :aria-label="`${t('welcome.forget')} ${project.name || projectBasename(project.path)}`"
+              @click="removeRecentProject(project)"
+            >
+              <span class="material-symbols-rounded discovered-remove" aria-hidden="true">close</span>
+            </button>
+          </div>
         </div>
         <p v-else class="discovered-empty recent-projects-empty">{{ t('menu.noRecentProjects') }}</p>
       </div>
@@ -216,12 +273,18 @@
          the dialog renders transparent. -->
     <Teleport to="body">
       <div v-if="showNameDialog" class="name-dialog-backdrop" :data-theme="theme" @click.self="cancelNameDialog">
-        <div class="name-dialog">
-          <h3 class="name-dialog__title">{{ t('project.enterName') }}</h3>
+        <div
+          class="name-dialog"
+          role="dialog"
+          aria-modal="true"
+          :aria-labelledby="nameDialogTitleId"
+        >
+          <h3 :id="nameDialogTitleId" class="name-dialog__title">{{ t('project.enterName') }}</h3>
           <input
             ref="nameDialogInput"
             class="name-dialog__input"
             v-model="nameDialogValue"
+            :aria-label="t('project.enterName')"
             :placeholder="t('project.placeholder')"
             @keydown.enter="confirmNameDialog"
             @keydown.escape="cancelNameDialog"
@@ -292,6 +355,12 @@ type RecentProject = {
   lastOpened?: number;
 };
 const recentProjects = ref<RecentProject[]>([]);
+const localModeButton = ref<HTMLButtonElement | null>(null);
+const remoteAddressInput = ref<HTMLInputElement | null>(null);
+const changeModeButton = ref<HTMLButtonElement | null>(null);
+const newProjectButton = ref<HTMLButtonElement | null>(null);
+const nameDialogReturnFocus = ref<HTMLElement | null>(null);
+const nameDialogTitleId = 'welcome-project-name-title';
 
 // Computed reflection of the currently-configured server URL.
 const serverUrlDisplay = computed(() => server.serverUrl ?? 'http://127.0.0.1:4480');
@@ -394,10 +463,12 @@ onMounted(async () => {
   } catch (e) {
     console.warn('[welcome] discovery start failed:', e);
   }
+  queueStageFocus();
 });
 
 watch(stage, (s) => {
   if (s === 'project') void loadRecentProjects();
+  queueStageFocus(s);
 });
 
 // Drive a double-clicked file. For .liveplay: force local, start the server,
@@ -767,8 +838,40 @@ const nameDialogValue  = ref('');
 const nameDialogInput  = ref<HTMLInputElement | null>(null);
 let   nameDialogResolve: ((v: string | null) => void) | null = null;
 
+function focusIfConnected(el: HTMLElement | null | undefined) {
+  if (el?.isConnected) el.focus();
+}
+
+function queueStageFocus(targetStage = stage.value) {
+  nextTick(() => {
+    if (showNameDialog.value || showPicker.value) return;
+    if (targetStage === 'remote') {
+      focusIfConnected(remoteAddressInput.value);
+      return;
+    }
+    if (targetStage === 'project') {
+      focusIfConnected(newProjectButton.value ?? changeModeButton.value);
+      return;
+    }
+    focusIfConnected(localModeButton.value);
+  });
+}
+
+function restoreNameDialogFocus() {
+  nextTick(() => {
+    if (nameDialogReturnFocus.value?.isConnected) {
+      nameDialogReturnFocus.value.focus();
+      return;
+    }
+    queueStageFocus();
+  });
+}
+
 const getProjectName = (): Promise<string | null> => {
   nameDialogValue.value = '';
+  nameDialogReturnFocus.value = document.activeElement instanceof HTMLElement
+    ? document.activeElement
+    : null;
   showNameDialog.value  = true;
   nextTick(() => nameDialogInput.value?.focus());
   return new Promise((resolve) => {
@@ -781,12 +884,14 @@ function confirmNameDialog() {
   showNameDialog.value = false;
   nameDialogResolve?.(v || null);
   nameDialogResolve = null;
+  restoreNameDialogFocus();
 }
 
 function cancelNameDialog() {
   showNameDialog.value = false;
   nameDialogResolve?.(null);
   nameDialogResolve = null;
+  restoreNameDialogFocus();
 }
 
 // Listen for menu events
@@ -1049,6 +1154,12 @@ if (import.meta.client && (window as any).electronAPI) {
   cursor: pointer;
   transition: background var(--transition-fast), border-color var(--transition-fast);
 }
+.discovered-row-group {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.discovered-row-group .discovered-row { flex: 1; }
 .discovered-row:hover:not(:disabled) {
   background: var(--color-surface-hover);
   border-color: var(--color-accent);
@@ -1081,6 +1192,22 @@ if (import.meta.client && (window as any).electronAPI) {
 .discovered-rescan:hover:not(:disabled) { color: var(--color-accent); background: var(--color-surface-hover); }
 .discovered-rescan:disabled { opacity: 0.5; cursor: default; }
 .discovered-rescan .material-symbols-rounded { font-size: 18px; }
+.discovered-forget {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  padding: 0 8px;
+  background: var(--color-surface);
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-sm);
+  color: var(--color-text-secondary);
+}
+.discovered-forget:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+  border-color: var(--color-accent);
+}
+.discovered-forget:disabled { opacity: 0.5; cursor: default; }
 .discovered-empty {
   font-size: 12px;
   color: var(--color-text-secondary);
@@ -1088,12 +1215,9 @@ if (import.meta.client && (window as any).electronAPI) {
   margin: 0;
 }
 .discovered-remove {
-  color: var(--color-text-secondary);
   font-size: 18px;
-  border-radius: 4px;
-  padding: 2px;
 }
-.discovered-remove:hover { color: var(--color-danger, #e5534b); background: var(--color-surface-hover); }
+.discovered-forget:hover:not(:disabled) .discovered-remove { color: var(--color-danger, #e5534b); }
 
 .recent-projects { margin-top: var(--spacing-md); }
 .recent-project-row .discovered-meta { max-width: 430px; }

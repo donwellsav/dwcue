@@ -18,6 +18,7 @@ These are the scripts wired into `npm run …` commands at the root. They are th
 | [`build-server-app-mac.js`](build-server-app-mac.js) | Manual (macOS only) | Wraps `dwcue-server` as a standalone development helper app. Release DMGs use the server embedded in DonWells Cue so every executable is covered by the main signing/notarization flow. |
 | [`ensure-server.js`](ensure-server.js)       | `npm run dev`                | Pre-flight check before launching the renderer. If the server binary is already built, this is a no-op (fast dev-loop iteration). Otherwise it triggers a configure + build. |
 | [`run-server.js`](run-server.js)             | `npm run server:run` (and `npm run dev:all`) | Locates the compiled `dwcue-server[.exe]` (searching both single-config and multi-config CMake output directories) and execs it, forwarding stdio and any CLI args. |
+| [`smoke-packaged-app-mac.js`](smoke-packaged-app-mac.js) | `npm run check:packaged:mac` | Verifies the built Apple Silicon app starts, checks its one main window when macOS UI scripting is available, then quits and cleans up. |
 
 ### Versioning
 

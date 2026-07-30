@@ -37,6 +37,16 @@ const deviceReset = section(
   'bool AudioEngine::reset_device_if_requested',
   '// Render loop — device-callback-driven',
 );
+const openDevice = section(
+  engine,
+  'DeviceId AudioEngine::open_device_by_name',
+  'void AudioEngine::close_device',
+);
+const enumerateDevices = section(
+  engine,
+  'std::vector<DeviceInfo> AudioEngine::enumerate_devices',
+  '// miniaudio data callback',
+);
 
 for (const [name, source] of [
   ['device callback', callback],
@@ -69,6 +79,21 @@ assert.match(engine, /render_block \* 4\)/,
   'device output ring must remain four render blocks');
 assert.match(engine, /notificationCallback\s*=\s*&AudioEngine::ma_notification_callback/,
   'device loss/reroute/interruption notifications must be wired');
+assert.match(
+  enumerateDevices,
+  /ma_device_id_equal\([\s\S]*playback_infos\[i\]\.id/,
+  'enumeration must follow the native output ID across default-device reroutes',
+);
+assert.ok(
+  openDevice.indexOf('ma_device_init') <
+    openDevice.indexOf('ma_device_id_equal'),
+  'duplicate outputs must be compared by resolved native ID after device init',
+);
+assert.match(
+  openDevice,
+  /if \(!have_match\)[\s\S]*return \{\};/,
+  'a missing named output must fail instead of leaking onto the default device',
+);
 assert.match(renderLoop, /ma_device_get_state/,
   'render loop must reconcile backends that omit stop notifications');
 assert.match(renderLoop, /clock_master->clock_controller\.target_frames\(\)/,

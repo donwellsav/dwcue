@@ -29,6 +29,7 @@
     "server:build": "node scripts/build-server.js",
     "server:run": "node scripts/run-server.js",
     "check:audio-formats:mac": "node scripts/check-common-audio-mac.js",
+    "check:packaged:mac": "node scripts/smoke-packaged-app-mac.js",
     "dev:all": "concurrently -n server,client -c blue,green \"npm:server:run\" \"npm:dev:client\"",
     "version": "node scripts/version.js",
     "bump": "node scripts/version.js"

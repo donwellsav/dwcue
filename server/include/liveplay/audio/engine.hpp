@@ -366,7 +366,6 @@ private:
         std::string                 display_name;
         ChannelCount                channels = 2;
         SampleRate                  sample_rate = kDefaultMixSampleRate;
-        bool                        opened_as_default = false;
         std::unique_ptr<ma_device>  ma_dev;
         std::unique_ptr<ma_pcm_rb>  ring;             // SPSC PCM ring
         std::unique_ptr<ma_resampler> clock_resampler;
