@@ -1,6 +1,6 @@
-# LivePlay Client — developer guide
+# DonWells Cue Client — developer guide
 
-The LivePlay client is a Vue 3 + Nuxt 3 application wrapped in Electron. It is a **remote control** for the LivePlay audio server: it owns no audio decoding, no playback, no Web Audio nodes. Every user action turns into a REST call or WebSocket frame sent to `liveplay-server`, and every meter / waveform / state update comes back the same way.
+The DonWells Cue client is a Vue 3 + Nuxt 3 application wrapped in Electron. It is a **remote control** for the DonWells Cue audio server: it owns no audio decoding, no playback, no Web Audio nodes. Every user action turns into a REST call or WebSocket frame sent to `dwcue-server`, and every meter / waveform / state update comes back the same way.
 
 This document is the developer's guide to the client. For the audio engine, see [`server/README.md`](../server/README.md). For the overall project, see the [root README](../README.md).
 
@@ -13,7 +13,7 @@ This document is the developer's guide to the client. For the audio engine, see 
 - [Running](#running)
 - [Architecture](#architecture)
   - [The renderer ↔ Electron-main split](#the-renderer--electron-main-split)
-  - [The renderer ↔ liveplay-server link](#the-renderer--liveplay-server-link)
+  - [The renderer ↔ DW Cue server link](#the-renderer--dw-cue-server-link)
   - [Local server lifecycle](#local-server-lifecycle)
 - [Composables](#composables)
 - [Components](#components)
@@ -29,14 +29,14 @@ This document is the developer's guide to the client. For the audio engine, see 
 
 | Layer            | Library                                                         |
 |------------------|-----------------------------------------------------------------|
-| Shell            | Electron 28                                                     |
+| Shell            | Electron 42                                                     |
 | Renderer         | Nuxt 3 (Vue 3 Composition API, TypeScript, SCSS)                |
 | UI primitives    | Material Symbols icons; in-house components — no UI framework   |
-| Local server     | C++ `liveplay-server` binary spawned as a child process         |
+| Local server     | C++ `dwcue-server` binary spawned as a child process         |
 | Media tooling    | `@ffmpeg-installer/ffmpeg`, `@ffprobe-installer/ffprobe`        |
 | YouTube import   | `yt-dlp-wrap` + `youtube-search-api`                            |
-| Updates          | `electron-updater` (GitHub releases provider)                   |
-| File transport   | `archiver` + `extract-zip` for `.lpa` project archives          |
+| Updates          | `electron-updater` wiring (disabled until the branded feed exists) |
+| File transport   | Server-backed REST upload/download for `.lpa` project archives  |
 
 Audio playback, waveform extraction, metering and routing all live in the C++ server. The renderer never decodes audio.
 
@@ -83,7 +83,7 @@ From the monorepo root, `npm run dev` (or `npm run dev --workspace=client`) does
 2. `nuxt dev` starts on `http://localhost:3000` with HMR.
 3. `wait-on` waits for Nuxt, then `electron .` launches with DevTools open.
 
-To work on just the renderer (no Electron shell): `npm run dev:nuxt` and visit `http://localhost:3000` in a browser. The renderer still tries to talk to a running `liveplay-server`; start one separately with `npm run server:run` from the monorepo root.
+To work on just the renderer (no Electron shell): `npm run dev:nuxt` and visit `http://localhost:3000` in a browser. The renderer still tries to talk to a running `dwcue-server`; start one separately with `npm run server:run` from the monorepo root.
 
 Production build (Nuxt static generate + electron-builder):
 
@@ -107,22 +107,24 @@ Key IPC channels (non-exhaustive):
 |---------------------------------------|---------|
 | `liveplay-server:get-config` / `set-config` | Read/write the persisted server connection settings. |
 | `liveplay-server:get-status` / `ensure-running` / `restart` / `shutdown` | Manage the bundled server child process. |
-| `liveplay-discovery:start` / `list`   | Browse for `liveplay-server` instances on the LAN. |
+| `liveplay-discovery:start` / `list`   | Browse for `dwcue-server` instances on the LAN. |
 | `select-project-folder` / `select-project-file` / `select-audio-files` | Native file pickers. |
-| `read-file` / `write-file` / `copy-file` / `read-audio-file` | Project filesystem helpers (binary + text). |
+| `read-file` / `write-file` / `copy-file` | Authorized project filesystem helpers. |
+| `get-binary-file-info` / `read-binary-file-chunk` | Bounded local archive reads for remote imports. |
+| `download-archive-to-file` | Streams a server archive directly to an authorized local destination. |
 | `export-project` / `import-project` / `import-lpa-file` | `.lpa` archive round-trip (zip-based project bundle). |
 | `check-for-updates` / `download-update` / `install-update` / `get-app-version` | `electron-updater` controls. |
 | `update-menu-language` / `get-system-locale` / `get-available-locales` / `get-locale-data` | Dynamic menu localisation. |
 | `open-folder` / `open-external` / `app:relaunch` / `app:exit` | OS integration. |
 | `open-cart-player-window` / `cart-player-window-attach` / `sync-project-data` | Second-window cart-player surface. |
 
-The audio data path is **not** via IPC — it's directly between the renderer and `liveplay-server` over HTTP + WebSocket. IPC is used only for things Electron needs to do as a desktop application.
+The audio data path is **not** via IPC — it's directly between the renderer and `dwcue-server` over HTTP + WebSocket. IPC is used only for things Electron needs to do as a desktop application.
 
-### The renderer ↔ liveplay-server link
+### The renderer ↔ DW Cue server link
 
 `composables/useLiveplayServer.ts` is the single source of truth. It is a Vue singleton — every component that calls `useLiveplayServer()` receives the **same** WebSocket connection and the **same** reactive state. The contract:
 
-- The server URL is read from `localStorage` (`liveplay.serverUrl`, default `http://127.0.0.1:4480`). Change it via the **Server Settings** modal.
+- The server URL and optional LAN access token are read from `localStorage` (`liveplay.serverUrl` and `liveplay.accessToken`; local default `http://127.0.0.1:4480`). Change them via the **Server Settings** modal.
 - On boot, the [`plugins/liveplay-server.client.ts`](plugins/liveplay-server.client.ts) plugin connects. The connection is lazy-retried if it drops (showing `ConnectionLostModal` in the meantime).
 - REST calls return promises; WebSocket frames update reactive refs.
 - Outbound frames are mostly transport commands (`play`, `stop`, `seek`) that take a fast WS path to avoid the HTTP round-trip; everything mutating goes through `PATCH /api/project/...` so the server can echo a `doc_patch` to all connected clients.
@@ -131,15 +133,15 @@ For the full REST and WebSocket surface, see [`server/README.md`](../server/READ
 
 ### Local server lifecycle
 
-When LivePlay is installed as a desktop app, [`electron/main.js`](electron/main.js) is also responsible for spawning the bundled server. The recipe:
+When DonWells Cue is installed as a desktop app, [`electron/main.js`](electron/main.js) is also responsible for spawning the bundled server. The recipe:
 
-1. `electron-builder` copies `liveplay-server[.exe]` into `resources/server-bin/` via `extraResources` (see the `build` block in `package.json`).
+1. `electron-builder` copies `dwcue-server[.exe]` into `resources/server-bin/` via `extraResources` (see the `build` block in `package.json`).
 2. On first launch, main resolves the binary path and spawns it as a detached child process bound to `127.0.0.1:<port>`.
 3. A lockfile records the PID so subsequent launches reattach to the running instance rather than spawning a duplicate.
-4. The server is shut down cleanly (Ctrl-Break / SIGTERM, with a hard kill fallback) when the last LivePlay window closes.
-5. The "Server Settings" UI can be pointed at a remote server, in which case the local child process is killed and the client connects over the LAN instead.
+4. Closing the UI leaves the detached server running so a renderer restart cannot interrupt show audio; the next launch reattaches through the PID file.
+5. The app can explicitly stop or restart that process. Switching **Server Settings** to a remote server cleanly stops the local child first.
 
-`liveplay-discovery:*` IPC channels run a UDP listener that picks up announce broadcasts from `liveplay-server` instances on the LAN, so the connection UI can present a one-click list.
+`liveplay-discovery:*` IPC channels run a UDP listener that picks up announce broadcasts from `dwcue-server` instances on the LAN, so the connection UI can present a one-click list.
 
 ---
 
@@ -190,7 +192,7 @@ Style: Composition API + `<script setup lang="ts">`, scoped SCSS, CSS variables 
 
 ## Localisation (20 languages, RTL)
 
-LivePlay ships with [`client/locales/*.json`](locales/) — one file per language. Currently shipped: **en, ar, bn, de, el, es, fa, fr, hi, it, ja, ko, no, pt, ro, ru, sq, sv, tr, ur, zh**. Arabic, Farsi and Urdu use RTL layout.
+DonWells Cue ships with [`client/locales/*.json`](locales/) — one file per language. Currently shipped: **en, ar, bn, de, el, es, fa, fr, hi, it, ja, ko, no, pt, ro, ru, sq, sv, tr, ur, zh**. Arabic, Farsi and Urdu use RTL layout.
 
 ### Using translations in a component
 
@@ -243,8 +245,8 @@ All colours and spacing flow through CSS custom properties in [`assets/styles/ma
 
 ```scss
 [data-theme='dark'] {
-  --color-background: #161616;
-  --color-surface:    #262626;
+  --color-background: #16161d;
+  --color-surface:    #24242d;
   --color-text-primary: #f4f4f4;
   --color-accent: var(--color-accent-custom, #da1e28);
 }
@@ -262,13 +264,9 @@ Theme mode + accent colour are persisted on the project, not per-user — every 
 
 ## Auto-updates
 
-In production builds, the client checks GitHub releases on startup via `electron-updater` (3 second post-launch delay). If a newer version exists:
+The updater wiring remains in place, but production checks are currently disabled by `DWCUE_UPDATES_CONFIGURED` in `electron/main.js` because no DonWells Cue release feed exists yet. This prevents the rebranded app from installing incompatible upstream builds.
 
-1. `UpdateModal.vue` shows the current and new version, with the release notes.
-2. The user picks **Download and install** (immediate progress + restart) or **Install on exit** (silently downloads, applies on next quit).
-3. Auto-update is **disabled in development** to prevent false notifications during local builds.
-
-For the release to be installable, the `latest.yml` / `latest-mac.yml` / `latest-linux.yml` metadata files must be attached to the GitHub release — `electron-builder` produces these automatically and the [release workflow](../.github/workflows/build-release.yml) uploads them along with the installers.
+When the branded repository is ready, configure its electron-builder publish provider and enable that flag. `UpdateModal.vue` and the check/download/install IPC handlers then provide the existing update flow. The `latest.yml` / `latest-mac.yml` / `latest-linux.yml` metadata files must be attached to each release; the [release workflow](../.github/workflows/build-release.yml) already uploads them.
 
 Update IPC: `check-for-updates`, `download-update`, `install-update`, `get-app-version` (see [The renderer ↔ Electron-main split](#the-renderer--electron-main-split)).
 
@@ -278,8 +276,8 @@ Update IPC: `check-for-updates`, `download-update`, `install-update`, `get-app-v
 
 The `build` block in [`package.json`](package.json) drives `electron-builder`:
 
-- `appId`: `com.liveplay.app`
-- `productName`: `LivePlay`
+- `appId`: `com.donwells.cue`
+- `productName`: `DonWells Cue`
 - `files`: includes `.output/`, `electron/`, `assets/`, `locales/`. Locales must be listed explicitly or they don't ship.
 - `extraResources`: copies the C++ server binary into `resources/server-bin/`.
 - `asarUnpack`: the ffmpeg/ffprobe installers can't run from inside an asar, so they're unpacked.
@@ -314,7 +312,7 @@ For multi-platform builds, use the [GitHub Actions release workflow](../.github/
 
 ### A new IPC handler
 
-Use IPC **only** for capabilities that genuinely need the Electron main process (file dialogs, OS integration, the local server child process, updater). Anything that touches audio or the project document goes through `liveplay-server`.
+Use IPC **only** for capabilities that genuinely need the Electron main process (file dialogs, OS integration, the local server child process, updater). Anything that touches audio or the project document goes through `dwcue-server`.
 
 1. `ipcMain.handle('my-channel', async (event, …args) => { … })` in [`electron/main.js`](electron/main.js).
 2. Expose it via `contextBridge.exposeInMainWorld('electronAPI', { … })` in [`electron/preload.js`](electron/preload.js).

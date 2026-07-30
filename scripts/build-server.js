@@ -22,7 +22,10 @@ function run(cmd, args, opts = {}) {
 }
 
 const cmakeCache = path.join(BUILD_DIR, 'CMakeCache.txt');
-if (!fs.existsSync(cmakeCache)) {
-  run('cmake', ['--preset', PRESET], { cwd: SERVER_DIR });
+if (process.platform === 'darwin' && fs.existsSync(cmakeCache) &&
+    fs.readFileSync(cmakeCache, 'utf8').includes('/vcpkg_installed/arm64-osx/')) {
+  fs.rmSync(cmakeCache, { force: true });
+  fs.rmSync(path.join(BUILD_DIR, 'CMakeFiles'), { recursive: true, force: true });
 }
+run('cmake', ['--preset', PRESET], { cwd: SERVER_DIR });
 run('cmake', ['--build', BUILD_DIR, '--preset', PRESET], { cwd: SERVER_DIR });

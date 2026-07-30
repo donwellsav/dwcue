@@ -1,4 +1,4 @@
-# LivePlay scripts
+# DonWells Cue scripts
 
 Cross-platform helper scripts used by the monorepo `package.json` and by CI. Every script here is invoked from the **repository root**, not from this directory — paths inside the scripts are resolved relative to the repo root.
 
@@ -12,12 +12,12 @@ These are the scripts wired into `npm run …` commands at the root. They are th
 
 | Script | Invoked by | What it does |
 |--------|-----------|--------------|
-| [`build-all.js`](build-all.js)               | `npm run build`              | Unified release build: builds the C++ server, wraps it as `LivePlay Server.app` on macOS, runs `nuxt generate` + `electron-builder`, copies the installer artefacts (`.exe`, `.dmg`, `.AppImage`, `.deb`, `.rpm`) into `/build/` at the repo root. |
+| [`build-all.js`](build-all.js)               | `npm run build`              | Unified release build: builds the C++ server, runs `nuxt generate` + `electron-builder`, and copies the installer artefacts (`.exe`, `.dmg`, `.AppImage`, `.deb`, `.rpm`) into `/build/` at the repo root. |
 | [`build-clean.js`](build-clean.js)           | `npm run build:clean`        | Wipes build outputs, then delegates to `build-all.js`. Deliberately **preserves** `server/build/vcpkg_installed/` so the (slow) compiled C++ dependencies are not re-downloaded. |
 | [`build-server.js`](build-server.js)         | `npm run server:build` / CI  | Configures (idempotently) and builds the C++ server using the appropriate CMake preset (`vs2022` on Windows, `default` elsewhere). |
-| [`build-server-app-mac.js`](build-server-app-mac.js) | `npm run build:electron` (macOS only) | Wraps the freshly-built `liveplay-server` binary into a proper `.app` bundle that `electron-builder` can include in the DMG. No-ops on non-macOS hosts. |
+| [`build-server-app-mac.js`](build-server-app-mac.js) | Manual (macOS only) | Wraps `dwcue-server` as a standalone development helper app. Release DMGs use the server embedded in DonWells Cue so every executable is covered by the main signing/notarization flow. |
 | [`ensure-server.js`](ensure-server.js)       | `npm run dev`                | Pre-flight check before launching the renderer. If the server binary is already built, this is a no-op (fast dev-loop iteration). Otherwise it triggers a configure + build. |
-| [`run-server.js`](run-server.js)             | `npm run server:run` (and `npm run dev:all`) | Locates the compiled `liveplay-server[.exe]` (searching both single-config and multi-config CMake output directories) and execs it, forwarding stdio and any CLI args. |
+| [`run-server.js`](run-server.js)             | `npm run server:run` (and `npm run dev:all`) | Locates the compiled `dwcue-server[.exe]` (searching both single-config and multi-config CMake output directories) and execs it, forwarding stdio and any CLI args. |
 
 ### Versioning
 

@@ -4,7 +4,7 @@
 // Brick-wall lookahead limiter living on every Master output channel. Stops
 // the engine from producing samples whose magnitude exceeds a configurable
 // ceiling (typically -0.3 dBFS) — replacing the legacy "reduce every cue's
-// level just-in-case" hack that LivePlay 1.x used.
+// level just-in-case" hack that DonWells Cue 1.x used.
 //
 // Design:
 //   * Lookahead buffer of L samples (default ~5 ms). The detector sees future

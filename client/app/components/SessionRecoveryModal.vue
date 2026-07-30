@@ -1,29 +1,56 @@
 <template>
   <transition name="fade">
-    <div v-if="visible" class="srm-overlay">
+    <div v-if="visible" class="srm-overlay" @keydown.stop>
       <div class="srm-dialog">
         <div class="srm-header">
           <span class="material-symbols-rounded srm-icon">restart_alt</span>
-          <h2>{{ t('sessionRecovery.title') }}</h2>
+          <h2>
+            {{ t(projectChanged
+              ? 'sessionRecovery.projectChangedTitle'
+              : 'sessionRecovery.title') }}
+          </h2>
         </div>
-        <p class="srm-body">{{ t('sessionRecovery.message') }}</p>
+        <p class="srm-body">
+          {{ projectChanged
+            ? t('sessionRecovery.projectChangedMessage', { name: serverProjectName })
+            : t('sessionRecovery.message') }}
+        </p>
         <p class="srm-project">{{ currentProject?.name }}</p>
 
         <div class="srm-actions">
-          <button class="srm-btn primary" :disabled="recovering" @click="onResume">
+          <button
+            class="srm-btn primary"
+            :disabled="recovering"
+            @click="projectChanged ? onJoinServer() : onResume()"
+          >
             <span class="material-symbols-rounded" :class="{ spin: recovering }">
-              {{ recovering ? 'progress_activity' : 'restore' }}
+              {{ recovering ? 'progress_activity' : (projectChanged ? 'login' : 'restore') }}
             </span>
-            <span>{{ t('sessionRecovery.resume') }}</span>
+            <span>
+              {{ t(projectChanged
+                ? 'sessionRecovery.useServerProject'
+                : 'sessionRecovery.resume') }}
+            </span>
           </button>
-          <button class="srm-btn" :disabled="recovering" @click="onFresh">
-            <span class="material-symbols-rounded">home</span>
-            <span>{{ t('sessionRecovery.startFresh') }}</span>
+          <button
+            class="srm-btn"
+            :disabled="recovering"
+            @click="projectChanged ? onResume() : onFresh()"
+          >
+            <span class="material-symbols-rounded">
+              {{ projectChanged ? 'restore' : 'home' }}
+            </span>
+            <span>
+              {{ t(projectChanged
+                ? 'sessionRecovery.keepLocalProject'
+                : 'sessionRecovery.startFresh') }}
+            </span>
           </button>
         </div>
         <p class="srm-hint">
-          {{ t('sessionRecovery.resumeHint') }}
-          {{ t('sessionRecovery.startFreshHint') }}
+          {{ projectChanged
+            ? t('sessionRecovery.projectChangedHint')
+            : `${t('sessionRecovery.resumeHint')} ${t('sessionRecovery.startFreshHint')}` }}
         </p>
       </div>
     </div>
@@ -37,7 +64,15 @@
 // failure: push it back and carry on, or drop it and start over.
 const { t } = useLocalization();
 const { currentProject } = useProject();
-const { sessionLost, recovering, resumeSession, startFresh } = useConnectionGuard();
+const {
+  sessionLost,
+  projectChanged,
+  serverProjectName,
+  recovering,
+  resumeSession,
+  startFresh,
+  joinServerSession,
+} = useConnectionGuard();
 
 const visible = computed(() => sessionLost.value && !!currentProject.value);
 
@@ -48,6 +83,11 @@ async function onResume() {
 
 async function onFresh() {
   await startFresh();
+}
+
+async function onJoinServer() {
+  const ok = await joinServerSession();
+  if (!ok) console.warn('[SessionRecoveryModal] server rejoin failed; leaving prompt open');
 }
 </script>
 

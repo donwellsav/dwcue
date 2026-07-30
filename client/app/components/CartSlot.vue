@@ -184,7 +184,6 @@
 
 <script setup lang="ts">
 import { triggerRef } from 'vue';
-import { v4 as uuidv4 } from 'uuid';
 import type { AudioItem } from '~/types/project';
 import ActionButton from './ActionButton.vue';
 import AudioImportModal from './AudioImportModal.vue';
@@ -360,7 +359,7 @@ const importFromServerPath = async (serverPath: string) => {
     }
 
     const fileName = destPath.split(/[\\/]/).pop() || 'audio';
-    const uuid = uuidv4();
+    const uuid = crypto.randomUUID();
 
     let duration = 0;
     try {
@@ -820,16 +819,12 @@ const handleDrop = async (e: DragEvent) => {
   // Check if it's a file drop
   if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
     const file = e.dataTransfer.files[0];
-    // Check if it's an audio file
-    if (file.type.startsWith('audio/') || /\.(mp3|wav|flac|ogg|m4a|aac)$/i.test(file.name)) {
-      // Upload to (local mode: copy into) the server's media root, then import
-      // the resulting server path. Works whether or not Electron can hand us an
-      // OS path and whether the server is local or remote.
-      const server = useLiveplayServer();
-      const serverPath = await server.resolveDroppedFileToMedia(file);
-      if (serverPath) await importFromServerPath(serverPath);
-      return;
-    }
+    // The decoder, not a short client-side extension list, decides whether
+    // the dropped file is playable.
+    const server = useLiveplayServer();
+    const serverPath = await server.resolveDroppedFileToMedia(file);
+    if (serverPath) await importFromServerPath(serverPath);
+    return;
   }
   
   // Otherwise, check if it's an item UUID from the playlist
@@ -842,8 +837,7 @@ const handleDrop = async (e: DragEvent) => {
   const sourceItem = findItemByUuid(sourceUuid);
   if (!sourceItem || sourceItem.type !== 'audio') return;
 
-  const { v4: uuidv4 } = await import('uuid');
-  const newUuid = uuidv4();
+  const newUuid = crypto.randomUUID();
   const cloned: AudioItem = {
     ...(sourceItem as AudioItem),
     uuid: newUuid,
@@ -877,11 +871,15 @@ const handleDrop = async (e: DragEvent) => {
 
 <style scoped lang="scss">
 .cart-slot {
-  border: 3px solid var(--color-border);
+  border: 1px solid var(--color-border);
   border-radius: var(--border-radius-md);
   background-color: var(--color-surface);
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
   position: relative;
   overflow: hidden;
   display: flex;
@@ -889,16 +887,15 @@ const handleDrop = async (e: DragEvent) => {
   
   &:hover {
     background-color: var(--color-surface-hover);
-    border-color: var(--color-accent);
-    transform: scale(1.02);
+    transform: translateY(-1px);
   }
   
   &.has-item {
-    border-width: 4px;
+    border-width: 1px;
   }
 
   &.is-selected {
-    box-shadow: 0 0 0 2px var(--color-accent);
+    box-shadow: inset 3px 0 0 var(--color-accent);
   }
   
   &.drag-over {
@@ -953,15 +950,15 @@ const handleDrop = async (e: DragEvent) => {
   gap: var(--spacing-sm);
   
   .slot-number {
-    font-size: 32px;
-    font-weight: 700;
-    color: var(--color-text-primary);
+    font-family: var(--font-mono);
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--color-text-tertiary);
   }
   
   .slot-hint {
-    font-size: 12px;
-    font-style: italic;
-    color: var(--color-text-secondary);
+    font-size: 11px;
+    color: var(--color-text-tertiary);
     padding-left: 4px;
     text-align: center;
   }
@@ -1002,15 +999,16 @@ const handleDrop = async (e: DragEvent) => {
   z-index: 2;
   
   .slot-number {
-    font-size: 16px;
-    font-weight: 700;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
     color: var(--color-text-secondary);
     min-width: 24px;
     flex-shrink: 0;
   }
   
   .slot-name {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
     color: var(--color-text-primary);
     overflow: hidden;
@@ -1150,7 +1148,9 @@ const handleDrop = async (e: DragEvent) => {
 }
 
 .slot-duration {
+  font-family: var(--font-mono);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
   color: var(--color-text-secondary);
   white-space: nowrap;
 }

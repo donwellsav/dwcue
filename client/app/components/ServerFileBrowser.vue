@@ -47,7 +47,7 @@
   ServerFileBrowser.vue
   -----------------------------------------------------------------------
   Browse the *server's* filesystem (not the client's) via /api/fs/list, so
-  the client can pick cue files when running against a remote LivePlay
+  the client can pick cue files when running against a remote DonWells Cue
   server. The 1.x client used Electron's dialog.showOpenDialog which only
   worked when client and audio engine ran on the same machine.
 
@@ -234,7 +234,7 @@ watch(() => props.startPath, p => goTo(p));
     overflow: auto;
     border: 1px solid #2a2a2a;
     border-radius: 4px;
-    background: #161616;
+    background: #16161d;
 
     .entry {
       display: grid;

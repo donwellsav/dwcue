@@ -233,8 +233,8 @@ function formatBytes(n: number): string {
 function filterDisplay(f: string): string {
   if (f === 'all')        return 'All files';
   if (f === 'audio')      return 'Audio files';
-  if (f === '.liveplay')  return 'LivePlay projects (.liveplay)';
-  if (f === '.liveplay,.lpa') return 'LivePlay projects';
+  if (f === '.liveplay')  return 'DonWells Cue projects (.liveplay)';
+  if (f === '.liveplay,.lpa') return 'DonWells Cue projects';
   return f;
 }
 
@@ -402,7 +402,7 @@ watch(() => props.open, (o) => {
 }
 .breadcrumb {
   padding: 6px 12px; font-size: 11px; color: #aaa;
-  border-bottom: 1px solid #222; background: #161616;
+  border-bottom: 1px solid #222; background: #16161d;
   .crumb {
     background: transparent; border: none; color: var(--color-accent); cursor: pointer;
     padding: 2px 4px; font-size: 11px;
@@ -412,7 +412,7 @@ watch(() => props.open, (o) => {
 }
 .listing {
   flex: 1; min-height: 0; overflow: auto;
-  background: #161616;
+  background: #16161d;
   &.loading { opacity: 0.6; }
 }
 .entries {

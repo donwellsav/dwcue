@@ -16,7 +16,6 @@
 // components (PlaylistView, CartSlot, PropertiesPanel, etc.) can keep
 // mutating `currentProject.value` and have those changes propagate.
 // =====================================================================
-import { v4 as uuidv4 } from 'uuid';
 import { markRaw, nextTick, toRaw, triggerRef } from 'vue';
 import type {
   Project,
@@ -27,6 +26,7 @@ import type {
   CartItem
 } from '~/types/project';
 import { DEFAULT_THEME, DEFAULT_CART_SLOT_KEYS, anchorStartNextMarker } from '~/types/project';
+import type { ServerAudioReadiness } from '~/types/server';
 import { applyAutoProcessing, buildWaveformFromChannels } from '~/utils/audio';
 import {
   formatDisplayIndexPath,
@@ -202,9 +202,16 @@ export const useProject = () => {
   // Background audio-loading progress (polled while the server is still
   // mirroring cues into the engine in a worker thread). loading=false means
   // every audio cue is ready to play.
-  const audioLoadingProgress = useState<{ loading: boolean; loaded: number; total: number }>(
+  const audioLoadingProgress = useState<ServerAudioReadiness>(
     'useProject.audioLoadingProgress',
-    () => ({ loading: false, loaded: 0, total: 0 }),
+    () => ({
+      ready: true,
+      loading: false,
+      loaded: 0,
+      total: 0,
+      failedCount: 0,
+      failures: [],
+    }),
   );
   // Server-owned preview state: at most one item is "being previewed" at a
   // time (DJ pre-listen on settings.previewDevice). Empty string = no
@@ -400,7 +407,7 @@ export const useProject = () => {
   const cloneItemWithNewIds = (item: any): AudioItem | GroupItem => {
     const clone = JSON.parse(JSON.stringify(_deepToRaw(item)));
     const reassign = (it: any) => {
-      it.uuid = uuidv4();
+      it.uuid = crypto.randomUUID();
       delete it.waveform;
       if (it.type === 'group' && Array.isArray(it.children)) it.children.forEach(reassign);
     };
@@ -494,7 +501,7 @@ export const useProject = () => {
 
   // Paste items from the clipboard into the playlist root (appended). Each
   // pasted item gets fresh UUIDs so it can coexist with the source — even
-  // when pasting back into the same project / a different LivePlay instance.
+  // when pasting back into the same project / a different DonWells Cue instance.
   const pasteItemsFromClipboard = async (): Promise<number> => {
     if (!import.meta.client || !currentProject.value) return 0;
     let text = '';
@@ -610,13 +617,13 @@ export const useProject = () => {
   // the welcome screen on connect: if another client already opened a
   // project, we drop straight into MainWorkspace instead of showing
   // New/Open. Returns true if a project was rejoined.
-  const tryRejoinExistingProject = async (): Promise<boolean> => {
+  const tryRejoinExistingProject = async (existingHeader?: any): Promise<boolean> => {
     try {
       const server = useLiveplayServer();
       if (!server.connected) {
         try { server.connect(); } catch { /* noop */ }
       }
-      const header = await server.fetchProjectHeader();
+      const header = existingHeader ?? await server.fetchProjectHeader();
       if (!header || !header.hasOpenProject) return false;
 
       isHydrating.value = true;
@@ -872,21 +879,17 @@ export const useProject = () => {
     if (progressPolling) return;
     progressPolling = true;
     try {
-      let firstTick = true;
       while (true) {
-        let p: { loading: boolean; loaded: number; total: number };
+        let p: ServerAudioReadiness;
         try { p = await server.fetchProjectProgress(); }
         catch { break; }
-        // Skip surfacing tiny loads — if the server's already done on the
-        // first tick, there's nothing to show.
-        if (firstTick && !p.loading) break;
-        firstTick = false;
         audioLoadingProgress.value = p;
         if (!p.loading) break;
         await new Promise(r => setTimeout(r, 400));
       }
     } finally {
-      audioLoadingProgress.value = { loading: false, loaded: 0, total: 0 };
+      // Preserve the final readiness report so missing/failed media stays
+      // visible after loading finishes instead of disappearing with the spinner.
       progressPolling = false;
     }
   }
@@ -977,7 +980,9 @@ export const useProject = () => {
 
   // Save the current project — the server already has the document, it just
   // needs to write to disk.
-  const saveProject = async (opts?: { force?: boolean }): Promise<boolean> => {
+  const saveProject = async (
+    opts?: { force?: boolean; signal?: AbortSignal },
+  ): Promise<boolean> => {
     try {
       if (!currentProject.value) return false;
 
@@ -1011,7 +1016,7 @@ export const useProject = () => {
       const docSnapshot = buildDocumentSnapshot();
       const path = projectFilePathRef.value ||
                    `${currentProject.value.folderPath}/${currentProject.value.name}.liveplay`;
-      const res = await server.saveProjectTo(path, docSnapshot);
+      const res = await server.saveProjectTo(path, docSnapshot, opts?.signal);
       if (res?.ok) hasUnsavedChanges.value = false;
       return !!res?.ok;
     } catch (error) {
@@ -1048,6 +1053,14 @@ export const useProject = () => {
     propertiesPanelOpen.value = false;
     activeCues.value.clear();
     projectFilePathRef.value = '';
+    audioLoadingProgress.value = {
+      ready: true,
+      loading: false,
+      loaded: 0,
+      total: 0,
+      failedCount: 0,
+      failures: [],
+    };
     _autoProcessPendingUuids.clear();
     _waveformCache.clear();
 

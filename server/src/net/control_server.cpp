@@ -16,14 +16,18 @@
 #endif
 
 #include "liveplay/net/control_server.hpp"
+#include "liveplay/net/control_security.hpp"
 #include "liveplay/logger.hpp"
 #include "liveplay/meta/metadata.hpp"
 #include "liveplay/meta/waveform.hpp"
+#include "liveplay/util/atomic_file.hpp"
 #include "liveplay/util/unicode_path.hpp"
 
 #if defined(_WIN32)
 #  include <windows.h>      // GetLogicalDrives(), GetVolumeInformationW(), ...
 #  include <winnetwk.h>     // WNetGetConnectionW() — mapped-network-drive UNC
+#else
+#  include <unistd.h>
 #endif
 
 #include <crow.h>
@@ -43,7 +47,6 @@
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <optional>
-#include <random>
 #include <set>
 #include <sstream>
 #include <string>
@@ -59,6 +62,118 @@ namespace core  = liveplay::core;
 
 namespace liveplay::net {
 
+namespace {
+
+long long current_process_id() noexcept {
+#if defined(_WIN32)
+    return static_cast<long long>(::GetCurrentProcessId());
+#else
+    return static_cast<long long>(::getpid());
+#endif
+}
+
+struct ControlSecurityMiddleware {
+    struct context {};
+
+    std::string access_token;
+    std::vector<std::string> allowed_origins;
+    std::size_t max_upload_bytes{256ull * 1024 * 1024};
+
+    bool authorized(const crow::request& req) const {
+        if (access_token.empty()) return true;
+
+        constexpr std::string_view bearer = "Bearer ";
+        const std::string authorization = req.get_header_value("Authorization");
+        if (authorization.starts_with(bearer) &&
+            security::constant_time_equal(
+                std::string_view{authorization}.substr(bearer.size()), access_token)) {
+            return true;
+        }
+
+        // Browser WebSocket does not support arbitrary request headers.
+        if (req.url == "/ws") {
+            if (const char* token = req.url_params.get("access_token"))
+                return security::constant_time_equal(token, access_token);
+        }
+        return false;
+    }
+
+    void add_cors_headers(const crow::request& req, crow::response& res) const {
+        const std::string origin = req.get_header_value("Origin");
+        if (origin.empty() || !security::origin_allowed(origin, allowed_origins)) return;
+        res.set_header("Access-Control-Allow-Origin", origin);
+        res.set_header("Vary", "Origin");
+    }
+
+    void reject(const crow::request& req, crow::response& res,
+                int status, std::string_view message) const {
+        res = crow::response{
+            status, json({{"error", message}}).dump()};
+        res.set_header("Content-Type", "application/json");
+        if (status == 401) res.set_header("WWW-Authenticate", "Bearer");
+        add_cors_headers(req, res);
+        res.end();
+    }
+
+    void before_handle(crow::request& req, crow::response& res, context&) {
+        const std::string origin = req.get_header_value("Origin");
+        if (!security::origin_allowed(origin, allowed_origins)) {
+            reject(req, res, 403, "origin not allowed");
+            return;
+        }
+
+        if (req.method == crow::HTTPMethod::Options) {
+            add_cors_headers(req, res);
+            res.code = 204;
+            res.set_header("Access-Control-Allow-Methods",
+                           "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+            res.set_header("Access-Control-Allow-Headers",
+                           "Authorization, Content-Type");
+            res.set_header("Access-Control-Max-Age", "600");
+            res.end();
+            return;
+        }
+
+        // Health is intentionally public so launchers and discovery probes can
+        // distinguish this service before presenting a token prompt.
+        if (req.url != "/api/health" && !authorized(req)) {
+            reject(req, res, 401, "authentication required");
+            return;
+        }
+
+        if (req.url == "/api/upload" || req.url == "/api/project/import") {
+            // Crow invokes middleware after buffering the HTTP body. This
+            // prevents multipart parsing/staging above the limit, but Crow
+            // itself needs an upstream parser cap to bound receive memory.
+            const std::string content_length =
+                req.get_header_value("Content-Length");
+            if (security::upload_exceeds_limit(
+                    req.body.size(), content_length, max_upload_bytes)) {
+                reject(req, res, 413, "payload too large");
+                return;
+            }
+        }
+        if (req.method == crow::HTTPMethod::Put &&
+            req.url.starts_with("/api/upload/")) {
+            const std::string content_length =
+                req.get_header_value("Content-Length");
+            if (security::upload_exceeds_limit(
+                    req.body.size(), content_length,
+                    security::kChunkedUploadChunkBytes)) {
+                reject(req, res, 413, "chunk too large");
+                return;
+            }
+        }
+
+    }
+
+    void after_handle(crow::request& req, crow::response& res, context&) {
+        add_cors_headers(req, res);
+    }
+};
+
+} // namespace
+
 // Forward declarations (definitions further down).
 static nlohmann::json build_playback_snapshot(audio::AudioEngine& engine,
                                               core::ProjectState& state);
@@ -66,7 +181,7 @@ static nlohmann::json build_playback_snapshot(audio::AudioEngine& engine,
 // Pimpl: all Crow + WebSocket state lives here so crow.h stays out of the
 // public header.
 struct ControlServer::Impl {
-    crow::SimpleApp app;
+    crow::App<ControlSecurityMiddleware> app;
     std::thread     app_thread;
     std::thread     broadcast_thread;
     std::mutex      ws_mutex;
@@ -79,6 +194,11 @@ struct ControlServer::Impl {
     // send_text directly from onopen while broadcast_loop was concurrently
     // sending meters to the same conn caused the crash on connect).
     std::unordered_set<crow::websocket::connection*> ws_clients_pending_snapshot;
+    // Command acknowledgements are cached so a controller may safely retry
+    // after losing an ack without executing GO/PLAY twice.
+    std::mutex                                  ws_command_mutex;
+    std::unordered_map<std::string, std::string> ws_command_results;
+    std::deque<std::string>                     ws_command_order;
 
     // Async waveform-generation queue. REST handler enqueues a task and
     // returns immediately; waveform_worker() processes them one at a time and
@@ -117,14 +237,12 @@ public:
 crow::response json_ok(const json& body) {
     crow::response r{200, body.dump()};
     r.add_header("Content-Type", "application/json");
-    r.add_header("Access-Control-Allow-Origin", "*");
     return r;
 }
 
 crow::response json_err(int status, std::string_view message) {
     crow::response r{status, json({{"error", message}}).dump()};
     r.add_header("Content-Type", "application/json");
-    r.add_header("Access-Control-Allow-Origin", "*");
     return r;
 }
 
@@ -147,7 +265,9 @@ static std::string item_playback_info(const std::string& item_uuid, core::Projec
 // Recursively pack every regular file under `root` into a .zip at `out_zip`.
 // Entries are stored with paths relative to `root` using forward slashes,
 // so the archive is portable between OSes.
-static bool zip_pack_directory(const fs::path& root, const fs::path& out_zip) {
+static bool zip_pack_directory(const fs::path& root,
+                               const fs::path& out_zip,
+                               const fs::path& excluded_output = {}) {
     mz_zip_archive zip{};
     std::memset(&zip, 0, sizeof(zip));
     const std::string out_utf8 = liveplay::util::path_to_utf8(out_zip);
@@ -160,6 +280,25 @@ static bool zip_pack_directory(const fs::path& root, const fs::path& out_zip) {
         for (auto it = fs::recursive_directory_iterator(root);
              it != fs::recursive_directory_iterator(); ++it) {
             if (!it->is_regular_file()) continue;
+            if (security::is_chunked_upload_staging_name(
+                    liveplay::util::path_to_utf8(it->path().filename())) ||
+                security::is_export_staging_name(
+                    liveplay::util::path_to_utf8(it->path().filename()))) {
+                continue;
+            }
+            std::error_code equivalent_ec;
+            if (fs::equivalent(it->path(), out_zip, equivalent_ec) &&
+                !equivalent_ec) {
+                continue;
+            }
+            if (!excluded_output.empty()) {
+                equivalent_ec.clear();
+                if (fs::equivalent(
+                        it->path(), excluded_output, equivalent_ec) &&
+                    !equivalent_ec) {
+                    continue;
+                }
+            }
             const fs::path rel = fs::relative(it->path(), root);
             // Forward-slash, UTF-8 entry name.
             std::string entry = liveplay::util::path_to_utf8(rel);
@@ -185,70 +324,318 @@ static bool zip_pack_directory(const fs::path& root, const fs::path& out_zip) {
     return ok;
 }
 
-// Extract every entry in `src_zip` into directory `out_dir`. Paths inside the
-// archive are sanitised — leading slashes, "..", and absolute prefixes are
-// rejected so a hostile archive can't escape `out_dir`.
-static bool zip_extract_to(const fs::path& src_zip, const fs::path& out_dir) {
-    mz_zip_archive zip{};
-    std::memset(&zip, 0, sizeof(zip));
-    const std::string in_utf8 = liveplay::util::path_to_utf8(src_zip);
-    if (!mz_zip_reader_init_file(&zip, in_utf8.c_str(), 0)) {
-        Logger::error("zip_extract_to: init failed for '{}'", in_utf8);
-        return false;
+struct ZipExtractResult {
+    bool ok{false};
+    int status{500};
+    std::string error;
+};
+
+struct ZipEntryPlan {
+    mz_uint index{0};
+    std::string relative_utf8;
+    fs::path destination;
+    bool directory{false};
+    std::uint64_t expanded_bytes{0};
+};
+
+struct ZipReaderGuard {
+    mz_zip_archive* archive{};
+    bool active{true};
+
+    void close() noexcept {
+        if (active && archive) mz_zip_reader_end(archive);
+        active = false;
     }
-    std::error_code ec;
-    fs::create_directories(out_dir, ec);
-    bool ok = true;
-    const mz_uint count = mz_zip_reader_get_num_files(&zip);
-    for (mz_uint i = 0; i < count; ++i) {
-        mz_zip_archive_file_stat st{};
-        if (!mz_zip_reader_file_stat(&zip, i, &st)) { ok = false; break; }
-        std::string name = st.m_filename;
-        // Sanitise: reject absolute or parent-traversal entries.
-        if (name.empty()) continue;
-        if (name.front() == '/' || name.front() == '\\') {
-            Logger::warn("zip_extract_to: skipping absolute entry '{}'", name);
-            continue;
-        }
-        if (name.find("..") != std::string::npos) {
-            Logger::warn("zip_extract_to: skipping suspicious entry '{}'", name);
-            continue;
-        }
-        const fs::path dest = out_dir / liveplay::util::utf8_to_path(name);
-        if (mz_zip_reader_is_file_a_directory(&zip, i)) {
-            fs::create_directories(dest, ec);
-            continue;
-        }
-        if (dest.has_parent_path()) fs::create_directories(dest.parent_path(), ec);
-        const std::string dest_utf8 = liveplay::util::path_to_utf8(dest);
-        if (!mz_zip_reader_extract_to_file(&zip, i, dest_utf8.c_str(), 0)) {
-            Logger::error("zip_extract_to: extract '{}' failed", name);
-            ok = false;
-            break;
-        }
+    ~ZipReaderGuard() { close(); }
+};
+
+struct BoundedZipWriter {
+    std::ofstream output;
+    std::uint64_t expected_bytes{0};
+    std::uint64_t written_bytes{0};
+    bool failed{false};
+};
+
+static size_t write_bounded_zip_entry(void* opaque, mz_uint64 file_offset,
+                                      const void* data, size_t size) {
+    auto& writer = *static_cast<BoundedZipWriter*>(opaque);
+    if (writer.failed || file_offset != writer.written_bytes ||
+        writer.written_bytes > writer.expected_bytes ||
+        size > writer.expected_bytes - writer.written_bytes) {
+        writer.failed = true;
+        return 0;
     }
-    mz_zip_reader_end(&zip);
-    return ok;
+    writer.output.write(static_cast<const char*>(data),
+                        static_cast<std::streamsize>(size));
+    if (!writer.output) {
+        writer.failed = true;
+        return 0;
+    }
+    writer.written_bytes += size;
+    return size;
 }
 
-// One-shot download tokens. The export endpoint creates a token that points
-// at a server-side .lpa; the client redeems the token via GET /api/file/download
-// once. Tokens are kept in memory and expire after 10 minutes. A token can
-// only be redeemed once — preventing accidental link-sharing leaks.
+static std::string archive_path_key(std::string path) {
+#if defined(_WIN32)
+    std::transform(path.begin(), path.end(), path.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+#endif
+    return path;
+}
+
+static bool archive_destination_is_safe(const fs::path& canonical_root,
+                                        const std::string& relative_utf8,
+                                        bool directory,
+                                        fs::path& destination,
+                                        std::string& error) {
+    const fs::path relative = liveplay::util::utf8_to_path(relative_utf8);
+    destination = canonical_root / relative;
+
+    // Reject every existing symlink/junction/reparse component, even one that
+    // currently resolves back inside the root. This prevents later retargeting
+    // from changing where an archive entry lands.
+    fs::path current = canonical_root;
+    std::error_code ec;
+    for (const auto& component : relative) {
+        current /= component;
+        const auto status = fs::symlink_status(current, ec);
+        if (ec) {
+            if (ec == std::errc::no_such_file_or_directory) {
+                ec.clear();
+                break;
+            }
+            error = "cannot inspect archive destination";
+            return false;
+        }
+        if (fs::is_symlink(status)) {
+            error = "archive destination contains a link or reparse point";
+            return false;
+        }
+#if defined(_WIN32)
+        const DWORD attributes = GetFileAttributesW(current.c_str());
+        if (attributes != INVALID_FILE_ATTRIBUTES &&
+            (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+            error = "archive destination contains a link or reparse point";
+            return false;
+        }
+#endif
+    }
+
+    const fs::path resolved = fs::weakly_canonical(destination, ec);
+    if (ec || !security::canonical_path_is_within(canonical_root, resolved)) {
+        error = "archive entry escapes extraction directory";
+        return false;
+    }
+
+    const auto status = fs::symlink_status(destination, ec);
+    if (ec && ec != std::errc::no_such_file_or_directory) {
+        error = "cannot inspect archive destination";
+        return false;
+    }
+    if (!ec && fs::exists(status)) {
+        if (fs::is_symlink(status)) {
+            error = "archive destination is a link or reparse point";
+            return false;
+        }
+        if (!directory || !fs::is_directory(status)) {
+            error = "archive would overwrite an existing path";
+            return false;
+        }
+    }
+    return true;
+}
+
+// Extract every entry only after a complete central-directory preflight.
+// The callback enforces the declared expanded size while inflating, so a
+// malformed archive cannot bypass the preflight by lying in its metadata.
+static ZipExtractResult zip_extract_to(const fs::path& src_zip,
+                                       const fs::path& out_dir) {
+    std::error_code ec;
+    const auto archive_size = fs::file_size(src_zip, ec);
+    if (ec) return {false, 400, "cannot read archive"};
+    if (archive_size > security::kMaxArchiveCompressedBytes)
+        return {false, 413, "archive exceeds compressed-size limit"};
+
+    fs::create_directories(out_dir, ec);
+    if (ec) return {false, 500, "cannot create extraction directory"};
+    const fs::path canonical_root = fs::canonical(out_dir, ec);
+    if (ec) return {false, 500, "cannot resolve extraction directory"};
+
+    mz_zip_archive zip{};
+    const std::string in_utf8 = liveplay::util::path_to_utf8(src_zip);
+    if (!mz_zip_reader_init_file(&zip, in_utf8.c_str(), 0)) {
+        Logger::warn("zip_extract_to: invalid archive '{}'", in_utf8);
+        return {false, 400, "invalid archive"};
+    }
+    ZipReaderGuard zip_guard{&zip};
+    const auto finish = [&](ZipExtractResult result) {
+        zip_guard.close();
+        return result;
+    };
+
+    const mz_uint count = mz_zip_reader_get_num_files(&zip);
+    if (count > security::kMaxArchiveEntries)
+        return finish({false, 413, "archive contains too many entries"});
+
+    security::ArchiveBudget budget;
+    std::vector<ZipEntryPlan> plans;
+    plans.reserve(count);
+    std::unordered_set<std::string> all_paths;
+    std::unordered_set<std::string> file_paths;
+
+    for (mz_uint i = 0; i < count; ++i) {
+        mz_zip_archive_file_stat stat{};
+        if (!mz_zip_reader_file_stat(&zip, i, &stat))
+            return finish({false, 400, "invalid archive directory"});
+        if (stat.m_is_encrypted || !stat.m_is_supported)
+            return finish({false, 400, "encrypted or unsupported archive entry"});
+
+        const mz_uint filename_bytes =
+            mz_zip_reader_get_filename(&zip, i, nullptr, 0);
+        if (filename_bytes <= 1 ||
+            filename_bytes > security::kMaxArchivePathBytes + 1) {
+            return finish({false, 400, "invalid or overlong archive entry path"});
+        }
+        std::vector<char> filename(filename_bytes);
+        if (mz_zip_reader_get_filename(
+                &zip, i, filename.data(), filename_bytes) != filename_bytes) {
+            return finish({false, 400, "invalid archive entry path"});
+        }
+        std::string raw_name{filename.data(), filename_bytes - 1};
+        if (raw_name.find('\0') != std::string::npos)
+            return finish({false, 400, "archive entry path contains NUL"});
+
+        const bool directory = stat.m_is_directory != 0;
+        const auto normalized =
+            security::normalize_archive_entry_path(raw_name);
+        if (!normalized)
+            return finish({false, 400, "unsafe archive entry path"});
+        if (!security::archive_entry_type_is_safe(
+                stat.m_version_made_by, stat.m_external_attr, directory)) {
+            return finish({false, 400, "archive contains a link or special entry"});
+        }
+        if (const auto limit_error = security::charge_archive_entry(
+                budget, stat.m_comp_size, stat.m_uncomp_size, directory)) {
+            return finish({false, 413, std::string{*limit_error}});
+        }
+
+        const std::string key = archive_path_key(*normalized);
+        if (!all_paths.insert(key).second)
+            return finish({false, 400, "archive contains duplicate paths"});
+
+        fs::path destination;
+        std::string destination_error;
+        if (!archive_destination_is_safe(
+                canonical_root, *normalized, directory,
+                destination, destination_error)) {
+            return finish({false, 400, std::move(destination_error)});
+        }
+        plans.push_back(ZipEntryPlan{
+            i, *normalized, std::move(destination), directory,
+            static_cast<std::uint64_t>(stat.m_uncomp_size),
+        });
+        if (!directory) file_paths.insert(key);
+    }
+
+    // A file cannot also be the parent of another entry ("a" and "a/b").
+    for (const auto& plan : plans) {
+        const std::string key = archive_path_key(plan.relative_utf8);
+        for (auto slash = key.find('/'); slash != std::string::npos;
+             slash = key.find('/', slash + 1)) {
+            if (file_paths.contains(key.substr(0, slash)))
+                return finish({false, 400, "archive path has a file as its parent"});
+        }
+    }
+
+    const auto space = fs::space(canonical_root, ec);
+    if (!ec && budget.expanded_bytes > space.available)
+        return finish({false, 507, "insufficient space for expanded archive"});
+
+    std::vector<fs::path> created_files;
+    created_files.reserve(plans.size());
+    const auto fail_extract = [&](int status, std::string message) {
+        for (auto it = created_files.rbegin(); it != created_files.rend(); ++it) {
+            std::error_code remove_error;
+            fs::remove(*it, remove_error);
+        }
+        return finish({false, status, std::move(message)});
+    };
+
+    for (const auto& plan : plans) {
+        if (plan.directory) {
+            fs::create_directories(plan.destination, ec);
+            if (ec) return fail_extract(500, "cannot create archive directory");
+            continue;
+        }
+
+        fs::create_directories(plan.destination.parent_path(), ec);
+        if (ec) return fail_extract(500, "cannot create archive parent directory");
+
+        fs::path checked_destination;
+        std::string destination_error;
+        if (!archive_destination_is_safe(
+                canonical_root, plan.relative_utf8, false,
+                checked_destination, destination_error)) {
+            return fail_extract(400, std::move(destination_error));
+        }
+
+        BoundedZipWriter writer{
+            std::ofstream{checked_destination,
+                          std::ios::binary | std::ios::trunc},
+            plan.expanded_bytes,
+        };
+        if (!writer.output)
+            return fail_extract(500, "cannot create extracted file");
+        created_files.push_back(checked_destination);
+
+        const bool extracted = mz_zip_reader_extract_to_callback(
+            &zip, plan.index, write_bounded_zip_entry, &writer, 0);
+        writer.output.close();
+        if (!extracted || writer.failed ||
+            writer.written_bytes != writer.expected_bytes) {
+            return fail_extract(400, "archive entry data is invalid");
+        }
+
+        const auto status = fs::symlink_status(checked_destination, ec);
+        if (ec || !fs::is_regular_file(status) ||
+            fs::file_size(checked_destination, ec) != plan.expanded_bytes || ec) {
+            return fail_extract(400, "extracted file failed validation");
+        }
+    }
+
+    return finish({true, 200, {}});
+}
+
+// One-shot download tokens. GET claims a token and DELETE acknowledges a
+// completed transfer. Claimed files remain until acknowledged or expired so
+// Crow can stream them without a delete-before-send race.
 struct DownloadToken {
     fs::path path;
     std::chrono::steady_clock::time_point expires_at;
+    bool claimed{false};
 };
+
+struct ScopedFileRemoval {
+    fs::path path;
+    ~ScopedFileRemoval() {
+        if (path.empty()) return;
+        std::error_code ec;
+        fs::remove(path, ec);
+    }
+};
+
 static std::mutex g_download_tokens_mutex;
 static std::unordered_map<std::string, DownloadToken> g_download_tokens;
 
+static fs::path export_temp_root() {
+    return fs::temp_directory_path() / "liveplay-exports";
+}
+
 static std::string make_download_token() {
-    // RFC 4122-ish random hex. We don't need crypto strength — these are
-    // short-lived single-use claim tickets, not auth credentials.
-    static thread_local std::mt19937_64 rng{std::random_device{}()};
-    std::ostringstream os;
-    for (int i = 0; i < 4; ++i) os << std::hex << std::setw(16) << std::setfill('0') << rng();
-    return os.str();
+    // This token authorizes a one-shot file download, so use the same direct
+    // platform random source as LAN access tokens rather than a PRNG stream.
+    return security::random_hex_token(32);
 }
 
 static void register_download_token(const std::string& token, fs::path path) {
@@ -256,30 +643,229 @@ static void register_download_token(const std::string& token, fs::path path) {
     g_download_tokens[token] = DownloadToken{
         std::move(path),
         std::chrono::steady_clock::now() + std::chrono::minutes(10),
+        false,
     };
 }
 
-static std::optional<fs::path> redeem_download_token(const std::string& token) {
+static void purge_download_tokens(bool all = false) {
+    std::vector<fs::path> expired;
     std::lock_guard lock{g_download_tokens_mutex};
-    // GC any expired entries while we're here. An expired-and-unclaimed token
-    // still has its .lpa sitting on disk (redeem is the only path that deletes
-    // it), so remove the file before dropping the entry — otherwise abandoned
-    // exports leak temp files indefinitely.
     const auto now = std::chrono::steady_clock::now();
     for (auto it = g_download_tokens.begin(); it != g_download_tokens.end();) {
-        if (it->second.expires_at <= now) {
-            std::error_code ec;
-            fs::remove(it->second.path, ec);
+        if (all || it->second.expires_at <= now) {
+            expired.push_back(std::move(it->second.path));
             it = g_download_tokens.erase(it);
         } else {
             ++it;
         }
     }
+    for (const auto& path : expired) {
+        std::error_code ec;
+        fs::remove(path, ec);
+    }
+}
+
+static std::optional<fs::path> claim_download_token(
+    const std::string& token) {
+    purge_download_tokens();
+    std::lock_guard lock{g_download_tokens_mutex};
     auto it = g_download_tokens.find(token);
-    if (it == g_download_tokens.end()) return std::nullopt;
-    fs::path p = std::move(it->second.path);
-    g_download_tokens.erase(it);
-    return p;
+    if (it == g_download_tokens.end() || it->second.claimed)
+        return std::nullopt;
+    it->second.claimed = true;
+    it->second.expires_at =
+        std::chrono::steady_clock::now() + std::chrono::hours(24);
+    return it->second.path;
+}
+
+static bool complete_download_token(const std::string& token) {
+    fs::path path;
+    {
+        std::lock_guard lock{g_download_tokens_mutex};
+        auto it = g_download_tokens.find(token);
+        if (it == g_download_tokens.end() || !it->second.claimed)
+            return false;
+        path = std::move(it->second.path);
+        g_download_tokens.erase(it);
+    }
+    std::error_code ec;
+    fs::remove(path, ec);
+    return true;
+}
+
+static bool valid_download_token(std::string_view token) {
+    return token.size() == 64 &&
+        std::all_of(token.begin(), token.end(), [](unsigned char c) {
+            return std::isxdigit(c) != 0;
+        });
+}
+
+static std::string safe_download_filename(std::string name) {
+    name = security::sanitize_upload_filename(name, "project");
+    return security::sanitize_upload_filename(name + ".lpa", "project.lpa");
+}
+
+static void purge_orphan_export_files() {
+    std::unordered_set<std::string> active_names;
+    {
+        std::lock_guard lock{g_download_tokens_mutex};
+        for (const auto& [_, token] : g_download_tokens) {
+            const auto filename =
+                liveplay::util::path_to_utf8(token.path.filename());
+            if (security::is_export_archive_name(filename))
+                active_names.insert(filename);
+        }
+    }
+    const fs::path root = export_temp_root();
+    std::error_code ec;
+    const auto cutoff = fs::file_time_type::clock::now() - std::chrono::hours(24);
+    for (fs::directory_iterator it{root, ec}, end; !ec && it != end;
+         it.increment(ec)) {
+        const std::string name =
+            liveplay::util::path_to_utf8(it->path().filename());
+        if (!security::is_export_archive_name(name) ||
+            active_names.contains(name)) {
+            continue;
+        }
+        const auto modified = it->last_write_time(ec);
+        if (ec) break;
+        if (modified <= cutoff) fs::remove(it->path(), ec);
+        if (ec) break;
+    }
+}
+
+struct ChunkedUploadSession {
+    enum class Purpose {
+        Media,
+        ProjectImport,
+    };
+
+    fs::path temp_path;
+    fs::path staging_root;
+    fs::path filename;
+    fs::path extract_path;
+    std::uint64_t expected_bytes{0};
+    std::uint64_t received_bytes{0};
+    std::chrono::steady_clock::time_point expires_at;
+    bool finalizing{false};
+    Purpose purpose{Purpose::Media};
+};
+
+// ponytail: operator uploads are sparse; one process-wide lock keeps offset
+// checks and append order coherent. Split per upload id only if contention
+// ever shows up in real use.
+static std::mutex g_chunked_uploads_mutex;
+static std::unordered_map<std::string, ChunkedUploadSession> g_chunked_uploads;
+
+static std::string make_chunked_upload_id() {
+    return security::random_hex_token(32);
+}
+
+static bool chunked_upload_has_space(const fs::path& path,
+                                     std::uint64_t bytes_needed) {
+    if (bytes_needed == 0) return true;
+    std::error_code ec;
+    const auto space = fs::space(path, ec);
+    return !ec && space.available >= bytes_needed;
+}
+
+static std::optional<std::uint64_t> chunked_upload_offset(
+    const crow::request& req) {
+    const char* raw = req.url_params.get("offset");
+    if (!raw) return std::nullopt;
+    std::uint64_t value = 0;
+    if (!security::parse_decimal_u64(raw, value)) return std::nullopt;
+    return value;
+}
+
+static void purge_chunked_uploads(bool all = false) {
+    std::vector<fs::path> expired;
+    {
+        std::lock_guard lock{g_chunked_uploads_mutex};
+        const auto now = std::chrono::steady_clock::now();
+        for (auto it = g_chunked_uploads.begin(); it != g_chunked_uploads.end();) {
+            const bool expired_session = it->second.expires_at <= now;
+            if (security::chunked_upload_should_purge(
+                    all, expired_session, it->second.finalizing)) {
+                expired.push_back(std::move(it->second.temp_path));
+                it = g_chunked_uploads.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+    for (const auto& path : expired) {
+        std::error_code ec;
+        fs::remove(path, ec);
+    }
+}
+
+static void purge_orphan_chunked_upload_files(const fs::path& media_root) {
+    std::unordered_set<std::string> active;
+    {
+        std::lock_guard lock{g_chunked_uploads_mutex};
+        for (const auto& [id, _] : g_chunked_uploads) active.insert(id);
+    }
+    const auto cutoff = fs::file_time_type::clock::now() - std::chrono::hours(1);
+    std::error_code ec;
+    for (fs::directory_iterator it{media_root, ec}, end; !ec && it != end;
+         it.increment(ec)) {
+        const std::string name =
+            liveplay::util::path_to_utf8(it->path().filename());
+        if (!security::is_chunked_upload_staging_name(name)) continue;
+        const std::string id = name.substr(
+            std::string_view{".dwcue-upload-"}.size(), 64);
+        if (active.contains(id)) continue;
+        const auto modified = it->last_write_time(ec);
+        if (ec) break;
+        if (modified <= cutoff) fs::remove(it->path(), ec);
+        if (ec) break;
+    }
+}
+
+static json imported_project_response(const fs::path& extract_path) {
+    json project_files = json::array();
+    for (auto& entry : fs::directory_iterator(extract_path)) {
+        if (entry.is_regular_file() &&
+            entry.path().extension() == ".liveplay") {
+            project_files.push_back(
+                liveplay::util::path_to_utf8(entry.path().filename()));
+        }
+    }
+    return json{
+        {"extractPath", liveplay::util::path_to_utf8(extract_path)},
+        {"projectFiles", std::move(project_files)},
+    };
+}
+
+// ponytail: media imports are operator-driven; one process-wide lock keeps
+// collision naming and creation atomic. Shard by media root if bulk ingest
+// throughput ever matters.
+static std::mutex g_media_import_mutex;
+
+static ZipExtractResult extract_archive_locked(const fs::path& src_zip,
+                                               const fs::path& out_dir) {
+    std::lock_guard import_lock{g_media_import_mutex};
+    return zip_extract_to(src_zip, out_dir);
+}
+
+static fs::path unused_media_path(const fs::path& media,
+                                  const fs::path& filename) {
+    fs::path candidate = media / filename;
+    std::error_code ec;
+    if (!fs::exists(candidate, ec) && !ec) return candidate;
+    const auto stem = filename.stem();
+    const auto extension = filename.extension();
+    for (unsigned n = 2; n < 100'000; ++n) {
+        candidate = media /
+            fs::path{stem.native() +
+                     liveplay::util::utf8_to_path(
+                         " (" + std::to_string(n) + ")").native() +
+                     extension.native()};
+        ec.clear();
+        if (!fs::exists(candidate, ec) && !ec) return candidate;
+    }
+    throw std::runtime_error{"could not choose an unused media filename"};
 }
 
 json device_info_to_json(const audio::DeviceInfo& d) {
@@ -289,6 +875,21 @@ json device_info_to_json(const audio::DeviceInfo& d) {
         {"channel_count", d.channel_count},
         {"sample_rate",   d.sample_rate},
         {"is_default",    d.is_default},
+        {"is_open",       d.is_open},
+        {"is_available",  d.is_available},
+        {"is_clock_master", d.is_clock_master},
+        {"runtime_state", d.runtime_state},
+        {"underrun_count", d.underrun_count},
+        {"underrun_frames", d.underrun_frames},
+        {"overrun_count", d.overrun_count},
+        {"hard_resync_count", d.hard_resync_count},
+        {"device_loss_count", d.device_loss_count},
+        {"device_recovery_count", d.device_recovery_count},
+        {"reroute_count", d.reroute_count},
+        {"interruption_count", d.interruption_count},
+        {"correction_limit_count", d.correction_limit_count},
+        {"ring_occupancy_frames", d.ring_occupancy_frames},
+        {"clock_correction_ppm", d.clock_correction_ppm},
     };
 }
 
@@ -309,12 +910,16 @@ json cue_to_json(const core::CueMeta& c, audio::AudioEngine& engine) {
         {"offset_ns",      static_cast<long long>(c.ltc_offset_ns.count())},
         {"start_timecode", c.ltc_start_timecode},
     };
-    if (auto* item = engine.find_cue(c.id)) {
+    if (auto item = engine.find_cue(c.id)) {
         const auto s = item->stats();
         j["transport"] = static_cast<int>(s.transport);
         j["playhead_seconds"] = s.playhead_seconds;
         j["source_channels"]  = s.source_channels;
         j["file_loaded"]      = s.file_loaded;
+        j["decode_error"]     = s.decode_error;
+        j["decoder_result"]   = s.decoder_result;
+        j["read_ahead_underruns"] = s.read_ahead_underruns;
+        j["read_ahead_blocks"]    = s.read_ahead_blocks;
     }
     return j;
 }
@@ -333,6 +938,15 @@ ControlServer::~ControlServer() { stop(); }
 
 bool ControlServer::start() {
     if (running_.exchange(true)) return true;
+    if (!security::is_loopback_address(cfg_.bind_address) &&
+        cfg_.access_token.size() < 16) {
+        running_.store(false);
+        Logger::error(
+            "ControlServer: non-loopback bind requires an access token "
+            "of at least 16 characters.");
+        return false;
+    }
+    purge_orphan_export_files();
     install_routes();
 
     // Hand custom http-request actions off to clients. The server has no
@@ -367,6 +981,9 @@ bool ControlServer::start() {
     });
 
     // Crow's SimpleApp::run() blocks; we shove it on a worker thread.
+    // Main owns process shutdown. Crow otherwise replaces our SIGINT/SIGTERM
+    // handlers when run() starts, leaving the main heartbeat loop alive.
+    impl_->app.signal_clear();
     impl_->app_thread = std::thread([this] {
         try {
             impl_->app.bindaddr(cfg_.bind_address).port(cfg_.port).multithreaded().run();
@@ -375,7 +992,25 @@ bool ControlServer::start() {
         }
     });
 
+    impl_->app.wait_for_server_start(std::chrono::milliseconds{3000});
+    if (!impl_->app.is_bound()) {
+        running_.store(false);
+        impl_->app.stop();
+        if (impl_->app_thread.joinable()) impl_->app_thread.join();
+        state_.set_external_action_handler({});
+        state_.set_next_item_broadcaster({});
+        state_.set_ui_state_broadcaster({});
+        Logger::error(
+            "ControlServer: failed to bind {}:{}.",
+            cfg_.bind_address, cfg_.port);
+        return false;
+    }
+
     impl_->broadcast_thread = std::thread([this] { broadcast_loop(); });
+    {
+        std::lock_guard lock{impl_->waveform_q_mutex};
+        impl_->waveform_stop = false;
+    }
     impl_->waveform_thread  = std::thread([this] { waveform_worker(); });
     Logger::success("Control server listening on {}:{}", cfg_.bind_address, cfg_.port);
     return true;
@@ -383,15 +1018,21 @@ bool ControlServer::start() {
 
 void ControlServer::stop() {
     if (!running_.exchange(false)) return;
+    state_.set_external_action_handler({});
+    state_.set_next_item_broadcaster({});
+    state_.set_ui_state_broadcaster({});
     impl_->app.stop();
     {
         std::lock_guard lock{impl_->waveform_q_mutex};
         impl_->waveform_stop = true;
+        impl_->waveform_q.clear();
     }
     impl_->waveform_q_cv.notify_one();
     if (impl_->broadcast_thread.joinable()) impl_->broadcast_thread.join();
     if (impl_->waveform_thread.joinable())  impl_->waveform_thread.join();
     if (impl_->app_thread.joinable())       impl_->app_thread.join();
+    purge_chunked_uploads(true);
+    purge_download_tokens(true);
     Logger::info("Control server stopped.");
 }
 
@@ -414,6 +1055,8 @@ void ControlServer::broadcast_loop() {
     // rounds every sleep up); sleep_until against an advancing deadline
     // self-corrects, so the average rate converges on meter_broadcast_hz.
     auto next_tick = clock::now() + period;
+    auto next_download_cleanup = clock::now() + std::chrono::minutes(1);
+    auto next_upload_cleanup = clock::now() + std::chrono::minutes(1);
 
     while (running_.load(std::memory_order_acquire)) {
         // Guard the entire tick: an exception escaping this thread would call
@@ -421,6 +1064,15 @@ void ControlServer::broadcast_loop() {
         // Log-and-continue instead so a transient fault (e.g. a flaky media
         // share throwing out of a filesystem call) just drops one meter frame.
         try {
+        if (clock::now() >= next_download_cleanup) {
+            purge_download_tokens();
+            purge_orphan_export_files();
+            next_download_cleanup = clock::now() + std::chrono::minutes(1);
+        }
+        if (clock::now() >= next_upload_cleanup) {
+            purge_chunked_uploads();
+            next_upload_cleanup = clock::now() + std::chrono::minutes(1);
+        }
 
         // Build the meters payload.
         json payload;
@@ -431,7 +1083,7 @@ void ControlServer::broadcast_loop() {
         // both project cues and the preview cue (which is engine-only, not in
         // state_.list_cues()).
         auto append_meter_for = [&](const audio::CueId& cue_id) {
-            auto* item = engine_.find_cue(cue_id);
+            auto item = engine_.find_cue(cue_id);
             if (!item) return;
             const auto stats = item->stats();
             if (stats.transport == audio::TransportState::Stopped) return;
@@ -463,7 +1115,7 @@ void ControlServer::broadcast_loop() {
 
         json mixer_meters = json::array();
         for (auto& mch : state_.list_mixer_channels()) {
-            if (auto* m = engine_.find_mixer_channel(mch.id)) {
+            if (auto m = engine_.find_mixer_channel(mch.id)) {
                 auto s = m->meter_snapshot_consume();
                 mixer_meters.push_back(json{
                     {"mixer_id",         mch.id.value},
@@ -516,7 +1168,7 @@ void ControlServer::broadcast_loop() {
         std::vector<std::string> cue_state_events;
         try {
             for (auto& cue : state_.list_cues()) {
-                auto* item = engine_.find_cue(cue.id);
+                auto item = engine_.find_cue(cue.id);
                 const auto current = item
                     ? item->stats().transport
                     : audio::TransportState::Stopped;
@@ -731,7 +1383,7 @@ static json build_playback_snapshot(audio::AudioEngine& engine,
                                     core::ProjectState& state) {
     json cues_arr = json::array();
     for (auto& cue : state.list_cues()) {
-        auto* item = engine.find_cue(cue.id);
+        auto item = engine.find_cue(cue.id);
         if (!item) continue;
         const auto s = item->stats();
         if (s.transport == audio::TransportState::Stopped) continue;
@@ -778,7 +1430,7 @@ static std::vector<std::string> selection_anchors(audio::AudioEngine& engine,
     std::vector<std::string> playing;
     if (!state.selected_item_uuid().empty()) return playing;
     for (auto& cue : state.list_cues()) {
-        auto* item = engine.find_cue(cue.id);
+        auto item = engine.find_cue(cue.id);
         if (!item) continue;
         if (item->stats().transport == audio::TransportState::Stopped) continue;
         if (auto uuid = state.cue_to_item_uuid(cue.id)) playing.push_back(*uuid);
@@ -794,7 +1446,10 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
                                      const std::string& msg,
                                      audio::AudioEngine& engine,
                                      core::ProjectState& state,
-                                     const std::string& server_addr) {
+                                     const std::string& server_addr,
+                                     std::mutex& command_mutex,
+                                     std::unordered_map<std::string, std::string>& command_results,
+                                     std::deque<std::string>& command_order) {
     Logger::api_request("Client ({}) -> Server ({}) : {}", conn.get_remote_ip(), server_addr, msg);
 
     json j;
@@ -803,7 +1458,62 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
         Logger::warn("WS message parse failed: {}", e.what());
         return json({{"type", "error"}, {"message", e.what()}}).dump();
     }
+    if (!j.is_object()) {
+        Logger::warn("WS message rejected: top-level JSON must be an object");
+        return json{
+            {"type", "error"},
+            {"message", "message must be a JSON object"},
+        }.dump();
+    }
     const std::string type = j.value("type", "");
+    const std::string command_id =
+        j.contains("command_id") && j["command_id"].is_string()
+            ? j["command_id"].get<std::string>()
+            : std::string{};
+    if (command_id.size() > 128) {
+        return json{
+            {"type", "error"},
+            {"message", "command_id exceeds 128 characters"},
+        }.dump();
+    }
+    std::unique_lock<std::mutex> command_lock;
+    if (!command_id.empty()) {
+        command_lock = std::unique_lock{command_mutex};
+        if (const auto it = command_results.find(command_id);
+            it != command_results.end()) {
+            return it->second;
+        }
+    }
+    const auto remember_result = [&](std::string result) {
+        if (command_id.empty()) return result;
+        constexpr std::size_t max_results = 256;
+        if (command_results.size() >= max_results) {
+            command_results.erase(command_order.front());
+            command_order.pop_front();
+        }
+        command_order.push_back(command_id);
+        command_results.emplace(command_id, result);
+        return result;
+    };
+    const auto command_error = [&](std::string_view message) {
+        if (!command_id.empty()) {
+            return remember_result(json{
+                {"type", "command_ack"},
+                {"command_id", command_id},
+                {"ok", false},
+                {"error", message},
+            }.dump());
+        }
+        return json{{"type", "error"}, {"message", message}}.dump();
+    };
+    const auto command_ok = [&] {
+        if (command_id.empty()) return std::string{};
+        return remember_result(json{
+            {"type", "command_ack"},
+            {"command_id", command_id},
+            {"ok", true},
+        }.dump());
+    };
     // Resolve a transport target: prefer "item_uuid" (preserves duckingBehavior
     // / inPoint semantics defined in the project document); fall back to
     // "cue_id" (raw engine id) for low-level callers.
@@ -825,7 +1535,8 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
                 // trigger_item dispatches by item type: audio → play_item,
                 // group → walks startBehavior. Without this, WS plays of
                 // group items were silently ignored.
-                state.trigger_item(uuid);
+                if (!state.trigger_item(uuid))
+                    return command_error("play: item not loaded into engine");
             } else {
                 auto cue = resolve_cue(j);
                 if (cue) {
@@ -836,13 +1547,17 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
                     // (e.g. ad-hoc /api/cues registrations with no item).
                     if (auto uuid = state.cue_to_item_uuid(*cue)) {
                         Logger::playback("PLAY: {}", item_playback_info(*uuid, state));
-                        state.play_item(*uuid);
+                        if (!state.play_item(*uuid))
+                            return command_error("play: item not loaded into engine");
                     } else {
                         Logger::playback("PLAY: cue_id={} (orphan)", cue->value);
+                        if (!engine.find_cue(*cue))
+                            return command_error("play: cue not loaded into engine");
                         engine.play(*cue);
                     }
                 } else {
                     Logger::warn("WS play: no valid cue target in message");
+                    return command_error("play: no valid cue target");
                 }
             }
         }
@@ -850,19 +1565,24 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
             if (j.contains("item_uuid") && j["item_uuid"].is_string()) {
                 const auto uuid = j["item_uuid"].get<std::string>();
                 Logger::playback("STOP: {}", item_playback_info(uuid, state));
-                state.stop_item(uuid);
+                if (!state.stop_item(uuid))
+                    return command_error("stop: item not loaded into engine");
             } else {
                 auto cue = resolve_cue(j);
                 if (cue) {
                     if (auto uuid = state.cue_to_item_uuid(*cue)) {
                         Logger::playback("STOP: {}", item_playback_info(*uuid, state));
-                        state.stop_item(*uuid);
+                        if (!state.stop_item(*uuid))
+                            return command_error("stop: item not loaded into engine");
                     } else {
                         Logger::playback("STOP: cue_id={} (orphan)", cue->value);
+                        if (!engine.find_cue(*cue))
+                            return command_error("stop: cue not loaded into engine");
                         engine.stop(*cue);
                     }
                 } else {
                     Logger::warn("WS stop: no valid cue target in message");
+                    return command_error("stop: no valid cue target");
                 }
             }
         }
@@ -876,7 +1596,7 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
                 cue = resolve_cue(j);
             }
             if (cue) {
-                if (auto* pi = engine.find_cue(*cue)) {
+                if (auto pi = engine.find_cue(*cue)) {
                     Logger::playback("{} cue_id={}",
                                      type == "pause" ? "PAUSE" : "RESUME",
                                      cue->value);
@@ -884,13 +1604,11 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
                     else                 pi->resume();
                 } else {
                     Logger::warn("WS {}: cue_id={} not live in engine", type, cue->value);
-                    return json({{"type", "error"},
-                                 {"message", type + ": cue not loaded into engine"}}).dump();
+                    return command_error(type + ": cue not loaded into engine");
                 }
             } else {
                 Logger::warn("WS {}: no valid cue target", type);
-                return json({{"type", "error"},
-                             {"message", type + ": no valid cue target"}}).dump();
+                return command_error(type + ": no valid cue target");
             }
         }
         else if (type == "stop_all") {
@@ -911,46 +1629,48 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
             const auto uuid = state.go();
             if (uuid.empty()) {
                 Logger::warn("WS go: nothing armed or derivable to play");
-                return json({{"type", "error"}, {"message", "nothing armed to GO to"}}).dump();
+                return command_error("nothing armed to GO to");
             }
             Logger::playback("GO: {}", item_playback_info(uuid, state));
         }
         else if (type == "gain") {
             auto cue = resolve_cue(j);
             if (cue) {
+                if (!engine.find_cue(*cue))
+                    return command_error("gain: cue not loaded into engine");
                 const float db = j.value("db", 0.0f);
                 Logger::api_request("Client ({}) -> Server ({}) : WS gain cue_id={} db={:.1f}",
                                     conn.get_remote_ip(), server_addr, cue->value, db);
                 state.set_cue_gain_db(*cue, db);
-            }
+            } else return command_error("gain: no valid cue target");
         }
         else if (type == "fade") {
             auto cue = resolve_cue(j);
             if (cue) {
+                if (!engine.find_cue(*cue))
+                    return command_error("fade: cue not loaded into engine");
                 const auto in_ms  = j.value("in_ms",  (long long)0);
                 const auto out_ms = j.value("out_ms", (long long)0);
                 Logger::api_request("Client ({}) -> Server ({}) : WS fade cue_id={} in={}ms out={}ms",
                                     conn.get_remote_ip(), server_addr, cue->value, in_ms, out_ms);
                 state.set_cue_fade_in (*cue, std::chrono::milliseconds{in_ms});
                 state.set_cue_fade_out(*cue, std::chrono::milliseconds{out_ms});
-            }
+            } else return command_error("fade: no valid cue target");
         }
         else if (type == "seek") {
             auto cue = resolve_cue(j);
             if (cue) {
                 const double secs = j.value("seconds", 0.0);
                 Logger::playback("SEEK {:.2f}s → cue_id={}", secs, cue->value);
-                if (auto* pi = engine.find_cue(*cue)) {
+                if (auto pi = engine.find_cue(*cue)) {
                     pi->seek_seconds(secs);
                 } else {
                     Logger::warn("WS seek: cue_id={} not live in engine", cue->value);
-                    return json({{"type", "error"},
-                                 {"message", "seek: cue not loaded into engine"}}).dump();
+                    return command_error("seek: cue not loaded into engine");
                 }
             } else {
                 Logger::warn("WS seek: no valid cue target");
-                return json({{"type", "error"},
-                             {"message", "seek: no valid cue target"}}).dump();
+                return command_error("seek: no valid cue target");
             }
         }
         else if (type == "set_next_item") {
@@ -985,7 +1705,8 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
             // only applies when there is no selection — an explicit selection
             // always wins.
             const int delta = j.value("delta", 0);
-            if (delta != 0) state.step_selection(delta, selection_anchors(engine, state));
+            if (delta == 0) return command_error("select_step: delta must be non-zero");
+            state.step_selection(delta, selection_anchors(engine, state));
         }
         else if (type == "set_show_mode") {
             // Omit "enabled" to toggle.
@@ -995,24 +1716,27 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
                 state.toggle_show_mode();
         }
         else if (type == "set_locale") {
-            if (j.contains("locale") && j["locale"].is_string())
-                state.set_ui_locale(j["locale"].get<std::string>());
+            if (!j.contains("locale") || !j["locale"].is_string() ||
+                j["locale"].get_ref<const std::string&>().empty()) {
+                return command_error("set_locale: locale must be a non-empty string");
+            }
+            state.set_ui_locale(j["locale"].get<std::string>());
         }
         else if (type == "ping") {
             return json({{"type", "pong"}}).dump();
         }
         else {
             Logger::warn("WS unknown message type: {}", type);
-            return json({{"type", "error"}, {"message", "unknown type"}}).dump();
+            return command_error("unknown type");
         }
     } catch (const std::exception& e) {
         Logger::error("WS handler threw: {}", e.what());
-        return json({{"type", "error"}, {"message", e.what()}}).dump();
+        return command_error(e.what());
     } catch (...) {
         Logger::error("WS handler caught unknown exception.");
-        return json({{"type", "error"}, {"message", "internal error"}}).dump();
+        return command_error("internal error");
     }
-    return {};
+    return command_ok();
 }
 
 // ---------------------------------------------------------------------------
@@ -1021,6 +1745,11 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
 void ControlServer::install_routes() {
     auto& app = impl_->app;
     impl_->server_addr = std::format("{}:{}", cfg_.bind_address, cfg_.port);
+    app.websocket_max_payload(64 * 1024);
+    auto& security_middleware = app.get_middleware<ControlSecurityMiddleware>();
+    security_middleware.access_token = cfg_.access_token;
+    security_middleware.allowed_origins = cfg_.allowed_origins;
+    security_middleware.max_upload_bytes = cfg_.max_upload_bytes;
 
     // Route Crow's internal logs through our Logger and silence the noisy
     // per-request INFO lines (we log those ourselves via api_request/api_response).
@@ -1047,21 +1776,17 @@ void ControlServer::install_routes() {
         res = json_err(500, message);
     });
 
-    // Permissive CORS preflight for everything (the Electron client is on a
-    // different origin).
-    CROW_ROUTE(app, "/<path>").methods(crow::HTTPMethod::Options)
-        ([](const crow::request&, std::string){
-            crow::response r{204};
-            r.add_header("Access-Control-Allow-Origin",  "*");
-            r.add_header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-            r.add_header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-            return r;
-        });
-
     // ---- Health ----
     CROW_ROUTE(app, "/api/health").methods(crow::HTTPMethod::Get)
-        ([] {
-            try { return json_ok(json({{"ok", true}, {"name", "liveplay-server"}})); }
+        ([this] {
+            try {
+                return json_ok(json({
+                    {"ok", true},
+                    {"name", "dwcue-server"},
+                    {"pid", current_process_id()},
+                    {"instanceToken", cfg_.instance_token},
+                }));
+            }
             catch (...) { return json_err(500, "internal error"); }
         });
 
@@ -1261,10 +1986,9 @@ void ControlServer::install_routes() {
         });
 
     // GO — play whatever is armed as "Up Next" (user override first, else the
-    // playing item's endBehavior target). GET is accepted as well as POST so
-    // the URL can be fired from a browser or a plain `curl`.
+    // playing item's endBehavior target).
     CROW_ROUTE(app, "/api/transport/go")
-        .methods(crow::HTTPMethod::Post, crow::HTTPMethod::Get)
+        .methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req){
             Logger::api_request("Client ({}) -> Server ({}) : {} /api/transport/go",
                                 req.remote_ip_address, impl_->server_addr,
@@ -1315,7 +2039,7 @@ void ControlServer::install_routes() {
     // Arm the selected item as "Up Next" — the control-surface equivalent of
     // the client's "Set As Next" context action.
     CROW_ROUTE(app, "/api/transport/arm_selected")
-        .methods(crow::HTTPMethod::Post, crow::HTTPMethod::Get)
+        .methods(crow::HTTPMethod::Post)
         ([this]{
             const auto uuid = state_.selected_item_uuid();
             if (uuid.empty()) return json_err(404, "nothing is selected");
@@ -1326,7 +2050,7 @@ void ControlServer::install_routes() {
 
     // Trigger the selected item (the client's Enter / "Play Selected" key).
     CROW_ROUTE(app, "/api/transport/play_selected")
-        .methods(crow::HTTPMethod::Post, crow::HTTPMethod::Get)
+        .methods(crow::HTTPMethod::Post)
         ([this]{
             const auto uuid = state_.selected_item_uuid();
             if (uuid.empty()) return json_err(404, "nothing is selected");
@@ -1341,7 +2065,7 @@ void ControlServer::install_routes() {
     // paused, otherwise pauses everything sounding; that way a single button
     // is never ambiguous about which way it will go.
     CROW_ROUTE(app, "/api/transport/pause_toggle")
-        .methods(crow::HTTPMethod::Post, crow::HTTPMethod::Get)
+        .methods(crow::HTTPMethod::Post)
         ([this]{
             const json summary = state_.state_summary();
             std::vector<std::string> paused, sounding;
@@ -1356,7 +2080,7 @@ void ControlServer::install_routes() {
             const bool resuming = !paused.empty();
             for (const auto& uuid : resuming ? paused : sounding) {
                 if (auto cue = state_.item_to_cue_id(uuid)) {
-                    if (auto* pi = engine_.find_cue(*cue)) {
+                    if (auto pi = engine_.find_cue(*cue)) {
                         if (resuming) pi->resume(); else pi->pause();
                     }
                 }
@@ -1425,9 +2149,9 @@ void ControlServer::install_routes() {
             } catch (const std::exception& e) { return json_err(400, e.what()); }
         });
 
-    // Trigger the item bound to a cart slot. GET accepted for curl/browser.
+    // Trigger the item bound to a cart slot.
     CROW_ROUTE(app, "/api/transport/cart/<int>/play")
-        .methods(crow::HTTPMethod::Post, crow::HTTPMethod::Get)
+        .methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req, int slot){
             Logger::api_request("Client ({}) -> Server ({}) : {} /api/transport/cart/{}/play",
                                 req.remote_ip_address, impl_->server_addr,
@@ -1609,7 +2333,7 @@ void ControlServer::install_routes() {
     //     "all"             — list every regular file
     //     ".liveplay,.lpa"  — comma-separated extension allow-list
     CROW_ROUTE(app, "/api/fs/list").methods(crow::HTTPMethod::Get)
-        ([this](const crow::request& req){
+        ([](const crow::request& req){
             try {
                 const char* path_param   = req.url_params.get("path");
                 const char* filter_param = req.url_params.get("filter");
@@ -1855,7 +2579,7 @@ void ControlServer::install_routes() {
                 if (req.body.size() > cfg_.max_upload_bytes) {
                     return json_err(413, "payload too large");
                 }
-                crow::multipart::message multipart{req};
+                crow::multipart::message_view multipart{req};
                 const auto& parts = multipart.parts;
                 if (parts.empty()) return json_err(400, "no multipart parts");
 
@@ -1874,18 +2598,286 @@ void ControlServer::install_routes() {
                             filename = fn->second;
                         }
                     }
-                    // Strip path traversal — treat the filename bytes as UTF-8.
-                    fs::path safe_name = liveplay::util::utf8_to_path(filename).filename();
-                    if (safe_name.empty()) safe_name = "upload.bin";
-                    fs::path dest = media / safe_name;
-
-                    std::ofstream f{dest, std::ios::binary};
+                    const fs::path safe_name = liveplay::util::utf8_to_path(
+                        security::sanitize_upload_filename(filename));
+                    std::lock_guard import_lock{g_media_import_mutex};
+                    const fs::path dest = unused_media_path(media, safe_name);
+                    ScopedFileRemoval incomplete{dest};
+                    std::ofstream f{
+                        dest, std::ios::binary | std::ios::trunc};
                     if (!f) return json_err(500, "failed to write file");
                     f.write(part.body.data(), static_cast<std::streamsize>(part.body.size()));
+                    f.close();
+                    if (!f) return json_err(500, "failed to write file");
+                    incomplete.path.clear();
                     saved.push_back(liveplay::util::path_to_utf8(dest));
                 }
                 return json_ok(json({{"saved", saved}}));
             } catch (const std::exception& e) { return json_err(400, e.what()); }
+        });
+
+    CROW_ROUTE(app, "/api/upload/start").methods(crow::HTTPMethod::Post)
+        ([this](const crow::request& req) {
+            try {
+                purge_chunked_uploads();
+                const auto body = json::parse(req.body);
+                if (!body.contains("filename") || !body["filename"].is_string())
+                    return json_err(400, "missing filename");
+                const auto size_value = body.find("size");
+                if (size_value == body.end() || !size_value->is_number_unsigned())
+                    return json_err(400, "missing size");
+                const std::string purpose =
+                    body.value("purpose", std::string{"media"});
+                if (!security::valid_chunked_upload_purpose(purpose))
+                    return json_err(400, "invalid purpose");
+
+                const std::uint64_t expected_bytes =
+                    size_value->get<std::uint64_t>();
+                ChunkedUploadSession::Purpose session_purpose =
+                    ChunkedUploadSession::Purpose::Media;
+                fs::path staging_root;
+                fs::path extract_path;
+                if (purpose == "project_import") {
+                    const auto extract_value = body.find("extract_path");
+                    if (extract_value == body.end() ||
+                        !extract_value->is_string()) {
+                        return json_err(400, "missing extract_path");
+                    }
+                    extract_path = liveplay::util::utf8_to_path(
+                        extract_value->get<std::string>());
+                    if (extract_path.empty())
+                        return json_err(400, "extract_path must not be empty");
+                    staging_root = fs::temp_directory_path() / "liveplay-imports";
+                    session_purpose = ChunkedUploadSession::Purpose::ProjectImport;
+                    if (expected_bytes > security::kMaxArchiveCompressedBytes)
+                        return json_err(
+                            413, "archive exceeds compressed-size limit");
+                } else {
+                    staging_root = state_.media_root();
+                    if (staging_root.empty())
+                        return json_err(500, "media root not configured");
+                }
+                std::error_code ec;
+                fs::create_directories(staging_root, ec);
+                if (ec) return json_err(500, "failed to create upload staging");
+                purge_orphan_chunked_upload_files(staging_root);
+                if (!chunked_upload_has_space(staging_root, expected_bytes))
+                    return json_err(507, "insufficient space for upload");
+
+                const fs::path filename = liveplay::util::utf8_to_path(
+                    security::sanitize_upload_filename(
+                        body["filename"].get<std::string>()));
+                const std::string upload_id = make_chunked_upload_id();
+                const fs::path temp_path =
+                    staging_root / liveplay::util::utf8_to_path(
+                        ".dwcue-upload-" + upload_id + ".part");
+                ScopedFileRemoval incomplete{temp_path};
+                std::ofstream temp{
+                    temp_path, std::ios::binary | std::ios::trunc};
+                if (!temp) return json_err(500, "failed to stage upload");
+                temp.close();
+                if (!temp) return json_err(500, "failed to stage upload");
+                incomplete.path.clear();
+
+                {
+                    std::lock_guard lock{g_chunked_uploads_mutex};
+                    g_chunked_uploads[upload_id] = ChunkedUploadSession{
+                        .temp_path = temp_path,
+                        .staging_root = std::move(staging_root),
+                        .filename = filename,
+                        .extract_path = std::move(extract_path),
+                        .expected_bytes = expected_bytes,
+                        .received_bytes = 0,
+                        .expires_at =
+                            std::chrono::steady_clock::now() + std::chrono::hours(1),
+                        .purpose = session_purpose,
+                    };
+                }
+
+                return json_ok(json{
+                    {"upload_id", upload_id},
+                    {"chunk_size", security::kChunkedUploadChunkBytes},
+                });
+            } catch (const std::exception& e) {
+                return json_err(400, e.what());
+            }
+        });
+
+    CROW_ROUTE(app, "/api/upload/<string>").methods(crow::HTTPMethod::Put)
+        ([](const crow::request& req, const std::string& upload_id) {
+            try {
+                if (!valid_download_token(upload_id))
+                    return json_err(404, "upload not found");
+                if (req.body.size() > security::kChunkedUploadChunkBytes)
+                    return json_err(413, "chunk too large");
+                const auto offset = chunked_upload_offset(req);
+                if (!offset) return json_err(400, "missing or invalid offset");
+
+                std::lock_guard lock{g_chunked_uploads_mutex};
+                auto it = g_chunked_uploads.find(upload_id);
+                if (it == g_chunked_uploads.end())
+                    return json_err(404, "upload not found");
+                auto& session = it->second;
+                if (session.expires_at <= std::chrono::steady_clock::now()) {
+                    const fs::path expired_path = std::move(session.temp_path);
+                    g_chunked_uploads.erase(it);
+                    std::error_code ec;
+                    fs::remove(expired_path, ec);
+                    return json_err(404, "upload expired");
+                }
+                if (*offset != session.received_bytes) {
+                    auto response = crow::response{
+                        409,
+                        json({{"error", "offset mismatch"},
+                              {"expected_offset", session.received_bytes}})
+                            .dump()};
+                    response.set_header("Content-Type", "application/json");
+                    return response;
+                }
+                if (session.finalizing)
+                    return json_err(409, "upload is being finalized");
+                const auto chunk_bytes =
+                    static_cast<std::uint64_t>(req.body.size());
+                if (chunk_bytes >
+                    session.expected_bytes - session.received_bytes) {
+                    return json_err(409, "chunk exceeds declared upload size");
+                }
+                if (!chunked_upload_has_space(
+                        session.staging_root,
+                        session.expected_bytes - session.received_bytes)) {
+                    return json_err(507, "insufficient space for upload");
+                }
+
+                std::ofstream temp{
+                    session.temp_path, std::ios::binary | std::ios::app};
+                if (!temp) return json_err(500, "failed to open staged upload");
+                temp.write(req.body.data(),
+                           static_cast<std::streamsize>(req.body.size()));
+                temp.close();
+                if (!temp) return json_err(500, "failed to write upload chunk");
+
+                session.received_bytes += chunk_bytes;
+                session.expires_at =
+                    std::chrono::steady_clock::now() + std::chrono::hours(1);
+                return json_ok(json{
+                    {"received", session.received_bytes},
+                    {"complete", session.received_bytes == session.expected_bytes},
+                });
+            } catch (const std::exception& e) {
+                return json_err(400, e.what());
+            }
+        });
+
+    CROW_ROUTE(app, "/api/upload/<string>/finish").methods(crow::HTTPMethod::Post)
+        ([](const crow::request&, const std::string& upload_id) {
+            try {
+                purge_chunked_uploads();
+                if (!valid_download_token(upload_id))
+                    return json_err(404, "upload not found");
+
+                fs::path temp_path;
+                fs::path staging_root;
+                fs::path filename;
+                fs::path extract_path;
+                ChunkedUploadSession::Purpose purpose{
+                    ChunkedUploadSession::Purpose::Media};
+                {
+                    std::lock_guard lock{g_chunked_uploads_mutex};
+                    auto it = g_chunked_uploads.find(upload_id);
+                    if (it == g_chunked_uploads.end())
+                        return json_err(404, "upload not found");
+                    if (it->second.expires_at <= std::chrono::steady_clock::now()) {
+                        const fs::path expired_path = std::move(it->second.temp_path);
+                        g_chunked_uploads.erase(it);
+                        std::error_code ec;
+                        fs::remove(expired_path, ec);
+                        return json_err(404, "upload expired");
+                    }
+                    if (it->second.received_bytes != it->second.expected_bytes)
+                        return json_err(409, "upload is incomplete");
+                    if (it->second.finalizing)
+                        return json_err(409, "upload is being finalized");
+                    it->second.finalizing = true;
+                    it->second.expires_at =
+                        std::chrono::steady_clock::now() + std::chrono::hours(1);
+                    temp_path = it->second.temp_path;
+                    staging_root = it->second.staging_root;
+                    filename = it->second.filename;
+                    extract_path = it->second.extract_path;
+                    purpose = it->second.purpose;
+                }
+
+                const auto reset_finalizing = [&] {
+                    std::lock_guard lock{g_chunked_uploads_mutex};
+                    if (auto it = g_chunked_uploads.find(upload_id);
+                        it != g_chunked_uploads.end()) {
+                        it->second.finalizing = false;
+                    }
+                };
+                try {
+                    if (purpose == ChunkedUploadSession::Purpose::ProjectImport) {
+                        const auto extraction =
+                            extract_archive_locked(temp_path, extract_path);
+                        if (!extraction.ok) {
+                            reset_finalizing();
+                            return json_err(extraction.status, extraction.error);
+                        }
+                        {
+                            std::lock_guard lock{g_chunked_uploads_mutex};
+                            g_chunked_uploads.erase(upload_id);
+                        }
+                        std::error_code cleanup_ec;
+                        fs::remove(temp_path, cleanup_ec);
+                        return json_ok(imported_project_response(extract_path));
+                    }
+
+                    fs::path dest;
+                    std::error_code ec;
+                    std::lock_guard import_lock{g_media_import_mutex};
+                    dest = unused_media_path(staging_root, filename);
+                    fs::rename(temp_path, dest, ec);
+                    if (ec) {
+                        reset_finalizing();
+                        return json_err(500, "failed to finalize upload");
+                    }
+                    {
+                        std::lock_guard lock{g_chunked_uploads_mutex};
+                        g_chunked_uploads.erase(upload_id);
+                    }
+                    return json_ok(json{{
+                        "saved", json::array({liveplay::util::path_to_utf8(dest)})}});
+                } catch (...) {
+                    reset_finalizing();
+                    throw;
+                }
+            } catch (const std::exception& e) {
+                return json_err(400, e.what());
+            }
+        });
+
+    CROW_ROUTE(app, "/api/upload/<string>").methods(crow::HTTPMethod::Delete)
+        ([](const crow::request&, const std::string& upload_id) {
+            try {
+                purge_chunked_uploads();
+                if (!valid_download_token(upload_id))
+                    return json_err(404, "upload not found");
+                fs::path temp_path;
+                {
+                    std::lock_guard lock{g_chunked_uploads_mutex};
+                    auto it = g_chunked_uploads.find(upload_id);
+                    if (it == g_chunked_uploads.end())
+                        return json_err(404, "upload not found");
+                    if (it->second.finalizing)
+                        return json_err(409, "upload is being finalized");
+                    temp_path = std::move(it->second.temp_path);
+                    g_chunked_uploads.erase(it);
+                }
+                std::error_code ec;
+                fs::remove(temp_path, ec);
+                return json_ok(json{{"ok", true}});
+            } catch (const std::exception& e) {
+                return json_err(400, e.what());
+            }
         });
 
     // Copy an existing server-side file into the project's media root.
@@ -1908,18 +2900,17 @@ void ControlServer::install_routes() {
                 if (media.empty()) return json_err(500, "media root not configured");
 
                 fs::create_directories(media);
-                const fs::path dest = media / src.filename();
+                std::lock_guard import_lock{g_media_import_mutex};
+                fs::path dest = media / src.filename();
 
-                // Skip the copy only when src and dest are the same file. Use
-                // weakly_canonical, NOT canonical: canonical() throws when the
-                // path doesn't exist, and dest normally does NOT exist yet on a
-                // first import — that threw, returned 500, and the client fell
-                // back to the original out-of-folder path, so the media never
-                // landed in the project folder (the import bug).
                 std::error_code ec;
-                if (fs::weakly_canonical(src, ec) != fs::weakly_canonical(dest, ec)) {
-                    fs::copy_file(src, dest, fs::copy_options::overwrite_existing);
+                if (fs::exists(dest, ec) && !ec &&
+                    fs::equivalent(src, dest, ec) && !ec) {
+                    return json_ok(json{{
+                        "dest_path", liveplay::util::path_to_utf8(dest)}});
                 }
+                dest = unused_media_path(media, src.filename());
+                fs::copy_file(src, dest, fs::copy_options::none);
 
                 return json_ok(json{{"dest_path", liveplay::util::path_to_utf8(dest)}});
             } catch (const std::exception& e) { return json_err(500, e.what()); }
@@ -1943,15 +2934,26 @@ void ControlServer::install_routes() {
                 const auto wdir = proj_path.empty()
                     ? fs::path{}
                     : proj_path.parent_path() / "waveforms";
+                const auto waveform_path =
+                    liveplay::util::utf8_to_path(path_str);
 
                 {
                     std::lock_guard lock{impl_->waveform_q_mutex};
-                    impl_->waveform_q.push_back({
-                        liveplay::util::utf8_to_path(path_str),
-                        item_uuid,
-                        wdir,
-                        force
-                    });
+                    if (impl_->waveform_stop)
+                        return json_err(503, "server is stopping");
+                    const auto queued = std::find_if(
+                        impl_->waveform_q.begin(), impl_->waveform_q.end(),
+                        [&](const Impl::WaveformTask& task) {
+                            return task.item_uuid == item_uuid &&
+                                   task.path == waveform_path;
+                        });
+                    if (queued != impl_->waveform_q.end()) {
+                        queued->force = queued->force || force;
+                    } else {
+                        impl_->waveform_q.push_back({
+                            waveform_path, item_uuid, wdir, force
+                        });
+                    }
                 }
                 impl_->waveform_q_cv.notify_one();
                 return json_ok(json{{"ok", true}});
@@ -2097,13 +3099,7 @@ void ControlServer::install_routes() {
     // open so it can show "loaded X / Y audio cues" without re-fetching the
     // whole document on a timer.
     CROW_ROUTE(app, "/api/project/progress").methods(crow::HTTPMethod::Get)
-        ([this] {
-            return json_ok(json({
-                {"loading", state_.audio_loading()},
-                {"loaded",  state_.audio_loaded_count()},
-                {"total",   state_.audio_total_count()},
-            }));
-        });
+        ([this] { return json_ok(state_.audio_readiness()); });
 
     CROW_ROUTE(app, "/api/project/load").methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req){
@@ -2210,26 +3206,47 @@ void ControlServer::install_routes() {
                 if (!fs::exists(src) || !fs::is_directory(src)) {
                     return json_err(400, "folderPath does not exist or is not a directory");
                 }
-                const std::string default_name =
-                    j.value("projectName", src.filename().string()) + ".lpa";
+                const std::string default_name = safe_download_filename(
+                    j.value("projectName",
+                            liveplay::util::path_to_utf8(src.filename())));
 
                 fs::path out;
                 bool to_temp = false;
+                std::string download_token;
                 if (j.contains("outputPath") && j["outputPath"].is_string() &&
                     !j["outputPath"].get<std::string>().empty()) {
                     out = liveplay::util::utf8_to_path(j["outputPath"].get<std::string>());
-                    if (out.has_parent_path()) fs::create_directories(out.parent_path());
                 } else {
                     // Stage in a temp directory; surface via download token.
-                    fs::path tmp = fs::temp_directory_path() / "liveplay-exports";
+                    fs::path tmp = export_temp_root();
                     fs::create_directories(tmp);
-                    out = tmp / default_name;
+                    download_token = make_download_token();
+                    out = tmp / (download_token + ".lpa");
                     to_temp = true;
                 }
+                if (!out.is_absolute())
+                    return json_err(400, "outputPath must be absolute");
+                std::error_code output_ec;
+                fs::create_directories(out.parent_path(), output_ec);
+                if (output_ec)
+                    return json_err(500, "failed to create export directory");
+                const fs::path staged_out =
+                    out.parent_path() /
+                    liveplay::util::utf8_to_path(
+                        ".dwcue-export-" + make_download_token() + ".part");
+                ScopedFileRemoval incomplete_export{staged_out};
 
-                if (!zip_pack_directory(src, out)) {
-                    return json_err(500, "failed to package archive");
+                {
+                    std::lock_guard media_snapshot_lock{g_media_import_mutex};
+                    if (!zip_pack_directory(src, staged_out, out)) {
+                        return json_err(500, "failed to package archive");
+                    }
                 }
+                if (!liveplay::util::replace_file_atomically(
+                        staged_out, out, output_ec)) {
+                    return json_err(500, "failed to finalize archive");
+                }
+                incomplete_export.path.clear();
                 std::uintmax_t size = 0;
                 try { size = fs::file_size(out); } catch (...) {}
 
@@ -2238,9 +3255,8 @@ void ControlServer::install_routes() {
                     {"size",        static_cast<std::uint64_t>(size)},
                 };
                 if (to_temp) {
-                    const std::string token = make_download_token();
-                    register_download_token(token, out);
-                    resp["downloadToken"] = token;
+                    register_download_token(download_token, out);
+                    resp["downloadToken"] = download_token;
                     resp["downloadFilename"] = default_name;
                 }
                 Logger::api_response("Client ({}) <- Server ({}) : POST /api/project/export OK — '{}' ({} bytes)",
@@ -2253,37 +3269,34 @@ void ControlServer::install_routes() {
             }
         });
 
-    // Stream a server-side file to the client by one-shot download token.
-    // The token is consumed (single-use) on success. Used by the export flow
-    // when the user picks "Save on my computer" and the .lpa was packaged in
-    // a temp dir server-side.
-    CROW_ROUTE(app, "/api/file/download").methods(crow::HTTPMethod::Get)
-        ([this](const crow::request& req){
+    // Stream a server-side file by one-shot token. GET claims it; DELETE
+    // acknowledges a fully received transfer and removes the temp file.
+    CROW_ROUTE(app, "/api/file/download")
+        .methods(crow::HTTPMethod::Get, crow::HTTPMethod::Delete)
+        ([](const crow::request& req){
             try {
                 const char* token = req.url_params.get("token");
                 if (!token) return json_err(400, "missing ?token=");
-                auto path_opt = redeem_download_token(token);
+                if (!valid_download_token(token))
+                    return json_err(400, "invalid token");
+                if (req.method == crow::HTTPMethod::Delete) {
+                    return complete_download_token(token)
+                        ? json_ok(json{{"deleted", true}})
+                        : json_err(404, "token expired or invalid");
+                }
+                auto path_opt = claim_download_token(token);
                 if (!path_opt) return json_err(404, "token expired or invalid");
                 const fs::path& p = *path_opt;
-                std::ifstream f{p, std::ios::binary | std::ios::ate};
-                if (!f) return json_err(500, "failed to open archive");
-                const auto size = f.tellg();
-                f.seekg(0, std::ios::beg);
-                std::string body(static_cast<std::size_t>(size), '\0');
-                f.read(body.data(), size);
-
-                crow::response r{200, std::move(body)};
-                r.add_header("Content-Type", "application/octet-stream");
-                // Encode the filename via path_to_utf8 rather than the native
-                // .string() (which decodes through the active code page and can
-                // throw on non-representable Unicode names).
-                r.add_header("Content-Disposition",
-                             "attachment; filename=\""
-                                 + liveplay::util::path_to_utf8(p.filename()) + "\"");
-                r.add_header("Access-Control-Allow-Origin", "*");
-                // The temp file has served its purpose; delete it to bound disk
-                // usage on the server.
-                std::error_code ec; fs::remove(p, ec);
+                crow::response r;
+                r.set_static_file_info_unsafe(
+                    liveplay::util::path_to_utf8(p),
+                    "application/octet-stream");
+                if (r.code != 200) {
+                    complete_download_token(token);
+                    return json_err(500, "failed to open archive");
+                }
+                r.add_header("Content-Disposition", "attachment");
+                r.add_header("Cache-Control", "no-store");
                 return r;
             } catch (const std::exception& e) {
                 Logger::error("GET /api/file/download threw: {}", e.what());
@@ -2301,22 +3314,27 @@ void ControlServer::install_routes() {
     //     discovered) and `extractPath`.
     //   * application/json: { "archivePath": "/abs/path.lpa", "extractPath": "/abs/dest" }
     //     Same response shape; no upload step.
+    //   * chunked upload via /api/upload/start with
+    //     { "filename": "...", "size": N, "purpose": "project_import",
+    //       "extract_path": "/abs/dest" }, then PUT chunks, then
+    //     POST /api/upload/{id}/finish. Same response shape.
     CROW_ROUTE(app, "/api/project/import").methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req){
             try {
+                if (req.body.size() > cfg_.max_upload_bytes)
+                    return json_err(413, "payload too large");
                 Logger::api_request("Client ({}) -> Server ({}) : POST /api/project/import",
                                     req.remote_ip_address, impl_->server_addr);
                 fs::path archive_path;
                 fs::path extract_path;
-                bool delete_archive_after = false;
+                ScopedFileRemoval staged_upload;
 
                 const auto ct_it = req.headers.find("Content-Type");
                 const std::string ct = ct_it != req.headers.end() ? ct_it->second : "";
 
                 if (ct.find("multipart/") != std::string::npos) {
-                    crow::multipart::message mp{req};
-                    std::string filename = "import.lpa";
-                    const crow::multipart::part* file_part = nullptr;
+                    crow::multipart::message_view mp{req};
+                    const crow::multipart::part_view* file_part = nullptr;
                     for (const auto& part : mp.parts) {
                         auto cd = part.headers.find("Content-Disposition");
                         if (cd == part.headers.end()) continue;
@@ -2324,28 +3342,26 @@ void ControlServer::install_routes() {
                         if (name_it == cd->second.params.end()) continue;
                         if (name_it->second == "file") {
                             file_part = &part;
-                            auto fn = cd->second.params.find("filename");
-                            if (fn != cd->second.params.end() && !fn->second.empty())
-                                filename = fn->second;
                         } else if (name_it->second == "extractPath") {
-                            extract_path = liveplay::util::utf8_to_path(part.body);
+                            extract_path = liveplay::util::utf8_to_path(
+                                std::string{part.body});
                         }
                     }
                     if (!file_part) return json_err(400, "missing 'file' part");
+                    if (file_part->body.size() > cfg_.max_upload_bytes)
+                        return json_err(413, "uploaded archive too large");
                     if (extract_path.empty())
                         return json_err(400, "missing 'extractPath' form field");
                     fs::path tmp = fs::temp_directory_path() / "liveplay-imports";
                     fs::create_directories(tmp);
-                    archive_path = tmp /
-                        (liveplay::util::utf8_to_path(filename).filename().empty()
-                            ? fs::path{"import.lpa"}
-                            : liveplay::util::utf8_to_path(filename).filename());
+                    archive_path = tmp / (make_download_token() + ".lpa");
+                    staged_upload.path = archive_path;
                     std::ofstream of{archive_path, std::ios::binary};
                     if (!of) return json_err(500, "failed to stage uploaded archive");
                     of.write(file_part->body.data(),
                              static_cast<std::streamsize>(file_part->body.size()));
                     of.close();
-                    delete_archive_after = true;
+                    if (!of) return json_err(500, "failed to stage uploaded archive");
                 } else {
                     auto j = json::parse(req.body);
                     if (!j.contains("archivePath") || !j["archivePath"].is_string())
@@ -2356,27 +3372,17 @@ void ControlServer::install_routes() {
                     extract_path = liveplay::util::utf8_to_path(j["extractPath"].get<std::string>());
                 }
 
-                if (!fs::exists(archive_path))
+                if (extract_path.empty())
+                    return json_err(400, "extractPath must not be empty");
+                if (!fs::exists(archive_path) || !fs::is_regular_file(archive_path))
                     return json_err(400, "archive does not exist");
-                fs::create_directories(extract_path);
 
-                if (!zip_extract_to(archive_path, extract_path)) {
-                    if (delete_archive_after) { std::error_code ec; fs::remove(archive_path, ec); }
-                    return json_err(500, "extract failed");
-                }
-                if (delete_archive_after) { std::error_code ec; fs::remove(archive_path, ec); }
+                const auto extraction =
+                    extract_archive_locked(archive_path, extract_path);
+                if (!extraction.ok)
+                    return json_err(extraction.status, extraction.error);
 
-                // Find all .liveplay files in the extracted folder (top-level).
-                json project_files = json::array();
-                for (auto& e : fs::directory_iterator(extract_path)) {
-                    if (e.is_regular_file() && e.path().extension() == ".liveplay") {
-                        project_files.push_back(e.path().filename().string());
-                    }
-                }
-                json resp = {
-                    {"extractPath",  liveplay::util::path_to_utf8(extract_path)},
-                    {"projectFiles", std::move(project_files)},
-                };
+                json resp = imported_project_response(extract_path);
                 Logger::api_response("Client ({}) <- Server ({}) : POST /api/project/import OK — extracted to '{}'",
                                      req.remote_ip_address, impl_->server_addr,
                                      liveplay::util::path_to_utf8(extract_path));
@@ -2615,10 +3621,8 @@ void ControlServer::install_routes() {
 
     // Item-by-uuid transport. Routed through ProjectState so duckingBehavior,
     // inPoint, and fade settings from the project document are honoured.
-    // GET is accepted as well as POST so the trigger URL shown in the client's
-    // Properties Panel can be fired from a browser or a plain `curl`.
     CROW_ROUTE(app, "/api/project/items/<string>/play")
-        .methods(crow::HTTPMethod::Post, crow::HTTPMethod::Get)
+        .methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req, std::string uuid){
             const std::string m = crow::method_name(req.method);
             Logger::api_request("Client ({}) -> Server ({}) : {} /api/project/items/{}/play",
@@ -2640,10 +3644,9 @@ void ControlServer::install_routes() {
     // 12th item inside it). Both comma- and slash-separated forms are accepted
     // ("1,11" and "1/11" are equivalent), so the URL can be written either way
     // — even mixed ("1,2/0"). Routed through trigger_item so audio items play
-    // and group items dispatch per their startBehavior. GET is accepted as well
-    // as POST so the URL can be fired from a browser or a plain `curl`.
+    // and group items dispatch per their startBehavior.
     CROW_ROUTE(app, "/api/project/items/by-index/<path>")
-        .methods(crow::HTTPMethod::Post, crow::HTTPMethod::Get)
+        .methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req, std::string index_path){
             const std::string m = crow::method_name(req.method);
             Logger::api_request("Client ({}) -> Server ({}) : {} /api/project/items/by-index/{}",
@@ -2708,7 +3711,7 @@ void ControlServer::install_routes() {
                                 req.remote_ip_address, impl_->server_addr, uuid);
             const auto cue = state_.item_to_cue_id(uuid);
             if (!cue) return json_err(404, "item not loaded into engine");
-            if (auto* pi = engine_.find_cue(*cue)) {
+            if (auto pi = engine_.find_cue(*cue)) {
                 Logger::playback("PAUSE: {}", item_playback_info(uuid, state_));
                 pi->pause();
                 return json_ok(json({{"ok", true}}));
@@ -2721,7 +3724,7 @@ void ControlServer::install_routes() {
                                 req.remote_ip_address, impl_->server_addr, uuid);
             const auto cue = state_.item_to_cue_id(uuid);
             if (!cue) return json_err(404, "item not loaded into engine");
-            if (auto* pi = engine_.find_cue(*cue)) {
+            if (auto pi = engine_.find_cue(*cue)) {
                 Logger::playback("RESUME: {}", item_playback_info(uuid, state_));
                 pi->resume();
                 return json_ok(json({{"ok", true}}));
@@ -2741,7 +3744,7 @@ void ControlServer::install_routes() {
                     Logger::warn("SEEK item_uuid={} — not loaded into engine", uuid);
                     return json_err(404, "item not loaded into engine");
                 }
-                if (auto* pi = engine_.find_cue(*cue)) {
+                if (auto pi = engine_.find_cue(*cue)) {
                     pi->seek_seconds(secs);
                 }
                 return json_ok(json({{"ok", true}}));
@@ -2902,6 +3905,26 @@ void ControlServer::install_routes() {
     // WebSocket
     // ------------------------------------------------------------------
     CROW_WEBSOCKET_ROUTE(app, "/ws")
+      .max_payload(64 * 1024)
+      .onaccept([this](const crow::request& req,
+                       std::optional<crow::response>& rejection,
+                       void**) {
+          const std::string origin = req.get_header_value("Origin");
+          const auto& middleware =
+              impl_->app.get_middleware<ControlSecurityMiddleware>();
+          if (!security::origin_allowed(origin, cfg_.allowed_origins)) {
+              rejection = crow::response{
+                  403, json({{"error", "origin not allowed"}}).dump()};
+              rejection->set_header("Content-Type", "application/json");
+              return;
+          }
+          if (!middleware.authorized(req)) {
+              rejection = crow::response{
+                  401, json({{"error", "authentication required"}}).dump()};
+              rejection->set_header("Content-Type", "application/json");
+              rejection->set_header("WWW-Authenticate", "Bearer");
+          }
+      })
       .onopen([this](crow::websocket::connection& conn) {
           std::lock_guard lock{impl_->ws_mutex};
           impl_->ws_clients.insert(&conn);
@@ -2927,7 +3950,10 @@ void ControlServer::install_routes() {
           if (is_binary) return;
           std::string direct_reply;
           try {
-              direct_reply = handle_ws_message(conn, data, engine_, state_, impl_->server_addr);
+              direct_reply = handle_ws_message(
+                  conn, data, engine_, state_, impl_->server_addr,
+                  impl_->ws_command_mutex, impl_->ws_command_results,
+                  impl_->ws_command_order);
           } catch (const std::exception& e) {
               Logger::error("WS onmessage threw past handler: {}", e.what());
           } catch (...) {

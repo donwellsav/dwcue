@@ -4,7 +4,7 @@
       <div class="welcome-header">
         <img
           :src="isDark ? './assets/icons/SVG/liveplay-icon-darkmode@web.svg' : './assets/icons/SVG/liveplay-icon-lightmode@web.svg'"
-          alt="LivePlay"
+          alt="DonWells Cue"
           class="welcome-logo"
         />
         <div class="welcome-text">
@@ -119,6 +119,15 @@
             type="text"
             class="remote-field-input"
             :placeholder="t('welcome.serverAddressPlaceholder')"
+            @keydown.enter="connectToRemote"
+          />
+          <label class="remote-field-label">Access token</label>
+          <input
+            v-model="remoteAccessToken"
+            type="password"
+            class="remote-field-input"
+            autocomplete="off"
+            placeholder="Required by LAN servers"
             @keydown.enter="connectToRemote"
           />
           <p v-if="connectionError" class="remote-error">{{ connectionError }}</p>
@@ -240,6 +249,7 @@ const stage = ref<Stage>('mode');
 const mode  = ref<'local' | 'remote'>('local');
 
 const remoteAddress   = ref('');
+const remoteAccessToken = ref(String(server.accessToken || ''));
 const connecting      = ref(false);
 const connectionError = ref<string>('');
 
@@ -489,6 +499,7 @@ async function ensureLocalServer(): Promise<boolean> {
   if (import.meta.client && api?.setConfig) {
     const cfg = await api.setConfig({ mode: 'local' });
     const url = `http://127.0.0.1:${cfg.localPort ?? 4480}`;
+    server.setAccessToken('');
     server.setServerUrl(url);
     if (api.ensureRunning) {
       const res = await api.ensureRunning();
@@ -500,6 +511,7 @@ async function ensureLocalServer(): Promise<boolean> {
       }
     }
   } else {
+    server.setAccessToken('');
     server.setServerUrl('http://127.0.0.1:4480');
   }
   return true;
@@ -566,6 +578,7 @@ async function connectToRemote() {
     // Probe the server's /api/health before committing.
     await probeServerReachable(url);
 
+    server.setAccessToken(remoteAccessToken.value);
     server.setServerUrl(url);
     if (import.meta.client && (window as any).electronAPI?.liveplayServer?.setConfig) {
       await (window as any).electronAPI.liveplayServer.setConfig({
@@ -602,6 +615,7 @@ async function connectToDiscovered(srv: DiscoveredServer) {
     // commit so a blocked port shows an error instead of a fake welcome screen.
     await probeServerReachable(url);
     remoteAddress.value = stripScheme(url);
+    server.setAccessToken(remoteAccessToken.value);
     server.setServerUrl(url);
     if (import.meta.client && (window as any).electronAPI?.liveplayServer?.setConfig) {
       await (window as any).electronAPI.liveplayServer.setConfig({
@@ -695,7 +709,7 @@ async function openRecentProject(project: RecentProject) {
     console.warn('[welcome] failed to open recent project:', project.path);
     alert(
       `Failed to open project.\n\n` +
-      `LivePlay could not load this recent project from the current server. ` +
+      `DonWells Cue could not load this recent project from the current server. ` +
       `The file may exist, but it may be unavailable, locked, not fully synced, or not readable by the server.\n\n` +
       `Recent entry:\n${project.path}\n\n` +
       `The entry was not removed. You can remove it manually with the X button.`
@@ -802,53 +816,54 @@ if (import.meta.client && (window as any).electronAPI) {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--color-background) 0%, var(--color-surface) 100%);
+  background: var(--color-background);
 }
 
 .welcome-container {
-  text-align: center;
-  max-width: 600px;
-  padding: var(--spacing-xxl);
+  width: min(720px, calc(100% - 64px));
+  max-height: calc(100% - 64px);
+  text-align: left;
+  padding: 0;
 }
 
 .welcome-header {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: var(--spacing-lg);
-  margin-bottom: var(--spacing-xxl);
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+  padding: 0 var(--spacing-xs);
 }
 
 .welcome-logo {
-  width: 80px;
-  height: 80px;
+  width: 52px;
+  height: 52px;
   object-fit: contain;
 }
 
 .welcome-text { text-align: left; }
 
 .welcome-title {
-  font-size: 64px;
-  font-weight: 600;
+  font-size: 34px;
+  font-weight: 650;
   margin-bottom: var(--spacing-xs);
   color: var(--color-text-primary);
-  letter-spacing: -2px;
-  line-height: 1;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
   display: flex;
   align-items: baseline;
   gap: var(--spacing-sm);
 }
 
 .version-badge {
-  font-size: 16px;
-  font-weight: 400;
-  color: var(--color-text-secondary);
-  opacity: 0.6;
-  letter-spacing: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.02em;
 }
 
 .welcome-subtitle {
-  font-size: 20px;
+  font-size: 14px;
   color: var(--color-text-secondary);
   margin: 0;
 }
@@ -857,17 +872,27 @@ if (import.meta.client && (window as any).electronAPI) {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 12px;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xl);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-lg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.14);
+  max-height: calc(100vh - 180px);
+  overflow: auto;
 }
 
 .stage-title {
-  font-size: 22px;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
   margin: 0;
   color: var(--color-text-primary);
 }
 
 .stage-subtitle {
-  margin: 0 0 8px;
+  margin: 0 0 var(--spacing-sm);
+  font-size: 13px;
   color: var(--color-text-secondary);
 }
 
@@ -876,7 +901,7 @@ if (import.meta.client && (window as any).electronAPI) {
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  justify-content: center;
+  justify-content: flex-start;
 }
 .connection-icon {
   font-size: 18px;
@@ -887,43 +912,47 @@ if (import.meta.client && (window as any).electronAPI) {
   background: none;
   border: none;
   color: var(--color-accent);
-  text-decoration: underline;
+  text-underline-offset: 3px;
   cursor: pointer;
   font-size: inherit;
 }
 
 .welcome-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-xs);
 }
 
 .welcome-button {
   display: flex;
   align-items: center;
-  justify-content: left;
-  gap: 12px;
-  padding: 14px 20px;
-  background: var(--color-surface);
+  justify-content: flex-start;
+  gap: var(--spacing-md);
+  min-height: 76px;
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: var(--color-surface-raised);
   border: 1px solid var(--color-border);
-  border-radius: 2px;
+  border-radius: var(--border-radius-md);
   cursor: pointer;
-  font-size: 15px;
+  font-size: 14px;
   color: var(--color-text-primary);
   text-align: left;
-  transition: background 0.15s, border-color 0.15s;
 }
-.welcome-button:hover {
+.welcome-button:hover:not(:disabled) {
   background: var(--color-surface-hover);
-  border-color: var(--color-accent);
+  border-color: var(--color-border-strong);
 }
 .welcome-button.primary {
-  background: var(--color-accent);
-  color: white;
+  background: var(--color-accent-soft);
+  color: var(--color-text-primary);
   border-color: var(--color-accent);
+  box-shadow: inset 3px 0 0 var(--color-accent);
 }
-.welcome-button.primary:hover { filter: brightness(1.08); }
+.welcome-button.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-accent) 24%, var(--color-surface));
+  border-color: var(--color-accent-hover);
+}
 .welcome-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -933,6 +962,12 @@ if (import.meta.client && (window as any).electronAPI) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border-radius: var(--border-radius-sm);
+  background: var(--color-control);
+  color: var(--color-accent);
 }
 
 .button-label {
@@ -943,7 +978,8 @@ if (import.meta.client && (window as any).electronAPI) {
 .button-label-line { font-weight: 600; }
 .button-label-sub {
   font-size: 12px;
-  opacity: 0.8;
+  color: var(--color-text-secondary);
+  line-height: 1.35;
 }
 
 /* Remote form */
@@ -958,16 +994,10 @@ if (import.meta.client && (window as any).electronAPI) {
   color: var(--color-text-secondary);
 }
 .remote-field-input {
-  padding: 10px 12px;
-  border-radius: 6px;
-  border: 1px solid var(--color-border);
-  background: var(--color-background);
-  color: var(--color-text-primary);
-  font-size: 14px;
+  min-height: 40px;
 }
 .remote-field-input:focus {
-  outline: none;
-  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
 }
 .remote-error {
   color: #e34c4c;
@@ -980,16 +1010,20 @@ if (import.meta.client && (window as any).electronAPI) {
   margin-top: 12px;
   justify-content: flex-end;
 }
+.remote-actions .welcome-button {
+  min-height: 40px;
+  padding: var(--spacing-sm) var(--spacing-lg);
+}
 
 .discovered-servers {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 8px 0 14px;
-  padding: 10px;
-  background: var(--color-background);
+  gap: var(--spacing-xs);
+  margin: var(--spacing-sm) 0 var(--spacing-md);
+  padding: var(--spacing-sm);
+  background: var(--color-control);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: var(--border-radius-md);
 }
 .discovered-header {
   display: flex;
@@ -998,17 +1032,18 @@ if (import.meta.client && (window as any).electronAPI) {
   font-size: 12px;
   color: var(--color-text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding-bottom: 4px;
+  letter-spacing: 0.06em;
+  padding: 2px var(--spacing-xs) var(--spacing-xs);
 }
 .discovered-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  min-height: 48px;
+  padding: var(--spacing-sm) var(--spacing-md);
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-sm);
   color: var(--color-text-primary);
   text-align: left;
   cursor: pointer;
@@ -1060,12 +1095,22 @@ if (import.meta.client && (window as any).electronAPI) {
 }
 .discovered-remove:hover { color: var(--color-danger, #e5534b); background: var(--color-surface-hover); }
 
-.recent-projects { margin-top: 14px; }
+.recent-projects { margin-top: var(--spacing-md); }
 .recent-project-row .discovered-meta { max-width: 430px; }
 .recent-projects-empty { margin-top: 12px; }
 
 @keyframes lp-spin { to { transform: rotate(360deg); } }
 .spin { display: inline-block; animation: lp-spin 0.85s linear infinite; }
+
+@media (max-width: 720px) {
+  .welcome-container {
+    width: calc(100% - 32px);
+  }
+
+  .welcome-actions {
+    grid-template-columns: 1fr;
+  }
+}
 </style>
 
 /* New-project name dialog — unscoped due to Teleport to body */

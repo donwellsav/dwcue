@@ -8,12 +8,12 @@
       <div class="about-header">
         <img 
           :src="isDark ? './assets/icons/SVG/liveplay-icon-darkmode@web.svg' : './assets/icons/SVG/liveplay-icon-lightmode@web.svg'"
-          alt="LivePlay"
+          alt="DonWells Cue"
           class="about-logo"
         />
         <div class="about-text">
           <h1 class="about-title">
-            LivePlay
+            DonWells Cue
             <span class="version-badge">v{{ appVersion }}</span>
           </h1>
           <p class="about-subtitle">{{ t('welcome.subtitle') }}</p>
@@ -23,7 +23,10 @@
       <div class="about-info">
         <div class="info-section">
           <p class="developer">
-            <strong>{{ t('about.developedBy') }}:</strong> {{t('about.developerName') }}
+            <strong>DonWells</strong>
+          </p>
+          <p class="original-credit">
+            Original software © Thomas Doukinitsas and contributors.
           </p>
           <p class="translator" v-if="t('translationContributor.name')">
             <strong>{{ t('translationContributor.title') }}: </strong>
@@ -256,6 +259,11 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-lg);
+}
+
+.original-credit {
+  color: var(--color-text-secondary);
+  font-size: 12px;
 }
 
 .info-section {

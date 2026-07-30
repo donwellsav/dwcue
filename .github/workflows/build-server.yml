@@ -32,35 +32,24 @@ jobs:
             label: Windows (MSVC)
             triplet: x64-windows
             cmake_args: ""
-            artifact_name: liveplay-server-windows-x64
+            artifact_name: dwcue-server-windows-x64
             binary_glob: |
-              server/build/Release/liveplay-server.exe
-              server/build/liveplay-server.exe
+              server/build/Release/dwcue-server.exe
+              server/build/dwcue-server.exe
           - os: macos-latest
             label: macOS Apple Silicon (Clang)
-            triplet: arm64-osx
-            cmake_args: "-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0"
-            artifact_name: liveplay-server-macos-arm64
+            triplet: arm64-osx-dwcue
+            cmake_args: "-DCMAKE_OSX_DEPLOYMENT_TARGET=13.3"
+            artifact_name: dwcue-server-macos-arm64
             binary_glob: |
-              server/build/liveplay-server
-          # Cross-compiled x86_64 on an Apple Silicon runner (GitHub is retiring
-          # the Intel macos-13 runner). Rosetta 2 is installed below so the
-          # --help smoke test can still execute the x64 binary.
-          - os: macos-latest
-            label: macOS Intel (Clang)
-            triplet: x64-osx
-            cmake_args: "-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DCMAKE_OSX_ARCHITECTURES=x86_64"
-            artifact_name: liveplay-server-macos-x64
-            rosetta: true
-            binary_glob: |
-              server/build/liveplay-server
+              server/build/dwcue-server
           - os: ubuntu-latest
             label: Linux (GCC)
             triplet: x64-linux
             cmake_args: ""
-            artifact_name: liveplay-server-linux-x64
+            artifact_name: dwcue-server-linux-x64
             binary_glob: |
-              server/build/liveplay-server
+              server/build/dwcue-server
 
     env:
       VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
@@ -112,12 +101,6 @@ jobs:
         run: |
           brew install ninja pkg-config
 
-      # The x64 slice is cross-compiled on an arm64 runner; Rosetta 2 lets the
-      # smoke test below actually run the resulting x86_64 binary.
-      - name: Install Rosetta 2 (cross-compiled x64)
-        if: matrix.rosetta
-        run: softwareupdate --install-rosetta --agree-to-license
-
       - name: Install Windows build tools
         if: runner.os == 'Windows'
         shell: pwsh
@@ -142,11 +125,17 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
+            -DLIVEPLAY_BUILD_TESTS=ON \
+            -DBUILD_TESTING=ON \
             ${{ matrix.cmake_args }}
 
       - name: CMake build
         working-directory: server
         run: cmake --build build --config Release -j
+
+      - name: CTest
+        working-directory: server
+        run: ctest --test-dir build --build-config Release --output-on-failure
 
       # ------------------------------------------------------------------
       # Smoke test — the banner should print without crashing.
@@ -155,15 +144,15 @@ jobs:
       - name: Smoke test (--help)
         if: runner.os != 'Windows'
         working-directory: server
-        run: ./build/liveplay-server --help
+        run: ./build/dwcue-server --help
 
       - name: Smoke test (--help) Windows
         if: runner.os == 'Windows'
         working-directory: server
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Path build -Recurse -Filter liveplay-server.exe | Select-Object -First 1
-          if (-not $exe) { throw "liveplay-server.exe not found" }
+          $exe = Get-ChildItem -Path build -Recurse -Filter dwcue-server.exe | Select-Object -First 1
+          if (-not $exe) { throw "dwcue-server.exe not found" }
           & $exe.FullName --help
 
       # ------------------------------------------------------------------
@@ -173,24 +162,35 @@ jobs:
         shell: bash
         run: |
           mkdir -p artifact
-          # Copy whichever build/<config>/liveplay-server[.exe] exists.
-          if [ -f "server/build/Release/liveplay-server.exe" ]; then
-            cp "server/build/Release/liveplay-server.exe" artifact/
-          elif [ -f "server/build/liveplay-server.exe" ]; then
-            cp "server/build/liveplay-server.exe" artifact/
-          elif [ -f "server/build/liveplay-server" ]; then
-            cp "server/build/liveplay-server" artifact/
+          # Copy whichever build/<config>/dwcue-server[.exe] exists.
+          if [ -f "server/build/Release/dwcue-server.exe" ]; then
+            cp "server/build/Release/dwcue-server.exe" artifact/
+          elif [ -f "server/build/dwcue-server.exe" ]; then
+            cp "server/build/dwcue-server.exe" artifact/
+          elif [ -f "server/build/dwcue-server" ]; then
+            cp "server/build/dwcue-server" artifact/
           else
-            echo "::error::No liveplay-server binary found under server/build/"
+            echo "::error::No dwcue-server binary found under server/build/"
             ls -lR server/build || true
             exit 1
           fi
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            find server/build -maxdepth 1 -type f -name '*.dll' -exec cp {} artifact/ \;
+            vcpkg_bin="server/build/vcpkg_installed/${{ matrix.triplet }}/bin"
+            if [ -d "$vcpkg_bin" ]; then
+              find "$vcpkg_bin" -maxdepth 1 -type f -name '*.dll' -exec cp {} artifact/ \;
+            fi
+          fi
           cp server/README.md artifact/README.md
           cp LICENCE.txt artifact/LICENCE.txt
+          cp server/assets/TimGM6mb.sf2 artifact/
+          cp server/assets/TimGM6mb.NOTICE.md artifact/
+          cp server/assets/TimGM6mb.GPL-2.0.txt artifact/
+          tar -czf "${{ matrix.artifact_name }}.tar.gz" -C artifact .
 
       - name: Upload artefact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: artifact/
+          path: ${{ matrix.artifact_name }}.tar.gz
           retention-days: 14

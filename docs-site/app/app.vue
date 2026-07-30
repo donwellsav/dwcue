@@ -11,7 +11,7 @@
               @error="handleImageError"
             />
             <div class="title-section">
-              <h1>LivePlay</h1>
+              <h1>DonWells Cue</h1>
               <p class="version">{{ t('header.version') }} {{ version }}</p>
             </div>
           </div>
@@ -119,9 +119,6 @@
             </a>
             <a :href="downloadLinks.macArmZip" target="_blank" rel="noopener noreferrer">
               {{ t('download.macArmZip') }}
-            </a>
-            <a :href="downloadLinks.macIntelZip" target="_blank" rel="noopener noreferrer">
-              {{ t('download.macIntelZip') }}
             </a>
           </div>
         </div>
@@ -289,7 +286,7 @@
     <footer class="site-footer">
       <div class="container">
         <p>
-          <strong>LivePlay</strong> {{ t('footer.license') }}
+          <strong>DonWells Cue</strong> {{ t('footer.license') }}
           <a href="https://www.gnu.org/licenses/agpl-3.0.en.html" target="_blank" rel="noopener noreferrer">
             AGPL-3.0
           </a>
@@ -334,17 +331,17 @@ const { t, direction, initLocale, isLocaleLoaded } = useI18n();
 const baseURL = useRuntimeConfig().app.baseURL;
 const asset = (path: string) => `${baseURL}${path.replace(/^\/+/, '')}`;
 
-const version = ref('2.4.3');
+const version = ref('2.5.0');
 const contributors = ref<{ name: string; link: string }[]>([]);
 
 // Platform download cards. When we can detect the visitor's OS we surface only
 // the matching build(s) prominently and tuck the rest behind a toggle; when we
-// can't, all four are shown and the flex grid keeps them centred and aligned.
-type PlatformKey = 'windows' | 'macArm' | 'macIntel' | 'linux';
-const allPlatformKeys: PlatformKey[] = ['windows', 'macArm', 'macIntel', 'linux'];
+// can't, every supported build is shown and the grid remains centred.
+type PlatformKey = 'windows' | 'macArm' | 'linux';
+const allPlatformKeys: PlatformKey[] = ['windows', 'macArm', 'linux'];
 const osPlatformMap: Record<string, PlatformKey[]> = {
   windows: ['windows'],
-  mac: ['macArm', 'macIntel'],
+  mac: ['macArm'],
   linux: ['linux']
 };
 
@@ -381,17 +378,15 @@ const downloadLinks = computed(() => {
   const baseUrl = `https://github.com/tdoukinitsas/liveplay/releases/download/v${v}`;
   return {
     // Windows (artifactName uses hyphens so the file, GitHub asset and latest.yml all match)
-    windows: `${baseUrl}/LivePlay-Setup-${v}.exe`,
-    // macOS — two separate, per-architecture builds
-    macArm: `${baseUrl}/LivePlay-${v}-arm64.dmg`,
-    macIntel: `${baseUrl}/LivePlay-${v}.dmg`,
+    windows: `${baseUrl}/DonWells-Cue-Setup-${v}.exe`,
+    // macOS — Apple Silicon only
+    macArm: `${baseUrl}/DonWells-Cue-${v}-arm64.dmg`,
     // Linux
-    linux: `${baseUrl}/LivePlay-${v}.AppImage`,
-    deb: `${baseUrl}/liveplay_${v}_amd64.deb`,
-    rpm: `${baseUrl}/liveplay-${v}.x86_64.rpm`,
+    linux: `${baseUrl}/DonWells-Cue-${v}-x64.AppImage`,
+    deb: `${baseUrl}/DonWells-Cue-${v}-x64.deb`,
+    rpm: `${baseUrl}/DonWells-Cue-${v}-x64.rpm`,
     // macOS .zip variants (for auto-update / manual installs)
-    macArmZip: `${baseUrl}/LivePlay-${v}-arm64-mac.zip`,
-    macIntelZip: `${baseUrl}/LivePlay-${v}-mac.zip`
+    macArmZip: `${baseUrl}/DonWells-Cue-${v}-arm64.zip`
   };
 });
 
@@ -404,7 +399,7 @@ const handleImageError = (event: Event) => {
 const updateSeoMeta = () => {
   if (!isLocaleLoaded.value) return;
 
-  const title = `LivePlay - ${t('header.tagline')}`;
+  const title = `DonWells Cue - ${t('header.tagline')}`;
   const description = `${t('header.tagline')}. ${t('download.subtitle')}`;
   const ogImage = 'https://tdoukinitsas.github.io/liveplay/screenshots/liveplay_screenshot.jpg';
 
@@ -471,16 +466,16 @@ watch(isLocaleLoaded, () => {
 
 // Initial SEO with fallback values
 useHead({
-  title: 'LivePlay - Audio Cue Playback for Live Events',
+  title: 'DonWells Cue - Audio Cue Playback for Live Events',
   meta: [
     { name: 'description', content: 'Free, open-source audio playback system for live sound operators. Available for Windows, macOS, and Linux.' }
   ]
 });
 
 useSeoMeta({
-  title: 'LivePlay - Audio Cue Playback for Live Events',
+  title: 'DonWells Cue - Audio Cue Playback for Live Events',
   description: 'Free, open-source audio playback system for live sound operators. Available for Windows, macOS, and Linux.',
-  ogTitle: 'LivePlay - Audio Cue Playback for Live Events',
+  ogTitle: 'DonWells Cue - Audio Cue Playback for Live Events',
   ogDescription: 'Free, open-source audio playback system for live sound operators. Available for Windows, macOS, and Linux.',
   ogType: 'website',
   ogUrl: 'https://tdoukinitsas.github.io/liveplay/',
@@ -489,7 +484,7 @@ useSeoMeta({
   ogImageHeight: '1080',
   ogImageType: 'image/jpeg',
   twitterCard: 'summary_large_image',
-  twitterTitle: 'LivePlay - Audio Cue Playback for Live Events',
+  twitterTitle: 'DonWells Cue - Audio Cue Playback for Live Events',
   twitterDescription: 'Free, open-source audio playback system for live sound operators. Available for Windows, macOS, and Linux.',
   twitterImage: 'https://tdoukinitsas.github.io/liveplay/screenshots/liveplay_screenshot.jpg'
 });
@@ -544,7 +539,7 @@ useSeoMeta({
     font-size: 4rem;
     font-weight: 700;
     margin: 0;
-    color: #DA1E28;
+    color: #315FCF;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   }
 
@@ -595,7 +590,7 @@ useSeoMeta({
     text-align: center;
     font-size: 2.5rem;
     margin-bottom: 1rem;
-    color: #DA1E28;
+    color: #315FCF;
   }
 
   .download-subtitle {
@@ -687,7 +682,7 @@ useSeoMeta({
       font-family: inherit;
 
       &:hover {
-        border-color: #DA1E28;
+        border-color: #315FCF;
         color: #ffffff;
       }
     }
@@ -713,7 +708,7 @@ useSeoMeta({
 
     &:hover {
       transform: translateY(-4px);
-      border-color: #DA1E28;
+      border-color: #315FCF;
       box-shadow: 0 8px 24px rgba(218, 30, 40, 0.3);
     }
 
@@ -734,7 +729,7 @@ useSeoMeta({
     }
 
     .download-button {
-      background: #DA1E28;
+      background: #315FCF;
       color: white;
       padding: 1rem 2rem;
       border-radius: 8px;
@@ -767,7 +762,7 @@ useSeoMeta({
       flex-wrap: wrap;
 
       a {
-        color: #DA1E28;
+        color: #315FCF;
         text-decoration: none;
         font-weight: 500;
         transition: opacity 0.2s;
@@ -791,7 +786,7 @@ useSeoMeta({
       transition: color 0.2s;
 
       &:hover {
-        color: #DA1E28;
+        color: #315FCF;
       }
     }
   }
@@ -805,7 +800,7 @@ useSeoMeta({
     text-align: center;
     font-size: 2.5rem;
     margin-bottom: 3rem;
-    color: #DA1E28;
+    color: #315FCF;
   }
 }
 
@@ -857,7 +852,7 @@ useSeoMeta({
       font-family: 'Courier New', monospace;
       font-size: 0.85rem;
       font-weight: 700;
-      color: #DA1E28;
+      color: #315FCF;
       background: rgba(218, 30, 40, 0.1);
       padding: 0.25rem 0.6rem;
       border-radius: 5px;
@@ -885,7 +880,7 @@ useSeoMeta({
     text-align: center;
     font-size: 2.5rem;
     margin-bottom: 1rem;
-    color: #DA1E28;
+    color: #315FCF;
   }
 
   .contribute-subtitle {
@@ -927,7 +922,7 @@ useSeoMeta({
 
     .contribute-button {
       display: inline-block;
-      background: #DA1E28;
+      background: #315FCF;
       color: #ffffff;
       padding: 1rem 2.5rem;
       border-radius: 8px;
@@ -955,7 +950,7 @@ useSeoMeta({
 
     :deep(h1) {
       font-size: 2.5rem;
-      color: #DA1E28;
+      color: #315FCF;
       margin: 2rem 0 1rem;
       
       &:first-child {
@@ -965,7 +960,7 @@ useSeoMeta({
 
     :deep(h2) {
       font-size: 2rem;
-      color: #DA1E28;
+      color: #315FCF;
       margin: 2rem 0 1rem;
       border-bottom: 2px solid rgba(218, 30, 40, 0.3);
       padding-bottom: 0.5rem;
@@ -983,7 +978,7 @@ useSeoMeta({
     }
 
     :deep(a) {
-      color: #DA1E28;
+      color: #315FCF;
       text-decoration: none;
       
       &:hover {
@@ -1042,7 +1037,7 @@ useSeoMeta({
   }
 
   a {
-    color: #DA1E28;
+    color: #315FCF;
     text-decoration: none;
 
     &:hover {

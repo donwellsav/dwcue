@@ -1,5 +1,22 @@
 cmake_minimum_required(VERSION 3.21)
 
+if(CMAKE_HOST_APPLE)
+    set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING
+        "DW Cue macOS builds are Apple Silicon-only")
+    if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "13.3" CACHE STRING
+            "Minimum macOS version for the Apple Silicon build")
+    endif()
+    if(NOT VCPKG_OVERLAY_TRIPLETS)
+        set(VCPKG_OVERLAY_TRIPLETS "${CMAKE_CURRENT_SOURCE_DIR}/triplets"
+            CACHE STRING "DW Cue vcpkg triplets" FORCE)
+    endif()
+    if(NOT VCPKG_TARGET_TRIPLET OR VCPKG_TARGET_TRIPLET STREQUAL "arm64-osx")
+        set(VCPKG_TARGET_TRIPLET "arm64-osx-dwcue" CACHE STRING
+            "DW Cue Apple Silicon dependency triplet" FORCE)
+    endif()
+endif()
+
 # vcpkg manifest mode: pick up the toolchain automatically when present.
 # Set VCPKG_ROOT in your environment (CI does this for you).
 if(DEFINED ENV{VCPKG_ROOT} AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
@@ -14,7 +31,7 @@ set(VCPKG_OVERLAY_PORTS "${CMAKE_CURRENT_SOURCE_DIR}/ports" CACHE STRING "Local 
 
 project(liveplay-server
     VERSION ${LIVEPLAY_VERSION}
-    DESCRIPTION "LivePlay headless audio engine and control server"
+    DESCRIPTION "DonWells Cue headless audio engine and control server"
     LANGUAGES C CXX
 )
 
@@ -40,22 +57,6 @@ if(MSVC)
     )
 else()
     add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-parameter)
-endif()
-
-# ---------------------------------------------------------------------------
-# macOS: std::format vs. deployment target
-# ---------------------------------------------------------------------------
-# Instantiating std::format for *any* argument pulls in libc++'s floating-point
-# formatter, which calls std::to_chars(float/double). Apple marks that overload
-# "unavailable" below macOS 13.3, so the build fails even for string-only calls
-# (e.g. Logger::error("Reason : {}", reason)) whenever the deployment target is
-# older than 13.3 — which it is for our 11.0 (x64) / 12.0 (arm64) artifacts.
-#
-# The implementation is header-only in modern libc++ (no dylib symbol), so it
-# runs correctly on those older systems; only the availability annotation is
-# conservative. Disable the annotations so we can keep the older targets.
-if(APPLE)
-    add_compile_definitions(_LIBCPP_DISABLE_AVAILABILITY)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -152,6 +153,7 @@ add_executable(liveplay-server
     src/meta/metadata.cpp
     src/meta/waveform.cpp
 )
+set_target_properties(liveplay-server PROPERTIES OUTPUT_NAME "dwcue-server")
 
 target_include_directories(liveplay-server
     PRIVATE
@@ -194,7 +196,7 @@ endif()
 # Bake version + build identity into the binary.
 target_compile_definitions(liveplay-server PRIVATE
     LIVEPLAY_SERVER_VERSION="${PROJECT_VERSION}"
-    LIVEPLAY_SERVER_NAME="${PROJECT_NAME}"
+    LIVEPLAY_SERVER_NAME="dwcue-server"
     LIVEPLAY_DEFAULT_SOUNDFONT="${CMAKE_CURRENT_SOURCE_DIR}/assets/TimGM6mb.sf2"
 )
 
@@ -211,6 +213,14 @@ endforeach()
 option(LIVEPLAY_BUILD_TESTS "Build the liveplay test binaries" OFF)
 if(LIVEPLAY_BUILD_TESTS)
     enable_testing()
+    add_executable(liveplay-control-security-tests
+        tests/control_security_test.cpp
+    )
+    target_include_directories(liveplay-control-security-tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    add_test(NAME control-security COMMAND liveplay-control-security-tests)
+
     add_executable(liveplay-meter-tests
         tests/meter_test.cpp
         src/audio/meter.cpp
@@ -235,15 +245,59 @@ if(LIVEPLAY_BUILD_TESTS)
     add_executable(liveplay-waveform-tests
         tests/waveform_test.cpp
         src/meta/waveform.cpp
+        src/audio/decoder.cpp
         src/logger.cpp
     )
     target_include_directories(liveplay-waveform-tests
-        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${FFMPEG_INCLUDE_DIRS}
+            ${GME_INCLUDE_DIR}
+            ${VGMSTREAM_INCLUDE_DIR}
     )
+    target_link_directories(liveplay-waveform-tests PRIVATE ${FFMPEG_LIBRARY_DIRS})
     target_link_libraries(liveplay-waveform-tests
-        PRIVATE liveplay_miniaudio Threads::Threads
+        PRIVATE
+            liveplay_miniaudio
+            Threads::Threads
+            ${FFMPEG_LIBRARIES}
+            FluidSynth::libfluidsynth
+            ${GME_LIBRARY}
+            ${VGMSTREAM_LIBRARY}
+    )
+    target_compile_definitions(liveplay-waveform-tests PRIVATE
+        LIVEPLAY_DEFAULT_SOUNDFONT="${CMAKE_CURRENT_SOURCE_DIR}/assets/TimGM6mb.sf2"
     )
     add_test(NAME waveform COMMAND liveplay-waveform-tests)
+
+    # Shared decoded-audio read-ahead: bounded queue, forced underrun recovery,
+    # seamless loop markers, and concurrent producer/consumer/seek stress.
+    add_executable(liveplay-audio-rt-tests
+        tests/audio_rt_stress_test.cpp
+        src/audio/playback_item.cpp
+        src/audio/decoder.cpp
+        src/audio/meter.cpp
+        src/audio/ltc_generator.cpp
+        src/logger.cpp
+    )
+    target_include_directories(liveplay-audio-rt-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${FFMPEG_INCLUDE_DIRS}
+        ${GME_INCLUDE_DIR}
+        ${VGMSTREAM_INCLUDE_DIR}
+    )
+    target_link_directories(liveplay-audio-rt-tests PRIVATE ${FFMPEG_LIBRARY_DIRS})
+    target_link_libraries(liveplay-audio-rt-tests PRIVATE
+        liveplay_miniaudio
+        Threads::Threads
+        ${FFMPEG_LIBRARIES}
+        FluidSynth::libfluidsynth
+        ${GME_LIBRARY}
+        ${VGMSTREAM_LIBRARY}
+    )
+    target_compile_definitions(liveplay-audio-rt-tests PRIVATE
+        LIVEPLAY_DEFAULT_SOUNDFONT="${CMAKE_CURRENT_SOURCE_DIR}/assets/TimGM6mb.sf2")
+    add_test(NAME audio-rt COMMAND liveplay-audio-rt-tests)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -275,4 +329,5 @@ if(BUILD_TESTING)
         ${GME_LIBRARY} ${VGMSTREAM_LIBRARY})
     target_compile_definitions(decoder-check PRIVATE
         LIVEPLAY_DEFAULT_SOUNDFONT="${CMAKE_CURRENT_SOURCE_DIR}/assets/TimGM6mb.sf2")
+    add_test(NAME decoder COMMAND decoder-check --self-test)
 endif()

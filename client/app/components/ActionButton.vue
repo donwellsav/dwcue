@@ -44,10 +44,14 @@ const computedStyle = computed(() => {
   align-items: center;
   justify-content: center;
   border-radius: var(--border-radius-sm);
-  background-color: var(--color-background);
+  background-color: var(--color-control);
   border: 1px solid var(--color-border);
   color: var(--color-text-primary);
-  transition: all var(--transition-fast);
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast);
   cursor: pointer;
 
   &:hover:not(:disabled) {

@@ -75,7 +75,7 @@ onUnmounted(() => {
 
     &:hover {
       background: rgba(255, 255, 255, 0.1);
-      border-color: #DA1E28;
+      border-color: #315FCF;
     }
 
     .material-symbols-rounded {
@@ -121,7 +121,7 @@ onUnmounted(() => {
 
       &.active {
         background: rgba(218, 30, 40, 0.2);
-        color: #DA1E28;
+        color: #315FCF;
         font-weight: 600;
       }
 

@@ -405,6 +405,10 @@ public:
     bool         audio_loading() const noexcept { return loading_audio_.load(); }
     std::size_t  audio_loaded_count() const noexcept { return load_progress_loaded_.load(); }
     std::size_t  audio_total_count()  const noexcept { return load_progress_total_.load(); }
+    // Structured show-readiness result. Failed entries identify media that
+    // could not be resolved or opened; `ready` becomes true only after the
+    // current mirror finishes with no such entries.
+    json audio_readiness() const;
 
 private:
     audio::AudioEngine&        engine_;
@@ -462,6 +466,14 @@ private:
     std::atomic<std::size_t> load_progress_loaded_{0};
     std::atomic<std::size_t> load_progress_total_{0};
     std::thread              load_thread_;
+    struct AudioLoadFailure {
+        std::string code;
+        std::string path;
+    };
+    // Guarded by mutex_. Kept outside document_ so transient machine/path
+    // failures are never persisted into the user's project file.
+    std::unordered_map<std::string, AudioLoadFailure> audio_load_failures_;
+    json audio_readiness_locked() const;
 
     // Per-device routing infrastructure: each unique output device name
     // referenced by any item's deviceOverride gets its own mixer + a pair
@@ -651,7 +663,7 @@ private:
     };
     std::deque<LoadRequest>         load_queue_;
     std::unordered_set<std::string> pending_load_uuids_;
-    std::mutex                      loader_mutex_;      // guards both of the above
+    mutable std::mutex              loader_mutex_;      // guards both of the above
     std::condition_variable         loader_cv_;         // work available
     std::condition_variable         loader_done_cv_;    // a pending load finished
     std::thread                     loader_thread_;

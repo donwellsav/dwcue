@@ -6,7 +6,7 @@
     "direction": "ltr"
   },
   "app": {
-    "name": "LivePlay"
+    "name": "DonWells Cue"
   },
   "menu": {
     "file": "Dosje",
@@ -27,21 +27,21 @@
     "fullscreen": "Ekran i Plotë",
     "language": "Gjuha",
     "help": "Ndihmë",
-    "about": "Rreth LivePlay"
+    "about": "Rreth DonWells Cue"
   },
   "welcome": {
-    "title": "LivePlay",
+    "title": "DonWells Cue",
     "subtitle": "Luajtje audio për ngjarje të drejtpërdrejta",
     "newProject": "Projekt i Ri",
     "openProject": "Hap Projektin",
     "modeTitle": "Zgjidh Modalitetin e Serverit",
-    "modeSubtitle": "Ku duhet LivePlay të ekzekutojë motorin audio?",
+    "modeSubtitle": "Ku duhet DonWells Cue të ekzekutojë motorin audio?",
     "localMode": "Lokal",
     "localModeDescription": "Ekzekuto motorin audio në këtë kompjuter.",
     "remoteMode": "I Largët",
-    "remoteModeDescription": "Lidhu me një server LivePlay në rrjet.",
-    "remoteConnect": "Lidhu me serverin LivePlay",
-    "remoteAddressHint": "Shkruaj adresën IP ose emrin e hostit të serverit LivePlay.",
+    "remoteModeDescription": "Lidhu me një server DonWells Cue në rrjet.",
+    "remoteConnect": "Lidhu me serverin DonWells Cue",
+    "remoteAddressHint": "Shkruaj adresën IP ose emrin e hostit të serverit DonWells Cue.",
     "serverAddress": "Adresa e Serverit",
     "serverAddressPlaceholder": "p.sh. 192.168.1.10 ose myserver.local",
     "connect": "Lidhu",
@@ -226,12 +226,12 @@
     "restartTitle": "Rinicio serverin"
   },
   "serverSettings": {
-    "title": "Serveri LivePlay",
+    "title": "Serveri DonWells Cue",
     "connected": "● I lidhur",
     "reconnecting": "● Duke u rilidhur…",
     "disconnected": "● I shkëputur",
     "localModeDesc": "Aplikacioni nis motorin e tij audio. Më i mirë për operatorë të vetëm.",
-    "remoteModeDesc": "Lidhu me një server LivePlay që funksionon në një makinë tjetër.",
+    "remoteModeDesc": "Lidhu me një server DonWells Cue që funksionon në një makinë tjetër.",
     "localPort": "Porti lokal",
     "remoteUrl": "URL i largët",
     "engineRunning": "Motori duke funksionuar (pid {pid})",
@@ -269,8 +269,8 @@
     "currentVersion": "Versioni Aktual",
     "newVersion": "Versioni i Ri",
     "whatsNew": "Çfarë ka të Re",
-    "updatePrompt": "Një version i ri i LivePlay është i disponueshëm. Dëshironi ta shkarkoni dhe instaloni tani?",
-    "manualUpdatePrompt": "Një version i ri i LivePlay është në dispozicion. Klikoni më poshtë për të vizituar faqen e shkarkimit.",
+    "updatePrompt": "Një version i ri i DonWells Cue është i disponueshëm. Dëshironi ta shkarkoni dhe instaloni tani?",
+    "manualUpdatePrompt": "Një version i ri i DonWells Cue është në dispozicion. Klikoni më poshtë për të vizituar faqen e shkarkimit.",
     "downloading": "Po shkarkohet Përditësimi",
     "downloadComplete": "Shkarkimi Përfundoi",
     "installInfo": "Përditësimi është gati për instalim. Mund ta instaloni tani ose do të instalohet kur të mbyllni aplikacionin.",
@@ -478,7 +478,7 @@
   },
   "connectionLost": {
     "title": "Lidhja u humb",
-    "message": "Lidhja me serverin LivePlay në {url} u humb.",
+    "message": "Lidhja me serverin DonWells Cue në {url} u humb.",
     "attempting": "Po përpiqet të rilidhet…",
     "attemptCount": "(Përpjekje të dështuara: {count})",
     "locked": "Riprodhimi dhe redaktimi janë në pauzë derisa lidhja të kthehet — ndryshimet e bëra tani nuk do të mund të dërgoheshin te serveri.",

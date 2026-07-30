@@ -33,6 +33,8 @@ export const useConnectionGuard = () => {
 
   // Set when we reconnect to a server that no longer has our project loaded.
   const sessionLost = useState<boolean>('connectionGuard.sessionLost', () => false);
+  const projectChanged = useState<boolean>('connectionGuard.projectChanged', () => false);
+  const serverProjectName = useState<string>('connectionGuard.serverProjectName', () => '');
   // Guards against a second recovery prompt stacking on the first while the
   // operator is still deciding.
   const recovering = useState<boolean>('connectionGuard.recovering', () => false);
@@ -47,7 +49,11 @@ export const useConnectionGuard = () => {
     recovering.value = true;
     try {
       const ok = await resumeProjectOnServer();
-      if (ok) sessionLost.value = false;
+      if (ok) {
+        sessionLost.value = false;
+        projectChanged.value = false;
+        serverProjectName.value = '';
+      }
       return ok;
     } catch (e) {
       console.error('[connectionGuard] resume failed:', e);
@@ -65,13 +71,42 @@ export const useConnectionGuard = () => {
     try {
       await closeProject();
       sessionLost.value = false;
+      projectChanged.value = false;
+      serverProjectName.value = '';
+    } finally {
+      recovering.value = false;
+    }
+  };
+
+  // The server changed projects while this client was offline. Joining is
+  // deliberately explicit when local edits are dirty: it replaces only this
+  // client's mirror and leaves the server's active show untouched.
+  const joinServerSession = async (): Promise<boolean> => {
+    const { tryRejoinExistingProject } = useProject();
+    recovering.value = true;
+    try {
+      const ok = await tryRejoinExistingProject();
+      if (ok) {
+        sessionLost.value = false;
+        projectChanged.value = false;
+        serverProjectName.value = '';
+      }
+      return ok;
     } finally {
       recovering.value = false;
     }
   };
 
   if (_wired || !import.meta.client) {
-    return { sessionLost, recovering, resumeSession, startFresh };
+    return {
+      sessionLost,
+      projectChanged,
+      serverProjectName,
+      recovering,
+      resumeSession,
+      startFresh,
+      joinServerSession,
+    };
   }
   _wired = true;
 
@@ -82,7 +117,7 @@ export const useConnectionGuard = () => {
   // needing its own check. Keys inside the dialogs themselves are exempt, so
   // the operator can always drive the recovery UI.
   const trapKeydown = (e: KeyboardEvent) => {
-    if (!server.connectionLost) return;
+    if (!server.connectionLost && !sessionLost.value) return;
     // Keys aimed at the recovery dialogs — or at Server Settings, which stacks
     // above them so the URL can be retargeted — go through untouched.
     const el = e.target as HTMLElement | null;
@@ -104,11 +139,38 @@ export const useConnectionGuard = () => {
   const nuxtApp = useNuxtApp();
   server.onReconnected(() => {
     void nuxtApp.runWithContext(async () => {
-      const { currentProject } = useProject();
+      const {
+        currentProject,
+        hasUnsavedChanges,
+        projectFilePath,
+        tryRejoinExistingProject,
+      } = useProject();
       if (!currentProject.value || sessionLost.value || recovering.value) return;
       try {
         const header = await server.fetchProjectHeader();
-        if (!header?.hasOpenProject) sessionLost.value = true;
+        if (!header?.hasOpenProject) {
+          projectChanged.value = false;
+          serverProjectName.value = '';
+          sessionLost.value = true;
+          return;
+        }
+
+        const serverPath = header.server?.projectFilePath ?? '';
+        const localPath = projectFilePath.value;
+        const sameProject = serverPath || localPath
+          ? serverPath === localPath
+          : header.name === currentProject.value.name &&
+            header.folderPath === currentProject.value.folderPath &&
+            header.createdAt === currentProject.value.createdAt;
+        if (!sameProject) {
+          if (hasUnsavedChanges.value) {
+            serverProjectName.value = header.name || 'Untitled';
+            projectChanged.value = true;
+            sessionLost.value = true;
+          } else {
+            await tryRejoinExistingProject(header);
+          }
+        }
       } catch (e) {
         // Couldn't ask — don't throw an unnecessary dialog at the operator on
         // the strength of a failed probe. The next reconnect re-checks.
@@ -117,5 +179,13 @@ export const useConnectionGuard = () => {
     });
   });
 
-  return { sessionLost, recovering, resumeSession, startFresh };
+  return {
+    sessionLost,
+    projectChanged,
+    serverProjectName,
+    recovering,
+    resumeSession,
+    startFresh,
+    joinServerSession,
+  };
 };

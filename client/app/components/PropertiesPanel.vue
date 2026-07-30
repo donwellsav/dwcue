@@ -62,7 +62,7 @@
         </div>
         
         <div class="property-field" v-if="selectedItem.type === 'audio'">
-          <label>{{ t('properties.apiTriggerUrl') }}</label>
+          <label>{{ t('properties.apiTriggerUrl') }} · POST</label>
           <div class="input-with-btn">
             <input :value="apiTriggerUrl" readonly />
             <button class="icon-btn" @click="copyToClipboard(apiTriggerUrl)">
@@ -905,20 +905,21 @@ const formatTime = (seconds: number): string => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--spacing-md) var(--spacing-lg);
+  min-height: 44px;
+  padding: var(--spacing-sm) var(--spacing-md);
   border-bottom: 1px solid var(--color-border);
   color: var(--color-text-secondary);
 }
 
 .properties-header h3 {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 650;
 }
 
 .close-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--border-radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -941,7 +942,7 @@ const formatTime = (seconds: number): string => {
 .properties-tabs {
   display: flex;
   gap: 2px;
-  padding: 0 var(--spacing-lg);
+  padding: 0 var(--spacing-md);
   border-bottom: 1px solid var(--color-border);
   background-color: var(--color-surface);
   overflow-x: auto;
@@ -951,7 +952,8 @@ const formatTime = (seconds: number): string => {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-md);
+  min-height: 36px;
+  padding: 6px var(--spacing-md);
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
@@ -960,7 +962,10 @@ const formatTime = (seconds: number): string => {
   font-size: 13px;
   font-weight: 500;
   white-space: nowrap;
-  transition: all 0.2s;
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast),
+    border-color var(--transition-fast);
   
   .material-symbols-rounded {
     font-size: 18px;
@@ -983,7 +988,7 @@ const formatTime = (seconds: number): string => {
   flex: 1;
   overflow-x: auto;
   overflow-y: auto;
-  padding: var(--spacing-lg);
+  padding: var(--spacing-md);
   min-height: 0;
 }
 
@@ -1004,7 +1009,7 @@ const formatTime = (seconds: number): string => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
-  min-width: 250px;
+  min-width: 220px;
   flex: 0 0 auto;
   color: var(--color-text-secondary);
 }
@@ -1018,7 +1023,7 @@ const formatTime = (seconds: number): string => {
 .property-field select {
   width: 100%;
   padding: var(--spacing-sm);
-  background-color: var(--color-background);
+  background-color: var(--color-control);
   border: 1px solid var(--color-border);
   border-radius: 4px;
   color: var(--color-text);
@@ -1205,5 +1210,3 @@ const formatTime = (seconds: number): string => {
   }
 }
 </style>
-
-

@@ -23,9 +23,7 @@
             <div class="notes-content" @click="handleNotesClick" v-html="sanitizedReleaseNotes"></div>
           </div>
 
-          <p class="update-prompt">
-            {{ isManualUpdate ? t('update.manualUpdatePrompt') : t('update.updatePrompt') }}
-          </p>
+          <p class="update-prompt">{{ t('update.updatePrompt') }}</p>
         </div>
 
         <div v-if="downloading" class="download-progress">
@@ -59,19 +57,12 @@
         >
           {{ t('update.later') }}
         </button>
-        <button 
-          v-if="!downloading && !downloaded && !isManualUpdate" 
+        <button
+          v-if="!downloading && !downloaded"
           class="button button-primary" 
           @click="handleDownload"
         >
           {{ t('update.downloadAndInstall') }}
-        </button>
-        <button 
-          v-if="!downloading && !downloaded && isManualUpdate" 
-          class="button button-primary" 
-          @click="handleOpenDownloadPage"
-        >
-          {{ t('update.goToDownloadPage') }}
         </button>
         <button 
           v-if="downloaded" 
@@ -100,8 +91,6 @@ const props = defineProps<{
   newVersion: string;
   releaseNotes?: string;
   releaseDate?: string;
-  isManualUpdate?: boolean;
-  downloadUrl?: string;
 }>();
 
 const emit = defineEmits<{
@@ -179,14 +168,6 @@ const handleDownload = async () => {
       error.value = result.error || t('update.downloadFailed');
       downloading.value = false;
     }
-  }
-};
-
-const handleOpenDownloadPage = async () => {
-  if (import.meta.client && window.electronAPI) {
-    const url = props.downloadUrl || 'https://tdoukinitsas.github.io/liveplay/';
-    await window.electronAPI.openExternal(url);
-    emit('close');
   }
 };
 

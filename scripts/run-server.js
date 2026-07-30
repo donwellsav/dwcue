@@ -11,7 +11,7 @@ const { spawn } = require('node:child_process');
 
 const REPO_ROOT  = path.resolve(__dirname, '..');
 const BUILD_DIR  = path.join(REPO_ROOT, 'server', 'build');
-const EXE_NAME   = process.platform === 'win32' ? 'liveplay-server.exe' : 'liveplay-server';
+const EXE_NAME   = process.platform === 'win32' ? 'dwcue-server.exe' : 'dwcue-server';
 
 const candidates = [
   path.join(BUILD_DIR, 'Release', EXE_NAME),

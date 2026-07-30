@@ -1,7 +1,7 @@
 // =====================================================================
 // useLiveplayServer.ts
 // ---------------------------------------------------------------------
-// Central client for the LivePlay C++ server (post-Milestone 3).
+// Central client for the DonWells Cue C++ server (post-Milestone 3).
 //
 // One instance per app. Owns:
 //   * the WebSocket connection at /ws (with auto-reconnect)
@@ -29,6 +29,7 @@ import type {
   MetersBroadcast,
   MixerChannelId,
   ServerCue,
+  ServerAudioReadiness,
   ServerDeviceInfo,
   ServerFsListing,
   ServerMixerChannel,
@@ -50,11 +51,18 @@ function createClient() {
   const defaultUrl = (typeof window !== 'undefined' &&
                       window.localStorage?.getItem('liveplay.serverUrl')) ||
                      'http://127.0.0.1:4480';
+  const defaultAccessToken = (typeof window !== 'undefined' &&
+                              window.localStorage?.getItem('liveplay.accessToken')) || '';
   const serverUrl = ref<string>(defaultUrl);
+  const accessToken = ref<string>(defaultAccessToken);
 
   const httpBase = computed(() => serverUrl.value.replace(/\/+$/, ''));
-  const wsUrl    = computed(() =>
-    httpBase.value.replace(/^http/i, 'ws') + '/ws');
+  const wsUrl = computed(() => {
+    const base = httpBase.value.replace(/^http/i, 'ws') + '/ws';
+    return accessToken.value
+      ? `${base}?access_token=${encodeURIComponent(accessToken.value)}`
+      : base;
+  });
 
   function setServerUrl(url: string) {
     serverUrl.value = url;
@@ -66,6 +74,21 @@ function createClient() {
     hasEverConnected = false;
     disconnect();
     connect();
+  }
+
+  function setAccessToken(token: string) {
+    const next = token.trim();
+    if (next === accessToken.value) return;
+    accessToken.value = next;
+    if (typeof window !== 'undefined') {
+      window.localStorage?.setItem('liveplay.accessToken', accessToken.value);
+    }
+    disconnect();
+    connect();
+  }
+
+  function clearLastError() {
+    lastError.value = null;
   }
 
   // ---- Reactive state -----------------------------------------------
@@ -107,6 +130,11 @@ function createClient() {
   type PlaybackSnapshot = {
     cues: Array<{ cue_id: string; transport: number; playhead_seconds: number }>;
     next_item_uuid: string;
+    master_gain_db: number;
+    output_channel_gains: Array<{ channel: number; db: number }>;
+    selected_item_uuid: string;
+    show_mode: boolean;
+    locale: string;
     preview: { item_uuid: string; cue_id: string };
   };
   type PlaybackSnapshotSubscriber = (s: PlaybackSnapshot) => void;
@@ -137,6 +165,10 @@ function createClient() {
 
   // ---- WebSocket ----------------------------------------------------
   let ws: WebSocket | null = null;
+  const pendingCommands = new Map<string, {
+    timer: ReturnType<typeof setTimeout>;
+    resolve: (ok: boolean) => void;
+  }>();
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectDelay = 1500;         // start higher; backs off to 10 s
   // True after the *very first* successful onopen for this session. Used to
@@ -181,6 +213,16 @@ function createClient() {
       reconnectDelay = Math.min(reconnectDelay * 2, 10000);
       connect();
     }, reconnectDelay);
+  }
+
+  function failPendingCommands(message: string) {
+    if (pendingCommands.size === 0) return;
+    for (const pending of pendingCommands.values()) {
+      clearTimeout(pending.timer);
+      pending.resolve(false);
+    }
+    pendingCommands.clear();
+    lastError.value = message;
   }
 
   // Force an immediate reconnect attempt, resetting the backoff so the retry
@@ -248,13 +290,14 @@ function createClient() {
         // client while we were offline. Refetch the cue catalogue so any
         // cues added in the meantime show up; subscribers (useProject)
         // can listen on onPlaybackSnapshot to do a header re-sync as well.
-        void fetchCues().catch(() => {});
+        void Promise.allSettled([fetchCues(), fetchMixerChannels(), fetchDevices()]);
       }
     };
 
     ws.onclose = () => {
       const wasConnected = connected.value;
       connected.value = false;
+      failPendingCommands('Connection closed before the server confirmed the command.');
       // Count pre-handshake closes — the socket bounced straight to close
       // without an onopen in between. Purely for display in the modal.
       if (!wasConnected && hasEverConnected) failedReconnectAttempts.value++;
@@ -284,26 +327,32 @@ function createClient() {
           break;
         }
         case 'playback_snapshot': {
-          // Update each known cue's transport in place so any UI bound to
-          // `cues[i].transport` repaints. The cue may not be in the local
-          // list yet on a cold reconnect — that's handled by the broader
-          // refetch below, which re-runs the catalogue fetches and then
-          // a second snapshot is applied as cue_state edges resume.
+          // The snapshot is sparse: stopped cues and 0 dB channel gains are
+          // omitted. Treat it as authoritative so state that changed while
+          // this client was offline cannot survive the reconnect.
           const snap = payload as PlaybackSnapshot;
-          for (const c of snap.cues ?? []) {
-            const idx = cues.value.findIndex(x => x.id === c.cue_id);
-            if (idx >= 0) {
-              cues.value[idx].transport = c.transport as any;
-              cues.value[idx].playhead_seconds = c.playhead_seconds;
+          const active = new Map((snap.cues ?? []).map(c => [c.cue_id, c]));
+          const notified = new Set<string>();
+          for (const cue of cues.value) {
+            const state = active.get(cue.id) ?? {
+              cue_id: cue.id,
+              transport: 0,
+              playhead_seconds: 0,
+            };
+            cue.transport = state.transport as any;
+            cue.playhead_seconds = state.playhead_seconds;
+            for (const cb of cueStateSubscribers) cb(state);
+            notified.add(cue.id);
+          }
+          // A cold reconnect can receive the snapshot before the catalogue.
+          for (const state of snap.cues ?? []) {
+            if (!notified.has(state.cue_id)) {
+              for (const cb of cueStateSubscribers) cb(state);
             }
-            // Also fire as a synthetic cue_state event so subscribers
-            // (useAudioEngine) see "Playing" for items the snapshot lists.
-            for (const cb of cueStateSubscribers) cb(c);
           }
-          // Restore per-output-channel gains from snapshot.
-          for (const g of (snap as any).output_channel_gains ?? []) {
-            outputChannelGains.value[g.channel] = g.db;
-          }
+          outputChannelGains.value = Object.fromEntries(
+            (snap.output_channel_gains ?? []).map(g => [g.channel, g.db]),
+          );
           for (const cb of playbackSnapshotSubscribers) cb(snap);
           break;
         }
@@ -341,6 +390,26 @@ function createClient() {
         }
         case 'pong':
           break;
+        case 'command_ack': {
+          const commandId = typeof payload.command_id === 'string' ? payload.command_id : '';
+          const pending = pendingCommands.get(commandId);
+          if (!pending) break;
+          clearTimeout(pending.timer);
+          pendingCommands.delete(commandId);
+          const ok = payload.ok === true;
+          if (!ok) lastError.value = String(payload.error || 'Server rejected the command.');
+          pending.resolve(ok);
+          break;
+        }
+        case 'playback_error': {
+          const cueId = typeof payload.cue_id === 'string' ? payload.cue_id : '';
+          const cueName = cues.value.find(c => c.id === cueId)?.display_name || cueId || 'audio cue';
+          const at = typeof payload.playhead_seconds === 'number'
+            ? ` at ${payload.playhead_seconds.toFixed(2)}s`
+            : '';
+          lastError.value = `Playback failed for ${cueName}${at}: decoder read error.`;
+          break;
+        }
         case 'error':
           lastError.value = String(payload.message || 'server error');
           break;
@@ -365,30 +434,44 @@ function createClient() {
     reconnecting.value = false;
   }
 
-  function wsSend(payload: object) {
-    const body = JSON.stringify(payload);
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      // eslint-disable-next-line no-console
-      console.log('[liveplay] WS send:', body);
-      ws.send(body);
-    } else {
-      // Loudly flag — silent drops are the most painful class of WS bug.
+  function wsSend(payload: Record<string, unknown>, requireAck = false): Promise<boolean> {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
       const state = ws ? ws.readyState : 'no-ws';
+      lastError.value = 'Command was not sent because the server is disconnected.';
+      if (hasEverConnected) connectionLost.value = true;
       // eslint-disable-next-line no-console
-      console.warn('[liveplay] WS send DROPPED (readyState=' + state + '):', body);
+      console.warn('[liveplay] WS send rejected (readyState=' + state + '):', payload);
+      return Promise.resolve(false);
     }
+
+    if (!requireAck) {
+      ws.send(JSON.stringify(payload));
+      return Promise.resolve(true);
+    }
+
+    const commandId = crypto.randomUUID();
+    const body = JSON.stringify({ ...payload, command_id: commandId });
+    return new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        pendingCommands.delete(commandId);
+        lastError.value = `The server did not confirm the ${String(payload.type || 'transport')} command.`;
+        resolve(false);
+      }, 2500);
+      pendingCommands.set(commandId, { timer, resolve });
+      ws!.send(body);
+    });
   }
 
   // ---- Transport (WS — low-latency) ---------------------------------
-  function play(cue: CueId)             { wsSend({ type: 'play',     cue_id: cue }); }
-  function stop(cue: CueId)             { wsSend({ type: 'stop',     cue_id: cue }); }
+  function play(cue: CueId) { return wsSend({ type: 'play', cue_id: cue }, true); }
+  function stop(cue: CueId) { return wsSend({ type: 'stop', cue_id: cue }, true); }
   // Omit fadeMs to let the server apply the project-wide Stop All fade
   // (settings.stopAllFadeMs, default 1000 ms). Pass a number (incl. 0 for an
   // instant panic) to override it for this call.
   function stopAll(fadeMs?: number) {
-    wsSend(fadeMs === undefined
+    return wsSend(fadeMs === undefined
       ? { type: 'stop_all' }
-      : { type: 'stop_all', fade_ms: fadeMs });
+      : { type: 'stop_all', fade_ms: fadeMs }, true);
   }
   function setGainDb(cue: CueId, db: number)
                                         { wsSend({ type: 'gain', cue_id: cue, db }); }
@@ -404,9 +487,15 @@ function createClient() {
     console.log('[liveplay] rest start:', init?.method || 'GET', url);
     let res: Response;
     try {
+      const headers = new Headers(init?.headers);
+      if (init?.body != null && !headers.has('Content-Type')) {
+        headers.set('Content-Type', 'application/json');
+      }
+      if (accessToken.value) headers.set('Authorization', `Bearer ${accessToken.value}`);
       res = await fetch(url, {
-        headers: { 'Content-Type': 'application/json' },
         ...init,
+        headers,
+        signal: init?.signal ?? AbortSignal.timeout(30000),
       });
     } catch (e) {
       // eslint-disable-next-line no-console
@@ -433,7 +522,12 @@ function createClient() {
   }
 
   async function fetchCues() {
-    cues.value = await rest<ServerCue[]>('/api/cues');
+    const next = await rest<ServerCue[]>('/api/cues');
+    cues.value = next;
+    const failed = next.find(c => c.decode_error);
+    if (failed) {
+      lastError.value = `Playback failed for ${failed.display_name || failed.id}: decoder read error.`;
+    }
   }
   async function fetchMixerChannels() {
     mixerChannels.value = await rest<ServerMixerChannel[]>('/api/mixers');
@@ -463,7 +557,8 @@ function createClient() {
       itemCount: number;
       hasOpenProject: boolean;
       server: { projectFilePath: string; mediaRoot: string;
-                audioLoading: boolean; audioLoaded: number; audioTotal: number };
+                audioLoading: boolean; audioLoaded: number; audioTotal: number;
+                audioReadiness?: ServerAudioReadiness };
     }>('/api/project/header');
   }
   // Paged items. Caller drives the loop; we keep this stateless so it
@@ -474,8 +569,7 @@ function createClient() {
     }>(`/api/project/items?offset=${offset}&limit=${limit}`);
   }
   async function fetchProjectProgress() {
-    return rest<{ loading: boolean; loaded: number; total: number }>(
-      '/api/project/progress');
+    return rest<ServerAudioReadiness>('/api/project/progress');
   }
   async function loadProjectFromPath(path: string) {
     return rest<any>('/api/project/load', {
@@ -489,7 +583,7 @@ function createClient() {
       body: JSON.stringify({ document }),
     }).then(p => { fetchCues(); fetchMixerChannels(); return p; });
   }
-  async function saveProjectTo(path?: string, document?: any) {
+  async function saveProjectTo(path?: string, document?: any, signal?: AbortSignal) {
     // Authoritative-save: when the caller provides the latest document, send
     // it along so the server replaces its in-memory copy (and re-mirrors per-
     // cue properties to the audio engine) before writing to disk. Belt-and-
@@ -501,6 +595,9 @@ function createClient() {
     return rest<any>('/api/project/save', {
       method: 'POST',
       body: JSON.stringify(body),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
+        : undefined,
     });
   }
   async function repairProject(): Promise<{ repaired: boolean; issues: string[] }> {
@@ -549,7 +646,7 @@ function createClient() {
   // Package a project folder server-side into a .lpa archive.
   //  * outputPath set → archive written there on the server; no download token.
   //  * outputPath empty → archive staged in server temp dir; response carries
-  //    a one-shot download token the client redeems via downloadArchive().
+  //    a one-shot download token streamed directly to a local file.
   async function exportProjectArchive(folderPath: string, projectName?: string,
                                       outputPath?: string) {
     return rest<{
@@ -567,16 +664,20 @@ function createClient() {
     });
   }
 
-  // Redeem a one-shot download token and return the .lpa bytes as a Blob.
-  // The server deletes the temp file after streaming, so a token is single-use.
-  async function downloadArchive(token: string): Promise<Blob> {
-    const res = await fetch(httpBase.value + '/api/file/download?token=' +
-                            encodeURIComponent(token));
-    if (!res.ok) {
-      const text = await res.text().catch(() => res.statusText);
-      throw new Error(`download failed: ${res.status} ${text}`);
+  // Stream the archive in Electron's main process so large shows never cross
+  // the renderer IPC boundary as one giant ArrayBuffer.
+  async function downloadArchiveToFile(token: string, destination: string) {
+    const api = window.electronAPI;
+    if (!api?.downloadArchiveToFile) {
+      throw new Error('Local archive download is unavailable');
     }
-    return await res.blob();
+    const result = await api.downloadArchiveToFile({
+      baseUrl: httpBase.value,
+      token,
+      destination,
+      accessToken: accessToken.value,
+    });
+    if (!result.success) throw new Error(result.error || 'download failed');
   }
 
   // Upload a .lpa archive from the client and have the server extract it
@@ -584,21 +685,44 @@ function createClient() {
   async function importProjectArchiveUpload(file: File | Blob,
                                             extractPath: string,
                                             filename?: string) {
-    const fd = new FormData();
-    fd.append('file', file, filename ?? (file as File).name ?? 'import.lpa');
-    fd.append('extractPath', extractPath);
-    const res = await fetch(httpBase.value + '/api/project/import', {
-      method: 'POST',
-      body: fd,
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => res.statusText);
-      throw new Error(`import upload failed: ${res.status} ${text}`);
-    }
-    return res.json() as Promise<{
+    return uploadInChunks<{
       extractPath: string;
       projectFiles: string[];
-    }>;
+    }>(file.size, {
+      filename: filename ?? (file as File).name ?? 'import.lpa',
+      purpose: 'project_import',
+      extract_path: extractPath,
+    }, (offset, length) => file.slice(offset, offset + length),
+    60 * 60 * 1000);
+  }
+
+  async function importProjectArchiveFromClientPath(
+    filePath: string,
+    extractPath: string,
+    filename?: string,
+  ) {
+    const api = (globalThis as any).electronAPI;
+    if (!api?.getBinaryFileInfo || !api?.readBinaryFileChunk) {
+      throw new Error('Local archive access is unavailable');
+    }
+    const info = await api.getBinaryFileInfo(filePath);
+    if (!info?.success || !Number.isSafeInteger(info.size) || info.size < 0) {
+      throw new Error(info?.error || 'Could not inspect local archive');
+    }
+    return uploadInChunks<{
+      extractPath: string;
+      projectFiles: string[];
+    }>(info.size, {
+      filename: filename ?? info.name ?? 'import.lpa',
+      purpose: 'project_import',
+      extract_path: extractPath,
+    }, async (offset, length) => {
+      const chunk = await api.readBinaryFileChunk(filePath, offset, length);
+      if (!chunk?.success || !(chunk.data instanceof ArrayBuffer)) {
+        throw new Error(chunk?.error || 'Could not read local archive');
+      }
+      return chunk.data;
+    }, 60 * 60 * 1000);
   }
 
   // Have the server extract a .lpa archive that already exists on its
@@ -610,6 +734,7 @@ function createClient() {
       {
         method: 'POST',
         body: JSON.stringify({ archivePath, extractPath }),
+        signal: AbortSignal.timeout(60 * 60 * 1000),
       });
   }
   // PUT the full project document. Server replaces in-memory state and
@@ -652,10 +777,10 @@ function createClient() {
   // Transport by item uuid (preferred over cue_id — preserves duckingBehavior
   // and inPoint semantics on the server side). The server routes `play` for
   // a group uuid through trigger_item so group startBehavior fires.
-  function playItem(uuid: string)  { wsSend({ type: 'play', item_uuid: uuid }); }
-  function stopItem(uuid: string)  { wsSend({ type: 'stop', item_uuid: uuid }); }
-  function pauseItem(uuid: string) { wsSend({ type: 'pause',  item_uuid: uuid }); }
-  function resumeItem(uuid: string){ wsSend({ type: 'resume', item_uuid: uuid }); }
+  function playItem(uuid: string)  { return wsSend({ type: 'play', item_uuid: uuid }, true); }
+  function stopItem(uuid: string)  { return wsSend({ type: 'stop', item_uuid: uuid }, true); }
+  function pauseItem(uuid: string) { return wsSend({ type: 'pause', item_uuid: uuid }, true); }
+  function resumeItem(uuid: string){ return wsSend({ type: 'resume', item_uuid: uuid }, true); }
   // Tell the server which item to play when the currently-playing item's
   // end-behavior fires "next". Pass null to clear.
   function setNextItem(uuid: string | null) {
@@ -849,19 +974,64 @@ function createClient() {
     });
   }
 
-  // ---- Upload (multipart) -------------------------------------------
-  async function uploadFile(file: File | Blob, filename?: string) {
-    const fd = new FormData();
-    fd.append('file', file, filename ?? (file as File).name);
-    const res = await fetch(httpBase.value + '/api/upload', {
-      method: 'POST',
-      body: fd,
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => res.statusText);
-      throw new Error(`upload failed: ${res.status} ${text}`);
+  // ---- Upload -------------------------------------------------------
+  async function uploadInChunks<T>(
+    size: number,
+    start: Record<string, unknown>,
+    readChunk: (offset: number, length: number) =>
+      Blob | ArrayBuffer | Promise<Blob | ArrayBuffer>,
+    finishTimeoutMs = 30000,
+  ): Promise<T> {
+    if (!Number.isSafeInteger(size) || size < 0) {
+      throw new RangeError('upload failed: invalid source size');
     }
-    return res.json() as Promise<{ saved: string[] }>;
+    const session = await rest<{ upload_id: string; chunk_size: number }>(
+      '/api/upload/start', {
+        method: 'POST',
+        body: JSON.stringify({ ...start, size }),
+      });
+    if (!/^[0-9a-f]{64}$/.test(session.upload_id)) {
+      throw new Error('upload failed: invalid server upload session');
+    }
+
+    const uploadPath = `/api/upload/${session.upload_id}`;
+    try {
+      if (!Number.isSafeInteger(session.chunk_size) ||
+          session.chunk_size < 64 * 1024 ||
+          session.chunk_size > 8 * 1024 * 1024) {
+        throw new Error('upload failed: invalid server chunk size');
+      }
+      for (let offset = 0; offset < size; offset += session.chunk_size) {
+        const length = Math.min(session.chunk_size, size - offset);
+        const body = await readChunk(offset, length);
+        const bodyBytes = body instanceof Blob ? body.size : body.byteLength;
+        if (bodyBytes !== length) {
+          throw new Error('upload failed: source file changed while reading');
+        }
+        await rest(`${uploadPath}?offset=${offset}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body,
+          signal: AbortSignal.timeout(120000),
+        });
+      }
+      return await rest<T>(`${uploadPath}/finish`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(finishTimeoutMs),
+      });
+    } catch (error) {
+      await rest(uploadPath, {
+        method: 'DELETE',
+        signal: AbortSignal.timeout(3000),
+      }).catch(() => {});
+      throw error;
+    }
+  }
+
+  async function uploadFile(file: File | Blob, filename?: string) {
+    return uploadInChunks<{ saved: string[] }>(file.size, {
+      filename: filename ?? (file as File).name ?? 'audio',
+    }, (offset, length) => file.slice(offset, offset + length));
   }
 
   // ---- Waveform fetch queue + cache --------------------------------
@@ -915,8 +1085,12 @@ function createClient() {
       waveformCache.clear();
     }
   }
-  async function fetchMetadata(path: string) {
-    return rest('/api/metadata?path=' + encodeURIComponent(path));
+  async function fetchMetadata(path: string, signal?: AbortSignal) {
+    return rest('/api/metadata?path=' + encodeURIComponent(path), {
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
+        : undefined,
+    });
   }
 
   // Compute a waveform for an arbitrary server-side file path. Used right
@@ -933,10 +1107,13 @@ function createClient() {
   // Copy a server-side file into the project's media root. Returns the
   // absolute path of the copy. A no-op (returns the same path) if the file
   // is already inside the media root.
-  async function copyToMedia(sourcePath: string): Promise<string> {
+  async function copyToMedia(sourcePath: string, signal?: AbortSignal): Promise<string> {
     const result = await rest<{ dest_path: string }>('/api/copy_to_media', {
       method: 'POST',
       body: JSON.stringify({ source_path: sourcePath }),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
+        : undefined,
     });
     return result.dest_path;
   }
@@ -949,14 +1126,14 @@ function createClient() {
   //   * Local server — when Electron can give us the dropped file's OS path and
   //     the server shares this filesystem, ask the server to copy it in place
   //     (no byte transfer over the wire).
-  //   * Remote server / browser / no path — upload the bytes via multipart.
+  //   * Remote server / browser / no path — upload bounded file slices.
   // copyToMedia failing (e.g. a remote server that can't see the path) falls
   // back to upload, so a misdetected "local" server still works.
   async function resolveDroppedFileToMedia(file: File): Promise<string | null> {
     const osPath = (import.meta.client && (window as any).electronAPI?.getFilePath)
       ? (window as any).electronAPI.getFilePath(file)
       : null;
-    if (osPath) {
+    if (osPath && isLocalServer.value) {
       try { return await copyToMedia(osPath); }
       catch (e) { console.warn('[import] copyToMedia failed, uploading bytes instead:', e); }
     }
@@ -988,6 +1165,7 @@ function createClient() {
   return reactive({
     // state
     serverUrl,
+    accessToken,
     connected,
     reconnecting,
     connectionLost,
@@ -1000,6 +1178,8 @@ function createClient() {
 
     // config
     setServerUrl,
+    setAccessToken,
+    clearLastError,
 
     // lifecycle
     connect,
@@ -1065,8 +1245,9 @@ function createClient() {
     isLocalServer,
     refreshIsLocalServer,
     exportProjectArchive,
-    downloadArchive,
+    downloadArchiveToFile,
     importProjectArchiveUpload,
+    importProjectArchiveFromClientPath,
     importProjectArchiveFromServer,
 
     // item CRUD via server

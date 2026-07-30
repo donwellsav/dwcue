@@ -10,7 +10,7 @@
         <!-- Source mode toggle. Only rendered when the server is on a
              different machine; otherwise "upload" makes no sense and we
              skip the tabs entirely. -->
-        <div v-if="!server.isLocalServer.value" class="tabs">
+        <div v-if="!server.isLocalServer" class="tabs">
           <button class="tab" :class="{ active: tab === 'server' }" @click="tab = 'server'">
             {{ t('importAudio.tabServer') }}
           </button>
@@ -25,7 +25,7 @@
           <p class="hint">{{ t('importAudio.serverHint') }}</p>
 
           <!-- Local file picker: only shown on local server (Electron only) -->
-          <template v-if="server.isLocalServer.value && hasElectron">
+          <template v-if="server.isLocalServer && hasElectron">
             <div class="divider">{{ t('importAudio.orFromComputer') }}</div>
             <div class="row">
               <button class="btn primary" :disabled="pickingLocal" @click="pickLocal">
@@ -50,12 +50,19 @@
           </template>
         </section>
 
-        <!-- "Upload" tab — native dialog, then multipart POST to /api/upload -->
+        <!-- "Upload" tab — browser file picker, then upload to /api/upload -->
         <section v-else class="pane">
           <p>{{ t('importAudio.uploadIntro') }}</p>
 
           <div class="row">
-            <button class="btn primary" :disabled="uploading" @click="pickAndUpload">
+            <input
+              ref="uploadInput"
+              class="file-input"
+              type="file"
+              multiple
+              @change="uploadSelectedFiles"
+            >
+            <button class="btn primary" :disabled="uploading" @click="uploadInput?.click()">
               <span class="material-symbols-rounded" style="font-size:16px;vertical-align:middle;">folder_open</span>
               {{ uploading ? t('importAudio.uploading') : t('importAudio.chooseFiles') }}
             </button>
@@ -87,8 +94,7 @@
   -----------------------------------------------------------------------
   Replaces the native OS file dialog for audio import. Two tabs:
    * "On server"  — browse the server's filesystem with ServerFileBrowser.
-   * "Upload"     — use Electron's native dialog to pick local files, then
-                    stream them to the server via /api/upload (multipart).
+   * "Upload"     — use the browser's file picker and upload directly.
 
   Emits:
     pick(serverPaths: string[]) — caller proceeds to create AudioItems for
@@ -124,6 +130,7 @@ const uploadStatus        = ref<string>('');
 const uploadedThisSession = ref<string[]>([]);
 const selectedUploaded    = ref<string[]>([]);
 const uploadedAnchor      = { i: -1 };
+const uploadInput          = ref<HTMLInputElement | null>(null);
 
 // Local file picker (used when server is local — same machine, so local paths = server paths)
 const hasElectron = !!(globalThis as any).electronAPI?.selectAudioFiles;
@@ -200,38 +207,20 @@ async function pickLocal() {
   }
 }
 
-// Native dialog → multipart upload → register paths under the server's media_root.
-// Falls back gracefully if not running inside Electron.
-async function pickAndUpload() {
-  const api: any = (globalThis as any).electronAPI;
-  if (!api?.selectAudioFiles) {
-    uploadStatus.value = t('importAudio.desktopOnly');
-    return;
-  }
-
-  const localPaths: string[] | null = await api.selectAudioFiles();
-  if (!localPaths || localPaths.length === 0) return;
+// File-backed browser uploads avoid copying audio through Electron IPC.
+async function uploadSelectedFiles(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const files = Array.from(input.files ?? []);
+  input.value = '';
+  if (files.length === 0) return;
 
   uploading.value = true;
   try {
-    for (let i = 0; i < localPaths.length; ++i) {
-      const lp = localPaths[i];
+    for (let i = 0; i < files.length; ++i) {
+      const file = files[i];
       uploadStatus.value = t('importAudio.uploadingProgress',
-        { i: i + 1, total: localPaths.length, name: basename(lp) });
-
-      // Read raw bytes through Electron, then wrap as a File for fetch().
-      // (This avoids needing the renderer to have direct disk access.)
-      // readAudioFile returns the binary as a number[]; readFile would
-      // try to decode utf8 and corrupt audio payloads.
-      const result = await api.readAudioFile(lp);
-      if (!result?.success || !result.data) {
-        console.warn('[import] readAudioFile failed for', lp, result?.error);
-        continue;
-      }
-      const bytes = new Uint8Array(result.data);
-      const file = new File([bytes], basename(lp));
-
-      const out = await server.uploadFile(file, basename(lp));
+        { i: i + 1, total: files.length, name: file.name });
+      const out = await server.uploadFile(file, file.name);
       if (out?.saved?.length) {
         for (const savedPath of out.saved) {
           uploadedThisSession.value.push(savedPath);
@@ -239,7 +228,7 @@ async function pickAndUpload() {
         }
       }
     }
-    uploadStatus.value = t('importAudio.uploadedCount', { count: localPaths.length });
+    uploadStatus.value = t('importAudio.uploadedCount', { count: files.length });
   } catch (e: any) {
     uploadStatus.value = t('importAudio.uploadFailed', { error: e?.message ?? e });
   } finally {
@@ -298,11 +287,12 @@ async function pickAndUpload() {
     &.small   { padding: 2px 8px; font-size: 12px; }
   }
   .row { display: flex; gap: 10px; align-items: center; }
+  .file-input { display: none; }
   .status { font-size: 12px; color: #aaa; }
 
   .uploaded {
     list-style: none; margin: 0; padding: 0;
-    border: 1px solid #2a2a2a; border-radius: 4px; background: #161616;
+    border: 1px solid #2a2a2a; border-radius: 4px; background: #16161d;
     max-height: 200px; overflow: auto;
     li {
       display: grid; grid-template-columns: 26px 1fr; gap: 8px; align-items: center;

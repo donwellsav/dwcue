@@ -3,6 +3,7 @@
 #include <winresrc.h>
 
 IDI_APPICON ICON "app.ico"
+1 RT_MANIFEST "server.manifest"
 
 // Version information block shown in Explorer > Properties > Details.
 VS_VERSION_INFO VERSIONINFO
@@ -18,13 +19,13 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "CompanyName",      "Thomas Doukinitsas\0"
-            VALUE "FileDescription",  "LivePlay Audio Engine Server\0"
+            VALUE "CompanyName",      "DonWells\0"
+            VALUE "FileDescription",  "DW Cue Audio Engine Server\0"
             VALUE "FileVersion",      "0.1.0.0\0"
-            VALUE "InternalName",     "liveplay-server\0"
+            VALUE "InternalName",     "dwcue-server\0"
             VALUE "LegalCopyright",   "AGPL-3.0-only\0"
-            VALUE "OriginalFilename", "liveplay-server.exe\0"
-            VALUE "ProductName",      "LivePlay\0"
+            VALUE "OriginalFilename", "dwcue-server.exe\0"
+            VALUE "ProductName",      "DonWells Cue\0"
             VALUE "ProductVersion",   "0.1.0.0\0"
         END
     END

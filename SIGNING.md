@@ -1,6 +1,6 @@
 # Code signing
 
-LivePlay's released installers are currently **unsigned**. This file tracks the
+DonWells Cue's released installers are currently **unsigned**. This file tracks the
 plan for signing each platform and contains the ready-to-enable wiring so that
 turning signing on is a matter of adding secrets — not re-engineering the
 release pipeline.
@@ -10,7 +10,7 @@ release pipeline.
 >   below is staged but inert (no secrets configured → release stays unsigned).
 > - **macOS:** unsigned + un-notarized. Users must clear the quarantine flag
 >   once per install — see
->   [README → First launch on macOS](README.md#first-launch-on-macos-liveplay-is-damaged-and-cant-be-opened).
+>   [README → First launch on macOS](README.md#first-launch-on-macos-donwells-cue-is-damaged-and-cant-be-opened).
 > - **Linux:** AppImage/deb/rpm are unsigned (normal for these formats).
 
 Nothing in this document changes the current build. The release workflow
@@ -41,7 +41,7 @@ The unsigned NSIS installer is already uploaded by the Windows matrix job as the
 1. Once the OSS certificate is approved, create a **Project** in SignPath (slug,
    e.g. `liveplay`).
 2. Add an **Artifact configuration** that matches the NSIS installer
-   (`LivePlay-Setup-*.exe`).
+   (`DonWells Cue-Setup-*.exe`).
 3. Create a **Signing policy** (e.g. `release-signing`) bound to the
    Authenticode certificate.
 4. Register GitHub as a **Trusted Build System** and link this repository so
@@ -118,7 +118,7 @@ changes are required.
 
 ## macOS — Apple notarization (separate from SignPath)
 
-SignPath cannot sign macOS apps. Removing the "LivePlay is damaged" Gatekeeper
+SignPath cannot sign macOS apps. Removing the "DonWells Cue is damaged" Gatekeeper
 prompt requires Apple's own chain:
 
 1. An **Apple Developer Program** membership (paid).
@@ -126,14 +126,14 @@ prompt requires Apple's own chain:
 3. Notarization via Apple's notary service (electron-builder uses
    [`@electron/notarize`](https://github.com/electron/notarize)).
 
-When that's in place:
+The hardened runtime, entitlements and notarization settings are already in
+[client/package.json](client/package.json), and the release workflow already
+passes the required values. To enable the final signing step, provide:
 
-- Remove `"identity": null` from the `mac` block in
-  [client/package.json](client/package.json) (it currently forces an unsigned
-  build).
-- Add `"hardenedRuntime": true`, an entitlements file, and a `notarize` config.
-- Provide CI secrets: `CSC_LINK` (base64 `.p12`), `CSC_KEY_PASSWORD`, and either
-  `APPLE_API_KEY` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER` or
-  `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID`.
+- `MAC_CSC_LINK` — the Developer ID Application certificate exported as `.p12`
+  (or its base64 value).
+- `MAC_CSC_KEY_PASSWORD` — the `.p12` password.
+- `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` — notarization
+  credentials.
 
 Until then the README documents the one-time `xattr` workaround for users.

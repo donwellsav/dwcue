@@ -4,7 +4,7 @@
       <img
         ref="logoRef"
         :src="isDark ? './assets/icons/SVG/liveplay-icon-darkmode@web.svg' : './assets/icons/SVG/liveplay-icon-lightmode@web.svg'"
-        alt="LivePlay"
+        alt="DonWells Cue"
         class="header-logo"
       />
       <h2 class="project-name" :class="{ 'project-name--hidden': hideTitle }">{{ currentProject?.name || t('project.noProject') }}</h2>
@@ -352,27 +352,28 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--spacing-sm) var(--spacing-lg);
+  padding: var(--spacing-sm) var(--spacing-md);
   background-color: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
-  min-height: 60px;
+  min-height: 52px;
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md);
+  gap: var(--spacing-sm);
 }
 
 .header-logo {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   object-fit: contain;
 }
 
 .project-name {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
   color: var(--color-text-primary);
   margin: 0;
 }
@@ -380,7 +381,7 @@ onMounted(() => {
 .header-right {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md);
+  gap: var(--spacing-sm);
 }
 
 /* "Unsaved Changes" pill — styled like the playback status pills (yellow
@@ -403,7 +404,7 @@ onMounted(() => {
 .autosave-toggle {
   display: inline-flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: 6px;
   background: none;
   border: none;
   padding: 0;
@@ -418,17 +419,18 @@ onMounted(() => {
 }
 
 .autosave-toggle__label {
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
 }
 
 .autosave-toggle__track {
   position: relative;
-  width: 36px;
-  height: 20px;
-  border-radius: 10px;
-  background-color: var(--color-border);
+  width: 30px;
+  height: 16px;
+  border-radius: 8px;
+  background-color: var(--color-control);
+  box-shadow: inset 0 0 0 1px var(--color-border-strong);
   transition: background-color var(--transition-base);
   flex-shrink: 0;
 }
@@ -441,21 +443,21 @@ onMounted(() => {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 16px;
-  height: 16px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  background-color: #fff;
+  background-color: var(--color-text-primary);
   transition: transform var(--transition-base);
 }
 
 .autosave-toggle__track--on .autosave-toggle__thumb {
-  transform: translateX(16px);
+  transform: translateX(14px);
 }
 
 /* Two clocks side-by-side, never re-arrange */
 .clock-pair {
   display: flex;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-xs);
   align-items: stretch;
 }
 
@@ -464,15 +466,19 @@ onMounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 4px var(--spacing-md);
-  border: 2px solid currentColor;
+  padding: 4px var(--spacing-sm);
+  border: 1px solid var(--color-border);
   border-radius: var(--border-radius-md);
-  background-color: var(--color-surface);
+  background-color: var(--color-control);
   transition: color var(--transition-base), border-color var(--transition-base);
-  min-width: 110px;
+  min-width: 86px;
 }
 
 .clock--active {
+  color: var(--color-text-primary);
+}
+
+.clock--active .clock-value {
   color: var(--color-accent);
 }
 
@@ -483,7 +489,7 @@ onMounted(() => {
 
 .clock-label {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -493,9 +499,9 @@ onMounted(() => {
 
 .clock-value {
   font-family: var(--font-mono);
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   line-height: 1;
 }
 

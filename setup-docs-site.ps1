@@ -1,6 +1,6 @@
-# LivePlay Documentation Site Setup
+# DonWells Cue Documentation Site Setup
 
-Write-Host "Setting up LivePlay documentation site..." -ForegroundColor Cyan
+Write-Host "Setting up DonWells Cue documentation site..." -ForegroundColor Cyan
 
 # Check if we're in the right directory
 if (-not (Test-Path "docs-site")) {

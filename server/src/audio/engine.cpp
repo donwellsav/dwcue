@@ -47,11 +47,41 @@ std::string gen_uuid_like() {
     return std::string{buf};
 }
 
+class AtomicActiveGuard {
+public:
+    explicit AtomicActiveGuard(std::atomic<bool>& active) noexcept : active_(active) {}
+    ~AtomicActiveGuard() { active_.store(false, std::memory_order_seq_cst); }
+
+    AtomicActiveGuard(const AtomicActiveGuard&) = delete;
+    AtomicActiveGuard& operator=(const AtomicActiveGuard&) = delete;
+
+private:
+    std::atomic<bool>& active_;
+};
+
+const char* device_runtime_state_name(DeviceRuntimeState state) noexcept {
+    switch (state) {
+        case DeviceRuntimeState::Available:    return "available";
+        case DeviceRuntimeState::Starting:     return "starting";
+        case DeviceRuntimeState::Running:      return "running";
+        case DeviceRuntimeState::Interrupted:  return "interrupted";
+        case DeviceRuntimeState::Disconnected: return "disconnected";
+        case DeviceRuntimeState::Closing:      return "closing";
+    }
+    return "disconnected";
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
 // Construction / lifecycle
 // ---------------------------------------------------------------------------
+AudioEngine::Device::~Device() {
+    if (clock_resampler_initialized && clock_resampler) {
+        ma_resampler_uninit(clock_resampler.get(), nullptr);
+    }
+}
+
 AudioEngine::AudioEngine(EngineConfig cfg) : cfg_(cfg) {
     if (cfg_.master_channels == 0) cfg_.master_channels = kDefaultMasterChannels;
     if (cfg_.render_block    == 0) cfg_.render_block    = kDefaultRenderBlock;
@@ -65,18 +95,29 @@ AudioEngine::AudioEngine(EngineConfig cfg) : cfg_(cfg) {
         ms.meter->configure(cfg_.mix_sample_rate);
     }
     pending_.master_destinations.resize(cfg_.master_channels);
+    output_channel_gains_ =
+        std::make_unique<std::atomic<float>[]>(cfg_.master_channels);
+    for (MasterChannelIndex i = 0; i < cfg_.master_channels; ++i) {
+        output_channel_gains_[i].store(1.0f, std::memory_order_relaxed);
+    }
 
     // Publish an empty topology so the render thread has something to read.
     auto initial = std::make_shared<Topology>();
     initial->masters.resize(cfg_.master_channels);
+    initial->master_accumulators.assign(
+        cfg_.master_channels,
+        std::vector<Sample>(static_cast<std::size_t>(cfg_.render_block), 0.0f));
     for (MasterChannelIndex i = 0; i < cfg_.master_channels; ++i) initial->masters[i].index = i;
     topology_.store(std::move(initial));
+    device_snapshot_.store(std::make_shared<const DeviceList>());
 }
 
 AudioEngine::~AudioEngine() {
     stop();
     std::lock_guard lock{mutex_};
+    device_snapshot_.store(std::make_shared<const DeviceList>());
     for (auto& dev : devices_) {
+        dev->closing.store(true, std::memory_order_release);
         if (dev->ma_dev) {
             ma_device_uninit(dev->ma_dev.get());
         }
@@ -93,15 +134,8 @@ bool AudioEngine::start() {
                  cfg_.mix_sample_rate, cfg_.render_block, cfg_.master_channels,
                  cfg_.master_ceiling_db);
 
-    // Pre-allocate scratch buffers sized for the worst-case topology.
-    mixer_accumulators_.clear();
-    master_accumulators_.assign(cfg_.master_channels,
-                                std::vector<Sample>(cfg_.render_block, 0.0f));
-
-    // Initialise per-output-channel gains to unity (0 dB).
-    output_channel_gains_.assign(cfg_.master_channels, 1.0f);
-
     render_thread_ = std::thread([this] { render_loop(); });
+    decode_thread_ = std::thread([this] { decode_loop(); });
 
 #if defined(_WIN32)
     // Lift the render thread above generic worker threads so consumption_counter_
@@ -119,10 +153,12 @@ bool AudioEngine::start() {
 
 void AudioEngine::stop() {
     if (!running_.exchange(false)) return;
+    decode_cv_.notify_all();
     // Kick the render thread out of any consumption_counter_.wait().
     consumption_counter_.fetch_add(1, std::memory_order_release);
     consumption_counter_.notify_all();
     if (render_thread_.joinable()) render_thread_.join();
+    if (decode_thread_.joinable()) decode_thread_.join();
     Logger::info("AudioEngine: stopped.");
 }
 
@@ -133,12 +169,38 @@ std::shared_ptr<const Topology> AudioEngine::snapshot_topology() const noexcept 
     return topology_.load();
 }
 
+std::shared_ptr<const AudioEngine::DeviceList>
+AudioEngine::snapshot_devices() const noexcept {
+    return device_snapshot_.load();
+}
+
+void AudioEngine::publish_device_snapshot_locked() {
+    device_snapshot_.store(std::make_shared<const DeviceList>(devices_));
+}
+
 void AudioEngine::publish_topology(std::shared_ptr<const Topology> snap) {
     topology_.store(std::move(snap));
+    decode_cv_.notify_one();
 }
 
 void AudioEngine::rebuild_topology_locked() {
     auto snap = std::make_shared<Topology>();
+    const auto block = static_cast<std::size_t>(cfg_.render_block);
+
+    // Mixer ownership and mixer-id lookup are frozen into the snapshot. The
+    // hash table exists only here on the control thread; render sends carry a
+    // direct accumulator index.
+    std::unordered_map<std::string, std::size_t> mixer_indices;
+    snap->mixers.reserve(mixers_.size());
+    mixer_indices.reserve(mixers_.size());
+    for (auto& [id, mixer] : mixers_) {
+        const auto index = snap->mixers.size();
+        mixer_indices.emplace(id, index);
+        snap->mixers.emplace_back(mixer);
+    }
+    snap->mixer_accumulators.assign(
+        snap->mixers.size() * kMixerLanes,
+        std::vector<Sample>(block, 0.0f));
 
     // ---- Items ----
     snap->items.reserve(items_.size());
@@ -148,6 +210,16 @@ void AudioEngine::rebuild_topology_locked() {
 
         const ChannelCount n_src = item->source_channel_count();
         entry.per_source_channel.resize(n_src);
+        // Keep one spare channel so toggling LTC on does not force allocation
+        // on the render thread before the routing snapshot is rebuilt.
+        const ChannelCount scratch_channels =
+            n_src + (item->desc().ltc_enabled ? 0u : 1u);
+        entry.channel_buffers.assign(
+            scratch_channels, std::vector<Sample>(block, 0.0f));
+        entry.channel_ptrs.reserve(scratch_channels);
+        for (auto& channel : entry.channel_buffers) {
+            entry.channel_ptrs.push_back(channel.data());
+        }
 
         // Find sends for this item, expanding kAllMixerLanes into one send
         // per concrete lane so the render loop never branches on it.
@@ -157,8 +229,8 @@ void AudioEngine::rebuild_topology_locked() {
             for (ChannelIndex c = 0; c < n_src; ++c) {
                 if (c >= isr.size()) continue;
                 for (const auto& send : isr[c]) {
-                    auto mit = mixers_.find(send.mixer.value);
-                    if (mit == mixers_.end()) continue;
+                    auto mit = mixer_indices.find(send.mixer.value);
+                    if (mit == mixer_indices.end()) continue;
                     if (send.lane == kAllMixerLanes) {
                         for (ChannelIndex l = 0; l < kMixerLanes; ++l) {
                             entry.per_source_channel[c].sends.push_back(
@@ -176,13 +248,15 @@ void AudioEngine::rebuild_topology_locked() {
 
     // ---- Masters ----
     snap->masters.resize(cfg_.master_channels);
+    snap->master_accumulators.assign(
+        cfg_.master_channels, std::vector<Sample>(block, 0.0f));
     for (MasterChannelIndex m = 0; m < cfg_.master_channels; ++m) {
         snap->masters[m].index       = m;
         snap->masters[m].destination = pending_.master_destinations[m];
     }
     for (auto& [mixer_id_str, master_sends] : pending_.mixer_to_master) {
-        auto mit = mixers_.find(mixer_id_str);
-        if (mit == mixers_.end()) continue;
+        auto mit = mixer_indices.find(mixer_id_str);
+        if (mit == mixer_indices.end()) continue;
         for (auto& send : master_sends) {
             if (send.master >= cfg_.master_channels) continue;
             if (send.lane == kAllMixerLanes) {
@@ -204,7 +278,44 @@ void AudioEngine::rebuild_topology_locked() {
 // Devices
 // ---------------------------------------------------------------------------
 std::vector<DeviceInfo> AudioEngine::enumerate_devices() const {
+    std::lock_guard lifecycle_lock{device_lifecycle_mutex_};
     std::vector<DeviceInfo> out;
+    const auto opened = snapshot_devices();
+    std::vector<bool> opened_matched(opened ? opened->size() : 0, false);
+
+    const auto overlay_runtime = [](DeviceInfo& info, const Device& dev) {
+        // API mutations use the engine's opened-instance id, not the
+        // enumeration-only hardware-name id.
+        info.id = dev.id;
+        info.is_open = true;
+        info.is_clock_master =
+            info.is_clock_master ||
+            dev.clock_master.load(std::memory_order_acquire);
+        info.runtime_state = device_runtime_state_name(
+            dev.runtime_state.load(std::memory_order_acquire));
+        info.underrun_count +=
+            dev.underrun_count.load(std::memory_order_acquire);
+        info.underrun_frames +=
+            dev.underrun_frames.load(std::memory_order_acquire);
+        info.overrun_count +=
+            dev.overrun_count.load(std::memory_order_acquire);
+        info.hard_resync_count +=
+            dev.hard_resync_count.load(std::memory_order_acquire);
+        info.device_loss_count +=
+            dev.device_loss_count.load(std::memory_order_acquire);
+        info.device_recovery_count +=
+            dev.device_recovery_count.load(std::memory_order_acquire);
+        info.reroute_count +=
+            dev.reroute_count.load(std::memory_order_acquire);
+        info.interruption_count +=
+            dev.interruption_count.load(std::memory_order_acquire);
+        info.correction_limit_count +=
+            dev.correction_limit_count.load(std::memory_order_acquire);
+        info.ring_occupancy_frames =
+            dev.ring_occupancy_frames.load(std::memory_order_acquire);
+        info.clock_correction_ppm =
+            dev.clock_correction_ppm.load(std::memory_order_acquire);
+    };
 
     ma_context ctx;
     if (ma_context_init(nullptr, 0, nullptr, &ctx) != MA_SUCCESS) return out;
@@ -229,10 +340,39 @@ std::vector<DeviceInfo> AudioEngine::enumerate_devices() const {
                 info.sample_rate   = full.nativeDataFormatCount > 0
                                          ? full.nativeDataFormats[0].sampleRate : 48000;
             }
+            if (opened) {
+                for (std::size_t opened_index = 0;
+                     opened_index < opened->size(); ++opened_index) {
+                    const auto& dev = (*opened)[opened_index];
+                    if (dev->closing.load(std::memory_order_acquire) ||
+                        dev->display_name != info.display_name) {
+                        continue;
+                    }
+                    opened_matched[opened_index] = true;
+                    overlay_runtime(info, *dev);
+                }
+            }
             out.emplace_back(std::move(info));
         }
     }
     ma_context_uninit(&ctx);
+
+    // A removed named device no longer appears in the hardware enumeration,
+    // but its logical output and loss counters must remain visible.
+    if (opened) {
+        for (std::size_t i = 0; i < opened->size(); ++i) {
+            if (opened_matched[i]) continue;
+            const auto& dev = (*opened)[i];
+            DeviceInfo info;
+            info.id = dev->id;
+            info.display_name = dev->display_name;
+            info.channel_count = dev->channels;
+            info.sample_rate = dev->sample_rate;
+            info.is_available = false;
+            overlay_runtime(info, *dev);
+            out.emplace_back(std::move(info));
+        }
+    }
     return out;
 }
 
@@ -241,6 +381,68 @@ std::vector<DeviceInfo> AudioEngine::enumerate_devices() const {
 // output and — after consuming any samples — notifies the engine's render
 // thread to refill the ring. This is the consumer side of our device-callback-
 // driven synchronisation: the device clock dictates production cadence.
+void AudioEngine::ma_notification_callback(
+    const ma_device_notification* notification) {
+    if (!notification || !notification->pDevice) return;
+    auto* device = reinterpret_cast<Device*>(
+        notification->pDevice->pUserData);
+    if (!device) return;
+
+    const auto wake_engine = [&] {
+        if (!device->engine) return;
+        device->engine->consumption_counter_.fetch_add(
+            1, std::memory_order_release);
+        device->engine->consumption_counter_.notify_all();
+    };
+    const auto mark_running = [&] {
+        const auto previous = device->runtime_state.exchange(
+            DeviceRuntimeState::Running, std::memory_order_acq_rel);
+        if (previous == DeviceRuntimeState::Disconnected ||
+            previous == DeviceRuntimeState::Interrupted) {
+            device->device_recovery_count.fetch_add(
+                1, std::memory_order_relaxed);
+        }
+        device->reset_requested.store(true, std::memory_order_release);
+    };
+
+    switch (notification->type) {
+        case ma_device_notification_type_started:
+            mark_running();
+            break;
+        case ma_device_notification_type_stopped: {
+            if (device->closing.load(std::memory_order_acquire)) {
+                device->runtime_state.store(
+                    DeviceRuntimeState::Closing, std::memory_order_release);
+                break;
+            }
+            const auto previous = device->runtime_state.exchange(
+                DeviceRuntimeState::Disconnected, std::memory_order_acq_rel);
+            if (previous != DeviceRuntimeState::Disconnected) {
+                device->device_loss_count.fetch_add(
+                    1, std::memory_order_relaxed);
+            }
+            device->reset_requested.store(true, std::memory_order_release);
+            break;
+        }
+        case ma_device_notification_type_rerouted:
+            device->reroute_count.fetch_add(1, std::memory_order_relaxed);
+            mark_running();
+            break;
+        case ma_device_notification_type_interruption_began:
+            device->interruption_count.fetch_add(1, std::memory_order_relaxed);
+            device->runtime_state.store(
+                DeviceRuntimeState::Interrupted, std::memory_order_release);
+            device->reset_requested.store(true, std::memory_order_release);
+            break;
+        case ma_device_notification_type_interruption_ended:
+            mark_running();
+            break;
+        case ma_device_notification_type_unlocked:
+            break;
+    }
+    wake_engine();
+}
+
 void AudioEngine::ma_data_callback(ma_device* dev,
                                    void* out,
                                    const void* /*in*/,
@@ -253,43 +455,134 @@ void AudioEngine::ma_data_callback(ma_device* dev,
         std::memset(out, 0, frames * dev->playback.channels * sizeof(Sample));
         return;
     }
-    if (!device->ring) {
+    // The callback never waits. The render thread briefly claims this flag
+    // only while resetting ring/resampler state; a collision emits silence
+    // for this callback and lets the render thread finish the hard re-lock.
+    if (device->callback_active.exchange(true, std::memory_order_acq_rel)) {
         std::memset(out, 0, frames * device->channels * sizeof(Sample));
+        if (device->engine) {
+            device->engine->consumption_counter_.fetch_add(
+                1, std::memory_order_release);
+            device->engine->consumption_counter_.notify_one();
+        }
+        return;
+    }
+    AtomicActiveGuard callback_guard{device->callback_active};
+
+    const auto wake_render = [&] {
+        if (!device->engine) return;
+        device->engine->consumption_counter_.fetch_add(
+            1, std::memory_order_release);
+        device->engine->consumption_counter_.notify_one();
+    };
+
+    if (!device->ring ||
+        !device->started.load(std::memory_order_acquire) ||
+        device->closing.load(std::memory_order_acquire) ||
+        device->runtime_state.load(std::memory_order_acquire) !=
+            DeviceRuntimeState::Running ||
+        device->reset_requested.load(std::memory_order_acquire)) {
+        std::memset(out, 0, frames * device->channels * sizeof(Sample));
+        wake_render();
         return;
     }
 
     Sample* dst = static_cast<Sample*>(out);
     std::uint32_t remaining = frames;
-    bool consumed_any = false;
-    while (remaining > 0) {
-        void*         buf       = nullptr;
-        ma_uint32     available = remaining;
-        if (ma_pcm_rb_acquire_read(device->ring.get(), &available, &buf) != MA_SUCCESS) break;
-        if (available == 0) {
-            // Ring underrun — render thread isn't keeping up with hardware consumption.
-            // Fill with silence so operators hear silence instead of garbage.
-            if (remaining == frames) {
-                // Entire block is missing — likely indicates a scheduling hiccup
-                Logger::warn("Ring underrun on device '{}': {} frames starved",
-                             device->display_name, remaining);
-            }
-            std::memset(dst, 0, remaining * device->channels * sizeof(Sample));
-            break;
+    const bool correct_clock =
+        !device->clock_master.load(std::memory_order_acquire) &&
+        device->clock_resampler_initialized &&
+        device->clock_resampler;
+
+    if (correct_clock) {
+        const auto occupancy = ma_pcm_rb_available_read(device->ring.get());
+        device->ring_occupancy_frames.store(
+            occupancy, std::memory_order_relaxed);
+        const double ratio = device->clock_controller.update(occupancy);
+        const auto correction_ppm = static_cast<std::int32_t>(
+            std::lround((ratio - 1.0) * 1'000'000.0));
+        device->clock_correction_ppm.store(
+            static_cast<float>(correction_ppm), std::memory_order_relaxed);
+        const bool limited = device->clock_controller.limited();
+        if (limited && !device->correction_was_limited) {
+            device->correction_limit_count.fetch_add(
+                1, std::memory_order_relaxed);
         }
-        std::memcpy(dst, buf, available * device->channels * sizeof(Sample));
-        ma_pcm_rb_commit_read(device->ring.get(), available);
-        dst       += available * device->channels;
-        remaining -= available;
-        consumed_any = true;
+        device->correction_was_limited = limited;
+
+        const auto applied = device->applied_rate_ppm.load(
+            std::memory_order_relaxed);
+        if (std::abs(correction_ppm - applied) >= 10) {
+            constexpr ma_uint32 kRatioScale = 1'000'000;
+            const auto input_rate = static_cast<ma_uint32>(
+                static_cast<std::int64_t>(kRatioScale) + correction_ppm);
+            if (ma_resampler_set_rate(
+                    device->clock_resampler.get(), input_rate,
+                    kRatioScale) == MA_SUCCESS) {
+                device->applied_rate_ppm.store(
+                    correction_ppm, std::memory_order_relaxed);
+            }
+        }
+
+        while (remaining > 0) {
+            void* buf = nullptr;
+            ma_uint32 available =
+                ma_pcm_rb_available_read(device->ring.get());
+            if (available == 0 ||
+                ma_pcm_rb_acquire_read(
+                    device->ring.get(), &available, &buf) != MA_SUCCESS) {
+                break;
+            }
+
+            ma_uint64 input_frames = available;
+            ma_uint64 output_frames = remaining;
+            const ma_result result = ma_resampler_process_pcm_frames(
+                device->clock_resampler.get(), buf, &input_frames,
+                dst, &output_frames);
+            if (input_frames > 0) {
+                ma_pcm_rb_commit_read(
+                    device->ring.get(), static_cast<ma_uint32>(input_frames));
+            }
+            dst += output_frames * device->channels;
+            remaining -= static_cast<std::uint32_t>(output_frames);
+            if (result != MA_SUCCESS ||
+                (input_frames == 0 && output_frames == 0)) {
+                break;
+            }
+        }
+    } else {
+        device->clock_correction_ppm.store(0.0f, std::memory_order_relaxed);
+        while (remaining > 0) {
+            void* buf = nullptr;
+            ma_uint32 available = remaining;
+            if (ma_pcm_rb_acquire_read(
+                    device->ring.get(), &available, &buf) != MA_SUCCESS ||
+                available == 0) {
+                break;
+            }
+            std::memcpy(
+                dst, buf, available * device->channels * sizeof(Sample));
+            ma_pcm_rb_commit_read(device->ring.get(), available);
+            dst += available * device->channels;
+            remaining -= available;
+        }
     }
 
-    // Signal the render thread that ring space has been freed. fetch_add is
-    // wait-free; notify_one() on a counter only takes a futex-style fast path
-    // when a waiter exists. Safe to call from the RT callback.
-    if (consumed_any && device->engine) {
-        device->engine->consumption_counter_.fetch_add(1, std::memory_order_release);
-        device->engine->consumption_counter_.notify_one();
+    device->ring_occupancy_frames.store(
+        ma_pcm_rb_available_read(device->ring.get()),
+        std::memory_order_relaxed);
+    if (remaining > 0) {
+        std::memset(dst, 0, remaining * device->channels * sizeof(Sample));
+        device->underrun_count.fetch_add(1, std::memory_order_relaxed);
+        device->underrun_frames.fetch_add(
+            remaining, std::memory_order_relaxed);
+        if (!device->reset_requested.exchange(
+                true, std::memory_order_acq_rel)) {
+            device->hard_resync_count.fetch_add(
+                1, std::memory_order_relaxed);
+        }
     }
+    wake_render();
 }
 
 DeviceId AudioEngine::open_default_device(ChannelCount output_channels) {
@@ -298,11 +591,13 @@ DeviceId AudioEngine::open_default_device(ChannelCount output_channels) {
 
 DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
                                           ChannelCount output_channels) {
-    auto dev = std::make_unique<Device>();
+    std::lock_guard lifecycle_lock{device_lifecycle_mutex_};
+    auto dev = std::make_shared<Device>();
     dev->id           = DeviceId{gen_uuid_like()};
     dev->channels     = output_channels;
     dev->sample_rate  = cfg_.mix_sample_rate;
     dev->display_name = name_substring.empty() ? "Default Output" : name_substring;
+    dev->opened_as_default = name_substring.empty();
     dev->ma_dev       = std::make_unique<ma_device>();
     dev->ring         = std::make_unique<ma_pcm_rb>();
     dev->engine       = this;                       // for callback → consumption_counter_
@@ -315,12 +610,34 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
         Logger::error("Failed to allocate ring buffer for device '{}'", dev->display_name);
         return {};
     }
+    dev->clock_resampler = std::make_unique<ma_resampler>();
+    auto resampler_cfg = ma_resampler_config_init(
+        ma_format_f32, output_channels, cfg_.mix_sample_rate,
+        cfg_.mix_sample_rate, ma_resample_algorithm_linear);
+    // Clock matching moves by only a few parts per million. Disabling the
+    // anti-alias LPF removes needless callback work and resampler latency at
+    // ratios that never approach an aliasing boundary.
+    resampler_cfg.linear.lpfOrder = 0;
+    if (ma_resampler_init(
+            &resampler_cfg, nullptr, dev->clock_resampler.get()) !=
+        MA_SUCCESS) {
+        Logger::error(
+            "Failed to initialize clock adapter for device '{}'",
+            dev->display_name);
+        ma_pcm_rb_uninit(dev->ring.get());
+        return {};
+    }
+    dev->clock_resampler_initialized = true;
+    dev->clock_controller.configure(
+        ring_frames,
+        ring_frames - static_cast<ma_uint32>(cfg_.render_block));
 
     ma_device_config cfg = ma_device_config_init(ma_device_type_playback);
     cfg.playback.format    = ma_format_f32;
     cfg.playback.channels  = output_channels;
     cfg.sampleRate         = cfg_.mix_sample_rate;
     cfg.dataCallback       = &AudioEngine::ma_data_callback;
+    cfg.notificationCallback = &AudioEngine::ma_notification_callback;
     cfg.pUserData          = dev.get();
     cfg.periodSizeInFrames = static_cast<ma_uint32>(cfg_.render_block);
 
@@ -354,6 +671,29 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
         if (!have_match) {
             Logger::warn("Device matching '{}' not found, falling back to default.",
                          name_substring);
+            dev->opened_as_default = true;
+        }
+    }
+
+    // Opening the same physical output twice creates doubled/echoing audio and
+    // makes close semantics ambiguous. The lifecycle mutex makes this
+    // idempotence check cover simultaneous API requests too.
+    {
+        std::lock_guard lock{mutex_};
+        const auto existing = std::find_if(
+            devices_.begin(), devices_.end(),
+            [&](const std::shared_ptr<Device>& candidate) {
+                if (candidate->closing.load(std::memory_order_acquire)) {
+                    return false;
+                }
+                return (dev->opened_as_default &&
+                        candidate->opened_as_default) ||
+                       candidate->display_name == dev->display_name;
+            });
+        if (existing != devices_.end()) {
+            const auto existing_id = (*existing)->id;
+            ma_pcm_rb_uninit(dev->ring.get());
+            return existing_id;
         }
     }
 
@@ -362,6 +702,10 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
         ma_pcm_rb_uninit(dev->ring.get());
         return {};
     }
+    if (dev->ma_dev->playback.name[0] != '\0') {
+        dev->display_name = dev->ma_dev->playback.name;
+    }
+    dev->scratch.assign(cfg_.render_block * output_channels, 0.0f);
     if (ma_device_start(dev->ma_dev.get()) != MA_SUCCESS) {
         Logger::error("ma_device_start failed for '{}'", dev->display_name);
         ma_device_uninit(dev->ma_dev.get());
@@ -369,14 +713,30 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
         return {};
     }
 
-    dev->scratch.assign(cfg_.render_block * output_channels, 0.0f);
-    dev->started.store(true);
-
     DeviceId id = dev->id;
+    const std::string display_name = dev->display_name;
     {
         std::lock_guard lock{mutex_};
-        devices_.emplace_back(std::move(dev));
+        const bool have_healthy_clock_master = std::any_of(
+            devices_.begin(), devices_.end(),
+            [](const std::shared_ptr<Device>& candidate) {
+                return !candidate->closing.load(std::memory_order_acquire) &&
+                       candidate->runtime_state.load(
+                           std::memory_order_acquire) ==
+                           DeviceRuntimeState::Running &&
+                       candidate->clock_master.load(
+                           std::memory_order_acquire);
+            });
+        dev->clock_master.store(
+            !have_healthy_clock_master, std::memory_order_release);
+        devices_.emplace_back(dev);
+        publish_device_snapshot_locked();
     }
+    dev->started.store(true, std::memory_order_release);
+    auto starting = DeviceRuntimeState::Starting;
+    dev->runtime_state.compare_exchange_strong(
+        starting, DeviceRuntimeState::Running,
+        std::memory_order_acq_rel, std::memory_order_acquire);
     // Wake render thread: when we boot with no devices it idles on a coarse
     // timer; opening the first device should kick it into the live path
     // immediately so the first audio block lands before the device starves.
@@ -384,21 +744,25 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
     consumption_counter_.notify_all();
 
     Logger::success("Opened audio device '{}' ({} ch @ {} Hz) → DeviceId {}",
-                    devices_.back()->display_name, output_channels,
+                    display_name, output_channels,
                     cfg_.mix_sample_rate, id.value);
     return id;
 }
 
 void AudioEngine::close_device(const DeviceId& id) {
+    std::lock_guard lifecycle_lock{device_lifecycle_mutex_};
+    std::shared_ptr<Device> closing;
     {
         std::lock_guard lock{mutex_};
         auto it = std::find_if(devices_.begin(), devices_.end(),
-                               [&](const std::unique_ptr<Device>& d){ return d->id == id; });
+                               [&](const std::shared_ptr<Device>& d){ return d->id == id; });
         if (it == devices_.end()) return;
-        if ((*it)->ma_dev) ma_device_uninit((*it)->ma_dev.get());
-        if ((*it)->ring)   ma_pcm_rb_uninit((*it)->ring.get());
-        Logger::info("Closed audio device '{}'", (*it)->display_name);
+        closing = *it;
+        closing->closing.store(true, std::memory_order_seq_cst);
+        closing->runtime_state.store(
+            DeviceRuntimeState::Closing, std::memory_order_release);
         devices_.erase(it);
+        publish_device_snapshot_locked();
 
         // Drop any master assignments that pointed at this device.
         for (auto& dest : pending_.master_destinations) {
@@ -406,6 +770,27 @@ void AudioEngine::close_device(const DeviceId& id) {
         }
         rebuild_topology_locked();
     }
+
+    // An old immutable device snapshot may still be in the render function.
+    // It observes closing=true and exits; wait off the real-time thread before
+    // releasing the ring storage.
+    while (closing->render_active.load(std::memory_order_seq_cst)) {
+        std::this_thread::yield();
+    }
+    if (closing->ma_dev) ma_device_uninit(closing->ma_dev.get());
+    if (closing->ring)   ma_pcm_rb_uninit(closing->ring.get());
+    if (closing->clock_resampler_initialized &&
+        closing->clock_resampler) {
+        ma_resampler_uninit(closing->clock_resampler.get(), nullptr);
+        closing->clock_resampler_initialized = false;
+        closing->clock_resampler.reset();
+    }
+    {
+        std::lock_guard lock{mutex_};
+        retired_devices_.emplace_back(closing);
+    }
+    Logger::info("Closed audio device '{}'", closing->display_name);
+
     // Wake the render thread so it re-evaluates state (in particular, if this
     // was the last device it should drop into the idle-timer path).
     consumption_counter_.fetch_add(1, std::memory_order_release);
@@ -487,14 +872,14 @@ void AudioEngine::unload_cue(const CueId& id) {
     rebuild_topology_locked();
 }
 
-PlaybackItem* AudioEngine::find_cue(const CueId& id) const {
+std::shared_ptr<PlaybackItem> AudioEngine::find_cue(const CueId& id) const {
     std::lock_guard lock{mutex_};
     auto it = items_.find(id.value);
-    return it != items_.end() ? it->second.get() : nullptr;
+    return it != items_.end() ? it->second : nullptr;
 }
 
 void AudioEngine::play(const CueId& id) {
-    if (auto* item = find_cue(id)) {
+    if (auto item = find_cue(id)) {
         Logger::info("play() cue='{}'", id.value);
         item->play();
     } else {
@@ -503,7 +888,7 @@ void AudioEngine::play(const CueId& id) {
 }
 
 void AudioEngine::stop(const CueId& id) {
-    if (auto* item = find_cue(id)) {
+    if (auto item = find_cue(id)) {
         Logger::info("stop() cue='{}'", id.value);
         item->stop();
     }
@@ -669,10 +1054,11 @@ void AudioEngine::remove_mixer_channel(const MixerChannelId& id) {
     rebuild_topology_locked();
 }
 
-MixerChannel* AudioEngine::find_mixer_channel(const MixerChannelId& id) const {
+std::shared_ptr<MixerChannel> AudioEngine::find_mixer_channel(
+    const MixerChannelId& id) const {
     std::lock_guard lock{mutex_};
     auto it = mixers_.find(id.value);
-    return it != mixers_.end() ? it->second.get() : nullptr;
+    return it != mixers_.end() ? it->second : nullptr;
 }
 
 // ---------------------------------------------------------------------------
@@ -810,16 +1196,14 @@ void AudioEngine::set_output_channel_gain_db(MasterChannelIndex ch, float db) {
     const float clamped = std::clamp(db, -120.0f, 40.0f);
     const float lin = (clamped <= -120.0f) ? 0.0f
                                            : std::pow(10.0f, clamped / 20.0f);
-    std::lock_guard lock{mutex_};
-    if (ch < output_channel_gains_.size()) {
-        output_channel_gains_[ch] = lin;
+    if (ch < cfg_.master_channels) {
+        output_channel_gains_[ch].store(lin, std::memory_order_release);
     }
 }
 
 float AudioEngine::output_channel_gain_db(MasterChannelIndex ch) const noexcept {
-    std::lock_guard lock{mutex_};
-    if (ch >= output_channel_gains_.size()) return 0.0f;
-    const float lin = output_channel_gains_[ch];
+    if (ch >= cfg_.master_channels) return 0.0f;
+    const float lin = output_channel_gains_[ch].load(std::memory_order_acquire);
     if (lin <= 0.0f) return -120.0f;
     return 20.0f * std::log10(lin);
 }
@@ -871,28 +1255,65 @@ float AudioEngine::read_master_gain_reduction_db(MasterChannelIndex master) cons
     return master_state_[master].limiter->gain_reduction_db();
 }
 
+bool AudioEngine::reset_device_if_requested(Device& device) noexcept {
+    if (!device.reset_requested.load(std::memory_order_acquire) ||
+        device.reset_applied) {
+        return true;
+    }
+
+    // The callback never waits for a reset. Symmetrically, the render thread
+    // does not touch ring/resampler state until it can claim this flag.
+    if (device.callback_active.exchange(
+            true, std::memory_order_acq_rel)) {
+        return false;
+    }
+    AtomicActiveGuard reset_guard{device.callback_active};
+    if (device.closing.load(std::memory_order_seq_cst) ||
+        device.runtime_state.load(std::memory_order_acquire) !=
+            DeviceRuntimeState::Running) {
+        return false;
+    }
+
+    ma_pcm_rb_reset(device.ring.get());
+    if (device.clock_resampler_initialized &&
+        device.clock_resampler) {
+        if (ma_resampler_reset(device.clock_resampler.get()) !=
+                MA_SUCCESS ||
+            ma_resampler_set_rate(
+                device.clock_resampler.get(), 1'000'000,
+                1'000'000) != MA_SUCCESS) {
+            render_error_count_.fetch_add(
+                1, std::memory_order_relaxed);
+            return false;
+        }
+    }
+    device.clock_controller.reset();
+    device.correction_was_limited = false;
+    device.applied_rate_ppm.store(0, std::memory_order_relaxed);
+    device.clock_correction_ppm.store(0.0f, std::memory_order_relaxed);
+    device.ring_occupancy_frames.store(0, std::memory_order_relaxed);
+    device.reset_applied = true;
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // Render loop — device-callback-driven
 // ---------------------------------------------------------------------------
-// The render thread does NOT poll. Instead it blocks on consumption_counter_
-// via std::atomic::wait() and is woken by the ma_data_callback() of every
-// device after it consumes samples. This couples production cadence to the
-// hardware clock of the slowest active device and eliminates the timing jitter
-// that produced the residual crackles in the polling implementation.
+// The render thread does NOT poll healthy devices. Instead it blocks on
+// consumption_counter_ via std::atomic::wait() and is woken by device
+// callbacks after they consume samples. One healthy clock-master device
+// defines the show timeline. Secondary outputs continuously resample by a
+// bounded amount to hold their own ring occupancy against that timeline.
 //
 // Invariants:
-//   * After waking, the render thread checks whether *any* device's ring has
-//     >= one full block of writable space. If so, it renders one block and
-//     writes to every device. If not, it loops back to wait.
-//   * With multiple devices at different sample rates / clock drifts, the
-//     loop renders whenever the slowest consumer frees up enough space, so
-//     no device ever overflows and the faster ones simply stay closer to the
-//     top of their ring.
-//   * When no devices are open we fall back to a coarse timer so playhead
-//     advancement remains aligned with wall-clock (matters for the future
-//     "preview without an output device assigned" case).
+//   * The existing healthy master remains master until it closes/fails.
+//   * A failed master cannot stall another healthy device; election happens
+//     here without waiting for control-thread intervention.
+//   * Production stops at the master's target occupancy, preserving one block
+//     of ring headroom instead of filling the ring and adding latency.
+//   * When no healthy device exists we use a coarse timer so stopped-device
+//     state and later native recovery are still observed.
 void AudioEngine::render_loop() {
-    Logger::debug("Render thread started.");
 #if defined(LIVEPLAY_HAVE_SSE_DENORMAL)
     // Flush-to-zero + denormals-are-zero for this thread. The limiter and meter
     // states decay exponentially toward zero during silence and can enter
@@ -913,45 +1334,159 @@ void AudioEngine::render_loop() {
                 continue;
             }
 
-            // Production is gated by the SLOWEST consumer: we only render a block
-            // when every device has room for it. Gating on "any device has space"
-            // would let a fast device (higher SR, larger ring, or clock drift
-            // ahead) pull production above real-time, overflowing the slower
-            // devices' rings and making audio sound sped up.
-            bool can_render   = true;
-            bool has_devices  = false;
-            bool has_ring     = false;
-            {
-                std::lock_guard lock{mutex_};
-                has_devices = !devices_.empty();
-                if (has_devices) {
-                    // Gate production on the primary device only, to prevent
-                    // clock drift on secondary devices from starving the primary.
-                    auto& primary = devices_.front();
-                    if (primary->ring) {
-                        has_ring = true;
-                        if (ma_pcm_rb_available_write(primary->ring.get()) < cfg_.render_block) {
-                            can_render = false;
+            const auto device_snap = snapshot_devices();
+            std::shared_ptr<Device> clock_master;
+
+            if (device_snap) {
+                // Notifications are the fast path. This state poll covers
+                // backends that only expose an unexpected stop through the
+                // native device state.
+                for (const auto& dev : *device_snap) {
+                    if (!dev->ma_dev) {
+                        continue;
+                    }
+                    dev->render_active.store(
+                        true, std::memory_order_seq_cst);
+                    AtomicActiveGuard device_guard{dev->render_active};
+                    if (dev->closing.load(
+                            std::memory_order_seq_cst)) {
+                        continue;
+                    }
+
+                    const auto native_state =
+                        ma_device_get_state(dev->ma_dev.get());
+                    const auto runtime_state =
+                        dev->runtime_state.load(std::memory_order_acquire);
+                    if (native_state == ma_device_state_started) {
+                        if (runtime_state == DeviceRuntimeState::Starting ||
+                            runtime_state ==
+                                DeviceRuntimeState::Disconnected) {
+                            const auto previous =
+                                dev->runtime_state.exchange(
+                                    DeviceRuntimeState::Running,
+                                    std::memory_order_acq_rel);
+                            if (previous ==
+                                DeviceRuntimeState::Disconnected) {
+                                dev->device_recovery_count.fetch_add(
+                                    1, std::memory_order_relaxed);
+                            }
+                            dev->reset_requested.store(
+                                true, std::memory_order_release);
+                        }
+                    } else if (runtime_state ==
+                               DeviceRuntimeState::Running) {
+                        const auto previous =
+                            dev->runtime_state.exchange(
+                                DeviceRuntimeState::Disconnected,
+                                std::memory_order_acq_rel);
+                        if (previous !=
+                            DeviceRuntimeState::Disconnected) {
+                            dev->device_loss_count.fetch_add(
+                                1, std::memory_order_relaxed);
+                        }
+                        dev->reset_requested.store(
+                            true, std::memory_order_release);
+                    }
+                }
+
+                // Preserve the current healthy master. A reconnected former
+                // master stays secondary until the active master goes away.
+                for (const auto& dev : *device_snap) {
+                    const bool healthy =
+                        dev->ring &&
+                        !dev->closing.load(std::memory_order_acquire) &&
+                        dev->runtime_state.load(
+                            std::memory_order_acquire) ==
+                            DeviceRuntimeState::Running;
+                    if (healthy &&
+                        dev->clock_master.load(std::memory_order_acquire)) {
+                        clock_master = dev;
+                        break;
+                    }
+                }
+                if (!clock_master) {
+                    for (const auto& dev : *device_snap) {
+                        if (dev->ring &&
+                            !dev->closing.load(std::memory_order_acquire) &&
+                            dev->runtime_state.load(
+                                std::memory_order_acquire) ==
+                                DeviceRuntimeState::Running) {
+                            clock_master = dev;
+                            break;
                         }
                     }
                 }
-                if (!has_ring) can_render = false;
+
+                for (const auto& dev : *device_snap) {
+                    const bool should_be_master =
+                        clock_master && dev.get() == clock_master.get();
+                    const bool was_master = dev->clock_master.exchange(
+                        should_be_master, std::memory_order_acq_rel);
+                    if (was_master && !should_be_master) {
+                        // Demotion activates the clock adapter, so reset its
+                        // phase before the device resumes as a secondary.
+                        if (!dev->reset_requested.exchange(
+                                true, std::memory_order_acq_rel) &&
+                            dev->runtime_state.load(
+                                std::memory_order_acquire) ==
+                                DeviceRuntimeState::Running) {
+                            dev->hard_resync_count.fetch_add(
+                                1, std::memory_order_relaxed);
+                        }
+                    }
+                }
             }
 
-            if (!has_devices) {
-                // Idle (no output). Coarse timer; consumption_counter_ will
-                // never fire without a device callback to bump it.
+            if (!clock_master) {
                 std::this_thread::sleep_for(block_duration);
                 continue;
             }
 
+            bool can_render = false;
+            bool master_ready = true;
+            std::uint32_t before = 0;
+            clock_master->render_active.store(
+                true, std::memory_order_seq_cst);
+            {
+                AtomicActiveGuard device_guard{
+                    clock_master->render_active};
+                if (clock_master->closing.load(
+                        std::memory_order_seq_cst) ||
+                    clock_master->runtime_state.load(
+                        std::memory_order_acquire) !=
+                        DeviceRuntimeState::Running) {
+                    continue;
+                }
+
+                master_ready =
+                    reset_device_if_requested(*clock_master);
+                if (master_ready) {
+                    const auto target =
+                        clock_master->clock_controller.target_frames();
+                    can_render =
+                        ma_pcm_rb_available_read(
+                            clock_master->ring.get()) +
+                            cfg_.render_block <=
+                        target;
+                    if (!can_render) {
+                        // Capture the sequence before re-checking occupancy.
+                        // If a callback consumes between the re-check and
+                        // wait(), its sequence change returns immediately.
+                        before = consumption_counter_.load(
+                            std::memory_order_acquire);
+                        can_render =
+                            ma_pcm_rb_available_read(
+                                clock_master->ring.get()) +
+                                cfg_.render_block <=
+                            target;
+                    }
+                }
+            }
+            if (!master_ready) {
+                std::this_thread::yield();
+                continue;
+            }
             if (!can_render) {
-                // Block until a device callback notifies us. Use an atomic
-                // counter to avoid lost wakeups: we capture the current value
-                // before checking-then-waiting on it.
-                const std::uint32_t before = consumption_counter_.load(std::memory_order_acquire);
-                // Re-check under the lock just before waiting (defence against a
-                // device closing between the earlier check and now).
                 consumption_counter_.wait(before, std::memory_order_acquire);
                 continue;
             }
@@ -960,81 +1495,73 @@ void AudioEngine::render_loop() {
         } catch (const std::bad_alloc&) {
             // Memory pressure: skip this block and give the system a moment.
             // Audio will glitch but the server survives.
-            Logger::error("Render thread: out of memory — skipping block.");
+            render_error_count_.fetch_add(1, std::memory_order_relaxed);
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        } catch (const std::exception& e) {
-            Logger::error("Render thread exception (audio may glitch): {}", e.what());
+        } catch (const std::exception&) {
+            render_error_count_.fetch_add(1, std::memory_order_relaxed);
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         } catch (...) {
-            Logger::error("Render thread caught unknown exception (audio may glitch).");
+            render_error_count_.fetch_add(1, std::memory_order_relaxed);
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     }
-    Logger::debug("Render thread exiting.");
+}
+
+void AudioEngine::decode_loop() {
+    while (running_.load(std::memory_order_acquire)) {
+        bool produced = false;
+        const auto snap = snapshot_topology();
+        if (snap) {
+            // One block per cue per pass keeps a large project fair while the
+            // loop quickly circles until every active queue is full. Stopped
+            // cues are primed synchronously, and paused cues keep their existing
+            // queue; reading either idle source here can starve a live cue.
+            for (const auto& entry : snap->items) {
+                if (!running_.load(std::memory_order_acquire)) break;
+                const auto transport = entry.item->stats().transport;
+                if (transport == TransportState::Stopped ||
+                    transport == TransportState::Paused) {
+                    continue;
+                }
+                produced = entry.item->service_read_ahead(1) || produced;
+            }
+        }
+
+        if (!produced) {
+            std::unique_lock wait_lock{decode_wait_mutex_};
+            decode_cv_.wait_for(
+                wait_lock, std::chrono::milliseconds(2),
+                [this] { return !running_.load(std::memory_order_acquire); });
+        }
+    }
 }
 
 void AudioEngine::render_one_block(const Topology& topo) {
     const std::size_t block = static_cast<std::size_t>(cfg_.render_block);
 
-    // ---- (Re)size scratch buffers if the mixer count changed ----
-    std::vector<std::shared_ptr<MixerChannel>> active_mixers;
-    std::vector<float> channel_gains_snapshot;
-    {
-        std::lock_guard lock{mutex_};
-        active_mixers.reserve(mixers_.size());
-        for (auto& [_, m] : mixers_) active_mixers.emplace_back(m);
-        channel_gains_snapshot = output_channel_gains_;
+    // Every container below was sized with the immutable topology on the
+    // control thread. The render deadline only clears and reuses storage.
+    for (auto& buffer : topo.mixer_accumulators) {
+        std::fill_n(buffer.data(), block, 0.0f);
     }
-    // One accumulator per mixer *lane* (stereo strips: L and R stay separate
-    // all the way to the masters).
-    const std::size_t lane_buf_count = active_mixers.size() * kMixerLanes;
-    if (mixer_accumulators_.size() < lane_buf_count) {
-        mixer_accumulators_.resize(lane_buf_count,
-                                   std::vector<Sample>(block, 0.0f));
-    }
-    for (auto& mb : mixer_accumulators_) {
-        if (mb.size() < block) mb.assign(block, 0.0f);
-        else std::fill(mb.begin(), mb.begin() + block, 0.0f);
-    }
-    if (master_accumulators_.size() < cfg_.master_channels) {
-        master_accumulators_.resize(cfg_.master_channels,
-                                    std::vector<Sample>(block, 0.0f));
-    }
-    for (auto& mb : master_accumulators_) {
-        if (mb.size() < block) mb.assign(block, 0.0f);
-        else std::fill(mb.begin(), mb.begin() + block, 0.0f);
-    }
-    // Map mixer-id → accumulator index for the duration of this block.
-    std::unordered_map<std::string, std::size_t> mixer_index;
-    for (std::size_t i = 0; i < active_mixers.size(); ++i) {
-        mixer_index.emplace(active_mixers[i]->id().value, i);
+    for (auto& buffer : topo.master_accumulators) {
+        std::fill_n(buffer.data(), block, 0.0f);
     }
 
     // ---- Per-item render + Tier-1 → Tier-2 mix ----
-    if (item_channel_buffers_.size() < topo.items.size()) {
-        item_channel_buffers_.resize(topo.items.size());
-    }
-    for (std::size_t i = 0; i < topo.items.size(); ++i) {
-        auto& entry = topo.items[i];
-        const ChannelCount n_src = entry.item->source_channel_count();
-        auto& chbufs = item_channel_buffers_[i];
-        if (chbufs.size() < n_src) chbufs.resize(n_src);
-        std::vector<Sample*> ptrs;
-        ptrs.reserve(n_src);
-        for (ChannelCount c = 0; c < n_src; ++c) {
-            if (chbufs[c].size() < block) chbufs[c].assign(block, 0.0f);
-            ptrs.push_back(chbufs[c].data());
-        }
-
-        entry.item->render_block(ptrs.data(), n_src, block);
+    for (const auto& entry : topo.items) {
+        const ChannelCount n_src = std::min<ChannelCount>(
+            entry.item->source_channel_count(),
+            static_cast<ChannelCount>(entry.channel_ptrs.size()));
+        entry.item->render_block(entry.channel_ptrs.data(), n_src, block);
 
         // Route each source channel to its destination mixer lanes.
         for (ChannelCount c = 0; c < n_src && c < entry.per_source_channel.size(); ++c) {
             for (const auto& send : entry.per_source_channel[c].sends) {
-                auto mit = mixer_index.find(send.mixer->id().value);
-                if (mit == mixer_index.end()) continue;
-                Sample* acc = mixer_accumulators_[mit->second * kMixerLanes + send.lane].data();
-                const Sample* src = chbufs[c].data();
+                Sample* acc =
+                    topo.mixer_accumulators[
+                        send.mixer_index * kMixerLanes + send.lane].data();
+                const Sample* src = entry.channel_buffers[c].data();
                 for (std::size_t s = 0; s < block; ++s) acc[s] += src[s] * send.gain;
             }
         }
@@ -1042,10 +1569,12 @@ void AudioEngine::render_one_block(const Topology& topo) {
 
     // ---- Tier-2 strip processing (gain/mute/solo/fade) + meter ----
     bool any_soloed = false;
-    for (auto& m : active_mixers) if (m->is_soloed()) { any_soloed = true; break; }
+    for (const auto& m : topo.mixers) {
+        if (m->is_soloed()) { any_soloed = true; break; }
+    }
 
-    for (std::size_t i = 0; i < active_mixers.size(); ++i) {
-        auto& m = active_mixers[i];
+    for (std::size_t i = 0; i < topo.mixers.size(); ++i) {
+        const auto& m = topo.mixers[i];
         // Advance the strip's fade envelope by exactly one render block, then
         // read the resulting gain. peek_gain_linear() is side-effect-free, so
         // the read may be repeated (metering, gain application) without the
@@ -1055,7 +1584,8 @@ void AudioEngine::render_one_block(const Topology& topo) {
         const bool  audible  = !m->is_muted() && (!any_soloed || m->is_soloed());
         const float effective = audible ? gain_lin : 0.0f;
         for (ChannelIndex lane = 0; lane < kMixerLanes; ++lane) {
-            Sample* buf = mixer_accumulators_[i * kMixerLanes + lane].data();
+            Sample* buf =
+                topo.mixer_accumulators[i * kMixerLanes + lane].data();
             for (std::size_t s = 0; s < block; ++s) buf[s] *= effective;
             m->update_meter(lane, buf, block);
         }
@@ -1063,11 +1593,11 @@ void AudioEngine::render_one_block(const Topology& topo) {
 
     // ---- Tier-2 → Tier-3 mix into master accumulators ----
     for (MasterChannelIndex mc = 0; mc < cfg_.master_channels; ++mc) {
-        Sample* acc = master_accumulators_[mc].data();
+        Sample* acc = topo.master_accumulators[mc].data();
         for (const auto& send : topo.masters[mc].sends) {
-            auto mit = mixer_index.find(send.mixer->id().value);
-            if (mit == mixer_index.end()) continue;
-            const Sample* src = mixer_accumulators_[mit->second * kMixerLanes + send.lane].data();
+            const Sample* src =
+                topo.mixer_accumulators[
+                    send.mixer_index * kMixerLanes + send.lane].data();
             for (std::size_t s = 0; s < block; ++s) acc[s] += src[s] * send.gain;
         }
     }
@@ -1075,17 +1605,16 @@ void AudioEngine::render_one_block(const Topology& topo) {
     // ---- Tier-3: master gain → per-channel output gain → limiter + meter ----
     const float mg = master_gain_linear_.load(std::memory_order_acquire);
     for (MasterChannelIndex mc = 0; mc < cfg_.master_channels; ++mc) {
-        Sample* buf = master_accumulators_[mc].data();
+        Sample* buf = topo.master_accumulators[mc].data();
         // Global master gain
         if (mg != 1.0f) {
             for (std::size_t s = 0; s < block; ++s) buf[s] *= mg;
         }
         // Per-output-channel gain (independent fader per device output pair)
-        if (mc < channel_gains_snapshot.size()) {
-            const float og = channel_gains_snapshot[mc];
-            if (og != 1.0f) {
-                for (std::size_t s = 0; s < block; ++s) buf[s] *= og;
-            }
+        const float og =
+            output_channel_gains_[mc].load(std::memory_order_acquire);
+        if (og != 1.0f) {
+            for (std::size_t s = 0; s < block; ++s) buf[s] *= og;
         }
         // Brick-wall limiter (bypassed when the operator has disabled it, so
         // peaks above the ceiling pass through unmodified).
@@ -1098,26 +1627,37 @@ void AudioEngine::render_one_block(const Topology& topo) {
     // ---- Dispatch to devices ----
     // For each device, build an interleaved block of its hardware channels by
     // picking the right master accumulator for each.
-    std::vector<Device*> devices_copy;
-    {
-        std::lock_guard lock{mutex_};
-        devices_copy.reserve(devices_.size());
-        for (auto& d : devices_) devices_copy.push_back(d.get());
-    }
-    for (auto* dev : devices_copy) {
-        if (!dev->ring) continue;
-        if (dev->scratch.size() < block * dev->channels) {
-            dev->scratch.assign(block * dev->channels, 0.0f);
-        } else {
-            std::fill_n(dev->scratch.data(), block * dev->channels, 0.0f);
+    const auto devices = snapshot_devices();
+    if (!devices) return;
+    for (const auto& dev : *devices) {
+        if (!dev->ring ||
+            dev->closing.load(std::memory_order_acquire) ||
+            dev->runtime_state.load(std::memory_order_acquire) !=
+                DeviceRuntimeState::Running) {
+            continue;
         }
+        dev->render_active.store(true, std::memory_order_seq_cst);
+        AtomicActiveGuard active_guard{dev->render_active};
+        if (dev->closing.load(std::memory_order_seq_cst) ||
+            dev->runtime_state.load(std::memory_order_acquire) !=
+                DeviceRuntimeState::Running) {
+            continue;
+        }
+
+        if (!reset_device_if_requested(*dev)) continue;
+
+        if (dev->scratch.size() < block * dev->channels) {
+            render_error_count_.fetch_add(1, std::memory_order_relaxed);
+            continue;
+        }
+        std::fill_n(dev->scratch.data(), block * dev->channels, 0.0f);
 
         // Walk master assignments and copy contributions into the right hw ch.
         for (MasterChannelIndex mc = 0; mc < cfg_.master_channels; ++mc) {
             const auto& dest = topo.masters[mc].destination;
             if (!dest || dest->device != dev->id) continue;
             if (dest->hw_channel >= dev->channels) continue;
-            const Sample* src = master_accumulators_[mc].data();
+            const Sample* src = topo.master_accumulators[mc].data();
             Sample*       dst = dev->scratch.data();
             for (std::size_t s = 0; s < block; ++s) {
                 dst[s * dev->channels + dest->hw_channel] += src[s];
@@ -1130,10 +1670,11 @@ void AudioEngine::render_one_block(const Topology& topo) {
         while (remaining > 0) {
             ma_uint32 frames_to_write = remaining;
             void*     buf = nullptr;
-            if (ma_pcm_rb_acquire_write(dev->ring.get(), &frames_to_write, &buf) != MA_SUCCESS) break;
+            if (ma_pcm_rb_acquire_write(
+                    dev->ring.get(), &frames_to_write, &buf) != MA_SUCCESS) {
+                break;
+            }
             if (frames_to_write == 0) {
-                // Ring is full. Since we only gate production on the primary device, 
-                // secondary devices with slower clocks will occasionally drop a frame here.
                 break;
             }
             std::memcpy(buf, src,
@@ -1141,6 +1682,29 @@ void AudioEngine::render_one_block(const Topology& topo) {
             ma_pcm_rb_commit_write(dev->ring.get(), frames_to_write);
             src       += frames_to_write * dev->channels;
             remaining -= frames_to_write;
+        }
+
+        const auto occupancy =
+            ma_pcm_rb_available_read(dev->ring.get());
+        dev->ring_occupancy_frames.store(
+            occupancy, std::memory_order_relaxed);
+        if (remaining > 0) {
+            dev->overrun_count.fetch_add(
+                1, std::memory_order_relaxed);
+            dev->reset_applied = false;
+            if (!dev->reset_requested.exchange(
+                    true, std::memory_order_acq_rel)) {
+                dev->hard_resync_count.fetch_add(
+                    1, std::memory_order_relaxed);
+            }
+            continue;
+        }
+
+        if (dev->reset_applied &&
+            occupancy >= dev->clock_controller.target_frames()) {
+            dev->reset_applied = false;
+            dev->reset_requested.store(
+                false, std::memory_order_release);
         }
     }
 }

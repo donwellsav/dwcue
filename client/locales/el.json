@@ -6,7 +6,7 @@
     "direction": "ltr"
   },
   "app": {
-    "name": "LivePlay"
+    "name": "DonWells Cue"
   },
   "menu": {
     "file": "Αρχείο",
@@ -27,21 +27,21 @@
     "language": "Γλώσσα",
     "exit": "Έξοδος",
     "help": "Βοήθεια",
-    "about": "Σχετικά με το LivePlay"
+    "about": "Σχετικά με το DonWells Cue"
   },
   "welcome": {
-    "title": "LivePlay",
+    "title": "DonWells Cue",
     "subtitle": "Αναπαραγωγή αρχείων ήχου για ζωντανές εκδηλώσεις",
     "newProject": "Νέα Εκδήλωση",
     "openProject": "Άνοιγμα Εκδήλωσης",
     "modeTitle": "Επιλογή Λειτουργίας Διακομιστή",
-    "modeSubtitle": "Πού να εκτελεί το LivePlay τον κινητήρα ήχου;",
+    "modeSubtitle": "Πού να εκτελεί το DonWells Cue τον κινητήρα ήχου;",
     "localMode": "Τοπικά",
     "localModeDescription": "Εκτέλεση του κινητήρα ήχου σε αυτόν τον υπολογιστή.",
     "remoteMode": "Απομακρυσμένα",
-    "remoteModeDescription": "Σύνδεση σε διακομιστή LivePlay στο δίκτυο.",
-    "remoteConnect": "Σύνδεση στον διακομιστή LivePlay",
-    "remoteAddressHint": "Εισάγετε τη διεύθυνση IP ή το όνομα κεντρικού υπολογιστή του διακομιστή LivePlay.",
+    "remoteModeDescription": "Σύνδεση σε διακομιστή DonWells Cue στο δίκτυο.",
+    "remoteConnect": "Σύνδεση στον διακομιστή DonWells Cue",
+    "remoteAddressHint": "Εισάγετε τη διεύθυνση IP ή το όνομα κεντρικού υπολογιστή του διακομιστή DonWells Cue.",
     "serverAddress": "Διεύθυνση Διακομιστή",
     "serverAddressPlaceholder": "π.χ. 192.168.1.10 ή myserver.local",
     "connect": "Σύνδεση",
@@ -226,12 +226,12 @@
     "restartTitle": "Επανεκκίνηση διακομιστή"
   },
   "serverSettings": {
-    "title": "Διακομιστής LivePlay",
+    "title": "Διακομιστής DonWells Cue",
     "connected": "● Συνδεδεμένος",
     "reconnecting": "● Επανασύνδεση…",
     "disconnected": "● Αποσυνδεδεμένος",
     "localModeDesc": "Η εφαρμογή εκκινεί τον δικό της κινητήρα ήχου. Καλύτερο για μεμονωμένους χειριστές.",
-    "remoteModeDesc": "Σύνδεση σε διακομιστή LivePlay σε άλλο μηχάνημα.",
+    "remoteModeDesc": "Σύνδεση σε διακομιστή DonWells Cue σε άλλο μηχάνημα.",
     "localPort": "Τοπική θύρα",
     "remoteUrl": "Απομακρυσμένο URL",
     "engineRunning": "Κινητήρας σε λειτουργία (pid {pid})",
@@ -269,8 +269,8 @@
     "currentVersion": "Τρέχουσα Έκδοση",
     "newVersion": "Νέα Έκδοση",
     "whatsNew": "Τι Νέο Υπάρχει",
-    "updatePrompt": "Μια νέα έκδοση του LivePlay είναι διαθέσιμη. Θέλετε να την κατεβάσετε και να την εγκαταστήσετε τώρα;",
-    "manualUpdatePrompt": "Μια νέα έκδοση του LivePlay είναι διαθέσιμη. Κάντε κλικ παρακάτω για να επισκεφτείτε τη σελίδα λήψης.",
+    "updatePrompt": "Μια νέα έκδοση του DonWells Cue είναι διαθέσιμη. Θέλετε να την κατεβάσετε και να την εγκαταστήσετε τώρα;",
+    "manualUpdatePrompt": "Μια νέα έκδοση του DonWells Cue είναι διαθέσιμη. Κάντε κλικ παρακάτω για να επισκεφτείτε τη σελίδα λήψης.",
     "downloading": "Λήψη Ενημέρωσης",
     "downloadComplete": "Η Λήψη Ολοκληρώθηκε",
     "installInfo": "Η ενημέρωση είναι έτοιμη για εγκατάσταση. Μπορείτε να την εγκαταστήσετε τώρα ή θα εγκατασταθεί όταν κλείσετε την εφαρμογή.",
@@ -478,7 +478,7 @@
   },
   "connectionLost": {
     "title": "Η σύνδεση χάθηκε",
-    "message": "Η σύνδεση με τον διακομιστή LivePlay στο {url} χάθηκε.",
+    "message": "Η σύνδεση με τον διακομιστή DonWells Cue στο {url} χάθηκε.",
     "attempting": "Προσπάθεια επανασύνδεσης…",
     "attemptCount": "(Αποτυχημένες προσπάθειες: {count})",
     "locked": "Η αναπαραγωγή και η επεξεργασία είναι σε παύση μέχρι να επανέλθει η σύνδεση — οι αλλαγές που θα γίνονταν τώρα δεν θα μπορούσαν να σταλούν στον διακομιστή.",

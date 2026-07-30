@@ -17,7 +17,7 @@ export default defineNuxtConfig({
   
   app: {
     head: {
-      title: 'LivePlay',
+      title: 'DonWells Cue',
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' }

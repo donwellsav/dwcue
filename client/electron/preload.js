@@ -22,19 +22,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // File operations
   readFile: (filePath) => ipcRenderer.invoke('read-file', filePath),
-  readAudioFile: (filePath) => ipcRenderer.invoke('read-audio-file', filePath),
-  loadAudioBuffer: async (filePath) => {
-    const result = await ipcRenderer.invoke('read-audio-file', filePath);
-    if (result.success) {
-      return new Uint8Array(result.data).buffer;
-    }
-    throw new Error(result.error || 'Failed to load audio');
-  },
   writeFile: (filePath, data) => ipcRenderer.invoke('write-file', filePath, data),
   // Dialogs + binary helpers used by the dual-dialog import/export flows.
   showSaveArchiveDialog: (defaultName) => ipcRenderer.invoke('show-save-archive-dialog', defaultName),
   showOpenArchiveDialog: () => ipcRenderer.invoke('show-open-archive-dialog'),
-  writeBinaryFile: (filePath, data) => ipcRenderer.invoke('write-binary-file', filePath, data),
+  getBinaryFileInfo: (filePath) => ipcRenderer.invoke('get-binary-file-info', filePath),
+  readBinaryFileChunk: (filePath, offset, length) =>
+    ipcRenderer.invoke('read-binary-file-chunk', filePath, offset, length),
+  downloadArchiveToFile: (request) =>
+    ipcRenderer.invoke('download-archive-to-file', request),
   copyFile: (source, destination) => ipcRenderer.invoke('copy-file', source, destination),
   ensureDirectory: (dirPath) => ipcRenderer.invoke('ensure-directory', dirPath),
   openFolder: (folderPath) => ipcRenderer.invoke('open-folder', folderPath),
@@ -43,10 +39,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getFilePath: (file) => {
     try {
       if (webUtils && webUtils.getPathForFile) {
-        return webUtils.getPathForFile(file);
+        const filePath = webUtils.getPathForFile(file);
+        if (filePath) ipcRenderer.send('authorize-dropped-file', filePath);
+        return filePath;
       }
-      // Fallback: try to get path from file object directly (may not work in all cases)
-      return file.path || null;
+      return null;
     } catch (error) {
       console.error('Error getting file path:', error);
       return null;
@@ -55,13 +52,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Project management
   setCurrentProject: (projectPath) => ipcRenderer.invoke('set-current-project', projectPath),
-  exportProject: (projectFolderPath, projectName) => ipcRenderer.invoke('export-project', projectFolderPath, projectName),
-  importProject: () => ipcRenderer.invoke('import-project'),
-  importLpaFile: (lpaPath) => ipcRenderer.invoke('import-lpa-file', lpaPath),
-  onExportProgress: (callback) => ipcRenderer.on('export-progress', callback),
-  onImportProgress: (callback) => ipcRenderer.on('import-progress', callback),
-  removeExportProgressListener: (callback) => ipcRenderer.removeListener('export-progress', callback),
-  removeImportProgressListener: (callback) => ipcRenderer.removeListener('import-progress', callback),
 
   // Waveform generation
   generateWaveform: (audioPath, outputPath) => ipcRenderer.invoke('generate-waveform', audioPath, outputPath),
@@ -86,6 +76,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.removeListener('youtube-download-progress', progressListener);
       });
   },
+
+  // Spotify track / album / playlist import
+  downloadSpotifyAudio: (jobId, url, projectFolderPath, progressCallback) => {
+    const progressListener = (_event, progress) => {
+      if (progress.jobId === jobId && progressCallback) progressCallback(progress);
+    };
+    ipcRenderer.on('spotify-download-progress', progressListener);
+    return ipcRenderer.invoke(
+      'download-spotify-audio', jobId, url, projectFolderPath,
+    ).finally(() => {
+      ipcRenderer.removeListener('spotify-download-progress', progressListener);
+    });
+  },
+  cancelSpotifyDownload: (jobId) =>
+    ipcRenderer.invoke('cancel-spotify-download', jobId),
+  finalizeSpotifyImport: (jobId, keepFiles) =>
+    ipcRenderer.invoke('finalize-spotify-import', jobId, keepFiles),
 
   // Menu events. These are mounted by Vue components that can be replaced when
   // projects are opened/closed; keep one live renderer listener per channel so
@@ -125,19 +132,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onUpdateDownloadProgress: (callback) => ipcRenderer.on('update-download-progress', callback),
   onUpdateDownloaded: (callback) => ipcRenderer.on('update-downloaded', callback),
   onUpdateError: (callback) => ipcRenderer.on('update-error', callback),
-  onManualUpdateAvailable: (callback) => ipcRenderer.on('manual-update-available', callback),
 
-  // API triggers
-  onTriggerItem: (callback) => replaceIpcListener('trigger-item', callback),
-  onStopItem: (callback) => replaceIpcListener('stop-item', callback),
-  onTriggerCartSlot: (callback) => replaceIpcListener('trigger-cart-slot', callback),
-  onStopAllCues: (callback) => replaceIpcListener('stop-all-cues', callback),
-
-  // HTTP API — project data sync and PATCH round-trips
+  // Project data sync between the main and detached cart windows.
   syncProjectData: (data) => ipcRenderer.send('sync-project-data', data),
-  sendApiResponse: (data) => ipcRenderer.send('api-response', data),
-  onApiUpdateItem: (callback) => replaceIpcListener('api-update-item', callback),
-  onApiUpdateCartItem: (callback) => replaceIpcListener('api-update-cart-item', callback),
   
   // File association - opening project files (.liveplay / .lpa).
   // Push: main → renderer for warm-start / macOS open-file events.
@@ -168,7 +165,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readMidiConfig: () => ipcRenderer.invoke('read-midi-config'),
   writeMidiConfig: (config) => ipcRenderer.invoke('write-midi-config', config),
 
-  // LivePlay audio server lifecycle (C++ server spawned by main process)
+  // DonWells Cue audio server lifecycle (C++ server spawned by main process)
   liveplayServer: {
     getConfig: () => ipcRenderer.invoke('liveplay-server:get-config'),
     setConfig: (cfg) => ipcRenderer.invoke('liveplay-server:set-config', cfg),
@@ -200,7 +197,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
   },
 
-  // LAN auto-discovery of other LivePlay servers (UDP beacons on the LAN).
+  // LAN auto-discovery of other DonWells Cue servers (UDP beacons on the LAN).
   liveplayDiscovery: {
     start:   () => ipcRenderer.invoke('liveplay-discovery:start'),
     list:    () => ipcRenderer.invoke('liveplay-discovery:list'),

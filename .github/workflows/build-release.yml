@@ -2,8 +2,8 @@ name: Build and Release
 
 # Cuts a release whenever the monorepo root version (package.json) changes on
 # main. Builds the C++ server and the Electron client together on each
-# platform — Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and
-# Linux x64 — and publishes a single GitHub Release with all installers.
+# platform — Windows x64, macOS Apple Silicon (arm64), and Linux x64 — and
+# publishes a single GitHub Release with all installers.
 on:
   push:
     branches:
@@ -66,24 +66,12 @@ jobs:
             artifact_name: linux-build
             electron_args: --linux --x64 --publish never
             cmake_args: ""
-          # Cross-compiled for x86_64 on an Apple Silicon runner. GitHub is
-          # retiring the Intel macOS runners (macos-15-intel), so instead of a
-          # native Intel host we build the x64 slice on arm64: Apple clang is a
-          # cross-compiler (CMAKE_OSX_ARCHITECTURES=x86_64), vcpkg builds the
-          # x64-osx triplet on the arm64 host, and electron-builder --x64 pulls
-          # the prebuilt x64 Electron. Output artifact names are unchanged.
-          - os: macos-latest
-            label: macOS Intel (x64)
-            triplet: x64-osx
-            artifact_name: macos-x64-build
-            electron_args: --mac --x64 --publish never
-            cmake_args: "-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DCMAKE_OSX_ARCHITECTURES=x86_64"
           - os: macos-latest
             label: macOS Apple Silicon (arm64)
-            triplet: arm64-osx
+            triplet: arm64-osx-dwcue
             artifact_name: macos-arm64-build
             electron_args: --mac --arm64 --publish never
-            cmake_args: "-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0"
+            cmake_args: "-DCMAKE_OSX_DEPLOYMENT_TARGET=13.3"
     runs-on: ${{ matrix.os }}
     name: ${{ matrix.label }}
 
@@ -148,8 +136,11 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
+            -DLIVEPLAY_BUILD_TESTS=ON \
+            -DBUILD_TESTING=ON \
             ${{ matrix.cmake_args }}
           cmake --build server/build --config Release -j
+          ctest --test-dir server/build --build-config Release --output-on-failure
 
       - name: Stage server binary for electron-builder (Windows)
         if: runner.os == 'Windows'
@@ -158,15 +149,18 @@ jobs:
           # Ninja produces a single-config build; electron-builder expects
           # the Release sub-directory layout used by the multi-config preset.
           New-Item -ItemType Directory -Force "server/build/Release" | Out-Null
-          if (Test-Path "server/build/liveplay-server.exe") {
-            Copy-Item "server/build/liveplay-server.exe" "server/build/Release/" -Force
+          if (-not (Test-Path "server/build/dwcue-server.exe")) {
+            throw "server/build/dwcue-server.exe not found"
           }
-          Get-ChildItem "server/build" -Filter "*.dll" -ErrorAction SilentlyContinue |
-            ForEach-Object { Copy-Item $_.FullName "server/build/Release/" -Force }
-
-      - name: Build macOS server .app bundle
-        if: runner.os == 'macOS'
-        run: node scripts/build-server-app-mac.js
+          Copy-Item "server/build/dwcue-server.exe" "server/build/Release/" -Force
+          @(
+            "server/build",
+            "server/build/vcpkg_installed/${{ matrix.triplet }}/bin"
+          ) | Where-Object { Test-Path $_ } | ForEach-Object {
+            Get-ChildItem $_ -File -Filter "*.dll" -ErrorAction SilentlyContinue |
+              ForEach-Object { Copy-Item $_.FullName "server/build/Release/" -Force }
+          }
+          & "server/build/Release/dwcue-server.exe" --help
 
       # -------------------------------------------------------------------
       # Client (Nuxt + Electron)
@@ -188,12 +182,15 @@ jobs:
       # Installed from the repo root: client is an npm workspace, so npm
       # resolves its prefix to the root regardless of the cwd, and the root
       # package-lock.json is the one it reads. That lockfile carries every
-      # platform's optional binaries, so all four matrix targets resolve.
+      # platform's optional binaries, so all three matrix targets resolve.
       - name: Install dependencies
         shell: bash
         run: npm ci --include=optional
         env:
           CI: true
+
+      - name: Type-check client
+        run: npm run typecheck --workspace=client
 
       - name: Build Nuxt application
         working-directory: client
@@ -215,6 +212,34 @@ jobs:
           key: ${{ runner.os }}-${{ matrix.triplet }}-electron-${{ hashFiles('package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.triplet }}-electron-
+
+      - name: Configure available signing credentials
+        shell: bash
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          SIGN_APPLE_ID: ${{ secrets.APPLE_ID }}
+          SIGN_APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          SIGN_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ] &&
+             [ -n "$MAC_CSC_LINK" ] && [ -n "$MAC_CSC_KEY_PASSWORD" ]; then
+            printf 'CSC_LINK=%s\nCSC_KEY_PASSWORD=%s\n' \
+              "$MAC_CSC_LINK" "$MAC_CSC_KEY_PASSWORD" >> "$GITHUB_ENV"
+          elif [ "$RUNNER_OS" = "Windows" ] &&
+               [ -n "$WIN_CSC_LINK" ] && [ -n "$WIN_CSC_KEY_PASSWORD" ]; then
+            printf 'CSC_LINK=%s\nCSC_KEY_PASSWORD=%s\n' \
+              "$WIN_CSC_LINK" "$WIN_CSC_KEY_PASSWORD" >> "$GITHUB_ENV"
+          fi
+          if [ "$RUNNER_OS" = "macOS" ] &&
+             [ -n "$SIGN_APPLE_ID" ] && [ -n "$SIGN_APPLE_PASSWORD" ] &&
+             [ -n "$SIGN_APPLE_TEAM_ID" ]; then
+            printf 'APPLE_ID=%s\nAPPLE_APP_SPECIFIC_PASSWORD=%s\nAPPLE_TEAM_ID=%s\n' \
+              "$SIGN_APPLE_ID" "$SIGN_APPLE_PASSWORD" "$SIGN_APPLE_TEAM_ID" \
+              >> "$GITHUB_ENV"
+          fi
 
       - name: Build Electron app
         working-directory: client
@@ -287,68 +312,11 @@ jobs:
           name: linux-build
           path: ./artifacts
 
-      # macOS artifacts go to per-arch directories so their two latest-mac.yml
-      # files don't clobber each other — they are merged below.
-      - name: Download macOS Intel artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: macos-x64-build
-          path: ./artifacts-mac-x64
-
       - name: Download macOS Apple Silicon artifacts
         uses: actions/download-artifact@v4
         with:
           name: macos-arm64-build
-          path: ./artifacts-mac-arm64
-
-      # The Intel and Apple-Silicon jobs each emit their own latest-mac.yml
-      # listing only that arch's files. electron-updater's MacUpdater filters
-      # the yml's `files` list by the running architecture (keeping arm64-named
-      # files on Apple Silicon, dropping them on Intel), so a release must ship
-      # ONE latest-mac.yml whose `files` array contains BOTH arches. Otherwise
-      # whichever yml is published last wins and the other arch's auto-update
-      # fails with ERR_UPDATER_ZIP_FILE_NOT_FOUND. Merge the two here.
-      - name: Merge macOS artifacts and update metadata
-        run: |
-          set -euo pipefail
-          # Drop the runner's flaky pre-installed Microsoft apt repos (see the
-          # Linux build step) so `apt-get update` can't fail with exit code 100.
-          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list \
-                     /etc/apt/sources.list.d/azure-cli.list \
-                     /etc/apt/sources.list.d/azure-cli.sources
-          # python3-yaml gives us PyYAML without tripping PEP 668 on the runner.
-          sudo apt-get update -qq && sudo apt-get install -y -qq python3-yaml
-          # Installer files (.dmg/.zip + blockmaps) have distinct per-arch names
-          # and never collide, so copy them all into ./artifacts.
-          for d in artifacts-mac-x64 artifacts-mac-arm64; do
-            [ -d "$d" ] || continue
-            find "$d" -maxdepth 1 -type f ! -name 'latest-mac.yml' -exec cp -f {} artifacts/ \;
-          done
-          python3 - <<'PY'
-          import os, yaml
-          srcs = [p for p in ("artifacts-mac-x64/latest-mac.yml",
-                              "artifacts-mac-arm64/latest-mac.yml") if os.path.exists(p)]
-          docs = []
-          for p in srcs:
-              with open(p) as fh:
-                  docs.append(yaml.safe_load(fh))
-          if not docs:
-              raise SystemExit("No latest-mac.yml found to merge")
-          # Base on the first doc; union the `files` arrays (by url) so both the
-          # x64 and arm64 zips/dmgs are advertised in one manifest.
-          merged = docs[0]
-          seen = {f["url"] for f in merged.get("files", [])}
-          for extra in docs[1:]:
-              for fi in extra.get("files", []):
-                  if fi["url"] not in seen:
-                      merged.setdefault("files", []).append(fi)
-                      seen.add(fi["url"])
-          with open("artifacts/latest-mac.yml", "w") as fh:
-              yaml.safe_dump(merged, fh, default_flow_style=False, sort_keys=False)
-          print("Merged latest-mac.yml advertises:")
-          for fi in merged.get("files", []):
-              print("  -", fi["url"])
-          PY
+          path: ./artifacts
 
       - name: List downloaded artifacts
         run: |
@@ -441,7 +409,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ needs.check-version.outputs.version }}
-          name: LivePlay ${{ needs.check-version.outputs.version }}
+          name: DonWells Cue ${{ needs.check-version.outputs.version }}
           body_path: CHANGELOG.md
           draft: false
           prerelease: false

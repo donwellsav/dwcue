@@ -37,6 +37,7 @@ export default defineNuxtPlugin(async () => {
   if (ep) {
     try {
       const cfg = await ep.getConfig();
+      if (cfg.mode !== 'remote') server.setAccessToken('');
       const url = cfg.mode === 'remote'
         ? cfg.remoteUrl
         : `http://127.0.0.1:${cfg.localPort ?? 4480}`;
@@ -50,6 +51,7 @@ export default defineNuxtPlugin(async () => {
     ep.onStateChange?.((payload: any) => {
       const cfg = payload?.config;
       if (!cfg) return;
+      if (cfg.mode !== 'remote') server.setAccessToken('');
       const url = cfg.mode === 'remote'
         ? cfg.remoteUrl
         : `http://127.0.0.1:${cfg.localPort ?? 4480}`;

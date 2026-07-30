@@ -1,14 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg id="Layer_2" data-name="Layer 2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 819.5">
-  <defs>
-    <style>
-      .cls-1 {
-        fill: #da1e28;
-      }
-    </style>
-  </defs>
-  <g id="Layer_1-2" data-name="Layer 1">
-    <circle class="cls-1" cx="723.74" cy="409.75" r="356.26"/>
-    <path d="M34.15,819.5C15.29,819.5,0,804.21,0,785.35V34.15C0,15.29,15.29,0,34.14,0c5.75,0,11.42,1.45,16.46,4.23l682.91,375.6c16.52,9.09,22.55,29.85,13.47,46.37-3.12,5.68-7.79,10.35-13.47,13.47L50.6,815.27c-5.04,2.77-10.7,4.23-16.45,4.23Z"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#16161d"/>
+  <text x="256" y="280" fill="#f5f3ee" font-family="Helvetica Neue,Arial Narrow,Arial,sans-serif" font-size="154" font-weight="800" text-anchor="middle" letter-spacing="-9">CUE</text>
+  <rect x="102" y="316" width="308" height="18" fill="#315fcf"/>
+  <text x="256" y="390" fill="#9297a6" font-family="Helvetica Neue,Arial,sans-serif" font-size="34" font-weight="700" text-anchor="middle" letter-spacing="10">DONWELLS</text>
 </svg>

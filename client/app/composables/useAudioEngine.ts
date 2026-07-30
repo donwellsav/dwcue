@@ -571,7 +571,10 @@ export const useAudioEngine = () => {
   // When the project items finish streaming (or items are added/removed
   // by another client), re-resolve any pending activeCues that we
   // received cue_state for before the items existed locally.
-  watch(() => currentProject.value?.items?.length, () => {
+  watch([
+    () => currentProject.value?.items?.length,
+    () => server.cues,
+  ], () => {
     // Sweep server.cues for anything Playing-like and ensure an entry.
     for (const sc of server.cues ?? []) {
       const t = (sc as any).transport;

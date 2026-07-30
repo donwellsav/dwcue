@@ -6,7 +6,7 @@
     "direction": "rtl"
   },
   "app": {
-    "name": "LivePlay"
+    "name": "DonWells Cue"
   },
   "menu": {
     "file": "ملف",
@@ -27,21 +27,21 @@
     "fullscreen": "ملء الشاشة",
     "language": "اللغة",
     "help": "مساعدة",
-    "about": "حول LivePlay"
+    "about": "حول DonWells Cue"
   },
   "welcome": {
-    "title": "LivePlay",
+    "title": "DonWells Cue",
     "subtitle": "تشغيل إشارات الصوت للأحداث المباشرة",
     "newProject": "مشروع جديد",
     "openProject": "فتح مشروع",
     "modeTitle": "اختيار وضع الخادم",
-    "modeSubtitle": "أين يجب أن يشغّل LivePlay محرك الصوت؟",
+    "modeSubtitle": "أين يجب أن يشغّل DonWells Cue محرك الصوت؟",
     "localMode": "محلي",
     "localModeDescription": "تشغيل محرك الصوت على هذا الحاسوب.",
     "remoteMode": "بعيد",
-    "remoteModeDescription": "الاتصال بخادم LivePlay على الشبكة.",
-    "remoteConnect": "الاتصال بخادم LivePlay",
-    "remoteAddressHint": "أدخل عنوان IP أو اسم المضيف لخادم LivePlay.",
+    "remoteModeDescription": "الاتصال بخادم DonWells Cue على الشبكة.",
+    "remoteConnect": "الاتصال بخادم DonWells Cue",
+    "remoteAddressHint": "أدخل عنوان IP أو اسم المضيف لخادم DonWells Cue.",
     "serverAddress": "عنوان الخادم",
     "serverAddressPlaceholder": "مثال: 192.168.1.10 أو myserver.local",
     "connect": "اتصال",
@@ -226,12 +226,12 @@
     "restartTitle": "إعادة تشغيل الخادم"
   },
   "serverSettings": {
-    "title": "خادم LivePlay",
+    "title": "خادم DonWells Cue",
     "connected": "● متصل",
     "reconnecting": "● إعادة الاتصال…",
     "disconnected": "● غير متصل",
     "localModeDesc": "يبدأ التطبيق محرك الصوت الخاص به. الأفضل للمشغلين المنفردين.",
-    "remoteModeDesc": "الاتصال بخادم LivePlay يعمل على جهاز آخر.",
+    "remoteModeDesc": "الاتصال بخادم DonWells Cue يعمل على جهاز آخر.",
     "localPort": "المنفذ المحلي",
     "remoteUrl": "عنوان URL البعيد",
     "engineRunning": "المحرك يعمل (pid {pid})",
@@ -269,8 +269,8 @@
     "currentVersion": "الإصدار الحالي",
     "newVersion": "الإصدار الجديد",
     "whatsNew": "ما الجديد",
-    "updatePrompt": "يتوفر إصدار جديد من LivePlay. هل تريد تنزيله وتثبيته الآن؟",
-    "manualUpdatePrompt": "يتوفر إصدار جديد من LivePlay. انقر أدناه لزيارة صفحة التنزيل.",
+    "updatePrompt": "يتوفر إصدار جديد من DonWells Cue. هل تريد تنزيله وتثبيته الآن؟",
+    "manualUpdatePrompt": "يتوفر إصدار جديد من DonWells Cue. انقر أدناه لزيارة صفحة التنزيل.",
     "downloading": "جاري تنزيل التحديث",
     "downloadComplete": "اكتمل التنزيل",
     "installInfo": "التحديث جاهز للتثبيت. يمكنك تثبيته الآن أو سيتم تثبيته عند إغلاق التطبيق.",
@@ -478,7 +478,7 @@
   },
   "connectionLost": {
     "title": "انقطع الاتصال",
-    "message": "تم فقدان الاتصال بخادم LivePlay على {url}.",
+    "message": "تم فقدان الاتصال بخادم DonWells Cue على {url}.",
     "attempting": "محاولة إعادة الاتصال…",
     "attemptCount": "(محاولات فاشلة: {count})",
     "locked": "التشغيل والتحرير متوقفان حتى عودة الاتصال — التغييرات التي تُجرى الآن لا يمكن إرسالها إلى الخادم.",

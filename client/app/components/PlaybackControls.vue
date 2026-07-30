@@ -256,14 +256,15 @@ const handlePlayNext = () => {
   border-bottom: 1px solid var(--color-border);
   display: flex;
   align-items: center;
-  gap: var(--spacing-lg);
-  padding: 0 var(--spacing-lg);
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
   background-color: var(--color-surface);
 }
 
 .controls-left {
   display: flex;
   gap: var(--spacing-sm);
+  align-self: stretch;
 }
 
 /* Show Mode — bigger GO / Stop-All buttons. The controls bar grows a little
@@ -302,15 +303,18 @@ const handlePlayNext = () => {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
+  min-width: 108px;
+  justify-content: center;
   padding: var(--spacing-md) var(--spacing-lg);
-  background-color: var(--color-background);
+  background-color: var(--color-control);
   border: 1px solid var(--color-border);
   border-radius: var(--border-radius-md);
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 650;
   
   &:hover:not(:disabled) {
     background-color: var(--color-surface-hover);
-    border-color: var(--color-accent);
+    border-color: var(--color-border-strong);
   }
   
   &:disabled {
@@ -322,15 +326,13 @@ const handlePlayNext = () => {
   color: var(--color-text-secondary);
 
   &.has-next {
-    background-color: var(--color-warning);
-    border-color: var(--color-warning);
-    color: black;
-    font-weight: 600;
+    background-color: var(--color-accent);
+    border-color: var(--color-accent);
+    color: var(--color-text-on-accent);
 
     &:hover:not(:disabled) {
-      background-color: var(--color-warning);
-      border-color: var(--color-warning);
-      filter: brightness(0.88);
+      background-color: var(--color-accent-hover);
+      border-color: var(--color-accent-hover);
     }
   }
 }
@@ -344,7 +346,7 @@ const handlePlayNext = () => {
   &:hover:not(:disabled) {
     background-color: var(--color-danger);
     border-color: var(--color-danger);
-    filter: brightness(0.85);
+    filter: brightness(0.9);
   }
 }
 
@@ -360,12 +362,18 @@ const handlePlayNext = () => {
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: var(--spacing-sm) 0;
+  padding: 0;
 }
 
 .no-cues {
-  color: var(--color-text-secondary);
-  font-style: italic;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   padding: var(--spacing-md);
 }
 
@@ -378,7 +386,7 @@ const handlePlayNext = () => {
 /* Preview card — same card dimensions and visual structure as ActiveCueItem,
    with a green "Preview" pill prefixing the name. */
 .preview-cue-card {
-  background-color: var(--color-background);
+  background-color: var(--color-surface-raised);
   border: 1px solid var(--color-border);
   border-radius: var(--border-radius-md);
   padding: var(--spacing-sm) var(--spacing-md);
@@ -462,7 +470,7 @@ const handlePlayNext = () => {
   align-items: stretch;
   gap: var(--spacing-sm);
   padding-left: var(--spacing-md);
-  border-left: 2px solid var(--color-border);
+  border-left: 1px solid var(--color-border);
   height: calc(var(--playback-controls-height) - 16px);
   flex-shrink: 0;
 }

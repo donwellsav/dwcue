@@ -118,7 +118,7 @@ const rightStream = useMasterMeter(() => props.rightIndex);
 const { levels, meterMode, colorForLevel } = useOutputTarget();
 
 const { currentProject } = useProject();
-const accentColor = computed(() => currentProject.value?.theme?.accentColor ?? '#DA1E28');
+const accentColor = computed(() => currentProject.value?.theme?.accentColor ?? '#315FCF');
 
 // Raw signal values from the server (always peak_db and rms_db).
 const rawPeakL = computed(() => props.cueId != null

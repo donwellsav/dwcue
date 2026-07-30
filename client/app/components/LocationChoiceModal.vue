@@ -79,7 +79,7 @@ function cancel() { emit('cancel'); }
   backdrop-filter: blur(4px);
 }
 .lc-modal {
-  background: var(--color-surface, #262626);
+  background: var(--color-surface, #24242d);
   border: 1px solid var(--color-border, #525252);
   color: var(--color-text-primary, #f4f4f4);
   border-radius: 8px;
@@ -110,7 +110,7 @@ function cancel() { emit('cancel'); }
   padding: 14px 16px;
   border-radius: 6px;
   border: 1px solid var(--color-border, #525252);
-  background: var(--color-background, #161616);
+  background: var(--color-background, #16161d);
   color: var(--color-text-primary, #f4f4f4);
   font-size: 14px;
   font-weight: 500;
@@ -119,12 +119,12 @@ function cancel() { emit('cancel'); }
   transition: all 0.15s ease;
 
   &:hover {
-    background: var(--color-surface-hover, var(--color-surface, #333333));
+    background: var(--color-surface-hover, var(--color-surface, #30303a));
   }
 
   &.primary {
-    border-color: var(--color-accent, #da1e28);
-    &:hover { background: var(--color-accent, #da1e28); color: white; }
+    border-color: var(--color-accent, #315fcf);
+    &:hover { background: var(--color-accent, #315fcf); color: white; }
   }
   &.ghost {
     background: transparent;

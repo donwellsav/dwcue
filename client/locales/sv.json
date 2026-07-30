@@ -6,7 +6,7 @@
     "direction": "ltr"
   },
   "app": {
-    "name": "LivePlay"
+    "name": "DonWells Cue"
   },
   "menu": {
     "file": "Arkiv",
@@ -27,21 +27,21 @@
     "fullscreen": "Helskärm",
     "language": "Språk",
     "help": "Hjälp",
-    "about": "Om LivePlay"
+    "about": "Om DonWells Cue"
   },
   "welcome": {
-    "title": "LivePlay",
+    "title": "DonWells Cue",
     "subtitle": "Ljuduppspelning för liveevenemang",
     "newProject": "Nytt projekt",
     "openProject": "Öppna projekt",
     "modeTitle": "Välj serverläge",
-    "modeSubtitle": "Var ska LivePlay köra ljudmotorn?",
+    "modeSubtitle": "Var ska DonWells Cue köra ljudmotorn?",
     "localMode": "Lokal",
     "localModeDescription": "Kör ljudmotorn på den här datorn.",
     "remoteMode": "Fjärr",
-    "remoteModeDescription": "Anslut till en LivePlay-server i nätverket.",
-    "remoteConnect": "Anslut till LivePlay-server",
-    "remoteAddressHint": "Ange IP-adressen eller värdnamnet för LivePlay-servern.",
+    "remoteModeDescription": "Anslut till en DonWells Cue-server i nätverket.",
+    "remoteConnect": "Anslut till DonWells Cue-server",
+    "remoteAddressHint": "Ange IP-adressen eller värdnamnet för DonWells Cue-servern.",
     "serverAddress": "Serveradress",
     "serverAddressPlaceholder": "t.ex. 192.168.1.10 eller minserver.local",
     "connect": "Anslut",
@@ -226,12 +226,12 @@
     "restartTitle": "Starta om server"
   },
   "serverSettings": {
-    "title": "LivePlay Server",
+    "title": "DW Cue Server",
     "connected": "● Ansluten",
     "reconnecting": "● Återansluter…",
     "disconnected": "● Frånkopplad",
     "localModeDesc": "Appen startar sin egen ljudmotor. Bäst för ensamma operatörer.",
-    "remoteModeDesc": "Anslut till en LivePlay-server som körs på en annan maskin.",
+    "remoteModeDesc": "Anslut till en DonWells Cue-server som körs på en annan maskin.",
     "localPort": "Lokal port",
     "remoteUrl": "Fjärr-URL",
     "engineRunning": "Motor körs (pid {pid})",
@@ -269,8 +269,8 @@
     "currentVersion": "Nuvarande version",
     "newVersion": "Ny version",
     "whatsNew": "Vad är nytt",
-    "updatePrompt": "En ny version av LivePlay är tillgänglig. Vill du ladda ner och installera den nu?",
-    "manualUpdatePrompt": "En ny version av LivePlay är tillgänglig. Klicka nedan för att besöka nedladdningssidan.",
+    "updatePrompt": "En ny version av DonWells Cue är tillgänglig. Vill du ladda ner och installera den nu?",
+    "manualUpdatePrompt": "En ny version av DonWells Cue är tillgänglig. Klicka nedan för att besöka nedladdningssidan.",
     "downloading": "Laddar ner uppdatering",
     "downloadComplete": "Nedladdning slutförd",
     "installInfo": "Uppdateringen är redo att installeras. Du kan installera den nu eller så installeras den när du stänger appen.",
@@ -478,7 +478,7 @@
   },
   "connectionLost": {
     "title": "Anslutning förlorad",
-    "message": "Anslutningen till LivePlay-servern på {url} har förlorats.",
+    "message": "Anslutningen till DonWells Cue-servern på {url} har förlorats.",
     "attempting": "Försöker återansluta…",
     "attemptCount": "(Misslyckade försök: {count})",
     "locked": "Uppspelning och redigering är pausade tills anslutningen är tillbaka — ändringar som görs nu skulle inte kunna skickas till servern.",

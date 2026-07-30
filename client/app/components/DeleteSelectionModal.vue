@@ -75,7 +75,7 @@ const truncatedName = computed(() => {
   backdrop-filter: blur(4px);
 }
 .ds-modal {
-  background: var(--color-surface, #262626);
+  background: var(--color-surface, #24242d);
   border: 1px solid var(--color-border, #525252);
   color: var(--color-text-primary, #f4f4f4);
   border-radius: 8px;
@@ -107,7 +107,7 @@ const truncatedName = computed(() => {
   padding: 10px 16px;
   border-radius: 6px;
   border: 1px solid var(--color-border, #525252);
-  background: var(--color-background, #161616);
+  background: var(--color-background, #16161d);
   color: var(--color-text-primary, #f4f4f4);
   font-size: 14px;
   font-weight: 500;
@@ -116,7 +116,7 @@ const truncatedName = computed(() => {
   transition: all 0.15s ease;
 
   &:hover {
-    background: var(--color-surface-hover, var(--color-surface, #333333));
+    background: var(--color-surface-hover, var(--color-surface, #30303a));
   }
 
   &.danger {

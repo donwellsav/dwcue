@@ -40,6 +40,15 @@
           {{ t('serverSettings.remoteUrl') }}
           <input v-model="draftRemoteUrl" placeholder="http://192.168.1.42:4480" />
         </label>
+        <label v-if="draftMode === 'remote'">
+          Access token
+          <input
+            v-model="draftAccessToken"
+            type="password"
+            autocomplete="off"
+            placeholder="Required by LAN servers"
+          />
+        </label>
 
         <p v-if="serverStatus" class="server-pid">
           <template v-if="draftMode === 'local'">
@@ -63,7 +72,17 @@
             <li v-for="d in server.devices" :key="d.id">
               <span :class="{ default: d.is_default }">{{ d.display_name }}</span>
               <small>{{ d.channel_count }} ch @ {{ d.sample_rate }} Hz</small>
-              <button class="btn small" @click="server.openDevice(d.display_name, d.channel_count)">{{ t('serverSettings.open') }}</button>
+              <button
+                v-if="d.is_open"
+                class="btn small"
+                @click="server.closeDevice(d.id)"
+              >{{ t('settings.close') }}</button>
+              <button
+                v-else
+                class="btn small"
+                :disabled="!d.is_available"
+                @click="server.openDevice(d.display_name, d.channel_count)"
+              >{{ t('serverSettings.open') }}</button>
             </li>
             <li v-if="server.devices.length === 0" class="empty">{{ t('serverSettings.noDevices') }}</li>
           </ul>
@@ -100,6 +119,7 @@ const hasElectron = !!electronApi;
 const draftMode      = ref<'local' | 'remote'>('local');
 const draftRemoteUrl = ref('http://127.0.0.1:4480');
 const draftLocalPort = ref(4480);
+const draftAccessToken = ref('');
 const serverStatus   = ref<{ running: boolean; pid?: number } | null>(null);
 
 let stopStatusListener: (() => void) | null = null;
@@ -116,6 +136,7 @@ async function loadConfig() {
   draftMode.value      = cfg.mode;
   draftRemoteUrl.value = cfg.remoteUrl || 'http://127.0.0.1:4480';
   draftLocalPort.value = cfg.localPort || 4480;
+  draftAccessToken.value = String(server.accessToken || '');
   serverStatus.value   = { running: status.running, pid: status.pid };
 }
 
@@ -138,6 +159,7 @@ watch(() => props.open, o => {
 });
 
 async function apply() {
+  server.setAccessToken(draftMode.value === 'remote' ? draftAccessToken.value : '');
   if (electronApi) {
     // Main process persists the choice and starts/stops the child as needed.
     // The plugin's onStateChange listener will retarget the WebSocket.
@@ -195,7 +217,7 @@ function close() { emit('close'); }
   .mode-group {
     display: grid; gap: 6px;
     border: 1px solid #2a2a2a; border-radius: 6px;
-    padding: 6px; background: #161616;
+    padding: 6px; background: #16161d;
   }
   .mode-option {
     display: flex; align-items: flex-start; gap: 10px;
@@ -223,7 +245,7 @@ function close() { emit('close'); }
   h3 { margin: 8px 0 4px; font-size: 13px; color: #9ec5ff; }
   .devices {
     list-style: none; padding: 0; margin: 0; max-height: 200px; overflow: auto;
-    border: 1px solid #2a2a2a; border-radius: 4px; background: #161616;
+    border: 1px solid #2a2a2a; border-radius: 4px; background: #16161d;
     li {
       display: grid; grid-template-columns: 1fr auto auto;
       gap: 8px; align-items: center; padding: 6px 10px;

@@ -6,7 +6,7 @@
     "direction": "ltr"
   },
   "app": {
-    "name": "LivePlay"
+    "name": "DonWells Cue"
   },
   "menu": {
     "file": "文件",
@@ -27,21 +27,21 @@
     "fullscreen": "全屏",
     "language": "语言",
     "help": "帮助",
-    "about": "关于LivePlay"
+    "about": "关于DonWells Cue"
   },
   "welcome": {
-    "title": "LivePlay",
+    "title": "DonWells Cue",
     "subtitle": "现场活动音频播放",
     "newProject": "新建项目",
     "openProject": "打开项目",
     "modeTitle": "选择服务器模式",
-    "modeSubtitle": "LivePlay 应在哪里运行音频引擎？",
+    "modeSubtitle": "DonWells Cue 应在哪里运行音频引擎？",
     "localMode": "本地",
     "localModeDescription": "在本计算机上运行音频引擎。",
     "remoteMode": "远程",
-    "remoteModeDescription": "连接到网络上的 LivePlay 服务器。",
-    "remoteConnect": "连接到 LivePlay 服务器",
-    "remoteAddressHint": "输入 LivePlay 服务器的 IP 地址或主机名。",
+    "remoteModeDescription": "连接到网络上的 DonWells Cue 服务器。",
+    "remoteConnect": "连接到 DonWells Cue 服务器",
+    "remoteAddressHint": "输入 DonWells Cue 服务器的 IP 地址或主机名。",
     "serverAddress": "服务器地址",
     "serverAddressPlaceholder": "例如 192.168.1.10 或 myserver.local",
     "connect": "连接",
@@ -226,12 +226,12 @@
     "restartTitle": "重启服务器"
   },
   "serverSettings": {
-    "title": "LivePlay服务器",
+    "title": "DonWells Cue服务器",
     "connected": "● 已连接",
     "reconnecting": "● 重新连接中…",
     "disconnected": "● 已断开",
     "localModeDesc": "应用启动自己的音频引擎。最适合独立操作员。",
-    "remoteModeDesc": "连接到另一台机器上运行的LivePlay服务器。",
+    "remoteModeDesc": "连接到另一台机器上运行的DonWells Cue服务器。",
     "localPort": "本地端口",
     "remoteUrl": "远程URL",
     "engineRunning": "引擎运行中 (pid {pid})",
@@ -269,8 +269,8 @@
     "currentVersion": "当前版本",
     "newVersion": "新版本",
     "whatsNew": "更新内容",
-    "updatePrompt": "有新版本的LivePlay可用。您想现在下载并安装吗？",
-    "manualUpdatePrompt": "LivePlay 有新版本可用。点击下方访问下载页面。",
+    "updatePrompt": "有新版本的DonWells Cue可用。您想现在下载并安装吗？",
+    "manualUpdatePrompt": "DonWells Cue 有新版本可用。点击下方访问下载页面。",
     "downloading": "正在下载更新",
     "downloadComplete": "下载完成",
     "installInfo": "更新已准备好安装。您可以现在安装，或在关闭应用时安装。",
@@ -478,7 +478,7 @@
   },
   "connectionLost": {
     "title": "连接已断开",
-    "message": "与 {url} 上的 LivePlay 服务器的连接已断开。",
+    "message": "与 {url} 上的 DonWells Cue 服务器的连接已断开。",
     "attempting": "正在尝试重新连接…",
     "attemptCount": "（失败次数：{count}）",
     "locked": "连接恢复前，播放和编辑已暂停——此时所做的更改无法发送到服务器。",

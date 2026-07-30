@@ -94,7 +94,7 @@ onUnmounted(() => { if (import.meta.client) window.removeEventListener('keydown'
   backdrop-filter: blur(4px);
 }
 .qm-modal {
-  background: var(--color-surface, #262626);
+  background: var(--color-surface, #24242d);
   border: 1px solid var(--color-border, #525252);
   color: var(--color-text-primary, #f4f4f4);
   border-radius: 8px;
@@ -126,7 +126,7 @@ onUnmounted(() => { if (import.meta.client) window.removeEventListener('keydown'
   padding: 10px 16px;
   border-radius: 6px;
   border: 1px solid var(--color-border, #525252);
-  background: var(--color-background, #161616);
+  background: var(--color-background, #16161d);
   color: var(--color-text-primary, #f4f4f4);
   font-size: 14px;
   font-weight: 500;
@@ -137,12 +137,12 @@ onUnmounted(() => { if (import.meta.client) window.removeEventListener('keydown'
   .material-symbols-rounded { font-size: 18px; }
 
   &:hover {
-    background: var(--color-surface-hover, var(--color-surface, #333333));
+    background: var(--color-surface-hover, var(--color-surface, #30303a));
   }
 
   &.primary {
-    border-color: var(--color-accent, #da1e28);
-    &:hover { background: var(--color-accent, #da1e28); color: white; }
+    border-color: var(--color-accent, #315fcf);
+    &:hover { background: var(--color-accent, #315fcf); color: white; }
   }
   &.danger {
     border-color: var(--color-danger, #da1e28);

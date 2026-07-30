@@ -190,7 +190,8 @@ void Logger::set_min_level(LogLevel level) {
     state().min_level.store(level);
 }
 
-void Logger::set_log_file(const std::string& path, std::size_t max_bytes) {
+void Logger::set_log_file(const std::filesystem::path& path,
+                          std::size_t max_bytes) {
     std::lock_guard lock{mutex()};
     auto& lf = log_file();
     if (lf.is_open()) lf.close();
@@ -198,7 +199,7 @@ void Logger::set_log_file(const std::string& path, std::size_t max_bytes) {
 
     namespace fs = std::filesystem;
     std::error_code ec;
-    const fs::path p{path};
+    const fs::path& p = path;
     if (p.has_parent_path()) fs::create_directories(p.parent_path(), ec);
 
     // Single-generation size rotation: if the current file is already large,
@@ -214,7 +215,7 @@ void Logger::set_log_file(const std::string& path, std::size_t max_bytes) {
     lf.open(path, std::ios::binary | std::ios::app);
     if (!lf) {
         // Never throw from logging setup; console logging still works.
-        std::cerr << "[logger] failed to open log file: " << path << '\n';
+        std::cerr << "[logger] failed to open log file\n";
     }
 }
 

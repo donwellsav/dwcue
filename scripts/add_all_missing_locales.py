@@ -11,7 +11,7 @@ translations = {
         },
         'connectionLost': {
             'title': 'Connection lost',
-            'message': 'The connection to the LivePlay server at {url} has been lost.',
+            'message': 'The connection to the DonWells Cue server at {url} has been lost.',
             'attempting': 'Attempting to reconnect…',
             'reconnect': 'Reconnect',
             'restart': 'Restart',
@@ -44,7 +44,7 @@ translations = {
         },
         'connectionLost': {
             'title': 'فُقِد الاتصال',
-            'message': 'فُقِد الاتصال بخادم LivePlay في {url}.',
+            'message': 'فُقِد الاتصال بخادم DonWells Cue في {url}.',
             'attempting': 'محاولة إعادة الاتصال…',
             'reconnect': 'إعادة الاتصال',
             'restart': 'إعادة تشغيل',
@@ -77,7 +77,7 @@ translations = {
         },
         'connectionLost': {
             'title': 'সংযোগ হারিয়েছে',
-            'message': '{url} তে LivePlay সার্ভারের সংযোগ হারিয়ে গেছে।',
+            'message': '{url} তে DonWells Cue সার্ভারের সংযোগ হারিয়ে গেছে।',
             'attempting': 'পুনরায় সংযোগ করার চেষ্টা করা হচ্ছে…',
             'reconnect': 'পুনরায় সংযোগ করুন',
             'restart': 'পুনরায় শুরু করুন',
@@ -110,7 +110,7 @@ translations = {
         },
         'connectionLost': {
             'title': 'Verbindung unterbrochen',
-            'message': 'Die Verbindung zum LivePlay-Server bei {url} wurde unterbrochen.',
+            'message': 'Die Verbindung zum DonWells Cue-Server bei {url} wurde unterbrochen.',
             'attempting': 'Versuche, Verbindung wiederherzustellen…',
             'reconnect': 'Erneut verbinden',
             'restart': 'Neustart',
@@ -143,7 +143,7 @@ translations = {
         },
         'connectionLost': {
             'title': 'Η σύνδεση χάθηκε',
-            'message': 'Η σύνδεση με το διακομιστή LivePlay στο {url} έχει χαθεί.',
+            'message': 'Η σύνδεση με το διακομιστή DonWells Cue στο {url} έχει χαθεί.',
             'attempting': 'Προσπάθεια επανασύνδεσης…',
             'reconnect': 'Επανασύνδεση',
             'restart': 'Επανεκκίνηση',
@@ -176,7 +176,7 @@ translations = {
         },
         'connectionLost': {
             'title': 'Se perdió la conexión',
-            'message': 'Se perdió la conexión con el servidor de LivePlay en {url}.',
+            'message': 'Se perdió la conexión con el servidor de DonWells Cue en {url}.',
             'attempting': 'Intentando reconectar…',
             'reconnect': 'Reconectar',
             'restart': 'Reiniciar',
@@ -209,7 +209,7 @@ translations = {
         },
         'connectionLost': {
             'title': 'اتصال قطع شد',
-            'message': 'اتصال به سرور LivePlay در {url} قطع شده است.',
+            'message': 'اتصال به سرور DonWells Cue در {url} قطع شده است.',
             'attempting': 'تلاش برای اتصال مجدد…',
             'reconnect': 'اتصال مجدد',
             'restart': 'راه‌اندازی مجدد',
@@ -242,7 +242,7 @@ translations = {
         },
         'connectionLost': {
             'title': 'Connexion perdue',
-            'message': 'La connexion au serveur LivePlay à {url} a été perdue.',
+            'message': 'La connexion au serveur DonWells Cue à {url} a été perdue.',
             'attempting': 'Tentative de reconnexion…',
             'reconnect': 'Reconnecter',
             'restart': 'Redémarrer',
@@ -275,7 +275,7 @@ translations = {
         },
         'connectionLost': {
             'title': 'कनेक्शन खो गया',
-            'message': '{url} पर LivePlay सर्वर का कनेक्शन खो गया है।',
+            'message': '{url} पर DonWells Cue सर्वर का कनेक्शन खो गया है।',
             'attempting': 'पुनः कनेक्ट करने का प्रयास किया जा रहा है…',
             'reconnect': 'पुनः कनेक्ट करें',
             'restart': 'पुनः शुरू करें',
@@ -308,7 +308,7 @@ translations = {
         },
         'connectionLost': {
             'title': 'Connessione persa',
-            'message': 'La connessione al server LivePlay su {url} è stata persa.',
+            'message': 'La connessione al server DonWells Cue su {url} è stata persa.',
             'attempting': 'Tentativo di riconnessione…',
             'reconnect': 'Riconnetti',
             'restart': 'Riavvia',
@@ -341,7 +341,7 @@ translations = {
         },
         'connectionLost': {
             'title': '接続が失われました',
-            'message': '{url} の LivePlay サーバーへの接続が失われました。',
+            'message': '{url} の DonWells Cue サーバーへの接続が失われました。',
             'attempting': '再接続を試みています…',
             'reconnect': '再接続',
             'restart': '再起動',
@@ -374,7 +374,7 @@ translations = {
         },
         'connectionLost': {
             'title': '연결이 끊어졌습니다',
-            'message': '{url}의 LivePlay 서버에 대한 연결이 끊어졌습니다.',
+            'message': '{url}의 DonWells Cue 서버에 대한 연결이 끊어졌습니다.',
             'attempting': '다시 연결을 시도 중…',
             'reconnect': '다시 연결',
             'restart': '다시 시작',
@@ -407,7 +407,7 @@ translations = {
         },
         'connectionLost': {
             'title': 'Forbindelse mistet',
-            'message': 'Forbindelsen til LivePlay-serveren på {url} er mistet.',
+            'message': 'Forbindelsen til DonWells Cue-serveren på {url} er mistet.',
             'attempting': 'Forsøker å koble til igjen…',
             'reconnect': 'Koble til igjen',
             'restart': 'Start på nytt',
@@ -440,7 +440,7 @@ translations = {
         },
         'connectionLost': {
             'title': 'Conexão perdida',
-            'message': 'A conexão com o servidor LivePlay em {url} foi perdida.',
+            'message': 'A conexão com o servidor DonWells Cue em {url} foi perdida.',
             'attempting': 'Tentando reconectar…',
             'reconnect': 'Reconectar',
             'restart': 'Reiniciar',
@@ -473,7 +473,7 @@ translations = {
         },
         'connectionLost': {
             'title': 'Conexiune pierdută',
-            'message': 'Conexiunea cu serverul LivePlay la {url} a fost pierdută.',
+            'message': 'Conexiunea cu serverul DonWells Cue la {url} a fost pierdută.',
             'attempting': 'Se încearcă reconectarea…',
             'reconnect': 'Reconectare',
             'restart': 'Redeschidere',
@@ -506,7 +506,7 @@ translations = {
         },
         'connectionLost': {
             'title': 'Соединение потеряно',
-            'message': 'Соединение с сервером LivePlay на {url} потеряно.',
+            'message': 'Соединение с сервером DonWells Cue на {url} потеряно.',
             'attempting': 'Попытка переподключения…',
             'reconnect': 'Переподключиться',
             'restart': 'Перезагрузить',
@@ -539,7 +539,7 @@ translations = {
         },
         'connectionLost': {
             'title': 'Lidhja u humb',
-            'message': 'Lidhja me serverin LivePlay në {url} u humb.',
+            'message': 'Lidhja me serverin DonWells Cue në {url} u humb.',
             'attempting': 'Duke u përpjekur të ribindehet…',
             'reconnect': 'Ribindehu',
             'restart': 'Rifillo',
@@ -572,7 +572,7 @@ translations = {
         },
         'connectionLost': {
             'title': 'Anslutningen förlorades',
-            'message': 'Anslutningen till LivePlay-servern på {url} gick förlorad.',
+            'message': 'Anslutningen till DonWells Cue-servern på {url} gick förlorad.',
             'attempting': 'Försöker återansluta…',
             'reconnect': 'Återanslut',
             'restart': 'Starta om',
@@ -605,7 +605,7 @@ translations = {
         },
         'connectionLost': {
             'title': 'Bağlantı kaybedildi',
-            'message': '{url} adresindeki LivePlay sunucusuna olan bağlantı kaybedildi.',
+            'message': '{url} adresindeki DonWells Cue sunucusuna olan bağlantı kaybedildi.',
             'attempting': 'Yeniden bağlanılmaya çalışılıyor…',
             'reconnect': 'Yeniden bağlan',
             'restart': 'Yeniden başlat',
@@ -638,7 +638,7 @@ translations = {
         },
         'connectionLost': {
             'title': 'کنکشن ٹوٹ گیا',
-            'message': '{url} پر LivePlay سرور سے کنکشن ٹوٹ گیا۔',
+            'message': '{url} پر DonWells Cue سرور سے کنکشن ٹوٹ گیا۔',
             'attempting': 'دوبارہ کنکٹ کرنے کی کوشش کی جا رہی ہے…',
             'reconnect': 'دوبارہ کنکٹ کریں',
             'restart': 'دوبارہ شروع کریں',
@@ -671,7 +671,7 @@ translations = {
         },
         'connectionLost': {
             'title': '连接丢失',
-            'message': '与 {url} 上的 LivePlay 服务器的连接已丢失。',
+            'message': '与 {url} 上的 DonWells Cue 服务器的连接已丢失。',
             'attempting': '正在尝试重新连接…',
             'reconnect': '重新连接',
             'restart': '重新启动',

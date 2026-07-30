@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * Builds a macOS .app bundle for the LivePlay Server.
+ * Builds a macOS .app bundle for the DW Cue Server.
  * This creates the proper application structure that can be bundled in the DMG.
  * Only runs on macOS; no-ops silently on other platforms.
  */
 
 const path = require('path');
 const fs = require('fs');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
 // Only run on macOS
 if (process.platform !== 'darwin') {
@@ -16,16 +16,17 @@ if (process.platform !== 'darwin') {
 }
 
 const projectRoot = path.join(__dirname, '..');
-const serverBinaryPath = path.join(projectRoot, 'server', 'build', 'liveplay-server');
+const version = require(path.join(projectRoot, 'package.json')).version;
+const serverBinaryPath = path.join(projectRoot, 'server', 'build', 'dwcue-server');
 const soundfontFiles = ['TimGM6mb.sf2', 'TimGM6mb.NOTICE.md', 'TimGM6mb.GPL-2.0.txt'];
 const serverAssetsPath = path.join(projectRoot, 'server', 'assets');
 const serverIconPath = path.join(projectRoot, 'client', 'assets', 'icons', '4092w', 'liveplay-server4092w.png');
-const appBundlePath = path.join(projectRoot, 'server', 'build', 'LivePlay Server.app');
+const appBundlePath = path.join(projectRoot, 'server', 'build', 'DW Cue Server.app');
 const contentsPath = path.join(appBundlePath, 'Contents');
 const macOsPath = path.join(contentsPath, 'MacOS');
 const resourcesPath = path.join(contentsPath, 'Resources');
 
-console.log('[build-server-app-mac] Building LivePlay Server.app bundle...');
+console.log('[build-server-app-mac] Building DW Cue Server.app bundle...');
 console.log('[build-server-app-mac] Source binary:', serverBinaryPath);
 console.log('[build-server-app-mac] Target bundle:', appBundlePath);
 
@@ -46,7 +47,7 @@ try {
   // Remove existing bundle if present
   if (fs.existsSync(appBundlePath)) {
     console.log('[build-server-app-mac] Removing existing bundle...');
-    execSync(`rm -rf "${appBundlePath}"`, { stdio: 'inherit' });
+    fs.rmSync(appBundlePath, { recursive: true, force: true });
   }
 
   // Create directory structure
@@ -56,8 +57,8 @@ try {
 
   // Copy server binary to MacOS/
   console.log('[build-server-app-mac] Copying server binary...');
-  fs.copyFileSync(serverBinaryPath, path.join(macOsPath, 'liveplay-server'));
-  execSync(`chmod +x "${path.join(macOsPath, 'liveplay-server')}"`, { stdio: 'inherit' });
+  fs.copyFileSync(serverBinaryPath, path.join(macOsPath, 'dwcue-server'));
+  fs.chmodSync(path.join(macOsPath, 'dwcue-server'), 0o755);
   for (const file of soundfontFiles) {
     fs.copyFileSync(path.join(serverAssetsPath, file), path.join(macOsPath, file));
   }
@@ -70,9 +71,9 @@ try {
   // and the Ctrl-C prompt — identical to the Electron-spawned experience.
   console.log('[build-server-app-mac] Creating launcher script...');
   const launcherScript = `#!/bin/bash
-# LivePlay Server launcher — opens a visible Terminal window running the server.
+# DW Cue Server launcher — opens a visible Terminal window running the server.
 BINARY_DIR="$(cd "$(dirname "$0")" && pwd)"
-BINARY="$BINARY_DIR/liveplay-server"
+BINARY="$BINARY_DIR/dwcue-server"
 # Shell-quote the path for AppleScript in case it contains spaces.
 QUOTED="'$(echo "$BINARY" | sed "s/'/'\\\\''/g")'"
 osascript \\
@@ -94,21 +95,21 @@ osascript \\
 <plist version="1.0">
 <dict>
   <key>CFBundleIdentifier</key>
-  <string>com.liveplay.server</string>
+  <string>com.donwells.cue.server</string>
   <key>CFBundleName</key>
-  <string>LivePlay Server</string>
+  <string>DW Cue Server</string>
   <key>CFBundleDisplayName</key>
-  <string>LivePlay Server</string>
+  <string>DW Cue Server</string>
   <key>CFBundleExecutable</key>
   <string>launcher</string>
   <key>CFBundleIconFile</key>
-  <string>liveplay-server</string>
+  <string>dwcue-server</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleVersion</key>
-  <string>2.0.0</string>
+  <string>${version}</string>
   <key>CFBundleShortVersionString</key>
-  <string>2.0.0</string>
+  <string>${version}</string>
   <key>LSUIElement</key>
   <true/>
   <key>NSHighResolutionCapable</key>
@@ -120,12 +121,12 @@ osascript \\
 
   // Convert PNG icon to ICNS
   console.log('[build-server-app-mac] Converting icon to ICNS format...');
-  const tempIconDir = path.join(projectRoot, 'server', 'build', 'liveplay-server.iconset');
-  const outputIconPath = path.join(resourcesPath, 'liveplay-server.icns');
+  const tempIconDir = path.join(projectRoot, 'server', 'build', 'dwcue-server.iconset');
+  const outputIconPath = path.join(resourcesPath, 'dwcue-server.icns');
 
   // Create iconset directory
   if (fs.existsSync(tempIconDir)) {
-    execSync(`rm -rf "${tempIconDir}"`, { stdio: 'inherit' });
+    fs.rmSync(tempIconDir, { recursive: true, force: true });
   }
   fs.mkdirSync(tempIconDir, { recursive: true });
 
@@ -135,7 +136,8 @@ osascript \\
     const outputSize = `${size}x${size}`;
     const outputFile = path.join(tempIconDir, `icon_${outputSize}.png`);
     console.log(`[build-server-app-mac] Creating ${outputSize} icon...`);
-    execSync(`sips -z ${size} ${size} "${serverIconPath}" --out "${outputFile}"`, { stdio: 'inherit' });
+    execFileSync('sips', ['-z', String(size), String(size), serverIconPath, '--out', outputFile],
+      { stdio: 'inherit' });
 
     // For retina versions (2x)
     if (size <= 256) {
@@ -143,21 +145,23 @@ osascript \\
       const retinaOutputSize = `${retinaSizeInt}x${retinaSizeInt}`;
       const retinaOutputFile = path.join(tempIconDir, `icon_${outputSize}@2x.png`);
       console.log(`[build-server-app-mac] Creating ${retinaOutputSize} icon (retina)...`);
-      execSync(`sips -z ${retinaSizeInt} ${retinaSizeInt} "${serverIconPath}" --out "${retinaOutputFile}"`, { stdio: 'inherit' });
+      execFileSync('sips', ['-z', String(retinaSizeInt), String(retinaSizeInt),
+        serverIconPath, '--out', retinaOutputFile], { stdio: 'inherit' });
     }
   }
 
   // Convert iconset to ICNS
   console.log('[build-server-app-mac] Converting iconset to ICNS...');
-  execSync(`iconutil -c icns -o "${outputIconPath}" "${tempIconDir}"`, { stdio: 'inherit' });
+  execFileSync('iconutil', ['-c', 'icns', '-o', outputIconPath, tempIconDir],
+    { stdio: 'inherit' });
 
   // Clean up temporary iconset directory
-  execSync(`rm -rf "${tempIconDir}"`, { stdio: 'inherit' });
+  fs.rmSync(tempIconDir, { recursive: true, force: true });
 
   // Create PkgInfo file (optional but good practice)
-  fs.writeFileSync(path.join(contentsPath, 'PkgInfo'), 'APPLcom.liveplay.server');
+  fs.writeFileSync(path.join(contentsPath, 'PkgInfo'), 'APPLDWCQ');
 
-  console.log('[build-server-app-mac] ✓ LivePlay Server.app bundle created successfully');
+  console.log('[build-server-app-mac] ✓ DW Cue Server.app bundle created successfully');
   console.log(`[build-server-app-mac] Bundle location: ${appBundlePath}`);
 } catch (error) {
   console.error('[build-server-app-mac] ERROR: Failed to build server app bundle');

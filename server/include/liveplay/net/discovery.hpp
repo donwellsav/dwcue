@@ -2,13 +2,13 @@
 // liveplay/net/discovery.hpp
 // ----------------------------------------------------------------------------
 // LAN auto-discovery beacon. The server announces itself on a well-known UDP
-// port so LivePlay clients can populate a "Servers on this network" list
+// port so DonWells Cue clients can populate a "Servers on this network" list
 // without the operator typing an IP.
 //
 // We use plain UDP (broadcast + multicast) rather than full mDNS because:
 //   * No extra deps to vendor / link.
 //   * No collision with the OS Bonjour service on port 5353.
-//   * The audience for this signal is the LivePlay client UI only.
+//   * The audience for this signal is the DonWells Cue client UI only.
 //
 // Reachability is the hard part on real networks, so the beacon uses three
 // delivery paths every tick and additionally answers active probes:
@@ -36,9 +36,6 @@
 //     "name": "<hostname>",
 //     "version": "<server version>",
 //     "port": 4480,
-//     "projectName": "<name or empty>",
-//     "hasOpenProject": false,
-//     "itemCount": 2,
 //     "instanceId": "<uuid-ish per-run>"
 //   }
 //
@@ -46,10 +43,8 @@
 // ============================================================================
 #pragma once
 
-#include "liveplay/core/project_state.hpp"
-#include "liveplay/net/control_server.hpp"
-
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -71,7 +66,7 @@ struct DiscoveryConfig {
 
 class DiscoveryBeacon {
 public:
-    explicit DiscoveryBeacon(core::ProjectState& state, DiscoveryConfig cfg = {});
+    explicit DiscoveryBeacon(DiscoveryConfig cfg = {});
     ~DiscoveryBeacon();
 
     DiscoveryBeacon(const DiscoveryBeacon&) = delete;
@@ -81,7 +76,6 @@ public:
     void stop();
 
 private:
-    core::ProjectState& state_;
     DiscoveryConfig     cfg_;
     std::atomic<bool>   running_{false};
     std::thread         thread_;

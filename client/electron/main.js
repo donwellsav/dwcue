@@ -1,21 +1,208 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, session } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
-const { spawn, exec } = require('child_process');
-const express = require('express');
+const crypto = require('crypto');
+const { spawn, exec, execFile } = require('child_process');
+const readline = require('readline');
+const { Readable, Transform } = require('stream');
+const { pipeline } = require('stream/promises');
 const youtubesearchapi = require('youtube-search-api');
 const YTDlpWrap = require('yt-dlp-wrap').default;
 const ffmpeg = require('fluent-ffmpeg');
 const { promisify } = require('util');
 const https = require('https');
+const { fileURLToPath } = require('url');
+const { PathCapabilityRegistry } = require('./path-capabilities');
 const execPromise = promisify(exec);
+const execFilePromise = promisify(execFile);
+
+app.setName('DonWells Cue');
+
+// Product branding changed, but this storage path is an installed-app contract:
+// it contains projects, preferences, Chromium state, and the detached server's
+// pidfile. Keeping it also lets the new client safely retire a running legacy
+// server instead of losing its identity during an upgrade.
+app.setPath('userData', path.join(app.getPath('appData'), 'LivePlay'));
 
 let ffmpegPath = null;
 let ffmpegAvailable = false;
+let ffmpegSetupPromise = null;
+
+const MAX_IPC_PATH_LENGTH = 32768;
+const MAX_BINARY_CHUNK_BYTES = 4 * 1024 * 1024;
+const MAX_ARCHIVE_DOWNLOAD_BYTES = 64 * 1024 * 1024 * 1024;
+const pathCapabilities = new PathCapabilityRegistry();
+const EXTERNAL_HTTPS_HOSTS = new Set([
+  'github.com',
+  'www.gnu.org',
+  'gnu.org',
+  'www.youtube.com',
+  'youtube.com',
+  'youtu.be',
+  'tdoukinitsas.github.io',
+]);
+
+function isPathInside(candidate, root) {
+  const relative = path.relative(root, candidate);
+  return relative === '' ||
+    (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+}
+
+function isTrustedRendererUrl(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    if (!app.isPackaged && parsed.protocol === 'http:' &&
+        ['localhost', '127.0.0.1'].includes(parsed.hostname) &&
+        parsed.port === '3000') {
+      return true;
+    }
+    if (parsed.protocol !== 'file:') return false;
+    const rendererRoot = path.resolve(__dirname, '../.output/public');
+    return isPathInside(fileURLToPath(parsed), rendererRoot);
+  } catch {
+    return false;
+  }
+}
+
+function requireTrustedIpc(event) {
+  const senderUrl = event.senderFrame?.url || event.sender?.getURL?.() || '';
+  if (!isTrustedRendererUrl(senderUrl)) {
+    throw new Error('IPC request rejected from an untrusted renderer');
+  }
+}
+
+function requireIpcString(value, name, maxLength = 4096) {
+  if (typeof value !== 'string' || value.length === 0 || value.length > maxLength ||
+      value.includes('\0')) {
+    throw new TypeError(`${name} must be a non-empty string no longer than ${maxLength} characters`);
+  }
+  return value;
+}
+
+function requireBoundedIpcObject(value, name, maxBytes) {
+  if (value === null) return value;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError(`${name} must be an object`);
+  }
+  const serialized = JSON.stringify(value);
+  if (serialized === undefined || Buffer.byteLength(serialized, 'utf8') > maxBytes) {
+    throw new RangeError(`${name} exceeds the ${maxBytes}-byte limit`);
+  }
+  return value;
+}
+
+function requireAbsoluteIpcPath(value, name = 'path') {
+  const checked = requireIpcString(value, name, MAX_IPC_PATH_LENGTH);
+  if (!path.isAbsolute(checked)) throw new TypeError(`${name} must be an absolute path`);
+  return path.normalize(checked);
+}
+
+function requireAuthorizedIpcPath(value, name = 'path', allowMissing = false) {
+  const checked = requireAbsoluteIpcPath(value, name);
+  return pathCapabilities.require(checked, { allowMissing, label: name });
+}
+
+function isAllowedExternalUrl(rawUrl) {
+  if (typeof rawUrl !== 'string' || rawUrl.length === 0 || rawUrl.length > 2048 ||
+      /[\0\r\n]/.test(rawUrl)) {
+    return false;
+  }
+  if (/^mailto:[^?]{1,320}$/i.test(rawUrl)) return true;
+  if (/^tel:\+?[0-9(). -]{3,32}$/i.test(rawUrl)) return true;
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.protocol === 'https:' &&
+      !parsed.username &&
+      !parsed.password &&
+      EXTERNAL_HTTPS_HOSTS.has(parsed.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+async function safeOpenExternal(rawUrl) {
+  if (!isAllowedExternalUrl(rawUrl)) {
+    throw new Error('External URL is not allowed');
+  }
+  await shell.openExternal(rawUrl);
+}
+
+app.on('web-contents-created', (_event, contents) => {
+  contents.on('will-attach-webview', (event) => event.preventDefault());
+  contents.on('will-navigate', (event, targetUrl) => {
+    if (isTrustedRendererUrl(targetUrl)) return;
+    event.preventDefault();
+    if (isAllowedExternalUrl(targetUrl)) {
+      void safeOpenExternal(targetUrl).catch((error) => {
+        console.warn('[navigation] failed to open external URL:', error.message);
+      });
+    }
+  });
+  contents.setWindowOpenHandler(({ url }) => {
+    if (isAllowedExternalUrl(url)) {
+      void safeOpenExternal(url).catch((error) => {
+        console.warn('[navigation] failed to open external URL:', error.message);
+      });
+    }
+    return { action: 'deny' };
+  });
+});
+
+function cspHashesForInlineScripts(html) {
+  return Array.from(
+    html.matchAll(/<script\b(?![^>]*\bsrc\s*=)[^>]*>([\s\S]*?)<\/script>/gi),
+    ([, source]) => source
+      ? `'sha256-${crypto.createHash('sha256').update(source, 'utf8').digest('base64')}'`
+      : null,
+  ).filter(Boolean);
+}
+
+function configureSessionSecurity() {
+  const allowedPermissions = new Set(['clipboard-read', 'clipboard-sanitized-write', 'midi']);
+  const permissionAllowed = (webContents, permission) =>
+    !!webContents &&
+    isTrustedRendererUrl(webContents.getURL()) &&
+    allowedPermissions.has(permission);
+
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) =>
+    permissionAllowed(webContents, permission));
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) =>
+    callback(permissionAllowed(webContents, permission)));
+
+  if (!app.isPackaged) return;
+  const rendererHtml = fs.readFileSync(
+    path.join(__dirname, '../.output/public/index.html'), 'utf8');
+  const inlineScriptHashes = cspHashesForInlineScripts(rendererHtml).join(' ');
+  const csp = [
+    "default-src 'self' file:",
+    `script-src 'self' file: ${inlineScriptHashes}`,
+    "style-src 'self' 'unsafe-inline' file:",
+    "img-src 'self' data: blob: file: https:",
+    "font-src 'self' data: file:",
+    "media-src 'self' data: blob: file: http: https:",
+    "connect-src http: https: ws: wss:",
+    "object-src 'none'",
+    "frame-src 'none'",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'none'",
+  ].join('; ');
+  session.defaultSession.webRequest.onHeadersReceived(
+    { urls: ['file://*/*'] },
+    (details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [csp],
+        },
+      });
+    },
+  );
+}
 
 // ===========================================================================
-// LivePlay C++ server lifecycle
+// DonWells Cue C++ server lifecycle
 // ---------------------------------------------------------------------------
 // When the user runs the desktop client in "local" server mode, Electron
 // spawns the bundled liveplay-server binary as a *detached* child process —
@@ -30,12 +217,7 @@ let ffmpegAvailable = false;
 const LIVEPLAY_DEFAULT_PORT = 4480;
 const LIVEPLAY_CONFIG_FILENAME = 'liveplay-server.json';
 const LIVEPLAY_LOCK_FILENAME   = 'liveplay-server.lock';
-// liveplayServerProc is the spawned ChildProcess when *this* renderer
-// instance started the server. After a reattach on a fresh launch we may
-// only have a PID — see liveplayServerPid below.
-let liveplayServerProc = null;
-let liveplayServerPid  = null;
-let liveplayServerPort = LIVEPLAY_DEFAULT_PORT;
+let liveplayServerIdentity = null;
 let liveplayServerStartPromise = null;
 
 function liveplayConfigPath() {
@@ -49,24 +231,16 @@ function readLiveplayLock() {
   try {
     const raw = fs.readFileSync(liveplayLockPath(), 'utf-8');
     const j = JSON.parse(raw);
-    if (Number.isInteger(j.pid) && Number.isInteger(j.port)) return j;
+    if (Number.isSafeInteger(j.pid) && j.pid > 0 &&
+        Number.isSafeInteger(j.port) && j.port >= 1 && j.port <= 65535 &&
+        (j.startedAt === undefined ||
+         (Number.isSafeInteger(j.startedAt) && j.startedAt > 0)) &&
+        (j.instanceToken === undefined ||
+         /^[0-9a-f]{32}$/.test(j.instanceToken))) {
+      return j;
+    }
   } catch {}
   return null;
-}
-
-function writeLiveplayLock(pid, port) {
-  try {
-    fs.writeFileSync(
-      liveplayLockPath(),
-      JSON.stringify({ pid, port, startedAt: new Date().toISOString() }, null, 2),
-    );
-  } catch (e) {
-    console.warn('[liveplay-server] could not write lock file:', e);
-  }
-}
-
-function deleteLiveplayLock() {
-  try { fs.unlinkSync(liveplayLockPath()); } catch {}
 }
 
 function isPidAlive(pid) {
@@ -75,12 +249,134 @@ function isPidAlive(pid) {
   catch (e) { return e.code === 'EPERM'; /* process exists but we lack permission */ }
 }
 
-async function terminateLiveplayPid(pid) {
+function healthMatchesIdentity(health, identity) {
+  return health?.pid === identity.pid &&
+    /^[0-9a-f]{32}$/.test(identity.instanceToken || '') &&
+    health.instanceToken === identity.instanceToken;
+}
+
+function isLegacyServerHealth(health) {
+  return health?.ok === true &&
+    health?.name === 'liveplay-server' &&
+    !Object.hasOwn(health, 'pid') &&
+    !Object.hasOwn(health, 'instanceToken');
+}
+
+function commandLineHasArgPair(commandLine, flag, value) {
+  if (typeof commandLine !== 'string') return false;
+  const escape = (text) => String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const optionalQuote = '["\\\']?';
+  return new RegExp(
+    `(?:^|\\s)${optionalQuote}${escape(flag)}${optionalQuote}` +
+    `\\s+${optionalQuote}${escape(value)}${optionalQuote}(?=\\s|$)`,
+  ).test(commandLine);
+}
+
+function sameExecutablePath(left, right) {
+  if (typeof left !== 'string' || !left || typeof right !== 'string' || !right) {
+    return false;
+  }
+  try { left = fs.realpathSync.native(left); } catch { left = path.resolve(left); }
+  try { right = fs.realpathSync.native(right); } catch { right = path.resolve(right); }
+  return process.platform === 'win32'
+    ? left.toLowerCase() === right.toLowerCase()
+    : left === right;
+}
+
+async function inspectServerProcess(pid) {
+  if (process.platform === 'linux') {
+    const executable = fs.readlinkSync(`/proc/${pid}/exe`);
+    const argv = fs.readFileSync(`/proc/${pid}/cmdline`);
+    if (argv.length > 64 * 1024) throw new Error('process command line is too long');
+    return {
+      executable,
+      args: argv.toString('utf8').split('\0').filter(Boolean),
+      commandLine: '',
+    };
+  }
+  if (process.platform === 'darwin') {
+    const options = { timeout: 2000, maxBuffer: 64 * 1024 };
+    const [{ stdout: executable }, { stdout: commandLine }] = await Promise.all([
+      execFilePromise('ps', ['-ww', '-p', String(pid), '-o', 'comm='], options),
+      execFilePromise('ps', ['-ww', '-p', String(pid), '-o', 'command='], options),
+    ]);
+    return { executable: executable.trim(), args: null, commandLine };
+  }
+  if (process.platform === 'win32') {
+    const command = [
+      `$p = Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}"`,
+      '$p | Select-Object ExecutablePath,CommandLine | ConvertTo-Json -Compress',
+    ].join('; ');
+    const { stdout } = await execFilePromise(
+      'powershell.exe',
+      ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command],
+      { timeout: 3000, windowsHide: true, maxBuffer: 64 * 1024 },
+    );
+    const info = JSON.parse(stdout);
+    return {
+      executable: info?.ExecutablePath,
+      args: null,
+      commandLine: String(info?.CommandLine || ''),
+    };
+  }
+  throw new Error(`unsupported process identity platform: ${process.platform}`);
+}
+
+function processInfoHasArgPair(info, flag, value) {
+  if (Array.isArray(info.args)) {
+    const index = info.args.indexOf(flag);
+    return index >= 0 && info.args[index + 1] === String(value);
+  }
+  return commandLineHasArgPair(info.commandLine, flag, value);
+}
+
+async function processRunsOwnedServer(pid, instanceToken) {
+  if (!isPidAlive(pid) || !/^[0-9a-f]{32}$/.test(instanceToken || '')) return false;
+  try {
+    const info = await inspectServerProcess(pid);
+    return sameExecutablePath(info.executable, resolveServerBinaryPath()) &&
+      processInfoHasArgPair(info, '--instance-token', instanceToken);
+  } catch (error) {
+    console.warn('[liveplay-server] process identity probe failed:', error.message);
+    return false;
+  }
+}
+
+async function processRunsLegacyServer(identity) {
+  if (!identity || identity.instanceToken || !isPidAlive(identity.pid)) return false;
+  try {
+    const info = await inspectServerProcess(identity.pid);
+    const expectedName = process.platform === 'win32'
+      ? 'liveplay-server.exe'
+      : 'liveplay-server';
+    return path.basename(String(info.executable || '')).toLowerCase() === expectedName &&
+      path.basename(path.dirname(String(info.executable || ''))).toLowerCase() === 'server-bin' &&
+      processInfoHasArgPair(info, '--port', identity.port) &&
+      processInfoHasArgPair(info, '--pidfile', liveplayLockPath());
+  } catch (error) {
+    console.warn('[liveplay-server] legacy process identity probe failed:', error.message);
+    return false;
+  }
+}
+
+async function terminateLiveplayPid(pid, port, instanceToken, legacy = false) {
   if (!isPidAlive(pid)) return true;
+  const identity = { pid, port, instanceToken, legacy };
+  const identityMatches = async () => legacy
+    ? processRunsLegacyServer(identity)
+    : healthMatchesIdentity(await probeServerHealth(port), identity) ||
+      await processRunsOwnedServer(pid, instanceToken);
+  if (!(await identityMatches())) {
+    console.error('[liveplay-server] refusing to signal unverified lock PID:', pid);
+    return false;
+  }
 
   try {
     if (process.platform === 'win32') {
-      await new Promise((resolve) => exec(`taskkill /pid ${pid} /T /F`, resolve));
+      if (!(await identityMatches())) return false;
+      await new Promise((resolve) => execFile(
+        'taskkill.exe', ['/pid', String(pid), '/T', '/F'], resolve,
+      ));
     } else {
       process.kill(pid, 'SIGINT');
       const deadline = Date.now() + 2000;
@@ -88,6 +384,7 @@ async function terminateLiveplayPid(pid) {
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
       if (isPidAlive(pid)) {
+        if (!(await identityMatches())) return false;
         process.kill(pid, 'SIGKILL');
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
@@ -101,12 +398,44 @@ async function terminateLiveplayPid(pid) {
 
 async function probeServerHealth(port, timeoutMs = 1000) {
   return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
     const req = require('http').get(
       { host: '127.0.0.1', port, path: '/api/health', timeout: timeoutMs },
-      (res) => { resolve(res.statusCode === 200); res.resume(); },
+      (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => {
+          body += chunk;
+          if (body.length > 4096) {
+            res.destroy();
+            finish(null);
+          }
+        });
+        res.on('end', () => {
+          try {
+            const health = JSON.parse(body);
+            const modern = health?.ok === true &&
+              health?.name === 'dwcue-server' &&
+              Number.isInteger(health?.pid) &&
+              health.pid > 0 &&
+              (health.instanceToken === '' ||
+               /^[0-9a-f]{32}$/.test(health.instanceToken || ''));
+            finish(res.statusCode === 200 && (modern || isLegacyServerHealth(health))
+              ? health
+              : null);
+          } catch {
+            finish(null);
+          }
+        });
+      },
     );
-    req.on('timeout', () => { req.destroy(); resolve(false); });
-    req.on('error',   () => resolve(false));
+    req.on('timeout', () => { req.destroy(); finish(null); });
+    req.on('error',   () => finish(null));
   });
 }
 
@@ -223,6 +552,10 @@ function readRecentProjects() {
         name:       typeof e.name === 'string' ? e.name : '',
         folderPath: typeof e.folderPath === 'string' ? e.folderPath : '',
         lastOpened: Number.isInteger(e.lastOpened) ? e.lastOpened : 0,
+        // Only entries explicitly recorded from an already-authorized local
+        // path can restore local filesystem access. Legacy and remote entries
+        // remain useful history but never become capabilities by coincidence.
+        localTrusted: e.localTrusted === true,
       }))
       .slice(0, LIVEPLAY_RECENT_PROJECTS_MAX);
   } catch {
@@ -238,7 +571,7 @@ function writeRecentProjects(list) {
   }
 }
 
-function addRecentProject(entry) {
+function addRecentProject(entry, localTrusted) {
   if (!entry || typeof entry.path !== 'string' || !entry.path) return readRecentProjects();
   // Normalise separators so the same file doesn't appear twice (e.g. when one
   // open used "/" and another "\"). Compare case-insensitively on Windows.
@@ -253,6 +586,7 @@ function addRecentProject(entry) {
     name:       typeof entry.name === 'string' ? entry.name : '',
     folderPath: typeof entry.folderPath === 'string' ? entry.folderPath : '',
     lastOpened: Date.now(),
+    localTrusted: localTrusted === true,
   });
   const capped = next.slice(0, LIVEPLAY_RECENT_PROJECTS_MAX);
   writeRecentProjects(capped);
@@ -276,62 +610,42 @@ function clearRecentProjects() {
   return [];
 }
 
-// ---------------------------------------------------------------------------
-// Best-effort Windows Firewall rules. Discovery relies on inbound UDP (the
-// server receiving solicitations, the client receiving beacons/unicast
-// replies). The NSIS installer adds proper program rules at install time
-// (elevated); this runtime pass is a fallback for portable/dev runs. It is
-// skipped unless we're elevated — netsh silently fails otherwise — and it
-// only runs once per machine (a marker file guards repeat work).
-// ---------------------------------------------------------------------------
-function ensureFirewallRules() {
-  if (process.platform !== 'win32') return;
-  // Marker is versioned: bumping the suffix forces a one-time re-run so
-  // existing installs that only got the old UDP-only pass pick up the new
-  // server TCP rule.
-  const markerPath = path.join(app.getPath('userData'), '.firewall-configured-v2');
-  try { if (fs.existsSync(markerPath)) return; } catch {}
-
-  const exe = process.execPath;
-  const serverExe = resolveServerBinaryPath();
-  // protocols per program:
-  //  * UDP — discovery beacon/solicitation (both client and server listen).
-  //  * TCP — the server's REST + WebSocket control port (4480). Without this,
-  //    LAN discovery (UDP) still finds the server but every actual connection
-  //    is silently dropped, so the client appears to connect yet nothing works.
-  //    The client never accepts inbound TCP, so it only needs UDP.
-  const rules = [
-    ['LivePlay Client', exe,       ['UDP']],
-    ['LivePlay Server', serverExe, ['UDP', 'TCP']],
-  ];
-  let attempted = false;
-  for (const [name, program, protocols] of rules) {
-    if (!program || !fs.existsSync(program)) continue;
-    attempted = true;
-    for (const proto of protocols) {
-      // Program-scoped inbound allow — covers discovery / control on all ports.
-      const cmd = `netsh advfirewall firewall add rule name="${name} (${proto}-In)" ` +
-                  `dir=in action=allow protocol=${proto} program="${program}" enable=yes profile=any`;
-      exec(cmd, (err) => {
-        if (err) {
-          // Almost always "requires elevation" — expected for non-admin runs.
-          console.warn('[liveplay-firewall] could not add', proto, 'rule for', name,
-                       '(needs admin / handled by installer):', err.message);
-        } else {
-          console.log('[liveplay-firewall] inbound', proto, 'rule ensured for', name);
-        }
-      });
-    }
+function authorizeOpenableFilePath(filePath) {
+  const checked = requireAbsoluteIpcPath(filePath, 'filePath');
+  if (!fs.existsSync(checked) || !fs.statSync(checked).isFile()) {
+    throw new Error('Selected project/archive file does not exist');
   }
-  // Write the marker regardless so we don't re-spawn netsh every launch; the
-  // installer is the authoritative path for users who declined elevation.
-  if (attempted) {
-    try { fs.writeFileSync(markerPath, new Date().toISOString()); } catch {}
+  if (/\.liveplay$/i.test(checked)) return pathCapabilities.authorizeProjectFile(checked);
+  if (/\.lpa$/i.test(checked)) return pathCapabilities.authorizeFile(checked);
+  throw new Error('Selected file is not a project or archive');
+}
+
+function tryAuthorizeOpenableFilePath(filePath) {
+  if (typeof filePath !== 'string') return null;
+  try {
+    const absolute = path.isAbsolute(filePath) ? filePath : path.resolve(filePath);
+    return authorizeOpenableFilePath(absolute);
+  } catch (error) {
+    console.warn('[file-association] rejected file:', error.message);
+    return null;
+  }
+}
+
+function initializeCapabilitiesFromRecentProjects() {
+  for (const entry of readRecentProjects()) {
+    if (!entry.localTrusted) continue;
+    try {
+      if (path.isAbsolute(entry.path) && fs.existsSync(entry.path)) {
+        authorizeOpenableFilePath(entry.path);
+      }
+    } catch (error) {
+      console.warn('[path-capabilities] skipped stale recent project:', error.message);
+    }
   }
 }
 
 function resolveServerBinaryPath() {
-  const exeName = process.platform === 'win32' ? 'liveplay-server.exe' : 'liveplay-server';
+  const exeName = process.platform === 'win32' ? 'dwcue-server.exe' : 'dwcue-server';
 
   if (app.isPackaged) {
     // Bundled via electron-builder extraResources → resourcesPath/server-bin/
@@ -350,32 +664,119 @@ function resolveServerBinaryPath() {
   return candidates[0]; // return first as a useful error path
 }
 
-// Passive: probe the lockfile and adopt the running server if there is
-// one, but do NOT spawn a new one. Called at startup so users who quit
-// the renderer while the detached server kept running rejoin
-// transparently. Spawning is deferred to startLiveplayServer (which the
-// renderer triggers only when the user picks Local mode).
+function adoptLiveplayIdentity(identity) {
+  liveplayServerIdentity = {
+    pid: identity.pid,
+    port: identity.port,
+    startedAt: identity.startedAt,
+    instanceToken: identity.instanceToken,
+    legacy: identity.legacy === true,
+  };
+  return liveplayServerIdentity;
+}
+
+function sameLiveplayIdentity(left, right) {
+  return !!left && !!right &&
+    left.pid === right.pid &&
+    left.port === right.port &&
+    left.instanceToken === right.instanceToken &&
+    left.startedAt === right.startedAt;
+}
+
+function clearLiveplayIdentity(identity = null) {
+  if (!identity || sameLiveplayIdentity(liveplayServerIdentity, identity)) {
+    liveplayServerIdentity = null;
+  }
+}
+
+async function verifyLiveplayLock(lock) {
+  if (!lock || !isPidAlive(lock.pid)) return null;
+  const health = await probeServerHealth(lock.port);
+  if (/^[0-9a-f]{32}$/.test(lock.instanceToken || '')) {
+    if (healthMatchesIdentity(health, lock) ||
+        await processRunsOwnedServer(lock.pid, lock.instanceToken)) {
+      return { ...lock, legacy: false };
+    }
+    return null;
+  }
+  if (isLegacyServerHealth(health) && await processRunsLegacyServer(lock)) {
+    return { ...lock, legacy: true };
+  }
+  return null;
+}
+
+async function waitForCrashReplacement(staleIdentity, timeoutMs = 6500) {
+  if (!/^[0-9a-f]{32}$/.test(staleIdentity?.instanceToken || '')) return null;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const lock = readLiveplayLock();
+    if (lock && lock.pid !== staleIdentity.pid &&
+        lock.instanceToken === staleIdentity.instanceToken &&
+        isPidAlive(lock.pid)) {
+      const replacement = await verifyLiveplayLock(lock);
+      if (replacement) return adoptLiveplayIdentity(replacement);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return null;
+}
+
+// The C++ crash handler replaces the process and rewrites the pidfile. Always
+// reconcile that current identity before lifecycle operations so Electron
+// never acts on an old in-memory PID.
+async function reconcileLiveplayServerIdentity(waitForReplacement = false) {
+  const lock = readLiveplayLock();
+  const verifiedLock = await verifyLiveplayLock(lock);
+  if (verifiedLock) return adoptLiveplayIdentity(verifiedLock);
+
+  if (waitForReplacement && lock && !isPidAlive(lock.pid)) {
+    const replacement = await waitForCrashReplacement(lock);
+    if (replacement) return replacement;
+  }
+
+  const current = liveplayServerIdentity;
+  if (current) {
+    if (isPidAlive(current.pid)) {
+      const health = await probeServerHealth(current.port);
+      const owned = current.legacy
+        ? await processRunsLegacyServer(current)
+        : healthMatchesIdentity(health, current) ||
+          await processRunsOwnedServer(current.pid, current.instanceToken);
+      if (owned) {
+        return current;
+      }
+    }
+    clearLiveplayIdentity(current);
+  }
+  return null;
+}
+
+// Reattach to a verified detached server. A tokenless pre-rebrand server is
+// adopted only after both its old health response and exact process arguments
+// agree, then replaced once with the tokenized current binary.
 async function tryReattachLiveplayServer() {
-  if (liveplayServerProc || liveplayServerPid) return;
   const lock = readLiveplayLock();
   if (!lock) return;
-  if (isPidAlive(lock.pid) && await probeServerHealth(lock.port)) {
-    console.log('[liveplay-server] reattaching to pid', lock.pid, 'on port', lock.port);
-    liveplayServerPid  = lock.pid;
-    liveplayServerPort = lock.port;
-    notifyServerStateChange();
-    return;
+  const identity = await reconcileLiveplayServerIdentity(true);
+  if (!identity) {
+    if (isPidAlive(lock.pid)) {
+      console.warn('[liveplay-server] unverified lock PID left untouched:', lock.pid);
+    }
+    return null;
   }
-  // An unhealthy process must be gone before its replacement starts. If it
-  // cannot be stopped, retain its PID so startLiveplayServer will not overlap it.
-  if (isPidAlive(lock.pid) && !(await terminateLiveplayPid(lock.pid))) {
-    console.error('[liveplay-server] unhealthy pid could not be stopped:', lock.pid);
-    liveplayServerPid  = lock.pid;
-    liveplayServerPort = lock.port;
-    notifyServerStateChange();
-    return;
+  console.log('[liveplay-server] reattaching to pid', identity.pid, 'on port', identity.port);
+  notifyServerStateChange();
+
+  const cfg = readLiveplayConfig();
+  if (cfg.mode === 'remote') {
+    await stopVerifiedLiveplayServer(identity);
+    return null;
   }
-  deleteLiveplayLock();
+  if (identity.legacy || identity.port !== cfg.localPort) {
+    if (!(await stopVerifiedLiveplayServer(identity))) return identity;
+    return startLiveplayServer();
+  }
+  return identity;
 }
 
 async function startLiveplayServer() {
@@ -389,15 +790,25 @@ async function startLiveplayServer() {
 }
 
 async function startLiveplayServerOnce() {
-  // Already managing one in this process — nothing to do.
-  if (liveplayServerProc || liveplayServerPid) return;
-
   const cfg = readLiveplayConfig();
   if (cfg.mode !== 'local') return;
 
-  // Try reattaching first in case another instance left a running server.
-  await tryReattachLiveplayServer();
-  if (liveplayServerProc || liveplayServerPid) return;
+  const current = await reconcileLiveplayServerIdentity(true);
+  if (current) {
+    if (!current.legacy && current.port === cfg.localPort) return current;
+    if (!(await stopVerifiedLiveplayServer(current))) return null;
+  }
+
+  // Never signal, adopt, or overwrite a live PID that failed identity checks.
+  // The user can stop that process directly; spawning beside it risks two
+  // independent audio engines if the configured port also changed.
+  const unverifiedLock = readLiveplayLock();
+  if (unverifiedLock && isPidAlive(unverifiedLock.pid)) {
+    console.error('[liveplay-server] refusing to launch beside unverified pid',
+                  unverifiedLock.pid);
+    notifyServerStateChange();
+    return null;
+  }
 
   const exePath = resolveServerBinaryPath();
   if (!fs.existsSync(exePath)) {
@@ -413,16 +824,15 @@ async function startLiveplayServerOnce() {
   // the server writes its real PID to the lockfile — necessary on Windows
   // because `cmd /c start` returns the PID of cmd.exe, not the server.
   const lockPath = liveplayLockPath();
-  // Pre-clear any stale lock so the freshly-started server's write is the
-  // canonical one and our tryReattach race-condition window is minimal.
-  deleteLiveplayLock();
-  liveplayServerPort = cfg.localPort;
+  const instanceToken = crypto.randomBytes(16).toString('hex');
 
   console.log('[liveplay-server] launching (visible console)', exePath, 'on port', cfg.localPort);
   const serverArgs = [
-    '--port',    String(cfg.localPort),
-    '--pidfile', lockPath,
+    '--port',           String(cfg.localPort),
+    '--pidfile',        lockPath,
+    '--instance-token', instanceToken,
   ];
+  let launcher;
   try {
     if (process.platform === 'win32') {
       // `cmd /c start "" /D "<cwd>" "<exe>" <args>` opens a visible console
@@ -430,7 +840,7 @@ async function startLiveplayServerOnce() {
       // where the first quoted arg to `start` is treated as the window title
       // instead of the executable. The server binary's own embedded icon and
       // the title it sets via SetConsoleTitle() then appear in the taskbar.
-      liveplayServerProc = spawn(
+      launcher = spawn(
         'cmd.exe',
         ['/c', 'start', '',
          '/D', path.dirname(exePath),
@@ -448,14 +858,14 @@ async function startLiveplayServerOnce() {
       const cmdLine = [exePath, ...serverArgs].map(shellQuote).join(' ');
       // Multi-statement AppleScript: open the window then activate so
       // Terminal comes to the foreground rather than opening silently
-      // behind the LivePlay window.
+      // behind the DonWells Cue window.
       const appleScript = [
         'tell application "Terminal"',
         `  do script "${cmdLine.replace(/"/g, '\\"')}"`,
         '  activate',
         'end tell',
       ].join('\n');
-      liveplayServerProc = spawn(
+      launcher = spawn(
         'osascript',
         ['-e', appleScript],
         { stdio: 'ignore', detached: true },
@@ -465,7 +875,7 @@ async function startLiveplayServerOnce() {
       // Electron app from a terminal, the server inherits that terminal
       // and is visible. If launched from a desktop launcher, there's no
       // console — best-effort.
-      liveplayServerProc = spawn(exePath, serverArgs, {
+      launcher = spawn(exePath, serverArgs, {
         cwd: path.dirname(exePath),
         stdio: 'ignore',
         detached: true,
@@ -473,66 +883,93 @@ async function startLiveplayServerOnce() {
     }
   } catch (e) {
     console.error('[liveplay-server] spawn failed:', e);
-    liveplayServerProc = null;
     notifyServerStateChange();
-    return;
+    return null;
   }
+
+  const launchState = { error: null };
+  launcher.once('error', (error) => {
+    launchState.error = error;
+    console.error('[liveplay-server] spawn failed:', error);
+    notifyServerStateChange();
+  });
 
   // The spawn handle we hold is either cmd.exe (Windows), osascript (macOS),
   // or the server itself (Linux). We don't track its lifetime — the real
   // server's PID arrives via the pidfile within ~1 s. unref() so Electron
   // can quit independently.
-  try { liveplayServerProc.unref(); } catch {}
-  liveplayServerProc = null;   // discard the launcher handle
+  try { launcher.unref(); } catch {}
 
   // Adopt the real PID before completing this launch so a concurrent stop or
   // restart cannot miss the new server in the pidfile handoff window.
-  await pollPidfileForServerPid(lockPath);
+  const identity = await pollPidfileForServerPid(
+    lockPath, instanceToken, cfg.localPort, launchState,
+  );
 
   notifyServerStateChange();
+  return identity;
 }
 
-// Watch the pidfile until the server writes it (or we time out). The
-// server creates this file after binding, so its presence implies the
-// server is ~ready.
-async function pollPidfileForServerPid(lockPath) {
+// Watch the pidfile until the server publishes the expected generation (or we
+// time out). Crash replacements publish before their hand-off delay, so health
+// identity—not mere file presence—is the readiness check.
+async function pollPidfileForServerPid(
+  lockPath, expectedInstanceToken, expectedPort, launchState,
+) {
   const deadline = Date.now() + 8000;
   while (Date.now() < deadline) {
+    if (launchState.error) return null;
     const lock = readLiveplayLock();
-    if (lock && Number.isInteger(lock.pid)) {
-      liveplayServerPid  = lock.pid;
-      liveplayServerPort = lock.port ?? liveplayServerPort;
+    const health = lock ? await probeServerHealth(lock.port) : null;
+    if (lock?.instanceToken === expectedInstanceToken &&
+        lock.port === expectedPort &&
+        healthMatchesIdentity(health, lock)) {
+      const identity = adoptLiveplayIdentity({ ...lock, legacy: false });
       notifyServerStateChange();
-      return;
+      return identity;
     }
     await new Promise(r => setTimeout(r, 150));
   }
   console.warn('[liveplay-server] pidfile did not appear at', lockPath,
                '— server may have failed to launch (check the console window).');
+  return null;
 }
 
 // Stop the local server. Since the server now always runs as an external
 // process (visible terminal, written PID via pidfile), we only have a PID
 // to work with — there is no ChildProcess handle.
-async function stopLiveplayServer() {
-  if (liveplayServerStartPromise) await liveplayServerStartPromise;
-  const pid = liveplayServerPid ?? readLiveplayLock()?.pid;
-  if (!pid) {
-    deleteLiveplayLock();
-    notifyServerStateChange();
-    return true;
-  }
-  console.log('[liveplay-server] stopping pid', pid);
-  const stopped = await terminateLiveplayPid(pid);
-  if (stopped) deleteLiveplayLock();
-  liveplayServerProc = null;
-  liveplayServerPid  = stopped ? null : pid;
+async function stopVerifiedLiveplayServer(identity) {
+  if (!identity) return true;
+  console.log('[liveplay-server] stopping pid', identity.pid);
+  const stopped = await terminateLiveplayPid(
+    identity.pid, identity.port, identity.instanceToken, identity.legacy,
+  );
+  if (stopped) clearLiveplayIdentity(identity);
   notifyServerStateChange();
   return stopped;
 }
 
+async function stopLiveplayServer() {
+  if (liveplayServerStartPromise) await liveplayServerStartPromise;
+  const identity = await reconcileLiveplayServerIdentity(true);
+  if (!identity) {
+    const unverifiedLock = readLiveplayLock();
+    if (unverifiedLock && isPidAlive(unverifiedLock.pid)) {
+      console.error('[liveplay-server] refusing to stop unverified lock PID:',
+                    unverifiedLock.pid);
+      clearLiveplayIdentity();
+      notifyServerStateChange();
+      return false;
+    }
+    clearLiveplayIdentity();
+    notifyServerStateChange();
+    return true;
+  }
+  return stopVerifiedLiveplayServer(identity);
+}
+
 function liveplayServerStatus() {
-  const pid = liveplayServerProc?.pid ?? liveplayServerPid;
+  const pid = liveplayServerIdentity?.pid ?? null;
   return {
     running: !!pid,
     pid,
@@ -547,38 +984,79 @@ function notifyServerStateChange() {
 }
 
 // IPC: renderer reads/writes config and queries state.
-ipcMain.handle('liveplay-server:get-config', () => readLiveplayConfig());
+ipcMain.handle('liveplay-server:get-config', (event) => {
+  requireTrustedIpc(event);
+  return readLiveplayConfig();
+});
 
-ipcMain.handle('liveplay-server:set-config', async (_e, incoming) => {
-  const next = { ...readLiveplayConfig(), ...incoming };
+ipcMain.handle('liveplay-server:set-config', async (event, incoming) => {
+  requireTrustedIpc(event);
+  if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
+    throw new TypeError('server config must be an object');
+  }
+  const current = readLiveplayConfig();
+  const next = {
+    mode: incoming.mode === undefined
+      ? current.mode
+      : (incoming.mode === 'remote' ? 'remote' : 'local'),
+    remoteUrl: typeof incoming.remoteUrl === 'string' && incoming.remoteUrl.length <= 2048
+      ? incoming.remoteUrl
+      : current.remoteUrl,
+    localPort: incoming.localPort === undefined ? current.localPort : incoming.localPort,
+  };
   // Sanity: clamp port to a valid TCP range.
   if (!Number.isInteger(next.localPort) || next.localPort < 1 || next.localPort > 65535) {
     next.localPort = LIVEPLAY_DEFAULT_PORT;
   }
-  if (next.mode !== 'local' && next.mode !== 'remote') next.mode = 'local';
+  try {
+    const remote = new URL(next.remoteUrl);
+    if (!['http:', 'https:'].includes(remote.protocol) || remote.username || remote.password) {
+      throw new Error('invalid remote URL');
+    }
+    next.remoteUrl = remote.toString().replace(/\/+$/, '');
+  } catch {
+    next.remoteUrl = current.remoteUrl;
+  }
 
   writeLiveplayConfig(next);
+  notifyServerStateChange();
 
-  // If switching to remote, stop any running local server.
-  if (next.mode === 'remote' && (liveplayServerProc || liveplayServerPid)) await stopLiveplayServer();
-  // Do NOT auto-start in local mode here — the caller (ensure-running) is
-  // responsible for starting the server so it isn't spawned twice.
+  if (next.mode === 'remote') {
+    await stopLiveplayServer();
+  } else {
+    // Start is promise-coalesced, and startLiveplayServerOnce replaces a
+    // verified legacy or wrong-port generation before launching.
+    await startLiveplayServer();
+    const identity = await reconcileLiveplayServerIdentity();
+    if (identity && (identity.legacy || identity.port !== next.localPort)) {
+      if (await stopVerifiedLiveplayServer(identity)) await startLiveplayServer();
+    }
+  }
 
+  notifyServerStateChange();
   return next;
 });
 
-ipcMain.handle('liveplay-server:get-status', () => liveplayServerStatus());
+ipcMain.handle('liveplay-server:get-status', async (event) => {
+  requireTrustedIpc(event);
+  await reconcileLiveplayServerIdentity();
+  return liveplayServerStatus();
+});
 
 // Generic app lifecycle controls used by the connection-lost modal.
 // `relaunch` re-spawns the renderer in a clean state (the detached
 // liveplay-server keeps running and is reattached on the next launch).
 // `exit` just quits without touching the server.
-ipcMain.handle('app:relaunch', () => {
+ipcMain.handle('app:relaunch', async (event) => {
+  requireTrustedIpc(event);
+  await cancelAllSpotifyDownloads(true);
   app.relaunch();
   app.exit(0);
   return true;
 });
-ipcMain.handle('app:exit', () => {
+ipcMain.handle('app:exit', async (event) => {
+  requireTrustedIpc(event);
+  await cancelAllSpotifyDownloads(true);
   app.exit(0);
   return true;
 });
@@ -588,14 +1066,17 @@ ipcMain.handle('app:exit', () => {
 // has decided it calls `app:confirm-quit`. We stop the local server only
 // when asked, flip quitConfirmed so the next `close` is allowed through,
 // then quit for real.
-ipcMain.handle('app:confirm-quit', async (_e, opts) => {
+ipcMain.handle('app:confirm-quit', async (event, opts) => {
+  requireTrustedIpc(event);
   if (opts && opts.stopServer) await stopLiveplayServer();
+  await cancelAllSpotifyDownloads(true);
   quitConfirmed = true;
   app.quit();
   return true;
 });
 
-ipcMain.handle('liveplay-server:restart', async () => {
+ipcMain.handle('liveplay-server:restart', async (event) => {
+  requireTrustedIpc(event);
   if (!(await stopLiveplayServer())) return false;
   await startLiveplayServer();
   return true;
@@ -604,7 +1085,8 @@ ipcMain.handle('liveplay-server:restart', async () => {
 // Explicit shutdown — the server is now detached, so quitting the
 // renderer no longer kills it. The user (or the about-to-quit prompt)
 // invokes this when they really want it gone.
-ipcMain.handle('liveplay-server:shutdown', async () => {
+ipcMain.handle('liveplay-server:shutdown', async (event) => {
+  requireTrustedIpc(event);
   return stopLiveplayServer();
 });
 
@@ -612,19 +1094,25 @@ ipcMain.handle('liveplay-server:shutdown', async () => {
 // answers. The welcome screen calls this when the user picks Local mode
 // so the renderer doesn't try to connect before the server is bound.
 // Returns { ok, port, error? } — never throws.
-ipcMain.handle('liveplay-server:ensure-running', async () => {
+ipcMain.handle('liveplay-server:ensure-running', async (event) => {
+  requireTrustedIpc(event);
   const cfg = readLiveplayConfig();
   if (cfg.mode !== 'local') {
     return { ok: false, port: cfg.localPort, error: 'config mode is not local' };
   }
-  if (!liveplayServerProc && !liveplayServerPid) {
-    try { await startLiveplayServer(); }
-    catch (e) { return { ok: false, port: cfg.localPort, error: String(e) }; }
-  }
+  try { await startLiveplayServer(); }
+  catch (e) { return { ok: false, port: cfg.localPort, error: String(e) }; }
+
   // Poll health. The detached console process needs a moment to bind.
   const deadline = Date.now() + 10000;
   while (Date.now() < deadline) {
-    if (await probeServerHealth(cfg.localPort, 800)) {
+    const lock = readLiveplayLock();
+    const health = lock?.port === cfg.localPort
+      ? await probeServerHealth(cfg.localPort, 800)
+      : null;
+    if (lock && healthMatchesIdentity(health, lock)) {
+      adoptLiveplayIdentity({ ...lock, legacy: false });
+      notifyServerStateChange();
       return { ok: true, port: cfg.localPort };
     }
     await new Promise(r => setTimeout(r, 200));
@@ -702,7 +1190,7 @@ function startDiscoveryListener() {
   });
   try {
     // Bind on 0.0.0.0:DISCOVERY_PORT to receive broadcasts. reuseAddr lets
-    // multiple LivePlay clients on the same machine coexist.
+    // multiple DonWells Cue clients on the same machine coexist.
     discoverySocket.bind(DISCOVERY_PORT, () => {
       try { discoverySocket.setBroadcast(true); } catch {}
       // Join the multicast group on all interfaces (no iface arg = default
@@ -757,19 +1245,22 @@ function broadcastDiscovered() {
   mainWindow.webContents.send('liveplay-discovery:servers', list);
 }
 
-ipcMain.handle('liveplay-discovery:start', () => {
+ipcMain.handle('liveplay-discovery:start', (event) => {
+  requireTrustedIpc(event);
   startDiscoveryListener();
   sendSolicitation();             // fresh probe whenever the picker opens
   broadcastDiscovered();          // immediate refresh for the new subscriber
   return true;
 });
 
-ipcMain.handle('liveplay-discovery:list', () => {
+ipcMain.handle('liveplay-discovery:list', (event) => {
+  requireTrustedIpc(event);
   return Array.from(discoveredServers.values()).map(v => v.entry);
 });
 
 // Fire an on-demand solicitation (e.g. user hit a "rescan" button).
-ipcMain.handle('liveplay-discovery:solicit', () => {
+ipcMain.handle('liveplay-discovery:solicit', (event) => {
+  requireTrustedIpc(event);
   startDiscoveryListener();
   sendSolicitation();
   return true;
@@ -779,34 +1270,66 @@ ipcMain.handle('liveplay-discovery:solicit', () => {
 // server (different subnet, VPN, locked-down WiFi). The renderer records a
 // server here whenever it successfully connects, and reads the list to offer
 // one-tap reconnect + auto-reconnect on launch.
-ipcMain.handle('liveplay-discovery:recent-list', () => readRecentServers());
+ipcMain.handle('liveplay-discovery:recent-list', (event) => {
+  requireTrustedIpc(event);
+  return readRecentServers();
+});
 
-ipcMain.handle('liveplay-discovery:recent-add', (_e, entry) => {
+ipcMain.handle('liveplay-discovery:recent-add', (event, entry) => {
+  requireTrustedIpc(event);
+  requireBoundedIpcObject(entry, 'recent server entry', 16 * 1024);
   return addRecentServer(entry);
 });
 
-ipcMain.handle('liveplay-discovery:recent-remove', (_e, url) => {
+ipcMain.handle('liveplay-discovery:recent-remove', (event, url) => {
+  requireTrustedIpc(event);
+  requireIpcString(url, 'url', 2048);
   return removeRecentServer(url);
 });
 
 // Recent-projects history — last N .liveplay files opened on this client.
 // Every mutation rebuilds the menu so the File > Open Recent submenu stays
 // in sync without the renderer having to poke the menu directly.
-ipcMain.handle('liveplay-projects:recent-list', () => readRecentProjects());
+ipcMain.handle('liveplay-projects:recent-list', (event) => {
+  requireTrustedIpc(event);
+  return readRecentProjects();
+});
 
-ipcMain.handle('liveplay-projects:recent-add', (_e, entry) => {
-  const list = addRecentProject(entry);
+ipcMain.handle('liveplay-projects:recent-add', (event, entry) => {
+  requireTrustedIpc(event);
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry) ||
+      typeof entry.path !== 'string' || entry.path.length > MAX_IPC_PATH_LENGTH) {
+    throw new TypeError('recent project entry is invalid');
+  }
+  let localTrusted = false;
+  let storedEntry = entry;
+  if (path.isAbsolute(entry.path) && /\.liveplay$/i.test(entry.path) &&
+      fs.existsSync(entry.path) && pathCapabilities.allows(entry.path)) {
+    const trustedProjectPath = pathCapabilities.authorizeProjectFile(
+      pathCapabilities.require(entry.path, { label: 'projectPath' }),
+    );
+    storedEntry = {
+      ...entry,
+      path: trustedProjectPath,
+      folderPath: path.dirname(trustedProjectPath),
+    };
+    localTrusted = true;
+  }
+  const list = addRecentProject(storedEntry, localTrusted);
   createMenu(currentLocale, isDevMode);
   return list;
 });
 
-ipcMain.handle('liveplay-projects:recent-remove', (_e, projectPath) => {
+ipcMain.handle('liveplay-projects:recent-remove', (event, projectPath) => {
+  requireTrustedIpc(event);
+  requireIpcString(projectPath, 'projectPath', MAX_IPC_PATH_LENGTH);
   const list = removeRecentProject(projectPath);
   createMenu(currentLocale, isDevMode);
   return list;
 });
 
-ipcMain.handle('liveplay-projects:recent-clear', () => {
+ipcMain.handle('liveplay-projects:recent-clear', (event) => {
+  requireTrustedIpc(event);
   const list = clearRecentProjects();
   createMenu(currentLocale, isDevMode);
   return list;
@@ -825,7 +1348,7 @@ async function checkAndSetupFfmpeg() {
     }
     
     // Verify bundled version works
-    await execPromise(`"${ffmpegPath}" -version`);
+    await execFilePromise(ffmpegPath, ['-version'], { timeout: 5000 });
     ffmpegAvailable = true;
     console.log('Using bundled ffmpeg:', ffmpegPath);
     
@@ -849,7 +1372,7 @@ async function checkAndSetupFfmpeg() {
         // Fallback: try system-wide ffprobe from PATH
         try {
           const whichProbeCmd = process.platform === 'win32' ? 'where ffprobe' : 'which ffprobe';
-          const probeResult = await execPromise(whichProbeCmd);
+          const probeResult = await execPromise(whichProbeCmd, { timeout: 5000 });
           const systemProbePath = probeResult.stdout.trim().split('\n')[0].trim();
           ffmpeg.setFfprobePath(systemProbePath);
           console.log('Using system ffprobe:', systemProbePath);
@@ -866,11 +1389,11 @@ async function checkAndSetupFfmpeg() {
     // Fallback: try system-wide ffmpeg from PATH
     try {
       const whichCmd = process.platform === 'win32' ? 'where ffmpeg' : 'which ffmpeg';
-      const { stdout } = await execPromise(whichCmd);
+      const { stdout } = await execPromise(whichCmd, { timeout: 5000 });
       const systemFfmpegPath = stdout.trim().split('\n')[0].trim();
       
       // Verify the system binary works
-      await execPromise(`"${systemFfmpegPath}" -version`);
+      await execFilePromise(systemFfmpegPath, ['-version'], { timeout: 5000 });
       ffmpegPath = systemFfmpegPath;
       ffmpegAvailable = true;
       console.log('Using system ffmpeg:', ffmpegPath);
@@ -878,7 +1401,7 @@ async function checkAndSetupFfmpeg() {
       // Try to find system ffprobe too
       try {
         const whichProbeCmd = process.platform === 'win32' ? 'where ffprobe' : 'which ffprobe';
-        const probeResult = await execPromise(whichProbeCmd);
+        const probeResult = await execPromise(whichProbeCmd, { timeout: 5000 });
         const systemFfprobePath = probeResult.stdout.trim().split('\n')[0].trim();
         ffmpeg.setFfprobePath(systemFfprobePath);
         console.log('Using system ffprobe:', systemFfprobePath);
@@ -895,520 +1418,365 @@ async function checkAndSetupFfmpeg() {
   }
 }
 
+function setupFfmpeg() {
+  if (!ffmpegSetupPromise) ffmpegSetupPromise = checkAndSetupFfmpeg();
+  return ffmpegSetupPromise;
+}
+
 // ===========================================================================
 // yt-dlp + deno (JS runtime) management
 // ---------------------------------------------------------------------------
-// YouTube changes its player/signature scheme frequently, so the bundled
-// yt-dlp binary goes stale fast. Rather than the old "re-download if the file
-// is >7 days old" heuristic (which both updated needlessly and could keep a
-// stale binary for up to a week), we compare the installed --version against
-// the latest GitHub release on every launch and update whenever they differ.
-//
-// Modern yt-dlp also requires a JavaScript runtime to solve YouTube's nsig
-// challenge ("No supported JavaScript runtime could be found" warning).
-// Electron's own Node (18 in Electron 28) is too old for yt-dlp's JS provider,
-// so we download deno — yt-dlp's recommended runtime — alongside yt-dlp and
-// pass it via --js-runtimes. Both downloads are best-effort and degrade
-// gracefully: network failures fall back to whatever binary is already on disk.
+// Runtime tools are pinned deliberately. Their release assets are accepted
+// only when they match checksums published with those exact GitHub releases;
+// changing a version therefore requires reviewing and updating this table.
+// yt-dlp publishes SHA2-256SUMS; Deno publishes <asset>.sha256sum files.
+// Deno binary hashes below are derived from those verified release archives.
 // ===========================================================================
+const YT_DLP_RELEASE = Object.freeze({
+  version: '2026.07.04',
+  assets: Object.freeze({
+    'darwin:arm64': {
+      name: 'yt-dlp_macos',
+      sha256: '498bd0dae17855c599d371d68ec5bafc439a9d8640e838be25c765a9792f261b',
+    },
+    'darwin:x64': {
+      name: 'yt-dlp_macos',
+      sha256: '498bd0dae17855c599d371d68ec5bafc439a9d8640e838be25c765a9792f261b',
+    },
+    'linux:x64': {
+      name: 'yt-dlp_linux',
+      sha256: '6bbb3d314cde4febe36e5fa1d55462e29c974f63444e707871834f6d8cc210ae',
+    },
+    'win32:x64': {
+      name: 'yt-dlp.exe',
+      sha256: '52fe3c26dcf71fbdc85b528589020bb0b8e383155cfa81b64dd447bbe35e24b8',
+    },
+  }),
+});
+
+const DENO_RELEASE = Object.freeze({
+  tag: 'v2.9.4',
+  version: '2.9.4',
+  assets: Object.freeze({
+    'darwin:arm64': {
+      name: 'deno-aarch64-apple-darwin.zip',
+      archiveSha256: '6d17647fdbf9c587a581dba205054c4ccf732dae0a196cc1e9b44c07589db412',
+      binarySha256: '433088c827fa0e39ff162ab0e475f1fd4c7690eaedec500cf678edc3865e9287',
+    },
+    'darwin:x64': {
+      name: 'deno-x86_64-apple-darwin.zip',
+      archiveSha256: 'f757df6d3991e37601c69fad56c22b37c4ea77b5dcfad3636a642c2ba4c9b19f',
+      binarySha256: 'e0d641386d4f396414da81fa4cfda7b73533ce092a8e12ab0f0551d1a2bc8dcd',
+    },
+    'linux:x64': {
+      name: 'deno-x86_64-unknown-linux-gnu.zip',
+      archiveSha256: 'c24f955d9fbfe0ea5ae2b501c8e71ae76e31e4c9782390a54a284b3364fda725',
+      binarySha256: '1d97ecaf9e6bbb2a99e991caaf64ba9d62bf98759e8ef9938b9005855772b017',
+    },
+    'win32:x64': {
+      name: 'deno-x86_64-pc-windows-msvc.zip',
+      archiveSha256: '68ed08b05c56cf887e9aa509947dc3f468f7e12f47a13e5c1abd51d46d1453ef',
+      binarySha256: '4a2757fe99afc2c62c46500c8221cfa0189ac4bfb7064141875ad9c0f04b60ef',
+    },
+  }),
+});
+
+const SPOTDL_RELEASE = Object.freeze({
+  tag: 'v4.5.2',
+  version: '4.5.2',
+  assets: Object.freeze({
+    'darwin:arm64': {
+      name: 'spotdl-4.5.2-darwin',
+      sha256: '0e6a1b704253eda7dda7e85e2a8137b024fdd09cf94e9ab6286350dee95fcabc',
+    },
+    'linux:x64': {
+      name: 'spotdl-4.5.2-linux',
+      sha256: '5d7db2fe9adefdea7544413c1a0cca6e913c23376bf5763c172729b4e434b25d',
+    },
+    'win32:x64': {
+      name: 'spotdl-4.5.2-win32.exe',
+      sha256: '4490ae3b38c4321173e17975a9990a130cf9a9aea8132ee2978afecefbeeb477',
+    },
+  }),
+});
+
 let ytDlpPath;
 let ytDlpReady = false;
 let denoPath = null;
 let denoReady = false;
+let spotDlPath = null;
+let spotDlSetupPromise = null;
 
-// Fetch the latest release tag for a GitHub repo (e.g. "yt-dlp/yt-dlp").
-// Best-effort: rejects on network error / non-200 so callers can fall back.
-function getLatestReleaseTag(repo) {
+function currentReleaseAsset(release) {
+  return release.assets[process.platform + ':' + process.arch] || null;
+}
+
+function sha256File(filePath) {
   return new Promise((resolve, reject) => {
-    const req = https.request({
-      hostname: 'api.github.com',
-      path: `/repos/${repo}/releases/latest`,
-      method: 'GET',
-      headers: {
-        'User-Agent': 'LivePlay',
-        'Accept': 'application/vnd.github+json'
-      },
-      timeout: 10000
-    }, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        if (res.statusCode !== 200) {
-          reject(new Error(`GitHub API returned ${res.statusCode} for ${repo}`));
-          return;
-        }
-        try {
-          resolve(JSON.parse(data).tag_name);
-        } catch (e) {
-          reject(e);
-        }
-      });
-    });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(new Error('GitHub API request timed out')); });
-    req.end();
+    const hash = crypto.createHash('sha256');
+    const input = fs.createReadStream(filePath);
+    input.on('error', reject);
+    input.on('data', chunk => hash.update(chunk));
+    input.on('end', () => resolve(hash.digest('hex')));
   });
 }
 
-// Run `<binary> --version` and return the trimmed stdout, or null on failure.
-async function getBinaryVersion(binaryPath) {
+async function hasExpectedSha256(filePath, expected) {
+  if (!fs.existsSync(filePath)) return false;
   try {
-    const { stdout } = await execPromise(`"${binaryPath}" --version`);
+    return (await sha256File(filePath)) === expected;
+  } catch {
+    return false;
+  }
+}
+
+async function downloadVerifiedFile(url, destination, expectedSha256) {
+  const temporaryPath = destination + '.download';
+  if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath);
+  try {
+    await YTDlpWrap.downloadFile(url, temporaryPath);
+    const actualSha256 = await sha256File(temporaryPath);
+    if (actualSha256 !== expectedSha256) {
+      throw new Error(
+        'checksum mismatch (expected ' + expectedSha256 + ', got ' + actualSha256 + ')',
+      );
+    }
+    return temporaryPath;
+  } catch (error) {
+    if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath);
+    throw error;
+  }
+}
+
+function replaceVerifiedFile(candidatePath, destinationPath) {
+  const backupPath = destinationPath + '.bak';
+  if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
+  if (fs.existsSync(destinationPath)) fs.renameSync(destinationPath, backupPath);
+  try {
+    fs.renameSync(candidatePath, destinationPath);
+  } catch (error) {
+    if (fs.existsSync(backupPath) && !fs.existsSync(destinationPath)) {
+      fs.renameSync(backupPath, destinationPath);
+    }
+    throw error;
+  }
+  if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
+}
+
+// Run <binary> --version without involving a shell.
+async function getBinaryVersion(binaryPath, timeout = 10000) {
+  try {
+    const { stdout } = await execFilePromise(binaryPath, ['--version'], {
+      timeout,
+      windowsHide: true,
+      maxBuffer: 1024 * 1024,
+    });
     return stdout.trim();
-  } catch (e) {
+  } catch {
     return null;
   }
 }
 
 async function initializeYtDlp() {
+  ytDlpReady = false;
+  ytDlpPath = null;
+  const asset = currentReleaseAsset(YT_DLP_RELEASE);
+  if (!asset) {
+    console.warn(
+      'No checksum-pinned yt-dlp asset for ' + process.platform + '/' + process.arch +
+      '; automatic installation is disabled.',
+    );
+    return false;
+  }
+
   try {
-    // Set up download directory in user data folder
     const binDir = path.join(app.getPath('userData'), 'bin');
-    if (!fs.existsSync(binDir)) {
-      fs.mkdirSync(binDir, { recursive: true });
-    }
+    fs.mkdirSync(binDir, { recursive: true });
+    const binaryPath = path.join(binDir, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
+    const installedVersion = await getBinaryVersion(binaryPath);
+    const installedIsVerified =
+      installedVersion === YT_DLP_RELEASE.version &&
+      await hasExpectedSha256(binaryPath, asset.sha256);
 
-    const exeName = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
-    const binaryPath = path.join(binDir, exeName);
-    const exists = fs.existsSync(binaryPath);
-
-    console.log('Initializing yt-dlp...');
-    console.log('Binary path:', binaryPath);
-
-    // Determine the latest available version (best-effort; non-fatal on failure).
-    let latestVersion = null;
-    try {
-      latestVersion = await getLatestReleaseTag('yt-dlp/yt-dlp');
-    } catch (e) {
-      console.warn('Could not check latest yt-dlp version:', e.message);
-    }
-
-    // Determine the currently installed version (yt-dlp prints e.g. "2026.03.17").
-    const installedVersion = exists ? await getBinaryVersion(binaryPath) : null;
-
-    // Update when the binary is missing, or we know the latest and it differs
-    // from what's installed (including when we can't read the installed version).
-    let needsDownload = !exists;
-    if (!needsDownload && latestVersion) {
-      if (installedVersion !== latestVersion) {
-        console.log(`yt-dlp update: installed=${installedVersion || 'unknown'} latest=${latestVersion}`);
-        needsDownload = true;
-      } else {
-        console.log(`yt-dlp is up to date (${installedVersion})`);
+    if (!installedIsVerified) {
+      const url =
+        'https://github.com/yt-dlp/yt-dlp/releases/download/' +
+        YT_DLP_RELEASE.version + '/' + asset.name;
+      console.log('Installing checksum-verified yt-dlp ' + YT_DLP_RELEASE.version + '...');
+      const candidatePath = await downloadVerifiedFile(url, binaryPath, asset.sha256);
+      if (process.platform !== 'win32') fs.chmodSync(candidatePath, 0o755);
+      if (await getBinaryVersion(candidatePath) !== YT_DLP_RELEASE.version) {
+        fs.unlinkSync(candidatePath);
+        throw new Error('downloaded yt-dlp reported an unexpected version');
       }
+      replaceVerifiedFile(candidatePath, binaryPath);
     }
 
-    if (needsDownload) {
-      console.log('Downloading latest yt-dlp binary...');
-      // Back up old binary in case download fails
-      const backupPath = binaryPath + '.bak';
-      try {
-        if (exists) {
-          fs.copyFileSync(binaryPath, backupPath);
-          fs.unlinkSync(binaryPath);
-        }
-        // Pass the resolved tag when we have it; otherwise yt-dlp-wrap fetches latest.
-        await YTDlpWrap.downloadFromGithub(binaryPath, latestVersion || undefined);
-        // Clean up backup on success
-        if (fs.existsSync(backupPath)) {
-          fs.unlinkSync(backupPath);
-        }
-      } catch (downloadError) {
-        console.error('Failed to download yt-dlp:', downloadError);
-        // Restore backup if download failed
-        if (fs.existsSync(backupPath)) {
-          fs.copyFileSync(backupPath, binaryPath);
-          fs.unlinkSync(backupPath);
-          console.log('Restored previous yt-dlp binary as fallback');
-        } else if (!fs.existsSync(binaryPath)) {
-          throw downloadError;
-        }
-      }
+    if (!await hasExpectedSha256(binaryPath, asset.sha256)) {
+      throw new Error('installed yt-dlp failed checksum verification');
     }
-
-    // Verify the binary exists and is usable
-    if (fs.existsSync(binaryPath)) {
-      ytDlpPath = binaryPath;
-      ytDlpReady = true;
-      console.log('yt-dlp version:', (await getBinaryVersion(binaryPath)) || 'unknown');
-      return true;
-    } else {
-      throw new Error('yt-dlp binary not found after initialization');
-    }
+    ytDlpPath = binaryPath;
+    ytDlpReady = true;
+    console.log('yt-dlp ready (' + YT_DLP_RELEASE.version + ')');
+    return true;
   } catch (error) {
-    console.error('Failed to initialize yt-dlp:', error);
-    ytDlpReady = false;
+    console.error('Failed to initialize verified yt-dlp:', error.message);
     return false;
   }
 }
 
-// Map the current platform/arch to deno's release asset filename.
-function getDenoAssetName() {
-  const arch = process.arch === 'arm64' ? 'aarch64' : 'x86_64';
-  switch (process.platform) {
-    case 'win32': return `deno-${arch}-pc-windows-msvc.zip`;
-    case 'darwin': return `deno-${arch}-apple-darwin.zip`;
-    case 'linux': return `deno-${arch}-unknown-linux-gnu.zip`;
-    default: return null;
-  }
-}
-
-// Download/update deno, the JS runtime yt-dlp uses to solve YouTube's nsig
-// challenge. Same version-comparison + backup/restore strategy as yt-dlp.
 async function initializeDeno() {
+  denoReady = false;
+  denoPath = null;
+  const asset = currentReleaseAsset(DENO_RELEASE);
+  if (!asset) {
+    console.warn(
+      'No checksum-pinned deno asset for ' + process.platform + '/' + process.arch +
+      '; automatic installation is disabled.',
+    );
+    return false;
+  }
+
+  let archivePath = null;
+  let extractDir = null;
   try {
-    const assetName = getDenoAssetName();
-    if (!assetName) {
-      console.warn(`deno is not available for ${process.platform}/${process.arch}; YouTube extraction may be degraded.`);
-      return false;
-    }
-
     const binDir = path.join(app.getPath('userData'), 'bin');
-    if (!fs.existsSync(binDir)) {
-      fs.mkdirSync(binDir, { recursive: true });
-    }
-
+    fs.mkdirSync(binDir, { recursive: true });
     const exeName = process.platform === 'win32' ? 'deno.exe' : 'deno';
     const binaryPath = path.join(binDir, exeName);
-    const exists = fs.existsSync(binaryPath);
+    const versionOutput = await getBinaryVersion(binaryPath);
+    const installedVersion = versionOutput?.match(/deno\s+(\d+\.\d+\.\d+)/i)?.[1] || null;
+    const installedIsVerified =
+      installedVersion === DENO_RELEASE.version &&
+      await hasExpectedSha256(binaryPath, asset.binarySha256);
 
-    console.log('Initializing deno (JS runtime for yt-dlp)...');
-    console.log('Binary path:', binaryPath);
-
-    // Latest deno tag looks like "v2.8.1"; normalise to "2.8.1" for comparison.
-    let latestTag = null;
-    try {
-      latestTag = await getLatestReleaseTag('denoland/deno');
-    } catch (e) {
-      console.warn('Could not check latest deno version:', e.message);
-    }
-    const latestVersion = latestTag ? latestTag.replace(/^v/, '') : null;
-
-    // `deno --version` prints e.g. "deno 2.8.1 (stable, release, ...)".
-    let installedVersion = null;
-    if (exists) {
-      const out = await getBinaryVersion(binaryPath);
-      const m = out && out.match(/deno\s+(\d+\.\d+\.\d+)/i);
-      installedVersion = m ? m[1] : null;
-    }
-
-    let needsDownload = !exists;
-    if (!needsDownload && latestVersion && installedVersion !== latestVersion) {
-      console.log(`deno update: installed=${installedVersion || 'unknown'} latest=${latestVersion}`);
-      needsDownload = true;
-    } else if (!needsDownload) {
-      console.log(`deno is up to date (${installedVersion || 'unknown'})`);
-    }
-
-    if (needsDownload) {
-      const url = latestTag
-        ? `https://github.com/denoland/deno/releases/download/${latestTag}/${assetName}`
-        : `https://github.com/denoland/deno/releases/latest/download/${assetName}`;
-      const zipPath = path.join(binDir, assetName);
-      const backupPath = binaryPath + '.bak';
-      try {
-        if (exists) {
-          fs.copyFileSync(binaryPath, backupPath);
-          fs.unlinkSync(binaryPath);
-        }
-        console.log('Downloading deno from', url);
-        await YTDlpWrap.downloadFile(url, zipPath);
-        const extractZip = require('extract-zip');
-        await extractZip(zipPath, { dir: binDir });
-        if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
-        // The zip should preserve the exec bit, but ensure it on unix.
-        if (process.platform !== 'win32' && fs.existsSync(binaryPath)) {
-          fs.chmodSync(binaryPath, 0o755);
-        }
-        if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
-      } catch (err) {
-        console.error('Failed to download/extract deno:', err);
-        if (fs.existsSync(backupPath)) {
-          fs.copyFileSync(backupPath, binaryPath);
-          fs.unlinkSync(backupPath);
-          console.log('Restored previous deno binary as fallback');
-        }
+    if (!installedIsVerified) {
+      const url =
+        'https://github.com/denoland/deno/releases/download/' +
+        DENO_RELEASE.tag + '/' + asset.name;
+      console.log('Installing checksum-verified deno ' + DENO_RELEASE.version + '...');
+      archivePath = await downloadVerifiedFile(
+        url,
+        path.join(binDir, asset.name),
+        asset.archiveSha256,
+      );
+      extractDir = fs.mkdtempSync(path.join(binDir, 'deno-extract-'));
+      const extractZip = require('extract-zip');
+      await extractZip(archivePath, { dir: extractDir });
+      const candidatePath = path.join(extractDir, exeName);
+      if (!await hasExpectedSha256(candidatePath, asset.binarySha256)) {
+        throw new Error('extracted deno failed checksum verification');
       }
+      if (process.platform !== 'win32') fs.chmodSync(candidatePath, 0o755);
+      const candidateVersion =
+        (await getBinaryVersion(candidatePath))?.match(/deno\s+(\d+\.\d+\.\d+)/i)?.[1] || null;
+      if (candidateVersion !== DENO_RELEASE.version) {
+        throw new Error('downloaded deno reported an unexpected version');
+      }
+      replaceVerifiedFile(candidatePath, binaryPath);
     }
 
-    if (fs.existsSync(binaryPath)) {
-      denoPath = binaryPath;
-      denoReady = true;
-      const out = await getBinaryVersion(binaryPath);
-      console.log('deno version:', out ? out.split('\n')[0].trim() : 'unknown');
-      return true;
+    if (!await hasExpectedSha256(binaryPath, asset.binarySha256)) {
+      throw new Error('installed deno failed checksum verification');
     }
-
-    console.warn('deno binary not available; YouTube extraction will run without a JS runtime.');
-    return false;
+    denoPath = binaryPath;
+    denoReady = true;
+    console.log('deno ready (' + DENO_RELEASE.version + ')');
+    return true;
   } catch (error) {
-    console.error('Failed to initialize deno:', error);
-    denoReady = false;
+    console.error('Failed to initialize verified deno:', error.message);
+    return false;
+  } finally {
+    if (archivePath && fs.existsSync(archivePath)) fs.unlinkSync(archivePath);
+    if (extractDir && fs.existsSync(extractDir)) {
+      fs.rmSync(extractDir, { recursive: true, force: true });
+    }
+  }
+}
+
+async function initializeSpotDl() {
+  spotDlPath = null;
+  const asset = currentReleaseAsset(SPOTDL_RELEASE);
+  if (!asset) {
+    console.warn(
+      'No checksum-pinned spotDL asset for ' + process.platform + '/' + process.arch +
+      '; Spotify import is unavailable on this platform.',
+    );
     return false;
   }
+
+  try {
+    const binDir = path.join(app.getPath('userData'), 'bin');
+    fs.mkdirSync(binDir, { recursive: true });
+    const binaryPath = path.join(
+      binDir,
+      process.platform === 'win32' ? 'spotdl.exe' : 'spotdl',
+    );
+    const installedIsVerified =
+      await getBinaryVersion(binaryPath, 30000) === SPOTDL_RELEASE.version &&
+      await hasExpectedSha256(binaryPath, asset.sha256);
+
+    if (!installedIsVerified) {
+      const url =
+        'https://github.com/spotDL/spotify-downloader/releases/download/' +
+        SPOTDL_RELEASE.tag + '/' + asset.name;
+      console.log('Installing checksum-verified spotDL ' + SPOTDL_RELEASE.version + '...');
+      const candidatePath = await downloadVerifiedFile(url, binaryPath, asset.sha256);
+      if (process.platform !== 'win32') fs.chmodSync(candidatePath, 0o755);
+      if (await getBinaryVersion(candidatePath, 30000) !== SPOTDL_RELEASE.version) {
+        fs.unlinkSync(candidatePath);
+        throw new Error('downloaded spotDL reported an unexpected version');
+      }
+      replaceVerifiedFile(candidatePath, binaryPath);
+    }
+
+    if (!await hasExpectedSha256(binaryPath, asset.sha256)) {
+      throw new Error('installed spotDL failed checksum verification');
+    }
+    spotDlPath = binaryPath;
+    console.log('spotDL ready (' + SPOTDL_RELEASE.version + ')');
+    return true;
+  } catch (error) {
+    console.error('Failed to initialize verified spotDL:', error.message);
+    return false;
+  }
+}
+
+function setupSpotDl() {
+  if (!spotDlSetupPromise) {
+    spotDlSetupPromise = initializeSpotDl().then((ready) => {
+      if (!ready) spotDlSetupPromise = null;
+      return ready;
+    });
+  }
+  return spotDlSetupPromise;
 }
 
 // Start initialization immediately (concurrently; both are independent).
-initializeYtDlp();
-initializeDeno();
+void initializeYtDlp();
+const denoInitialization = initializeDeno();
 
 let mainWindow = null;
 // Set once the renderer-driven quit confirmation has resolved, so the
 // next main-window `close` is allowed through instead of being vetoed
 // to re-show the dialogs. See the `close` handler in createWindow().
 let quitConfirmed = false;
-let apiServer = null;
 let currentProject = null;
-let currentProjectData = null; // Full project data synced from renderer for HTTP API
-const pendingApiRequests = new Map(); // requestId → { resolve } for PATCH round-trips
+let currentProjectData = null; // Full project data synced between Electron windows
 let fileToOpen = null; // Store file path if app is opened with a file
 let stateViewerWindow = null; // Debug state viewer window
 let cartPlayerWindow = null;  // Detached cart player window
 
-// Flatten all audio items from a nested project items array
-function flattenAudioItems(items) {
-  const result = [];
-  for (const item of items) {
-    if (item.type === 'audio') result.push(item);
-    if (item.type === 'group' && item.children) result.push(...flattenAudioItems(item.children));
-  }
-  return result;
-}
-
-// Find any item by UUID in a nested items array
-function findProjectItemByUuid(items, uuid) {
-  for (const item of items) {
-    if (item.uuid === uuid) return item;
-    if (item.type === 'group' && item.children) {
-      const found = findProjectItemByUuid(item.children, uuid);
-      if (found) return found;
-    }
-  }
-  return null;
-}
-
 // Check if --dev flag is present in command line arguments
 const isDevMode = process.argv.includes('--dev') || !app.isPackaged;
-
-// API Server Setup
-function startAPIServer(port = 8080, maxAttempts = 10) {
-  const apiApp = express();
-  apiApp.use(express.json());
-
-  // ── Cue endpoints ──────────────────────────────────────────────────────────
-
-  // List all cue items (audio items from playlist, flattened)
-  apiApp.get('/api/cues', (req, res) => {
-    if (!currentProjectData) {
-      return res.status(404).json({ success: false, message: 'No project loaded' });
-    }
-    const cues = flattenAudioItems(currentProjectData.items || []);
-    res.json({ success: true, cues });
-  });
-
-  // Get a cue by UUID
-  apiApp.get('/api/cues/:id', (req, res) => {
-    if (!currentProjectData) {
-      return res.status(404).json({ success: false, message: 'No project loaded' });
-    }
-    const item = findProjectItemByUuid(currentProjectData.items || [], req.params.id);
-    if (!item || item.type !== 'audio') {
-      return res.status(404).json({ success: false, message: 'Cue not found' });
-    }
-    res.json({ success: true, cue: item });
-  });
-
-  // Update a cue by UUID (partial update — only provided fields are changed)
-  apiApp.patch('/api/cues/:id', async (req, res) => {
-    if (!mainWindow) return res.status(500).json({ success: false, message: 'Window not available' });
-    if (!currentProjectData) return res.status(404).json({ success: false, message: 'No project loaded' });
-    const item = findProjectItemByUuid(currentProjectData.items || [], req.params.id);
-    if (!item || item.type !== 'audio') {
-      return res.status(404).json({ success: false, message: 'Cue not found' });
-    }
-    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const promise = new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        pendingApiRequests.delete(requestId);
-        resolve({ success: false, message: 'Request timeout' });
-      }, 5000);
-      pendingApiRequests.set(requestId, { resolve: (r) => { clearTimeout(timer); resolve(r); } });
-    });
-    mainWindow.webContents.send('api-update-item', { requestId, id: req.params.id, updates: req.body });
-    const result = await promise;
-    res.status(result.success ? 200 : 500).json(result);
-  });
-
-  // ── Cart endpoints ─────────────────────────────────────────────────────────
-
-  // List all cart slots with their audio item details
-  apiApp.get('/api/carts', (req, res) => {
-    if (!currentProjectData) {
-      return res.status(404).json({ success: false, message: 'No project loaded' });
-    }
-    const cartOnlyItems = currentProjectData.cartOnlyItems || [];
-    const carts = (currentProjectData.cartItems || []).map(ci => {
-      const item = cartOnlyItems.find(i => i.uuid === ci.itemUuid)
-        || findProjectItemByUuid(currentProjectData.items || [], ci.itemUuid)
-        || null;
-      return { slot: ci.slot, itemUuid: ci.itemUuid, item };
-    });
-    res.json({ success: true, carts });
-  });
-
-  // Get a cart slot by slot number (0-15)
-  apiApp.get('/api/carts/:slot', (req, res) => {
-    if (!currentProjectData) {
-      return res.status(404).json({ success: false, message: 'No project loaded' });
-    }
-    const slot = parseInt(req.params.slot, 10);
-    if (isNaN(slot) || slot < 0 || slot > 15) {
-      return res.status(400).json({ success: false, message: 'Invalid slot number — must be 0-15' });
-    }
-    const ci = (currentProjectData.cartItems || []).find(c => c.slot === slot);
-    if (!ci) {
-      return res.status(404).json({ success: false, message: 'Cart slot is empty' });
-    }
-    const cartOnlyItems = currentProjectData.cartOnlyItems || [];
-    const item = cartOnlyItems.find(i => i.uuid === ci.itemUuid)
-      || findProjectItemByUuid(currentProjectData.items || [], ci.itemUuid)
-      || null;
-    res.json({ success: true, cart: { slot: ci.slot, itemUuid: ci.itemUuid, item } });
-  });
-
-  // Update a cart slot's audio item by slot number (partial update)
-  apiApp.patch('/api/carts/:slot', async (req, res) => {
-    if (!mainWindow) return res.status(500).json({ success: false, message: 'Window not available' });
-    if (!currentProjectData) return res.status(404).json({ success: false, message: 'No project loaded' });
-    const slot = parseInt(req.params.slot, 10);
-    if (isNaN(slot) || slot < 0 || slot > 15) {
-      return res.status(400).json({ success: false, message: 'Invalid slot number — must be 0-15' });
-    }
-    const ci = (currentProjectData.cartItems || []).find(c => c.slot === slot);
-    if (!ci) return res.status(404).json({ success: false, message: 'Cart slot is empty' });
-    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const promise = new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        pendingApiRequests.delete(requestId);
-        resolve({ success: false, message: 'Request timeout' });
-      }, 5000);
-      pendingApiRequests.set(requestId, { resolve: (r) => { clearTimeout(timer); resolve(r); } });
-    });
-    mainWindow.webContents.send('api-update-cart-item', { requestId, slot, updates: req.body });
-    const result = await promise;
-    res.status(result.success ? 200 : 500).json(result);
-  });
-
-  // ── Trigger endpoints ──────────────────────────────────────────────────────
-
-  // Trigger cue by UUID
-  apiApp.get('/api/trigger/uuid/:uuid', (req, res) => {
-    const { uuid } = req.params;
-    if (mainWindow) {
-      mainWindow.webContents.send('trigger-item', { type: 'uuid', value: uuid });
-      res.json({ success: true, message: `Triggered item ${uuid}` });
-    } else {
-      res.status(500).json({ success: false, message: 'Window not available' });
-    }
-  });
-
-  // Trigger cue by index (comma-separated, e.g. "0" or "1,2")
-  apiApp.get('/api/trigger/index/:index', (req, res) => {
-    const { index } = req.params;
-    if (mainWindow) {
-      const indexArray = index.split(',').map(i => parseInt(i.trim()));
-      mainWindow.webContents.send('trigger-item', { type: 'index', value: indexArray });
-      res.json({ success: true, message: `Triggered item at index ${index}` });
-    } else {
-      res.status(500).json({ success: false, message: 'Window not available' });
-    }
-  });
-
-  // Trigger a cart slot by slot number (0-15)
-  apiApp.get('/api/trigger/cart/slot/:slot', (req, res) => {
-    const slot = parseInt(req.params.slot, 10);
-    if (isNaN(slot) || slot < 0 || slot > 15) {
-      return res.status(400).json({ success: false, message: 'Invalid slot number — must be 0-15' });
-    }
-    if (mainWindow) {
-      mainWindow.webContents.send('trigger-cart-slot', { slot });
-      res.json({ success: true, message: `Triggered cart slot ${slot + 1}` });
-    } else {
-      res.status(500).json({ success: false, message: 'Window not available' });
-    }
-  });
-
-  // ── Stop endpoints ─────────────────────────────────────────────────────────
-
-  // Stop a cue by UUID
-  apiApp.get('/api/stop/uuid/:uuid', (req, res) => {
-    const { uuid } = req.params;
-    if (mainWindow) {
-      mainWindow.webContents.send('stop-item', { type: 'uuid', value: uuid });
-      res.json({ success: true, message: `Stopped item ${uuid}` });
-    } else {
-      res.status(500).json({ success: false, message: 'Window not available' });
-    }
-  });
-
-  // Stop all cues
-  apiApp.get('/api/stop/all', (req, res) => {
-    if (mainWindow) {
-      mainWindow.webContents.send('stop-all-cues', {});
-      res.json({ success: true, message: 'All cues stopped' });
-    } else {
-      res.status(500).json({ success: false, message: 'Window not available' });
-    }
-  });
-
-  // ── Project info ───────────────────────────────────────────────────────────
-
-  // Get current project info
-  apiApp.get('/api/project/info', (req, res) => {
-    if (currentProjectData) {
-      res.json({ success: true, project: currentProjectData });
-    } else if (currentProject) {
-      res.json({ success: true, project: { path: currentProject } });
-    } else {
-      res.status(404).json({ success: false, message: 'No project loaded' });
-    }
-  });
-
-  // Try to start server, incrementing port if already in use
-  const tryListen = (currentPort, attemptsLeft) => {
-    const server = apiApp.listen(currentPort)
-      .on('listening', () => {
-        apiServer = server;
-        console.log(`LivePlay API Server running on http://localhost:${currentPort}`);
-      })
-      .on('error', (err) => {
-        if (err.code === 'EADDRINUSE' && attemptsLeft > 0) {
-          console.log(`Port ${currentPort} is in use, trying ${currentPort + 1}...`);
-          tryListen(currentPort + 1, attemptsLeft - 1);
-        } else if (err.code === 'EADDRINUSE') {
-          console.error(`Failed to start API server after ${maxAttempts} attempts. Ports ${port}-${currentPort} are all in use.`);
-        } else {
-          console.error('Failed to start API server:', err);
-        }
-      });
-  };
-
-  tryListen(port, maxAttempts - 1);
-}
 
 // Configure auto-updater
 autoUpdater.autoDownload = false; // Don't auto-download, ask user first
 autoUpdater.autoInstallOnAppQuit = true;
 
-// Configure update feed URL to point to GitHub releases
-autoUpdater.setFeedURL({
-  provider: 'github',
-  owner: 'tdoukinitsas',
-  repo: 'liveplay',
-  private: false
-});
-
-console.log('Auto-updater configured for:', autoUpdater.getFeedURL());
+// ponytail: no branded release feed exists yet; enable updates when the
+// DonWells Cue repository is ready rather than installing upstream builds.
+const DWCUE_UPDATES_CONFIGURED = false;
 
 // Auto-updater event handlers
 autoUpdater.on('checking-for-update', () => {
@@ -1433,19 +1801,7 @@ autoUpdater.on('update-not-available', (info) => {
 
 autoUpdater.on('error', (err) => {
   console.error('Error in auto-updater:', err);
-  console.log('Falling back to manual update check...');
-  
-  // Fallback to manual update check
-  checkForManualUpdate().then(updateInfo => {
-    if (updateInfo && mainWindow) {
-      mainWindow.webContents.send('manual-update-available', updateInfo);
-    }
-  }).catch(fallbackErr => {
-    console.error('Fallback update check also failed:', fallbackErr);
-    if (mainWindow) {
-      mainWindow.webContents.send('update-error', err.message);
-    }
-  });
+  if (mainWindow) mainWindow.webContents.send('update-error', err.message);
 });
 
 autoUpdater.on('download-progress', (progressObj) => {
@@ -1468,70 +1824,6 @@ autoUpdater.on('update-downloaded', (info) => {
   }
 });
 
-// Fallback manual update checker using GitHub Pages hosted package.json
-async function checkForManualUpdate() {
-  return new Promise((resolve, reject) => {
-    const currentVersion = app.getVersion();
-    const packageJsonUrl = 'https://tdoukinitsas.github.io/liveplay/package.json';
-    
-    console.log('Checking for updates manually at:', packageJsonUrl);
-    console.log('Current version:', currentVersion);
-    
-    https.get(packageJsonUrl, (res) => {
-      let data = '';
-      
-      res.on('data', (chunk) => {
-        data += chunk;
-      });
-      
-      res.on('end', () => {
-        try {
-          const packageData = JSON.parse(data);
-          const latestVersion = packageData.version;
-          
-          console.log('Latest version from package.json:', latestVersion);
-          
-          // Simple version comparison
-          if (compareVersions(latestVersion, currentVersion) > 0) {
-            console.log('New version available:', latestVersion);
-            resolve({
-              currentVersion,
-              newVersion: latestVersion,
-              downloadUrl: 'https://tdoukinitsas.github.io/liveplay/',
-              isManualUpdate: true
-            });
-          } else {
-            console.log('No update available');
-            resolve(null);
-          }
-        } catch (error) {
-          console.error('Error parsing package.json:', error);
-          reject(error);
-        }
-      });
-    }).on('error', (error) => {
-      console.error('Error fetching package.json:', error);
-      reject(error);
-    });
-  });
-}
-
-// Simple version comparison (e.g., "1.2.3" vs "1.2.4")
-function compareVersions(v1, v2) {
-  const parts1 = v1.split('.').map(Number);
-  const parts2 = v2.split('.').map(Number);
-  
-  for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
-    const num1 = parts1[i] || 0;
-    const num2 = parts2[i] || 0;
-    
-    if (num1 > num2) return 1;
-    if (num1 < num2) return -1;
-  }
-  
-  return 0;
-}
-
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -1542,8 +1834,12 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: true,
       preload: path.join(__dirname, 'preload.js'),
-      webSecurity: false // Allow loading local files
+      webSecurity: true,
+      webviewTag: false,
+      allowRunningInsecureContent: false,
+      experimentalFeatures: false,
     },
     show: false
   });
@@ -1572,8 +1868,8 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     
-    // Check for updates only in production
-    if (!isDevMode) {
+    // Check for updates only when the branded release feed exists.
+    if (!isDevMode && DWCUE_UPDATES_CONFIGURED) {
       // Wait a bit for the window to fully load before checking updates
       setTimeout(() => {
         autoUpdater.checkForUpdates().catch(err => {
@@ -1600,7 +1896,6 @@ function createWindow() {
   });
 
   createMenu('en', isDevMode);
-  startAPIServer();
 }
 
 // Create detached cart player window
@@ -1615,13 +1910,17 @@ function createCartPlayerWindow() {
     height: 700,
     minWidth: 380,
     minHeight: 400,
-    title: 'LivePlay - Cart Player',
+    title: 'DonWells Cue - Cart Player',
     icon: path.join(__dirname, '../assets/icons/2x/app_icon_darkmode@2x.png'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: true,
       preload: path.join(__dirname, 'preload.js'),
-      webSecurity: false
+      webSecurity: true,
+      webviewTag: false,
+      allowRunningInsecureContent: false,
+      experimentalFeatures: false,
     }
   });
 
@@ -1661,12 +1960,17 @@ function createStateViewerWindow() {
   stateViewerWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    title: 'LivePlay - Current State Viewer',
+    title: 'DonWells Cue - Current State Viewer',
     icon: path.join(__dirname, '../assets/icons/2x/app_icon_darkmode@2x.png'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload-state-viewer.js')
+      sandbox: true,
+      preload: path.join(__dirname, 'preload-state-viewer.js'),
+      webSecurity: true,
+      webviewTag: false,
+      allowRunningInsecureContent: false,
+      experimentalFeatures: false,
     }
   });
 
@@ -1676,7 +1980,7 @@ function createStateViewerWindow() {
     <html>
     <head>
       <meta charset="UTF-8">
-      <title>LivePlay State Viewer</title>
+      <title>DonWells Cue State Viewer</title>
       <style>
         * {
           margin: 0;
@@ -1813,7 +2117,7 @@ function createStateViewerWindow() {
     </head>
     <body>
       <div class="header">
-        <h1>LivePlay - Current State Viewer (Development Mode)</h1>
+        <h1>DonWells Cue - Current State Viewer (Development Mode)</h1>
       </div>
       <div class="container" id="container"></div>
       
@@ -2078,6 +2382,9 @@ function createMenu(locale = 'en', isDev = false) {
         { type: 'separator' },
         {
           label: t.openProjectFolder,
+          enabled: currentProject !== null &&
+            path.isAbsolute(currentProject) &&
+            pathCapabilities.allows(currentProject),
           click: () => {
             mainWindow.webContents.send('menu-open-project-folder');
           }
@@ -2179,63 +2486,117 @@ function createMenu(locale = 'en', isDev = false) {
 }
 
 // IPC Handlers
-ipcMain.handle('select-project-folder', async () => {
+ipcMain.handle('select-project-folder', async (event) => {
+  requireTrustedIpc(event);
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openDirectory', 'createDirectory']
   });
 
   if (!result.canceled && result.filePaths.length > 0) {
-    return result.filePaths[0];
+    return pathCapabilities.authorizeRoot(result.filePaths[0]);
   }
   return null;
 });
 
-ipcMain.handle('select-project-file', async () => {
+ipcMain.handle('select-project-file', async (event) => {
+  requireTrustedIpc(event);
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openFile'],
-    filters: [{ name: 'LivePlay Project', extensions: ['liveplay'] }]
+    filters: [{ name: 'DW Cue Project', extensions: ['liveplay'] }]
   });
 
   if (!result.canceled && result.filePaths.length > 0) {
-    return result.filePaths[0];
+    return pathCapabilities.authorizeProjectFile(result.filePaths[0]);
   }
   return null;
 });
 
-ipcMain.handle('select-audio-files', async () => {
+ipcMain.handle('select-audio-files', async (event) => {
+  requireTrustedIpc(event);
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openFile', 'multiSelections']
   });
 
   if (!result.canceled && result.filePaths.length > 0) {
-    return result.filePaths;
+    return result.filePaths.map(filePath => pathCapabilities.authorizeFile(filePath));
   }
   return null;
 });
 
+// This channel is intentionally not exposed directly. The preload invokes it
+// only after Electron's webUtils extracts a real OS path from a dropped File.
+ipcMain.on('authorize-dropped-file', (event, filePath) => {
+  try {
+    requireTrustedIpc(event);
+    const checkedPath = requireAbsoluteIpcPath(filePath, 'filePath');
+    if (!fs.existsSync(checkedPath) || !fs.statSync(checkedPath).isFile()) return;
+    if (/\.liveplay$/i.test(checkedPath)) {
+      pathCapabilities.authorizeProjectFile(checkedPath);
+    } else {
+      pathCapabilities.authorizeFile(checkedPath);
+    }
+  } catch (error) {
+    console.warn('[path-capabilities] rejected dropped file:', error.message);
+  }
+});
+
 ipcMain.handle('read-file', async (event, filePath) => {
   try {
-    const data = fs.readFileSync(filePath, 'utf8');
+    requireTrustedIpc(event);
+    const checkedPath = requireAuthorizedIpcPath(filePath, 'filePath');
+    const data = fs.readFileSync(checkedPath, 'utf8');
     return { success: true, data };
   } catch (error) {
     return { success: false, error: error.message };
   }
 });
 
-ipcMain.handle('read-audio-file', async (event, filePath) => {
+ipcMain.handle('get-binary-file-info', async (event, filePath) => {
   try {
-    const data = fs.readFileSync(filePath);
-    // Convert Node.js Buffer to ArrayBuffer
-    const arrayBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-    return { success: true, data: Array.from(new Uint8Array(arrayBuffer)) };
+    requireTrustedIpc(event);
+    const checkedPath = requireAuthorizedIpcPath(filePath, 'filePath');
+    const stat = await fs.promises.stat(checkedPath);
+    if (!stat.isFile() || !Number.isSafeInteger(stat.size)) {
+      throw new Error('filePath is not a regular file with a supported size');
+    }
+    return { success: true, size: stat.size, name: path.basename(checkedPath) };
   } catch (error) {
     return { success: false, error: error.message };
   }
 });
 
+ipcMain.handle('read-binary-file-chunk', async (event, filePath, offset, length) => {
+  let handle;
+  try {
+    requireTrustedIpc(event);
+    const checkedPath = requireAuthorizedIpcPath(filePath, 'filePath');
+    if (!Number.isSafeInteger(offset) || offset < 0) {
+      throw new RangeError('offset must be a non-negative safe integer');
+    }
+    if (!Number.isSafeInteger(length) || length < 1 || length > MAX_BINARY_CHUNK_BYTES) {
+      throw new RangeError(`length must be between 1 and ${MAX_BINARY_CHUNK_BYTES} bytes`);
+    }
+    handle = await fs.promises.open(checkedPath, 'r');
+    const buffer = Buffer.allocUnsafe(length);
+    const { bytesRead } = await handle.read(buffer, 0, length, offset);
+    const bytes = buffer.subarray(0, bytesRead);
+    return {
+      success: true,
+      data: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+});
+
 ipcMain.handle('write-file', async (event, filePath, data) => {
   try {
-    fs.writeFileSync(filePath, data, 'utf8');
+    requireTrustedIpc(event);
+    const checkedPath = requireAuthorizedIpcPath(filePath, 'filePath', true);
+    if (typeof data !== 'string') throw new TypeError('data must be a string');
+    fs.writeFileSync(checkedPath, data, 'utf8');
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -2245,48 +2606,123 @@ ipcMain.handle('write-file', async (event, filePath, data) => {
 // Save dialog for the .lpa download flow. Returns the chosen absolute path
 // or null on cancel. `defaultName` is the suggested filename (e.g. "MyShow.lpa").
 ipcMain.handle('show-save-archive-dialog', async (event, defaultName) => {
+  requireTrustedIpc(event);
+  const suggestedName = typeof defaultName === 'string' && defaultName.length <= 255
+    ? path.basename(defaultName)
+    : 'project.lpa';
   const result = await dialog.showSaveDialog(mainWindow, {
     title: 'Save Project Archive',
-    defaultPath: defaultName || 'project.lpa',
-    filters: [{ name: 'LivePlay Archive', extensions: ['lpa'] }],
+    defaultPath: suggestedName,
+    filters: [{ name: 'DW Cue Archive', extensions: ['lpa'] }],
   });
   if (result.canceled || !result.filePath) return null;
-  return result.filePath;
+  return pathCapabilities.authorizeFile(result.filePath, { allowMissing: true });
 });
 
 // Open dialog for the .lpa upload flow (client picks a .lpa from local disk
 // to upload to a remote server for extraction). Returns the absolute path or
 // null on cancel.
-ipcMain.handle('show-open-archive-dialog', async () => {
+ipcMain.handle('show-open-archive-dialog', async (event) => {
+  requireTrustedIpc(event);
   const result = await dialog.showOpenDialog(mainWindow, {
     title: 'Choose Project Archive',
     properties: ['openFile'],
-    filters: [{ name: 'LivePlay Archive', extensions: ['lpa'] }],
+    filters: [{ name: 'DW Cue Archive', extensions: ['lpa'] }],
   });
   if (result.canceled || result.filePaths.length === 0) return null;
-  return result.filePaths[0];
+  return pathCapabilities.authorizeFile(result.filePaths[0]);
 });
 
-// Write raw bytes (binary) to a local file. Used by the download flow to
-// persist the .lpa blob streamed back from the server.
-ipcMain.handle('write-binary-file', async (event, filePath, data) => {
+// Stream a one-shot server archive directly to an authorized local path.
+// The renderer never holds the archive in memory, and the destination is
+// replaced only after the complete response reaches a sibling temp file.
+ipcMain.handle('download-archive-to-file', async (event, request) => {
+  let tempPath = '';
   try {
-    const buf = Buffer.from(new Uint8Array(data));
-    fs.writeFileSync(filePath, buf);
+    requireTrustedIpc(event);
+    const checked = requireBoundedIpcObject(request, 'request', 16 * 1024);
+    const destination = requireAuthorizedIpcPath(
+      checked.destination, 'destination', true);
+    const token = requireIpcString(checked.token, 'token', 64);
+    if (!/^[0-9a-f]{64}$/.test(token)) {
+      throw new TypeError('token must be 64 lowercase hexadecimal characters');
+    }
+    const rawBaseUrl = requireIpcString(checked.baseUrl, 'baseUrl', 2048);
+    const baseUrl = new URL(rawBaseUrl);
+    if (!['http:', 'https:'].includes(baseUrl.protocol) ||
+        baseUrl.username || baseUrl.password) {
+      throw new TypeError('baseUrl must be an HTTP(S) URL without credentials');
+    }
+    const accessToken = checked.accessToken ?? '';
+    if (typeof accessToken !== 'string' || accessToken.length > 8192 ||
+        /[\0\r\n]/.test(accessToken)) {
+      throw new TypeError('accessToken is invalid');
+    }
+
+    const endpoint = new URL(baseUrl);
+    endpoint.pathname = endpoint.pathname.replace(/\/+$/, '') + '/api/file/download';
+    endpoint.search = '';
+    endpoint.searchParams.set('token', token);
+    endpoint.hash = '';
+    const headers = accessToken
+      ? { Authorization: `Bearer ${accessToken}` }
+      : undefined;
+    const response = await fetch(endpoint, { headers, redirect: 'error' });
+    if (!response.ok || !response.body) {
+      throw new Error(`download failed: ${response.status} ${response.statusText}`);
+    }
+    const declaredLength = response.headers.get('content-length');
+    if (declaredLength !== null &&
+        (!/^\d+$/.test(declaredLength) ||
+         Number(declaredLength) > MAX_ARCHIVE_DOWNLOAD_BYTES)) {
+      throw new Error('download exceeds the supported archive size');
+    }
+
+    tempPath = path.join(
+      path.dirname(destination),
+      `.dwcue-download-${crypto.randomBytes(16).toString('hex')}.part`);
+    let received = 0;
+    const sizeLimit = new Transform({
+      transform(chunk, _encoding, callback) {
+        received += chunk.length;
+        callback(
+          received <= MAX_ARCHIVE_DOWNLOAD_BYTES
+            ? null
+            : new Error('download exceeds the supported archive size'),
+          chunk);
+      },
+    });
+    await pipeline(
+      Readable.fromWeb(response.body),
+      sizeLimit,
+      fs.createWriteStream(tempPath, { flags: 'wx', mode: 0o600 }));
+    await fs.promises.rename(tempPath, destination);
+    tempPath = '';
+
+    await fetch(endpoint, {
+      method: 'DELETE',
+      headers,
+      redirect: 'error',
+    }).catch(() => undefined);
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
+  } finally {
+    if (tempPath) await fs.promises.unlink(tempPath).catch(() => {});
   }
 });
 
 ipcMain.handle('copy-file', async (event, source, destination) => {
   try {
+    requireTrustedIpc(event);
+    const checkedSource = requireAuthorizedIpcPath(source, 'source');
+    const checkedDestination = requireAuthorizedIpcPath(destination, 'destination', true);
     // Ensure destination directory exists
-    const destDir = path.dirname(destination);
+    const destDir = path.dirname(checkedDestination);
     if (!fs.existsSync(destDir)) {
       fs.mkdirSync(destDir, { recursive: true });
     }
-    fs.copyFileSync(source, destination);
+    fs.copyFileSync(checkedSource, checkedDestination);
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -2295,8 +2731,10 @@ ipcMain.handle('copy-file', async (event, source, destination) => {
 
 ipcMain.handle('ensure-directory', async (event, dirPath) => {
   try {
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
+    requireTrustedIpc(event);
+    const checkedPath = requireAuthorizedIpcPath(dirPath, 'dirPath', true);
+    if (!fs.existsSync(checkedPath)) {
+      fs.mkdirSync(checkedPath, { recursive: true });
     }
     return { success: true };
   } catch (error) {
@@ -2306,7 +2744,10 @@ ipcMain.handle('ensure-directory', async (event, dirPath) => {
 
 ipcMain.handle('open-folder', async (event, folderPath) => {
   try {
-    shell.openPath(folderPath);
+    requireTrustedIpc(event);
+    const checkedPath = requireAuthorizedIpcPath(folderPath, 'folderPath');
+    const error = await shell.openPath(checkedPath);
+    if (error) throw new Error(error);
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -2316,7 +2757,8 @@ ipcMain.handle('open-folder', async (event, folderPath) => {
 // Open external URL in default browser
 ipcMain.handle('open-external', async (event, url) => {
   try {
-    await shell.openExternal(url);
+    requireTrustedIpc(event);
+    await safeOpenExternal(url);
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -2325,40 +2767,35 @@ ipcMain.handle('open-external', async (event, url) => {
 
 // Update menu language from renderer
 ipcMain.handle('update-menu-language', async (event, locale) => {
+  requireTrustedIpc(event);
+  if (typeof locale !== 'string' || !(locale in localeFiles)) {
+    throw new TypeError('locale is not available');
+  }
   createMenu(locale, isDevMode);
   return { success: true };
 });
 
 // Auto-updater IPC handlers
-ipcMain.handle('check-for-updates', async () => {
+ipcMain.handle('check-for-updates', async (event) => {
+  requireTrustedIpc(event);
+  if (!DWCUE_UPDATES_CONFIGURED) {
+    return { success: false, error: 'Updates are not configured for this build.' };
+  }
   try {
     console.log('Manual update check requested');
     const result = await autoUpdater.checkForUpdates();
     return { success: true, updateInfo: result?.updateInfo };
   } catch (error) {
     console.error('Check for updates error:', error);
-    console.log('Attempting fallback manual update check...');
-    
-    // Try fallback method
-    try {
-      const manualUpdateInfo = await checkForManualUpdate();
-      if (manualUpdateInfo) {
-        return { 
-          success: true, 
-          isManualUpdate: true,
-          updateInfo: manualUpdateInfo 
-        };
-      } else {
-        return { success: true, updateInfo: null };
-      }
-    } catch (fallbackError) {
-      console.error('Fallback update check error:', fallbackError);
-      return { success: false, error: error.message };
-    }
+    return { success: false, error: error.message };
   }
 });
 
-ipcMain.handle('download-update', async () => {
+ipcMain.handle('download-update', async (event) => {
+  requireTrustedIpc(event);
+  if (!DWCUE_UPDATES_CONFIGURED) {
+    return { success: false, error: 'Updates are not configured for this build.' };
+  }
   try {
     await autoUpdater.downloadUpdate();
     return { success: true };
@@ -2368,18 +2805,24 @@ ipcMain.handle('download-update', async () => {
   }
 });
 
-ipcMain.handle('install-update', () => {
+ipcMain.handle('install-update', async (event) => {
+  requireTrustedIpc(event);
+  if (!DWCUE_UPDATES_CONFIGURED) return false;
   // The user already opted into the update, so bypass the close veto /
   // quit-confirmation dialog and let electron-updater quit + relaunch.
+  await cancelAllSpotifyDownloads(true);
   quitConfirmed = true;
   autoUpdater.quitAndInstall(false, true);
+  return true;
 });
 
-ipcMain.handle('get-app-version', () => {
+ipcMain.handle('get-app-version', (event) => {
+  requireTrustedIpc(event);
   return app.getVersion();
 });
 
-ipcMain.handle('get-system-locale', () => {
+ipcMain.handle('get-system-locale', (event) => {
+  requireTrustedIpc(event);
   // Get the system locale from Electron
   const systemLocale = app.getLocale(); // Returns locale like 'en-US', 'es-ES', 'fr-FR', etc.
   
@@ -2389,7 +2832,8 @@ ipcMain.handle('get-system-locale', () => {
   return languageCode;
 });
 
-ipcMain.handle('get-available-locales', () => {
+ipcMain.handle('get-available-locales', (event) => {
+  requireTrustedIpc(event);
   // Return list of available locale codes and metadata
   return Object.keys(localeFiles).map(code => ({
     code,
@@ -2399,6 +2843,8 @@ ipcMain.handle('get-available-locales', () => {
 });
 
 ipcMain.handle('get-locale-data', (event, localeCode) => {
+  requireTrustedIpc(event);
+  requireIpcString(localeCode, 'localeCode', 32);
   // Return the full locale data for a specific locale
   if (localeCode in localeFiles) {
     return localeFiles[localeCode];
@@ -2408,243 +2854,36 @@ ipcMain.handle('get-locale-data', (event, localeCode) => {
 });
 
 ipcMain.handle('set-current-project', async (event, projectPath) => {
-  currentProject = projectPath;
+  requireTrustedIpc(event);
+  if (projectPath === null) {
+    currentProject = null;
+  } else {
+    const checked = requireIpcString(projectPath, 'projectPath', MAX_IPC_PATH_LENGTH);
+    if (path.isAbsolute(checked) && pathCapabilities.allows(checked)) {
+      const canonical = pathCapabilities.require(checked, { label: 'projectPath' });
+      currentProject = /\.liveplay$/i.test(canonical) && fs.existsSync(canonical)
+        ? pathCapabilities.authorizeProjectFile(canonical)
+        : canonical;
+    } else {
+      // Server-side paths may be absolute but are not local capabilities.
+      currentProject = checked;
+    }
+  }
   // Rebuild menu to update enabled/disabled state of menu items
   createMenu(currentLocale, isDevMode);
   return { success: true };
 });
 
-// Export project to .lpa archive
-ipcMain.handle('export-project', async (event, projectFolderPath, projectName = null) => {
-  try {
-    const archiver = require('archiver');
-    // Use provided project name or fall back to folder name
-    const defaultName = projectName || path.basename(projectFolderPath);
-    
-    // Show save dialog for .lpa file
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: 'Export Project',
-      defaultPath: `${defaultName}.lpa`,
-      filters: [
-        { name: 'LivePlay Archive', extensions: ['lpa'] }
-      ]
-    });
-
-    if (result.canceled || !result.filePath) {
-      return { success: false, canceled: true };
-    }
-
-    const outputPath = result.filePath;
-    const fileName = path.basename(outputPath);
-    const output = fs.createWriteStream(outputPath);
-    const archive = archiver('zip', { zlib: { level: 9 } });
-
-    return new Promise((resolve, reject) => {
-      let totalBytes = 0;
-      let processedBytes = 0;
-
-      output.on('close', () => {
-        event.sender.send('export-progress', { percentage: 100, fileName });
-        resolve({
-          success: true,
-          path: outputPath,
-          size: archive.pointer()
-        });
-      });
-
-      archive.on('error', (err) => {
-        reject({ success: false, error: err.message });
-      });
-
-      // Track progress by monitoring data being written
-      archive.on('data', (chunk) => {
-        processedBytes += chunk.length;
-        if (totalBytes > 0) {
-          const percentage = Math.min(99, Math.round((processedBytes / totalBytes) * 100));
-          event.sender.send('export-progress', { percentage, fileName });
-        }
-      });
-
-      archive.pipe(output);
-      
-      // Calculate total size first
-      const calculateSize = (dirPath) => {
-        let size = 0;
-        const files = fs.readdirSync(dirPath);
-        for (const file of files) {
-          const filePath = path.join(dirPath, file);
-          const stats = fs.statSync(filePath);
-          if (stats.isDirectory()) {
-            size += calculateSize(filePath);
-          } else {
-            size += stats.size;
-          }
-        }
-        return size;
-      };
-      
-      totalBytes = calculateSize(projectFolderPath);
-      event.sender.send('export-progress', { percentage: 0, fileName });
-      
-      // Add the entire project folder to the archive
-      archive.directory(projectFolderPath, false);
-      
-      archive.finalize();
-    });
-  } catch (error) {
-    console.error('Export error:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-// Import project from .lpa archive
-ipcMain.handle('import-project', async (event) => {
-  try {
-    const extractZip = require('extract-zip');
-    
-    // Show open dialog for .lpa file
-    const fileResult = await dialog.showOpenDialog(mainWindow, {
-      title: 'Import Project',
-      properties: ['openFile'],
-      filters: [
-        { name: 'LivePlay Archive', extensions: ['lpa'] }
-      ]
-    });
-
-    if (fileResult.canceled || fileResult.filePaths.length === 0) {
-      return { success: false, canceled: true };
-    }
-
-    const archivePath = fileResult.filePaths[0];
-    const fileName = path.basename(archivePath);
-
-    // Show folder dialog for extraction location
-    const folderResult = await dialog.showOpenDialog(mainWindow, {
-      title: 'Select Extraction Location',
-      properties: ['openDirectory', 'createDirectory']
-    });
-
-    if (folderResult.canceled || folderResult.filePaths.length === 0) {
-      return { success: false, canceled: true };
-    }
-
-    const extractPath = folderResult.filePaths[0];
-
-    // Send initial progress
-    event.sender.send('import-progress', { percentage: 0, fileName });
-
-    // Extract the archive with progress updates
-    await extractZip(archivePath, { 
-      dir: extractPath,
-      onEntry: (entry, zipfile) => {
-        const percentage = Math.round((zipfile.entriesRead / zipfile.entryCount) * 100);
-        event.sender.send('import-progress', { percentage, fileName });
-      }
-    });
-
-    // Send completion
-    event.sender.send('import-progress', { percentage: 100, fileName });
-
-    // Find all .liveplay files in the extracted folder
-    const files = fs.readdirSync(extractPath);
-    const projectFiles = files.filter(file => file.endsWith('.liveplay'));
-
-    if (projectFiles.length === 0) {
-      return { success: false, error: 'No .liveplay file found in archive' };
-    }
-
-    // If multiple project files found, return them for user selection
-    if (projectFiles.length > 1) {
-      return {
-        success: true,
-        multipleProjects: true,
-        projectFiles,
-        extractPath
-      };
-    }
-
-    // Single project file - return its path directly
-    const projectPath = path.join(extractPath, projectFiles[0]);
-
-    return {
-      success: true,
-      projectPath,
-      extractPath
-    };
-  } catch (error) {
-    console.error('Import error:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-// Import project from specific .lpa file (for double-click file association)
-ipcMain.handle('import-lpa-file', async (event, archivePath) => {
-  try {
-    const extractZip = require('extract-zip');
-    const fileName = path.basename(archivePath);
-
-    // Show folder dialog for extraction location
-    const folderResult = await dialog.showOpenDialog(mainWindow, {
-      title: 'Select Extraction Location',
-      properties: ['openDirectory', 'createDirectory']
-    });
-
-    if (folderResult.canceled || folderResult.filePaths.length === 0) {
-      return { success: false, canceled: true };
-    }
-
-    const extractPath = folderResult.filePaths[0];
-
-    // Send initial progress
-    event.sender.send('import-progress', { percentage: 0, fileName });
-
-    // Extract the archive with progress updates
-    await extractZip(archivePath, { 
-      dir: extractPath,
-      onEntry: (entry, zipfile) => {
-        const percentage = Math.round((zipfile.entriesRead / zipfile.entryCount) * 100);
-        event.sender.send('import-progress', { percentage, fileName });
-      }
-    });
-
-    // Send completion
-    event.sender.send('import-progress', { percentage: 100, fileName });
-
-    // Find all .liveplay files in the extracted folder
-    const files = fs.readdirSync(extractPath);
-    const projectFiles = files.filter(file => file.endsWith('.liveplay'));
-
-    if (projectFiles.length === 0) {
-      return { success: false, error: 'No .liveplay file found in archive' };
-    }
-
-    // If multiple project files found, return them for user selection
-    if (projectFiles.length > 1) {
-      return {
-        success: true,
-        multipleProjects: true,
-        projectFiles,
-        extractPath
-      };
-    }
-
-    // Single project file - return its path directly
-    const projectPath = path.join(extractPath, projectFiles[0]);
-
-    return {
-      success: true,
-      projectPath,
-      extractPath
-    };
-  } catch (error) {
-    console.error('Import LPA file error:', error);
-    return { success: false, error: error.message };
-  }
-});
-
 // Receive full project data from renderer to power HTTP API GET/PATCH endpoints
 // Only sync from the main window, not from the detached cart window (to avoid feedback loops)
 ipcMain.on('sync-project-data', (event, projectData) => {
+  try {
+    requireTrustedIpc(event);
+    requireBoundedIpcObject(projectData, 'projectData', 10 * 1024 * 1024);
+  } catch (error) {
+    console.warn('[sync-project-data] rejected payload:', error.message);
+    return;
+  }
   // Check if this sync is coming from the main window (not the cart window)
   const isFromMainWindow = event.sender === mainWindow?.webContents;
 
@@ -2677,11 +2916,21 @@ ipcMain.on('sync-project-data', (event, projectData) => {
 });
 
 // Cart player window IPC handlers
-ipcMain.handle('open-cart-player-window', () => {
+ipcMain.handle('open-cart-player-window', (event, projectFolderPath) => {
+  requireTrustedIpc(event);
+  if (projectFolderPath !== undefined) {
+    requireIpcString(projectFolderPath, 'projectFolderPath', MAX_IPC_PATH_LENGTH);
+  }
   createCartPlayerWindow();
 });
 
-ipcMain.on('cart-player-window-attach', () => {
+ipcMain.on('cart-player-window-attach', (event) => {
+  try {
+    requireTrustedIpc(event);
+  } catch (error) {
+    console.warn('[cart-player-window-attach] rejected event:', error.message);
+    return;
+  }
   if (cartPlayerWindow) {
     cartPlayerWindow.close();
   }
@@ -2691,6 +2940,15 @@ ipcMain.on('cart-player-window-attach', () => {
 // own state, so broadcast a change from any window to every other window so
 // the detached cart player stays in lockstep with the main window.
 ipcMain.on('ui-mode-changed', (event, mode) => {
+  try {
+    requireTrustedIpc(event);
+    if (mode !== 'edit' && mode !== 'playback') {
+      throw new TypeError('mode must be edit or playback');
+    }
+  } catch (error) {
+    console.warn('[ui-mode-changed] rejected event:', error.message);
+    return;
+  }
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.webContents.id === event.sender.id) continue;
     if (win.webContents && !win.webContents.isDestroyed()) {
@@ -2699,22 +2957,20 @@ ipcMain.on('ui-mode-changed', (event, mode) => {
   }
 });
 
-ipcMain.handle('get-cart-window-project-data', () => {
+ipcMain.handle('get-cart-window-project-data', (event) => {
+  requireTrustedIpc(event);
   return currentProjectData || null;
-});
-
-// Receive response from renderer for pending PATCH API requests
-ipcMain.on('api-response', (event, data) => {
-  const { requestId, ...result } = data;
-  const pending = pendingApiRequests.get(requestId);
-  if (pending) {
-    pendingApiRequests.delete(requestId);
-    pending.resolve(result);
-  }
 });
 
 // State viewer: Receive state updates from renderer and forward to state viewer window
 ipcMain.on('update-app-state', (event, state) => {
+  try {
+    requireTrustedIpc(event);
+    requireBoundedIpcObject(state, 'state', 2 * 1024 * 1024);
+  } catch (error) {
+    console.warn('[update-app-state] rejected payload:', error.message);
+    return;
+  }
   //console.log('[Main] Received state update, viewer window exists:', !!stateViewerWindow);
   if (stateViewerWindow && !stateViewerWindow.isDestroyed()) {
     // Make sure webContents is ready
@@ -2726,12 +2982,15 @@ ipcMain.on('update-app-state', (event, state) => {
 });
 
 // Check if dev mode is enabled
-ipcMain.handle('is-dev-mode', () => {
+ipcMain.handle('is-dev-mode', (event) => {
+  requireTrustedIpc(event);
   return isDevMode;
 });
 
 // Check FFmpeg availability
-ipcMain.handle('check-ffmpeg', async () => {
+ipcMain.handle('check-ffmpeg', async (event) => {
+  requireTrustedIpc(event);
+  await setupFfmpeg();
   return {
     available: ffmpegAvailable,
     path: ffmpegPath || null
@@ -2740,6 +2999,10 @@ ipcMain.handle('check-ffmpeg', async () => {
 
 // Waveform generation
 ipcMain.handle('generate-waveform', async (event, audioFilePath, outputPath) => {
+  requireTrustedIpc(event);
+  audioFilePath = requireAuthorizedIpcPath(audioFilePath, 'audioFilePath');
+  outputPath = requireAuthorizedIpcPath(outputPath, 'outputPath', true);
+  if (!(await setupFfmpeg())) throw new Error('FFmpeg is unavailable');
   return new Promise((resolve, reject) => {
     console.log('Generating waveform for:', audioFilePath);
     console.log('Output path:', outputPath);
@@ -2824,9 +3087,408 @@ ipcMain.handle('generate-waveform', async (event, audioFilePath, outputPath) => 
   });
 });
 
+const activeSpotifyDownloads = new Map();
+
+function validatedSpotifyUrl(rawUrl) {
+  const checked = requireIpcString(rawUrl, 'url', 2048);
+  const parsed = new URL(checked);
+  if (parsed.protocol !== 'https:' || parsed.port || parsed.username || parsed.password) {
+    throw new TypeError('A valid Spotify HTTPS URL is required');
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  if (host === 'open.spotify.com') {
+    const parts = parsed.pathname.split('/').filter(Boolean);
+    if (/^intl-[a-z]{2}(?:-[a-z]{2})?$/i.test(parts[0] || '')) parts.shift();
+    if (parts.length !== 2 ||
+        !['track', 'album', 'playlist', 'artist'].includes(parts[0]) ||
+        !/^[A-Za-z0-9]{10,64}$/.test(parts[1])) {
+      throw new TypeError('Use a Spotify track, album, playlist, or artist URL');
+    }
+  } else if (
+    !['spotify.link', 'spotify.app.link'].includes(host) ||
+    !/^\/[A-Za-z0-9_-]{3,128}\/?$/.test(parsed.pathname)
+  ) {
+    throw new TypeError('Use a Spotify share URL');
+  }
+
+  parsed.hash = '';
+  return parsed.toString();
+}
+
+function sendSpotifyProgress(sender, progress) {
+  if (!sender.isDestroyed()) sender.send('spotify-download-progress', progress);
+}
+
+function summarizeSpotDlError(lines, code) {
+  const useful = [...lines].reverse().find((line) =>
+    /(?:\bError\b|\bException\b|failed|no songs found|spotify playlist error)/i.test(line));
+  return useful || lines.slice(-5).join('\n') || `spotDL exited with code ${code}`;
+}
+
+function orderedSpotifyOutputs(stagingDir) {
+  const files = new Map(
+    fs.readdirSync(stagingDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && /\.mp3$/i.test(entry.name))
+      .map((entry) => [entry.name, path.join(stagingDir, entry.name)]),
+  );
+  const ordered = [];
+  const listed = new Set();
+  const m3uPath = path.join(stagingDir, 'dwcue-spotify-order.m3u8');
+  if (fs.existsSync(m3uPath)) {
+    for (const line of fs.readFileSync(m3uPath, 'utf8').split(/\r?\n/)) {
+      const value = line.trim();
+      if (!value || value.startsWith('#')) continue;
+      const name = value.split(/[\\/]/).pop();
+      const filePath = files.get(name);
+      if (!filePath) continue;
+      ordered.push(filePath);
+      listed.add(name);
+    }
+  }
+  return [
+    ...ordered,
+    ...[...files.entries()]
+      .filter(([name]) => !listed.has(name))
+      .map(([, filePath]) => filePath)
+      .sort((a, b) => path.basename(a).localeCompare(path.basename(b))),
+  ];
+}
+
+async function cleanupSpotifyFiles(job) {
+  const files = job.files.splice(0);
+  const results = await Promise.allSettled(files.map((filePath) =>
+    fs.promises.rm(filePath, { force: true })));
+  const failed = files.filter((_, index) => results[index].status === 'rejected');
+  if (failed.length > 0) {
+    job.files.push(...failed);
+    console.error('[spotify] failed to remove job-owned media:', failed);
+    throw new Error(`Could not remove ${failed.length} Spotify media file(s)`);
+  }
+}
+
+async function copySpotifyOutputsToMedia(sourcePaths, mediaDir, job) {
+  for (const sourcePath of sourcePaths) {
+    if (job.cancelled) throw new Error('Spotify download cancelled');
+    const parsed = path.parse(path.basename(sourcePath));
+    let copied = false;
+    for (let suffix = 1; suffix < 100000; suffix++) {
+      const name = suffix === 1
+        ? parsed.base
+        : `${parsed.name} (${suffix})${parsed.ext}`;
+      const destination = path.join(mediaDir, name);
+      try {
+        await pipeline(
+          fs.createReadStream(sourcePath),
+          fs.createWriteStream(destination, { flags: 'wx' }),
+          { signal: job.abortController.signal },
+        );
+        job.files.push(destination);
+        copied = true;
+        break;
+      } catch (error) {
+        if (error.code === 'EEXIST') continue;
+        await fs.promises.rm(destination, { force: true });
+        throw error;
+      }
+    }
+    if (!copied) throw new Error(`Could not create a unique media file for ${parsed.base}`);
+  }
+  if (job.cancelled) throw new Error('Spotify download cancelled');
+  return [...job.files];
+}
+
+function releaseSpotifyJob(jobId, job) {
+  if (!job.released) {
+    for (const eventName of ['destroyed', 'render-process-gone', 'did-start-navigation']) {
+      job.sender.removeListener(eventName, job.cancelOnRendererExit);
+    }
+    if (activeSpotifyDownloads.get(jobId) === job) activeSpotifyDownloads.delete(jobId);
+    job.released = true;
+  }
+  if (job.stagingCleaned) job.resolveDone();
+}
+
+async function cancelSpotifyDownload(
+  jobId,
+  senderId = null,
+  preserveImportedFiles = false,
+) {
+  const job = activeSpotifyDownloads.get(jobId);
+  if (!job || (senderId !== null && job.senderId !== senderId)) return false;
+  job.cancelled = true;
+  job.abortController.abort();
+  const child = job.child;
+  if (child?.pid && isPidAlive(child.pid)) {
+    if (process.platform === 'win32') {
+      execFile('taskkill.exe', ['/pid', String(child.pid), '/T', '/F'],
+        { windowsHide: true }, () => {});
+    } else {
+      try { process.kill(-child.pid, 'SIGTERM'); } catch {}
+      const timer = setTimeout(() => {
+        if (activeSpotifyDownloads.get(jobId)?.child !== child ||
+            !isPidAlive(child.pid)) return;
+        try { process.kill(-child.pid, 'SIGKILL'); } catch {}
+      }, 2000);
+      timer.unref();
+    }
+  }
+  if (job.awaitingImport) {
+    job.awaitingImport = false;
+    try {
+      if (!preserveImportedFiles) await cleanupSpotifyFiles(job);
+    } finally {
+      releaseSpotifyJob(jobId, job);
+    }
+  }
+  return true;
+}
+
+async function cancelAllSpotifyDownloads(preserveImportedFiles = false) {
+  const jobs = [...activeSpotifyDownloads.entries()];
+  await Promise.allSettled(jobs.map(async ([jobId, job]) => {
+    try {
+      await cancelSpotifyDownload(jobId, null, preserveImportedFiles);
+    } finally {
+      await job.done;
+    }
+  }));
+}
+
+ipcMain.handle('cancel-spotify-download', async (event, jobId) => {
+  requireTrustedIpc(event);
+  jobId = requireIpcString(jobId, 'jobId', 64);
+  return cancelSpotifyDownload(jobId, event.sender.id);
+});
+
+ipcMain.handle('finalize-spotify-import', async (event, jobId, keepFiles) => {
+  requireTrustedIpc(event);
+  jobId = requireIpcString(jobId, 'jobId', 64);
+  if (typeof keepFiles !== 'boolean') throw new TypeError('keepFiles must be a boolean');
+  const job = activeSpotifyDownloads.get(jobId);
+  if (!job || job.senderId !== event.sender.id || !job.awaitingImport) return false;
+  job.awaitingImport = false;
+  try {
+    if (!keepFiles || job.cancelled) await cleanupSpotifyFiles(job);
+  } finally {
+    releaseSpotifyJob(jobId, job);
+  }
+  return keepFiles && !job.cancelled;
+});
+
+ipcMain.handle(
+  'download-spotify-audio',
+  async (event, jobId, rawUrl, projectFolderPath) => {
+    requireTrustedIpc(event);
+    jobId = requireIpcString(jobId, 'jobId', 64);
+    if (!/^[A-Za-z0-9-]{8,64}$/.test(jobId)) throw new TypeError('jobId is invalid');
+    const url = validatedSpotifyUrl(rawUrl);
+    projectFolderPath = requireAuthorizedIpcPath(projectFolderPath, 'projectFolderPath');
+    if (!fs.statSync(projectFolderPath).isDirectory()) {
+      throw new TypeError('projectFolderPath must be a directory');
+    }
+    if (activeSpotifyDownloads.has(jobId)) throw new Error('Spotify job already exists');
+    // ponytail: one job avoids spotDL's shared cache/temp races; add a queue
+    // only if concurrent playlist imports become a real operator need.
+    if (activeSpotifyDownloads.size > 0) {
+      throw new Error('Another Spotify download is already running');
+    }
+
+    const mediaDir = path.join(projectFolderPath, 'media');
+    fs.mkdirSync(mediaDir, { recursive: true });
+    const stagingDir = fs.mkdtempSync(path.join(app.getPath('temp'), 'dwcue-spotify-'));
+    const abortController = new AbortController();
+    const cancelledSignal = new Promise((resolve) => {
+      abortController.signal.addEventListener('abort', resolve, { once: true });
+    });
+    let resolveDone;
+    const done = new Promise((resolve) => { resolveDone = resolve; });
+    const job = {
+      child: null,
+      cancelled: false,
+      abortController,
+      cancelledSignal,
+      files: [],
+      awaitingImport: false,
+      sender: event.sender,
+      senderId: event.sender.id,
+      cancelOnRendererExit: null,
+      done,
+      resolveDone,
+      released: false,
+      stagingCleaned: false,
+    };
+    activeSpotifyDownloads.set(jobId, job);
+    const cancelOnRendererExit = () => {
+      void cancelSpotifyDownload(jobId, null, true).catch((error) => {
+        console.error('[spotify] renderer-exit cleanup failed:', error.message);
+      });
+    };
+    job.cancelOnRendererExit = cancelOnRendererExit;
+    for (const eventName of ['destroyed', 'render-process-gone', 'did-start-navigation']) {
+      event.sender.once(eventName, cancelOnRendererExit);
+    }
+
+    const progress = (status, extra = {}) => sendSpotifyProgress(event.sender, {
+      jobId,
+      status,
+      total: 0,
+      completed: 0,
+      ...extra,
+    });
+
+    try {
+      progress('preparing', { message: 'Preparing Spotify downloader…' });
+      const setupResult = await Promise.race([
+        Promise.all([setupSpotDl(), denoInitialization, setupFfmpeg()])
+          .then((value) => ({ value }), (error) => ({ error })),
+        job.cancelledSignal.then(() => ({ cancelled: true })),
+      ]);
+      if (setupResult.cancelled || job.cancelled) {
+        throw new Error('Spotify download cancelled');
+      }
+      if (setupResult.error) throw setupResult.error;
+      const [spotDlReady, , ffmpegReady] = setupResult.value;
+      if (!spotDlReady || !spotDlPath) throw new Error('Spotify downloader is unavailable');
+      if (!ffmpegReady || !ffmpegPath) throw new Error('FFmpeg is unavailable');
+
+      const cacheDir = path.join(app.getPath('userData'), 'spotdl');
+      fs.mkdirSync(cacheDir, { recursive: true });
+      const args = [
+        'download',
+        url,
+        '--format', 'mp3',
+        '--bitrate', '320k',
+        '--ffmpeg', ffmpegPath,
+        '--output', '{list-position} - {artists} - {title}.{output-ext}',
+        '--m3u', 'dwcue-spotify-order.m3u8',
+        '--overwrite', 'skip',
+        '--restrict', 'strict',
+        '--max-filename-length', '180',
+        '--cache-path', path.join(cacheDir, 'spotify-cache'),
+        '--max-retries', '3',
+        '--print-errors',
+        '--simple-tui',
+      ];
+      const env = { ...process.env };
+      const pathKey = Object.keys(env).find((key) => key.toLowerCase() === 'path') || 'PATH';
+      env[pathKey] = [
+        denoReady && denoPath ? path.dirname(denoPath) : null,
+        path.dirname(ffmpegPath),
+        env[pathKey],
+      ].filter(Boolean).join(path.delimiter);
+
+      progress('resolving', { message: 'Reading Spotify list…' });
+      const child = spawn(spotDlPath, args, {
+        cwd: stagingDir,
+        env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+        detached: process.platform !== 'win32',
+      });
+      job.child = child;
+
+      let total = 0;
+      let playlistName = '';
+      const completedTitles = new Set();
+      const tail = [];
+      const onLine = (rawLine) => {
+        const line = rawLine
+          .replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '')
+          .trim();
+        if (!line) return;
+        tail.push(line);
+        if (tail.length > 60) tail.shift();
+
+        const found = line.match(/Found\s+(\d+)\s+songs?/i);
+        if (found) {
+          total = Number(found[1]);
+          playlistName =
+            line.match(/songs?\s+in\s+(.+?)\s+\(/i)?.[1]?.trim() || playlistName;
+        }
+        const downloaded = line.match(/^Downloaded\s+"([^"]+)"/i);
+        if (downloaded) completedTitles.add(downloaded[1]);
+        if (found || downloaded) {
+          progress('downloading', {
+            playlistName,
+            total,
+            completed: completedTitles.size,
+            message: downloaded ? downloaded[1] : 'Downloading…',
+          });
+        }
+      };
+      const stdoutLines = readline.createInterface({ input: child.stdout });
+      const stderrLines = readline.createInterface({ input: child.stderr });
+      stdoutLines.on('line', onLine);
+      stderrLines.on('line', onLine);
+
+      const result = await new Promise((resolve, reject) => {
+        child.once('error', reject);
+        child.once('close', (code, signal) => resolve({ code, signal }));
+      });
+      stdoutLines.close();
+      stderrLines.close();
+      job.child = null;
+
+      if (job.cancelled) {
+        progress('cancelled', { message: 'Download cancelled' });
+        throw new Error('Spotify download cancelled');
+      }
+
+      const outputs = orderedSpotifyOutputs(stagingDir);
+      if (outputs.length === 0) {
+        throw new Error(summarizeSpotDlError(tail, result.code));
+      }
+
+      progress('importing', {
+        playlistName,
+        total: total || outputs.length,
+        completed: outputs.length,
+        message: 'Adding tracks to project…',
+      });
+      const files = await copySpotifyOutputsToMedia(outputs, mediaDir, job);
+      const partial = result.code !== 0 || (total > 0 && files.length < total);
+      const error = partial ? summarizeSpotDlError(tail, result.code) : undefined;
+      job.awaitingImport = true;
+      progress('importing', {
+        playlistName,
+        total: total || files.length,
+        completed: files.length,
+        message: 'Saving cues to the project…',
+      });
+      return {
+        files,
+        total: total || files.length,
+        completed: files.length,
+        partial,
+        error,
+      };
+    } catch (error) {
+      try {
+        await cleanupSpotifyFiles(job);
+      } catch (cleanupError) {
+        console.error('[spotify] media rollback failed:', cleanupError.message);
+      }
+      if (!job.cancelled) {
+        progress('error', { message: error.message });
+      }
+      throw error;
+    } finally {
+      if (!job.awaitingImport) releaseSpotifyJob(jobId, job);
+      await fs.promises.rm(stagingDir, { recursive: true, force: true }).catch((error) => {
+        console.warn('[spotify] failed to remove staging directory:', error.message);
+      });
+      job.stagingCleaned = true;
+      if (job.released) job.resolveDone();
+    }
+  },
+);
+
 // YouTube Search Handler
 ipcMain.handle('search-youtube', async (event, query) => {
   try {
+    requireTrustedIpc(event);
+    query = requireIpcString(query, 'query', 500);
     const result = await youtubesearchapi.GetListByKeyword(query, false, 20, [{ type: 'video' }]);
     
     // Format results
@@ -2847,6 +3509,11 @@ ipcMain.handle('search-youtube', async (event, query) => {
 
 // YouTube Download Handler
 ipcMain.handle('download-youtube-audio', async (event, videoId, title, projectFolderPath) => {
+  requireTrustedIpc(event);
+  videoId = requireIpcString(videoId, 'videoId', 32);
+  if (!/^[A-Za-z0-9_-]{6,32}$/.test(videoId)) throw new TypeError('videoId is invalid');
+  title = requireIpcString(title, 'title', 500);
+  projectFolderPath = requireAuthorizedIpcPath(projectFolderPath, 'projectFolderPath');
   return new Promise(async (resolve, reject) => {
     console.log('YouTube download - Project folder path:', projectFolderPath);
     
@@ -2891,7 +3558,7 @@ ipcMain.handle('download-youtube-audio', async (event, videoId, title, projectFo
       return;
     }
     
-    if (!ffmpegAvailable) {
+    if (!(await setupFfmpeg())) {
       reject(new Error('Bundled FFmpeg failed to initialize. Please restart the application.'));
       return;
     }
@@ -3102,10 +3769,10 @@ ipcMain.handle('download-youtube-audio', async (event, videoId, title, projectFo
 // Register custom protocol for app
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient('liveplay', process.execPath, [path.resolve(process.argv[1])]);
+    app.setAsDefaultProtocolClient('dwcue', process.execPath, [path.resolve(process.argv[1])]);
   }
 } else {
-  app.setAsDefaultProtocolClient('liveplay');
+  app.setAsDefaultProtocolClient('dwcue');
 }
 
 // For Windows, we need to handle the protocol differently
@@ -3123,7 +3790,7 @@ if (!gotTheLock) {
     // On Windows/Linux a double-clicked file while we're already running
     // arrives as an argument on the second instance's command line. Pick it
     // up and open it (or stash it if the window isn't ready yet).
-    const f = getOpenableFileFromArgv(commandLine);
+    const f = tryAuthorizeOpenableFilePath(getOpenableFileFromArgv(commandLine));
     if (f) {
       if (mainWindow && mainWindow.webContents) {
         openFile(f);
@@ -3134,27 +3801,27 @@ if (!gotTheLock) {
   });
 
   app.whenReady().then(async () => {
-    // Setup bundled ffmpeg before creating window
-    const ffmpegReady = await checkAndSetupFfmpeg();
-    if (!ffmpegReady) {
-      console.error('Warning: Bundled ffmpeg failed to initialize. Audio processing may be limited.');
-    }
+    configureSessionSecurity();
+    initializeCapabilitiesFromRecentProjects();
 
-    // At boot we ONLY adopt an already-running server (via the lockfile).
-    // Spawning a fresh server is deferred until the user explicitly picks
-    // Local mode in the welcome screen — otherwise we'd briefly spawn a
-    // server even for users who only ever use Remote mode.
+    createWindow();
+
+    // Tool probing must never gate first paint. Feature handlers await the
+    // same bounded setup promise if the user reaches them immediately.
+    void setupFfmpeg().then((ready) => {
+      if (!ready) {
+        console.error('Warning: Bundled ffmpeg failed to initialize. Audio processing may be limited.');
+      }
+    });
+
+    // Rejoin a verified detached server. A pre-rebrand or wrong-port server is
+    // replaced in Local mode; Remote mode retires it. With no lock, a fresh
+    // launch still waits until the user selects Local.
     void tryReattachLiveplayServer();
-
-    // Best-effort firewall rules so LAN discovery's inbound UDP isn't dropped
-    // (no-op on non-Windows / non-elevated; the installer is authoritative).
-    try { ensureFirewallRules(); } catch (e) { console.warn('[liveplay-firewall]', e); }
 
     // Start listening for discovery beacons early so the welcome screen's
     // picker is already populated by the time the user reaches it.
     try { startDiscoveryListener(); } catch (e) { console.warn('[liveplay-discovery]', e); }
-
-    createWindow();
 
     // NOTE: a file opened before the app was ready (cold start) is delivered
     // via the pull path — the renderer calls `get-pending-open-file` on mount
@@ -3167,6 +3834,8 @@ if (!gotTheLock) {
 // Windows/Linux deliver the path via argv / second-instance instead).
 app.on('open-file', (event, filePath) => {
   event.preventDefault();
+  filePath = tryAuthorizeOpenableFilePath(filePath);
+  if (!filePath) return;
 
   if (mainWindow && mainWindow.webContents) {
     // Window is ready, push the file to the renderer immediately.
@@ -3194,7 +3863,7 @@ function fileKindFor(filePath) {
 // Handle command line arguments (Windows/Linux)
 if (process.platform === 'win32' || process.platform === 'linux') {
   // Check if a file was passed as argument
-  const fileArg = getOpenableFileFromArgv(process.argv);
+  const fileArg = tryAuthorizeOpenableFilePath(getOpenableFileFromArgv(process.argv));
   if (fileArg) {
     fileToOpen = fileArg;
   }
@@ -3203,7 +3872,8 @@ if (process.platform === 'win32' || process.platform === 'linux') {
 // Pull path for cold start: the renderer asks for any file that was queued
 // before it was ready, then drives the open/import flow itself. Returns null
 // when nothing is pending. Clears the queue so it's delivered exactly once.
-ipcMain.handle('get-pending-open-file', async () => {
+ipcMain.handle('get-pending-open-file', async (event) => {
+  requireTrustedIpc(event);
   if (!fileToOpen) return null;
   const filePath = fileToOpen;
   fileToOpen = null;
@@ -3215,6 +3885,12 @@ ipcMain.handle('get-pending-open-file', async () => {
 // the project. The main process only hands over the path + kind.
 function openFile(filePath) {
   if (!mainWindow || !mainWindow.webContents) return;
+  try {
+    filePath = requireAuthorizedIpcPath(filePath, 'filePath');
+  } catch (error) {
+    console.warn('[file-association] refused dispatch:', error.message);
+    return;
+  }
   mainWindow.webContents.send('open-file-association', {
     filePath,
     kind: fileKindFor(filePath),
@@ -3225,8 +3901,9 @@ function openFile(filePath) {
 // MIDI Config Handlers
 const midiConfigPath = path.join(app.getPath('userData'), 'midi-config.json');
 
-ipcMain.handle('read-midi-config', async () => {
+ipcMain.handle('read-midi-config', async (event) => {
   try {
+    requireTrustedIpc(event);
     if (fs.existsSync(midiConfigPath)) {
       const data = fs.readFileSync(midiConfigPath, 'utf-8');
       return JSON.parse(data);
@@ -3240,7 +3917,13 @@ ipcMain.handle('read-midi-config', async () => {
 
 ipcMain.handle('write-midi-config', async (event, config) => {
   try {
-    fs.writeFileSync(midiConfigPath, JSON.stringify(config, null, 2), 'utf-8');
+    requireTrustedIpc(event);
+    if (!config || typeof config !== 'object' || Array.isArray(config)) {
+      throw new TypeError('MIDI config must be an object');
+    }
+    const serialized = JSON.stringify(config, null, 2);
+    if (serialized.length > 1024 * 1024) throw new Error('MIDI config is too large');
+    fs.writeFileSync(midiConfigPath, serialized, 'utf-8');
     return { success: true };
   } catch (error) {
     console.error('Failed to write MIDI config:', error);
@@ -3249,9 +3932,6 @@ ipcMain.handle('write-midi-config', async (event, config) => {
 });
 
 app.on('window-all-closed', () => {
-  if (apiServer) {
-    apiServer.close();
-  }
   // The liveplay audio server is intentionally NOT stopped here — it was
   // spawned detached so it survives renderer reloads and Electron quits.
   // Users explicitly shut it down via the `liveplay-server:shutdown` IPC

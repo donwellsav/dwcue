@@ -64,7 +64,7 @@ const handleImageError = (event: Event) => {
   .feature-content {
     .feature-title {
       font-size: 2rem;
-      color: #DA1E28;
+      color: #315FCF;
       margin: 0 0 1rem;
       font-weight: 600;
     }

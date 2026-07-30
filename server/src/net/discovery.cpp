@@ -64,7 +64,7 @@ std::string hostname_or_default() {
 #else
     if (::gethostname(buf, sizeof(buf) - 1) == 0) return std::string{buf};
 #endif
-    return "liveplay";
+    return "dwcue";
 }
 
 std::string make_instance_id() {
@@ -189,8 +189,8 @@ std::vector<SendTarget> build_send_targets(const std::string& mcast_group,
 
 } // namespace
 
-DiscoveryBeacon::DiscoveryBeacon(core::ProjectState& state, DiscoveryConfig cfg)
-    : state_(state), cfg_(std::move(cfg)), impl_(std::make_unique<Impl>()) {
+DiscoveryBeacon::DiscoveryBeacon(DiscoveryConfig cfg)
+    : cfg_(std::move(cfg)), impl_(std::make_unique<Impl>()) {
     if (cfg_.instance_id.empty()) cfg_.instance_id = make_instance_id();
 }
 
@@ -276,39 +276,21 @@ void DiscoveryBeacon::stop() {
 void DiscoveryBeacon::run_loop() {
     const std::string host = hostname_or_default();
 
-    // Build the JSON beacon payload fresh — project name and item count
-    // change at runtime.
-    auto build_payload = [&]() -> std::string {
-        json payload;
-        try {
-            auto header = state_.header_document();
-            payload = {
-                {"type",            "liveplay-beacon"},
-                {"name",            host},
-                {"version",         std::string{
+    // Discovery is unauthenticated by design, so advertise connection
+    // metadata only. Project/show details belong behind the authenticated API.
+    const std::string payload = json{
+        {"type",       "liveplay-beacon"},
+        {"name",       host},
+        {"version",    std::string{
 #ifdef LIVEPLAY_SERVER_VERSION
-                                       LIVEPLAY_SERVER_VERSION
+                           LIVEPLAY_SERVER_VERSION
 #else
-                                       "0.0.0"
+                           "0.0.0"
 #endif
-                                   }},
-                {"port",            cfg_.advertised_port},
-                {"projectName",    header.value("name", "")},
-                {"hasOpenProject", header.value("hasOpenProject", false)},
-                {"itemCount",      header.value("itemCount", 0)},
-                {"instanceId",     cfg_.instance_id},
-            };
-        } catch (const std::exception& e) {
-            Logger::warn("DiscoveryBeacon: payload build failed: {}", e.what());
-            payload = json{
-                {"type",       "liveplay-beacon"},
-                {"name",       host},
-                {"port",       cfg_.advertised_port},
-                {"instanceId", cfg_.instance_id},
-            };
-        }
-        return payload.dump();
-    };
+                       }},
+        {"port",       cfg_.advertised_port},
+        {"instanceId", cfg_.instance_id},
+    }.dump();
 
     // sendto helper that honours per-target multicast egress interface.
     auto send_one = [&](const SendTarget& t, const std::string& s,
@@ -352,8 +334,7 @@ void DiscoveryBeacon::run_loop() {
 
         // ---- periodic announce across all delivery paths ------------------
         if (now >= next_tick) {
-            const std::string s = build_payload();
-            for (const auto& t : targets) send_one(t, s, cfg_.beacon_port);
+            for (const auto& t : targets) send_one(t, payload, cfg_.beacon_port);
             next_tick += cfg_.interval;
             if (next_tick <= now) next_tick = now + cfg_.interval; // catch up
         }
@@ -401,9 +382,8 @@ void DiscoveryBeacon::run_loop() {
                 } catch (...) {}
                 if (is_solicit) {
                     // Reply with a UNICAST beacon straight back to the asker.
-                    const std::string s = build_payload();
-                    (void)::sendto(impl_->sock, s.data(),
-                                   static_cast<int>(s.size()), 0,
+                    (void)::sendto(impl_->sock, payload.data(),
+                                   static_cast<int>(payload.size()), 0,
                                    reinterpret_cast<sockaddr*>(&from), fromlen);
                 }
             }

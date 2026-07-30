@@ -6,7 +6,7 @@
     "direction": "ltr"
   },
   "app": {
-    "name": "LivePlay"
+    "name": "DonWells Cue"
   },
   "menu": {
     "file": "Fișier",
@@ -27,21 +27,21 @@
     "fullscreen": "Ecran întreg",
     "language": "Limba",
     "help": "Ajutor",
-    "about": "Despre LivePlay"
+    "about": "Despre DonWells Cue"
   },
   "welcome": {
-    "title": "LivePlay",
+    "title": "DonWells Cue",
     "subtitle": "Redare audio pentru evenimente live",
     "newProject": "Proiect Nou",
     "openProject": "Deschide Proiect",
     "modeTitle": "Alege Modul Server",
-    "modeSubtitle": "Unde ar trebui LivePlay să ruleze motorul audio?",
+    "modeSubtitle": "Unde ar trebui DonWells Cue să ruleze motorul audio?",
     "localMode": "Local",
     "localModeDescription": "Rulează motorul audio pe acest computer.",
     "remoteMode": "La distanță",
-    "remoteModeDescription": "Conectează-te la un server LivePlay în rețea.",
-    "remoteConnect": "Conectare la serverul LivePlay",
-    "remoteAddressHint": "Introduceți adresa IP sau numele gazdă al serverului LivePlay.",
+    "remoteModeDescription": "Conectează-te la un server DonWells Cue în rețea.",
+    "remoteConnect": "Conectare la serverul DonWells Cue",
+    "remoteAddressHint": "Introduceți adresa IP sau numele gazdă al serverului DonWells Cue.",
     "serverAddress": "Adresa Serverului",
     "serverAddressPlaceholder": "ex. 192.168.1.10 sau serverulmeu.local",
     "connect": "Conectare",
@@ -226,12 +226,12 @@
     "restartTitle": "Repornire server"
   },
   "serverSettings": {
-    "title": "Server LivePlay",
+    "title": "Server DonWells Cue",
     "connected": "● Conectat",
     "reconnecting": "● Reconectare…",
     "disconnected": "● Deconectat",
     "localModeDesc": "Aplicația pornește propriul motor audio. Cel mai bun pentru operatori individuali.",
-    "remoteModeDesc": "Conectează-te la un server LivePlay care rulează pe altă mașină.",
+    "remoteModeDesc": "Conectează-te la un server DonWells Cue care rulează pe altă mașină.",
     "localPort": "Port local",
     "remoteUrl": "URL distant",
     "engineRunning": "Motor pornit (pid {pid})",
@@ -269,8 +269,8 @@
     "currentVersion": "Versiunea Actuala",
     "newVersion": "Versiune Noua",
     "whatsNew": "Ce este nou",
-    "updatePrompt": "O noua versiune a LivePlay este disponibila. Vrei sa o descarci și sa o instalezi acum?",
-    "manualUpdatePrompt": "O noua versiunea LivePlay este disponibila. Apasa aici pentru a vizita pagina de unde o poti descarcă",
+    "updatePrompt": "O noua versiune a DonWells Cue este disponibila. Vrei sa o descarci și sa o instalezi acum?",
+    "manualUpdatePrompt": "O noua versiunea DonWells Cue este disponibila. Apasa aici pentru a vizita pagina de unde o poti descarcă",
     "downloading": "Se descarca actualizarea",
     "downloadComplete": "Descarcare completa",
     "installInfo": " Actualizarea este gata sa fie instalata. O poti instala acum sau o sa fie instalata când închizi aplicatia.",
@@ -478,7 +478,7 @@
   },
   "connectionLost": {
     "title": "Conexiune pierdută",
-    "message": "Conexiunea la serverul LivePlay de la {url} a fost pierdută.",
+    "message": "Conexiunea la serverul DonWells Cue de la {url} a fost pierdută.",
     "attempting": "Se încearcă reconectarea…",
     "attemptCount": "(Încercări eșuate: {count})",
     "locked": "Redarea și editarea sunt în pauză până când conexiunea revine — modificările făcute acum nu ar putea fi trimise către server.",

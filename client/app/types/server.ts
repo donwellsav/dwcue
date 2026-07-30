@@ -26,6 +26,21 @@ export interface ServerDeviceInfo {
   channel_count: number;
   sample_rate: number;
   is_default: boolean;
+  is_open: boolean;
+  is_available: boolean;
+  is_clock_master: boolean;
+  runtime_state: 'available' | 'starting' | 'running' | 'interrupted' | 'disconnected' | 'closing';
+  underrun_count: number;
+  underrun_frames: number;
+  overrun_count: number;
+  hard_resync_count: number;
+  device_loss_count: number;
+  device_recovery_count: number;
+  reroute_count: number;
+  interruption_count: number;
+  correction_limit_count: number;
+  ring_occupancy_frames: number;
+  clock_correction_ppm: number;
 }
 
 export interface ServerCueLTC {
@@ -49,6 +64,8 @@ export interface ServerCue {
   playhead_seconds?: number;
   source_channels?: number;
   file_loaded?: boolean;
+  decode_error?: boolean;
+  decoder_result?: number;
 }
 
 export interface ServerMixerChannel {
@@ -71,6 +88,21 @@ export interface ServerFsListing {
   parent: string;
   is_root?: boolean;     // true when path === "" — entries are drives/volumes
   entries: ServerFsEntry[];
+}
+
+export interface ServerAudioReadinessFailure {
+  itemUuid: string;
+  code: string;
+  path: string;
+}
+
+export interface ServerAudioReadiness {
+  ready: boolean;
+  loading: boolean;
+  loaded: number;
+  total: number;
+  failedCount: number;
+  failures: ServerAudioReadinessFailure[];
 }
 
 export interface MeterSnapshot {

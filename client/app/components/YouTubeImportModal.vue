@@ -230,14 +230,13 @@ const importDownloadedFile = async (fileName: string, filePath: string) => {
   if (!currentProject.value) return;
 
   try {
-    const { v4: uuidv4 } = await import('uuid');
     const { DEFAULT_AUDIO_ITEM, transitionDefaultsForImport } = await import('~/types/project');
 
     // Get audio duration
     const duration = await getAudioDuration(filePath);
 
     // Create audio item
-    const uuid = uuidv4();
+    const uuid = crypto.randomUUID();
     const audioItem: any = {
       ...DEFAULT_AUDIO_ITEM,
       ...transitionDefaultsForImport((currentProject.value as any)?.settings?.defaultTransitionMode, duration),

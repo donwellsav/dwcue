@@ -6,7 +6,7 @@
     "direction": "ltr"
   },
   "app": {
-    "name": "LivePlay"
+    "name": "DonWells Cue"
   },
   "menu": {
     "file": "File",
@@ -27,21 +27,21 @@
     "language": "Lingua",
     "exit": "Esci",
     "help": "Aiuto",
-    "about": "Informazioni su LivePlay"
+    "about": "Informazioni su DonWells Cue"
   },
   "welcome": {
-    "title": "LivePlay",
+    "title": "DonWells Cue",
     "subtitle": "Riproduzione di segnali audio per eventi dal vivo",
     "newProject": "Nuovo Progetto",
     "openProject": "Apri Progetto",
     "modeTitle": "Scegli Modalità Server",
-    "modeSubtitle": "Dove deve eseguire LivePlay il motore audio?",
+    "modeSubtitle": "Dove deve eseguire DonWells Cue il motore audio?",
     "localMode": "Locale",
     "localModeDescription": "Esegui il motore audio su questo computer.",
     "remoteMode": "Remoto",
-    "remoteModeDescription": "Connetti a un server LivePlay sulla rete.",
-    "remoteConnect": "Connetti al server LivePlay",
-    "remoteAddressHint": "Inserisci l'indirizzo IP o il nome host del server LivePlay.",
+    "remoteModeDescription": "Connetti a un server DonWells Cue sulla rete.",
+    "remoteConnect": "Connetti al server DonWells Cue",
+    "remoteAddressHint": "Inserisci l'indirizzo IP o il nome host del server DonWells Cue.",
     "serverAddress": "Indirizzo Server",
     "serverAddressPlaceholder": "es. 192.168.1.10 o myserver.local",
     "connect": "Connetti",
@@ -226,12 +226,12 @@
     "restartTitle": "Riavvia server"
   },
   "serverSettings": {
-    "title": "Server LivePlay",
+    "title": "Server DonWells Cue",
     "connected": "● Connesso",
     "reconnecting": "● Riconnessione…",
     "disconnected": "● Disconnesso",
     "localModeDesc": "L'app avvia il proprio motore audio. Ideale per operatori singoli.",
-    "remoteModeDesc": "Connetti a un server LivePlay in esecuzione su un altro computer.",
+    "remoteModeDesc": "Connetti a un server DonWells Cue in esecuzione su un altro computer.",
     "localPort": "Porta locale",
     "remoteUrl": "URL remoto",
     "engineRunning": "Motore in esecuzione (pid {pid})",
@@ -269,8 +269,8 @@
     "currentVersion": "Versione Corrente",
     "newVersion": "Nuova Versione",
     "whatsNew": "Novità",
-    "updatePrompt": "È disponibile una nuova versione di LivePlay. Vuoi scaricarla e installarla ora?",
-    "manualUpdatePrompt": "È disponibile una nuova versione di LivePlay. Clicca qui sotto per visitare la pagina di download.",
+    "updatePrompt": "È disponibile una nuova versione di DonWells Cue. Vuoi scaricarla e installarla ora?",
+    "manualUpdatePrompt": "È disponibile una nuova versione di DonWells Cue. Clicca qui sotto per visitare la pagina di download.",
     "downloading": "Download Aggiornamento",
     "downloadComplete": "Download Completato",
     "installInfo": "L'aggiornamento è pronto per l'installazione. Puoi installarlo ora o verrà installato quando chiudi l'app.",
@@ -478,7 +478,7 @@
   },
   "connectionLost": {
     "title": "Connessione persa",
-    "message": "La connessione al server LivePlay su {url} è stata persa.",
+    "message": "La connessione al server DonWells Cue su {url} è stata persa.",
     "attempting": "Tentativo di riconnessione…",
     "attemptCount": "(Tentativi falliti: {count})",
     "locked": "La riproduzione e la modifica sono in pausa finché la connessione non torna: le modifiche fatte ora non potrebbero essere inviate al server.",

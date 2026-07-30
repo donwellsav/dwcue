@@ -8,14 +8,14 @@ export default defineNuxtConfig({
     baseURL: '/liveplay/',
     buildAssetsDir: 'assets',
     head: {
-      title: 'LivePlay - Audio Cue Playback for Live Events',
+      title: 'DonWells Cue - Audio Cue Playback for Live Events',
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
         { name: 'description', content: 'Free, open-source audio playback system for live sound operators. Available for Windows, macOS, and Linux.' },
-        { name: 'theme-color', content: '#DA1E28' },
+        { name: 'theme-color', content: '#315FCF' },
         // Open Graph
-        { property: 'og:title', content: 'LivePlay - Audio Cue Playback for Live Events' },
+        { property: 'og:title', content: 'DonWells Cue - Audio Cue Playback for Live Events' },
         { property: 'og:description', content: 'Free, open-source audio playback system for live sound operators. Available for Windows, macOS, and Linux.' },
         { property: 'og:type', content: 'website' },
         { property: 'og:url', content: 'https://tdoukinitsas.github.io/liveplay/' },
@@ -25,7 +25,7 @@ export default defineNuxtConfig({
         { property: 'og:image:type', content: 'image/jpeg' },
         // Twitter Card
         { name: 'twitter:card', content: 'summary_large_image' },
-        { name: 'twitter:title', content: 'LivePlay - Audio Cue Playback for Live Events' },
+        { name: 'twitter:title', content: 'DonWells Cue - Audio Cue Playback for Live Events' },
         { name: 'twitter:description', content: 'Free, open-source audio playback system for live sound operators. Available for Windows, macOS, and Linux.' },
         { name: 'twitter:image', content: 'https://tdoukinitsas.github.io/liveplay/screenshots/liveplay_screenshot.jpg' }
       ],

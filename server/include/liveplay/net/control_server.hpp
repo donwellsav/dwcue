@@ -42,6 +42,12 @@
 //   DELETE /api/mixers/{id}
 //   GET    /api/fs/list?path=...             — list directory (audio + dirs)
 //   POST   /api/upload                       — multipart upload to media root
+//   POST   /api/upload/start                 — { "filename": "...", "size": N,
+//                                              //   "purpose"?: "project_import",
+//                                              //   "extract_path"?: "..." }
+//   PUT    /api/upload/{id}?offset=N         — raw chunk append
+//   POST   /api/upload/{id}/finish           — finalize staged upload
+//   DELETE /api/upload/{id}                  — abort staged upload
 //   GET    /api/project                      — current project JSON
 //   POST   /api/project/load                 — { "path": "..." }
 //   POST   /api/project/save                 — { "path": "..." }
@@ -60,17 +66,26 @@
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <vector>
 
 namespace liveplay::net {
 
 struct ControlServerConfig {
-    std::string   bind_address       = "0.0.0.0";
+    std::string   bind_address       = "127.0.0.1";
     std::uint16_t port               = 4480;
+    // Empty is permitted only for a loopback-only server. LAN binding is
+    // rejected by main before ControlServer starts.
+    std::string   access_token;
+    // Per-process launcher identity. This is not an access credential; the
+    // desktop client uses it to distinguish its detached server from a stale
+    // or unrelated PID.
+    std::string   instance_token;
+    std::vector<std::string> allowed_origins;
     // Meter frame rate. Peaks between frames are never lost — the broadcaster
     // uses consuming max-since-read meter reads — so this only sets how
     // fluid the meters look, not what they catch.
     std::size_t   meter_broadcast_hz = 30;
-    std::size_t   max_upload_bytes   = 256ull * 1024 * 1024;   // 256 MiB
+    std::size_t   max_upload_bytes   = 256ull * 1024 * 1024;   // legacy multipart cap
 };
 
 class ControlServer {

@@ -6,7 +6,7 @@
     "direction": "ltr"
   },
   "app": {
-    "name": "LivePlay"
+    "name": "DonWells Cue"
   },
   "menu": {
     "file": "ファイル",
@@ -27,21 +27,21 @@
     "fullscreen": "フルスクリーン",
     "language": "言語",
     "help": "ヘルプ",
-    "about": "LivePlayについて"
+    "about": "DonWells Cueについて"
   },
   "welcome": {
-    "title": "LivePlay",
+    "title": "DonWells Cue",
     "subtitle": "ライブイベント用オーディオ再生",
     "newProject": "新規プロジェクト",
     "openProject": "プロジェクトを開く",
     "modeTitle": "サーバーモードを選択",
-    "modeSubtitle": "LivePlayはどこでオーディオエンジンを実行しますか？",
+    "modeSubtitle": "DonWells Cueはどこでオーディオエンジンを実行しますか？",
     "localMode": "ローカル",
     "localModeDescription": "このコンピューターでオーディオエンジンを実行します。",
     "remoteMode": "リモート",
-    "remoteModeDescription": "ネットワーク上のLivePlayサーバーに接続します。",
-    "remoteConnect": "LivePlayサーバーに接続",
-    "remoteAddressHint": "LivePlayサーバーのIPアドレスまたはホスト名を入力してください。",
+    "remoteModeDescription": "ネットワーク上のDonWells Cueサーバーに接続します。",
+    "remoteConnect": "DonWells Cueサーバーに接続",
+    "remoteAddressHint": "DonWells CueサーバーのIPアドレスまたはホスト名を入力してください。",
     "serverAddress": "サーバーアドレス",
     "serverAddressPlaceholder": "例: 192.168.1.10 または myserver.local",
     "connect": "接続",
@@ -226,12 +226,12 @@
     "restartTitle": "サーバーを再起動"
   },
   "serverSettings": {
-    "title": "LivePlayサーバー",
+    "title": "DonWells Cueサーバー",
     "connected": "● 接続済み",
     "reconnecting": "● 再接続中…",
     "disconnected": "● 切断済み",
     "localModeDesc": "アプリが独自のオーディオエンジンを起動します。ソロオペレーターに最適。",
-    "remoteModeDesc": "別のマシンで動作するLivePlayサーバーに接続します。",
+    "remoteModeDesc": "別のマシンで動作するDonWells Cueサーバーに接続します。",
     "localPort": "ローカルポート",
     "remoteUrl": "リモートURL",
     "engineRunning": "エンジン起動中 (pid {pid})",
@@ -269,8 +269,8 @@
     "currentVersion": "現在のバージョン",
     "newVersion": "新しいバージョン",
     "whatsNew": "更新内容",
-    "updatePrompt": "LivePlayの新しいバージョンが利用可能です。今すぐダウンロードしてインストールしますか？",
-    "manualUpdatePrompt": "LivePlayの新しいバージョンが利用可能です。以下をクリックしてダウンロードページにアクセスしてください。",
+    "updatePrompt": "DonWells Cueの新しいバージョンが利用可能です。今すぐダウンロードしてインストールしますか？",
+    "manualUpdatePrompt": "DonWells Cueの新しいバージョンが利用可能です。以下をクリックしてダウンロードページにアクセスしてください。",
     "downloading": "アップデートをダウンロード中",
     "downloadComplete": "ダウンロード完了",
     "installInfo": "アップデートのインストール準備ができました。今すぐインストールするか、アプリを閉じたときにインストールされます。",
@@ -478,7 +478,7 @@
   },
   "connectionLost": {
     "title": "接続が切断されました",
-    "message": "{url} のLivePlayサーバーへの接続が失われました。",
+    "message": "{url} のDonWells Cueサーバーへの接続が失われました。",
     "attempting": "再接続を試行中…",
     "attemptCount": "（失敗した試行: {count}）",
     "locked": "接続が復旧するまで再生と編集は一時停止しています。いま行った変更はサーバーに送信できません。",

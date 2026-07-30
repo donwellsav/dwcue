@@ -14,7 +14,7 @@ const { spawnSync } = require('node:child_process');
 const REPO_ROOT  = path.resolve(__dirname, '..');
 const SERVER_DIR = path.join(REPO_ROOT, 'server');
 const BUILD_DIR  = path.join(SERVER_DIR, 'build');
-const EXE_NAME   = process.platform === 'win32' ? 'liveplay-server.exe' : 'liveplay-server';
+const EXE_NAME   = process.platform === 'win32' ? 'dwcue-server.exe' : 'dwcue-server';
 
 // Candidate output locations across single-config and multi-config generators.
 const BIN_CANDIDATES = [

@@ -202,7 +202,6 @@
 </template>
 
 <script setup lang="ts">
-import { v4 as uuidv4 } from 'uuid';
 import type { AudioItem, GroupItem, BaseItem } from '~/types/project';
 import ActionButton from './ActionButton.vue';
 import { useOutputTarget, METER_COLORS } from '~/composables/useOutputTarget';
@@ -682,7 +681,7 @@ const handleDrop = (e: DragEvent) => {
     const cartSrc = findItemByUuid(cartUuid);
     if (!cartSrc || cartSrc.type !== 'audio') return;
 
-    const clone: AudioItem = { ...(cartSrc as AudioItem), uuid: uuidv4() } as AudioItem;
+    const clone: AudioItem = { ...(cartSrc as AudioItem), uuid: crypto.randomUUID() } as AudioItem;
 
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const y = e.clientY - rect.top;
@@ -834,13 +833,15 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 <style scoped>
 .playlist-item {
   border-radius: var(--border-radius-sm);
-  margin-bottom: var(--spacing-xs);
-  transition: all var(--transition-fast);
+  margin-bottom: 0;
+  transition:
+    background-color var(--transition-fast),
+    box-shadow var(--transition-fast);
   position: relative;
   overflow: hidden;
   
   &.is-selected {
-    box-shadow: 0 0 0 2px var(--color-accent);
+    box-shadow: inset 3px 0 0 var(--color-accent);
   }
   
   &.drag-over-top::before {
@@ -930,7 +931,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: 6px var(--spacing-md);
   min-height: 44px;
   position: relative;
   z-index: 5;
@@ -962,7 +963,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .item-index {
   font-size: 12px;
-  font-size: 1.5em;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   color: var(--color-text-secondary);
   min-width: 40px;
 }
@@ -979,8 +981,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .item-name {
-  font-weight: 700;
-  font-size: 1.5em;
+  font-weight: 600;
+  font-size: 14px;
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -1002,7 +1004,9 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .item-duration {
-  font-size: 1.5em;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
   color: var(--color-text-secondary);
   margin: 0 var(--spacing-sm);
   white-space: nowrap;
@@ -1037,11 +1041,11 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   align-items: center;
   padding: 2px 8px;
   border-radius: 2px;
-  font-size: 14px;
+  font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
   flex-shrink: 0;
-  height: 30px;
+  height: 22px;
 
   &.playing {
     background-color: var(--color-danger);

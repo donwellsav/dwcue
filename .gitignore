@@ -8,7 +8,8 @@ client/.nuxt/
 .output/
 client/.output/
 dist/
-client/dist/
+client/dist
+client/dist-final/
 dist-electron/
 client/dist-electron/
 .env

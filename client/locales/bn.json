@@ -6,7 +6,7 @@
     "direction": "ltr"
   },
   "app": {
-    "name": "LivePlay"
+    "name": "DonWells Cue"
   },
   "menu": {
     "file": "ফাইল",
@@ -27,21 +27,21 @@
     "fullscreen": "পূর্ণ স্ক্রীন",
     "language": "ভাষা",
     "help": "সাহায্য",
-    "about": "LivePlay সম্পর্কে"
+    "about": "DonWells Cue সম্পর্কে"
   },
   "welcome": {
-    "title": "LivePlay",
+    "title": "DonWells Cue",
     "subtitle": "লাইভ ইভেন্টের জন্য অডিও প্লেব্যাক",
     "newProject": "নতুন প্রকল্প",
     "openProject": "প্রকল্প খুলুন",
     "modeTitle": "সার্ভার মোড বেছে নিন",
-    "modeSubtitle": "LivePlay কোথায় অডিও ইঞ্জিন চালাবে?",
+    "modeSubtitle": "DonWells Cue কোথায় অডিও ইঞ্জিন চালাবে?",
     "localMode": "স্থানীয়",
     "localModeDescription": "এই কম্পিউটারে অডিও ইঞ্জিন চালান।",
     "remoteMode": "দূরবর্তী",
-    "remoteModeDescription": "নেটওয়ার্কে একটি LivePlay সার্ভারের সাথে সংযুক্ত হন।",
-    "remoteConnect": "LivePlay সার্ভারের সাথে সংযুক্ত হন",
-    "remoteAddressHint": "LivePlay সার্ভারের IP ঠিকানা বা হোস্টনাম লিখুন।",
+    "remoteModeDescription": "নেটওয়ার্কে একটি DonWells Cue সার্ভারের সাথে সংযুক্ত হন।",
+    "remoteConnect": "DonWells Cue সার্ভারের সাথে সংযুক্ত হন",
+    "remoteAddressHint": "DonWells Cue সার্ভারের IP ঠিকানা বা হোস্টনাম লিখুন।",
     "serverAddress": "সার্ভার ঠিকানা",
     "serverAddressPlaceholder": "যেমন: 192.168.1.10 বা myserver.local",
     "connect": "সংযুক্ত হন",
@@ -226,12 +226,12 @@
     "restartTitle": "সার্ভার পুনরায় চালু করুন"
   },
   "serverSettings": {
-    "title": "LivePlay সার্ভার",
+    "title": "DonWells Cue সার্ভার",
     "connected": "● সংযুক্ত",
     "reconnecting": "● পুনরায় সংযুক্ত হচ্ছে…",
     "disconnected": "● সংযোগ বিচ্ছিন্ন",
     "localModeDesc": "অ্যাপ নিজের অডিও ইঞ্জিন শুরু করে। একক অপারেটরদের জন্য সেরা।",
-    "remoteModeDesc": "অন্য একটি মেশিনে চলমান LivePlay সার্ভারে সংযুক্ত হন।",
+    "remoteModeDesc": "অন্য একটি মেশিনে চলমান DonWells Cue সার্ভারে সংযুক্ত হন।",
     "localPort": "স্থানীয় পোর্ট",
     "remoteUrl": "রিমোট URL",
     "engineRunning": "ইঞ্জিন চলছে (pid {pid})",
@@ -269,8 +269,8 @@
     "currentVersion": "বর্তমান সংস্করণ",
     "newVersion": "নতুন সংস্করণ",
     "whatsNew": "নতুন কি",
-    "updatePrompt": "LivePlay এর একটি নতুন সংস্করণ উপলব্ধ। আপনি কি এটি এখনই ডাউনলোড এবং ইনস্টল করতে চান?",
-    "manualUpdatePrompt": "LivePlay এর একটি নতুন সংস্করণ উপলব্ধ। ডাউনলোড পৃষ্ঠা দেখতে নীচে ক্লিক করুন।",
+    "updatePrompt": "DonWells Cue এর একটি নতুন সংস্করণ উপলব্ধ। আপনি কি এটি এখনই ডাউনলোড এবং ইনস্টল করতে চান?",
+    "manualUpdatePrompt": "DonWells Cue এর একটি নতুন সংস্করণ উপলব্ধ। ডাউনলোড পৃষ্ঠা দেখতে নীচে ক্লিক করুন।",
     "downloading": "আপডেট ডাউনলোড হচ্ছে",
     "downloadComplete": "ডাউনলোড সম্পন্ন",
     "installInfo": "আপডেট ইনস্টল করার জন্য প্রস্তুত। আপনি এখন এটি ইনস্টল করতে পারেন বা অ্যাপ বন্ধ করার সময় এটি ইনস্টল হবে।",
@@ -478,7 +478,7 @@
   },
   "connectionLost": {
     "title": "সংযোগ বিচ্ছিন্ন হয়েছে",
-    "message": "{url}-এ LivePlay সার্ভারের সাথে সংযোগ বিচ্ছিন্ন হয়েছে।",
+    "message": "{url}-এ DonWells Cue সার্ভারের সাথে সংযোগ বিচ্ছিন্ন হয়েছে।",
     "attempting": "পুনরায় সংযোগের চেষ্টা করা হচ্ছে…",
     "attemptCount": "(ব্যর্থ চেষ্টা: {count})",
     "locked": "সংযোগ ফিরে না আসা পর্যন্ত প্লেব্যাক ও সম্পাদনা স্থগিত রয়েছে — এখন করা পরিবর্তন সার্ভারে পাঠানো যাবে না।",

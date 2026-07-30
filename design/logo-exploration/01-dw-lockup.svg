@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#16161d"/>
+  <text x="256" y="286" fill="#f5f3ee" font-family="Helvetica Neue" font-size="196" font-weight="800" text-anchor="middle" letter-spacing="-18">DW</text>
+  <rect x="112" y="326" width="288" height="18" fill="#315fcf"/>
+  <text x="256" y="397" fill="#315fcf" font-family="Helvetica Neue" font-size="48" font-weight="700" text-anchor="middle" letter-spacing="14">CUE</text>
+</svg>

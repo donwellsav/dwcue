@@ -6,7 +6,7 @@
     "direction": "rtl"
   },
   "app": {
-    "name": "LivePlay"
+    "name": "DonWells Cue"
   },
   "menu": {
     "file": "فایل",
@@ -27,21 +27,21 @@
     "language": "زبان",
     "exit": "خروج",
     "help": "راهنما",
-    "about": "درباره LivePlay"
+    "about": "درباره DonWells Cue"
   },
   "welcome": {
-    "title": "LivePlay",
+    "title": "DonWells Cue",
     "subtitle": "پخش سیگنال‌های صوتی برای رویدادهای زنده",
     "newProject": "پروژه جدید",
     "openProject": "باز کردن پروژه",
     "modeTitle": "انتخاب حالت سرور",
-    "modeSubtitle": "LivePlay موتور صوتی را کجا اجرا کند؟",
+    "modeSubtitle": "DonWells Cue موتور صوتی را کجا اجرا کند؟",
     "localMode": "محلی",
     "localModeDescription": "اجرای موتور صوتی روی این رایانه.",
     "remoteMode": "از راه دور",
-    "remoteModeDescription": "اتصال به سرور LivePlay در شبکه.",
-    "remoteConnect": "اتصال به سرور LivePlay",
-    "remoteAddressHint": "آدرس IP یا نام میزبان سرور LivePlay را وارد کنید.",
+    "remoteModeDescription": "اتصال به سرور DonWells Cue در شبکه.",
+    "remoteConnect": "اتصال به سرور DonWells Cue",
+    "remoteAddressHint": "آدرس IP یا نام میزبان سرور DonWells Cue را وارد کنید.",
     "serverAddress": "آدرس سرور",
     "serverAddressPlaceholder": "مثلاً 192.168.1.10 یا myserver.local",
     "connect": "اتصال",
@@ -226,12 +226,12 @@
     "restartTitle": "راه‌اندازی مجدد سرور"
   },
   "serverSettings": {
-    "title": "سرور LivePlay",
+    "title": "سرور DonWells Cue",
     "connected": "● متصل",
     "reconnecting": "● در حال اتصال مجدد…",
     "disconnected": "● قطع ارتباط",
     "localModeDesc": "برنامه موتور صوتی خود را راه‌اندازی می‌کند. بهترین گزینه برای اپراتورهای انفرادی.",
-    "remoteModeDesc": "اتصال به سرور LivePlay در حال اجرا روی دستگاه دیگر.",
+    "remoteModeDesc": "اتصال به سرور DonWells Cue در حال اجرا روی دستگاه دیگر.",
     "localPort": "پورت محلی",
     "remoteUrl": "URL از راه دور",
     "engineRunning": "موتور در حال اجرا (pid {pid})",
@@ -269,8 +269,8 @@
     "currentVersion": "نسخه فعلی",
     "newVersion": "نسخه جدید",
     "whatsNew": "موارد جدید",
-    "updatePrompt": "نسخه جدیدی از LivePlay موجود است. آیا می‌خواهید آن را الان دانلود و نصب کنید؟",
-    "manualUpdatePrompt": "نسخه جدیدی از LivePlay موجود است. برای بازدید از صفحه دانلود، در زیر کلیک کنید.",
+    "updatePrompt": "نسخه جدیدی از DonWells Cue موجود است. آیا می‌خواهید آن را الان دانلود و نصب کنید؟",
+    "manualUpdatePrompt": "نسخه جدیدی از DonWells Cue موجود است. برای بازدید از صفحه دانلود، در زیر کلیک کنید.",
     "downloading": "در حال دانلود به‌روزرسانی",
     "downloadComplete": "دانلود تکمیل شد",
     "installInfo": "به‌روزرسانی آماده نصب است. می‌توانید الان نصب کنید یا هنگام بستن برنامه نصب می‌شود.",
@@ -478,7 +478,7 @@
   },
   "connectionLost": {
     "title": "اتصال قطع شد",
-    "message": "اتصال به سرور LivePlay در {url} قطع شده است.",
+    "message": "اتصال به سرور DonWells Cue در {url} قطع شده است.",
     "attempting": "در حال تلاش برای اتصال مجدد…",
     "attemptCount": "(تلاش‌های ناموفق: {count})",
     "locked": "پخش و ویرایش تا بازگشت اتصال متوقف است — تغییراتی که اکنون انجام شود قابل ارسال به سرور نیست.",

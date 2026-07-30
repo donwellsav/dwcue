@@ -1,4 +1,4 @@
-# LivePlay — Improvements & Feature Plan
+# DonWells Cue — Improvements & Feature Plan
 
 > **Audience:** This document is written for a fresh agent (or developer) with **zero prior context**.
 > It describes the current architecture, then specifies six feature workstreams in implementation
@@ -9,7 +9,7 @@
 
 ## 1. Current Architecture (read this first)
 
-LivePlay is an open-source audio cue playback application for live sound operators
+DonWells Cue is an open-source audio cue playback application for live sound operators
 (theatre, radio, events). It is a **client/server** app:
 
 ```
@@ -85,7 +85,7 @@ WebSocket `/ws`: server→client `meters` (~10 Hz, client interpolates), `cue_st
 ### 1.4 Build & run
 
 - `npm run dev:all` — server + client dev concurrently. `npm run server:build` — CMake build
-  (Windows preset `vs2022`, output `server/build/Release/liveplay-server.exe`).
+  (Windows preset `vs2022`, output `server/build/Release/dwcue-server.exe`).
 - Dependencies: server via vcpkg (`server/vcpkg.json`); client is npm workspace `client`.
 - Version bumps via `npm run bump` (syncs root, client, server, docs-site versions).
 
@@ -226,18 +226,18 @@ dispatcher), `control_server.cpp` (test-fire endpoint, plugin listing endpoints)
 ## 4. Stage 2 — Bitfocus Companion Support (Stream Deck)
 
 ### Goal
-Control LivePlay and view its status from a Stream Deck via Bitfocus Companion.
+Control DonWells Cue and view its status from a Stream Deck via Bitfocus Companion.
 
 ### Design
 Companion integrations are **TypeScript modules living in their own repo** published to the
 Companion module registry (`companion-module-<name>`, base package
-`@companion-module/base`). The module is a *client* of LivePlay's existing API — so this
-workstream is 20 % LivePlay changes, 80 % a new small repo.
+`@companion-module/base`). The module is a *client* of DonWells Cue's existing API — so this
+workstream is 20 % DonWells Cue changes, 80 % a new small repo.
 
 1. **New repo** `companion-module-tdoukinitsas-liveplay` (scaffold with
    `yo @companion-module/generator` or copy an existing module; check current Companion v3+
    docs at github.com/bitfocus/companion-module-base — verify current API, knowledge may be stale).
-   - **Config:** host + port (default 4480). Optionally use LivePlay's UDP 4481 discovery for a
+   - **Config:** host + port (default 4480). Optionally use DonWells Cue's UDP 4481 discovery for a
      "found instances" dropdown.
    - **Actions:** play/stop/pause item by index path or UUID, GO (play-next), stop-all (with
      fade ms), trigger cart slot 1–16, master gain set/step, toggle limiter, load project.
@@ -246,7 +246,7 @@ workstream is 20 % LivePlay changes, 80 % a new small repo.
    - **Variables:** current item name, elapsed/remaining time, up-next name, master gain,
      project name, LUFS/meter values (throttled).
    - Transport: reuse the WebSocket `/ws` for push state (`cue_state`, `meters`) — poll nothing.
-2. **LivePlay server additions** (small): a stable **external-control surface** —
+2. **DonWells Cue server additions** (small): a stable **external-control surface** —
    - `GET /api/state/summary` — compact machine-readable transport state (playing items with
      index, name, elapsed/duration, up-next) so Companion doesn't need the whole project JSON.
    - Ensure every action listed above is reachable via REST/WS with **index-path addressing**
@@ -258,7 +258,7 @@ workstream is 20 % LivePlay changes, 80 % a new small repo.
    (Companion dev-modules folder).
 
 ### Files to touch
-LivePlay: `server/src/net/control_server.cpp` (+summary/transport endpoints), docs-site.
+DonWells Cue: `server/src/net/control_server.cpp` (+summary/transport endpoints), docs-site.
 New repo: full Companion module (TS).
 
 ### Risks

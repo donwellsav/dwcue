@@ -5,7 +5,8 @@
       <!-- Import / add-group are edit actions — hidden in Show Mode. -->
       <div v-if="!showMode" class="playlist-actions">
         <Btn icon="audio_file" :text="t('playlist.importAudio')" :disabled="!currentProject" @click="handleImport" />
-        <Btn icon="youtube_activity" :text="t('youtube.importFromYouTube')" bg-style="youtube" :disabled="!currentProject" @click="showYouTubeModal = true" />
+        <Btn v-if="canOnlineImport" icon="youtube_activity" :text="t('youtube.importFromYouTube')" bg-style="youtube" @click="showYouTubeModal = true" />
+        <Btn v-if="canOnlineImport" icon="library_music" :text="t('spotifyImport.button')" @click="showSpotifyModal = true" />
         <Btn icon="folder" :text="t('playlist.addGroup')" :disabled="!currentProject" @click="handleAddGroup" />
       </div>
     </div>
@@ -35,6 +36,15 @@
     <!-- YouTube Import Modal -->
     <YouTubeImportModal :isOpen="showYouTubeModal" @close="showYouTubeModal = false" />
 
+    <!-- Spotify Import Modal -->
+    <SpotifyImportModal
+      :open="showSpotifyModal"
+      :project-folder-path="currentProject?.folderPath ?? ''"
+      :project-epoch="projectEpoch"
+      :import-files="importFromServerPaths"
+      @close="showSpotifyModal = false"
+    />
+
     <!-- Audio Import Modal — server browse + native upload -->
     <AudioImportModal :open="showImportModal"
                       @pick="onImportPick"
@@ -43,44 +53,39 @@
 </template>
 
 <script setup lang="ts">
-import { v4 as uuidv4 } from 'uuid';
 import { ref } from 'vue';
 import YouTubeImportModal from './YouTubeImportModal.vue';
 import AudioImportModal from './AudioImportModal.vue';
+import SpotifyImportModal from './SpotifyImportModal.vue';
 import Btn from './Btn.vue';
-import { triggerRef } from 'vue';
 import type { AudioItem, GroupItem } from '~/types/project';
-import { DEFAULT_AUDIO_ITEM, DEFAULT_GROUP_ITEM, transitionDefaultsForImport, anchorStartNextMarker } from '~/types/project';
-import { applyAutoProcessing, buildWaveformFromChannels, parseWaveformFileData } from '~/utils/audio';
-import { useOutputTarget } from '~/composables/useOutputTarget';
+import { DEFAULT_AUDIO_ITEM, DEFAULT_GROUP_ITEM, transitionDefaultsForImport } from '~/types/project';
+import { useLiveplayServer } from '~/composables/useLiveplayServer';
 
-const { currentProject, addItem, consumePendingAutoProcess, updateIndices, saveProject, triggerWaveformUpdate, isLoading, getAllItemsFlat, resolveProjectPath, findItemByUuid, projectEpoch } = useProject();
+const {
+  currentProject,
+  addItem,
+  removeItem,
+  saveProject,
+  getAllItemsFlat,
+  findItemByUuid,
+  projectEpoch,
+} = useProject();
 const { t } = useLocalization();
-const { levels: outputTargetLevels } = useOutputTarget();
 const { activeCues, nextItemOverrideUuid } = useAudioEngine();
 const { uiMode } = useUiMode();
 const { revealSelection, commitReveal, clearReveals } = usePlaylistReveal();
+const server = useLiveplayServer();
 // Same useState key useProject/useShowControl bind to — watching the uuid (not
 // the `selectedItem` computed) means we react to the selection MOVING, not to
 // the item object being rebuilt by a server-pushed document.
 const selectedItemUuid = useState<string | null>('selectedItemUuid', () => null);
 const showMode = computed(() => uiMode.value === 'playback');
 const scrollContainer = ref<HTMLElement | null>(null);
-
-// Auto-process only items that were just imported this session (marked by
-// addItem). Consumes the mark so it never runs twice for the same item.
-function maybeAutoProcess(item: AudioItem) {
-  if (!consumePendingAutoProcess(item.uuid)) return;
-  const settings = (currentProject.value as any)?.settings;
-  if (!settings?.disableAutoVolumeAndTrim) {
-    applyAutoProcessing(item, outputTargetLevels.value.autoVolumeTargetDb);
-  }
-  // The default start-next marker was placed relative to the import-time
-  // duration; re-anchor it to the final (possibly auto-trimmed) out point.
-  anchorStartNextMarker(item);
-}
+const canOnlineImport = computed(() => !!currentProject.value && server.isLocalServer);
 
 const showYouTubeModal = ref(false);
+const showSpotifyModal = ref(false);
 const showImportModal  = ref(false);
 
 // ---------------------------------------------------------------------------
@@ -257,8 +262,8 @@ watch(
     currentProject.value?.name ?? '',
     currentProject.value?.items?.length ?? 0,
     projectEpoch.value,
-  ],
-  ([folder, name, , epoch], [prevFolder, prevName, , prevEpoch] = ['', '', 0, 0]) => {
+  ] as const,
+  ([folder, name, , epoch], [prevFolder, prevName, , prevEpoch]) => {
     // Reset the "already requested" tracker when the project changes. Temporary
     // group reveals go with it — they point at uuids from the old document.
     //
@@ -297,277 +302,144 @@ const onImportPick = async (serverPaths: string | string[]) => {
   // The modal now batches selections; accept either a single path (legacy) or
   // an array. Import sequentially so each item gets a stable, ordered index.
   const paths = Array.isArray(serverPaths) ? serverPaths : [serverPaths];
-  for (const p of paths) {
-    await importFromServerPath(p);
-  }
+  await importFromServerPaths(paths);
   showImportModal.value = false;
 };
 
-// Import a file that is already on (or accessible from) the server.
-// 1. Copy the source into the project's media root so the project owns the file.
-// 2. Fetch duration metadata.
-// 3. Add the AudioItem immediately (no waveform yet).
-// 4. Queue async waveform generation — result arrives via 'waveform_ready' WS.
-const importFromServerPath = async (serverPath: string) => {
-  if (!currentProject.value) return;
-  try {
-    const server = (await import('~/composables/useLiveplayServer')).useLiveplayServer();
+interface PreparedImport {
+  audioItem: AudioItem;
+  mediaServerPath: string;
+}
 
-    // Copy file to the project's media root (no-op if already there).
+interface ImportBatchResult {
+  success: boolean;
+  imported: number;
+  error?: string;
+  retainFiles?: boolean;
+}
+
+const prepareImportFromServerPath = async (
+  serverPath: string,
+  signal?: AbortSignal,
+): Promise<PreparedImport | null> => {
+  if (!currentProject.value) return null;
+  try {
+    if (signal?.aborted) return null;
     let destPath = serverPath;
     try {
-      destPath = await server.copyToMedia(serverPath);
+      destPath = await server.copyToMedia(serverPath, signal);
+      if (signal?.aborted) return null;
     } catch (e) {
       console.warn('[import] copyToMedia failed, using original path:', e);
+      if (signal?.aborted) return null;
     }
 
     const fileName = destPath.split(/[\\/]/).pop() || 'audio';
-    const uuid = uuidv4();
+    const uuid = crypto.randomUUID();
 
-    // Best-effort metadata — gives duration without a full decode on the client.
     let duration = 0;
     try {
-      const md: any = await server.fetchMetadata(destPath);
+      const md: any = await server.fetchMetadata(destPath, signal);
+      if (signal?.aborted) return null;
       if (md && typeof md.duration_ms === 'number') duration = md.duration_ms / 1000;
     } catch (e) {
       console.warn('[import] fetchMetadata failed, falling back to 0 duration:', e);
+      if (signal?.aborted) return null;
     }
 
-    const audioItem: AudioItem = {
-      ...DEFAULT_AUDIO_ITEM,
-      ...transitionDefaultsForImport((currentProject.value as any)?.settings?.defaultTransitionMode, duration),
-      uuid,
-      index: [currentProject.value.items.length],
-      displayName: fileName.replace(/\.[^/.]+$/, ''),
-      type: 'audio',
-      mediaFileName: fileName,
-      mediaPath: `media/${fileName}`,
+    return {
       mediaServerPath: destPath,
-      // Stored relative to the project folder so the project stays portable.
-      waveformPath: `waveforms/${uuid}.json`,
-      waveform: undefined,
-      outPoint: duration,
-      duration,
-    } as AudioItem;
-
-    addItem(audioItem);
-
-    // Persist the import right away: when autosave is on this writes the file
-    // AND ships the full document (mirroring the new cue into the engine); when
-    // autosave is off it flags unsaved changes while the items diff-watcher
-    // still syncs the cue live. Either way the engine gets a cue immediately so
-    // the item is playable without waiting for a later manual save.
-    await saveProject();
-
-    // Queue waveform generation — server responds via 'waveform_ready' doc_patch.
-    server.requestWaveformGeneration(destPath, uuid).catch(e => {
-      console.warn(`[waveform] generation request failed for ${audioItem.displayName}:`, e);
-    });
+      audioItem: {
+        ...DEFAULT_AUDIO_ITEM,
+        ...transitionDefaultsForImport((currentProject.value as any)?.settings?.defaultTransitionMode, duration),
+        uuid,
+        index: [currentProject.value.items.length],
+        displayName: fileName.replace(/\.[^/.]+$/, ''),
+        type: 'audio',
+        mediaFileName: fileName,
+        mediaPath: `media/${fileName}`,
+        mediaServerPath: destPath,
+        waveformPath: `waveforms/${uuid}.json`,
+        waveform: undefined,
+        outPoint: duration,
+        duration,
+      } as AudioItem,
+    };
   } catch (e) {
-    console.error('Error importing from server path:', e);
+    console.error('Error preparing import from server path:', e);
+    return null;
   }
 };
 
-const importAudioFile = async (sourcePath: string) => {
-  if (!currentProject.value) return;
-
-  try {
-    const fileName = sourcePath.split(/[\\/]/).pop() || 'audio.mp3';
-    const uuid = uuidv4();
-    const destPath = `${currentProject.value.folderPath}/media/${fileName}`;
-    
-    // Copy file to media folder
-    const copyResult = await window.electronAPI.copyFile(sourcePath, destPath);
-    if (!copyResult.success) {
-      console.error('Failed to copy file:', copyResult.error);
-      return;
-    }
-
-    // Get audio duration
-    const duration = await getAudioDuration(destPath);
-
-    // Create audio item WITHOUT waveform (will be generated async via ffmpeg)
-    const audioItem: AudioItem = {
-      ...DEFAULT_AUDIO_ITEM,
-      ...transitionDefaultsForImport((currentProject.value as any)?.settings?.defaultTransitionMode, duration),
-      uuid,
-      index: [currentProject.value.items.length],
-      displayName: fileName.replace(/\.[^/.]+$/, ''), // Remove extension
-      type: 'audio',
-      mediaFileName: fileName,
-      mediaPath: `media/${fileName}`, // Store relative path to project folder
-      waveformPath: `waveforms/${uuid}.json`, // Relative — keeps the project portable
-      waveform: undefined, // Will be generated asynchronously
-      outPoint: duration,
-      duration
-    } as AudioItem;
-
-    // Add item immediately (no blocking)
-    addItem(audioItem);
-    
-    // Generate waveform asynchronously using ffmpeg
-    generateWaveformAsync(audioItem);
-  } catch (error) {
-    console.error('Error importing audio:', error);
+const importFromServerPaths = async (
+  serverPaths: string[],
+  signal?: AbortSignal,
+): Promise<ImportBatchResult> => {
+  const project = currentProject.value;
+  const epoch = projectEpoch.value;
+  if (!project || serverPaths.length === 0) {
+    return { success: false, imported: 0, error: t('spotifyImport.cueImportFailed') };
   }
-};
 
-const generateWaveformAsync = async (item: AudioItem) => {
-  try {
-    if (!currentProject.value) return;
-
-    // Non-Electron / server mode: skip the file-system checks and go straight
-    // to the server waveform endpoint.
-    if (!window.electronAPI) {
-      if (item.mediaServerPath) {
-        try {
-          const server = (await import('~/composables/useLiveplayServer')).useLiveplayServer();
-          const serverWf = await server.fetchWaveformByPath(item.mediaServerPath);
-          const duration = serverWf.duration_ms / 1000;
-          // All source channels, not just the left one (#47).
-          const built = buildWaveformFromChannels(serverWf.channels, duration);
-          const peaks = built?.peaks ?? [];
-          if (built && peaks.length > 0) {
-            item.waveform = built;
-            if (duration > 0) { item.duration = duration; item.outPoint = duration; }
-            maybeAutoProcess(item);
-            triggerWaveformUpdate();
-            console.log(`[waveform] server: ${item.displayName} — ${peaks.length} buckets, ${duration.toFixed(2)}s`);
-          }
-        } catch (e) {
-          console.warn(`[waveform] server fetch failed for ${item.displayName}:`, e);
-        }
-      }
-      return;
+  const prepared: PreparedImport[] = [];
+  for (const serverPath of serverPaths) {
+    if (signal?.aborted ||
+        currentProject.value !== project ||
+        projectEpoch.value !== epoch) {
+      return { success: false, imported: 0, error: t('spotifyImport.cancelled') };
     }
-
-    // Electron path: check for a cached waveform file first.
-    // Ensure waveforms directory exists
-    const waveformsDir = `${currentProject.value.folderPath}/waveforms`;
-    await window.electronAPI.ensureDirectory(waveformsDir);
-
-    // Check if waveform file already exists and is valid
-    const existingWaveform = await window.electronAPI.readFile(resolveProjectPath(item.waveformPath));
-    if (existingWaveform.success && existingWaveform.data) {
-      try {
-        // Accepts both the server's per-channel cache and legacy ffmpeg files.
-        const waveformData = parseWaveformFileData(JSON.parse(existingWaveform.data));
-
-        if (waveformData) {
-          item.waveform = waveformData;
-
-          // Update duration from waveform data if available (more accurate than Audio API)
-          if (waveformData.duration && waveformData.duration > 0) {
-            item.duration = waveformData.duration;
-            item.outPoint = waveformData.duration;
-          }
-
-          maybeAutoProcess(item);
-          triggerWaveformUpdate();
-          console.log(`Existing waveform loaded for ${item.displayName}`);
-          return;
-        }
-        console.warn('Invalid waveform format, regenerating...');
-      } catch (e) {
-        console.warn('Failed to parse existing waveform, regenerating...');
-      }
-    }
-
-    // Check if generateWaveform is available (Electron path)
-    if (!window.electronAPI?.generateWaveform) {
-      // Server fallback: use /api/waveform_path if this item has a server path.
-      // The fetch is async so the UI is never blocked; the waveform appears when ready.
-      if (item.mediaServerPath) {
-        try {
-          const server = (await import('~/composables/useLiveplayServer')).useLiveplayServer();
-          const serverWf = await server.fetchWaveformByPath(item.mediaServerPath);
-          // Keep every channel; `peaks` is their per-bucket max (#47).
-          const duration = serverWf.duration_ms / 1000;
-          const built = buildWaveformFromChannels(serverWf.channels, duration);
-          const peaks = built?.peaks ?? [];
-          if (built && peaks.length > 0) {
-            item.waveform = built;
-            if (duration > 0) {
-              item.duration = duration;
-              item.outPoint = duration;
-            }
-            maybeAutoProcess(item);
-            triggerWaveformUpdate();
-            console.log(`[waveform] server: ${item.displayName} — ${peaks.length} buckets, ${duration.toFixed(2)}s`);
-          }
-        } catch (e) {
-          console.warn(`[waveform] server fetch failed for ${item.displayName}:`, e);
-        }
-      } else {
-        console.warn('[waveform] no Electron API and no mediaServerPath — skipping waveform generation');
-      }
-      return;
-    }
-
-    // Generate waveform using ffmpeg (non-blocking)
-    const mediaPath = `${currentProject.value.folderPath}/media/${item.mediaFileName}`;
-    const result = await window.electronAPI.generateWaveform(mediaPath, resolveProjectPath(item.waveformPath));
-
-    if (result.success) {
-      console.log(`Started waveform generation for ${item.displayName}`);
-
-      // Start polling for waveform file (check every 2 seconds)
-      const pollInterval = setInterval(async () => {
-        try {
-          const waveformFile = await window.electronAPI.readFile(resolveProjectPath(item.waveformPath));
-          if (waveformFile.success && waveformFile.data) {
-            const waveformData = parseWaveformFileData(JSON.parse(waveformFile.data));
-
-            if (waveformData) {
-              item.waveform = waveformData;
-
-              // Update duration from waveform data if available (more accurate than Audio API)
-              if (waveformData.duration && waveformData.duration > 0) {
-                item.duration = waveformData.duration;
-                item.outPoint = waveformData.duration;
-              }
-
-              maybeAutoProcess(item);
-              // Force Vue reactivity update
-              triggerWaveformUpdate();
-
-              // Stop polling once loaded
-              clearInterval(pollInterval);
-              console.log(`Waveform loaded for ${item.displayName} (${waveformData.peaks.length} peaks, ${waveformData.duration?.toFixed(2)}s)`);
-            }
-          }
-        } catch (error) {
-          console.error('Error polling for waveform:', error);
-        }
-      }, 2000);
-
-      // Stop polling after 30 seconds to prevent infinite polling
-      setTimeout(() => {
-        clearInterval(pollInterval);
-      }, 30000);
-    } else {
-      console.error('Failed to generate waveform:', result.error);
-    }
-  } catch (error) {
-    console.error('Error generating waveform:', error);
+    const item = await prepareImportFromServerPath(serverPath, signal);
+    if (item) prepared.push(item);
   }
-};
+  if (prepared.length !== serverPaths.length ||
+      signal?.aborted ||
+      currentProject.value !== project ||
+      projectEpoch.value !== epoch) {
+    return {
+      success: false,
+      imported: 0,
+      error: signal?.aborted
+        ? t('spotifyImport.cancelled')
+        : t('spotifyImport.cueImportFailed'),
+    };
+  }
 
-const getAudioDuration = async (filePath: string): Promise<number> => {
-  // Simplified - would use proper audio decoding
-  return new Promise((resolve) => {
-    if (import.meta.client) {
-      const audio = new Audio(`file://${filePath}`);
-      audio.addEventListener('loadedmetadata', () => {
-        resolve(audio.duration);
+  for (const entry of prepared) {
+    addItem(entry.audioItem);
+  }
+
+  if (signal?.aborted) {
+    for (const entry of prepared) removeItem(entry.audioItem.uuid);
+    return { success: false, imported: 0, error: t('spotifyImport.cancelled') };
+  }
+
+  const saved = await saveProject({ signal });
+  if (!saved) {
+    if (currentProject.value === project && projectEpoch.value === epoch) {
+      for (const entry of prepared) removeItem(entry.audioItem.uuid);
+    }
+    return {
+      success: false,
+      imported: 0,
+      error: signal?.aborted
+        ? t('spotifyImport.cancelled')
+        : t('spotifyImport.cueImportFailed'),
+      // The server may have persisted the cues before its acknowledgement was
+      // lost. An orphan is recoverable; a saved cue pointing at a deleted file is not.
+      retainFiles: true,
+    };
+  }
+
+  if (currentProject.value === project && projectEpoch.value === epoch) {
+    for (const entry of prepared) {
+      requestedWaveformUuids.add(entry.audioItem.uuid);
+      server.requestWaveformGeneration(entry.mediaServerPath, entry.audioItem.uuid).catch((e) => {
+        requestedWaveformUuids.delete(entry.audioItem.uuid);
+        console.warn(`[waveform] generation request failed for ${entry.audioItem.displayName}:`, e);
       });
-      audio.addEventListener('error', () => {
-        resolve(60); // Default fallback
-      });
-    } else {
-      resolve(60);
     }
-  });
+  }
+  return { success: true, imported: prepared.length };
 };
 
 const handleAddGroup = () => {
@@ -575,7 +447,7 @@ const handleAddGroup = () => {
 
   const groupItem: GroupItem = {
     ...DEFAULT_GROUP_ITEM,
-    uuid: uuidv4(),
+    uuid: crypto.randomUUID(),
     index: [currentProject.value.items.length],
     displayName: 'New Group',
     type: 'group',
@@ -602,7 +474,7 @@ const handleDrop = async (e: DragEvent) => {
     if (!cartSrc || cartSrc.type !== 'audio') return;
     const clone: AudioItem = {
       ...(cartSrc as AudioItem),
-      uuid: uuidv4(),
+      uuid: crypto.randomUUID(),
       index: [currentProject.value.items.length],
     } as AudioItem;
     addItem(clone);
@@ -611,21 +483,19 @@ const handleDrop = async (e: DragEvent) => {
   }
 
   const files = Array.from(e.dataTransfer.files);
-  const audioFiles = files.filter(file =>
-    /\.(mp3|wav|ogg|flac|m4a|aac)$/i.test(file.name)
-  );
-  if (audioFiles.length === 0) return;
+  if (files.length === 0) return;
 
   // Files dropped from the OS must be uploaded to (or copied into) the
   // server's media root and registered with the project — the server owns
   // playback and addresses media by its own paths. The old local-copy path
   // (importAudioFile) left the item with no server-resolvable media, so the
   // engine could never create a cue for it ("PLAY: ?" in the server log).
-  const server = (await import('~/composables/useLiveplayServer')).useLiveplayServer();
-  for (const file of audioFiles) {
+  const serverPaths: string[] = [];
+  for (const file of files) {
     const serverPath = await server.resolveDroppedFileToMedia(file);
-    if (serverPath) await importFromServerPath(serverPath);
+    if (serverPath) serverPaths.push(serverPath);
   }
+  await importFromServerPaths(serverPaths);
 };
 </script>
 
@@ -642,16 +512,17 @@ const handleDrop = async (e: DragEvent) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--spacing-md) var(--spacing-lg);
-  min-height: 56px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  min-height: 48px;
   box-sizing: border-box;
   border-bottom: 1px solid var(--color-border);
   background-color: var(--color-surface);
 }
 
 .playlist-header h2 {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
 }
 
 .playlist-actions {
@@ -663,12 +534,12 @@ const handleDrop = async (e: DragEvent) => {
 .playlist-content {
   flex: 1;
   overflow-y: auto;
-  padding: var(--spacing-md);
+  padding: var(--spacing-sm);
 }
 
 .empty-state {
   text-align: center;
-  padding: var(--spacing-xxl);
+  padding: 64px var(--spacing-xl);
   color: var(--color-text-secondary);
   
   p {
@@ -676,15 +547,15 @@ const handleDrop = async (e: DragEvent) => {
   }
   
   .hint {
-    font-size: 13px;
-    font-style: italic;
+    font-size: 12px;
+    color: var(--color-text-tertiary);
   }
 }
 
 .item-list {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xs);
+  gap: 2px;
 }
 
 .item-list-progress {

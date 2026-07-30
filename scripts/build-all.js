@@ -4,9 +4,8 @@
 // -----------------------------------------------------------------------------
 // Unified root build:
 //   1. Build the C++ server (via build-server.js)
-//   2. On macOS, wrap it as LivePlay Server.app (used by the DMG)
-//   3. Build the Nuxt client and produce the Electron installers
-//   4. Copy installer artefacts into the repo-root /build/ directory
+//   2. Build the Nuxt client and produce the Electron installers
+//   3. Copy installer artefacts into the repo-root /build/ directory
 //
 // Invoked by `npm run build` and `npm run build:clean` from the monorepo root.
 // =============================================================================
@@ -18,6 +17,8 @@ const REPO_ROOT    = path.resolve(__dirname, '..');
 const CLIENT_DIR   = path.join(REPO_ROOT, 'client');
 const DIST_ELECTRON = path.join(CLIENT_DIR, 'dist-electron');
 const ROOT_BUILD   = path.join(REPO_ROOT, 'build');
+const ARTIFACT_PREFIX = require(path.join(CLIENT_DIR, 'package.json'))
+  .build.artifactName.split('${', 1)[0];
 
 function run(cmd, args, opts = {}) {
   console.log(`\n> ${cmd} ${args.join(' ')}`);
@@ -31,15 +32,10 @@ function run(cmd, args, opts = {}) {
 // 1. C++ server -------------------------------------------------------------
 run('node', [path.join('scripts', 'build-server.js')], { cwd: REPO_ROOT });
 
-// 2. macOS: wrap server binary into a .app bundle ---------------------------
-if (process.platform === 'darwin') {
-  run('node', [path.join('scripts', 'build-server-app-mac.js')], { cwd: REPO_ROOT });
-}
-
-// 3. Client (Nuxt generate + electron-builder) -----------------------------
+// 2. Client (Nuxt generate + electron-builder) -----------------------------
 run('npm', ['run', 'build:electron', '--workspace=client'], { cwd: REPO_ROOT });
 
-// 4. Collect installers into /build/ at the repo root ----------------------
+// 3. Collect installers into /build/ at the repo root ----------------------
 fs.mkdirSync(ROOT_BUILD, { recursive: true });
 
 // Only copy actual installer artefacts — not the unpacked app trees or the
@@ -63,6 +59,7 @@ const entries = fs.readdirSync(DIST_ELECTRON, { withFileTypes: true });
 let copied = 0;
 for (const entry of entries) {
   if (!entry.isFile()) continue;
+  if (!entry.name.startsWith(ARTIFACT_PREFIX)) continue;
   if (!INSTALLER_PATTERNS.some(rx => rx.test(entry.name))) continue;
   const src  = path.join(DIST_ELECTRON, entry.name);
   const dest = path.join(ROOT_BUILD, entry.name);

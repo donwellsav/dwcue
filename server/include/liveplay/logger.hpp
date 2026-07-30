@@ -1,7 +1,7 @@
 // ============================================================================
 // liveplay/logger.hpp
 // ----------------------------------------------------------------------------
-// Thread-safe, ANSI-color-coded logger for the LivePlay server CLI.
+// Thread-safe, ANSI-color-coded logger for the DonWells Cue server CLI.
 //
 // The server is headless — its stdout is the user interface. Color helps the
 // operator triage what is information, what needs attention, and what is on
@@ -18,6 +18,7 @@
 // ============================================================================
 #pragma once
 
+#include <filesystem>
 #include <format>
 #include <mutex>
 #include <string>
@@ -55,7 +56,7 @@ public:
     // `max_bytes`, it is rotated to "<path>.1" first (single generation). Pass
     // an empty path to disable file logging. Best-effort: a file-open failure is
     // logged once and never blocks console logging.
-    static void set_log_file(const std::string& path,
+    static void set_log_file(const std::filesystem::path& path,
                              std::size_t max_bytes = 10u * 1024 * 1024);
 
     // -------------------- primary API ---------------------------------------

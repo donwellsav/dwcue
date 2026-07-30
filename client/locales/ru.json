@@ -6,7 +6,7 @@
     "direction": "ltr"
   },
   "app": {
-    "name": "LivePlay"
+    "name": "DonWells Cue"
   },
   "menu": {
     "file": "Файл",
@@ -27,21 +27,21 @@
     "fullscreen": "Полноэкранный режим",
     "language": "Язык",
     "help": "Справка",
-    "about": "О LivePlay"
+    "about": "О DonWells Cue"
   },
   "welcome": {
-    "title": "LivePlay",
+    "title": "DonWells Cue",
     "subtitle": "Воспроизведение аудио для живых мероприятий",
     "newProject": "Новый проект",
     "openProject": "Открыть проект",
     "modeTitle": "Выбор режима сервера",
-    "modeSubtitle": "Где LivePlay должен запустить аудиодвижок?",
+    "modeSubtitle": "Где DonWells Cue должен запустить аудиодвижок?",
     "localMode": "Локальный",
     "localModeDescription": "Запустить аудиодвижок на этом компьютере.",
     "remoteMode": "Удалённый",
-    "remoteModeDescription": "Подключиться к серверу LivePlay в сети.",
-    "remoteConnect": "Подключиться к серверу LivePlay",
-    "remoteAddressHint": "Введите IP-адрес или имя хоста сервера LivePlay.",
+    "remoteModeDescription": "Подключиться к серверу DonWells Cue в сети.",
+    "remoteConnect": "Подключиться к серверу DonWells Cue",
+    "remoteAddressHint": "Введите IP-адрес или имя хоста сервера DonWells Cue.",
     "serverAddress": "Адрес сервера",
     "serverAddressPlaceholder": "напр. 192.168.1.10 или myserver.local",
     "connect": "Подключиться",
@@ -226,12 +226,12 @@
     "restartTitle": "Перезапустить сервер"
   },
   "serverSettings": {
-    "title": "Сервер LivePlay",
+    "title": "Сервер DonWells Cue",
     "connected": "● Подключено",
     "reconnecting": "● Переподключение…",
     "disconnected": "● Отключено",
     "localModeDesc": "Приложение запускает собственный аудиодвижок. Лучше всего для одиночных операторов.",
-    "remoteModeDesc": "Подключиться к серверу LivePlay на другом компьютере.",
+    "remoteModeDesc": "Подключиться к серверу DonWells Cue на другом компьютере.",
     "localPort": "Локальный порт",
     "remoteUrl": "Удалённый URL",
     "engineRunning": "Движок запущен (pid {pid})",
@@ -269,8 +269,8 @@
     "currentVersion": "Текущая версия",
     "newVersion": "Новая версия",
     "whatsNew": "Что нового",
-    "updatePrompt": "Доступна новая версия LivePlay. Хотите скачать и установить её сейчас?",
-    "manualUpdatePrompt": "Доступна новая версия LivePlay. Нажмите ниже, чтобы посетить страницу загрузки.",
+    "updatePrompt": "Доступна новая версия DonWells Cue. Хотите скачать и установить её сейчас?",
+    "manualUpdatePrompt": "Доступна новая версия DonWells Cue. Нажмите ниже, чтобы посетить страницу загрузки.",
     "downloading": "Загрузка обновления",
     "downloadComplete": "Загрузка завершена",
     "installInfo": "Обновление готово к установке. Вы можете установить его сейчас или оно будет установлено при закрытии приложения.",
@@ -478,7 +478,7 @@
   },
   "connectionLost": {
     "title": "Соединение потеряно",
-    "message": "Соединение с сервером LivePlay по адресу {url} потеряно.",
+    "message": "Соединение с сервером DonWells Cue по адресу {url} потеряно.",
     "attempting": "Попытка переподключения…",
     "attemptCount": "(Неудачных попыток: {count})",
     "locked": "Воспроизведение и редактирование приостановлены до восстановления связи — изменения, сделанные сейчас, не удалось бы отправить на сервер.",

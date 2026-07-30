@@ -58,8 +58,6 @@
       :new-version="updateInfo.newVersion"
       :release-notes="updateInfo.releaseNotes"
       :release-date="updateInfo.releaseDate"
-      :is-manual-update="updateInfo.isManualUpdate"
-      :download-url="updateInfo.downloadUrl"
       @close="showUpdateModal = false"
     />
     
@@ -166,6 +164,7 @@
       @close="importServerPickerOpen = false"
     />
     </template>
+    <ServerAlert />
   </div>
 </template>
 
@@ -231,6 +230,10 @@ const pendingImportPath = ref<string>('');
 
 // Color picker for accent color
 const showColorPicker = ref(false);
+const DEFAULT_ACCENT = '#315fcf';
+const retiredBrandAccents = new Set(['#a45d00', '#8f5000', '#c47a00', '#ffb000']);
+const displayAccent = (color?: string) =>
+  color && !retiredBrandAccents.has(color.toLowerCase()) ? color : DEFAULT_ACCENT;
 
 // About modal
 const showAboutModal = ref(false);
@@ -241,13 +244,12 @@ const updateInfo = ref({
   currentVersion: '',
   newVersion: '',
   releaseNotes: '',
-  releaseDate: '',
-  isManualUpdate: false,
-  downloadUrl: ''
+  releaseDate: ''
 });
 
 const accentColors = [
-  '#0f62fe', '#0353e9', '#002d9c', // Blues
+  '#315fcf', '#3c6fe0', '#5a83e8', // DonWells cobalt
+  '#007d79', '#009d9a', '#08bdba', // Teals
   '#da1e28', '#a2191f', '#750e13', // Reds
   '#24a148', '#198038', '#0e6027', // Greens
   '#f1c21b', '#d2a106', '#b28600', // Yellows
@@ -276,7 +278,7 @@ function applyCartWindowProjectData(projectData: any) {
     theme.value = projectData.theme.mode;
   }
   if (projectData.theme?.accentColor) {
-    document.documentElement.style.setProperty('--color-accent-custom', projectData.theme.accentColor);
+    document.documentElement.style.setProperty('--color-accent-custom', displayAccent(projectData.theme.accentColor));
   }
 }
 
@@ -333,12 +335,6 @@ onMounted(() => {
 
     // Listen for update events
     window.electronAPI.onUpdateAvailable((event: any, info: any) => {
-      updateInfo.value = info;
-      showUpdateModal.value = true;
-    });
-    
-    // Listen for manual update events (fallback)
-    window.electronAPI.onManualUpdateAvailable((event: any, info: any) => {
       updateInfo.value = info;
       showUpdateModal.value = true;
     });
@@ -470,37 +466,26 @@ const importChoiceVisible       = ref(false);
 const importServerPickerOpen    = ref(false);
 const importServerPickerStage   = ref<'archive' | 'destination'>('archive');
 const pendingArchiveOnServer    = ref<string>('');           // server-side .lpa path
-const pendingArchiveBlob        = ref<File | null>(null);    // client-side .lpa
-const pendingArchiveBlobName    = ref<string>('');
+const pendingArchiveClientPath  = ref<string>('');           // client-side .lpa path
+const pendingArchiveName        = ref<string>('');
 
 // When a .lpa is double-clicked, WelcomeScreen handles the local/remote
-// connection then publishes the local .lpa path here. We buffer the file and
-// reuse the standard import destination-picker (server owns the extraction).
+// connection then publishes the local .lpa path here. The archive stays on
+// disk until the destination is chosen (server owns the extraction).
 const pendingLpaImportReady = useState<string | null>('liveplay:pendingLpaImportReady', () => null);
-watch(pendingLpaImportReady, async (lpaPath) => {
+watch(pendingLpaImportReady, (lpaPath) => {
   if (!lpaPath) return;
   pendingLpaImportReady.value = null; // consume
-  try {
-    const result = await (window as any).electronAPI.readAudioFile(lpaPath);
-    if (!result?.success || !result.data) {
-      console.error('Failed to read .lpa:', result?.error);
-      return;
-    }
-    const bytes = new Uint8Array(result.data);
-    const name  = lpaPath.split(/[\\/]/).pop() || 'import.lpa';
-    pendingArchiveBlob.value      = new File([bytes], name);
-    pendingArchiveBlobName.value  = name;
-    importServerPickerStage.value = 'destination';
-    importServerPickerOpen.value  = true;
-  } catch (error) {
-    console.error('Failed to open .lpa file:', error);
-  }
+  pendingArchiveClientPath.value = lpaPath;
+  pendingArchiveName.value = lpaPath.split(/[\\/]/).pop() || 'import.lpa';
+  importServerPickerStage.value = 'destination';
+  importServerPickerOpen.value = true;
 });
 
 function startImportFlow() {
   const server = useLiveplayServer();
   importServerPickerStage.value = 'archive';
-  if (server.isLocalServer.value) {
+  if (server.isLocalServer) {
     importServerPickerOpen.value = true;
   } else {
     importChoiceVisible.value = true;
@@ -519,15 +504,8 @@ async function onImportChoice(choice: 'server' | 'client') {
   // it should be extracted.
   const lpaPath = await (window as any).electronAPI.showOpenArchiveDialog();
   if (!lpaPath) return;
-  const result = await (window as any).electronAPI.readAudioFile(lpaPath);
-  if (!result?.success || !result.data) {
-    console.error('Failed to read .lpa:', result?.error);
-    return;
-  }
-  const bytes = new Uint8Array(result.data);
-  const name  = lpaPath.split(/[\\/]/).pop() || 'import.lpa';
-  pendingArchiveBlob.value     = new File([bytes], name);
-  pendingArchiveBlobName.value = name;
+  pendingArchiveClientPath.value = lpaPath;
+  pendingArchiveName.value = lpaPath.split(/[\\/]/).pop() || 'import.lpa';
   importServerPickerStage.value = 'destination';
   importServerPickerOpen.value  = true;
 }
@@ -551,15 +529,18 @@ async function onImportServerPickerPick(serverPath: string) {
   progressModal.value = {
     visible: true,
     title:   t('importProgress.title'),
-    message: `${t('importProgress.message')} ${pendingArchiveBlobName.value ||
+    message: `${t('importProgress.message')} ${pendingArchiveName.value ||
               pendingArchiveOnServer.value.split(/[\\/]/).pop() || ''}…`,
     percentage: 40,
   };
   try {
     let result;
-    if (pendingArchiveBlob.value) {
-      result = await server.importProjectArchiveUpload(
-        pendingArchiveBlob.value, serverPath, pendingArchiveBlobName.value);
+    if (pendingArchiveClientPath.value) {
+      result = server.isLocalServer
+        ? await server.importProjectArchiveFromServer(
+            pendingArchiveClientPath.value, serverPath)
+        : await server.importProjectArchiveFromClientPath(
+            pendingArchiveClientPath.value, serverPath, pendingArchiveName.value);
     } else {
       result = await server.importProjectArchiveFromServer(
         pendingArchiveOnServer.value, serverPath);
@@ -567,6 +548,7 @@ async function onImportServerPickerPick(serverPath: string) {
     progressModal.value.percentage = 100;
     if (result.projectFiles.length === 0) {
       console.error('No .liveplay file in archive');
+      server.lastError = 'Import failed: archive contains no .liveplay project file.';
       return;
     }
     if (result.projectFiles.length > 1) {
@@ -578,11 +560,12 @@ async function onImportServerPickerPick(serverPath: string) {
     }
   } catch (e) {
     console.error('Import failed:', e);
+    server.lastError = `Import failed: ${e instanceof Error ? e.message : String(e)}`;
   } finally {
     setTimeout(() => { progressModal.value.visible = false; }, 300);
     pendingArchiveOnServer.value = '';
-    pendingArchiveBlob.value     = null;
-    pendingArchiveBlobName.value = '';
+    pendingArchiveClientPath.value = '';
+    pendingArchiveName.value = '';
   }
 }
 
@@ -608,8 +591,10 @@ watch(currentProject, (project) => {
     
     // Set accent color
     if (import.meta.client && project.theme.accentColor) {
-      document.documentElement.style.setProperty('--color-accent-custom', project.theme.accentColor);
+      document.documentElement.style.setProperty('--color-accent-custom', displayAccent(project.theme.accentColor));
     }
+  } else if (import.meta.client) {
+    document.documentElement.style.removeProperty('--color-accent-custom');
   }
 }, { immediate: true });
 

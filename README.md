@@ -1,14 +1,14 @@
-# LivePlay
+# DonWells Cue
 
-![LivePlay main interface — playlist editor, cart grid and properties panel](client/public/screenshots/liveplay_screenshot.jpg)
+![DonWells Cue main interface — playlist editor, cart grid and properties panel](client/public/screenshots/liveplay_screenshot.jpg)
 
-**LivePlay is a free, open-source app for playing back audio in live shows.** If you run sound for theatre, conferences, houses of worship, AV installs, or any live event, LivePlay lets you line up your music, sound effects and stings ahead of time and fire them off reliably on the night — from a laptop, a touchscreen, or even a separate stage-side machine you control over the network.
+**DonWells Cue is a free, open-source app for playing back audio in live shows.** If you run sound for theatre, conferences, houses of worship, AV installs, or any live event, DonWells Cue lets you line up your music, sound effects and stings ahead of time and fire them off reliably on the night — from a laptop, a touchscreen, or even a separate stage-side machine you control over the network.
 
-You build a **show** as a list of cues plus a grid of one-touch buttons, then trigger them with a click, a tap, a keyboard shortcut, or a MIDI controller. LivePlay handles the fades, the transitions between tracks, and keeps a close eye on your levels so nothing clips or distorts.
+You build a **show** as a list of cues plus a grid of one-touch buttons, then trigger them with a click, a tap, a keyboard shortcut, or a MIDI controller. DonWells Cue handles the fades, the transitions between tracks, and keeps a close eye on your levels so nothing clips or distorts.
 
 It runs on **Windows, macOS and Linux**, and it's completely free.
 
-> 📥 **[Download the latest version →](https://github.com/tdoukinitsas/liveplay/releases)** &nbsp;·&nbsp; 🌐 **[Website & docs](https://tdoukinitsas.github.io/liveplay/)**
+> A public DonWells Cue release feed is not configured yet. Build locally or publish the signed artifacts from your own release workflow.
 
 ---
 
@@ -18,7 +18,7 @@ It runs on **Windows, macOS and Linux**, and it's completely free.
 - **🎛 Fire off carts** — a grid of one-touch buttons for stings, SFX, walk-on music and beds. Great for touchscreens; the cart grid can even pop out into its own window.
 - **📺 Show Mode** — switch to a simplified, touch-friendly playback view for the actual performance, so operators can trigger cues without the editing clutter. Each device remembers its own preference.
 - **⏭ Smooth transitions** — automatic advance, crossfades, and radio-style "Start Next" segue markers with an on-screen countdown for seamless back-to-back playback.
-- **🔊 Sounds great, stays safe** — pick an **Output Target** for your show (Broadcast / EBU R128, Streaming, Radio, Netflix / OTT, or Live console) and LivePlay sets an appropriate loudness target, a brick-wall limiter to stop clipping, and matching meter and waveform colours automatically.
+- **🔊 Sounds great, stays safe** — pick an **Output Target** for your show (Broadcast / EBU R128, Streaming, Radio, Netflix / OTT, or Live console) and DonWells Cue sets an appropriate loudness target, a brick-wall limiter to stop clipping, and matching meter and waveform colours automatically.
 - **📊 See your levels** — real-time metering at every stage (per-cue, per-channel and master), shown in LUFS, dBFS, true-peak or RMS.
 - **🎚 Route anywhere** — send audio to multiple outputs at once (front-of-house, monitors, comms, a record bus…) across one or more sound cards.
 - **🎬 Timecode** — send SMPTE LTC timecode from a cue to keep lighting, video or other systems in sync.
@@ -31,34 +31,33 @@ It runs on **Windows, macOS and Linux**, and it's completely free.
 
 ## Download and install
 
-Pre-built installers for **Windows, macOS and Linux** are on the **[GitHub Releases page](https://github.com/tdoukinitsas/liveplay/releases)** and the **[docs site](https://tdoukinitsas.github.io/liveplay/)**.
+The release workflow produces installers for **Windows, macOS and Linux**. A branded public download location has not been configured yet.
 
 | Platform | What to download |
 |----------|------------------|
-| **Windows** | `LivePlay-Setup-x.y.z.exe` (installer, 64-bit) |
-| **macOS — Apple Silicon** (M1/M2/M3 and newer) | `LivePlay-x.y.z-arm64.dmg` |
-| **macOS — Intel** (older Macs) | `LivePlay-x.y.z.dmg` |
-| **Linux** | `LivePlay-x.y.z.AppImage`, `liveplay_x.y.z_amd64.deb`, or `liveplay-x.y.z.x86_64.rpm` |
+| **Windows** | `DonWells-Cue-Setup-x.y.z.exe` (installer, 64-bit) |
+| **macOS — Apple Silicon** (M1/M2/M3 and newer) | `DonWells-Cue-x.y.z-arm64.dmg` |
+| **Linux** | `DonWells-Cue-x.y.z.AppImage`, `DonWells-Cue-x.y.z-x64.deb`, or `DonWells-Cue-x.y.z-x64.rpm` |
 
-On macOS, pick the build that matches your Mac — Apple Silicon for M1/M2/M3 (and newer), Intel for older machines.
+The macOS build is native Apple Silicon (`arm64`) for M-series Macs.
 
-You only need the one installer. Everything is bundled inside it, so a normal single-machine install works with **no setup or configuration** — install, launch, and start building a show. LivePlay also checks for updates on launch and can update itself.
+You only need the one installer. Everything is bundled inside it, so a normal single-machine install works with **no setup or configuration** — install, launch, and start building a show.
 
-### First launch on macOS ("LivePlay is damaged and can't be opened")
+### First launch on macOS ("DonWells Cue is damaged and can't be opened")
 
-LivePlay's macOS builds are **not yet signed with an Apple Developer ID certificate or notarized** (Apple charges for this — it's on the roadmap). Because of that, macOS quarantines the app on download and refuses to open it, usually with *"LivePlay is damaged and can't be opened."* The app is not actually damaged — macOS just won't run an unsigned, quarantined binary.
+DonWells Cue's macOS builds are **not yet signed with an Apple Developer ID certificate or notarized** (Apple charges for this — it's on the roadmap). Because of that, macOS quarantines the app on download and refuses to open it, usually with *"DonWells Cue is damaged and can't be opened."* The app is not actually damaged — macOS just won't run an unsigned, quarantined binary.
 
-After dragging **LivePlay.app** into `/Applications`, remove the quarantine flag once from Terminal:
+After dragging **DonWells Cue.app** into `/Applications`, remove the quarantine flag once from Terminal:
 
 ```sh
-sudo xattr -rd com.apple.quarantine "/Applications/LivePlay.app"
+sudo xattr -rd com.apple.quarantine "/Applications/DonWells Cue.app"
 ```
 
-Enter your password when prompted, then launch LivePlay normally. You only need to do this once per install (repeat it after each update). This applies to both the Apple Silicon and Intel builds.
+Enter your password when prompted, then launch DonWells Cue normally. You only need to do this once per install (repeat it after each update).
 
 ### First launch on Windows ("Windows protected your PC")
 
-LivePlay's Windows installer isn't yet signed with a certificate that Microsoft SmartScreen recognises (code signing via [SignPath](SIGNING.md) is in progress). Until then, Windows may show a blue **"Windows protected your PC"** dialog the first time you run the installer. The app is safe — it just hasn't accumulated SmartScreen download reputation yet.
+DonWells Cue's Windows installer isn't yet signed with a certificate that Microsoft SmartScreen recognises (code signing via [SignPath](SIGNING.md) is in progress). Until then, Windows may show a blue **"Windows protected your PC"** dialog the first time you run the installer. The app is safe — it just hasn't accumulated SmartScreen download reputation yet.
 
 To run it:
 
@@ -71,25 +70,25 @@ If your browser blocked the download instead, choose **Keep** to save the instal
 
 ## Getting started
 
-1. Install LivePlay and launch it.
-2. Choose **New Project** and pick a folder — LivePlay creates the project file and a `media/` sub-folder there.
+1. Install DonWells Cue and launch it.
+2. Choose **New Project** and pick a folder — DonWells Cue creates the project file and a `media/` sub-folder there.
 3. Drop audio files onto the playlist, or use **Import audio** to copy them in (you can also import from YouTube).
 4. Click a cue to open its properties, then set in/out points, fade times, volume and what happens when it ends.
 5. Assign your most-used cues to cart buttons for one-touch playback.
 6. Fire cues by clicking, tapping a cart, or pressing a keyboard shortcut. Live meters show your signal at every stage.
 7. Heading into a show? Switch on **Show Mode** for a clean, touch-friendly playback view.
 
-**Running on a separate machine?** LivePlay can run the audio engine on a stage-side computer wired to your sound gear and be controlled from a different laptop over your local network. Open **Server Settings** and either pick a discovered server or point the client at `http://<server-host>:4480`. See [Network ports](#network-ports) below for the firewall details.
+**Running on a separate machine?** Start the stage-side server with `dwcue-server --bind 0.0.0.0`. It prints a one-time access token unless `LIVEPLAY_ACCESS_TOKEN` already supplies one. On the control laptop, open **Server Settings**, choose the discovered server or enter `http://<server-host>:4480`, and enter that token. See [Network ports](#network-ports) below for firewall details.
 
 ---
 
 ## For developers
 
-Everything below is for people who want to build LivePlay from source, contribute, or understand how it works under the hood. If you just want to use the app, you're all set — grab a [release](https://github.com/tdoukinitsas/liveplay/releases) above.
+Everything below is for people who want to build DonWells Cue from source, contribute, or understand how it works under the hood. If you just want to use the app, you're all set — grab a [release](https://github.com/tdoukinitsas/liveplay/releases) above.
 
 ### How it's built
 
-LivePlay uses a **decoupled client/server architecture**: a headless C++ audio engine (`liveplay-server`) handles all sound, while a cross-platform Electron desktop app drives it as a remote control. No audio ever plays in the desktop UI — it sends commands to the server and receives meters and state back.
+DonWells Cue uses a **decoupled client/server architecture**: a headless C++ audio engine (`dwcue-server`) handles all sound, while a cross-platform Electron desktop app drives it as a remote control. No audio ever plays in the desktop UI — it sends commands to the server and receives meters and state back.
 
 Made with some help from Claude Sonnet 4.5, Claude Sonnet 4.6 and Claude Opus 4.8.
 
@@ -97,7 +96,7 @@ Made with some help from Claude Sonnet 4.5, Claude Sonnet 4.6 and Claude Opus 4.
 
 ```
 +--------------------------------+   WebSocket (ws://host:4480/ws)   +-----------------------------------+
-|  client/                       | <----- meters @ ~60 Hz ---------> |  server/  (liveplay-server)       |
+|  client/                       | <----- meters @ ~60 Hz ---------> |  server/  (dwcue-server)          |
 |  Electron + Nuxt 3 + Vue 3     | <----- transport / route cmds --- |  C++20, miniaudio, Crow, TagLib   |
 |                                |        REST  (http://host:4480)   |                                   |
 |  - Playlist / cart / routing UI| <----- list / load / waveform --> |  - AudioEngine (mixer + limiter)  |
@@ -123,7 +122,7 @@ A single-machine install talks to itself over `127.0.0.1` and needs nothing open
 | `4480` | TCP | Control surface — REST API + WebSocket (transport, project data, routing, live meters). |
 | `4481` | UDP | LAN auto-discovery beacon (broadcast + multicast group `239.255.69.80`). Lets clients find servers without typing an IP. |
 
-On Windows the NSIS installer adds the necessary inbound firewall rules at install time; the app also makes a best-effort runtime pass if run elevated. On macOS/Linux, allow the `liveplay-server` binary through your firewall if you operate it remotely.
+DonWells Cue does not open firewall ports automatically. If you deliberately run a remote server, allow `dwcue-server` on your trusted LAN for the ports above. The default local server remains bound to `127.0.0.1` and does not need a firewall exception.
 
 ## Repository layout
 
@@ -187,9 +186,8 @@ npm run build              # builds server + client and collects installers into
 `npm run build` runs the unified pipeline in [scripts/build-all.js](scripts/build-all.js):
 
 1. Configures and builds the C++ server through CMake/vcpkg.
-2. On macOS, wraps the server binary into a `LivePlay Server.app` for DMG inclusion.
-3. Runs `nuxt generate` and `electron-builder` in `client/`.
-4. Copies the installer artefacts (`.exe`, `.dmg`, `.AppImage`, `.deb`, `.rpm`) into `build/`.
+2. Runs `nuxt generate` and `electron-builder` in `client/`; the server binary is bundled inside the signed desktop app.
+3. Copies the installer artefacts (`.exe`, `.dmg`, `.AppImage`, `.deb`, `.rpm`) into `build/`.
 
 Use `npm run build:clean` to wipe previous build outputs first (it preserves `vcpkg_installed/` so C++ deps don't get re-downloaded).
 
@@ -205,7 +203,7 @@ Use `npm run build:clean` to wipe previous build outputs first (it preserves `vc
   C:\dev\vcpkg\bootstrap-vcpkg.bat
   ```
 - Set `VCPKG_ROOT` (see above), open a fresh PowerShell, `npm install`, then `npm run build`.
-- Output: `dist-electron/LivePlay-Setup-<version>.exe` (NSIS installer, x64). The `artifactName` uses hyphens (no spaces) so the local file, the GitHub release asset and the `latest.yml` auto-update manifest all reference the same name.
+- Output: `dist-electron/DonWells-Cue-Setup-<version>.exe` (NSIS installer, x64). The `artifactName` uses hyphens (no spaces) so the local file, the GitHub release asset and the `latest.yml` auto-update manifest all reference the same name.
 
 ##### macOS
 
@@ -217,8 +215,8 @@ Use `npm run build:clean` to wipe previous build outputs first (it preserves `vc
   "$HOME/dev/vcpkg"/bootstrap-vcpkg.sh
   ```
 - Set `VCPKG_ROOT`, then `npm install && npm run build`.
-- Output: `build/LivePlay-<version>.dmg` on Intel, or `build/LivePlay-<version>-arm64.dmg` on Apple Silicon (each with a matching `.zip`). CI builds both x64 and arm64 **on Apple Silicon runners** — the Intel slice is cross-compiled with `-DCMAKE_OSX_ARCHITECTURES=x86_64` (Apple clang cross-compiles, vcpkg builds the `x64-osx` triplet, and `electron-builder --x64` fetches the prebuilt x64 Electron). To cross-build the Intel slice locally on an Apple Silicon Mac, configure the server with `-DCMAKE_OSX_ARCHITECTURES=x86_64` and run `electron-builder --mac --x64`.
-- Code signing is skipped by default. Users will see a Gatekeeper warning on first launch — see [First launch on macOS](#first-launch-on-macos-liveplay-is-damaged-and-cant-be-opened).
+- Output: `build/DonWells-Cue-<version>-arm64.dmg` with a matching `.zip`. CI and local release builds target Apple Silicon only.
+- Code signing is skipped by default. Users will see a Gatekeeper warning on first launch — see [First launch on macOS](#first-launch-on-macos-donwells-cue-is-damaged-and-cant-be-opened).
 
 ##### Linux
 
@@ -231,7 +229,7 @@ Use `npm run build:clean` to wipe previous build outputs first (it preserves `vc
   (use the equivalent `dnf` / `pacman` packages on Fedora / Arch).
 - Install Node.js 20 LTS via your distro or [nvm](https://github.com/nvm-sh/nvm).
 - Bootstrap vcpkg as on macOS, set `VCPKG_ROOT`, then `npm install && npm run build`.
-- Output: `build/LivePlay-<version>.AppImage`, `liveplay_<version>_amd64.deb`, `liveplay-<version>.x86_64.rpm`.
+- Output: `build/DonWells-Cue-<version>.AppImage`, `DonWells-Cue-<version>-x64.deb`, `DonWells-Cue-<version>-x64.rpm`.
 
 ---
 
@@ -286,8 +284,7 @@ Releases are fully automated. The release pipeline lives in [`.github/workflows/
 2. Commit and push to `main`.
 3. The `build-release` workflow detects the version change and runs the platform matrix:
    - **Windows x64** (MSVC, WASAPI)
-   - **macOS Intel x64** (Clang, CoreAudio, deployment target 11.0 — cross-compiled `x86_64` on an Apple Silicon runner)
-   - **macOS Apple Silicon arm64** (Clang, CoreAudio, deployment target 12.0)
+   - **macOS Apple Silicon arm64** (Clang, CoreAudio, deployment target 13.3)
    - **Linux x64** (GCC, ALSA + PulseAudio + JACK)
 4. Each job builds the C++ server through CMake/vcpkg, then runs the client `electron-builder` step with `extraResources` picking up the freshly compiled server binary.
 5. All artefacts are uploaded, then a final `release` job downloads them, auto-generates a changelog from git commits since the last tag, and creates a GitHub Release tagged `v<version>` with every installer attached.
@@ -296,8 +293,8 @@ The vcpkg binary cache (`x-gha,readwrite` backend) is reused across runs so comp
 
 ### Other workflows
 
-- **[`build-server.yml`](.github/workflows/build-server.yml)** — builds the server alone on PRs and pushes that touch `server/**`. Cross-platform matrix; uploads `liveplay-server-<platform>` artefacts for download from the Actions UI. Useful for vetting server-only PRs without running the full release pipeline.
-- **[`deploy-docs.yml`](.github/workflows/deploy-docs.yml)** — rebuilds [the docs site](https://tdoukinitsas.github.io/liveplay/) when `docs-site/`, the root `README.md`, or `package.json` changes.
+- **[`build-server.yml`](.github/workflows/build-server.yml)** — builds the server alone on PRs and pushes that touch `server/**`. Cross-platform matrix; uploads `dwcue-server-<platform>` artefacts for download from the Actions UI. Useful for vetting server-only PRs without running the full release pipeline.
+- **[`deploy-docs.yml`](.github/workflows/deploy-docs.yml)** — rebuilds the static docs site when `docs-site/`, the root `README.md`, or `package.json` changes.
 
 ---
 
@@ -318,7 +315,7 @@ Contributions of all sizes are welcome — bug fixes, new features, translations
 
 ### Translations
 
-LivePlay ships with 20 locale files at [`client/locales/`](client/locales/). To add a new language or fix existing translations:
+DonWells Cue ships with 20 locale files at [`client/locales/`](client/locales/). To add a new language or fix existing translations:
 
 1. Copy `en.json` to `<lang-code>.json` (e.g. `nl.json`).
 2. Update the `_metadata` block (`code`, `name`, `nativeName`, `direction`).
@@ -330,7 +327,7 @@ For right-to-left languages, set `"direction": "rtl"` in `_metadata` and verify 
 
 ### Reporting bugs
 
-File issues at [github.com/tdoukinitsas/liveplay/issues](https://github.com/tdoukinitsas/liveplay/issues). Include OS, LivePlay version (visible in the About dialog), and a minimal repro.
+File issues at [github.com/tdoukinitsas/liveplay/issues](https://github.com/tdoukinitsas/liveplay/issues). Include OS, DonWells Cue version (visible in the About dialog), and a minimal repro.
 
 ---
 

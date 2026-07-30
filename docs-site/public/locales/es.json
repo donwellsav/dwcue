@@ -8,11 +8,11 @@
   "header": {
     "tagline": "Reproducción de Audio para Eventos en Vivo",
     "version": "Versión",
-    "logoAlt": "Logotipo de LivePlay",
-    "screenshotAlt": "Interfaz principal de LivePlay con el editor de listas de reproducción, el cart de cues y el panel de propiedades"
+    "logoAlt": "Logotipo de DonWells Cue",
+    "screenshotAlt": "Interfaz principal de DonWells Cue con el editor de listas de reproducción, el cart de cues y el panel de propiedades"
   },
   "download": {
-    "title": "Descargar LivePlay",
+    "title": "Descargar DonWells Cue",
     "subtitle": "Gratuito y de código abierto. Disponible para Windows, macOS y Linux.",
     "windows": {
       "title": "Windows",
@@ -31,14 +31,14 @@
     "fedoraRHEL": ".rpm (Fedora/RHEL)",
     "viewReleases": "Ver todas las versiones en GitHub →",
     "macGatekeeper": {
-      "title": "macOS: ¿«LivePlay está dañado y no se puede abrir»?",
-      "intro": "LivePlay aún no está firmado con un certificado de desarrollador de Apple, por lo que macOS lo pone en cuarentena al descargarlo. La app es segura: solo significa que no se ha pagado a Apple para certificarla. Para abrirla, elimina una vez la marca de cuarentena tras instalarla en /Applications:",
-      "command": "sudo xattr -rd com.apple.quarantine \"/Applications/LivePlay.app\"",
-      "outro": "Introduce tu contraseña cuando se te solicite y luego abre LivePlay con normalidad. Solo tienes que hacerlo una vez por instalación."
+      "title": "macOS: ¿«DonWells Cue está dañado y no se puede abrir»?",
+      "intro": "DonWells Cue aún no está firmado con un certificado de desarrollador de Apple, por lo que macOS lo pone en cuarentena al descargarlo. La app es segura: solo significa que no se ha pagado a Apple para certificarla. Para abrirla, elimina una vez la marca de cuarentena tras instalarla en /Applications:",
+      "command": "sudo xattr -rd com.apple.quarantine \"/Applications/DonWells Cue.app\"",
+      "outro": "Introduce tu contraseña cuando se te solicite y luego abre DonWells Cue con normalidad. Solo tienes que hacerlo una vez por instalación."
     },
     "winSmartScreen": {
       "title": "Windows: ¿«Windows protegió tu PC»?",
-      "intro": "LivePlay aún no está firmado con un certificado que Microsoft SmartScreen reconozca, por lo que Windows puede mostrar la advertencia azul «Windows protegió tu PC» al ejecutar el instalador. La app es segura: simplemente todavía no ha acumulado reputación de descarga (la firma de código está en camino).",
+      "intro": "DonWells Cue aún no está firmado con un certificado que Microsoft SmartScreen reconozca, por lo que Windows puede mostrar la advertencia azul «Windows protegió tu PC» al ejecutar el instalador. La app es segura: simplemente todavía no ha acumulado reputación de descarga (la firma de código está en camino).",
       "step1": "Haz clic en «Más información» en el cuadro de advertencia.",
       "step2": "Haz clic en el botón «Ejecutar de todos modos» que aparece y continúa la instalación con normalidad.",
       "outro": "Si en su lugar el navegador bloqueó la descarga, elige «Conservar» para guardar primero el instalador."
@@ -49,14 +49,7 @@
       "buttonText": "Descargar .dmg",
       "size": "~140 MB"
     },
-    "macIntel": {
-      "title": "macOS — Intel",
-      "description": "Macs Intel (x64), macOS 11+",
-      "buttonText": "Descargar .dmg",
-      "size": "~145 MB"
-    },
     "macArmZip": ".zip (macOS Apple Silicon)",
-    "macIntelZip": ".zip (macOS Intel)",
     "recommended": "Recomendado para tu sistema",
     "showOtherOS": "Descargar para otro sistema operativo",
     "hideOtherOS": "Ocultar otros sistemas operativos"
@@ -65,11 +58,11 @@
     "title": "Características Principales",
     "interface": {
       "title": "Interfaz Intuitiva",
-      "description": "LivePlay presenta una interfaz limpia, simple y moderna diseñada específicamente para operadores de sonido en vivo. Organiza tus archivos de sonido principales en listas de reproducción y agrega sonidos a un reproductor de carrito para acceso rápido o anuncios. Los archivos de audio agregados al carrito automáticamente se comportarán como anuncios, reduciendo el audio de fondo cuando se reproducen."
+      "description": "DonWells Cue presenta una interfaz limpia, simple y moderna diseñada específicamente para operadores de sonido en vivo. Organiza tus archivos de sonido principales en listas de reproducción y agrega sonidos a un reproductor de carrito para acceso rápido o anuncios. Los archivos de audio agregados al carrito automáticamente se comportarán como anuncios, reduciendo el audio de fondo cuando se reproducen."
     },
     "audioEngine": {
       "title": "Robusto motor de audio en C++",
-      "description": "En el corazón de LivePlay hay un motor de audio dedicado y de alto rendimiento escrito en C++ que se comunica directamente con tu hardware de sonido — WASAPI en Windows, Core Audio en macOS y ALSA en Linux. Cada cue se ejecuta como una instancia de reproducción totalmente independiente con su propio decodificador y envolvente de fundido, de modo que reproducir el mismo archivo dos veces a volúmenes distintos siempre se comporta exactamente como se espera. El motor funciona como un proceso de servidor independiente: puede vivir dentro de la aplicación de escritorio o ejecutarse sin interfaz en una máquina dedicada entre bastidores conectada a tus interfaces de audio."
+      "description": "En el corazón de DonWells Cue hay un motor de audio dedicado y de alto rendimiento escrito en C++ que se comunica directamente con tu hardware de sonido — WASAPI en Windows, Core Audio en macOS y ALSA en Linux. Cada cue se ejecuta como una instancia de reproducción totalmente independiente con su propio decodificador y envolvente de fundido, de modo que reproducir el mismo archivo dos veces a volúmenes distintos siempre se comporta exactamente como se espera. El motor funciona como un proceso de servidor independiente: puede vivir dentro de la aplicación de escritorio o ejecutarse sin interfaz en una máquina dedicada entre bastidores conectada a tus interfaces de audio."
     },
     "routing": {
       "title": "Enrutamiento de audio multidispositivo",
@@ -93,15 +86,15 @@
     },
     "remoteOperation": {
       "title": "Funcionamiento local o remoto",
-      "description": "El servidor de audio de LivePlay se inicia automáticamente junto con la aplicación, o puede ejecutarse en una máquina dedicada entre bastidores con tus interfaces de audio conectadas. Conéctate desde cualquier ordenador de la misma red y toma el control total — transporte, propiedades, enrutamiento y medición en vivo funcionan de forma remota, dándote la flexibilidad de separar tu posición de control del hardware de audio."
+      "description": "El servidor de audio de DonWells Cue se inicia automáticamente junto con la aplicación, o puede ejecutarse en una máquina dedicada entre bastidores con tus interfaces de audio conectadas. Conéctate desde cualquier ordenador de la misma red y toma el control total — transporte, propiedades, enrutamiento y medición en vivo funcionan de forma remota, dándote la flexibilidad de separar tu posición de control del hardware de audio."
     },
     "firstLaunch": {
       "title": "Configuración Rápida",
-      "description": "Comienza en segundos con el proceso de configuración simplificado de LivePlay. ¡Selecciona una carpeta, crea un proyecto y comienza a importar archivos! Todos tus medios se recopilan automáticamente en un solo lugar para que puedas mover tu proyecto entre computadoras con facilidad."
+      "description": "Comienza en segundos con el proceso de configuración simplificado de DonWells Cue. ¡Selecciona una carpeta, crea un proyecto y comienza a importar archivos! Todos tus medios se recopilan automáticamente en un solo lugar para que puedas mover tu proyecto entre computadoras con facilidad."
     },
     "limiter": {
       "title": "Limitador brickwall y objetivos de sonoridad",
-      "description": "Un verdadero limitador brickwall actúa en cada canal de salida, manteniendo tus niveles constantes y protegiendo tu hardware y a tu público de picos descontrolados. Elige entre objetivos de salida integrados que cumplen estándares profesionales de sonoridad — EBU R128, streaming, radio, Netflix y directo — y LivePlay aplica automáticamente el techo, las zonas de medición y la calibración de forma de onda adecuados."
+      "description": "Un verdadero limitador brickwall actúa en cada canal de salida, manteniendo tus niveles constantes y protegiendo tu hardware y a tu público de picos descontrolados. Elige entre objetivos de salida integrados que cumplen estándares profesionales de sonoridad — EBU R128, streaming, radio, Netflix y directo — y DonWells Cue aplica automáticamente el techo, las zonas de medición y la calibración de forma de onda adecuados."
     },
     "meters": {
       "title": "Medición de calidad de difusión",
@@ -109,11 +102,11 @@
     },
     "previewLtc": {
       "title": "Pre-escucha dedicada y timecode LTC",
-      "description": "Pre-escucha los cues en silencio en un dispositivo de pre-escucha dedicado — auriculares o un bus de cue — sin tocar nunca tus salidas principales, para que puedas preparar el siguiente cue mientras el espectáculo continúa. Un generador de timecode SMPTE LTC independiente emite una señal de timecode lineal continua en su propio canal, permitiéndote sincronizar mesas de luces, reproducción de vídeo y otros dispositivos externos con LivePlay."
+      "description": "Pre-escucha los cues en silencio en un dispositivo de pre-escucha dedicado — auriculares o un bus de cue — sin tocar nunca tus salidas principales, para que puedas preparar el siguiente cue mientras el espectáculo continúa. Un generador de timecode SMPTE LTC independiente emite una señal de timecode lineal continua en su propio canal, permitiéndote sincronizar mesas de luces, reproducción de vídeo y otros dispositivos externos con DonWells Cue."
     },
     "discovery": {
       "title": "Descubrimiento automático y fiabilidad a prueba de todo",
-      "description": "Los servidores de LivePlay se anuncian en tu red local, de modo que los clientes los encuentran automáticamente — sin direcciones IP que teclear. Si el motor de audio se detiene inesperadamente, se reinicia al instante y reanuda la reproducción justo donde la dejó, para que tu espectáculo siga adelante. Y como el motor es un verdadero servidor, varios clientes pueden conectarse a la misma instancia a la vez — ideal para un operador principal y uno de respaldo, o un regidor que supervisa la reproducción junto al técnico de sonido."
+      "description": "Los servidores de DonWells Cue se anuncian en tu red local, de modo que los clientes los encuentran automáticamente — sin direcciones IP que teclear. Si el motor de audio se detiene inesperadamente, se reinicia al instante y reanuda la reproducción justo donde la dejó, para que tu espectáculo siga adelante. Y como el motor es un verdadero servidor, varios clientes pueden conectarse a la misma instancia a la vez — ideal para un operador principal y uno de respaldo, o un regidor que supervisa la reproducción junto al técnico de sonido."
     }
   },
   "footer": {
@@ -137,17 +130,17 @@
     "discovery": {
       "port": "UDP 4481",
       "title": "Descubrimiento automático",
-      "description": "Baliza de difusión y multidifusión (grupo 239.255.69.80) que permite a los clientes encontrar servidores de LivePlay en la red local automáticamente."
+      "description": "Baliza de difusión y multidifusión (grupo 239.255.69.80) que permite a los clientes encontrar servidores de DonWells Cue en la red local automáticamente."
     },
     "note": "Una instalación en una sola máquina no necesita configuración — el cliente y el servidor se comunican por 127.0.0.1 y el instalador de Windows añade las reglas de firewall por ti. Estos puertos solo importan cuando separas la posición de control del hardware de audio a través de una LAN."
   },
   "contribute": {
     "title": "Contribuir",
-    "subtitle": "LivePlay es gratuito y de código abierto, y siempre lo será.",
+    "subtitle": "DonWells Cue es gratuito y de código abierto, y siempre lo será.",
     "freeTitle": "Gratis para siempre",
-    "freeText": "LivePlay es totalmente gratuito para descargar y usar: sin tarifas de licencia, sin suscripciones, sin muros de pago. Todas las funciones están disponibles para todos, sin niveles premium.",
+    "freeText": "DonWells Cue es totalmente gratuito para descargar y usar: sin tarifas de licencia, sin suscripciones, sin muros de pago. Todas las funciones están disponibles para todos, sin niveles premium.",
     "licenseTitle": "Licencia de código abierto",
-    "licenseText": "LivePlay se publica bajo la licencia GNU AGPL-3.0. En pocas palabras: eres libre de usarlo, estudiarlo, compartirlo y modificarlo. Si compartes una versión modificada —o la ejecutas como un servicio de red— debes poner tu código fuente a disposición bajo la misma licencia, para que toda la comunidad siga beneficiándose.",
+    "licenseText": "DonWells Cue se publica bajo la licencia GNU AGPL-3.0. En pocas palabras: eres libre de usarlo, estudiarlo, compartirlo y modificarlo. Si compartes una versión modificada —o la ejecutas como un servicio de red— debes poner tu código fuente a disposición bajo la misma licencia, para que toda la comunidad siga beneficiándose.",
     "contributeTitle": "Cómo ayudar",
     "contributeText": "Cualquiera puede contribuir. Informa de errores, sugiere funciones, mejora las traducciones o envía código: toda contribución es bienvenida. Visita el repositorio de GitHub para abrir una incidencia o una pull request.",
     "githubButton": "Contribuir en GitHub →"

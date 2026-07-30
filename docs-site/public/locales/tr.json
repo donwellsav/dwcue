@@ -8,11 +8,11 @@
   "header": {
     "tagline": "Canlı Etkinlikler için Ses İpucu Oynatma",
     "version": "Sürüm",
-    "logoAlt": "LivePlay logosu",
-    "screenshotAlt": "Çalma listesi düzenleyicisi, cue cart’ı ve özellikler panelini gösteren LivePlay ana arayüzü"
+    "logoAlt": "DonWells Cue logosu",
+    "screenshotAlt": "Çalma listesi düzenleyicisi, cue cart’ı ve özellikler panelini gösteren DonWells Cue ana arayüzü"
   },
   "download": {
-    "title": "LivePlay'i İndirin",
+    "title": "DonWells Cue'i İndirin",
     "subtitle": "Ücretsiz ve açık kaynak. Windows, macOS ve Linux için kullanılabilir.",
     "windows": {
       "title": "Windows",
@@ -31,14 +31,14 @@
     "fedoraRHEL": ".rpm (Fedora/RHEL)",
     "viewReleases": "GitHub'da tüm sürümleri görüntüle →",
     "macGatekeeper": {
-      "title": "macOS: \"LivePlay zarar görmüş ve açılamıyor\" mu?",
-      "intro": "LivePlay henüz bir Apple Geliştirici sertifikasıyla imzalanmadığından macOS, indirme sırasında onu karantinaya alır. Uygulama güvenlidir — bu yalnızca onaylatma (notarize) için Apple'a ödeme yapılmadığı anlamına gelir. Açmak için /Applications klasörüne kurduktan sonra karantina işaretini bir kez kaldırın:",
-      "command": "sudo xattr -rd com.apple.quarantine \"/Applications/LivePlay.app\"",
-      "outro": "İstendiğinde parolanızı girin, ardından LivePlay'i normal şekilde başlatın. Bunu her kurulum için yalnızca bir kez yapmanız gerekir."
+      "title": "macOS: \"DonWells Cue zarar görmüş ve açılamıyor\" mu?",
+      "intro": "DonWells Cue henüz bir Apple Geliştirici sertifikasıyla imzalanmadığından macOS, indirme sırasında onu karantinaya alır. Uygulama güvenlidir — bu yalnızca onaylatma (notarize) için Apple'a ödeme yapılmadığı anlamına gelir. Açmak için /Applications klasörüne kurduktan sonra karantina işaretini bir kez kaldırın:",
+      "command": "sudo xattr -rd com.apple.quarantine \"/Applications/DonWells Cue.app\"",
+      "outro": "İstendiğinde parolanızı girin, ardından DonWells Cue'i normal şekilde başlatın. Bunu her kurulum için yalnızca bir kez yapmanız gerekir."
     },
     "winSmartScreen": {
       "title": "Windows: \"Windows bilgisayarınızı korudu\" mu?",
-      "intro": "LivePlay henüz Microsoft SmartScreen'in tanıdığı bir sertifikayla imzalanmadığından, yükleyiciyi çalıştırdığınızda Windows mavi \"Windows bilgisayarınızı korudu\" uyarısını gösterebilir. Uygulama güvenlidir — yalnızca henüz indirme itibarı oluşmamıştır (kod imzalama yolda).",
+      "intro": "DonWells Cue henüz Microsoft SmartScreen'in tanıdığı bir sertifikayla imzalanmadığından, yükleyiciyi çalıştırdığınızda Windows mavi \"Windows bilgisayarınızı korudu\" uyarısını gösterebilir. Uygulama güvenlidir — yalnızca henüz indirme itibarı oluşmamıştır (kod imzalama yolda).",
       "step1": "Uyarı iletişim kutusunda \"Ek bilgi\"ye tıklayın.",
       "step2": "Görünen \"Yine de çalıştır\" düğmesine tıklayın, ardından kuruluma normal şekilde devam edin.",
       "outro": "Bunun yerine indirmeyi tarayıcınız engellediyse, yükleyiciyi kaydetmek için önce \"Sakla\"yı seçin."
@@ -49,14 +49,7 @@
       "buttonText": ".dmg İndir",
       "size": "~140 MB"
     },
-    "macIntel": {
-      "title": "macOS — Intel",
-      "description": "Intel Mac’ler (x64), macOS 11+",
-      "buttonText": ".dmg İndir",
-      "size": "~145 MB"
-    },
     "macArmZip": ".zip (macOS Apple Silicon)",
-    "macIntelZip": ".zip (macOS Intel)",
     "recommended": "Sisteminiz için önerilir",
     "showOtherOS": "Başka bir işletim sistemi için indir",
     "hideOtherOS": "Diğer işletim sistemlerini gizle"
@@ -65,11 +58,11 @@
     "title": "Temel Özellikler",
     "interface": {
       "title": "Sezgisel Arayüz",
-      "description": "LivePlay, canlı ses operatörleri için özel olarak tasarlanmış temiz, basit ve modern bir arayüze sahiptir. Ana ses dosyalarınızı oynatma listelerinde düzenleyin ve hızlı erişim veya duyurular için arabaya ses ekleyin. Arabaya eklenen ses dosyaları otomatik olarak duyuru gibi davranır ve oynatma sırasında arka plan sesini azaltır."
+      "description": "DonWells Cue, canlı ses operatörleri için özel olarak tasarlanmış temiz, basit ve modern bir arayüze sahiptir. Ana ses dosyalarınızı oynatma listelerinde düzenleyin ve hızlı erişim veya duyurular için arabaya ses ekleyin. Arabaya eklenen ses dosyaları otomatik olarak duyuru gibi davranır ve oynatma sırasında arka plan sesini azaltır."
     },
     "audioEngine": {
       "title": "Sağlam C++ Ses Motoru",
-      "description": "LivePlay’in kalbinde, ses donanımınızla doğrudan konuşan, C++ ile yazılmış özel ve yüksek performanslı bir ses motoru bulunur — Windows’ta WASAPI, macOS’ta Core Audio ve Linux’ta ALSA. Her cue, kendi kod çözücüsü ve fade zarfıyla tamamen bağımsız bir oynatma örneği olarak çalışır; böylece aynı dosyayı farklı seviyelerde iki kez çalmak her zaman tam beklendiği gibi davranır. Motor bağımsız bir sunucu süreci olarak çalışır: masaüstü uygulamasının içinde yaşayabilir veya ses arabirimlerinize bağlı, sahne arkasındaki özel bir makinede arayüzsüz çalışabilir."
+      "description": "DonWells Cue’in kalbinde, ses donanımınızla doğrudan konuşan, C++ ile yazılmış özel ve yüksek performanslı bir ses motoru bulunur — Windows’ta WASAPI, macOS’ta Core Audio ve Linux’ta ALSA. Her cue, kendi kod çözücüsü ve fade zarfıyla tamamen bağımsız bir oynatma örneği olarak çalışır; böylece aynı dosyayı farklı seviyelerde iki kez çalmak her zaman tam beklendiği gibi davranır. Motor bağımsız bir sunucu süreci olarak çalışır: masaüstü uygulamasının içinde yaşayabilir veya ses arabirimlerinize bağlı, sahne arkasındaki özel bir makinede arayüzsüz çalışabilir."
     },
     "routing": {
       "title": "Çoklu Cihaz Ses Yönlendirme",
@@ -93,15 +86,15 @@
     },
     "remoteOperation": {
       "title": "Yerel veya Uzaktan Çalışma",
-      "description": "LivePlay ses sunucusu uygulamayla birlikte otomatik olarak başlar veya ses arabirimleriniz takılıyken sahne arkasındaki özel bir makinede çalıştırılabilir. Aynı ağdaki herhangi bir bilgisayardan bağlanın ve tam kontrolü elinize alın — transport, özellikler, yönlendirme ve canlı ölçüm hepsi uzaktan çalışır; kontrol konumunuzu ses donanımınızdan ayırma esnekliği verir."
+      "description": "DonWells Cue ses sunucusu uygulamayla birlikte otomatik olarak başlar veya ses arabirimleriniz takılıyken sahne arkasındaki özel bir makinede çalıştırılabilir. Aynı ağdaki herhangi bir bilgisayardan bağlanın ve tam kontrolü elinize alın — transport, özellikler, yönlendirme ve canlı ölçüm hepsi uzaktan çalışır; kontrol konumunuzu ses donanımınızdan ayırma esnekliği verir."
     },
     "firstLaunch": {
       "title": "Hızlı Kurulum",
-      "description": "LivePlay'in basitleştirilmiş kurulum süreciyle saniyeler içinde başlayın. Bir klasör seçin, bir proje oluşturun ve dosya içe aktarmaya başlayın! Tüm medyanız otomatik olarak tek bir yerde toplanır, böylece projenizi bilgisayarlar arasında kolayca taşıyabilirsiniz."
+      "description": "DonWells Cue'in basitleştirilmiş kurulum süreciyle saniyeler içinde başlayın. Bir klasör seçin, bir proje oluşturun ve dosya içe aktarmaya başlayın! Tüm medyanız otomatik olarak tek bir yerde toplanır, böylece projenizi bilgisayarlar arasında kolayca taşıyabilirsiniz."
     },
     "limiter": {
       "title": "Brickwall Limiter ve Ses Yüksekliği Hedefleri",
-      "description": "Her çıkış kanalında gerçek bir brickwall limiter bulunur; seviyelerinizi tutarlı tutar ve donanımınızı ve izleyicinizi kontrolden çıkan tepelerden korur. Profesyonel ses yüksekliği standartlarına uyan yerleşik çıkış hedeflerinden — EBU R128, akış, radyo, Netflix ve canlı — seçin; LivePlay doğru tavanı, ölçüm bölgelerini ve dalga formu kalibrasyonunu otomatik olarak uygular."
+      "description": "Her çıkış kanalında gerçek bir brickwall limiter bulunur; seviyelerinizi tutarlı tutar ve donanımınızı ve izleyicinizi kontrolden çıkan tepelerden korur. Profesyonel ses yüksekliği standartlarına uyan yerleşik çıkış hedeflerinden — EBU R128, akış, radyo, Netflix ve canlı — seçin; DonWells Cue doğru tavanı, ölçüm bölgelerini ve dalga formu kalibrasyonunu otomatik olarak uygular."
     },
     "meters": {
       "title": "Yayın Kalitesinde Ölçüm",
@@ -109,11 +102,11 @@
     },
     "previewLtc": {
       "title": "Özel Ön Dinleme ve LTC Zaman Kodu",
-      "description": "Cue’ları, ana çıkışlarınıza hiç dokunmadan özel bir ön dinleme cihazında — kulaklık veya bir cue veri yolu — sessizce dinleyin; böylece gösteri devam ederken bir sonraki cue’yu hazırlayabilirsiniz. Ayrı bir SMPTE LTC zaman kodu üreteci, kendi kanalında sürekli doğrusal bir zaman kodu sinyali verir; ışık masalarını, video oynatmayı ve diğer harici cihazları LivePlay ile senkronize etmenizi sağlar."
+      "description": "Cue’ları, ana çıkışlarınıza hiç dokunmadan özel bir ön dinleme cihazında — kulaklık veya bir cue veri yolu — sessizce dinleyin; böylece gösteri devam ederken bir sonraki cue’yu hazırlayabilirsiniz. Ayrı bir SMPTE LTC zaman kodu üreteci, kendi kanalında sürekli doğrusal bir zaman kodu sinyali verir; ışık masalarını, video oynatmayı ve diğer harici cihazları DonWells Cue ile senkronize etmenizi sağlar."
     },
     "discovery": {
       "title": "Otomatik Keşif ve Kaya Gibi Sağlam Güvenilirlik",
-      "description": "LivePlay sunucuları yerel ağınızda kendilerini duyurur; böylece istemciler onları otomatik olarak bulur — yazılacak IP adresi yok. Ses motoru beklenmedik şekilde durursa, anında kendini yeniden başlatır ve oynatmaya tam kaldığı yerden devam eder; böylece gösteriniz aksamaz. Ve motor gerçek bir sunucu olduğundan, birden çok istemci aynı örneğe aynı anda bağlanabilir — bir ana operatör ve bir yedek için ya da ses operatörünün yanında oynatmayı izleyen bir sahne amiri için idealdir."
+      "description": "DonWells Cue sunucuları yerel ağınızda kendilerini duyurur; böylece istemciler onları otomatik olarak bulur — yazılacak IP adresi yok. Ses motoru beklenmedik şekilde durursa, anında kendini yeniden başlatır ve oynatmaya tam kaldığı yerden devam eder; böylece gösteriniz aksamaz. Ve motor gerçek bir sunucu olduğundan, birden çok istemci aynı örneğe aynı anda bağlanabilir — bir ana operatör ve bir yedek için ya da ses operatörünün yanında oynatmayı izleyen bir sahne amiri için idealdir."
     }
   },
   "footer": {
@@ -137,17 +130,17 @@
     "discovery": {
       "port": "UDP 4481",
       "title": "Otomatik Keşif",
-      "description": "İstemcilerin LivePlay sunucularını yerel ağda otomatik olarak bulmasını sağlayan yayın ve çok noktaya yayın işaretçisi (grup 239.255.69.80)."
+      "description": "İstemcilerin DonWells Cue sunucularını yerel ağda otomatik olarak bulmasını sağlayan yayın ve çok noktaya yayın işaretçisi (grup 239.255.69.80)."
     },
     "note": "Tek makineye kurulum yapılandırma gerektirmez — istemci ve sunucu 127.0.0.1 üzerinden konuşur ve Windows yükleyicisi güvenlik duvarı kurallarını sizin için ekler. Bu bağlantı noktaları yalnızca kontrol konumunu bir LAN üzerinden ses donanımından ayırdığınızda önemlidir."
   },
   "contribute": {
     "title": "Katkıda bulunun",
-    "subtitle": "LivePlay ücretsiz ve açık kaynaklıdır — ve her zaman öyle kalacaktır.",
+    "subtitle": "DonWells Cue ücretsiz ve açık kaynaklıdır — ve her zaman öyle kalacaktır.",
     "freeTitle": "Sonsuza dek ücretsiz",
-    "freeText": "LivePlay’i indirmek ve kullanmak tamamen ücretsizdir — lisans ücreti yok, abonelik yok, ödeme duvarı yok. Tüm özellikler, premium katmanlar olmadan herkese açıktır.",
+    "freeText": "DonWells Cue’i indirmek ve kullanmak tamamen ücretsizdir — lisans ücreti yok, abonelik yok, ödeme duvarı yok. Tüm özellikler, premium katmanlar olmadan herkese açıktır.",
     "licenseTitle": "Açık kaynak lisansı",
-    "licenseText": "LivePlay, GNU AGPL-3.0 lisansı altında yayımlanır. Basitçe: onu özgürce kullanabilir, inceleyebilir, paylaşabilir ve değiştirebilirsiniz. Değiştirilmiş bir sürümü paylaşırsanız — ya da bir ağ hizmeti olarak çalıştırırsanız — kaynak kodunuzu aynı lisans altında erişilebilir kılmalısınız; böylece tüm topluluk yararlanmaya devam eder.",
+    "licenseText": "DonWells Cue, GNU AGPL-3.0 lisansı altında yayımlanır. Basitçe: onu özgürce kullanabilir, inceleyebilir, paylaşabilir ve değiştirebilirsiniz. Değiştirilmiş bir sürümü paylaşırsanız — ya da bir ağ hizmeti olarak çalıştırırsanız — kaynak kodunuzu aynı lisans altında erişilebilir kılmalısınız; böylece tüm topluluk yararlanmaya devam eder.",
     "contributeTitle": "Nasıl yardımcı olabilirsiniz",
     "contributeText": "Herkes katkıda bulunabilir. Hataları bildirin, özellikler önerin, çevirileri geliştirin veya kod gönderin — her katkı memnuniyetle karşılanır. Bir issue veya pull request açmak için GitHub deposuna gidin.",
     "githubButton": "GitHub’da katkıda bulunun →"

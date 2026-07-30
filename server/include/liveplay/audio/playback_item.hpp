@@ -5,7 +5,7 @@
 //
 // Each PlaybackItem owns:
 //   * Its own ma_decoder (independent state per cue, even when two cues load
-//     the same file — solves the LivePlay 1.x state-sharing bug)
+//     the same file — solves the DonWells Cue 1.x state-sharing bug)
 //   * Per-item linear gain + fade envelope (in/out)
 //   * Transport state (Stopped / Playing / FadingOut / Paused)
 //   * An optional LTCGenerator that occupies a synthetic source channel
@@ -81,6 +81,10 @@ struct PlaybackItemStats {
     ChannelCount    source_channels = 0;     // including LTC if enabled
     bool            file_loaded     = false;
     bool            at_end          = false;
+    bool            decode_error    = false;
+    int             decoder_result  = 0;     // native decoder result; 0 = none
+    std::uint64_t   read_ahead_underruns = 0;
+    std::uint32_t   read_ahead_blocks    = 0;
 };
 
 class PlaybackItem {
@@ -164,16 +168,16 @@ public:
     // so these fades don't disturb the "explicit-stop" fade setting.
     void stop_with_fade(std::chrono::milliseconds dur);
 
-    // Pre-warm the decoder by reading and discarding `seconds` of audio
-    // starting from `start_seconds`, then leaving the decoder cursor at
-    // `start_seconds` (so a subsequent play() returns to the same point).
-    // This populates the OS file cache and primes the decoder's internal
-    // state so the *first* read during actual playback doesn't block on
-    // disk I/O — the dominant cause of crackling at the start of a cue.
-    // Returns true on success, false if the decoder isn't ready. Safe to
-    // call while NOT playing; should not be called concurrently with
-    // playback (it holds the decoder mutex).
+    // Position the decoder at `start_seconds` and synchronously fill the
+    // bounded read-ahead queue. `seconds` caps how much is filled; the queue
+    // itself is deliberately much smaller than two seconds. Returns false
+    // when the decoder isn't ready.
     bool prime(double seconds = 2.0, double start_seconds = 0.0) noexcept;
+
+    // Decode-worker entry point. Fills at most `max_blocks` free read-ahead
+    // slots and returns true when it produced anything. AudioEngine calls this
+    // from one shared worker; there is never a thread per cue.
+    bool service_read_ahead(std::size_t max_blocks = 1) noexcept;
 
     // ---- Introspection ---------------------------------------------------
     const CueId&     id() const noexcept                  { return desc_.id; }
@@ -183,13 +187,23 @@ public:
 
     // True if the decoder returned an unexpected error mid-playback (i.e. not a
     // clean end-of-file) since the flag was last cleared — e.g. a file dropping
-    // off a flaky network/USB drive. Lets the control thread surface a warning
-    // without any logging on the audio path. clear_decode_error() resets it.
+    // off a flaky network/USB drive. The error is sticky for reconnect snapshots;
+    // take_decode_error() separately consumes the one-shot notification used by
+    // the sequencer/control layer.
     bool had_decode_error() const noexcept {
-        return decode_error_.load(std::memory_order_relaxed);
+        return decode_error_.load(std::memory_order_acquire);
+    }
+    int decoder_error_code() const noexcept {
+        return decode_error_code_.load(std::memory_order_acquire);
+    }
+    int take_decode_error() noexcept {
+        if (!decode_error_pending_.exchange(false, std::memory_order_acq_rel)) return 0;
+        return decode_error_code_.load(std::memory_order_acquire);
     }
     void clear_decode_error() noexcept {
-        decode_error_.store(false, std::memory_order_relaxed);
+        decode_error_pending_.store(false, std::memory_order_release);
+        decode_error_code_.store(0, std::memory_order_release);
+        decode_error_.store(false, std::memory_order_release);
     }
 
     MeterSnapshot source_meter(ChannelIndex ch) const noexcept;
@@ -213,18 +227,36 @@ private:
     PlaybackItemDesc desc_;
 
     // Owned decoder. Pointer because miniaudio types stay out of this header.
-    // Protected by decoder_mutex_ for load/unload/seek; the audio thread
-    // grabs a try_lock and falls back to silence on contention (rare).
+    // Only control operations and AudioEngine's shared decode worker touch it;
+    // render_block() consumes predecoded blocks and never locks or reads files.
     std::unique_ptr<ma_decoder> decoder_;
-    std::mutex                  decoder_mutex_;
+    mutable std::mutex          decoder_mutex_;
     std::atomic<bool>           decoder_ready_{false};
-    ChannelCount                file_channels_ = 0;
+    std::atomic<ChannelCount>   file_channels_{0};
 
-    // Interleaved decode staging buffer. Sized in load(); only touched inside
-    // the decoder_mutex_-guarded region of render_block(), so keeping it as a
-    // member (rather than a thread_local that reallocates on the audio thread's
-    // first block) moves the allocation to load() on the control thread.
-    std::vector<Sample>         interleave_buf_;
+    // Fixed-capacity SPSC read-ahead. Slots and their sample storage are
+    // allocated in load(); the producer is the shared decode worker and the
+    // sole consumer is render_block().
+    static constexpr std::size_t kReadAheadBlockCount = 16;
+    struct ReadAheadBlock {
+        std::vector<Sample> samples;
+        std::uint32_t       frames = 0;
+        std::uint64_t       playhead_after = 0;
+        bool                natural_end = false;
+        int                 decoder_result = 0;
+    };
+    std::vector<ReadAheadBlock> read_ahead_;
+    std::atomic<std::uint64_t>  read_ahead_read_{0};
+    std::atomic<std::uint64_t>  read_ahead_write_{0};
+    std::uint64_t               decode_cursor_frame_ = 0; // decoder_mutex_
+    bool                        decode_out_point_passed_ = false; // decoder_mutex_
+    std::atomic<bool>           decode_terminal_{false};
+    std::atomic<std::uint64_t>  read_ahead_underruns_{0};
+
+    // Control operations occasionally replace queue/meter/LTC storage. One
+    // lock-free gate gives those operations exclusive access; render_block()
+    // only tries once and emits silence rather than ever waiting.
+    std::atomic_flag render_exclusion_ = ATOMIC_FLAG_INIT;
 
     // Transport + gain state (hot atomics).
     std::atomic<TransportState> transport_{TransportState::Stopped};
@@ -243,7 +275,11 @@ private:
     std::atomic<long long>      fade_out_ms_{0};
 
     // Set by render_block() on an unexpected decoder error (see had_decode_error).
+    // The sticky state survives event consumption so reconnecting control clients
+    // can still report the stopped cue's failure.
     std::atomic<bool>           decode_error_{false};
+    std::atomic<int>            decode_error_code_{0};
+    std::atomic<bool>           decode_error_pending_{false};
 
     // Playhead in mix-rate frames. Audio thread is the only writer.
     std::atomic<std::uint64_t>  playhead_frames_{0};
@@ -277,6 +313,9 @@ private:
     std::atomic<long long>        ltc_offset_ns_{0};
 
     // Per-source-channel meters (including LTC if enabled). Sized at load().
+    // Telemetry uses its own lifetime lock so a stalled network-file decode
+    // cannot block the server's meter broadcaster.
+    mutable std::mutex source_meters_mutex_;
     std::vector<std::unique_ptr<Meter>> source_meters_;
     // Current ballistics + feature flags — applied by resize_meters() so
     // meters created after a channel-count change inherit the project
@@ -289,6 +328,12 @@ private:
     void start_fade(float from_lin, float to_lin, std::chrono::milliseconds dur,
                     TransportState during, TransportState after_complete) noexcept;
     void resize_meters(ChannelCount n);
+    void begin_render_exclusion() noexcept;
+    void end_render_exclusion() noexcept;
+    void reset_read_ahead_locked(std::uint64_t frame) noexcept;
+    bool fill_read_ahead_block_locked() noexcept;
+    void stop_for_decode_error(int decoder_result) noexcept;
+    void handle_natural_end() noexcept;
 };
 
 } // namespace liveplay::audio

@@ -8,14 +8,14 @@
   "header": {
     "tagline": "Audio Cue Playback for Live Events",
     "version": "Version",
-    "logoAlt": "LivePlay logo",
-    "screenshotAlt": "LivePlay main interface showing the playlist editor, cue cart, and properties panel"
+    "logoAlt": "DonWells Cue logo",
+    "screenshotAlt": "DonWells Cue main interface showing the playlist editor, cue cart, and properties panel"
   },
   "common": {
     "changeLanguage": "Change language"
   },
   "download": {
-    "title": "Download LivePlay",
+    "title": "Download DonWells Cue",
     "subtitle": "Free and open-source. Available for Windows, macOS, and Linux.",
     "windows": {
       "title": "Windows",
@@ -28,12 +28,6 @@
       "description": "M1/M2/M3 and newer (arm64)",
       "buttonText": "Download .dmg",
       "size": "~140 MB"
-    },
-    "macIntel": {
-      "title": "macOS — Intel",
-      "description": "Intel Macs (x64), macOS 11+",
-      "buttonText": "Download .dmg",
-      "size": "~145 MB"
     },
     "linux": {
       "title": "Linux",
@@ -48,17 +42,16 @@
     "debianUbuntu": ".deb (Debian/Ubuntu)",
     "fedoraRHEL": ".rpm (Fedora/RHEL)",
     "macArmZip": ".zip (macOS Apple Silicon)",
-    "macIntelZip": ".zip (macOS Intel)",
     "viewReleases": "View all releases on GitHub →",
     "macGatekeeper": {
-      "title": "macOS: \"LivePlay is damaged and can't be opened\"?",
-      "intro": "LivePlay is not yet signed with an Apple Developer certificate, so macOS quarantines it on download. The app is safe — this just means Apple hasn't been paid to notarize it. To open it, remove the quarantine flag once after installing to /Applications:",
-      "command": "sudo xattr -rd com.apple.quarantine \"/Applications/LivePlay.app\"",
-      "outro": "Enter your password when prompted, then launch LivePlay normally. You only need to do this once per install."
+      "title": "macOS: \"DonWells Cue is damaged and can't be opened\"?",
+      "intro": "DonWells Cue is not yet signed with an Apple Developer certificate, so macOS quarantines it on download. The app is safe — this just means Apple hasn't been paid to notarize it. To open it, remove the quarantine flag once after installing to /Applications:",
+      "command": "sudo xattr -rd com.apple.quarantine \"/Applications/DonWells Cue.app\"",
+      "outro": "Enter your password when prompted, then launch DonWells Cue normally. You only need to do this once per install."
     },
     "winSmartScreen": {
       "title": "Windows: \"Windows protected your PC\"?",
-      "intro": "LivePlay isn't yet signed with a certificate Microsoft SmartScreen recognises, so Windows may show a blue \"Windows protected your PC\" warning when you run the installer. The app is safe — it simply hasn't built up download reputation yet (code signing is on the way).",
+      "intro": "DonWells Cue isn't yet signed with a certificate Microsoft SmartScreen recognises, so Windows may show a blue \"Windows protected your PC\" warning when you run the installer. The app is safe — it simply hasn't built up download reputation yet (code signing is on the way).",
       "step1": "Click \"More info\" on the warning dialog.",
       "step2": "Click the \"Run anyway\" button that appears, then continue the installation normally.",
       "outro": "If your browser blocked the download instead, choose \"Keep\" to save the installer first."
@@ -66,11 +59,11 @@
   },
   "contribute": {
     "title": "Contribute",
-    "subtitle": "LivePlay is free and open-source — and always will be.",
+    "subtitle": "DonWells Cue is free and open-source — and always will be.",
     "freeTitle": "Free forever",
-    "freeText": "LivePlay is completely free to download and use — no licence fees, no subscriptions, no paywalls. Every feature is available to everyone, with no premium tiers.",
+    "freeText": "DonWells Cue is completely free to download and use — no licence fees, no subscriptions, no paywalls. Every feature is available to everyone, with no premium tiers.",
     "licenseTitle": "Open-source licence",
-    "licenseText": "LivePlay is released under the GNU AGPL-3.0 licence. In plain terms: you are free to use, study, share and modify it. If you share a modified version — or run it as a network service — you must make your source code available under the same licence, so the whole community keeps benefiting.",
+    "licenseText": "DonWells Cue is released under the GNU AGPL-3.0 licence. In plain terms: you are free to use, study, share and modify it. If you share a modified version — or run it as a network service — you must make your source code available under the same licence, so the whole community keeps benefiting.",
     "contributeTitle": "How to help",
     "contributeText": "Anyone can contribute. Report bugs, suggest features, improve translations or submit code — every contribution is welcome. Head to the GitHub repository to open an issue or a pull request.",
     "githubButton": "Contribute on GitHub →"
@@ -79,15 +72,15 @@
     "title": "Key Features",
     "interface": {
       "title": "Intuitive Interface",
-      "description": "LivePlay features a clean, simple and modern interface designed specifically for live sound operators. Organize your main sound files in playlists, and add sounds to a cart player for quick access or announcements. Audio files added to the cart will automatically behave as announcements, ducking any background audio when played."
+      "description": "DonWells Cue features a clean, simple and modern interface designed specifically for live sound operators. Organize your main sound files in playlists, and add sounds to a cart player for quick access or announcements. Audio files added to the cart will automatically behave as announcements, ducking any background audio when played."
     },
     "audioEngine": {
       "title": "Robust C++ Audio Engine",
-      "description": "At the heart of LivePlay is a dedicated, high-performance audio engine written in C++ that talks directly to your sound hardware — WASAPI on Windows, Core Audio on macOS, and ALSA on Linux. Every cue runs as a fully independent playback instance with its own decoder and fade envelope, so playing the same file twice at different volumes always behaves exactly as expected. The engine runs as a standalone server process: it can live inside the desktop app, or run headless on a dedicated backstage machine wired to your audio interfaces."
+      "description": "At the heart of DonWells Cue is a dedicated, high-performance audio engine written in C++ that talks directly to your sound hardware — WASAPI on Windows, Core Audio on macOS, and ALSA on Linux. Every cue runs as a fully independent playback instance with its own decoder and fade envelope, so playing the same file twice at different volumes always behaves exactly as expected. The engine runs as a standalone server process: it can live inside the desktop app, or run headless on a dedicated backstage machine wired to your audio interfaces."
     },
     "limiter": {
       "title": "Brick-Wall Limiter & Loudness Targets",
-      "description": "A true brick-wall limiter sits on every output channel, keeping your levels consistent and protecting your hardware and audience from runaway peaks. Choose from built-in output targets that match professional loudness standards — EBU R128, streaming, radio, Netflix and live — and LivePlay applies the right ceiling, metering zones and waveform calibration automatically."
+      "description": "A true brick-wall limiter sits on every output channel, keeping your levels consistent and protecting your hardware and audience from runaway peaks. Choose from built-in output targets that match professional loudness standards — EBU R128, streaming, radio, Netflix and live — and DonWells Cue applies the right ceiling, metering zones and waveform calibration automatically."
     },
     "meters": {
       "title": "Broadcast-Grade Metering",
@@ -99,7 +92,7 @@
     },
     "previewLtc": {
       "title": "Dedicated Preview & LTC Timecode",
-      "description": "Audition cues silently on a dedicated preview device — headphones or a cue bus — without ever touching your main outputs, so you can line up the next cue while the show rolls on. A separate SMPTE LTC timecode generator outputs a continuous linear timecode signal on its own channel, letting you synchronise lighting desks, video playback and other external devices to LivePlay."
+      "description": "Audition cues silently on a dedicated preview device — headphones or a cue bus — without ever touching your main outputs, so you can line up the next cue while the show rolls on. A separate SMPTE LTC timecode generator outputs a continuous linear timecode signal on its own channel, letting you synchronise lighting desks, video playback and other external devices to DonWells Cue."
     },
     "waveform": {
       "title": "Waveform Trimmer",
@@ -119,15 +112,15 @@
     },
     "discovery": {
       "title": "Automatic Discovery & Rock-Solid Reliability",
-      "description": "LivePlay servers announce themselves on your local network, so clients find them automatically — no IP addresses to type in. If the audio engine ever stops unexpectedly, it relaunches itself instantly and resumes playback right where it left off, so your show keeps running. And because the engine is a true server, multiple clients can connect to the same instance at once — ideal for a primary operator and a backup, or a stage manager monitoring playback alongside the sound op."
+      "description": "DonWells Cue servers announce themselves on your local network, so clients find them automatically — no IP addresses to type in. If the audio engine ever stops unexpectedly, it relaunches itself instantly and resumes playback right where it left off, so your show keeps running. And because the engine is a true server, multiple clients can connect to the same instance at once — ideal for a primary operator and a backup, or a stage manager monitoring playback alongside the sound op."
     },
     "remoteOperation": {
       "title": "Local or Remote Operation",
-      "description": "The LivePlay audio server launches automatically alongside the application, or can be run on a dedicated backstage machine with your audio interfaces plugged in. Connect from any computer on the same network and take full control — transport, properties, routing, and live metering all work remotely, giving you the flexibility to separate your control position from your audio hardware."
+      "description": "The DonWells Cue audio server launches automatically alongside the application, or can be run on a dedicated backstage machine with your audio interfaces plugged in. Connect from any computer on the same network and take full control — transport, properties, routing, and live metering all work remotely, giving you the flexibility to separate your control position from your audio hardware."
     },
     "firstLaunch": {
       "title": "Quick Setup",
-      "description": "Get started in seconds with LivePlay's streamlined setup process. Select a folder, create a project and start importing files! All your media gets automatically collected into one place so you can move your project between computers with ease."
+      "description": "Get started in seconds with DonWells Cue's streamlined setup process. Select a folder, create a project and start importing files! All your media gets automatically collected into one place so you can move your project between computers with ease."
     }
   },
   "ports": {
@@ -141,7 +134,7 @@
     "discovery": {
       "port": "UDP 4481",
       "title": "Automatic Discovery",
-      "description": "Broadcast and multicast beacon (group 239.255.69.80) that lets clients find LivePlay servers on the local network automatically."
+      "description": "Broadcast and multicast beacon (group 239.255.69.80) that lets clients find DonWells Cue servers on the local network automatically."
     },
     "note": "A single-machine install needs no configuration — the client and server talk over 127.0.0.1 and the Windows installer adds the firewall rules for you. These ports only matter when separating the control position from the audio hardware across a LAN."
   },

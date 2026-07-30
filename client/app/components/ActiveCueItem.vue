@@ -260,11 +260,13 @@ const formatTime = (seconds: number): string => {
 
 <style scoped lang="scss">
 .active-cue-item {
-  background-color: var(--color-background);
+  background-color: var(--color-surface-raised);
   border: 1px solid var(--color-border);
   border-radius: var(--border-radius-md);
   padding: var(--spacing-sm) var(--spacing-md);
-  transition: all var(--transition-fast);
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast);
   min-width: 400px;
   max-width: 400px;
   display: flex;
@@ -352,7 +354,7 @@ const formatTime = (seconds: number): string => {
 .action-btn {
   width: 24px;
   height: 24px;
-  border-radius: 50%;
+  border-radius: var(--border-radius-sm);
   color: white;
   font-size: 20px;
   line-height: 1;
@@ -361,7 +363,7 @@ const formatTime = (seconds: number): string => {
   justify-content: center;
   
   &.pause-btn, &.resume-btn {
-    background-color: #ff9800; /* Orange color for pause/resume */
+    background-color: var(--color-accent);
   }
 
   &.continue-btn {

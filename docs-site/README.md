@@ -1,6 +1,6 @@
-# LivePlay Docs Site — developer guide
+# DonWells Cue Docs Site — developer guide
 
-This is the public-facing static site at **<https://tdoukinitsas.github.io/liveplay/>**. It's a Nuxt 3 SPA that advertises the project, links to the latest release, and renders the project README in a few languages.
+This is the public-facing DonWells Cue static site. It's a Nuxt 3 SPA that advertises the project and renders the project README in a few languages. Its final public URL and release feed have not been configured yet.
 
 This document is the developer's guide to the docs site. For end-user docs, see the [root README](../README.md).
 
@@ -81,9 +81,9 @@ cp package.json  docs-site/public/package.json
 
    | Platform | Asset pattern                          |
    |----------|-----------------------------------------|
-   | Windows  | `LivePlay-Setup-<version>.exe`         |
-   | macOS    | `LivePlay-<version>.dmg`, `LivePlay-<version>-mac.zip` |
-   | Linux    | `LivePlay-<version>.AppImage`, `LivePlay_<version>_amd64.deb`, `LivePlay-<version>.x86_64.rpm` |
+   | Windows  | `DonWells-Cue-Setup-<version>.exe`         |
+   | macOS    | `DonWells-Cue-<version>-arm64.dmg`, `DonWells-Cue-<version>-arm64.zip` |
+   | Linux    | `DonWells-Cue-<version>.AppImage`, `DonWells-Cue-<version>_amd64.deb`, `DonWells-Cue-<version>.x86_64.rpm` |
 
    If you rename a release asset on the server side, update the URL builder in `app.vue`.
 3. **README rendering** — fetches `/liveplay/README.md` and runs a small client-side markdown parser to render it inline. Heavy markdown features (tables of contents, footnotes, custom syntax) are deliberately not supported — for those, link to GitHub.
@@ -96,7 +96,7 @@ cp package.json  docs-site/public/package.json
 | Task | Where |
 |------|-------|
 | Change layout / sections | `app.vue` (everything is here) |
-| Tweak the brand colour (currently `#DA1E28`) | `app.vue` SCSS block + `assets/styles/main.scss` |
+| Tweak the brand colour (currently `#315FCF`) | `app.vue` SCSS block + `assets/styles/main.scss` |
 | Add a feature highlight section | Drop in a `<FeatureHighlight title="…" image-src="/screenshots/…">` block in `app.vue` |
 | Add a language | New file in `public/locales/<code>.json`, then add it to `availableLocales` in `composables/useI18n.ts` |
 | Replace the logo | `public/assets/logo.svg` |

@@ -6,7 +6,7 @@
     "direction": "rtl"
   },
   "app": {
-    "name": "LivePlay"
+    "name": "DonWells Cue"
   },
   "menu": {
     "file": "فائل",
@@ -27,21 +27,21 @@
     "fullscreen": "مکمل اسکرین",
     "language": "زبان",
     "help": "مدد",
-    "about": "LivePlay کے بارے میں"
+    "about": "DonWells Cue کے بارے میں"
   },
   "welcome": {
-    "title": "LivePlay",
+    "title": "DonWells Cue",
     "subtitle": "براہ راست تقریبات کے لیے آڈیو پلے بیک",
     "newProject": "نیا پروجیکٹ",
     "openProject": "پروجیکٹ کھولیں",
     "modeTitle": "سرور موڈ منتخب کریں",
-    "modeSubtitle": "LivePlay کو آڈیو انجن کہاں چلانا چاہیے؟",
+    "modeSubtitle": "DonWells Cue کو آڈیو انجن کہاں چلانا چاہیے؟",
     "localMode": "مقامی",
     "localModeDescription": "اس کمپیوٹر پر آڈیو انجن چلائیں۔",
     "remoteMode": "ریموٹ",
-    "remoteModeDescription": "نیٹ ورک پر LivePlay سرور سے جڑیں۔",
-    "remoteConnect": "LivePlay سرور سے جڑیں",
-    "remoteAddressHint": "LivePlay سرور کا IP ایڈریس یا ہوسٹ نام درج کریں۔",
+    "remoteModeDescription": "نیٹ ورک پر DonWells Cue سرور سے جڑیں۔",
+    "remoteConnect": "DonWells Cue سرور سے جڑیں",
+    "remoteAddressHint": "DonWells Cue سرور کا IP ایڈریس یا ہوسٹ نام درج کریں۔",
     "serverAddress": "سرور ایڈریس",
     "serverAddressPlaceholder": "مثلاً 192.168.1.10 یا myserver.local",
     "connect": "جڑیں",
@@ -226,12 +226,12 @@
     "restartTitle": "سرور دوبارہ شروع کریں"
   },
   "serverSettings": {
-    "title": "LivePlay سرور",
+    "title": "DonWells Cue سرور",
     "connected": "● جڑا ہوا",
     "reconnecting": "● دوبارہ جڑ رہا ہے…",
     "disconnected": "● منقطع",
     "localModeDesc": "ایپ اپنا آڈیو انجن شروع کرتی ہے۔ تنہا آپریٹرز کے لیے بہترین۔",
-    "remoteModeDesc": "کسی دوسری مشین پر چل رہے LivePlay سرور سے جڑیں۔",
+    "remoteModeDesc": "کسی دوسری مشین پر چل رہے DonWells Cue سرور سے جڑیں۔",
     "localPort": "مقامی پورٹ",
     "remoteUrl": "ریموٹ URL",
     "engineRunning": "انجن چل رہا ہے (pid {pid})",
@@ -269,8 +269,8 @@
     "currentVersion": "موجودہ ورژن",
     "newVersion": "نیا ورژن",
     "whatsNew": "نیا کیا ہے",
-    "updatePrompt": "LivePlay کا ایک نیا ورژن دستیاب ہے۔ کیا آپ اسے ابھی ڈاؤن لوڈ اور انسٹال کرنا چاہتے ہیں؟",
-    "manualUpdatePrompt": "LivePlay کا ایک نیا ورژن دستیاب ہے۔ ڈاؤن لوڈ صفحہ پر جانے کے لیے نیچے کلک کریں۔",
+    "updatePrompt": "DonWells Cue کا ایک نیا ورژن دستیاب ہے۔ کیا آپ اسے ابھی ڈاؤن لوڈ اور انسٹال کرنا چاہتے ہیں؟",
+    "manualUpdatePrompt": "DonWells Cue کا ایک نیا ورژن دستیاب ہے۔ ڈاؤن لوڈ صفحہ پر جانے کے لیے نیچے کلک کریں۔",
     "downloading": "اپ ڈیٹ ڈاؤن لوڈ ہو رہا ہے",
     "downloadComplete": "ڈاؤن لوڈ مکمل",
     "installInfo": "اپ ڈیٹ انسٹال کرنے کے لیے تیار ہے۔ آپ اسے ابھی انسٹال کر سکتے ہیں یا ایپ بند کرتے وقت یہ انسٹال ہو جائے گا۔",
@@ -478,7 +478,7 @@
   },
   "connectionLost": {
     "title": "کنکشن ختم ہو گیا",
-    "message": "{url} پر LivePlay سرور سے کنکشن ختم ہو گیا ہے۔",
+    "message": "{url} پر DonWells Cue سرور سے کنکشن ختم ہو گیا ہے۔",
     "attempting": "دوبارہ جڑنے کی کوشش ہو رہی ہے…",
     "attemptCount": "(ناکام کوششیں: {count})",
     "locked": "کنکشن بحال ہونے تک پلے بیک اور ترمیم روکی گئی ہے — ابھی کی گئی تبدیلیاں سرور تک نہیں بھیجی جا سکتیں۔",

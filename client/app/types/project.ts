@@ -255,13 +255,13 @@ export const PRESET_COLORS = [
   '#CC0000', // Dark Red
   '#996600', // Brown
   '#666666', // Gray
-  '#333333'  // Dark Gray
+  '#30303a'  // Dark Gray
 ];
 
 // Default values
 export const DEFAULT_THEME: Theme = {
   mode: 'dark',
-  accentColor: '#DA1E28'
+  accentColor: '#315FCF'
 };
 
 export const DEFAULT_AUDIO_ITEM: Partial<AudioItem> = {

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 640">
+  <rect x="282" y="70" width="42" height="216" fill="#f5f3ee"/>
+  <path d="m353 70 135 108-135 108v-74l47-34-47-34Z" fill="#315fcf"/>
+  <text x="380" y="450" fill="#f5f3ee" font-family="Helvetica Neue" font-size="154" font-weight="800" text-anchor="middle" letter-spacing="-8">CUE</text>
+  <rect x="207" y="478" width="346" height="18" fill="#315fcf"/>
+  <text x="380" y="563" fill="#9297a6" font-family="Helvetica Neue" font-size="42" font-weight="700" text-anchor="middle" letter-spacing="12">DONWELLS</text>
+</svg>

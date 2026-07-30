@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1200" viewBox="0 0 1800 1200">
+  <rect width="1800" height="1200" fill="#101117"/>
+  <text x="70" y="70" fill="#f5f3ee" font-family="Helvetica Neue" font-size="38" font-weight="700">DONWELLS CUE — LOGO LANES</text>
+  <text x="70" y="105" fill="#9195a3" font-family="Helvetica Neue" font-size="17" letter-spacing="2">SELECT A LANE TO REFINE · NONE APPLIED TO THE APP</text>
+
+  <g transform="translate(70 145)">
+    <rect width="520" height="455" rx="20" fill="#1b1c24" stroke="#30323e" stroke-width="2"/>
+    <text x="30" y="46" fill="#f5f3ee" font-family="Helvetica Neue" font-size="21" font-weight="700">01 / DW LOCKUP</text>
+    <text x="30" y="74" fill="#9195a3" font-family="Helvetica Neue" font-size="15">Personal monogram · direct ownership</text>
+    <image href="01-dw-lockup.svg" x="155" y="98" width="210" height="210"/>
+    <text x="30" y="366" fill="#f5f3ee" font-family="Helvetica Neue" font-size="32" font-weight="700">DW</text>
+    <rect x="89" y="337" width="4" height="40" fill="#315fcf"/>
+    <text x="112" y="366" fill="#f5f3ee" font-family="Helvetica Neue" font-size="29" font-weight="700">DonWells Cue</text>
+    <text x="30" y="418" fill="#656a78" font-family="Menlo" font-size="13">MONOGRAM / TYPOGRAPHIC</text>
+  </g>
+
+  <g transform="translate(640 145)">
+    <rect width="520" height="455" rx="20" fill="#1b1c24" stroke="#30323e" stroke-width="2"/>
+    <text x="30" y="46" fill="#f5f3ee" font-family="Helvetica Neue" font-size="21" font-weight="700">02 / CUE FORWARD</text>
+    <text x="30" y="74" fill="#9195a3" font-family="Helvetica Neue" font-size="15">Playhead · launch · decisive motion</text>
+    <image href="02-cue-forward.svg" x="155" y="98" width="210" height="210"/>
+    <rect x="30" y="333" width="13" height="47" fill="#f5f3ee"/>
+    <path d="m51 333 31 23.5L51 380v-16l11-7.5L51 349Z" fill="#315fcf"/>
+    <text x="112" y="366" fill="#f5f3ee" font-family="Helvetica Neue" font-size="29" font-weight="700">DonWells Cue</text>
+    <text x="30" y="418" fill="#656a78" font-family="Menlo" font-size="13">PLAYBACK / MOTION</text>
+  </g>
+
+  <g transform="translate(1210 145)">
+    <rect width="520" height="455" rx="20" fill="#1b1c24" stroke="#30323e" stroke-width="2"/>
+    <text x="30" y="46" fill="#f5f3ee" font-family="Helvetica Neue" font-size="21" font-weight="700">03 / CUE STACK</text>
+    <text x="30" y="74" fill="#9195a3" font-family="Helvetica Neue" font-size="15">Show order · next cue brought forward</text>
+    <image href="03-cue-stack.svg" x="155" y="98" width="210" height="210"/>
+    <rect x="30" y="340" width="52" height="31" rx="3" fill="#315fcf"/>
+    <rect x="39" y="349" width="27" height="4" fill="#f5f3ee"/>
+    <rect x="39" y="358" width="17" height="4" fill="#f5f3ee"/>
+    <text x="112" y="366" fill="#f5f3ee" font-family="Helvetica Neue" font-size="29" font-weight="700">DonWells Cue</text>
+    <text x="30" y="418" fill="#656a78" font-family="Menlo" font-size="13">CUES / SHOW FLOW</text>
+  </g>
+
+  <g transform="translate(70 650)">
+    <rect width="520" height="455" rx="20" fill="#1b1c24" stroke="#30323e" stroke-width="2"/>
+    <text x="30" y="46" fill="#f5f3ee" font-family="Helvetica Neue" font-size="21" font-weight="700">04 / STAGE MARK</text>
+    <text x="30" y="74" fill="#9195a3" font-family="Helvetica Neue" font-size="15">Precision · placement · the exact hit</text>
+    <image href="04-stage-mark.svg" x="155" y="98" width="210" height="210"/>
+    <path d="M47 340H30v17M65 340h17v17M30 358v17h17M82 358v17H65" fill="none" stroke="#315fcf" stroke-width="8"/>
+    <rect x="52" y="353" width="9" height="9" fill="#f5f3ee"/>
+    <text x="112" y="366" fill="#f5f3ee" font-family="Helvetica Neue" font-size="29" font-weight="700">DonWells Cue</text>
+    <text x="30" y="418" fill="#656a78" font-family="Menlo" font-size="13">LIVE EVENT / PRECISION</text>
+  </g>
+
+  <g transform="translate(640 650)">
+    <rect width="520" height="455" rx="20" fill="#1b1c24" stroke="#30323e" stroke-width="2"/>
+    <text x="30" y="46" fill="#f5f3ee" font-family="Helvetica Neue" font-size="21" font-weight="700">05 / SIGNAL PATH</text>
+    <text x="30" y="74" fill="#9195a3" font-family="Helvetica Neue" font-size="15">Audio energy · playback position</text>
+    <image href="05-signal-path.svg" x="155" y="98" width="210" height="210"/>
+    <path d="M27 358h15l7-23 15 46 16-46 7 23h16" fill="none" stroke="#f5f3ee" stroke-width="6"/>
+    <rect x="82" y="331" width="5" height="54" fill="#315fcf"/>
+    <text x="112" y="366" fill="#f5f3ee" font-family="Helvetica Neue" font-size="29" font-weight="700">DonWells Cue</text>
+    <text x="30" y="418" fill="#656a78" font-family="Menlo" font-size="13">AUDIO / PLAYHEAD</text>
+  </g>
+
+  <g transform="translate(1210 650)">
+    <rect width="520" height="455" rx="20" fill="#1b1c24" stroke="#30323e" stroke-width="2"/>
+    <text x="30" y="46" fill="#f5f3ee" font-family="Helvetica Neue" font-size="21" font-weight="700">06 / WORDMARK</text>
+    <text x="30" y="74" fill="#9195a3" font-family="Helvetica Neue" font-size="15">The product name carries the identity</text>
+    <image href="06-wordmark.svg" x="155" y="98" width="210" height="210"/>
+    <text x="30" y="366" fill="#f5f3ee" font-family="Helvetica Neue" font-size="31" font-weight="800">DONWELLS</text>
+    <text x="328" y="366" fill="#315fcf" font-family="Helvetica Neue" font-size="31" font-weight="800">CUE</text>
+    <text x="30" y="418" fill="#656a78" font-family="Menlo" font-size="13">WORDMARK / NAME</text>
+  </g>
+</svg>

@@ -6,7 +6,7 @@
     "direction": "ltr"
   },
   "app": {
-    "name": "LivePlay"
+    "name": "DonWells Cue"
   },
   "menu": {
     "file": "Dosya",
@@ -27,21 +27,21 @@
     "fullscreen": "Tam Ekran",
     "language": "Dil",
     "help": "Yardım",
-    "about": "LivePlay Hakkında"
+    "about": "DonWells Cue Hakkında"
   },
   "welcome": {
-    "title": "LivePlay",
+    "title": "DonWells Cue",
     "subtitle": "Canlı etkinlikler için ses oynatma",
     "newProject": "Yeni Proje",
     "openProject": "Proje Aç",
     "modeTitle": "Sunucu Modunu Seç",
-    "modeSubtitle": "LivePlay ses motorunu nerede çalıştırmalı?",
+    "modeSubtitle": "DonWells Cue ses motorunu nerede çalıştırmalı?",
     "localMode": "Yerel",
     "localModeDescription": "Ses motorunu bu bilgisayarda çalıştır.",
     "remoteMode": "Uzak",
-    "remoteModeDescription": "Ağdaki bir LivePlay sunucusuna bağlan.",
-    "remoteConnect": "LivePlay sunucusuna bağlan",
-    "remoteAddressHint": "LivePlay sunucusunun IP adresini veya ana bilgisayar adını girin.",
+    "remoteModeDescription": "Ağdaki bir DonWells Cue sunucusuna bağlan.",
+    "remoteConnect": "DonWells Cue sunucusuna bağlan",
+    "remoteAddressHint": "DonWells Cue sunucusunun IP adresini veya ana bilgisayar adını girin.",
     "serverAddress": "Sunucu Adresi",
     "serverAddressPlaceholder": "ör. 192.168.1.10 veya sunucum.local",
     "connect": "Bağlan",
@@ -226,12 +226,12 @@
     "restartTitle": "Sunucuyu yeniden başlat"
   },
   "serverSettings": {
-    "title": "LivePlay Sunucusu",
+    "title": "DonWells Cue Sunucusu",
     "connected": "● Bağlandı",
     "reconnecting": "● Yeniden bağlanıyor…",
     "disconnected": "● Bağlantı kesildi",
     "localModeDesc": "Uygulama kendi ses motorunu başlatır. Tek operatörler için en iyisi.",
-    "remoteModeDesc": "Başka bir makinede çalışan LivePlay sunucusuna bağlan.",
+    "remoteModeDesc": "Başka bir makinede çalışan DonWells Cue sunucusuna bağlan.",
     "localPort": "Yerel port",
     "remoteUrl": "Uzak URL",
     "engineRunning": "Motor çalışıyor (pid {pid})",
@@ -269,8 +269,8 @@
     "currentVersion": "Mevcut Sürüm",
     "newVersion": "Yeni Sürüm",
     "whatsNew": "Yenilikler",
-    "updatePrompt": "LivePlay'in yeni bir sürümü mevcut. Şimdi indirmek ve yüklemek ister misiniz?",
-    "manualUpdatePrompt": "LivePlay'in yeni bir sürümü mevcut. İndirme sayfasını ziyaret etmek için aşağıya tıklayın.",
+    "updatePrompt": "DonWells Cue'in yeni bir sürümü mevcut. Şimdi indirmek ve yüklemek ister misiniz?",
+    "manualUpdatePrompt": "DonWells Cue'in yeni bir sürümü mevcut. İndirme sayfasını ziyaret etmek için aşağıya tıklayın.",
     "downloading": "Güncelleme İndiriliyor",
     "downloadComplete": "İndirme Tamamlandı",
     "installInfo": "Güncelleme yüklemeye hazır. Şimdi yükleyebilir veya uygulamayı kapattığınızda yüklenecek.",
@@ -478,7 +478,7 @@
   },
   "connectionLost": {
     "title": "Bağlantı kesildi",
-    "message": "{url} adresindeki LivePlay sunucusuyla bağlantı kesildi.",
+    "message": "{url} adresindeki DonWells Cue sunucusuyla bağlantı kesildi.",
     "attempting": "Yeniden bağlanmaya çalışılıyor…",
     "attemptCount": "(Başarısız deneme: {count})",
     "locked": "Bağlantı geri gelene kadar oynatma ve düzenleme duraklatıldı — şimdi yapılan değişiklikler sunucuya gönderilemezdi.",

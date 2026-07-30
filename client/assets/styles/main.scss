@@ -57,20 +57,20 @@
   // Spacing
   --spacing-xs: 4px;
   --spacing-sm: 8px;
-  --spacing-md: 16px;
-  --spacing-lg: 24px;
-  --spacing-xl: 32px;
-  --spacing-xxl: 48px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+  --spacing-xxl: 32px;
 
   // Border radius
-  --border-radius-sm: 2px;
-  --border-radius-md: 4px;
-  --border-radius-lg: 8px;
+  --border-radius-sm: 4px;
+  --border-radius-md: 6px;
+  --border-radius-lg: 10px;
 
   // Transitions
-  --transition-fast: 150ms ease;
-  --transition-base: 250ms ease;
-  --transition-slow: 350ms ease;
+  --transition-fast: 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  --transition-base: 180ms cubic-bezier(0.23, 1, 0.32, 1);
+  --transition-slow: 240ms cubic-bezier(0.23, 1, 0.32, 1);
 
   // Z-index
   --z-dropdown: 1000;
@@ -78,44 +78,63 @@
   --z-tooltip: 3000;
 
   // Layout
-  --playback-controls-height: 120px;
-  --properties-panel-height: 300px;
+  --playback-controls-height: 108px;
+  --properties-panel-height: 320px;
   --cart-player-width: 33.333%;
-  /* Default accent colors so components without an explicit data-theme inherit a usable value */
-  --color-accent: #da1e28;
-  --color-accent-hover: #b71c22;
+
+  // Rack-console primitives. Existing component aliases below keep this a
+  // visual overhaul rather than a risky component rewrite.
+  --rack-eigengrau: #16161d;
+  --signal-blue: #315fcf;
+  --signal-blue-hover: #3c6fe0;
+  --signal-blue-soft: rgba(49, 95, 207, 0.18);
+  --color-accent: var(--color-accent-custom, var(--signal-blue));
+  --color-accent-hover: var(--signal-blue-hover);
+  --color-accent-soft: var(--signal-blue-soft);
+  --color-accent-bg: var(--signal-blue-soft);
+  --color-text-on-accent: #f7f8fb;
+  --color-text: var(--color-text-primary);
+  --color-focus-ring: rgba(111, 145, 239, 0.55);
 }
 
 // Light theme
 [data-theme='light'] {
-  --color-background: #ebebeb;
-  --color-surface: #f3f3f3;
-  --color-surface-hover: #ffffff;
-  --color-border: #d0d0d0;
-  --color-text-primary: #161616;
-  --color-text-secondary: #525252;
-  --color-text-disabled: #8d8d8d;
-  --color-accent: var(--color-accent-custom, #da1e28);
-  --color-accent-hover: var(--color-accent-hover-custom, #da1e28);
-  --color-danger: #da1e28;
-  --color-success: #24a148;
-  --color-warning: #f1c21b;
+  --color-background: #edf0f5;
+  --color-surface: #f7f8fb;
+  --color-surface-raised: #ffffff;
+  --color-surface-hover: #e5e9f1;
+  --color-control: #e7ebf2;
+  --color-border: rgba(22, 29, 46, 0.16);
+  --color-border-strong: rgba(22, 29, 46, 0.28);
+  --color-text-primary: #171b25;
+  --color-text-secondary: #586274;
+  --color-text-tertiary: #788191;
+  --color-text-disabled: #969daa;
+  --color-accent: var(--color-accent-custom, var(--signal-blue));
+  --color-accent-hover: var(--signal-blue-hover);
+  --color-danger: #c93642;
+  --color-success: #1f8f55;
+  --color-warning: #d4a21b;
 }
 
 // Dark theme
 [data-theme='dark'] {
-  --color-background: #161616;
-  --color-surface: #262626;
-  --color-surface-hover: #333333;
-  --color-border: #525252;
-  --color-text-primary: #f4f4f4;
-  --color-text-secondary: #c6c6c6;
-  --color-text-disabled: #6f6f6f;
-  --color-accent: var(--color-accent-custom, #da1e28);
-  --color-accent-hover: var(--color-accent-hover-custom, #da1e28);
-  --color-danger: #fa4d56;
-  --color-success: #42be65;
-  --color-warning: #f1c21b;
+  --color-background: var(--rack-eigengrau);
+  --color-surface: #1d1e26;
+  --color-surface-raised: #242630;
+  --color-surface-hover: #2a2d38;
+  --color-control: #121319;
+  --color-border: rgba(255, 255, 255, 0.10);
+  --color-border-strong: rgba(255, 255, 255, 0.18);
+  --color-text-primary: #f2f4f8;
+  --color-text-secondary: #aab1bf;
+  --color-text-tertiary: #7f8796;
+  --color-text-disabled: #616875;
+  --color-accent: var(--color-accent-custom, var(--signal-blue));
+  --color-accent-hover: var(--signal-blue-hover);
+  --color-danger: #e54855;
+  --color-success: #35a96b;
+  --color-warning: #d8ad35;
 }
 
 // Base styles
@@ -176,32 +195,34 @@ span {
 
 // Scrollbar styling
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--color-surface);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: var(--border-radius-sm);
+  background: var(--color-border-strong);
+  border: 3px solid transparent;
+  border-radius: 8px;
+  background-clip: padding-box;
 
   &:hover {
-    background: var(--color-text-secondary);
+    background-color: var(--color-text-tertiary);
   }
 }
 
 // Selection
 ::selection {
   background-color: var(--color-accent);
-  color: white;
+  color: var(--color-text-on-accent);
 }
 
 // Focus styles
 :focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
 
@@ -213,7 +234,16 @@ button {
   background: none;
   cursor: pointer;
   color: var(--color-text-primary);
-  transition: all var(--transition-fast);
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
+
+  &:active:not(:disabled) {
+    transform: scale(0.98);
+  }
 
   &:disabled {
     cursor: not-allowed;
@@ -228,20 +258,35 @@ select {
   font-family: inherit;
   font-size: inherit;
   color: var(--color-text-primary);
-  background-color: var(--color-surface);
+  background-color: var(--color-control);
   border: 1px solid var(--color-border);
   border-radius: var(--border-radius-sm);
   padding: var(--spacing-sm) var(--spacing-md);
-  transition: all var(--transition-fast);
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
 
   &:focus {
     outline: none;
     border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px var(--color-accent-soft);
   }
 
   &:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

@@ -72,15 +72,13 @@ const {
   closeProject,
   confirmUnsavedChanges,
   currentProject,
-  findItemByUuid,
   selectAllItems,
   duplicateItems,
   copyItemsToClipboard,
   pasteItemsFromClipboard,
   requestDeleteFromKeyboard,
 } = useProject();
-const { triggerByUuid, triggerByIndex, stopCue, stopAllCues, playCue } = useAudioEngine();
-const { getCartItem, cartOnlyItems, updateCartOnlyItem } = useCartItems();
+const { cartOnlyItems } = useCartItems();
 const { t } = useLocalization();
 const server = useLiveplayServer();
 const { uiMode } = useUiMode();
@@ -222,61 +220,6 @@ if (import.meta.client && window.electronAPI) {
     cartDetached.value = false;
   });
 
-  // Listen for API triggers
-  window.electronAPI.onTriggerItem((_event, data) => {
-    if (data.type === 'uuid') {
-      triggerByUuid(data.value);
-    } else if (data.type === 'index') {
-      triggerByIndex(data.value);
-    }
-  });
-
-  window.electronAPI.onStopItem((_event, data) => {
-    if (data.type === 'uuid') {
-      stopCue(data.value);
-    }
-  });
-
-  // Trigger a cart slot by slot number (from HTTP API)
-  window.electronAPI.onTriggerCartSlot((_event, data) => {
-    const item = getCartItem(data.slot);
-    if (item) playCue(item);
-  });
-
-  // Stop all cues (from HTTP API)
-  window.electronAPI.onStopAllCues(() => {
-    stopAllCues();
-  });
-
-  // Update a cue's properties (from HTTP API PATCH /api/cues/:id)
-  const READONLY_ITEM_KEYS = new Set(['uuid', 'type', 'index', 'mediaFileName', 'mediaPath', 'waveformPath', 'waveform', 'duration']);
-  window.electronAPI.onApiUpdateItem((_event, { requestId, id, updates }) => {
-    const item = findItemByUuid(id);
-    if (!item || item.type !== 'audio') {
-      window.electronAPI.sendApiResponse({ requestId, success: false, message: 'Cue not found' });
-      return;
-    }
-    for (const [key, value] of Object.entries(updates)) {
-      if (!READONLY_ITEM_KEYS.has(key)) (item as any)[key] = value;
-    }
-    saveProject();
-    window.electronAPI.sendApiResponse({ requestId, success: true, cue: item });
-  });
-
-  // Update a cart slot's audio item properties (from HTTP API PATCH /api/carts/:slot)
-  window.electronAPI.onApiUpdateCartItem((_event, { requestId, slot, updates }) => {
-    const item = getCartItem(slot);
-    if (!item) {
-      window.electronAPI.sendApiResponse({ requestId, success: false, message: 'Cart slot is empty' });
-      return;
-    }
-    for (const [key, value] of Object.entries(updates)) {
-      if (!READONLY_ITEM_KEYS.has(key)) (item as any)[key] = value;
-    }
-    updateCartOnlyItem(item.uuid, item);
-    saveProject();
-    window.electronAPI.sendApiResponse({ requestId, success: true, cart: { slot, item } });
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -292,7 +235,7 @@ const exportServerPickerOpen = ref(false);
 
 async function startExportFlow() {
   if (!currentProject.value) return;
-  if (server.isLocalServer.value) {
+  if (server.isLocalServer) {
     // Local: skip the choice modal and go straight to the server picker
     // (the "server" here is this same computer, so this matches the user's
     // expectation of a familiar OS-style directory chooser).
@@ -345,6 +288,9 @@ async function runExport(opts: { outputPath: string; downloadTo?: string }) {
     percentage: 30,
   };
   try {
+    if (!(await saveProject({ force: true }))) {
+      throw new Error('Project must be saved before it can be exported');
+    }
     const result = await server.exportProjectArchive(
       project.folderPath, project.name, opts.outputPath);
     progressModal.value.percentage = opts.downloadTo ? 60 : 100;
@@ -352,14 +298,12 @@ async function runExport(opts: { outputPath: string; downloadTo?: string }) {
     if (opts.downloadTo && result.downloadToken) {
       progressModal.value.message =
         `${t('exportProgress.downloading')} ${project.name}.lpa…`;
-      const blob = await server.downloadArchive(result.downloadToken);
-      const buf  = await blob.arrayBuffer();
-      const w = await window.electronAPI.writeBinaryFile(opts.downloadTo, buf);
-      if (!w.success) throw new Error(w.error || 'write failed');
+      await server.downloadArchiveToFile(result.downloadToken, opts.downloadTo);
     }
     progressModal.value.percentage = 100;
   } catch (e) {
     console.error('Export failed:', e);
+    server.lastError = `Export failed: ${e instanceof Error ? e.message : String(e)}`;
   } finally {
     setTimeout(() => { progressModal.value.visible = false; }, 400);
   }
@@ -483,6 +427,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: var(--color-background);
 }
 
 .workspace-content {
@@ -490,6 +435,7 @@ onUnmounted(() => {
   display: flex;
   overflow: hidden;
   position: relative;
+  background: var(--color-background);
 }
 
 .playlist-section {
@@ -522,8 +468,8 @@ onUnmounted(() => {
     position: absolute;
     top: 0;
     bottom: 0;
-    left: 0;
-    right: 0;
+    left: -4px;
+    right: -4px;
   }
 
   @media (any-pointer: coarse) {

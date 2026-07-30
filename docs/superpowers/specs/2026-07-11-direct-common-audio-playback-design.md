@@ -2,13 +2,13 @@
 
 ## Goal
 
-LivePlay plays common audio formats from their original files. Decode, channel conversion, and resampling happen in memory; playback does not create replacement media files or persistent decoded-audio caches.
+DonWells Cue plays common audio formats from their original files. Decode, channel conversion, and resampling happen in memory; playback does not create replacement media files or persistent decoded-audio caches.
 
 ## Supported files
 
 The playback surface includes WAV/BWF/W64, MP1/MP2/MP3, FLAC, AIFF/AIFC, AAC, M4A/M4B/M4R with AAC or ALAC, OGG/Vorbis, Opus, WMA, CAF, APE, WavPack, AMR, AC-3/E-AC-3, DTS, Matroska/WebM audio, AU/SND, DSF, TTA, Musepack, Speex, GSM, VOC, RealAudio, tracker modules, standard MIDI/KAR, common emulated-system music, and streamed game-audio formats supported by the bundled decoders.
 
-For containers with video or multiple audio streams, LivePlay ignores the picture and plays FFmpeg's best audio stream.
+For containers with video or multiple audio streams, DonWells Cue ignores the picture and plays FFmpeg's best audio stream.
 
 ## Architecture
 
@@ -60,4 +60,4 @@ The final packaged app is launched once, and the bundled server is exercised fro
 - No converted WAV, replacement media file, or decoded-audio cache is created by playback.
 - Existing projects gain the same format support automatically when cues load.
 - Seeking, looping, fades, waveform generation, metadata, and cue loading work for FFmpeg-backed files.
-- Audiovisual containers play their audio without turning LivePlay into a video player.
+- Audiovisual containers play their audio without turning DonWells Cue into a video player.

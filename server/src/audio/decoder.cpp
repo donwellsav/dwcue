@@ -1396,8 +1396,11 @@ int decode_next(FfmpegDataSource& source) {
         for (;;) {
             const int read = av_read_frame(source.format, source.packet);
             if (read < 0) {
-                source.demux_eof = true;
-                break;
+                if (read == AVERROR_EOF) {
+                    source.demux_eof = true;
+                    break;
+                }
+                return read;
             }
             if (source.packet->stream_index != source.stream_index) {
                 av_packet_unref(source.packet);

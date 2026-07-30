@@ -1,6 +1,6 @@
-# LivePlay Server — developer guide
+# DW Cue Server — developer guide
 
-`liveplay-server` is the headless C++20 audio engine and control surface that backs the LivePlay client. It owns the audio graph, the routing matrix, the loaded project file, and exposes a REST + WebSocket API. It runs as either a child process spawned by the desktop client (single-machine installs) or as a standalone daemon on a stage-side machine that the client connects to over the LAN.
+`dwcue-server` is the headless C++20 audio engine and control surface that backs the DonWells Cue client. It owns the audio graph, the routing matrix, the loaded project file, and exposes a REST + WebSocket API. It runs as either a child process spawned by the desktop client (single-machine installs) or as a standalone daemon on a stage-side machine that the client connects to over the LAN.
 
 This document is the developer's guide to the server. For end-user docs or the overall project orientation, see the [root README](../README.md). For the client-side, see [`client/README.md`](../client/README.md).
 
@@ -104,7 +104,7 @@ cmake --preset default                # Ninja Release; fetches vcpkg deps (~5 mi
 cmake --build build --config Release -j
 ```
 
-The binary lands at `build/liveplay-server` (or `build/Release/liveplay-server.exe` on Windows with the `vs2022` preset).
+The binary lands at `build/dwcue-server` (or `build/Release/dwcue-server.exe` on Windows with the `vs2022` preset).
 
 Useful presets:
 
@@ -131,26 +131,33 @@ npm run server:run -- --verbose  # launch with debug logs
 ## Running
 
 ```
-liveplay-server [options]
+dwcue-server [options]
   -p, --port <port>         Port to listen on (default 4480)
-  -b, --bind <addr>         Interface to bind (default 0.0.0.0)
+  -b, --bind <addr>         Interface to bind (default 127.0.0.1)
       --pidfile <path>      Write JSON {pid,port,startedAt} after binding
       --start-delay-ms <n>  Wait <n> ms before binding (used by crash-restart)
   -v, --verbose             Enable debug-level logging
   -h, --help                Show this help and exit
 
 Environment:
-  LIVEPLAY_PORT         Same as --port
-  NO_COLOR=1            Disable ANSI colour in logs
-  FORCE_COLOR=1         Force colour even when stdout isn't a tty
+  LIVEPLAY_PORT             Same as --port
+  LIVEPLAY_ACCESS_TOKEN     LAN bearer token (minimum 16 characters)
+  LIVEPLAY_ALLOWED_ORIGINS  Additional browser origins, comma-separated
+  NO_COLOR=1                Disable ANSI colour in logs
+  FORCE_COLOR=1             Force colour even when stdout isn't a tty
 ```
 
-The control surface listens on **TCP 4480** (REST + WebSocket). Alongside it, the
-[discovery beacon](include/liveplay/net/discovery.hpp) announces the server on
-**UDP 4481** via subnet broadcast and multicast (group `239.255.69.80`), and answers
-client solicitations with a unicast reply — so clients on the LAN can find the server
-without a hand-typed address. Open both ports through any firewall when running the
-server on a separate machine from the client.
+The default control surface is local-only on `127.0.0.1:4480`. Passing a
+non-loopback `--bind` enables LAN mode, requires bearer authentication, and starts the
+[discovery beacon](include/liveplay/net/discovery.hpp) on **UDP 4481**. If
+`LIVEPLAY_ACCESS_TOKEN` is unset, the server generates a 128-bit session token and
+prints it once before file logging starts. REST clients send
+`Authorization: Bearer <token>`; browser WebSocket clients connect to
+`/ws?access_token=<token>`. Discovery advertises connection details only, never the
+open project or show state.
+
+Open TCP 4480 and UDP 4481 through a firewall only when intentionally operating a
+remote server. DonWells Cue never creates firewall rules automatically.
 
 If the server crashes, its crash handler spawns a fresh copy of itself with the same
 flags plus `--start-delay-ms` (so the old listening socket drains before the new
@@ -159,7 +166,7 @@ that file, reloads the open project and resumes playback from where it left off 
 crash doesn't take the show down. The desktop client tracks the live server via the
 `--pidfile` it passes on launch.
 
-On boot it prints a banner showing the LAN-reachable URL:
+In LAN mode, the boot banner shows the reachable URL:
 
 ```
   Listening
@@ -195,7 +202,7 @@ All three tiers run at a 256-frame block (~5.3 ms at 48 kHz). Meters and limiter
 
 ### Multi-device routing matrix
 
-LivePlay drives **multiple sound cards simultaneously** with full source-channel splitting. The matrix is sparse, JSON-serialisable, and round-trips through `/api/project`. The three stages:
+DonWells Cue drives **multiple sound cards simultaneously** with full source-channel splitting. The matrix is sparse, JSON-serialisable, and round-trips through `/api/project`. The three stages:
 
 | Stage              | Mapping                                       | Persisted as         |
 |--------------------|-----------------------------------------------|----------------------|
@@ -241,9 +248,9 @@ The authoritative endpoint list is the table of `CROW_ROUTE` registrations in [`
 
 ### Conventions
 
-- Every JSON response carries `Content-Type: application/json` and `Access-Control-Allow-Origin: *`.
+- Every JSON response carries `Content-Type: application/json`. Browser origins are restricted to the packaged app and explicitly configured `LIVEPLAY_ALLOWED_ORIGINS`.
 - Every error follows `{ "error": "<message>" }` with an appropriate 4xx/5xx status code. `400` covers malformed bodies; `404` covers unknown ids/paths; `413` covers oversize uploads; `500` covers internal failures.
-- `OPTIONS` on any path returns `204` with permissive CORS headers (preflight).
+- Allowed-origin `OPTIONS` requests return `204` with matching CORS preflight headers.
 - All IDs are opaque strings unless typed otherwise. `<int>` path parameters are 32-bit signed.
 - `cue_id` (engine-level) ≠ `item_uuid` (project-document level). The server maintains the mapping in `ProjectState`; most transport endpoints accept either.
 
@@ -253,7 +260,7 @@ The authoritative endpoint list is the table of `CROW_ROUTE` registrations in [`
 
 | Method · Path      | Body | Response | Notes |
 |--------------------|------|----------|-------|
-| `GET /api/health`  | —    | `{ "ok": true, "name": "liveplay-server" }` | Liveness probe. |
+| `GET /api/health`  | —    | `{ "ok": true, "name": "dwcue-server" }` | Liveness probe. |
 | `GET /api/whoami`  | —    | `{ "clientIp": "192.168.1.10", "isLocal": false }` | `isLocal` is true for loopback callers (127.0.0.0/8, `::1`). |
 
 #### Devices
@@ -410,7 +417,7 @@ Plays an item on `settings.previewDevice` without routing through the live mixer
 | `GET /api/project`              | — | full project JSON document | The single GET a remote client needs to render the whole project. |
 | `GET /api/project/header`       | — | lightweight header `{ name, itemCount, theme, settings, cart, hasOpenProject, … }` | Hit this first so the workspace shell can paint before the items array arrives. |
 | `GET /api/project/items?offset=0&limit=100` | — | `{ "offset": int, "limit": int, "total": int, "items": [...] }` | `limit` clamps to [1,1000]. Top-level items only (groups carry their children inline). |
-| `GET /api/project/progress`     | — | `{ "loading": bool, "loaded": int, "total": int }` | Cheap poll for the open-project progress bar. |
+| `GET /api/project/progress`     | — | `{ "ready": bool, "loading": bool, "loaded": int, "total": int, "failedCount": int, "failures": [...] }` | Cheap poll for playback readiness and missing/unreadable media. |
 | `POST /api/project/load`        | `{ "path": "/abs/file.liveplay" }` *or* `{ "document": { … } }` | header object, augmented with `needsRepair`/`repairIssues` if the document was auto-repaired on load | broadcasts `project_changed`. `400` if neither field is present or load fails. |
 | `POST /api/project/close`       | — | `{ "closed": true }` | broadcasts `project_changed` |
 | `PUT /api/project/document`     | full project JSON document | header object | Replaces the entire in-memory document. Broadcasts `project_changed`. |
@@ -427,12 +434,12 @@ Mutating routes return `{ ok: true, ... }` only — the full document is **not**
 | `PATCH /api/project/items/<uuid>`      | partial item JSON (sparse update) | `{ "ok": true, "uuid": "…" }` · `404` if missing | `item_updated` |
 | `DELETE /api/project/items/<uuid>`     | — | `{ "ok": true, "uuid": "…" }` · `404` if missing | `item_removed` |
 | `POST /api/project/items/reorder`      | `{ "parentUuid": "" or "<group>", "uuids": [string, …] }` | `{ "ok": true }` | `items_reordered` |
-| `POST` or `GET /api/project/items/<uuid>/play` | — | `{ "ok": true }` · `404` if not loaded | — (transport edge fires `cue_state` instead) |
-| `POST` or `GET /api/project/items/by-index/<path>` | — | `{ "ok": true, "uuid": "…", "index": [int, …] }` · `400` invalid path · `404` no item / not loaded | — (transport edge fires `cue_state` instead) |
+| `POST /api/project/items/<uuid>/play` | — | `{ "ok": true }` · `404` if not loaded | — (transport edge fires `cue_state` instead) |
+| `POST /api/project/items/by-index/<path>` | — | `{ "ok": true, "uuid": "…", "index": [int, …] }` · `400` invalid path · `404` no item / not loaded | — (transport edge fires `cue_state` instead) |
 | `POST /api/project/items/<uuid>/stop`  | — | `{ "ok": true }` · `404` if not loaded | — |
 | `POST /api/project/items/<uuid>/seek`  | `{ "seconds": float }` | `{ "ok": true }` · `404` if not loaded | — |
 
-**Triggering by index** — `…/by-index/<path>` triggers an item by its position instead of its uuid. The `<path>` is an **index path**: a zero-based list of child indices that descends into groups at each level, mirroring the client's `findItemByIndex` / `endBehavior.targetIndex`. A single number (`5`) targets the 6th top-level item; multiple components descend into groups — `1,11` means top-level item `1` (the 2nd item, a group) then its child `11` (the 12th item inside it). Both **comma- and slash-separated** forms are accepted and equivalent, so the same target can be written `…/by-index/1,11` or `…/by-index/1/11` (mixed forms like `1,2/0` work too). Like `/play`, it accepts `GET` so it can be fired from a browser or `curl`, and it routes through `trigger_item` — audio items play, group items dispatch per their `startBehavior`. Returns `400` for a malformed path, `404` when no item exists at that index or the resolved item isn't loaded into the engine.
+**Triggering by index** — `…/by-index/<path>` triggers an item by its position instead of its uuid. The `<path>` is an **index path**: a zero-based list of child indices that descends into groups at each level, mirroring the client's `findItemByIndex` / `endBehavior.targetIndex`. A single number (`5`) targets the 6th top-level item; multiple components descend into groups — `1,11` means top-level item `1` (the 2nd item, a group) then its child `11` (the 12th item inside it). Both **comma- and slash-separated** forms are accepted and equivalent, so the same target can be written `…/by-index/1,11` or `…/by-index/1/11` (mixed forms like `1,2/0` work too). Send a `POST`; the route uses `trigger_item`, so audio items play and group items dispatch per their `startBehavior`. It returns `400` for a malformed path and `404` when no item exists at that index or the resolved item isn't loaded into the engine.
 
 Project UI settings such as `settings.indexDisplayStart` only change the numbers shown and entered in the client. REST by-index paths stay zero-based for backwards compatibility.
 
@@ -645,7 +652,7 @@ Inter-thread communication is lock-free atomics where it's on the audio path; ev
 - `--verbose` enables `DBUG`-level logs. The logger ([`logger.hpp`](include/liveplay/logger.hpp)) is ANSI-coloured by default; set `NO_COLOR=1` for log aggregators.
 - The `debug` CMake preset enables assertions + symbols and builds into `build-debug/`.
 - `crash_handler.cpp` installs a cross-platform signal/SEH handler that dumps a backtrace on fatal errors. Useful when bug reports come in from operators in the field.
-- Smoke-test the binary in CI by running `liveplay-server --help` (`build-server.yml` does exactly this).
+- Smoke-test the binary in CI by running `dwcue-server --help` (`build-server.yml` does exactly this).
 - For audio-thread bugs, prefer adding atomic counters / ring-buffer logs rather than `printf` from inside `render_block()`.
 
 For deeper context on the client side of the protocol, see [`client/README.md`](../client/README.md).

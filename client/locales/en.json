@@ -6,7 +6,7 @@
     "direction": "ltr"
   },
   "app": {
-    "name": "LivePlay"
+    "name": "DonWells Cue"
   },
   "menu": {
     "file": "File",
@@ -27,22 +27,22 @@
     "fullscreen": "Fullscreen",
     "language": "Language",
     "help": "Help",
-    "about": "About LivePlay"
+    "about": "About DonWells Cue"
   },
   "welcome": {
-    "title": "LivePlay",
+    "title": "DonWells Cue",
     "subtitle": "Audio cue playback for live events",
     "newProject": "New Project",
     "openProject": "Open Project",
     "modeTitle": "Choose Server Mode",
-    "modeSubtitle": "Where should LivePlay run the audio engine?",
+    "modeSubtitle": "Where should DonWells Cue run the audio engine?",
     "localMode": "Local",
     "localModeDescription": "Run the audio engine on this computer.",
     "startingLocalServer": "Starting local server…",
     "remoteMode": "Remote",
-    "remoteModeDescription": "Connect to a LivePlay server on the network.",
-    "remoteConnect": "Connect to LivePlay server",
-    "remoteAddressHint": "Enter the IP address or hostname of the LivePlay server.",
+    "remoteModeDescription": "Connect to a DonWells Cue server on the network.",
+    "remoteConnect": "Connect to DonWells Cue server",
+    "remoteAddressHint": "Enter the IP address or hostname of the DonWells Cue server.",
     "serverAddress": "Server Address",
     "serverAddressPlaceholder": "e.g. 192.168.1.10 or myserver.local",
     "connect": "Connect",
@@ -140,6 +140,35 @@
     "noItems": "No items in playlist",
     "importAudio": "Import Audio",
     "importHint": "Use the import buttons or drag files here"
+  },
+  "spotifyImport": {
+    "button": "Spotify",
+    "title": "Import from Spotify",
+    "idle": "Ready to download",
+    "urlLabel": "Spotify URL",
+    "urlPlaceholder": "https://open.spotify.com/playlist/...",
+    "hint": "Supports public Spotify track, album, artist, playlist, and share links.",
+    "downloadAndAdd": "Download & Add",
+    "downloading": "Downloading…",
+    "cancelling": "Cancelling…",
+    "count": "{completed} / {total}",
+    "invalidUrl": "Enter a public Spotify track, album, artist, playlist, or share URL.",
+    "unavailable": "Spotify import is not available in this build yet.",
+    "downloadFailed": "Spotify download failed.",
+    "cueImportFailed": "Downloaded tracks could not be added to the project.",
+    "cancelFailed": "Could not cancel the Spotify download.",
+    "cancelled": "Spotify download cancelled.",
+    "partialWarning": "Some tracks could not be downloaded.",
+    "status": {
+      "preparing": "Preparing import…",
+      "resolving": "Resolving Spotify tracks…",
+      "downloading": "Downloading audio…",
+      "importing": "Importing files…",
+      "complete": "Import complete",
+      "partial": "Import completed with issues",
+      "cancelled": "Import cancelled",
+      "error": "Import failed"
+    }
   },
   "cart": {
     "title": "Cart Player",
@@ -299,7 +328,7 @@
   },
   "connectionLost": {
     "title": "Connection lost",
-    "message": "The connection to the LivePlay server at {url} has been lost.",
+    "message": "The connection to the DonWells Cue server at {url} has been lost.",
     "attempting": "Attempting to reconnect…",
     "attemptCount": "(Failed attempts: {count})",
     "locked": "Playback and editing are paused until the connection is back — changes made now could not be sent to the server.",
@@ -317,7 +346,12 @@
     "resume": "Continue session",
     "startFresh": "Start fresh",
     "resumeHint": "Continue session reopens this project on the server so you can carry on.",
-    "startFreshHint": "Start fresh closes it and returns to the welcome screen."
+    "startFreshHint": "Start fresh closes it and returns to the welcome screen.",
+    "projectChangedTitle": "Server project changed",
+    "projectChangedMessage": "While this client was offline, the server opened “{name}”. Your local project has unsaved changes, so nothing was replaced automatically.",
+    "useServerProject": "Use server project",
+    "keepLocalProject": "Restore local project",
+    "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
   },
   "audioImport": {
     "title": "Import audio",
@@ -339,12 +373,12 @@
     "restartTitle": "Restart server"
   },
   "serverSettings": {
-    "title": "LivePlay Server",
+    "title": "DW Cue Server",
     "connected": "● Connected",
     "reconnecting": "● Reconnecting…",
     "disconnected": "● Disconnected",
     "localModeDesc": "App starts its own audio engine. Best for solo operators.",
-    "remoteModeDesc": "Connect to a LivePlay server running on another machine.",
+    "remoteModeDesc": "Connect to a DonWells Cue server running on another machine.",
     "localPort": "Local port",
     "remoteUrl": "Remote URL",
     "engineRunning": "Engine running (pid {pid})",
@@ -382,8 +416,8 @@
     "currentVersion": "Current Version",
     "newVersion": "New Version",
     "whatsNew": "What's New",
-    "updatePrompt": "A new version of LivePlay is available. Would you like to download and install it now?",
-    "manualUpdatePrompt": "A new version of LivePlay is available. Click below to visit the download page.",
+    "updatePrompt": "A new version of DonWells Cue is available. Would you like to download and install it now?",
+    "manualUpdatePrompt": "A new version of DonWells Cue is available. Click below to visit the download page.",
     "downloading": "Downloading Update",
     "downloadComplete": "Download Complete",
     "installInfo": "The update is ready to install. You can install it now or it will be installed when you close the application.",

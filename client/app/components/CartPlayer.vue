@@ -143,16 +143,17 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--spacing-md) var(--spacing-lg);
-  min-height: 68px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  min-height: 48px;
   box-sizing: border-box;
   border-bottom: 1px solid var(--color-border);
   background-color: var(--color-surface);
 }
 
 .cart-header h2 {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
 }
 
 .cart-header-actions {
@@ -164,9 +165,9 @@ onMounted(() => {
 .cart-grid {
   flex: 1;
   display: grid;
-  grid-auto-rows: minmax(100px, 1fr);
+  grid-auto-rows: minmax(88px, 1fr);
   gap: var(--spacing-sm);
-  padding: var(--spacing-md);
+  padding: var(--spacing-sm);
   overflow-y: auto;
   align-content: start;
 
