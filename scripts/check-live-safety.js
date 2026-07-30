@@ -689,6 +689,11 @@ assert.match(
 const appVue = read('client/app/app.vue');
 assert.match(
   appVue,
+  /watch\(theme,[\s\S]*document\.documentElement\.dataset\.theme = value/,
+  'the document root must carry the active theme so teleported dialogs inherit theme variables',
+);
+assert.match(
+  appVue,
   /pendingArchiveClientPath[\s\S]*importProjectArchiveFromClientPath/,
   'remote archive imports must preserve a file path until chunked upload',
 );
@@ -703,6 +708,20 @@ assert.match(
   macSigner,
   /server-bin[\s\S]*dwcue-server[\s\S]*optionsForFile[\s\S]*entitlements: serverEntitlementsPath[\s\S]*signAsync/,
   'the bundled native server must receive its restricted entitlements during normal signing',
+);
+
+const spotifyImportModal = read('client/app/components/SpotifyImportModal.vue');
+assert.match(
+  spotifyImportModal,
+  /class="icon-btn"[\s\S]*:aria-label="t\('actions\.close'\)"/,
+  'the Spotify dialog close button must expose an accessible name',
+);
+
+const electronMain = read('client/electron/main.js');
+assert.match(
+  electronMain,
+  /role: 'editMenu'/,
+  'the desktop menu must preserve native text editing actions, including paste',
 );
 
 const cart = read('client/app/components/CartPlayer.vue');

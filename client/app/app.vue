@@ -207,6 +207,10 @@ import ServerFilePickerModal from './components/ServerFilePickerModal.vue';
 const { currentLocale, setLocale, getDirection, t } = useLocalization();
 const theme = useState('theme', () => 'dark');
 
+watch(theme, (value) => {
+  if (import.meta.client) document.documentElement.dataset.theme = value;
+}, { immediate: true });
+
 // Detect if this window is the detached cart player window
 const isCartWindow = import.meta.client
   ? new URLSearchParams(window.location.search).get('cartWindow') === '1'

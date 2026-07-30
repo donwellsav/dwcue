@@ -4,8 +4,14 @@
       <div class="modal" role="dialog" aria-modal="true" :aria-labelledby="titleId">
         <header class="modal-header">
           <h2 :id="titleId">{{ t('spotifyImport.title') }}</h2>
-          <button type="button" class="icon-btn" :disabled="isActive" @click="handleClose">
-            <span class="material-symbols-rounded">close</span>
+          <button
+            type="button"
+            class="icon-btn"
+            :aria-label="t('actions.close')"
+            :disabled="isActive"
+            @click="handleClose"
+          >
+            <span class="material-symbols-rounded" aria-hidden="true">close</span>
           </button>
         </header>
 
@@ -44,7 +50,7 @@
 
           <div class="actions">
             <button type="submit" class="btn primary" :disabled="!canStart">
-              <span class="material-symbols-rounded">library_add</span>
+              <span class="material-symbols-rounded" aria-hidden="true">library_add</span>
               <span>{{ isActive ? t('spotifyImport.downloading') : t('spotifyImport.downloadAndAdd') }}</span>
             </button>
             <button
@@ -54,7 +60,7 @@
               :disabled="isCancelling"
               @click="cancelDownload"
             >
-              <span class="material-symbols-rounded">close</span>
+              <span class="material-symbols-rounded" aria-hidden="true">close</span>
               <span>{{ isCancelling ? t('spotifyImport.cancelling') : t('common.cancel') }}</span>
             </button>
           </div>

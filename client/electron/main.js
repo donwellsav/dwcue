@@ -2407,6 +2407,7 @@ function createMenu(locale = 'en', isDev = false) {
         }
       ]
     },
+    { role: 'editMenu' },
     {
       label: t.view,
       submenu: [
