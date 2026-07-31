@@ -78,13 +78,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // Spotify track / album / playlist import
-  downloadSpotifyAudio: (jobId, url, projectFolderPath, progressCallback) => {
+  downloadSpotifyAudio: (jobId, url, destinationParentPath, progressCallback) => {
     const progressListener = (_event, progress) => {
       if (progress.jobId === jobId && progressCallback) progressCallback(progress);
     };
     ipcRenderer.on('spotify-download-progress', progressListener);
     return ipcRenderer.invoke(
-      'download-spotify-audio', jobId, url, projectFolderPath,
+      'download-spotify-audio', jobId, url, destinationParentPath,
     ).finally(() => {
       ipcRenderer.removeListener('spotify-download-progress', progressListener);
     });

@@ -37,6 +37,7 @@
                 <p class="status-label">{{ statusText }}</p>
                 <p v-if="progressState?.playlistName" class="status-detail">{{ progressState.playlistName }}</p>
                 <p v-else-if="progressState?.message" class="status-detail">{{ progressState.message }}</p>
+                <p v-if="resultState?.projectFolderPath" class="status-detail">{{ resultState.projectFolderPath }}</p>
               </div>
               <p v-if="countText" class="status-count">{{ countText }}</p>
             </div>
@@ -98,6 +99,8 @@ interface SpotifyDownloadResult {
   completed: number;
   partial: boolean;
   error?: string;
+  playlistName: string;
+  projectFolderPath: string;
 }
 
 interface ImportBatchResult {
@@ -107,11 +110,16 @@ interface ImportBatchResult {
   retainFiles?: boolean;
 }
 
+interface ImportBatchOptions {
+  groupName: string;
+  templateFolderPath: string;
+}
+
 interface SpotifyElectronApi {
   downloadSpotifyAudio: (
     jobId: string,
     url: string,
-    projectFolderPath: string,
+    destinationParentPath: string,
     progressCallback: (progress: SpotifyDownloadProgress) => void,
   ) => Promise<SpotifyDownloadResult>;
   cancelSpotifyDownload: (jobId: string) => Promise<boolean>;
@@ -122,7 +130,11 @@ const props = defineProps<{
   open: boolean;
   projectFolderPath: string;
   projectEpoch: number;
-  importFiles: (files: string[], signal?: AbortSignal) => Promise<ImportBatchResult>;
+  importFiles: (
+    files: string[],
+    signal?: AbortSignal,
+    options?: ImportBatchOptions,
+  ) => Promise<ImportBatchResult>;
 }>();
 
 const emit = defineEmits<{
@@ -275,9 +287,20 @@ async function startDownload() {
   }
   if (!props.projectFolderPath || isActive.value) return;
 
-  const jobId = crypto.randomUUID();
   const projectFolderPath = props.projectFolderPath;
   const projectEpoch = props.projectEpoch;
+  let destinationParentPath: string | null;
+  try {
+    destinationParentPath = await api.selectProjectFolder();
+  } catch (error: any) {
+    errorMessage.value = error?.message || t('spotifyImport.downloadFailed');
+    return;
+  }
+  if (!destinationParentPath ||
+      props.projectFolderPath !== projectFolderPath ||
+      props.projectEpoch !== projectEpoch) return;
+
+  const jobId = crypto.randomUUID();
   const importController = new AbortController();
   activeJobId.value = jobId;
   importAbortController.value = importController;
@@ -294,11 +317,12 @@ async function startDownload() {
 
   let needsFinalize = false;
   let finalizeKeepFiles = false;
+  let downloadResult: SpotifyDownloadResult | null = null;
   try {
-    const result = await api.downloadSpotifyAudio(
+    downloadResult = await api.downloadSpotifyAudio(
       jobId,
       normalizedUrl.value,
-      projectFolderPath,
+      destinationParentPath,
       (progress) => {
         if (progress.jobId !== activeJobId.value) return;
         progressState.value = progress;
@@ -316,14 +340,17 @@ async function startDownload() {
       jobId,
       status: 'importing',
       playlistName: progressState.value?.playlistName,
-      total: result.total,
-      completed: result.completed,
+      total: downloadResult.total,
+      completed: downloadResult.completed,
       message: t('spotifyImport.status.importing'),
     };
-    const imported = await props.importFiles(result.files, importController.signal);
+    const imported = await props.importFiles(downloadResult.files, importController.signal, {
+      groupName: downloadResult.playlistName,
+      templateFolderPath: downloadResult.projectFolderPath,
+    });
     isImportingCues.value = false;
     const importSucceeded =
-      imported.success && imported.imported === result.files.length;
+      imported.success && imported.imported === downloadResult.files.length;
     const keepFiles = importSucceeded || imported.retainFiles === true;
     finalizeKeepFiles = keepFiles;
     const finalized = await api.finalizeSpotifyImport(jobId, keepFiles);
@@ -332,23 +359,33 @@ async function startDownload() {
       throw new Error(imported.error || t('spotifyImport.cueImportFailed'));
     }
 
-    resultState.value = result;
+    resultState.value = downloadResult;
     progressState.value = {
       jobId,
-      status: result.partial ? 'partial' : 'complete',
-      playlistName: progressState.value?.playlistName,
-      total: result.total,
-      completed: result.completed,
+      status: downloadResult.partial ? 'partial' : 'complete',
+      playlistName: downloadResult.playlistName,
+      total: downloadResult.total,
+      completed: downloadResult.completed,
       message: progressState.value?.message,
     };
 
-    if (result.error) {
-      errorMessage.value = result.error;
-    } else if (result.partial) {
+    if (downloadResult.error) {
+      errorMessage.value = downloadResult.error;
+    } else if (downloadResult.partial) {
       errorMessage.value = t('spotifyImport.partialWarning');
     }
   } catch (error: any) {
-    if (isCancelling.value ||
+    if (finalizeKeepFiles && error?.message) {
+      if (downloadResult) resultState.value = downloadResult;
+      errorMessage.value = error.message;
+      progressState.value = {
+        jobId,
+        status: 'partial',
+        playlistName: downloadResult?.playlistName || progressState.value?.playlistName,
+        total: downloadResult?.total ?? progressState.value?.total ?? 0,
+        completed: downloadResult?.completed ?? progressState.value?.completed ?? 0,
+      };
+    } else if (isCancelling.value ||
         importController.signal.aborted ||
         progressState.value?.status === 'cancelled') {
       errorMessage.value = t('spotifyImport.cancelled');

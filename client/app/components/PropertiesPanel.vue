@@ -290,7 +290,7 @@
 <script setup lang="ts">
 import type { AudioItem, GroupItem } from '~/types/project';
 import { PRESET_COLORS } from '~/types/project';
-import { calculatePerceivedLoudness } from '~/utils/audio';
+import { applyLoudnessMatch, type MeasuredLoudness } from '~/utils/audio';
 import { useOutputTarget } from '~/composables/useOutputTarget';
 
 const {
@@ -654,7 +654,7 @@ const handleSave = async () => {
 };
 
 // Handle normalize: normalize ALL selected audio items individually
-const handleNormalize = () => {
+const handleNormalize = async () => {
   let items = getSelectedItems();
   
   // Fallback to selectedItem if no items in selectedItems set (shouldn't happen now, but safe)
@@ -662,49 +662,61 @@ const handleNormalize = () => {
     items = [selectedItem.value];
   }
   
-  const targetLoudness = outputTargetLevels.value.autoVolumeTargetDb;
+  const targetLoudness = outputTargetLevels.value.loudnessTargetLufs;
+  const limiterCeilingDb = outputTargetLevels.value.limiterCeilingDb;
   
   let normalizedCount = 0;
   
-  items.forEach(item => {
-    if (item.type !== 'audio') return;
+  for (const item of items) {
+    if (item.type !== 'audio') continue;
     
     const audioItem = item as AudioItem;
     
-    // Skip if no waveform data
-    if (!audioItem.waveform || !audioItem.waveform.peaks || audioItem.waveform.peaks.length === 0) {
-      console.warn(`Skipping ${audioItem.displayName}: no waveform data`);
-      return;
+    const duration = Math.max(0, audioItem.duration || audioItem.waveform?.duration || 0);
+    const inPoint = Math.max(0, audioItem.inPoint || 0);
+    const outPoint = audioItem.outPoint > 0 ? audioItem.outPoint : duration;
+    const isFullFile = inPoint <= 0.001 &&
+      (duration <= 0 || outPoint >= duration - 0.001);
+    let analysis: MeasuredLoudness | undefined = audioItem.waveform;
+
+    if (!isFullFile || analysis?.analysis_version !== 1) {
+      const folder = currentProject.value?.folderPath || '';
+      const relativePath = audioItem.mediaPath?.replace(/^[\\/]+/, '') || '';
+      const mediaPath = audioItem.mediaServerPath ||
+        (folder && relativePath
+          ? `${folder.replace(/[\\/]+$/, '')}/${relativePath}`
+          : '');
+      if (!mediaPath) {
+        console.warn(`Skipping ${audioItem.displayName}: media path unavailable`);
+        continue;
+      }
+      try {
+        analysis = await _server.fetchWaveformByPath(
+          mediaPath,
+          1000,
+          isFullFile ? undefined : {
+            startMs: inPoint * 1000,
+            endMs: outPoint * 1000,
+          },
+        );
+      } catch (error) {
+        console.warn(`Skipping ${audioItem.displayName}: analysis failed`, error);
+        continue;
+      }
     }
-    
-    const peaks = audioItem.waveform.peaks;
-    const duration = audioItem.duration;
-    
-    // Get trimmed region
-    const inPoint = audioItem.inPoint || 0;
-    const outPoint = audioItem.outPoint || duration;
-    const startIndex = Math.floor((inPoint / duration) * peaks.length);
-    const endIndex = Math.ceil((outPoint / duration) * peaks.length);
-    const trimmedPeaks = peaks.slice(startIndex, endIndex);
-    
-    // Calculate INTRINSIC perceived loudness
-    const intrinsicLoudness = calculatePerceivedLoudness(trimmedPeaks);
-    
-    // Calculate the ABSOLUTE volume needed
-    const gainDb = targetLoudness - intrinsicLoudness;
-    const newVolume = Math.pow(10, gainDb / 20);
-    
-    // Clamp to reasonable range (0.001 to 3.162, where 3.162 = +10dB max)
-    const maxVolume = Math.pow(10, 10 / 20); // +10dB = 3.162
-    const clampedVolume = Math.min(Math.max(newVolume, 0.001), maxVolume);
-    audioItem.volume = clampedVolume;
-    
-    normalizedCount++;
-    console.log(`Normalized ${audioItem.displayName}: ${intrinsicLoudness.toFixed(1)}dB -> ${targetLoudness}dB (volume: ${clampedVolume.toFixed(3)})`);
-  });
+
+    if (applyLoudnessMatch(
+      audioItem,
+      analysis,
+      targetLoudness,
+      limiterCeilingDb,
+    )) {
+      normalizedCount++;
+    }
+  }
   
   if (normalizedCount > 0) {
-    saveProject();
+    await saveProject();
     console.log(`Normalized ${normalizedCount} item(s)`);
   }
 };

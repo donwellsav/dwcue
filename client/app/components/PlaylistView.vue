@@ -58,9 +58,23 @@ import YouTubeImportModal from './YouTubeImportModal.vue';
 import AudioImportModal from './AudioImportModal.vue';
 import SpotifyImportModal from './SpotifyImportModal.vue';
 import Btn from './Btn.vue';
-import type { AudioItem, GroupItem } from '~/types/project';
-import { DEFAULT_AUDIO_ITEM, DEFAULT_GROUP_ITEM, transitionDefaultsForImport } from '~/types/project';
+import type { AudioItem, GroupItem, Project, ProjectSettings } from '~/types/project';
+import {
+  DEFAULT_AUDIO_ITEM,
+  DEFAULT_CART_SLOT_KEYS,
+  DEFAULT_GROUP_ITEM,
+  DEFAULT_PROJECT_SETTINGS,
+  DEFAULT_THEME,
+  anchorStartNextMarker,
+  transitionDefaultsForImport,
+} from '~/types/project';
 import { useLiveplayServer } from '~/composables/useLiveplayServer';
+import { useOutputTarget } from '~/composables/useOutputTarget';
+import {
+  applyLoudnessMatch,
+  buildWaveformFromChannels,
+  trimSilence,
+} from '~/utils/audio';
 
 const {
   currentProject,
@@ -72,6 +86,7 @@ const {
   projectEpoch,
 } = useProject();
 const { t } = useLocalization();
+const { levels: outputTargetLevels } = useOutputTarget();
 const { activeCues, nextItemOverrideUuid } = useAudioEngine();
 const { uiMode } = useUiMode();
 const { revealSelection, commitReveal, clearReveals } = usePlaylistReveal();
@@ -211,7 +226,9 @@ onUnmounted(() => {
   if (raf !== null) { cancelAnimationFrame(raf); raf = null; }
 });
 
-// Queue waveform generation for every audio item that lacks peaks.
+// Queue waveform generation for every audio item that lacks current decoded
+// analysis. Legacy peak-only waveforms are redrawn immediately, then replaced
+// once with the server's versioned LUFS/true-peak result.
 // We can't gate on isLoading flipping false — it flips before
 // streamItemPages() has pushed any pages, so the items array is still
 // empty at that moment. Instead we react to items actually appearing
@@ -233,7 +250,7 @@ const scanForMissingWaveforms = async () => {
     for (const item of all) {
       if (item.type !== 'audio') continue;
       const ai = item as AudioItem;
-      if (ai.waveform) continue;
+      if (ai.waveform?.analysis_version === 1) continue;
       if (requestedWaveformUuids.has(ai.uuid)) continue;
 
       // Prefer the explicit server-absolute path written by the new import
@@ -318,6 +335,224 @@ interface ImportBatchResult {
   retainFiles?: boolean;
 }
 
+interface ImportBatchOptions {
+  groupName: string;
+  templateFolderPath: string;
+}
+
+const buildSpotifyCueSpecs = async (
+  serverPaths: string[],
+  settings: ProjectSettings | undefined,
+  signal?: AbortSignal,
+): Promise<AudioItem[]> => {
+  const cues: AudioItem[] = [];
+  for (const [position, serverPath] of serverPaths.entries()) {
+    if (signal?.aborted) throw new Error(t('spotifyImport.cancelled'));
+    const [metadata, serverWaveform] = await Promise.all([
+      server.fetchMetadata(serverPath, signal),
+      server.fetchWaveformByPath(serverPath),
+    ]);
+    if (signal?.aborted) throw new Error(t('spotifyImport.cancelled'));
+    const fileName = serverPath.split(/[\\/]/).pop() || 'audio';
+    const artist = typeof (metadata as any)?.artist === 'string'
+      ? (metadata as any).artist.trim()
+      : '';
+    const title = typeof (metadata as any)?.title === 'string'
+      ? (metadata as any).title.trim()
+      : '';
+    const metadataDuration = Number((metadata as any)?.duration_ms);
+    const duration = (Number.isFinite(metadataDuration) && metadataDuration > 0
+      ? metadataDuration
+      : serverWaveform.duration_ms) / 1000;
+    const waveform = buildWaveformFromChannels(
+      serverWaveform.channels,
+      duration,
+      serverWaveform,
+    );
+    if (!waveform) throw new Error(`Could not prepare waveform for ${fileName}`);
+
+    const uuid = crypto.randomUUID();
+    const cue = {
+      ...DEFAULT_AUDIO_ITEM,
+      ...transitionDefaultsForImport(settings?.defaultTransitionMode, duration),
+      uuid,
+      index: [0, position],
+      displayName: artist && title
+        ? `${artist} — ${title}`
+        : title || fileName.replace(/\.[^/.]+$/, ''),
+      type: 'audio',
+      mediaFileName: fileName,
+      mediaPath: `media/${fileName}`,
+      mediaServerPath: serverPath,
+      waveformPath: `waveforms/${uuid}.json`,
+      waveform,
+      outPoint: duration,
+      duration,
+    } as AudioItem;
+    const trimmed = settings?.autoTrimSilenceOnImport === true
+      ? trimSilence(cue)
+      : false;
+    if (settings?.autoMatchLoudnessOnImport === true) {
+      const analysis = trimmed
+        ? await server.fetchWaveformByPath(serverPath, 1000, {
+            startMs: cue.inPoint * 1000,
+            endMs: cue.outPoint * 1000,
+          })
+        : serverWaveform;
+      applyLoudnessMatch(
+        cue,
+        analysis,
+        outputTargetLevels.value.loudnessTargetLufs,
+        outputTargetLevels.value.limiterCeilingDb,
+      );
+    }
+    anchorStartNextMarker(cue);
+    cues.push(cue);
+  }
+  return cues;
+};
+
+const importSpotifyTemplate = async (
+  serverPaths: string[],
+  signal: AbortSignal | undefined,
+  options: ImportBatchOptions,
+): Promise<ImportBatchResult> => {
+  const project = currentProject.value;
+  const epoch = projectEpoch.value;
+  if (!project || serverPaths.length === 0) {
+    return { success: false, imported: 0, error: t('spotifyImport.cueImportFailed') };
+  }
+
+  const templateName = options.templateFolderPath.split(/[\\/]/).filter(Boolean).pop()
+    || options.groupName;
+  const templatePath =
+    `${options.templateFolderPath.replace(/[\\/]+$/, '')}/${templateName}.liveplay`;
+  const settings: ProjectSettings = {
+    ...DEFAULT_PROJECT_SETTINGS,
+    ...(project.settings?.outputTarget
+      ? { outputTarget: project.settings.outputTarget }
+      : {}),
+    ...(project.settings?.outputTargetLevels
+      ? { outputTargetLevels: project.settings.outputTargetLevels }
+      : {}),
+    ...(project.settings?.meterMode
+      ? { meterMode: project.settings.meterMode }
+      : {}),
+    defaultTransitionMode: project.settings?.defaultTransitionMode,
+    autoTrimSilenceOnImport:
+      project.settings?.autoTrimSilenceOnImport === true,
+    autoMatchLoudnessOnImport:
+      project.settings?.autoMatchLoudnessOnImport === true,
+  };
+  let templateCommitted = false;
+  let activeGroupUuid = '';
+
+  try {
+    const cueSpecs = await buildSpotifyCueSpecs(
+      serverPaths,
+      settings,
+      signal,
+    );
+    const persistedCues = cueSpecs.map((cue, position) => {
+      const persisted = { ...cue };
+      delete persisted.mediaServerPath;
+      delete persisted.waveform;
+      persisted.index = [0, position];
+      return persisted;
+    });
+    const now = new Date().toISOString();
+    const templateProject: Project = {
+      name: templateName,
+      version: '2.0.0',
+      folderPath: options.templateFolderPath,
+      items: [{
+        ...DEFAULT_GROUP_ITEM,
+        uuid: crypto.randomUUID(),
+        index: [0],
+        displayName: options.groupName,
+        type: 'group',
+        children: persistedCues,
+      } as GroupItem],
+      cartItems: [],
+      cartSlotKeys: { ...DEFAULT_CART_SLOT_KEYS },
+      cartOnlyItems: [],
+      theme: { ...DEFAULT_THEME },
+      settings,
+      createdAt: now,
+      lastModified: now,
+    };
+    const writeResult = await window.electronAPI.writeFile(
+      templatePath,
+      JSON.stringify(templateProject, null, 2),
+    );
+    if (!writeResult.success) {
+      throw new Error(writeResult.error || `Could not save template to ${templatePath}`);
+    }
+    templateCommitted = true;
+
+    if (signal?.aborted ||
+        currentProject.value !== project ||
+        projectEpoch.value !== epoch) {
+      throw new Error(t('spotifyImport.cancelled'));
+    }
+
+    const rootIndex = project.items.length;
+    const activeCues: AudioItem[] = [];
+    for (const [position, cue] of cueSpecs.entries()) {
+      const sourcePath = cue.mediaServerPath!;
+      const destPath = await server.copyToMedia(sourcePath, signal);
+      if (signal?.aborted ||
+          currentProject.value !== project ||
+          projectEpoch.value !== epoch) {
+        throw new Error(t('spotifyImport.cancelled'));
+      }
+      const fileName = destPath.split(/[\\/]/).pop() || cue.mediaFileName;
+      const uuid = crypto.randomUUID();
+      activeCues.push({
+        ...cue,
+        uuid,
+        index: [rootIndex, position],
+        mediaFileName: fileName,
+        mediaPath: `media/${fileName}`,
+        mediaServerPath: destPath,
+        waveformPath: `waveforms/${uuid}.json`,
+      });
+    }
+
+    const activeGroup = {
+      ...DEFAULT_GROUP_ITEM,
+      uuid: crypto.randomUUID(),
+      index: [rootIndex],
+      displayName: options.groupName,
+      type: 'group',
+      children: activeCues,
+    } as GroupItem;
+    activeGroupUuid = activeGroup.uuid;
+    addItem(activeGroup);
+    if (signal?.aborted) throw new Error(t('spotifyImport.cancelled'));
+    if (!await saveProject({ signal })) throw new Error(t('spotifyImport.cueImportFailed'));
+    if (currentProject.value !== project || projectEpoch.value !== epoch) {
+      throw new Error(t('spotifyImport.cancelled'));
+    }
+    return { success: true, imported: activeCues.length, retainFiles: true };
+  } catch (error: any) {
+    if (activeGroupUuid &&
+        currentProject.value === project &&
+        projectEpoch.value === epoch) {
+      removeItem(activeGroupUuid);
+    }
+    const message = error?.message || t('spotifyImport.cueImportFailed');
+    return {
+      success: false,
+      imported: 0,
+      error: templateCommitted
+        ? `Template saved to ${templatePath}. ${message}`
+        : message,
+      retainFiles: templateCommitted,
+    };
+  }
+};
+
 const prepareImportFromServerPath = async (
   serverPath: string,
   signal?: AbortSignal,
@@ -374,7 +609,10 @@ const prepareImportFromServerPath = async (
 const importFromServerPaths = async (
   serverPaths: string[],
   signal?: AbortSignal,
+  options?: ImportBatchOptions,
 ): Promise<ImportBatchResult> => {
+  if (options) return importSpotifyTemplate(serverPaths, signal, options);
+
   const project = currentProject.value;
   const epoch = projectEpoch.value;
   if (!project || serverPaths.length === 0) {

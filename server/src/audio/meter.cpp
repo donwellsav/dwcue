@@ -31,38 +31,23 @@ inline float lin_to_db(float lin) noexcept {
     return 20.0f * std::log10(lin);
 }
 
-// 4× oversampling interpolator prototype for true-peak detection
-// (ITU-R BS.1770-4 style): 48-tap Blackman-Harris-windowed sinc, split into
-// 4 polyphase branches of 12 taps. Branch 0 is (near) pass-through; branches
-// 1-3 estimate the waveform at +0.25 / +0.5 / +0.75 sample offsets. Each
-// branch is normalised to unity DC gain so a steady full-scale signal reads
-// exactly 0 dBTP. Built once, thread-safe (magic static), on first use from
-// the control thread (Meter construction).
+// ITU-R BS.1770-5 Annex 2: order-48, 4-phase FIR interpolator. The table is
+// stored row-major (12 taps × 4 phases) to match tp_process_sample().
 const std::array<float, 48>& tp_filter_taps() {
-    static const std::array<float, 48> taps = [] {
-        std::array<float, 48> t{};
-        constexpr int    N  = 48;
-        constexpr double L  = 4.0;
-        constexpr double PI = 3.14159265358979323846;
-        for (int n = 0; n < N; ++n) {
-            // Sinc centred on tap 24 → branch 0 lands on integer offsets
-            // (pure delay), branches 1-3 on the intersample positions.
-            const double x = (static_cast<double>(n) - 24.0) / L;
-            const double s = (x == 0.0) ? 1.0 : std::sin(PI * x) / (PI * x);
-            const double w = 0.35875
-                           - 0.48829 * std::cos(2.0 * PI * n / (N - 1))
-                           + 0.14128 * std::cos(4.0 * PI * n / (N - 1))
-                           - 0.01168 * std::cos(6.0 * PI * n / (N - 1));
-            t[n] = static_cast<float>(s * w);
-        }
-        for (int p = 0; p < 4; ++p) {
-            double sum = 0.0;
-            for (int m = 0; m < 12; ++m) sum += t[m * 4 + p];
-            for (int m = 0; m < 12; ++m)
-                t[m * 4 + p] = static_cast<float>(t[m * 4 + p] / sum);
-        }
-        return t;
-    }();
+    static constexpr std::array<float, 48> taps{
+         0.0017089843750f, -0.0291748046875f, -0.0189208984375f, -0.0083007812500f,
+         0.0109863281250f,  0.0292968750000f,  0.0330810546875f,  0.0148925781250f,
+        -0.0196533203125f, -0.0517578125000f, -0.0582275390625f, -0.0266113281250f,
+         0.0332031250000f,  0.0891113281250f,  0.1015625000000f,  0.0476074218750f,
+        -0.0594482421875f, -0.1665039062500f, -0.2003173828125f, -0.1022949218750f,
+         0.1373291015625f,  0.4650878906250f,  0.7797851562500f,  0.9721679687500f,
+         0.9721679687500f,  0.7797851562500f,  0.4650878906250f,  0.1373291015625f,
+        -0.1022949218750f, -0.2003173828125f, -0.1665039062500f, -0.0594482421875f,
+         0.0476074218750f,  0.1015625000000f,  0.0891113281250f,  0.0332031250000f,
+        -0.0266113281250f, -0.0582275390625f, -0.0517578125000f, -0.0196533203125f,
+         0.0148925781250f,  0.0330810546875f,  0.0292968750000f,  0.0109863281250f,
+        -0.0083007812500f, -0.0189208984375f, -0.0291748046875f,  0.0017089843750f,
+    };
     return taps;
 }
 

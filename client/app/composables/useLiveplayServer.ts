@@ -34,6 +34,7 @@ import type {
   ServerFsListing,
   ServerMixerChannel,
   ServerWaveform,
+  WaveformAnalysisRange,
 } from '~/types/server';
 
 // ---------------------------------------------------------------------
@@ -1049,8 +1050,23 @@ function createClient() {
     }
   }
 
-  async function fetchWaveform(cueId: CueId, buckets = 1000): Promise<ServerWaveform> {
-    const key = `${cueId}:${buckets}`;
+  function appendAnalysisRange(params: URLSearchParams, range?: WaveformAnalysisRange) {
+    if (Number.isFinite(range?.startMs)) {
+      params.set('analysis_start_ms', String(Math.max(0, Math.round(range!.startMs!))));
+    }
+    if (Number.isFinite(range?.endMs)) {
+      params.set('analysis_end_ms', String(Math.max(0, Math.round(range!.endMs!))));
+    }
+  }
+
+  async function fetchWaveform(
+    cueId: CueId,
+    buckets = 1000,
+    range?: WaveformAnalysisRange,
+  ): Promise<ServerWaveform> {
+    const params = new URLSearchParams({ buckets: String(buckets) });
+    appendAnalysisRange(params, range);
+    const key = `${cueId}:${params}`;
     if (waveformCache.has(key)) return waveformCache.get(key)!;
 
     return new Promise<ServerWaveform>((resolve, reject) => {
@@ -1058,7 +1074,7 @@ function createClient() {
         waveformInFlight++;
         try {
           const data = await rest<ServerWaveform>(
-            `/api/waveform/${encodeURIComponent(cueId)}?buckets=${buckets}`);
+            `/api/waveform/${encodeURIComponent(cueId)}?${params}`);
           waveformCache.set(key, data);
           resolve(data);
         } catch (e) {
@@ -1099,8 +1115,10 @@ function createClient() {
   async function fetchWaveformByPath(
     filePath: string,
     buckets = 1000,
+    range?: WaveformAnalysisRange,
   ): Promise<ServerWaveform> {
     const params = new URLSearchParams({ path: filePath, buckets: String(buckets) });
+    appendAnalysisRange(params, range);
     return rest<ServerWaveform>(`/api/waveform_path?${params}`);
   }
 

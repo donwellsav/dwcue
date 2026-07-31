@@ -8,7 +8,7 @@
 // =====================================================================
 import type { OutputTargetLevels, MeterMode } from '~/types/server';
 
-// Fallback levels used before a project is loaded (EBU R128 defaults).
+// Fallback for legacy projects whose server header has no embedded levels.
 export const DEFAULT_OUTPUT_TARGET_LEVELS: OutputTargetLevels = {
   blueBelow:          -28,
   greenMin:           -28,
@@ -17,7 +17,7 @@ export const DEFAULT_OUTPUT_TARGET_LEVELS: OutputTargetLevels = {
   yellowMax:          -1,
   redAbove:           -1,
   limiterCeilingDb:   -1,
-  autoVolumeTargetDb: -23,
+  loudnessTargetLufs: -23,
   meterUnit:          'LUFS',
   waveformColor:      '#00e676',
 };
@@ -36,7 +36,27 @@ export function useOutputTarget() {
   const levels = computed<OutputTargetLevels>(() => {
     const s = (currentProject.value as any)?.settings;
     if (s?.outputTargetLevels && typeof s.outputTargetLevels === 'object') {
-      return s.outputTargetLevels as OutputTargetLevels;
+      const raw = s.outputTargetLevels as Record<string, unknown>;
+      const target = typeof raw.loudnessTargetLufs === 'number'
+        ? raw.loudnessTargetLufs
+        // Narrow compatibility window for an old hydrated server document.
+        : typeof raw.autoVolumeTargetDb === 'number'
+          ? raw.autoVolumeTargetDb
+          : DEFAULT_OUTPUT_TARGET_LEVELS.loudnessTargetLufs;
+      return {
+        ...DEFAULT_OUTPUT_TARGET_LEVELS,
+        ...raw,
+        loudnessTargetLufs: target,
+      } as OutputTargetLevels;
+    }
+    // A named target without levels is a fresh/partially-hydrated document.
+    // Wait for the server authority instead of applying the EBU fallback to a
+    // live/streaming/etc. project.
+    if (s?.outputTarget) {
+      return {
+        ...DEFAULT_OUTPUT_TARGET_LEVELS,
+        loudnessTargetLufs: Number.NaN,
+      };
     }
     return DEFAULT_OUTPUT_TARGET_LEVELS;
   });

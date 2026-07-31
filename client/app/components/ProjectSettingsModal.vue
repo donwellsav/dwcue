@@ -151,16 +151,29 @@
               <p class="settings-help">{{ t('settings.stopAllFadeHelp') }}</p>
             </section>
 
-            <!-- Auto volume and trim -->
+            <!-- Import processing is opt-in and independently controlled. -->
             <section class="settings-field">
               <label class="settings-label settings-label--checkbox">
                 <input
                   type="checkbox"
-                  :checked="disableAutoVolumeAndTrim"
-                  @change="onDisableAutoVolumeAndTrimChange"
+                  :checked="autoTrimSilenceOnImport"
+                  @change="onAutoTrimSilenceOnImportChange"
                 />
-                {{ t('settings.disableAutoVolumeAndTrim') }}
+                {{ t('settings.autoTrimSilenceOnImport') }}
               </label>
+              <p class="settings-help">{{ t('settings.autoTrimSilenceOnImportHelp') }}</p>
+            </section>
+
+            <section class="settings-field">
+              <label class="settings-label settings-label--checkbox">
+                <input
+                  type="checkbox"
+                  :checked="autoMatchLoudnessOnImport"
+                  @change="onAutoMatchLoudnessOnImportChange"
+                />
+                {{ t('settings.autoMatchLoudnessOnImport') }}
+              </label>
+              <p class="settings-help">{{ t('settings.autoMatchLoudnessOnImportHelp') }}</p>
             </section>
 
             <!-- Disable brickwall limiter -->
@@ -301,7 +314,10 @@ const audioDeviceId          = computed(() => (currentProject.value as any)?.set
 const previewDeviceId        = computed(() => (currentProject.value as any)?.settings?.previewDevice || '');
 const ltcDeviceId            = computed(() => (currentProject.value as any)?.settings?.ltcDevice || '');
 const outputTarget           = computed(() => (currentProject.value as any)?.settings?.outputTarget || 'ebu-r128');
-const disableAutoVolumeAndTrim = computed(() => !!(currentProject.value as any)?.settings?.disableAutoVolumeAndTrim);
+const autoTrimSilenceOnImport = computed(() =>
+  (currentProject.value as any)?.settings?.autoTrimSilenceOnImport === true);
+const autoMatchLoudnessOnImport = computed(() =>
+  (currentProject.value as any)?.settings?.autoMatchLoudnessOnImport === true);
 const disableLimiter           = computed(() => !!(currentProject.value as any)?.settings?.disableLimiter);
 const disableSilenceWarning    = computed(() => !!(currentProject.value as any)?.settings?.disableSilenceWarning);
 const defaultTransitionMode    = computed(() => (currentProject.value as any)?.settings?.defaultTransitionMode || 'crossfade');
@@ -367,8 +383,11 @@ function onMeterBallisticsChange(e: Event) {
   const v = (e.target as HTMLSelectElement).value;
   applyPatch({ meterBallistics: v });
 }
-function onDisableAutoVolumeAndTrimChange(e: Event) {
-  applyPatch({ disableAutoVolumeAndTrim: (e.target as HTMLInputElement).checked });
+function onAutoTrimSilenceOnImportChange(e: Event) {
+  applyPatch({ autoTrimSilenceOnImport: (e.target as HTMLInputElement).checked });
+}
+function onAutoMatchLoudnessOnImportChange(e: Event) {
+  applyPatch({ autoMatchLoudnessOnImport: (e.target as HTMLInputElement).checked });
 }
 function onDisableLimiterChange(e: Event) {
   applyPatch({ disableLimiter: (e.target as HTMLInputElement).checked });

@@ -245,6 +245,7 @@ if(LIVEPLAY_BUILD_TESTS)
     add_executable(liveplay-waveform-tests
         tests/waveform_test.cpp
         src/meta/waveform.cpp
+        src/audio/meter.cpp
         src/audio/decoder.cpp
         src/logger.cpp
     )

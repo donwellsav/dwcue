@@ -2593,14 +2593,27 @@ ipcMain.handle('read-binary-file-chunk', async (event, filePath, offset, length)
 });
 
 ipcMain.handle('write-file', async (event, filePath, data) => {
+  let tempPath = '';
   try {
     requireTrustedIpc(event);
     const checkedPath = requireAuthorizedIpcPath(filePath, 'filePath', true);
     if (typeof data !== 'string') throw new TypeError('data must be a string');
-    fs.writeFileSync(checkedPath, data, 'utf8');
+    tempPath = path.join(
+      path.dirname(checkedPath),
+      `.dwcue-write-${crypto.randomBytes(16).toString('hex')}.tmp`,
+    );
+    await fs.promises.writeFile(tempPath, data, {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode: 0o600,
+    });
+    await fs.promises.rename(tempPath, checkedPath);
+    tempPath = '';
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
+  } finally {
+    if (tempPath) await fs.promises.unlink(tempPath).catch(() => {});
   }
 });
 
@@ -3127,6 +3140,69 @@ function summarizeSpotDlError(lines, code) {
   return useful || lines.slice(-5).join('\n') || `spotDL exited with code ${code}`;
 }
 
+function sanitizeSpotifyFolderName(value) {
+  let name = typeof value === 'string' ? value.slice(0, 512).normalize('NFKC') : '';
+  name = name
+    .replace(/[\u0000-\u001f\u007f-\u009f<>:"/\\|?*]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[ .]+|[ .]+$/g, '');
+  while (Buffer.byteLength(name, 'utf8') > 120) name = name.slice(0, -1);
+  name = name.replace(/[ .]+$/g, '');
+  if (!name ||
+      /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i.test(name)) {
+    return 'Spotify Import';
+  }
+  return name;
+}
+
+function spotifyManifestListName(manifestPath) {
+  try {
+    const stat = fs.statSync(manifestPath);
+    if (!stat.isFile() || stat.size > 64 * 1024 * 1024) return '';
+    const tracks = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    if (!Array.isArray(tracks)) return '';
+    for (const track of tracks) {
+      if (typeof track?.list_name !== 'string') continue;
+      const name = track.list_name.slice(0, 512).trim();
+      if (name) return name;
+    }
+    return '';
+  } catch {
+    return '';
+  }
+}
+
+function spotDlNumericProgress(line) {
+  const match = line.match(/\b(\d+)\s*\/\s*(\d+)\s+complete\b/i);
+  if (!match) return null;
+  const completed = Number(match[1]);
+  const total = Number(match[2]);
+  if (!Number.isSafeInteger(completed) || !Number.isSafeInteger(total) ||
+      completed < 0 || total < 1) {
+    return null;
+  }
+  return { completed: Math.min(completed, total), total };
+}
+
+async function createSpotifyProjectFolder(destinationParentPath, playlistName, job) {
+  for (let suffix = 1; suffix < 100000; suffix++) {
+    const folderName = suffix === 1 ? playlistName : `${playlistName} (${suffix})`;
+    const projectFolderPath = path.join(destinationParentPath, folderName);
+    try {
+      await fs.promises.mkdir(projectFolderPath);
+    } catch (error) {
+      if (error.code === 'EEXIST') continue;
+      throw error;
+    }
+    job.ownedDirectories.push(projectFolderPath);
+    const mediaDir = path.join(projectFolderPath, 'media');
+    await fs.promises.mkdir(mediaDir);
+    job.ownedDirectories.push(mediaDir);
+    return { projectFolderPath, mediaDir };
+  }
+  throw new Error(`Could not create a unique folder for ${playlistName}`);
+}
+
 function orderedSpotifyOutputs(stagingDir) {
   const files = new Map(
     fs.readdirSync(stagingDir, { withFileTypes: true })
@@ -3165,6 +3241,11 @@ async function cleanupSpotifyFiles(job) {
     job.files.push(...failed);
     console.error('[spotify] failed to remove job-owned media:', failed);
     throw new Error(`Could not remove ${failed.length} Spotify media file(s)`);
+  }
+  for (const directory of (job.ownedDirectories?.splice(0) || []).reverse()) {
+    await fs.promises.rmdir(directory).catch((error) => {
+      if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(error.code)) throw error;
+    });
   }
 }
 
@@ -3279,14 +3360,15 @@ ipcMain.handle('finalize-spotify-import', async (event, jobId, keepFiles) => {
 
 ipcMain.handle(
   'download-spotify-audio',
-  async (event, jobId, rawUrl, projectFolderPath) => {
+  async (event, jobId, rawUrl, destinationParentPath) => {
     requireTrustedIpc(event);
     jobId = requireIpcString(jobId, 'jobId', 64);
     if (!/^[A-Za-z0-9-]{8,64}$/.test(jobId)) throw new TypeError('jobId is invalid');
     const url = validatedSpotifyUrl(rawUrl);
-    projectFolderPath = requireAuthorizedIpcPath(projectFolderPath, 'projectFolderPath');
-    if (!fs.statSync(projectFolderPath).isDirectory()) {
-      throw new TypeError('projectFolderPath must be a directory');
+    destinationParentPath = requireAuthorizedIpcPath(
+      destinationParentPath, 'destinationParentPath');
+    if (!fs.statSync(destinationParentPath).isDirectory()) {
+      throw new TypeError('destinationParentPath must be a directory');
     }
     if (activeSpotifyDownloads.has(jobId)) throw new Error('Spotify job already exists');
     // ponytail: one job avoids spotDL's shared cache/temp races; add a queue
@@ -3295,8 +3377,6 @@ ipcMain.handle(
       throw new Error('Another Spotify download is already running');
     }
 
-    const mediaDir = path.join(projectFolderPath, 'media');
-    fs.mkdirSync(mediaDir, { recursive: true });
     const stagingDir = fs.mkdtempSync(path.join(app.getPath('temp'), 'dwcue-spotify-'));
     const abortController = new AbortController();
     const cancelledSignal = new Promise((resolve) => {
@@ -3310,6 +3390,7 @@ ipcMain.handle(
       abortController,
       cancelledSignal,
       files: [],
+      ownedDirectories: [],
       awaitingImport: false,
       sender: event.sender,
       senderId: event.sender.id,
@@ -3363,6 +3444,7 @@ ipcMain.handle(
         '--ffmpeg', ffmpegPath,
         '--output', '{list-position} - {artists} - {title}.{output-ext}',
         '--m3u', 'dwcue-spotify-order.m3u8',
+        '--save-file', 'dwcue-spotify-manifest.spotdl',
         '--overwrite', 'skip',
         '--restrict', 'strict',
         '--max-filename-length', '180',
@@ -3391,7 +3473,7 @@ ipcMain.handle(
 
       let total = 0;
       let playlistName = '';
-      const completedTitles = new Set();
+      let completed = 0;
       const tail = [];
       const onLine = (rawLine) => {
         const line = rawLine
@@ -3407,13 +3489,17 @@ ipcMain.handle(
           playlistName =
             line.match(/songs?\s+in\s+(.+?)\s+\(/i)?.[1]?.trim() || playlistName;
         }
+        const numericProgress = spotDlNumericProgress(line);
+        if (numericProgress) {
+          total = numericProgress.total;
+          completed = numericProgress.completed;
+        }
         const downloaded = line.match(/^Downloaded\s+"([^"]+)"/i);
-        if (downloaded) completedTitles.add(downloaded[1]);
-        if (found || downloaded) {
+        if (found || numericProgress || downloaded) {
           progress('downloading', {
             playlistName,
             total,
-            completed: completedTitles.size,
+            completed,
             message: downloaded ? downloaded[1] : 'Downloading…',
           });
         }
@@ -3440,6 +3526,13 @@ ipcMain.handle(
       if (outputs.length === 0) {
         throw new Error(summarizeSpotDlError(tail, result.code));
       }
+      playlistName = sanitizeSpotifyFolderName(
+        spotifyManifestListName(path.join(stagingDir, 'dwcue-spotify-manifest.spotdl')) ||
+        playlistName,
+      );
+      const { projectFolderPath, mediaDir } = await createSpotifyProjectFolder(
+        destinationParentPath, playlistName, job,
+      );
 
       progress('importing', {
         playlistName,
@@ -3463,6 +3556,8 @@ ipcMain.handle(
         completed: files.length,
         partial,
         error,
+        playlistName,
+        projectFolderPath,
       };
     } catch (error) {
       try {

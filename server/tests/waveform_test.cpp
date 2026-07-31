@@ -18,6 +18,8 @@
 //   4. Short files              — a file shorter than the bucket count leaves no
 //                                 empty buckets
 //   5. Metadata                 — duration / sample rate / channel count
+//   6. BS.1770 analysis         — integrated gating, silence, range selection,
+//                                 bucket independence, and intersample true peak
 // ============================================================================
 #include "liveplay/meta/waveform.hpp"
 
@@ -50,6 +52,7 @@ void check_true(const char* name, bool ok) {
 }
 
 constexpr std::uint32_t kFs = 48'000;
+constexpr double kPi = 3.14159265358979323846;
 
 // ---------------------------------------------------------------------------
 // Minimal 32-bit-float WAV writer so the tests need no fixture files.
@@ -99,6 +102,16 @@ std::vector<float> square(double amplitude, std::size_t frames) {
     std::vector<float> v(frames);
     for (std::size_t i = 0; i < frames; ++i)
         v[i] = static_cast<float>((i % 2 == 0) ? amplitude : -amplitude);
+    return v;
+}
+
+std::vector<float> sine(double frequency, double amplitude, std::size_t frames,
+                        double phase = 0.0) {
+    std::vector<float> v(frames);
+    for (std::size_t i = 0; i < frames; ++i) {
+        v[i] = static_cast<float>(
+            amplitude * std::sin(2.0 * kPi * frequency * i / kFs + phase));
+    }
     return v;
 }
 
@@ -212,6 +225,110 @@ void test_short_file_has_no_gaps() {
     check_near("short: peak amplitude",   wf.channels[0].peak[500], 0.5, 0.01);
 }
 
+// ---------------------------------------------------------------------------
+// 6. Standards analysis is independent of the display bucket grid.
+// ---------------------------------------------------------------------------
+void test_integrated_loudness_and_bucket_independence() {
+    const double amplitude = std::pow(10.0, -23.0 / 20.0);
+    const auto channel = sine(997.0, amplitude, kFs * 4);
+    TempWav wav("liveplay_wf_loudness.wav");
+    if (!write_wav_f32(wav.path, interleave(channel, channel), 2, kFs)) {
+        check_true("loudness: fixture written", false);
+        return;
+    }
+
+    const auto coarse = compute_waveform(wav.path, 16);
+    const auto fine = compute_waveform(wav.path, 1000);
+    check_true("loudness: both bucket grids decode",
+               coarse.ok && fine.ok);
+    check_true("loudness: integrated values present",
+               coarse.integrated_lufs && fine.integrated_lufs);
+    check_true("loudness: true-peak values present",
+               coarse.true_peak_dbtp && fine.true_peak_dbtp);
+    if (!coarse.integrated_lufs || !fine.integrated_lufs ||
+        !coarse.true_peak_dbtp || !fine.true_peak_dbtp) return;
+
+    check_near("loudness: 997 Hz stereo @ -23 dBFS",
+               *coarse.integrated_lufs, -23.0, 0.15);
+    check_near("loudness: integrated result ignores bucket count",
+               *coarse.integrated_lufs, *fine.integrated_lufs, 1e-6);
+    check_near("loudness: true peak ignores bucket count",
+               *coarse.true_peak_dbtp, *fine.true_peak_dbtp, 1e-6);
+}
+
+void test_gating_silence_and_range() {
+    const double amplitude = std::pow(10.0, -23.0 / 20.0);
+    auto channel = sine(997.0, amplitude, kFs * 8);
+    std::fill(channel.begin() + kFs * 4, channel.end(), 0.0f);
+    TempWav wav("liveplay_wf_gating.wav");
+    if (!write_wav_f32(wav.path, interleave(channel, channel), 2, kFs)) {
+        check_true("gating: fixture written", false);
+        return;
+    }
+
+    const auto full = compute_waveform(wav.path, 64);
+    check_true("gating: integrated result present", full.integrated_lufs.has_value());
+    if (full.integrated_lufs) {
+        check_near("gating: trailing silence excluded",
+                   *full.integrated_lufs, -23.0, 0.35);
+    }
+
+    const auto tone = compute_waveform(
+        wav.path, 64, std::chrono::milliseconds{0}, std::chrono::milliseconds{4000});
+    const auto silence = compute_waveform(
+        wav.path, 64, std::chrono::milliseconds{4000}, std::chrono::milliseconds{8000});
+    check_true("range: tone loudness present", tone.integrated_lufs.has_value());
+    if (tone.integrated_lufs)
+        check_near("range: tone uses requested in/out",
+                   *tone.integrated_lufs, -23.0, 0.15);
+    check_true("range: silence is below absolute gate",
+               !silence.integrated_lufs.has_value());
+    check_true("range: silence true peak still valid",
+               silence.true_peak_dbtp.has_value());
+    if (silence.true_peak_dbtp)
+        check_near("range: silence true peak floor",
+                   *silence.true_peak_dbtp, -120.0, 0.001);
+}
+
+void test_relative_gate() {
+    const double loud_amplitude = std::pow(10.0, -23.0 / 20.0);
+    const double quiet_scale = std::pow(10.0, (-45.0 + 23.0) / 20.0);
+    auto channel = sine(997.0, loud_amplitude, kFs * 8);
+    for (auto it = channel.begin() + kFs * 4; it != channel.end(); ++it)
+        *it = static_cast<float>(*it * quiet_scale);
+
+    TempWav wav("liveplay_wf_relative_gate.wav");
+    if (!write_wav_f32(wav.path, interleave(channel, channel), 2, kFs)) {
+        check_true("relative gate: fixture written", false);
+        return;
+    }
+
+    const auto wf = compute_waveform(wav.path, 64);
+    check_true("relative gate: integrated result present",
+               wf.integrated_lufs.has_value());
+    if (wf.integrated_lufs) {
+        check_near("relative gate: -45 LUFS section excluded",
+                   *wf.integrated_lufs, -23.0, 0.35);
+    }
+}
+
+void test_true_peak() {
+    const auto channel = sine(kFs / 4.0, 1.0, kFs * 2, kPi / 4.0);
+    TempWav wav("liveplay_wf_true_peak.wav");
+    if (!write_wav_f32(wav.path, interleave(channel, channel), 2, kFs)) {
+        check_true("true peak: fixture written", false);
+        return;
+    }
+
+    const auto wf = compute_waveform(wav.path, 100);
+    check_true("true peak: analysis present", wf.true_peak_dbtp.has_value());
+    if (!wf.true_peak_dbtp || wf.channels.empty()) return;
+    check_near("true peak: sample buckets see -3.01 dBFS",
+               20.0 * std::log10(wf.channels[0].peak[50]), -3.01, 0.1);
+    check_near("true peak: BS.1770 FIR reference",
+               *wf.true_peak_dbtp, 0.083, 0.01);
+}
+
 } // namespace
 
 int main() {
@@ -220,6 +337,10 @@ int main() {
     test_envelope_placement(1000);
     test_envelope_placement(16);      // forces repeated sub-bucket merging
     test_short_file_has_no_gaps();
+    test_integrated_loudness_and_bucket_independence();
+    test_gating_silence_and_range();
+    test_relative_gate();
+    test_true_peak();
 
     std::printf("\n%s (%d failure%s)\n", g_failures == 0 ? "ALL PASS" : "FAILURES",
                 g_failures, g_failures == 1 ? "" : "s");

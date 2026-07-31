@@ -50,7 +50,7 @@ declare global {
       downloadSpotifyAudio: (
         jobId: string,
         url: string,
-        projectFolderPath: string,
+        destinationParentPath: string,
         progressCallback?: (progress: {
           jobId: string;
           status: 'preparing' | 'resolving' | 'downloading' | 'importing' |
@@ -66,6 +66,8 @@ declare global {
         completed: number;
         partial: boolean;
         error?: string;
+        playlistName: string;
+        projectFolderPath: string;
       }>;
       cancelSpotifyDownload: (jobId: string) => Promise<boolean>;
       finalizeSpotifyImport: (jobId: string, keepFiles: boolean) => Promise<boolean>;

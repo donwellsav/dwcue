@@ -3,13 +3,17 @@
 // ============================================================================
 #include "liveplay/meta/waveform.hpp"
 #include "liveplay/audio/decoder.hpp"
+#include "liveplay/audio/meter.hpp"
 #include "liveplay/logger.hpp"
 #include "liveplay/util/unicode_path.hpp"
 
 #include <miniaudio.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <limits>
+#include <memory>
 #include <vector>
 
 namespace liveplay::meta {
@@ -26,10 +30,73 @@ std::size_t oversample_factor(std::uint32_t bucket_count) noexcept {
     return 4;
 }
 
+std::uint64_t frame_at(std::optional<std::chrono::milliseconds> time,
+                       std::uint32_t sample_rate,
+                       std::uint64_t fallback) noexcept {
+    if (!time) return fallback;
+    const auto ms = std::max<std::int64_t>(0, time->count());
+    const long double frames =
+        static_cast<long double>(ms) * static_cast<long double>(sample_rate) / 1000.0L;
+    if (frames >= static_cast<long double>(std::numeric_limits<std::uint64_t>::max()))
+        return std::numeric_limits<std::uint64_t>::max();
+    return static_cast<std::uint64_t>(std::ceil(frames));
+}
+
+double channel_gain(ma_channel channel) noexcept {
+    if (channel == MA_CHANNEL_LFE) return 0.0;
+    switch (channel) {
+        case MA_CHANNEL_BACK_LEFT:
+        case MA_CHANNEL_BACK_RIGHT:
+        case MA_CHANNEL_BACK_CENTER:
+        case MA_CHANNEL_SIDE_LEFT:
+        case MA_CHANNEL_SIDE_RIGHT:
+            return 1.41;
+        default:
+            return 1.0;
+    }
+}
+
+double lufs_from_power(double power) noexcept {
+    return power <= 0.0 ? -std::numeric_limits<double>::infinity()
+                        : -0.691 + 10.0 * std::log10(power);
+}
+
+std::optional<double> integrated_loudness(
+    const std::vector<double>& block_powers) noexcept {
+    constexpr double kAbsoluteGateLufs = -70.0;
+    const double absolute_gate_power =
+        std::pow(10.0, (kAbsoluteGateLufs + 0.691) / 10.0);
+
+    double absolute_sum = 0.0;
+    std::size_t absolute_count = 0;
+    for (const double power : block_powers) {
+        if (power <= absolute_gate_power) continue;
+        absolute_sum += power;
+        ++absolute_count;
+    }
+    if (absolute_count == 0) return std::nullopt;
+
+    const double relative_gate_power = std::pow(
+        10.0, (lufs_from_power(absolute_sum / absolute_count) - 10.0 + 0.691) / 10.0);
+    const double gate_power = std::max(absolute_gate_power, relative_gate_power);
+
+    double gated_sum = 0.0;
+    std::size_t gated_count = 0;
+    for (const double power : block_powers) {
+        if (power <= gate_power) continue;
+        gated_sum += power;
+        ++gated_count;
+    }
+    if (gated_count == 0) return std::nullopt;
+    return lufs_from_power(gated_sum / gated_count);
+}
+
 } // namespace
 
 Waveform compute_waveform(const std::filesystem::path& path,
-                          std::uint32_t bucket_count) noexcept {
+                          std::uint32_t bucket_count,
+                          std::optional<std::chrono::milliseconds> analysis_start,
+                          std::optional<std::chrono::milliseconds> analysis_end) noexcept {
     Waveform out;
     bucket_count = std::clamp<std::uint32_t>(bucket_count, 16, 16384);
 
@@ -45,6 +112,33 @@ Waveform compute_waveform(const std::filesystem::path& path,
     ma_uint32 sample_rate = 0;
     ma_decoder_get_data_format(&decoder, nullptr, &channels, &sample_rate, nullptr, 0);
     if (channels == 0) channels = 2;
+    if (sample_rate == 0) sample_rate = audio::kDefaultMixSampleRate;
+
+    std::vector<ma_channel> channel_map(channels, MA_CHANNEL_NONE);
+    ma_decoder_get_data_format(
+        &decoder, nullptr, nullptr, nullptr, channel_map.data(), channel_map.size());
+    if (ma_channel_map_is_blank(channel_map.data(), channels)) {
+        ma_channel_map_init_standard(
+            ma_standard_channel_map_default, channel_map.data(), channel_map.size(), channels);
+    }
+
+    const std::uint64_t analysis_start_frame = frame_at(analysis_start, sample_rate, 0);
+    const std::uint64_t analysis_end_frame = frame_at(
+        analysis_end, sample_rate, std::numeric_limits<std::uint64_t>::max());
+    std::vector<std::unique_ptr<audio::Meter>> analysis_meters;
+    analysis_meters.reserve(channels);
+    for (ma_uint32 c = 0; c < channels; ++c) {
+        auto meter = std::make_unique<audio::Meter>();
+        meter->configure(sample_rate);
+        meter->set_loudness_enabled(true);
+        meter->set_true_peak_enabled(true);
+        analysis_meters.push_back(std::move(meter));
+    }
+    std::vector<double> loudness_blocks;
+    std::uint64_t analysis_frames = 0;
+    std::uint64_t hop_index = 1;
+    std::uint64_t next_hop_frame =
+        (static_cast<std::uint64_t>(sample_rate) + 9) / 10;
 
     // ---- Single decode pass ------------------------------------------------
     // We deliberately do NOT ask miniaudio for the length up front: for MP3
@@ -82,6 +176,43 @@ Waveform compute_waveform(const std::filesystem::path& path,
         ma_uint64 frames_read = 0;
         const ma_result rc =
             ma_decoder_read_pcm_frames(&decoder, buf.data(), kChunk, &frames_read);
+
+        const std::uint64_t chunk_start = total_frames;
+        const std::uint64_t chunk_end = chunk_start + frames_read;
+        const std::uint64_t selected_start =
+            std::max(chunk_start, analysis_start_frame);
+        const std::uint64_t selected_end =
+            std::min(chunk_end, analysis_end_frame);
+        if (selected_start < selected_end) {
+            std::uint64_t offset = selected_start - chunk_start;
+            std::uint64_t remaining = selected_end - selected_start;
+            while (remaining > 0) {
+                const std::uint64_t count =
+                    std::min(remaining, next_hop_frame - analysis_frames);
+                const float* selected = buf.data() + offset * channels;
+                for (ma_uint32 c = 0; c < channels; ++c) {
+                    analysis_meters[c]->push_interleaved(
+                        selected, static_cast<std::size_t>(count), channels, c);
+                }
+                offset += count;
+                remaining -= count;
+                analysis_frames += count;
+
+                if (analysis_frames != next_hop_frame) continue;
+                if (hop_index >= 4) {
+                    double power = 0.0;
+                    for (ma_uint32 c = 0; c < channels; ++c) {
+                        power += channel_gain(channel_map[c]) *
+                                 static_cast<double>(
+                                     analysis_meters[c]->snapshot().kw_ms);
+                    }
+                    loudness_blocks.push_back(power);
+                }
+                ++hop_index;
+                next_hop_frame =
+                    (hop_index * static_cast<std::uint64_t>(sample_rate) + 9) / 10;
+            }
+        }
 
         for (ma_uint64 i = 0; i < frames_read; ++i) {
             for (ma_uint32 c = 0; c < channels; ++c) {
@@ -132,6 +263,18 @@ Waveform compute_waveform(const std::filesystem::path& path,
         Logger::warn("compute_waveform: zero-length file '{}'", p);
         return out;
     }
+
+    if (analysis_frames > 0) {
+        const std::array<float, 12> zeros{};
+        double true_peak = -120.0;
+        for (auto& meter : analysis_meters) {
+            meter->push_block(zeros.data(), zeros.size());
+            true_peak = std::max(
+                true_peak, static_cast<double>(meter->snapshot().true_peak_max_db));
+        }
+        out.true_peak_dbtp = true_peak;
+    }
+    out.integrated_lufs = integrated_loudness(loudness_blocks);
 
     // Flush the trailing partial sub-bucket (it covers `part_frames`, not
     // `sub_span`, frames — the fold below accounts for that).

@@ -112,12 +112,13 @@ void test_true_peak() {
     m.configure(kFs, 0.0f, 300.0f, 300.0f);
     m.set_true_peak_enabled(true);
     // fs/4 sine with 45° phase: every sample lands at ±1/√2 (-3.01 dBFS) but
-    // the continuous waveform peaks at 1.0 (0 dBTP).
+    // the continuous waveform peaks at 1.0 (0 dBTP). The fixed BS.1770-5
+    // Annex 2 FIR reports +0.083 dBTP for this discrete reference vector.
     const auto isp = make_sine(kFs / 4.0, 1.0, 1.0, kPi / 4.0);
     push_in_blocks(m, isp);
     const auto s = m.snapshot();
     check_near("ISP: sample peak ≈ -3.01 dBFS", s.peak_max_db,      -3.01, 0.1);
-    check_near("ISP: true peak ≈ 0 dBTP",       s.true_peak_max_db,  0.0,  0.4);
+    check_near("ISP: BS.1770 FIR reference",    s.true_peak_max_db,  0.083, 0.01);
 
     // Disabled → true peak mirrors sample peak.
     Meter m2;

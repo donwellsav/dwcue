@@ -35,81 +35,6 @@ export function linearToDb(linear: number): number {
 }
 
 /**
- * Apply -10dB headroom offset for Howler.js playback
- * UI shows 0dB as "normal" while actually playing at -10dB
- * This gives +10dB headroom for louder playback
- * 
- * @param uiVolume - Volume from UI (0.0 to ~3.16 linear)
- * @returns Howler volume (0.0 to 1.0 for -10dB offset, can exceed 1.0)
- */
-export function applyVolumeOffset(uiVolume: number): number {
-  // Convert UI volume to dB
-  const uiDB = linearToDb(uiVolume);
-  
-  // Apply -10dB offset
-  const actualDB = uiDB - 10;
-  
-  // Convert back to linear for Howler
-  const actualVolume = dbToLinear(actualDB);
-  
-  // Allow values above 1.0 for Web Audio API
-  return Math.max(0, actualVolume);
-}
-
-/**
- * Calculate perceived loudness (RMS) from waveform peaks
- * RMS = Root Mean Square = sqrt(average of squared samples)
- * 
- * @param peaks - Waveform peak data (normalized 0-1)
- * @param startIndex - Start index in peaks array
- * @param endIndex - End index in peaks array
- * @returns RMS value (0-1)
- */
-export function calculateRMS(peaks: number[], startIndex: number = 0, endIndex?: number): number {
-  if (!peaks || peaks.length === 0) return 0;
-  
-  const end = endIndex ?? peaks.length;
-  const count = end - startIndex;
-  if (count <= 0) return 0;
-  
-  let sumSquares = 0;
-  for (let i = startIndex; i < end; i++) {
-    const value = peaks[i];
-    sumSquares += value * value;
-  }
-  
-  return Math.sqrt(sumSquares / count);
-}
-
-/**
- * Calculate perceived loudness in dB (LUFS approximation)
- * Uses RMS as a simple approximation of perceived loudness
- * 
- * @param peaks - Waveform peak data
- * @param startIndex - Start index
- * @param endIndex - End index
- * @returns Perceived loudness in dB (-60 to 0)
- */
-export function calculatePerceivedLoudness(peaks: number[], startIndex?: number, endIndex?: number): number {
-  const rms = calculateRMS(peaks, startIndex, endIndex);
-  return linearToDb(rms);
-}
-
-/**
- * Calculate normalization gain to reach target loudness
- * 
- * @param currentLoudnessDb - Current perceived loudness in dB
- * @param targetLoudnessDb - Target loudness in dB (e.g., -10 for our 0dB UI)
- * @returns Gain multiplier (linear)
- */
-export function calculateNormalizationGain(currentLoudnessDb: number, targetLoudnessDb: number): number {
-  if (currentLoudnessDb <= -60) return 1; // Can't normalize silence
-  
-  const gainDb = targetLoudnessDb - currentLoudnessDb;
-  return dbToLinear(gainDb);
-}
-
-/**
  * Estimate audio level at current playback position
  * Combines volume setting with waveform data
  *
@@ -135,11 +60,20 @@ export function estimateCurrentLevel(volume: number, waveformValue: number): num
 /** One channel of a server waveform payload (see ServerWaveformChannel). */
 export interface ServerChannelPeaks { peak?: number[]; rms?: number[] }
 
+export interface MeasuredLoudness {
+  analysis_version?: 1;
+  integrated_lufs?: number | null;
+  true_peak_dbtp?: number | null;
+}
+
 export interface BuiltWaveform {
   peaks: number[];
   length: number;
   duration: number;
   channelPeaks?: number[][];
+  analysis_version?: 1;
+  integrated_lufs?: number | null;
+  true_peak_dbtp?: number | null;
 }
 
 /**
@@ -156,6 +90,7 @@ export interface BuiltWaveform {
 export function buildWaveformFromChannels(
   channels: ServerChannelPeaks[] | undefined | null,
   durationSeconds: number,
+  analysis?: MeasuredLoudness | null,
 ): BuiltWaveform | null {
   const lanes = (channels ?? [])
     .map(c => c?.peak)
@@ -177,6 +112,15 @@ export function buildWaveformFromChannels(
     duration: durationSeconds,
     // Only worth carrying when there's more than one channel to show.
     ...(lanes.length > 1 ? { channelPeaks: lanes } : {}),
+    ...(analysis?.analysis_version === 1 ? {
+      analysis_version: 1 as const,
+      integrated_lufs: Number.isFinite(analysis.integrated_lufs)
+        ? analysis.integrated_lufs as number
+        : null,
+      true_peak_dbtp: Number.isFinite(analysis.true_peak_dbtp)
+        ? analysis.true_peak_dbtp as number
+        : null,
+    } : {}),
   };
 }
 
@@ -198,7 +142,7 @@ export function parseWaveformFileData(data: any): BuiltWaveform | null {
     const duration = typeof data.duration === 'number'
       ? data.duration
       : (data.duration_ms ?? 0) / 1000;
-    return buildWaveformFromChannels(data.channels, duration);
+    return buildWaveformFromChannels(data.channels, duration, data);
   }
 
   if (Array.isArray(data.peaks) && data.peaks.length > 0) {
@@ -209,6 +153,15 @@ export function parseWaveformFileData(data: any): BuiltWaveform | null {
       ...(Array.isArray(data.channelPeaks) && data.channelPeaks.length > 1
         ? { channelPeaks: data.channelPeaks }
         : {}),
+      ...(data.analysis_version === 1 ? {
+        analysis_version: 1 as const,
+        integrated_lufs: Number.isFinite(data.integrated_lufs)
+          ? data.integrated_lufs
+          : null,
+        true_peak_dbtp: Number.isFinite(data.true_peak_dbtp)
+          ? data.true_peak_dbtp
+          : null,
+      } : {}),
     };
   }
 
@@ -216,75 +169,111 @@ export function parseWaveformFileData(data: any): BuiltWaveform | null {
 }
 
 // ---------------------------------------------------------------------------
-// Auto-process: trim silence + normalise to target loudness.
-// Applied on first waveform load when disableAutoVolumeAndTrim is false.
+// Import processing. Trimming and loudness matching are independent opt-ins:
+// callers decide which operation to run and which measured range to use.
 // ---------------------------------------------------------------------------
 
-interface AutoProcessableItem {
+interface ProcessableItem {
   duration: number;
   inPoint: number;
   outPoint: number;
   volume: number;
-  waveform?: { peaks: number[]; length: number; duration: number };
+  waveform?: BuiltWaveform;
 }
 
 /**
- * Apply trim-silence and loudness normalisation to an audio item in-place.
- * Returns true when any property was modified.
- *
- * @param item            - Audio item (mutated directly)
- * @param targetLoudnessDb - LUFS/dBFS target from the active output target
+ * Trim leading/trailing silence in-place. This never changes item volume.
  */
-export function applyAutoProcessing(item: AutoProcessableItem, targetLoudnessDb: number): boolean {
+export function trimSilence(item: ProcessableItem): boolean {
   if (!item.waveform || !item.waveform.peaks || item.waveform.peaks.length === 0) return false;
 
   const peaks = item.waveform.peaks;
   const duration = item.duration || item.waveform.duration || 0;
   if (duration <= 0) return false;
 
-  let changed = false;
-
-  // --- 1. Trim silence ---
   const maxPeak = peaks.reduce((m, v) => (v > m ? v : m), 0);
-  if (maxPeak > 0) {
-    const threshold = maxPeak * 0.05; // 5% of peak
-    const padding = 0.1;
+  if (maxPeak <= 0) return false;
 
-    let startIdx = 0;
-    for (let i = 0; i < peaks.length; i++) {
-      if (peaks[i] > threshold) { startIdx = i; break; }
-    }
-    let endIdx = peaks.length - 1;
-    for (let i = peaks.length - 1; i >= 0; i--) {
-      if (peaks[i] > threshold) { endIdx = i; break; }
-    }
+  const threshold = maxPeak * 0.05;
+  const padding = 0.1;
+  let startIdx = peaks.findIndex(peak => peak > threshold);
+  if (startIdx < 0) return false;
+  let endIdx = peaks.length - 1;
+  while (endIdx > startIdx && peaks[endIdx] <= threshold) endIdx--;
 
-    const newInPoint  = Math.max(0, (startIdx / peaks.length) * duration - padding);
-    const newOutPoint = Math.min(duration, ((endIdx + 1) / peaks.length) * duration + padding);
-
-    if (Math.abs(newInPoint - item.inPoint) > 0.05 || Math.abs(newOutPoint - item.outPoint) > 0.05) {
-      item.inPoint  = newInPoint;
-      item.outPoint = newOutPoint;
-      changed = true;
-    }
+  const newInPoint = Math.max(0, (startIdx / peaks.length) * duration - padding);
+  const newOutPoint = Math.min(duration, ((endIdx + 1) / peaks.length) * duration + padding);
+  if (Math.abs(newInPoint - item.inPoint) <= 0.05 &&
+      Math.abs(newOutPoint - item.outPoint) <= 0.05) {
+    return false;
   }
 
-  // --- 2. Normalise to target loudness ---
-  const trimmedStart = Math.floor((item.inPoint / duration) * peaks.length);
-  const trimmedEnd   = Math.ceil((item.outPoint / duration) * peaks.length);
-  const trimmedPeaks = peaks.slice(trimmedStart, trimmedEnd);
+  item.inPoint = newInPoint;
+  item.outPoint = newOutPoint;
+  return true;
+}
 
-  const intrinsicLoudness = calculatePerceivedLoudness(trimmedPeaks);
-  if (intrinsicLoudness > -60) {
-    const gainDb    = targetLoudnessDb - intrinsicLoudness;
-    const newVolume = Math.pow(10, gainDb / 20);
-    const maxVolume = Math.pow(10, 10 / 20); // +10 dB ceiling
-    const clamped   = Math.min(Math.max(newVolume, 0.001), maxVolume);
-    if (Math.abs(clamped - item.volume) > 0.001) {
-      item.volume = clamped;
-      changed = true;
-    }
+/**
+ * Return the absolute source gain needed for the measured range. Invalid
+ * analysis and silence are intentionally no-ops.
+ */
+export function loudnessMatchedVolume(
+  analysis: MeasuredLoudness | null | undefined,
+  loudnessTargetLufs: number,
+  limiterCeilingDb: number,
+): number | null {
+  if (analysis?.analysis_version !== 1 ||
+      !Number.isFinite(analysis.integrated_lufs) ||
+      !Number.isFinite(analysis.true_peak_dbtp) ||
+      !Number.isFinite(loudnessTargetLufs) ||
+      !Number.isFinite(limiterCeilingDb)) {
+    return null;
   }
 
-  return changed;
+  const gainDb = Math.max(-60, Math.min(
+    10,
+    loudnessTargetLufs - (analysis.integrated_lufs as number),
+    limiterCeilingDb - (analysis.true_peak_dbtp as number),
+  ));
+  return Math.pow(10, gainDb / 20);
+}
+
+/**
+ * Apply an absolute, idempotent loudness match. This never changes trim points.
+ */
+export function applyLoudnessMatch(
+  item: Pick<ProcessableItem, 'volume'>,
+  analysis: MeasuredLoudness | null | undefined,
+  loudnessTargetLufs: number,
+  limiterCeilingDb: number,
+): boolean {
+  const volume = loudnessMatchedVolume(analysis, loudnessTargetLufs, limiterCeilingDb);
+  if (volume === null || Math.abs(volume - item.volume) <= 0.000001) return false;
+  item.volume = volume;
+  return true;
+}
+
+export function exceedsTruePeakCeiling(
+  item: Pick<ProcessableItem, 'duration' | 'inPoint' | 'outPoint' | 'volume'> &
+    { waveform?: MeasuredLoudness & { duration?: number } },
+  limiterCeilingDb: number,
+): boolean {
+  // Whole-file analysis cannot truthfully warn about a trimmed cue: the peak
+  // may be outside the played range. Ranged analysis is fetched on demand by
+  // Normalize; suppress this conservative row warning until we persist range
+  // provenance with the waveform.
+  const duration = item.duration || item.waveform?.duration || 0;
+  const outPoint = item.outPoint > 0 ? item.outPoint : duration;
+  if (duration > 0 && (item.inPoint > 0.001 || outPoint < duration - 0.001)) {
+    return false;
+  }
+
+  const truePeak = item.waveform?.analysis_version === 1
+    ? item.waveform.true_peak_dbtp
+    : null;
+  if (!Number.isFinite(truePeak) || !Number.isFinite(item.volume) ||
+      item.volume <= 0 || !Number.isFinite(limiterCeilingDb)) {
+    return false;
+  }
+  return (truePeak as number) + 20 * Math.log10(item.volume) > limiterCeilingDb;
 }

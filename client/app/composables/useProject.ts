@@ -25,9 +25,18 @@ import type {
   Theme,
   CartItem
 } from '~/types/project';
-import { DEFAULT_THEME, DEFAULT_CART_SLOT_KEYS, anchorStartNextMarker } from '~/types/project';
+import {
+  DEFAULT_THEME,
+  DEFAULT_CART_SLOT_KEYS,
+  DEFAULT_PROJECT_SETTINGS,
+  anchorStartNextMarker,
+} from '~/types/project';
 import type { ServerAudioReadiness } from '~/types/server';
-import { applyAutoProcessing, buildWaveformFromChannels } from '~/utils/audio';
+import {
+  applyLoudnessMatch,
+  buildWaveformFromChannels,
+  trimSilence,
+} from '~/utils/audio';
 import {
   formatDisplayIndexPath,
   normalizeIndexDisplayStart,
@@ -62,11 +71,11 @@ let _installItemsWatcherFn:   null | (() => void) = null;
 let _uninstallItemsWatcherFn: null | (() => void) = null;
 
 // UUIDs of items that were just added in this session and are waiting for
-// their first waveform so that auto-process (trim + normalise) can run.
+// their first waveform so the enabled import processing can run.
 // Items loaded from the saved project file are NEVER added here — only
 // items created via addItem() with no pre-existing waveform. The set is
 // cleared on project close/open so stale entries don't accumulate.
-const _autoProcessPendingUuids = new Set<string>();
+const _importProcessingPendingUuids = new Set<string>();
 
 // ---------------------------------------------------------------------------
 // Client-side waveform cache (uuid -> WaveformData).
@@ -566,6 +575,7 @@ export const useProject = () => {
         cartSlotKeys: { ...DEFAULT_CART_SLOT_KEYS },
         cartOnlyItems: [],
         theme: { ...DEFAULT_THEME },
+        settings: { ...DEFAULT_PROJECT_SETTINGS },
         createdAt: new Date().toISOString(),
         lastModified: new Date().toISOString()
       };
@@ -1061,7 +1071,7 @@ export const useProject = () => {
       failedCount: 0,
       failures: [],
     };
-    _autoProcessPendingUuids.clear();
+    _importProcessingPendingUuids.clear();
     _waveformCache.clear();
 
     // Clear cart-only items from memory
@@ -1107,9 +1117,9 @@ export const useProject = () => {
     if (!currentProject.value) return;
 
     // If this is a brand-new audio item (no waveform yet), mark it so the
-    // waveform_ready handler knows it should run auto-process once.
+    // waveform_ready handler can run either enabled import operation once.
     if (item.type === 'audio' && !(item as AudioItem).waveform) {
-      _autoProcessPendingUuids.add(item.uuid);
+      _importProcessingPendingUuids.add(item.uuid);
     }
 
     if (parentIndex && parentIndex.length > 0) {
@@ -1125,19 +1135,9 @@ export const useProject = () => {
   };
 
   // Allow external callers (e.g. CartSlot) to mark a UUID for one-shot
-  // auto-processing when its waveform arrives.
-  const markPendingAutoProcess = (uuid: string) => {
-    _autoProcessPendingUuids.add(uuid);
-  };
-
-  // Check whether a UUID is pending auto-process and consume the mark
-  // atomically. Returns true only when the item was marked AND removes it
-  // so it can never be processed twice (handles both the waveform_ready
-  // and generateWaveformAsync code paths).
-  const consumePendingAutoProcess = (uuid: string): boolean => {
-    if (!_autoProcessPendingUuids.has(uuid)) return false;
-    _autoProcessPendingUuids.delete(uuid);
-    return true;
+  // import processing when its waveform arrives.
+  const markPendingImportProcessing = (uuid: string) => {
+    _importProcessingPendingUuids.add(uuid);
   };
 
   // Remove an item
@@ -1543,7 +1543,7 @@ export const useProject = () => {
             if (target && target.type === 'audio') {
               const duration: number = (patch.duration_ms ?? 0) / 1000;
               // Every source channel, not just the left one (#47).
-              const built = buildWaveformFromChannels(patch.channels, duration);
+              const built = buildWaveformFromChannels(patch.channels, duration, patch);
               const peaks: number[] = built?.peaks ?? [];
               if (peaks.length > 0) {
                 // Distinguish a brand-new item's FIRST waveform from a
@@ -1584,23 +1584,85 @@ export const useProject = () => {
                   }
                 }
 
-                // Auto-process (trim silence + normalise) only for items that
-                // were just added in this session AND are receiving their first
-                // waveform — never for items restored from the saved project
-                // file, and never on a regeneration (which would overwrite the
-                // user's just-applied trim/volume). The pending mark is consumed
-                // either way so a lingering flag can't fire on a later regen.
-                if (_autoProcessPendingUuids.has(patch.item_uuid)) {
-                  _autoProcessPendingUuids.delete(patch.item_uuid);
+                // Import processing only runs for items added in this session
+                // and only on their first waveform. Legacy/missing settings are
+                // deliberately OFF; a regeneration never touches user edits.
+                if (_importProcessingPendingUuids.has(patch.item_uuid)) {
+                  _importProcessingPendingUuids.delete(patch.item_uuid);
                   if (!hadWaveform) {
                     const settings = (currentProject.value as any)?.settings;
-                    if (!settings?.disableAutoVolumeAndTrim) {
-                      const targetDb: number = settings?.outputTargetLevels?.autoVolumeTargetDb ?? -23;
-                      applyAutoProcessing(target as AudioItem, targetDb);
+                    const levels = settings?.outputTargetLevels;
+                    const loudnessTargetLufs =
+                      typeof levels?.loudnessTargetLufs === 'number'
+                        ? levels.loudnessTargetLufs
+                        : typeof levels?.autoVolumeTargetDb === 'number'
+                          ? levels.autoVolumeTargetDb
+                          : settings?.outputTarget
+                            ? Number.NaN
+                            : -23;
+                    const limiterCeilingDb =
+                      typeof levels?.limiterCeilingDb === 'number'
+                        ? levels.limiterCeilingDb
+                        : settings?.outputTarget
+                          ? Number.NaN
+                          : -1;
+                    const trimmed = settings?.autoTrimSilenceOnImport === true
+                      ? trimSilence(target as AudioItem)
+                      : false;
+                    let processingChanged = trimmed;
+
+                    if (settings?.autoMatchLoudnessOnImport === true) {
+                      if (!trimmed) {
+                        processingChanged = applyLoudnessMatch(
+                          target as AudioItem,
+                          built,
+                          loudnessTargetLufs,
+                          limiterCeilingDb,
+                        ) || processingChanged;
+                      } else {
+                        const requestedInPoint = (target as AudioItem).inPoint;
+                        const requestedOutPoint = (target as AudioItem).outPoint;
+                        const requestedVolume = (target as AudioItem).volume;
+                        const mediaPath = (target as AudioItem).mediaServerPath
+                          || resolveProjectPath((target as AudioItem).mediaPath);
+                        if (mediaPath) {
+                          void server().fetchWaveformByPath(mediaPath, 1000, {
+                            startMs: requestedInPoint * 1000,
+                            endMs: requestedOutPoint * 1000,
+                          }).then((analysis) => {
+                            const current = findItemByUuid(patch.item_uuid);
+                            if (!current || current.type !== 'audio' ||
+                                current.inPoint !== requestedInPoint ||
+                                current.outPoint !== requestedOutPoint ||
+                                current.volume !== requestedVolume) {
+                              return;
+                            }
+                            if (applyLoudnessMatch(
+                              current,
+                              analysis,
+                              loudnessTargetLufs,
+                              limiterCeilingDb,
+                            )) {
+                              void _syncItemsDiffFn();
+                              void saveProject();
+                            }
+                          }).catch((e: Error) => {
+                            console.warn(`[import] loudness analysis failed for ${target.displayName}:`, e);
+                          });
+                        }
+                      }
                     }
                     // Re-anchor the import-default start-next marker to the
-                    // final (possibly auto-trimmed) out point.
+                    // final (possibly trimmed) out point.
                     anchorStartNextMarker(target as AudioItem);
+                    if (processingChanged) {
+                      // The outer microtask yields to applyDocPatch's hydration
+                      // reset; the inner one then syncs the deliberate edit.
+                      queueMicrotask(() => queueMicrotask(() => {
+                        void _syncItemsDiffFn();
+                        void saveProject();
+                      }));
+                    }
                   }
                 }
                 triggerWaveformUpdate();
@@ -1978,8 +2040,7 @@ export const useProject = () => {
     setAutoSave,
     closeProject,
     addItem,
-    markPendingAutoProcess,
-    consumePendingAutoProcess,
+    markPendingImportProcessing,
     removeItem,
     findItemByUuid,
     findItemByIndex,

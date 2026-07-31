@@ -94,6 +94,12 @@ assert.match(
   /class="name-dialog"[\s\S]*role="dialog"[\s\S]*aria-modal="true"[\s\S]*:aria-labelledby/,
   'the new-project prompt must expose native dialog semantics',
 );
+const playlistItem = read('client/app/components/PlaylistItem.vue');
+assert.match(
+  playlistItem,
+  /v-if="isPlaying && item\.type === 'audio'"[\s\S]{0,500}icon="restart_alt"[\s\S]{0,500}@click\.stop="handlePlay"[\s\S]{0,500}:aria-label="t\('actions\.restartCue', \{ name: item\.displayName \}\)"/,
+  'the active-track restart control must reuse the normal Play path',
+);
 assert.match(
   welcome,
   /watch\(stage,[\s\S]*queueStageFocus\(s\)[\s\S]*function queueStageFocus[\s\S]*remoteAddressInput[\s\S]*newProjectButton/,
@@ -503,13 +509,28 @@ assert.match(
 );
 assert.match(
   electron,
-  /download-spotify-audio[\s\S]*requireAuthorizedIpcPath\(projectFolderPath[\s\S]*spawn\(spotDlPath, args/,
+  /download-spotify-audio[\s\S]*requireAuthorizedIpcPath\([\s\S]*destinationParentPath[\s\S]*spawn\(spotDlPath, args/,
   'Spotify downloads must use trusted IPC and argv spawning',
+);
+assert.match(
+  electron,
+  /--save-file', 'dwcue-spotify-manifest\.spotdl'[\s\S]*spotifyManifestListName\([\s\S]*playlistName[\s\S]*projectFolderPath/,
+  'Spotify imports must use the manifest list name and return their new project folder',
+);
+assert.doesNotMatch(
+  electron,
+  /completedTitles\s*=\s*new Set/,
+  'Spotify progress must not collapse duplicate track titles',
 );
 assert.match(
   electron,
   /async function copySpotifyOutputsToMedia[\s\S]*createWriteStream\(destination, \{ flags: 'wx' \}\)[\s\S]*job\.abortController\.signal/,
   'Spotify downloads must use cancellable, collision-safe media copies',
+);
+assert.match(
+  electron,
+  /ipcMain\.handle\('write-file'[\s\S]*\.dwcue-write-[\s\S]*flag: 'wx'[\s\S]*fs\.promises\.rename\(tempPath, checkedPath\)[\s\S]*finally[\s\S]*unlink\(tempPath\)/,
+  'project documents must be staged to a sibling file before atomic replacement',
 );
 assert.match(
   electron,
@@ -543,8 +564,13 @@ assert.match(
 );
 assert.match(
   spotifyModal,
-  /await props\.importFiles\(result\.files, importController\.signal\)[\s\S]*await api\.finalizeSpotifyImport\(jobId, keepFiles\)[\s\S]*resultState\.value = result/,
+  /await props\.importFiles\(downloadResult\.files, importController\.signal, \{[\s\S]*groupName: downloadResult\.playlistName[\s\S]*templateFolderPath: downloadResult\.projectFolderPath[\s\S]*await api\.finalizeSpotifyImport\(jobId, keepFiles\)[\s\S]*resultState\.value = downloadResult/,
   'Spotify completion must wait for cue persistence and media commit',
+);
+assert.match(
+  spotifyModal,
+  /await api\.selectProjectFolder\(\)[\s\S]*destinationParentPath[\s\S]*api\.downloadSpotifyAudio\([\s\S]*destinationParentPath/,
+  'Spotify imports must let the operator choose the template parent folder',
 );
 assert.match(
   spotifyModal,
@@ -566,6 +592,21 @@ assert.match(
   playlistView,
   /saveProject\(\{ signal \}\)[\s\S]*retainFiles: true/,
   'an ambiguous cue-save result must retain downloaded media',
+);
+assert.match(
+  playlistView,
+  /buildSpotifyCueSpecs[\s\S]*fetchMetadata\(serverPath, signal\)[\s\S]*fetchWaveformByPath\(serverPath\)[\s\S]*buildWaveformFromChannels[\s\S]*autoTrimSilenceOnImport === true[\s\S]*trimSilence\(cue\)[\s\S]*autoMatchLoudnessOnImport === true[\s\S]*applyLoudnessMatch\([\s\S]*anchorStartNextMarker/,
+  'Spotify template cues must be metadata-named, show-ready, and only import-processed by explicit opt-ins',
+);
+assert.match(
+  playlistView,
+  /mediaPath: `media\/\$\{fileName\}`[\s\S]*delete persisted\.mediaServerPath[\s\S]*delete persisted\.waveform[\s\S]*window\.electronAPI\.writeFile\([\s\S]*templatePath/,
+  'detached Spotify projects must keep portable relative media paths and omit waveform caches',
+);
+assert.match(
+  playlistView,
+  /templateCommitted = true[\s\S]*addItem\(activeGroup\)[\s\S]*saveProject\(\{ signal \}\)[\s\S]*retainFiles: templateCommitted/,
+  'a committed template must survive any failure while adding its named group to the active show',
 );
 assert.match(
   liveplayClient,
@@ -592,6 +633,18 @@ assert.match(
   /ARTIFACT_PREFIX[\s\S]*entry\.name\.startsWith\(ARTIFACT_PREFIX\)/,
   'artifact collection must not recopy stale pre-rebrand installers',
 );
+const sanitizeNameStart = electron.indexOf('function sanitizeSpotifyFolderName');
+const sanitizeNameEnd = electron.indexOf(
+  '\n}\n\nfunction spotifyManifestListName', sanitizeNameStart) + 2;
+const manifestNameStart = electron.indexOf('function spotifyManifestListName');
+const manifestNameEnd = electron.indexOf(
+  '\n}\n\nfunction spotDlNumericProgress', manifestNameStart) + 2;
+const numericProgressStart = electron.indexOf('function spotDlNumericProgress');
+const numericProgressEnd = electron.indexOf(
+  '\n}\n\nasync function createSpotifyProjectFolder', numericProgressStart) + 2;
+const createFolderStart = electron.indexOf('async function createSpotifyProjectFolder');
+const createFolderEnd = electron.indexOf(
+  '\n}\n\nfunction orderedSpotifyOutputs', createFolderStart) + 2;
 const orderedOutputsStart = electron.indexOf('function orderedSpotifyOutputs');
 const orderedOutputsEnd = electron.indexOf(
   '\n}\n\nasync function cleanupSpotifyFiles', orderedOutputsStart) + 2;
@@ -601,6 +654,18 @@ const cleanupOutputsEnd = electron.indexOf(
 const copyOutputsStart = electron.indexOf('async function copySpotifyOutputsToMedia');
 const copyOutputsEnd = electron.indexOf(
   '\n}\n\nfunction releaseSpotifyJob', copyOutputsStart) + 2;
+const sanitizeSpotifyFolderName = Function(
+  'Buffer', `return (${electron.slice(sanitizeNameStart, sanitizeNameEnd)})`,
+)(Buffer);
+const spotifyManifestListName = Function(
+  'fs', `return (${electron.slice(manifestNameStart, manifestNameEnd)})`,
+)(fs);
+const spotDlNumericProgress = Function(
+  `return (${electron.slice(numericProgressStart, numericProgressEnd)})`,
+)();
+const createSpotifyProjectFolder = Function(
+  'fs', 'path', `return (${electron.slice(createFolderStart, createFolderEnd)})`,
+)(fs, path);
 const orderedSpotifyOutputs = Function(
   'fs', 'path', `return (${electron.slice(orderedOutputsStart, orderedOutputsEnd)})`,
 )(fs, path);
@@ -611,6 +676,26 @@ const copySpotifyOutputsToMedia = Function(
   'fs', 'path', 'pipeline',
   `return (${electron.slice(copyOutputsStart, copyOutputsEnd)})`,
 )(fs, path, pipeline);
+
+assert.equal(
+  sanitizeSpotifyFolderName('../../My: Playlist\u0000 '),
+  'My Playlist',
+  'Spotify list names must not create traversal paths or illegal filenames',
+);
+assert.equal(
+  sanitizeSpotifyFolderName('...'),
+  'Spotify Import',
+  'unsafe or empty Spotify list names must use the safe fallback',
+);
+assert.ok(
+  Buffer.byteLength(sanitizeSpotifyFolderName('🎵'.repeat(100)), 'utf8') <= 120,
+  'Spotify list folders must stay within the bounded UTF-8 name length',
+);
+assert.deepEqual(
+  spotDlNumericProgress('INFO 2/5 complete'),
+  { completed: 2, total: 5 },
+  'spotDL 4.5.2 numeric progress must be parsed',
+);
 
 async function checkSpotifyCopyTransaction() {
   const spotifyTestRoot = fs.mkdtempSync(
@@ -623,6 +708,16 @@ async function checkSpotifyCopyTransaction() {
     fs.mkdirSync(media);
     fs.writeFileSync(path.join(staging, 'First.mp3'), 'first');
     fs.writeFileSync(path.join(staging, 'Second.mp3'), 'second');
+    const manifest = path.join(staging, 'dwcue-spotify-manifest.spotdl');
+    fs.writeFileSync(manifest, JSON.stringify([
+      { list_name: 'The Exact Spotify List' },
+      { list_name: 'The Exact Spotify List' },
+    ]));
+    assert.equal(
+      spotifyManifestListName(manifest),
+      'The Exact Spotify List',
+      'the manifest must provide the exact Spotify collection name',
+    );
     fs.writeFileSync(
       path.join(staging, 'dwcue-spotify-order.m3u8'),
       '#EXTM3U\nSecond.mp3\nSecond.mp3\nFirst.mp3\n',
@@ -663,6 +758,30 @@ async function checkSpotifyCopyTransaction() {
       fs.readdirSync(media),
       ['Second.mp3'],
       'an aborted copy must remove its partial destination',
+    );
+
+    const destinationParent = path.join(spotifyTestRoot, 'destination');
+    fs.mkdirSync(destinationParent);
+    fs.mkdirSync(path.join(destinationParent, 'The Exact Spotify List'));
+    const folderJob = { files: [], ownedDirectories: [] };
+    const created = await createSpotifyProjectFolder(
+      destinationParent, 'The Exact Spotify List', folderJob,
+    );
+    assert.equal(
+      path.basename(created.projectFolderPath),
+      'The Exact Spotify List (2)',
+      'Spotify project folders must be created exclusively with a unique suffix',
+    );
+    assert.equal(
+      path.dirname(created.mediaDir),
+      created.projectFolderPath,
+      'Spotify audio must land in the child project media folder',
+    );
+    await cleanupSpotifyFiles(folderJob);
+    assert.deepEqual(
+      fs.readdirSync(destinationParent),
+      ['The Exact Spotify List'],
+      'rollback must remove only empty directories owned by its Spotify job',
     );
   } finally {
     fs.rmSync(spotifyTestRoot, { recursive: true, force: true });

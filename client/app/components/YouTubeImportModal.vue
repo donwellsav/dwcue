@@ -98,12 +98,9 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useProject } from '~/composables/useProject';
-import { applyAutoProcessing, parseWaveformFileData } from '~/utils/audio';
-import { useOutputTarget } from '~/composables/useOutputTarget';
 
 const { t } = useLocalization();
-const { currentProject, addItem, consumePendingAutoProcess, triggerWaveformUpdate, resolveProjectPath } = useProject();
-const { levels: outputTargetLevels } = useOutputTarget();
+const { currentProject, addItem } = useProject();
 
 interface YouTubeVideo {
   id: string;
@@ -246,6 +243,7 @@ const importDownloadedFile = async (fileName: string, filePath: string) => {
       type: 'audio',
       mediaFileName: fileName,
       mediaPath: `media/${fileName}`, // Relative path
+      mediaServerPath: filePath,
       waveformPath: `waveforms/${uuid}.json`, // Relative — keeps the project portable
       waveform: undefined,
       outPoint: duration,
@@ -256,7 +254,7 @@ const importDownloadedFile = async (fileName: string, filePath: string) => {
     addItem(audioItem);
     
     // Generate waveform asynchronously
-    generateWaveformAsync(audioItem);
+    generateWaveformAsync(audioItem, filePath);
   } catch (error) {
     console.error('Failed to import downloaded file:', error);
   }
@@ -275,33 +273,11 @@ const getAudioDuration = async (filePath: string): Promise<number> => {
   });
 };
 
-const generateWaveformAsync = async (audioItem: any) => {
-  if (!currentProject.value) return;
-  
+const generateWaveformAsync = async (audioItem: any, mediaPath: string) => {
   try {
-    const mediaPath = `${currentProject.value.folderPath}/media/${audioItem.mediaFileName}`;
-    const result = await window.electronAPI.generateWaveform(mediaPath, resolveProjectPath(audioItem.waveformPath));
-
-    if (result.success) {
-      const waveformFile = await window.electronAPI.readFile(resolveProjectPath(audioItem.waveformPath));
-      if (waveformFile.success && waveformFile.data) {
-        // Accepts both the server's per-channel cache and legacy ffmpeg files.
-        const parsed = parseWaveformFileData(JSON.parse(waveformFile.data));
-        if (parsed) audioItem.waveform = parsed;
-        if (consumePendingAutoProcess(audioItem.uuid)) {
-          const settings = (currentProject.value as any)?.settings;
-          if (!settings?.disableAutoVolumeAndTrim) {
-            applyAutoProcessing(audioItem, outputTargetLevels.value.autoVolumeTargetDb);
-          }
-        }
-        console.log('Waveform loaded and applied to item');
-        triggerWaveformUpdate();
-        
-        // Force a save to trigger reactivity
-        const { saveProject } = useProject();
-        await saveProject();
-      }
-    }
+    const { saveProject } = useProject();
+    await saveProject();
+    await useLiveplayServer().requestWaveformGeneration(mediaPath, audioItem.uuid);
   } catch (error) {
     console.error('Failed to generate waveform:', error);
   }

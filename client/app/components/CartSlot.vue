@@ -188,7 +188,7 @@ import type { AudioItem } from '~/types/project';
 import ActionButton from './ActionButton.vue';
 import AudioImportModal from './AudioImportModal.vue';
 import { useOutputTarget, METER_COLORS } from '~/composables/useOutputTarget';
-import { calculatePerceivedLoudness, parseWaveformFileData } from '~/utils/audio';
+import { exceedsTruePeakCeiling, parseWaveformFileData } from '~/utils/audio';
 
 const props = defineProps<{
   slot: number;
@@ -203,7 +203,7 @@ const CART_SLOT_MAX = 15;
 const slotRef = ref<HTMLElement | null>(null);
 const showImportModal = ref(false);
 
-const { currentProject, selectedItem, selectedItems, selectionContext, requestDeleteFromButton, findItemByUuid, triggerWaveformUpdate, markPendingAutoProcess, resolveProjectPath } = useProject();
+const { currentProject, selectedItem, selectedItems, selectionContext, requestDeleteFromButton, findItemByUuid, triggerWaveformUpdate, markPendingImportProcessing, resolveProjectPath } = useProject();
 const { levels: outputTargetLevels } = useOutputTarget();
 const { playCue, stopCue, activeCues, nextItemOverrideUuid, autoNextItemUuid, setNextItem } = useAudioEngine();
 const { t } = useLocalization();
@@ -225,21 +225,10 @@ const hasItem = computed(() => props.item !== null);
 
 const isPeaking = computed(() => {
   if (!props.item || props.item.type !== 'audio') return false;
-  const peaks = props.item.waveform?.peaks;
-  if (!peaks || peaks.length === 0) return false;
-
-  const duration = props.item.duration || 0;
-  const inPoint  = props.item.inPoint  || 0;
-  const outPoint = props.item.outPoint || duration;
-  const startIdx = duration > 0 ? Math.floor((inPoint  / duration) * peaks.length) : 0;
-  const endIdx   = duration > 0 ? Math.ceil ((outPoint / duration) * peaks.length) : peaks.length;
-
-  const intrinsicLoudness = calculatePerceivedLoudness(peaks, startIdx, endIdx);
-  const volume = props.item.volume ?? 1;
-  const volumeDb = volume > 0 ? 20 * Math.log10(volume) : -60;
-  const effectiveLoudness = intrinsicLoudness + volumeDb;
-
-  return effectiveLoudness > outputTargetLevels.value.autoVolumeTargetDb + 3;
+  return exceedsTruePeakCeiling(
+    props.item,
+    outputTargetLevels.value.limiterCeilingDb,
+  );
 });
 const isPlaying = computed(() => props.item ? activeCues.value.has(props.item.uuid) : false);
 const isSelected = computed(() => props.item ? selectedItems.value.has(props.item.uuid) : false);
@@ -387,8 +376,8 @@ const importFromServerPath = async (serverPath: string) => {
     } as AudioItem;
 
     addCartOnlyItem(newItem);
-    // Mark for one-shot auto-process when the waveform arrives.
-    markPendingAutoProcess(uuid);
+    // Mark for one-shot opt-in import processing when the waveform arrives.
+    markPendingImportProcessing(uuid);
 
     const existingIndex = currentProject.value.cartItems.findIndex((ci: any) => ci.slot === props.slot);
     if (existingIndex !== -1) {

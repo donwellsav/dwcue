@@ -299,7 +299,7 @@ struct OutputTargetLevels {
     float yellow_min;            // yellow zone start (== green_max)
     float yellow_max;            // yellow zone end (== red threshold == hard limit)
     float limiter_ceiling_db;    // brickwall limiter ceiling for this platform
-    float auto_volume_target_db; // target for the auto-volume normalise feature
+    float loudness_target_lufs;  // target for loudness normalisation
     const char* meter_unit;      // preferred unit: "LUFS" | "dBFS" | "dBTP" | "RMS"
     const char* waveform_color;  // CSS hex color for the properties-panel waveform
 };
@@ -331,7 +331,7 @@ static json compute_output_target_levels(const json& settings) {
         {"yellowMax",          lv.yellow_max},
         {"redAbove",           lv.yellow_max},
         {"limiterCeilingDb",   lv.limiter_ceiling_db},
-        {"autoVolumeTargetDb", lv.auto_volume_target_db},
+        {"loudnessTargetLufs", lv.loudness_target_lufs},
         {"meterUnit",          lv.meter_unit},
         {"waveformColor",      lv.waveform_color},
     };
@@ -1078,6 +1078,10 @@ json ProjectState::default_empty_document() {
             {"defaultOutputDevice", nullptr},
             {"previewDevice",       nullptr},
             {"ltcDevice",           nullptr},
+            {"outputTarget",        "live"},
+            {"meterMode",           "dBFS"},
+            {"autoTrimSilenceOnImport",    false},
+            {"autoMatchLoudnessOnImport",  false},
         }},
         {"createdAt",     ""},
         {"lastModified",  ""},

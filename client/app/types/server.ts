@@ -180,9 +180,14 @@ export interface OutputTargetLevels {
   yellowMax:          number;  // yellow zone end
   redAbove:           number;  // same as yellowMax / hard limit
   limiterCeilingDb:   number;  // brickwall ceiling for this platform
-  autoVolumeTargetDb: number;  // target for the auto-volume feature
+  loudnessTargetLufs: number;  // integrated-loudness match target
   meterUnit:          MeterMode;   // recommended meter display unit
   waveformColor:      string;  // CSS hex color for the properties-panel waveform
+}
+
+export interface WaveformAnalysisRange {
+  startMs?: number;
+  endMs?: number;
 }
 
 export interface ServerWaveform {
@@ -192,4 +197,7 @@ export interface ServerWaveform {
   sample_rate: number;
   source_channels: number;
   channels: ServerWaveformChannel[];
+  analysis_version: 1;
+  integrated_lufs: number | null;
+  true_peak_dbtp: number | null;
 }

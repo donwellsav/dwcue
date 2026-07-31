@@ -351,8 +351,7 @@
 
 <script setup lang="ts">
 import type { AudioItem } from '~/types/project';
-import { calculatePerceivedLoudness, calculateNormalizationGain } from '~/utils/audio';
-import { useOutputTarget, METER_COLORS } from '~/composables/useOutputTarget';
+import { useOutputTarget } from '~/composables/useOutputTarget';
 import { useLiveplayServer } from '~/composables/useLiveplayServer';
 
 const props = defineProps<{
@@ -383,7 +382,7 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useLocalization();
-const { colorForLevel, levels: outputTargetLevels } = useOutputTarget();
+const { colorForLevel } = useOutputTarget();
 
 // Parse a CSS hex color ("#rrggbb") into [r, g, b] without DOM tricks.
 function hexToRgb(hex: string): [number, number, number] {
@@ -432,9 +431,8 @@ const playbackPosition = computed(() => {
   return cue.currentTime + inPoint;
 });
 
-// Use existing waveform data from audioItem. `waveformData` is the combined
-// trace (per-bucket max across channels) used for analysis — auto-trim, RMS,
-// normalisation — so a stereo file is measured from BOTH channels (#47).
+// Use the combined peak trace for drawing and silence trim only. Loudness and
+// true peak come from the server's decoded-sample analysis.
 const waveformData = computed(() => props.audioItem?.waveform?.peaks ?? null);
 const hasWaveform = computed(() => waveformData.value && waveformData.value.length > 0);
 
@@ -1019,20 +1017,8 @@ const drawWaveform = () => {
     // stereo meter) so the waveform and meter always agree visually.
     const getColorForDB = (db: number): string => colorForLevel(db);
 
-    // Loudness-referenced vertical scale.
-    // ------------------------------------
-    // The display is calibrated so that a signal sitting AT the project's
-    // target optimal loudness fills ~3/4 of the lane height, leaving the
-    // top 1/4 as headroom for louder transient peaks. Without this, an
-    // auto-normalised track (whose volume is pulled down to hit the target)
-    // rendered as a tiny sliver. We map linear amplitude → height fraction
-    // with a fixed gain so the target maps to 0.75 and clamp at 1.0.
-    const targetDb = outputTargetLevels.value?.autoVolumeTargetDb ?? -23;
-    const targetLinear = Math.pow(10, targetDb / 20);
-    const HEIGHT_AT_TARGET = 0.75;
-    const loudnessScale = HEIGHT_AT_TARGET / Math.max(targetLinear, 1e-4);
     const heightFraction = (linear: number) =>
-      Math.min(Math.max(linear, 0) * loudnessScale, 1);
+      Math.min(Math.max(linear, 0), 1);
 
     lanes.forEach((peaks, laneIndex) => {
       const laneCenter = laneIndex * laneHeight + laneHeight / 2;
@@ -1073,32 +1059,6 @@ const drawWaveform = () => {
         ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
         ctx.fillRect(x, amplifiedY, Math.max(barWidth, 1), amplifiedBarHeight);
       });
-
-      // Draw perceived loudness line (RMS level) for this lane
-      const perceivedLoudness = calculatePerceivedLoudness(visiblePeaksArray);
-      const rmsLinear = perceivedLoudness <= -60 ? 0 : Math.pow(10, perceivedLoudness / 20);
-      const rmsHeight = heightFraction(rmsLinear * volumeMultiplier) * laneHeight;
-
-      // Draw horizontal line at RMS level (on both sides of the lane centre)
-      ctx.strokeStyle = 'rgba(255, 165, 0, 0.5)'; // Orange with transparency
-      ctx.lineWidth = 1;
-
-      // Top line
-      const topY = laneCenter - rmsHeight / 2;
-      ctx.beginPath();
-      ctx.moveTo(0, topY);
-      ctx.lineTo(canvasWidth.value, topY);
-      ctx.stroke();
-
-      // Bottom line
-      const bottomY = laneCenter + rmsHeight / 2;
-      ctx.beginPath();
-      ctx.moveTo(0, bottomY);
-      ctx.lineTo(canvasWidth.value, bottomY);
-      ctx.stroke();
-
-      // Reset line dash
-      ctx.setLineDash([]);
 
       // Lane zero line + divider between lanes, so L/R read as two strips.
       if (lanes.length > 1) {
@@ -1289,7 +1249,6 @@ watch([
   () => props.audioItem?.startNextFadeOut,
   waveformData,
   playbackPosition,
-  () => outputTargetLevels.value?.autoVolumeTargetDb,
 ], () => {
   throttledDraw();
 });

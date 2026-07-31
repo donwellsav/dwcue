@@ -24,6 +24,7 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <vector>
 
 namespace liveplay::meta {
@@ -34,17 +35,27 @@ struct WaveformChannel {
 };
 
 struct Waveform {
+    static constexpr std::uint32_t kAnalysisVersion = 1;
+
     std::vector<WaveformChannel> channels;   // size = audio channel count
     std::uint32_t                bucket_count = 0;
     std::chrono::milliseconds    duration{0};
     std::uint32_t                sample_rate  = 0;
     std::uint32_t                source_channels = 0;
+    std::uint32_t                analysis_version = kAnalysisVersion;
+    std::optional<double>        integrated_lufs;
+    std::optional<double>        true_peak_dbtp;
     bool                         ok = false;
 };
 
 // Decode `path` and produce `bucket_count` waveform buckets. `bucket_count`
-// is clamped to [16, 16384]. Real-time-irrelevant — runs on a worker thread.
+// is clamped to [16, 16384]. Loudness is integrated per ITU-R BS.1770 with
+// absolute + relative gating; true peak is 4x oversampled. The optional range
+// affects only those two analysis values — waveform buckets always cover the
+// full file. Real-time-irrelevant — runs on a worker thread.
 Waveform compute_waveform(const std::filesystem::path& path,
-                          std::uint32_t bucket_count = 1000) noexcept;
+                          std::uint32_t bucket_count = 1000,
+                          std::optional<std::chrono::milliseconds> analysis_start = std::nullopt,
+                          std::optional<std::chrono::milliseconds> analysis_end = std::nullopt) noexcept;
 
 } // namespace liveplay::meta

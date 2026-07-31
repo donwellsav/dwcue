@@ -36,6 +36,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <charconv>
 #include <chrono>
 #include <condition_variable>
 #include <cstdlib>
@@ -49,6 +50,7 @@
 #include <optional>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -59,6 +61,7 @@ namespace fs    = std::filesystem;
 using json      = nlohmann::json;
 namespace audio = liveplay::audio;
 namespace core  = liveplay::core;
+namespace meta  = liveplay::meta;
 
 namespace liveplay::net {
 
@@ -244,6 +247,49 @@ crow::response json_err(int status, std::string_view message) {
     crow::response r{status, json({{"error", message}}).dump()};
     r.add_header("Content-Type", "application/json");
     return r;
+}
+
+json waveform_data_json(const meta::Waveform& wf) {
+    json channels = json::array();
+    for (const auto& ch : wf.channels) {
+        channels.push_back(json{{"peak", ch.peak}, {"rms", ch.rms}});
+    }
+    return json{
+        {"analysis_version", wf.analysis_version},
+        {"integrated_lufs",  wf.integrated_lufs
+                                 ? json(*wf.integrated_lufs) : json(nullptr)},
+        {"true_peak_dbtp",   wf.true_peak_dbtp
+                                 ? json(*wf.true_peak_dbtp) : json(nullptr)},
+        {"bucket_count",     wf.bucket_count},
+        {"duration_ms",      wf.duration.count()},
+        {"sample_rate",      wf.sample_rate},
+        {"source_channels",  wf.source_channels},
+        {"channels",         std::move(channels)},
+    };
+}
+
+bool current_waveform_cache(const json& cached) {
+    const auto analysis_value = [&](std::string_view key) {
+        const auto it = cached.find(key);
+        return it != cached.end() && (it->is_number() || it->is_null());
+    };
+    return cached.value("analysis_version", 0u) ==
+               meta::Waveform::kAnalysisVersion &&
+           analysis_value("integrated_lufs") &&
+           analysis_value("true_peak_dbtp");
+}
+
+std::optional<std::chrono::milliseconds> query_milliseconds(
+    const crow::request& req, const char* name) {
+    const char* raw = req.url_params.get(name);
+    if (!raw) return std::nullopt;
+    const std::string text{raw};
+    long long value = 0;
+    const auto [end, ec] =
+        std::from_chars(text.data(), text.data() + text.size(), value);
+    if (ec != std::errc{} || end != text.data() + text.size() || value < 0)
+        throw std::invalid_argument(std::string{name} + " must be a non-negative integer");
+    return std::chrono::milliseconds{value};
 }
 
 // Returns "Display Name (cue_id) (media/path)" for playback log lines.
@@ -1298,10 +1344,15 @@ void ControlServer::waveform_worker() {
             try {
                 std::ifstream cache_f(json_file);
                 const auto cached = json::parse(cache_f);
+                if (!current_waveform_cache(cached))
+                    throw std::runtime_error("stale analysis schema");
                 broadcast_doc_patch(json{
                     {"type",            "doc_patch"},
                     {"op",              "waveform_ready"},
                     {"item_uuid",       task.item_uuid},
+                    {"analysis_version", cached.at("analysis_version")},
+                    {"integrated_lufs",  cached.at("integrated_lufs")},
+                    {"true_peak_dbtp",   cached.at("true_peak_dbtp")},
                     {"bucket_count",    cached.at("bucket_count")},
                     {"duration_ms",     cached.at("duration_ms")},
                     {"sample_rate",     cached.at("sample_rate")},
@@ -1327,22 +1378,11 @@ void ControlServer::waveform_worker() {
             continue;
         }
 
-        json channels = json::array();
-        for (const auto& ch : wf.channels) {
-            channels.push_back(json{{"peak", ch.peak}, {"rms", ch.rms}});
-        }
-
-        // Build the broadcast payload; also used as the on-disk cache format.
-        json patch{
-            {"type",            "doc_patch"},
-            {"op",              "waveform_ready"},
-            {"item_uuid",       task.item_uuid},
-            {"bucket_count",    wf.bucket_count},
-            {"duration_ms",     wf.duration.count()},
-            {"sample_rate",     wf.sample_rate},
-            {"source_channels", wf.source_channels},
-            {"channels",        std::move(channels)},
-        };
+        const json waveform_data = waveform_data_json(wf);
+        json patch = waveform_data;
+        patch["type"]      = "doc_patch";
+        patch["op"]        = "waveform_ready";
+        patch["item_uuid"] = task.item_uuid;
 
         // Persist waveform so future project opens skip recomputation.
         if (!json_file.empty()) {
@@ -1350,13 +1390,7 @@ void ControlServer::waveform_worker() {
                 fs::create_directories(task.waveforms_dir);
                 std::ofstream out(json_file);
                 // Write only the waveform data fields (not WS envelope fields).
-                out << json{
-                    {"bucket_count",    patch["bucket_count"]},
-                    {"duration_ms",     patch["duration_ms"]},
-                    {"sample_rate",     patch["sample_rate"]},
-                    {"source_channels", patch["source_channels"]},
-                    {"channels",        patch["channels"]},
-                }.dump();
+                out << waveform_data.dump();
             } catch (const std::exception& e) {
                 Logger::warn("waveform_worker: failed to save waveform cache for '{}': {}", task.item_uuid, e.what());
             }
@@ -2993,21 +3027,19 @@ void ControlServer::install_routes() {
                     catch (...) {}
                 }
 
-                const auto wf = liveplay::meta::compute_waveform(meta->file_path, buckets);
+                const auto analysis_start =
+                    query_milliseconds(req, "analysis_start_ms");
+                const auto analysis_end =
+                    query_milliseconds(req, "analysis_end_ms");
+                const auto wf = liveplay::meta::compute_waveform(
+                    meta->file_path, buckets, analysis_start, analysis_end);
                 if (!wf.ok) return json_err(500, "waveform decode failed");
 
-                json channels = json::array();
-                for (const auto& ch : wf.channels) {
-                    channels.push_back(json{{"peak", ch.peak}, {"rms", ch.rms}});
-                }
-                return json_ok(json{
-                    {"cue_id",          cue_id},
-                    {"bucket_count",    wf.bucket_count},
-                    {"duration_ms",     wf.duration.count()},
-                    {"sample_rate",     wf.sample_rate},
-                    {"source_channels", wf.source_channels},
-                    {"channels",        std::move(channels)},
-                });
+                auto data = waveform_data_json(wf);
+                data["cue_id"] = cue_id;
+                return json_ok(data);
+            } catch (const std::invalid_argument& e) {
+                return json_err(400, e.what());
             } catch (const std::exception& e) { return json_err(500, e.what()); }
             catch (...) { return json_err(500, "unknown error computing waveform"); }
         });
@@ -3030,20 +3062,17 @@ void ControlServer::install_routes() {
                 const std::filesystem::path file_path =
                     liveplay::util::utf8_to_path(std::string{path_param});
 
-                const auto wf = liveplay::meta::compute_waveform(file_path, buckets);
+                const auto analysis_start =
+                    query_milliseconds(req, "analysis_start_ms");
+                const auto analysis_end =
+                    query_milliseconds(req, "analysis_end_ms");
+                const auto wf = liveplay::meta::compute_waveform(
+                    file_path, buckets, analysis_start, analysis_end);
                 if (!wf.ok) return json_err(500, "waveform decode failed");
 
-                json channels = json::array();
-                for (const auto& ch : wf.channels) {
-                    channels.push_back(json{{"peak", ch.peak}, {"rms", ch.rms}});
-                }
-                return json_ok(json{
-                    {"bucket_count",    wf.bucket_count},
-                    {"duration_ms",     wf.duration.count()},
-                    {"sample_rate",     wf.sample_rate},
-                    {"source_channels", wf.source_channels},
-                    {"channels",        std::move(channels)},
-                });
+                return json_ok(waveform_data_json(wf));
+            } catch (const std::invalid_argument& e) {
+                return json_err(400, e.what());
             } catch (const std::exception& e) { return json_err(500, e.what()); }
             catch (...) { return json_err(500, "unknown error computing waveform"); }
         });

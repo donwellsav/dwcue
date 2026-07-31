@@ -81,6 +81,39 @@ struct Output {
     Sample* channels[2] = {left.data(), right.data()};
 };
 
+void test_item_gain_path(PlaybackItem& item) {
+    const auto render_peak = [&](float gain_db) {
+        item.stop_now();
+        item.set_gain_db(gain_db);
+        if (!item.prime(2.0, 0.0)) return 0.0;
+        item.play();
+        Output output;
+        if (item.render_block(output.channels, 2, kBlock) != kBlock) return 0.0;
+        return static_cast<double>(*std::max_element(
+            output.left.begin(), output.left.end(),
+            [](float a, float b) { return std::fabs(a) < std::fabs(b); }));
+    };
+
+    double expected_peak = 0.0;
+    for (std::uint32_t frame = 0; frame < kBlock; ++frame) {
+        const auto sample = static_cast<std::int16_t>(
+            std::sin(2.0 * 3.14159265358979323846 * 997.0 * frame / kRate) *
+            20'000.0);
+        expected_peak = std::max(
+            expected_peak, std::fabs(static_cast<double>(sample) / 32768.0));
+    }
+
+    const double unity = std::fabs(render_peak(0.0f));
+    const double minus_six = std::fabs(render_peak(-6.0f));
+    check(std::fabs(unity - expected_peak) < 1e-6,
+          "gain: 0 dB preserves decoded source amplitude");
+    check(unity > 0.0 &&
+              std::fabs(minus_six / unity - 0.501187) < 1e-5,
+          "gain: -6 dB is exactly the cue-stage 0.501187 ratio");
+    item.stop_now();
+    item.set_gain_db(0.0f);
+}
+
 void test_bounded_prefill_and_recovery(PlaybackItem& item) {
     check(item.prime(2.0, 0.0), "prefill: prime succeeds");
     const auto prefetched = item.stats().read_ahead_blocks;
@@ -299,6 +332,7 @@ int main() {
 
     check(item.load(), "fixture: WAV loads");
     if (failures == 0) {
+        test_item_gain_path(item);
         test_bounded_prefill_and_recovery(item);
         test_soft_out_point_fade(item);
         test_loop_and_concurrent_stress(item);

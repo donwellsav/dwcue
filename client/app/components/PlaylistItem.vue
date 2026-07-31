@@ -77,6 +77,17 @@
 
         <span v-if="isPlaying" class="status-pill playing">{{ t('status.playing') }}</span>
         <span v-else-if="isQueuedNext" class="status-pill up-next">{{ t('status.upNext') }}</span>
+        <ActionButton
+          v-if="isPlaying && item.type === 'audio'"
+          class="restart-action"
+          icon="restart_alt"
+          highlight-color="var(--color-success)"
+          context="Playlist"
+          type="button"
+          @click.stop="handlePlay"
+          :title="t('actions.restartCue', { name: item.displayName })"
+          :aria-label="t('actions.restartCue', { name: item.displayName })"
+        />
         <span v-if="isPreviewing" class="status-pill preview">{{ t('status.previewing') }}</span>
 
         <!-- Behavior indicators (for audio items) -->
@@ -205,7 +216,7 @@
 import type { AudioItem, GroupItem, BaseItem } from '~/types/project';
 import ActionButton from './ActionButton.vue';
 import { useOutputTarget, METER_COLORS } from '~/composables/useOutputTarget';
-import { calculatePerceivedLoudness } from '~/utils/audio';
+import { exceedsTruePeakCeiling } from '~/utils/audio';
 
 const props = defineProps<{
   item: AudioItem | GroupItem;
@@ -270,27 +281,13 @@ const indexDisplay = computed(() => {
   return formatItemIndex(props.item.index);
 });
 
-// True when the item's effective loudness is significantly above the
-// recommended target for the active output target. Reactive: recomputes
-// whenever the output target or volume changes mid-session.
+// True when measured true peak plus item gain exceeds the active ceiling.
 const isPeaking = computed(() => {
   if (props.item.type !== 'audio') return false;
-  const audio = props.item as AudioItem;
-  const peaks = audio.waveform?.peaks;
-  if (!peaks || peaks.length === 0) return false;
-
-  const duration = audio.duration || 0;
-  const inPoint  = audio.inPoint  || 0;
-  const outPoint = audio.outPoint || duration;
-  const startIdx = duration > 0 ? Math.floor((inPoint  / duration) * peaks.length) : 0;
-  const endIdx   = duration > 0 ? Math.ceil ((outPoint / duration) * peaks.length) : peaks.length;
-
-  const intrinsicLoudness = calculatePerceivedLoudness(peaks, startIdx, endIdx);
-  const volume = audio.volume ?? 1;
-  const volumeDb = volume > 0 ? 20 * Math.log10(volume) : -60;
-  const effectiveLoudness = intrinsicLoudness + volumeDb;
-
-  return effectiveLoudness > outputTargetLevels.value.autoVolumeTargetDb + 3;
+  return exceedsTruePeakCeiling(
+    props.item as AudioItem,
+    outputTargetLevels.value.limiterCeilingDb,
+  );
 });
 
 const durationDisplay = computed(() => {
@@ -1121,6 +1118,15 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
     .material-symbols-rounded {
       font-size: 28px;
+    }
+  }
+
+  :deep(.restart-action.action-btn--playlist) {
+    width: 34px;
+    height: 34px;
+
+    .material-symbols-rounded {
+      font-size: 20px;
     }
   }
 

@@ -49,14 +49,19 @@ export interface WaveformData {
   length: number;
   duration: number;
   // Combined trace: the per-bucket maximum across every source channel.
-  // Normalized 0..1. This is what analysis (auto-trim, perceived loudness) and
-  // the compact row/cart renderers use — taking channel 0 instead meant a
-  // stereo file was measured and drawn from its LEFT channel only (#47).
+  // Normalized 0..1. Auto-trim and the compact row/cart renderers use this
+  // combined trace; loudness and true peak come only from decoded-sample
+  // server analysis.
   peaks: number[];
   // Per-channel traces, in source channel order (stereo = [L, R]). Present for
   // waveforms produced by the server; absent for legacy single-array data.
   // Renderers with room for it (the trimmer) draw one lane per channel.
   channelPeaks?: number[][];
+  // BS.1770 analysis measured from decoded samples by the server. Legacy
+  // waveform files have none of these fields and are never loudness-matched.
+  analysis_version?: 1;
+  integrated_lufs?: number | null;
+  true_peak_dbtp?: number | null;
 }
 
 // Group item properties
@@ -152,7 +157,8 @@ export interface ProjectSettings {
   autoCueNextWithoutEndBehavior?: boolean;
   stopAllFadeMs?: number;
   uiScrollToPlaying?: boolean;
-  disableAutoVolumeAndTrim?: boolean;
+  autoTrimSilenceOnImport?: boolean;
+  autoMatchLoudnessOnImport?: boolean;
   disableLimiter?: boolean;
   disableSilenceWarning?: boolean;
   autoSave?: boolean;
@@ -262,6 +268,13 @@ export const PRESET_COLORS = [
 export const DEFAULT_THEME: Theme = {
   mode: 'dark',
   accentColor: '#315FCF'
+};
+
+export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
+  outputTarget: 'live',
+  meterMode: 'dBFS',
+  autoTrimSilenceOnImport: false,
+  autoMatchLoudnessOnImport: false,
 };
 
 export const DEFAULT_AUDIO_ITEM: Partial<AudioItem> = {
