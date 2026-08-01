@@ -134,9 +134,19 @@ assert.match(
   'playlist row-height preferences must remain bounded and persist per device',
 );
 assert.match(
+  uiMode,
+  /WAVEFORM_OPACITY = \{ min: 0, max: 100, default: 10 \}[\s\S]*normalizeWaveformOpacity[\s\S]*WAVEFORM_OPACITY_KEY[\s\S]*setWaveformOpacity/,
+  'waveform opacity must remain bounded and persist per device',
+);
+assert.match(
   playlistView,
-  /:style="playlistRowStyle"[\s\S]*--playlist-row-height[\s\S]*--show-playlist-row-height[\s\S]*--folder-playlist-row-height/,
-  'playlist density must be inherited once by top-level and nested rows',
+  /:style="playlistRowStyle"[\s\S]*--playlist-row-height[\s\S]*--show-playlist-row-height[\s\S]*--folder-playlist-row-height[\s\S]*--playlist-waveform-opacity/,
+  'playlist density and waveform opacity must be inherited once by top-level and nested rows',
+);
+assert.match(
+  playlistItem,
+  /\.waveform-canvas\s*\{[\s\S]*opacity:\s*var\(--playlist-waveform-opacity, 0\.1\)/,
+  'playlist waveform opacity must use the inherited display preference',
 );
 assert.match(
   playlistItem,
@@ -150,6 +160,7 @@ assert.match(
 );
 const mainWorkspace = read('client/app/components/MainWorkspace.vue');
 const playbackControls = read('client/app/components/PlaybackControls.vue');
+const activeCueItem = read('client/app/components/ActiveCueItem.vue');
 const canvasFader = read('client/app/components/CanvasFader.vue');
 const stereoMeter = read('client/app/components/StereoMeter.vue');
 const volumeSlider = read('client/app/components/VolumeSlider.vue');
@@ -296,6 +307,16 @@ assert.match(
   'active and preview cue cards must share the full transport lane evenly',
 );
 assert.match(
+  activeCueItem,
+  /class="cue-meter"[\s\S]*<StereoMeter[\s\S]*:cue-id="serverCueId"/,
+  'active cue cards must retain their server-driven stereo meter',
+);
+assert.match(
+  playbackControls,
+  /class="preview-cue-meter"[\s\S]*<StereoMeter[\s\S]*:left-index="30"[\s\S]*:right-index="31"/,
+  'preview cue meters must match the active cue meter layout',
+);
+assert.match(
   canvasFader,
   /dbToConsolePosition[\s\S]*consolePositionToDb[\s\S]*dragStartNorm/,
   'fader drawing and interaction must share the console taper',
@@ -309,6 +330,11 @@ assert.match(
   stereoMeter,
   /const meterGradient = computed[\s\S]*METER_COLORS\.green[\s\S]*METER_COLORS\.yellow[\s\S]*METER_COLORS\.red[\s\S]*background:\s*meterGradient\.value/,
   'meter fills must reveal fixed safe, warning, and danger zones',
+);
+assert.match(
+  stereoMeter,
+  /\.stereo-meter:not\(\.stereo-meter--strip\)[\s\S]*width:\s*26px;[\s\S]*padding:\s*0;[\s\S]*background:\s*transparent;[\s\S]*border:\s*0;[\s\S]*grid-template-rows:\s*6px minmax\(0, 1fr\) 11px;[\s\S]*padding:\s*1px 0;/,
+  'compact cue meters must use their height for signal without nested strip chrome',
 );
 assert.match(
   stereoMeter,
@@ -458,6 +484,11 @@ assert.match(
   projectSettingsModal,
   /regular-playlist-row-height[\s\S]*type="range"[\s\S]*PLAYLIST_ROW_HEIGHTS\.regular[\s\S]*show-playlist-row-height[\s\S]*type="range"[\s\S]*PLAYLIST_ROW_HEIGHTS\.show[\s\S]*folder-playlist-row-height[\s\S]*type="range"[\s\S]*PLAYLIST_ROW_HEIGHTS\.folder[\s\S]*onPlaylistRowHeightInput/,
   'User Interface settings must expose independent regular, Show Mode, and folder row-height controls',
+);
+assert.match(
+  projectSettingsModal,
+  /playlist-waveform-opacity[\s\S]*type="range"[\s\S]*WAVEFORM_OPACITY\.min[\s\S]*WAVEFORM_OPACITY\.max[\s\S]*onWaveformOpacityInput/,
+  'User Interface settings must expose the waveform opacity control',
 );
 assert.match(
   projectSettingsModal,

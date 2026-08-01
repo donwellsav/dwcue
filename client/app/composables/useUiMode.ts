@@ -70,12 +70,22 @@ export const PLAYLIST_ROW_HEIGHTS = {
   folder: { min: 60, max: 96, default: 60 },
 } as const;
 
+export const WAVEFORM_OPACITY = { min: 0, max: 100, default: 10 } as const;
+
 export type PlaylistRowMode = keyof typeof PLAYLIST_ROW_HEIGHTS;
 
 export const normalizePlaylistRowHeight = (value: unknown, mode: PlaylistRowMode): number => {
   const range = PLAYLIST_ROW_HEIGHTS[mode];
   return normalizeBoundedInteger(value, range.min, range.max, range.default);
 };
+
+export const normalizeWaveformOpacity = (value: unknown): number =>
+  normalizeBoundedInteger(
+    value,
+    WAVEFORM_OPACITY.min,
+    WAVEFORM_OPACITY.max,
+    WAVEFORM_OPACITY.default,
+  );
 
 export const normalizeCartGridLayouts = (value: unknown): CartGridLayouts => {
   const source = value && typeof value === 'object'
@@ -111,6 +121,7 @@ const STORAGE_KEY = 'liveplay-ui-mode';
 const REGULAR_ROW_HEIGHT_KEY = 'liveplay-playlist-row-height-regular';
 const SHOW_ROW_HEIGHT_KEY = 'liveplay-playlist-row-height-show';
 const FOLDER_ROW_HEIGHT_KEY = 'liveplay-playlist-row-height-folder';
+const WAVEFORM_OPACITY_KEY = 'liveplay-playlist-waveform-opacity';
 const CART_GRID_LAYOUTS_KEY = 'liveplay-cart-grid-layouts-v1';
 
 const parseCartGridLayouts = (value: string | null): CartGridLayouts => {
@@ -136,6 +147,10 @@ export const useUiMode = () => {
     'useUiMode.folderPlaylistRowHeight',
     () => PLAYLIST_ROW_HEIGHTS.folder.default,
   );
+  const waveformOpacity = useState<number>(
+    'useUiMode.waveformOpacity',
+    () => WAVEFORM_OPACITY.default,
+  );
   const cartGridLayouts = useState<CartGridLayouts>(
     'useUiMode.cartGridLayouts',
     () => normalizeCartGridLayouts(null),
@@ -158,6 +173,9 @@ export const useUiMode = () => {
         localStorage.getItem(FOLDER_ROW_HEIGHT_KEY),
         'folder',
       );
+      waveformOpacity.value = normalizeWaveformOpacity(
+        localStorage.getItem(WAVEFORM_OPACITY_KEY),
+      );
       cartGridLayouts.value = parseCartGridLayouts(localStorage.getItem(CART_GRID_LAYOUTS_KEY));
     } catch {
       // localStorage unavailable (e.g. private browsing) — fall back to 'edit'.
@@ -178,6 +196,8 @@ export const useUiMode = () => {
           showPlaylistRowHeight.value = normalizePlaylistRowHeight(e.newValue, 'show');
         } else if (e.key === FOLDER_ROW_HEIGHT_KEY) {
           folderPlaylistRowHeight.value = normalizePlaylistRowHeight(e.newValue, 'folder');
+        } else if (e.key === WAVEFORM_OPACITY_KEY) {
+          waveformOpacity.value = normalizeWaveformOpacity(e.newValue);
         } else if (e.key === CART_GRID_LAYOUTS_KEY) {
           cartGridLayouts.value = parseCartGridLayouts(e.newValue);
         }
@@ -234,6 +254,14 @@ export const useUiMode = () => {
     }
   };
 
+  const setWaveformOpacity = (value: unknown) => {
+    const next = normalizeWaveformOpacity(value);
+    waveformOpacity.value = next;
+    if (import.meta.client) {
+      try { localStorage.setItem(WAVEFORM_OPACITY_KEY, String(next)); } catch {}
+    }
+  };
+
   const setCartGridLayout = (
     profile: CartGridProfile,
     patch: Partial<CartGridLayout>,
@@ -259,11 +287,13 @@ export const useUiMode = () => {
     regularPlaylistRowHeight,
     showPlaylistRowHeight,
     folderPlaylistRowHeight,
+    waveformOpacity,
     cartGridLayouts,
     setUiMode,
     setRegularPlaylistRowHeight,
     setShowPlaylistRowHeight,
     setFolderPlaylistRowHeight,
+    setWaveformOpacity,
     setCartGridLayout,
     enterPlaybackMode,
     exitPlaybackMode,

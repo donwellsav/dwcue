@@ -273,6 +273,27 @@
 
             <section class="settings-field">
               <div class="settings-label">
+                <span class="material-symbols-rounded">waterfall_chart</span>
+                {{ t('settings.playlistWaveforms') }}
+              </div>
+              <div class="track-height-control">
+                <label for="playlist-waveform-opacity">{{ t('settings.waveformOpacity') }}</label>
+                <input
+                  id="playlist-waveform-opacity"
+                  type="range"
+                  :min="WAVEFORM_OPACITY.min"
+                  :max="WAVEFORM_OPACITY.max"
+                  step="1"
+                  :value="waveformOpacity"
+                  @input="onWaveformOpacityInput"
+                />
+                <output for="playlist-waveform-opacity">{{ waveformOpacity }}%</output>
+              </div>
+              <p class="settings-help">{{ t('settings.waveformOpacityHelp') }}</p>
+            </section>
+
+            <section class="settings-field">
+              <div class="settings-label">
                 <span class="material-symbols-rounded">grid_view</span>
                 {{ t('settings.cartPlayerLayout') }}
               </div>
@@ -484,6 +505,7 @@ import {
   CART_GRID_LIMITS,
   CART_GRID_PROFILES,
   PLAYLIST_ROW_HEIGHTS,
+  WAVEFORM_OPACITY,
   type CartGridLayout,
   type CartGridProfile,
   type PlaylistRowMode,
@@ -500,10 +522,12 @@ const {
   regularPlaylistRowHeight,
   showPlaylistRowHeight,
   folderPlaylistRowHeight,
+  waveformOpacity,
   cartGridLayouts,
   setRegularPlaylistRowHeight,
   setShowPlaylistRowHeight,
   setFolderPlaylistRowHeight,
+  setWaveformOpacity,
   setCartGridLayout,
 } = useUiMode();
 
@@ -735,6 +759,10 @@ function onPlaylistRowHeightInput(mode: PlaylistRowMode, e: Event) {
   if (mode === 'show') setShowPlaylistRowHeight(value);
   else if (mode === 'folder') setFolderPlaylistRowHeight(value);
   else setRegularPlaylistRowHeight(value);
+}
+
+function onWaveformOpacityInput(e: Event) {
+  setWaveformOpacity((e.target as HTMLInputElement).value);
 }
 
 function onCartGridLayoutChange(

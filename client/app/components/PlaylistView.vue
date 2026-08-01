@@ -93,6 +93,7 @@ const {
   regularPlaylistRowHeight,
   showPlaylistRowHeight,
   folderPlaylistRowHeight,
+  waveformOpacity,
 } = useUiMode();
 const { revealSelection, commitReveal, clearReveals } = usePlaylistReveal();
 const server = useLiveplayServer();
@@ -105,6 +106,7 @@ const playlistRowStyle = computed(() => ({
   '--playlist-row-height': `${regularPlaylistRowHeight.value}px`,
   '--show-playlist-row-height': `${showPlaylistRowHeight.value}px`,
   '--folder-playlist-row-height': `${folderPlaylistRowHeight.value}px`,
+  '--playlist-waveform-opacity': String(waveformOpacity.value / 100),
 }));
 const scrollContainer = ref<HTMLElement | null>(null);
 const canOnlineImport = computed(() => !!currentProject.value && server.isLocalServer);

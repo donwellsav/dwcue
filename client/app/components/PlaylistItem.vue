@@ -399,7 +399,7 @@ const drawWaveform = () => {
   ctx.clearRect(0, 0, rect.width, rect.height);
 
   // Use the item's own colour so the waveform tints to match the row.
-  // The canvas has opacity:0.1 applied in CSS, giving a naturally dark tint.
+  // Canvas opacity is controlled by the per-Mac User Interface setting.
   ctx.fillStyle = audioItem.color || '#ffffff';
 
   const peaks = audioItem.waveform.peaks;
@@ -994,7 +994,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   pointer-events: none;
   z-index: 1;
   color: var(--color-text-primary);
-  opacity: 0.1; /* Control opacity at canvas level instead of individual bars */
+  opacity: var(--playlist-waveform-opacity, 0.1);
 }
 
 .item-progress {

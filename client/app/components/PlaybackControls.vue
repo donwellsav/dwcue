@@ -106,8 +106,7 @@ const { playbackMappings } = useCartHotkeys();
 const { t } = useLocalization();
 const server = useLiveplayServer();
 const { uiMode } = useUiMode();
-// Show Mode enlarges the GO / Stop-All buttons for touch; the active-cue cards
-// and meters are already the right size and stay as-is.
+// Show Mode enlarges the GO / Stop-All buttons for touch.
 const showMode = computed(() => uiMode.value === 'playback');
 
 // ---- Preview seek / time --------------------------------------------------
@@ -434,8 +433,7 @@ const handlePlayNext = () => {
 .preview-cue-meter {
   display: flex;
   align-items: stretch;
-  padding-left: var(--spacing-sm);
-  border-left: 1px solid var(--color-border);
+  flex: 0 0 26px;
 }
 
 .preview-cue-progress {

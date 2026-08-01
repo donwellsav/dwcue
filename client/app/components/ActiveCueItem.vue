@@ -111,10 +111,9 @@
         </div>
       </div>
     </div>
-    
-    <!-- VU Meter — drawn from the server's live meter stream so it tracks
-         what the audio engine is actually outputting, not a waveform-based
-         estimate. Stereo widget shows L/R per source channel. -->
+
+    <!-- Drawn from the server's live meter stream. Compact cue meters stay
+         vertical but omit the nested console-strip box and padding. -->
     <div class="cue-meter">
       <StereoMeter
         :cue-id="serverCueId"
@@ -323,8 +322,7 @@ const formatTime = (seconds: number): string => {
 .cue-meter {
   display: flex;
   align-items: stretch;
-  padding-left: var(--spacing-sm);
-  border-left: 1px solid var(--color-border);
+  flex: 0 0 26px;
 }
 
 .cue-header {

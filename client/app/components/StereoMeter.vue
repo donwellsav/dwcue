@@ -682,4 +682,24 @@ const shortTermLabel = computed(() => {
     flex: 0 0 auto;
   }
 }
+
+// The cue/preview meter has no scale-control slot. It stays vertical, but
+// drops the console-strip chrome and spends its height on signal instead.
+.stereo-meter:not(.stereo-meter--strip) {
+  width: 26px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  gap: 0;
+}
+
+.stereo-meter:not(.stereo-meter--strip) .stereo-meter__body {
+  grid-template-rows: 6px minmax(0, 1fr) 11px;
+  row-gap: 2px;
+}
+
+.stereo-meter:not(.stereo-meter--strip) .stereo-meter__bars {
+  padding: 1px 0;
+}
 </style>
