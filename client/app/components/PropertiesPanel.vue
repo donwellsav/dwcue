@@ -44,6 +44,14 @@
               @click="() => { selectedItem.color = color; handleSave(); }"
             ></button>
           </div>
+          <button
+            v-if="hasSelectedAudioItems"
+            type="button"
+            class="action-btn-small"
+            @click="handleCycleSelectedColors"
+          >
+            {{ t('properties.cycleSelectedColors') }}
+          </button>
         </div>
         
         <div class="property-field">
@@ -309,6 +317,8 @@ const { t } = useLocalization();
 const { levels: outputTargetLevels } = useOutputTarget();
 
 const audioItem = computed(() => selectedItem.value as AudioItem);
+const hasSelectedAudioItems = computed(() =>
+  getSelectedItems().some(item => item.type === 'audio'));
 
 // LTC output is only meaningful when a project-wide LTC device is configured.
 // The checkbox stays disabled until then to prevent users from "enabling"
@@ -650,6 +660,24 @@ const handleSave = async () => {
     originalSnapshot.value = JSON.parse(JSON.stringify(selectedItem.value));
   }
 
+  await saveProject();
+};
+
+const handleCycleSelectedColors = async () => {
+  const items = getSelectedItems().filter(
+    (item): item is AudioItem => item.type === 'audio',
+  );
+  if (items.length === 0) return;
+
+  const currentIndex = PRESET_COLORS.indexOf(items[0]!.color.toUpperCase());
+  const startIndex = (currentIndex + 1) % PRESET_COLORS.length;
+  items.forEach((item, index) => {
+    item.color = PRESET_COLORS[(startIndex + index) % PRESET_COLORS.length]!;
+  });
+
+  if (selectedItem.value) {
+    originalSnapshot.value = JSON.parse(JSON.stringify(selectedItem.value));
+  }
   await saveProject();
 };
 

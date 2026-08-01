@@ -79,8 +79,8 @@
       "description": "At the heart of DonWells Cue is a dedicated, high-performance audio engine written in C++ that talks directly to your sound hardware — WASAPI on Windows, Core Audio on macOS, and ALSA on Linux. Every cue runs as a fully independent playback instance with its own decoder and fade envelope, so playing the same file twice at different volumes always behaves exactly as expected. The engine runs as a standalone server process: it can live inside the desktop app, or run headless on a dedicated backstage machine wired to your audio interfaces."
     },
     "limiter": {
-      "title": "Brick-Wall Limiter & Loudness Targets",
-      "description": "A true brick-wall limiter sits on every output channel, keeping your levels consistent and protecting your hardware and audience from runaway peaks. Choose from built-in output targets that match professional loudness standards — EBU R128, streaming, radio, Netflix and live — and DonWells Cue applies the right ceiling, metering zones and waveform calibration automatically."
+      "title": "True-Peak Limiter & Loudness Targets",
+      "description": "A true-peak limiter catches intersample peaks on every output channel, keeping your levels consistent and protecting your hardware and audience from runaway peaks. Choose from built-in output targets that match professional loudness standards — EBU R128, streaming, radio, Netflix and live — and DonWells Cue applies the right ceiling, metering zones and waveform calibration automatically."
     },
     "meters": {
       "title": "Broadcast-Grade Metering",

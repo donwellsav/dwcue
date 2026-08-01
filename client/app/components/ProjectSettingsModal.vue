@@ -5,7 +5,13 @@
     <div class="project-settings-modal">
         <header class="modal-header">
           <h2>{{ t('settings.title') }}</h2>
-          <button class="close-x" @click="close">✕</button>
+          <button
+            type="button"
+            class="close-x"
+            :aria-label="t('actions.close')"
+            :title="t('actions.close')"
+            @click="close"
+          >✕</button>
         </header>
 
         <!-- Tab Navigation (styled to match the Properties panel) -->
@@ -16,7 +22,7 @@
             :class="['tab-btn', { active: activeTab === tab.id }]"
             @click="activeTab = tab.id"
           >
-            <span class="material-symbols-rounded">{{ tab.icon }}</span>
+            <span class="material-symbols-rounded" aria-hidden="true">{{ tab.icon }}</span>
             <span>{{ tab.label }}</span>
           </button>
         </div>
@@ -27,7 +33,7 @@
             <!-- Audio device (default for cue playback) -->
             <section class="settings-field">
               <label class="settings-label">
-                <span class="material-symbols-rounded">speaker</span>
+                <span class="material-symbols-rounded" aria-hidden="true">speaker</span>
                 {{ t('settings.audioDevice') }}
               </label>
               <select
@@ -46,7 +52,7 @@
             <!-- Preview device (used by headphones button) -->
             <section class="settings-field">
               <label class="settings-label">
-                <span class="material-symbols-rounded">headphones</span>
+                <span class="material-symbols-rounded" aria-hidden="true">headphones</span>
                 {{ t('settings.previewDevice') }}
               </label>
               <select
@@ -65,7 +71,7 @@
             <!-- LTC device (timecode output) -->
             <section class="settings-field">
               <label class="settings-label">
-                <span class="material-symbols-rounded">schedule</span>
+                <span class="material-symbols-rounded" aria-hidden="true">schedule</span>
                 {{ t('settings.ltcDevice') }}
               </label>
               <select
@@ -84,7 +90,7 @@
             <!-- Output Target (loudness platform standard) -->
             <section class="settings-field">
               <label class="settings-label">
-                <span class="material-symbols-rounded">tune</span>
+                <span class="material-symbols-rounded" aria-hidden="true">tune</span>
                 {{ t('settings.outputTarget') }}
               </label>
               <select
@@ -107,7 +113,7 @@
             <!-- Default transition mode -->
             <section class="settings-field">
               <label class="settings-label">
-                <span class="material-symbols-rounded">swap_horiz</span>
+                <span class="material-symbols-rounded" aria-hidden="true">swap_horiz</span>
                 {{ t('settings.transitionMode') }}
               </label>
               <select
@@ -137,7 +143,7 @@
             <!-- Project-wide Stop All fade-out time -->
             <section class="settings-field">
               <label class="settings-label">
-                <span class="material-symbols-rounded">stop_circle</span>
+                <span class="material-symbols-rounded" aria-hidden="true">stop_circle</span>
                 {{ t('settings.stopAllFade') }}
               </label>
               <input
@@ -151,7 +157,7 @@
               <p class="settings-help">{{ t('settings.stopAllFadeHelp') }}</p>
             </section>
 
-            <!-- Import processing is opt-in and independently controlled. -->
+            <!-- Import processing options are independently controlled. -->
             <section class="settings-field">
               <label class="settings-label settings-label--checkbox">
                 <input
@@ -176,7 +182,19 @@
               <p class="settings-help">{{ t('settings.autoMatchLoudnessOnImportHelp') }}</p>
             </section>
 
-            <!-- Disable brickwall limiter -->
+            <section class="settings-field">
+              <label class="settings-label settings-label--checkbox">
+                <input
+                  type="checkbox"
+                  :checked="autoReduceTruePeaksOnImport"
+                  @change="onAutoReduceTruePeaksOnImportChange"
+                />
+                {{ t('settings.autoReduceTruePeaksOnImport') }}
+              </label>
+              <p class="settings-help">{{ t('settings.autoReduceTruePeaksOnImportHelp') }}</p>
+            </section>
+
+            <!-- Disable true-peak limiter -->
             <section class="settings-field">
               <label class="settings-label settings-label--checkbox">
                 <input
@@ -209,7 +227,7 @@
             <!-- Playlist numbering -->
             <section class="settings-field">
               <label class="settings-label">
-                <span class="material-symbols-rounded">format_list_numbered</span>
+                <span class="material-symbols-rounded" aria-hidden="true">format_list_numbered</span>
                 {{ t('settings.indexDisplayStart') }}
               </label>
               <input
@@ -226,7 +244,7 @@
             <!-- Per-device playlist density -->
             <section class="settings-field">
               <div class="settings-label">
-                <span class="material-symbols-rounded">density_medium</span>
+                <span class="material-symbols-rounded" aria-hidden="true">density_medium</span>
                 {{ t('settings.playlistTrackHeight') }}
               </div>
               <div class="track-height-control">
@@ -273,7 +291,7 @@
 
             <section class="settings-field">
               <div class="settings-label">
-                <span class="material-symbols-rounded">waterfall_chart</span>
+                <span class="material-symbols-rounded" aria-hidden="true">waterfall_chart</span>
                 {{ t('settings.playlistWaveforms') }}
               </div>
               <div class="track-height-control">
@@ -293,8 +311,20 @@
             </section>
 
             <section class="settings-field">
+              <label class="settings-label settings-label--checkbox">
+                <input
+                  type="checkbox"
+                  :checked="cycleTrackColors"
+                  @change="onCycleTrackColorsChange"
+                />
+                {{ t('settings.cycleTrackColors') }}
+              </label>
+              <p class="settings-help">{{ t('settings.cycleTrackColorsHelp') }}</p>
+            </section>
+
+            <section class="settings-field">
               <div class="settings-label">
-                <span class="material-symbols-rounded">grid_view</span>
+                <span class="material-symbols-rounded" aria-hidden="true">grid_view</span>
                 {{ t('settings.cartPlayerLayout') }}
               </div>
               <label class="cart-slot-count" for="cart-slot-count">
@@ -358,7 +388,7 @@
             <!-- Meter Display Mode -->
             <section class="settings-field">
               <label class="settings-label">
-                <span class="material-symbols-rounded">bar_chart</span>
+                <span class="material-symbols-rounded" aria-hidden="true">bar_chart</span>
                 {{ t('settings.meterMode') }}
               </label>
               <select
@@ -377,7 +407,7 @@
             <!-- Meter Ballistics -->
             <section class="settings-field">
               <label class="settings-label">
-                <span class="material-symbols-rounded">speed</span>
+                <span class="material-symbols-rounded" aria-hidden="true">speed</span>
                 {{ t('settings.meterBallistics') }}
               </label>
               <select
@@ -397,7 +427,7 @@
             <!-- Time Left countdown colours -->
             <section class="settings-field">
               <div class="settings-label">
-                <span class="material-symbols-rounded">timer</span>
+                <span class="material-symbols-rounded" aria-hidden="true">timer</span>
                 {{ t('settings.countdownColors') }}
               </div>
               <p class="settings-help">{{ t('settings.countdownColorsHelp') }}</p>
@@ -561,6 +591,10 @@ const autoTrimSilenceOnImport = computed(() =>
   (currentProject.value as any)?.settings?.autoTrimSilenceOnImport === true);
 const autoMatchLoudnessOnImport = computed(() =>
   (currentProject.value as any)?.settings?.autoMatchLoudnessOnImport === true);
+const autoReduceTruePeaksOnImport = computed(() =>
+  (currentProject.value as any)?.settings?.autoReduceTruePeaksOnImport !== false);
+const cycleTrackColors = computed(() =>
+  (currentProject.value as any)?.settings?.cycleTrackColors !== false);
 const disableLimiter           = computed(() => !!(currentProject.value as any)?.settings?.disableLimiter);
 const disableSilenceWarning    = computed(() => !!(currentProject.value as any)?.settings?.disableSilenceWarning);
 const defaultTransitionMode    = computed(() => (currentProject.value as any)?.settings?.defaultTransitionMode || 'crossfade');
@@ -726,6 +760,12 @@ function onAutoTrimSilenceOnImportChange(e: Event) {
 }
 function onAutoMatchLoudnessOnImportChange(e: Event) {
   applyPatch({ autoMatchLoudnessOnImport: (e.target as HTMLInputElement).checked });
+}
+function onAutoReduceTruePeaksOnImportChange(e: Event) {
+  applyPatch({ autoReduceTruePeaksOnImport: (e.target as HTMLInputElement).checked });
+}
+function onCycleTrackColorsChange(e: Event) {
+  applyPatch({ cycleTrackColors: (e.target as HTMLInputElement).checked });
 }
 function onDisableLimiterChange(e: Event) {
   applyPatch({ disableLimiter: (e.target as HTMLInputElement).checked });

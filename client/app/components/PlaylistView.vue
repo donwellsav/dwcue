@@ -66,12 +66,14 @@ import {
   DEFAULT_PROJECT_SETTINGS,
   DEFAULT_THEME,
   anchorStartNextMarker,
+  colorForNewAudioItem,
   transitionDefaultsForImport,
 } from '~/types/project';
 import { useLiveplayServer } from '~/composables/useLiveplayServer';
 import { useOutputTarget } from '~/composables/useOutputTarget';
 import {
   applyLoudnessMatch,
+  applyTruePeakCeiling,
   buildWaveformFromChannels,
   trimSilence,
 } from '~/utils/audio';
@@ -356,6 +358,7 @@ const buildSpotifyCueSpecs = async (
   serverPaths: string[],
   settings: ProjectSettings | undefined,
   signal?: AbortSignal,
+  baseColorIndex = 0,
 ): Promise<AudioItem[]> => {
   const cues: AudioItem[] = [];
   for (const [position, serverPath] of serverPaths.entries()) {
@@ -387,6 +390,7 @@ const buildSpotifyCueSpecs = async (
     const cue = {
       ...DEFAULT_AUDIO_ITEM,
       ...transitionDefaultsForImport(settings?.defaultTransitionMode, duration),
+      color: colorForNewAudioItem(settings, baseColorIndex + position),
       uuid,
       index: [0, position],
       displayName: artist && title
@@ -404,19 +408,24 @@ const buildSpotifyCueSpecs = async (
     const trimmed = settings?.autoTrimSilenceOnImport === true
       ? trimSilence(cue)
       : false;
-    if (settings?.autoMatchLoudnessOnImport === true) {
+    const matchLoudness = settings?.autoMatchLoudnessOnImport === true;
+    const reduceTruePeaks = settings?.autoReduceTruePeaksOnImport !== false;
+    if (matchLoudness || reduceTruePeaks) {
       const analysis = trimmed
         ? await server.fetchWaveformByPath(serverPath, 1000, {
             startMs: cue.inPoint * 1000,
             endMs: cue.outPoint * 1000,
           })
         : serverWaveform;
-      applyLoudnessMatch(
-        cue,
-        analysis,
-        outputTargetLevels.value.loudnessTargetLufs,
-        outputTargetLevels.value.limiterCeilingDb,
-      );
+      if (matchLoudness) {
+        applyLoudnessMatch(
+          cue,
+          analysis,
+          outputTargetLevels.value.loudnessTargetLufs,
+          outputTargetLevels.value.limiterCeilingDb,
+        );
+      }
+      if (reduceTruePeaks) applyTruePeakCeiling(cue, analysis);
     }
     anchorStartNextMarker(cue);
     cues.push(cue);
@@ -455,6 +464,10 @@ const importSpotifyTemplate = async (
       project.settings?.autoTrimSilenceOnImport === true,
     autoMatchLoudnessOnImport:
       project.settings?.autoMatchLoudnessOnImport === true,
+    autoReduceTruePeaksOnImport:
+      project.settings?.autoReduceTruePeaksOnImport !== false,
+    cycleTrackColors:
+      project.settings?.cycleTrackColors !== false,
   };
   let templateCommitted = false;
   let activeGroupUuid = '';
@@ -464,6 +477,7 @@ const importSpotifyTemplate = async (
       serverPaths,
       settings,
       signal,
+      getAllItemsFlat(project.items).filter(item => item.type === 'audio').length,
     );
     const persistedCues = cueSpecs.map((cue, position) => {
       const persisted = { ...cue };
@@ -568,6 +582,7 @@ const importSpotifyTemplate = async (
 const prepareImportFromServerPath = async (
   serverPath: string,
   signal?: AbortSignal,
+  colorIndex = 0,
 ): Promise<PreparedImport | null> => {
   if (!currentProject.value) return null;
   try {
@@ -599,6 +614,7 @@ const prepareImportFromServerPath = async (
       audioItem: {
         ...DEFAULT_AUDIO_ITEM,
         ...transitionDefaultsForImport((currentProject.value as any)?.settings?.defaultTransitionMode, duration),
+        color: colorForNewAudioItem(currentProject.value.settings, colorIndex),
         uuid,
         index: [currentProject.value.items.length],
         displayName: fileName.replace(/\.[^/.]+$/, ''),
@@ -631,14 +647,20 @@ const importFromServerPaths = async (
     return { success: false, imported: 0, error: t('spotifyImport.cueImportFailed') };
   }
 
+  const baseColorIndex = getAllItemsFlat(project.items)
+    .filter(item => item.type === 'audio').length;
   const prepared: PreparedImport[] = [];
-  for (const serverPath of serverPaths) {
+  for (const [offset, serverPath] of serverPaths.entries()) {
     if (signal?.aborted ||
         currentProject.value !== project ||
         projectEpoch.value !== epoch) {
       return { success: false, imported: 0, error: t('spotifyImport.cancelled') };
     }
-    const item = await prepareImportFromServerPath(serverPath, signal);
+    const item = await prepareImportFromServerPath(
+      serverPath,
+      signal,
+      baseColorIndex + offset,
+    );
     if (item) prepared.push(item);
   }
   if (prepared.length !== serverPaths.length ||
@@ -758,6 +780,10 @@ const handleDrop = async (e: DragEvent) => {
   background-color: var(--color-background);
 }
 
+.playlist-header {
+  padding-inline: var(--spacing-sm);
+}
+
 .playlist-actions {
   display: flex;
   gap: var(--spacing-sm);
@@ -786,6 +812,7 @@ const handleDrop = async (e: DragEvent) => {
 }
 
 .item-list {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   gap: 2px;

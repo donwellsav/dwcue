@@ -49,6 +49,10 @@
   -webkit-font-smoothing: antialiased;
 }
 
+button > .material-symbols-rounded {
+  vertical-align: middle;
+}
+
 
 // CSS Variables for theming
 :root {
@@ -80,7 +84,7 @@
   --z-tooltip: 3000;
 
   // Layout
-  --playback-controls-height: 108px;
+  --playback-controls-height: 109px;
   --properties-panel-height: 320px;
   --cart-player-width: 33.333%;
   --panel-header-height: 51px;
@@ -190,7 +194,6 @@ body {
 
 .workspace-panel-header__title {
   color: var(--color-text-primary);
-  font-family: 'IBM Plex Sans', sans-serif;
   font-size: 14px;
   font-weight: 650;
   line-height: 1;

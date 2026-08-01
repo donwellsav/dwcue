@@ -100,7 +100,7 @@ import { ref, computed } from 'vue';
 import { useProject } from '~/composables/useProject';
 
 const { t } = useLocalization();
-const { currentProject, addItem } = useProject();
+const { currentProject, addItem, getAllItemsFlat } = useProject();
 
 interface YouTubeVideo {
   id: string;
@@ -227,7 +227,7 @@ const importDownloadedFile = async (fileName: string, filePath: string) => {
   if (!currentProject.value) return;
 
   try {
-    const { DEFAULT_AUDIO_ITEM, transitionDefaultsForImport } = await import('~/types/project');
+    const { DEFAULT_AUDIO_ITEM, colorForNewAudioItem, transitionDefaultsForImport } = await import('~/types/project');
 
     // Get audio duration
     const duration = await getAudioDuration(filePath);
@@ -237,6 +237,10 @@ const importDownloadedFile = async (fileName: string, filePath: string) => {
     const audioItem: any = {
       ...DEFAULT_AUDIO_ITEM,
       ...transitionDefaultsForImport((currentProject.value as any)?.settings?.defaultTransitionMode, duration),
+      color: colorForNewAudioItem(
+        currentProject.value.settings,
+        getAllItemsFlat().filter(item => item.type === 'audio').length,
+      ),
       uuid,
       index: [currentProject.value.items.length],
       displayName: fileName.replace(/\.[^/.]+$/, ''), // Remove extension

@@ -182,7 +182,7 @@ export interface ProjectSettings {
   ltcDevice?: string | null;
   outputTarget?: string;
   outputTargetLevels?: Record<string, unknown>;
-  limiterCeilingDb?: number;
+  limiterCeilingDb?: number; // dBTP; key retained for file/API compatibility
   meterMode?: string;
   defaultTransitionMode?: TransitionMode;
   autoCueNextWithoutEndBehavior?: boolean;
@@ -190,6 +190,8 @@ export interface ProjectSettings {
   uiScrollToPlaying?: boolean;
   autoTrimSilenceOnImport?: boolean;
   autoMatchLoudnessOnImport?: boolean;
+  autoReduceTruePeaksOnImport?: boolean;
+  cycleTrackColors?: boolean;
   disableLimiter?: boolean;
   disableSilenceWarning?: boolean;
   autoSave?: boolean;
@@ -279,7 +281,6 @@ export interface ActiveCue {
 
 // Predefined colors for items
 export const PRESET_COLORS = [
-  '#FF0000', // Red
   '#FF6600', // Orange
   '#FFCC00', // Yellow
   '#99CC00', // Lime
@@ -291,11 +292,18 @@ export const PRESET_COLORS = [
   '#9900FF', // Purple
   '#FF00CC', // Magenta
   '#FF0066', // Pink
-  '#CC0000', // Dark Red
   '#996600', // Brown
   '#666666', // Gray
   '#30303a'  // Dark Gray
 ];
+
+export const colorForNewAudioItem = (
+  settings?: ProjectSettings,
+  sequenceIndex = 0,
+): string =>
+  settings?.cycleTrackColors === false
+    ? PRESET_COLORS[0]!
+    : PRESET_COLORS[sequenceIndex % PRESET_COLORS.length]!;
 
 // Default values
 export const DEFAULT_THEME: Theme = {
@@ -352,6 +360,8 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   meterMode: 'dBFS',
   autoTrimSilenceOnImport: false,
   autoMatchLoudnessOnImport: false,
+  autoReduceTruePeaksOnImport: true,
+  cycleTrackColors: true,
   cartSlotCount: CART_SLOT_COUNT_LIMITS.default,
   countdownColorBands: DEFAULT_COUNTDOWN_COLOR_BANDS.map(band => ({ ...band })),
 };
@@ -404,7 +414,7 @@ export const DEFAULT_CART_AUDIO_ITEM: Partial<AudioItem> = {
 };
 
 export const DEFAULT_GROUP_ITEM: Partial<GroupItem> = {
-  color: PRESET_COLORS[8],
+  color: PRESET_COLORS[7],
   startBehavior: { action: 'play-first' },
   endBehavior: { action: 'nothing' },
   isExpanded: true,

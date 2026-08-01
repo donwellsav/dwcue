@@ -297,8 +297,8 @@ struct OutputTargetLevels {
     float green_min;             // green zone start
     float green_max;             // green zone end
     float yellow_min;            // yellow zone start (== green_max)
-    float yellow_max;            // yellow zone end (== red threshold == hard limit)
-    float limiter_ceiling_db;    // brickwall limiter ceiling for this platform
+    float yellow_max;            // yellow zone end (== red threshold)
+    float limiter_ceiling_db;    // true-peak limiter ceiling in dBTP
     float loudness_target_lufs;  // target for loudness normalisation
     const char* meter_unit;      // preferred unit: "LUFS" | "dBFS" | "dBTP" | "RMS"
     const char* waveform_color;  // CSS hex color for the properties-panel waveform
@@ -1092,6 +1092,8 @@ json ProjectState::default_empty_document() {
             {"cartSlotCount",       16},
             {"autoTrimSilenceOnImport",    false},
             {"autoMatchLoudnessOnImport",  false},
+            {"autoReduceTruePeaksOnImport", true},
+            {"cycleTrackColors",            true},
         }},
         {"createdAt",     ""},
         {"lastModified",  ""},
@@ -3802,7 +3804,7 @@ bool ProjectState::patch_settings(const json& patch) {
     if (ltc_device_changed)     apply_ltc_device_routing();
     if (default_device_changed) apply_default_device_routing();
     if (preview_device_changed) apply_preview_device_change();
-    // Apply brickwall limiter ceiling for the chosen output platform.
+    // Apply true-peak limiter ceiling for the chosen output platform.
     if (output_target_changed || limiter_ceiling_changed)
         engine_.set_master_ceiling_db(new_ceiling_db);
     // Enable/disable the limiter live so the change is heard immediately.

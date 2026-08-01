@@ -14,7 +14,7 @@
 //     into per-device PCM ring buffers. Each device's audio callback drains
 //     its own ring buffer.
 //   * Per-master-channel Limiter and Meter (so multi-device routing all
-//     enjoys brick-wall protection + 3rd-tier metering).
+//     enjoys true-peak protection + 3rd-tier metering).
 //
 // Thread model:
 //   * Control thread (REST/WS handlers in M3, or test driver here in M2) —
@@ -317,7 +317,7 @@ public:
 
     // ---- Master ----------------------------------------------------------
     void set_master_ceiling_db(float db);
-    // Enable/disable the per-master brickwall limiter. Bypass preserves the
+    // Enable/disable the per-master true-peak limiter. Bypass preserves the
     // lookahead delay and detector state, so live transitions do not shift
     // audio in time. Audio-thread safe via an atomic flag.
     void set_limiter_enabled(bool enabled) noexcept;

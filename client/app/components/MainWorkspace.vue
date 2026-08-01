@@ -276,7 +276,7 @@ const limiterCeilingDb = computed(() => {
 });
 const limiterCeilingLabel = computed(() => {
   const db = limiterCeilingDb.value;
-  return `${db > 0 ? '+' : db < 0 ? '−' : ''}${Math.abs(db).toFixed(1)} dBFS`;
+  return `${db > 0 ? '+' : db < 0 ? '−' : ''}${Math.abs(db).toFixed(1)} dBTP`;
 });
 const limiterToggleLabel = computed(() =>
   t(limiterEnabled.value ? 'outputConsole.bypassLimiter' : 'outputConsole.enableLimiter'),
@@ -779,11 +779,11 @@ onUnmounted(() => {
 .output-console__strips {
   display: flex;
   flex: 1;
-  gap: 12px;
+  gap: var(--spacing-sm);
   min-height: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: var(--spacing-sm) 10px 12px;
+  padding: var(--spacing-sm);
   background:
     linear-gradient(90deg, rgba(0, 0, 0, 0.12), transparent 40%, rgba(0, 0, 0, 0.08)),
     color-mix(in srgb, var(--color-background) 88%, black);
@@ -791,8 +791,7 @@ onUnmounted(() => {
 }
 
 .output-console__header {
-  gap: 4px;
-  padding-inline: 6px;
+  gap: var(--spacing-xs);
 }
 
 .output-console__header-controls {
@@ -934,7 +933,19 @@ onUnmounted(() => {
 
 .resize-handle {
   width: 5px;
-  background-color: var(--color-border);
+  background:
+    linear-gradient(
+      to right,
+      transparent 2px,
+      var(--color-border) 2px 3px,
+      transparent 3px
+    ),
+    linear-gradient(
+      to bottom,
+      var(--color-surface) 0 calc(var(--panel-header-height) - 1px),
+      var(--color-border) calc(var(--panel-header-height) - 1px) var(--panel-header-height),
+      var(--color-background) var(--panel-header-height)
+    );
   cursor: col-resize;
   transition: background-color var(--transition-fast);
   position: relative;
@@ -968,22 +979,22 @@ onUnmounted(() => {
   }
 
   &:hover {
-    background-color: var(--color-accent);
+    background: var(--color-accent);
   }
 
   &:active,
   &.dragging {
-    background-color: var(--color-accent);
+    background: var(--color-accent);
   }
 
   &.collapsed-left {
     /* When cart is closed, show handle at left edge */
     position: absolute;
     left: 0;
-    top: 48px;
+    top: var(--panel-header-height);
     bottom: 0;
     width: 8px;
-    background-color: transparent;
+    background: transparent;
 
     /* Collapsed states float ON TOP of a panel, so the grab zone may only grow
        inward — growing outward too would swallow taps on the panel behind it. */
@@ -1000,9 +1011,9 @@ onUnmounted(() => {
       left: 0;
       top: 0;
       bottom: 0;
-      width: 2px;
+      width: 1px;
       background-color: var(--color-border);
-      opacity: 0.5;
+      opacity: 1;
     }
     
     &:hover::after {
@@ -1020,7 +1031,7 @@ onUnmounted(() => {
     top: 0;
     bottom: 0;
     width: 8px;
-    background-color: transparent;
+    background: transparent;
 
     @media (any-pointer: coarse) {
       &::before {
@@ -1035,9 +1046,9 @@ onUnmounted(() => {
       right: 0;
       top: 0;
       bottom: 0;
-      width: 2px;
+      width: 1px;
       background-color: var(--color-border);
-      opacity: 0.5;
+      opacity: 1;
     }
     
     &:hover::after {
@@ -1056,7 +1067,7 @@ onUnmounted(() => {
 
 .cart-toggle {
   position: absolute;
-  top: 7px;
+  top: var(--spacing-sm);
   left: 8px;
   z-index: 20;
   display: grid;

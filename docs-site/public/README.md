@@ -6,7 +6,7 @@
 
 - 🎚 Multi-device output routing (FOH + monitors + comms + record bus, all at once)
 - 🎬 Per-cue SMPTE LTC generator
-- 🔊 Brick-wall master limiter on every output
+- 🔊 True-peak master limiter on every output
 - 📊 Three-stage real-time metering (per-cue, mixer-channel, master)
 - 🌐 REST + WebSocket control surface — run the server on a stage-side machine and operate it remotely from the show laptop
 - 🌍 Localised in **20 languages** with full RTL support
@@ -39,7 +39,7 @@ DonWells Cue is a cue-playback application aimed at theatre, conferences, AV ins
 - **A cart grid** of one-touch buttons mapped to cues for stings, SFX and walk-ons.
 - **A routing matrix** that maps cue source channels → mixer channels → master outputs → physical hardware outputs across one or more sound cards.
 
-At showtime, the operator triggers cues via the UI, the cart grid, configured keyboard shortcuts, MIDI controllers, or HTTP/WebSocket calls from external automation. Each cue plays through its own decoder, runs through a three-tier mixer, and lands on a brick-wall limiter before hitting the DAC.
+At showtime, the operator triggers cues via the UI, the cart grid, configured keyboard shortcuts, MIDI controllers, or HTTP/WebSocket calls from external automation. Each cue plays through its own decoder, runs through a three-tier mixer, and lands on a true-peak limiter before hitting the DAC.
 
 ### Architecture in one diagram
 

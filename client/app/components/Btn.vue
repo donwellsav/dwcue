@@ -31,13 +31,6 @@ withDefaults(defineProps<{
   display: flex;
   align-items: center;
   gap: 6px;
-  cursor: pointer;
-  transition:
-    background-color var(--transition-fast),
-    border-color var(--transition-fast),
-    color var(--transition-fast),
-    transform var(--transition-fast),
-    box-shadow var(--transition-fast);
   color: var(--color-text-primary);
   white-space: nowrap;
   box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
@@ -49,11 +42,6 @@ withDefaults(defineProps<{
   &:hover:not(:disabled) {
     background-color: var(--color-surface-hover);
     border-color: var(--color-border-strong);
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 }
 

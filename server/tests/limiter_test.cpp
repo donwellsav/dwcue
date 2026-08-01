@@ -1,13 +1,16 @@
 // Framework-free checks for live limiter control changes.
 #include "liveplay/audio/limiter.hpp"
+#include "liveplay/audio/true_peak_detector.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <vector>
 
 using liveplay::audio::Limiter;
 using liveplay::audio::Sample;
+using liveplay::audio::TruePeakDetector;
 
 namespace {
 int failures = 0;
@@ -63,21 +66,74 @@ void test_bypass_preserves_latency_and_detector() {
     check(same, "bypass transitions preserve the configured latency");
 
     Limiter hot;
-    hot.configure(1'000, -6.0f, 4.5f, 50.0f); // exactly five samples
-    Sample over[] = {0.25f, 0.25f, 2.0f, 0.25f, 0.25f};
-    hot.process(over, 5, false);
+    hot.configure(1'000, -6.0f, 6.0f, 50.0f);
+    Sample over[] = {0.25f, 0.25f, 2.0f, 0.25f, 0.25f, 0.25f};
+    hot.process(over, 6, false);
     check(hot.gain_reduction_db() == 0.0f,
           "gain-reduction readout is zero while bypassed");
-    Sample release[] = {0.25f};
-    hot.process(release, 1, true);
-    check(std::fabs(release[0]) < 0.1f,
+    Sample release[] = {0.0f, 0.0f, 0.0f};
+    hot.process(release, 3, true);
+    check(std::fabs(release[2]) <= std::pow(10.0f, -6.0f / 20.0f) + 1e-5f,
           "detector keeps tracking while bypassed");
+}
+
+void test_limits_intersample_true_peak() {
+    constexpr float pi = 3.14159265358979323846f;
+    constexpr float ceiling_db = -1.0f;
+    constexpr float ceiling = 0.89125094f;
+    constexpr std::size_t frames = 4'800;
+
+    std::vector<Sample> audio(frames + 512, 0.0f);
+    for (std::size_t i = 0; i < frames; ++i) {
+        // 12 kHz at 48 kHz, 45° phase: sample peaks are -3.01 dBFS while
+        // the reconstructed waveform reaches approximately 0 dBTP.
+        audio[i] = std::sin(0.5f * pi * static_cast<float>(i) + 0.25f * pi);
+    }
+
+    Limiter limiter;
+    limiter.configure(48'000, ceiling_db, 5.0f, 50.0f);
+    limiter.process(audio.data(), audio.size());
+
+    TruePeakDetector detector;
+    float output_true_peak = 0.0f;
+    for (const auto sample : audio) {
+        output_true_peak = std::max(output_true_peak, detector.process(sample));
+    }
+    check(output_true_peak <= ceiling + 1e-4f,
+          "intersample true peak stays below the dBTP ceiling");
+}
+
+void test_gain_envelope_cannot_create_true_peak_overs() {
+    constexpr float ceiling = 0.89125094f; // -1 dBTP
+    std::vector<Sample> audio(1'024, 0.0f);
+    std::uint32_t random = 742'347;
+    for (std::size_t i = 0; i < 512; ++i) {
+        random ^= random << 13;
+        random ^= random >> 17;
+        random ^= random << 5;
+        audio[i] = static_cast<float>(random >> 8) *
+                   (4.0f / 16'777'216.0f) - 2.0f;
+    }
+
+    Limiter limiter;
+    limiter.configure(48'000, -1.0f, 5.0f, 50.0f);
+    limiter.process(audio.data(), audio.size());
+
+    TruePeakDetector detector;
+    float output_true_peak = 0.0f;
+    for (const auto value : audio) {
+        output_true_peak = std::max(output_true_peak, detector.process(value));
+    }
+    check(output_true_peak <= ceiling + 1e-4f,
+          "gain envelope cannot create a true-peak overshoot");
 }
 } // namespace
 
 int main() {
     test_live_ceiling_preserves_delay();
     test_bypass_preserves_latency_and_detector();
+    test_limits_intersample_true_peak();
+    test_gain_envelope_cannot_create_true_peak_overs();
     std::printf("%s (%d failure%s)\n",
                 failures == 0 ? "ALL TESTS PASSED" : "TESTS FAILED",
                 failures, failures == 1 ? "" : "s");

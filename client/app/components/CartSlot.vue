@@ -377,9 +377,10 @@ const importFromServerPath = async (serverPath: string) => {
       console.warn('[cart import] fetchMetadata failed, falling back to 0 duration:', e);
     }
 
-    const { DEFAULT_CART_AUDIO_ITEM } = await import('~/types/project');
+    const { DEFAULT_CART_AUDIO_ITEM, colorForNewAudioItem } = await import('~/types/project');
     const newItem: AudioItem = {
       ...DEFAULT_CART_AUDIO_ITEM,
+      color: colorForNewAudioItem(currentProject.value.settings, props.slot),
       uuid,
       type: 'audio' as const,
       displayName: fileName.replace(/\.[^/.]+$/, ''),
@@ -1321,7 +1322,7 @@ const handleDrop = async (e: DragEvent) => {
   }
 
   .behavior-icon {
-    font-size: 16px !important;
+    font-size: 16px;
   }
 
   /* The footer keeps its own lane so duration and behavior metadata do not

@@ -63,7 +63,7 @@
           :title="groupToggleLabel"
           @click.stop="toggleExpand"
         >
-          <span class="material-symbols-rounded">{{ isExpanded ? 'expand_more' : 'chevron_right' }}</span>
+          <span class="material-symbols-rounded" aria-hidden="true">{{ isExpanded ? 'expand_more' : 'chevron_right' }}</span>
         </button>
 
         <div class="item-arm">
@@ -71,7 +71,8 @@
             v-if="showMode"
             class="play-action"
             :icon="isPlaying ? 'stop' : 'play_arrow'"
-            :highlight-color="isPlaying ? 'var(--color-danger)' : 'var(--state-playing)'"
+            :highlight-color="isPlaying ? 'var(--color-danger)' : (item.type === 'group' ? 'var(--folder-play-action)' : 'var(--state-playing)')"
+            :is-active="isPlaying"
             context="Playlist"
             @click.stop="isPlaying ? handleStop() : handlePlay()"
             :title="isPlaying ? t('actions.stop') : t('actions.play')"
@@ -80,7 +81,7 @@
             v-else
             class="set-next-action"
             icon="fast_forward"
-            highlight-color="var(--state-up-next)"
+            :highlight-color="item.type === 'group' ? 'var(--folder-next-action)' : 'var(--state-up-next)'"
             active-text-color="black"
             :is-active="isManuallyQueued"
             context="Playlist"
@@ -95,10 +96,10 @@
           <span class="item-index">{{ indexDisplay }}</span>
 
           <span v-if="item.type === 'group'" class="item-icon">
-            <span class="material-symbols-rounded">folder</span>
+            <span class="material-symbols-rounded" aria-hidden="true">folder</span>
           </span>
 
-          <span class="item-name" :class="{ 'is-peaking': isPeaking }">{{ item.displayName }}</span>
+          <span class="item-name" :title="item.displayName">{{ item.displayName }}</span>
           <span
             v-if="isPeaking"
             class="material-symbols-rounded peak-warning-icon"
@@ -205,7 +206,7 @@
             v-if="showMode"
             class="set-next-action"
             icon="fast_forward"
-            highlight-color="var(--state-up-next)"
+            :highlight-color="item.type === 'group' ? 'var(--folder-next-action)' : 'var(--state-up-next)'"
             active-text-color="black"
             :is-active="isManuallyQueued"
             context="Playlist"
@@ -218,7 +219,8 @@
             v-else
             class="play-action"
             :icon="isPlaying ? 'stop' : 'play_arrow'"
-            :highlight-color="isPlaying ? 'var(--color-danger)' : 'var(--state-playing)'"
+            :highlight-color="isPlaying ? 'var(--color-danger)' : (item.type === 'group' ? 'var(--folder-play-action)' : 'var(--state-playing)')"
+            :is-active="isPlaying"
             context="Playlist"
             @click.stop="isPlaying ? handleStop() : handlePlay()"
             :title="isPlaying ? t('actions.stop') : t('actions.play')"
@@ -883,7 +885,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 <style scoped>
 .playlist-item {
   --current-playlist-row-height: var(--playlist-row-height, 44px);
-  container-type: inline-size;
+  --folder-play-action: color-mix(in srgb, var(--state-playing) 82%, var(--color-accent));
+  --folder-next-action: color-mix(in srgb, var(--state-up-next) 84%, var(--color-accent));
   border-radius: var(--border-radius-sm);
   margin-bottom: 0;
   transition:
@@ -922,6 +925,16 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
   &.is-group > .item-content {
     background: var(--folder-background);
+  }
+
+  &.is-group > .item-content :deep(.play-action.action-btn--playlist:not(.action-btn--active)) {
+    background-color: color-mix(in srgb, var(--folder-play-action) 14%, var(--color-control));
+    border-color: color-mix(in srgb, var(--folder-play-action) 34%, var(--color-border));
+  }
+
+  &.is-group > .item-content :deep(.set-next-action.action-btn--playlist:not(.action-btn--active)) {
+    background-color: color-mix(in srgb, var(--folder-next-action) 14%, var(--color-control));
+    border-color: color-mix(in srgb, var(--folder-next-action) 34%, var(--color-border));
   }
   
   &.drag-over-top::before {
@@ -995,6 +1008,10 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   z-index: 1;
   color: var(--color-text-primary);
   opacity: var(--playlist-waveform-opacity, 0.1);
+}
+
+.playlist-item.is-playing > .waveform-canvas {
+  opacity: max(var(--playlist-waveform-opacity, 0.1), 0.65);
 }
 
 .item-progress {
@@ -1111,10 +1128,16 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--color-text-primary);
+}
 
-  &.is-peaking {
-    color: var(--color-danger);
-  }
+.playlist-item.is-playing > .item-content .item-name {
+  justify-self: start;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 2px 6px;
+  border-radius: var(--control-radius);
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-background) 88%, transparent);
 }
 
 .peak-warning-icon {
@@ -1220,12 +1243,16 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .group-children {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 2px;
   padding-left: var(--spacing-md);
 }
 
 /* Keep every control available when the resizable playlist is narrow. The
    lanes remain fixed, but state and transport move to a second console row. */
-@container (max-width: 760px) {
+@container (max-width: 560px) {
   .item-left {
     grid-template-columns: 32px minmax(0, 1fr) max-content 32px;
     grid-template-areas:
@@ -1299,7 +1326,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .behavior-icon {
-    font-size: 18px !important;
+    font-size: 18px;
   }
 
   /* Enlarge the remaining action buttons (preview, play/stop, set-next) for

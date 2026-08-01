@@ -11,6 +11,7 @@
 // ============================================================================
 #pragma once
 
+#include "liveplay/audio/true_peak_detector.hpp"
 #include "liveplay/audio/types.hpp"
 
 #include <algorithm>
@@ -138,17 +139,10 @@ private:
     float rms_sq_           = 0.0f;
 
     // True-peak state (audio-thread-only except the enable flag + published
-    // atomics). 12-sample history ring feeding the 4-phase interpolator.
-    static constexpr std::size_t kTpTapsPerPhase = 12;
-    static constexpr std::size_t kTpPhases       = 4;
-    std::atomic<bool>                  true_peak_enabled_{false};
-    std::array<float, kTpTapsPerPhase> tp_hist_{};
-    std::size_t                        tp_hist_pos_ = 0;
-    float                              tp_env_      = 0.0f;
-
-    // Run the oversampler on one input sample; returns the max |value| of
-    // the 4 interpolated output samples.
-    float tp_process_sample(float s) noexcept;
+    // atomics).
+    std::atomic<bool> true_peak_enabled_{false};
+    TruePeakDetector true_peak_detector_{};
+    float            tp_env_ = 0.0f;
 
     // ---- Loudness (K-weighted mean square, BS.1770) -----------------------
     struct Biquad { float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0; };

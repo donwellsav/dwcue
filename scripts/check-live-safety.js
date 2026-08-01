@@ -97,6 +97,7 @@ assert.match(
 );
 const playlistItem = read('client/app/components/PlaylistItem.vue');
 const playlistView = read('client/app/components/PlaylistView.vue');
+const propertiesPanel = read('client/app/components/PropertiesPanel.vue');
 const uiMode = read('client/app/composables/useUiMode.ts');
 assert.match(
   playlistItem,
@@ -150,6 +151,41 @@ assert.match(
 );
 assert.match(
   playlistItem,
+  /\.playlist-item\.is-playing > \.waveform-canvas\s*\{\s*opacity:\s*max\(var\(--playlist-waveform-opacity, 0\.1\), 0\.65\)/,
+  'the playing cue waveform must stay visually prominent',
+);
+assert.match(
+  playlistItem,
+  /<span class="item-name"[^>]*>\{\{ item\.displayName \}\}<\/span>[\s\S]*\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]*color:\s*var\(--color-danger\);[\s\S]*background:\s*color-mix/,
+  'only the playing cue title must use red text with a text-sized contrast plate',
+);
+assert.doesNotMatch(
+  playlistItem,
+  /item-name[^\n]*is-peaking|\.item-name[\s\S]{0,300}&\.is-peaking/,
+  'a true-peak warning must not turn an idle cue title red',
+);
+assert.equal(
+  (playlistItem.match(/:is-active="isPlaying"/g) ?? []).length,
+  2,
+  'both playlist stop buttons must use the active danger fill',
+);
+assert.equal(
+  (playlistItem.match(/item\.type === 'group' \? 'var\(--folder-play-action\)'/g) ?? []).length,
+  2,
+  'folder Play must use its distinct semantic tint in both modes',
+);
+assert.equal(
+  (playlistItem.match(/item\.type === 'group' \? 'var\(--folder-next-action\)'/g) ?? []).length,
+  2,
+  'folder Next must use its distinct semantic tint in both modes',
+);
+assert.match(
+  playlistItem,
+  /--folder-play-action:[^;]+;[\s\S]*--folder-next-action:[^;]+;[\s\S]*&\.is-group > \.item-content :deep\(\.play-action[\s\S]*&\.is-group > \.item-content :deep\(\.set-next-action/,
+  'idle folder transport buttons must remain visibly distinct from track buttons',
+);
+assert.match(
+  playlistItem,
   /--current-playlist-row-height:\s*var\(--playlist-row-height, 44px\)[\s\S]*scroll-margin-top:\s*var\(--current-playlist-row-height\)[\s\S]*--current-playlist-row-height:\s*var\(--folder-playlist-row-height, 60px\)[\s\S]*min-height:\s*var\(--current-playlist-row-height\)[\s\S]*--current-playlist-row-height:\s*var\(--show-playlist-row-height, 68px\)[\s\S]*@container \(max-width: 620px\)/,
   'regular, Show Mode, and folder row heights must control geometry while typical Show Mode widths stay single-line',
 );
@@ -166,6 +202,7 @@ const stereoMeter = read('client/app/components/StereoMeter.vue');
 const volumeSlider = read('client/app/components/VolumeSlider.vue');
 const projectHeader = read('client/app/components/ProjectHeader.vue');
 const projectSettingsModal = read('client/app/components/ProjectSettingsModal.vue');
+const projectStore = read('client/app/composables/useProject.ts');
 assert.match(
   mainWorkspace,
   /const outputPairs = computed[\s\S]{0,1800}pairs\.push\(\{ key: 'main', leftIndex: 0, rightIndex: 1, label: mainLabel \}\);[\s\S]{0,100}pairs\.push\(\.\.\.overridePairs\)/,
@@ -186,6 +223,13 @@ assert.match(
   /class="limiter-ceiling-control"[\s\S]*outputConsole\.ceilingShort[\s\S]*class="limiter-ceiling-input"[\s\S]*min="-60"[\s\S]*max="0"[\s\S]*step="0\.1"[\s\S]*@change="onLimiterCeilingChange"[\s\S]*class="limiter-toggle"[\s\S]*:aria-pressed="!limiterEnabled"[\s\S]*outputConsole\.limiterBypass[\s\S]*@click="toggleLimiter"/,
   'the compact Output header must expose an editable ceiling and direct limiter bypass',
 );
+assert.match(
+  mainWorkspace,
+  /limiterCeilingLabel[\s\S]{0,220}dBTP/,
+  'the limiter ceiling must be presented as true peak (dBTP)',
+);
+const enLocale = JSON.parse(read('client/locales/en.json'));
+assert.equal(enLocale.outputConsole.ceilingInputLabel, 'True-peak limiter ceiling in dBTP');
 assert.match(
   mainWorkspace,
   /patchLimiterSettings\(patch: Record<string, unknown>\)[\s\S]*await server\.patchSettings\(patch\)[\s\S]*saveProject\(\)[\s\S]*function onLimiterCeilingChange[\s\S]*Math\.max\(-60, Math\.min\(0, value\)\)[\s\S]*patchLimiterSettings\(\{ limiterCeilingDb: db \}\)[\s\S]*patchLimiterSettings\(\{ outputTarget: value \}\)/,
@@ -233,7 +277,7 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /&\.collapsed-left\s*\{[\s\S]*left:\s*0;[\s\S]*top:\s*48px;/,
+  /&\.collapsed-left\s*\{[\s\S]*left:\s*0;[\s\S]*top:\s*var\(--panel-header-height\);/,
   'the closed-cart resize edge must start below the fixed header toggle',
 );
 assert.match(
@@ -243,7 +287,7 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /\.workspace-panels\.cart-toggle-visible:not\(\.cart-is-closed\) :deep\(\.cart-header\),[\s\S]*\.workspace-panels\.cart-toggle-visible\.cart-is-closed :deep\(\.playlist-header\)[\s\S]*padding-left:\s*56px[\s\S]*\.cart-toggle\s*\{[\s\S]*top:\s*7px[\s\S]*left:\s*8px[\s\S]*width:\s*36px[\s\S]*height:\s*34px[\s\S]*:focus-visible/,
+  /\.workspace-panels\.cart-toggle-visible:not\(\.cart-is-closed\) :deep\(\.cart-header\),[\s\S]*\.workspace-panels\.cart-toggle-visible\.cart-is-closed :deep\(\.playlist-header\)[\s\S]*padding-left:\s*56px[\s\S]*\.cart-toggle\s*\{[\s\S]*top:\s*var\(--spacing-sm\)[\s\S]*left:\s*8px[\s\S]*width:\s*36px[\s\S]*height:\s*34px[\s\S]*:focus-visible/,
   'the cart toggle must stay in one header position with reserved space and keyboard focus',
 );
 assert.doesNotMatch(
@@ -495,6 +539,26 @@ assert.match(
   /countdownMutationVersion[\s\S]*mutationVersion !== countdownMutationVersion[\s\S]*result === 'failed' && currentProject\.value/,
   'stale countdown saves must not roll back newer settings, and disk-save failures must preserve accepted live settings',
 );
+assert.match(
+  projectSettingsModal,
+  /:checked="autoReduceTruePeaksOnImport"[\s\S]{0,200}@change="onAutoReduceTruePeaksOnImportChange"/,
+  'project settings must expose persisted true-peak reduction',
+);
+assert.match(
+  projectSettingsModal,
+  /:checked="cycleTrackColors"[\s\S]{0,200}@change="onCycleTrackColorsChange"/,
+  'project settings must expose persisted track-color cycling',
+);
+assert.match(
+  projectStore,
+  /case 'waveform_ready':[\s\S]*autoReduceTruePeaksOnImport !== false[\s\S]*applyTruePeakCeiling/,
+  'normal, YouTube, and cart imports must share one-shot true-peak reduction',
+);
+assert.match(
+  projectStore,
+  /catch\(\(e: Error\)[\s\S]*if \(!reduceTruePeaks\) return;[\s\S]*current\.volume !== requestedVolume[\s\S]*applyTruePeakCeiling\(current, built\)/,
+  'failed trimmed-range analysis must conservatively retain true-peak safety without overwriting operator edits',
+);
 
 const transpiledProject = ts.transpileModule(
   read('client/app/types/project.ts'),
@@ -506,12 +570,22 @@ const {
   CART_SLOT_COUNT_LIMITS,
   DEFAULT_COUNTDOWN_COLOR_BANDS,
   DEFAULT_PROJECT_SETTINGS,
+  PRESET_COLORS,
+  colorForNewAudioItem,
   normalizeCartSlotCount,
   normalizeCountdownColorBands,
   countdownColorForSeconds,
 } = projectRuntime.exports;
 assert.deepEqual(CART_SLOT_COUNT_LIMITS, { min: 1, max: 64, default: 16 });
 assert.equal(DEFAULT_PROJECT_SETTINGS.cartSlotCount, 16);
+assert.equal(DEFAULT_PROJECT_SETTINGS.autoReduceTruePeaksOnImport, true);
+assert.equal(DEFAULT_PROJECT_SETTINGS.cycleTrackColors, true);
+assert.equal(PRESET_COLORS.includes('#FF0000'), false);
+assert.equal(PRESET_COLORS.includes('#CC0000'), false);
+assert.equal(colorForNewAudioItem(undefined, 0), PRESET_COLORS[0]);
+assert.equal(colorForNewAudioItem(undefined, 1), PRESET_COLORS[1]);
+assert.equal(colorForNewAudioItem(undefined, PRESET_COLORS.length), PRESET_COLORS[0]);
+assert.equal(colorForNewAudioItem({ cycleTrackColors: false }, 5), PRESET_COLORS[0]);
 assert.equal(normalizeCartSlotCount(undefined), 16);
 assert.equal(normalizeCartSlotCount(999), 64);
 assert.equal(normalizeCartSlotCount(4, [{ slot: 31 }]), 32);
@@ -551,7 +625,25 @@ const transpiledAudio = ts.transpileModule(
 ).outputText;
 const audioRuntime = { exports: {} };
 Function('exports', 'module', transpiledAudio)(audioRuntime.exports, audioRuntime);
-const { dbToConsolePosition, consolePositionToDb } = audioRuntime.exports;
+const {
+  applyTruePeakCeiling,
+  dbToConsolePosition,
+  consolePositionToDb,
+  exceedsTruePeakCeiling,
+} = audioRuntime.exports;
+const peakLimitedItem = { duration: 60, inPoint: 0, outPoint: 60, volume: 1 };
+const peakAnalysis = { analysis_version: 1, true_peak_dbtp: 0.9 };
+assert.equal(applyTruePeakCeiling(peakLimitedItem, peakAnalysis), true);
+assert.ok(Math.abs(peakAnalysis.true_peak_dbtp
+  + 20 * Math.log10(peakLimitedItem.volume) - (-0.1)) < 1e-9);
+assert.equal(applyTruePeakCeiling(peakLimitedItem, peakAnalysis), false);
+assert.equal(exceedsTruePeakCeiling(
+  { ...peakLimitedItem, waveform: { ...peakAnalysis, duration: 60 } },
+  -0.1,
+), false);
+const alreadySafeItem = { volume: 0.5 };
+assert.equal(applyTruePeakCeiling(alreadySafeItem, peakAnalysis), false);
+assert.equal(alreadySafeItem.volume, 0.5);
 const consoleDbValues = [-60, -40, -20, -10, 0, 10, 40];
 const consolePositions = consoleDbValues.map(
   db => dbToConsolePosition(db, -60, 40),
@@ -597,6 +689,11 @@ assert.match(itemRender.slice(decodeFailureStart, naturalEndStart), /return 0;/,
 
 const projectState = read('server/src/core/project_state.cpp');
 const atomicFile = read('server/include/liveplay/util/atomic_file.hpp');
+assert.match(
+  projectState,
+  /"autoReduceTruePeaksOnImport",\s*true[\s\S]*"cycleTrackColors",\s*true/,
+  'fresh server projects must default to true-peak safety and track-color cycling',
+);
 const sequencerStart = projectState.indexOf('void ProjectState::sequencer_loop()');
 const sequencerEnd = projectState.indexOf('void ProjectState::execute_custom_action', sequencerStart);
 const sequencer = projectState.slice(sequencerStart, sequencerEnd);
@@ -1071,15 +1168,66 @@ assert.match(
 );
 const cart = read('client/app/components/CartPlayer.vue');
 const cartSlot = read('client/app/components/CartSlot.vue');
+const youtubeImport = read('client/app/components/YouTubeImportModal.vue');
 const controlConfig = read('client/app/components/ControlConfigModal.vue');
 const midiController = read('client/app/composables/useMidiController.ts');
 const button = read('client/app/components/Btn.vue');
 const actionButton = read('client/app/components/ActionButton.vue');
 const globalStyles = read('client/assets/styles/main.scss');
 assert.match(
+  globalStyles,
+  /--playback-controls-height:\s*109px;[\s\S]*--panel-header-height:\s*51px;/,
+  'workspace bands must include their one-pixel border without squeezing their controls',
+);
+assert.match(
+  projectHeader,
+  /flex:\s*0 0 61px;[\s\S]{0,80}height:\s*61px;[\s\S]*\.header-right\s*\{[\s\S]{0,160}gap:\s*var\(--spacing-sm\);[\s\S]*\.autosave-toggle\s*\{[\s\S]{0,260}padding:\s*4px var\(--spacing-sm\);/,
+  'header controls must share an eight-pixel gutter inside a band tall enough for the clocks',
+);
+assert.match(
+  mainWorkspace,
+  /\.output-console__strips\s*\{[\s\S]{0,220}gap:\s*var\(--spacing-sm\);[\s\S]{0,160}padding:\s*var\(--spacing-sm\);[\s\S]*&\.collapsed-left\s*\{[\s\S]{0,180}top:\s*var\(--panel-header-height\);[\s\S]*\.cart-toggle\s*\{[\s\S]{0,100}top:\s*var\(--spacing-sm\);/,
+  'workspace panel gutters, dividers, and the cart toggle must land on shared header edges',
+);
+assert.match(
+  playlistView,
+  /\.item-list\s*\{\s*container-type:\s*inline-size;/,
+  'playlist rows must share one responsive grid instead of switching layouts at each nesting depth',
+);
+assert.doesNotMatch(
+  playlistItem,
+  /\.playlist-item\s*\{[\s\S]{0,400}container-type:/,
+  'nested playlist rows must not create independent query widths',
+);
+assert.match(
+  playlistItem,
+  /\.group-children\s*\{[\s\S]{0,180}gap:\s*2px;[\s\S]{0,100}padding-top:\s*2px;[\s\S]*@container \(max-width: 560px\)/,
+  'folder children must keep the same row rhythm and only wrap when the wide grid no longer fits',
+);
+assert.match(
   playlistView,
   /v-if="canOnlineImport"[^>]*youtube[\s\S]*v-if="canOnlineImport"[^>]*spotifyImport[\s\S]*canOnlineImport = computed\(\(\) => !!currentProject\.value && server\.isLocalServer\)/,
   'online imports must only be shown for local projects',
+);
+assert.match(
+  playlistView,
+  /prepareImportFromServerPath[\s\S]*color: colorForNewAudioItem\(currentProject\.value\.settings, colorIndex\)[\s\S]*baseColorIndex = getAllItemsFlat\(project\.items\)[\s\S]*item\.type === 'audio'[\s\S]*baseColorIndex \+ offset/,
+  'new playlist imports must receive their ordered palette color',
+);
+assert.match(
+  youtubeImport,
+  /importDownloadedFile[\s\S]*color: colorForNewAudioItem\([\s\S]{0,180}getAllItemsFlat\(\)\.filter\(item => item\.type === 'audio'\)\.length[\s\S]{0,20}\)/,
+  'new YouTube imports must receive their ordered palette color',
+);
+assert.match(
+  cartSlot,
+  /importFromServerPath[\s\S]*color: colorForNewAudioItem\(currentProject\.value\.settings, props\.slot\)/,
+  'new cart imports must receive their slot-ordered palette color',
+);
+assert.match(
+  propertiesPanel,
+  /handleCycleSelectedColors[\s\S]*getSelectedItems\(\)\.filter[\s\S]*item\.type === 'audio'[\s\S]*PRESET_COLORS\.indexOf[\s\S]*items\.forEach[\s\S]*await saveProject\(\)/,
+  'cycling the current selection must recolor selected audio tracks in order and save once',
 );
 assert.doesNotMatch(
   playlistView + button,
@@ -1090,6 +1238,11 @@ assert.match(
   actionButton,
   /v-bind="\$attrs"[\s\S]{0,100}:aria-label="getAccessibleLabel\(\)"[\s\S]{0,180}aria-hidden="true"[\s\S]*attrs\['aria-label'\][\s\S]*attrs\.title/,
   'shared icon actions must use their explicit label or title as an accessible name',
+);
+assert.match(
+  actionButton,
+  /if \(props\.isActive\)[\s\S]*backgroundColor: props\.highlightColor[\s\S]*borderColor: props\.highlightColor/,
+  'active icon actions must render their requested solid highlight fill',
 );
 assert.match(
   playlistItem,
@@ -1123,8 +1276,8 @@ assert.match(
 );
 assert.match(
   playlistView,
-  /buildSpotifyCueSpecs[\s\S]*fetchMetadata\(serverPath, signal\)[\s\S]*fetchWaveformByPath\(serverPath\)[\s\S]*buildWaveformFromChannels[\s\S]*autoTrimSilenceOnImport === true[\s\S]*trimSilence\(cue\)[\s\S]*autoMatchLoudnessOnImport === true[\s\S]*applyLoudnessMatch\([\s\S]*anchorStartNextMarker/,
-  'Spotify template cues must be metadata-named, show-ready, and only import-processed by explicit opt-ins',
+  /buildSpotifyCueSpecs[\s\S]*fetchMetadata\(serverPath, signal\)[\s\S]*fetchWaveformByPath\(serverPath\)[\s\S]*buildWaveformFromChannels[\s\S]*colorForNewAudioItem\(settings, baseColorIndex \+ position\)[\s\S]*autoTrimSilenceOnImport === true[\s\S]*trimSilence\(cue\)[\s\S]*autoMatchLoudnessOnImport === true[\s\S]*autoReduceTruePeaksOnImport !== false[\s\S]*applyTruePeakCeiling\(cue, analysis\)[\s\S]*anchorStartNextMarker/,
+  'Spotify template cues must be metadata-named, show-ready, palette-cycled, and true-peak safe',
 );
 assert.match(
   playlistView,

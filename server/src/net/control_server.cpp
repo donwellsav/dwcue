@@ -2245,7 +2245,7 @@ void ControlServer::install_routes() {
             } catch (const std::exception& e) { return json_err(400, e.what()); }
         });
 
-    // Master brickwall limiter enable/bypass. POST body { "enabled": bool };
+    // Master true-peak limiter enable/bypass. POST body { "enabled": bool };
     // omitting "enabled" toggles the current state (single-button surfaces).
     CROW_ROUTE(app, "/api/master/limiter").methods(crow::HTTPMethod::Get)
         ([this]{ return json_ok(json({{"enabled", engine_.limiter_enabled()}})); });

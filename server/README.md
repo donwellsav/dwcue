@@ -15,7 +15,7 @@ This document is the developer's guide to the server. For end-user docs or the o
 - [Architecture](#architecture)
   - [Three-tier mixer](#three-tier-mixer)
   - [Multi-device routing matrix](#multi-device-routing-matrix)
-  - [Brick-wall master limiter](#brick-wall-master-limiter)
+  - [True-peak master limiter](#true-peak-master-limiter)
   - [Per-cue LTC generator](#per-cue-ltc-generator)
   - [Real-time metering](#real-time-metering)
   - [Manual-stop fade-out contract](#manual-stop-fade-out-contract)
@@ -62,7 +62,8 @@ server/
 │   ├── audio/
 │   │   ├── types.hpp          shared audio types (DeviceId, ChannelIndex, …)
 │   │   ├── meter.hpp          VU + RMS ballistics + atomic publishers
-│   │   ├── limiter.hpp        lookahead brick-wall limiter
+│   │   ├── limiter.hpp        lookahead true-peak limiter
+│   │   ├── true_peak_detector.hpp  BS.1770 4× detector
 │   │   ├── ltc_generator.hpp  procedural SMPTE LTC (24/25/29.97/30, DF + NDF)
 │   │   ├── mixer_channel.hpp  Tier 2: virtual mixer strip
 │   │   ├── playback_item.hpp  Tier 1: per-cue decoder + fade state
@@ -190,7 +191,7 @@ Every cue's audio goes through three explicit tiers, in order, on the engine's r
    ──────                ──────                  ──────
  PlaybackItem  ─send─►  MixerChannel  ─send─►  Master Output Bus  ─hw─►  Device:HwCh
    (one per                (group bus,            (per-channel
-   live cue,               gain/mute/             brick-wall
+   live cue,               gain/mute/             true-peak
    own decoder)            solo/fade)             limiter)
 ```
 
@@ -214,9 +215,9 @@ Example: a stereo MP3 (`L`, `R`) playing on a 4-channel cue can simultaneously f
 
 Mutators: `POST /api/routing/item_to_mixer`, `/mixer_to_master`, `/master_to_device`.
 
-### Brick-wall master limiter
+### True-peak master limiter
 
-[`limiter.hpp`](include/liveplay/audio/limiter.hpp). Defaults: −0.1 dBFS ceiling for the Live output target, 5 ms lookahead (~240 samples at 48 kHz), 50 ms release. `settings.limiterCeilingDb` optionally overrides the selected target in the range −60..0 dBFS. The detector runs a sliding-max peak window with O(1) amortised update; the gain envelope snaps down within the lookahead window and one-pole-releases back to unity. Bypass keeps the detector and lookahead delay moving so live toggles do not shift timing.
+[`limiter.hpp`](include/liveplay/audio/limiter.hpp). Defaults: −0.1 dBTP ceiling for the Live output target, 5 ms lookahead (~240 samples at 48 kHz), 50 ms release. `settings.limiterCeilingDb` optionally overrides the selected target in the range −60..0 dBTP. The limiter reuses the meter's ITU-R BS.1770 4× intersample detector; its sliding maximum drives the lookahead gain envelope with a 0.25 dB internal guard against envelope-created peaks. Bypass keeps both detector and delay moving so live toggles do not shift timing.
 
 ### Per-cue LTC generator
 
@@ -315,7 +316,7 @@ This is the low-level cue surface — for normal use, prefer the project-item su
 | Method · Path | Body | Response |
 |---------------|------|----------|
 | `POST /api/transport/stop_all` | `{ "fade_ms": 0 }` (optional; empty body permitted) | `{ "ok": true }` |
-| `POST /api/master/ceiling` | `{ "db": -0.1 }` | `{ "ok": true, "db": -0.1 }` · updates and broadcasts the open project's override |
+| `POST /api/master/ceiling` | `{ "db": -0.1 }` (dBTP) | `{ "ok": true, "db": -0.1 }` · updates and broadcasts the open project's override |
 | `GET /api/master/gain` | — | `{ "db": float }` |
 | `POST /api/master/gain` | `{ "db": float }` | `{ "ok": true, "db": float }` · also broadcasts `master_gain_changed` |
 | `GET /api/master/channels/<int>/gain` | — | `{ "channel": int, "db": float }` |

@@ -390,8 +390,8 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex: 0 0 60px;
-  height: 60px;
+  flex: 0 0 61px;
+  height: 61px;
   padding: var(--spacing-sm) var(--spacing-md);
   background-color: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
@@ -428,7 +428,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   flex: 0 0 auto;
-  gap: 6px;
+  gap: var(--spacing-sm);
 }
 
 /* Settings and shortcuts are useful, but the live clocks and transport own
@@ -443,7 +443,8 @@ onMounted(() => {
   box-shadow: none;
 }
 
-.header-right :deep(.btn:hover:not(:disabled)) {
+.header-right :deep(.btn:hover:not(:disabled)),
+.autosave-toggle:hover:not(:disabled) {
   color: var(--color-text-primary);
   background-color: var(--color-surface-hover);
   border-color: var(--color-border);
@@ -474,21 +475,9 @@ onMounted(() => {
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--control-radius);
-  padding: 4px 7px;
-  cursor: pointer;
+  padding: 4px var(--spacing-sm);
   color: var(--color-text-secondary);
   font-family: inherit;
-
-  &:hover:not(:disabled) {
-    color: var(--color-text-primary);
-    background-color: var(--color-surface-hover);
-    border-color: var(--color-border);
-  }
-
-  &:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
 }
 
 .autosave-toggle__label {
@@ -532,8 +521,8 @@ onMounted(() => {
   display: flex;
   gap: var(--spacing-xs);
   align-items: stretch;
+  margin-left: calc(-1 * var(--spacing-sm));
   padding-left: var(--spacing-sm);
-  margin-left: 2px;
   border-left: 1px solid var(--color-border);
 }
 

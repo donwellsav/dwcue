@@ -294,6 +294,27 @@ export function applyLoudnessMatch(
   return true;
 }
 
+/** Turn an analysed cue down only as far as needed to meet a true-peak ceiling. */
+export function applyTruePeakCeiling(
+  item: Pick<ProcessableItem, 'volume'>,
+  analysis: MeasuredLoudness | null | undefined,
+  ceilingDbtp = -0.1,
+): boolean {
+  if (analysis?.analysis_version !== 1 ||
+      !Number.isFinite(analysis.true_peak_dbtp) ||
+      !Number.isFinite(ceilingDbtp) ||
+      !Number.isFinite(item.volume) || item.volume <= 0) {
+    return false;
+  }
+  const maxVolume = Math.pow(
+    10,
+    (ceilingDbtp - (analysis.true_peak_dbtp as number)) / 20,
+  );
+  if (item.volume <= maxVolume) return false;
+  item.volume = maxVolume;
+  return true;
+}
+
 export function exceedsTruePeakCeiling(
   item: Pick<ProcessableItem, 'duration' | 'inPoint' | 'outPoint' | 'volume'> &
     { waveform?: MeasuredLoudness & { duration?: number } },
@@ -316,5 +337,5 @@ export function exceedsTruePeakCeiling(
       item.volume <= 0 || !Number.isFinite(limiterCeilingDb)) {
     return false;
   }
-  return (truePeak as number) + 20 * Math.log10(item.volume) > limiterCeilingDb;
+  return (truePeak as number) + 20 * Math.log10(item.volume) > limiterCeilingDb + 0.000001;
 }

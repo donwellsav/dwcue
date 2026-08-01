@@ -55,24 +55,12 @@ const computedStyle = computed(() => {
   background-color: var(--color-control);
   border: 1px solid var(--color-border);
   color: var(--color-text-primary);
-  transition:
-    background-color var(--transition-fast),
-    border-color var(--transition-fast),
-    color var(--transition-fast),
-    transform var(--transition-fast),
-    box-shadow var(--transition-fast);
-  cursor: pointer;
   box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
 
   &:hover:not(:disabled) {
     background-color: var(--color-surface-hover);
     border-color: var(--action-highlight, var(--color-accent));
     color: var(--action-highlight, var(--color-accent));
-  }
-
-  &:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
   }
 }
 

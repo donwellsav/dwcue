@@ -18,7 +18,7 @@ It runs on **Windows, macOS and Linux**, and it's completely free.
 - **🎛 Fire off carts** — a grid of one-touch buttons for stings, SFX, walk-on music and beds. Great for touchscreens; the cart grid can even pop out into its own window.
 - **📺 Show Mode** — switch to a simplified, touch-friendly playback view for the actual performance, so operators can trigger cues without the editing clutter. Each device remembers its own preference.
 - **⏭ Smooth transitions** — automatic advance, crossfades, and radio-style "Start Next" segue markers with an on-screen countdown for seamless back-to-back playback.
-- **🔊 Sounds great, stays safe** — pick an **Output Target** for your show (Broadcast / EBU R128, Streaming, Radio, Netflix / OTT, or Live console) and DonWells Cue sets an appropriate loudness target, a brick-wall limiter to stop clipping, and matching meter and waveform colours automatically.
+- **🔊 Sounds great, stays safe** — pick an **Output Target** for your show (Broadcast / EBU R128, Streaming, Radio, Netflix / OTT, or Live console) and DonWells Cue sets an appropriate loudness target, a true-peak limiter to stop intersample clipping, and matching meter and waveform colours automatically.
 - **📊 See your levels** — real-time metering at every stage (per-cue, per-channel and master), shown in LUFS, dBFS, true-peak or RMS.
 - **🎚 Route anywhere** — send audio to multiple outputs at once (front-of-house, monitors, comms, a record bus…) across one or more sound cards.
 - **🎬 Timecode** — send SMPTE LTC timecode from a cue to keep lighting, video or other systems in sync.

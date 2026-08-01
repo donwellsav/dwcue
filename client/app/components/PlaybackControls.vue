@@ -24,7 +24,7 @@
         <div v-if="previewingItem" class="preview-cue-card">
           <div class="preview-cue-content">
             <div class="preview-cue-header">
-              <span class="preview-cue-name">
+              <span class="preview-cue-name" :title="previewingItem.displayName">
                 <span class="preview-status-pill">{{ t('status.previewing') }}</span>
                 {{ previewingItem.displayName }}
               </span>
@@ -188,6 +188,7 @@ const handlePlayNext = () => {
 
 <style scoped>
 .playback-controls {
+  flex: 0 0 var(--playback-controls-height);
   height: var(--playback-controls-height);
   border-bottom: 1px solid var(--color-border);
   display: flex;
@@ -247,9 +248,6 @@ const handlePlayNext = () => {
     border-color: var(--color-border-strong);
   }
   
-  &:disabled {
-    opacity: 0.5;
-  }
 }
 
 .play-next-btn {
@@ -283,6 +281,7 @@ const handlePlayNext = () => {
 
 .icon {
   font-size: 20px;
+  line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;

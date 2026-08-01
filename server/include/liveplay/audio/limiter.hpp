@@ -1,26 +1,26 @@
 // ============================================================================
 // liveplay/audio/limiter.hpp
 // ----------------------------------------------------------------------------
-// Brick-wall lookahead limiter living on every Master output channel. Stops
-// the engine from producing samples whose magnitude exceeds a configurable
-// ceiling (typically -0.1 dBFS) — replacing the legacy "reduce every cue's
+// True-peak lookahead limiter living on every Master output channel. Uses the
+// same ITU-R BS.1770 4× detector as the output meter to keep the reconstructed
+// waveform below a configurable ceiling (typically -0.1 dBTP) — replacing the
+// legacy "reduce every cue's
 // level just-in-case" hack that DonWells Cue 1.x used.
 //
 // Design:
 //   * Lookahead buffer of L samples (default ~5 ms). The detector sees future
-//     peaks before the delayed signal is output, so the gain envelope can
-//     ramp down in time to catch them.
-//   * Attack ≈ the lookahead time (the detector hits the new target gain by
-//     the time the corresponding sample is output).
+//     peaks before the delayed signal is output.
+//   * Attack snaps to the required gain; lookahead ensures the corresponding
+//     reconstructed peak has not reached the output yet.
 //   * Release: configurable one-pole release on gain reduction.
-//   * Output level is mathematically guaranteed ≤ ceiling for in-range
-//     inputs; for pathological NaN/Inf inputs we sanitise to silence.
+//   * A small detector guard absorbs intersample growth introduced by the
+//     gain envelope itself; pathological NaN/Inf inputs become silence.
 //
-// Per-channel: one instance per channel, no inter-channel linking by default.
-// If you want stereo-linked behaviour, call link_with() to share the envelope.
+// Per-channel: one independent instance per master output channel.
 // ============================================================================
 #pragma once
 
+#include "liveplay/audio/true_peak_detector.hpp"
 #include "liveplay/audio/types.hpp"
 
 #include <atomic>
@@ -37,7 +37,7 @@ public:
 
     // Configure / reconfigure. Call from control thread while paused, or
     // before start. Reallocates the lookahead ring.
-    //   ceiling_db    : output ceiling (must be ≤ 0). Default -0.1 dB.
+    //   ceiling_db    : true-peak ceiling (must be ≤ 0). Default -0.1 dBTP.
     //   lookahead_ms  : detector lookahead (samples buffered). Default 5 ms.
     //   release_ms    : time constant for gain-reduction release.
     void configure(SampleRate sample_rate,
@@ -69,7 +69,8 @@ private:
     float      release_coef_  = 0.0f;
     std::size_t lookahead_    = 0;
 
-    // Sliding peak detector
+    // Sliding maximum of the true-peak detector output.
+    TruePeakDetector  true_peak_detector_{};
     std::vector<float> peak_window_;       // size = lookahead_
     std::size_t        peak_window_pos_ = 0;
     std::size_t        peak_window_max_idx_ = 0;

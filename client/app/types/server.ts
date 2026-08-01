@@ -178,8 +178,8 @@ export interface OutputTargetLevels {
   greenMax:           number;  // green zone end
   yellowMin:          number;  // yellow zone start
   yellowMax:          number;  // yellow zone end
-  redAbove:           number;  // same as yellowMax / hard limit
-  limiterCeilingDb:   number;  // brickwall ceiling for this platform
+  redAbove:           number;  // same as yellowMax; uses meterUnit
+  limiterCeilingDb:   number;  // true-peak ceiling (dBTP) for this platform
   loudnessTargetLufs: number;  // integrated-loudness match target
   meterUnit:          MeterMode;   // recommended meter display unit
   waveformColor:      string;  // CSS hex color for the properties-panel waveform

@@ -34,6 +34,7 @@ import {
 import type { ServerAudioReadiness } from '~/types/server';
 import {
   applyLoudnessMatch,
+  applyTruePeakCeiling,
   buildWaveformFromChannels,
   trimSilence,
 } from '~/utils/audio';
@@ -1118,7 +1119,7 @@ export const useProject = () => {
     if (!currentProject.value) return;
 
     // If this is a brand-new audio item (no waveform yet), mark it so the
-    // waveform_ready handler can run either enabled import operation once.
+    // waveform_ready handler can run enabled import processing once.
     if (item.type === 'audio' && !(item as AudioItem).waveform) {
       _importProcessingPendingUuids.add(item.uuid);
     }
@@ -1586,8 +1587,8 @@ export const useProject = () => {
                 }
 
                 // Import processing only runs for items added in this session
-                // and only on their first waveform. Legacy/missing settings are
-                // deliberately OFF; a regeneration never touches user edits.
+                // and only on their first waveform; a regeneration never
+                // touches user edits.
                 if (_importProcessingPendingUuids.has(patch.item_uuid)) {
                   _importProcessingPendingUuids.delete(patch.item_uuid);
                   if (!hadWaveform) {
@@ -1612,45 +1613,74 @@ export const useProject = () => {
                       : false;
                     let processingChanged = trimmed;
 
-                    if (settings?.autoMatchLoudnessOnImport === true) {
-                      if (!trimmed) {
+                    const matchLoudness = settings?.autoMatchLoudnessOnImport === true;
+                    const reduceTruePeaks = settings?.autoReduceTruePeaksOnImport !== false;
+                    if (!trimmed) {
+                      if (matchLoudness) {
                         processingChanged = applyLoudnessMatch(
                           target as AudioItem,
                           built,
                           loudnessTargetLufs,
                           limiterCeilingDb,
                         ) || processingChanged;
-                      } else {
-                        const requestedInPoint = (target as AudioItem).inPoint;
-                        const requestedOutPoint = (target as AudioItem).outPoint;
-                        const requestedVolume = (target as AudioItem).volume;
-                        const mediaPath = (target as AudioItem).mediaServerPath
-                          || resolveProjectPath((target as AudioItem).mediaPath);
-                        if (mediaPath) {
-                          void server().fetchWaveformByPath(mediaPath, 1000, {
-                            startMs: requestedInPoint * 1000,
-                            endMs: requestedOutPoint * 1000,
-                          }).then((analysis) => {
-                            const current = findItemByUuid(patch.item_uuid);
-                            if (!current || current.type !== 'audio' ||
-                                current.inPoint !== requestedInPoint ||
-                                current.outPoint !== requestedOutPoint ||
-                                current.volume !== requestedVolume) {
-                              return;
-                            }
-                            if (applyLoudnessMatch(
+                      }
+                      if (reduceTruePeaks) {
+                        processingChanged = applyTruePeakCeiling(
+                          target as AudioItem,
+                          built,
+                        ) || processingChanged;
+                      }
+                    } else if (matchLoudness || reduceTruePeaks) {
+                      const requestedInPoint = (target as AudioItem).inPoint;
+                      const requestedOutPoint = (target as AudioItem).outPoint;
+                      const requestedVolume = (target as AudioItem).volume;
+                      const mediaPath = (target as AudioItem).mediaServerPath
+                        || resolveProjectPath((target as AudioItem).mediaPath);
+                      if (mediaPath) {
+                        void server().fetchWaveformByPath(mediaPath, 1000, {
+                          startMs: requestedInPoint * 1000,
+                          endMs: requestedOutPoint * 1000,
+                        }).then((analysis) => {
+                          const current = findItemByUuid(patch.item_uuid);
+                          if (!current || current.type !== 'audio' ||
+                              current.inPoint !== requestedInPoint ||
+                              current.outPoint !== requestedOutPoint ||
+                              current.volume !== requestedVolume) {
+                            return;
+                          }
+                          let changed = false;
+                          if (matchLoudness) {
+                            changed = applyLoudnessMatch(
                               current,
                               analysis,
                               loudnessTargetLufs,
                               limiterCeilingDb,
-                            )) {
-                              void _syncItemsDiffFn();
-                              void saveProject();
-                            }
-                          }).catch((e: Error) => {
-                            console.warn(`[import] loudness analysis failed for ${target.displayName}:`, e);
-                          });
-                        }
+                            );
+                          }
+                          if (reduceTruePeaks) {
+                            changed = applyTruePeakCeiling(current, analysis) || changed;
+                          }
+                          if (changed) {
+                            void _syncItemsDiffFn();
+                            void saveProject();
+                          }
+                        }).catch((e: Error) => {
+                          console.warn(`[import] analysis failed for ${target.displayName}:`, e);
+                          if (!reduceTruePeaks) return;
+                          const current = findItemByUuid(patch.item_uuid);
+                          if (!current || current.type !== 'audio' ||
+                              current.inPoint !== requestedInPoint ||
+                              current.outPoint !== requestedOutPoint ||
+                              current.volume !== requestedVolume) {
+                            return;
+                          }
+                          // ponytail: whole-file fallback may over-attenuate a
+                          // trimmed cue; retry the range if import retry UI lands.
+                          if (applyTruePeakCeiling(current, built)) {
+                            void _syncItemsDiffFn();
+                            void saveProject();
+                          }
+                        });
                       }
                     }
                     // Re-anchor the import-default start-next marker to the

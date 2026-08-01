@@ -10,6 +10,10 @@ namespace liveplay::audio {
 
 namespace {
 constexpr float kMinSignal = 1e-10f;
+// The sample-rate gain envelope can create a reconstructed peak slightly
+// above the detector's input prediction. This 0.25 dB guard keeps the output
+// under the operator's selected dBTP ceiling without changing idle gain.
+constexpr float kTruePeakGuardLin = 0.97162795f;
 
 inline float lin_to_db(float lin) noexcept {
     if (lin <= kMinSignal) return -120.0f;
@@ -37,7 +41,8 @@ void Limiter::configure(SampleRate sample_rate,
 
     const float seconds = std::max(lookahead_ms, 0.1f) * 0.001f;
     lookahead_ = std::max<std::size_t>(
-        1, static_cast<std::size_t>(std::ceil(seconds * static_cast<float>(sample_rate))));
+        TruePeakDetector::kLatencySamples,
+        static_cast<std::size_t>(std::ceil(seconds * static_cast<float>(sample_rate))));
 
     // One-pole release coef: y[n] = α y[n-1] + (1-α) target  with α = exp(-1/(τ·Fs)).
     const float rel_seconds = std::max(release_ms, 1.0f) * 0.001f;
@@ -51,6 +56,7 @@ void Limiter::configure(SampleRate sample_rate,
     peak_window_max_val_ = 0.0f;
     delay_pos_           = 0;
     current_gain_        = 1.0f;
+    true_peak_detector_.reset();
     gain_reduction_db_.store(0.0f, std::memory_order_relaxed);
 }
 
@@ -68,6 +74,7 @@ void Limiter::reset() noexcept {
     peak_window_max_val_ = 0.0f;
     delay_pos_           = 0;
     current_gain_        = 1.0f;
+    true_peak_detector_.reset();
     gain_reduction_db_.store(0.0f, std::memory_order_relaxed);
 }
 
@@ -103,26 +110,28 @@ void Limiter::process(Sample* samples, std::size_t frame_count,
 
     const std::size_t window_size = peak_window_.size();
     const float       ceiling     = ceiling_lin_.load(std::memory_order_acquire);
+    const float       detector_ceiling = ceiling * kTruePeakGuardLin;
     const float       rel         = release_coef_;
 
     for (std::size_t i = 0; i < frame_count; ++i) {
         // Sanitise pathological input.
         float in = samples[i];
         if (!finite_and_finite_enough(in)) in = 0.0f;
-        const float abs_in = std::fabs(in);
+        const float true_peak = true_peak_detector_.process(in);
 
-        // Push |x[n]| into the peak window. Maintain running max in O(1)
+        // Push the reconstructed-waveform peak into the window. Maintain the
+        // running max in O(1)
         // amortised — only recompute on the rare event that the leaving sample
         // was the previous maximum.
         const std::size_t leaving_idx = peak_window_pos_;
         const float leaving_val = peak_window_[leaving_idx];
 
-        peak_window_[leaving_idx] = abs_in;
+        peak_window_[leaving_idx] = true_peak;
         peak_window_pos_ = (peak_window_pos_ + 1) % window_size;
 
-        if (abs_in >= peak_window_max_val_) {
+        if (true_peak >= peak_window_max_val_) {
             // New entry sets a new max.
-            peak_window_max_val_ = abs_in;
+            peak_window_max_val_ = true_peak;
             peak_window_max_idx_ = leaving_idx;
         } else if (leaving_idx == peak_window_max_idx_ &&
                    leaving_val == peak_window_max_val_) {
@@ -130,10 +139,10 @@ void Limiter::process(Sample* samples, std::size_t frame_count,
             recompute_window_max();
         }
 
-        // Target gain ensures detected peak * gain ≤ ceiling.
+        // Target gain keeps the prediction below the guarded ceiling.
         float target_gain = 1.0f;
-        if (peak_window_max_val_ > ceiling) {
-            target_gain = ceiling / peak_window_max_val_;
+        if (peak_window_max_val_ > detector_ceiling) {
+            target_gain = detector_ceiling / peak_window_max_val_;
         }
 
         // Attack: snap immediately downward (lookahead gives time for the

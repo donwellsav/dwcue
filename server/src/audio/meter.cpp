@@ -31,26 +31,6 @@ inline float lin_to_db(float lin) noexcept {
     return 20.0f * std::log10(lin);
 }
 
-// ITU-R BS.1770-5 Annex 2: order-48, 4-phase FIR interpolator. The table is
-// stored row-major (12 taps × 4 phases) to match tp_process_sample().
-const std::array<float, 48>& tp_filter_taps() {
-    static constexpr std::array<float, 48> taps{
-         0.0017089843750f, -0.0291748046875f, -0.0189208984375f, -0.0083007812500f,
-         0.0109863281250f,  0.0292968750000f,  0.0330810546875f,  0.0148925781250f,
-        -0.0196533203125f, -0.0517578125000f, -0.0582275390625f, -0.0266113281250f,
-         0.0332031250000f,  0.0891113281250f,  0.1015625000000f,  0.0476074218750f,
-        -0.0594482421875f, -0.1665039062500f, -0.2003173828125f, -0.1022949218750f,
-         0.1373291015625f,  0.4650878906250f,  0.7797851562500f,  0.9721679687500f,
-         0.9721679687500f,  0.7797851562500f,  0.4650878906250f,  0.1373291015625f,
-        -0.1022949218750f, -0.2003173828125f, -0.1665039062500f, -0.0594482421875f,
-         0.0476074218750f,  0.1015625000000f,  0.0891113281250f,  0.0332031250000f,
-        -0.0266113281250f, -0.0582275390625f, -0.0517578125000f, -0.0196533203125f,
-         0.0148925781250f,  0.0330810546875f,  0.0292968750000f,  0.0109863281250f,
-        -0.0083007812500f, -0.0189208984375f, -0.0291748046875f,  0.0017089843750f,
-    };
-    return taps;
-}
-
 } // namespace
 
 std::optional<MeterBallistics> meter_ballistics_from_preset(std::string_view id) noexcept {
@@ -161,7 +141,7 @@ void Meter::push_block(const Sample* samples, std::size_t frame_count) noexcept 
 
         // True peak: 4× oversample, same ballistics on the TP stream.
         if (tp_on) {
-            const float tp = tp_process_sample(s);
+            const float tp = true_peak_detector_.process(s);
             if (tp > tp_blk_max) tp_blk_max = tp;
             if (tp > tp_env) tp_env = atk * tp_env + (1.0f - atk) * tp;
             else             tp_env = rel * tp_env + (1.0f - rel) * tp;
@@ -225,7 +205,7 @@ void Meter::push_interleaved(const Sample* interleaved,
         rms = rms_alpha * rms + roma * (s * s);
 
         if (tp_on) {
-            const float tp = tp_process_sample(s);
+            const float tp = true_peak_detector_.process(s);
             if (tp > tp_blk_max) tp_blk_max = tp;
             if (tp > tp_env) tp_env = atk * tp_env + (1.0f - atk) * tp;
             else             tp_env = rel * tp_env + (1.0f - rel) * tp;
@@ -307,24 +287,6 @@ void Meter::kw_push_block_sum(float sum_sq, std::uint32_t n) noexcept {
     kw_ms_s_published_.store(loud_s_.mean(), std::memory_order_relaxed);
 }
 
-float Meter::tp_process_sample(float s) noexcept {
-    const auto& h = tp_filter_taps();
-    tp_hist_[tp_hist_pos_] = s;
-    float max_abs = 0.0f;
-    for (std::size_t p = 0; p < kTpPhases; ++p) {
-        float acc = 0.0f;
-        std::size_t idx = tp_hist_pos_;
-        for (std::size_t m = 0; m < kTpTapsPerPhase; ++m) {
-            acc += h[m * kTpPhases + p] * tp_hist_[idx];
-            idx = (idx == 0) ? kTpTapsPerPhase - 1 : idx - 1;
-        }
-        const float a = std::fabs(acc);
-        if (a > max_abs) max_abs = a;
-    }
-    tp_hist_pos_ = (tp_hist_pos_ + 1) % kTpTapsPerPhase;
-    return max_abs;
-}
-
 MeterSnapshot Meter::snapshot() const noexcept {
     MeterSnapshot s;
     s.peak_db     = peak_db_published_.load(std::memory_order_relaxed);
@@ -368,8 +330,7 @@ void Meter::reset() noexcept {
     peak_env_ = 0.0f;
     rms_sq_   = 0.0f;
     tp_env_   = 0.0f;
-    tp_hist_.fill(0.0f);
-    tp_hist_pos_ = 0;
+    true_peak_detector_.reset();
     kw1_z1_ = kw1_z2_ = kw2_z1_ = kw2_z2_ = 0.0f;
     loud_m_.head = loud_m_.count = 0;
     loud_m_.total_sum = 0.0; loud_m_.total_n = 0;
