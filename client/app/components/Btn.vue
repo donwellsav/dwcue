@@ -1,11 +1,10 @@
 <template>
   <button
     class="btn"
-    :class="{ 'btn--youtube': bgStyle === 'youtube' }"
     :disabled="disabled"
     v-bind="$attrs"
   >
-    <span class="material-symbols-rounded">{{ icon }}</span>
+    <span class="material-symbols-rounded" aria-hidden="true">{{ icon }}</span>
     <span>{{ text }}</span>
   </button>
 </template>
@@ -14,10 +13,8 @@
 withDefaults(defineProps<{
   icon: string;
   text: string;
-  bgStyle?: 'default' | 'youtube';
   disabled?: boolean;
 }>(), {
-  bgStyle: 'default',
   disabled: false,
 });
 </script>
@@ -28,7 +25,7 @@ withDefaults(defineProps<{
   padding: 6px var(--spacing-md);
   background-color: var(--color-surface-raised);
   border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-md);
+  border-radius: var(--control-radius);
   font-size: 12px;
   font-weight: 550;
   display: flex;
@@ -39,9 +36,11 @@ withDefaults(defineProps<{
     background-color var(--transition-fast),
     border-color var(--transition-fast),
     color var(--transition-fast),
-    transform var(--transition-fast);
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
   color: var(--color-text-primary);
   white-space: nowrap;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
 
   .material-symbols-rounded {
     font-size: 18px;
@@ -58,19 +57,4 @@ withDefaults(defineProps<{
   }
 }
 
-.btn--youtube {
-  background: linear-gradient(135deg, #FF0000 0%, #CC0000 100%);
-  color: white;
-  border-color: #FF0000;
-
-  &:hover:not(:disabled) {
-    background: linear-gradient(135deg, #CC0000 0%, #990000 100%);
-    border-color: #CC0000;
-  }
-
-  &:disabled {
-    background: linear-gradient(135deg, #666666 0%, #555555 100%);
-    border-color: #666666;
-  }
-}
 </style>

@@ -154,6 +154,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // UI mode ("show mode") sync across windows
   broadcastUiMode: (mode) => ipcRenderer.send('ui-mode-changed', mode),
   onUiModeSet: (callback) => ipcRenderer.on('ui-mode-set', callback),
+  broadcastCartGridLayouts: (layouts) => ipcRenderer.send('cart-grid-layouts-changed', layouts),
+  onCartGridLayoutsSet: (callback) => ipcRenderer.on('cart-grid-layouts-set', callback),
 
   // State viewer - send state updates to main process
   updateAppState: (state) => ipcRenderer.send('update-app-state', state),

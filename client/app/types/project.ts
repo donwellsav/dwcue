@@ -141,9 +141,39 @@ export type PlaybackKeyAction =
 
 // Cart player item
 export interface CartItem {
-  slot: number; // 0-15
+  slot: number; // 0-63
   itemUuid: string;
   index: number[]; // [-1, slot] for API triggering
+}
+
+export const CART_SLOT_COUNT_LIMITS = { min: 1, max: 64, default: 16 } as const;
+
+export function normalizeCartSlotCount(
+  value: unknown,
+  cartItems: readonly Pick<CartItem, 'slot'>[] = [],
+  cartSlotKeys: object = {},
+): number {
+  const numeric = typeof value === 'number' || (typeof value === 'string' && value.trim())
+    ? Number(value)
+    : Number.NaN;
+  const configured = Number.isFinite(numeric)
+    ? Math.min(CART_SLOT_COUNT_LIMITS.max, Math.max(CART_SLOT_COUNT_LIMITS.min, Math.round(numeric)))
+    : CART_SLOT_COUNT_LIMITS.default;
+  let occupied = 0;
+  const includeSlot = (slot: unknown) => {
+    if (typeof slot === 'number' && Number.isInteger(slot)
+      && slot >= 0 && slot < CART_SLOT_COUNT_LIMITS.max) {
+      occupied = Math.max(occupied, slot + 1);
+    }
+  };
+  for (const item of cartItems) includeSlot(item?.slot);
+  for (const slot of Object.keys(cartSlotKeys)) includeSlot(Number(slot));
+  return Math.max(configured, occupied);
+}
+
+export interface CountdownColorBand {
+  startSeconds: number;
+  color: string;
 }
 
 export interface ProjectSettings {
@@ -152,6 +182,7 @@ export interface ProjectSettings {
   ltcDevice?: string | null;
   outputTarget?: string;
   outputTargetLevels?: Record<string, unknown>;
+  limiterCeilingDb?: number;
   meterMode?: string;
   defaultTransitionMode?: TransitionMode;
   autoCueNextWithoutEndBehavior?: boolean;
@@ -162,6 +193,8 @@ export interface ProjectSettings {
   disableLimiter?: boolean;
   disableSilenceWarning?: boolean;
   autoSave?: boolean;
+  countdownColorBands?: CountdownColorBand[];
+  cartSlotCount?: number;
 
   /**
    * Number shown for the first playlist item.
@@ -270,11 +303,57 @@ export const DEFAULT_THEME: Theme = {
   accentColor: '#315FCF'
 };
 
+export const DEFAULT_COUNTDOWN_COLOR_BANDS: CountdownColorBand[] = [
+  { startSeconds: 11, color: '#35A96B' },
+  { startSeconds: 6, color: '#D8AD35' },
+  { startSeconds: 0, color: '#E54855' },
+];
+
+const COUNTDOWN_HEX_COLOR = /^#[0-9a-f]{6}$/i;
+
+export function normalizeCountdownColorBands(value: unknown): CountdownColorBand[] {
+  const source = Array.isArray(value) ? value : DEFAULT_COUNTDOWN_COLOR_BANDS;
+  const byStart = new Map<number, string>();
+
+  for (const raw of source) {
+    if (!raw || typeof raw !== 'object') continue;
+    const start = Number((raw as any).startSeconds);
+    const color = typeof (raw as any).color === 'string'
+      ? (raw as any).color.trim().toUpperCase()
+      : '';
+    if (!Number.isFinite(start) || start < 0 || !COUNTDOWN_HEX_COLOR.test(color)) continue;
+    byStart.set(Math.round(start), color);
+  }
+
+  if (byStart.size === 0) {
+    return DEFAULT_COUNTDOWN_COLOR_BANDS.map(band => ({ ...band }));
+  }
+  if (!byStart.has(0)) {
+    byStart.set(0, DEFAULT_COUNTDOWN_COLOR_BANDS.at(-1)!.color);
+  }
+
+  return [...byStart]
+    .map(([startSeconds, color]) => ({ startSeconds, color }))
+    .sort((a, b) => b.startSeconds - a.startSeconds);
+}
+
+export function countdownColorForSeconds(
+  seconds: number | null,
+  value: unknown,
+): string | null {
+  if (seconds === null || !Number.isFinite(seconds)) return null;
+  const displayedSeconds = Math.max(0, Math.ceil(seconds));
+  return normalizeCountdownColorBands(value)
+    .find(band => displayedSeconds >= band.startSeconds)!.color;
+}
+
 export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   outputTarget: 'live',
   meterMode: 'dBFS',
   autoTrimSilenceOnImport: false,
   autoMatchLoudnessOnImport: false,
+  cartSlotCount: CART_SLOT_COUNT_LIMITS.default,
+  countdownColorBands: DEFAULT_COUNTDOWN_COLOR_BANDS.map(band => ({ ...band })),
 };
 
 export const DEFAULT_AUDIO_ITEM: Partial<AudioItem> = {

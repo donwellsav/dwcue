@@ -60,7 +60,7 @@
         <!-- Cart Slots section -->
         <div class="category-header">{{ t('controls.sectionCartSlots') }}</div>
         <div
-          v-for="slot in 16"
+          v-for="slot in cartSlotCount"
           :key="slot"
           class="action-row keyboard-action-row"
           :class="{
@@ -189,7 +189,7 @@ import {
   type MidiBinding,
   type MidiActionId,
 } from '~/composables/useMidiController';
-import type { PlaybackKeyAction, CartSlotKeyBinding } from '~/types/project';
+import { normalizeCartSlotCount, type PlaybackKeyAction, type CartSlotKeyBinding } from '~/types/project';
 
 const emit = defineEmits<{ close: [] }>();
 
@@ -218,6 +218,11 @@ const {
   resetPlaybackToDefaults,
 } = useCartHotkeys();
 const { saveProject, currentProject } = useProject();
+const cartSlotCount = computed(() => normalizeCartSlotCount(
+  currentProject.value?.settings?.cartSlotCount,
+  currentProject.value?.cartItems ?? [],
+  currentProject.value?.cartSlotKeys ?? {},
+));
 
 const capturingSlot = ref<number | null>(null);
 const capturingKeyAction = ref<PlaybackKeyAction | null>(null);
@@ -414,7 +419,7 @@ const categoryLabelKey = (category: string): string => {
 };
 
 const midiActionsByCategory = (category: string) =>
-  MIDI_ACTIONS.filter(a => a.category === category);
+  MIDI_ACTIONS.filter(a => a.category === category && (a.n === undefined || a.n <= cartSlotCount.value));
 
 const getMidiBinding = (actionId: string): MidiBinding | undefined =>
   midiConfig.value.bindings[actionId];

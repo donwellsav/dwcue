@@ -3,7 +3,7 @@
 // ----------------------------------------------------------------------------
 // Brick-wall lookahead limiter living on every Master output channel. Stops
 // the engine from producing samples whose magnitude exceeds a configurable
-// ceiling (typically -0.3 dBFS) — replacing the legacy "reduce every cue's
+// ceiling (typically -0.1 dBFS) — replacing the legacy "reduce every cue's
 // level just-in-case" hack that DonWells Cue 1.x used.
 //
 // Design:
@@ -37,16 +37,22 @@ public:
 
     // Configure / reconfigure. Call from control thread while paused, or
     // before start. Reallocates the lookahead ring.
-    //   ceiling_db    : output ceiling (must be ≤ 0). Default -0.3 dB.
+    //   ceiling_db    : output ceiling (must be ≤ 0). Default -0.1 dB.
     //   lookahead_ms  : detector lookahead (samples buffered). Default 5 ms.
     //   release_ms    : time constant for gain-reduction release.
     void configure(SampleRate sample_rate,
-                   float ceiling_db   = -0.3f,
+                   float ceiling_db   = -0.1f,
                    float lookahead_ms = 5.0f,
                    float release_ms   = 50.0f);
 
+    // Change only the ceiling. Safe from the control thread while audio is
+    // running; the lookahead/detector state and latency are preserved.
+    void set_ceiling_db(float ceiling_db) noexcept;
+
     // Process one mono buffer in-place. Real-time safe (no allocations).
-    void process(Sample* samples, std::size_t frame_count) noexcept;
+    // Bypass keeps the detector and delay line moving, preserving latency.
+    void process(Sample* samples, std::size_t frame_count,
+                 bool enabled = true) noexcept;
 
     // Current gain reduction in dB, suitable for a UI meter (control thread).
     float gain_reduction_db() const noexcept {
@@ -59,7 +65,7 @@ public:
 
 private:
     SampleRate sample_rate_   = kDefaultMixSampleRate;
-    float      ceiling_lin_   = 1.0f;     // 10^(-0.3/20)
+    std::atomic<float> ceiling_lin_{1.0f};
     float      release_coef_  = 0.0f;
     std::size_t lookahead_    = 0;
 

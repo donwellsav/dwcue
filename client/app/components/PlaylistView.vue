@@ -1,11 +1,11 @@
 <template>
-  <div class="playlist-view">
-    <div class="playlist-header">
-      <h2>{{ t('playlist.title') }}</h2>
+  <div class="playlist-view" :style="playlistRowStyle">
+    <div class="playlist-header workspace-panel-header">
+      <h2 class="workspace-panel-header__title">{{ t('playlist.title') }}</h2>
       <!-- Import / add-group are edit actions — hidden in Show Mode. -->
       <div v-if="!showMode" class="playlist-actions">
         <Btn icon="audio_file" :text="t('playlist.importAudio')" :disabled="!currentProject" @click="handleImport" />
-        <Btn v-if="canOnlineImport" icon="youtube_activity" :text="t('youtube.importFromYouTube')" bg-style="youtube" @click="showYouTubeModal = true" />
+        <Btn v-if="canOnlineImport" icon="youtube_activity" :text="t('youtube.importFromYouTube')" @click="showYouTubeModal = true" />
         <Btn v-if="canOnlineImport" icon="library_music" :text="t('spotifyImport.button')" @click="showSpotifyModal = true" />
         <Btn icon="folder" :text="t('playlist.addGroup')" :disabled="!currentProject" @click="handleAddGroup" />
       </div>
@@ -88,7 +88,12 @@ const {
 const { t } = useLocalization();
 const { levels: outputTargetLevels } = useOutputTarget();
 const { activeCues, nextItemOverrideUuid } = useAudioEngine();
-const { uiMode } = useUiMode();
+const {
+  uiMode,
+  regularPlaylistRowHeight,
+  showPlaylistRowHeight,
+  folderPlaylistRowHeight,
+} = useUiMode();
 const { revealSelection, commitReveal, clearReveals } = usePlaylistReveal();
 const server = useLiveplayServer();
 // Same useState key useProject/useShowControl bind to — watching the uuid (not
@@ -96,6 +101,11 @@ const server = useLiveplayServer();
 // the item object being rebuilt by a server-pushed document.
 const selectedItemUuid = useState<string | null>('selectedItemUuid', () => null);
 const showMode = computed(() => uiMode.value === 'playback');
+const playlistRowStyle = computed(() => ({
+  '--playlist-row-height': `${regularPlaylistRowHeight.value}px`,
+  '--show-playlist-row-height': `${showPlaylistRowHeight.value}px`,
+  '--folder-playlist-row-height': `${folderPlaylistRowHeight.value}px`,
+}));
 const scrollContainer = ref<HTMLElement | null>(null);
 const canOnlineImport = computed(() => !!currentProject.value && server.isLocalServer);
 
@@ -744,23 +754,6 @@ const handleDrop = async (e: DragEvent) => {
   display: flex;
   flex-direction: column;
   background-color: var(--color-background);
-}
-
-.playlist-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--spacing-sm) var(--spacing-md);
-  min-height: 48px;
-  box-sizing: border-box;
-  border-bottom: 1px solid var(--color-border);
-  background-color: var(--color-surface);
-}
-
-.playlist-header h2 {
-  font-size: 14px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
 }
 
 .playlist-actions {

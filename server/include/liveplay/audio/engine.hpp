@@ -146,7 +146,7 @@ struct EngineConfig {
     SampleRate         mix_sample_rate    = kDefaultMixSampleRate;
     FrameCount         render_block       = kDefaultRenderBlock;
     MasterChannelIndex master_channels    = 32;     // logical bus width
-    float              master_ceiling_db  = -0.3f;
+    float              master_ceiling_db  = -0.1f;
 };
 
 // ---------------------------------------------------------------------------
@@ -317,10 +317,9 @@ public:
 
     // ---- Master ----------------------------------------------------------
     void set_master_ceiling_db(float db);
-    // Enable/disable the per-master brickwall limiter. When disabled, master
-    // buffers bypass the limiter entirely so peaks above the ceiling pass
-    // through unmodified. Audio-thread safe via an atomic flag; can be toggled
-    // mid-playback and is reflected on the next rendered block.
+    // Enable/disable the per-master brickwall limiter. Bypass preserves the
+    // lookahead delay and detector state, so live transitions do not shift
+    // audio in time. Audio-thread safe via an atomic flag.
     void set_limiter_enabled(bool enabled) noexcept;
     bool limiter_enabled() const noexcept {
         return limiter_enabled_.load(std::memory_order_acquire);

@@ -7,7 +7,11 @@
         alt="DonWells Cue"
         class="header-logo"
       />
-      <h2 class="project-name" :class="{ 'project-name--hidden': hideTitle }">{{ currentProject?.name || t('project.noProject') }}</h2>
+      <h2
+        class="project-name"
+        :class="{ 'project-name--hidden': hideTitle }"
+        :title="currentProject?.name || t('project.noProject')"
+      >{{ currentProject?.name || t('project.noProject') }}</h2>
       <span
         v-if="currentProject && !autoSaveEnabled && hasUnsavedChanges"
         class="unsaved-pill"
@@ -71,7 +75,11 @@
            LTC output device is configured in Project Settings — otherwise
            it's permanent header clutter that never does anything. -->
       <div class="clock-pair">
-        <div class="digital-clock clock--active">
+        <div class="digital-clock clock--large" :class="primaryActiveCue ? 'clock--active' : 'clock--inactive'">
+          <span class="clock-label">{{ t('project.timeLeft') }}</span>
+          <span class="clock-value" :style="{ color: timeLeftColor ?? undefined }">{{ timeLeft }}</span>
+        </div>
+        <div class="digital-clock clock--large clock--active">
           <span class="clock-label">{{ t('project.clock') }}</span>
           <span class="clock-value">{{ currentTime }}</span>
         </div>
@@ -96,7 +104,7 @@
 <script setup lang="ts">
 import ProjectSettingsModal from './ProjectSettingsModal.vue';
 import Btn from './Btn.vue';
-import type { AudioItem } from '~/types/project';
+import { countdownColorForSeconds, type AudioItem } from '~/types/project';
 
 const { currentProject, findItemByUuid, findItemByIndex, autoSaveEnabled, hasUnsavedChanges, setAutoSave } = useProject();
 const { t } = useLocalization();
@@ -108,6 +116,34 @@ const showProjectSettings = useState('showProjectSettings', () => false);
 
 const isDark = computed(() => currentProject.value?.theme.mode === 'dark');
 const currentTime = ref('00:00:00');
+
+// Match PlaylistView's primary-cue convention: during a seamless advance the
+// newest cue is the one the operator is now following.
+const primaryActiveCue = computed(() => [...activeCues.value.values()].at(-1) ?? null);
+const displayedRemainingSeconds = computed<number | null>(() => {
+  const cue = primaryActiveCue.value;
+  if (!cue
+      || !Number.isFinite(cue.duration)
+      || !Number.isFinite(cue.currentTime)
+      || cue.duration <= 0) {
+    return null;
+  }
+  return Math.max(0, Math.ceil(cue.duration - cue.currentTime));
+});
+const timeLeft = computed(() => {
+  const total = displayedRemainingSeconds.value;
+  if (total === null) return '--:--';
+  const seconds = String(total % 60).padStart(2, '0');
+  const minutes = Math.floor(total / 60) % 60;
+  const hours = Math.floor(total / 3600);
+  return hours
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${seconds}`
+    : `${String(minutes).padStart(2, '0')}:${seconds}`;
+});
+const timeLeftColor = computed(() => countdownColorForSeconds(
+  displayedRemainingSeconds.value,
+  (currentProject.value as any)?.settings?.countdownColorBands,
+));
 
 // ---- Silence warning -------------------------------------------------------
 
@@ -333,9 +369,11 @@ onMounted(() => {
   // Re-place the silence banner whenever the header geometry changes
   // (window resize, sidebar toggles, clock width shifts, …).
   let resizeObserver: ResizeObserver | null = null;
-  if (headerRef.value && typeof ResizeObserver !== 'undefined') {
+  if (typeof ResizeObserver !== 'undefined') {
     resizeObserver = new ResizeObserver(() => recomputeWarningPlacement());
-    resizeObserver.observe(headerRef.value);
+    if (headerRef.value) resizeObserver.observe(headerRef.value);
+    if (leftRef.value) resizeObserver.observe(leftRef.value);
+    if (rightRef.value) resizeObserver.observe(rightRef.value);
   }
 
   onUnmounted(() => {
@@ -352,15 +390,19 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex: 0 0 60px;
+  height: 60px;
   padding: var(--spacing-sm) var(--spacing-md);
   background-color: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
-  min-height: 52px;
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--color-border) 35%, transparent);
 }
 
 .header-left {
   display: flex;
   align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
   gap: var(--spacing-sm);
 }
 
@@ -376,12 +418,35 @@ onMounted(() => {
   letter-spacing: -0.01em;
   color: var(--color-text-primary);
   margin: 0;
+  max-width: clamp(140px, 24vw, 420px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .header-right {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+/* Settings and shortcuts are useful, but the live clocks and transport own
+   this band. Keep these secondary controls quiet until the operator hovers. */
+.header-right :deep(.btn) {
+  min-height: 32px;
+  padding: 5px 8px;
+  color: var(--color-text-secondary);
+  background-color: transparent;
+  border-color: transparent;
+  border-radius: var(--control-radius);
+  box-shadow: none;
+}
+
+.header-right :deep(.btn:hover:not(:disabled)) {
+  color: var(--color-text-primary);
+  background-color: var(--color-surface-hover);
+  border-color: var(--color-border);
 }
 
 /* "Unsaved Changes" pill — styled like the playback status pills (yellow
@@ -391,12 +456,12 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
-  border-radius: 2px;
-  font-size: 14px;
+  border-radius: var(--pill-radius);
+  font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
   flex-shrink: 0;
-  background-color: var(--color-warning);
+  background-color: var(--state-up-next);
   color: black;
 }
 
@@ -405,12 +470,20 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: none;
-  border: none;
-  padding: 0;
+  min-height: 32px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--control-radius);
+  padding: 4px 7px;
   cursor: pointer;
   color: var(--color-text-secondary);
   font-family: inherit;
+
+  &:hover:not(:disabled) {
+    color: var(--color-text-primary);
+    background-color: var(--color-surface-hover);
+    border-color: var(--color-border);
+  }
 
   &:disabled {
     opacity: 0.4;
@@ -459,6 +532,9 @@ onMounted(() => {
   display: flex;
   gap: var(--spacing-xs);
   align-items: stretch;
+  padding-left: var(--spacing-sm);
+  margin-left: 2px;
+  border-left: 1px solid var(--color-border);
 }
 
 .digital-clock {
@@ -468,10 +544,19 @@ onMounted(() => {
   justify-content: center;
   padding: 4px var(--spacing-sm);
   border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-md);
+  border-radius: var(--control-radius);
   background-color: var(--color-control);
   transition: color var(--transition-base), border-color var(--transition-base);
-  min-width: 86px;
+  min-width: 108px;
+  height: 44px;
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.18),
+    0 1px 0 color-mix(in srgb, var(--color-text-primary) 5%, transparent);
+}
+
+.digital-clock.clock--large {
+  min-width: 108px;
+  padding: 5px 10px;
 }
 
 .clock--active {
@@ -501,8 +586,17 @@ onMounted(() => {
   font-family: var(--font-mono);
   font-size: 14px;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
   line-height: 1;
+}
+
+.clock--large .clock-label {
+  font-size: 9px;
+}
+
+.clock--large .clock-value {
+  font-size: 20px;
 }
 
 .silence-warning {
@@ -510,7 +604,7 @@ onMounted(() => {
   /* left + transform are set inline (adaptive placement, see script).
      Vertical centring comes from the flex container's static position. */
   padding: var(--spacing-xs) var(--spacing-lg);
-  border-radius: var(--border-radius-md);
+  border-radius: var(--control-radius);
   font-weight: 700;
   font-size: 16px;
   color: #000;
@@ -540,4 +634,11 @@ onMounted(() => {
 @keyframes flash-slow   { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
 @keyframes flash-medium { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
 @keyframes flash-fast   { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .silence-warning {
+    animation: none !important;
+    opacity: 1;
+  }
+}
 </style>

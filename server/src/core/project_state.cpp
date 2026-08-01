@@ -323,6 +323,13 @@ static json compute_output_target_levels(const json& settings) {
     auto it = kOutputTargets.find(target);
     if (it == kOutputTargets.end()) it = kOutputTargets.find("ebu-r128");
     const auto& lv = it->second;
+    float limiter_ceiling_db = lv.limiter_ceiling_db;
+    if (auto override = settings.find("limiterCeilingDb");
+        override != settings.end() && override->is_number()) {
+        const double requested = override->get<double>();
+        if (std::isfinite(requested) && requested >= -60.0 && requested <= 0.0)
+            limiter_ceiling_db = static_cast<float>(requested);
+    }
     return json{
         {"blueBelow",          lv.blue_below},
         {"greenMin",           lv.green_min},
@@ -330,7 +337,7 @@ static json compute_output_target_levels(const json& settings) {
         {"yellowMin",          lv.yellow_min},
         {"yellowMax",          lv.yellow_max},
         {"redAbove",           lv.yellow_max},
-        {"limiterCeilingDb",   lv.limiter_ceiling_db},
+        {"limiterCeilingDb",   limiter_ceiling_db},
         {"loudnessTargetLufs", lv.loudness_target_lufs},
         {"meterUnit",          lv.meter_unit},
         {"waveformColor",      lv.waveform_color},
@@ -367,6 +374,16 @@ static std::string effective_meter_mode(const json& settings) {
     }
     return compute_output_target_levels(settings)
         .value("meterUnit", std::string{"LUFS"});
+}
+
+static void apply_audio_settings(audio::AudioEngine& engine, const json& settings) {
+    const auto levels = compute_output_target_levels(settings);
+    engine.set_master_ceiling_db(levels.value("limiterCeilingDb", -0.1f));
+    engine.set_limiter_enabled(!settings.value("disableLimiter", false));
+    engine.set_meter_ballistics(meter_ballistics_from_settings(settings));
+    const auto mode = effective_meter_mode(settings);
+    engine.set_true_peak_metering(mode == "dBTP");
+    engine.set_loudness_metering(mode == "LUFS");
 }
 
 } // namespace
@@ -719,6 +736,15 @@ void ProjectState::start_async_mirror() {
     std::lock_guard mirror_lock{mirror_mutex_};
     if (load_thread_.joinable()) load_thread_.join();
 
+    // Apply the new project's output contract before any decoded cue can
+    // become playable; a large project must not inherit the prior ceiling.
+    json settings_snap;
+    {
+        std::lock_guard lock{mutex_};
+        settings_snap = document_.value("settings", json::object());
+    }
+    apply_audio_settings(engine_, settings_snap);
+
     loading_audio_.store(true, std::memory_order_release);
     load_progress_loaded_.store(0, std::memory_order_release);
     load_progress_total_.store(0, std::memory_order_release);
@@ -958,24 +984,6 @@ void ProjectState::start_async_mirror() {
         } catch (const std::exception& e) {
             Logger::error("async mirror threw: {}", e.what());
         }
-        // Apply the output-target brickwall ceiling configured for this project.
-        {
-            json settings_snap;
-            {
-                std::lock_guard lock{mutex_};
-                settings_snap = document_.value("settings", json::object());
-            }
-            const auto levels = compute_output_target_levels(settings_snap);
-            engine_.set_master_ceiling_db(levels.value("limiterCeilingDb", -0.3f));
-            // Honour the per-project "disable limiter" toggle.
-            engine_.set_limiter_enabled(!settings_snap.value("disableLimiter", false));
-            // Apply the project's meter ballistics to every engine meter.
-            engine_.set_meter_ballistics(meter_ballistics_from_settings(settings_snap));
-            // Enable the true-peak / loudness DSP per the display mode.
-            const auto mode = effective_meter_mode(settings_snap);
-            engine_.set_true_peak_metering(mode == "dBTP");
-            engine_.set_loudness_metering(mode == "LUFS");
-        }
         // Honour the project's default output device: re-pin every non-override
         // cue from Main (the OS default device, where ensure_default_routing()
         // above parked them) to the selected device. Previously this ran only
@@ -1057,6 +1065,7 @@ void ProjectState::reset() {
     project_name_ = "Untitled";
     project_file_path_.clear();
     document_ = default_empty_document();
+    apply_audio_settings(engine_, document_["settings"]);
     apply_to_engine_locked();
 }
 
@@ -1080,6 +1089,7 @@ json ProjectState::default_empty_document() {
             {"ltcDevice",           nullptr},
             {"outputTarget",        "live"},
             {"meterMode",           "dBFS"},
+            {"cartSlotCount",       16},
             {"autoTrimSilenceOnImport",    false},
             {"autoMatchLoudnessOnImport",  false},
         }},
@@ -3715,17 +3725,30 @@ bool ProjectState::patch_theme(const json& patch) {
 
 bool ProjectState::patch_settings(const json& patch) {
     if (!patch.is_object()) return false;
+    if (auto ceiling = patch.find("limiterCeilingDb");
+        ceiling != patch.end() && !ceiling->is_null()) {
+        if (!ceiling->is_number()) return false;
+        const double db = ceiling->get<double>();
+        if (!std::isfinite(db) || db < -60.0 || db > 0.0) return false;
+    }
+    if (auto count = patch.find("cartSlotCount");
+        count != patch.end() && !count->is_null()) {
+        if (!count->is_number_integer()) return false;
+        const auto slots = count->get<std::int64_t>();
+        if (slots < 1 || slots > 64) return false;
+    }
     bool ltc_device_changed      = false;
     bool default_device_changed  = false;
     bool preview_device_changed  = false;
     bool output_target_changed   = false;
+    bool limiter_ceiling_changed = false;
     bool limiter_toggle_changed  = false;
     bool limiter_disabled        = false;
     bool ballistics_changed      = false;
     bool meter_mode_changed      = false;
     bool meter_true_peak         = false;
     bool meter_loudness          = false;
-    float new_ceiling_db         = -0.3f;
+    float new_ceiling_db         = -0.1f;
     audio::MeterBallistics new_ballistics{};
     {
         std::lock_guard lock{mutex_};
@@ -3737,6 +3760,13 @@ bool ProjectState::patch_settings(const json& patch) {
             if (k == "defaultOutputDevice") default_device_changed = true;
             if (k == "previewDevice")       preview_device_changed = true;
             if (k == "outputTarget")        output_target_changed  = true;
+            if (k == "limiterCeilingDb") {
+                limiter_ceiling_changed = true;
+                if (v.is_null()) {
+                    document_["settings"].erase(k);
+                    continue;
+                }
+            }
             if (k == "disableLimiter") {
                 limiter_toggle_changed = true;
                 limiter_disabled       = v.is_boolean() ? v.get<bool>() : false;
@@ -3751,9 +3781,9 @@ bool ProjectState::patch_settings(const json& patch) {
             }
             document_["settings"][k] = v;
         }
-        if (output_target_changed) {
+        if (output_target_changed || limiter_ceiling_changed) {
             const auto levels = compute_output_target_levels(document_["settings"]);
-            new_ceiling_db = levels.value("limiterCeilingDb", -0.3f);
+            new_ceiling_db = levels.value("limiterCeilingDb", -0.1f);
             // Keep the embedded outputTargetLevels in sync so every broadcast
             // (settings_patched, full_document) carries the fresh zone colours
             // and ceiling rather than the stale values from before the change.
@@ -3773,7 +3803,8 @@ bool ProjectState::patch_settings(const json& patch) {
     if (default_device_changed) apply_default_device_routing();
     if (preview_device_changed) apply_preview_device_change();
     // Apply brickwall limiter ceiling for the chosen output platform.
-    if (output_target_changed)  engine_.set_master_ceiling_db(new_ceiling_db);
+    if (output_target_changed || limiter_ceiling_changed)
+        engine_.set_master_ceiling_db(new_ceiling_db);
     // Enable/disable the limiter live so the change is heard immediately.
     if (limiter_toggle_changed) engine_.set_limiter_enabled(!limiter_disabled);
     // Retune every meter live so the operator sees the new feel immediately.
@@ -3928,6 +3959,7 @@ bool ProjectState::load_from_json(const json& doc_in) {
     mixer_routes_.clear();
     master_assignments_.clear();
     document_ = default_empty_document();
+    apply_audio_settings(engine_, document_["settings"]);
 
     project_name_ = doc.value("project_name", std::string{"Untitled"});
     if (doc.contains("media_root") && doc["media_root"].is_string()) {

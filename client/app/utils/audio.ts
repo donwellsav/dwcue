@@ -34,6 +34,47 @@ export function linearToDb(linear: number): number {
   return 20 * Math.log10(linear);
 }
 
+// A smooth console-style taper gives most of the physical travel to the
+// useful range around unity while retaining the server's full +40 dB boost.
+// ponytail: fixed taper; make it profile-driven only if hardware fader
+// calibration is added.
+const consoleTaperRaw = (db: number) =>
+  db <= 0
+    ? -Math.log1p(-db / 6)
+    : 0.3 * Math.log1p(db / 6);
+
+const consoleTaperInverse = (value: number) =>
+  value <= 0
+    ? 6 * (1 - Math.exp(-value))
+    : 6 * Math.expm1(value / 0.3);
+
+/** Map dB to bottom-to-top console travel. */
+export function dbToConsolePosition(
+  db: number,
+  minDb = -60,
+  maxDb = 0,
+): number {
+  if (!Number.isFinite(db) || !Number.isFinite(minDb) ||
+      !Number.isFinite(maxDb) || maxDb <= minDb) return 0;
+  const low = consoleTaperRaw(minDb);
+  const span = consoleTaperRaw(maxDb) - low;
+  return Math.max(0, Math.min(1, (consoleTaperRaw(db) - low) / span));
+}
+
+/** Convert bottom-to-top console travel back to dB. */
+export function consolePositionToDb(
+  position: number,
+  minDb = -60,
+  maxDb = 0,
+): number {
+  if (!Number.isFinite(position) || !Number.isFinite(minDb) ||
+      !Number.isFinite(maxDb) || maxDb <= minDb) return minDb;
+  const low = consoleTaperRaw(minDb);
+  const raw = low + Math.max(0, Math.min(1, position)) *
+    (consoleTaperRaw(maxDb) - low);
+  return Math.max(minDb, Math.min(maxDb, consoleTaperInverse(raw)));
+}
+
 /**
  * Estimate audio level at current playback position
  * Combines volume setting with waveform data

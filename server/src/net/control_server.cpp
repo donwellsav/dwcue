@@ -38,6 +38,7 @@
 #include <atomic>
 #include <charconv>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstdlib>
 #include <cstring>
@@ -2202,8 +2203,22 @@ void ControlServer::install_routes() {
         ([this](const crow::request& req){
             try {
                 auto j = json::parse(req.body);
-                engine_.set_master_ceiling_db(j.value("db", -0.3f));
-                return json_ok(json({{"ok", true}}));
+                if (!j.contains("db") || !j["db"].is_number())
+                    return json_err(400, "db must be a number between -60 and 0");
+                const double db = j["db"].get<double>();
+                if (!std::isfinite(db) || db < -60.0 || db > 0.0)
+                    return json_err(400, "db must be a finite number between -60 and 0");
+                if (!state_.patch_settings(json{{"limiterCeilingDb", db}}))
+                    return json_err(400, "invalid limiter ceiling");
+                auto settings = state_.full_document()["settings"];
+                broadcast_doc_patch(json{
+                    {"type", "doc_patch"}, {"op", "settings_patched"},
+                    {"settings", settings},
+                });
+                return json_ok(json({
+                    {"ok", true},
+                    {"db", settings["outputTargetLevels"].value("limiterCeilingDb", -0.1f)},
+                }));
             } catch (const std::exception& e) { return json_err(400, e.what()); }
         });
 
@@ -3796,7 +3811,10 @@ void ControlServer::install_routes() {
                 }
                 Logger::api_request("Client ({}) -> Server ({}) : POST /api/project/cart slot={} itemUuid='{}'",
                                     req.remote_ip_address, impl_->server_addr, slot, uuid);
-                state_.set_cart_slot(slot, uuid);
+                if (!state_.set_cart_slot(slot, uuid)) {
+                    Logger::warn("POST /api/project/cart — slot {} is outside 0..63", slot);
+                    return json_err(400, "slot must be between 0 and 63");
+                }
                 Logger::api_response("Client ({}) <- Server ({}) : POST /api/project/cart OK — slot={} uuid='{}'",
                                      req.remote_ip_address, impl_->server_addr, slot, uuid);
                 broadcast_doc_patch(json{
@@ -3916,7 +3934,8 @@ void ControlServer::install_routes() {
                 auto patch = json::parse(req.body);
                 Logger::api_request("Client ({}) -> Server ({}) : PATCH /api/project/settings",
                                     req.remote_ip_address, impl_->server_addr);
-                state_.patch_settings(patch);
+                if (!state_.patch_settings(patch))
+                    return json_err(400, "invalid project settings");
                 auto settings = state_.full_document()["settings"];
                 Logger::api_response("Client ({}) <- Server ({}) : PATCH /api/project/settings OK",
                                      req.remote_ip_address, impl_->server_addr);

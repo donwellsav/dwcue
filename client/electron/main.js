@@ -818,15 +818,12 @@ async function startLiveplayServerOnce() {
     return;
   }
 
-  // The server is launched as a normal application with its own console
-  // window (Windows) or its own Terminal window (macOS) so the user can
-  // see it in the taskbar/dock and stop it directly. We pass --pidfile so
-  // the server writes its real PID to the lockfile — necessary on Windows
-  // because `cmd /c start` returns the PID of cmd.exe, not the server.
+  // Launch detached and headless. The server writes its real PID to the
+  // lockfile and persists logs under its state directory.
   const lockPath = liveplayLockPath();
   const instanceToken = crypto.randomBytes(16).toString('hex');
 
-  console.log('[liveplay-server] launching (visible console)', exePath, 'on port', cfg.localPort);
+  console.log('[liveplay-server] launching in background', exePath, 'on port', cfg.localPort);
   const serverArgs = [
     '--port',           String(cfg.localPort),
     '--pidfile',        lockPath,
@@ -851,30 +848,8 @@ async function startLiveplayServerOnce() {
           detached: true,
         },
       );
-    } else if (process.platform === 'darwin') {
-      // Open a Terminal.app window that runs the server. Quoting is fiddly
-      // because the AppleScript is one string — escape the path manually.
-      const shellQuote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
-      const cmdLine = [exePath, ...serverArgs].map(shellQuote).join(' ');
-      // Multi-statement AppleScript: open the window then activate so
-      // Terminal comes to the foreground rather than opening silently
-      // behind the DonWells Cue window.
-      const appleScript = [
-        'tell application "Terminal"',
-        `  do script "${cmdLine.replace(/"/g, '\\"')}"`,
-        '  activate',
-        'end tell',
-      ].join('\n');
-      launcher = spawn(
-        'osascript',
-        ['-e', appleScript],
-        { stdio: 'ignore', detached: true },
-      );
     } else {
-      // Linux / other POSIX: spawn directly. If the user launched the
-      // Electron app from a terminal, the server inherits that terminal
-      // and is visible. If launched from a desktop launcher, there's no
-      // console — best-effort.
+      // macOS / other POSIX: spawn directly without opening a terminal.
       launcher = spawn(exePath, serverArgs, {
         cwd: path.dirname(exePath),
         stdio: 'ignore',
@@ -894,8 +869,8 @@ async function startLiveplayServerOnce() {
     notifyServerStateChange();
   });
 
-  // The spawn handle we hold is either cmd.exe (Windows), osascript (macOS),
-  // or the server itself (Linux). We don't track its lifetime — the real
+  // The spawn handle we hold is either cmd.exe (Windows) or the server itself
+  // (POSIX). We don't track its lifetime — the real
   // server's PID arrives via the pidfile within ~1 s. unref() so Electron
   // can quit independently.
   try { launcher.unref(); } catch {}
@@ -931,13 +906,11 @@ async function pollPidfileForServerPid(
     await new Promise(r => setTimeout(r, 150));
   }
   console.warn('[liveplay-server] pidfile did not appear at', lockPath,
-               '— server may have failed to launch (check the console window).');
+               '— server may have failed to launch (check the server log).');
   return null;
 }
 
-// Stop the local server. Since the server now always runs as an external
-// process (visible terminal, written PID via pidfile), we only have a PID
-// to work with — there is no ChildProcess handle.
+// Stop the detached local server by its verified pidfile identity.
 async function stopVerifiedLiveplayServer(identity) {
   if (!identity) return true;
   console.log('[liveplay-server] stopping pid', identity.pid);
@@ -1103,7 +1076,7 @@ ipcMain.handle('liveplay-server:ensure-running', async (event) => {
   try { await startLiveplayServer(); }
   catch (e) { return { ok: false, port: cfg.localPort, error: String(e) }; }
 
-  // Poll health. The detached console process needs a moment to bind.
+  // Poll health. The detached server process needs a moment to bind.
   const deadline = Date.now() + 10000;
   while (Date.now() < deadline) {
     const lock = readLiveplayLock();
@@ -2967,6 +2940,22 @@ ipcMain.on('ui-mode-changed', (event, mode) => {
     if (win.webContents.id === event.sender.id) continue;
     if (win.webContents && !win.webContents.isDestroyed()) {
       win.webContents.send('ui-mode-set', mode);
+    }
+  }
+});
+
+ipcMain.on('cart-grid-layouts-changed', (event, layouts) => {
+  try {
+    requireTrustedIpc(event);
+    requireIpcString(layouts, 'layouts', 4096);
+  } catch (error) {
+    console.warn('[cart-grid-layouts-changed] rejected event:', error.message);
+    return;
+  }
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.webContents.id === event.sender.id) continue;
+    if (win.webContents && !win.webContents.isDestroyed()) {
+      win.webContents.send('cart-grid-layouts-set', layouts);
     }
   }
 });

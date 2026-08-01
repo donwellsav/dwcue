@@ -1,7 +1,12 @@
 <template>
-  <div class="cart-player" ref="cartPlayerRef" :class="{ 'show-mode': showMode }">
-    <div class="cart-header">
-      <h2>{{ t('cart.title') }}</h2>
+  <div class="cart-player" :class="{ 'show-mode': showMode }" :style="cartGridStyle">
+    <div class="cart-header workspace-panel-header">
+      <div class="cart-header__copy">
+        <h2 class="workspace-panel-header__title">{{ t('cart.title') }}</h2>
+        <span v-if="!showMode" id="cart-load-hint" class="cart-header__hint">
+          {{ t('cart.clickToImport') }}
+        </span>
+      </div>
       <div class="cart-header-actions">
         <Btn
           v-if="!isDetachedWindow"
@@ -19,11 +24,12 @@
       </div>
     </div>
 
-    <div class="cart-grid" :class="gridClass">
+    <div class="cart-grid">
       <CartSlot
-        v-for="slot in 16"
+        v-for="slot in cartSlotCount"
         :key="slot"
         :slot="slot - 1"
+        :max-slot="cartSlotCount - 1"
         :item="getCartItem(slot - 1)"
         :keyLabel="getKeyLabel(slot - 1)"
       />
@@ -32,7 +38,8 @@
 </template>
 
 <script setup lang="ts">
-import type { AudioItem } from '~/types/project';
+import { normalizeCartSlotCount, type AudioItem } from '~/types/project';
+import type { CartGridProfile } from '~/composables/useUiMode';
 import { formatKeyLabel } from '~/composables/useCartHotkeys';
 import Btn from './Btn.vue';
 
@@ -45,8 +52,27 @@ const { getCartItem } = useCartItems();
 const { keyMappings, mount: mountHotkeys, unmount: unmountHotkeys } = useCartHotkeys();
 const { mount: mountMidi, unmount: unmountMidi } = useMidiController();
 const { t } = useLocalization();
-const { uiMode } = useUiMode();
+const { uiMode, cartGridLayouts } = useUiMode();
 const showMode = computed(() => uiMode.value === 'playback');
+const cartSlotCount = computed(() => normalizeCartSlotCount(
+  currentProject.value?.settings?.cartSlotCount,
+  currentProject.value?.cartItems ?? [],
+  currentProject.value?.cartSlotKeys ?? {},
+));
+const CART_GRID_GAP_PX = 8; // Matches --spacing-sm used by .cart-grid.
+const cartGridProfile = computed<CartGridProfile>(() => {
+  if (props.isDetachedWindow) return showMode.value ? 'detachedShow' : 'detachedRegular';
+  return showMode.value ? 'attachedShow' : 'attachedRegular';
+});
+const cartGridStyle = computed(() => {
+  const layout = cartGridLayouts.value[cartGridProfile.value];
+  const rowPercent = 100 / layout.rows;
+  const gapOffset = CART_GRID_GAP_PX * (layout.rows - 1) / layout.rows;
+  return {
+    '--cart-columns': String(layout.columns),
+    '--cart-card-row-height': `max(${layout.minHeight}px, calc(${rowPercent}% - ${gapOffset}px))`,
+  };
+});
 
 const handleDetach = () => {
   if (!currentProject.value || !import.meta.client || !window.electronAPI) return;
@@ -56,27 +82,6 @@ const handleDetach = () => {
 const handleAttach = () => {
   if (!import.meta.client || !window.electronAPI) return;
   window.electronAPI.attachCartPlayerWindow();
-};
-
-const cartPlayerRef = ref<HTMLElement | null>(null);
-const gridClass = ref('grid-cols-2');
-
-// Watch for resize and adjust grid columns
-const updateGridColumns = () => {
-  if (!cartPlayerRef.value) return;
-
-  const width = cartPlayerRef.value.offsetWidth;
-
-  // Adjust grid columns based on width
-  if (width < 500) {
-    gridClass.value = 'grid-cols-2';
-  } else if (width < 800) {
-    gridClass.value = 'grid-cols-2';
-  } else if (width < 1100) {
-    gridClass.value = 'grid-cols-3';
-  } else {
-    gridClass.value = 'grid-cols-4';
-  }
 };
 
 const getKeyLabel = (slotIndex: number): string => {
@@ -107,24 +112,12 @@ onMounted(() => {
   if (import.meta.client) {
     mountHotkeys();
     mountMidi();
-    // Initial setup
-    updateGridColumns();
     if (props.isDetachedWindow) window.addEventListener('keydown', handleCartKeydown);
-
-    // Watch for resize
-    const resizeObserver = new ResizeObserver(() => {
-      updateGridColumns();
-    });
-
-    if (cartPlayerRef.value) {
-      resizeObserver.observe(cartPlayerRef.value);
-    }
 
     onUnmounted(() => {
       unmountHotkeys();
       unmountMidi();
       if (props.isDetachedWindow) window.removeEventListener('keydown', handleCartKeydown);
-      resizeObserver.disconnect();
     });
   }
 });
@@ -139,21 +132,18 @@ onMounted(() => {
   background-color: var(--color-background);
 }
 
-.cart-header {
+.cart-header__copy {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--spacing-sm) var(--spacing-md);
-  min-height: 48px;
-  box-sizing: border-box;
-  border-bottom: 1px solid var(--color-border);
-  background-color: var(--color-surface);
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
-.cart-header h2 {
-  font-size: 14px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
+.cart-header__hint {
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .cart-header-actions {
@@ -164,29 +154,13 @@ onMounted(() => {
 
 .cart-grid {
   flex: 1;
+  min-height: 0;
   display: grid;
-  grid-auto-rows: minmax(88px, 1fr);
+  grid-template-columns: repeat(var(--cart-columns, 2), minmax(0, 1fr));
+  grid-auto-rows: var(--cart-card-row-height, 88px);
   gap: var(--spacing-sm);
   padding: var(--spacing-sm);
   overflow-y: auto;
   align-content: start;
-
-  &.grid-cols-2 {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  &.grid-cols-3 {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  &.grid-cols-4 {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}
-
-/* Show Mode — taller cart tiles so the enlarged play/stop controls and
-   3-line names have room to breathe on a touch screen. */
-.cart-player.show-mode .cart-grid {
-  grid-auto-rows: minmax(150px, 1fr);
 }
 </style>

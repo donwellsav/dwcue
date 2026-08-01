@@ -173,7 +173,7 @@ The component tree is intentionally flat — every SFC lives directly in [`compo
 - `MainWorkspace.vue` — top-level layout once a project is loaded.
 - `PlaybackControls.vue`, `ActiveCueItem.vue` — top-of-screen transport.
 - `PlaylistView.vue`, `PlaylistItem.vue` — recursive playlist tree.
-- `CartPlayer.vue`, `CartSlot.vue` — 16-slot cart grid (cart-player can pop out into its own window).
+- `CartPlayer.vue`, `CartSlot.vue` — configurable 1–64 slot cart grid (cart-player can pop out into its own window).
 - `PropertiesPanel.vue` — properties for the selected item (gain, fades, behaviours, ducking).
 - `WaveformCanvas.vue` — canvas-rendered waveform fetched from `GET /api/waveform/<cueId>`.
 - `WaveformTrimmer.vue` — interactive in/out trimming + normalise.

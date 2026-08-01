@@ -5,9 +5,20 @@
        socket drops — ahead of the modal's grace period — so a brief blip is
        still visible to anyone watching, without stealing the whole screen. -->
   <transition name="csp-fade">
-    <div v-if="!connected" class="conn-pill" :class="{ 'conn-pill--lost': lost }" :title="title">
-      <span class="material-symbols-rounded conn-pill__icon">sync</span>
-      <span class="conn-pill__label">{{ t('connectionLost.pill') }}</span>
+    <div
+      v-if="!connected"
+      class="conn-pill"
+      :class="{ 'conn-pill--lost': lost }"
+      :title="title"
+      role="status"
+      aria-live="polite"
+    >
+      <span
+        class="material-symbols-rounded conn-pill__icon"
+        :class="{ 'is-spinning': !lost }"
+        aria-hidden="true"
+      >{{ lost ? 'cloud_off' : 'sync' }}</span>
+      <span class="conn-pill__label">{{ lost ? t('connectionLost.title') : t('connectionLost.pill') }}</span>
     </div>
   </transition>
 </template>
@@ -32,7 +43,7 @@ const title = computed(() =>
   padding: 4px 10px;
   /* Matches Btn and the unsaved-changes pill next to it — the header is all
      2px corners, and a fully-rounded pill reads as a foreign element. */
-  border-radius: var(--border-radius-sm);
+  border-radius: var(--pill-radius);
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
@@ -50,13 +61,14 @@ const title = computed(() =>
 
 .conn-pill__icon {
   font-size: 15px;
+}
+.conn-pill__icon.is-spinning {
   animation: conn-spin 1.1s linear infinite;
 }
 @keyframes conn-spin { to { transform: rotate(360deg); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .conn-pill__icon { animation: conn-pulse 1.4s ease-in-out infinite; }
-  @keyframes conn-pulse { 50% { opacity: 0.3; } }
+  .conn-pill__icon { animation: none; }
 }
 
 .csp-fade-enter-active, .csp-fade-leave-active { transition: opacity 0.2s ease; }

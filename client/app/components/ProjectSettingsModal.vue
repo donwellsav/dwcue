@@ -222,6 +222,117 @@
               />
               <p class="settings-help">{{ t('settings.indexDisplayStartHelp') }}</p>
             </section>
+
+            <!-- Per-device playlist density -->
+            <section class="settings-field">
+              <div class="settings-label">
+                <span class="material-symbols-rounded">density_medium</span>
+                {{ t('settings.playlistTrackHeight') }}
+              </div>
+              <div class="track-height-control">
+                <label for="regular-playlist-row-height">{{ t('settings.regularModeTrackHeight') }}</label>
+                <input
+                  id="regular-playlist-row-height"
+                  type="range"
+                  :min="PLAYLIST_ROW_HEIGHTS.regular.min"
+                  :max="PLAYLIST_ROW_HEIGHTS.regular.max"
+                  step="2"
+                  :value="regularPlaylistRowHeight"
+                  @input="onPlaylistRowHeightInput('regular', $event)"
+                />
+                <output for="regular-playlist-row-height">{{ regularPlaylistRowHeight }} px</output>
+              </div>
+              <div class="track-height-control">
+                <label for="show-playlist-row-height">{{ t('settings.showModeTrackHeight') }}</label>
+                <input
+                  id="show-playlist-row-height"
+                  type="range"
+                  :min="PLAYLIST_ROW_HEIGHTS.show.min"
+                  :max="PLAYLIST_ROW_HEIGHTS.show.max"
+                  step="2"
+                  :value="showPlaylistRowHeight"
+                  @input="onPlaylistRowHeightInput('show', $event)"
+                />
+                <output for="show-playlist-row-height">{{ showPlaylistRowHeight }} px</output>
+              </div>
+              <div class="track-height-control">
+                <label for="folder-playlist-row-height">{{ t('settings.folderHeaderTrackHeight') }}</label>
+                <input
+                  id="folder-playlist-row-height"
+                  type="range"
+                  :min="PLAYLIST_ROW_HEIGHTS.folder.min"
+                  :max="PLAYLIST_ROW_HEIGHTS.folder.max"
+                  step="2"
+                  :value="folderPlaylistRowHeight"
+                  @input="onPlaylistRowHeightInput('folder', $event)"
+                />
+                <output for="folder-playlist-row-height">{{ folderPlaylistRowHeight }} px</output>
+              </div>
+              <p class="settings-help">{{ t('settings.playlistTrackHeightHelp') }}</p>
+            </section>
+
+            <section class="settings-field">
+              <div class="settings-label">
+                <span class="material-symbols-rounded">grid_view</span>
+                {{ t('settings.cartPlayerLayout') }}
+              </div>
+              <label class="cart-slot-count" for="cart-slot-count">
+                <span>{{ t('settings.totalCartCards') }}</span>
+                <input
+                  id="cart-slot-count"
+                  type="number"
+                  class="settings-input cart-layout-input"
+                  :min="minimumCartSlotCount"
+                  :max="CART_SLOT_COUNT_LIMITS.max"
+                  step="1"
+                  :value="cartSlotCount"
+                  @change="onCartSlotCountChange"
+                />
+              </label>
+              <div class="cart-layout-grid">
+                <div class="cart-layout-grid__header">{{ t('settings.cartLayout') }}</div>
+                <div class="cart-layout-grid__header">{{ t('settings.minimumCardHeight') }}</div>
+                <div class="cart-layout-grid__header">{{ t('settings.visibleRows') }}</div>
+                <div class="cart-layout-grid__header">{{ t('settings.columns') }}</div>
+                <template v-for="profile in cartGridProfileOptions" :key="profile.id">
+                  <div class="cart-layout-grid__profile">{{ profile.label }}</div>
+                  <label class="cart-layout-grid__value">
+                    <input
+                      type="number"
+                      class="settings-input cart-layout-input"
+                      :min="CART_GRID_PROFILES[profile.id].minHeight"
+                      :max="CART_GRID_PROFILES[profile.id].maxHeight"
+                      step="2"
+                      :value="cartGridLayouts[profile.id].minHeight"
+                      :aria-label="`${profile.label}, ${t('settings.minimumCardHeight')}`"
+                      @change="onCartGridLayoutChange(profile.id, 'minHeight', $event)"
+                    />
+                    <span aria-hidden="true">px</span>
+                  </label>
+                  <input
+                    type="number"
+                    class="settings-input cart-layout-input"
+                    :min="CART_GRID_LIMITS.rows.min"
+                    :max="CART_GRID_LIMITS.rows.max"
+                    step="1"
+                    :value="cartGridLayouts[profile.id].rows"
+                    :aria-label="`${profile.label}, ${t('settings.visibleRows')}`"
+                    @change="onCartGridLayoutChange(profile.id, 'rows', $event)"
+                  />
+                  <input
+                    type="number"
+                    class="settings-input cart-layout-input"
+                    :min="CART_GRID_LIMITS.columns.min"
+                    :max="CART_GRID_LIMITS.columns.max"
+                    step="1"
+                    :value="cartGridLayouts[profile.id].columns"
+                    :aria-label="`${profile.label}, ${t('settings.columns')}`"
+                    @change="onCartGridLayoutChange(profile.id, 'columns', $event)"
+                  />
+                </template>
+              </div>
+              <p class="settings-help">{{ t('settings.cartPlayerLayoutHelp') }}</p>
+            </section>
             
             <!-- Meter Display Mode -->
             <section class="settings-field">
@@ -262,6 +373,82 @@
               <p class="settings-help">{{ t('settings.meterBallisticsHelp') }}</p>
             </section>
 
+            <!-- Time Left countdown colours -->
+            <section class="settings-field">
+              <div class="settings-label">
+                <span class="material-symbols-rounded">timer</span>
+                {{ t('settings.countdownColors') }}
+              </div>
+              <p class="settings-help">{{ t('settings.countdownColorsHelp') }}</p>
+
+              <div class="countdown-band-editor">
+                <div class="countdown-band-grid countdown-band-grid--header">
+                  <span>{{ t('settings.countdownRange') }}</span>
+                  <span>{{ t('settings.countdownStartsAt') }}</span>
+                  <span>{{ t('settings.countdownColor') }}</span>
+                  <span></span>
+                </div>
+                <div
+                  v-for="(band, index) in countdownColorBands"
+                  :key="band.startSeconds"
+                  class="countdown-band-grid countdown-band-grid--row"
+                >
+                  <span class="countdown-band-range">
+                    <span
+                      class="countdown-band-dot"
+                      :style="{ backgroundColor: band.color }"
+                      aria-hidden="true"
+                    ></span>
+                    {{ countdownBandRange(index) }}
+                  </span>
+
+                  <label class="countdown-band-start">
+                    <input
+                      v-if="band.startSeconds > 0"
+                      type="number"
+                      min="1"
+                      step="1"
+                      :value="band.startSeconds"
+                      :aria-label="t('settings.countdownStartsAtFor', { range: countdownBandRange(index) })"
+                      @change="onCountdownBandStartChange(index, $event)"
+                    />
+                    <span v-else class="countdown-band-fixed">0</span>
+                    <span>s</span>
+                  </label>
+
+                  <label class="countdown-band-color">
+                    <input
+                      type="color"
+                      :value="band.color"
+                      :aria-label="t('settings.countdownColorFor', { range: countdownBandRange(index) })"
+                      @change="onCountdownBandColorChange(index, $event)"
+                    />
+                    <span>{{ band.color }}</span>
+                  </label>
+
+                  <button
+                    v-if="band.startSeconds > 0"
+                    type="button"
+                    class="countdown-band-remove"
+                    :aria-label="t('settings.countdownRemoveFor', { range: countdownBandRange(index) })"
+                    :title="t('settings.countdownRemoveFor', { range: countdownBandRange(index) })"
+                    @click="removeCountdownBand(index)"
+                  >
+                    <span class="material-symbols-rounded" aria-hidden="true">remove</span>
+                  </button>
+                  <span v-else></span>
+                </div>
+              </div>
+
+              <p v-if="countdownBandError" class="settings-error" role="alert">
+                {{ countdownBandError }}
+              </p>
+              <button type="button" class="modal-btn countdown-band-add" @click="addCountdownBand">
+                <span class="material-symbols-rounded" aria-hidden="true">add</span>
+                {{ t('settings.countdownAddBand') }}
+              </button>
+            </section>
+
             <!-- Keep the currently-playing item centred in the list -->
             <section class="settings-field">
               <label class="settings-label settings-label--checkbox">
@@ -286,6 +473,21 @@
 
 <script setup lang="ts">
 import { useOutputTarget } from '~/composables/useOutputTarget';
+import {
+  CART_SLOT_COUNT_LIMITS,
+  DEFAULT_COUNTDOWN_COLOR_BANDS,
+  normalizeCartSlotCount,
+  normalizeCountdownColorBands,
+  type CountdownColorBand,
+} from '~/types/project';
+import {
+  CART_GRID_LIMITS,
+  CART_GRID_PROFILES,
+  PLAYLIST_ROW_HEIGHTS,
+  type CartGridLayout,
+  type CartGridProfile,
+  type PlaylistRowMode,
+} from '~/composables/useUiMode';
 import { normalizeIndexDisplayStart } from '~/utils/indexDisplay';
 
 const props = defineProps<{ open: boolean }>();
@@ -293,7 +495,24 @@ const emit  = defineEmits<{ (e: 'close'): void }>();
 
 const { t } = useLocalization();
 const server = useLiveplayServer();
-const { currentProject } = useProject();
+const { currentProject, saveProject } = useProject();
+const {
+  regularPlaylistRowHeight,
+  showPlaylistRowHeight,
+  folderPlaylistRowHeight,
+  cartGridLayouts,
+  setRegularPlaylistRowHeight,
+  setShowPlaylistRowHeight,
+  setFolderPlaylistRowHeight,
+  setCartGridLayout,
+} = useUiMode();
+
+const cartGridProfileOptions = computed<Array<{ id: CartGridProfile; label: string }>>(() => [
+  { id: 'attachedRegular', label: t('settings.cartLayoutAttachedRegular') },
+  { id: 'attachedShow', label: t('settings.cartLayoutAttachedShow') },
+  { id: 'detachedRegular', label: t('settings.cartLayoutDetachedRegular') },
+  { id: 'detachedShow', label: t('settings.cartLayoutDetachedShow') },
+]);
 
 const devices = computed(() => server.devices ?? []);
 
@@ -335,6 +554,20 @@ const scrollToPlaying = computed(() => !!(currentProject.value as any)?.settings
 const { meterMode: currentMeterMode } = useOutputTarget();
 const meterMode              = computed(() => (currentProject.value as any)?.settings?.meterMode || currentMeterMode.value);
 const meterBallistics        = computed(() => (currentProject.value as any)?.settings?.meterBallistics || 'digital-ppm');
+const countdownColorBands = computed(() => normalizeCountdownColorBands(
+  (currentProject.value as any)?.settings?.countdownColorBands,
+));
+const countdownBandError = ref('');
+const minimumCartSlotCount = computed(() => normalizeCartSlotCount(
+  CART_SLOT_COUNT_LIMITS.min,
+  currentProject.value?.cartItems ?? [],
+  currentProject.value?.cartSlotKeys ?? {},
+));
+const cartSlotCount = computed(() => normalizeCartSlotCount(
+  currentProject.value?.settings?.cartSlotCount,
+  currentProject.value?.cartItems ?? [],
+  currentProject.value?.cartSlotKeys ?? {},
+));
 
 // Make sure devices are loaded when the modal opens.
 watch(() => props.open, async (v) => {
@@ -346,7 +579,9 @@ onMounted(async () => {
   try { await server.fetchDevices(); } catch { /* connection may not be ready yet */ }
 });
 
-async function applyPatch(patch: Record<string, any>) {
+type PatchResult = 'saved' | 'unsaved' | 'failed';
+
+async function applyPatch(patch: Record<string, any>): Promise<PatchResult> {
   // Optimistic local update so the UI reflects the change immediately.
   if (currentProject.value) {
     const settings = ((currentProject.value as any).settings ?? {});
@@ -356,7 +591,86 @@ async function applyPatch(patch: Record<string, any>) {
     await server.patchSettings(patch);
   } catch (e) {
     console.warn('[ProjectSettings] patch failed:', e);
+    return 'failed';
   }
+  return await saveProject() ? 'saved' : 'unsaved';
+}
+
+function countdownBandRange(index: number): string {
+  const bands = countdownColorBands.value;
+  const band = bands[index];
+  if (!band) return '';
+  if (bands.length === 1) return t('settings.countdownAllTimes');
+  if (index === 0) {
+    return t('settings.countdownRangeAndAbove', { start: band.startSeconds });
+  }
+  return t('settings.countdownRangeBetween', {
+    start: band.startSeconds,
+    end: bands[index - 1]!.startSeconds - 1,
+  });
+}
+
+let countdownMutationVersion = 0;
+
+async function persistCountdownBands(bands: CountdownColorBand[]) {
+  const mutationVersion = ++countdownMutationVersion;
+  const previous = countdownColorBands.value.map(band => ({ ...band }));
+  countdownBandError.value = '';
+  const next = normalizeCountdownColorBands(bands);
+  const result = await applyPatch({ countdownColorBands: next });
+  if (mutationVersion !== countdownMutationVersion || result === 'saved') return;
+
+  // A failed disk save leaves the accepted live setting in place and visibly
+  // unsaved. Only a rejected server patch is safe to roll back.
+  if (result === 'failed' && currentProject.value) {
+    const settings = ((currentProject.value as any).settings ?? {});
+    (currentProject.value as any).settings = {
+      ...settings,
+      countdownColorBands: previous,
+    };
+  }
+  countdownBandError.value = t('settings.countdownSaveFailed');
+}
+
+function onCountdownBandStartChange(index: number, e: Event) {
+  const input = e.target as HTMLInputElement;
+  const bands = countdownColorBands.value.map(band => ({ ...band }));
+  const seconds = Number(input.value);
+  const duplicate = bands.some((band, i) => i !== index && band.startSeconds === seconds);
+  if (!Number.isInteger(seconds) || seconds < 1 || duplicate) {
+    countdownBandError.value = t('settings.countdownThresholdInvalid');
+    input.value = String(bands[index]?.startSeconds ?? 1);
+    return;
+  }
+
+  bands[index] = { ...bands[index]!, startSeconds: seconds };
+  void persistCountdownBands(bands);
+}
+
+function onCountdownBandColorChange(index: number, e: Event) {
+  const bands = countdownColorBands.value.map(band => ({ ...band }));
+  bands[index] = {
+    ...bands[index]!,
+    color: (e.target as HTMLInputElement).value.toUpperCase(),
+  };
+  void persistCountdownBands(bands);
+}
+
+function addCountdownBand() {
+  const bands = countdownColorBands.value.map(band => ({ ...band }));
+  const highestStart = bands[0]?.startSeconds ?? 0;
+  bands.push({
+    startSeconds: highestStart + 5,
+    color: DEFAULT_COUNTDOWN_COLOR_BANDS[0]!.color,
+  });
+  void persistCountdownBands(bands);
+}
+
+function removeCountdownBand(index: number) {
+  const bands = countdownColorBands.value.map(band => ({ ...band }));
+  if (!bands[index] || bands[index]!.startSeconds === 0) return;
+  bands.splice(index, 1);
+  void persistCountdownBands(bands);
 }
 
 function onAudioDeviceChange(e: Event) {
@@ -414,6 +728,46 @@ function onStopAllFadeChange(e: Event) {
 }
 function onScrollToPlayingChange(e: Event) {
   applyPatch({ uiScrollToPlaying: (e.target as HTMLInputElement).checked });
+}
+
+function onPlaylistRowHeightInput(mode: PlaylistRowMode, e: Event) {
+  const value = (e.target as HTMLInputElement).value;
+  if (mode === 'show') setShowPlaylistRowHeight(value);
+  else if (mode === 'folder') setFolderPlaylistRowHeight(value);
+  else setRegularPlaylistRowHeight(value);
+}
+
+function onCartGridLayoutChange(
+  profile: CartGridProfile,
+  field: keyof CartGridLayout,
+  e: Event,
+) {
+  const input = e.target as HTMLInputElement;
+  const current = cartGridLayouts.value[profile][field];
+  if (!input.value.trim()) {
+    input.value = String(current);
+    return;
+  }
+  const value = Number(input.value);
+  setCartGridLayout(profile, {
+    [field]: Number.isFinite(value) ? value : current,
+  });
+  input.value = String(cartGridLayouts.value[profile][field]);
+}
+
+function onCartSlotCountChange(e: Event) {
+  const input = e.target as HTMLInputElement;
+  if (!input.value.trim()) {
+    input.value = String(cartSlotCount.value);
+    return;
+  }
+  const value = normalizeCartSlotCount(
+    input.value,
+    currentProject.value?.cartItems ?? [],
+    currentProject.value?.cartSlotKeys ?? {},
+  );
+  input.value = String(value);
+  applyPatch({ cartSlotCount: value });
 }
 
 function close() {
@@ -544,6 +898,194 @@ function close() {
   margin: 0;
   font-size: 12px;
   color: var(--color-text-secondary);
+}
+
+.track-height-control {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(160px, 2fr) 52px;
+  gap: 12px;
+  align-items: center;
+  color: var(--color-text-primary);
+  font-size: 13px;
+}
+.track-height-control input[type="range"] {
+  width: 100%;
+  accent-color: var(--color-accent);
+}
+.track-height-control output {
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.cart-layout-grid {
+  display: grid;
+  grid-template-columns: minmax(136px, 1.5fr) minmax(92px, 1fr) 72px 72px;
+  gap: 6px 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+}
+.cart-slot-count {
+  display: grid;
+  grid-template-columns: 1fr 88px;
+  gap: 12px;
+  align-items: center;
+  color: var(--color-text-primary);
+  font-size: 13px;
+}
+.cart-layout-grid__header {
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.cart-layout-grid__profile {
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.cart-layout-grid__value {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.cart-layout-input {
+  height: 32px;
+  min-width: 0;
+  padding: 5px 7px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.settings-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-danger);
+}
+
+.countdown-band-editor {
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+.countdown-band-grid {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 78px 126px 34px;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+}
+.countdown-band-grid--header {
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+.countdown-band-grid--row {
+  min-height: 50px;
+  border-top: 1px solid var(--color-border);
+}
+.countdown-band-range,
+.countdown-band-start,
+.countdown-band-color {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.countdown-band-range {
+  font-size: 12px;
+  color: var(--color-text-primary);
+}
+.countdown-band-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+}
+.countdown-band-start input,
+.countdown-band-fixed {
+  width: 54px;
+  height: 32px;
+  padding: 6px 8px;
+  background: var(--color-control);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  font: inherit;
+  text-align: right;
+}
+.countdown-band-fixed {
+  display: grid;
+  place-items: center end;
+  color: var(--color-text-secondary);
+}
+.countdown-band-color input[type="color"] {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  padding: 2px;
+  background: var(--color-control);
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.countdown-band-color span {
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+}
+.countdown-band-remove {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.countdown-band-remove:hover {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+.countdown-band-remove:focus-visible,
+.countdown-band-start input:focus-visible,
+.countdown-band-color input:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.countdown-band-add {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.countdown-band-add .material-symbols-rounded {
+  font-size: 18px;
+}
+@media (max-width: 480px) {
+  .countdown-band-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 34px;
+  }
+  .countdown-band-grid--header {
+    display: none;
+  }
+  .countdown-band-range {
+    grid-column: 1 / -1;
+  }
 }
 .settings-label--checkbox {
   flex-direction: row;

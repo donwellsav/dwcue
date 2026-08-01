@@ -5,6 +5,7 @@
     :class="{
       'is-selected': isSelected,
       'is-group': item.type === 'group',
+      'is-sticky-group': item.type === 'group' && isExpanded && depth === 0,
       'is-audio': item.type === 'audio',
       'is-playing': isPlaying,
       'show-mode': showMode,
@@ -48,6 +49,7 @@
       :draggable="!showMode"
       @dragstart="handleDragStart"
     >
+      <span class="item-color-rail" :style="{ backgroundColor: item.color }" aria-hidden="true"></span>
       <!-- Progress bar for playing items (audio and groups) - only in header -->
       <div v-if="(isPlaying && item.type === 'audio') || (isGroupPlaying && item.type === 'group')" class="item-progress" :style="progressStyle"></div>
       
@@ -55,97 +57,132 @@
         <button 
           v-if="item.type === 'group'" 
           class="expand-btn"
+          type="button"
+          :aria-label="groupToggleLabel"
+          :aria-expanded="isExpanded"
+          :title="groupToggleLabel"
           @click.stop="toggleExpand"
         >
           <span class="material-symbols-rounded">{{ isExpanded ? 'expand_more' : 'chevron_right' }}</span>
         </button>
-        
-        <span class="item-index">{{ indexDisplay }}</span>
-        
-        <span v-if="item.type === 'group'" class="item-icon">
-          <span class="material-symbols-rounded">folder</span>
-        </span>
-        
-        <span class="item-name" :class="{ 'is-peaking': isPeaking }">{{ item.displayName }}</span>
-        <span
-          v-if="isPeaking"
-          class="material-symbols-rounded peak-warning-icon"
-          :title="t('properties.peakWarning')"
-          draggable="false"
-          @click.stop
-        >bomb</span>
 
-        <span v-if="isPlaying" class="status-pill playing">{{ t('status.playing') }}</span>
-        <span v-else-if="isQueuedNext" class="status-pill up-next">{{ t('status.upNext') }}</span>
-        <ActionButton
-          v-if="isPlaying && item.type === 'audio'"
-          class="restart-action"
-          icon="restart_alt"
-          highlight-color="var(--color-success)"
-          context="Playlist"
-          type="button"
-          @click.stop="handlePlay"
-          :title="t('actions.restartCue', { name: item.displayName })"
-          :aria-label="t('actions.restartCue', { name: item.displayName })"
-        />
-        <span v-if="isPreviewing" class="status-pill preview">{{ t('status.previewing') }}</span>
-
-        <!-- Behavior indicators (for audio items) -->
-        <div v-if="item.type === 'audio'" class="behavior-indicators">
-          <!-- Start behavior -->
-          <span
-            v-if="item.startBehavior?.action === 'play-next'"
-            class="material-symbols-rounded behavior-icon"
-            :title="t('behaviors.startPlayNext')"
-          >skip_next</span>
-          <span
-            v-else-if="item.startBehavior?.action === 'play-item'"
-            class="material-symbols-rounded behavior-icon"
-            :title="t('behaviors.startPlayItem')"
-          >arrow_forward</span>
-          <span
-            v-else-if="item.startBehavior?.action === 'play-index'"
-            class="material-symbols-rounded behavior-icon"
-            :title="t('behaviors.startPlayIndex')"
-          >arrow_forward</span>
-
-          <!-- Ducking behavior -->
-          <span
-            v-if="item.duckingBehavior?.mode === 'duck-others'"
-            class="material-symbols-rounded behavior-icon"
-            :title="t('behaviors.duckingOthers')"
-          >volume_down</span>
-
-          <!-- Start Next segue marker -->
-          <span
-            v-if="item.startNextEnabled && (item.startNextTime ?? 0) > 0"
-            class="material-symbols-rounded behavior-icon behavior-icon-segue"
-            :title="t('behaviors.startNextMarker', { time: formatMarkerTime(item.startNextTime ?? 0) })"
-          >flag</span>
-
-          <!-- End behavior -->
-          <span
-            v-if="item.endBehavior?.action === 'next'"
-            class="material-symbols-rounded behavior-icon"
-            :title="t('behaviors.endPlayNext')"
-          >skip_next</span>
-          <span
-            v-else-if="item.endBehavior?.action === 'goto-item'"
-            class="material-symbols-rounded behavior-icon"
-            :title="t('behaviors.endGotoItem')"
-          >arrow_forward</span>
-          <span
-            v-else-if="item.endBehavior?.action === 'goto-index'"
-            class="material-symbols-rounded behavior-icon"
-            :title="t('behaviors.endGotoIndex')"
-          >arrow_forward</span>
-          <span
-            v-else-if="item.endBehavior?.action === 'loop'"
-            class="material-symbols-rounded behavior-icon"
-            :title="t('behaviors.endLoop')"
-          >replay</span>
+        <div class="item-arm">
+          <ActionButton
+            v-if="showMode"
+            class="play-action"
+            :icon="isPlaying ? 'stop' : 'play_arrow'"
+            :highlight-color="isPlaying ? 'var(--color-danger)' : 'var(--state-playing)'"
+            context="Playlist"
+            @click.stop="isPlaying ? handleStop() : handlePlay()"
+            :title="isPlaying ? t('actions.stop') : t('actions.play')"
+          />
+          <ActionButton
+            v-else
+            class="set-next-action"
+            icon="fast_forward"
+            highlight-color="var(--state-up-next)"
+            active-text-color="black"
+            :is-active="isManuallyQueued"
+            context="Playlist"
+            @click.stop="handleSetAsNext"
+            :title="t('actions.setAsNext')"
+            :aria-label="t('actions.setAsNext')"
+            :aria-pressed="isManuallyQueued"
+          />
         </div>
-        
+
+        <div class="item-identity">
+          <span class="item-index">{{ indexDisplay }}</span>
+
+          <span v-if="item.type === 'group'" class="item-icon">
+            <span class="material-symbols-rounded">folder</span>
+          </span>
+
+          <span class="item-name" :class="{ 'is-peaking': isPeaking }">{{ item.displayName }}</span>
+          <span
+            v-if="isPeaking"
+            class="material-symbols-rounded peak-warning-icon"
+            :title="t('properties.peakWarning')"
+            role="img"
+            :aria-label="t('properties.peakWarning')"
+            draggable="false"
+            @click.stop
+          >bomb</span>
+        </div>
+
+        <div class="item-state">
+          <span v-if="isPlaying" class="status-pill playing">{{ t('status.playing') }}</span>
+          <span v-else-if="isQueuedNext" class="status-pill up-next">{{ t('status.upNext') }}</span>
+          <ActionButton
+            v-if="isPlaying && item.type === 'audio'"
+            class="restart-action"
+            icon="restart_alt"
+            highlight-color="var(--state-playing)"
+            context="Playlist"
+            type="button"
+            @click.stop="handlePlay"
+            :title="t('actions.restartCue', { name: item.displayName })"
+            :aria-label="t('actions.restartCue', { name: item.displayName })"
+          />
+          <span v-if="isPreviewing" class="status-pill preview">{{ t('status.previewing') }}</span>
+
+          <!-- Behavior indicators (for audio items) -->
+          <div v-if="item.type === 'audio'" class="behavior-indicators">
+            <!-- Start behavior -->
+            <span
+              v-if="item.startBehavior?.action === 'play-next'"
+              class="material-symbols-rounded behavior-icon"
+              :title="t('behaviors.startPlayNext')"
+            >skip_next</span>
+            <span
+              v-else-if="item.startBehavior?.action === 'play-item'"
+              class="material-symbols-rounded behavior-icon"
+              :title="t('behaviors.startPlayItem')"
+            >arrow_forward</span>
+            <span
+              v-else-if="item.startBehavior?.action === 'play-index'"
+              class="material-symbols-rounded behavior-icon"
+              :title="t('behaviors.startPlayIndex')"
+            >arrow_forward</span>
+
+            <!-- Ducking behavior -->
+            <span
+              v-if="item.duckingBehavior?.mode === 'duck-others'"
+              class="material-symbols-rounded behavior-icon"
+              :title="t('behaviors.duckingOthers')"
+            >volume_down</span>
+
+            <!-- Start Next segue marker -->
+            <span
+              v-if="item.startNextEnabled && (item.startNextTime ?? 0) > 0"
+              class="material-symbols-rounded behavior-icon behavior-icon-segue"
+              :title="t('behaviors.startNextMarker', { time: formatMarkerTime(item.startNextTime ?? 0) })"
+            >flag</span>
+
+            <!-- End behavior -->
+            <span
+              v-if="item.endBehavior?.action === 'next'"
+              class="material-symbols-rounded behavior-icon"
+              :title="t('behaviors.endPlayNext')"
+            >skip_next</span>
+            <span
+              v-else-if="item.endBehavior?.action === 'goto-item'"
+              class="material-symbols-rounded behavior-icon"
+              :title="t('behaviors.endGotoItem')"
+            >arrow_forward</span>
+            <span
+              v-else-if="item.endBehavior?.action === 'goto-index'"
+              class="material-symbols-rounded behavior-icon"
+              :title="t('behaviors.endGotoIndex')"
+            >arrow_forward</span>
+            <span
+              v-else-if="item.endBehavior?.action === 'loop'"
+              class="material-symbols-rounded behavior-icon"
+              :title="t('behaviors.endLoop')"
+            >replay</span>
+          </div>
+        </div>
+
         <span v-if="item.type === 'audio'" class="item-duration">{{ durationDisplay }}</span>
 
         <!-- In Show Mode the live-playback actions (play/stop, set-as-next)
@@ -155,8 +192,9 @@
         <div class="item-actions">
           <ActionButton
             v-if="item.type === 'audio'"
+            class="preview-action"
             :icon="'headphones'"
-            :highlight-color="isPreviewing ? 'var(--color-accent)' : 'var(--color-success)'"
+            highlight-color="var(--state-preview)"
             :is-active="isPreviewing"
             :class="{ 'no-device': !hasPreviewDevice }"
             context="Playlist"
@@ -164,23 +202,30 @@
             :title="isPreviewing ? t('actions.stopPreview') : (hasPreviewDevice ? t('actions.preview') : t('actions.previewNoDevice'))"
           />
           <ActionButton
-            :icon="isPlaying ? 'stop' : 'play_arrow'"
-            :highlight-color="isPlaying ? 'var(--color-danger)' : 'var(--color-success)'"
-            context="Playlist"
-            @click.stop="isPlaying ? handleStop() : handlePlay()"
-            :title="isPlaying ? t('actions.stop') : t('actions.play')"
-          />
-          <ActionButton
+            v-if="showMode"
+            class="set-next-action"
             icon="fast_forward"
-            highlight-color="var(--color-warning)"
+            highlight-color="var(--state-up-next)"
             active-text-color="black"
             :is-active="isManuallyQueued"
             context="Playlist"
             @click.stop="handleSetAsNext"
             :title="t('actions.setAsNext')"
+            :aria-label="t('actions.setAsNext')"
+            :aria-pressed="isManuallyQueued"
+          />
+          <ActionButton
+            v-else
+            class="play-action"
+            :icon="isPlaying ? 'stop' : 'play_arrow'"
+            :highlight-color="isPlaying ? 'var(--color-danger)' : 'var(--state-playing)'"
+            context="Playlist"
+            @click.stop="isPlaying ? handleStop() : handlePlay()"
+            :title="isPlaying ? t('actions.stop') : t('actions.play')"
           />
           <ActionButton
             v-if="!showMode"
+            class="edit-action"
             icon="settings"
             highlight-color="var(--color-accent)"
             context="Playlist"
@@ -189,6 +234,7 @@
           />
           <ActionButton
             v-if="!showMode"
+            class="delete-action"
             icon="delete"
             highlight-color="var(--color-danger)"
             context="Playlist"
@@ -262,6 +308,9 @@ const { isRevealed, forgetReveal } = usePlaylistReveal();
 // never see it.
 const isExpanded = computed(() =>
   props.item.type === 'group' && (props.item.isExpanded || isRevealed(props.item.uuid)),
+);
+const groupToggleLabel = computed(() =>
+  `${t(isExpanded.value ? 'actions.close' : 'serverSettings.open')} ${props.item.displayName}`,
 );
 const waveformCanvas = ref<HTMLCanvasElement | null>(null);
 const dragPosition = ref<'top' | 'bottom' | 'group' | null>(null);
@@ -520,18 +569,17 @@ const hexToRgba = (hex: string, alpha: number) => {
 };
 
 const itemStyle = computed(() => {
+  const backgroundColor = isPlaying.value || isGroupPlaying.value
+    ? hexToRgba(props.item.color, 0.5)
+    : hexToRgba(props.item.color, 0.14);
   const styles: any = {
     marginLeft: `${props.depth * 24}px`,
+    '--item-background': backgroundColor,
+    '--folder-background': props.item.type === 'group'
+      ? `color-mix(in srgb, ${props.item.color} 50%, var(--color-background))`
+      : backgroundColor,
+    backgroundColor,
   };
-  
-  if (isPlaying.value || isGroupPlaying.value) {
-    // Playing: 50% opacity background
-    styles.backgroundColor = hexToRgba(props.item.color, 0.5);
-  } else {
-    // Inactive: 25% opacity background
-    styles.backgroundColor = hexToRgba(props.item.color, 0.25);
-  }
-  
   return styles;
 });
 
@@ -633,6 +681,11 @@ const handleDragStart = (e: DragEvent) => {
 const handleDragOver = (e: DragEvent) => {
   e.preventDefault();
   e.stopPropagation();
+  if (showMode.value) {
+    dragPosition.value = null;
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'none';
+    return;
+  }
   if (!e.dataTransfer) return;
   
   e.dataTransfer.dropEffect = 'move';
@@ -829,6 +882,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 <style scoped>
 .playlist-item {
+  --current-playlist-row-height: var(--playlist-row-height, 44px);
+  container-type: inline-size;
   border-radius: var(--border-radius-sm);
   margin-bottom: 0;
   transition:
@@ -836,9 +891,37 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
     box-shadow var(--transition-fast);
   position: relative;
   overflow: hidden;
+  scroll-margin-top: var(--current-playlist-row-height);
+
+  /* Native sticky positioning keeps every open folder's collapse control in
+     reach. Expanded group wrappers must not become overflow ancestors or the
+     header would stick to the group itself instead of the playlist scroller. */
+  &.is-sticky-group {
+    overflow: clip;
+  }
+
+  /* ponytail: sticky navigation is intentionally top-level; nested sticky
+     stacks need measured row heights once nested-folder shows become common. */
+  &.is-sticky-group > .item-content {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: var(--folder-background);
+    box-shadow:
+      inset 0 -1px var(--color-border-strong),
+      0 2px 4px rgba(0, 0, 0, 0.16);
+  }
   
   &.is-selected {
     box-shadow: inset 3px 0 0 var(--color-accent);
+  }
+
+  &.is-group {
+    --current-playlist-row-height: var(--folder-playlist-row-height, 60px);
+  }
+
+  &.is-group > .item-content {
+    background: var(--folder-background);
   }
   
   &.drag-over-top::before {
@@ -929,14 +1012,24 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   align-items: center;
   justify-content: space-between;
   padding: 6px var(--spacing-md);
-  min-height: 44px;
+  min-height: var(--current-playlist-row-height);
   position: relative;
   z-index: 5;
   cursor: pointer;
 }
 
+.item-color-rail {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  z-index: 6;
+  pointer-events: none;
+}
+
 .item-left {
-  display: flex;
+  display: grid;
+  grid-template-columns: 32px minmax(112px, 1fr) minmax(84px, max-content) 64px max-content 32px;
+  grid-template-areas: 'expand identity state duration actions arm';
   align-items: center;
   gap: var(--spacing-sm);
   flex: 1;
@@ -945,28 +1038,60 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .expand-btn {
-  width: 20px;
-  height: 20px;
+  grid-area: expand;
+  width: 32px;
+  height: 32px;
+  padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  border: 1px solid transparent;
+  border-radius: var(--control-radius);
+  background: transparent;
   color: var(--color-text-secondary);
+  cursor: pointer;
+
+  .material-symbols-rounded {
+    font-size: 20px;
+  }
   
   &:hover {
+    border-color: var(--color-border);
+    background: var(--color-control);
     color: var(--color-text-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 2px;
   }
 }
 
+.item-arm {
+  grid-area: arm;
+  display: flex;
+  align-items: center;
+}
+
+.item-identity {
+  grid-area: identity;
+  display: grid;
+  grid-template-columns: 40px 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .item-index {
+  grid-column: 1;
   font-size: 12px;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--color-text-secondary);
-  min-width: 40px;
 }
 
 .item-icon {
+  grid-column: 2;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -978,9 +1103,9 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .item-name {
+  grid-column: 3;
   font-weight: 600;
   font-size: 14px;
-  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -988,24 +1113,36 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   color: var(--color-text-primary);
 
   &.is-peaking {
-    color: #ff3b5c;
+    color: var(--color-danger);
   }
 }
 
 .peak-warning-icon {
+  grid-column: 4;
   font-size: 18px;
-  color: #ff3b5c;
+  color: var(--color-danger);
   flex-shrink: 0;
   cursor: help;
   line-height: 1;
 }
 
+.item-state {
+  grid-area: state;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+
 .item-duration {
+  grid-area: duration;
+  justify-self: end;
   font-family: var(--font-mono);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
   color: var(--color-text-secondary);
-  margin: 0 var(--spacing-sm);
+  margin: 0;
   white-space: nowrap;
   /* Fixed-width, right-aligned column so the leading "-" shown during the
      playing countdown widens the text without shoving the flags around, and
@@ -1017,6 +1154,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .behavior-indicators {
   display: flex;
+  flex-wrap: wrap;
   gap: 2px;
   align-items: center;
   flex-shrink: 0;
@@ -1028,7 +1166,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .behavior-icon-segue {
-    color: rgb(22, 163, 74);
+    color: var(--state-up-next);
     opacity: 0.9;
   }
 }
@@ -1037,7 +1175,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
-  border-radius: 2px;
+  border-radius: var(--pill-radius);
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
@@ -1045,18 +1183,18 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   height: 22px;
 
   &.playing {
-    background-color: var(--color-danger);
-    color: white;
+    background-color: var(--state-playing);
+    color: black;
   }
 
   &.up-next {
-    background-color: var(--color-warning);
+    background-color: var(--state-up-next);
     color: black;
   }
 
   &.preview {
-    background-color: var(--color-success);
-    color: black;
+    background-color: var(--state-preview);
+    color: var(--color-text-on-accent);
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -1064,11 +1202,18 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .item-actions {
-  display: flex;
+  grid-area: actions;
+  display: grid;
+  grid-template-columns: repeat(4, 32px);
   gap: var(--spacing-xs);
   z-index: 5;
   flex-shrink: 0;
 }
+
+.preview-action { grid-column: 1; }
+.play-action { grid-column: 2; }
+.edit-action { grid-column: 3; }
+.delete-action { grid-column: 4; }
 
 .no-device {
   opacity: 0.4;
@@ -1078,6 +1223,22 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   padding-left: var(--spacing-md);
 }
 
+/* Keep every control available when the resizable playlist is narrow. The
+   lanes remain fixed, but state and transport move to a second console row. */
+@container (max-width: 760px) {
+  .item-left {
+    grid-template-columns: 32px minmax(0, 1fr) max-content 32px;
+    grid-template-areas:
+      'expand identity duration arm'
+      'state state actions actions';
+    row-gap: var(--spacing-xs);
+  }
+
+  .item-state {
+    min-height: 32px;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Show Mode — larger, touch-friendly rows. Same content, bigger hit  */
 /* areas: taller rows, bigger name/duration text, and chunky play/    */
@@ -1085,27 +1246,60 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 /* are untouched so the row still reads exactly like the editor.       */
 /* ------------------------------------------------------------------ */
 .playlist-item.show-mode {
+  --current-playlist-row-height: var(--show-playlist-row-height, 68px);
+
   .item-content {
-    min-height: 68px;
-    padding: var(--spacing-md) var(--spacing-lg);
+    padding: 6px var(--spacing-md);
+  }
+
+  &.is-group {
+    --current-playlist-row-height: var(--folder-playlist-row-height, 60px);
+  }
+
+  .item-left {
+    grid-template-columns: 44px 88px minmax(0, 1fr) max-content 64px max-content;
+    grid-template-areas: 'expand arm identity state duration actions';
+    gap: var(--spacing-sm);
+  }
+
+  .expand-btn {
+    width: 44px;
+    height: 44px;
+
+    .material-symbols-rounded {
+      font-size: 24px;
+    }
+  }
+
+  .item-identity {
+    grid-template-columns: 44px 24px minmax(0, 1fr) auto;
+    gap: var(--spacing-sm);
+  }
+
+  .item-index {
+    font-size: 14px;
+  }
+
+  .item-icon .material-symbols-rounded {
+    font-size: 22px;
   }
 
   .item-name {
-    font-size: 1.7em;
+    font-size: 18px;
   }
 
   .item-duration {
-    font-size: 1.7em;
+    font-size: 18px;
   }
 
   .status-pill {
-    font-size: 15px;
-    height: 34px;
-    padding: 2px 12px;
+    font-size: 13px;
+    height: 28px;
+    padding: 2px 10px;
   }
 
   .behavior-icon {
-    font-size: 20px !important;
+    font-size: 18px !important;
   }
 
   /* Enlarge the remaining action buttons (preview, play/stop, set-next) for
@@ -1113,17 +1307,18 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
      misjudging horizontal position. :deep() reaches into the ActionButton
      child component's root. */
   :deep(.action-btn--playlist) {
-    width: 112px;
-    height: 56px;
+    width: 88px;
+    height: 48px;
+    flex-shrink: 0;
 
     .material-symbols-rounded {
-      font-size: 28px;
+      font-size: 24px;
     }
   }
 
   :deep(.restart-action.action-btn--playlist) {
-    width: 34px;
-    height: 34px;
+    width: 40px;
+    height: 40px;
 
     .material-symbols-rounded {
       font-size: 20px;
@@ -1131,12 +1326,27 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .item-actions {
+    grid-template-columns: repeat(2, 88px);
     gap: var(--spacing-sm);
+
+    .set-next-action {
+      grid-column: 2;
+    }
   }
 
   /* Not selectable — row is a playback surface, not a list to click into. */
   .item-content {
     cursor: default;
+  }
+}
+
+@container (max-width: 620px) {
+  .playlist-item.show-mode .item-left {
+    grid-template-columns: 44px 88px minmax(0, 1fr) max-content;
+    grid-template-areas:
+      'expand arm identity duration'
+      'state state state actions';
+    row-gap: var(--spacing-sm);
   }
 }
 </style>

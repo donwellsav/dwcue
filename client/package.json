@@ -1,6 +1,6 @@
 {
   "name": "donwells-cue",
-  "version": "2.5.0",
+  "version": "2.5.2",
   "description": "Audio cue playback application for live events",
   "homepage": "https://github.com/tdoukinitsas/liveplay",
   "main": "electron/main.js",
@@ -129,9 +129,6 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.inherit.plist",
       "notarize": true,
-      "extendInfo": {
-        "NSAppleEventsUsageDescription": "DonWells Cue opens its local audio server in Terminal when requested."
-      },
       "target": [
         {
           "target": "dmg",

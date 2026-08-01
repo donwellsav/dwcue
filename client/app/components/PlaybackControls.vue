@@ -1,21 +1,15 @@
 <template>
   <div class="playback-controls" :class="{ 'show-mode': showMode }">
-    <div class="controls-left">
-      <button
-        class="control-btn play-next-btn"
-        :class="{ 'has-next': !!effectiveNextUuid }"
-        @click="handlePlayNext"
-        :disabled="!effectiveNextUuid"
-        :title="playNextTooltip"
-      >
-        <span class="material-symbols-rounded">fast_forward</span>
-        <span>{{ t('controls.playNext') }}</span>
-      </button>
-      <button class="control-btn panic-btn" @click="handlePanic" :disabled="activeCues.size === 0" :title="stopAllTooltip">
-        <span class="icon">⚠</span>
-        <span>{{ t('playback.panic') }}</span>
-      </button>
-    </div>
+    <button
+      type="button"
+      class="control-btn panic-btn"
+      @click="handlePanic"
+      :disabled="activeCues.size === 0"
+      :title="stopAllTooltip"
+    >
+      <span class="icon" aria-hidden="true">⚠</span>
+      <span>{{ t('playback.panic') }}</span>
+    </button>
     
     <div class="active-cues">
       <div v-if="activeCues.size === 0 && !previewingItem" class="no-cues">
@@ -23,7 +17,7 @@
       </div>
 
       <div v-else class="cue-list">
-        <!-- Preview card: styled identically to ActiveCueItem, with a green
+        <!-- Preview card: styled identically to ActiveCueItem, with a blue
              "Preview" pill at the start of the name. Meter reads master
              channels 30/31 (the preview output bus). Seek + time come from
              the per-cue meter stream (playhead_seconds). -->
@@ -35,8 +29,14 @@
                 {{ previewingItem.displayName }}
               </span>
               <div class="preview-cue-actions">
-                <button class="preview-stop-btn" @click="stopPreview" :title="t('actions.stopPreview')">
-                  <span class="material-symbols-rounded">stop</span>
+                <button
+                  type="button"
+                  class="preview-stop-btn"
+                  @click="stopPreview"
+                  :title="t('actions.stopPreview')"
+                  :aria-label="t('actions.stopPreview')"
+                >
+                  <span class="material-symbols-rounded" aria-hidden="true">stop</span>
                 </button>
               </div>
             </div>
@@ -46,9 +46,19 @@
                 <span>{{ formatPreviewTime(previewCurrentTime) }}</span>
                 <span>-{{ formatPreviewTime(previewDuration - previewCurrentTime) }}</span>
               </div>
-              <div class="preview-progress-bar" @click="handlePreviewSeek">
+              <div class="preview-progress-bar">
                 <div class="preview-progress-fill" :style="{ width: previewProgressPct + '%' }"></div>
-                <div class="preview-progress-handle" :style="{ left: previewProgressPct + '%' }"></div>
+                <input
+                  type="range"
+                  class="preview-progress-slider"
+                  min="0"
+                  :max="previewDuration"
+                  step="0.1"
+                  :value="previewSeekValue"
+                  :aria-label="`${t('status.previewing')}: ${previewingItem.displayName}`"
+                  :aria-valuetext="`${formatPreviewTime(previewSeekValue)} / ${formatPreviewTime(previewDuration)}`"
+                  @input="handlePreviewSeek"
+                />
               </div>
             </div>
           </div>
@@ -64,28 +74,18 @@
         />
       </div>
     </div>
-    
-    <!-- Per-output meters — one StereoMeter + volume fader per active audio output pair.
-         Main output (masters 0/1) is always shown. Preview (30/31) and
-         device-override pairs (2+) appear when they carry signal. -->
-    <div class="output-meters">
-      <div v-for="pair in outputPairs" :key="pair.key" class="output-pair">
-        <StereoMeter
-          :left-index="pair.leftIndex"
-          :right-index="pair.rightIndex"
-          :label="pair.label"
-          :show-peak-value="true"
-        />
-        <VolumeSlider
-          :db="getOutputGainDb(pair.leftIndex)"
-          :min-db="-60"
-          :max-db="40"
-          :title="pair.label"
-          @input="(db: number) => onOutputGainInput(pair.leftIndex, pair.rightIndex, db)"
-          @reset="resetOutputGain(pair.leftIndex, pair.rightIndex)"
-        />
-      </div>
-    </div>
+
+    <button
+      type="button"
+      class="control-btn play-next-btn"
+      :class="{ 'has-next': !!effectiveNextUuid }"
+      @click="handlePlayNext"
+      :disabled="!effectiveNextUuid"
+      :title="playNextTooltip"
+    >
+      <span class="material-symbols-rounded" aria-hidden="true">fast_forward</span>
+      <span>{{ t('controls.playNext') }}</span>
+    </button>
   </div>
 </template>
 
@@ -95,17 +95,13 @@
 //     (until every component is migrated away from it) AND the new C++
 //     server via useLiveplayServer().stopAll(). Removing the legacy call
 //     is safe once all play paths route through the server.
-//   * The master mix meter is rendered by <LiveMeterBar source="master"
-//     :index="0" />, which consumes the live WebSocket meter stream from
-//     the engine — replacing the static-waveform "cheat" levels.
 import { formatKeyLabel } from '~/composables/useCartHotkeys';
 import type { AudioItem } from '~/types/project';
 import { useLiveplayServer } from '~/composables/useLiveplayServer';
 import { useCueMeters } from '~/composables/useLiveMeters';
-import VolumeSlider from './VolumeSlider.vue';
 
 const { activeCues, panicStop, nextItemOverrideUuid, autoNextItemUuid, setNextItem, playCue, triggerGroup } = useAudioEngine();
-const { findItemByUuid, previewItemUuid, previewCueId, stopPreview, currentProject } = useProject();
+const { findItemByUuid, previewItemUuid, previewCueId, stopPreview } = useProject();
 const { playbackMappings } = useCartHotkeys();
 const { t } = useLocalization();
 const server = useLiveplayServer();
@@ -126,9 +122,13 @@ const previewDuration = computed(() => {
   const outPoint = item.outPoint ?? item.duration ?? 0;
   return Math.max(0, outPoint - inPoint);
 });
+const previewSeekValue = computed(() => Math.max(
+  0,
+  Math.min(previewDuration.value, previewCurrentTime.value),
+));
 const previewProgressPct = computed(() => {
   if (!previewDuration.value) return 0;
-  return Math.min(100, (previewCurrentTime.value / previewDuration.value) * 100);
+  return (previewSeekValue.value / previewDuration.value) * 100;
 });
 
 function formatPreviewTime(seconds: number): string {
@@ -137,61 +137,14 @@ function formatPreviewTime(seconds: number): string {
   return `${m}:${(s % 60).toString().padStart(2, '0')}`;
 }
 
-function handlePreviewSeek(e: MouseEvent) {
+function handlePreviewSeek(e: Event) {
   if (!previewCueId.value || !previewDuration.value) return;
-  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-  const pct = (e.clientX - rect.left) / rect.width;
-  const seekTo = pct * previewDuration.value;
+  const seekTo = Number((e.currentTarget as HTMLInputElement).value);
+  if (!Number.isFinite(seekTo)) return;
   const item = previewingItem.value as any;
   const inPoint = item?.inPoint ?? 0;
   server.seekCueId(previewCueId.value, Math.max(0, seekTo + inPoint));
 }
-
-// Dynamic per-output meters. Main (0/1) is always shown. Preview (30/31)
-// and per-device overrides (2+) appear only when they carry signal so we
-// don't flood the UI with silent meters.
-const outputPairs = computed(() => {
-  const m = server.meters;
-  const activeIdx = new Set((m?.master_channels ?? []).map((mc: any) => mc.index as number));
-
-  const configuredId = (currentProject.value as any)?.settings?.defaultOutputDevice;
-  const mainLabel = configuredId
-    ? (server.devices.find((d: any) => d.id === configuredId)?.display_name ?? 'Main')
-    : (server.devices.find((d: any) => d.is_default)?.display_name ?? 'Main');
-  const pairs: Array<{ key: string; leftIndex: number; rightIndex: number; label: string }> = [];
-
-  // Per-device override pairs (allocated at 2+, step 2). When a project selects
-  // a specific default output device the server routes the program onto one of
-  // these override buses (masters 0/1 stay silent), so we must NOT unconditionally
-  // show a "Main" 0/1 strip — that produced a permanent duplicated, signal-less
-  // "Main" strip alongside the real one.
-  const overridePairs: Array<{ key: string; leftIndex: number; rightIndex: number; label: string }> = [];
-  for (let i = 2; i < 30; i += 2) {
-    if (activeIdx.has(i) || activeIdx.has(i + 1)) {
-      overridePairs.push({ key: `out-${i}`, leftIndex: i, rightIndex: i + 1, label: `Out ${i / 2}` });
-    }
-  }
-
-  const mainActive = activeIdx.has(0) || activeIdx.has(1);
-  // Show the 0/1 "Main" strip only when it actually carries signal, or when
-  // there is no override bus to represent the main output (so at least one
-  // output strip is always visible). When the program has moved onto the
-  // project's default-device override bus, relabel that first override pair
-  // with the configured device name instead of a bare "Out N".
-  if (mainActive || overridePairs.length === 0) {
-    pairs.push({ key: 'main', leftIndex: 0, rightIndex: 1, label: mainLabel });
-  } else if (overridePairs.length > 0) {
-    overridePairs[0]!.label = mainLabel;
-  }
-  pairs.push(...overridePairs);
-
-  // Preview output (master 30/31) — only when active
-  if (activeIdx.has(30) || activeIdx.has(31)) {
-    pairs.push({ key: 'preview-out', leftIndex: 30, rightIndex: 31, label: 'Preview' });
-  }
-
-  return pairs;
-});
 
 // Preview pill data: when an item is being pre-listened on the headphone bus,
 // this resolves to the item record so we can render its display name.
@@ -223,22 +176,6 @@ const handlePanic = () => {
   panicStop();
 };
 
-// ---- Per-output gain faders -----------------------------------------------
-function getOutputGainDb(leftIndex: number): number {
-  return server.outputChannelGains[leftIndex] ?? 0;
-}
-
-function onOutputGainInput(leftIndex: number, rightIndex: number, db: number) {
-  // Update both channels of the stereo pair together.
-  server.setOutputChannelGainDb(leftIndex, db);
-  server.setOutputChannelGainDb(rightIndex, db);
-}
-
-function resetOutputGain(leftIndex: number, rightIndex: number) {
-  server.setOutputChannelGainDb(leftIndex, 0);
-  server.setOutputChannelGainDb(rightIndex, 0);
-}
-
 const handlePlayNext = () => {
   const uuid = effectiveNextUuid.value;
   if (!uuid) return;
@@ -259,20 +196,15 @@ const handlePlayNext = () => {
   gap: var(--spacing-md);
   padding: var(--spacing-sm) var(--spacing-md);
   background-color: var(--color-surface);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-border) 45%, transparent);
 }
 
-.controls-left {
-  display: flex;
-  gap: var(--spacing-sm);
-  align-self: stretch;
-}
-
-/* Show Mode — bigger GO / Stop-All buttons. The controls bar grows a little
-   taller to fit them; preview card and stop button are also enlarged. */
+/* Show Mode — bigger GO / Stop-All buttons. */
 .playback-controls.show-mode {
   min-height: calc(var(--playback-controls-height) + 20px);
 
   .control-btn {
+    flex-basis: 148px;
     padding: var(--spacing-lg) var(--spacing-xl);
     font-size: 17px;
 
@@ -280,12 +212,6 @@ const handlePlayNext = () => {
     .icon {
       font-size: 26px;
     }
-  }
-
-  .preview-cue-card {
-    min-width: 500px;
-    max-width: 500px;
-    padding: var(--spacing-md);
   }
 
   .preview-cue-header {
@@ -302,13 +228,18 @@ const handlePlayNext = () => {
 .control-btn {
   display: flex;
   align-items: center;
+  align-self: stretch;
+  flex: 0 0 124px;
   gap: var(--spacing-sm);
-  min-width: 108px;
+  min-width: 124px;
   justify-content: center;
   padding: var(--spacing-md) var(--spacing-lg);
   background-color: var(--color-control);
   border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-md);
+  border-radius: var(--control-radius);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--color-text-primary) 7%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.12);
   font-size: 13px;
   font-weight: 650;
   
@@ -326,13 +257,14 @@ const handlePlayNext = () => {
   color: var(--color-text-secondary);
 
   &.has-next {
-    background-color: var(--color-accent);
-    border-color: var(--color-accent);
-    color: var(--color-text-on-accent);
+    background-color: var(--state-up-next);
+    border-color: var(--state-up-next);
+    color: #171b25;
 
     &:hover:not(:disabled) {
-      background-color: var(--color-accent-hover);
-      border-color: var(--color-accent-hover);
+      background-color: var(--state-up-next);
+      border-color: var(--state-up-next);
+      filter: brightness(1.06);
     }
   }
 }
@@ -359,41 +291,76 @@ const handlePlayNext = () => {
 
 .active-cues {
   flex: 1;
+  align-self: stretch;
+  display: flex;
+  align-items: stretch;
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 0;
+  padding: var(--spacing-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  background-color: var(--color-control);
+  box-shadow:
+    inset 0 1px 4px rgba(0, 0, 0, 0.18),
+    0 1px 0 color-mix(in srgb, var(--color-text-primary) 5%, transparent);
 }
 
 .no-cues {
-  height: 100%;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
   color: var(--color-text-tertiary);
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   padding: var(--spacing-md);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--border-radius-sm);
+}
+
+.no-cues::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  opacity: 0.65;
 }
 
 .cue-list {
   display: flex;
   flex-direction: row;
+  align-items: stretch;
   gap: var(--spacing-sm);
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.cue-list > :deep(.active-cue-item) {
+  flex: 1 1 0;
+  min-width: min(280px, 100%);
+  max-width: none;
 }
 
 /* Preview card — same card dimensions and visual structure as ActiveCueItem,
-   with a green "Preview" pill prefixing the name. */
+   with a blue "Preview" pill prefixing the name. */
 .preview-cue-card {
   background-color: var(--color-surface-raised);
   border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-md);
+  border-radius: var(--control-radius);
   padding: var(--spacing-sm) var(--spacing-md);
-  min-width: 400px;
-  max-width: 400px;
+  flex: 1 1 0;
+  min-width: min(280px, 100%);
+  max-width: none;
   display: flex;
   gap: var(--spacing-sm);
+  box-shadow: inset 3px 0 0 var(--state-preview);
 }
 
 .preview-cue-content {
@@ -429,13 +396,13 @@ const handlePlayNext = () => {
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
-  border-radius: 2px;
+  border-radius: var(--pill-radius);
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  background-color: var(--color-success);
-  color: black;
+  background-color: var(--state-preview);
+  color: var(--color-text-on-accent);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -449,7 +416,7 @@ const handlePlayNext = () => {
 .preview-stop-btn {
   width: 24px;
   height: 24px;
-  border-radius: 50%;
+  border-radius: var(--control-radius);
   background-color: var(--color-danger);
   color: white;
   font-size: 20px;
@@ -463,25 +430,6 @@ const handlePlayNext = () => {
     opacity: 0.8;
   }
 }
-
-.output-meters {
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  gap: var(--spacing-sm);
-  padding-left: var(--spacing-md);
-  border-left: 1px solid var(--color-border);
-  height: calc(var(--playback-controls-height) - 16px);
-  flex-shrink: 0;
-}
-
-.output-pair {
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  gap: 4px;
-}
-
 
 .preview-cue-meter {
   display: flex;
@@ -504,36 +452,60 @@ const handlePlayNext = () => {
 }
 
 .preview-progress-bar {
-  height: 8px;
+  height: 12px;
   background-color: var(--color-surface);
   border-radius: var(--border-radius-sm);
   position: relative;
-  cursor: pointer;
   direction: ltr;
-
-  &:hover .preview-progress-handle {
-    opacity: 1;
-  }
 }
 
 .preview-progress-fill {
   height: 100%;
-  background-color: var(--color-success);
+  background-color: var(--state-preview);
   border-radius: var(--border-radius-sm);
   transition: width 100ms linear;
+  pointer-events: none;
 }
 
-.preview-progress-handle {
+.preview-progress-slider {
+  appearance: none;
+  -webkit-appearance: none;
   position: absolute;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  inset: -6px 0;
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  background: transparent;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  direction: ltr;
+}
+
+.preview-progress-slider::-webkit-slider-runnable-track {
+  height: 12px;
+  background: transparent;
+}
+
+.preview-progress-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
   width: 16px;
   height: 16px;
-  background-color: white;
-  border: 2px solid var(--color-success);
+  margin-top: -2px;
+  background-color: var(--color-surface-raised);
+  border: 2px solid var(--state-preview);
   border-radius: 50%;
-  opacity: 0;
-  transition: opacity var(--transition-fast);
-  pointer-events: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.preview-progress-slider:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
+}
+
+.preview-progress-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--state-preview) 32%, transparent),
+    0 1px 3px rgba(0, 0, 0, 0.4);
 }
 </style>

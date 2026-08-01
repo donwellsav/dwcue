@@ -33,7 +33,7 @@ void Limiter::configure(SampleRate sample_rate,
                         float lookahead_ms,
                         float release_ms) {
     sample_rate_  = sample_rate;
-    ceiling_lin_  = db_to_lin(std::min(ceiling_db, 0.0f));
+    set_ceiling_db(ceiling_db);
 
     const float seconds = std::max(lookahead_ms, 0.1f) * 0.001f;
     lookahead_ = std::max<std::size_t>(
@@ -52,6 +52,12 @@ void Limiter::configure(SampleRate sample_rate,
     delay_pos_           = 0;
     current_gain_        = 1.0f;
     gain_reduction_db_.store(0.0f, std::memory_order_relaxed);
+}
+
+void Limiter::set_ceiling_db(float ceiling_db) noexcept {
+    if (!std::isfinite(ceiling_db)) return;
+    ceiling_lin_.store(db_to_lin(std::clamp(ceiling_db, -60.0f, 0.0f)),
+                       std::memory_order_release);
 }
 
 void Limiter::reset() noexcept {
@@ -78,7 +84,8 @@ void Limiter::recompute_window_max() noexcept {
     peak_window_max_idx_ = max_idx;
 }
 
-void Limiter::process(Sample* samples, std::size_t frame_count) noexcept {
+void Limiter::process(Sample* samples, std::size_t frame_count,
+                      bool enabled) noexcept {
     if (!samples || frame_count == 0) return;
     if (peak_window_.empty() || delay_.empty()) {
         // Not configured — still provide a safety backstop rather than passing
@@ -95,7 +102,7 @@ void Limiter::process(Sample* samples, std::size_t frame_count) noexcept {
     }
 
     const std::size_t window_size = peak_window_.size();
-    const float       ceiling     = ceiling_lin_;
+    const float       ceiling     = ceiling_lin_.load(std::memory_order_acquire);
     const float       rel         = release_coef_;
 
     for (std::size_t i = 0; i < frame_count; ++i) {
@@ -142,14 +149,16 @@ void Limiter::process(Sample* samples, std::size_t frame_count) noexcept {
         delay_[delay_pos_]   = in;
         delay_pos_           = (delay_pos_ + 1) % window_size;
 
-        float out = delayed * current_gain_;
+        float out = delayed * (enabled ? current_gain_ : 1.0f);
         // Final hard clip as a backstop against floating-point edge cases.
-        if (out >  ceiling) out =  ceiling;
-        if (out < -ceiling) out = -ceiling;
+        if (enabled) {
+            if (out >  ceiling) out =  ceiling;
+            if (out < -ceiling) out = -ceiling;
+        }
         samples[i] = out;
     }
 
-    gain_reduction_db_.store(lin_to_db(current_gain_),
+    gain_reduction_db_.store(enabled ? lin_to_db(current_gain_) : 0.0f,
                              std::memory_order_relaxed);
 }
 

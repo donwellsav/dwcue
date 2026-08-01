@@ -66,6 +66,8 @@
   --border-radius-sm: 4px;
   --border-radius-md: 6px;
   --border-radius-lg: 10px;
+  --control-radius: var(--border-radius-md);
+  --pill-radius: var(--border-radius-sm);
 
   // Transitions
   --transition-fast: 120ms cubic-bezier(0.23, 1, 0.32, 1);
@@ -81,6 +83,7 @@
   --playback-controls-height: 108px;
   --properties-panel-height: 320px;
   --cart-player-width: 33.333%;
+  --panel-header-height: 51px;
 
   // Rack-console primitives. Existing component aliases below keep this a
   // visual overhaul rather than a risky component rewrite.
@@ -95,6 +98,11 @@
   --color-text-on-accent: #f7f8fb;
   --color-text: var(--color-text-primary);
   --color-focus-ring: rgba(111, 145, 239, 0.55);
+
+  // One status language across the playlist, cart, and transport surfaces.
+  --state-playing: var(--color-success);
+  --state-up-next: var(--color-warning);
+  --state-preview: var(--color-accent);
 }
 
 // Light theme
@@ -165,6 +173,29 @@ body {
   // for genuine text-entry surfaces below.
   user-select: none;
   -webkit-user-select: none;
+}
+
+// Shared chrome for the three workspace columns. Keeping this global makes
+// Cart, Playlist, Monitor, and Output land on the same baseline in every mode.
+.workspace-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 var(--panel-header-height);
+  height: var(--panel-header-height);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-surface);
+}
+
+.workspace-panel-header__title {
+  color: var(--color-text-primary);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  text-transform: none;
 }
 
 // Re-enable text selection where it actually makes sense: editable fields
@@ -239,10 +270,12 @@ button {
     background-color var(--transition-fast),
     border-color var(--transition-fast),
     opacity var(--transition-fast),
-    transform var(--transition-fast);
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
 
   &:active:not(:disabled) {
-    transform: scale(0.98);
+    transform: translateY(1px);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
   }
 
   &:disabled {

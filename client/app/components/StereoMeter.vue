@@ -8,12 +8,79 @@
     which resolves after mount (server decorates items asynchronously) still
     activates the subscription on the next meter frame.
   -->
-  <div class="stereo-meter">
+  <div class="stereo-meter" :class="{ 'stereo-meter--strip': hasScaleControl }">
     <div v-if="label" class="stereo-meter__label">{{ label }}</div>
+    <div v-if="showPeakValue" class="stereo-meter__peak-text">
+      <span>{{ peakLabel }}<template v-if="meterMode === 'LUFS'"> · {{ shortTermLabel }}</template></span>
+      <span
+        class="stereo-meter__gr-text"
+        :class="{ 'is-active': gainReduction >= 0.1 }"
+      >{{ gainReductionLabel }}</span>
+    </div>
 
     <div class="stereo-meter__body">
-      <!-- dB scale -->
-      <div class="stereo-meter__scale">
+      <div class="stereo-meter__clips">
+        <button
+          type="button"
+          class="stereo-meter__clip"
+          :class="{ 'is-clipped': holdL.clipped.value }"
+          :aria-label="holdL.clipped.value ? 'Left clip indicator, clipped. Activate to reset' : 'Left clip indicator, clear'"
+          :title="holdL.clipped.value ? 'Left clip — click to reset' : 'Left clip — clear'"
+          @click="holdL.resetClip"
+        />
+        <button
+          type="button"
+          class="stereo-meter__clip"
+          :class="{ 'is-clipped': holdR.clipped.value }"
+          :aria-label="holdR.clipped.value ? 'Right clip indicator, clipped. Activate to reset' : 'Right clip indicator, clear'"
+          :title="holdR.clipped.value ? 'Right clip — click to reset' : 'Right clip — clear'"
+          @click="holdR.resetClip"
+        />
+      </div>
+
+      <!-- L + R tracks occupy the exact same grid row as the shared scale. -->
+      <div class="stereo-meter__bars">
+        <div class="stereo-meter__chan">
+          <div class="stereo-meter__bar-group">
+            <div class="stereo-meter__track">
+              <div class="stereo-meter__rms-fill" :style="rmsStyleL" />
+              <div class="stereo-meter__peak-cap" :style="peakStyleL" />
+              <div v-if="holdVisibleL" class="stereo-meter__hold" :style="holdStyleL" />
+            </div>
+          </div>
+        </div>
+        <div class="stereo-meter__chan">
+          <div class="stereo-meter__bar-group">
+            <div class="stereo-meter__track">
+              <div class="stereo-meter__rms-fill" :style="rmsStyleR" />
+              <div class="stereo-meter__peak-cap" :style="peakStyleR" />
+              <div v-if="holdVisibleR" class="stereo-meter__hold" :style="holdStyleR" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        v-if="hasScaleControl"
+        class="stereo-meter__gr-lane"
+        role="meter"
+        aria-label="Maximum gain reduction of independent left and right limiters"
+        aria-valuemin="0"
+        :aria-valuemax="Math.abs(Math.min(props.minDb, 0))"
+        :aria-valuenow="Math.min(gainReduction, Math.abs(Math.min(props.minDb, 0)))"
+        :aria-valuetext="gainReductionAriaLabel"
+      >
+        <div class="stereo-meter__gr-track" />
+        <div class="stereo-meter__gr-fill" :style="gainReductionFillStyle" />
+      </div>
+
+      <div class="stereo-meter__chan-labels" aria-hidden="true">
+        <span>L</span>
+        <span>R</span>
+      </div>
+
+      <!-- The fader slot shares this precise grid cell with the tick scale. -->
+      <div v-if="hasScaleControl" class="stereo-meter__scale">
         <div
           v-for="m in scaleMarks"
           :key="m.db"
@@ -24,69 +91,19 @@
           <span class="stereo-meter__mark-tick" :style="{ background: m.color }" />
         </div>
       </div>
-
-      <!-- L + R bars -->
-      <div class="stereo-meter__bars">
-        <div class="stereo-meter__chan">
-          <!-- Clip latch — lights on any raw sample ≥ clip threshold since
-               the last click (click either indicator to reset both). -->
-          <div
-            class="stereo-meter__clip"
-            :class="{ 'is-clipped': holdL.clipped.value || holdR.clipped.value }"
-            :title="'Clip (click to reset)'"
-            @click="resetClips"
-          />
-          <div class="stereo-meter__bar-group">
-            <div class="stereo-meter__track">
-              <div class="stereo-meter__fill" :style="rmsStyleL" />
-              <div class="stereo-meter__fill" :style="peakStyleL" />
-              <div v-if="holdVisibleL" class="stereo-meter__hold" :style="holdStyleL" />
-            </div>
-            <!-- GR track: same rounded-rect shape, accent fill from top -->
-            <div v-if="props.leftIndex != null" class="stereo-meter__gr-track">
-              <div class="stereo-meter__gr-fill" :style="grStyleL" />
-            </div>
-          </div>
-          <div class="stereo-meter__chan-label">L</div>
-        </div>
-        <div class="stereo-meter__chan">
-          <div
-            class="stereo-meter__clip"
-            :class="{ 'is-clipped': holdL.clipped.value || holdR.clipped.value }"
-            :title="'Clip (click to reset)'"
-            @click="resetClips"
-          />
-          <div class="stereo-meter__bar-group">
-            <div class="stereo-meter__track">
-              <div class="stereo-meter__fill" :style="rmsStyleR" />
-              <div class="stereo-meter__fill" :style="peakStyleR" />
-              <div v-if="holdVisibleR" class="stereo-meter__hold" :style="holdStyleR" />
-            </div>
-            <div v-if="props.rightIndex != null" class="stereo-meter__gr-track">
-              <div class="stereo-meter__gr-fill" :style="grStyleR" />
-            </div>
-          </div>
-          <div class="stereo-meter__chan-label">R</div>
-        </div>
-      </div>
+      <slot name="scale-control" />
     </div>
-
-    <div v-if="showPeakValue" class="stereo-meter__peak-text">
-      {{ peakLabel }}
-    </div>
-    <!-- Short-term loudness readout (LUFS mode only): momentary drives the
-         bars + main label; this second line shows the 3 s EBU "S" value. -->
-    <div v-if="showPeakValue && meterMode === 'LUFS'" class="stereo-meter__peak-text">
-      {{ shortTermLabel }}
+    <div v-if="hasFooter" class="stereo-meter__footer">
+      <slot name="footer" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, useSlots } from 'vue';
 import { useMasterMeter, useCueMeters, usePeakHold, lufsFromKwMs } from '~/composables/useLiveMeters';
 import { useOutputTarget, METER_COLORS } from '~/composables/useOutputTarget';
-import { useProject } from '~/composables/useProject';
+import { dbToConsolePosition } from '~/utils/audio';
 
 const props = withDefaults(defineProps<{
   leftIndex?: number | null;
@@ -106,6 +123,10 @@ const props = withDefaults(defineProps<{
   maxDb: 0,
 });
 
+const slots = useSlots();
+const hasScaleControl = computed(() => !!slots['scale-control']);
+const hasFooter = computed(() => !!slots.footer);
+
 // Always subscribe unconditionally — composables handle null IDs by returning
 // silence. This ensures a cueId that resolves after mount (the server
 // decorates items asynchronously after mirroring audio into the engine)
@@ -117,8 +138,12 @@ const rightStream = useMasterMeter(() => props.rightIndex);
 // Server-reported output-target levels and meter mode.
 const { levels, meterMode, colorForLevel } = useOutputTarget();
 
-const { currentProject } = useProject();
-const accentColor = computed(() => currentProject.value?.theme?.accentColor ?? '#315FCF');
+// A meter measures signal level, not fader gain. Keep the fader's +40…−60
+// scale untouched while giving every signal bar its own standard dBFS range.
+const meterMinDb = -60;
+const meterMaxDb = 0;
+const meterPosition = (db: number) =>
+  dbToConsolePosition(db, meterMinDb, meterMaxDb);
 
 // Raw signal values from the server (always peak_db and rms_db).
 const rawPeakL = computed(() => props.cueId != null
@@ -153,7 +178,6 @@ const rawMaxR = computed(() => {
 
 const holdL = usePeakHold(() => rawMaxL.value);
 const holdR = usePeakHold(() => rawMaxR.value);
-const resetClips = () => { holdL.resetClip(); holdR.resetClip(); };
 
 // True-peak stream (4× oversampled server-side when the project's meter
 // mode is dBTP; mirrors sample peak otherwise).
@@ -202,65 +226,111 @@ const displayR = computed(() => {
   }
 });
 
-function fillStyle(db: number, opacity: number): Record<string, string> {
-  const pct = Math.min(100, Math.max(0,
-    ((db - props.minDb) / (props.maxDb - props.minDb)) * 100));
+const bodyL = computed(() => meterMode.value === 'LUFS'
+  ? lufsMomentary.value
+  : rawRmsL.value);
+const bodyR = computed(() => meterMode.value === 'LUFS'
+  ? lufsMomentary.value
+  : rawRmsR.value);
+
+const meterGradient = computed(() => {
+  const yellow = meterPosition(levels.value.yellowMin) * 100;
+  const red = Math.max(yellow, meterPosition(levels.value.redAbove) * 100);
+  return `linear-gradient(to top,
+    ${METER_COLORS.green} 0%,
+    ${METER_COLORS.green} ${yellow.toFixed(2)}%,
+    ${METER_COLORS.yellow} ${yellow.toFixed(2)}%,
+    ${METER_COLORS.yellow} ${red.toFixed(2)}%,
+    ${METER_COLORS.red} ${red.toFixed(2)}%,
+    ${METER_COLORS.red} 100%)`;
+});
+
+function fillStyle(db: number): Record<string, string> {
+  const pct = meterPosition(db) * 100;
   return {
     height: '100%',
-    background: colorForLevel(db),
+    background: meterGradient.value,
     clipPath: `inset(${(100 - pct).toFixed(2)}% 0 0 0)`,
-    opacity: String(opacity),
   };
 }
 
-const peakStyleL = computed(() => fillStyle(displayL.value, 1));
-const rmsStyleL  = computed(() => fillStyle(rawRmsL.value,  0.4));
-const peakStyleR = computed(() => fillStyle(displayR.value, 1));
-const rmsStyleR  = computed(() => fillStyle(rawRmsR.value,  0.4));
+function lineStyle(db: number): Record<string, string> {
+  return { bottom: `${(meterPosition(db) * 100).toFixed(2)}%` };
+}
 
-// Gain-reduction fill: grows downward from the top of the GR track,
-// sized by how much the brickwall limiter is currently reducing the signal.
-function grStyle(grDb: number): Record<string, string> {
-  const range = props.maxDb - props.minDb;
-  const pct = range > 0 ? Math.min(100, (Math.abs(grDb) / range) * 100) : 0;
+function peakCapStyle(db: number): Record<string, string> {
   return {
-    background: accentColor.value,
-    clipPath: `inset(0 0 ${(100 - pct).toFixed(2)}% 0)`,
+    ...lineStyle(db),
+    color: colorForLevel(db),
   };
 }
 
-const grStyleL = computed(() => grStyle(leftStream.gainReduction.value));
-const grStyleR = computed(() => grStyle(rightStream.gainReduction.value));
+const peakStyleL = computed(() => peakCapStyle(displayL.value));
+const rmsStyleL  = computed(() => fillStyle(bodyL.value));
+const peakStyleR = computed(() => peakCapStyle(displayR.value));
+const rmsStyleR  = computed(() => fillStyle(bodyR.value));
 
-// Peak-hold line: thin marker at the held level, coloured by zone.
+// Peak-hold line is deliberately neutral so it remains visible in every zone.
 function holdStyle(db: number): Record<string, string> {
-  const pct = Math.min(100, Math.max(0,
-    ((db - props.minDb) / (props.maxDb - props.minDb)) * 100));
-  return { bottom: `${pct.toFixed(2)}%`, background: colorForLevel(db) };
+  return lineStyle(db);
 }
-const holdVisibleL = computed(() => holdL.held.value > props.minDb);
-const holdVisibleR = computed(() => holdR.held.value > props.minDb);
+const holdVisibleL = computed(() => holdL.held.value > meterMinDb);
+const holdVisibleR = computed(() => holdR.held.value > meterMinDb);
 const holdStyleL = computed(() => holdStyle(holdL.held.value));
 const holdStyleR = computed(() => holdStyle(holdR.held.value));
+
+// Each master channel owns an independent limiter. One compact lane therefore
+// shows the worst (most-negative) side and labels it MAX; it must not imply a
+// stereo-linked envelope that the engine does not provide.
+const worstGainReductionDb = computed(() => Math.min(
+  0,
+  leftStream.gainReduction.value,
+  rightStream.gainReduction.value,
+));
+const gainReduction = computed(() => Math.abs(worstGainReductionDb.value));
+const gainReductionLabel = computed(() =>
+  `GR MAX ${worstGainReductionDb.value < -0.05 ? '−' : ''}${gainReduction.value.toFixed(1)}`,
+);
+const gainReductionAriaLabel = computed(() =>
+  `Maximum of independent left and right limiters: ${gainReduction.value.toFixed(1)} decibels`,
+);
+
+// Gain reduction starts at 0 dB at the top of its lane and grows downward
+// through the same negative console taper the operator already sees on the
+// shared scale. Positive fader headroom is intentionally excluded here.
+const gainReductionFloorDb = computed(() => Math.min(props.minDb, 0));
+const gainReductionExtent = computed(() => {
+  const floor = gainReductionFloorDb.value;
+  const clamped = Math.max(floor, Math.min(0, worstGainReductionDb.value));
+  return (1 - dbToConsolePosition(clamped, floor, 0)) * 100;
+});
+const gainReductionFillStyle = computed(() => ({
+  height: `${gainReductionExtent.value.toFixed(2)}%`,
+}));
 
 // Scale tick marks at key zone boundary levels from the server-reported
 // output target. Ticks use the zone colour for their position.
 const scaleMarks = computed(() => {
   const { minDb, maxDb } = props;
-  const range = maxDb - minDb;
-  const lv = levels.value;
   const candidates = [
-    lv.redAbove, lv.yellowMin, lv.greenMin, lv.blueBelow,
-    // Always include 0 at the top as a ceiling reference.
+    maxDb,
+    20,
+    10,
+    5,
     0,
+    -5,
+    -10,
+    -20,
+    -40,
+    minDb,
   ];
   return [...new Set(candidates)]
     .filter(db => db >= minDb && db <= maxDb)
     .sort((a, b) => b - a)
     .map(db => ({
       db,
-      pct: ((db - minDb) / range) * 100,
-      label: String(Math.round(db)),
+      pct: dbToConsolePosition(db, minDb, maxDb) * 100,
+      label: db > 0 ? `+${Math.round(db)}` : String(Math.round(db)).replace('-', '−'),
       color: colorForLevel(db),
     }));
 });
@@ -272,7 +342,7 @@ const peakLabel = computed(() => {
   if (m <= -119) return '−∞';
   // LUFS mode: label the momentary value "M"; the S line follows below.
   if (meterMode.value === 'LUFS') return `M ${m.toFixed(1)}`;
-  return `${Math.round(m)} ${modeLabel.value}`;
+  return `${m.toFixed(1)} ${modeLabel.value}`;
 });
 
 const shortTermLabel = computed(() => {
@@ -291,63 +361,93 @@ const shortTermLabel = computed(() => {
   border: 1px solid var(--color-border);
   border-radius: 6px;
   box-sizing: border-box;
-  // Width is determined by fixed bar widths: scale(24) + gap(3) + 2×chan(14) + gap(3) + padding(10)
-  width: 68px;
+  width: 54px;
   flex-shrink: 0;
   gap: 3px;
 
+  &--strip {
+    width: 132px;
+  }
+
   &__label {
     font-family: var(--font-mono);
-    font-size: 9px;
+    font-size: 10px;
+    font-weight: 700;
     color: var(--color-text-secondary);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.03em;
     text-align: center;
     flex-shrink: 0;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: normal;
     max-width: 100%;
+    min-height: 23px;
+    line-height: 1.1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-wrap: balance;
   }
 
   &__body {
-    display: flex;
-    flex-direction: row;
-    gap: 3px;
+    display: grid;
+    grid-template-columns: 26px;
+    grid-template-rows: 6px minmax(40px, 1fr) 24px;
+    justify-content: center;
+    column-gap: 4px;
+    row-gap: 3px;
     flex: 1;
     min-height: 0;
   }
 
-  // Scale column — tick marks at EBU reference levels
+  &--strip &__body {
+    grid-template-columns: 26px 8px 48px;
+  }
+
+  &__clips {
+    grid-column: 1;
+    grid-row: 1;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 3px;
+    justify-items: center;
+    width: 26px;
+  }
+
   &__scale {
+    grid-column: 3;
+    grid-row: 2;
     position: relative;
-    width: 24px;
-    flex-shrink: 0;
+    min-width: 0;
+    margin: 10px 0;
   }
 
   &__mark {
     position: absolute;
+    left: 0;
     right: 0;
     display: flex;
     align-items: center;
-    gap: 2px;
+    justify-content: flex-end;
+    gap: 4px;
     transform: translateY(50%);
+    pointer-events: none;
   }
 
   &__mark-text {
     font-family: var(--font-mono);
-    font-size: 7px;
+    font-size: 11px;
+    font-weight: 700;
     color: var(--color-text-secondary);
-    opacity: 0.7;
+    opacity: 0.95;
     text-align: right;
-    flex: 1;
     line-height: 1;
     white-space: nowrap;
   }
 
   &__mark-tick {
     display: block;
-    width: 3px;
+    width: 6px;
     height: 1px;
     background: var(--color-border);
     flex-shrink: 0;
@@ -355,77 +455,174 @@ const shortTermLabel = computed(() => {
 
   // Stereo bar pair — fixed gap between L and R channels
   &__bars {
+    grid-column: 1;
+    grid-row: 2;
     display: flex;
     flex-direction: row;
-    gap: 3px;
-    flex: 1;
+    gap: 2px;
     min-height: 0;
+    justify-content: center;
+    padding: 10px 0;
+    box-sizing: border-box;
+    width: 26px;
+    justify-self: start;
+  }
+
+  // Dedicated GR lane between signal and shared scale/fader.
+  &__gr-lane {
+    grid-column: 2;
+    grid-row: 2;
+    position: relative;
+    justify-self: center;
+    width: 8px;
+    min-height: 0;
+    margin: 10px 0;
+  }
+
+  &__gr-track,
+  &__gr-fill {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    border-radius: 1px;
+    pointer-events: none;
+  }
+
+  &__gr-track {
+    border: 1px solid var(--color-border);
+    background:
+      repeating-linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, 0.06) 0 1px,
+        transparent 1px 6px
+      ),
+      color-mix(in srgb, var(--color-background) 84%, black);
+    box-shadow: inset 0 0 3px rgba(0, 0, 0, 0.8);
+
+    &::before {
+      content: '';
+      position: absolute;
+      top: -1px;
+      left: -2px;
+      right: -2px;
+      height: 2px;
+      border-radius: 1px;
+      background: #ffc400;
+      opacity: 0.72;
+    }
+  }
+
+  &__gr-fill {
+    z-index: 1;
+    background: color-mix(in srgb, #ffc400 76%, #715c18);
+    box-shadow: 0 0 3px rgba(255, 196, 0, 0.24);
+    bottom: auto;
+    transition: height 35ms linear;
   }
 
   &__chan {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 2px;
     flex-shrink: 0;
   }
 
   // Clip latch dot above each bar. Dim until a raw sample crosses the clip
   // threshold; click to acknowledge/reset.
   &__clip {
-    width: 8px;
-    height: 4px;
+    appearance: none;
+    width: 11px;
+    height: 5px;
+    padding: 0;
+    border: 0;
     border-radius: 1px;
     background: var(--color-border);
     cursor: pointer;
     flex-shrink: 0;
+    position: relative;
+
+    // Preserve the compact lamp while giving pointer users a practical target.
+    &::before {
+      content: '';
+      position: absolute;
+      inset: -7px -6px;
+    }
 
     &.is-clipped {
       background: #ff1744;
       box-shadow: 0 0 4px rgba(255, 23, 68, 0.8);
     }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-text-primary);
+      outline-offset: 2px;
+    }
   }
 
-  // Row containing the 8px signal track + 4px GR track
+  // One wider signal track per channel; limiter reduction stays in the
+  // permanent numeric readout rather than consuming another meter lane.
   &__bar-group {
-    display: flex;
-    flex-direction: row;
-    gap: 2px;
-    flex: 1;
+    height: 100%;
     min-height: 0;
-    align-items: stretch;
   }
 
-  // 8 px signal level bar — transparent bg so it adapts to light and dark
+  // Segmented broadcast-style signal bar with a fixed level-zone ladder.
   &__track {
-    width: 8px;
+    width: 11px;
+    height: 100%;
     flex-shrink: 0;
-    background: transparent;
+    background:
+      linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, 0.05),
+        rgba(0, 0, 0, 0.18)
+      ),
+      color-mix(in srgb, var(--color-background) 84%, black);
     border: 1px solid var(--color-border);
     border-radius: 2px;
     position: relative;
     overflow: hidden;
+    box-shadow: inset 0 0 3px rgba(0, 0, 0, 0.8);
   }
 
-  // 4 px gain-reduction bar — same rounded-rect shape as the signal track
-  &__gr-track {
-    width: 4px;
-    flex-shrink: 0;
-    background: transparent;
-    border: 1px solid var(--color-border);
-    border-radius: 2px;
-    position: relative;
-    overflow: hidden;
-  }
-
-  // Fill shared by both signal fills and the GR fill
-  &__fill,
-  &__gr-fill {
+  &__track::after {
+    content: '';
     position: absolute;
     inset: 0;
-    // ~One broadcast frame (30 Hz): just enough to hide frame jitter.
-    // Meter feel comes from the engine's ballistics, not CSS smoothing.
+    background:
+      repeating-linear-gradient(
+        to top,
+        rgba(255, 255, 255, 0.06) 0 1px,
+        transparent 1px 6px
+      );
+    pointer-events: none;
+  }
+
+  &__rms-fill {
+    position: absolute;
+    inset: 0;
     transition: clip-path 35ms linear;
+    -webkit-mask: repeating-linear-gradient(to top, #000 0 4px, transparent 4px 6px);
+    mask: repeating-linear-gradient(to top, #000 0 4px, transparent 4px 6px);
+    opacity: 0.58;
+  }
+
+  // DAW-style bright edge over a dimmer body so peaks read instantly.
+  &__peak-cap {
+    position: absolute;
+    left: 1px;
+    right: 1px;
+    height: 4px;
+    z-index: 2;
+    border-radius: 1px;
+    background: currentColor;
+    box-shadow:
+      0 0 4px color-mix(in srgb, currentColor 60%, white),
+      0 0 1px rgba(255, 255, 255, 0.7);
+    pointer-events: none;
+    transform: translateY(50%);
+    transition: bottom 35ms linear, color 35ms linear;
   }
 
   // Peak-hold line — no transition: it snaps to new peaks and drops on
@@ -435,22 +632,54 @@ const shortTermLabel = computed(() => {
     left: 0;
     right: 0;
     height: 2px;
+    z-index: 3;
+    background: var(--color-text-primary);
+    box-shadow: 0 0 3px rgba(255, 255, 255, 0.55);
     pointer-events: none;
   }
 
-  &__chan-label {
+  &__chan-labels {
+    grid-column: 1;
+    grid-row: 3;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 3px;
+    justify-items: center;
+    align-items: center;
     font-family: var(--font-mono);
-    font-size: 7px;
+    font-size: 10px;
     color: var(--color-text-secondary);
-    flex-shrink: 0;
+    width: 26px;
+  }
+
+  &--strip &__chan-labels {
+    padding-right: 0;
   }
 
   &__peak-text {
     font-family: var(--font-mono);
-    font-size: 9px;
+    font-size: 11px;
+    font-weight: 700;
     color: var(--color-text-secondary);
     text-align: center;
     flex-shrink: 0;
+    display: grid;
+    gap: 1px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  &__gr-text {
+    color: var(--color-text-secondary);
+
+    &.is-active {
+      color: #ffc400;
+    }
+  }
+
+  &__footer {
+    width: 100%;
+    flex: 0 0 auto;
   }
 }
 </style>

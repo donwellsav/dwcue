@@ -7,8 +7,9 @@
     ]"
     :style="computedStyle"
     v-bind="$attrs"
+    :aria-label="getAccessibleLabel()"
   >
-    <span class="material-symbols-rounded">{{ icon }}</span>
+    <span class="material-symbols-rounded" aria-hidden="true">{{ icon }}</span>
   </button>
 </template>
 
@@ -26,6 +27,13 @@ const props = withDefaults(defineProps<{
   isActive: false,
 });
 
+const attrs = useAttrs();
+const getAccessibleLabel = () => {
+  const explicit = attrs['aria-label'];
+  if (typeof explicit === 'string' && explicit) return explicit;
+  return typeof attrs.title === 'string' ? attrs.title : undefined;
+};
+
 const computedStyle = computed(() => {
   if (props.isActive) {
     return {
@@ -34,7 +42,7 @@ const computedStyle = computed(() => {
       color: props.activeTextColor,
     };
   }
-  return { '--action-highlight': props.highlightColor, '--action-text': props.activeTextColor };
+  return { '--action-highlight': props.highlightColor };
 });
 </script>
 
@@ -43,7 +51,7 @@ const computedStyle = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--border-radius-sm);
+  border-radius: var(--control-radius);
   background-color: var(--color-control);
   border: 1px solid var(--color-border);
   color: var(--color-text-primary);
@@ -51,13 +59,15 @@ const computedStyle = computed(() => {
     background-color var(--transition-fast),
     border-color var(--transition-fast),
     color var(--transition-fast),
-    transform var(--transition-fast);
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
   cursor: pointer;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
 
   &:hover:not(:disabled) {
-    background-color: var(--action-highlight, var(--color-accent));
+    background-color: var(--color-surface-hover);
     border-color: var(--action-highlight, var(--color-accent));
-    color: var(--action-text, white);
+    color: var(--action-highlight, var(--color-accent));
   }
 
   &:disabled {

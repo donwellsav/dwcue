@@ -1027,9 +1027,10 @@ export const useProject = () => {
       const path = projectFilePathRef.value ||
                    `${currentProject.value.folderPath}/${currentProject.value.name}.liveplay`;
       const res = await server.saveProjectTo(path, docSnapshot, opts?.signal);
-      if (res?.ok) hasUnsavedChanges.value = false;
+      hasUnsavedChanges.value = !res?.ok;
       return !!res?.ok;
     } catch (error) {
+      hasUnsavedChanges.value = true;
       console.error('Error saving project:', error);
       return false;
     }

@@ -21,19 +21,33 @@
 
     <!-- Empty slot: importing is an edit action, so in Show Mode the slot is
          inert (just a dimmed number) rather than a "click to import" target. -->
-    <div v-if="!hasItem" class="empty-slot" :class="{ 'empty-slot--inert': showMode }" @click="showMode ? undefined : handleImport()">
+    <button
+      v-if="!hasItem && !showMode"
+      type="button"
+      class="empty-slot"
+      :aria-label="`${t('project.importAudio')}, ${t('cart.slot')} ${slot + 1}`"
+      aria-describedby="cart-load-hint"
+      @click="handleImport"
+    >
       <span class="slot-number">{{ slot + 1 }}</span>
       <span v-if="keyLabel" class="key-label">{{ keyLabel }}</span>
-      <span v-if="!showMode" class="slot-hint">{{ t('cart.clickToImport') }}</span>
+    </button>
+    <div v-else-if="!hasItem" class="empty-slot empty-slot--inert">
+      <span class="slot-number">{{ slot + 1 }}</span>
+      <span v-if="keyLabel" class="key-label">{{ keyLabel }}</span>
     </div>
 
     <div
       v-else
       class="slot-content"
       :draggable="!showMode"
+      :role="showMode ? 'button' : undefined"
+      :tabindex="showMode ? 0 : undefined"
+      :aria-label="showMode ? showModeAccessibleName : undefined"
       @dragstart="handleDragStart"
       @dragend="handleDragEnd"
       @click="showMode ? handleSlotClick() : undefined"
+      @keydown="handleSlotKeydown"
     >
       <!-- Waveform canvas -->
       <canvas
@@ -47,19 +61,27 @@
 
       <!-- Item info section -->
       <div class="slot-header" @click="handleSelect($event)">
-        <span class="slot-number">{{ slot + 1 }}</span>
-        <span class="slot-name" :class="{ 'is-peaking': isPeaking }">{{ item.displayName }}</span>
-        <span
-          v-if="isPeaking"
-          class="material-symbols-rounded peak-warning-icon"
-          :title="t('properties.peakWarning')"
-          draggable="false"
-          @click.stop
-        >bomb</span>
-        <span v-if="isPlaying" class="status-pill playing">{{ t('status.playing') }}</span>
-        <span v-else-if="isQueuedNext" class="status-pill up-next">{{ t('status.upNext') }}</span>
-        <span v-if="isPreviewing" class="status-pill preview">{{ t('status.previewing') }}</span>
-        <span v-if="keyLabel" class="key-label">{{ keyLabel }}</span>
+        <div class="slot-meta">
+          <span class="slot-number">{{ slot + 1 }}</span>
+          <div class="slot-state">
+            <span v-if="isPlaying" class="status-pill playing">{{ t('status.playing') }}</span>
+            <span v-else-if="isQueuedNext" class="status-pill up-next">{{ t('status.upNext') }}</span>
+            <span v-if="isPreviewing" class="status-pill preview">{{ t('status.previewing') }}</span>
+            <span v-if="keyLabel" class="key-label">{{ keyLabel }}</span>
+          </div>
+        </div>
+        <div class="slot-title">
+          <span class="slot-name" :class="{ 'is-peaking': isPeaking }" :title="item.displayName">{{ item.displayName }}</span>
+          <span
+            v-if="isPeaking"
+            class="material-symbols-rounded peak-warning-icon"
+            :title="t('properties.peakWarning')"
+            role="img"
+            :aria-label="t('properties.peakWarning')"
+            draggable="false"
+            @click.stop="showMode ? handleSlotClick() : undefined"
+          >bomb</span>
+        </div>
       </div>
       
       <!-- Waveform/Progress section at bottom -->
@@ -84,7 +106,7 @@
           <ActionButton
             v-if="item.type === 'audio'"
             :icon="'headphones'"
-            :highlight-color="isPreviewing ? 'var(--color-accent)' : 'var(--color-success)'"
+            highlight-color="var(--state-preview)"
             :is-active="isPreviewing"
             :class="{ 'no-device': !hasPreviewDevice }"
             context="Cart"
@@ -93,14 +115,14 @@
           />
           <ActionButton
             :icon="isPlaying ? 'stop' : 'play_arrow'"
-            :highlight-color="isPlaying ? 'var(--color-danger)' : 'var(--color-success)'"
+            highlight-color="var(--state-playing)"
             context="Cart"
             @click.stop="isPlaying ? handleStop() : handlePlay()"
             :title="isPlaying ? t('actions.stop') : t('actions.play')"
           />
           <ActionButton
             icon="fast_forward"
-            highlight-color="var(--color-warning)"
+            highlight-color="var(--state-up-next)"
             active-text-color="black"
             :is-active="isManuallyQueued"
             context="Cart"
@@ -192,13 +214,10 @@ import { exceedsTruePeakCeiling, parseWaveformFileData } from '~/utils/audio';
 
 const props = defineProps<{
   slot: number;
+  maxSlot: number;
   item: AudioItem | null;
   keyLabel?: string;
 }>();
-
-// Highest valid cart slot index. The grid renders 16 slots (CartPlayer:
-// v-for="slot in 16"), so indices run 0..15.
-const CART_SLOT_MAX = 15;
 
 const slotRef = ref<HTMLElement | null>(null);
 const showImportModal = ref(false);
@@ -408,6 +427,15 @@ const handleSlotClick = () => {
   isPlaying.value ? handleStop() : handlePlay();
 };
 
+const handleSlotKeydown = (event: KeyboardEvent) => {
+  if (!showMode.value || event.target !== event.currentTarget) return;
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (!event.repeat) handleSlotClick();
+};
+
 const handleSelect = (event?: MouseEvent) => {
   if (!props.item) return;
   if (showMode.value) return;
@@ -507,6 +535,16 @@ const { previewItemUuid, startPreview, stopPreview } = useProject();
 const isPreviewing = computed(() =>
   props.item ? previewItemUuid.value === props.item.uuid : false,
 );
+const showModeAccessibleName = computed(() => {
+  if (!props.item) return '';
+  return [
+    `${t('cart.slot')} ${props.slot + 1}`,
+    props.item.displayName,
+    isPlaying.value ? t('status.playing') : (isQueuedNext.value ? t('status.upNext') : ''),
+    isPreviewing.value ? t('status.previewing') : '',
+    isPlaying.value ? t('actions.stop') : t('actions.play'),
+  ].filter(Boolean).join(', ');
+});
 const hasPreviewDevice = computed(() => !!(currentProject.value as any)?.settings?.previewDevice);
 const showProjectSettings = useState('showProjectSettings', () => false);
 const handleStartPreview = () => {
@@ -605,14 +643,21 @@ let waveformPollInterval: NodeJS.Timeout | null = null;
 onMounted(() => {
   // Use native DOM listeners for drag-and-drop — Vue event handlers
   // on this component don't receive drop events (likely a Vue 3 scoped template issue).
-  // Skipped in Show Mode so cues can't be accidentally reordered/replaced mid-show.
-  if (slotRef.value && !showMode.value) {
+  // Bind once regardless of the initial mode; each event reads the live mode
+  // so switching between Show and Edit Mode cannot strand drag/drop disabled.
+  if (slotRef.value) {
     slotRef.value.addEventListener('dragenter', (e) => {
       e.preventDefault();
+      if (showMode.value && e.dataTransfer) e.dataTransfer.dropEffect = 'none';
     });
     slotRef.value.addEventListener('dragover', (e) => {
       e.preventDefault();
       if (e.dataTransfer) {
+        if (showMode.value) {
+          isDragOver.value = false;
+          e.dataTransfer.dropEffect = 'none';
+          return;
+        }
         isDragOver.value = true;
         e.dataTransfer.dropEffect = 'move';
       }
@@ -622,6 +667,10 @@ onMounted(() => {
     });
     slotRef.value.addEventListener('drop', (e) => {
       e.preventDefault();
+      if (showMode.value) {
+        isDragOver.value = false;
+        return;
+      }
       handleDrop(e);
     });
   }
@@ -788,7 +837,7 @@ const handleDrop = async (e: DragEvent) => {
       while (occupied.has(firstFree)) firstFree += 1;
 
       // No blank slot remains before the end of the grid → no room to push.
-      if (firstFree > CART_SLOT_MAX) return;
+      if (firstFree > props.maxSlot) return;
 
       // Shift the run up by one, highest slot first to avoid collisions.
       for (let s = firstFree - 1; s >= targetSlot; s--) {
@@ -860,6 +909,7 @@ const handleDrop = async (e: DragEvent) => {
 
 <style scoped lang="scss">
 .cart-slot {
+  container-type: size;
   border: 1px solid var(--color-border);
   border-radius: var(--border-radius-md);
   background-color: var(--color-surface);
@@ -876,7 +926,6 @@ const handleDrop = async (e: DragEvent) => {
   
   &:hover {
     background-color: var(--color-surface-hover);
-    transform: translateY(-1px);
   }
   
   &.has-item {
@@ -930,6 +979,13 @@ const handleDrop = async (e: DragEvent) => {
 }
 
 .empty-slot {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
   width: 100%;
   height: 100%;
   display: flex;
@@ -937,6 +993,12 @@ const handleDrop = async (e: DragEvent) => {
   align-items: center;
   justify-content: center;
   gap: var(--spacing-sm);
+
+  &:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: -3px;
+    border-radius: var(--border-radius-md);
+  }
   
   .slot-number {
     font-family: var(--font-mono);
@@ -945,13 +1007,6 @@ const handleDrop = async (e: DragEvent) => {
     color: var(--color-text-tertiary);
   }
   
-  .slot-hint {
-    font-size: 11px;
-    color: var(--color-text-tertiary);
-    padding-left: 4px;
-    text-align: center;
-  }
-
   .key-label {
     font-size: 11px;
     font-weight: 600;
@@ -971,9 +1026,17 @@ const handleDrop = async (e: DragEvent) => {
   flex-direction: column;
   position: relative;
   padding: var(--spacing-sm);
-  padding-bottom: 40px; /* Space for absolute positioned footer */
-  cursor: move;
+  padding-bottom: 36px; /* Space for absolute positioned footer */
+  cursor: grab;
   min-height: 0;
+
+  &[role='button']:focus-visible {
+    outline: 2px solid var(--color-text-primary);
+    outline-offset: -3px;
+    border-radius: var(--control-radius);
+    box-shadow: inset 0 0 0 6px var(--color-focus-ring);
+  }
+
   &:active {
     cursor: grabbing;
   }
@@ -981,46 +1044,36 @@ const handleDrop = async (e: DragEvent) => {
 
 .slot-header {
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: stretch;
   gap: var(--spacing-xs);
-  margin-bottom: var(--spacing-xs);
   cursor: pointer;
   z-index: 2;
-  
+  min-width: 0;
+}
+
+.slot-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  min-width: 0;
+
   .slot-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: 10px;
     font-weight: 600;
-    color: var(--color-text-secondary);
-    min-width: 24px;
-    flex-shrink: 0;
-  }
-  
-  .slot-name {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--color-text-primary);
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
-    -webkit-box-orient: vertical;
-    line-height: 1.3;
-    flex: 1;
-
-    &.is-peaking {
-      color: #ff3b5c;
-    }
-  }
-
-  .peak-warning-icon {
-    font-size: 16px;
-    color: #ff3b5c;
-    flex-shrink: 0;
-    cursor: help;
     line-height: 1;
-    align-self: flex-start;
-    margin-top: 1px;
+    color: var(--color-text-secondary);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--pill-radius);
+    min-width: 22px;
+    height: 20px;
+    padding: 0 5px;
+    flex-shrink: 0;
   }
 
   .key-label {
@@ -1029,75 +1082,100 @@ const handleDrop = async (e: DragEvent) => {
     color: var(--color-text-secondary);
     background: rgba(0, 0, 0, 0.2);
     border: 1px solid var(--color-border);
-    border-radius: 3px;
-    padding: 0 4px;
+    border-radius: var(--pill-radius);
+    padding: 1px 5px;
     font-family: var(--font-mono);
     flex-shrink: 0;
-    line-height: 1.6;
+    line-height: 1.4;
   }
 }
 
-.content-header {
+.slot-state {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: var(--spacing-xs);
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-xs);
+  min-width: 0;
+  margin-left: auto;
 }
 
 .slot-title {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+
+.slot-name {
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  -webkit-box-orient: vertical;
+  line-height: 1.2;
   flex: 1;
-  
-  .slot-number {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--color-text-secondary);
-    margin-bottom: 2px;
+
+  &.is-peaking {
+    color: var(--color-danger);
   }
-  
-  .slot-name {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--color-text-primary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+}
+
+.peak-warning-icon {
+  font-size: 16px;
+  color: var(--color-danger);
+  flex-shrink: 0;
+  cursor: help;
+  line-height: 1;
+  margin-top: 1px;
 }
 
 .status-pill {
   display: inline-flex;
   align-items: center;
-  padding: 1px 6px;
-  border-radius: 2px;
+  padding: 2px 6px;
+  border-radius: var(--pill-radius);
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
   white-space: nowrap;
   flex-shrink: 0;
-  line-height: 1.4;
+  line-height: 1.2;
 
   &.playing {
-    background-color: var(--color-success);
-    color: white;
+    background-color: var(--state-playing);
+    color: black;
   }
 
   &.up-next {
-    background-color: var(--color-warning);
+    background-color: var(--state-up-next);
     color: black;
   }
 
   &.preview {
-    background-color: var(--color-success);
-    color: black;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+    background-color: var(--state-preview);
+    color: var(--color-text-on-accent);
   }
 }
 
 .slot-actions {
   display: flex;
-  gap: 4px;
+  gap: 3px;
   flex-shrink: 0;
+  opacity: 0.84;
+  transition: opacity var(--transition-fast);
+
+  &:focus-within {
+    opacity: 1;
+  }
+}
+
+.cart-slot:hover .slot-actions {
+  opacity: 1;
 }
 
 .no-device {
@@ -1111,17 +1189,20 @@ const handleDrop = async (e: DragEvent) => {
   right: var(--spacing-sm);
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: 6px;
   justify-content: space-between;
   flex-shrink: 0;
+  min-height: 28px;
   z-index: 2;
 }
 
 .slot-info {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: 5px;
   margin-left: auto;
+  min-height: 28px;
+  flex-shrink: 0;
 }
 
 .behavior-indicators {
@@ -1130,18 +1211,22 @@ const handleDrop = async (e: DragEvent) => {
   align-items: center;
   
   .behavior-icon {
-    font-size: 14px;
-    color: var(--color-text-secondary);
-    opacity: 0.7;
+    font-size: 13px;
+    color: var(--color-text-tertiary);
+    opacity: 0.75;
   }
 }
 
 .slot-duration {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
   color: var(--color-text-secondary);
   white-space: nowrap;
+  width: 8ch;
+  min-width: 8ch;
+  text-align: right;
 }
 
 .slot-waveform-area {
@@ -1149,7 +1234,7 @@ const handleDrop = async (e: DragEvent) => {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  min-height: 30px;
+  min-height: 0;
   overflow: hidden; /* Prevent overflow */
 }
 
@@ -1194,7 +1279,7 @@ const handleDrop = async (e: DragEvent) => {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background-color: var(--color-success);
+  background-color: var(--state-playing);
   animation: blink 1s ease-in-out infinite;
 }
 
@@ -1208,8 +1293,8 @@ const handleDrop = async (e: DragEvent) => {
 }
 
 /* ------------------------------------------------------------------ */
-/* Show Mode — bigger name text and chunky play/stop / set-next        */
-/* buttons for touch. Empty slots become inert (no import cursor).      */
+/* Show Mode — the filled pad is one large play/stop target. Empty      */
+/* slots stay inert.                                                     */
 /* ------------------------------------------------------------------ */
 .cart-slot.show-mode {
   &:hover {
@@ -1223,40 +1308,84 @@ const handleDrop = async (e: DragEvent) => {
   }
 
   .slot-name {
-    font-size: 17px;
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1.15;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
   }
 
   .slot-duration {
-    font-size: 14px;
+    font-size: 13px;
+    color: var(--color-text-secondary);
   }
 
   .behavior-icon {
-    font-size: 18px !important;
+    font-size: 16px !important;
   }
 
-  :deep(.action-btn--cart) {
-    width: 46px;
-    height: 46px;
-
-    .material-symbols-rounded {
-      font-size: 24px;
-    }
-  }
-
-  .slot-actions {
-    gap: var(--spacing-sm);
-  }
-
-  /* No buttons in Show Mode — the whole slot is the play/stop trigger, and
-     it's not draggable, so drop the "move" cursor and shrink the footer
-     padding back down (no buttons to clear). */
+  /* The footer keeps its own lane so duration and behavior metadata do not
+     jump around as playback starts. */
   .slot-content {
     cursor: pointer;
-    padding-bottom: var(--spacing-sm);
+    padding: var(--spacing-md);
+    padding-bottom: 44px;
 
     &:active {
       cursor: pointer;
+      background: rgba(0, 0, 0, 0.08);
     }
+  }
+
+  .slot-footer {
+    right: var(--spacing-md);
+    bottom: var(--spacing-md);
+    left: var(--spacing-md);
+  }
+}
+
+/* Keep loaded carts readable when the operator chooses a short card height. */
+@container (max-height: 110px) {
+  .slot-content,
+  .cart-slot.show-mode .slot-content {
+    display: grid;
+    grid-template-rows: 20px minmax(0, 1fr) 28px;
+    padding: 6px;
+  }
+
+  .slot-header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+  }
+
+  .slot-meta,
+  .slot-title {
+    min-width: 0;
+  }
+
+  .slot-state {
+    gap: 2px;
+  }
+
+  .status-pill {
+    padding: 1px 4px;
+    font-size: 8px;
+  }
+
+  .slot-name,
+  .cart-slot.show-mode .slot-name {
+    font-size: 13px;
+    line-height: 1.1;
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+  }
+
+  .slot-footer,
+  .cart-slot.show-mode .slot-footer {
+    position: static;
+    min-height: 28px;
   }
 }
 </style>

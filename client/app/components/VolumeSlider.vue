@@ -1,5 +1,17 @@
 <template>
-  <div class="volume-slider" :title="title">
+  <div
+    class="volume-slider"
+    :class="{ 'volume-slider--inline': inlineScale }"
+    :title="title"
+  >
+    <CanvasFader
+      :db="db"
+      :min-db="minDb"
+      :max-db="maxDb"
+      :label="title"
+      @input="$emit('input', $event)"
+      @reset="$emit('reset')"
+    />
     <div class="volume-slider__label-wrap">
       <span
         v-if="!isEditing"
@@ -19,13 +31,6 @@
         @keyup.escape="cancelEdit"
       />
     </div>
-    <CanvasFader
-      :db="db"
-      :min-db="minDb"
-      :max-db="maxDb"
-      @input="$emit('input', $event)"
-      @reset="$emit('reset')"
-    />
   </div>
 </template>
 
@@ -37,9 +42,11 @@ const props = withDefaults(defineProps<{
   minDb?: number;
   maxDb?: number;
   title?: string;
+  inlineScale?: boolean;
 }>(), {
   minDb: -60,
   maxDb: 6,
+  inlineScale: false,
 });
 
 const emit = defineEmits<{
@@ -60,7 +67,7 @@ function formatLabel(db: number): string {
 }
 
 function startEdit() {
-  editValue.value = Number(props.db.toFixed(1));
+  editValue.value = Number(Math.max(props.minDb, props.db).toFixed(1));
   isEditing.value = true;
   nextTick(() => {
     if (inputRef.value) {
@@ -89,14 +96,33 @@ function cancelEdit() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  width: 20px;
+  gap: 6px;
+  width: 48px;
   padding: 2px 0;
+}
+
+.volume-slider--inline {
+  display: contents;
+}
+
+.volume-slider--inline :deep(.canvas-fader) {
+  grid-column: 3;
+  grid-row: 2;
+  z-index: 1;
+  justify-self: center;
+  width: 48px;
+  height: 100%;
+}
+
+.volume-slider--inline .volume-slider__label-wrap {
+  grid-column: 3;
+  grid-row: 3;
+  z-index: 1;
 }
 
 .volume-slider__label-wrap {
   position: relative;
-  height: 18px;
+  height: 24px;
   width: 100%;
   display: flex;
   justify-content: center;
@@ -105,17 +131,17 @@ function cancelEdit() {
 
 .volume-slider__label {
   font-family: var(--font-mono, monospace);
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
   color: var(--color-text-primary);
   text-align: center;
   line-height: 1;
   cursor: text;
-  padding: 2px 4px;
+  padding: 3px 6px;
   background: rgba(128, 128, 128, 0.15);
   border-radius: 4px;
   white-space: nowrap;
-  min-width: 28px;
+  min-width: 42px;
   user-select: none;
 }
 
@@ -125,10 +151,10 @@ function cancelEdit() {
   left: 50%;
   transform: translateX(-50%);
   z-index: var(--z-index-dropdown, 1000);
-  width: 40px;
-  height: 20px;
+  width: 56px;
+  height: 24px;
   font-family: var(--font-mono, monospace);
-  font-size: 10px;
+  font-size: 13px;
   text-align: center;
   background: var(--color-surface);
   color: var(--color-text-primary);

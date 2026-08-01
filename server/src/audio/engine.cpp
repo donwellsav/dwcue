@@ -1170,10 +1170,12 @@ void AudioEngine::clear_master_assignment(MasterChannelIndex master) {
 // Master
 // ---------------------------------------------------------------------------
 void AudioEngine::set_master_ceiling_db(float db) {
+    if (!std::isfinite(db)) return;
+    db = std::clamp(db, -60.0f, 0.0f);
     std::lock_guard lock{mutex_};
     cfg_.master_ceiling_db = db;
     for (auto& ms : master_state_) {
-        ms.limiter->configure(cfg_.mix_sample_rate, db);
+        ms.limiter->set_ceiling_db(db);
     }
 }
 
@@ -1597,6 +1599,7 @@ void AudioEngine::render_one_block(const Topology& topo) {
     }
 
     // ---- Tier-2 → Tier-3 mix into master accumulators ----
+    const bool limiter_enabled = limiter_enabled_.load(std::memory_order_acquire);
     for (MasterChannelIndex mc = 0; mc < cfg_.master_channels; ++mc) {
         Sample* acc = topo.master_accumulators[mc].data();
         for (const auto& send : topo.masters[mc].sends) {
@@ -1621,11 +1624,8 @@ void AudioEngine::render_one_block(const Topology& topo) {
         if (og != 1.0f) {
             for (std::size_t s = 0; s < block; ++s) buf[s] *= og;
         }
-        // Brick-wall limiter (bypassed when the operator has disabled it, so
-        // peaks above the ceiling pass through unmodified).
-        if (limiter_enabled_.load(std::memory_order_acquire)) {
-            master_state_[mc].limiter->process(buf, block);
-        }
+        // Always advance limiter state so bypass never changes output latency.
+        master_state_[mc].limiter->process(buf, block, limiter_enabled);
         master_state_[mc].meter->push_block(buf, block);
     }
 

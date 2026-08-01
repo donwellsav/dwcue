@@ -11,7 +11,112 @@
 
 export type UiMode = 'edit' | 'playback';
 
+export type CartGridLayout = {
+  rows: number;
+  columns: number;
+  minHeight: number;
+};
+
+export const CART_GRID_LIMITS = {
+  rows: { min: 1, max: 16 },
+  columns: { min: 1, max: 16 },
+} as const;
+
+export const CART_GRID_PROFILES = {
+  attachedRegular: {
+    minHeight: 64,
+    maxHeight: 600,
+    default: { rows: 8, columns: 2, minHeight: 88 },
+  },
+  attachedShow: {
+    minHeight: 72,
+    maxHeight: 600,
+    default: { rows: 8, columns: 2, minHeight: 150 },
+  },
+  detachedRegular: {
+    minHeight: 64,
+    maxHeight: 600,
+    default: { rows: 6, columns: 3, minHeight: 88 },
+  },
+  detachedShow: {
+    minHeight: 72,
+    maxHeight: 600,
+    default: { rows: 6, columns: 3, minHeight: 150 },
+  },
+} as const;
+
+export type CartGridProfile = keyof typeof CART_GRID_PROFILES;
+export type CartGridLayouts = Record<CartGridProfile, CartGridLayout>;
+
+const CART_GRID_PROFILE_KEYS = Object.keys(CART_GRID_PROFILES) as CartGridProfile[];
+
+const normalizeBoundedInteger = (
+  value: unknown,
+  min: number,
+  max: number,
+  fallback: number,
+): number => {
+  const number = typeof value === 'number' || (typeof value === 'string' && value.trim())
+    ? Number(value)
+    : Number.NaN;
+  return Number.isFinite(number)
+    ? Math.min(max, Math.max(min, Math.round(number)))
+    : fallback;
+};
+
+export const PLAYLIST_ROW_HEIGHTS = {
+  regular: { min: 44, max: 72, default: 44 },
+  show: { min: 60, max: 96, default: 68 },
+  folder: { min: 60, max: 96, default: 60 },
+} as const;
+
+export type PlaylistRowMode = keyof typeof PLAYLIST_ROW_HEIGHTS;
+
+export const normalizePlaylistRowHeight = (value: unknown, mode: PlaylistRowMode): number => {
+  const range = PLAYLIST_ROW_HEIGHTS[mode];
+  return normalizeBoundedInteger(value, range.min, range.max, range.default);
+};
+
+export const normalizeCartGridLayouts = (value: unknown): CartGridLayouts => {
+  const source = value && typeof value === 'object'
+    ? value as Partial<Record<CartGridProfile, Partial<CartGridLayout>>>
+    : {};
+  return Object.fromEntries(CART_GRID_PROFILE_KEYS.map((profile) => {
+    const spec = CART_GRID_PROFILES[profile];
+    const raw = source[profile] ?? {};
+    return [profile, {
+      rows: normalizeBoundedInteger(
+        raw.rows,
+        CART_GRID_LIMITS.rows.min,
+        CART_GRID_LIMITS.rows.max,
+        spec.default.rows,
+      ),
+      columns: normalizeBoundedInteger(
+        raw.columns,
+        CART_GRID_LIMITS.columns.min,
+        CART_GRID_LIMITS.columns.max,
+        spec.default.columns,
+      ),
+      minHeight: normalizeBoundedInteger(
+        raw.minHeight,
+        spec.minHeight,
+        spec.maxHeight,
+        spec.default.minHeight,
+      ),
+    }];
+  })) as CartGridLayouts;
+};
+
 const STORAGE_KEY = 'liveplay-ui-mode';
+const REGULAR_ROW_HEIGHT_KEY = 'liveplay-playlist-row-height-regular';
+const SHOW_ROW_HEIGHT_KEY = 'liveplay-playlist-row-height-show';
+const FOLDER_ROW_HEIGHT_KEY = 'liveplay-playlist-row-height-folder';
+const CART_GRID_LAYOUTS_KEY = 'liveplay-cart-grid-layouts-v1';
+
+const parseCartGridLayouts = (value: string | null): CartGridLayouts => {
+  if (!value) return normalizeCartGridLayouts(null);
+  try { return normalizeCartGridLayouts(JSON.parse(value)); } catch { return normalizeCartGridLayouts(null); }
+};
 
 // Guards the one-time localStorage read so multiple components calling
 // useUiMode() don't repeatedly touch storage or clobber each other.
@@ -19,12 +124,41 @@ let _hydrated = false;
 
 export const useUiMode = () => {
   const uiMode = useState<UiMode>('useUiMode.uiMode', () => 'edit');
+  const regularPlaylistRowHeight = useState<number>(
+    'useUiMode.regularPlaylistRowHeight',
+    () => PLAYLIST_ROW_HEIGHTS.regular.default,
+  );
+  const showPlaylistRowHeight = useState<number>(
+    'useUiMode.showPlaylistRowHeight',
+    () => PLAYLIST_ROW_HEIGHTS.show.default,
+  );
+  const folderPlaylistRowHeight = useState<number>(
+    'useUiMode.folderPlaylistRowHeight',
+    () => PLAYLIST_ROW_HEIGHTS.folder.default,
+  );
+  const cartGridLayouts = useState<CartGridLayouts>(
+    'useUiMode.cartGridLayouts',
+    () => normalizeCartGridLayouts(null),
+  );
 
   if (import.meta.client && !_hydrated) {
     _hydrated = true;
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved === 'edit' || saved === 'playback') uiMode.value = saved;
+      regularPlaylistRowHeight.value = normalizePlaylistRowHeight(
+        localStorage.getItem(REGULAR_ROW_HEIGHT_KEY),
+        'regular',
+      );
+      showPlaylistRowHeight.value = normalizePlaylistRowHeight(
+        localStorage.getItem(SHOW_ROW_HEIGHT_KEY),
+        'show',
+      );
+      folderPlaylistRowHeight.value = normalizePlaylistRowHeight(
+        localStorage.getItem(FOLDER_ROW_HEIGHT_KEY),
+        'folder',
+      );
+      cartGridLayouts.value = parseCartGridLayouts(localStorage.getItem(CART_GRID_LAYOUTS_KEY));
     } catch {
       // localStorage unavailable (e.g. private browsing) — fall back to 'edit'.
     }
@@ -35,9 +169,18 @@ export const useUiMode = () => {
     // fires in every *other* same-origin window when localStorage changes.
     try {
       window.addEventListener('storage', (e) => {
-        if (e.key !== STORAGE_KEY) return;
-        const next = e.newValue;
-        if (next === 'edit' || next === 'playback') uiMode.value = next;
+        if (e.key === STORAGE_KEY) {
+          const next = e.newValue;
+          if (next === 'edit' || next === 'playback') uiMode.value = next;
+        } else if (e.key === REGULAR_ROW_HEIGHT_KEY) {
+          regularPlaylistRowHeight.value = normalizePlaylistRowHeight(e.newValue, 'regular');
+        } else if (e.key === SHOW_ROW_HEIGHT_KEY) {
+          showPlaylistRowHeight.value = normalizePlaylistRowHeight(e.newValue, 'show');
+        } else if (e.key === FOLDER_ROW_HEIGHT_KEY) {
+          folderPlaylistRowHeight.value = normalizePlaylistRowHeight(e.newValue, 'folder');
+        } else if (e.key === CART_GRID_LAYOUTS_KEY) {
+          cartGridLayouts.value = parseCartGridLayouts(e.newValue);
+        }
       });
     } catch {
       // window/addEventListener unavailable — sync simply won't happen.
@@ -48,6 +191,9 @@ export const useUiMode = () => {
     try {
       window.electronAPI?.onUiModeSet?.((_event, mode) => {
         if (mode === 'edit' || mode === 'playback') uiMode.value = mode;
+      });
+      window.electronAPI?.onCartGridLayoutsSet?.((_event, value) => {
+        cartGridLayouts.value = parseCartGridLayouts(value);
       });
     } catch {
       // electronAPI unavailable (browser context) — IPC sync won't happen.
@@ -64,9 +210,63 @@ export const useUiMode = () => {
     }
   };
 
+  const setRegularPlaylistRowHeight = (value: unknown) => {
+    const next = normalizePlaylistRowHeight(value, 'regular');
+    regularPlaylistRowHeight.value = next;
+    if (import.meta.client) {
+      try { localStorage.setItem(REGULAR_ROW_HEIGHT_KEY, String(next)); } catch {}
+    }
+  };
+
+  const setShowPlaylistRowHeight = (value: unknown) => {
+    const next = normalizePlaylistRowHeight(value, 'show');
+    showPlaylistRowHeight.value = next;
+    if (import.meta.client) {
+      try { localStorage.setItem(SHOW_ROW_HEIGHT_KEY, String(next)); } catch {}
+    }
+  };
+
+  const setFolderPlaylistRowHeight = (value: unknown) => {
+    const next = normalizePlaylistRowHeight(value, 'folder');
+    folderPlaylistRowHeight.value = next;
+    if (import.meta.client) {
+      try { localStorage.setItem(FOLDER_ROW_HEIGHT_KEY, String(next)); } catch {}
+    }
+  };
+
+  const setCartGridLayout = (
+    profile: CartGridProfile,
+    patch: Partial<CartGridLayout>,
+  ) => {
+    const next = normalizeCartGridLayouts({
+      ...cartGridLayouts.value,
+      [profile]: { ...cartGridLayouts.value[profile], ...patch },
+    });
+    cartGridLayouts.value = next;
+    if (import.meta.client) {
+      const serialized = JSON.stringify(next);
+      try { localStorage.setItem(CART_GRID_LAYOUTS_KEY, serialized); } catch {}
+      try { window.electronAPI?.broadcastCartGridLayouts?.(serialized); } catch {}
+    }
+  };
+
   const enterPlaybackMode = () => setUiMode('playback');
   const exitPlaybackMode = () => setUiMode('edit');
   const toggleUiMode = () => setUiMode(uiMode.value === 'playback' ? 'edit' : 'playback');
 
-  return { uiMode, setUiMode, enterPlaybackMode, exitPlaybackMode, toggleUiMode };
+  return {
+    uiMode,
+    regularPlaylistRowHeight,
+    showPlaylistRowHeight,
+    folderPlaylistRowHeight,
+    cartGridLayouts,
+    setUiMode,
+    setRegularPlaylistRowHeight,
+    setShowPlaylistRowHeight,
+    setFolderPlaylistRowHeight,
+    setCartGridLayout,
+    enterPlaybackMode,
+    exitPlaybackMode,
+    toggleUiMode,
+  };
 };

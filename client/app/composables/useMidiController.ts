@@ -1,4 +1,4 @@
-import type { AudioItem } from '~/types/project';
+import { CART_SLOT_COUNT_LIMITS, type AudioItem } from '~/types/project';
 
 // MIDI binding: identifies a specific control on a MIDI device
 export interface MidiBinding {
@@ -9,10 +9,7 @@ export interface MidiBinding {
 
 // Available action IDs
 export type MidiActionId =
-  | 'trigger-slot-0' | 'trigger-slot-1' | 'trigger-slot-2' | 'trigger-slot-3'
-  | 'trigger-slot-4' | 'trigger-slot-5' | 'trigger-slot-6' | 'trigger-slot-7'
-  | 'trigger-slot-8' | 'trigger-slot-9' | 'trigger-slot-10' | 'trigger-slot-11'
-  | 'trigger-slot-12' | 'trigger-slot-13' | 'trigger-slot-14' | 'trigger-slot-15'
+  | `trigger-slot-${number}`
   | 'pause-resume' | 'toggle-loop' | 'cue-to-continue' | 'jump-cue' | 'stop-all' | 'master-volume'
   | 'select-up' | 'select-down' | 'play-selected' | 'play-next';
 
@@ -29,7 +26,7 @@ export const DEFAULT_MASTER_VOLUME_MULTIPLIER = 1;
 // All available actions with display metadata
 export const MIDI_ACTIONS: { id: MidiActionId; labelKey: string; category: string; continuous: boolean; n?: number }[] = [
   // Cart slots
-  ...Array.from({ length: 16 }, (_, i) => ({
+  ...Array.from({ length: CART_SLOT_COUNT_LIMITS.max }, (_, i) => ({
     id: `trigger-slot-${i}` as MidiActionId,
     labelKey: 'controls.cartSlot',
     category: 'Cart Slots',

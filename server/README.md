@@ -216,7 +216,7 @@ Mutators: `POST /api/routing/item_to_mixer`, `/mixer_to_master`, `/master_to_dev
 
 ### Brick-wall master limiter
 
-[`limiter.hpp`](include/liveplay/audio/limiter.hpp). Defaults: −0.3 dBFS ceiling, 5 ms lookahead (~240 samples at 48 kHz), 50 ms release. The detector runs a sliding-max peak window with O(1) amortised update; the gain envelope snaps down within the lookahead window and one-pole-releases back to unity. Output is mathematically clamped to the ceiling so clipping is impossible for finite inputs.
+[`limiter.hpp`](include/liveplay/audio/limiter.hpp). Defaults: −0.1 dBFS ceiling for the Live output target, 5 ms lookahead (~240 samples at 48 kHz), 50 ms release. `settings.limiterCeilingDb` optionally overrides the selected target in the range −60..0 dBFS. The detector runs a sliding-max peak window with O(1) amortised update; the gain envelope snaps down within the lookahead window and one-pole-releases back to unity. Bypass keeps the detector and lookahead delay moving so live toggles do not shift timing.
 
 ### Per-cue LTC generator
 
@@ -315,7 +315,7 @@ This is the low-level cue surface — for normal use, prefer the project-item su
 | Method · Path | Body | Response |
 |---------------|------|----------|
 | `POST /api/transport/stop_all` | `{ "fade_ms": 0 }` (optional; empty body permitted) | `{ "ok": true }` |
-| `POST /api/master/ceiling` | `{ "db": -0.3 }` | `{ "ok": true }` |
+| `POST /api/master/ceiling` | `{ "db": -0.1 }` | `{ "ok": true, "db": -0.1 }` · updates and broadcasts the open project's override |
 | `GET /api/master/gain` | — | `{ "db": float }` |
 | `POST /api/master/gain` | `{ "db": float }` | `{ "ok": true, "db": float }` · also broadcasts `master_gain_changed` |
 | `GET /api/master/channels/<int>/gain` | — | `{ "channel": int, "db": float }` |

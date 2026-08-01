@@ -230,6 +230,15 @@ if(LIVEPLAY_BUILD_TESTS)
     )
     add_test(NAME meter COMMAND liveplay-meter-tests)
 
+    add_executable(liveplay-limiter-tests
+        tests/limiter_test.cpp
+        src/audio/limiter.cpp
+    )
+    target_include_directories(liveplay-limiter-tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    add_test(NAME limiter COMMAND liveplay-limiter-tests)
+
     # Mixer strip gain / fade envelope (peek vs. advance).
     add_executable(liveplay-mixer-tests
         tests/mixer_channel_test.cpp
