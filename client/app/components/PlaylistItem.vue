@@ -400,9 +400,10 @@ const drawWaveform = () => {
   // Clear canvas
   ctx.clearRect(0, 0, rect.width, rect.height);
 
-  // Use the item's own colour so the waveform tints to match the row.
-  // Canvas opacity is controlled by the per-Mac User Interface setting.
-  ctx.fillStyle = audioItem.color || '#ffffff';
+  // Keep the cue hue while narrowing the luminance range between very bright
+  // and very dark user colours. CSS resolves the mix for Canvas, so no second
+  // colour parser can drift from the row styling.
+  ctx.fillStyle = getComputedStyle(canvas).color;
 
   const peaks = audioItem.waveform.peaks;
   
@@ -572,13 +573,16 @@ const hexToRgba = (hex: string, alpha: number) => {
 
 const itemStyle = computed(() => {
   const depthOffset = props.depth > 0 ? 24 : 0;
-  const backgroundColor = isPlaying.value || isGroupPlaying.value
+  // Playing audio keeps the same cue tint as idle audio. Playback state is
+  // already conveyed by the title, status, controls, waveform, and progress.
+  const backgroundColor = isGroupPlaying.value
     ? hexToRgba(props.item.color, 0.5)
     : hexToRgba(props.item.color, 0.14);
   const styles: any = {
     marginLeft: showMode.value ? '0px' : `${depthOffset}px`,
     '--item-depth-offset': `${depthOffset}px`,
     '--item-background': backgroundColor,
+    '--waveform-color': `color-mix(in srgb, ${props.item.color} 40%, #687386)`,
     '--folder-background': props.item.type === 'group'
       ? `color-mix(in srgb, ${props.item.color} 50%, var(--color-background))`
       : backgroundColor,
@@ -590,7 +594,7 @@ const itemStyle = computed(() => {
 const progressStyle = computed(() => {
   return {
     width: `${playbackProgress.value}%`,
-    backgroundColor: hexToRgba(props.item.color, 0.75),
+    backgroundColor: 'var(--color-danger)',
   };
 });
 
@@ -966,6 +970,10 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 }
 
+.playlist-item.is-group + .playlist-item.is-group {
+  margin-top: var(--spacing-xs);
+}
+
 /* Solid 4px end-of-cue warning border. Inset overlay sitting above the
    waveform/progress layers (z-index 10) and pinned inside the item box so it
    cannot be clipped by the scroll container. */
@@ -1008,7 +1016,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   height: 100%;
   pointer-events: none;
   z-index: 1;
-  color: var(--color-text-primary);
+  color: var(--waveform-color, var(--color-text-primary));
   opacity: var(--playlist-waveform-opacity, 0.1);
 }
 
@@ -1018,9 +1026,9 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .item-progress {
   position: absolute;
-  top: 0;
+  bottom: 0;
   left: 0;
-  height: 100%;
+  height: 3px;
   transition: width 100ms linear;
   pointer-events: none;
   z-index: 2;
@@ -1047,7 +1055,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .item-left {
   display: grid;
-  grid-template-columns: 34px minmax(112px, 1fr) minmax(84px, max-content) 64px max-content 32px;
+  grid-template-columns: 34px minmax(112px, 1fr) minmax(0, max-content) 64px max-content 32px;
   grid-template-areas: 'expand identity state duration actions arm';
   align-items: center;
   gap: var(--spacing-sm);
@@ -1095,7 +1103,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .item-identity {
   grid-area: identity;
   display: grid;
-  grid-template-columns: 40px 20px minmax(0, 1fr) auto;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
   min-width: 0;
@@ -1107,6 +1115,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .item-index {
   grid-column: 1;
+  justify-self: start;
   font-size: 12px;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -1114,7 +1123,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .item-icon {
-  grid-column: 2;
+  grid-column: 1;
+  justify-self: end;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1126,7 +1136,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .item-name {
-  grid-column: 3;
+  grid-column: 2;
   font-weight: 700;
   font-size: var(--type-track-size);
   line-height: 1.2;
@@ -1137,11 +1147,44 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   color: var(--color-text-primary);
 }
 
+.playlist-item.is-audio .item-name,
+.playlist-item.is-audio .item-index,
+.playlist-item.is-audio .item-duration,
+.playlist-item.is-audio .behavior-icon,
+.playlist-item.is-audio .peak-warning-icon {
+  text-shadow:
+    0 2px 3px rgba(0, 0, 0, 0.95),
+    0 0 7px rgba(0, 0, 0, 0.72);
+}
+
+.playlist-item.is-audio .item-index,
+.playlist-item.is-audio .item-duration,
+.playlist-item.is-audio .behavior-icon {
+  color: var(--color-text-primary);
+  opacity: 0.9;
+}
+
+.playlist-item.is-group .item-name {
+  font-size: calc(var(--type-track-size) + 1px);
+  font-weight: 800;
+}
+
 .playlist-item.is-audio .item-name {
   grid-column: 2;
+}
+
+.playlist-item.is-audio > .item-content :deep(.action-btn--playlist) {
+  background-color: var(--color-control);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.035),
+    0 2px 3px rgba(0, 0, 0, 0.85),
+    0 0 7px rgba(0, 0, 0, 0.55);
+}
+
+.playlist-item.is-audio > .item-content :deep(.action-btn--playlist .material-symbols-rounded) {
   text-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.9),
-    0 0 5px rgba(0, 0, 0, 0.55);
+    0 2px 3px rgba(0, 0, 0, 0.95),
+    0 0 7px rgba(0, 0, 0, 0.72);
 }
 
 .playlist-item.is-audio .peak-warning-icon {
@@ -1159,7 +1202,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .peak-warning-icon {
-  grid-column: 4;
+  grid-column: 3;
   font-size: 18px;
   color: var(--color-danger);
   flex-shrink: 0;
@@ -1257,7 +1300,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .delete-action { grid-column: 4; }
 
 .no-device {
-  opacity: 0.4;
+  opacity: 1;
+  color: var(--color-text-disabled);
 }
 
 .group-children {
@@ -1332,7 +1376,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .item-identity {
-    grid-template-columns: 44px 24px minmax(0, 1fr) auto;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
     gap: var(--spacing-sm);
   }
 
@@ -1350,6 +1394,10 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
   .item-name {
     font-size: var(--type-track-show-size);
+  }
+
+  &.is-group .item-name {
+    font-size: calc(var(--type-track-show-size) + 1px);
   }
 
   &.is-audio .item-name {

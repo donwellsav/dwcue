@@ -3524,6 +3524,8 @@ bool ProjectState::start_preview(const std::string& item_uuid) {
     // 1. Resolve the source file path under the lock.
     std::filesystem::path file_path;
     double in_point = 0.0;
+    double out_point = 0.0;
+    bool loop = false;
     std::string preview_device_name;
     {
         std::lock_guard lock{mutex_};
@@ -3535,6 +3537,9 @@ bool ProjectState::start_preview(const std::string& item_uuid) {
                     it, document_.value("folderPath", std::string{}));
                 if (!p.empty()) file_path = std::move(p);
                 in_point = it.value("inPoint", 0.0);
+                out_point = it.value("outPoint", 0.0);
+                loop = it.contains("endBehavior") && it["endBehavior"].is_object()
+                    && it["endBehavior"].value("action", std::string{}) == "loop";
             });
         // settings.previewDevice
         if (document_.contains("settings") && document_["settings"].is_object()) {
@@ -3635,6 +3640,8 @@ bool ProjectState::start_preview(const std::string& item_uuid) {
             engine_.route_item_source_to_mixer(cue_id, 0, preview_mixer, 0.0f,
                                                audio::kAllMixerLanes);
         }
+        pi->set_out_point_seconds(out_point > in_point ? out_point : 0.0);
+        pi->set_loop(loop, in_point);
         pi->prime(2.0, in_point);
     }
     engine_.play(cue_id);

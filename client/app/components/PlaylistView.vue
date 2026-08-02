@@ -1073,6 +1073,29 @@ const handleDrop = async (e: DragEvent) => {
   flex: 1;
   overflow-y: auto;
   padding: 0 var(--workspace-gutter) var(--workspace-gutter);
+  scrollbar-color: var(--color-border-strong) transparent;
+  scrollbar-width: auto;
+}
+
+.playlist-content::-webkit-scrollbar {
+  width: 12px;
+}
+
+.playlist-content::-webkit-scrollbar-track {
+  background: color-mix(in srgb, var(--color-border) 45%, transparent);
+}
+
+.playlist-content::-webkit-scrollbar-thumb {
+  min-height: 44px;
+  border: 2px solid transparent;
+  border-radius: var(--pill-radius);
+  background: var(--color-text-tertiary);
+  background-clip: padding-box;
+}
+
+.playlist-content::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-tertiary);
+  background-clip: padding-box;
 }
 
 .empty-state {

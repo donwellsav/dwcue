@@ -732,6 +732,11 @@ const shortTermLabel = computed(() => {
     height: 34px;
     flex: 0 0 34px;
   }
+
+  &--strip &__footer {
+    width: calc(100% + 20px);
+    margin: 0 -10px -7px;
+  }
 }
 
 // The cue/preview meter has no scale-control slot. It stays vertical, but

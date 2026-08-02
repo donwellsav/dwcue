@@ -782,6 +782,8 @@ function createClient() {
   function stopItem(uuid: string)  { return wsSend({ type: 'stop', item_uuid: uuid }, true); }
   function pauseItem(uuid: string) { return wsSend({ type: 'pause', item_uuid: uuid }, true); }
   function resumeItem(uuid: string){ return wsSend({ type: 'resume', item_uuid: uuid }, true); }
+  function pauseCueId(cueId: string) { return wsSend({ type: 'pause', cue_id: cueId }, true); }
+  function resumeCueId(cueId: string){ return wsSend({ type: 'resume', cue_id: cueId }, true); }
   // Tell the server which item to play when the currently-playing item's
   // end-behavior fires "next". Pass null to clear.
   function setNextItem(uuid: string | null) {
@@ -816,6 +818,14 @@ function createClient() {
   }
   function seekCueId(cueId: string, seconds: number) {
     wsSend({ type: 'seek', cue_id: cueId, seconds });
+  }
+  function setPreviewRange(inSeconds: number, outSeconds: number, loop: boolean) {
+    return wsSend({
+      type: 'preview_range',
+      in_seconds: inSeconds,
+      out_seconds: outSeconds,
+      loop,
+    }, true);
   }
   async function seekItemREST(uuid: string, seconds: number) {
     return rest<any>(`/api/project/items/${encodeURIComponent(uuid)}/seek`, {
@@ -1298,6 +1308,8 @@ function createClient() {
     stopItem,
     pauseItem,
     resumeItem,
+    pauseCueId,
+    resumeCueId,
     setNextItem,
 
     // shared operator UI state (server-owned; mirrored to every client)
@@ -1308,6 +1320,7 @@ function createClient() {
 
     seekItem,
     seekCueId,
+    setPreviewRange,
     seekItemREST,
     setMasterGainDb,
     fetchMasterGainDb,

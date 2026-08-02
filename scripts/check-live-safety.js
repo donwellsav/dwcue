@@ -168,6 +168,36 @@ assert.match(
   /\.playlist-item\.is-audio \.item-identity\s*\{[\s\S]*grid-template-columns:\s*40px minmax\(0, 1fr\) auto;[\s\S]*\.item-name\s*\{[\s\S]*font-weight:\s*700;[\s\S]*font-size:\s*var\(--type-track-size\);[\s\S]*\.playlist-item\.is-audio \.item-name\s*\{[\s\S]*text-shadow:[\s\S]*\.playlist-item\.show-mode\s*\{[\s\S]*&\.is-audio \.item-identity\s*\{[\s\S]*grid-template-columns:\s*44px minmax\(0, 1fr\) auto;[\s\S]*\.item-name\s*\{\s*font-size:\s*var\(--type-track-show-size\);[\s\S]*&\.is-audio \.item-name\s*\{[\s\S]*-webkit-line-clamp:\s*2;[\s\S]*white-space:\s*normal;/,
   'audio titles must reclaim the empty icon lane and stay readable over two high-contrast Show Mode lines',
 );
+assert.match(
+  playlistItem,
+  /const backgroundColor = isGroupPlaying\.value[\s\S]*hexToRgba\(props\.item\.color, 0\.5\)[\s\S]*hexToRgba\(props\.item\.color, 0\.14\)/,
+  'playing audio must retain its normal cue tint while only active groups receive the stronger tint',
+);
+assert.match(
+  playlistItem,
+  /backgroundColor:\s*'var\(--color-danger\)'[\s\S]*\.item-progress\s*\{[\s\S]{0,100}bottom:\s*0;[\s\S]{0,100}height:\s*3px;/,
+  'playback progress must be a visible red line rather than a distracting row fill',
+);
+assert.match(
+  playlistItem,
+  /getComputedStyle\(canvas\)\.color[\s\S]*'--waveform-color':\s*`color-mix\(in srgb, \$\{props\.item\.color\} 40%, #687386\)`[\s\S]*color:\s*var\(--waveform-color, var\(--color-text-primary\)\)/,
+  'playlist waveforms must preserve cue hue while normalizing extreme luminance',
+);
+assert.match(
+  playlistItem,
+  /grid-template-columns:\s*34px minmax\(112px, 1fr\) minmax\(0, max-content\) 64px max-content 32px;[\s\S]*\.item-identity\s*\{[\s\S]*grid-template-columns:\s*40px minmax\(0, 1fr\) auto;[\s\S]*\.item-icon\s*\{[\s\S]*grid-column:\s*1;[\s\S]*justify-self:\s*end;/,
+  'folder and audio titles must share one origin while empty state lanes return space to long titles',
+);
+assert.match(
+  playlistItem,
+  /\.playlist-item\.is-group \+ \.playlist-item\.is-group\s*\{[\s\S]*margin-top:\s*var\(--spacing-xs\);[\s\S]*\.playlist-item\.is-group \.item-name\s*\{[\s\S]*font-weight:\s*800;/,
+  'adjacent folder headers must separate spatially and use a stronger hierarchy than tracks',
+);
+assert.match(
+  playlistItem,
+  /\.playlist-item\.is-audio \.item-index,[\s\S]*\.playlist-item\.is-audio \.behavior-icon\s*\{[\s\S]*color:\s*var\(--color-text-primary\);[\s\S]*opacity:\s*0\.9;[\s\S]*:deep\(\.action-btn--playlist\)\s*\{[\s\S]*background-color:\s*var\(--color-control\);[\s\S]*\.no-device\s*\{[\s\S]*opacity:\s*1;[\s\S]*color:\s*var\(--color-text-disabled\);/,
+  'track metadata and icons must stay readable without making unavailable preview controls translucent',
+);
 assert.doesNotMatch(
   playlistItem,
   /item-name[^\n]*is-peaking|\.item-name[\s\S]{0,300}&\.is-peaking/,
@@ -229,8 +259,13 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /class="limiter-ceiling-control"[\s\S]*outputConsole\.ceilingShort[\s\S]*class="limiter-ceiling-input"[\s\S]*min="-60"[\s\S]*max="0"[\s\S]*step="0\.1"[\s\S]*@change="onLimiterCeilingChange"[\s\S]*class="limiter-toggle"[\s\S]*:aria-pressed="!limiterEnabled"[\s\S]*outputConsole\.limiterBypass[\s\S]*@click="toggleLimiter"/,
-  'the compact Output header must expose an editable ceiling and direct limiter bypass',
+  /class="limiter-toggle"[\s\S]*:aria-pressed="!limiterEnabled"[\s\S]*outputConsole\.limiterBypass[\s\S]*@click="toggleLimiter"[\s\S]*class="limiter-ceiling-control"[\s\S]*class="limiter-ceiling-input"[\s\S]*min="-60"[\s\S]*max="0"[\s\S]*step="0\.1"[\s\S]*@change="onLimiterCeilingChange"/,
+  'the compact Output header must place limiter bypass before its editable ceiling',
+);
+assert.doesNotMatch(
+  mainWorkspace,
+  /class="limiter-ceiling-control"[\s\S]{0,120}outputConsole\.ceilingShort/,
+  'the ceiling control must not repeat a visible CEIL label beside TP Limiter',
 );
 assert.match(
   mainWorkspace,
@@ -336,13 +371,13 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /v-if="monitorActive"[\s\S]*class="monitor-console output-console"[\s\S]*:left-index="30"[\s\S]*:right-index="31"[\s\S]*onOutputGainInput\(30, 31, db\)[\s\S]*resetOutputGain\(30, 31\)/,
-  'active preview audio must expose a stereo-linked Monitor strip on master 30/31',
+  /v-if="monitorAssigned"[\s\S]*class="monitor-console output-console"[\s\S]*:left-index="30"[\s\S]*:right-index="31"[\s\S]*onOutputGainInput\(30, 31, db\)[\s\S]*resetOutputGain\(30, 31\)/,
+  'an assigned preview device must expose a stereo-linked Monitor strip on master 30/31',
 );
 assert.match(
   mainWorkspace,
-  /const monitorActive = computed\(\(\) => !!previewCueId\.value &&[\s\S]*server\.meters\?\.items[\s\S]*item\.cue_id === previewCueId\.value/,
-  'Monitor visibility must follow preview transport frames rather than sparse signal amplitude',
+  /const monitorAssigned = computed\(\(\) => !!\(currentProject\.value as any\)\?\.settings\?\.previewDevice\)/,
+  'Monitor visibility must follow Preview Device assignment rather than playback state',
 );
 assert.doesNotMatch(
   mainWorkspace,
@@ -381,8 +416,18 @@ assert.match(
 );
 assert.match(
   playbackControls,
-  /\.cue-list\s*\{[\s\S]*min-width:\s*0;[\s\S]*width:\s*100%;[\s\S]*\.cue-list > :deep\(\.active-cue-item\)\s*\{[\s\S]*flex:\s*1 1 0;[\s\S]*min-width:\s*min\(280px, 100%\);[\s\S]*max-width:\s*none;[\s\S]*\.preview-cue-card\s*\{[\s\S]*flex:\s*1 1 0;[\s\S]*min-width:\s*min\(280px, 100%\);[\s\S]*max-width:\s*none;/,
-  'active and preview cue cards must share the full transport lane evenly',
+  /<Teleport v-if="previewingItem" defer to="#preview-lower-panel">[\s\S]*class="preview-cue-card"/,
+  'Preview must leave the live transport and render in the lower workspace panel',
+);
+assert.match(
+  mainWorkspace,
+  /<div class="workspace-content">[\s\S]*<div id="preview-lower-panel" class="preview-lower-panel"[\s\S]*\.preview-lower-panel\s*\{[\s\S]*flex:\s*0 0 128px;[\s\S]*\.preview-lower-panel:empty\s*\{[\s\S]*display:\s*none;/,
+  'the Preview target must be a fixed lower panel beneath the track workspace and collapse when unused',
+);
+assert.match(
+  playbackControls,
+  /class="preview-cue-card"[\s\S]*handlePreviewPause[\s\S]*preview-range-marker--in[\s\S]*startPreviewBracketDrag\('in'[\s\S]*commitPreviewTimeInput\('in'[\s\S]*preview-range-marker--out[\s\S]*startPreviewBracketDrag\('out'[\s\S]*commitPreviewTimeInput\('out'[\s\S]*jumpPreview\(-1\)[\s\S]*previewJumpDigit === 'whole'[\s\S]*previewJumpDigit === 'tenths'[\s\S]*savePreviewTrim[\s\S]*handleSetPreviewNext/,
+  'the lower Preview panel must provide pause, editable drag trim markers, digit-stepped seek, save, and Set Next controls',
 );
 assert.match(
   activeCueItem,
@@ -733,6 +778,11 @@ assert.match(
   /"autoReduceTruePeaksOnImport",\s*true[\s\S]*"cycleTrackColors",\s*true/,
   'fresh server projects must default to true-peak safety and track-color cycling',
 );
+assert.match(
+  projectState,
+  /bool ProjectState::start_preview[\s\S]*out_point = it\.value\("outPoint", 0\.0\);[\s\S]*endBehavior[\s\S]*== "loop"[\s\S]*set_out_point_seconds\(out_point > in_point \? out_point : 0\.0\);[\s\S]*set_loop\(loop, in_point\);[\s\S]*prime\(2\.0, in_point\)/,
+  'Preview must inherit the selected track’s permanent In/Out and loop behavior before playback starts',
+);
 const sequencerStart = projectState.indexOf('void ProjectState::sequencer_loop()');
 const sequencerEnd = projectState.indexOf('void ProjectState::execute_custom_action', sequencerStart);
 const sequencer = projectState.slice(sequencerStart, sequencerEnd);
@@ -755,6 +805,11 @@ assert.match(
   controlServer,
   /wait_for_server_start[\s\S]*if \(!impl_->app\.is_bound\(\)\)[\s\S]*return false/,
   'the server must confirm Crow actually bound before publishing startup success',
+);
+assert.match(
+  controlServer,
+  /type == "preview_range"[\s\S]*current_preview_cue_id\(\)[\s\S]*out_seconds <= in_seconds[\s\S]*set_out_point_seconds\(out_seconds\)[\s\S]*set_loop\(j\.value\("loop", false\), in_seconds\)/,
+  'temporary Preview ranges must be validated and applied only to the active Preview cue',
 );
 assert.match(
   controlServer,
@@ -1295,13 +1350,23 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /\.limiter-ceiling-control\s*\{[\s\S]{0,180}height:\s*var\(--panel-control-height\);[\s\S]*\.limiter-toggle\s*\{[\s\S]{0,180}height:\s*var\(--panel-control-height\);[\s\S]*\.output-pair\s*\{[\s\S]{0,120}flex:\s*0 0 var\(--output-strip-width\);/,
+  /\.limiter-ceiling-control\s*\{[\s\S]{0,180}height:\s*calc\(var\(--panel-control-height\) \+ 2px\);[\s\S]*\.limiter-toggle\s*\{[\s\S]{0,180}height:\s*calc\(var\(--panel-control-height\) \+ 2px\);[\s\S]*\.output-pair\s*\{[\s\S]{0,120}flex:\s*0 0 var\(--output-strip-width\);/,
   'the limiter header and meter body must use the same output-rail geometry',
 );
 assert.match(
   mainWorkspace,
-  /\.output-console__header-controls\s*\{[\s\S]*gap:\s*var\(--spacing-sm\);[\s\S]*\.limiter-ceiling-control\s*\{[\s\S]*font-size:\s*13px;[\s\S]*\.limiter-ceiling-value\s*\{[\s\S]*flex:\s*0 1 50px;[\s\S]*\.limiter-ceiling-input\s*\{[\s\S]*width:\s*100%;[\s\S]*font-size:\s*13px;[\s\S]*\.limiter-toggle\s*\{[\s\S]*min-width:\s*88px;[\s\S]*font-size:\s*13px;[\s\S]*\.output-target-control\s*\{[\s\S]*height:\s*var\(--panel-control-height\);[\s\S]*padding:\s*0 24px 0 12px;/,
+  /\.output-console__header-controls\s*\{[\s\S]*gap:\s*var\(--spacing-sm\);[\s\S]*\.limiter-ceiling-control\s*\{[\s\S]*flex:\s*1 1 0;[\s\S]*\.limiter-ceiling-value\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) 20px;[\s\S]*width:\s*100%;[\s\S]*\.limiter-ceiling-input\s*\{[\s\S]*width:\s*100%;[\s\S]*font-size:\s*13px;[\s\S]*\.limiter-toggle\s*\{[\s\S]*min-width:\s*92px;[\s\S]*font-size:\s*13\.5px;[\s\S]*\.output-target-control\s*\{[\s\S]*height:\s*var\(--panel-control-height\);[\s\S]*padding:\s*0 18px 0 8px;/,
   'the output header controls must use readable live-operation spacing and type',
+);
+assert.match(
+  playlistView,
+  /\.playlist-content\s*\{[\s\S]*scrollbar-color:\s*var\(--color-border-strong\) transparent;[\s\S]*::-webkit-scrollbar\s*\{[\s\S]*width:\s*12px;[\s\S]*::-webkit-scrollbar-thumb\s*\{[\s\S]*min-height:\s*44px;/,
+  'the playlist scrollbar must remain visible and grabbable in long show files',
+);
+assert.match(
+  playbackControls,
+  /\.panic-btn\s*\{[\s\S]*&:disabled\s*\{[\s\S]*opacity:\s*1;[\s\S]*background-color:\s*var\(--color-control\);[\s\S]*color:\s*var\(--color-text-disabled\);/,
+  'disabled Stop All must use a neutral surface instead of looking armed',
 );
 assert.match(
   mainWorkspace,
@@ -1325,7 +1390,7 @@ assert.match(
 );
 assert.match(
   stereoMeter,
-  /v-if="hasScaleControl" class="stereo-meter__footer"[\s\S]*&__footer\s*\{[\s\S]{0,100}height:\s*34px;[\s\S]{0,80}flex:\s*0 0 34px;/,
+  /v-if="hasScaleControl" class="stereo-meter__footer"[\s\S]*&__footer\s*\{[\s\S]{0,100}height:\s*34px;[\s\S]{0,80}flex:\s*0 0 34px;[\s\S]*&--strip &__footer\s*\{[\s\S]{0,100}width:\s*calc\(100% \+ 20px\);[\s\S]{0,80}margin:\s*0 -10px -7px;/,
   'every console strip must reserve the same footer so its dB scale stays aligned',
 );
 assert.doesNotMatch(
@@ -1515,7 +1580,7 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /const backgroundColor = isPlaying\.value \|\| isGroupPlaying\.value[\s\S]*hexToRgba\(props\.item\.color, 0\.14\)[\s\S]*'--folder-background': props\.item\.type === 'group'[\s\S]*color-mix\(in srgb, \$\{props\.item\.color\} 50%, var\(--color-background\)\)[\s\S]*&\.is-group > \.item-content\s*\{[\s\S]*background:\s*var\(--folder-background\)/,
+  /const backgroundColor = isGroupPlaying\.value[\s\S]*hexToRgba\(props\.item\.color, 0\.14\)[\s\S]*'--folder-background': props\.item\.type === 'group'[\s\S]*color-mix\(in srgb, \$\{props\.item\.color\} 50%, var\(--color-background\)\)[\s\S]*&\.is-group > \.item-content\s*\{[\s\S]*background:\s*var\(--folder-background\)/,
   'only the folder header row must use an opaque colour mix; audio tracks keep their original tint',
 );
 assert.doesNotMatch(

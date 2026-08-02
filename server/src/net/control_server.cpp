@@ -1759,6 +1759,22 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
                 return command_error("seek: no valid cue target");
             }
         }
+        else if (type == "preview_range") {
+            const auto cue = state.current_preview_cue_id();
+            const double in_seconds = j.value("in_seconds", -1.0);
+            const double out_seconds = j.value("out_seconds", -1.0);
+            if (cue.empty()) return command_error("preview_range: no preview cue");
+            if (!std::isfinite(in_seconds) || !std::isfinite(out_seconds)
+                || in_seconds < 0.0 || out_seconds <= in_seconds) {
+                return command_error("preview_range: invalid In/Out range");
+            }
+            if (auto pi = engine.find_cue(cue)) {
+                pi->set_out_point_seconds(out_seconds);
+                pi->set_loop(j.value("loop", false), in_seconds);
+            } else {
+                return command_error("preview_range: preview cue not loaded into engine");
+            }
+        }
         else if (type == "set_next_item") {
             // User-set "Up Next" override. Empty/null item_uuid clears it.
             std::string uuid;

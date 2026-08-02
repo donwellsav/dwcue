@@ -10,7 +10,7 @@
 
     <div class="workspace-content">
       <aside
-        v-if="monitorActive"
+        v-if="monitorAssigned"
         class="monitor-console output-console"
         aria-label="Monitor"
       >
@@ -100,8 +100,19 @@
       <aside class="output-console" :aria-label="t('properties.output')">
         <div class="output-console__header workspace-panel-header">
           <div class="output-console__header-controls">
+            <button
+              type="button"
+              class="limiter-toggle"
+              :class="{ 'is-enabled': limiterEnabled }"
+              :aria-pressed="!limiterEnabled"
+              :aria-label="t('outputConsole.limiterBypass')"
+              :title="limiterToggleLabel"
+              :disabled="limiterChangePending || !currentProject"
+              @click="toggleLimiter"
+            >
+              {{ t('outputConsole.limiter') }}
+            </button>
             <div class="limiter-ceiling-control">
-              <span aria-hidden="true">{{ t('outputConsole.ceilingShort') }}</span>
               <div class="limiter-ceiling-value">
                 <input
                   ref="limiterCeilingInput"
@@ -139,19 +150,6 @@
                 </div>
               </div>
             </div>
-            <button
-              type="button"
-              class="limiter-toggle"
-              :class="{ 'is-enabled': limiterEnabled }"
-              :aria-pressed="!limiterEnabled"
-              :aria-label="t('outputConsole.limiterBypass')"
-              :title="limiterToggleLabel"
-              :disabled="limiterChangePending || !currentProject"
-              @click="toggleLimiter"
-            >
-              <span class="limiter-toggle__state" aria-hidden="true" />
-              {{ t('outputConsole.limiter') }}
-            </button>
           </div>
         </div>
         <div class="output-console__strips">
@@ -203,6 +201,8 @@
         </div>
       </aside>
     </div>
+
+    <div id="preview-lower-panel" class="preview-lower-panel" aria-live="polite"></div>
 
     <!-- Properties panel is an edit affordance — never surfaced in Show Mode. -->
     <PropertiesPanel v-if="uiMode !== 'playback' && propertiesPanelOpen && selectedItem" />
@@ -258,7 +258,6 @@ const {
   copyItemsToClipboard,
   pasteItemsFromClipboard,
   requestDeleteFromKeyboard,
-  previewCueId,
 } = useProject();
 const { cartOnlyItems } = useCartItems();
 const { t } = useLocalization();
@@ -473,11 +472,7 @@ const outputPairs = computed(() => {
   return pairs;
 });
 
-// Item meter frames are transport-aware but not amplitude-sparse, so this
-// stays visible through silence and a pulled-down monitor fader, then vanishes
-// when preview playback actually stops (including natural end-of-file).
-const monitorActive = computed(() => !!previewCueId.value &&
-  (server.meters?.items ?? []).some((item: any) => item.cue_id === previewCueId.value));
+const monitorAssigned = computed(() => !!(currentProject.value as any)?.settings?.previewDevice);
 
 const monitorLabel = computed(() => {
   const deviceId = (currentProject.value as any)?.settings?.previewDevice;
@@ -851,6 +846,21 @@ onUnmounted(() => {
   background: var(--color-background);
 }
 
+.preview-lower-panel {
+  flex: 0 0 128px;
+  height: 128px;
+  box-sizing: border-box;
+  padding: var(--workspace-gutter);
+  overflow: hidden;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-text-primary) 4%, transparent);
+}
+
+.preview-lower-panel:empty {
+  display: none;
+}
+
 .workspace-panels {
   flex: 1;
   min-width: 0;
@@ -919,17 +929,13 @@ onUnmounted(() => {
 .limiter-ceiling-control {
   display: flex;
   align-items: center;
-  gap: 4px;
   flex: 1 1 0;
   min-width: 0;
-  height: var(--panel-control-height);
-  padding-left: 8px;
+  height: calc(var(--panel-control-height) + 2px);
+  overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
   background: var(--color-surface-raised);
-  color: var(--color-text-tertiary);
-  font-size: 13px;
-  font-weight: 650;
   transition:
     background-color var(--transition-fast),
     border-color var(--transition-fast);
@@ -942,18 +948,22 @@ onUnmounted(() => {
 }
 
 .limiter-ceiling-value {
-  position: relative;
-  flex: 0 1 50px;
-  min-width: 44px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20px;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
   height: 100%;
+  background: var(--color-control);
 }
 
 .limiter-ceiling-input {
   width: 100%;
   height: 100%;
-  padding: 0 17px 0 2px;
+  min-width: 0;
+  padding: 0 2px;
   border: 0;
-  border-radius: 0 var(--control-radius) var(--control-radius) 0;
+  border-radius: 0;
   background: transparent;
   color: var(--color-text-primary);
   font-family: var(--font-mono);
@@ -978,14 +988,13 @@ onUnmounted(() => {
 }
 
 .limiter-ceiling-steppers {
-  position: absolute;
-  inset: 2px 2px 2px auto;
   display: grid;
   grid-template-rows: 1fr 1fr;
-  width: 15px;
+  width: 20px;
+  height: 100%;
   overflow: hidden;
   border-left: 1px solid var(--color-border);
-  border-radius: 0 3px 3px 0;
+  border-radius: 0 var(--control-radius) var(--control-radius) 0;
 
   button {
     display: grid;
@@ -1008,7 +1017,7 @@ onUnmounted(() => {
   }
 
   .material-symbols-rounded {
-    font-size: 12px;
+    font-size: 14px;
     line-height: 1;
   }
 }
@@ -1017,40 +1026,38 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  min-width: 88px;
-  height: var(--panel-control-height);
+  min-width: 92px;
+  height: calc(var(--panel-control-height) + 2px);
   padding: 0 8px;
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
   background: var(--color-surface-raised);
-  color: var(--color-warning);
-  font-size: 13px;
+  color: var(--color-text-secondary);
+  font-size: 13.5px;
   font-weight: 650;
   cursor: pointer;
   transition:
     background-color var(--transition-fast),
     border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
     color var(--transition-fast);
 
-  &__state {
-    width: 6px;
-    height: 6px;
-    flex: 0 0 6px;
-    border-radius: 50%;
-    background: var(--color-warning);
-  }
-
   &.is-enabled {
-    color: var(--color-text-secondary);
-
-    .limiter-toggle__state { background: var(--color-success); }
+    background: color-mix(in srgb, var(--color-success) 12%, var(--color-surface-raised));
+    border-color: color-mix(in srgb, var(--color-success) 55%, var(--color-border));
+    color: var(--color-text-primary);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--color-success) 25%, transparent);
   }
 
   &:hover {
     background: var(--color-surface-hover);
     border-color: var(--color-border-strong);
     color: var(--color-text-primary);
+  }
+
+  &.is-enabled:hover {
+    background: color-mix(in srgb, var(--color-success) 16%, var(--color-surface-raised));
+    border-color: color-mix(in srgb, var(--color-success) 65%, var(--color-border));
   }
 
   &:focus-visible {
@@ -1064,7 +1071,7 @@ onUnmounted(() => {
   height: var(--panel-control-height);
   min-width: 0;
   margin: 0;
-  padding: 0 24px 0 12px;
+  padding: 0 18px 0 8px;
   border-color: var(--color-border);
   border-radius: var(--control-radius);
   background: var(--color-surface-raised);
