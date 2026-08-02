@@ -1322,8 +1322,6 @@ onUnmounted(() => {
   gap: var(--spacing-sm);
   padding: 0;
   background: transparent;
-  max-height: 149px;
-  overflow: hidden;
 }
 
 /* Volume Control */
@@ -1359,7 +1357,7 @@ onUnmounted(() => {
 .volume-slider-vertical {
   writing-mode: vertical-lr;
   direction: rtl;
-  width: 150px;
+  width: 24px;
   height: 100%;
   cursor: pointer;
   -webkit-appearance: slider-vertical;

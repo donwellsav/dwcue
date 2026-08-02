@@ -501,22 +501,24 @@ onUnmounted(() => {
 }
 
 .control-config-panel {
-  background: var(--color-surface);
+  background: var(--color-background);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
-  width: 560px;
-  max-height: 82vh;
+  border-radius: var(--border-radius-lg);
+  width: min(var(--modal-width), 92vw);
+  max-height: var(--modal-max-height);
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
   position: relative;
 }
 
 .config-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  padding: 16px 20px 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .header-left {
@@ -527,18 +529,23 @@ onUnmounted(() => {
 
 .config-header h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
   color: var(--color-text-primary);
 }
 
 .close-btn {
+  display: grid;
+  place-items: center;
+  width: var(--spacing-xxl);
+  height: var(--spacing-xxl);
+  padding: 0;
   background: none;
   border: none;
-  font-size: 24px;
+  border-radius: var(--control-radius);
+  font-size: 18px;
   cursor: pointer;
   color: var(--color-text-secondary);
-  padding: 0 4px;
   line-height: 1;
 }
 
@@ -549,13 +556,17 @@ onUnmounted(() => {
 /* Tabs */
 .tab-bar {
   display: flex;
-  gap: 0;
+  flex-shrink: 0;
+  gap: 2px;
   padding: 0 20px;
   border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-surface);
+  overflow-x: auto;
 }
 
 .tab-btn {
-  padding: 8px 16px;
+  min-height: 36px;
+  padding: 6px var(--spacing-md);
   font-size: 13px;
   font-weight: 500;
   background: none;
@@ -563,15 +574,15 @@ onUnmounted(() => {
   border-bottom: 2px solid transparent;
   color: var(--color-text-secondary);
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
+  transition: all 0.2s;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--spacing-sm);
 }
 
 .tab-btn:hover { color: var(--color-text-primary); }
 .tab-btn.active {
-  color: var(--color-text-primary);
+  color: var(--color-accent);
   border-bottom-color: var(--color-accent, #3b82f6);
 }
 
@@ -601,7 +612,8 @@ onUnmounted(() => {
 
 /* Shared action row (both tabs) */
 .action-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 130px minmax(80px, 1fr) 108px;
   align-items: center;
   gap: 8px;
   padding: 6px 20px;
@@ -620,36 +632,38 @@ onUnmounted(() => {
 .keyboard-action-row { cursor: pointer; }
 
 .action-label {
+  grid-column: 1;
   font-size: 13px;
   color: var(--color-text-primary);
-  min-width: 130px;
-  flex-shrink: 0;
 }
 
 .action-binding {
+  grid-column: 2;
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 600;
   color: var(--color-text-primary);
   background: var(--color-background);
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: var(--control-radius);
   padding: 2px 8px;
   min-width: 80px;
   text-align: center;
-  flex: 1;
 }
 
 .error-msg {
+  grid-column: 2 / -1;
   font-size: 11px;
   color: #ef4444;
   flex-shrink: 0;
-  max-width: 160px;
+  max-width: none;
 }
 
 /* MIDI / keyboard action buttons */
 .action-buttons {
+  grid-column: 3;
   display: flex;
+  justify-content: flex-end;
   gap: 4px;
   flex-shrink: 0;
 }
@@ -659,13 +673,18 @@ onUnmounted(() => {
 .clear-key-btn {
   font-size: 11px;
   padding: 3px 8px;
-  border-radius: 3px;
+  border-radius: var(--control-radius);
   border: 1px solid var(--color-border);
   background: var(--color-background);
   color: var(--color-text-primary);
   cursor: pointer;
   transition: background-color 0.15s;
   flex-shrink: 0;
+}
+
+.clear-key-btn {
+  grid-column: 3;
+  justify-self: end;
 }
 
 .learn-btn:hover,
@@ -680,10 +699,11 @@ onUnmounted(() => {
 
 /* Master-volume multiplier input */
 .multiplier-input {
+  grid-column: 2;
   width: 80px;
   font-size: 12px;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--control-radius);
   border: 1px solid var(--color-border);
   background: var(--color-background);
   color: var(--color-text-primary);
@@ -717,7 +737,7 @@ onUnmounted(() => {
   flex: 1;
   font-size: 12px;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--control-radius);
   border: 1px solid var(--color-border);
   background: var(--color-background);
   color: var(--color-text-primary);
@@ -740,9 +760,9 @@ onUnmounted(() => {
 
 .reset-btn,
 .done-btn {
-  padding: 6px 16px;
-  border-radius: 4px;
-  font-size: 13px;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-radius: var(--control-radius);
+  font-size: 14px;
   cursor: pointer;
   border: 1px solid var(--color-border);
   background: var(--color-background);
@@ -796,7 +816,7 @@ onUnmounted(() => {
 .cancel-btn,
 .confirm-btn {
   padding: 6px 14px;
-  border-radius: 4px;
+  border-radius: var(--control-radius);
   font-size: 13px;
   cursor: pointer;
   border: 1px solid var(--color-border);

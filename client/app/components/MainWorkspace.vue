@@ -44,34 +44,29 @@
         </div>
       </aside>
 
-      <div
-        class="workspace-panels"
-        :class="{
-          'cart-toggle-visible': !cartDetached,
-          'cart-is-closed': cartClosed,
-        }"
-      >
-        <button
-          v-if="!cartDetached"
-          type="button"
-          class="cart-toggle"
-          :class="{ 'cart-toggle--open': !cartClosed }"
-          :aria-label="cartClosed ? t('cart.show') : t('cart.hide')"
-          :title="cartClosed ? t('cart.show') : t('cart.hide')"
-          :aria-expanded="!cartClosed"
-          :aria-controls="cartClosed ? undefined : 'cart-player-panel'"
-          @click="toggleCart"
-        >
-          <span class="material-symbols-rounded" aria-hidden="true">view_sidebar</span>
-        </button>
-
+      <div class="workspace-panels">
         <div
           v-if="!cartClosed && !cartDetached"
           id="cart-player-panel"
           class="cart-section"
+          :class="{ 'cart-section--fullscreen': cartFullscreen }"
           :style="{ width: cartFullscreen ? '100%' : `${cartWidth}px` }"
         >
-          <CartPlayer />
+          <CartPlayer>
+            <template #header-leading>
+              <button
+                type="button"
+                class="cart-toggle cart-toggle--open"
+                :aria-label="t('cart.hide')"
+                :title="t('cart.hide')"
+                :aria-expanded="true"
+                aria-controls="cart-player-panel"
+                @click="toggleCart"
+              >
+                <span class="material-symbols-rounded" aria-hidden="true">view_sidebar</span>
+              </button>
+            </template>
+          </CartPlayer>
         </div>
 
         <div
@@ -81,9 +76,23 @@
           @pointerdown="startResize"
         ></div>
 
-        <div v-if="!cartFullscreen || cartDetached" class="playlist-section" :style="{ width: (cartClosed || cartDetached) ? '100%' : `calc(100% - ${cartWidth}px)` }">
+        <div v-if="!cartFullscreen || cartDetached" class="playlist-section">
           <div class="playlist-panel">
-            <PlaylistView />
+            <PlaylistView>
+              <template #header-leading>
+                <button
+                  v-if="cartClosed && !cartDetached"
+                  type="button"
+                  class="cart-toggle"
+                  :aria-label="t('cart.show')"
+                  :title="t('cart.show')"
+                  :aria-expanded="false"
+                  @click="toggleCart"
+                >
+                  <span class="material-symbols-rounded" aria-hidden="true">view_sidebar</span>
+                </button>
+              </template>
+            </PlaylistView>
           </div>
         </div>
       </div>
@@ -91,22 +100,45 @@
       <aside class="output-console" :aria-label="t('properties.output')">
         <div class="output-console__header workspace-panel-header">
           <div class="output-console__header-controls">
-            <label class="limiter-ceiling-control">
+            <div class="limiter-ceiling-control">
               <span aria-hidden="true">{{ t('outputConsole.ceilingShort') }}</span>
-              <input
-                type="number"
-                class="limiter-ceiling-input"
-                :value="limiterCeilingDb.toFixed(1)"
-                min="-60"
-                max="0"
-                step="0.1"
-                inputmode="decimal"
-                :aria-label="t('outputConsole.ceilingInputLabel')"
-                :title="`${t('outputConsole.ceiling')}: ${limiterCeilingLabel}`"
-                :disabled="limiterChangePending || !currentProject"
-                @change="onLimiterCeilingChange"
-              />
-            </label>
+              <div class="limiter-ceiling-value">
+                <input
+                  ref="limiterCeilingInput"
+                  type="number"
+                  class="limiter-ceiling-input"
+                  :value="limiterCeilingDb.toFixed(1)"
+                  min="-60"
+                  max="0"
+                  step="0.1"
+                  inputmode="decimal"
+                  :aria-label="t('outputConsole.ceilingInputLabel')"
+                  :title="`${t('outputConsole.ceiling')}: ${limiterCeilingLabel}`"
+                  :disabled="limiterChangePending || !currentProject"
+                  @change="onLimiterCeilingChange"
+                  @pointerdown="startLimiterCeilingDrag"
+                  @pointermove="scrubLimiterCeiling"
+                  @pointerup="finishLimiterCeilingDrag"
+                  @pointercancel="cancelLimiterCeilingDrag"
+                />
+                <div class="limiter-ceiling-steppers">
+                  <button
+                    type="button"
+                    :aria-label="`${t('outputConsole.ceilingInputLabel')}: +0.1 dB`"
+                    title="+0.1 dB"
+                    :disabled="limiterChangePending || !currentProject"
+                    @click="stepLimiterCeiling(0.1)"
+                  ><span class="material-symbols-rounded" aria-hidden="true">keyboard_arrow_up</span></button>
+                  <button
+                    type="button"
+                    :aria-label="`${t('outputConsole.ceilingInputLabel')}: −0.1 dB`"
+                    title="−0.1 dB"
+                    :disabled="limiterChangePending || !currentProject"
+                    @click="stepLimiterCeiling(-0.1)"
+                  ><span class="material-symbols-rounded" aria-hidden="true">keyboard_arrow_down</span></button>
+                </div>
+              </div>
+            </div>
             <button
               type="button"
               class="limiter-toggle"
@@ -250,7 +282,16 @@ const cartFullscreen = ref(false);
 const cartDetached = ref(false);
 const outputConsoleMinDb = -60;
 const outputConsoleMaxDb = 40;
+const limiterCeilingDragPixelsPerStep = 6;
 const limiterChangePending = ref(false);
+const limiterCeilingInput = ref<HTMLInputElement | null>(null);
+let limiterCeilingDrag: {
+  input: HTMLInputElement;
+  pointerId: number;
+  startY: number;
+  startDb: number;
+  moved: boolean;
+} | null = null;
 const limiterEnabled = computed(() =>
   (currentProject.value as any)?.settings?.disableLimiter !== true,
 );
@@ -306,18 +347,79 @@ async function toggleLimiter() {
   await patchLimiterSettings({ disableLimiter: limiterEnabled.value });
 }
 
-async function onLimiterCeilingChange(event: Event) {
-  const input = event.target as HTMLInputElement;
+function normalizeLimiterCeiling(value: number) {
+  return Math.round(Math.max(-60, Math.min(0, value)) * 10) / 10;
+}
+
+async function commitLimiterCeiling(input: HTMLInputElement) {
   const value = Number(input.value);
   if (!Number.isFinite(value)) {
     input.value = limiterCeilingDb.value.toFixed(1);
     return;
   }
 
-  const db = Math.round(Math.max(-60, Math.min(0, value)) * 10) / 10;
+  const db = normalizeLimiterCeiling(value);
   input.value = db.toFixed(1);
   if (db === limiterCeilingDb.value) return;
   await patchLimiterSettings({ limiterCeilingDb: db });
+}
+
+async function onLimiterCeilingChange(event: Event) {
+  await commitLimiterCeiling(event.target as HTMLInputElement);
+}
+
+async function stepLimiterCeiling(delta: number) {
+  const input = limiterCeilingInput.value;
+  if (!input || input.disabled) return;
+  input.value = normalizeLimiterCeiling(limiterCeilingDb.value + delta).toFixed(1);
+  await commitLimiterCeiling(input);
+}
+
+function startLimiterCeilingDrag(event: PointerEvent) {
+  const input = event.currentTarget as HTMLInputElement;
+  if (event.button !== 0 || input.disabled) return;
+  limiterCeilingDrag = {
+    input,
+    pointerId: event.pointerId,
+    startY: event.clientY,
+    startDb: limiterCeilingDb.value,
+    moved: false,
+  };
+}
+
+function scrubLimiterCeiling(event: PointerEvent) {
+  const drag = limiterCeilingDrag;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+
+  const deltaY = drag.startY - event.clientY;
+  if (!drag.moved && Math.abs(deltaY) < 3) return;
+  if (!drag.moved) {
+    drag.moved = true;
+    drag.input.setPointerCapture(event.pointerId);
+  }
+
+  const steps = Math.round(deltaY / limiterCeilingDragPixelsPerStep);
+  drag.input.value = normalizeLimiterCeiling(drag.startDb + steps * 0.1).toFixed(1);
+  event.preventDefault();
+}
+
+async function finishLimiterCeilingDrag(event: PointerEvent) {
+  const drag = limiterCeilingDrag;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  limiterCeilingDrag = null;
+  if (drag.input.hasPointerCapture(event.pointerId)) {
+    drag.input.releasePointerCapture(event.pointerId);
+  }
+  if (!drag.moved) return;
+  event.preventDefault();
+  await commitLimiterCeiling(drag.input);
+}
+
+function cancelLimiterCeilingDrag(event: PointerEvent) {
+  const drag = limiterCeilingDrag;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  limiterCeilingDrag = null;
+  drag.input.value = limiterCeilingDb.value.toFixed(1);
 }
 
 async function onLimiterOutputTargetChange(event: Event) {
@@ -423,8 +525,14 @@ const startResize = (e: PointerEvent) => {
 
     // Snap zones
     const snapThreshold = 100; // pixels from edge to trigger snap
-    const minWidth = 300;
-    const maxWidth = rect.width * 0.95; // Allow up to 95% to trigger fullscreen
+    const handleWidth = Number.parseFloat(
+      getComputedStyle(container).getPropertyValue('--resize-handle-width'),
+    ) || 1;
+    const minPlaylistWidth = Number.parseFloat(
+      getComputedStyle(container).getPropertyValue('--playlist-split-min-width'),
+    ) || 577;
+    const maxWidth = Math.max(0, rect.width - handleWidth - minPlaylistWidth);
+    const minWidth = Math.min(300, maxWidth);
     
     // Check for close snap (dragging very close to left edge)
     if (newWidth < snapThreshold) {
@@ -443,7 +551,7 @@ const startResize = (e: PointerEvent) => {
     // Normal resize
     cartClosed.value = false;
     cartFullscreen.value = false;
-    cartWidth.value = Math.max(minWidth, Math.min(maxWidth, newWidth));
+    cartWidth.value = Math.round(Math.max(minWidth, Math.min(maxWidth, newWidth)));
   };
   
   const handleMouseUp = () => {
@@ -729,6 +837,12 @@ onUnmounted(() => {
   background: var(--color-background);
 }
 
+.main-workspace.show-mode {
+  // PlaylistView contributes 16px of horizontal gutters; 637px leaves the
+  // row container at 621px, safely above its 620px compact breakpoint.
+  --playlist-split-min-width: 637px;
+}
+
 .workspace-content {
   flex: 1;
   display: flex;
@@ -746,7 +860,9 @@ onUnmounted(() => {
 }
 
 .playlist-section {
-  min-width: 30%;
+  flex: 1 1 0;
+  width: auto;
+  min-width: var(--playlist-split-min-width);
   overflow: hidden;
   display: flex;
   min-height: 0;
@@ -761,10 +877,8 @@ onUnmounted(() => {
 .output-console {
   display: flex;
   flex-direction: column;
-  flex: 0 0 auto;
-  width: max-content;
-  min-width: 152px;
-  max-width: min(360px, 35%);
+  flex: 0 0 var(--output-console-width);
+  width: var(--output-console-width);
   min-height: 0;
   overflow: hidden;
   background: var(--color-surface);
@@ -784,10 +898,8 @@ onUnmounted(() => {
   overflow-x: auto;
   overflow-y: hidden;
   padding: var(--spacing-sm);
-  background:
-    linear-gradient(90deg, rgba(0, 0, 0, 0.12), transparent 40%, rgba(0, 0, 0, 0.08)),
-    color-mix(in srgb, var(--color-background) 88%, black);
-  box-shadow: inset 1px 0 rgba(255, 255, 255, 0.025);
+  background: var(--color-background);
+  box-shadow: none;
 }
 
 .output-console__header {
@@ -799,40 +911,59 @@ onUnmounted(() => {
   flex: 1;
   align-items: center;
   justify-content: flex-end;
-  gap: 4px;
+  gap: var(--spacing-sm);
+  width: 100%;
   min-width: 0;
 }
 
 .limiter-ceiling-control {
   display: flex;
   align-items: center;
-  gap: 3px;
-  height: 28px;
-  padding-left: 4px;
-  border: 1px solid var(--color-border-strong);
+  gap: 4px;
+  flex: 1 1 0;
+  min-width: 0;
+  height: var(--panel-control-height);
+  padding-left: 8px;
+  border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
-  background: color-mix(in srgb, var(--color-control) 88%, black);
+  background: var(--color-surface-raised);
   color: var(--color-text-tertiary);
-  font-family: var(--font-mono);
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 650;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast);
+
+  &:hover,
+  &:focus-within {
+    background: var(--color-surface-hover);
+    border-color: var(--color-border-strong);
+  }
+}
+
+.limiter-ceiling-value {
+  position: relative;
+  flex: 0 1 50px;
+  min-width: 44px;
+  height: 100%;
 }
 
 .limiter-ceiling-input {
-  width: 36px;
-  height: 28px;
-  padding: 0 2px;
+  width: 100%;
+  height: 100%;
+  padding: 0 17px 0 2px;
   border: 0;
   border-radius: 0 var(--control-radius) var(--control-radius) 0;
   background: transparent;
   color: var(--color-text-primary);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 700;
   text-align: center;
   font-variant-numeric: tabular-nums;
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
 
   &::-webkit-inner-spin-button,
   &::-webkit-outer-spin-button {
@@ -846,23 +977,61 @@ onUnmounted(() => {
   }
 }
 
+.limiter-ceiling-steppers {
+  position: absolute;
+  inset: 2px 2px 2px auto;
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  width: 15px;
+  overflow: hidden;
+  border-left: 1px solid var(--color-border);
+  border-radius: 0 3px 3px 0;
+
+  button {
+    display: grid;
+    place-items: center;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    color: var(--color-text-secondary);
+    background: var(--color-control);
+
+    &:first-child {
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    &:hover:not(:disabled),
+    &:focus-visible {
+      color: var(--color-text-primary);
+      background: var(--color-surface-hover);
+    }
+  }
+
+  .material-symbols-rounded {
+    font-size: 12px;
+    line-height: 1;
+  }
+}
+
 .limiter-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  min-width: 48px;
-  height: 28px;
-  padding: 0 4px;
+  gap: 7px;
+  min-width: 88px;
+  height: var(--panel-control-height);
+  padding: 0 8px;
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
-  background: var(--color-control);
+  background: var(--color-surface-raised);
   color: var(--color-warning);
-  font-family: var(--font-mono);
-  font-size: 8px;
-  font-weight: 700;
-  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 650;
   cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 
   &__state {
     width: 6px;
@@ -879,6 +1048,7 @@ onUnmounted(() => {
   }
 
   &:hover {
+    background: var(--color-surface-hover);
     border-color: var(--color-border-strong);
     color: var(--color-text-primary);
   }
@@ -891,16 +1061,16 @@ onUnmounted(() => {
 
 .output-target-control {
   width: 100%;
-  height: 24px;
+  height: var(--panel-control-height);
   min-width: 0;
   margin: 0;
-  padding: 0 18px 0 5px;
-  border-color: var(--color-border-strong);
-  background: color-mix(in srgb, var(--color-control) 88%, black);
+  padding: 0 24px 0 12px;
+  border-color: var(--color-border);
+  border-radius: var(--control-radius);
+  background: var(--color-surface-raised);
   color: var(--color-text-primary);
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
   text-overflow: ellipsis;
 
   &:focus-visible {
@@ -912,19 +1082,16 @@ onUnmounted(() => {
 .output-pair {
   position: relative;
   display: flex;
-  flex: 0 0 132px;
+  flex: 0 0 var(--output-strip-width);
   align-items: stretch;
   border-radius: var(--control-radius);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.035);
+  box-shadow: none;
 }
 
 .output-pair :deep(.stereo-meter--strip) {
-  width: 132px;
-  background: color-mix(in srgb, var(--color-control) 88%, black);
-  border-color: var(--color-border-strong);
-  box-shadow:
-    inset 0 1px rgba(255, 255, 255, 0.03),
-    inset 0 0 10px rgba(0, 0, 0, 0.22);
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  box-shadow: none;
 }
 
 .output-pair__fader {
@@ -932,20 +1099,8 @@ onUnmounted(() => {
 }
 
 .resize-handle {
-  width: 5px;
-  background:
-    linear-gradient(
-      to right,
-      transparent 2px,
-      var(--color-border) 2px 3px,
-      transparent 3px
-    ),
-    linear-gradient(
-      to bottom,
-      var(--color-surface) 0 calc(var(--panel-header-height) - 1px),
-      var(--color-border) calc(var(--panel-header-height) - 1px) var(--panel-header-height),
-      var(--color-background) var(--panel-header-height)
-    );
+  width: var(--resize-handle-width);
+  background: var(--color-border);
   cursor: col-resize;
   transition: background-color var(--transition-fast);
   position: relative;
@@ -1028,7 +1183,7 @@ onUnmounted(() => {
     /* When cart is fullscreen, show handle at right edge */
     position: absolute;
     right: 0;
-    top: 0;
+    top: var(--panel-header-height);
     bottom: 0;
     width: 8px;
     background: transparent;
@@ -1060,26 +1215,18 @@ onUnmounted(() => {
   }
 }
 
-.workspace-panels.cart-toggle-visible:not(.cart-is-closed) :deep(.cart-header),
-.workspace-panels.cart-toggle-visible.cart-is-closed :deep(.playlist-header) {
-  padding-left: 56px;
-}
-
 .cart-toggle {
-  position: absolute;
-  top: var(--spacing-sm);
-  left: 8px;
-  z-index: 20;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 34px;
+  flex: 0 0 var(--panel-control-height);
+  width: var(--panel-control-height);
+  height: var(--panel-control-height);
   padding: 0;
   border: 1px solid var(--color-border-strong);
-  border-radius: var(--border-radius-md);
+  border-radius: var(--control-radius);
   background: var(--color-surface-raised);
   color: var(--color-text-primary);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
   cursor: pointer;
 
   .material-symbols-rounded {
@@ -1104,6 +1251,12 @@ onUnmounted(() => {
 }
 
 .cart-section {
+  flex: 0 0 auto;
+  max-width: calc(100% - var(--playlist-split-min-width) - var(--resize-handle-width));
   overflow: hidden;
+
+  &.cart-section--fullscreen {
+    max-width: none;
+  }
 }
 </style>

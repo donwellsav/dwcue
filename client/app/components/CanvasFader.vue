@@ -97,7 +97,7 @@ function draw() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
 
-  const trackW = 6;
+  const trackW = 2;
   const trackCenterX = w / 2;
   const trackX = trackCenterX - trackW / 2;
   const padTop    = trackPadding;
@@ -109,14 +109,12 @@ function draw() {
   const border = readCssVar('--color-border', '#444');
   const borderStrong = readCssVar('--color-border-strong', '#666');
   const accent = readCssVar('--color-accent', '#0f62fe');
-  const surface = readCssVar('--color-surface', '#1f2226');
   const surfaceRaised = readCssVar('--color-surface-raised', '#2b2f36');
+  const control = readCssVar('--color-control', '#121319');
   const background = readCssVar('--color-background', '#0d0f13');
-  const secondary = readCssVar('--color-text-secondary', '#888');
 
-  // Recessed rail: neutral rather than accent-filled, so it reads as a
-  // physical console control instead of a progress bar.
-  ctx.fillStyle = border;
+  // Flat rail and cap reuse the same surface vocabulary as the app controls.
+  ctx.fillStyle = control;
   ctx.beginPath();
   if (typeof (ctx as any).roundRect === 'function') {
     (ctx as any).roundRect(trackX - 4, trackTop, trackW + 8, trackH, 5);
@@ -124,38 +122,36 @@ function draw() {
     ctx.rect(trackX - 4, trackTop, trackW + 8, trackH);
   }
   ctx.fill();
+  ctx.strokeStyle = border;
+  ctx.lineWidth = 1;
+  ctx.stroke();
   ctx.fillStyle = background;
   ctx.fillRect(trackX, trackTop, trackW, trackH);
 
   const zeroY = trackTop + (1 - dbToNorm(0)) * trackH;
   const valY  = trackTop + (1 - dbToNorm(props.db)) * trackH;
 
-  // Strong unity reference.
-  ctx.strokeStyle = secondary;
-  ctx.lineWidth = 2;
+  // Unity reference follows the same quiet divider treatment as app panels.
+  ctx.strokeStyle = borderStrong;
+  ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(trackCenterX - 12, zeroY);
-  ctx.lineTo(trackCenterX + 12, zeroY);
+  ctx.moveTo(trackCenterX - 10, zeroY);
+  ctx.lineTo(trackCenterX + 10, zeroY);
   ctx.stroke();
 
-  // Raised rectangular cap with a clear pickup line. This keeps the whole
-  // canvas as the hit target while giving the eye a familiar DAW fader.
+  // The full canvas remains the hit target; only the cap chrome is flattened.
   const capW = Math.min(38, w - 6);
   const capH = 22;
   const capX = trackCenterX - capW / 2;
   const capY = valY - capH / 2;
   ctx.save();
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
-  ctx.shadowBlur = 5;
-  ctx.shadowOffsetY = 2;
-  const capGradient = ctx.createLinearGradient(0, capY, 0, capY + capH);
-  capGradient.addColorStop(0, surfaceRaised);
-  capGradient.addColorStop(0.52, surface);
-  capGradient.addColorStop(1, background);
-  ctx.fillStyle = capGradient;
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.24)';
+  ctx.shadowBlur = 2;
+  ctx.shadowOffsetY = 1;
+  ctx.fillStyle = surfaceRaised;
   ctx.beginPath();
   if (typeof (ctx as any).roundRect === 'function') {
-    (ctx as any).roundRect(capX, capY, capW, capH, 4);
+    (ctx as any).roundRect(capX, capY, capW, capH, 6);
   } else {
     ctx.rect(capX, capY, capW, capH);
   }

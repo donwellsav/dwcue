@@ -174,10 +174,12 @@ const warningRef = ref<HTMLElement | null>(null);
 
 const warningMode = ref<'center' | 'gap' | 'left'>('center');
 const warningLeftPx = ref(0);
+const warningMaxWidthPx = ref<number | null>(null);
 const hideTitle = computed(() => !!silenceWarning.value && warningMode.value === 'left');
 
 const warningStyle = computed(() => ({
   left: `${warningLeftPx.value}px`,
+  maxWidth: warningMaxWidthPx.value === null ? undefined : `${warningMaxWidthPx.value}px`,
   transform: warningMode.value === 'left' ? 'translateX(0)' : 'translateX(-50%)',
 }));
 
@@ -205,6 +207,7 @@ function recomputeWarningPlacement() {
   if (center - w / 2 >= leftEdge + PLACEMENT_MARGIN &&
       center + w / 2 <= rightEdge - PLACEMENT_MARGIN) {
     warningMode.value = 'center';
+    warningMaxWidthPx.value = null;
     warningLeftPx.value = center;
     return;
   }
@@ -213,6 +216,7 @@ function recomputeWarningPlacement() {
   const gapAvail = (rightEdge - leftEdge) - 2 * PLACEMENT_MARGIN;
   if (w <= gapAvail) {
     warningMode.value = 'gap';
+    warningMaxWidthPx.value = null;
     warningLeftPx.value = (leftEdge + rightEdge) / 2;
     return;
   }
@@ -220,6 +224,7 @@ function recomputeWarningPlacement() {
   // 3. Fall back to left-aligned, taking the title's place (logo stays).
   warningMode.value = 'left';
   warningLeftPx.value = logoEdge + PLACEMENT_MARGIN;
+  warningMaxWidthPx.value = Math.max(0, rightEdge - warningLeftPx.value - PLACEMENT_MARGIN);
 }
 
 // Recompute whenever the displayed text changes (digit count shifts width) or
@@ -390,9 +395,9 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex: 0 0 61px;
-  height: 61px;
-  padding: var(--spacing-sm) var(--spacing-md);
+  flex: 0 0 var(--app-header-height);
+  height: var(--app-header-height);
+  padding: var(--spacing-xs) var(--workspace-gutter);
   background-color: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--color-border) 35%, transparent);
@@ -413,7 +418,7 @@ onMounted(() => {
 }
 
 .project-name {
-  font-size: 15px;
+  font-size: var(--type-project-size);
   font-weight: 650;
   letter-spacing: -0.01em;
   color: var(--color-text-primary);
@@ -521,7 +526,6 @@ onMounted(() => {
   display: flex;
   gap: var(--spacing-xs);
   align-items: stretch;
-  margin-left: calc(-1 * var(--spacing-sm));
   padding-left: var(--spacing-sm);
   border-left: 1px solid var(--color-border);
 }
@@ -544,7 +548,9 @@ onMounted(() => {
 }
 
 .digital-clock.clock--large {
-  min-width: 108px;
+  width: var(--output-strip-width);
+  min-width: var(--output-strip-width);
+  box-sizing: border-box;
   padding: 5px 10px;
 }
 
@@ -581,11 +587,11 @@ onMounted(() => {
 }
 
 .clock--large .clock-label {
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .clock--large .clock-value {
-  font-size: 20px;
+  font-size: var(--type-clock-size);
 }
 
 .silence-warning {
@@ -598,6 +604,8 @@ onMounted(() => {
   font-size: 16px;
   color: #000;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   z-index: 10;
 }

@@ -131,17 +131,19 @@ function cancelEdit() {
 
 .volume-slider__label {
   font-family: var(--font-mono, monospace);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--color-text-primary);
   text-align: center;
   line-height: 1;
   cursor: text;
   padding: 3px 6px;
-  background: rgba(128, 128, 128, 0.15);
-  border-radius: 4px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
   white-space: nowrap;
   min-width: 42px;
+  box-sizing: border-box;
   user-select: none;
 }
 
@@ -156,10 +158,10 @@ function cancelEdit() {
   font-family: var(--font-mono, monospace);
   font-size: 13px;
   text-align: center;
-  background: var(--color-surface);
+  background: var(--color-control);
   color: var(--color-text-primary);
   border: 1px solid var(--color-accent);
-  border-radius: 2px;
+  border-radius: var(--control-radius);
   outline: none;
   padding: 0;
 }

@@ -1,7 +1,7 @@
 <template>
   <div class="properties-panel">
-    <div class="properties-header">
-      <h3>{{ selectedItems.size > 1 ? t('properties.multipleItemsSelected', { count: selectedItems.size }) : (t('properties.title') + ': ' + (selectedItem?.displayName || '')) }}</h3>
+    <div class="properties-header workspace-panel-header">
+      <h3 class="workspace-panel-header__title">{{ selectedItems.size > 1 ? t('properties.multipleItemsSelected', { count: selectedItems.size }) : (t('properties.title') + ': ' + (selectedItem?.displayName || '')) }}</h3>
       <button class="close-btn" @click="handleClose">
         <span class="material-symbols-rounded">close</span>
       </button>
@@ -942,23 +942,13 @@ const formatTime = (seconds: number): string => {
 }
 
 .properties-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 44px;
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-bottom: 1px solid var(--color-border);
   color: var(--color-text-secondary);
 }
 
-.properties-header h3 {
-  font-size: 14px;
-  font-weight: 650;
-}
-
 .close-btn {
-  width: 30px;
-  height: 30px;
+  width: var(--panel-control-height);
+  height: var(--panel-control-height);
+  padding: 0;
   border-radius: var(--border-radius-sm);
   display: flex;
   align-items: center;
@@ -1065,7 +1055,7 @@ const formatTime = (seconds: number): string => {
   padding: var(--spacing-sm);
   background-color: var(--color-control);
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: var(--control-radius);
   color: var(--color-text);
   font-size: 13px;
   
@@ -1093,7 +1083,7 @@ const formatTime = (seconds: number): string => {
   padding: var(--spacing-sm);
   background: var(--color-surface-hover);
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: var(--control-radius);
   cursor: pointer;
   color: var(--color-text);
   display: flex;

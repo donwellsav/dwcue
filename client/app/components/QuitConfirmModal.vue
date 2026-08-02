@@ -94,14 +94,14 @@ onUnmounted(() => { if (import.meta.client) window.removeEventListener('keydown'
   backdrop-filter: blur(4px);
 }
 .qm-modal {
-  background: var(--color-surface, #24242d);
+  box-sizing: border-box;
+  background: var(--color-background, #16161d);
   border: 1px solid var(--color-border, #525252);
   color: var(--color-text-primary, #f4f4f4);
-  border-radius: 8px;
-  padding: 24px;
-  min-width: 440px;
-  max-width: 560px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  border-radius: var(--border-radius-lg, 10px);
+  width: min(var(--modal-width, 560px), 92vw);
+  padding: 20px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.35);
   display: flex; flex-direction: column; gap: 16px;
 }
 .qm-header h3 {

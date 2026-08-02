@@ -245,7 +245,10 @@ async function uploadSelectedFiles(event: Event) {
   z-index: 9000;
 }
 .modal {
+  box-sizing: border-box;
   width: min(720px, 92vw);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   background: #1a1a1a;
   border: 1px solid #2a2a2a;
   border-radius: 8px;

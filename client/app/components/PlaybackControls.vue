@@ -188,23 +188,24 @@ const handlePlayNext = () => {
 
 <style scoped>
 .playback-controls {
+  --transport-side-width: var(--output-strip-width);
   flex: 0 0 var(--playback-controls-height);
   height: var(--playback-controls-height);
   border-bottom: 1px solid var(--color-border);
-  display: flex;
+  display: grid;
+  grid-template-columns: var(--transport-side-width) minmax(0, 1fr) var(--transport-side-width);
   align-items: center;
-  gap: var(--spacing-md);
-  padding: var(--spacing-sm) var(--spacing-md);
+  gap: var(--workspace-gutter);
+  padding: var(--workspace-gutter);
   background-color: var(--color-surface);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-border) 45%, transparent);
 }
 
 /* Show Mode — bigger GO / Stop-All buttons. */
 .playback-controls.show-mode {
-  min-height: calc(var(--playback-controls-height) + 20px);
+  min-height: calc(var(--playback-controls-height) + var(--spacing-lg));
 
   .control-btn {
-    flex-basis: 148px;
     padding: var(--spacing-lg) var(--spacing-xl);
     font-size: 17px;
 
@@ -225,13 +226,19 @@ const handlePlayNext = () => {
   }
 }
 
+.playback-controls.show-mode :deep(.active-cue-item .action-btn) {
+  width: 32px;
+  height: 32px;
+  font-size: 24px;
+}
+
 .control-btn {
   display: flex;
   align-items: center;
   align-self: stretch;
-  flex: 0 0 124px;
+  width: 100%;
   gap: var(--spacing-sm);
-  min-width: 124px;
+  min-width: 0;
   justify-content: center;
   padding: var(--spacing-md) var(--spacing-lg);
   background-color: var(--color-control);
@@ -295,7 +302,7 @@ const handlePlayNext = () => {
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: var(--spacing-xs);
+  padding: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
   background-color: var(--color-control);

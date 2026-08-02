@@ -1,7 +1,10 @@
 <template>
   <div class="playlist-view" :style="playlistRowStyle">
     <div class="playlist-header workspace-panel-header">
-      <h2 class="workspace-panel-header__title">{{ t('playlist.title') }}</h2>
+      <div class="workspace-panel-header__leading">
+        <slot name="header-leading" />
+        <h2 class="workspace-panel-header__title">{{ t('playlist.title') }}</h2>
+      </div>
       <!-- Import / add-group are edit actions — hidden in Show Mode. -->
       <div v-if="!showMode" class="playlist-actions">
         <Btn icon="audio_file" :text="t('playlist.importAudio')" :disabled="!currentProject" @click="handleImport" />
@@ -780,20 +783,33 @@ const handleDrop = async (e: DragEvent) => {
   background-color: var(--color-background);
 }
 
-.playlist-header {
-  padding-inline: var(--spacing-sm);
-}
-
 .playlist-actions {
   display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-width: 0;
+  margin-left: auto;
   gap: var(--spacing-sm);
+  overflow-x: auto;
 }
 
+.playlist-header .workspace-panel-header__leading {
+  flex: 0 0 auto;
+}
+
+.playlist-header,
+.playlist-content {
+  scrollbar-gutter: stable;
+}
+
+.playlist-header {
+  overflow-y: auto;
+}
 
 .playlist-content {
   flex: 1;
   overflow-y: auto;
-  padding: var(--spacing-sm);
+  padding: 0 var(--workspace-gutter) var(--workspace-gutter);
 }
 
 .empty-state {
@@ -816,6 +832,7 @@ const handleDrop = async (e: DragEvent) => {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  padding-top: var(--workspace-gutter);
 }
 
 .item-list-progress {

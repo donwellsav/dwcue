@@ -75,14 +75,15 @@ const truncatedName = computed(() => {
   backdrop-filter: blur(4px);
 }
 .ds-modal {
-  background: var(--color-surface, #24242d);
+  box-sizing: border-box;
+  background: var(--color-background, #16161d);
   border: 1px solid var(--color-border, #525252);
   color: var(--color-text-primary, #f4f4f4);
-  border-radius: 8px;
+  border-radius: var(--border-radius-lg, 10px);
   padding: 24px;
-  min-width: 440px;
+  width: min(440px, calc(100vw - 32px));
   max-width: 560px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.35);
   display: flex; flex-direction: column; gap: 16px;
 }
 .ds-header h3 {

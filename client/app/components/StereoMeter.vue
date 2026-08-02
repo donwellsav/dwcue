@@ -93,7 +93,7 @@
       </div>
       <slot name="scale-control" />
     </div>
-    <div v-if="hasFooter" class="stereo-meter__footer">
+    <div v-if="hasScaleControl" class="stereo-meter__footer">
       <slot name="footer" />
     </div>
   </div>
@@ -125,7 +125,6 @@ const props = withDefaults(defineProps<{
 
 const slots = useSlots();
 const hasScaleControl = computed(() => !!slots['scale-control']);
-const hasFooter = computed(() => !!slots.footer);
 
 // Always subscribe unconditionally — composables handle null IDs by returning
 // silence. This ensures a cueId that resolves after mount (the server
@@ -366,7 +365,31 @@ const shortTermLabel = computed(() => {
   gap: 3px;
 
   &--strip {
-    width: 132px;
+    width: var(--output-strip-width, 192px);
+    padding: 7px 10px;
+    gap: 7px;
+  }
+
+  &--strip &__label {
+    color: var(--color-text-primary);
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0;
+    line-height: 1.1;
+    min-height: 36px;
+    justify-content: flex-start;
+    text-align: left;
+    text-transform: none;
+  }
+
+  &--strip &__peak-text {
+    color: var(--color-text-primary);
+    font-size: 14px;
+    gap: 4px;
+    line-height: 1.1;
+    text-align: left;
+    justify-items: start;
   }
 
   &__label {
@@ -401,7 +424,8 @@ const shortTermLabel = computed(() => {
   }
 
   &--strip &__body {
-    grid-template-columns: 26px 8px 48px;
+    grid-template-columns: 28px 8px 72px;
+    column-gap: 8px;
   }
 
   &__clips {
@@ -443,6 +467,11 @@ const shortTermLabel = computed(() => {
     text-align: right;
     line-height: 1;
     white-space: nowrap;
+  }
+
+  &--strip &__mark-text {
+    font-size: 13px;
+    color: var(--color-text-primary);
   }
 
   &__mark-tick {
@@ -522,6 +551,20 @@ const shortTermLabel = computed(() => {
     transition: height 35ms linear;
   }
 
+  &--strip &__gr-track {
+    background: var(--color-control);
+    box-shadow: none;
+  }
+
+  &--strip &__gr-track::before {
+    content: none;
+  }
+
+  &--strip &__gr-fill {
+    background: var(--color-warning);
+    box-shadow: none;
+  }
+
   &__chan {
     display: flex;
     align-items: center;
@@ -599,6 +642,11 @@ const shortTermLabel = computed(() => {
     pointer-events: none;
   }
 
+  &--strip &__track {
+    background: var(--color-control);
+    box-shadow: none;
+  }
+
   &__rms-fill {
     position: absolute;
     inset: 0;
@@ -654,6 +702,8 @@ const shortTermLabel = computed(() => {
 
   &--strip &__chan-labels {
     padding-right: 0;
+    font-size: 12px;
+    color: var(--color-text-primary);
   }
 
   &__peak-text {
@@ -673,13 +723,14 @@ const shortTermLabel = computed(() => {
     color: var(--color-text-secondary);
 
     &.is-active {
-      color: #ffc400;
+      color: var(--color-warning);
     }
   }
 
   &__footer {
     width: 100%;
-    flex: 0 0 auto;
+    height: 34px;
+    flex: 0 0 34px;
   }
 }
 

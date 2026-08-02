@@ -571,11 +571,13 @@ const hexToRgba = (hex: string, alpha: number) => {
 };
 
 const itemStyle = computed(() => {
+  const depthOffset = props.depth > 0 ? 24 : 0;
   const backgroundColor = isPlaying.value || isGroupPlaying.value
     ? hexToRgba(props.item.color, 0.5)
     : hexToRgba(props.item.color, 0.14);
   const styles: any = {
-    marginLeft: `${props.depth * 24}px`,
+    marginLeft: showMode.value ? '0px' : `${depthOffset}px`,
+    '--item-depth-offset': `${depthOffset}px`,
     '--item-background': backgroundColor,
     '--folder-background': props.item.type === 'group'
       ? `color-mix(in srgb, ${props.item.color} 50%, var(--color-background))`
@@ -1045,7 +1047,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .item-left {
   display: grid;
-  grid-template-columns: 32px minmax(112px, 1fr) minmax(84px, max-content) 64px max-content 32px;
+  grid-template-columns: 34px minmax(112px, 1fr) minmax(84px, max-content) 64px max-content 32px;
   grid-template-areas: 'expand identity state duration actions arm';
   align-items: center;
   gap: var(--spacing-sm);
@@ -1099,6 +1101,10 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   min-width: 0;
 }
 
+.playlist-item.is-audio .item-identity {
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+}
+
 .item-index {
   grid-column: 1;
   font-size: 12px;
@@ -1121,13 +1127,25 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .item-name {
   grid-column: 3;
-  font-weight: 600;
-  font-size: 14px;
+  font-weight: 700;
+  font-size: var(--type-track-size);
+  line-height: 1.2;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--color-text-primary);
+}
+
+.playlist-item.is-audio .item-name {
+  grid-column: 2;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.9),
+    0 0 5px rgba(0, 0, 0, 0.55);
+}
+
+.playlist-item.is-audio .peak-warning-icon {
+  grid-column: 3;
 }
 
 .playlist-item.is-playing > .item-content .item-name {
@@ -1247,14 +1265,21 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   flex-direction: column;
   gap: 2px;
   padding-top: 2px;
+}
+
+.playlist-item:not(.show-mode) > .group-children {
   padding-left: var(--spacing-md);
+}
+
+.playlist-item:not(.show-mode).is-group > .item-content .expand-btn {
+  transform: translateX(10px);
 }
 
 /* Keep every control available when the resizable playlist is narrow. The
    lanes remain fixed, but state and transport move to a second console row. */
 @container (max-width: 560px) {
   .item-left {
-    grid-template-columns: 32px minmax(0, 1fr) max-content 32px;
+    grid-template-columns: 34px minmax(0, 1fr) max-content 32px;
     grid-template-areas:
       'expand identity duration arm'
       'state state actions actions';
@@ -1279,6 +1304,10 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
     padding: 6px var(--spacing-md);
   }
 
+  .item-color-rail {
+    left: var(--item-depth-offset, 0px);
+  }
+
   &.is-group {
     --current-playlist-row-height: var(--folder-playlist-row-height, 60px);
   }
@@ -1298,9 +1327,17 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
     }
   }
 
+  &.is-group .expand-btn {
+    transform: translateX(-8px);
+  }
+
   .item-identity {
     grid-template-columns: 44px 24px minmax(0, 1fr) auto;
     gap: var(--spacing-sm);
+  }
+
+  &.is-audio .item-identity {
+    grid-template-columns: 44px minmax(0, 1fr) auto;
   }
 
   .item-index {
@@ -1312,7 +1349,15 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .item-name {
-    font-size: 18px;
+    font-size: var(--type-track-show-size);
+  }
+
+  &.is-audio .item-name {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-height: 1.12;
+    white-space: normal;
   }
 
   .item-duration {

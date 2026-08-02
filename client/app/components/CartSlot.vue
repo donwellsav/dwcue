@@ -944,39 +944,41 @@ const handleDrop = async (e: DragEvent) => {
     border-color: var(--color-accent);
   }
   
-  /* End-of-cue warning border. Reuses the slot's own border (never clipped),
-     bumped to 8px so it reads clearly over the slot's existing 4px border, and
-     blinks at the same rate as the ProjectHeader silence-warning banner
-     (yellow ≤30s, orange ≤10s, red ≤5s). */
+  /* Draw warnings inside the fixed 1px structural border so flashing never
+     moves or shrinks the card contents. */
   &.warning-yellow {
-    border-width: 8px;
-    animation: cart-warning-flash-yellow 2s ease-in-out infinite;
+    --cart-warning-color: #FFC107;
+    --cart-warning-rate: 2s;
   }
 
   &.warning-orange {
-    border-width: 8px;
-    animation: cart-warning-flash-orange 1s ease-in-out infinite;
+    --cart-warning-color: #FF9800;
+    --cart-warning-rate: 1s;
   }
 
   &.warning-red {
-    border-width: 8px;
-    animation: cart-warning-flash-red 0.5s ease-in-out infinite;
+    --cart-warning-color: #F44336;
+    --cart-warning-rate: 0.5s;
+  }
+
+  &.warning-yellow::after,
+  &.warning-orange::after,
+  &.warning-red::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    pointer-events: none;
+    box-sizing: border-box;
+    border: 4px solid var(--cart-warning-color);
+    border-radius: inherit;
+    animation: cart-warning-flash var(--cart-warning-rate) ease-in-out infinite;
   }
 }
 
-@keyframes cart-warning-flash-yellow {
-  0%, 100% { border-color: var(--color-border); }
-  50% { border-color: #FFC107; }
-}
-
-@keyframes cart-warning-flash-orange {
-  0%, 100% { border-color: var(--color-border); }
-  50% { border-color: #FF9800; }
-}
-
-@keyframes cart-warning-flash-red {
-  0%, 100% { border-color: var(--color-border); }
-  50% { border-color: #F44336; }
+@keyframes cart-warning-flash {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
 }
 
 .empty-slot {
@@ -1190,7 +1192,7 @@ const handleDrop = async (e: DragEvent) => {
   right: var(--spacing-sm);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--spacing-xs);
   justify-content: space-between;
   flex-shrink: 0;
   min-height: 28px;
@@ -1342,6 +1344,18 @@ const handleDrop = async (e: DragEvent) => {
     right: var(--spacing-md);
     bottom: var(--spacing-md);
     left: var(--spacing-md);
+  }
+}
+
+/* A two-column attached Show cart is intentionally compact. Scale the two
+   metadata glyphs at the exact width where the full-size footer stops fitting. */
+@container (max-width: 145px) {
+  .cart-slot.show-mode .behavior-icon {
+    font-size: 13px;
+  }
+
+  .cart-slot.show-mode .slot-duration {
+    font-size: 11px;
   }
 }
 

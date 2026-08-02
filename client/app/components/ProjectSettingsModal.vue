@@ -857,9 +857,9 @@ function close() {
 .project-settings-modal {
   background: var(--color-background);
   border: 1px solid var(--color-border);
-  border-radius: 10px;
-  width: min(560px, 92vw);
-  max-height: 90vh;
+  border-radius: var(--border-radius-lg);
+  width: min(var(--modal-width), 92vw);
+  max-height: var(--modal-max-height);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -879,8 +879,14 @@ function close() {
   font-size: 18px;
 }
 .close-x {
+  display: grid;
+  place-items: center;
+  width: var(--spacing-xxl);
+  height: var(--spacing-xxl);
+  padding: 0;
   background: none;
   border: none;
+  border-radius: var(--control-radius);
   color: var(--color-text-secondary);
   font-size: 18px;
   cursor: pointer;
@@ -892,6 +898,7 @@ function close() {
 /* Tab Navigation — matches PropertiesPanel.vue .properties-tabs / .tab-btn */
 .settings-tabs {
   display: flex;
+  flex-shrink: 0;
   gap: 2px;
   padding: 0 20px;
   border-bottom: 1px solid var(--color-border);
@@ -902,7 +909,8 @@ function close() {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm, 8px);
-  padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+  min-height: 36px;
+  padding: 6px var(--spacing-md, 12px);
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
@@ -1088,7 +1096,7 @@ function close() {
   background: var(--color-control);
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
-  border-radius: 5px;
+  border-radius: var(--control-radius);
   font: inherit;
   text-align: right;
 }
@@ -1104,7 +1112,7 @@ function close() {
   padding: 2px;
   background: var(--color-control);
   border: 1px solid var(--color-border);
-  border-radius: 5px;
+  border-radius: var(--control-radius);
   cursor: pointer;
 }
 .countdown-band-color span {
@@ -1122,7 +1130,7 @@ function close() {
   background: transparent;
   color: var(--color-text-secondary);
   border: 1px solid var(--color-border);
-  border-radius: 5px;
+  border-radius: var(--control-radius);
   cursor: pointer;
 }
 .countdown-band-remove:hover {
@@ -1178,9 +1186,9 @@ function close() {
 .modal-btn {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: var(--control-radius);
   color: var(--color-text-primary);
-  padding: 8px 16px;
+  padding: var(--spacing-sm) var(--spacing-lg);
   cursor: pointer;
   font-size: 14px;
 }

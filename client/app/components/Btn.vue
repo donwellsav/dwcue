@@ -21,13 +21,13 @@ withDefaults(defineProps<{
 
 <style scoped>
 .btn {
-  min-height: 34px;
+  min-height: var(--panel-control-height);
   padding: 6px var(--spacing-md);
   background-color: var(--color-surface-raised);
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
   font-size: 12px;
-  font-weight: 550;
+  font-weight: 600;
   display: flex;
   align-items: center;
   gap: 6px;

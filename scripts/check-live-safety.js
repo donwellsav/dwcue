@@ -96,6 +96,10 @@ assert.match(
   'the new-project prompt must expose native dialog semantics',
 );
 const playlistItem = read('client/app/components/PlaylistItem.vue');
+const locationChoiceModal = read('client/app/components/LocationChoiceModal.vue');
+const quitConfirmModal = read('client/app/components/QuitConfirmModal.vue');
+const deleteSelectionModal = read('client/app/components/DeleteSelectionModal.vue');
+const waveformTrimmer = read('client/app/components/WaveformTrimmer.vue');
 const playlistView = read('client/app/components/PlaylistView.vue');
 const propertiesPanel = read('client/app/components/PropertiesPanel.vue');
 const uiMode = read('client/app/composables/useUiMode.ts');
@@ -159,6 +163,11 @@ assert.match(
   /<span class="item-name"[^>]*>\{\{ item\.displayName \}\}<\/span>[\s\S]*\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]*color:\s*var\(--color-danger\);[\s\S]*background:\s*color-mix/,
   'only the playing cue title must use red text with a text-sized contrast plate',
 );
+assert.match(
+  playlistItem,
+  /\.playlist-item\.is-audio \.item-identity\s*\{[\s\S]*grid-template-columns:\s*40px minmax\(0, 1fr\) auto;[\s\S]*\.item-name\s*\{[\s\S]*font-weight:\s*700;[\s\S]*font-size:\s*var\(--type-track-size\);[\s\S]*\.playlist-item\.is-audio \.item-name\s*\{[\s\S]*text-shadow:[\s\S]*\.playlist-item\.show-mode\s*\{[\s\S]*&\.is-audio \.item-identity\s*\{[\s\S]*grid-template-columns:\s*44px minmax\(0, 1fr\) auto;[\s\S]*\.item-name\s*\{\s*font-size:\s*var\(--type-track-show-size\);[\s\S]*&\.is-audio \.item-name\s*\{[\s\S]*-webkit-line-clamp:\s*2;[\s\S]*white-space:\s*normal;/,
+  'audio titles must reclaim the empty icon lane and stay readable over two high-contrast Show Mode lines',
+);
 assert.doesNotMatch(
   playlistItem,
   /item-name[^\n]*is-peaking|\.item-name[\s\S]{0,300}&\.is-peaking/,
@@ -187,7 +196,7 @@ assert.match(
 assert.match(
   playlistItem,
   /--current-playlist-row-height:\s*var\(--playlist-row-height, 44px\)[\s\S]*scroll-margin-top:\s*var\(--current-playlist-row-height\)[\s\S]*--current-playlist-row-height:\s*var\(--folder-playlist-row-height, 60px\)[\s\S]*min-height:\s*var\(--current-playlist-row-height\)[\s\S]*--current-playlist-row-height:\s*var\(--show-playlist-row-height, 68px\)[\s\S]*@container \(max-width: 620px\)/,
-  'regular, Show Mode, and folder row heights must control geometry while typical Show Mode widths stay single-line',
+  'regular, Show Mode, and folder row heights must control geometry while preserving usable title space',
 );
 assert.match(
   playlistItem,
@@ -232,18 +241,28 @@ const enLocale = JSON.parse(read('client/locales/en.json'));
 assert.equal(enLocale.outputConsole.ceilingInputLabel, 'True-peak limiter ceiling in dBTP');
 assert.match(
   mainWorkspace,
-  /patchLimiterSettings\(patch: Record<string, unknown>\)[\s\S]*await server\.patchSettings\(patch\)[\s\S]*saveProject\(\)[\s\S]*function onLimiterCeilingChange[\s\S]*Math\.max\(-60, Math\.min\(0, value\)\)[\s\S]*patchLimiterSettings\(\{ limiterCeilingDb: db \}\)[\s\S]*patchLimiterSettings\(\{ outputTarget: value \}\)/,
+  /patchLimiterSettings\(patch: Record<string, unknown>\)[\s\S]*await server\.patchSettings\(patch\)[\s\S]*saveProject\(\)[\s\S]*function normalizeLimiterCeiling[\s\S]*Math\.max\(-60, Math\.min\(0, value\)\)[\s\S]*function commitLimiterCeiling[\s\S]*patchLimiterSettings\(\{ limiterCeilingDb: db \}\)[\s\S]*function onLimiterCeilingChange[\s\S]*commitLimiterCeiling[\s\S]*patchLimiterSettings\(\{ outputTarget: value \}\)/,
   'ceiling and target edits must use the persistent project-settings path',
 );
 assert.match(
   mainWorkspace,
-  /<template v-if="pair\.key === 'main'" #footer>[\s\S]*class="output-target-control"[\s\S]*@change="onLimiterOutputTargetChange"[\s\S]*\.output-target-control\s*\{[\s\S]*width:\s*100%;[\s\S]*height:\s*24px/,
+  /step="0\.1"[\s\S]*@pointerdown="startLimiterCeilingDrag"[\s\S]*@pointermove="scrubLimiterCeiling"[\s\S]*@pointerup="finishLimiterCeilingDrag"[\s\S]*@pointercancel="cancelLimiterCeilingDrag"[\s\S]*limiterCeilingDragPixelsPerStep = 6[\s\S]*Math\.round\(deltaY \/ limiterCeilingDragPixelsPerStep\)[\s\S]*steps \* 0\.1[\s\S]*commitLimiterCeiling\(drag\.input\)/,
+  'the limiter ceiling must support pointer scrubbing in 0.1 dB steps and commit once on release',
+);
+assert.match(
+  mainWorkspace,
+  /class="limiter-ceiling-steppers"[\s\S]*@click="stepLimiterCeiling\(0\.1\)"[\s\S]*@click="stepLimiterCeiling\(-0\.1\)"[\s\S]*\.limiter-ceiling-input\s*\{[\s\S]{0,500}cursor:\s*ns-resize;[\s\S]{0,80}touch-action:\s*none;[\s\S]*\.limiter-ceiling-steppers\s*\{/,
+  'the limiter ceiling must expose integrated step arrows and advertise drag adjustment',
+);
+assert.match(
+  mainWorkspace,
+  /<template v-if="pair\.key === 'main'" #footer>[\s\S]*class="output-target-control"[\s\S]*@change="onLimiterOutputTargetChange"[\s\S]*\.output-target-control\s*\{[\s\S]*width:\s*100%;[\s\S]*height:\s*var\(--panel-control-height\)/,
   'Output Target must sit inside the main meter/fader footer beneath L, R, and gain',
 );
 assert.match(
   stereoMeter,
-  /<div v-if="hasFooter" class="stereo-meter__footer">[\s\S]*<slot name="footer"/,
-  'the meter card must own its compact footer instead of creating a separate output box',
+  /<div v-if="hasScaleControl" class="stereo-meter__footer">[\s\S]*<slot name="footer"/,
+  'every console meter must own the shared footer rail instead of creating a separate output box',
 );
 assert.doesNotMatch(
   mainWorkspace,
@@ -256,8 +275,8 @@ assert.match(
   'the docked stereo fader must link both channels and make its −∞ detent truly silent',
 );
 const workspaceOrder = [
-  mainWorkspace.indexOf('<CartPlayer />'),
-  mainWorkspace.indexOf('<PlaylistView />'),
+  mainWorkspace.indexOf('<CartPlayer>'),
+  mainWorkspace.indexOf('<PlaylistView>'),
   mainWorkspace.indexOf('class="output-console"'),
 ];
 assert.ok(
@@ -282,13 +301,23 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /class="workspace-panels"[\s\S]*class="cart-toggle"[\s\S]*:aria-label="cartClosed \? t\('cart\.show'\) : t\('cart\.hide'\)"[\s\S]*:aria-expanded="!cartClosed"[\s\S]*:aria-controls="cartClosed \? undefined : 'cart-player-panel'"[\s\S]*view_sidebar[\s\S]*id="cart-player-panel"[\s\S]*function toggleCart\(\)[\s\S]*cartClosed\.value = !cartClosed\.value[\s\S]*cartFullscreen\.value = false/,
-  'the fixed cart toggle must open or close the panel and leave resizing to the splitter',
+  /class="workspace-panels"[\s\S]*id="cart-player-panel"[\s\S]*<CartPlayer>[\s\S]*#header-leading[\s\S]*class="cart-toggle cart-toggle--open"[\s\S]*t\('cart\.hide'\)[\s\S]*@click="toggleCart"[\s\S]*<PlaylistView>[\s\S]*#header-leading[\s\S]*v-if="cartClosed && !cartDetached"[\s\S]*class="cart-toggle"[\s\S]*t\('cart\.show'\)[\s\S]*@click="toggleCart"[\s\S]*function toggleCart\(\)[\s\S]*cartClosed\.value = !cartClosed\.value[\s\S]*cartFullscreen\.value = false/,
+  'the cart toggle must stay in the active panel header and leave resizing to the splitter',
 );
 assert.match(
   mainWorkspace,
-  /\.workspace-panels\.cart-toggle-visible:not\(\.cart-is-closed\) :deep\(\.cart-header\),[\s\S]*\.workspace-panels\.cart-toggle-visible\.cart-is-closed :deep\(\.playlist-header\)[\s\S]*padding-left:\s*56px[\s\S]*\.cart-toggle\s*\{[\s\S]*top:\s*var\(--spacing-sm\)[\s\S]*left:\s*8px[\s\S]*width:\s*36px[\s\S]*height:\s*34px[\s\S]*:focus-visible/,
-  'the cart toggle must stay in one header position with reserved space and keyboard focus',
+  /\.cart-toggle\s*\{[\s\S]*flex:\s*0 0 var\(--panel-control-height\);[\s\S]*width:\s*var\(--panel-control-height\);[\s\S]*height:\s*var\(--panel-control-height\);[\s\S]*:focus-visible/,
+  'the in-flow cart toggle must share the panel control rail and keyboard focus treatment',
+);
+assert.doesNotMatch(
+  mainWorkspace,
+  /cart-toggle-visible|cart-is-closed|\.cart-toggle\s*\{[^}]*position:\s*absolute/,
+  'the cart toggle must not use absolute positioning or compensating header classes',
+);
+assert.match(
+  read('client/app/components/CartPlayer.vue') + playlistView,
+  /cart-header workspace-panel-header[\s\S]*workspace-panel-header__leading[\s\S]*slot name="header-leading"[\s\S]*playlist-header workspace-panel-header[\s\S]*workspace-panel-header__leading[\s\S]*slot name="header-leading"/,
+  'cart and playlist headers must expose the same in-flow leading-control lane',
 );
 assert.doesNotMatch(
   mainWorkspace,
@@ -342,8 +371,13 @@ assert.ok(
 );
 assert.match(
   playbackControls,
-  /\.control-btn\s*\{[\s\S]*align-self:\s*stretch;[\s\S]*flex:\s*0 0 124px;[\s\S]*\.active-cues\s*\{[\s\S]*flex:\s*1;/,
-  'the separated transport buttons must retain equal fixed anchors around a flexible cue lane',
+  /\.playback-controls\s*\{[\s\S]*--transport-side-width:\s*var\(--output-strip-width\);[\s\S]*grid-template-columns:\s*var\(--transport-side-width\) minmax\(0, 1fr\) var\(--transport-side-width\);[\s\S]*\.control-btn\s*\{[\s\S]*align-self:\s*stretch;[\s\S]*width:\s*100%;[\s\S]*\.active-cues\s*\{[\s\S]*min-width:\s*0;/,
+  'the transport buttons must match the output rail around a flexible cue lane',
+);
+assert.match(
+  playbackControls,
+  /\.active-cues\s*\{[\s\S]{0,220}padding:\s*0;/,
+  'active cue cards must not inherit a unique four-pixel inset from the transport grid',
 );
 assert.match(
   playbackControls,
@@ -476,8 +510,13 @@ assert.match(
 );
 assert.match(
   canvasFader,
-  /Recessed rail[\s\S]*const capW = Math\.min\(38, w - 6\)[\s\S]*const capH = 22[\s\S]*capGradient[\s\S]*ctx\.strokeStyle = accent/,
-  'the fader must render a recessed rail and a substantial physical cap',
+  /Flat rail and cap[\s\S]*const capW = Math\.min\(38, w - 6\)[\s\S]*const capH = 22[\s\S]*ctx\.fillStyle = surfaceRaised[\s\S]*ctx\.strokeStyle = accent/,
+  'the fader must retain a substantial grab cap while using the app control surfaces',
+);
+assert.doesNotMatch(
+  canvasFader,
+  /createLinearGradient|shadowBlur = 5/,
+  'the output fader must not reintroduce the old three-dimensional rack chrome',
 );
 assert.match(
   canvasFader,
@@ -496,7 +535,7 @@ assert.match(
 );
 assert.match(
   stereoMeter,
-  /grid-template-rows:\s*6px minmax\(40px, 1fr\) 24px;[\s\S]*&--strip &__body\s*\{[\s\S]*grid-template-columns:\s*26px 8px 48px;[\s\S]*&__scale\s*\{[\s\S]*grid-row:\s*2;[\s\S]*margin:\s*10px 0;[\s\S]*&__bars\s*\{[\s\S]*grid-row:\s*2;[\s\S]*padding:\s*10px 0;[\s\S]*&__gr-lane\s*\{[\s\S]*grid-row:\s*2;[\s\S]*margin:\s*10px 0;/,
+  /grid-template-rows:\s*6px minmax\(40px, 1fr\) 24px;[\s\S]*&--strip &__body\s*\{[\s\S]*grid-template-columns:\s*28px 8px 72px;[\s\S]*column-gap:\s*8px;[\s\S]*&__scale\s*\{[\s\S]*grid-row:\s*2;[\s\S]*margin:\s*10px 0;[\s\S]*&__bars\s*\{[\s\S]*grid-row:\s*2;[\s\S]*padding:\s*10px 0;[\s\S]*&__gr-lane\s*\{[\s\S]*grid-row:\s*2;[\s\S]*margin:\s*10px 0;/,
   'meter tracks and the shared scale must use the same vertical pixel box',
 );
 assert.match(
@@ -516,7 +555,7 @@ assert.match(
 );
 assert.match(
   projectHeader,
-  /t\('project\.timeLeft'\)[\s\S]*:style="\{ color: timeLeftColor \?\? undefined \}"[\s\S]*\{\{ timeLeft \}\}[\s\S]*countdownColorForSeconds\([\s\S]*displayedRemainingSeconds\.value[\s\S]*countdownColorBands[\s\S]*\.clock--large \.clock-value\s*\{[\s\S]*font-size:\s*20px/,
+  /t\('project\.timeLeft'\)[\s\S]*:style="\{ color: timeLeftColor \?\? undefined \}"[\s\S]*\{\{ timeLeft \}\}[\s\S]*countdownColorForSeconds\([\s\S]*displayedRemainingSeconds\.value[\s\S]*countdownColorBands[\s\S]*\.clock--large \.clock-value\s*\{[\s\S]*font-size:\s*var\(--type-clock-size\)/,
   'the header must retain the large Time Left clock',
 );
 assert.match(
@@ -864,6 +903,21 @@ assert.match(
   'packaged renderer CSP must include hashes from its exact generated HTML',
 );
 assert.match(
+  deleteSelectionModal,
+  /\.ds-modal\s*\{[\s\S]{0,260}width:\s*min\(440px, calc\(100vw - 32px\)\);/,
+  'the delete dialog must fit the supported 380px detached-cart window',
+);
+assert.match(
+  audioImportModal,
+  /\.modal\s*\{[\s\S]{0,140}max-height:\s*calc\(100vh - 32px\);[\s\S]{0,60}overflow-y:\s*auto;/,
+  'the audio import header and close control must remain reachable in the detached cart window',
+);
+assert.match(
+  waveformTrimmer,
+  /\.waveform-trimmer\s*\{(?![\s\S]{0,180}(?:max-height|overflow:\s*hidden))[\s\S]{0,180}background:\s*transparent;[\s\S]*\.volume-slider-vertical\s*\{[\s\S]{0,180}width:\s*24px;/,
+  'the properties panel must own waveform scrolling and the vertical fader must not consume empty horizontal space',
+);
+assert.match(
   liveplayClient,
   /uploadFile[\s\S]*file\.slice\(offset, offset \+ length\)/,
   'remote audio uploads must send bounded file-backed slices',
@@ -1176,18 +1230,158 @@ const actionButton = read('client/app/components/ActionButton.vue');
 const globalStyles = read('client/assets/styles/main.scss');
 assert.match(
   globalStyles,
-  /--playback-controls-height:\s*109px;[\s\S]*--panel-header-height:\s*51px;/,
+  /--workspace-gutter:\s*var\(--spacing-sm\);[\s\S]*--app-header-height:\s*52px;[\s\S]*--playback-controls-height:\s*104px;[\s\S]*--panel-header-height:\s*44px;[\s\S]*--panel-control-height:\s*34px;[\s\S]*--output-strip-width:\s*192px;[\s\S]*--output-console-width:\s*calc\(/,
   'workspace bands must include their one-pixel border without squeezing their controls',
 );
 assert.match(
+  globalStyles,
+  /--resize-handle-width:\s*1px;[\s\S]{0,240}--playlist-split-min-width:\s*577px;/,
+  'the splitter must use a one-pixel structural seam and reserve the regular row grid plus its gutters',
+);
+assert.match(
   projectHeader,
-  /flex:\s*0 0 61px;[\s\S]{0,80}height:\s*61px;[\s\S]*\.header-right\s*\{[\s\S]{0,160}gap:\s*var\(--spacing-sm\);[\s\S]*\.autosave-toggle\s*\{[\s\S]{0,260}padding:\s*4px var\(--spacing-sm\);/,
+  /flex:\s*0 0 var\(--app-header-height\);[\s\S]{0,100}height:\s*var\(--app-header-height\);[\s\S]*\.header-right\s*\{[\s\S]{0,160}gap:\s*var\(--spacing-sm\);[\s\S]*\.autosave-toggle\s*\{[\s\S]{0,260}padding:\s*4px var\(--spacing-sm\);/,
   'header controls must share an eight-pixel gutter inside a band tall enough for the clocks',
 );
 assert.match(
+  projectHeader,
+  /\.digital-clock\.clock--large\s*\{[\s\S]{0,120}width:\s*var\(--output-strip-width\);[\s\S]{0,100}min-width:\s*var\(--output-strip-width\);/,
+  'the clocks must share the visible output-rail width',
+);
+assert.match(
   mainWorkspace,
-  /\.output-console__strips\s*\{[\s\S]{0,220}gap:\s*var\(--spacing-sm\);[\s\S]{0,160}padding:\s*var\(--spacing-sm\);[\s\S]*&\.collapsed-left\s*\{[\s\S]{0,180}top:\s*var\(--panel-header-height\);[\s\S]*\.cart-toggle\s*\{[\s\S]{0,100}top:\s*var\(--spacing-sm\);/,
+  /\.output-console__strips\s*\{[\s\S]{0,220}gap:\s*var\(--spacing-sm\);[\s\S]{0,160}padding:\s*var\(--spacing-sm\);[\s\S]*&\.collapsed-left\s*\{[\s\S]{0,180}top:\s*var\(--panel-header-height\);/,
   'workspace panel gutters, dividers, and the cart toggle must land on shared header edges',
+);
+assert.match(
+  mainWorkspace,
+  /class="playlist-section">[\s\S]*\.playlist-section\s*\{[\s\S]{0,100}flex:\s*1 1 0;[\s\S]{0,80}width:\s*auto;[\s\S]*\.output-console\s*\{[\s\S]{0,180}flex:\s*0 0 var\(--output-console-width\);[\s\S]{0,80}width:\s*var\(--output-console-width\);/,
+  'the cart splitter, playlist, and output rail must share one deterministic width equation',
+);
+assert.match(
+  mainWorkspace,
+  /\.cart-section\s*\{[\s\S]{0,80}flex:\s*0 0 auto;/,
+  'the cart must keep the exact width supplied by its splitter',
+);
+assert.match(
+  mainWorkspace,
+  /getPropertyValue\('--resize-handle-width'\)[\s\S]{0,180}getPropertyValue\('--playlist-split-min-width'\)[\s\S]{0,140}const maxWidth = Math\.max\(0, rect\.width - handleWidth - minPlaylistWidth\);[\s\S]{0,80}const minWidth = Math\.min\(300, maxWidth\);[\s\S]*cartWidth\.value = Math\.round\(Math\.max\(minWidth, Math\.min\(maxWidth, newWidth\)\)\);/,
+  'cart resizing must preserve the mode-specific usable playlist width',
+);
+assert.match(
+  mainWorkspace,
+  /\.main-workspace\.show-mode\s*\{[\s\S]{0,240}--playlist-split-min-width:\s*637px;[\s\S]*\.playlist-section\s*\{[\s\S]{0,140}min-width:\s*var\(--playlist-split-min-width\);[\s\S]*\.cart-section\s*\{[\s\S]{0,180}max-width:\s*calc\(100% - var\(--playlist-split-min-width\) - var\(--resize-handle-width\)\);[\s\S]{0,140}&\.cart-section--fullscreen\s*\{[\s\S]{0,80}max-width:\s*none;/,
+  'the split view must stay usable while fullscreen cart remains unconstrained',
+);
+assert.match(
+  mainWorkspace,
+  /&\.collapsed-left\s*\{[\s\S]{0,180}top:\s*var\(--panel-header-height\);[\s\S]*&\.collapsed-right\s*\{[\s\S]{0,180}top:\s*var\(--panel-header-height\);/,
+  'collapsed cart dividers must begin below the shared panel header',
+);
+assert.match(
+  mainWorkspace,
+  /\.limiter-ceiling-control\s*\{[\s\S]{0,180}height:\s*var\(--panel-control-height\);[\s\S]*\.limiter-toggle\s*\{[\s\S]{0,180}height:\s*var\(--panel-control-height\);[\s\S]*\.output-pair\s*\{[\s\S]{0,120}flex:\s*0 0 var\(--output-strip-width\);/,
+  'the limiter header and meter body must use the same output-rail geometry',
+);
+assert.match(
+  mainWorkspace,
+  /\.output-console__header-controls\s*\{[\s\S]*gap:\s*var\(--spacing-sm\);[\s\S]*\.limiter-ceiling-control\s*\{[\s\S]*font-size:\s*13px;[\s\S]*\.limiter-ceiling-value\s*\{[\s\S]*flex:\s*0 1 50px;[\s\S]*\.limiter-ceiling-input\s*\{[\s\S]*width:\s*100%;[\s\S]*font-size:\s*13px;[\s\S]*\.limiter-toggle\s*\{[\s\S]*min-width:\s*88px;[\s\S]*font-size:\s*13px;[\s\S]*\.output-target-control\s*\{[\s\S]*height:\s*var\(--panel-control-height\);[\s\S]*padding:\s*0 24px 0 12px;/,
+  'the output header controls must use readable live-operation spacing and type',
+);
+assert.match(
+  mainWorkspace,
+  /\.output-console__strips\s*\{[\s\S]{0,260}background:\s*var\(--color-background\);[\s\S]{0,60}box-shadow:\s*none;[\s\S]*\.limiter-ceiling-control\s*\{[\s\S]{0,420}background:\s*var\(--color-surface-raised\);[\s\S]*\.output-pair :deep\(\.stereo-meter--strip\)\s*\{[\s\S]{0,180}background:\s*var\(--color-surface\);[\s\S]{0,100}box-shadow:\s*none;/,
+  'the output rail must reuse the app panel and control surfaces instead of separate rack chrome',
+);
+assert.match(
+  stereoMeter,
+  /&--strip\s*\{\s*width:\s*var\(--output-strip-width,\s*192px\);[\s\S]{0,120}padding:\s*7px 10px;[\s\S]{0,80}gap:\s*7px;[\s\S]*&--strip &__label\s*\{[\s\S]{0,240}font-size:\s*15px;[\s\S]{0,80}font-weight:\s*700;[\s\S]{0,120}min-height:\s*36px;[\s\S]{0,120}justify-content:\s*flex-start;[\s\S]{0,80}text-align:\s*left;/,
+  'the stereo meter strip must inherit the shared output-rail width',
+);
+assert.match(
+  stereoMeter,
+  /&--strip &__peak-text\s*\{[\s\S]{0,180}font-size:\s*14px;[\s\S]{0,120}justify-items:\s*start;[\s\S]*&--strip &__mark-text\s*\{[\s\S]{0,120}font-size:\s*13px;[\s\S]*&--strip &__chan-labels\s*\{[\s\S]{0,140}font-size:\s*12px;[\s\S]{0,100}color:\s*var\(--color-text-primary\);/,
+  'output names and status readouts must stay legible at live-operation distance',
+);
+assert.match(
+  stereoMeter,
+  /&--strip &__gr-track\s*\{[\s\S]{0,120}background:\s*var\(--color-control\);[\s\S]{0,60}box-shadow:\s*none;[\s\S]*&--strip &__gr-track::before\s*\{\s*content:\s*none;[\s\S]*&--strip &__track\s*\{[\s\S]{0,120}background:\s*var\(--color-control\);[\s\S]{0,60}box-shadow:\s*none;/,
+  'the output meter wells must stay flat while retaining their live level data',
+);
+assert.match(
+  stereoMeter,
+  /v-if="hasScaleControl" class="stereo-meter__footer"[\s\S]*&__footer\s*\{[\s\S]{0,100}height:\s*34px;[\s\S]{0,80}flex:\s*0 0 34px;/,
+  'every console strip must reserve the same footer so its dB scale stays aligned',
+);
+assert.doesNotMatch(
+  cartSlot,
+  /&\.warning-(?:yellow|orange|red)\s*\{[^}]*border-width:/,
+  'cart warning states must not change the structural card border',
+);
+assert.match(
+  cartSlot,
+  /&\.warning-yellow::after,[\s\S]{0,100}&\.warning-red::after\s*\{[\s\S]{0,180}inset:\s*0;[\s\S]{0,180}border:\s*4px solid var\(--cart-warning-color\);[\s\S]{0,100}animation:\s*cart-warning-flash var\(--cart-warning-rate\)/,
+  'cart warnings must draw inside the card without moving its contents',
+);
+assert.match(
+  propertiesPanel,
+  /class="properties-header workspace-panel-header"[\s\S]{0,180}class="workspace-panel-header__title"[\s\S]*\.close-btn\s*\{[\s\S]{0,100}width:\s*var\(--panel-control-height\);[\s\S]{0,80}height:\s*var\(--panel-control-height\);/,
+  'the properties panel must reuse the workspace header rail',
+);
+assert.match(
+  playbackControls,
+  /\.playback-controls\.show-mode :deep\(\.active-cue-item \.action-btn\)\s*\{[\s\S]{0,100}width:\s*32px;[\s\S]{0,80}height:\s*32px;/,
+  'preview and active-cue actions must share one Show Mode control tier',
+);
+assert.match(
+  globalStyles,
+  /--modal-width:\s*560px;[\s\S]{0,80}--modal-max-height:\s*90vh;/,
+  'settings dialogs must share one shell geometry',
+);
+assert.match(
+  projectSettingsModal,
+  /\.project-settings-modal\s*\{[\s\S]{0,180}border-radius:\s*var\(--border-radius-lg\);[\s\S]{0,100}width:\s*min\(var\(--modal-width\), 92vw\);[\s\S]{0,80}max-height:\s*var\(--modal-max-height\);[\s\S]*\.close-x\s*\{[\s\S]{0,120}width:\s*var\(--spacing-xxl\);[\s\S]{0,80}height:\s*var\(--spacing-xxl\);/,
+  'project settings must use the shared dialog shell and close target',
+);
+assert.match(
+  controlConfig,
+  /\.control-config-panel\s*\{[\s\S]{0,180}border-radius:\s*var\(--border-radius-lg\);[\s\S]{0,100}width:\s*min\(var\(--modal-width\), 92vw\);[\s\S]{0,80}max-height:\s*var\(--modal-max-height\);[\s\S]*\.config-header\s*\{[\s\S]{0,180}padding:\s*16px 20px;[\s\S]{0,80}border-bottom:\s*1px solid var\(--color-border\);[\s\S]*\.tab-bar\s*\{[\s\S]{0,80}flex-shrink:\s*0;[\s\S]{0,80}gap:\s*2px;[\s\S]*\.tab-btn\s*\{[\s\S]{0,80}min-height:\s*36px;[\s\S]*\.reset-btn,[\s\S]*\.done-btn\s*\{[\s\S]{0,120}padding:\s*var\(--spacing-sm\) var\(--spacing-lg\);/,
+  'shortcuts must use the same dialog header, tabs, and action rail as settings',
+);
+assert.match(
+  controlConfig,
+  /\.action-row\s*\{[\s\S]{0,100}display:\s*grid;[\s\S]{0,100}grid-template-columns:\s*130px minmax\(80px, 1fr\) 108px;[\s\S]*\.action-label\s*\{[\s\S]{0,60}grid-column:\s*1;[\s\S]*\.action-binding\s*\{[\s\S]{0,60}grid-column:\s*2;[\s\S]*\.action-buttons\s*\{[\s\S]{0,60}grid-column:\s*3;[\s\S]*\.clear-key-btn\s*\{[\s\S]{0,60}grid-column:\s*3;/,
+  'shortcut bindings must keep one column width whether or not an action button is present',
+);
+assert.doesNotMatch(
+  `${controlConfig}\n${projectSettingsModal}\n${propertiesPanel}`,
+  /border-radius:\s*(?:3px|4px|5px)/,
+  'rectangular settings, shortcut, and properties controls must share the control radius',
+);
+assert.match(
+  projectSettingsModal,
+  /\.settings-tabs\s*\{[\s\S]{0,80}flex-shrink:\s*0;[\s\S]*\.tab-btn\s*\{[\s\S]{0,100}min-height:\s*36px;/,
+  'settings tabs must keep their control height under the dialog height cap',
+);
+assert.match(
+  playbackControls,
+  /\.playback-controls\s*\{[\s\S]{0,360}display:\s*grid;[\s\S]{0,140}grid-template-columns:\s*var\(--transport-side-width\) minmax\(0, 1fr\) var\(--transport-side-width\);[\s\S]{0,180}padding:\s*var\(--workspace-gutter\);/,
+  'transport sides and active-cue lane must stay on one three-column grid',
+);
+assert.match(
+  playlistView,
+  /\.playlist-content\s*\{[\s\S]{0,100}padding:\s*0 var\(--workspace-gutter\) var\(--workspace-gutter\);[\s\S]*\.item-list\s*\{[\s\S]{0,140}padding-top:\s*var\(--workspace-gutter\);/,
+  'sticky folder headers must land flush while initial playlist content keeps its gutter',
+);
+assert.match(
+  playlistView,
+  /\.playlist-actions\s*\{[\s\S]{0,160}flex:\s*0 0 auto;[\s\S]{0,120}margin-left:\s*auto;[\s\S]{0,120}overflow-x:\s*auto;[\s\S]*\.playlist-header \.workspace-panel-header__leading\s*\{[\s\S]{0,80}flex:\s*0 0 auto;/,
+  'playlist actions must stay bounded by the shared header at every supported width',
+);
+assert.match(
+  projectHeader,
+  /warningMaxWidthPx = ref<number \| null>\(null\)[\s\S]*Math\.max\(0, rightEdge - warningLeftPx\.value - PLACEMENT_MARGIN\)[\s\S]*\.silence-warning\s*\{[\s\S]{0,500}overflow:\s*hidden;[\s\S]{0,80}text-overflow:\s*ellipsis;/,
+  'the silence-warning fallback must not overlap the fixed header controls',
 );
 assert.match(
   playlistView,
@@ -1203,6 +1397,36 @@ assert.match(
   playlistItem,
   /\.group-children\s*\{[\s\S]{0,180}gap:\s*2px;[\s\S]{0,100}padding-top:\s*2px;[\s\S]*@container \(max-width: 560px\)/,
   'folder children must keep the same row rhythm and only wrap when the wide grid no longer fits',
+);
+assert.match(
+  playlistItem,
+  /\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]{0,220}padding:\s*2px 6px;/,
+  'the playing-title contrast chip must not move its text off the shared identity axis',
+);
+assert.doesNotMatch(
+  playlistItem,
+  /\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]{0,220}margin-left:/,
+  'the playing-title contrast chip must stay on the shared identity axis',
+);
+assert.match(
+  playlistItem,
+  /const depthOffset = props\.depth > 0 \? 24 : 0;[\s\S]*marginLeft:\s*showMode\.value \? '0px' : `\$\{depthOffset\}px`[\s\S]*'--item-depth-offset':\s*`\$\{depthOffset\}px`[\s\S]*\.playlist-item\.show-mode\s*\{[\s\S]*\.item-color-rail\s*\{[\s\S]{0,100}left:\s*var\(--item-depth-offset, 0px\);[\s\S]*&\.is-group \.expand-btn\s*\{[\s\S]{0,120}transform:\s*translateX\(-8px\);/,
+  'nested folders must align recursively without entering the fixed Show Mode play lane',
+);
+assert.match(
+  playlistItem,
+  /\.item-left\s*\{[\s\S]{0,100}grid-template-columns:\s*34px minmax\(112px, 1fr\)[\s\S]*@container \(max-width: 560px\)\s*\{[\s\S]{0,100}\.item-left\s*\{[\s\S]{0,100}grid-template-columns:\s*34px minmax\(0, 1fr\)/,
+  'Regular Mode disclosure hitboxes must end before the identity lane at every width',
+);
+assert.match(
+  playlistItem,
+  /\.playlist-item:not\(\.show-mode\) > \.group-children\s*\{[\s\S]{0,80}padding-left:\s*var\(--spacing-md\);/,
+  'Regular Mode must retain its existing nested-folder offset',
+);
+assert.match(
+  playlistItem,
+  /\.playlist-item:not\(\.show-mode\)\.is-group > \.item-content \.expand-btn\s*\{[\s\S]{0,80}transform:\s*translateX\(10px\);/,
+  'Regular Mode folder arrows must align with their child accent rail',
 );
 assert.match(
   playlistView,
@@ -1261,7 +1485,7 @@ assert.doesNotMatch(
 );
 assert.match(
   globalStyles,
-  /--panel-header-height:\s*51px;[\s\S]*\.workspace-panel-header\s*\{[\s\S]*height:\s*var\(--panel-header-height\)[\s\S]*\.workspace-panel-header__title/,
+  /--panel-header-height:\s*44px;[\s\S]*\.workspace-panel-header\s*\{[\s\S]*height:\s*var\(--panel-header-height\)[\s\S]*\.workspace-panel-header__title/,
   'workspace column headers must share one fixed geometry and title style',
 );
 assert.match(
@@ -1532,8 +1756,23 @@ assert.match(
 );
 assert.match(
   cart,
-  /props\.isDetachedWindow[\s\S]*'detachedShow'[\s\S]*'detachedRegular'[\s\S]*'attachedShow'[\s\S]*'attachedRegular'[\s\S]*--cart-columns[\s\S]*--cart-card-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--cart-columns, 2\)[\s\S]*grid-auto-rows:\s*var\(--cart-card-row-height, 88px\)/,
-  'the cart must select the independent attached/detached mode profile and preserve all slots through scrolling',
+  /props\.isDetachedWindow[\s\S]*'detachedShow'[\s\S]*'detachedRegular'[\s\S]*'attachedShow'[\s\S]*'attachedRegular'[\s\S]*--cart-target-card-width[\s\S]*--cart-min-card-width[\s\S]*showMode\.value \? '128px' : '276px'[\s\S]*--cart-card-row-height[\s\S]*grid-template-columns:\s*repeat\([\s\S]{0,80}auto-fit,[\s\S]{0,220}var\(--cart-min-card-width, 276px\)[\s\S]{0,120}var\(--cart-target-card-width, 100%\)[\s\S]*grid-auto-rows:\s*var\(--cart-card-row-height, 88px\)/,
+  'the cart must honor each profile without shrinking cards below their usable mode-specific width',
+);
+assert.match(
+  cart,
+  /\.cart-header,\s*\.cart-grid\s*\{\s*scrollbar-gutter:\s*stable;/,
+  'the cart header and card grid must reserve the same scrollbar gutter',
+);
+assert.match(
+  playlistView,
+  /\.playlist-header,\s*\.playlist-content\s*\{\s*scrollbar-gutter:\s*stable;/,
+  'the playlist header and track list must reserve the same scrollbar gutter',
+);
+assert.match(
+  cartSlot,
+  /\.slot-footer\s*\{[\s\S]{0,180}gap:\s*var\(--spacing-xs\);[\s\S]*@container \(max-width: 145px\)\s*\{[\s\S]{0,120}\.cart-slot\.show-mode \.behavior-icon\s*\{[\s\S]{0,60}font-size:\s*13px;[\s\S]{0,120}\.cart-slot\.show-mode \.slot-duration\s*\{[\s\S]{0,60}font-size:\s*11px;/,
+  'compact Show cart cards must retain their full footer without clipping metadata',
 );
 assert.match(
   cart,
@@ -1555,6 +1794,11 @@ assert.match(
   controlConfig,
   /v-for="slot in cartSlotCount"[\s\S]*normalizeCartSlotCount\([\s\S]*a\.n <= cartSlotCount\.value/,
   'keyboard and MIDI configuration must follow the active project card count',
+);
+assert.match(
+  `${locationChoiceModal}\n${quitConfirmModal}`,
+  /\.lc-modal\s*\{[\s\S]{0,220}border-radius:\s*var\(--border-radius-lg, 10px\);[\s\S]{0,100}width:\s*min\(var\(--modal-width, 560px\), 92vw\);[\s\S]{0,80}padding:\s*20px;[\s\S]*\.qm-modal\s*\{[\s\S]{0,220}border-radius:\s*var\(--border-radius-lg, 10px\);[\s\S]{0,100}width:\s*min\(var\(--modal-width, 560px\), 92vw\);[\s\S]{0,80}padding:\s*20px;/,
+  'confirmation and location dialogs must share the main modal shell geometry',
 );
 assert.match(
   midiController,

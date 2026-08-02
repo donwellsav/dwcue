@@ -1,11 +1,14 @@
 <template>
   <div class="cart-player" :class="{ 'show-mode': showMode }" :style="cartGridStyle">
     <div class="cart-header workspace-panel-header">
-      <div class="cart-header__copy">
-        <h2 class="workspace-panel-header__title">{{ t('cart.title') }}</h2>
-        <span v-if="!showMode" id="cart-load-hint" class="cart-header__hint">
-          {{ t('cart.clickToImport') }}
-        </span>
+      <div class="workspace-panel-header__leading">
+        <slot name="header-leading" />
+        <div class="cart-header__copy">
+          <h2 class="workspace-panel-header__title">{{ t('cart.title') }}</h2>
+          <span v-if="!showMode" id="cart-load-hint" class="cart-header__hint">
+            {{ t('cart.clickToImport') }}
+          </span>
+        </div>
       </div>
       <div class="cart-header-actions">
         <Btn
@@ -67,10 +70,13 @@ const cartGridProfile = computed<CartGridProfile>(() => {
 const cartGridStyle = computed(() => {
   const layout = cartGridLayouts.value[cartGridProfile.value];
   const rowPercent = 100 / layout.rows;
-  const gapOffset = CART_GRID_GAP_PX * (layout.rows - 1) / layout.rows;
+  const rowGapOffset = CART_GRID_GAP_PX * (layout.rows - 1) / layout.rows;
+  const columnPercent = 100 / layout.columns;
+  const columnGapOffset = CART_GRID_GAP_PX * (layout.columns - 1) / layout.columns;
   return {
-    '--cart-columns': String(layout.columns),
-    '--cart-card-row-height': `max(${layout.minHeight}px, calc(${rowPercent}% - ${gapOffset}px))`,
+    '--cart-target-card-width': `calc(${columnPercent}% - ${columnGapOffset}px)`,
+    '--cart-min-card-width': showMode.value ? '128px' : '276px',
+    '--cart-card-row-height': `max(${layout.minHeight}px, calc(${rowPercent}% - ${rowGapOffset}px))`,
   };
 });
 
@@ -141,22 +147,41 @@ onMounted(() => {
 
 .cart-header__hint {
   color: var(--color-text-tertiary);
-  font-size: 10px;
+  font-size: var(--type-status-size);
   line-height: 1;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cart-header-actions {
   display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  margin-left: auto;
   gap: var(--spacing-sm);
 }
 
+.cart-header,
+.cart-grid {
+  scrollbar-gutter: stable;
+}
+
+.cart-header {
+  overflow-y: auto;
+}
 
 .cart-grid {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(var(--cart-columns, 2), minmax(0, 1fr));
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(
+      min(100%, max(var(--cart-min-card-width, 276px), var(--cart-target-card-width, 100%))),
+      1fr
+    )
+  );
   grid-auto-rows: var(--cart-card-row-height, 88px);
   gap: var(--spacing-sm);
   padding: var(--spacing-sm);
