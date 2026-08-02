@@ -1,6 +1,6 @@
 {
   "name": "donwells-cue",
-  "version": "2.5.6",
+  "version": "2.5.7",
   "description": "Audio cue playback application for live events",
   "homepage": "https://github.com/tdoukinitsas/liveplay",
   "main": "electron/main.js",

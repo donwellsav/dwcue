@@ -35,6 +35,7 @@
 #include <miniz.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <charconv>
 #include <chrono>
@@ -913,6 +914,56 @@ static fs::path unused_media_path(const fs::path& media,
         if (!fs::exists(candidate, ec) && !ec) return candidate;
     }
     throw std::runtime_error{"could not choose an unused media filename"};
+}
+
+static bool same_file_contents(const fs::path& left, const fs::path& right) {
+    std::error_code ec;
+    if (fs::equivalent(left, right, ec) && !ec) return true;
+    ec.clear();
+    const auto left_size = fs::file_size(left, ec);
+    if (ec) return false;
+    const auto right_size = fs::file_size(right, ec);
+    if (ec || left_size != right_size) return false;
+
+    std::ifstream a{left, std::ios::binary};
+    std::ifstream b{right, std::ios::binary};
+    std::array<char, 64 * 1024> a_buf{};
+    std::array<char, 64 * 1024> b_buf{};
+    while (a && b) {
+        a.read(a_buf.data(), static_cast<std::streamsize>(a_buf.size()));
+        b.read(b_buf.data(), static_cast<std::streamsize>(b_buf.size()));
+        if (a.gcount() != b.gcount() ||
+            !std::equal(a_buf.begin(), a_buf.begin() + a.gcount(), b_buf.begin())) {
+            return false;
+        }
+    }
+    return a.eof() && b.eof();
+}
+
+static fs::path matching_media_file(const fs::path& media,
+                                    const fs::path& source) {
+    // ponytail: operator imports are small; scan the media directory on a
+    // filename collision. Add a content-hash index only if large libraries
+    // make this measurable.
+    const auto source_name = source.filename();
+    const auto source_stem = source_name.stem().native();
+    const auto numbered_prefix = source_stem +
+        liveplay::util::utf8_to_path(" (").native();
+    const auto source_ext = source_name.extension();
+    for (const auto& entry : fs::directory_iterator(media)) {
+        if (!entry.is_regular_file()) continue;
+        const auto candidate = entry.path().filename();
+        if (candidate.extension() != source_ext) continue;
+        const auto stem = candidate.stem().native();
+        if (candidate != source_name &&
+            (stem.size() <= numbered_prefix.size() ||
+             stem.compare(0, numbered_prefix.size(), numbered_prefix) != 0 ||
+             stem.back() != liveplay::util::utf8_to_path(")").native().front())) {
+            continue;
+        }
+        if (same_file_contents(source, entry.path())) return entry.path();
+    }
+    return {};
 }
 
 json device_info_to_json(const audio::DeviceInfo& d) {
@@ -2940,7 +2991,13 @@ void ControlServer::install_routes() {
             try {
                 const auto body = json::parse(req.body);
                 const std::string src_str = body.value("source_path", std::string{});
+                const std::string duplicate_policy =
+                    body.value("duplicate_policy", std::string{"keep"});
                 if (src_str.empty()) return json_err(400, "missing source_path");
+                if (duplicate_policy != "reuse" && duplicate_policy != "skip" &&
+                    duplicate_policy != "keep") {
+                    return json_err(400, "invalid duplicate_policy");
+                }
 
                 const fs::path src  = liveplay::util::utf8_to_path(src_str);
                 if (!fs::exists(src)) return json_err(404, "source file not found");
@@ -2956,12 +3013,31 @@ void ControlServer::install_routes() {
                 if (fs::exists(dest, ec) && !ec &&
                     fs::equivalent(src, dest, ec) && !ec) {
                     return json_ok(json{{
-                        "dest_path", liveplay::util::path_to_utf8(dest)}});
+                        "dest_path", liveplay::util::path_to_utf8(dest)},
+                        {"duplicate", true},
+                        {"reused", duplicate_policy != "skip"},
+                        {"skipped", duplicate_policy == "skip"}});
+                }
+                if (duplicate_policy != "keep") {
+                    const fs::path existing = matching_media_file(media, src);
+                    if (!existing.empty()) {
+                        return json_ok(json{
+                            {"dest_path", liveplay::util::path_to_utf8(existing)},
+                            {"duplicate", true},
+                            {"reused", duplicate_policy == "reuse"},
+                            {"skipped", duplicate_policy == "skip"},
+                        });
+                    }
                 }
                 dest = unused_media_path(media, src.filename());
                 fs::copy_file(src, dest, fs::copy_options::none);
 
-                return json_ok(json{{"dest_path", liveplay::util::path_to_utf8(dest)}});
+                return json_ok(json{
+                    {"dest_path", liveplay::util::path_to_utf8(dest)},
+                    {"duplicate", false},
+                    {"reused", false},
+                    {"skipped", false},
+                });
             } catch (const std::exception& e) { return json_err(500, e.what()); }
         });
 

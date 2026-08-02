@@ -461,6 +461,21 @@ function writeLiveplayConfig(cfg) {
   }
 }
 
+function importPreferencesPath() {
+  return path.join(app.getPath('userData'), 'import-preferences.json');
+}
+
+function readImportPreferences() {
+  try {
+    const value = JSON.parse(fs.readFileSync(importPreferencesPath(), 'utf8'));
+    return { spotifyDestination: typeof value.spotifyDestination === 'string' ? value.spotifyDestination : '' };
+  } catch { return { spotifyDestination: '' }; }
+}
+
+function writeImportPreferences(value) {
+  fs.writeFileSync(importPreferencesPath(), JSON.stringify(value, null, 2));
+}
+
 // ---------------------------------------------------------------------------
 // Recent-servers history (separate file so it survives config rewrites).
 // Stored newest-first, capped, keyed by normalised URL.
@@ -1023,6 +1038,7 @@ ipcMain.handle('liveplay-server:get-status', async (event) => {
 ipcMain.handle('app:relaunch', async (event) => {
   requireTrustedIpc(event);
   await cancelAllSpotifyDownloads(true);
+  await cancelAllYouTubeDownloads();
   app.relaunch();
   app.exit(0);
   return true;
@@ -1030,6 +1046,7 @@ ipcMain.handle('app:relaunch', async (event) => {
 ipcMain.handle('app:exit', async (event) => {
   requireTrustedIpc(event);
   await cancelAllSpotifyDownloads(true);
+  await cancelAllYouTubeDownloads();
   app.exit(0);
   return true;
 });
@@ -1043,6 +1060,7 @@ ipcMain.handle('app:confirm-quit', async (event, opts) => {
   requireTrustedIpc(event);
   if (opts && opts.stopServer) await stopLiveplayServer();
   await cancelAllSpotifyDownloads(true);
+  await cancelAllYouTubeDownloads();
   quitConfirmed = true;
   app.quit();
   return true;
@@ -2497,6 +2515,25 @@ ipcMain.handle('select-audio-files', async (event) => {
   return null;
 });
 
+ipcMain.handle('get-import-preferences', (event) => {
+  requireTrustedIpc(event);
+  const preferences = readImportPreferences();
+  const destination = preferences.spotifyDestination;
+  if (!destination || !path.isAbsolute(destination) || !fs.existsSync(destination) ||
+      !fs.statSync(destination).isDirectory()) {
+    return { spotifyDestination: '' };
+  }
+  return { spotifyDestination: pathCapabilities.authorizeRoot(destination) };
+});
+
+ipcMain.handle('set-spotify-import-destination', (event, destination) => {
+  requireTrustedIpc(event);
+  destination = requireAuthorizedIpcPath(destination, 'destination');
+  if (!fs.statSync(destination).isDirectory()) throw new TypeError('destination must be a directory');
+  writeImportPreferences({ ...readImportPreferences(), spotifyDestination: destination });
+  return true;
+});
+
 // This channel is intentionally not exposed directly. The preload invokes it
 // only after Electron's webUtils extracts a real OS path from a dropped File.
 ipcMain.on('authorize-dropped-file', (event, filePath) => {
@@ -2798,6 +2835,7 @@ ipcMain.handle('install-update', async (event) => {
   // The user already opted into the update, so bypass the close veto /
   // quit-confirmation dialog and let electron-updater quit + relaunch.
   await cancelAllSpotifyDownloads(true);
+  await cancelAllYouTubeDownloads();
   quitConfirmed = true;
   autoUpdater.quitAndInstall(false, true);
   return true;
@@ -3091,6 +3129,8 @@ ipcMain.handle('generate-waveform', async (event, audioFilePath, outputPath) => 
 });
 
 const activeSpotifyDownloads = new Map();
+const activeSpotifyPreflightJobs = new Map();
+const spotifyPreflights = new Map();
 
 function validatedSpotifyUrl(rawUrl) {
   const checked = requireIpcString(rawUrl, 'url', 2048);
@@ -3123,6 +3163,21 @@ function sendSpotifyProgress(sender, progress) {
   if (!sender.isDestroyed()) sender.send('spotify-download-progress', progress);
 }
 
+function terminateSpotifyChild(child) {
+  if (!child?.pid || child.exitCode !== null) return;
+  if (process.platform === 'win32') {
+    execFile('taskkill.exe', ['/pid', String(child.pid), '/T', '/F'],
+      { windowsHide: true }, () => {});
+    return;
+  }
+  try { process.kill(-child.pid, 'SIGTERM'); } catch {}
+  const timer = setTimeout(() => {
+    if (child.exitCode !== null) return;
+    try { process.kill(-child.pid, 'SIGKILL'); } catch {}
+  }, 2000);
+  timer.unref();
+}
+
 function summarizeSpotDlError(lines, code) {
   const useful = [...lines].reverse().find((line) =>
     /(?:\bError\b|\bException\b|failed|no songs found|spotify playlist error)/i.test(line));
@@ -3144,22 +3199,160 @@ function sanitizeSpotifyFolderName(value) {
   return name;
 }
 
-function spotifyManifestListName(manifestPath) {
-  try {
-    const stat = fs.statSync(manifestPath);
-    if (!stat.isFile() || stat.size > 64 * 1024 * 1024) return '';
-    const tracks = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    if (!Array.isArray(tracks)) return '';
-    for (const track of tracks) {
-      if (typeof track?.list_name !== 'string') continue;
-      const name = track.list_name.slice(0, 512).trim();
-      if (name) return name;
-    }
-    return '';
-  } catch {
-    return '';
-  }
+function spotifyTrackId(track) {
+  const id = typeof track?.song_id === 'string' ? track.song_id : '';
+  return /^[A-Za-z0-9]{10,64}$/.test(id) ? id : '';
 }
+
+ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
+  requireTrustedIpc(event);
+  jobId = requireIpcString(jobId, 'jobId', 64);
+  if (!/^[A-Za-z0-9-]{8,64}$/.test(jobId)) throw new TypeError('jobId is invalid');
+  const url = validatedSpotifyUrl(rawUrl);
+  if (activeSpotifyPreflightJobs.has(jobId)) throw new Error('Spotify review job already exists');
+  let cancelReview;
+  const cancelledSignal = new Promise((resolve) => { cancelReview = resolve; });
+  let resolveDone;
+  const done = new Promise((resolve) => { resolveDone = resolve; });
+  const job = {
+    child: null,
+    cancelled: false,
+    sender: event.sender,
+    senderId: event.sender.id,
+    cancelOnRendererExit: null,
+    cancelReview,
+    cancelledSignal,
+    done,
+    resolveDone,
+  };
+  activeSpotifyPreflightJobs.set(jobId, job);
+  const cancelOnRendererExit = () => cancelSpotifyPreflight(jobId);
+  job.cancelOnRendererExit = cancelOnRendererExit;
+  for (const eventName of ['destroyed', 'render-process-gone', 'did-start-navigation']) {
+    event.sender.once(eventName, cancelOnRendererExit);
+  }
+
+  let stdout = '';
+  try {
+    const setupResult = await Promise.race([
+      setupSpotDl().then((ready) => ({ ready }), (error) => ({ error })),
+      job.cancelledSignal.then(() => ({ cancelled: true })),
+    ]);
+    if (setupResult.cancelled || job.cancelled) throw new Error('Spotify review cancelled');
+    if (setupResult.error) throw setupResult.error;
+    if (!setupResult.ready || !spotDlPath) throw new Error('Spotify downloader is unavailable');
+    stdout = await new Promise((resolve, reject) => {
+      const child = spawn(spotDlPath, ['save', url, '--save-file', '-'], {
+        windowsHide: true,
+        detached: process.platform !== 'win32',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      job.child = child;
+      let output = '';
+      let errors = '';
+      let bytes = 0;
+      let settled = false;
+      let timeout;
+      const finish = (error, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        error ? reject(error) : resolve(value);
+      };
+      const append = (chunk, stderr = false) => {
+        bytes += chunk.length;
+        if (bytes > 32 * 1024 * 1024) {
+          terminateSpotifyChild(child);
+          finish(new Error('Spotify review output was too large'));
+          return;
+        }
+        if (stderr) errors += chunk.toString();
+        else output += chunk.toString();
+      };
+      child.stdout.on('data', (chunk) => append(chunk));
+      child.stderr.on('data', (chunk) => append(chunk, true));
+      child.once('error', (error) => finish(error));
+      child.once('close', (code) => {
+        job.child = null;
+        if (job.cancelled) finish(new Error('Spotify review cancelled'));
+        else if (code !== 0) finish(new Error(summarizeSpotDlError(errors.split(/\r?\n/), code)));
+        else finish(null, output);
+      });
+      timeout = setTimeout(() => {
+        terminateSpotifyChild(child);
+        finish(new Error('Spotify review timed out'));
+      }, 120000);
+      timeout.unref();
+    });
+  } finally {
+    for (const eventName of ['destroyed', 'render-process-gone', 'did-start-navigation']) {
+      event.sender.removeListener(eventName, cancelOnRendererExit);
+    }
+    if (activeSpotifyPreflightJobs.get(jobId) === job) activeSpotifyPreflightJobs.delete(jobId);
+    job.resolveDone();
+  }
+
+  const clean = stdout.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '').trim();
+  const start = clean.indexOf('[');
+  const end = clean.lastIndexOf(']');
+  if (start < 0 || end <= start) throw new Error('Spotify returned no track list');
+  const rawTracks = JSON.parse(clean.slice(start, end + 1));
+  if (!Array.isArray(rawTracks) || rawTracks.length === 0 || rawTracks.length > 10000) {
+    throw new Error('Spotify returned an invalid track list');
+  }
+  const tracks = rawTracks.map((track, index) => {
+    const id = spotifyTrackId(track);
+    if (!id) throw new Error(`Spotify track ${index + 1} has no usable ID`);
+    const artists = Array.isArray(track.artists)
+      ? track.artists.filter((artist) => typeof artist === 'string').slice(0, 20)
+      : [];
+    return {
+      id,
+      title: String(track.name || 'Untitled').slice(0, 500),
+      artists,
+      album: String(track.album_name || '').slice(0, 500),
+      duration: Number.isFinite(track.duration) ? Math.max(0, track.duration) : 0,
+      coverUrl: typeof track.cover_url === 'string' ? track.cover_url : '',
+      spotifyUrl: `https://open.spotify.com/track/${id}`,
+    };
+  });
+  const preflightId = crypto.randomUUID();
+  const playlistName = sanitizeSpotifyFolderName(
+    rawTracks.find((track) => typeof track?.list_name === 'string' && track.list_name.trim())?.list_name ||
+    (tracks.length === 1 ? `${tracks[0].artists.join(', ')} - ${tracks[0].title}` : 'Spotify Import'),
+  );
+  for (const [id, review] of spotifyPreflights) {
+    if (review.senderId === event.sender.id || review.expiresAt < Date.now()) spotifyPreflights.delete(id);
+  }
+  spotifyPreflights.set(preflightId, {
+    senderId: event.sender.id,
+    url,
+    playlistName,
+    rawTracks,
+    expiresAt: Date.now() + 15 * 60 * 1000,
+  });
+  return {
+    preflightId,
+    playlistName,
+    tracks,
+    totalDuration: tracks.reduce((sum, track) => sum + track.duration, 0),
+  };
+});
+
+function cancelSpotifyPreflight(jobId, senderId = null) {
+  const job = activeSpotifyPreflightJobs.get(jobId);
+  if (!job || (senderId !== null && job.senderId !== senderId)) return false;
+  job.cancelled = true;
+  job.cancelReview();
+  terminateSpotifyChild(job.child);
+  return true;
+}
+
+ipcMain.handle('cancel-spotify-preflight', async (event, jobId) => {
+  requireTrustedIpc(event);
+  jobId = requireIpcString(jobId, 'jobId', 64);
+  return cancelSpotifyPreflight(jobId, event.sender.id);
+});
 
 function spotDlNumericProgress(line) {
   const match = line.match(/\b(\d+)\s*\/\s*(\d+)\s+complete\b/i);
@@ -3173,7 +3366,18 @@ function spotDlNumericProgress(line) {
   return { completed: Math.min(completed, total), total };
 }
 
-async function createSpotifyProjectFolder(destinationParentPath, playlistName, job) {
+async function createSpotifyProjectFolder(destinationParentPath, playlistName, job, reusePath = '') {
+  if (reusePath) {
+    const relative = path.relative(destinationParentPath, reusePath);
+    if (relative && !relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)) {
+      const mediaDir = path.join(reusePath, 'media');
+      const reusable = await fs.promises.stat(reusePath).then((stat) => stat.isDirectory()).catch(() => false);
+      if (reusable) {
+        await fs.promises.mkdir(mediaDir, { recursive: true });
+        return { projectFolderPath: reusePath, mediaDir };
+      }
+    }
+  }
   for (let suffix = 1; suffix < 100000; suffix++) {
     const folderName = suffix === 1 ? playlistName : `${playlistName} (${suffix})`;
     const projectFolderPath = path.join(destinationParentPath, folderName);
@@ -3192,7 +3396,7 @@ async function createSpotifyProjectFolder(destinationParentPath, playlistName, j
   throw new Error(`Could not create a unique folder for ${playlistName}`);
 }
 
-function orderedSpotifyOutputs(stagingDir) {
+function orderedSpotifyOutputs(stagingDir, trackIds = []) {
   const files = new Map(
     fs.readdirSync(stagingDir, { withFileTypes: true })
       .filter((entry) => entry.isFile() && /\.mp3$/i.test(entry.name))
@@ -3200,6 +3404,14 @@ function orderedSpotifyOutputs(stagingDir) {
   );
   const ordered = [];
   const listed = new Set();
+  if (trackIds.length) {
+    for (const id of trackIds) {
+      const match = [...files.entries()].find(([name]) => name.startsWith(`${id} - `));
+      if (!match) continue;
+      ordered.push(match[1]);
+      listed.add(match[0]);
+    }
+  }
   const m3uPath = path.join(stagingDir, 'dwcue-spotify-order.m3u8');
   if (fs.existsSync(m3uPath)) {
     for (const line of fs.readFileSync(m3uPath, 'utf8').split(/\r?\n/)) {
@@ -3207,7 +3419,7 @@ function orderedSpotifyOutputs(stagingDir) {
       if (!value || value.startsWith('#')) continue;
       const name = value.split(/[\\/]/).pop();
       const filePath = files.get(name);
-      if (!filePath) continue;
+      if (!filePath || listed.has(name)) continue;
       ordered.push(filePath);
       listed.add(name);
     }
@@ -3242,11 +3454,13 @@ async function copySpotifyOutputsToMedia(sourcePaths, mediaDir, job) {
   for (const sourcePath of sourcePaths) {
     if (job.cancelled) throw new Error('Spotify download cancelled');
     const parsed = path.parse(path.basename(sourcePath));
+    const cleanBase = parsed.base.replace(/^[A-Za-z0-9]{10,64} - /, '');
+    const cleanParsed = path.parse(cleanBase);
     let copied = false;
     for (let suffix = 1; suffix < 100000; suffix++) {
       const name = suffix === 1
-        ? parsed.base
-        : `${parsed.name} (${suffix})${parsed.ext}`;
+        ? cleanParsed.base
+        : `${cleanParsed.name} (${suffix})${cleanParsed.ext}`;
       const destination = path.join(mediaDir, name);
       try {
         await pipeline(
@@ -3289,21 +3503,7 @@ async function cancelSpotifyDownload(
   if (!job || (senderId !== null && job.senderId !== senderId)) return false;
   job.cancelled = true;
   job.abortController.abort();
-  const child = job.child;
-  if (child?.pid && isPidAlive(child.pid)) {
-    if (process.platform === 'win32') {
-      execFile('taskkill.exe', ['/pid', String(child.pid), '/T', '/F'],
-        { windowsHide: true }, () => {});
-    } else {
-      try { process.kill(-child.pid, 'SIGTERM'); } catch {}
-      const timer = setTimeout(() => {
-        if (activeSpotifyDownloads.get(jobId)?.child !== child ||
-            !isPidAlive(child.pid)) return;
-        try { process.kill(-child.pid, 'SIGKILL'); } catch {}
-      }, 2000);
-      timer.unref();
-    }
-  }
+  terminateSpotifyChild(job.child);
   if (job.awaitingImport) {
     job.awaitingImport = false;
     try {
@@ -3316,14 +3516,19 @@ async function cancelSpotifyDownload(
 }
 
 async function cancelAllSpotifyDownloads(preserveImportedFiles = false) {
+  const reviews = [...activeSpotifyPreflightJobs.entries()];
+  for (const [jobId] of reviews) cancelSpotifyPreflight(jobId);
   const jobs = [...activeSpotifyDownloads.entries()];
-  await Promise.allSettled(jobs.map(async ([jobId, job]) => {
-    try {
-      await cancelSpotifyDownload(jobId, null, preserveImportedFiles);
-    } finally {
-      await job.done;
-    }
-  }));
+  await Promise.allSettled([
+    ...reviews.map(([, job]) => job.done),
+    ...jobs.map(async ([jobId, job]) => {
+      try {
+        await cancelSpotifyDownload(jobId, null, preserveImportedFiles);
+      } finally {
+        await job.done;
+      }
+    }),
+  ]);
 }
 
 ipcMain.handle('cancel-spotify-download', async (event, jobId) => {
@@ -3349,7 +3554,7 @@ ipcMain.handle('finalize-spotify-import', async (event, jobId, keepFiles) => {
 
 ipcMain.handle(
   'download-spotify-audio',
-  async (event, jobId, rawUrl, destinationParentPath) => {
+  async (event, jobId, rawUrl, destinationParentPath, selection = null) => {
     requireTrustedIpc(event);
     jobId = requireIpcString(jobId, 'jobId', 64);
     if (!/^[A-Za-z0-9-]{8,64}$/.test(jobId)) throw new TypeError('jobId is invalid');
@@ -3359,6 +3564,32 @@ ipcMain.handle(
     if (!fs.statSync(destinationParentPath).isDirectory()) {
       throw new TypeError('destinationParentPath must be a directory');
     }
+    selection = requireBoundedIpcObject(selection, 'selection', 1024 * 1024);
+    if (selection?.reusePreviousFolder !== undefined &&
+        typeof selection.reusePreviousFolder !== 'boolean') {
+      throw new TypeError('reusePreviousFolder must be a boolean');
+    }
+    const preflightId = requireIpcString(selection?.preflightId, 'preflightId', 64);
+    if (!Array.isArray(selection?.selectedTrackIds) || selection.selectedTrackIds.length === 0 ||
+        selection.selectedTrackIds.length > 10000) {
+      throw new TypeError('selectedTrackIds must be a non-empty array');
+    }
+    const preflight = spotifyPreflights.get(preflightId);
+    if (!preflight || preflight.senderId !== event.sender.id || preflight.url !== url ||
+        preflight.expiresAt < Date.now()) {
+      throw new Error('Spotify review expired; review the link again');
+    }
+    const selectedTrackIds = selection.selectedTrackIds.map((id) => {
+      id = requireIpcString(id, 'trackId', 64);
+      if (!/^[A-Za-z0-9]{10,64}$/.test(id)) throw new TypeError('trackId is invalid');
+      return id;
+    });
+    if (new Set(selectedTrackIds).size !== selectedTrackIds.length) {
+      throw new TypeError('selectedTrackIds contains duplicates');
+    }
+    const rawById = new Map(preflight.rawTracks.map((track) => [spotifyTrackId(track), track]));
+    const selectedRawTracks = selectedTrackIds.map((id) => rawById.get(id));
+    if (selectedRawTracks.some((track) => !track)) throw new Error('Selected Spotify track is not in this review');
     if (activeSpotifyDownloads.has(jobId)) throw new Error('Spotify job already exists');
     // ponytail: one job avoids spotDL's shared cache/temp races; add a queue
     // only if concurrent playlist imports become a real operator need.
@@ -3425,13 +3656,15 @@ ipcMain.handle(
 
       const cacheDir = path.join(app.getPath('userData'), 'spotdl');
       fs.mkdirSync(cacheDir, { recursive: true });
+      const selectionPath = path.join(stagingDir, 'dwcue-selected.spotdl');
+      fs.writeFileSync(selectionPath, JSON.stringify(selectedRawTracks));
       const args = [
         'download',
-        url,
+        selectionPath,
         '--format', 'mp3',
         '--bitrate', '320k',
         '--ffmpeg', ffmpegPath,
-        '--output', '{list-position} - {artists} - {title}.{output-ext}',
+        '--output', '{track-id} - {artists} - {title}.{output-ext}',
         '--m3u', 'dwcue-spotify-order.m3u8',
         '--save-file', 'dwcue-spotify-manifest.spotdl',
         '--overwrite', 'skip',
@@ -3460,8 +3693,8 @@ ipcMain.handle(
       });
       job.child = child;
 
-      let total = 0;
-      let playlistName = '';
+      let total = selectedTrackIds.length;
+      let playlistName = preflight.playlistName;
       let completed = 0;
       const tail = [];
       const onLine = (rawLine) => {
@@ -3511,17 +3744,18 @@ ipcMain.handle(
         throw new Error('Spotify download cancelled');
       }
 
-      const outputs = orderedSpotifyOutputs(stagingDir);
+      const outputs = orderedSpotifyOutputs(stagingDir, selectedTrackIds);
       if (outputs.length === 0) {
         throw new Error(summarizeSpotDlError(tail, result.code));
       }
-      playlistName = sanitizeSpotifyFolderName(
-        spotifyManifestListName(path.join(stagingDir, 'dwcue-spotify-manifest.spotdl')) ||
-        playlistName,
-      );
+      playlistName = sanitizeSpotifyFolderName(playlistName);
       const { projectFolderPath, mediaDir } = await createSpotifyProjectFolder(
-        destinationParentPath, playlistName, job,
+        destinationParentPath,
+        playlistName,
+        job,
+        selection.reusePreviousFolder ? preflight.projectFolderPath : '',
       );
+      preflight.projectFolderPath = projectFolderPath;
 
       progress('importing', {
         playlistName,
@@ -3547,6 +3781,9 @@ ipcMain.handle(
         error,
         playlistName,
         projectFolderPath,
+        completedTrackIds: outputs.map((filePath) => path.basename(filePath).split(' - ')[0]),
+        failedTrackIds: selectedTrackIds.filter((id) =>
+          !outputs.some((filePath) => path.basename(filePath).startsWith(`${id} - `))),
       };
     } catch (error) {
       try {
@@ -3569,6 +3806,86 @@ ipcMain.handle(
   },
 );
 
+const activeYouTubeDownloads = new Map();
+
+function releaseYouTubeJob(jobId, job) {
+  for (const eventName of ['destroyed', 'render-process-gone', 'did-start-navigation']) {
+    job.sender.removeListener(eventName, job.cancelOnRendererExit);
+  }
+  if (activeYouTubeDownloads.get(jobId) === job) activeYouTubeDownloads.delete(jobId);
+}
+
+async function cancelYouTubeDownload(jobId, senderId = null) {
+  const job = activeYouTubeDownloads.get(jobId);
+  if (!job || (senderId !== null && job.senderId !== senderId)) return false;
+  job.cancelled = true;
+  const child = job.child;
+  if (child?.pid && isPidAlive(child.pid)) {
+    if (process.platform === 'win32') {
+      execFile('taskkill.exe', ['/pid', String(child.pid), '/T', '/F'],
+        { windowsHide: true }, () => {});
+    } else {
+      try { process.kill(-child.pid, 'SIGTERM'); } catch {}
+      const timer = setTimeout(() => {
+        if (activeYouTubeDownloads.get(jobId)?.child !== child || !isPidAlive(child.pid)) return;
+        try { process.kill(-child.pid, 'SIGKILL'); } catch {}
+      }, 2000);
+      timer.unref();
+    }
+  }
+  job.cleanup?.();
+  return true;
+}
+
+async function cancelAllYouTubeDownloads() {
+  await Promise.allSettled([...activeYouTubeDownloads.keys()].map((jobId) =>
+    cancelYouTubeDownload(jobId)));
+}
+
+ipcMain.handle('cancel-youtube-download', async (event, jobId) => {
+  requireTrustedIpc(event);
+  jobId = requireIpcString(jobId, 'jobId', 64);
+  return cancelYouTubeDownload(jobId, event.sender.id);
+});
+
+async function waitForYtDlp() {
+  for (let attempts = 0; !ytDlpReady && attempts < 30; attempts++) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  if (!ytDlpReady || !ytDlpPath) {
+    throw new Error('yt-dlp failed to initialize. Please restart the application.');
+  }
+}
+
+ipcMain.handle('get-youtube-info', async (event, videoId) => {
+  requireTrustedIpc(event);
+  videoId = requireIpcString(videoId, 'videoId', 32);
+  if (!/^[A-Za-z0-9_-]{6,32}$/.test(videoId)) throw new TypeError('videoId is invalid');
+  await waitForYtDlp();
+  const args = [
+    `https://www.youtube.com/watch?v=${videoId}`,
+    '--dump-single-json', '--skip-download', '--no-playlist', '--no-warnings',
+  ];
+  if (denoReady && denoPath) args.push('--js-runtimes', `deno:${denoPath}`);
+  const { stdout } = await execFilePromise(ytDlpPath, args, {
+    windowsHide: true,
+    timeout: 45000,
+    maxBuffer: 2 * 1024 * 1024,
+  });
+  const info = JSON.parse(stdout);
+  if (info.id !== videoId || typeof info.title !== 'string') {
+    throw new Error('YouTube did not return usable video information');
+  }
+  return {
+    id: videoId,
+    title: info.title.slice(0, 500),
+    thumbnail: typeof info.thumbnail === 'string' ? info.thumbnail : '',
+    channelTitle: String(info.channel || info.uploader || '').slice(0, 300),
+    length: Number.isFinite(info.duration) ? new Date(info.duration * 1000).toISOString().slice(11, 19).replace(/^00:/, '') : '',
+    isLive: info.is_live === true || info.live_status === 'is_live',
+  };
+});
+
 // YouTube Search Handler
 ipcMain.handle('search-youtube', async (event, query) => {
   try {
@@ -3582,7 +3899,8 @@ ipcMain.handle('search-youtube', async (event, query) => {
       title: item.title,
       thumbnail: item.thumbnail.thumbnails[item.thumbnail.thumbnails.length - 1].url,
       channelTitle: item.channelTitle,
-      length: item.length?.simpleText || ''
+      length: item.length?.simpleText || '',
+      isLive: item.isLive === true,
     }));
     
     return videos;
@@ -3593,13 +3911,33 @@ ipcMain.handle('search-youtube', async (event, query) => {
 });
 
 // YouTube Download Handler
-ipcMain.handle('download-youtube-audio', async (event, videoId, title, projectFolderPath) => {
+ipcMain.handle('download-youtube-audio', async (event, jobId, videoId, title, projectFolderPath, outputMode = 'mp3') => {
   requireTrustedIpc(event);
+  jobId = requireIpcString(jobId, 'jobId', 64);
+  if (!/^[A-Za-z0-9-]{8,64}$/.test(jobId)) throw new TypeError('jobId is invalid');
   videoId = requireIpcString(videoId, 'videoId', 32);
   if (!/^[A-Za-z0-9_-]{6,32}$/.test(videoId)) throw new TypeError('videoId is invalid');
   title = requireIpcString(title, 'title', 500);
   projectFolderPath = requireAuthorizedIpcPath(projectFolderPath, 'projectFolderPath');
-  return new Promise(async (resolve, reject) => {
+  outputMode = requireIpcString(outputMode, 'outputMode', 16);
+  if (!['source', 'mp3'].includes(outputMode)) throw new TypeError('outputMode is invalid');
+  if (activeYouTubeDownloads.has(jobId)) throw new Error('YouTube job already exists');
+  const job = {
+    child: null,
+    cleanup: null,
+    cancelled: false,
+    sender: event.sender,
+    senderId: event.sender.id,
+    cancelOnRendererExit: null,
+  };
+  const cancelOnRendererExit = () => { void cancelYouTubeDownload(jobId); };
+  job.cancelOnRendererExit = cancelOnRendererExit;
+  activeYouTubeDownloads.set(jobId, job);
+  for (const eventName of ['destroyed', 'render-process-gone', 'did-start-navigation']) {
+    event.sender.once(eventName, cancelOnRendererExit);
+  }
+
+  const task = new Promise(async (resolve, reject) => {
     console.log('YouTube download - Project folder path:', projectFolderPath);
     
     const outputPath = path.join(projectFolderPath, 'media');
@@ -3612,9 +3950,26 @@ ipcMain.handle('download-youtube-audio', async (event, videoId, title, projectFo
     }
     
     // Clean filename
-    const sanitizedTitle = title.replace(/[<>:"/\\|?*]/g, '').substring(0, 200);
-    const fileName = `${sanitizedTitle}.mp3`;
-    const outputTemplate = path.join(outputPath, sanitizedTitle);
+    const sanitizedTitle = title.replace(/[<>:"/\\|?*]/g, '').trim().substring(0, 180)
+      || `YouTube audio ${videoId}`;
+    const outputBaseName = `${sanitizedTitle} [${videoId}]`;
+    const fileName = outputMode === 'mp3' ? `${outputBaseName}.mp3` : '';
+    const outputTemplate = path.join(outputPath, outputBaseName);
+    const outputPrefix = `${outputBaseName}.`;
+    const existingOutputs = new Set(
+      fs.readdirSync(outputPath).filter(candidate => candidate.startsWith(outputPrefix)),
+    );
+    const cleanupNewOutputs = () => {
+      try {
+        for (const candidate of fs.readdirSync(outputPath)) {
+          if (!candidate.startsWith(outputPrefix) || existingOutputs.has(candidate)) continue;
+          fs.unlinkSync(path.join(outputPath, candidate));
+        }
+      } catch (cleanupError) {
+        console.error('Failed to clean up YouTube download:', cleanupError);
+      }
+    };
+    job.cleanup = cleanupNewOutputs;
     
     console.log('YouTube download - Output template:', outputTemplate);
     
@@ -3624,49 +3979,34 @@ ipcMain.handle('download-youtube-audio', async (event, videoId, title, projectFo
     console.log(`Video URL: ${videoUrl}`);
     
     // Wait for yt-dlp to be ready (with timeout)
-    if (!ytDlpReady) {
-      console.log('Waiting for yt-dlp to initialize...');
-      let attempts = 0;
-      while (!ytDlpReady && attempts < 30) { // Wait up to 30 seconds
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        attempts++;
-      }
-      
-      if (!ytDlpReady) {
-        reject(new Error('yt-dlp initialization timed out. Please try again.'));
-        return;
-      }
-    }
+    try { await waitForYtDlp(); }
+    catch (error) { reject(error); return; }
+    if (job.cancelled) { reject(new Error('YouTube download cancelled')); return; }
     
-    if (!ytDlpPath) {
-      reject(new Error('yt-dlp binary path not available. Please restart the application.'));
-      return;
-    }
-    
-    if (!(await setupFfmpeg())) {
+    if (outputMode === 'mp3' && !(await setupFfmpeg())) {
       reject(new Error('Bundled FFmpeg failed to initialize. Please restart the application.'));
       return;
     }
     
     try {
-      // Create YTDlpWrap instance with the binary path
-      const ytDlp = new YTDlpWrap(ytDlpPath);
-      
       // Build yt-dlp arguments
-      const args = [
-        videoUrl,
-        '-f', 'bestaudio',
-        '--extract-audio',
-        '--audio-format', 'mp3',
-        '--audio-quality', '0', // Best quality
+      const args = [videoUrl, '-f', 'bestaudio'];
+      if (outputMode === 'mp3') {
+        args.push(
+          '--extract-audio',
+          '--audio-format', 'mp3',
+          '--audio-quality', '0', // V0: best variable-bit-rate MP3 quality.
+        );
+      }
+      args.push(
         '-o', outputTemplate + '.%(ext)s',
         '--no-playlist',
         '--progress',
         '--newline' // Force progress on new lines for easier parsing
-      ];
+      );
       
       // Add ffmpeg path if we have it
-      if (ffmpegPath) {
+      if (outputMode === 'mp3' && ffmpegPath) {
         args.push('--ffmpeg-location', ffmpegPath);
       }
 
@@ -3691,8 +4031,11 @@ ipcMain.handle('download-youtube-audio', async (event, videoId, title, projectFo
       console.log('yt-dlp path:', ytDlpPath);
       
       // Use spawn to get a proper ChildProcess
-      const { spawn } = require('child_process');
-      const downloadProcess = spawn(ytDlpPath, args);
+      const downloadProcess = spawn(ytDlpPath, args, {
+        windowsHide: true,
+        detached: process.platform !== 'win32',
+      });
+      job.child = downloadProcess;
       
       // Check if downloadProcess is valid
       if (!downloadProcess || !downloadProcess.stdout) {
@@ -3713,16 +4056,20 @@ ipcMain.handle('download-youtube-audio', async (event, videoId, title, projectFo
           if (percentage > lastProgress) {
             lastProgress = percentage;
             event.sender.send('youtube-download-progress', {
+              jobId,
               videoId,
               percentage: percentage,
-              status: percentage < 100 ? 'downloading' : 'converting'
+              status: outputMode === 'mp3' && percentage >= 100
+                ? 'converting'
+                : 'downloading'
             });
           }
         }
         
         // Check for post-processing
-        if (output.includes('[ExtractAudio]') || output.includes('Destination:')) {
+        if (outputMode === 'mp3' && output.includes('[ExtractAudio]')) {
           event.sender.send('youtube-download-progress', {
+            jobId,
             videoId,
             percentage: 95,
             status: 'converting'
@@ -3745,13 +4092,21 @@ ipcMain.handle('download-youtube-audio', async (event, videoId, title, projectFo
       
       downloadProcess.on('error', (error) => {
         console.error('yt-dlp process error:', error);
+        cleanupNewOutputs();
         reject(new Error(`Download process failed: ${error.message}`));
       });
       
       downloadProcess.on('close', (code) => {
+        job.child = null;
         console.log(`yt-dlp process closed with code: ${code}`);
         
+        if (job.cancelled) {
+          cleanupNewOutputs();
+          reject(new Error('YouTube download cancelled'));
+          return;
+        }
         if (code !== 0) {
+          cleanupNewOutputs();
           // Surface the real reason from yt-dlp's stderr instead of just the code.
           const errorLines = stderrBuffer
             .split('\n')
@@ -3778,30 +4133,31 @@ ipcMain.handle('download-youtube-audio', async (event, videoId, title, projectFo
           return;
         }
         
-        console.log(`Download completed: ${fileName}`);
+        console.log(`Download completed: ${outputBaseName}`);
         
-        // Find the actual downloaded file (yt-dlp might use URL encoding)
-        const expectedFile = path.join(outputPath, fileName);
+        // Source audio keeps the provider's actual container/codec, so discover
+        // the extension after yt-dlp finishes. The video ID makes this lookup
+        // exact even when two results share a title.
+        const expectedFile = fileName ? path.join(outputPath, fileName) : '';
         let actualFile = expectedFile;
         
         // Check if file exists with expected name
-        if (!fs.existsSync(expectedFile)) {
-          // Try to find it with URL-encoded name or other variations
+        if (!expectedFile || !fs.existsSync(expectedFile)) {
           const files = fs.readdirSync(outputPath);
-          const baseName = sanitizedTitle;
-          
-          // Look for files that match the base name (case-insensitive, with any encoding)
           const matchingFile = files.find(f => {
-            const decoded = decodeURIComponent(f);
-            return decoded.toLowerCase().startsWith(baseName.toLowerCase()) && f.endsWith('.mp3');
+            const parsed = path.parse(f);
+            return parsed.name === outputBaseName &&
+              !/\.(?:part|ytdl|tmp)$/i.test(f) &&
+              (outputMode === 'source' || parsed.ext.toLowerCase() === '.mp3');
           });
           
           if (matchingFile) {
             actualFile = path.join(outputPath, matchingFile);
             console.log('Found downloaded file:', matchingFile);
             
-            // Rename to expected filename if different
-            if (matchingFile !== fileName) {
+            // MP3 mode has one canonical filename. Source mode must retain the
+            // downloaded extension because changing it would mislabel the codec.
+            if (expectedFile && matchingFile !== fileName) {
               try {
                 fs.renameSync(actualFile, expectedFile);
                 actualFile = expectedFile;
@@ -3819,6 +4175,7 @@ ipcMain.handle('download-youtube-audio', async (event, videoId, title, projectFo
         
         // Send 100% progress
         event.sender.send('youtube-download-progress', {
+          jobId,
           videoId,
           percentage: 100,
           status: 'completed'
@@ -3828,7 +4185,7 @@ ipcMain.handle('download-youtube-audio', async (event, videoId, title, projectFo
           success: true,
           file: actualFile,
           fileName: path.basename(actualFile),
-          title: sanitizedTitle
+          title,
         });
       });
       
@@ -3836,19 +4193,12 @@ ipcMain.handle('download-youtube-audio', async (event, videoId, title, projectFo
       console.error('YouTube download error:', error);
       console.error('Error stack:', error.stack);
       
-      // Clean up partial file
-      const outputFile = path.join(outputPath, fileName);
-      if (fs.existsSync(outputFile)) {
-        try {
-          fs.unlinkSync(outputFile);
-        } catch (e) {
-          console.error('Failed to clean up file:', e);
-        }
-      }
+      cleanupNewOutputs();
       
       reject(new Error(`Download failed: ${error.message}`));
     }
   });
+  return task.finally(() => releaseYouTubeJob(jobId, job));
 });
 
 // Register custom protocol for app

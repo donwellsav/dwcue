@@ -31,6 +31,8 @@ declare global {
       ensureDirectory: (dirPath: string) => Promise<{ success: boolean; error?: string }>;
       generateWaveform: (audioPath: string, outputPath: string) => Promise<{ success: boolean; error?: string }>;
       openFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>;
+      getImportPreferences: () => Promise<{ spotifyDestination: string }>;
+      setSpotifyImportDestination: (destination: string) => Promise<boolean>;
       setCurrentProject: (projectPath: string) => Promise<{ success: boolean }>;
       getFilePath: (file: File) => string | null;
       checkFfmpeg: () => Promise<{ available: boolean; path: string | null }>;
@@ -40,17 +42,45 @@ declare global {
         thumbnail: string;
         channelTitle: string;
         length?: string;
+        isLive?: boolean;
       }>>;
+      getYouTubeInfo: (videoId: string) => Promise<{
+        id: string;
+        title: string;
+        thumbnail: string;
+        channelTitle: string;
+        length?: string;
+        isLive?: boolean;
+      }>;
       downloadYouTubeAudio: (
+        jobId: string,
         videoId: string,
         title: string,
         projectFolderPath: string,
-        progressCallback?: (progress: { videoId: string; percentage: number; status: string }) => void
+        outputMode: 'source' | 'mp3',
+        progressCallback?: (progress: { jobId: string; videoId: string; percentage: number; status: string }) => void
       ) => Promise<{ success: boolean; file: string; fileName: string; title: string }>;
+      cancelYouTubeDownload: (jobId: string) => Promise<boolean>;
+      preflightSpotify: (jobId: string, url: string) => Promise<{
+        preflightId: string;
+        playlistName: string;
+        totalDuration: number;
+        tracks: Array<{
+          id: string;
+          title: string;
+          artists: string[];
+          album: string;
+          duration: number;
+          coverUrl: string;
+          spotifyUrl: string;
+        }>;
+      }>;
+      cancelSpotifyPreflight: (jobId: string) => Promise<boolean>;
       downloadSpotifyAudio: (
         jobId: string,
         url: string,
         destinationParentPath: string,
+        selection: { preflightId: string; selectedTrackIds: string[]; reusePreviousFolder?: boolean },
         progressCallback?: (progress: {
           jobId: string;
           status: 'preparing' | 'resolving' | 'downloading' | 'importing' |
@@ -68,6 +98,8 @@ declare global {
         error?: string;
         playlistName: string;
         projectFolderPath: string;
+        completedTrackIds: string[];
+        failedTrackIds: string[];
       }>;
       cancelSpotifyDownload: (jobId: string) => Promise<boolean>;
       finalizeSpotifyImport: (jobId: string, keepFiles: boolean) => Promise<boolean>;

@@ -71,11 +71,8 @@ const cartGridStyle = computed(() => {
   const layout = cartGridLayouts.value[cartGridProfile.value];
   const rowPercent = 100 / layout.rows;
   const rowGapOffset = CART_GRID_GAP_PX * (layout.rows - 1) / layout.rows;
-  const columnPercent = 100 / layout.columns;
-  const columnGapOffset = CART_GRID_GAP_PX * (layout.columns - 1) / layout.columns;
   return {
-    '--cart-target-card-width': `calc(${columnPercent}% - ${columnGapOffset}px)`,
-    '--cart-min-card-width': showMode.value ? '128px' : '276px',
+    '--cart-columns': String(layout.columns),
     '--cart-card-row-height': `max(${layout.minHeight}px, calc(${rowPercent}% - ${rowGapOffset}px))`,
   };
 });
@@ -175,13 +172,7 @@ onMounted(() => {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(
-    auto-fit,
-    minmax(
-      min(100%, max(var(--cart-min-card-width, 276px), var(--cart-target-card-width, 100%))),
-      1fr
-    )
-  );
+  grid-template-columns: repeat(var(--cart-columns, 2), minmax(0, 1fr));
   grid-auto-rows: var(--cart-card-row-height, 88px);
   gap: var(--spacing-sm);
   padding: var(--spacing-sm);

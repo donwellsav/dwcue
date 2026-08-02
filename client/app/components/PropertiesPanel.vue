@@ -62,6 +62,9 @@
               <span class="material-symbols-rounded">content_copy</span>
             </button>
           </div>
+          <p v-if="replaceMediaStatus" class="property-help" :class="{ 'property-help--error': replaceMediaError }">
+            {{ replaceMediaStatus }}
+          </p>
         </div>
         
         <div class="property-field">
@@ -86,7 +89,7 @@
           <label>{{ t('properties.file') }}</label>
           <div class="input-with-btn">
             <input :value="audioItem.mediaFileName" readonly />
-            <button class="icon-btn" @click="handleReplaceMedia">
+            <button class="icon-btn" :disabled="isReplacingMedia" :title="t('properties.replaceMedia')" @click="handleReplaceMedia">
               <span class="material-symbols-rounded">swap_horiz</span>
             </button>
           </div>
@@ -109,7 +112,7 @@
       <!-- Playback Tab -->
       <div v-if="activeTab === 'playback' && selectedItem.type === 'audio'" class="tab-panel">
         <WaveformTrimmer
-          v-if="audioItem && audioItem.mediaPath && audioItem.duration > 0"
+          v-if="audioItem && (audioItem.mediaPath || audioItem.mediaServerPath) && audioItem.duration > 0"
           :audio-item="audioItem"
           :multi-select="selectedItems.size > 1"
           @update:volume="(v) => { beginItemBatch(); audioItem.volume = v; }"
@@ -298,7 +301,7 @@
 <script setup lang="ts">
 import type { AudioItem, GroupItem } from '~/types/project';
 import { PRESET_COLORS } from '~/types/project';
-import { applyLoudnessMatch, type MeasuredLoudness } from '~/utils/audio';
+import { applyLoudnessMatch, buildWaveformFromChannels, type MeasuredLoudness } from '~/utils/audio';
 import { useOutputTarget } from '~/composables/useOutputTarget';
 
 const {
@@ -874,6 +877,12 @@ const handleStartNextFadeOutUpdate = (value: boolean) => {
 };
 
 const isRegenerating = ref(false);
+const isReplacingMedia = ref(false);
+const replaceMediaStatus = ref('');
+const replaceMediaError = ref(false);
+watch(() => selectedItem.value?.uuid, () => {
+  if (!isReplacingMedia.value) replaceMediaStatus.value = '';
+});
 
 const handleRegenerateWaveform = async () => {
   if (isRegenerating.value) return;
@@ -905,13 +914,62 @@ const handleRegenerateWaveform = async () => {
 };
 
 const handleReplaceMedia = async () => {
-  if (!import.meta.client || !window.electronAPI) return;
-  
+  if (!import.meta.client || !window.electronAPI || isReplacingMedia.value) return;
+
   const files = await window.electronAPI.selectAudioFiles();
-  if (!files || files.length === 0) return;
-  
-  // Implementation would replace the media file
-  console.log('Replace media with:', files[0]);
+  const sourcePath = files?.[0];
+  const item = audioItem.value;
+  if (!sourcePath || !item) return;
+
+  const snapshot = structuredClone(item);
+  let mutated = false;
+  isReplacingMedia.value = true;
+  replaceMediaError.value = false;
+  replaceMediaStatus.value = t('properties.verifyingReplacement');
+  try {
+    const [metadata, serverWaveform] = await Promise.all([
+      _server.fetchMetadata(sourcePath),
+      _server.fetchWaveformByPath(sourcePath),
+    ]);
+    const metadataDuration = Number((metadata as any)?.duration_ms);
+    const durationMs = Number.isFinite(metadataDuration) && metadataDuration > 0
+      ? metadataDuration
+      : Number(serverWaveform.duration_ms);
+    const duration = durationMs / 1000;
+    const waveform = buildWaveformFromChannels(serverWaveform.channels, duration, serverWaveform);
+    if ((metadata as any)?.valid !== true || !Number.isFinite(duration) || duration <= 0 || !waveform) {
+      throw new Error(t('properties.replacementDecodeFailed'));
+    }
+
+    const linked = !snapshot.mediaPath;
+    const mediaServerPath = linked ? sourcePath : await _server.copyToMedia(sourcePath);
+    const fileName = mediaServerPath.split(/[\\/]/).pop() || sourcePath.split(/[\\/]/).pop() || 'audio';
+    const usedWholeFile = snapshot.inPoint <= 0 && Math.abs(snapshot.outPoint - snapshot.duration) < 0.01;
+
+    mutated = true;
+    item.mediaFileName = fileName;
+    item.mediaServerPath = mediaServerPath;
+    item.mediaPath = linked ? '' : `media/${fileName}`;
+    item.waveform = waveform;
+    item.duration = duration;
+    item.inPoint = usedWholeFile ? 0 : Math.min(snapshot.inPoint, Math.max(0, duration - 0.01));
+    item.outPoint = usedWholeFile ? duration : Math.min(duration, Math.max(item.inPoint + Math.min(0.01, duration), Math.min(snapshot.outPoint, duration)));
+    if (typeof item.startNextTime === 'number') {
+      item.startNextTime = Math.max(item.inPoint, Math.min(item.startNextTime, item.outPoint));
+    }
+
+    if (!await saveProject()) throw new Error(t('properties.replacementSaveFailed'));
+    originalSnapshot.value = structuredClone(item);
+    replaceMediaStatus.value = t('properties.replacementComplete');
+    void _server.requestWaveformGeneration(mediaServerPath, item.uuid, true).catch(() => {});
+  } catch (error: any) {
+    Object.assign(item, snapshot);
+    if (mutated) await saveProject();
+    replaceMediaError.value = true;
+    replaceMediaStatus.value = error?.message || t('properties.replacementFailed');
+  } finally {
+    isReplacingMedia.value = false;
+  }
 };
 
 const copyToClipboard = async (text: string) => {

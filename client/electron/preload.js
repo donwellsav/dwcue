@@ -34,6 +34,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   copyFile: (source, destination) => ipcRenderer.invoke('copy-file', source, destination),
   ensureDirectory: (dirPath) => ipcRenderer.invoke('ensure-directory', dirPath),
   openFolder: (folderPath) => ipcRenderer.invoke('open-folder', folderPath),
+  getImportPreferences: () => ipcRenderer.invoke('get-import-preferences'),
+  setSpotifyImportDestination: (destination) =>
+    ipcRenderer.invoke('set-spotify-import-destination', destination),
   
   // Get file path from dropped file
   getFilePath: (file) => {
@@ -61,30 +64,41 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // YouTube features
   searchYouTube: (query) => ipcRenderer.invoke('search-youtube', query),
-  downloadYouTubeAudio: (videoId, title, projectFolderPath, progressCallback) => {
+  getYouTubeInfo: (videoId) => ipcRenderer.invoke('get-youtube-info', videoId),
+  downloadYouTubeAudio: (jobId, videoId, title, projectFolderPath, outputMode, progressCallback) => {
     // Set up progress listener
     const progressListener = (event, progress) => {
-      if (progress.videoId === videoId && progressCallback) {
+      if (progress.jobId === jobId && progressCallback) {
         progressCallback(progress);
       }
     };
     ipcRenderer.on('youtube-download-progress', progressListener);
     
     // Start download and clean up listener when done
-    return ipcRenderer.invoke('download-youtube-audio', videoId, title, projectFolderPath)
+    return ipcRenderer.invoke(
+      'download-youtube-audio',
+      jobId,
+      videoId,
+      title,
+      projectFolderPath,
+      outputMode,
+    )
       .finally(() => {
         ipcRenderer.removeListener('youtube-download-progress', progressListener);
       });
   },
+  cancelYouTubeDownload: (jobId) => ipcRenderer.invoke('cancel-youtube-download', jobId),
 
   // Spotify track / album / playlist import
-  downloadSpotifyAudio: (jobId, url, destinationParentPath, progressCallback) => {
+  preflightSpotify: (jobId, url) => ipcRenderer.invoke('spotify-preflight', jobId, url),
+  cancelSpotifyPreflight: (jobId) => ipcRenderer.invoke('cancel-spotify-preflight', jobId),
+  downloadSpotifyAudio: (jobId, url, destinationParentPath, selection, progressCallback) => {
     const progressListener = (_event, progress) => {
       if (progress.jobId === jobId && progressCallback) progressCallback(progress);
     };
     ipcRenderer.on('spotify-download-progress', progressListener);
     return ipcRenderer.invoke(
-      'download-spotify-audio', jobId, url, destinationParentPath,
+      'download-spotify-audio', jobId, url, destinationParentPath, selection,
     ).finally(() => {
       ipcRenderer.removeListener('spotify-download-progress', progressListener);
     });

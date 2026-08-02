@@ -913,6 +913,11 @@ assert.match(
   'the audio import header and close control must remain reachable in the detached cart window',
 );
 assert.match(
+  audioImportModal,
+  /class="import-plan"[\s\S]*mediaDestination[\s\S]*destinationFallback[\s\S]*importSettings[\s\S]*knownSelectionCount[\s\S]*uploadedSizes/,
+  'local imports must show their destination, processing, selection count, and uploaded file sizes',
+);
+assert.match(
   waveformTrimmer,
   /\.waveform-trimmer\s*\{(?![\s\S]{0,180}(?:max-height|overflow:\s*hidden))[\s\S]{0,180}background:\s*transparent;[\s\S]*\.volume-slider-vertical\s*\{[\s\S]{0,180}width:\s*24px;/,
   'the properties panel must own waveform scrolling and the vertical fader must not consume empty horizontal space',
@@ -1152,8 +1157,8 @@ assert.match(
 );
 assert.match(
   electron,
-  /--save-file', 'dwcue-spotify-manifest\.spotdl'[\s\S]*spotifyManifestListName\([\s\S]*playlistName[\s\S]*projectFolderPath/,
-  'Spotify imports must use the manifest list name and return their new project folder',
+  /--save-file', 'dwcue-spotify-manifest\.spotdl'[\s\S]*createSpotifyProjectFolder\([\s\S]*playlistName[\s\S]*projectFolderPath/,
+  'Spotify imports must retain a manifest and return their named project folder',
 );
 assert.doesNotMatch(
   electron,
@@ -1209,6 +1214,16 @@ assert.match(
   spotifyModal,
   /await api\.selectProjectFolder\(\)[\s\S]*destinationParentPath[\s\S]*api\.downloadSpotifyAudio\([\s\S]*destinationParentPath/,
   'Spotify imports must let the operator choose the template parent folder',
+);
+assert.match(
+  spotifyModal,
+  /sourceTypeText[\s\S]*spotifyImport\.audioFormatValue[\s\S]*destinationParentPath[\s\S]*cueProcessingSettings/,
+  'Spotify imports must disclose their source, fixed format, destination, and cue processing',
+);
+assert.match(
+  spotifyModal,
+  /v-if="progressState\?\.playlistName"[\s\S]{0,180}v-if="progressState\?\.message && isActive"[\s\S]*resultState\?\.projectFolderPath[\s\S]*openResultFolder/,
+  'Spotify progress must keep the collection, current operation, result path, and reveal action visible',
 );
 assert.match(
   spotifyModal,
@@ -1435,13 +1450,38 @@ assert.match(
 );
 assert.match(
   playlistView,
-  /prepareImportFromServerPath[\s\S]*color: colorForNewAudioItem\(currentProject\.value\.settings, colorIndex\)[\s\S]*baseColorIndex = getAllItemsFlat\(project\.items\)[\s\S]*item\.type === 'audio'[\s\S]*baseColorIndex \+ offset/,
+  /buildVerifiedAudioCue[\s\S]*color: colorForNewAudioItem\(settings, colorIndex\)[\s\S]*baseColorIndex = getAllItemsFlat\(project\.items\)[\s\S]*item\.type === 'audio'[\s\S]*baseColorIndex \+ offset/,
   'new playlist imports must receive their ordered palette color',
 );
 assert.match(
+  playlistView,
+  /<YouTubeImportModal[\s\S]{0,300}:project-folder-path="currentProject\?\.folderPath \?\? ''"[\s\S]{0,120}:project-epoch="projectEpoch"[\s\S]{0,120}:import-files="importFromServerPaths"/,
+  'YouTube downloads must use the shared project importer and project generation',
+);
+assert.match(
   youtubeImport,
-  /importDownloadedFile[\s\S]*color: colorForNewAudioItem\([\s\S]{0,180}getAllItemsFlat\(\)\.filter\(item => item\.type === 'audio'\)\.length[\s\S]{0,20}\)/,
-  'new YouTube imports must receive their ordered palette color',
+  /const projectFolderPath = props\.projectFolderPath;[\s\S]{0,100}const projectEpoch = props\.projectEpoch;[\s\S]*await props\.importFiles\([\s\S]{0,180}displayNames: \[result\.title\][\s\S]{0,300}!imported\.success \|\| imported\.imported !== 1/,
+  'YouTube completion must wait for the shared importer and reject partial cue creation',
+);
+assert.match(
+  playlistView,
+  /const prepareImportFromServerPath[\s\S]*fallbackName = displayName\.trim\(\) \|\|[\s\S]*replace\(\/\\\.\[\^\/\.\]\+\$\/[\s\S]*options\?\.displayNames\?\.\[offset\]/,
+  'the shared importer must keep collision-safe filenames out of operator-facing cue titles',
+);
+assert.doesNotMatch(
+  youtubeImport,
+  /importDownloadedFile|new Audio\(|DEFAULT_AUDIO_ITEM|addItem\(/,
+  'YouTube imports must not bypass the shared metadata, waveform, color, or save path',
+);
+assert.match(
+  youtubeImport,
+  /<option value="source">[\s\S]{0,120}<option value="mp3">[\s\S]*const outputMode = ref<'source' \| 'mp3'>\(storedOptions\.outputMode === 'mp3' \? 'mp3' : 'source'\)/,
+  'YouTube imports must default to original source audio while retaining explicit MP3 conversion',
+);
+assert.match(
+  youtubeImport,
+  /v-if="video\.isLive"[\s\S]*:disabled="video\.isLive \|\| isDownloading\(video\.id\)"[\s\S]*v-if="download\.savedPath"[\s\S]*openDownloadFolder/,
+  'YouTube results must block live downloads and retain saved-file information',
 );
 assert.match(
   cartSlot,
@@ -1500,7 +1540,7 @@ assert.match(
 );
 assert.match(
   playlistView,
-  /buildSpotifyCueSpecs[\s\S]*fetchMetadata\(serverPath, signal\)[\s\S]*fetchWaveformByPath\(serverPath\)[\s\S]*buildWaveformFromChannels[\s\S]*colorForNewAudioItem\(settings, baseColorIndex \+ position\)[\s\S]*autoTrimSilenceOnImport === true[\s\S]*trimSilence\(cue\)[\s\S]*autoMatchLoudnessOnImport === true[\s\S]*autoReduceTruePeaksOnImport !== false[\s\S]*applyTruePeakCeiling\(cue, analysis\)[\s\S]*anchorStartNextMarker/,
+  /buildVerifiedAudioCue[\s\S]*fetchMetadata\(serverPath, signal\)[\s\S]*fetchWaveformByPath\(serverPath\)[\s\S]*buildWaveformFromChannels[\s\S]*colorForNewAudioItem\(settings, colorIndex\)[\s\S]*autoTrimSilenceOnImport === true[\s\S]*trimSilence\(cue\)[\s\S]*autoMatchLoudnessOnImport === true[\s\S]*autoReduceTruePeaksOnImport !== false[\s\S]*applyTruePeakCeiling\(cue, analysis, -0\.1\)[\s\S]*anchorStartNextMarker[\s\S]*buildSpotifyCueSpecs[\s\S]*buildVerifiedAudioCue/,
   'Spotify template cues must be metadata-named, show-ready, palette-cycled, and true-peak safe',
 );
 assert.match(
@@ -1515,7 +1555,7 @@ assert.match(
 );
 assert.match(
   liveplayClient,
-  /async function saveProjectTo[\s\S]*AbortSignal\.any\(\[signal, AbortSignal\.timeout\(30000\)\]\)[\s\S]*async function fetchMetadata[\s\S]*AbortSignal\.any\(\[signal, AbortSignal\.timeout\(30000\)\]\)[\s\S]*async function copyToMedia[\s\S]*AbortSignal\.any\(\[signal, AbortSignal\.timeout\(30000\)\]\)/,
+  /async function saveProjectTo[\s\S]*AbortSignal\.any\(\[signal, AbortSignal\.timeout\(30000\)\]\)[\s\S]*async function fetchMetadata[\s\S]*AbortSignal\.any\(\[signal, AbortSignal\.timeout\(30000\)\]\)[\s\S]*async function copyToMediaResult[\s\S]*AbortSignal\.any\(\[signal, AbortSignal\.timeout\(30000\)\]\)/,
   'cancellable Spotify REST requests must retain their normal hard timeout',
 );
 const restHelper = liveplayClient.slice(
@@ -1540,10 +1580,7 @@ assert.match(
 );
 const sanitizeNameStart = electron.indexOf('function sanitizeSpotifyFolderName');
 const sanitizeNameEnd = electron.indexOf(
-  '\n}\n\nfunction spotifyManifestListName', sanitizeNameStart) + 2;
-const manifestNameStart = electron.indexOf('function spotifyManifestListName');
-const manifestNameEnd = electron.indexOf(
-  '\n}\n\nfunction spotDlNumericProgress', manifestNameStart) + 2;
+  '\n}\n\nfunction spotifyTrackId', sanitizeNameStart) + 2;
 const numericProgressStart = electron.indexOf('function spotDlNumericProgress');
 const numericProgressEnd = electron.indexOf(
   '\n}\n\nasync function createSpotifyProjectFolder', numericProgressStart) + 2;
@@ -1562,9 +1599,6 @@ const copyOutputsEnd = electron.indexOf(
 const sanitizeSpotifyFolderName = Function(
   'Buffer', `return (${electron.slice(sanitizeNameStart, sanitizeNameEnd)})`,
 )(Buffer);
-const spotifyManifestListName = Function(
-  'fs', `return (${electron.slice(manifestNameStart, manifestNameEnd)})`,
-)(fs);
 const spotDlNumericProgress = Function(
   `return (${electron.slice(numericProgressStart, numericProgressEnd)})`,
 )();
@@ -1611,21 +1645,13 @@ async function checkSpotifyCopyTransaction() {
     const media = path.join(spotifyTestRoot, 'media');
     fs.mkdirSync(staging);
     fs.mkdirSync(media);
-    fs.writeFileSync(path.join(staging, 'First.mp3'), 'first');
-    fs.writeFileSync(path.join(staging, 'Second.mp3'), 'second');
-    const manifest = path.join(staging, 'dwcue-spotify-manifest.spotdl');
-    fs.writeFileSync(manifest, JSON.stringify([
-      { list_name: 'The Exact Spotify List' },
-      { list_name: 'The Exact Spotify List' },
-    ]));
-    assert.equal(
-      spotifyManifestListName(manifest),
-      'The Exact Spotify List',
-      'the manifest must provide the exact Spotify collection name',
-    );
+    const firstId = '1111111111111111111111';
+    const secondId = '2222222222222222222222';
+    fs.writeFileSync(path.join(staging, `${firstId} - First.mp3`), 'first');
+    fs.writeFileSync(path.join(staging, `${secondId} - Second.mp3`), 'second');
     fs.writeFileSync(
       path.join(staging, 'dwcue-spotify-order.m3u8'),
-      '#EXTM3U\nSecond.mp3\nSecond.mp3\nFirst.mp3\n',
+      `#EXTM3U\n${secondId} - Second.mp3\n${secondId} - Second.mp3\n${firstId} - First.mp3\n`,
     );
     fs.writeFileSync(path.join(media, 'Second.mp3'), 'existing');
     const job = {
@@ -1634,12 +1660,12 @@ async function checkSpotifyCopyTransaction() {
       abortController: new AbortController(),
     };
     const copied = await copySpotifyOutputsToMedia(
-      orderedSpotifyOutputs(staging), media, job,
+      orderedSpotifyOutputs(staging, [secondId, firstId]), media, job,
     );
     assert.deepEqual(
       copied.map((file) => path.basename(file)),
-      ['Second (2).mp3', 'Second (3).mp3', 'First.mp3'],
-      'Spotify batch order, duplicate entries, and existing media files must be preserved',
+      ['Second (2).mp3', 'First.mp3'],
+      'Spotify selection order must be preserved without duplicating m3u entries or leaking track IDs',
     );
     await cleanupSpotifyFiles(job);
     assert.deepEqual(
@@ -1655,7 +1681,7 @@ async function checkSpotifyCopyTransaction() {
     };
     abortedJob.abortController.abort();
     await assert.rejects(
-      copySpotifyOutputsToMedia([path.join(staging, 'First.mp3')], media, abortedJob),
+      copySpotifyOutputsToMedia([path.join(staging, `${firstId} - First.mp3`)], media, abortedJob),
       /abort/i,
       'Spotify media copying must stop when its job is cancelled',
     );
@@ -1687,6 +1713,23 @@ async function checkSpotifyCopyTransaction() {
       fs.readdirSync(destinationParent),
       ['The Exact Spotify List'],
       'rollback must remove only empty directories owned by its Spotify job',
+    );
+
+    const reusedPath = path.join(destinationParent, 'The Exact Spotify List');
+    const retryJob = { files: [], ownedDirectories: [] };
+    const reused = await createSpotifyProjectFolder(
+      destinationParent, 'Ignored Retry Name', retryJob, reusedPath,
+    );
+    assert.equal(
+      reused.projectFolderPath,
+      reusedPath,
+      'Spotify retry must reuse its reviewed project folder',
+    );
+    await cleanupSpotifyFiles(retryJob);
+    assert.equal(
+      fs.existsSync(reusedPath),
+      true,
+      'retry cleanup must not remove the original project folder',
     );
   } finally {
     fs.rmSync(spotifyTestRoot, { recursive: true, force: true });
@@ -1735,6 +1778,7 @@ assert.match(
 );
 
 const spotifyImportModal = read('client/app/components/SpotifyImportModal.vue');
+const youtubeImportModal = read('client/app/components/YouTubeImportModal.vue');
 assert.match(
   spotifyImportModal,
   /class="icon-btn"[\s\S]*:aria-label="t\('actions\.close'\)"/,
@@ -1748,6 +1792,86 @@ assert.match(
   /role: 'editMenu'/,
   'the desktop menu must preserve native text editing actions, including paste',
 );
+assert.match(
+  electronMain,
+  /get-youtube-info[\s\S]*search-youtube[\s\S]*isLive: item\.isLive === true[\s\S]*download-youtube-audio[\s\S]*!\['source', 'mp3'\]\.includes\(outputMode\)[\s\S]*outputBaseName = `\$\{sanitizedTitle\} \[\$\{videoId\}\]`/,
+  'YouTube IPC must expose live state, validate output mode, and use collision-resistant names',
+);
+assert.match(
+  electronMain,
+  /const args = \[videoUrl, '-f', 'bestaudio'\];[\s\S]{0,120}if \(outputMode === 'mp3'\)[\s\S]{0,180}'--extract-audio'[\s\S]{0,120}'--audio-quality', '0'/,
+  'source downloads must avoid conversion while MP3 mode explicitly requests V0 extraction',
+);
+assert.match(
+  electronMain,
+  /existingOutputs = new Set\([\s\S]{0,500}const cleanupNewOutputs = \(\) =>[\s\S]*if \(code !== 0\) \{\s*cleanupNewOutputs\(\)/,
+  'failed YouTube downloads must remove only files created by that attempt',
+);
+assert.match(
+  electronPreload,
+  /downloadYouTubeAudio: \(jobId, videoId, title, projectFolderPath, outputMode, progressCallback\)[\s\S]*'download-youtube-audio'[\s\S]{0,120}jobId,[\s\S]{0,120}projectFolderPath,[\s\S]{0,40}outputMode,/,
+  'the renderer must pass the selected YouTube output mode across IPC',
+);
+assert.match(
+  electronMain,
+  /activeYouTubeDownloads[\s\S]*cancel-youtube-download[\s\S]*detached: process\.platform !== 'win32'[\s\S]*job\.cancelled[\s\S]*cleanupNewOutputs/,
+  'YouTube downloads must be renderer-scoped cancellable process-tree jobs',
+);
+assert.match(
+  youtubeImportModal,
+  /extractYouTubeVideoId[\s\S]*getYouTubeInfo[\s\S]*cancelYouTubeDownload[\s\S]*retryDownload/,
+  'YouTube import must accept direct links and expose cancel and retry controls',
+);
+assert.match(
+  electronMain,
+  /spotify-preflight[\s\S]*\['save', url, '--save-file', '-'\][\s\S]*selectedTrackIds[\s\S]*dwcue-selected\.spotdl[\s\S]*'\{track-id\} - \{artists\} - \{title\}\.\{output-ext\}'/,
+  'Spotify review must stay metadata-only and download only the validated selected tracks',
+);
+assert.match(
+  spotifyImportModal,
+  /reviewSummary[\s\S]*const selectedTrackIds[\s\S]*reviewSpotify[\s\S]*retryFailed/,
+  'Spotify import must show a selectable metadata review and failed-only retry',
+);
+assert.match(
+  electronMain,
+  /activeSpotifyPreflightJobs[\s\S]*cancel-spotify-preflight[\s\S]*terminateSpotifyChild[\s\S]*reusePreviousFolder[\s\S]*preflight\.projectFolderPath/,
+  'Spotify review must be cancellable and failed-only retries must reuse the reviewed playlist folder',
+);
+assert.match(
+  spotifyImportModal,
+  /cancelSpotifyPreflight[\s\S]*trackImportResults[\s\S]*toggleImportedPreview[\s\S]*reusePreviousFolder:\s*retry[\s\S]*existingGroupUuid/,
+  'Spotify review cancellation, operator preview, and retry-in-place must stay wired through the renderer',
+);
+assert.match(
+  audioImportModal,
+  /copyFiles[\s\S]*linkFiles[\s\S]*retryFailed[\s\S]*result\.results[\s\S]*const fileMode[\s\S]*const duplicatePolicy[\s\S]*function retryFailed/,
+  'local import must preserve source controls while exposing Copy, Link, duplicates, and per-file results',
+);
+assert.match(
+  `${audioImportModal}\n${playlistView}`,
+  /emit\('cancel'\)[\s\S]*audioImportAbortController[\s\S]*onProgress[\s\S]*signal\?\.aborted/,
+  'local batch verification must expose progress and abort through its existing import path',
+);
+assert.match(
+  playlistView,
+  /const verified = await buildVerifiedAudioCue\([\s\S]*if \(fileMode === 'copy'\)[\s\S]*copyToMediaResult[\s\S]*verified\.cue\.mediaPath = fileMode === 'link' \? ''/,
+  'local files must decode successfully before copying, and linked cues must not carry a colliding relative fallback',
+);
+assert.match(
+  playlistView,
+  /existingGroupUuid[\s\S]*templateGroup\.children\.push[\s\S]*targetGroup\.children\.push[\s\S]*groupUuid:\s*activeGroupUuid/,
+  'Spotify retries must append to the original template and active cue group',
+);
+assert.match(
+  propertiesPanel,
+  /buildWaveformFromChannels[\s\S]*handleReplaceMedia[\s\S]*structuredClone\(item\)[\s\S]*Object\.assign\(item, snapshot\)/,
+  'media replacement must decode first and restore the original cue when replacement fails',
+);
+assert.match(
+  controlServer,
+  /same_file_contents[\s\S]*matching_media_file[\s\S]*duplicate_policy[\s\S]*duplicate_policy == "skip"/,
+  'the media copy trust boundary must implement exact-content reuse and skip policies',
+);
 
 assert.match(
   uiMode,
@@ -1756,8 +1880,13 @@ assert.match(
 );
 assert.match(
   cart,
-  /props\.isDetachedWindow[\s\S]*'detachedShow'[\s\S]*'detachedRegular'[\s\S]*'attachedShow'[\s\S]*'attachedRegular'[\s\S]*--cart-target-card-width[\s\S]*--cart-min-card-width[\s\S]*showMode\.value \? '128px' : '276px'[\s\S]*--cart-card-row-height[\s\S]*grid-template-columns:\s*repeat\([\s\S]{0,80}auto-fit,[\s\S]{0,220}var\(--cart-min-card-width, 276px\)[\s\S]{0,120}var\(--cart-target-card-width, 100%\)[\s\S]*grid-auto-rows:\s*var\(--cart-card-row-height, 88px\)/,
-  'the cart must honor each profile without shrinking cards below their usable mode-specific width',
+  /props\.isDetachedWindow[\s\S]*'detachedShow'[\s\S]*'detachedRegular'[\s\S]*'attachedShow'[\s\S]*'attachedRegular'[\s\S]*--cart-columns[\s\S]*--cart-card-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--cart-columns, 2\), minmax\(0, 1fr\)\)[\s\S]*grid-auto-rows:\s*var\(--cart-card-row-height, 88px\)/,
+  'the cart must honor the exact row, column, and minimum-height values for each profile',
+);
+assert.doesNotMatch(
+  cart,
+  /grid-template-columns:\s*repeat\(\s*auto-fit|--cart-min-card-width|--cart-target-card-width/,
+  'automatic fitting must not override the operator-selected cart columns',
 );
 assert.match(
   cart,

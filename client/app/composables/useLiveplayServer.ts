@@ -1126,14 +1126,32 @@ function createClient() {
   // absolute path of the copy. A no-op (returns the same path) if the file
   // is already inside the media root.
   async function copyToMedia(sourcePath: string, signal?: AbortSignal): Promise<string> {
-    const result = await rest<{ dest_path: string }>('/api/copy_to_media', {
+    return (await copyToMediaResult(sourcePath, 'keep', signal)).destPath;
+  }
+
+  async function copyToMediaResult(
+    sourcePath: string,
+    duplicatePolicy: 'reuse' | 'skip' | 'keep',
+    signal?: AbortSignal,
+  ): Promise<{ destPath: string; duplicate: boolean; reused: boolean; skipped: boolean }> {
+    const result = await rest<{
+      dest_path: string;
+      duplicate?: boolean;
+      reused?: boolean;
+      skipped?: boolean;
+    }>('/api/copy_to_media', {
       method: 'POST',
-      body: JSON.stringify({ source_path: sourcePath }),
+      body: JSON.stringify({ source_path: sourcePath, duplicate_policy: duplicatePolicy }),
       signal: signal
         ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
         : undefined,
     });
-    return result.dest_path;
+    return {
+      destPath: result.dest_path,
+      duplicate: result.duplicate === true,
+      reused: result.reused === true,
+      skipped: result.skipped === true,
+    };
   }
 
   // Land a file dropped from the OS into the server's media root and return
@@ -1244,6 +1262,7 @@ function createClient() {
     fetchWaveform,
     fetchWaveformByPath,
     copyToMedia,
+    copyToMediaResult,
     resolveDroppedFileToMedia,
     requestWaveformGeneration,
     invalidateWaveformCache,
