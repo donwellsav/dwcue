@@ -421,13 +421,13 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /<div class="workspace-content">[\s\S]*<div id="preview-lower-panel" class="preview-lower-panel"[\s\S]*\.preview-lower-panel\s*\{[\s\S]*flex:\s*0 0 128px;[\s\S]*\.preview-lower-panel:empty\s*\{[\s\S]*display:\s*none;/,
+  /<div class="workspace-content">[\s\S]*<div id="preview-lower-panel" class="preview-lower-panel"[\s\S]*\.preview-lower-panel\s*\{[\s\S]*flex:\s*0 0 112px;[\s\S]*\.preview-lower-panel:empty\s*\{[\s\S]*display:\s*none;/,
   'the Preview target must be a fixed lower panel beneath the track workspace and collapse when unused',
 );
 assert.match(
   playbackControls,
-  /class="preview-cue-card"[\s\S]*handlePreviewPause[\s\S]*preview-range-marker--in[\s\S]*startPreviewBracketDrag\('in'[\s\S]*commitPreviewTimeInput\('in'[\s\S]*preview-range-marker--out[\s\S]*startPreviewBracketDrag\('out'[\s\S]*commitPreviewTimeInput\('out'[\s\S]*jumpPreview\(-1\)[\s\S]*previewJumpDigit === 'whole'[\s\S]*previewJumpDigit === 'tenths'[\s\S]*savePreviewTrim[\s\S]*handleSetPreviewNext/,
-  'the lower Preview panel must provide pause, editable drag trim markers, digit-stepped seek, save, and Set Next controls',
+  /class="preview-cue-card"[\s\S]*preview-status-pill[\s\S]*preview-set-next-btn[\s\S]*handleSetPreviewNext[\s\S]*preview-cue-title[\s\S]*preview-transport[\s\S]*jumpPreview\(-1\)[\s\S]*handlePreviewPause[\s\S]*preview-stop-btn[\s\S]*jumpPreview\(1\)[\s\S]*preview-jump-value[\s\S]*preview-range-marker--in[\s\S]*startPreviewBracketDrag\('in'[\s\S]*commitPreviewTimeInput\('in'[\s\S]*preview-range-marker--out[\s\S]*startPreviewBracketDrag\('out'[\s\S]*commitPreviewTimeInput\('out'[\s\S]*savePreviewTrim/,
+  'the lower Preview panel must keep Set Next beside its identity, use an ordered transport, and retain editable trim markers',
 );
 assert.match(
   activeCueItem,

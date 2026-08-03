@@ -847,8 +847,8 @@ onUnmounted(() => {
 }
 
 .preview-lower-panel {
-  flex: 0 0 128px;
-  height: 128px;
+  flex: 0 0 112px;
+  height: 112px;
   box-sizing: border-box;
   padding: var(--workspace-gutter);
   overflow: hidden;

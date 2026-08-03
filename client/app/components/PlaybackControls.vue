@@ -42,12 +42,8 @@
       <div class="preview-cue-card">
       <div class="preview-cue-content">
         <div class="preview-cue-header">
-          <span class="preview-cue-name" :title="previewingItem.displayName">
+          <div class="preview-cue-name" :title="previewingItem.displayName">
             <span class="preview-status-pill">{{ t('status.previewing') }}</span>
-            {{ previewingItem.displayName }}
-            <span v-if="previewLoops" class="preview-loop-pill">{{ t('endBehavior.loop') }}</span>
-          </span>
-          <div class="preview-cue-actions">
             <button
               type="button"
               class="preview-action-btn preview-set-next-btn"
@@ -56,6 +52,19 @@
               :title="t('actions.setAsNext')"
             >
               {{ t('actions.setAsNext') }}
+            </button>
+            <span class="preview-cue-title">{{ previewingItem.displayName }}</span>
+            <span v-if="previewLoops" class="preview-loop-pill">{{ t('endBehavior.loop') }}</span>
+          </div>
+          <div class="preview-transport" role="group" :aria-label="t('status.previewing')">
+            <button
+              type="button"
+              class="preview-action-btn"
+              @click="jumpPreview(-1)"
+              :title="t('actions.jumpPreviewBack')"
+              :aria-label="t('actions.jumpPreviewBack')"
+            >
+              <span class="material-symbols-rounded" aria-hidden="true">fast_rewind</span>
             </button>
             <button
               type="button"
@@ -75,6 +84,25 @@
             >
               <span class="material-symbols-rounded" aria-hidden="true">stop</span>
             </button>
+            <button
+              type="button"
+              class="preview-action-btn"
+              @click="jumpPreview(1)"
+              :title="t('actions.jumpPreviewForward')"
+              :aria-label="t('actions.jumpPreviewForward')"
+            >
+              <span class="material-symbols-rounded" aria-hidden="true">fast_forward</span>
+            </button>
+            <div class="preview-jump-value" :aria-label="t('actions.previewJump')">
+              <button type="button" :class="{ selected: previewJumpDigit === 'whole' }" @click="previewJumpDigit = 'whole'">{{ previewJumpWhole }}</button>
+              <span>.</span>
+              <button type="button" :class="{ selected: previewJumpDigit === 'tenths' }" @click="previewJumpDigit = 'tenths'">{{ previewJumpTenths }}</button>
+              <span class="preview-jump-unit">s</span>
+              <span class="preview-jump-steppers">
+                <button type="button" @click="stepPreviewJump(1)" :aria-label="t('actions.increasePreviewJump')">▲</button>
+                <button type="button" @click="stepPreviewJump(-1)" :aria-label="t('actions.decreasePreviewJump')">▼</button>
+              </span>
+            </div>
           </div>
         </div>
 
@@ -152,25 +180,6 @@
         </div>
 
         <div class="preview-tools">
-          <div class="preview-jump-controls">
-            <button type="button" class="preview-action-btn" @click="jumpPreview(-1)" :title="t('actions.jumpPreviewBack')">
-              <span class="material-symbols-rounded" aria-hidden="true">fast_rewind</span>
-            </button>
-            <div class="preview-jump-value" :aria-label="t('actions.previewJump')">
-              <button type="button" :class="{ selected: previewJumpDigit === 'whole' }" @click="previewJumpDigit = 'whole'">{{ previewJumpWhole }}</button>
-              <span>.</span>
-              <button type="button" :class="{ selected: previewJumpDigit === 'tenths' }" @click="previewJumpDigit = 'tenths'">{{ previewJumpTenths }}</button>
-              <span class="preview-jump-unit">s</span>
-              <span class="preview-jump-steppers">
-                <button type="button" @click="stepPreviewJump(1)" :aria-label="t('actions.increasePreviewJump')">▲</button>
-                <button type="button" @click="stepPreviewJump(-1)" :aria-label="t('actions.decreasePreviewJump')">▼</button>
-              </span>
-            </div>
-            <button type="button" class="preview-action-btn" @click="jumpPreview(1)" :title="t('actions.jumpPreviewForward')">
-              <span class="material-symbols-rounded" aria-hidden="true">fast_forward</span>
-            </button>
-          </div>
-
           <button
             type="button"
             class="preview-action-btn preview-save-btn"
@@ -488,10 +497,10 @@ const handlePlayNext = () => {
     font-size: 16px;
   }
 
-  .preview-stop-btn {
-    width: 32px;
-    height: 32px;
-    font-size: 24px;
+  .preview-transport .preview-action-btn {
+    width: 44px;
+    height: 44px;
+    font-size: 28px;
   }
 }
 
@@ -650,12 +659,15 @@ const handlePlayNext = () => {
 .preview-cue-content {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
   gap: 5px;
+  align-content: center;
 }
 
 .preview-cue-header {
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -666,11 +678,18 @@ const handlePlayNext = () => {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  font-weight: 500;
   flex: 1;
   min-width: 0;
   color: var(--color-text-primary);
+}
+
+.preview-cue-title {
+  min-width: 0;
   overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.2;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -701,10 +720,17 @@ const handlePlayNext = () => {
   flex-shrink: 0;
 }
 
-.preview-cue-actions {
+.preview-transport {
   display: flex;
+  align-items: center;
   gap: 4px;
   flex-shrink: 0;
+}
+
+.preview-transport .preview-action-btn {
+  width: 40px;
+  height: 40px;
+  font-size: 25px;
 }
 
 .preview-action-btn {
@@ -767,16 +793,19 @@ const handlePlayNext = () => {
 }
 
 .preview-cue-progress {
+  grid-column: 1;
+  grid-row: 2;
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) 44px;
+  grid-template-columns: 86px minmax(0, 1fr) 98px;
   align-items: center;
   gap: 6px;
 }
 
 .preview-time {
-  font-size: 12px;
+  font-size: 18px;
+  font-weight: 650;
   font-family: var(--font-mono);
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
 }
 
 .preview-time-remaining { text-align: right; }
@@ -855,8 +884,9 @@ const handlePlayNext = () => {
   top: 50%;
   z-index: 3;
   display: inline-flex;
+  flex-direction: column;
   align-items: stretch;
-  height: 24px;
+  height: 42px;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--state-preview) 72%, var(--color-border));
   border-radius: var(--control-radius);
@@ -880,10 +910,11 @@ const handlePlayNext = () => {
 }
 
 .preview-range-marker-drag {
-  width: 26px;
+  width: 100%;
+  height: 18px;
   padding: 0;
   border: 0;
-  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
   background: color-mix(in srgb, var(--state-preview) 22%, var(--color-control));
   color: color-mix(in srgb, var(--state-preview) 72%, white);
   font-size: 9px;
@@ -898,7 +929,8 @@ const handlePlayNext = () => {
 }
 
 .preview-range-marker-value {
-  width: 56px;
+  width: 72px;
+  height: 24px;
   min-width: 0;
   padding: 0 5px;
   border: 0;
@@ -906,12 +938,14 @@ const handlePlayNext = () => {
   background: transparent;
   color: var(--color-text-primary);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 650;
   text-align: center;
 }
 
 .preview-tools {
+  grid-column: 2;
+  grid-row: 2;
   display: flex;
   align-items: end;
   justify-content: flex-end;
@@ -919,14 +953,8 @@ const handlePlayNext = () => {
   min-width: 0;
 }
 
-.preview-jump-controls {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-}
-
 .preview-jump-value {
-  height: 24px;
+  height: 40px;
   display: inline-flex;
   align-items: center;
   padding-left: 5px;
@@ -935,7 +963,7 @@ const handlePlayNext = () => {
   background: var(--color-control);
   color: var(--color-text-secondary);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 15px;
 }
 
 .preview-jump-value > button {
