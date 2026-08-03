@@ -1318,10 +1318,25 @@ onUnmounted(() => {
 
 <style scoped>
 .waveform-trimmer {
-  display: flex;
-  gap: var(--spacing-sm);
-  padding: 0;
+  display: grid;
   background: transparent;
+  grid-template-columns: 72px minmax(360px, 1fr) 176px 296px;
+  align-items: stretch;
+  gap: var(--spacing-sm);
+  width: 100%;
+  min-width: 930px;
+  height: 100%;
+  min-height: 188px;
+  padding: 0;
+}
+
+.volume-control-section,
+.waveform-section,
+.time-display-section,
+.fade-controls-section {
+  min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
 }
 
 /* Volume Control */
@@ -1329,21 +1344,29 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
-  min-width: 70px;
+  min-width: 0;
+  padding: 0 var(--spacing-sm) 0 0;
+  border-right: 1px solid var(--color-border);
 }
 
 .volume-label {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .db-value {
   font-size: 13px;
   font-weight: 600;
   color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .volume-slider-container {
@@ -1371,56 +1394,19 @@ onUnmounted(() => {
 .volume-slider-vertical::-webkit-slider-runnable-track {
   width: 20px;
   height: 100%;
-  background: linear-gradient(to top,
-    #1a4d2e 0%,      /* Darker green under -36db */
-    #1a4d2e 33%,     /* -36db */
-    #22c55e 33%,     /* Dark green -36 to -18 */
-    #22c55e 50%,     /* -18db */
-    #16a34a 50%,     /* Green -18 to -6 */
-    #16a34a 75%,     /* -6db */
-    #eab308 75%,     /* Yellow -6 to -1 */
-    #eab308 93%,     /* -1db */
-    #dc2626 93%,     /* Red -1 to 0 */
-    #dc2626 97%,     /* 0db */
-    #991b1b 97%,     /* Dark red above 0 */
-    #991b1b 100%
-  );
+  background: var(--color-control);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
-  /* Add horizontal lines for dB steps */
-  background-image: 
-    repeating-linear-gradient(0deg,
-      rgba(0, 0, 0, 0.3) 0px,
-      rgba(0, 0, 0, 0.3) 1px,
-      transparent 1px,
-      transparent 10%
-    );
+  box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.45);
 }
 
 .volume-slider-vertical::-moz-range-track {
   width: 20px;
   height: 100%;
-  background: linear-gradient(to top,
-    #1a4d2e 0%,
-    #1a4d2e 33%,
-    #22c55e 33%,
-    #22c55e 50%,
-    #16a34a 50%,
-    #16a34a 75%,
-    #eab308 75%,
-    #eab308 93%,
-    #dc2626 93%,
-    #dc2626 97%,
-    #991b1b 97%,
-    #991b1b 100%
-  );
+  background: var(--color-control);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
-  background-image: 
-    repeating-linear-gradient(0deg,
-      rgba(0, 0, 0, 0.3) 0px,
-      rgba(0, 0, 0, 0.3) 1px,
-      transparent 1px,
-      transparent 10%
-    );
+  box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.45);
 }
 
 .volume-slider-vertical::-webkit-slider-thumb {
@@ -1428,20 +1414,24 @@ onUnmounted(() => {
   appearance: none;
   width: 24px;
   height: 14px;
-  background: var(--volume-handle-color, var(--color-text-primary));
+  background:
+    linear-gradient(to bottom, transparent 5px, var(--color-accent) 5px 7px, transparent 7px),
+    var(--color-surface-raised);
   cursor: pointer;
   border-radius: 3px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
-  border: 2px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid var(--color-border-strong);
 }
 
 .volume-slider-vertical::-moz-range-thumb {
   width: 24px;
   height: 14px;
-  background: var(--volume-handle-color, var(--color-text-primary));
+  background:
+    linear-gradient(to bottom, transparent 5px, var(--color-accent) 5px 7px, transparent 7px),
+    var(--color-surface-raised);
   cursor: pointer;
   border-radius: 3px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid var(--color-border-strong);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
 }
 
@@ -1450,8 +1440,9 @@ onUnmounted(() => {
   flex-direction: column;
   justify-content: space-between;
   height: 100%;
-  font-size: 9px;
+  font-size: 12px;
   color: var(--color-text-secondary);
+  font-family: var(--font-mono);
 }
 
 /* Fade & Transition Controls Section */
@@ -1460,10 +1451,10 @@ onUnmounted(() => {
   grid-template-columns: repeat(2, 1fr);
   align-items: start;
   gap: var(--spacing-xs);
-  padding: var(--spacing-xs);
-  background: var(--color-surface);
-  border-radius: var(--border-radius-sm);
-  width: 300px;
+  padding: 0 0 0 var(--spacing-sm);
+  border-left: 1px solid var(--color-border);
+  width: auto;
+  min-width: 0;
 }
 
 .fade-column {
@@ -1483,10 +1474,11 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   text-transform: uppercase;
   font-weight: 500;
+  letter-spacing: 0.04em;
   cursor: pointer;
   text-wrap: wrap;
 }
@@ -1502,10 +1494,11 @@ onUnmounted(() => {
 }
 
 .fade-control-group label {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   text-transform: uppercase;
   font-weight: 500;
+  letter-spacing: 0.04em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1515,13 +1508,14 @@ onUnmounted(() => {
 .fade-input {
   width: 100%;
   padding: 4px var(--spacing-xs);
-  background: var(--color-background);
+  background: var(--color-control);
   border: 1px solid var(--color-border);
   border-radius: var(--border-radius-sm);
   color: var(--color-text-primary);
-  font-family: 'Courier New', monospace;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 12px;
   text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .fade-input:focus {
@@ -1531,7 +1525,7 @@ onUnmounted(() => {
 
 .fade-unit {
   display: inline-block;
-  font-size: 9px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   margin-top: 2px;
 }
@@ -1549,8 +1543,10 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-height: 36px;
   padding: var(--spacing-xs) var(--spacing-sm);
   background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: var(--border-radius-sm);
   gap: var(--spacing-md);
 }
@@ -1593,18 +1589,24 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
-  background: var(--color-background);
+  min-height: 28px;
+  padding: 4px var(--spacing-sm);
+  background: var(--color-control);
   border: 1px solid var(--color-border);
   border-radius: var(--border-radius-sm);
   color: var(--color-text-secondary);
   font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast),
+    border-color var(--transition-fast);
   
   &:hover {
-    background: var(--color-surface-hover);
-    border-color: var(--color-accent);
+    background: var(--color-accent-soft);
+    border-color: color-mix(in srgb, var(--color-accent) 52%, var(--color-border));
+    color: var(--color-text-primary);
   }
   
   .material-symbols-rounded {
@@ -1637,7 +1639,7 @@ onUnmounted(() => {
 }
 
 .zoom-level-text {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   min-width: 45px;
   text-align: right;
@@ -1914,10 +1916,10 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
-  width: 150px;
-  padding: var(--spacing-xs);
-  background: var(--color-surface);
-  border-radius: var(--border-radius-sm);
+  width: auto;
+  min-width: 0;
+  padding: 0 0 0 var(--spacing-sm);
+  border-left: 1px solid var(--color-border);
 }
 
 .time-field {
@@ -1927,10 +1929,11 @@ onUnmounted(() => {
 }
 
 .time-field label {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   text-transform: uppercase;
   font-weight: 500;
+  letter-spacing: 0.04em;
 }
 
 .time-input-with-buttons {
@@ -1942,7 +1945,7 @@ onUnmounted(() => {
 .time-decrement,
 .time-increment {
   padding: 2px;
-  background: var(--color-background);
+  background: var(--color-control);
   border: 1px solid var(--color-border);
   border-radius: var(--border-radius-sm);
   color: var(--color-text-secondary);
@@ -1950,9 +1953,13 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 20px;
-  height: 22px;
-  transition: all 0.15s ease;
+  min-width: 24px;
+  height: 26px;
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .time-decrement:hover,
@@ -1975,13 +1982,14 @@ onUnmounted(() => {
 
 .time-input {
   padding: 4px var(--spacing-xs);
-  background: var(--color-background);
+  background: var(--color-control);
   border: 1px solid var(--color-border);
   border-radius: var(--border-radius-sm);
   color: var(--color-text-primary);
-  font-family: 'Courier New', monospace;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 12px;
   text-align: center;
+  font-variant-numeric: tabular-nums;
   flex: 1;
   min-width: 0;
 }

@@ -2,21 +2,21 @@
   <div class="properties-panel">
     <div class="properties-header workspace-panel-header">
       <h3 class="workspace-panel-header__title">{{ selectedItems.size > 1 ? t('properties.multipleItemsSelected', { count: selectedItems.size }) : (t('properties.title') + ': ' + (selectedItem?.displayName || '')) }}</h3>
-      <button class="close-btn" @click="handleClose">
+      <div class="properties-tabs" role="tablist">
+        <button
+          v-for="tab in availableTabs"
+          :key="tab.id"
+          :class="['tab-btn', { active: activeTab === tab.id }]"
+          role="tab"
+          :aria-selected="activeTab === tab.id"
+          @click="activeTab = tab.id"
+        >
+          <span class="material-symbols-rounded">{{ tab.icon }}</span>
+          <span>{{ tab.label }}</span>
+        </button>
+      </div>
+      <button class="close-btn" :title="t('cart.close')" :aria-label="t('cart.close')" @click="handleClose">
         <span class="material-symbols-rounded">close</span>
-      </button>
-    </div>
-    
-    <!-- Tab Navigation -->
-    <div class="properties-tabs">
-      <button 
-        v-for="tab in availableTabs" 
-        :key="tab.id"
-        :class="['tab-btn', { active: activeTab === tab.id }]"
-        @click="activeTab = tab.id"
-      >
-        <span class="material-symbols-rounded">{{ tab.icon }}</span>
-        <span>{{ tab.label }}</span>
       </button>
     </div>
     
@@ -30,6 +30,21 @@
             type="text" 
             @change="handleSave"
           />
+        </div>
+
+        <div v-if="selectedItem.type === 'audio'" class="property-field">
+          <label>{{ t('properties.file') }}</label>
+          <div class="input-with-btn">
+            <input :value="audioItem.mediaFileName" readonly />
+            <button class="icon-btn" :disabled="isReplacingMedia" :title="t('properties.replaceMedia')" @click="handleReplaceMedia">
+              <span class="material-symbols-rounded">swap_horiz</span>
+            </button>
+          </div>
+        </div>
+
+        <div v-if="selectedItem.type === 'audio'" class="property-field">
+          <label>{{ t('properties.duration') }}</label>
+          <input :value="formatTime(audioItem.duration)" readonly />
         </div>
         
         <div class="property-field">
@@ -81,26 +96,8 @@
             </button>
           </div>
         </div>
-      </div>
-      
-      <!-- Media Tab -->
-      <div v-if="activeTab === 'media' && selectedItem.type === 'audio'" class="tab-panel">
-        <div class="property-field">
-          <label>{{ t('properties.file') }}</label>
-          <div class="input-with-btn">
-            <input :value="audioItem.mediaFileName" readonly />
-            <button class="icon-btn" :disabled="isReplacingMedia" :title="t('properties.replaceMedia')" @click="handleReplaceMedia">
-              <span class="material-symbols-rounded">swap_horiz</span>
-            </button>
-          </div>
-        </div>
 
-        <div class="property-field">
-          <label>{{ t('properties.duration') }}</label>
-          <input :value="formatTime(audioItem.duration)" readonly />
-        </div>
-
-        <div class="property-field">
+        <div v-if="selectedItem.type === 'audio'" class="property-field">
           <label>{{ t('properties.waveform') }}</label>
           <button class="icon-btn regen-btn" :disabled="isRegenerating" @click="handleRegenerateWaveform">
             <span class="material-symbols-rounded" :class="{ spinning: isRegenerating }">refresh</span>
@@ -110,7 +107,7 @@
       </div>
       
       <!-- Playback Tab -->
-      <div v-if="activeTab === 'playback' && selectedItem.type === 'audio'" class="tab-panel">
+      <div v-if="activeTab === 'playback' && selectedItem.type === 'audio'" class="tab-panel playback-panel">
         <WaveformTrimmer
           v-if="audioItem && (audioItem.mediaPath || audioItem.mediaServerPath) && audioItem.duration > 0"
           :audio-item="audioItem"
@@ -202,10 +199,12 @@
         </div>
       </div>
 
-      <!-- Ducking Tab -->
-      <div v-if="activeTab === 'ducking' && selectedItem.type === 'audio'" class="tab-panel">
+      <div
+        v-if="activeTab === 'playback' && selectedItem.type === 'audio'"
+        class="tab-panel playback-behavior playback-behavior--ducking"
+      >
         <div class="property-field">
-          <label>{{ t('properties.mode') }}</label>
+          <label>{{ t('properties.ducking') }}</label>
           <select v-model="audioItem.duckingBehavior.mode" @change="handleSave">
             <option value="stop-all">{{ t('duckingBehavior.stopAll') }}</option>
             <option value="no-ducking">{{ t('duckingBehavior.noDucking') }}</option>
@@ -230,42 +229,12 @@
         </div>
       </div>
       
-      <!-- End Behavior Tab -->
-      <div v-if="activeTab === 'endBehavior'" class="tab-panel">
+      <div
+        v-if="(activeTab === 'playback' && selectedItem.type === 'audio') || (activeTab === 'startBehavior' && selectedItem.type === 'group')"
+        class="tab-panel playback-behavior playback-behavior--start"
+      >
         <div class="property-field">
-          <label>{{ t('properties.action') }}</label>
-          <select v-model="endBehaviorAction" @change="handleSave">
-            <option value="nothing">{{ t('endBehavior.nothing') }}</option>
-            <option value="next">{{ t('endBehavior.next') }}</option>
-            <option value="goto-item">{{ t('endBehavior.gotoItem') }}</option>
-            <option value="goto-index">{{ t('endBehavior.gotoIndex') }}</option>
-            <option v-if="selectedItem.type === 'audio'" value="loop">{{ t('endBehavior.loop') }}</option>
-          </select>
-        </div>
-        
-        <div class="property-field" v-if="endBehaviorAction === 'goto-item'">
-          <label>{{ t('properties.targetUuid') }}</label>
-          <input 
-            v-model="endBehaviorTargetUuid" 
-            type="text"
-            @change="handleSave"
-          />
-        </div>
-        
-        <div class="property-field" v-if="endBehaviorAction === 'goto-index'">
-          <label>{{ t('properties.targetIndex') }}</label>
-          <input 
-            :value="formatItemIndex(endBehaviorTargetIndex)"
-            @change="handleEndBehaviorIndexChange"
-            type="text"
-          />
-        </div>
-      </div>
-      
-      <!-- Start Behavior Tab -->
-      <div v-if="activeTab === 'startBehavior'" class="tab-panel">
-        <div class="property-field">
-          <label>{{ t('properties.action') }}</label>
+          <label>{{ activeTab === 'playback' ? t('properties.startBehavior') : t('properties.action') }}</label>
           <select v-model="startBehaviorAction" @change="handleSave">
             <option v-if="selectedItem.type === 'audio'" value="nothing">{{ t('startBehavior.nothing') }}</option>
             <option v-if="selectedItem.type === 'audio'" value="play-next">{{ t('startBehavior.playNext') }}</option>
@@ -279,7 +248,7 @@
         <div class="property-field" v-if="startBehaviorAction === 'play-item'">
           <label>{{ t('properties.targetUuid') }}</label>
           <input 
-            v-model="startBehaviorTargetUuid" 
+            v-model="startBehaviorTargetUuid"
             type="text"
             @change="handleSave"
           />
@@ -290,6 +259,40 @@
           <input 
             :value="formatItemIndex(startBehaviorTargetIndex)"
             @change="handleStartBehaviorIndexChange"
+            type="text"
+          />
+        </div>
+      </div>
+
+      <div
+        v-if="(activeTab === 'playback' && selectedItem.type === 'audio') || (activeTab === 'endBehavior' && selectedItem.type === 'group')"
+        class="tab-panel playback-behavior playback-behavior--end"
+      >
+        <div class="property-field">
+          <label>{{ activeTab === 'playback' ? t('properties.endBehavior') : t('properties.action') }}</label>
+          <select v-model="endBehaviorAction" @change="handleSave">
+            <option value="nothing">{{ t('endBehavior.nothing') }}</option>
+            <option value="next">{{ t('endBehavior.next') }}</option>
+            <option value="goto-item">{{ t('endBehavior.gotoItem') }}</option>
+            <option value="goto-index">{{ t('endBehavior.gotoIndex') }}</option>
+            <option v-if="selectedItem.type === 'audio'" value="loop">{{ t('endBehavior.loop') }}</option>
+          </select>
+        </div>
+        
+        <div class="property-field" v-if="endBehaviorAction === 'goto-item'">
+          <label>{{ t('properties.targetUuid') }}</label>
+          <input 
+            v-model="endBehaviorTargetUuid"
+            type="text"
+            @change="handleSave"
+          />
+        </div>
+        
+        <div class="property-field" v-if="endBehaviorAction === 'goto-index'">
+          <label>{{ t('properties.targetIndex') }}</label>
+          <input 
+            :value="formatItemIndex(endBehaviorTargetIndex)"
+            @change="handleEndBehaviorIndexChange"
             type="text"
           />
         </div>
@@ -418,20 +421,23 @@ interface Tab {
   label: string;
   icon: string;
   audioOnly?: boolean;
+  groupOnly?: boolean;
 }
 
 const allTabs = computed<Tab[]>(() => [
   { id: 'basic', label: t('properties.basicInfo'), icon: 'info' },
-  { id: 'media', label: t('properties.media'), icon: 'audio_file', audioOnly: true },
   { id: 'playback', label: t('properties.playback'), icon: 'play_circle', audioOnly: true },
   { id: 'output', label: t('properties.output'), icon: 'speaker', audioOnly: true },
-  { id: 'ducking', label: t('properties.ducking'), icon: 'volume_down', audioOnly: true },
-  { id: 'startBehavior', label: t('properties.startBehavior'), icon: 'play_arrow' },
-  { id: 'endBehavior', label: t('properties.endBehavior'), icon: 'stop_circle' }
+  { id: 'startBehavior', label: t('properties.startBehavior'), icon: 'play_arrow', groupOnly: true },
+  { id: 'endBehavior', label: t('properties.endBehavior'), icon: 'stop_circle', groupOnly: true }
 ]);
 
 const availableTabs = computed(() => {
-  return allTabs.value.filter(tab => !tab.audioOnly || selectedItem.value?.type === 'audio');
+  return allTabs.value.filter(tab => {
+    if (tab.audioOnly) return selectedItem.value?.type === 'audio';
+    if (tab.groupOnly) return selectedItem.value?.type === 'group';
+    return true;
+  });
 });
 
 // Computed properties for behavior fields
@@ -573,9 +579,9 @@ watch(selectedItem, (newItem, oldItem) => {
       isInitializing.value = true;
       originalSnapshot.value = JSON.parse(JSON.stringify(newItem));
       
-      // Only reset to basic tab if properties panel was previously closed (no oldItem)
-      // If panel was already open, keep the current tab
-      if (!oldItem) {
+      // Keep the current section when possible; fall back when the new item
+      // does not support it (for example, Playback on a group).
+      if (!oldItem || !availableTabs.value.some(tab => tab.id === activeTab.value)) {
         activeTab.value = 'basic';
       }
       
@@ -994,13 +1000,20 @@ const formatTime = (seconds: number): string => {
 .properties-panel {
   height: var(--properties-panel-height);
   border-top: 1px solid var(--color-border);
-  background-color: var(--color-surface);
+  background-color: var(--color-background);
   display: flex;
   flex-direction: column;
+  box-shadow: inset 0 1px color-mix(in srgb, var(--color-text-primary) 4%, transparent);
 }
 
 .properties-header {
-  color: var(--color-text-secondary);
+  justify-content: flex-start;
+  gap: var(--spacing-sm);
+}
+
+.properties-header .workspace-panel-header__title {
+  flex: 0 1 300px;
+  max-width: 30%;
 }
 
 .close-btn {
@@ -1029,26 +1042,34 @@ const formatTime = (seconds: number): string => {
 /* Tab Navigation */
 .properties-tabs {
   display: flex;
+  align-self: stretch;
+  flex: 1 1 auto;
+  min-width: 0;
   gap: 2px;
-  padding: 0 var(--spacing-md);
-  border-bottom: 1px solid var(--color-border);
-  background-color: var(--color-surface);
+  padding: 0;
   overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 .tab-btn {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  min-height: 36px;
-  padding: 6px var(--spacing-md);
+  flex: 0 0 auto;
+  height: 100%;
+  padding: 0 var(--spacing-sm);
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
   cursor: pointer;
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   white-space: nowrap;
   transition:
     color var(--transition-fast),
@@ -1067,6 +1088,7 @@ const formatTime = (seconds: number): string => {
   
   &.active {
     color: var(--color-accent);
+    background-color: var(--color-accent-soft);
     border-bottom-color: var(--color-accent);
   }
 }
@@ -1076,8 +1098,16 @@ const formatTime = (seconds: number): string => {
   flex: 1;
   overflow-x: auto;
   overflow-y: auto;
-  padding: var(--spacing-md);
+  padding: var(--spacing-sm);
   min-height: 0;
+}
+
+.properties-content:has(.playback-panel) {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: minmax(188px, 1fr) auto;
+  gap: var(--spacing-sm);
+  overflow-y: hidden;
 }
 
 .tab-panel {
@@ -1088,9 +1118,73 @@ const formatTime = (seconds: number): string => {
   min-height: min-content;
 }
 
-/* Special handling for playback tab with waveform trimmer */
-.tab-panel:has(.waveform-trimmer) {
+.playback-panel {
   display: block;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  height: auto;
+  min-height: 188px;
+}
+
+.properties-content:has(.playback-panel) .playback-behavior {
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: var(--spacing-xs);
+  padding-top: var(--spacing-xs);
+  border-top: 1px solid var(--color-border);
+}
+
+.properties-content:has(.playback-panel) .playback-behavior--ducking {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.properties-content:has(.playback-panel) .playback-behavior--start {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.properties-content:has(.playback-panel) .playback-behavior--end {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.properties-content:has(.playback-panel) .playback-behavior .property-field {
+  display: grid;
+  grid-template-columns: max-content minmax(120px, 220px);
+  align-items: center;
+  justify-content: start;
+  flex: 0 0 auto;
+  min-width: 0;
+  gap: var(--spacing-sm);
+}
+
+.properties-content:has(.playback-panel) .playback-behavior label {
+  color: var(--color-text-primary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.properties-content:has(.playback-panel) .playback-behavior select,
+.properties-content:has(.playback-panel) .playback-behavior input:not([type='range']) {
+  width: 100%;
+}
+
+.properties-content:has(.playback-panel) .playback-behavior input[type='range'] {
+  height: 18px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.properties-content:has(.playback-panel) .playback-behavior .db-range-labels {
+  grid-column: 2;
+  margin-top: 0;
+  font-size: 12px;
+  line-height: 1;
 }
 
 .property-field {
@@ -1120,6 +1214,7 @@ const formatTime = (seconds: number): string => {
   &:focus {
     outline: none;
     border-color: var(--color-accent);
+    box-shadow: 0 0 0 2px var(--color-focus-ring);
   }
   
   &[readonly] {
@@ -1139,7 +1234,7 @@ const formatTime = (seconds: number): string => {
 
 .icon-btn {
   padding: var(--spacing-sm);
-  background: var(--color-surface-hover);
+  background: var(--color-control);
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
   cursor: pointer;
@@ -1149,9 +1244,9 @@ const formatTime = (seconds: number): string => {
   justify-content: center;
 
   &:hover:not(:disabled) {
-    background-color: var(--color-accent);
-    border-color: var(--color-accent);
-    color: white;
+    background-color: var(--color-accent-soft);
+    border-color: color-mix(in srgb, var(--color-accent) 52%, var(--color-border));
+    color: var(--color-text-primary);
   }
 
   &:disabled {
@@ -1226,7 +1321,7 @@ const formatTime = (seconds: number): string => {
 .db-range-labels {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   margin-top: 4px;
 }
@@ -1261,7 +1356,7 @@ const formatTime = (seconds: number): string => {
 }
 
 .property-help {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   margin-top: 2px;
 }

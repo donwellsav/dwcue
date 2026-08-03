@@ -1409,6 +1409,16 @@ assert.match(
   'the properties panel must reuse the workspace header rail',
 );
 assert.match(
+  propertiesPanel,
+  /class="tab-panel playback-panel"[\s\S]*activeTab === 'playback'[\s\S]{0,160}playback-behavior--ducking[\s\S]*playback-behavior--start[\s\S]*playback-behavior--end[\s\S]*groupOnly:\s*true[\s\S]*availableTabs\.value\.some\(tab => tab\.id === activeTab\.value\)/,
+  'audio playback behaviors must stay consolidated while group-only sections remain reachable',
+);
+assert.doesNotMatch(
+  propertiesPanel,
+  /\{ id: '(?:media|ducking)', label:/,
+  'media and ducking must not return as separate audio-property tabs',
+);
+assert.match(
   playbackControls,
   /\.playback-controls\.show-mode :deep\(\.active-cue-item \.action-btn\)\s*\{[\s\S]{0,100}width:\s*32px;[\s\S]{0,80}height:\s*32px;/,
   'preview and active-cue actions must share one Show Mode control tier',

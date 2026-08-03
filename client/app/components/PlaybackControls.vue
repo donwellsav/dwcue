@@ -773,6 +773,11 @@ const handlePlayNext = () => {
   font-weight: 650;
 }
 
+.preview-set-next-btn:not(.active):hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--state-up-next) 24%, var(--color-control));
+  border-color: color-mix(in srgb, var(--state-up-next) 52%, var(--color-border));
+}
+
 .preview-set-next-btn.active {
   background-color: var(--state-up-next);
   border-color: var(--state-up-next);
