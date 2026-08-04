@@ -1519,8 +1519,8 @@ assert.match(
 );
 assert.match(
   propertiesPanel,
-  /class="tab-panel playback-panel"[\s\S]*activeTab === 'playback'[\s\S]{0,160}playback-behavior--ducking[\s\S]*playback-behavior--start[\s\S]*playback-behavior--end[\s\S]*groupOnly:\s*true[\s\S]*availableTabs\.value\.some\(tab => tab\.id === activeTab\.value\)/,
-  'audio playback behaviors must stay consolidated while group-only sections remain reachable',
+  /class="tab-panel basic-panel"[\s\S]*activeTab === 'basic' && selectedItem\.type === 'audio'[\s\S]{0,160}playback-behavior--ducking[\s\S]*playback-behavior--start[\s\S]*playback-behavior--end[\s\S]*groupOnly:\s*true[\s\S]*availableTabs\.value\.some\(tab => tab\.id === activeTab\.value\)/,
+  'audio cue behaviors must stay on Basic Info while group-only sections remain reachable',
 );
 assert.doesNotMatch(
   propertiesPanel,

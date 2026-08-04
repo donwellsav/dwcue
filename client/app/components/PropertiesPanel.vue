@@ -33,7 +33,7 @@
     
     <div class="properties-content">
       <!-- Basic Info Tab -->
-      <div v-if="activeTab === 'basic'" class="tab-panel">
+      <div v-if="activeTab === 'basic'" class="tab-panel basic-panel">
         <div class="property-field">
           <label>{{ t('properties.displayName') }}</label>
           <input 
@@ -212,7 +212,7 @@
       </div>
 
       <div
-        v-if="activeTab === 'playback' && selectedItem.type === 'audio'"
+        v-if="activeTab === 'basic' && selectedItem.type === 'audio'"
         class="tab-panel playback-behavior playback-behavior--ducking"
       >
         <div class="property-field">
@@ -243,11 +243,11 @@
       </div>
       
       <div
-        v-if="(activeTab === 'playback' && selectedItem.type === 'audio') || (activeTab === 'startBehavior' && selectedItem.type === 'group')"
+        v-if="(activeTab === 'basic' && selectedItem.type === 'audio') || (activeTab === 'startBehavior' && selectedItem.type === 'group')"
         class="tab-panel playback-behavior playback-behavior--start"
       >
         <div class="property-field">
-          <label>{{ activeTab === 'playback' ? t('properties.startBehavior') : t('properties.action') }}</label>
+          <label>{{ selectedItem.type === 'audio' ? t('properties.startBehavior') : t('properties.action') }}</label>
           <select v-model="startBehaviorAction" @change="handleSave">
             <option v-if="selectedItem.type === 'audio'" value="nothing">{{ t('startBehavior.nothing') }}</option>
             <option v-if="selectedItem.type === 'audio'" value="play-next">{{ t('startBehavior.playNext') }}</option>
@@ -278,11 +278,11 @@
       </div>
 
       <div
-        v-if="(activeTab === 'playback' && selectedItem.type === 'audio') || (activeTab === 'endBehavior' && selectedItem.type === 'group')"
+        v-if="(activeTab === 'basic' && selectedItem.type === 'audio') || (activeTab === 'endBehavior' && selectedItem.type === 'group')"
         class="tab-panel playback-behavior playback-behavior--end"
       >
         <div class="property-field">
-          <label>{{ activeTab === 'playback' ? t('properties.endBehavior') : t('properties.action') }}</label>
+          <label>{{ selectedItem.type === 'audio' ? t('properties.endBehavior') : t('properties.action') }}</label>
           <select v-model="endBehaviorAction" @change="handleSave">
             <option value="nothing">{{ t('endBehavior.nothing') }}</option>
             <option value="next">{{ t('endBehavior.next') }}</option>
@@ -1165,10 +1165,17 @@ const formatTime = (seconds: number): string => {
 
 .properties-content:has(.playback-panel) {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: minmax(188px, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(188px, 1fr);
   gap: var(--spacing-sm);
   overflow-y: hidden;
+}
+
+.properties-content:has(.basic-panel) {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--spacing-md);
+  align-content: start;
 }
 
 .tab-panel {
@@ -1189,7 +1196,11 @@ const formatTime = (seconds: number): string => {
   container-type: inline-size;
 }
 
-.properties-content:has(.playback-panel) .playback-behavior {
+.basic-panel {
+  grid-column: 1 / -1;
+}
+
+.properties-content:has(.basic-panel) .playback-behavior {
   display: flex;
   min-width: 0;
   min-height: 0;
@@ -1201,22 +1212,19 @@ const formatTime = (seconds: number): string => {
   border-top: 1px solid var(--color-border);
 }
 
-.properties-content:has(.playback-panel) .playback-behavior--ducking {
+.properties-content:has(.basic-panel) .playback-behavior--ducking {
   grid-column: 1;
-  grid-row: 2;
 }
 
-.properties-content:has(.playback-panel) .playback-behavior--start {
+.properties-content:has(.basic-panel) .playback-behavior--start {
   grid-column: 2;
-  grid-row: 2;
 }
 
-.properties-content:has(.playback-panel) .playback-behavior--end {
+.properties-content:has(.basic-panel) .playback-behavior--end {
   grid-column: 3;
-  grid-row: 2;
 }
 
-.properties-content:has(.playback-panel) .playback-behavior .property-field {
+.properties-content:has(.basic-panel) .playback-behavior .property-field {
   display: grid;
   grid-template-columns: minmax(88px, max-content) minmax(120px, 1fr);
   align-items: center;
@@ -1226,23 +1234,23 @@ const formatTime = (seconds: number): string => {
   gap: var(--spacing-sm);
 }
 
-.properties-content:has(.playback-panel) .playback-behavior label {
+.properties-content:has(.basic-panel) .playback-behavior label {
   color: var(--color-text-primary);
   font-weight: 600;
   white-space: nowrap;
 }
 
-.properties-content:has(.playback-panel) .playback-behavior select {
+.properties-content:has(.basic-panel) .playback-behavior select {
   justify-self: start;
   width: auto;
   max-width: 100%;
 }
 
-.properties-content:has(.playback-panel) .playback-behavior input:not([type='range']) {
+.properties-content:has(.basic-panel) .playback-behavior input:not([type='range']) {
   width: 100%;
 }
 
-.properties-content:has(.playback-panel) .playback-behavior .db-range-labels {
+.properties-content:has(.basic-panel) .playback-behavior .db-range-labels {
   grid-column: 2;
   margin-top: 0;
   font-size: 12px;
