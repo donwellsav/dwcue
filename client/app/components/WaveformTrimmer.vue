@@ -771,8 +771,6 @@ watch(playbackPosition, (position) => {
 const containerWidth = ref(800);
 const canvasWidth = computed(() => containerWidth.value);
 
-const canvasHeight = 120; // Fixed height for waveform (reduced from 200)
-
 // Calculate visible range based on zoom and scroll
 const visibleDuration = computed(() => duration.value / zoomLevel.value);
 const visibleStart = computed(() => {
@@ -1241,10 +1239,10 @@ const drawWaveform = () => {
 
   // Set canvas dimensions with device pixel ratio
   const dpr = window.devicePixelRatio || 1;
+  const canvasHeight = Math.max(120, waveformContainer.value?.clientHeight ?? 120);
   canvas.width = canvasWidth.value * dpr;
   canvas.height = canvasHeight * dpr;
   canvas.style.width = `${canvasWidth.value}px`;
-  //canvas.style.height = `${canvasHeight}px`; - commented out to fix height issue
   ctx.scale(dpr, dpr);
 
   // Clear canvas with background color
@@ -2306,7 +2304,8 @@ onUnmounted(() => {
 .waveform-container {
   position: relative;
   width: 100%;
-  height: 120px;
+  flex: 1;
+  min-height: 120px;
   background: var(--color-background);
   border: 1px solid var(--color-border);
   border-radius: var(--border-radius-sm);

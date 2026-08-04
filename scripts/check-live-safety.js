@@ -513,6 +513,11 @@ assert.match(
   'Properties must remain vertically resizable by pointer and keyboard without replacing editor controls',
 );
 assert.match(
+  waveformTrimmer,
+  /const canvasHeight = Math\.max\(120, waveformContainer\.value\?\.clientHeight \?\? 120\);[\s\S]*new ResizeObserver[\s\S]*\.waveform-container\s*\{[\s\S]{0,160}flex:\s*1;[\s\S]{0,80}min-height:\s*120px;/,
+  'the Properties waveform must use the available panel height and redraw at that measured size',
+);
+assert.match(
   activeCueItem,
   /class="cue-meter"[\s\S]*<StereoMeter[\s\S]*:cue-id="serverCueId"/,
   'active cue cards must retain their server-driven stereo meter',
