@@ -258,16 +258,16 @@
           <input
             type="range"
             class="zoom-slider"
-            min="1"
-            max="20"
-            step="0.5"
-            v-model.number="zoomLevel"
+            min="0"
+            :max="ZOOM_SLIDER_MAX"
+            :step="ZOOM_SLIDER_STEP"
+            v-model.number="zoomSliderPosition"
             :style="{ '--range-progress': `${zoomProgress}%` }"
             :aria-label="`${t('properties.waveform')} zoom`"
-            :aria-valuetext="`${Math.round(zoomLevel * 100)}%`"
+            :aria-valuetext="zoomLabel"
           />
           <span class="material-symbols-rounded">zoom_in</span>
-          <span class="zoom-level-text">{{ Math.round(zoomLevel * 100) }}%</span>
+          <span class="zoom-level-text">{{ zoomLabel }}</span>
         </div>
       </div>
     </div>
@@ -549,8 +549,24 @@ const waveformContainer = ref<HTMLDivElement | null>(null);
 const isDrawing = ref(false);
 
 // Zoom and scroll
+const MAX_ZOOM_LEVEL = 64;
+const ZOOM_SLIDER_MAX = Math.log2(MAX_ZOOM_LEVEL);
+const ZOOM_SLIDER_STEP = 0.25;
 const zoomLevel = ref(1);
 const scrollPosition = ref(0);
+const zoomSliderPosition = computed({
+  get: () => Math.log2(zoomLevel.value),
+  set: (position: number) => {
+    const clamped = Math.max(0, Math.min(ZOOM_SLIDER_MAX, position));
+    zoomLevel.value = 2 ** clamped;
+  },
+});
+const zoomLabel = computed(() => {
+  const value = zoomLevel.value >= 10
+    ? Math.round(zoomLevel.value)
+    : Math.round(zoomLevel.value * 10) / 10;
+  return `${value}\u00d7`;
+});
 
 const auditionPosition = ref(0);
 const auditionJumpSeconds = useState<number>('PlaybackControls.previewJumpSeconds', () => 5);
@@ -638,9 +654,9 @@ const resolveMediaPath = (): string => {
 };
 
 // The playlist's compact 1,000-bucket waveform is enough for rows, but not
-// for a 20x editor zoom. Fetch one display-only high-resolution trace while
+// for a 64x editor zoom. Fetch one display-only high-resolution trace while
 // Properties is open; saved analysis and information colours stay unchanged.
-const DETAIL_WAVEFORM_BUCKETS = 8192;
+const DETAIL_WAVEFORM_BUCKETS = 16384;
 let detailedWaveformRequest = 0;
 const loadDetailedWaveform = async () => {
   const request = ++detailedWaveformRequest;
@@ -775,7 +791,7 @@ const visibleEnd = computed(() => Math.min(duration.value, visibleStart.value + 
 
 // Max scroll value
 const maxScroll = computed(() => (zoomLevel.value > 1 ? 100 : 0));
-const zoomProgress = computed(() => ((zoomLevel.value - 1) / 19) * 100);
+const zoomProgress = computed(() => (zoomSliderPosition.value / ZOOM_SLIDER_MAX) * 100);
 const scrollProgress = computed(() => maxScroll.value === 0 ? 0 : scrollPosition.value);
 
 // Position calculations for trim handles
@@ -1014,8 +1030,7 @@ const handlePlayheadKeyDown = (event: KeyboardEvent) => {
 // Handle wheel zoom
 const handleWheel = (event: WheelEvent) => {
   if (props.multiSelect) return; // no canvas to zoom in multi-selection
-  const delta = event.deltaY > 0 ? -0.5 : 0.5;
-  zoomLevel.value = Math.max(1, Math.min(20, zoomLevel.value + delta));
+  zoomSliderPosition.value += event.deltaY > 0 ? -ZOOM_SLIDER_STEP : ZOOM_SLIDER_STEP;
 };
 
 const handleScrollInput = (event: Event) => {
@@ -1261,8 +1276,8 @@ const drawWaveform = () => {
   // Calculate initial time step
   let timeStep = targetPixelsPerGrid / pixelsPerSecond;
   
-  // Round to nice intervals: 0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600 seconds
-  const niceIntervals = [0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600];
+  // Round to readable intervals, including sub-100 ms detail at high zoom.
+  const niceIntervals = [0.01, 0.02, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600];
   timeStep = niceIntervals.reduce((prev, curr) => 
     Math.abs(curr - timeStep) < Math.abs(prev - timeStep) ? curr : prev
   );
@@ -1277,7 +1292,9 @@ const drawWaveform = () => {
 
     // Draw time label - format depends on scale
     let label: string;
-    if (timeStep < 1) {
+    if (timeStep < 0.1) {
+      label = time.toFixed(2) + 's';
+    } else if (timeStep < 1) {
       // Show with decimal for sub-second intervals
       label = time.toFixed(1) + 's';
     } else if (timeStep < 60) {
