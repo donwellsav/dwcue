@@ -507,7 +507,7 @@ const closeModal = async () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--dialog-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -515,21 +515,22 @@ const closeModal = async () => {
 }
 
 .youtube-import-modal {
-  background: var(--color-background);
-  border-radius: 8px;
+  background: var(--dialog-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--dialog-radius);
   width: 90%;
   max-width: 1200px;
   height: 80vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--dialog-shadow);
 }
 
 .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px;
+  padding: var(--dialog-header-padding);
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -560,7 +561,7 @@ const closeModal = async () => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  padding: 20px;
+  padding: var(--dialog-body-padding);
   gap: 20px;
 }
 

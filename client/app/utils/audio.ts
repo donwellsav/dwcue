@@ -109,9 +109,11 @@ export interface MeasuredLoudness {
 
 export interface BuiltWaveform {
   peaks: number[];
+  rms?: number[];
   length: number;
   duration: number;
   channelPeaks?: number[][];
+  channelRms?: number[][];
   analysis_version?: 1;
   integrated_lufs?: number | null;
   true_peak_dbtp?: number | null;
@@ -133,9 +135,11 @@ export function buildWaveformFromChannels(
   durationSeconds: number,
   analysis?: MeasuredLoudness | null,
 ): BuiltWaveform | null {
-  const lanes = (channels ?? [])
-    .map(c => c?.peak)
-    .filter((p): p is number[] => Array.isArray(p) && p.length > 0);
+  const usableChannels = (channels ?? []).filter(
+    (channel): channel is ServerChannelPeaks & { peak: number[] } =>
+      Array.isArray(channel?.peak) && channel.peak.length > 0,
+  );
+  const lanes = usableChannels.map(channel => channel.peak);
   if (lanes.length === 0) return null;
 
   const buckets = Math.max(...lanes.map(l => l.length));
@@ -147,12 +151,28 @@ export function buildWaveformFromChannels(
     }
   }
 
+  const rmsLanes = usableChannels.map(channel => channel.rms);
+  const hasRms = rmsLanes.every(
+    (lane): lane is number[] => Array.isArray(lane) && lane.length > 0,
+  );
+  const rms = hasRms ? new Array<number>(buckets).fill(0) : undefined;
+  if (rms) {
+    for (const lane of rmsLanes as number[][]) {
+      for (let i = 0; i < lane.length; i++) {
+        const value = lane[i] ?? 0;
+        if (value > rms[i]!) rms[i] = value;
+      }
+    }
+  }
+
   return {
     peaks,
+    ...(rms ? { rms } : {}),
     length: peaks.length,
     duration: durationSeconds,
     // Only worth carrying when there's more than one channel to show.
     ...(lanes.length > 1 ? { channelPeaks: lanes } : {}),
+    ...(hasRms && lanes.length > 1 ? { channelRms: rmsLanes as number[][] } : {}),
     ...(analysis?.analysis_version === 1 ? {
       analysis_version: 1 as const,
       integrated_lufs: Number.isFinite(analysis.integrated_lufs)
@@ -189,10 +209,16 @@ export function parseWaveformFileData(data: any): BuiltWaveform | null {
   if (Array.isArray(data.peaks) && data.peaks.length > 0) {
     return {
       peaks: data.peaks,
+      ...(Array.isArray(data.rms) && data.rms.length > 0
+        ? { rms: data.rms }
+        : {}),
       length: data.peaks.length,
       duration: typeof data.duration === 'number' ? data.duration : 0,
       ...(Array.isArray(data.channelPeaks) && data.channelPeaks.length > 1
         ? { channelPeaks: data.channelPeaks }
+        : {}),
+      ...(Array.isArray(data.channelRms) && data.channelRms.length > 1
+        ? { channelRms: data.channelRms }
         : {}),
       ...(data.analysis_version === 1 ? {
         analysis_version: 1 as const,
@@ -290,6 +316,28 @@ export function applyLoudnessMatch(
 ): boolean {
   const volume = loudnessMatchedVolume(analysis, loudnessTargetLufs, limiterCeilingDb);
   if (volume === null || Math.abs(volume - item.volume) <= 0.000001) return false;
+  item.volume = volume;
+  return true;
+}
+
+/** Set an analysed cue to an absolute true-peak target. */
+export function applyTruePeakNormalization(
+  item: Pick<ProcessableItem, 'volume'>,
+  analysis: MeasuredLoudness | null | undefined,
+  targetDbtp: number,
+): boolean {
+  if (analysis?.analysis_version !== 1 ||
+      !Number.isFinite(analysis.true_peak_dbtp) ||
+      (analysis.true_peak_dbtp as number) <= -120 ||
+      !Number.isFinite(targetDbtp)) {
+    return false;
+  }
+  const gainDb = Math.max(-60, Math.min(
+    10,
+    targetDbtp - (analysis.true_peak_dbtp as number),
+  ));
+  const volume = Math.pow(10, gainDb / 20);
+  if (Math.abs(volume - item.volume) <= 0.000001) return false;
   item.volume = volume;
   return true;
 }

@@ -69,22 +69,21 @@ const handleCancel = () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--dialog-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 10000;
-  backdrop-filter: blur(4px);
 }
 
 .modal-content {
-  background: var(--color-surface);
+  background: var(--dialog-surface);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 24px;
+  border-radius: var(--dialog-radius);
+  padding: var(--dialog-padding);
   min-width: 450px;
   max-width: 600px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--dialog-shadow);
 
   h3 {
     margin: 0 0 12px 0;
@@ -160,12 +159,12 @@ const handleCancel = () => {
   gap: 12px;
 
   button {
-    padding: 8px 20px;
-    border-radius: 6px;
-    font-size: 14px;
-    font-weight: 500;
+    min-height: var(--panel-control-height);
+    padding: 6px 12px;
+    border-radius: var(--control-radius);
+    font-size: 13px;
+    font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s ease;
     border: none;
 
     &:disabled {
@@ -175,18 +174,18 @@ const handleCancel = () => {
   }
 
   .btn-secondary {
-    background: var(--color-background);
+    background: var(--color-surface-raised);
     color: var(--color-text-primary);
     border: 1px solid var(--color-border);
 
     &:hover:not(:disabled) {
-      background: var(--color-surface);
+      background: var(--color-surface-hover);
     }
   }
 
   .btn-primary {
     background: var(--color-accent);
-    color: white;
+    color: var(--color-text-on-accent);
 
     &:hover:not(:disabled) {
       opacity: 0.9;

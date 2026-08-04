@@ -95,7 +95,7 @@ async function onJoinServer() {
 .srm-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--dialog-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -104,14 +104,14 @@ async function onJoinServer() {
   z-index: 9600;
 }
 .srm-dialog {
-  background: var(--color-surface);
+  background: var(--dialog-surface);
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
-  border-radius: 10px;
-  padding: 24px 28px;
+  border-radius: var(--dialog-radius);
+  padding: var(--dialog-padding);
   max-width: 480px;
   width: 90%;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--dialog-shadow);
 }
 .srm-header {
   display: flex;
@@ -146,10 +146,11 @@ async function onJoinServer() {
   gap: 6px;
   flex: 1;
   justify-content: center;
-  padding: 10px 12px;
+  min-height: var(--panel-control-height);
+  padding: 6px 12px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-background);
+  border-radius: var(--control-radius);
+  background: var(--color-surface-raised);
   color: var(--color-text-primary);
   font-size: 13px;
   cursor: pointer;
@@ -160,7 +161,7 @@ async function onJoinServer() {
 }
 .srm-btn.primary {
   background: var(--color-accent, #0f62fe);
-  color: #fff;
+  color: var(--color-text-on-accent);
   border-color: transparent;
 }
 .srm-btn.primary:hover:not(:disabled) { filter: brightness(1.1); }

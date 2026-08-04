@@ -195,10 +195,10 @@ watch(() => props.startPath, p => goTo(p));
     .path-input {
       flex: 1;
       padding: 6px 10px;
-      background: #1d1d1d;
-      border: 1px solid #333;
-      border-radius: 4px;
-      color: #eee;
+      background: var(--color-control);
+      border: 1px solid var(--color-border);
+      border-radius: var(--control-radius);
+      color: var(--color-text-primary);
       font-family: var(--font-mono);
     }
   }
@@ -209,21 +209,22 @@ watch(() => props.startPath, p => goTo(p));
     justify-content: flex-end;
     gap: 12px;
 
-    .sel-count { color: #aaa; font-size: 12px; }
+    .sel-count { color: var(--color-text-secondary); font-size: 12px; }
   }
 
   .btn {
-    background: #2a2a2a;
-    border: 1px solid #3a3a3a;
-    border-radius: 4px;
+    min-height: var(--panel-control-height);
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--control-radius);
     padding: 6px 12px;
-    color: #ddd;
+    color: var(--color-text-primary);
     cursor: pointer;
     display: inline-flex; align-items: center; gap: 4px;
-    &:hover:not(:disabled) { background: #353535; }
+    &:hover:not(:disabled) { background: var(--color-surface-hover); border-color: var(--color-border-strong); }
     &:disabled { opacity: 0.5; cursor: not-allowed; }
-    &.primary  { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
-    &.small    { padding: 2px 8px; font-size: 12px; }
+    &.primary  { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-text-on-accent); }
+    &.small    { min-height: 28px; padding: 2px 8px; font-size: 12px; }
   }
 
   .entries {
@@ -232,9 +233,9 @@ watch(() => props.startPath, p => goTo(p));
     padding: 0;
     max-height: 400px;
     overflow: auto;
-    border: 1px solid #2a2a2a;
-    border-radius: 4px;
-    background: #16161d;
+    border: 1px solid var(--color-border);
+    border-radius: var(--control-radius);
+    background: var(--color-background);
 
     .entry {
       display: grid;
@@ -243,32 +244,29 @@ watch(() => props.startPath, p => goTo(p));
       gap: 8px;
       padding: 6px 10px;
       cursor: pointer;
-      border-bottom: 1px solid #222;
+      border-bottom: 1px solid var(--color-border);
       user-select: none;
       &:last-child { border-bottom: none; }
-      &:hover { background: #202020; }
-      .size   { color: #888; font-size: 11px; font-family: var(--font-mono); }
-      // Names stay white for legibility; drives & home are emphasised.
-      .name   { color: #ffffff; }
+      &:hover { background: var(--color-surface-hover); }
+      .size   { color: var(--color-text-tertiary); font-size: 11px; font-family: var(--font-mono); }
+      .name   { color: var(--color-text-primary); }
       &.drive .name,
       &.home .name { font-weight: 600; }
-      // Drives & folders: white icons. Selectable files: accent icon.
-      .icon { font-size: 18px; text-align: center; color: #ffffff; }
+      .icon { font-size: 18px; text-align: center; color: var(--color-text-primary); }
       &.file .icon { color: var(--color-accent); }
-      // Selected file rows: accent fill, white glyphs for contrast.
       &.selected {
         background: var(--color-accent);
-        .name, .icon, .size { color: #fff; }
+        .name, .icon, .size { color: var(--color-text-on-accent); }
       }
     }
     .empty {
       padding: 12px;
       text-align: center;
-      color: #888;
+      color: var(--color-text-tertiary);
       font-style: italic;
     }
   }
-  .error  { color: #ff7070; padding: 8px; }
-  .status { color: #888;   padding: 8px; }
+  .error  { color: var(--color-danger); padding: 8px; }
+  .status { color: var(--color-text-tertiary); padding: 8px; }
 }
 </style>

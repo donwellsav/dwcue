@@ -42,22 +42,21 @@ const handleOverlayClick = () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--dialog-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 10000;
-  backdrop-filter: blur(4px);
 }
 
 .modal-content {
-  background: var(--color-surface);
+  background: var(--dialog-surface);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 24px;
+  border-radius: var(--dialog-radius);
+  padding: var(--dialog-padding);
   min-width: 400px;
   max-width: 500px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--dialog-shadow);
 
   h3 {
     margin: 0 0 16px 0;

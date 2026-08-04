@@ -124,7 +124,7 @@ onUnmounted(() => {
 .hotkey-config-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--dialog-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -132,14 +132,14 @@ onUnmounted(() => {
 }
 
 .hotkey-config-panel {
-  background: var(--color-surface);
+  background: var(--dialog-surface);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: var(--dialog-radius);
   width: 400px;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--dialog-shadow);
 }
 
 .config-header {

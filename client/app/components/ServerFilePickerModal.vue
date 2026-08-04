@@ -366,53 +366,54 @@ watch(() => props.open, (o) => {
 <style lang="scss" scoped>
 .picker-backdrop {
   position: fixed; inset: 0; z-index: 9100;
-  background: rgba(0,0,0,0.6);
+  background: var(--dialog-backdrop);
   display: flex; align-items: center; justify-content: center;
 }
 .picker {
   width: min(820px, 95vw);
   height: min(640px, 90vh);
-  background: #1a1a1a;
-  border: 1px solid #2a2a2a;
-  border-radius: 8px;
+  background: var(--dialog-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--dialog-radius);
   display: flex; flex-direction: column;
-  color: #ddd;
+  color: var(--color-text-primary);
   font-size: 13px;
   overflow: hidden;
+  box-shadow: var(--dialog-shadow);
 }
 .toolbar {
-  display: flex; gap: 6px; padding: 10px;
-  border-bottom: 1px solid #2a2a2a;
+  display: flex; gap: var(--spacing-sm); padding: var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
   .nav-btn {
-    border-radius: 4px; padding: 4px 10px;
+    min-height: 32px; border-radius: var(--control-radius); padding: 4px 10px;
     cursor: pointer;
   }
   .nav-btn.neutral {
-    background: #2a2a2a; border: 1px solid #3a3a3a;
-    color: #ddd;
-    &:hover:not(:disabled) { background: #353535; }
+    background: var(--color-surface-raised); border: 1px solid var(--color-border);
+    color: var(--color-text-primary);
+    &:hover:not(:disabled) { background: var(--color-surface-hover); border-color: var(--color-border-strong); }
     &:disabled { opacity: 0.4; cursor: not-allowed; }
   }
   .path-input {
     flex: 1;
-    background: #1d1d1d; border: 1px solid #333;
-    border-radius: 4px; padding: 4px 10px;
-    color: #eee; font-family: var(--font-mono); font-size: 12px;
+    background: var(--color-control); border: 1px solid var(--color-border);
+    border-radius: var(--control-radius); padding: 4px 10px;
+    color: var(--color-text-primary); font-family: var(--font-mono); font-size: 12px;
   }
 }
 .breadcrumb {
-  padding: 6px 12px; font-size: 11px; color: #aaa;
-  border-bottom: 1px solid #222; background: #16161d;
+  padding: 6px 12px; font-size: 11px; color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border); background: var(--color-background);
   .crumb {
     background: transparent; border: none; color: var(--color-accent); cursor: pointer;
     padding: 2px 4px; font-size: 11px;
     &:hover { text-decoration: underline; }
   }
-  .crumb-sep { color: #555; padding: 0 2px; }
+  .crumb-sep { color: var(--color-text-tertiary); padding: 0 2px; }
 }
 .listing {
   flex: 1; min-height: 0; overflow: auto;
-  background: #16161d;
+  background: var(--color-background);
   &.loading { opacity: 0.6; }
 }
 .entries {
@@ -421,77 +422,79 @@ watch(() => props.open, (o) => {
 .entry {
   display: grid; grid-template-columns: 28px 1fr auto;
   gap: 8px; align-items: center; padding: 6px 14px;
-  cursor: pointer; border-bottom: 1px solid #1d1d1d;
-  &:hover { background: #1f1f1f; }
+  cursor: pointer; border-bottom: 1px solid var(--color-border);
+  &:hover { background: var(--color-surface-hover); }
   // Drives & folders: white icons. Selectable files: accent icon, white name.
-  .icon { text-align: center; color: #ffffff; }
+  .icon { text-align: center; color: var(--color-text-primary); }
   &.file .icon { color: var(--color-accent); }
-  .name { color: #ffffff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .size { color: #888; font-family: var(--font-mono); font-size: 11px; }
+  .name { color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .size { color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 11px; }
   &.drive .name,
   &.home .name { font-weight: 600; }
   &.selected {
     background: var(--color-accent);
-    .name, .icon, .size { color: #fff; }
+    .name, .icon, .size { color: var(--color-text-on-accent); }
   }
 }
 .empty {
-  padding: 18px; text-align: center; color: #777; font-style: italic;
+  padding: 18px; text-align: center; color: var(--color-text-tertiary); font-style: italic;
 }
 .status {
   padding: 18px; text-align: center;
-  &.error { color: #ff8080; }
+  &.error { color: var(--color-danger); }
 }
 .footer {
-  border-top: 1px solid #2a2a2a;
-  padding: 10px 12px;
+  border-top: 1px solid var(--color-border);
+  padding: var(--dialog-footer-padding);
   display: flex; flex-direction: column; gap: 8px;
-  background: #1a1a1a;
+  background: var(--dialog-surface);
 }
 .filename-row {
   display: flex; align-items: center; gap: 6px;
   .filename {
     flex: 1;
-    background: #1d1d1d; border: 1px solid #333;
-    border-radius: 4px; padding: 4px 10px;
-    color: #eee;
+    background: var(--color-control); border: 1px solid var(--color-border);
+    border-radius: var(--control-radius); padding: 4px 10px;
+    color: var(--color-text-primary);
   }
 }
 .filter-row {
   display: flex; align-items: center; gap: 8px;
   .filter {
-    background: #1d1d1d; border: 1px solid #333; color: #eee;
-    padding: 4px 8px; border-radius: 4px;
+    background: var(--color-control); border: 1px solid var(--color-border); color: var(--color-text-primary);
+    padding: 4px 8px; border-radius: var(--control-radius);
   }
   .spacer { flex: 1; }
   .btn {
-    background: #2a2a2a; border: 1px solid #3a3a3a;
-    border-radius: 4px; padding: 6px 16px; color: #ddd; cursor: pointer;
+    min-height: var(--panel-control-height);
+    background: var(--color-surface-raised); border: 1px solid var(--color-border);
+    border-radius: var(--control-radius); padding: 6px 16px; color: var(--color-text-primary); cursor: pointer;
     display: inline-flex; align-items: center; gap: 4px;
-    &:hover:not(:disabled) { background: #353535; }
+    &:hover:not(:disabled) { background: var(--color-surface-hover); border-color: var(--color-border-strong); }
     &:disabled { opacity: 0.5; cursor: not-allowed; }
-    &.primary { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
-    &.small { padding: 4px 10px; font-size: 12px; }
+    &.primary { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-text-on-accent); }
+    &.small { min-height: 28px; padding: 4px 10px; font-size: 12px; }
   }
 }
 .newfolder-row {
   display: flex; align-items: center; gap: 6px;
   padding: 6px 0;
-  border-top: 1px solid #2a2a2a;
+  border-top: 1px solid var(--color-border);
   .newfolder-icon { color: var(--color-accent); font-size: 18px; flex-shrink: 0; }
   .newfolder-name {
     flex: 1;
-    background: #1d1d1d; border: 1px solid #3a3a3a;
-    border-radius: 4px; padding: 4px 10px;
-    color: #eee; font-size: 13px;
+    background: var(--color-control); border: 1px solid var(--color-border);
+    border-radius: var(--control-radius); padding: 4px 10px;
+    color: var(--color-text-primary); font-size: 13px;
     &:focus { outline: none; border-color: var(--color-accent); }
   }
   .btn {
-    background: #2a2a2a; border: 1px solid #3a3a3a;
-    border-radius: 4px; padding: 4px 10px; font-size: 12px; color: #ddd; cursor: pointer;
-    &:hover:not(:disabled) { background: #353535; }
+    min-height: 28px;
+    background: var(--color-surface-raised); border: 1px solid var(--color-border);
+    border-radius: var(--control-radius); padding: 4px 10px; font-size: 12px; color: var(--color-text-primary); cursor: pointer;
+    &:hover:not(:disabled) { background: var(--color-surface-hover); border-color: var(--color-border-strong); }
     &:disabled { opacity: 0.5; cursor: not-allowed; }
-    &.primary { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
+    &.primary { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-text-on-accent); }
   }
 }
 </style>

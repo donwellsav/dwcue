@@ -1,5 +1,16 @@
 <template>
-  <div class="properties-panel">
+  <div class="properties-panel" :style="{ height: `${panelHeight}px` }">
+    <div
+      class="properties-resize-handle"
+      role="separator"
+      aria-orientation="horizontal"
+      :aria-label="t('properties.title')"
+      aria-valuemin="240"
+      :aria-valuenow="panelHeight"
+      tabindex="0"
+      @pointerdown="startPanelResize"
+      @keydown="handlePanelResizeKey"
+    ></div>
     <div class="properties-header workspace-panel-header">
       <h3 class="workspace-panel-header__title">{{ selectedItems.size > 1 ? t('properties.multipleItemsSelected', { count: selectedItems.size }) : (t('properties.title') + ': ' + (selectedItem?.displayName || '')) }}</h3>
       <div class="properties-tabs" role="tablist">
@@ -112,6 +123,7 @@
           v-if="audioItem && (audioItem.mediaPath || audioItem.mediaServerPath) && audioItem.duration > 0"
           :audio-item="audioItem"
           :multi-select="selectedItems.size > 1"
+          :preview-mode="uiMode === 'playback'"
           @update:volume="(v) => { beginItemBatch(); audioItem.volume = v; }"
           @update:in-point="(v) => { beginItemBatch(); audioItem.inPoint = v; }"
           @update:out-point="(v) => { beginItemBatch(); audioItem.outPoint = v; }"
@@ -217,6 +229,7 @@
           <input 
             v-model.number="duckLevelDB" 
             type="range" 
+            class="app-range"
             min="-60" 
             max="0" 
             step="0.5"
@@ -304,7 +317,13 @@
 <script setup lang="ts">
 import type { AudioItem, GroupItem } from '~/types/project';
 import { PRESET_COLORS } from '~/types/project';
-import { applyLoudnessMatch, buildWaveformFromChannels, type MeasuredLoudness } from '~/utils/audio';
+import {
+  applyLoudnessMatch,
+  applyTruePeakNormalization,
+  buildWaveformFromChannels,
+  trimSilence,
+  type MeasuredLoudness,
+} from '~/utils/audio';
 import { useOutputTarget } from '~/composables/useOutputTarget';
 
 const {
@@ -320,7 +339,42 @@ const {
   parseItemIndexInput,
 } = useProject();
 const { t } = useLocalization();
+const { uiMode } = useUiMode();
 const { levels: outputTargetLevels } = useOutputTarget();
+const panelHeight = useState<number>('PropertiesPanel.height', () => 320);
+
+const clampPanelHeight = (height: number) => Math.max(
+  240,
+  Math.min(import.meta.client ? window.innerHeight - 180 : 640, height),
+);
+
+const startPanelResize = (event: PointerEvent) => {
+  if (event.button !== 0 || !event.isPrimary) return;
+  const handle = event.currentTarget as HTMLElement;
+  const startY = event.clientY;
+  const startHeight = panelHeight.value;
+  event.preventDefault();
+  handle.setPointerCapture(event.pointerId);
+  const move = (moveEvent: PointerEvent) => {
+    panelHeight.value = clampPanelHeight(startHeight + startY - moveEvent.clientY);
+  };
+  const finish = () => {
+    handle.removeEventListener('pointermove', move);
+    handle.removeEventListener('pointerup', finish);
+    handle.removeEventListener('pointercancel', finish);
+  };
+  handle.addEventListener('pointermove', move);
+  handle.addEventListener('pointerup', finish);
+  handle.addEventListener('pointercancel', finish);
+};
+
+const handlePanelResizeKey = (event: KeyboardEvent) => {
+  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+  event.preventDefault();
+  panelHeight.value = clampPanelHeight(
+    panelHeight.value + (event.key === 'ArrowUp' ? 16 : -16),
+  );
+};
 
 const audioItem = computed(() => selectedItem.value as AudioItem);
 const hasSelectedAudioItems = computed(() =>
@@ -414,7 +468,9 @@ const isCartItem = computed(() => {
 });
 
 // Tab management
-const activeTab = ref('basic');
+const activeTab = ref(uiMode.value === 'playback' && selectedItem.value?.type === 'audio'
+  ? 'playback'
+  : 'basic');
 
 interface Tab {
   id: string;
@@ -691,7 +747,10 @@ const handleCycleSelectedColors = async () => {
 };
 
 // Handle normalize: normalize ALL selected audio items individually
-const handleNormalize = async () => {
+const handleNormalize = async (
+  mode: 'loudness' | 'truePeak',
+  normalizeTarget: number,
+) => {
   let items = getSelectedItems();
   
   // Fallback to selectedItem if no items in selectedItems set (shouldn't happen now, but safe)
@@ -699,8 +758,12 @@ const handleNormalize = async () => {
     items = [selectedItem.value];
   }
   
-  const targetLoudness = outputTargetLevels.value.loudnessTargetLufs;
   const limiterCeilingDb = outputTargetLevels.value.limiterCeilingDb;
+  const effectiveTarget = Math.max(-60, Math.min(
+    mode === 'truePeak' ? limiterCeilingDb : 0,
+    normalizeTarget,
+  ));
+  if (!Number.isFinite(effectiveTarget)) return;
   
   let normalizedCount = 0;
   
@@ -742,24 +805,29 @@ const handleNormalize = async () => {
       }
     }
 
-    if (applyLoudnessMatch(
-      audioItem,
-      analysis,
-      targetLoudness,
-      limiterCeilingDb,
-    )) {
+    const changed = mode === 'truePeak'
+      ? applyTruePeakNormalization(audioItem, analysis, effectiveTarget)
+      : applyLoudnessMatch(
+          audioItem,
+          analysis,
+          effectiveTarget,
+          limiterCeilingDb,
+        );
+    if (changed) {
       normalizedCount++;
     }
   }
   
   if (normalizedCount > 0) {
     await saveProject();
-    console.log(`Normalized ${normalizedCount} item(s)`);
+    console.log(`Normalized ${normalizedCount} item(s) to ${
+      effectiveTarget.toFixed(1)
+    } ${mode === 'truePeak' ? 'dBTP' : 'LUFS'}`);
   }
 };
 
 // Handle trim silence: trim ALL selected audio items individually
-const handleTrimSilence = () => {
+const handleTrimSilence = async () => {
   let items = getSelectedItems();
   
   // Fallback to selectedItem if no items in selectedItems set (shouldn't happen now, but safe)
@@ -767,62 +835,14 @@ const handleTrimSilence = () => {
     items = [selectedItem.value];
   }
   
-  const padding = 0.1; // Padding in seconds
-  
   let trimmedCount = 0;
-  
   items.forEach(item => {
-    if (item.type !== 'audio') return;
-    
-    const audioItem = item as AudioItem;
-    
-    // Skip if no waveform data
-    if (!audioItem.waveform || !audioItem.waveform.peaks || audioItem.waveform.peaks.length === 0) {
-      console.warn(`Skipping ${audioItem.displayName}: no waveform data`);
-      return;
-    }
-    
-    const peaks = audioItem.waveform.peaks;
-    const duration = audioItem.duration;
-    
-    // Find the maximum peak value to calculate relative threshold
-    const maxPeak = Math.max(...peaks);
-    
-    // Use 5% of max peak as threshold (more sensitive to actual silence)
-    const threshold = maxPeak * 0.05;
-    
-    // Find first non-silent sample from start
-    let startIndex = 0;
-    for (let i = 0; i < peaks.length; i++) {
-      if (peaks[i] > threshold) {
-        startIndex = i;
-        break;
-      }
-    }
-    
-    // Find first non-silent sample from end
-    let endIndex = peaks.length - 1;
-    for (let i = peaks.length - 1; i >= 0; i--) {
-      if (peaks[i] > threshold) {
-        endIndex = i;
-        break;
-      }
-    }
-    
-    // Convert indices to time
-    const newInPoint = (startIndex / peaks.length) * duration;
-    const newOutPoint = ((endIndex + 1) / peaks.length) * duration;
-    
-    // Apply with padding
-    audioItem.inPoint = Math.max(0, newInPoint - padding);
-    audioItem.outPoint = Math.min(duration, newOutPoint + padding);
-    
-    trimmedCount++;
-    console.log(`Trimmed ${audioItem.displayName}: maxPeak=${maxPeak.toFixed(3)}, threshold=${threshold.toFixed(3)}, ${newInPoint.toFixed(2)}s - ${newOutPoint.toFixed(2)}s`);
+    if (item.type === 'audio' && trimSilence(item as AudioItem)) trimmedCount++;
   });
-  
+
   if (trimmedCount > 0) {
-    saveProject();
+    if (selectedItem.value) originalSnapshot.value = structuredClone(selectedItem.value);
+    await saveProject();
     console.log(`Trimmed ${trimmedCount} item(s)`);
   }
 };
@@ -998,7 +1018,8 @@ const formatTime = (seconds: number): string => {
 
 <style scoped>
 .properties-panel {
-  height: var(--properties-panel-height);
+  position: relative;
+  flex: 0 0 auto;
   border-top: 1px solid var(--color-border);
   background-color: var(--color-background);
   display: flex;
@@ -1006,14 +1027,49 @@ const formatTime = (seconds: number): string => {
   box-shadow: inset 0 1px color-mix(in srgb, var(--color-text-primary) 4%, transparent);
 }
 
+.properties-resize-handle {
+  position: absolute;
+  z-index: 2;
+  top: -4px;
+  right: 0;
+  left: 0;
+  height: 8px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.properties-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 45%;
+  left: 45%;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--color-border-strong);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.properties-resize-handle:hover::after,
+.properties-resize-handle:focus-visible::after {
+  opacity: 1;
+}
+
+.properties-resize-handle:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
+}
+
 .properties-header {
-  justify-content: flex-start;
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto var(--panel-control-height);
+  justify-content: stretch;
   gap: var(--spacing-sm);
 }
 
 .properties-header .workspace-panel-header__title {
-  flex: 0 1 300px;
-  max-width: 30%;
+  max-width: none;
 }
 
 .close-btn {
@@ -1032,6 +1088,11 @@ const formatTime = (seconds: number): string => {
   &:hover {
     background-color: var(--color-surface-hover);
   }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 1px;
+  }
   
   .material-symbols-rounded {
     font-size: 20px;
@@ -1043,7 +1104,7 @@ const formatTime = (seconds: number): string => {
 .properties-tabs {
   display: flex;
   align-self: stretch;
-  flex: 1 1 auto;
+  justify-self: start;
   min-width: 0;
   gap: 2px;
   padding: 0;
@@ -1096,9 +1157,9 @@ const formatTime = (seconds: number): string => {
 /* Tab Content */
 .properties-content {
   flex: 1;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: auto;
-  padding: var(--spacing-sm);
+  padding: var(--spacing-md);
   min-height: 0;
 }
 
@@ -1111,11 +1172,12 @@ const formatTime = (seconds: number): string => {
 }
 
 .tab-panel {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--spacing-md);
   align-content: flex-start;
   min-height: min-content;
+  width: 100%;
 }
 
 .playback-panel {
@@ -1124,9 +1186,11 @@ const formatTime = (seconds: number): string => {
   grid-row: 1;
   height: auto;
   min-height: 188px;
+  container-type: inline-size;
 }
 
 .properties-content:has(.playback-panel) .playback-behavior {
+  display: flex;
   min-width: 0;
   min-height: 0;
   flex-direction: column;
@@ -1154,9 +1218,9 @@ const formatTime = (seconds: number): string => {
 
 .properties-content:has(.playback-panel) .playback-behavior .property-field {
   display: grid;
-  grid-template-columns: max-content minmax(120px, 220px);
+  grid-template-columns: minmax(88px, max-content) minmax(120px, 1fr);
   align-items: center;
-  justify-content: start;
+  justify-content: stretch;
   flex: 0 0 auto;
   min-width: 0;
   gap: var(--spacing-sm);
@@ -1168,16 +1232,14 @@ const formatTime = (seconds: number): string => {
   white-space: nowrap;
 }
 
-.properties-content:has(.playback-panel) .playback-behavior select,
-.properties-content:has(.playback-panel) .playback-behavior input:not([type='range']) {
-  width: 100%;
+.properties-content:has(.playback-panel) .playback-behavior select {
+  justify-self: start;
+  width: auto;
+  max-width: 100%;
 }
 
-.properties-content:has(.playback-panel) .playback-behavior input[type='range'] {
-  height: 18px;
-  padding: 0;
-  border: 0;
-  background: transparent;
+.properties-content:has(.playback-panel) .playback-behavior input:not([type='range']) {
+  width: 100%;
 }
 
 .properties-content:has(.playback-panel) .playback-behavior .db-range-labels {
@@ -1191,14 +1253,15 @@ const formatTime = (seconds: number): string => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
-  min-width: 220px;
-  flex: 0 0 auto;
+  min-width: 0;
+  width: 100%;
   color: var(--color-text-secondary);
 }
 
 .property-field label {
-  font-size: 13px;
-  font-weight: 500;
+  color: var(--color-text-primary);
+  font-size: var(--type-metadata-size);
+  font-weight: 600;
 }
 
 .property-field input,
@@ -1209,7 +1272,8 @@ const formatTime = (seconds: number): string => {
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
   color: var(--color-text);
-  font-size: 13px;
+  min-height: var(--panel-control-height);
+  font-size: var(--type-metadata-size);
   
   &:focus {
     outline: none;
@@ -1218,7 +1282,7 @@ const formatTime = (seconds: number): string => {
   }
   
   &[readonly] {
-    opacity: 0.6;
+    color: var(--color-text-secondary);
     cursor: default;
   }
 }
@@ -1233,7 +1297,10 @@ const formatTime = (seconds: number): string => {
 }
 
 .icon-btn {
-  padding: var(--spacing-sm);
+  width: var(--panel-control-height);
+  min-width: var(--panel-control-height);
+  height: var(--panel-control-height);
+  padding: 0;
   background: var(--color-control);
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
@@ -1261,8 +1328,10 @@ const formatTime = (seconds: number): string => {
 }
 
 .regen-btn {
+  width: max-content;
+  min-width: 0;
   gap: var(--spacing-xs);
-  font-size: 13px;
+  font-size: var(--type-metadata-size);
   padding: var(--spacing-sm) var(--spacing-md);
 
   .spinning {
@@ -1272,18 +1341,20 @@ const formatTime = (seconds: number): string => {
 
 .color-picker {
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
+  grid-template-columns: repeat(8, 28px);
   gap: var(--spacing-xs);
 }
 
 .color-btn {
+  width: 28px;
+  height: 28px;
   aspect-ratio: 1;
   border-radius: var(--border-radius-sm);
   border: 2px solid transparent;
-  transition: all var(--transition-fast);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
   
   &:hover {
-    transform: scale(1.1);
+    border-color: var(--color-border-strong);
   }
   
   &.active {
@@ -1306,8 +1377,9 @@ const formatTime = (seconds: number): string => {
 
 .copy-btn,
 .action-btn-small {
-  padding: var(--spacing-sm);
-  background-color: var(--color-background);
+  min-height: var(--panel-control-height);
+  padding: 0 var(--spacing-md);
+  background-color: var(--color-control);
   border: 1px solid var(--color-border);
   border-radius: var(--border-radius-sm);
   white-space: nowrap;
@@ -1343,7 +1415,7 @@ const formatTime = (seconds: number): string => {
 }
 
 .field-disabled {
-  opacity: 0.45;
+  opacity: 0.62;
   pointer-events: none;
 }
 
@@ -1362,7 +1434,7 @@ const formatTime = (seconds: number): string => {
 }
 
 .property-help--error {
-  color: #e53e3e;
+  color: var(--color-danger);
 }
 
 .loading-message {

@@ -69,21 +69,20 @@ const truncatedName = computed(() => {
 <style lang="scss">
 .ds-backdrop {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,0.6);
+  background: var(--dialog-backdrop);
   display: flex; align-items: center; justify-content: center;
   z-index: 10000;
-  backdrop-filter: blur(4px);
 }
 .ds-modal {
   box-sizing: border-box;
-  background: var(--color-background, #16161d);
-  border: 1px solid var(--color-border, #525252);
-  color: var(--color-text-primary, #f4f4f4);
-  border-radius: var(--border-radius-lg, 10px);
-  padding: 24px;
+  background: var(--dialog-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  border-radius: var(--dialog-radius);
+  padding: var(--dialog-padding);
   width: min(440px, calc(100vw - 32px));
   max-width: 560px;
-  box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+  box-shadow: var(--dialog-shadow);
   display: flex; flex-direction: column; gap: 16px;
 }
 .ds-header h3 {
@@ -105,31 +104,31 @@ const truncatedName = computed(() => {
   gap: 12px;
 }
 .ds-btn {
-  padding: 10px 16px;
-  border-radius: 6px;
-  border: 1px solid var(--color-border, #525252);
-  background: var(--color-background, #16161d);
-  color: var(--color-text-primary, #f4f4f4);
-  font-size: 14px;
-  font-weight: 500;
+  min-height: var(--panel-control-height);
+  padding: 6px 12px;
+  border-radius: var(--control-radius);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center; gap: 8px;
-  transition: all 0.15s ease;
-
   &:hover {
-    background: var(--color-surface-hover, var(--color-surface, #30303a));
+    background: var(--color-surface-hover);
+    border-color: var(--color-border-strong);
   }
 
   &.danger {
     border-color: var(--color-danger, #da1e28);
     color: var(--color-danger, #fa4d56);
-    &:hover { background: var(--color-danger, #da1e28); color: white; }
+    &:hover { background: var(--color-danger); color: var(--color-text-on-accent); }
   }
   &.ghost {
     background: transparent;
     border-color: transparent;
-    color: var(--color-text-secondary, #c6c6c6);
-    &:hover { color: var(--color-text-primary, #f4f4f4); }
+    color: var(--color-text-secondary);
+    &:hover { color: var(--color-text-primary); }
   }
 }
 </style>

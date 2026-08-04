@@ -164,23 +164,22 @@ onMounted(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.7);
+  background-color: var(--dialog-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 10000;
-  backdrop-filter: blur(4px);
 }
 
 .modal-content {
-  background-color: var(--color-surface);
+  background-color: var(--dialog-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-lg);
-  padding: var(--spacing-xxl);
+  border-radius: var(--dialog-radius);
+  padding: var(--dialog-padding);
   max-width: 500px;
   width: 90%;
   position: relative;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--dialog-shadow);
 }
 
 .modal-close {

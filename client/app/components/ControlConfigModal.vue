@@ -493,7 +493,7 @@ onUnmounted(() => {
 .control-config-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--dialog-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -501,15 +501,15 @@ onUnmounted(() => {
 }
 
 .control-config-panel {
-  background: var(--color-background);
+  background: var(--dialog-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-lg);
+  border-radius: var(--dialog-radius);
   width: min(var(--modal-width), 92vw);
   max-height: var(--modal-max-height);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--dialog-shadow);
   position: relative;
 }
 
@@ -517,7 +517,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  padding: var(--dialog-header-padding);
   border-bottom: 1px solid var(--color-border);
 }
 

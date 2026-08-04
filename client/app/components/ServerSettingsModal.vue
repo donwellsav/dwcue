@@ -184,7 +184,7 @@ function close() { emit('close'); }
 <style lang="scss" scoped>
 .modal-backdrop {
   position: fixed; inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--dialog-backdrop);
   display: flex; align-items: center; justify-content: center;
   // Above ConnectionLostModal (9500) and SessionRecoveryModal (9600):
   // pointing the client at a different server is one of the ways out of a
@@ -193,68 +193,76 @@ function close() { emit('close'); }
 }
 .modal {
   width: min(520px, 90vw);
-  background: #1a1a1a;
-  border: 1px solid #2a2a2a;
-  border-radius: 8px;
-  padding: 20px;
-  color: #ddd;
+  background: var(--dialog-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--dialog-radius);
+  padding: var(--dialog-padding);
+  color: var(--color-text-primary);
+  box-shadow: var(--dialog-shadow);
   display: flex; flex-direction: column; gap: 12px;
 
-  header { display: flex; justify-content: space-between; align-items: center; }
+  header { display: flex; justify-content: space-between; align-items: center; min-height: 32px; }
   h2 { margin: 0; font-size: 18px; }
-  .x { background: transparent; border: none; color: #aaa; cursor: pointer; font-size: 18px; }
-  .status { font-family: var(--font-mono); font-size: 12px;
-    &.ok  { color: #6ad48d; }
-    &.bad { color: #ff8080; }
-    .err { color: #ff8080; }
+  .x {
+    display: grid; place-items: center;
+    width: 32px; height: 32px; padding: 0;
+    background: transparent; border: none; border-radius: var(--control-radius);
+    color: var(--color-text-secondary); cursor: pointer; font-size: 18px;
+    &:hover { background: var(--color-surface-hover); color: var(--color-text-primary); }
   }
-  label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #aaa; }
+  .status { font-family: var(--font-mono); font-size: 12px;
+    &.ok  { color: var(--color-success); }
+    &.bad { color: var(--color-danger); }
+    .err { color: var(--color-danger); }
+  }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--color-text-secondary); }
   input {
-    background: #1d1d1d; border: 1px solid #333;
-    color: #eee; padding: 6px 10px; border-radius: 4px;
+    background: var(--color-control); border: 1px solid var(--color-border);
+    color: var(--color-text-primary); padding: 6px 10px; border-radius: var(--control-radius);
     font-family: var(--font-mono);
   }
   .mode-group {
     display: grid; gap: 6px;
-    border: 1px solid #2a2a2a; border-radius: 6px;
-    padding: 6px; background: #16161d;
+    border: 1px solid var(--color-border); border-radius: var(--control-radius);
+    padding: 6px; background: var(--color-background);
   }
   .mode-option {
     display: flex; align-items: flex-start; gap: 10px;
-    padding: 8px; border-radius: 4px; cursor: pointer;
-    color: #ddd; font-size: 13px;
-    &:hover { background: #1d1d1d; }
+    padding: 8px; border-radius: var(--control-radius); cursor: pointer;
+    color: var(--color-text-primary); font-size: 13px;
+    &:hover { background: var(--color-surface-hover); }
     input[type="radio"] { margin-top: 4px; }
     div { display: flex; flex-direction: column; gap: 2px; }
     strong { font-size: 13px; }
-    small { font-size: 11px; color: #888; }
+    small { font-size: 11px; color: var(--color-text-tertiary); }
   }
   .server-pid {
-    font-size: 11px; color: #aaa; margin: 0;
-    .warn { color: #ffd58a; }
-    .hint { color: #9ec5ff; }
+    font-size: 11px; color: var(--color-text-secondary); margin: 0;
+    .warn { color: var(--color-warning); }
+    .hint { color: var(--color-accent); }
   }
   .row { display: flex; gap: 8px; flex-wrap: wrap; }
   .btn {
-    background: #2a2a2a; border: 1px solid #3a3a3a;
-    border-radius: 4px; padding: 6px 12px; color: #ddd; cursor: pointer;
-    &:hover:not(:disabled) { background: #353535; }
-    &.primary { background: #2a5e9a; border-color: #2a5e9a; }
-    &.small   { padding: 2px 8px; font-size: 12px; }
+    min-height: var(--panel-control-height);
+    background: var(--color-surface-raised); border: 1px solid var(--color-border);
+    border-radius: var(--control-radius); padding: 6px 12px; color: var(--color-text-primary); cursor: pointer;
+    &:hover:not(:disabled) { background: var(--color-surface-hover); border-color: var(--color-border-strong); }
+    &.primary { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-text-on-accent); }
+    &.small   { min-height: 28px; padding: 2px 8px; font-size: 12px; }
   }
-  h3 { margin: 8px 0 4px; font-size: 13px; color: #9ec5ff; }
+  h3 { margin: 8px 0 4px; font-size: 13px; color: var(--color-text-primary); }
   .devices {
     list-style: none; padding: 0; margin: 0; max-height: 200px; overflow: auto;
-    border: 1px solid #2a2a2a; border-radius: 4px; background: #16161d;
+    border: 1px solid var(--color-border); border-radius: var(--control-radius); background: var(--color-background);
     li {
       display: grid; grid-template-columns: 1fr auto auto;
       gap: 8px; align-items: center; padding: 6px 10px;
-      border-bottom: 1px solid #222;
+      border-bottom: 1px solid var(--color-border);
       &:last-child { border-bottom: none; }
-      small { color: #888; font-size: 11px; }
-      .default { color: #ffd58a; }
+      small { color: var(--color-text-tertiary); font-size: 11px; }
+      .default { color: var(--color-warning); }
     }
-    .empty { color: #888; padding: 12px; text-align: center; font-style: italic; }
+    .empty { color: var(--color-text-tertiary); padding: 12px; text-align: center; font-style: italic; }
   }
 }
 </style>

@@ -1628,6 +1628,7 @@ export const useProject = () => {
                         processingChanged = applyTruePeakCeiling(
                           target as AudioItem,
                           built,
+                          limiterCeilingDb,
                         ) || processingChanged;
                       }
                     } else if (matchLoudness || reduceTruePeaks) {
@@ -1658,7 +1659,11 @@ export const useProject = () => {
                             );
                           }
                           if (reduceTruePeaks) {
-                            changed = applyTruePeakCeiling(current, analysis) || changed;
+                            changed = applyTruePeakCeiling(
+                              current,
+                              analysis,
+                              limiterCeilingDb,
+                            ) || changed;
                           }
                           if (changed) {
                             void _syncItemsDiffFn();
@@ -1676,7 +1681,7 @@ export const useProject = () => {
                           }
                           // ponytail: whole-file fallback may over-attenuate a
                           // trimmed cue; retry the range if import retry UI lands.
-                          if (applyTruePeakCeiling(current, built)) {
+                          if (applyTruePeakCeiling(current, built, limiterCeilingDb)) {
                             void _syncItemsDiffFn();
                             void saveProject();
                           }

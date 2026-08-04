@@ -53,10 +53,14 @@ export interface WaveformData {
   // combined trace; loudness and true peak come only from decoded-sample
   // server analysis.
   peaks: number[];
+  // Combined RMS trace. This is the waveform's readable energy body; peaks
+  // remain the transient/ceiling outline. Optional for legacy waveform files.
+  rms?: number[];
   // Per-channel traces, in source channel order (stereo = [L, R]). Present for
   // waveforms produced by the server; absent for legacy single-array data.
   // Renderers with room for it (the trimmer) draw one lane per channel.
   channelPeaks?: number[][];
+  channelRms?: number[][];
   // BS.1770 analysis measured from decoded samples by the server. Legacy
   // waveform files have none of these fields and are never loudness-matched.
   analysis_version?: 1;

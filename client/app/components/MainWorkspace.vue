@@ -105,12 +105,13 @@
               class="limiter-toggle"
               :class="{ 'is-enabled': limiterEnabled }"
               :aria-pressed="!limiterEnabled"
-              :aria-label="t('outputConsole.limiterBypass')"
+              :aria-label="`${limiterToggleLabel}. ${limiterGainReductionLabel}`"
               :title="limiterToggleLabel"
               :disabled="limiterChangePending || !currentProject"
               @click="toggleLimiter"
             >
-              {{ t('outputConsole.limiter') }}
+              <span class="limiter-toggle__label">{{ t('outputConsole.limiter') }}</span>
+              <span class="limiter-toggle__gr">{{ limiterGainReductionLabel }}</span>
             </button>
             <div class="limiter-ceiling-control">
               <div class="limiter-ceiling-value">
@@ -180,22 +181,6 @@
                   @reset="resetOutputGain(pair.leftIndex, pair.rightIndex)"
                 />
               </template>
-              <template v-if="pair.key === 'main'" #footer>
-                <select
-                  class="output-target-control"
-                  :value="outputTarget"
-                  :aria-label="t('settings.outputTarget')"
-                  :title="outputTargetLabel"
-                  :disabled="limiterChangePending || !currentProject"
-                  @change="onLimiterOutputTargetChange"
-                >
-                  <option
-                    v-for="option in outputTargetOptions"
-                    :key="option.value"
-                    :value="option.value"
-                  >{{ t(option.label) }}</option>
-                </select>
-              </template>
             </StereoMeter>
           </section>
         </div>
@@ -204,8 +189,9 @@
 
     <div id="preview-lower-panel" class="preview-lower-panel" aria-live="polite"></div>
 
-    <!-- Properties panel is an edit affordance — never surfaced in Show Mode. -->
-    <PropertiesPanel v-if="uiMode !== 'playback' && propertiesPanelOpen && selectedItem" />
+    <PropertiesPanel
+      v-if="propertiesPanelOpen && selectedItem && (uiMode !== 'playback' || selectedItem.uuid === previewItemUuid)"
+    />
 
     <ProgressModal
       :visible="progressModal.visible"
@@ -249,6 +235,7 @@ const {
   selectedItem,
   selectedItems,
   propertiesPanelOpen,
+  previewItemUuid,
   saveProject,
   closeProject,
   confirmUnsavedChanges,
@@ -294,20 +281,6 @@ let limiterCeilingDrag: {
 const limiterEnabled = computed(() =>
   (currentProject.value as any)?.settings?.disableLimiter !== true,
 );
-const outputTarget = computed(() =>
-  (currentProject.value as any)?.settings?.outputTarget ?? 'ebu-r128',
-);
-const outputTargetOptions = [
-  { value: 'ebu-r128', label: 'settings.outputTargetEbuR128' },
-  { value: 'streaming', label: 'settings.outputTargetStreaming' },
-  { value: 'radio', label: 'settings.outputTargetRadio' },
-  { value: 'netflix', label: 'settings.outputTargetNetflix' },
-  { value: 'live', label: 'settings.outputTargetLive' },
-] as const;
-const outputTargetLabel = computed(() =>
-  t(outputTargetOptions.find(option => option.value === outputTarget.value)?.label
-    ?? 'settings.outputTargetEbuR128'),
-);
 const limiterCeilingDb = computed(() => {
   const value = (currentProject.value as any)?.settings?.limiterCeilingDb;
   return typeof value === 'number' && Number.isFinite(value)
@@ -321,6 +294,12 @@ const limiterCeilingLabel = computed(() => {
 const limiterToggleLabel = computed(() =>
   t(limiterEnabled.value ? 'outputConsole.bypassLimiter' : 'outputConsole.enableLimiter'),
 );
+const limiterGainReductionLabel = computed(() => {
+  const channels = server.meters?.master_channels ?? [];
+  const left = channels.find(channel => channel.index === 0)?.gain_reduction_db ?? 0;
+  const right = channels.find(channel => channel.index === 1)?.gain_reduction_db ?? 0;
+  return `GR −${Math.abs(Math.min(0, left, right)).toFixed(1)}`;
+});
 
 async function patchLimiterSettings(patch: Record<string, unknown>) {
   const project = currentProject.value as any;
@@ -419,12 +398,6 @@ function cancelLimiterCeilingDrag(event: PointerEvent) {
   if (!drag || drag.pointerId !== event.pointerId) return;
   limiterCeilingDrag = null;
   drag.input.value = limiterCeilingDb.value.toFixed(1);
-}
-
-async function onLimiterOutputTargetChange(event: Event) {
-  const value = (event.target as HTMLSelectElement).value;
-  if (!value || value === outputTarget.value) return;
-  await patchLimiterSettings({ outputTarget: value });
 }
 
 function toggleCart() {
@@ -914,6 +887,7 @@ onUnmounted(() => {
 
 .output-console__header {
   gap: var(--spacing-xs);
+  padding-block: 2px;
 }
 
 .output-console__header-controls {
@@ -931,7 +905,7 @@ onUnmounted(() => {
   align-items: center;
   flex: 1 1 0;
   min-width: 0;
-  height: calc(var(--panel-control-height) + 2px);
+  height: calc(var(--panel-control-height) + 6px);
   overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
@@ -1024,17 +998,18 @@ onUnmounted(() => {
 
 .limiter-toggle {
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 2px;
   min-width: 92px;
-  height: calc(var(--panel-control-height) + 2px);
+  height: calc(var(--panel-control-height) + 6px);
   padding: 0 8px;
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
   background: var(--color-surface-raised);
   color: var(--color-text-secondary);
-  font-size: 13.5px;
-  font-weight: 650;
+  line-height: 1;
   cursor: pointer;
   transition:
     background-color var(--transition-fast),
@@ -1066,24 +1041,17 @@ onUnmounted(() => {
   }
 }
 
-.output-target-control {
-  width: 100%;
-  height: var(--panel-control-height);
-  min-width: 0;
-  margin: 0;
-  padding: 0 18px 0 8px;
-  border-color: var(--color-border);
-  border-radius: var(--control-radius);
-  background: var(--color-surface-raised);
-  color: var(--color-text-primary);
-  font-size: 13px;
-  font-weight: 600;
-  text-overflow: ellipsis;
+.limiter-toggle__label {
+  font-size: 13.5px;
+  font-weight: 650;
+}
 
-  &:focus-visible {
-    outline: 2px solid var(--color-focus-ring);
-    outline-offset: 1px;
-  }
+.limiter-toggle__gr {
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
 }
 
 .output-pair {

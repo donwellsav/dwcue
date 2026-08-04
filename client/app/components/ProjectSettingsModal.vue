@@ -847,7 +847,7 @@ function close() {
 .project-settings-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--dialog-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -855,15 +855,15 @@ function close() {
 }
 
 .project-settings-modal {
-  background: var(--color-background);
+  background: var(--dialog-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-lg);
+  border-radius: var(--dialog-radius);
   width: min(var(--modal-width), 92vw);
   max-height: var(--modal-max-height);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--dialog-shadow);
   color: var(--color-text-primary);
 }
 
@@ -871,7 +871,7 @@ function close() {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
+  padding: var(--dialog-header-padding);
   border-bottom: 1px solid var(--color-border);
 }
 .modal-header h2 {

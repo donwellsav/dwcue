@@ -100,9 +100,47 @@ const locationChoiceModal = read('client/app/components/LocationChoiceModal.vue'
 const quitConfirmModal = read('client/app/components/QuitConfirmModal.vue');
 const deleteSelectionModal = read('client/app/components/DeleteSelectionModal.vue');
 const waveformTrimmer = read('client/app/components/WaveformTrimmer.vue');
+const waveformTypes = read('client/app/types/project.ts');
+const audioUtils = read('client/app/utils/audio.ts');
 const playlistView = read('client/app/components/PlaylistView.vue');
 const propertiesPanel = read('client/app/components/PropertiesPanel.vue');
+const liveMeters = read('client/app/composables/useLiveMeters.ts');
 const uiMode = read('client/app/composables/useUiMode.ts');
+assert.match(
+  waveformTrimmer,
+  /class="normalize-menu"[\s\S]*<summary class="normalize-btn"[\s\S]*properties\.normalize[\s\S]*class="normalize-popover"[\s\S]*v-model="normalizationMode"[\s\S]*value="loudness"[\s\S]*value="truePeak"[\s\S]*v-model\.number\.lazy="normalizationTarget"[\s\S]*type="number"[\s\S]*step="0\.1"[\s\S]*normalizationUnit/,
+  'Properties must expose one Normalize control with editable 0.1-step LUFS and dBTP levels in its popover',
+);
+assert.match(
+  waveformTrimmer,
+  /const normalizationMode = ref<NormalizationMode>\('truePeak'\);[\s\S]*const customTruePeakTarget = ref<number \| null>\(-0\.1\);/,
+  'Normalize must default to True peak at -0.1 dBTP',
+);
+assert.match(
+  waveformTypes,
+  /peaks: number\[\];[\s\S]*rms\?: number\[\];[\s\S]*channelPeaks\?: number\[\]\[\];[\s\S]*channelRms\?: number\[\]\[\];/,
+  'client waveforms must retain server RMS detail beside peak traces',
+);
+assert.match(
+  audioUtils,
+  /const rmsLanes = usableChannels\.map[\s\S]*const hasRms =[\s\S]*\.\.\.\(rms \? \{ rms \} : \{\}\)[\s\S]*channelRms:/,
+  'server waveform conversion must not discard combined or per-channel RMS data',
+);
+assert.match(
+  waveformTrimmer,
+  /interface WaveformLane[\s\S]*channelRms[\s\S]*rmsPower[\s\S]*createLinearGradient[\s\S]*fill\(envelopePath\('rms'\)\)[\s\S]*stroke\(envelopePath\('peak'\)\)/,
+  'Properties must render a continuous RMS body with a level-coloured peak contour',
+);
+assert.match(
+  propertiesPanel,
+  /handleNormalize = async \([\s\S]*mode: 'loudness' \| 'truePeak'[\s\S]*effectiveTarget = Math\.max\(-60, Math\.min\([\s\S]*mode === 'truePeak' \? limiterCeilingDb : 0[\s\S]*applyTruePeakNormalization\(audioItem, analysis, effectiveTarget\)[\s\S]*applyLoudnessMatch\([\s\S]*effectiveTarget/,
+  'Normalize must route by measurement and cap true peak at the active limiter ceiling',
+);
+assert.match(
+  liveMeters,
+  /const clipDb\s*= opts\?\.clipThresholdDb \?\? 0;/,
+  'the clip latch must indicate digital full scale, not valid -0.1 dBTP audio',
+);
 assert.match(
   playlistItem,
   /v-if="isPlaying && item\.type === 'audio'"[\s\S]{0,500}icon="restart_alt"[\s\S]{0,500}@click\.stop="handlePlay"[\s\S]{0,500}:aria-label="t\('actions\.restartCue', \{ name: item\.displayName \}\)"/,
@@ -257,10 +295,20 @@ assert.match(
   /class="output-console"[\s\S]*<StereoMeter[\s\S]*<VolumeSlider/,
   'the output meters and fader must stay docked beside the playlist',
 );
+assert.doesNotMatch(
+  mainWorkspace,
+  /output-target-control|onLimiterOutputTargetChange/,
+  'output target selection belongs in Project Settings, not the meter and fader strip',
+);
 assert.match(
   mainWorkspace,
-  /class="limiter-toggle"[\s\S]*:aria-pressed="!limiterEnabled"[\s\S]*outputConsole\.limiterBypass[\s\S]*@click="toggleLimiter"[\s\S]*class="limiter-ceiling-control"[\s\S]*class="limiter-ceiling-input"[\s\S]*min="-60"[\s\S]*max="0"[\s\S]*step="0\.1"[\s\S]*@change="onLimiterCeilingChange"/,
-  'the compact Output header must place limiter bypass before its editable ceiling',
+  /class="limiter-toggle"[\s\S]*:aria-pressed="!limiterEnabled"[\s\S]*limiterGainReductionLabel[\s\S]*@click="toggleLimiter"[\s\S]*limiter-toggle__label[\s\S]*limiter-toggle__gr[\s\S]*class="limiter-ceiling-control"[\s\S]*class="limiter-ceiling-input"[\s\S]*min="-60"[\s\S]*max="0"[\s\S]*step="0\.1"[\s\S]*@change="onLimiterCeilingChange"/,
+  'the compact Output header must place two-line limiter status before its editable ceiling',
+);
+assert.match(
+  mainWorkspace,
+  /const limiterGainReductionLabel = computed[\s\S]{0,420}master_channels[\s\S]{0,180}index === 0[\s\S]{0,120}gain_reduction_db[\s\S]{0,180}index === 1[\s\S]{0,120}gain_reduction_db[\s\S]{0,160}Math\.min\(0, left, right\)[\s\S]{0,80}toFixed\(1\)/,
+  'the limiter button must show the worst live L/R gain-reduction value',
 );
 assert.doesNotMatch(
   mainWorkspace,
@@ -276,8 +324,13 @@ const enLocale = JSON.parse(read('client/locales/en.json'));
 assert.equal(enLocale.outputConsole.ceilingInputLabel, 'True-peak limiter ceiling in dBTP');
 assert.match(
   mainWorkspace,
-  /patchLimiterSettings\(patch: Record<string, unknown>\)[\s\S]*await server\.patchSettings\(patch\)[\s\S]*saveProject\(\)[\s\S]*function normalizeLimiterCeiling[\s\S]*Math\.max\(-60, Math\.min\(0, value\)\)[\s\S]*function commitLimiterCeiling[\s\S]*patchLimiterSettings\(\{ limiterCeilingDb: db \}\)[\s\S]*function onLimiterCeilingChange[\s\S]*commitLimiterCeiling[\s\S]*patchLimiterSettings\(\{ outputTarget: value \}\)/,
-  'ceiling and target edits must use the persistent project-settings path',
+  /patchLimiterSettings\(patch: Record<string, unknown>\)[\s\S]*await server\.patchSettings\(patch\)[\s\S]*saveProject\(\)[\s\S]*function normalizeLimiterCeiling[\s\S]*Math\.max\(-60, Math\.min\(0, value\)\)[\s\S]*function commitLimiterCeiling[\s\S]*patchLimiterSettings\(\{ limiterCeilingDb: db \}\)[\s\S]*function onLimiterCeilingChange[\s\S]*commitLimiterCeiling/,
+  'ceiling edits must use the persistent project-settings path',
+);
+assert.match(
+  projectSettingsModal,
+  /:value="outputTarget"[\s\S]{0,120}@change="onOutputTargetChange"[\s\S]*function onOutputTargetChange[\s\S]{0,160}applyPatch\(\{ outputTarget: v \}\)/,
+  'output target edits must remain available through persistent Project Settings',
 );
 assert.match(
   mainWorkspace,
@@ -290,14 +343,9 @@ assert.match(
   'the limiter ceiling must expose integrated step arrows and advertise drag adjustment',
 );
 assert.match(
-  mainWorkspace,
-  /<template v-if="pair\.key === 'main'" #footer>[\s\S]*class="output-target-control"[\s\S]*@change="onLimiterOutputTargetChange"[\s\S]*\.output-target-control\s*\{[\s\S]*width:\s*100%;[\s\S]*height:\s*var\(--panel-control-height\)/,
-  'Output Target must sit inside the main meter/fader footer beneath L, R, and gain',
-);
-assert.match(
   stereoMeter,
-  /<div v-if="hasScaleControl" class="stereo-meter__footer">[\s\S]*<slot name="footer"/,
-  'every console meter must own the shared footer rail instead of creating a separate output box',
+  /<div v-if="slots\.footer" class="stereo-meter__footer">[\s\S]*<slot name="footer"/,
+  'the console meter footer must only consume space when a footer control is supplied',
 );
 assert.doesNotMatch(
   mainWorkspace,
@@ -430,6 +478,36 @@ assert.match(
   'the lower Preview panel must keep Set Next beside its identity, use an ordered transport, and retain editable trim markers',
 );
 assert.match(
+  playbackControls,
+  /preview-playhead-indicator[\s\S]*left: previewProgressPct[\s\S]*preview-start-next-marker[\s\S]*previewStartNextPct[\s\S]*preview-start-next-btn[\s\S]*handleSetPreviewStartNext[\s\S]*startNextEnabled:\s*true[\s\S]*startNextTime:\s*marker/,
+  'Preview must show its live playhead and let the operator save that position as the cue Start Next marker',
+);
+assert.match(
+  playbackControls,
+  /setPreviewTrimAtPlayhead\('in'\)[\s\S]*setPreviewTrimAtPlayhead\('out'\)[\s\S]*function setPreviewTrimAtPlayhead[\s\S]*setPreviewBracket\(which, previewFileTime\.value, true\)/,
+  'Preview Set In and Set Out must capture its playhead through the existing temporary trim path',
+);
+assert.match(
+  waveformTrimmer,
+  /mainPlayheadPosition[\s\S]*previewPlayheadPosition[\s\S]*setInPointAtPlayhead[\s\S]*setOutPointAtPlayhead[\s\S]*drawPlayheadMarker[\s\S]*--state-playing[\s\S]*--state-preview/,
+  'Properties must keep distinct Main and Preview playheads and capture either playhead into In or Out',
+);
+assert.match(
+  propertiesPanel,
+  /trimSilence,[\s\S]*const handleTrimSilence = async[\s\S]*trimSilence\(item(?: as AudioItem)?\)[\s\S]*structuredClone\(selectedItem\.value\)[\s\S]*await saveProject\(\)/,
+  'Properties Trim Silence must reuse the shared trim implementation and await persistence',
+);
+assert.match(
+  mainWorkspace + playbackControls + propertiesPanel + waveformTrimmer,
+  /selectedItem\.uuid === previewItemUuid[\s\S]*handleOpenPreviewProperties[\s\S]*openItemProperties\(previewItemUuid\.value\)[\s\S]*:preview-mode="uiMode === 'playback'"[\s\S]*class="audition-transport"[\s\S]*handleCanvasPointerDown[\s\S]*previewMode[\s\S]*startPreview\(props\.audioItem\.uuid\)/,
+  'Show Mode Preview must open the same cue in Properties and reuse its safe preview path for audition transport and playhead scrubbing',
+);
+assert.match(
+  propertiesPanel,
+  /height: `\$\{panelHeight\}px`[\s\S]*class="properties-resize-handle"[\s\S]*role="separator"[\s\S]*@pointerdown="startPanelResize"[\s\S]*@keydown="handlePanelResizeKey"/,
+  'Properties must remain vertically resizable by pointer and keyboard without replacing editor controls',
+);
+assert.match(
   activeCueItem,
   /class="cue-meter"[\s\S]*<StereoMeter[\s\S]*:cue-id="serverCueId"/,
   'active cue cards must retain their server-driven stereo meter',
@@ -456,7 +534,7 @@ assert.match(
 );
 assert.match(
   stereoMeter,
-  /\.stereo-meter:not\(\.stereo-meter--strip\)[\s\S]*width:\s*26px;[\s\S]*padding:\s*0;[\s\S]*background:\s*transparent;[\s\S]*border:\s*0;[\s\S]*grid-template-rows:\s*6px minmax\(0, 1fr\) 11px;[\s\S]*padding:\s*1px 0;/,
+  /\.stereo-meter:not\(\.stereo-meter--strip\)[\s\S]*width:\s*26px;[\s\S]*padding:\s*0;[\s\S]*background:\s*transparent;[\s\S]*border:\s*0;[\s\S]*grid-template-rows:\s*6px minmax\(0, 1fr\);[\s\S]*padding:\s*1px 0;/,
   'compact cue meters must use their height for signal without nested strip chrome',
 );
 assert.match(
@@ -505,14 +583,14 @@ assert.doesNotMatch(
   /showGainReduction/,
   'limiter reduction must never disappear while the meter strip is visible',
 );
-assert.match(
-  meterTemplate,
-  /stereo-meter__peak-text[\s\S]*stereo-meter__gr-text[\s\S]*gainReductionLabel/,
-  'gain reduction must occupy a permanent meter-readout row, including at GR 0.0',
+assert.doesNotMatch(
+  stereoMeter,
+  /stereo-meter__gr-text|gainReductionLabel|GR MAX/,
+  'gain-reduction numbers belong on the limiter button, not inside either meter',
 );
 assert.match(
   stereoMeter,
-  /const worstGainReductionDb = computed\(\(\) => Math\.min\([\s\S]*leftStream\.gainReduction\.value,[\s\S]*rightStream\.gainReduction\.value,[\s\S]*`GR MAX[\s\S]*const gainReductionFloorDb = computed\(\(\) => Math\.min\(props\.minDb, 0\)\)[\s\S]*dbToConsolePosition\(clamped, floor, 0\)/,
+  /const worstGainReductionDb = computed\(\(\) => Math\.min\([\s\S]*leftStream\.gainReduction\.value,[\s\S]*rightStream\.gainReduction\.value,[\s\S]*const gainReductionFloorDb = computed\(\(\) => Math\.min\(props\.minDb, 0\)\)[\s\S]*dbToConsolePosition\(clamped, floor, 0\)/,
   'the single GR lane must show the signed worst L/R limiter and run from 0 at the top through the shared negative taper',
 );
 assert.match(
@@ -580,7 +658,7 @@ assert.match(
 );
 assert.match(
   stereoMeter,
-  /grid-template-rows:\s*6px minmax\(40px, 1fr\) 24px;[\s\S]*&--strip &__body\s*\{[\s\S]*grid-template-columns:\s*28px 8px 72px;[\s\S]*column-gap:\s*8px;[\s\S]*&__scale\s*\{[\s\S]*grid-row:\s*2;[\s\S]*margin:\s*10px 0;[\s\S]*&__bars\s*\{[\s\S]*grid-row:\s*2;[\s\S]*padding:\s*10px 0;[\s\S]*&__gr-lane\s*\{[\s\S]*grid-row:\s*2;[\s\S]*margin:\s*10px 0;/,
+  /grid-template-rows:\s*6px minmax\(40px, 1fr\);[\s\S]*&--strip &__body\s*\{[\s\S]*grid-template-columns:\s*28px 8px 72px;[\s\S]*grid-template-rows:\s*6px minmax\(40px, 1fr\) 20px;[\s\S]*column-gap:\s*8px;[\s\S]*row-gap:\s*2px;[\s\S]*&__scale\s*\{[\s\S]*grid-row:\s*2;[\s\S]*margin:\s*10px 0;[\s\S]*&__bars\s*\{[\s\S]*grid-row:\s*2;[\s\S]*padding:\s*10px 0;[\s\S]*&__gr-lane\s*\{[\s\S]*grid-row:\s*2;[\s\S]*margin:\s*10px 0;/,
   'meter tracks and the shared scale must use the same vertical pixel box',
 );
 assert.match(
@@ -590,8 +668,13 @@ assert.match(
 );
 assert.match(
   volumeSlider,
-  /volume-slider--inline[\s\S]*display:\s*contents;[\s\S]*grid-column:\s*3;[\s\S]*grid-row:\s*2;[\s\S]*volume-slider__label-wrap[\s\S]*grid-column:\s*3;[\s\S]*grid-row:\s*3;/,
-  'the fader and its numeric value must align to the shared strip grid',
+  /volume-slider--inline[\s\S]*display:\s*contents;[\s\S]*grid-column:\s*3;[\s\S]*grid-row:\s*2;[\s\S]*volume-slider__label-wrap[\s\S]*grid-column:\s*3;[\s\S]*grid-row:\s*3;[\s\S]{0,80}justify-self:\s*end;[\s\S]{0,80}height:\s*20px;[\s\S]{0,80}width:\s*42px;/,
+  'the editable fader value must sit under the right-aligned numeric scale',
+);
+assert.match(
+  volumeSlider,
+  /volume-slider--inline \.volume-slider__label\s*\{[\s\S]{0,160}padding-right:\s*10px;[\s\S]{0,100}text-align:\s*right;[\s\S]*volume-slider--inline \.volume-slider__input\s*\{[\s\S]{0,220}right:\s*0;[\s\S]{0,220}width:\s*42px;[\s\S]{0,120}padding:\s*0 10px 0 4px;[\s\S]{0,80}text-align:\s*right;/,
+  'the displayed and edited fader values must share the scale numbers\' zero column',
 );
 assert.match(
   projectHeader,
@@ -635,12 +718,12 @@ assert.match(
 );
 assert.match(
   projectStore,
-  /case 'waveform_ready':[\s\S]*autoReduceTruePeaksOnImport !== false[\s\S]*applyTruePeakCeiling/,
-  'normal, YouTube, and cart imports must share one-shot true-peak reduction',
+  /case 'waveform_ready':[\s\S]*autoReduceTruePeaksOnImport !== false[\s\S]*applyTruePeakCeiling\([\s\S]*limiterCeilingDb/,
+  'normal, YouTube, and cart imports must share reduction to the active true-peak ceiling',
 );
 assert.match(
   projectStore,
-  /catch\(\(e: Error\)[\s\S]*if \(!reduceTruePeaks\) return;[\s\S]*current\.volume !== requestedVolume[\s\S]*applyTruePeakCeiling\(current, built\)/,
+  /catch\(\(e: Error\)[\s\S]*if \(!reduceTruePeaks\) return;[\s\S]*current\.volume !== requestedVolume[\s\S]*applyTruePeakCeiling\(current, built, limiterCeilingDb\)/,
   'failed trimmed-range analysis must conservatively retain true-peak safety without overwriting operator edits',
 );
 
@@ -711,6 +794,7 @@ const audioRuntime = { exports: {} };
 Function('exports', 'module', transpiledAudio)(audioRuntime.exports, audioRuntime);
 const {
   applyTruePeakCeiling,
+  applyTruePeakNormalization,
   dbToConsolePosition,
   consolePositionToDb,
   exceedsTruePeakCeiling,
@@ -728,6 +812,16 @@ assert.equal(exceedsTruePeakCeiling(
 const alreadySafeItem = { volume: 0.5 };
 assert.equal(applyTruePeakCeiling(alreadySafeItem, peakAnalysis), false);
 assert.equal(alreadySafeItem.volume, 0.5);
+const normalizedPeakItem = { volume: 0.25 };
+assert.equal(applyTruePeakNormalization(normalizedPeakItem, peakAnalysis, -1), true);
+assert.ok(Math.abs(peakAnalysis.true_peak_dbtp
+  + 20 * Math.log10(normalizedPeakItem.volume) - (-1)) < 1e-9);
+assert.equal(applyTruePeakNormalization(normalizedPeakItem, peakAnalysis, -1), false);
+assert.equal(applyTruePeakNormalization(
+  { volume: 1 },
+  { analysis_version: 1, true_peak_dbtp: -120 },
+  -1,
+), false);
 const consoleDbValues = [-60, -40, -20, -10, 0, 10, 40];
 const consolePositions = consoleDbValues.map(
   db => dbToConsolePosition(db, -60, 40),
@@ -974,8 +1068,13 @@ assert.match(
 );
 assert.match(
   waveformTrimmer,
-  /\.waveform-trimmer\s*\{(?![\s\S]{0,180}(?:max-height|overflow:\s*hidden))[\s\S]{0,180}background:\s*transparent;[\s\S]*\.volume-slider-vertical\s*\{[\s\S]{0,180}width:\s*24px;/,
-  'the properties panel must own waveform scrolling and the vertical fader must not consume empty horizontal space',
+  /class="volume-slider-vertical"[\s\S]*class="zoom-slider"[\s\S]*class="scroll-slider"[\s\S]*@input="handleScrollInput"[\s\S]*const handleScrollInput[\s\S]*scrollPosition\.value = Math\.max/,
+  'Properties must retain its volume, zoom, and view-position controls and wire view-position input explicitly',
+);
+assert.match(
+  waveformTrimmer,
+  /\.volume-slider-vertical::-webkit-slider-thumb\s*\{[\s\S]{0,260}var\(--volume-handle-color,[\s\S]*\.zoom-slider,[\s\S]*\.scroll-slider\s*\{[\s\S]{0,320}var\(--color-accent\)[\s\S]*\.scroll-slider:disabled/,
+  'Properties controls must use the app fader and cue-position visual language without discarding level colour or disabled state',
 );
 assert.match(
   liveplayClient,
@@ -1350,12 +1449,12 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /\.limiter-ceiling-control\s*\{[\s\S]{0,180}height:\s*calc\(var\(--panel-control-height\) \+ 2px\);[\s\S]*\.limiter-toggle\s*\{[\s\S]{0,180}height:\s*calc\(var\(--panel-control-height\) \+ 2px\);[\s\S]*\.output-pair\s*\{[\s\S]{0,120}flex:\s*0 0 var\(--output-strip-width\);/,
+  /\.output-console__header\s*\{[\s\S]{0,100}padding-block:\s*2px;[\s\S]*\.limiter-ceiling-control\s*\{[\s\S]{0,180}height:\s*calc\(var\(--panel-control-height\) \+ 6px\);[\s\S]*\.limiter-toggle\s*\{[\s\S]{0,220}height:\s*calc\(var\(--panel-control-height\) \+ 6px\);[\s\S]*\.output-pair\s*\{[\s\S]{0,120}flex:\s*0 0 var\(--output-strip-width\);/,
   'the limiter header and meter body must use the same output-rail geometry',
 );
 assert.match(
   mainWorkspace,
-  /\.output-console__header-controls\s*\{[\s\S]*gap:\s*var\(--spacing-sm\);[\s\S]*\.limiter-ceiling-control\s*\{[\s\S]*flex:\s*1 1 0;[\s\S]*\.limiter-ceiling-value\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) 20px;[\s\S]*width:\s*100%;[\s\S]*\.limiter-ceiling-input\s*\{[\s\S]*width:\s*100%;[\s\S]*font-size:\s*13px;[\s\S]*\.limiter-toggle\s*\{[\s\S]*min-width:\s*92px;[\s\S]*font-size:\s*13\.5px;[\s\S]*\.output-target-control\s*\{[\s\S]*height:\s*var\(--panel-control-height\);[\s\S]*padding:\s*0 18px 0 8px;/,
+  /\.output-console__header-controls\s*\{[\s\S]*gap:\s*var\(--spacing-sm\);[\s\S]*\.limiter-ceiling-control\s*\{[\s\S]*flex:\s*1 1 0;[\s\S]*\.limiter-ceiling-value\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) 20px;[\s\S]*width:\s*100%;[\s\S]*\.limiter-ceiling-input\s*\{[\s\S]*width:\s*100%;[\s\S]*font-size:\s*13px;[\s\S]*\.limiter-toggle\s*\{[\s\S]*flex-direction:\s*column;[\s\S]*min-width:\s*92px;[\s\S]*\.limiter-toggle__label\s*\{[\s\S]*font-size:\s*13\.5px;[\s\S]*\.limiter-toggle__gr\s*\{[\s\S]*font-size:\s*10px;/,
   'the output header controls must use readable live-operation spacing and type',
 );
 assert.match(
@@ -1378,20 +1477,20 @@ assert.match(
   /&--strip\s*\{\s*width:\s*var\(--output-strip-width,\s*192px\);[\s\S]{0,120}padding:\s*7px 10px;[\s\S]{0,80}gap:\s*7px;[\s\S]*&--strip &__label\s*\{[\s\S]{0,240}font-size:\s*15px;[\s\S]{0,80}font-weight:\s*700;[\s\S]{0,120}min-height:\s*36px;[\s\S]{0,120}justify-content:\s*flex-start;[\s\S]{0,80}text-align:\s*left;/,
   'the stereo meter strip must inherit the shared output-rail width',
 );
+assert.doesNotMatch(
+  stereoMeter,
+  /stereo-meter__chan-labels/,
+  'stereo meter channel labels must not consume footer space',
+);
 assert.match(
   stereoMeter,
-  /&--strip &__peak-text\s*\{[\s\S]{0,180}font-size:\s*14px;[\s\S]{0,120}justify-items:\s*start;[\s\S]*&--strip &__mark-text\s*\{[\s\S]{0,120}font-size:\s*13px;[\s\S]*&--strip &__chan-labels\s*\{[\s\S]{0,140}font-size:\s*12px;[\s\S]{0,100}color:\s*var\(--color-text-primary\);/,
-  'output names and status readouts must stay legible at live-operation distance',
+  /&__peak-text\s*\{[\s\S]{0,100}grid-column:\s*1 \/ -1;[\s\S]{0,60}grid-row:\s*3;[\s\S]{0,140}padding-right:\s*42px;[\s\S]{0,180}font-size:\s*13px;[\s\S]{0,120}font-variant-numeric:\s*tabular-nums;/,
+  'the live meter value must keep its row and use the width left of the fader value',
 );
 assert.match(
   stereoMeter,
   /&--strip &__gr-track\s*\{[\s\S]{0,120}background:\s*var\(--color-control\);[\s\S]{0,60}box-shadow:\s*none;[\s\S]*&--strip &__gr-track::before\s*\{\s*content:\s*none;[\s\S]*&--strip &__track\s*\{[\s\S]{0,120}background:\s*var\(--color-control\);[\s\S]{0,60}box-shadow:\s*none;/,
   'the output meter wells must stay flat while retaining their live level data',
-);
-assert.match(
-  stereoMeter,
-  /v-if="hasScaleControl" class="stereo-meter__footer"[\s\S]*&__footer\s*\{[\s\S]{0,100}height:\s*34px;[\s\S]{0,80}flex:\s*0 0 34px;[\s\S]*&--strip &__footer\s*\{[\s\S]{0,100}width:\s*calc\(100% \+ 20px\);[\s\S]{0,80}margin:\s*0 -10px -7px;/,
-  'every console strip must reserve the same footer so its dB scale stays aligned',
 );
 assert.doesNotMatch(
   cartSlot,
@@ -1430,12 +1529,12 @@ assert.match(
 );
 assert.match(
   projectSettingsModal,
-  /\.project-settings-modal\s*\{[\s\S]{0,180}border-radius:\s*var\(--border-radius-lg\);[\s\S]{0,100}width:\s*min\(var\(--modal-width\), 92vw\);[\s\S]{0,80}max-height:\s*var\(--modal-max-height\);[\s\S]*\.close-x\s*\{[\s\S]{0,120}width:\s*var\(--spacing-xxl\);[\s\S]{0,80}height:\s*var\(--spacing-xxl\);/,
+  /\.project-settings-modal\s*\{[\s\S]{0,180}border-radius:\s*var\(--dialog-radius\);[\s\S]{0,100}width:\s*min\(var\(--modal-width\), 92vw\);[\s\S]{0,80}max-height:\s*var\(--modal-max-height\);[\s\S]*\.close-x\s*\{[\s\S]{0,120}width:\s*var\(--spacing-xxl\);[\s\S]{0,80}height:\s*var\(--spacing-xxl\);/,
   'project settings must use the shared dialog shell and close target',
 );
 assert.match(
   controlConfig,
-  /\.control-config-panel\s*\{[\s\S]{0,180}border-radius:\s*var\(--border-radius-lg\);[\s\S]{0,100}width:\s*min\(var\(--modal-width\), 92vw\);[\s\S]{0,80}max-height:\s*var\(--modal-max-height\);[\s\S]*\.config-header\s*\{[\s\S]{0,180}padding:\s*16px 20px;[\s\S]{0,80}border-bottom:\s*1px solid var\(--color-border\);[\s\S]*\.tab-bar\s*\{[\s\S]{0,80}flex-shrink:\s*0;[\s\S]{0,80}gap:\s*2px;[\s\S]*\.tab-btn\s*\{[\s\S]{0,80}min-height:\s*36px;[\s\S]*\.reset-btn,[\s\S]*\.done-btn\s*\{[\s\S]{0,120}padding:\s*var\(--spacing-sm\) var\(--spacing-lg\);/,
+  /\.control-config-panel\s*\{[\s\S]{0,180}border-radius:\s*var\(--dialog-radius\);[\s\S]{0,100}width:\s*min\(var\(--modal-width\), 92vw\);[\s\S]{0,80}max-height:\s*var\(--modal-max-height\);[\s\S]*\.config-header\s*\{[\s\S]{0,180}padding:\s*var\(--dialog-header-padding\);[\s\S]{0,80}border-bottom:\s*1px solid var\(--color-border\);[\s\S]*\.tab-bar\s*\{[\s\S]{0,80}flex-shrink:\s*0;[\s\S]{0,80}gap:\s*2px;[\s\S]*\.tab-btn\s*\{[\s\S]{0,80}min-height:\s*36px;[\s\S]*\.reset-btn,[\s\S]*\.done-btn\s*\{[\s\S]{0,120}padding:\s*var\(--spacing-sm\) var\(--spacing-lg\);/,
   'shortcuts must use the same dialog header, tabs, and action rail as settings',
 );
 assert.match(
@@ -1615,7 +1714,7 @@ assert.match(
 );
 assert.match(
   playlistView,
-  /buildVerifiedAudioCue[\s\S]*fetchMetadata\(serverPath, signal\)[\s\S]*fetchWaveformByPath\(serverPath\)[\s\S]*buildWaveformFromChannels[\s\S]*colorForNewAudioItem\(settings, colorIndex\)[\s\S]*autoTrimSilenceOnImport === true[\s\S]*trimSilence\(cue\)[\s\S]*autoMatchLoudnessOnImport === true[\s\S]*autoReduceTruePeaksOnImport !== false[\s\S]*applyTruePeakCeiling\(cue, analysis, -0\.1\)[\s\S]*anchorStartNextMarker[\s\S]*buildSpotifyCueSpecs[\s\S]*buildVerifiedAudioCue/,
+  /buildVerifiedAudioCue[\s\S]*fetchMetadata\(serverPath, signal\)[\s\S]*fetchWaveformByPath\(serverPath\)[\s\S]*buildWaveformFromChannels[\s\S]*colorForNewAudioItem\(settings, colorIndex\)[\s\S]*autoTrimSilenceOnImport === true[\s\S]*trimSilence\(cue\)[\s\S]*autoMatchLoudnessOnImport === true[\s\S]*autoReduceTruePeaksOnImport !== false[\s\S]*applyTruePeakCeiling\(cue, analysis, outputTargetLevels\.value\.limiterCeilingDb\)[\s\S]*anchorStartNextMarker[\s\S]*buildSpotifyCueSpecs[\s\S]*buildVerifiedAudioCue/,
   'Spotify template cues must be metadata-named, show-ready, palette-cycled, and true-peak safe',
 );
 assert.match(
@@ -2001,7 +2100,7 @@ assert.match(
 );
 assert.match(
   `${locationChoiceModal}\n${quitConfirmModal}`,
-  /\.lc-modal\s*\{[\s\S]{0,220}border-radius:\s*var\(--border-radius-lg, 10px\);[\s\S]{0,100}width:\s*min\(var\(--modal-width, 560px\), 92vw\);[\s\S]{0,80}padding:\s*20px;[\s\S]*\.qm-modal\s*\{[\s\S]{0,220}border-radius:\s*var\(--border-radius-lg, 10px\);[\s\S]{0,100}width:\s*min\(var\(--modal-width, 560px\), 92vw\);[\s\S]{0,80}padding:\s*20px;/,
+  /\.lc-modal\s*\{[\s\S]{0,220}border-radius:\s*var\(--dialog-radius\);[\s\S]{0,100}width:\s*min\(var\(--modal-width, 560px\), 92vw\);[\s\S]{0,80}padding:\s*var\(--dialog-padding\);[\s\S]*\.qm-modal\s*\{[\s\S]{0,220}border-radius:\s*var\(--dialog-radius\);[\s\S]{0,100}width:\s*min\(var\(--modal-width, 560px\), 92vw\);[\s\S]{0,80}padding:\s*var\(--dialog-padding\);/,
   'confirmation and location dialogs must share the main modal shell geometry',
 );
 assert.match(
@@ -2109,6 +2208,48 @@ const serverSettings = read('client/app/components/ServerSettingsModal.vue');
 assert.match(serverSettings,
   /v-if="d\.is_open"[\s\S]*server\.closeDevice\(d\.id\)[\s\S]*v-else[\s\S]*server\.openDevice/,
   'device settings must close an open instance instead of opening a duplicate');
+
+assert.match(
+  globalStyles,
+  /--dialog-backdrop:[^;]+;[\s\S]*--dialog-surface:[^;]+;[\s\S]*--dialog-radius:[^;]+;[\s\S]*--dialog-shadow:[^;]+;/,
+  'dialogs must share one backdrop, surface, corner, and elevation system',
+);
+for (const file of [
+  'AboutModal.vue',
+  'AudioImportModal.vue',
+  'CartHotkeyConfig.vue',
+  'ConnectionLostModal.vue',
+  'ControlConfigModal.vue',
+  'DeleteSelectionModal.vue',
+  'LoadingOverlay.vue',
+  'LocationChoiceModal.vue',
+  'ProgressModal.vue',
+  'ProjectRepairModal.vue',
+  'ProjectSelectionModal.vue',
+  'ProjectSettingsModal.vue',
+  'QuitConfirmModal.vue',
+  'ServerFilePickerModal.vue',
+  'ServerSettingsModal.vue',
+  'SessionRecoveryModal.vue',
+  'SpotifyImportModal.vue',
+  'UnsavedChangesModal.vue',
+  'UpdateModal.vue',
+  'WelcomeScreen.vue',
+  'YouTubeImportModal.vue',
+]) {
+  const dialog = read(`client/app/components/${file}`);
+  for (const token of ['backdrop', 'surface', 'radius', 'shadow']) {
+    assert.match(dialog, new RegExp(`var\\(--dialog-${token}\\)`),
+      `${file} must use the shared dialog ${token}`);
+  }
+}
+assert.doesNotMatch(
+  audioImportModal + serverSettings
+    + read('client/app/components/ServerFilePickerModal.vue')
+    + read('client/app/components/ServerFileBrowser.vue'),
+  /#(?:16161d|1a1a1a|1d1d1d|202020|202027|2a2a2a|353535)\b/i,
+  'import and server dialogs must not bypass the app surface tokens',
+);
 
 checkSpotifyCopyTransaction()
   .then(() => console.log('Live safety checks passed.'))

@@ -15,6 +15,7 @@
           :max="10"
           step="0.1"
           :value="volumeDB"
+          :aria-label="t('properties.volume')"
           @input="handleVolumeInput"
           @change="handleVolumeDragEnd"
           :style="{ '--volume-handle-color': volumeHandleColor }"
@@ -35,6 +36,40 @@
     <div class="waveform-section">
       <!-- Zoom Controls -->
       <div class="waveform-controls">
+        <div v-if="!multiSelect" class="audition-transport" role="group" :aria-label="t('properties.playback')">
+          <button type="button" class="audition-btn" @click="jumpAudition(-1)" :title="t('actions.jumpPreviewBack')">
+            <span class="material-symbols-rounded" aria-hidden="true">fast_rewind</span>
+          </button>
+          <button type="button" class="audition-btn audition-btn--primary" @click="toggleAudition" :title="auditionToggleLabel">
+            <span class="material-symbols-rounded" aria-hidden="true">{{ auditionToggleIcon }}</span>
+          </button>
+          <button type="button" class="audition-btn audition-btn--stop" @click="stopAudition" :title="t('actions.stop')">
+            <span class="material-symbols-rounded" aria-hidden="true">stop</span>
+          </button>
+          <button type="button" class="audition-btn" @click="jumpAudition(1)" :title="t('actions.jumpPreviewForward')">
+            <span class="material-symbols-rounded" aria-hidden="true">fast_forward</span>
+          </button>
+          <label class="audition-jump">
+            <input v-model.number="auditionJumpSeconds" type="number" min="0.1" max="99.9" step="0.1" :aria-label="t('actions.previewJump')" />
+            <span>s</span>
+          </label>
+          <output class="audition-time">{{ formatTimeDetailed(playbackPosition) }}</output>
+          <button type="button" class="audition-marker-btn" @click="setInPointAtPlayhead">
+            {{ t('actions.setIn') }}
+          </button>
+          <button type="button" class="audition-marker-btn" @click="setOutPointAtPlayhead">
+            {{ t('actions.setOut') }}
+          </button>
+          <button
+            v-if="previewMode"
+            type="button"
+            class="audition-set-next"
+            :class="{ active: auditionIsNext }"
+            @click="setAuditionAsNext"
+          >
+            {{ t('actions.setAsNext') }}
+          </button>
+        </div>
         <div class="zoom-control" v-if="!multiSelect">
           <span class="material-symbols-rounded">zoom_out</span>
           <input
@@ -44,6 +79,9 @@
             max="20"
             step="0.5"
             v-model.number="zoomLevel"
+            :style="{ '--range-progress': `${zoomProgress}%` }"
+            :aria-label="`${t('properties.waveform')} zoom`"
+            :aria-valuetext="`${Math.round(zoomLevel * 100)}%`"
           />
           <span class="material-symbols-rounded">zoom_in</span>
         </div>
@@ -57,11 +95,45 @@
             <span>{{ t('properties.trimSilence') }}</span>
           </button>
           
-          <!-- Normalize Button -->
-          <button class="normalize-btn" @click="normalizeAudio" :title="t('properties.normalize')">
-            <span class="material-symbols-rounded">tune</span>
-            <span>{{ t('properties.normalize') }}</span>
-          </button>
+          <details
+            ref="normalizeMenu"
+            class="normalize-menu"
+            @focusout="handleNormalizeFocusOut"
+            @keydown.esc.prevent.stop="closeNormalizeMenu"
+          >
+            <summary class="normalize-btn" :title="t('properties.normalizeHelp')">
+              <span class="material-symbols-rounded">tune</span>
+              <span>{{ t('properties.normalize') }}</span>
+              <span class="material-symbols-rounded normalize-chevron">expand_more</span>
+            </summary>
+            <div class="normalize-popover">
+              <label class="normalize-field">
+                <span>{{ t('properties.normalizeMode') }}</span>
+                <select v-model="normalizationMode" class="normalize-mode">
+                  <option value="loudness">{{ t('properties.loudnessTargets') }}</option>
+                  <option value="truePeak">{{ t('properties.truePeakTargets') }}</option>
+                </select>
+              </label>
+              <label class="normalize-field">
+                <span>{{ t('properties.normalizeTarget') }}</span>
+                <span class="normalize-level">
+                  <input
+                    v-model.number.lazy="normalizationTarget"
+                    class="normalize-target"
+                    type="number"
+                    min="-60"
+                    :max="normalizationTargetMax"
+                    step="0.1"
+                    :title="t('properties.normalizeHelp')"
+                  />
+                  <span class="normalize-unit">{{ normalizationUnit }}</span>
+                </span>
+              </label>
+              <button class="normalize-apply" type="button" @click="normalizeAudio">
+                {{ t('properties.normalize') }}
+              </button>
+            </div>
+          </details>
         </div>
       </div>
 
@@ -83,7 +155,15 @@
         <canvas
           ref="waveformCanvas"
           class="waveform-canvas"
-          @mousedown="handleCanvasMouseDown"
+          role="slider"
+          tabindex="0"
+          :aria-label="t('properties.waveform')"
+          :aria-valuemin="inPoint"
+          :aria-valuemax="outPoint"
+          :aria-valuenow="playbackPosition"
+          :aria-valuetext="formatTimeDetailed(playbackPosition)"
+          @pointerdown="handleCanvasPointerDown"
+          @keydown="handlePlayheadKeyDown"
         ></canvas>
 
         <!-- Trim Handles -->
@@ -171,8 +251,8 @@
             @mousedown.prevent="startDragFade('startNext', $event)"
             :title="t('waveform.startNextTitle', { time: formatTimeDetailed(startNextTime) })"
           >
-            <div class="fade-line fade-line-green"></div>
-            <div class="fade-grip fade-grip-green">
+            <div class="fade-line fade-line-startnext"></div>
+            <div class="fade-grip fade-grip-startnext">
               <span class="material-symbols-rounded">skip_next</span>
             </div>
           </div>
@@ -188,7 +268,11 @@
           min="0"
           :max="maxScroll"
           step="0.1"
-          v-model.number="scrollPosition"
+          :value="scrollPosition"
+          :style="{ '--range-progress': `${scrollProgress}%` }"
+          :disabled="maxScroll === 0"
+          :aria-label="`${t('properties.waveform')} view position`"
+          @input="handleScrollInput"
         />
       </div>
     </div>
@@ -350,9 +434,10 @@
 </template>
 
 <script setup lang="ts">
-import type { AudioItem } from '~/types/project';
+import type { AudioItem, WaveformData } from '~/types/project';
 import { useOutputTarget } from '~/composables/useOutputTarget';
 import { useLiveplayServer } from '~/composables/useLiveplayServer';
+import { buildWaveformFromChannels } from '~/utils/audio';
 
 const props = defineProps<{
   audioItem: AudioItem;
@@ -363,6 +448,7 @@ const props = defineProps<{
   // items selected that re-request fires per displayed anchor and races the
   // batch edit, which is what made auto-trim / auto-volume revert.
   multiSelect?: boolean;
+  previewMode?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -377,21 +463,65 @@ const emit = defineEmits<{
   'update:startNextTime': [value: number];
   'update:startNextFadeOut': [value: boolean];
   'change': [];
-  'normalize': [];
+  'normalize': [mode: 'loudness' | 'truePeak', target: number];
   'trimSilence': [];
 }>();
 
 const { t } = useLocalization();
-const { colorForLevel } = useOutputTarget();
+const { colorForLevel, levels: outputTargetLevels } = useOutputTarget();
 
-// Parse a CSS hex color ("#rrggbb") into [r, g, b] without DOM tricks.
-function hexToRgb(hex: string): [number, number, number] {
-  const n = parseInt(hex.replace('#', ''), 16);
-  return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
-}
+type NormalizationMode = 'loudness' | 'truePeak';
 
-// Get audio engine for playback position
-const { activeCues, seekCue } = useAudioEngine();
+const normalizationMode = ref<NormalizationMode>('truePeak');
+const normalizeMenu = ref<HTMLDetailsElement | null>(null);
+const customLoudnessTarget = ref<number | null>(null);
+const customTruePeakTarget = ref<number | null>(-0.1);
+const projectLoudnessTarget = computed(() =>
+  Number.isFinite(outputTargetLevels.value.loudnessTargetLufs)
+    ? outputTargetLevels.value.loudnessTargetLufs
+    : -23,
+);
+const projectTruePeakTarget = computed(() =>
+  Number.isFinite(outputTargetLevels.value.limiterCeilingDb)
+    ? Math.max(-60, Math.min(0, outputTargetLevels.value.limiterCeilingDb))
+    : -1,
+);
+const normalizationTargetMax = computed(() =>
+  normalizationMode.value === 'truePeak' ? projectTruePeakTarget.value : 0,
+);
+const normalizationUnit = computed(() =>
+  normalizationMode.value === 'truePeak' ? 'dBTP' : 'LUFS',
+);
+const normalizationTarget = computed<number>({
+  get: () => normalizationMode.value === 'truePeak'
+    ? customTruePeakTarget.value ?? projectTruePeakTarget.value
+    : customLoudnessTarget.value ?? projectLoudnessTarget.value,
+  set: (value) => {
+    if (!Number.isFinite(value)) return;
+    const target = Math.round(
+      Math.max(-60, Math.min(normalizationTargetMax.value, value)) * 10,
+    ) / 10;
+    if (normalizationMode.value === 'truePeak') customTruePeakTarget.value = target;
+    else customLoudnessTarget.value = target;
+  },
+});
+
+const closeNormalizeMenu = () => normalizeMenu.value?.removeAttribute('open');
+const handleNormalizeFocusOut = (event: FocusEvent) => {
+  const next = event.relatedTarget as Node | null;
+  if (!next || !normalizeMenu.value?.contains(next)) closeNormalizeMenu();
+};
+
+const { activeCues, nextItemOverrideUuid, setNextItem } = useAudioEngine();
+const {
+  currentProject,
+  previewItemUuid,
+  previewCueId,
+  startPreview,
+} = useProject();
+const server = useLiveplayServer();
+const previewCueIsCurrent = computed(() => previewItemUuid.value === props.audioItem.uuid && !!previewCueId.value);
+const previewMeter = useCueMeters(() => previewCueIsCurrent.value ? previewCueId.value || null : null);
 
 // Check if this is a cart item
 const isCartItem = computed(() => {
@@ -417,37 +547,69 @@ const isDrawing = ref(false);
 const zoomLevel = ref(1);
 const scrollPosition = ref(0);
 
-// Get playback position for playhead
-const playbackPosition = computed(() => {
-  const cue = activeCues.value.get(props.audioItem.uuid);
+const auditionPosition = ref(0);
+const auditionJumpSeconds = useState<number>('PlaybackControls.previewJumpSeconds', () => 5);
+const regularCue = computed(() => activeCues.value.get(props.audioItem.uuid));
+const previewIsCurrent = computed(() => !!props.previewMode && previewCueIsCurrent.value);
+const previewCueIsRunning = computed(() => previewCueIsCurrent.value && previewMeter.transport.value !== 0);
+const previewIsRunning = computed(() => !!props.previewMode && previewCueIsRunning.value);
+const auditionIsPaused = computed(() => props.previewMode
+  ? previewIsRunning.value && previewMeter.transport.value === 4
+  : !!regularCue.value?.isPaused);
+const auditionIsRunning = computed(() => props.previewMode ? previewIsRunning.value : !!regularCue.value);
+const auditionToggleIcon = computed(() => auditionIsRunning.value && !auditionIsPaused.value ? 'pause' : 'play_arrow');
+const auditionToggleLabel = computed(() => auditionIsRunning.value && !auditionIsPaused.value
+  ? t('actions.pause')
+  : auditionIsPaused.value ? t('actions.resume') : t('actions.play'));
+const auditionIsNext = computed(() => nextItemOverrideUuid.value === props.audioItem.uuid);
+
+const liveMainPlayheadPosition = computed<number | null>(() => {
+  const cue = regularCue.value;
   if (!cue) return null;
-
-  // Prefer the absolute file playhead reported by the server — it's independent
-  // of the in point, so dragging in/out while playing doesn't shift the line.
   if (typeof cue.playheadSeconds === 'number') return cue.playheadSeconds;
+  return cue.currentTime + (props.audioItem.inPoint || 0);
+});
+const mainPlayheadPosition = computed<number | null>(() => liveMainPlayheadPosition.value
+  ?? (!props.previewMode ? auditionPosition.value : null));
+const previewPlayheadPosition = computed<number | null>(() => previewCueIsRunning.value
+  ? previewMeter.playhead.value
+  : props.previewMode ? auditionPosition.value : null);
 
-  // Fallback: currentTime is relative to inPoint, so add it back for absolute.
-  const inPoint = props.audioItem.inPoint || 0;
-  return cue.currentTime + inPoint;
+// The transport follows the mode-specific playhead. Main and Preview remain
+// separate marker streams so both can be shown when the same file is active.
+const playbackPosition = computed(() => {
+  if (props.previewMode) return previewPlayheadPosition.value ?? auditionPosition.value;
+  return mainPlayheadPosition.value ?? auditionPosition.value;
 });
 
 // Use the combined peak trace for drawing and silence trim only. Loudness and
 // true peak come from the server's decoded-sample analysis.
-const waveformData = computed(() => props.audioItem?.waveform?.peaks ?? null);
+const detailedWaveform = shallowRef<WaveformData | null>(null);
+const displayedWaveform = computed(() => detailedWaveform.value ?? props.audioItem?.waveform ?? null);
+const waveformData = computed(() => displayedWaveform.value?.peaks ?? null);
 const hasWaveform = computed(() => waveformData.value && waveformData.value.length > 0);
 
+interface WaveformLane {
+  peaks: number[];
+  rms?: number[];
+}
+
 // Lanes to draw: one per source channel when the server gave us per-channel
-// data (stereo renders L above R), otherwise a single combined lane. Legacy
-// waveforms (ffmpeg mono downmix, pre-channelPeaks projects) keep one lane.
-const waveformLanes = computed<number[][]>(() => {
-  const wf = props.audioItem?.waveform;
+// data (stereo renders L above R), otherwise a single combined lane. The
+// server's RMS trace supplies the readable body while peaks retain transient
+// and level-zone information. Legacy peak-only waveforms still render.
+const waveformLanes = computed<WaveformLane[]>(() => {
+  const wf = displayedWaveform.value;
   if (!wf) return [];
   const perChannel = wf.channelPeaks;
   if (Array.isArray(perChannel) && perChannel.length > 1 &&
       perChannel.every(lane => Array.isArray(lane) && lane.length > 0)) {
-    return perChannel;
+    return perChannel.map((peaks, index) => ({
+      peaks,
+      rms: Array.isArray(wf.channelRms?.[index]) ? wf.channelRms[index] : undefined,
+    }));
   }
-  return wf.peaks && wf.peaks.length > 0 ? [wf.peaks] : [];
+  return wf.peaks && wf.peaks.length > 0 ? [{ peaks: wf.peaks, rms: wf.rms }] : [];
 });
 
 // ---- Self-healing waveform regeneration -------------------------------------
@@ -456,8 +618,6 @@ const waveformLanes = computed<number[][]>(() => {
 // user press "Regenerate waveform", request it from the server automatically
 // whenever the panel shows an item with no peaks. The result arrives as a
 // waveform_ready doc_patch which sets audioItem.waveform and redraws.
-const { currentProject } = useProject();
-
 // Resolve the server-side absolute media path, falling back to project folder +
 // relative mediaPath for legacy items (mirrors the manual regenerate button).
 const resolveMediaPath = (): string => {
@@ -471,6 +631,33 @@ const resolveMediaPath = (): string => {
   }
   return '';
 };
+
+// The playlist's compact 1,000-bucket waveform is enough for rows, but not
+// for a 20x editor zoom. Fetch one display-only high-resolution trace while
+// Properties is open; saved analysis and information colours stay unchanged.
+const DETAIL_WAVEFORM_BUCKETS = 8192;
+let detailedWaveformRequest = 0;
+const loadDetailedWaveform = async () => {
+  const request = ++detailedWaveformRequest;
+  detailedWaveform.value = null;
+  const waveform = props.audioItem.waveform;
+  if (props.multiSelect || !waveform?.peaks?.length || waveform.peaks.length >= DETAIL_WAVEFORM_BUCKETS) return;
+  const path = resolveMediaPath();
+  if (!path) return;
+  try {
+    const data = await server.fetchWaveformByPath(path, DETAIL_WAVEFORM_BUCKETS);
+    const built = buildWaveformFromChannels(data.channels, data.duration_ms / 1000, data);
+    if (request === detailedWaveformRequest && built) detailedWaveform.value = built;
+  } catch {
+    // The persisted waveform remains the complete fallback.
+  }
+};
+
+watch([
+  () => props.audioItem.uuid,
+  () => props.audioItem.waveform?.peaks?.length,
+  () => props.multiSelect,
+], loadDetailedWaveform, { immediate: true });
 
 // Guard so we don't spam the server while a generation is in flight. Reset
 // when the item changes or once a waveform actually arrives.
@@ -561,6 +748,21 @@ const duration = computed(() =>
   props.audioItem?.duration || props.audioItem?.waveform?.duration || 0
 );
 
+const clampAuditionPosition = (value: number) => Math.max(
+  inPoint.value,
+  Math.min(Number.isFinite(value) ? value : inPoint.value, outPoint.value || duration.value),
+);
+
+watch(() => props.audioItem.uuid, () => {
+  auditionPosition.value = inPoint.value;
+}, { immediate: true });
+watch([inPoint, outPoint], () => {
+  auditionPosition.value = clampAuditionPosition(auditionPosition.value);
+});
+watch(playbackPosition, (position) => {
+  if (auditionIsRunning.value) auditionPosition.value = clampAuditionPosition(position);
+});
+
 // Canvas dimensions - use reactive ref to ensure handle positions update on resize
 const containerWidth = ref(800);
 const canvasWidth = computed(() => containerWidth.value);
@@ -577,6 +779,8 @@ const visibleEnd = computed(() => Math.min(duration.value, visibleStart.value + 
 
 // Max scroll value
 const maxScroll = computed(() => (zoomLevel.value > 1 ? 100 : 0));
+const zoomProgress = computed(() => ((zoomLevel.value - 1) / 19) * 100);
+const scrollProgress = computed(() => maxScroll.value === 0 ? 0 : scrollPosition.value);
 
 // Position calculations for trim handles
 const inPointPosition = computed(() => {
@@ -613,20 +817,80 @@ const startNextPosition = computed(() => {
   return (relativeTime / visibleDuration.value) * canvasWidth.value;
 });
 
-// Seek to position (when clicking waveform)
 const seekToPosition = (absoluteTime: number) => {
-  const cue = activeCues.value.get(props.audioItem.uuid);
-  if (!cue) return;
+  const position = clampAuditionPosition(absoluteTime);
+  auditionPosition.value = position;
+  if (props.previewMode && previewIsCurrent.value) {
+    server.seekCueId(previewCueId.value, position);
+  } else if (!props.previewMode && regularCue.value) {
+    server.seekItem(props.audioItem.uuid, position);
+  }
+};
 
-  const inPoint = props.audioItem.inPoint || 0;
-  const clampedTime = Math.max(
-    inPoint,
-    Math.min(absoluteTime, props.audioItem.outPoint || props.audioItem.duration)
+const syncPropertiesPreviewRange = () => {
+  if (!previewCueId.value || outPoint.value <= inPoint.value) return;
+  void server.setPreviewRange(
+    inPoint.value,
+    outPoint.value,
+    props.audioItem.endBehavior?.action === 'loop',
   );
+};
 
-  // Routes to the server (server seek is a no-op for now and logs a warning;
-  // wire-up will land with the engine's seek endpoint).
-  seekCue(props.audioItem.uuid, clampedTime);
+const toggleAudition = async () => {
+  const position = clampAuditionPosition(playbackPosition.value);
+  if (props.previewMode) {
+    if (!previewIsCurrent.value) {
+      await startPreview(props.audioItem.uuid);
+      if (!previewCueId.value) return;
+      syncPropertiesPreviewRange();
+      server.seekCueId(previewCueId.value, position);
+      return;
+    }
+    if (auditionIsPaused.value) {
+      await server.resumeCueId(previewCueId.value);
+    } else if (previewIsRunning.value) {
+      await server.pauseCueId(previewCueId.value);
+    } else {
+      syncPropertiesPreviewRange();
+      server.seekCueId(previewCueId.value, position);
+      await server.play(previewCueId.value);
+    }
+    return;
+  }
+
+  if (regularCue.value?.isPaused) {
+    await server.resumeItem(props.audioItem.uuid);
+  } else if (regularCue.value) {
+    await server.pauseItem(props.audioItem.uuid);
+  } else {
+    server.seekItem(props.audioItem.uuid, position);
+    await server.playItem(props.audioItem.uuid);
+  }
+};
+
+const stopAudition = async () => {
+  auditionPosition.value = clampAuditionPosition(playbackPosition.value);
+  if (props.previewMode) {
+    if (previewCueId.value) await server.stop(previewCueId.value);
+  } else {
+    await server.stopItem(props.audioItem.uuid);
+  }
+};
+
+const jumpAudition = (direction: -1 | 1) => {
+  const jump = Math.max(0.1, Math.min(99.9, Number(auditionJumpSeconds.value) || 5));
+  auditionJumpSeconds.value = Math.round(jump * 10) / 10;
+  seekToPosition(playbackPosition.value + direction * auditionJumpSeconds.value);
+};
+
+const setAuditionAsNext = () => setNextItem(props.audioItem.uuid);
+const setInPointAtPlayhead = () => {
+  emit('update:inPoint', Math.max(0, Math.min(playbackPosition.value, outPoint.value - 0.01)));
+  emit('change');
+};
+const setOutPointAtPlayhead = () => {
+  emit('update:outPoint', Math.min(duration.value, Math.max(playbackPosition.value, inPoint.value + 0.01)));
+  emit('change');
 };
 
 // Handle dragging
@@ -721,18 +985,34 @@ const startDragFade = (fadeType: 'play' | 'stop' | 'cross' | 'startNext', event:
   document.addEventListener('mouseup', handleMouseUp);
 };
 
-// Handle canvas click for setting trim points
-const handleCanvasMouseDown = (event: MouseEvent) => {
-  if (dragState.value.handle) return;
+const handleCanvasPointerDown = (event: PointerEvent) => {
+  if (dragState.value.handle || event.button !== 0 || !event.isPrimary) return;
+  const canvas = waveformCanvas.value;
+  if (!canvas) return;
+  event.preventDefault();
+  canvas.setPointerCapture(event.pointerId);
 
-  const rect = waveformCanvas.value?.getBoundingClientRect();
-  if (!rect) return;
+  const update = (clientX: number) => {
+    const rect = canvas.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    seekToPosition(visibleStart.value + ratio * visibleDuration.value);
+  };
+  const move = (moveEvent: PointerEvent) => update(moveEvent.clientX);
+  const finish = () => {
+    canvas.removeEventListener('pointermove', move);
+    canvas.removeEventListener('pointerup', finish);
+    canvas.removeEventListener('pointercancel', finish);
+  };
+  update(event.clientX);
+  canvas.addEventListener('pointermove', move);
+  canvas.addEventListener('pointerup', finish);
+  canvas.addEventListener('pointercancel', finish);
+};
 
-  const x = event.clientX - rect.left;
-  const clickedTime = visibleStart.value + (x / canvasWidth.value) * visibleDuration.value;
-
-  // Seek to clicked position
-  seekToPosition(clickedTime);
+const handlePlayheadKeyDown = (event: KeyboardEvent) => {
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+  event.preventDefault();
+  seekToPosition(playbackPosition.value + (event.key === 'ArrowLeft' ? -0.1 : 0.1));
 };
 
 // Handle wheel zoom
@@ -740,6 +1020,12 @@ const handleWheel = (event: WheelEvent) => {
   if (props.multiSelect) return; // no canvas to zoom in multi-selection
   const delta = event.deltaY > 0 ? -0.5 : 0.5;
   zoomLevel.value = Math.max(1, Math.min(20, zoomLevel.value + delta));
+};
+
+const handleScrollInput = (event: Event) => {
+  const value = Number((event.currentTarget as HTMLInputElement).value);
+  if (!Number.isFinite(value)) return;
+  scrollPosition.value = Math.max(0, Math.min(maxScroll.value, value));
 };
 
 // Real-time volume preview during drag — updates the value but does NOT save.
@@ -920,20 +1206,25 @@ const trimSilence = () => {
   emit('trimSilence');
 };
 
-// Normalize audio to target loudness
+// Normalize audio to the selected loudness or true-peak level.
 const normalizeAudio = () => {
   if (!waveformData.value || waveformData.value.length === 0) {
     console.warn('No waveform data available for normalization');
     return;
   }
 
+  const mode = normalizationMode.value;
+  const target = normalizationTarget.value;
+  if (!Number.isFinite(target)) return;
+
   // Emit normalize event to trigger batch normalization in parent.
   // The parent (handleNormalize) normalizes every selected item INDIVIDUALLY
-  // to the target loudness using each item's own intrinsic loudness, and
+  // from its own measured loudness or true peak, and
   // persists itself. We deliberately do NOT emit 'change' here: that would run
   // the multi-select snapshot-diff in handleSave and overwrite each item's
   // individually-computed volume with the anchor item's volume.
-  emit('normalize');
+  emit('normalize', mode, target);
+  closeNormalizeMenu();
 };
 
 // Draw waveform on canvas
@@ -953,7 +1244,8 @@ const drawWaveform = () => {
   ctx.scale(dpr, dpr);
 
   // Clear canvas with background color
-  const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--color-background').trim();
+  const rootStyle = getComputedStyle(document.documentElement);
+  const bgColor = rootStyle.getPropertyValue('--color-background').trim();
   ctx.fillStyle = bgColor || '#000';
   ctx.fillRect(0, 0, canvasWidth.value, canvasHeight);
 
@@ -1020,45 +1312,116 @@ const drawWaveform = () => {
     const heightFraction = (linear: number) =>
       Math.min(Math.max(linear, 0), 1);
 
-    lanes.forEach((peaks, laneIndex) => {
+    lanes.forEach((lane, laneIndex) => {
       const laneCenter = laneIndex * laneHeight + laneHeight / 2;
+      const peaks = lane.peaks;
+      const rms = lane.rms;
       const totalPeaks = peaks.length;
 
       // Calculate visible peak range
-      const startPeak = Math.floor((visibleStart.value / duration.value) * totalPeaks);
-      const endPeak = Math.floor((visibleEnd.value / duration.value) * totalPeaks);
-      const visiblePeaksArray = peaks.slice(startPeak, endPeak);
-      if (visiblePeaksArray.length === 0) return;
+      const startPeak = Math.max(0, Math.floor(
+        (visibleStart.value / duration.value) * totalPeaks,
+      ));
+      const endPeak = Math.min(totalPeaks, Math.max(startPeak + 1, Math.ceil(
+        (visibleEnd.value / duration.value) * totalPeaks,
+      )));
+      const visibleCount = endPeak - startPeak;
+      if (visibleCount <= 0) return;
 
-      const barWidth = canvasWidth.value / visiblePeaksArray.length;
+      // One envelope point per source bucket while zoomed in, or per screen
+      // pixel while zoomed out. Peak uses max-hold so transients survive;
+      // RMS uses power averaging so mastered material still has visible shape.
+      const pointCount = Math.min(
+        visibleCount,
+        Math.max(2, Math.floor(canvasWidth.value)),
+      );
+      const bucketsPerPoint = visibleCount / pointCount;
+      const halfHeight = Math.max(1, laneHeight / 2 - 2);
+      const samples: Array<{
+        x: number;
+        base: number;
+        peak: number;
+        rms: number;
+        color: string;
+      }> = [];
 
-      // Draw each bar with individual coloring
-      visiblePeaksArray.forEach((value, i) => {
-        const normalizedPeak = value; // Already normalized 0-1
-        const x = i * barWidth;
+      for (let point = 0; point < pointCount; point++) {
+        const from = startPeak + Math.floor(point * bucketsPerPoint);
+        const to = Math.min(endPeak, Math.max(
+          from + 1,
+          startPeak + Math.ceil((point + 1) * bucketsPerPoint),
+        ));
+        let peak = 0;
+        let rmsPower = 0;
+        let rmsCount = 0;
+        for (let index = from; index < to; index++) {
+          const peakValue = peaks[index] ?? 0;
+          if (Number.isFinite(peakValue)) peak = Math.max(peak, peakValue);
+          const rmsValue = rms?.[index];
+          if (Number.isFinite(rmsValue)) {
+            rmsPower += (rmsValue as number) ** 2;
+            rmsCount++;
+          }
+        }
 
-        // Base waveform bar height (pre-volume, subtle gray reference)
-        const baseBarHeight = heightFraction(normalizedPeak) * laneHeight;
-        const baseY = laneCenter - baseBarHeight / 2;
-        ctx.fillStyle = 'rgba(128, 128, 128, 0.15)';
-        ctx.fillRect(x, baseY, Math.max(barWidth, 1), baseBarHeight);
+        const audiblePeak = Math.max(0, peak * volumeMultiplier);
+        const measuredRms = rmsCount > 0 ? Math.sqrt(rmsPower / rmsCount) : peak;
+        const audibleRms = Math.min(audiblePeak, Math.max(0, measuredRms * volumeMultiplier));
+        const peakDB = audiblePeak <= 0 ? -60 : 20 * Math.log10(audiblePeak);
+        samples.push({
+          x: pointCount === 1 ? 0 : (point / (pointCount - 1)) * canvasWidth.value,
+          base: heightFraction(peak) * halfHeight,
+          peak: heightFraction(audiblePeak) * halfHeight,
+          rms: heightFraction(audibleRms) * halfHeight,
+          color: getColorForDB(peakDB),
+        });
+      }
+      if (samples.length === 1) samples.push({ ...samples[0]!, x: canvasWidth.value });
 
-        // Bar height after volume multiplication (the audible level).
-        const linearAmplitude = normalizedPeak * volumeMultiplier;
-        const amplifiedBarHeight = heightFraction(linearAmplitude) * laneHeight;
-        const amplifiedY = laneCenter - amplifiedBarHeight / 2;
+      const envelopePath = (key: 'base' | 'peak' | 'rms') => {
+        const path = new Path2D();
+        path.moveTo(samples[0]!.x, laneCenter - samples[0]![key]);
+        for (let index = 1; index < samples.length; index++) {
+          path.lineTo(samples[index]!.x, laneCenter - samples[index]![key]);
+        }
+        for (let index = samples.length - 1; index >= 0; index--) {
+          path.lineTo(samples[index]!.x, laneCenter + samples[index]![key]);
+        }
+        path.closePath();
+        return path;
+      };
 
-        // Convert this bar's amplitude to dB for color selection
-        const barDB = linearAmplitude <= 0 ? -60 : 20 * Math.log10(linearAmplitude);
+      // Preserve the exact output-target level colours, but apply them to a
+      // continuous energy body and peak contour instead of merged rectangles.
+      const levelGradient = ctx.createLinearGradient(0, 0, canvasWidth.value, 0);
+      let previousColor = samples[0]!.color;
+      levelGradient.addColorStop(0, previousColor);
+      for (let index = 1; index < samples.length; index++) {
+        const color = samples[index]!.color;
+        if (color === previousColor) continue;
+        const offset = samples[index]!.x / canvasWidth.value;
+        levelGradient.addColorStop(Math.max(0, offset - 0.001), previousColor);
+        levelGradient.addColorStop(offset, color);
+        previousColor = color;
+      }
+      levelGradient.addColorStop(1, previousColor);
 
-        // Get color for this specific bar's level
-        const [r, g, b] = hexToRgb(getColorForDB(barDB));
+      ctx.strokeStyle = 'rgba(128, 128, 128, 0.28)';
+      ctx.lineWidth = 1;
+      ctx.stroke(envelopePath('base'));
 
-        // Draw colored bar with opacity based on whether it's clipping
-        const alpha = linearAmplitude > 1 ? 0.8 : 0.5; // More opaque if clipping
-        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
-        ctx.fillRect(x, amplifiedY, Math.max(barWidth, 1), amplifiedBarHeight);
-      });
+      ctx.fillStyle = levelGradient;
+      ctx.globalAlpha = 0.18;
+      ctx.fill(envelopePath('peak'));
+
+      ctx.globalAlpha = 0.82;
+      ctx.fill(envelopePath('rms'));
+
+      ctx.strokeStyle = levelGradient;
+      ctx.globalAlpha = 0.95;
+      ctx.lineWidth = 1.25;
+      ctx.stroke(envelopePath('peak'));
+      ctx.globalAlpha = 1;
 
       // Lane zero line + divider between lanes, so L/R read as two strips.
       if (lanes.length > 1) {
@@ -1168,12 +1531,13 @@ const drawWaveform = () => {
       }
     }
 
-    // Start Next marker — green segue line, plus the optional marker fade-out
+    // Start Next marker — the same warning/next colour used throughout the app.
     if (props.audioItem.startNextEnabled && startNextTime.value > 0) {
       const markerTime = startNextTime.value;
+      const markerColor = rootStyle.getPropertyValue('--state-up-next').trim() || '#d8ad35';
       if (markerTime >= visibleStart.value && markerTime <= visibleEnd.value) {
         const markerX = (markerTime - visibleStart.value) * pixelsPerSecond;
-        ctx.strokeStyle = 'rgba(22, 163, 74, 0.9)';
+        ctx.strokeStyle = markerColor;
         ctx.lineWidth = 2;
         ctx.beginPath(); ctx.moveTo(markerX, 0); ctx.lineTo(markerX, canvasHeight); ctx.stroke();
       }
@@ -1185,30 +1549,43 @@ const drawWaveform = () => {
           const fadeEndX = Math.min(canvasWidth.value, (fadeEndTime - visibleStart.value) * pixelsPerSecond);
           const fadeWidth = fadeEndX - fadeStartX;
           if (fadeWidth > 0) {
-            ctx.fillStyle = 'rgba(22, 163, 74, 0.15)';
+            ctx.globalAlpha = 0.15;
+            ctx.fillStyle = markerColor;
             ctx.fillRect(fadeStartX, 0, fadeWidth, canvasHeight);
-            ctx.strokeStyle = 'rgba(22, 163, 74, 0.8)';
+            ctx.globalAlpha = 0.8;
+            ctx.strokeStyle = markerColor;
             ctx.lineWidth = 2;
             ctx.beginPath(); ctx.moveTo(fadeStartX, 0); ctx.lineTo(fadeEndX, canvasHeight); ctx.stroke();
+            ctx.globalAlpha = 1;
           }
         }
       }
     }
   }
 
-  // Draw playhead if item is currently playing
-  if (playbackPosition.value !== null && duration.value > 0) {
-    const relativeTime = playbackPosition.value - visibleStart.value;
+  const drawPlayheadMarker = (position: number | null, color: string, preview: boolean) => {
+    if (position === null || duration.value <= 0) return;
+    const relativeTime = position - visibleStart.value;
     const playheadX = (relativeTime / visibleDuration.value) * canvasWidth.value;
-    if (playheadX >= 0 && playheadX <= canvasWidth.value) {
-      const itemColor = props.audioItem.color || 'var(--color-accent)';
-      ctx.strokeStyle = itemColor;
-      ctx.lineWidth = 2;
+    if (playheadX < 0 || playheadX > canvasWidth.value) return;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 2;
+    ctx.setLineDash(preview ? [5, 3] : []);
+    ctx.beginPath();
+    ctx.moveTo(playheadX, 0);
+    ctx.lineTo(playheadX, canvasHeight);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (preview) {
       ctx.beginPath();
-      ctx.moveTo(playheadX, 0);
-      ctx.lineTo(playheadX, canvasHeight);
-      ctx.stroke();
-      ctx.fillStyle = itemColor;
+      ctx.arc(playheadX, 5, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(playheadX, canvasHeight - 5, 4, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
       ctx.beginPath();
       ctx.moveTo(playheadX, 10);
       ctx.lineTo(playheadX - 6, 0);
@@ -1222,7 +1599,19 @@ const drawWaveform = () => {
       ctx.closePath();
       ctx.fill();
     }
-  }
+    ctx.restore();
+  };
+
+  drawPlayheadMarker(
+    mainPlayheadPosition.value,
+    rootStyle.getPropertyValue('--state-playing').trim() || '#35a96b',
+    false,
+  );
+  drawPlayheadMarker(
+    previewPlayheadPosition.value,
+    rootStyle.getPropertyValue('--state-preview').trim() || '#315fcf',
+    true,
+  );
 };
 
 // Throttle drawWaveform to prevent excessive redraws
@@ -1249,6 +1638,8 @@ watch([
   () => props.audioItem?.startNextFadeOut,
   waveformData,
   playbackPosition,
+  mainPlayheadPosition,
+  previewPlayheadPosition,
 ], () => {
   throttledDraw();
 });
@@ -1260,6 +1651,7 @@ watch([
 watch(() => props.audioItem?.waveform, () => {
   throttledDraw();
 }, { immediate: true });
+watch(detailedWaveform, throttledDraw);
 
 // Leaving multi-selection re-creates the canvas element (it's only rendered in
 // single-item mode). Re-measure the container and draw once it's back, and run
@@ -1320,11 +1712,11 @@ onUnmounted(() => {
 .waveform-trimmer {
   display: grid;
   background: transparent;
-  grid-template-columns: 72px minmax(360px, 1fr) 176px 296px;
+  grid-template-columns: 80px minmax(300px, 1fr) 184px minmax(260px, 296px);
   align-items: stretch;
   gap: var(--spacing-sm);
   width: 100%;
-  min-width: 930px;
+  min-width: 0;
   height: 100%;
   min-height: 188px;
   padding: 0;
@@ -1353,10 +1745,9 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: var(--type-metadata-size);
+  color: var(--color-text-primary);
+  font-weight: 600;
 }
 
 .db-value {
@@ -1380,11 +1771,11 @@ onUnmounted(() => {
 .volume-slider-vertical {
   writing-mode: vertical-lr;
   direction: rtl;
-  width: 24px;
+  width: 40px;
   height: 100%;
   cursor: pointer;
-  -webkit-appearance: slider-vertical;
-  appearance: slider-vertical;
+  -webkit-appearance: none;
+  appearance: none;
   background: transparent;
   border-radius: 4px;
   position: relative;
@@ -1392,18 +1783,28 @@ onUnmounted(() => {
 
 /* Volume slider track with dB steps */
 .volume-slider-vertical::-webkit-slider-runnable-track {
-  width: 20px;
+  width: 10px;
   height: 100%;
-  background: var(--color-control);
+  background: linear-gradient(
+    to right,
+    var(--color-control) 0 4px,
+    var(--color-background) 4px 6px,
+    var(--color-control) 6px 100%
+  );
   border: 1px solid var(--color-border);
   border-radius: 4px;
   box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.45);
 }
 
 .volume-slider-vertical::-moz-range-track {
-  width: 20px;
+  width: 10px;
   height: 100%;
-  background: var(--color-control);
+  background: linear-gradient(
+    to right,
+    var(--color-control) 0 4px,
+    var(--color-background) 4px 6px,
+    var(--color-control) 6px 100%
+  );
   border: 1px solid var(--color-border);
   border-radius: 4px;
   box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.45);
@@ -1412,27 +1813,33 @@ onUnmounted(() => {
 .volume-slider-vertical::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 24px;
-  height: 14px;
+  width: 38px;
+  height: 22px;
   background:
-    linear-gradient(to bottom, transparent 5px, var(--color-accent) 5px 7px, transparent 7px),
+    linear-gradient(to bottom, transparent 9px, var(--volume-handle-color, var(--color-accent)) 9px 11px, transparent 11px),
     var(--color-surface-raised);
   cursor: pointer;
-  border-radius: 3px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.32);
   border: 1px solid var(--color-border-strong);
 }
 
 .volume-slider-vertical::-moz-range-thumb {
-  width: 24px;
-  height: 14px;
+  width: 38px;
+  height: 22px;
   background:
-    linear-gradient(to bottom, transparent 5px, var(--color-accent) 5px 7px, transparent 7px),
+    linear-gradient(to bottom, transparent 9px, var(--volume-handle-color, var(--color-accent)) 9px 11px, transparent 11px),
     var(--color-surface-raised);
   cursor: pointer;
-  border-radius: 3px;
+  border-radius: 6px;
   border: 1px solid var(--color-border-strong);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.32);
+}
+
+.volume-slider-vertical:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
+  border-radius: var(--border-radius-sm);
 }
 
 .volume-markers {
@@ -1474,11 +1881,9 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  text-transform: uppercase;
-  font-weight: 500;
-  letter-spacing: 0.04em;
+  font-size: var(--type-metadata-size);
+  color: var(--color-text-primary);
+  font-weight: 600;
   cursor: pointer;
   text-wrap: wrap;
 }
@@ -1489,16 +1894,14 @@ onUnmounted(() => {
 }
 
 .start-next-disabled {
-  opacity: 0.45;
+  opacity: 0.62;
   pointer-events: auto;
 }
 
 .fade-control-group label {
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  text-transform: uppercase;
-  font-weight: 500;
-  letter-spacing: 0.04em;
+  font-size: var(--type-metadata-size);
+  color: var(--color-text-primary);
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1507,13 +1910,14 @@ onUnmounted(() => {
 
 .fade-input {
   width: 100%;
+  height: 30px;
   padding: 4px var(--spacing-xs);
   background: var(--color-control);
   border: 1px solid var(--color-border);
   border-radius: var(--border-radius-sm);
   color: var(--color-text-primary);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--type-metadata-size);
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
@@ -1543,12 +1947,122 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   min-height: 36px;
   padding: var(--spacing-xs) var(--spacing-sm);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--border-radius-sm);
   gap: var(--spacing-md);
+}
+
+.audition-transport {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.audition-btn,
+.audition-set-next,
+.audition-marker-btn {
+  height: 30px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  background: var(--color-control);
+  color: var(--color-text-primary);
+}
+
+.audition-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  padding: 0;
+}
+
+.audition-btn:hover,
+.audition-set-next:hover,
+.audition-marker-btn:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-border-strong);
+}
+
+.audition-btn:focus-visible,
+.audition-set-next:focus-visible,
+.audition-marker-btn:focus-visible,
+.audition-jump input:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+
+.audition-btn .material-symbols-rounded {
+  font-size: 19px;
+}
+
+.audition-btn--primary {
+  border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border));
+  color: var(--color-accent);
+}
+
+.audition-btn--stop {
+  color: var(--color-danger);
+}
+
+.audition-jump {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding-right: 6px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  background: var(--color-control);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.audition-jump input {
+  width: 48px;
+  height: 100%;
+  padding: 0 3px 0 6px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  font: inherit;
+  text-align: right;
+}
+
+.audition-time {
+  min-width: 78px;
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.audition-set-next {
+  padding: 0 var(--spacing-sm);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.audition-marker-btn {
+  padding: 0 var(--spacing-sm);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.audition-set-next.active {
+  background: color-mix(in srgb, var(--state-up-next) 72%, var(--color-control));
+  border-color: var(--state-up-next);
+  color: #171b25;
+}
+
+.audition-set-next:hover {
+  background: color-mix(in srgb, var(--state-up-next) 34%, var(--color-control));
 }
 
 .zoom-control {
@@ -1564,18 +2078,77 @@ onUnmounted(() => {
 
 .zoom-slider {
   width: 120px;
-  cursor: pointer;
 }
 
-.zoom-slider::-webkit-slider-thumb {
+.zoom-slider,
+.scroll-slider {
+  --range-progress: 0%;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 12px;
+  margin: 0;
+  box-sizing: border-box;
+  background: linear-gradient(
+    to right,
+    var(--color-accent) 0 var(--range-progress),
+    var(--color-surface) var(--range-progress) 100%
+  );
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  direction: ltr;
+}
+
+.zoom-slider::-webkit-slider-runnable-track,
+.scroll-slider::-webkit-slider-runnable-track {
+  height: 10px;
+  background: transparent;
+  border: 0;
+}
+
+.zoom-slider::-webkit-slider-thumb,
+.scroll-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 14px;
   height: 14px;
-  background: var(--color-accent-custom, var(--color-accent));
+  margin-top: -2px;
+  background: var(--color-surface-raised);
+  border: 2px solid var(--color-accent);
   cursor: pointer;
   border-radius: 50%;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.zoom-slider::-moz-range-track,
+.scroll-slider::-moz-range-track {
+  height: 10px;
+  background: transparent;
+  border: 0;
+}
+
+.zoom-slider::-moz-range-thumb,
+.scroll-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--color-surface-raised);
+  border: 2px solid var(--color-accent);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.zoom-slider:focus-visible,
+.scroll-slider:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.zoom-slider:disabled,
+.scroll-slider:disabled {
+  cursor: default;
+  background: var(--color-surface);
+  opacity: 0.72;
 }
 
 .audio-tools {
@@ -1584,12 +2157,125 @@ onUnmounted(() => {
   align-items: center;
 }
 
-.trim-silence-btn,
+.normalize-menu {
+  position: relative;
+  min-height: 30px;
+}
+
 .normalize-btn {
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 28px;
+  min-height: 30px;
+  padding: 4px var(--spacing-sm);
+  background: var(--color-control);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  list-style: none;
+}
+
+.normalize-btn::-webkit-details-marker {
+  display: none;
+}
+
+.normalize-btn:hover,
+.normalize-menu[open] > .normalize-btn {
+  background: var(--color-surface-hover);
+  border-color: var(--color-border-strong);
+}
+
+.normalize-btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.normalize-chevron {
+  margin-left: 2px;
+  font-size: 16px;
+  transition: transform var(--transition-fast);
+}
+
+.normalize-menu[open] .normalize-chevron {
+  transform: rotate(180deg);
+}
+
+.normalize-popover {
+  position: absolute;
+  z-index: var(--z-dropdown);
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  gap: var(--spacing-sm);
+  width: 256px;
+  padding: var(--spacing-sm);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--border-radius-md);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42);
+}
+
+.normalize-field {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.normalize-field select,
+.normalize-level {
+  min-height: 30px;
+}
+
+.normalize-level {
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  background: var(--color-control);
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+}
+
+.normalize-target {
+  width: 72px;
+  min-width: 0;
+  padding: 4px 3px 4px 7px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.normalize-target:focus {
+  box-shadow: none;
+}
+
+.normalize-unit {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  padding: 4px 7px 4px 3px;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  pointer-events: none;
+}
+
+.normalize-apply {
+  justify-self: end;
+  min-height: 30px;
+}
+
+.trim-silence-btn,
+.normalize-btn,
+.normalize-apply {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
   padding: 4px var(--spacing-sm);
   background: var(--color-control);
   border: 1px solid var(--color-border);
@@ -1616,28 +2302,6 @@ onUnmounted(() => {
 
 
 
-.zoom-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  background: var(--color-accent-custom, var(--color-accent));
-  cursor: pointer;
-  border-radius: 50%;
-  border: none;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-}
-
-.zoom-slider::-webkit-slider-track {
-  background: var(--color-border);
-  height: 4px;
-  border-radius: 2px;
-}
-
-.zoom-slider::-moz-range-track {
-  background: var(--color-border);
-  height: 4px;
-  border-radius: 2px;
-}
-
 .zoom-level-text {
   font-size: 12px;
   color: var(--color-text-secondary);
@@ -1661,6 +2325,12 @@ onUnmounted(() => {
   display: block;
   width: 100%;
   height: 100%;
+  touch-action: none;
+}
+
+.waveform-canvas:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
 }
 
 /* Multi-selection placeholder shown in place of the single-item canvas.
@@ -1783,8 +2453,8 @@ onUnmounted(() => {
   background: rgba(234, 179, 8, 0.8);
 }
 
-.fade-line-green {
-  background: rgba(22, 163, 74, 0.8);
+.fade-line-startnext {
+  background: var(--state-up-next);
 }
 
 .fade-grip {
@@ -1818,9 +2488,9 @@ onUnmounted(() => {
   border-color: rgb(234, 179, 8);
 }
 
-.fade-grip-green {
-  color: rgb(22, 163, 74);
-  border-color: rgb(22, 163, 74);
+.fade-grip-startnext {
+  color: var(--state-up-next);
+  border-color: var(--state-up-next);
 }
 
 .fade-handle-play .fade-grip {
@@ -1875,40 +2545,6 @@ onUnmounted(() => {
 
 .scroll-slider {
   width: 100%;
-  cursor: pointer;
-}
-
-.scroll-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  background: var(--color-accent-custom, var(--color-accent));
-  cursor: pointer;
-  border-radius: 50%;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-}
-
-.scroll-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  background: var(--color-accent-custom, var(--color-accent));
-  cursor: pointer;
-  border-radius: 50%;
-  border: none;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-}
-
-.scroll-slider::-webkit-slider-track {
-  background: var(--color-border);
-  height: 4px;
-  border-radius: 2px;
-}
-
-.scroll-slider::-moz-range-track {
-  background: var(--color-border);
-  height: 4px;
-  border-radius: 2px;
 }
 
 /* Time Display Section (right side) */
@@ -1929,15 +2565,14 @@ onUnmounted(() => {
 }
 
 .time-field label {
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  text-transform: uppercase;
-  font-weight: 500;
-  letter-spacing: 0.04em;
+  font-size: var(--type-metadata-size);
+  color: var(--color-text-primary);
+  font-weight: 600;
 }
 
 .time-input-with-buttons {
-  display: flex;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 30px;
   align-items: center;
   gap: 2px;
 }
@@ -1953,25 +2588,20 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 24px;
-  height: 26px;
+  min-width: 30px;
+  height: 30px;
   transition:
     color var(--transition-fast),
     background-color var(--transition-fast),
     border-color var(--transition-fast),
-    transform var(--transition-fast);
+    border-color var(--transition-fast);
 }
 
 .time-decrement:hover,
 .time-increment:hover {
-  background: var(--color-background-hover);
+  background: var(--color-surface-hover);
   color: var(--color-text-primary);
   border-color: var(--color-accent);
-}
-
-.time-decrement:active,
-.time-increment:active {
-  transform: scale(0.95);
 }
 
 .time-decrement .material-symbols-rounded,
@@ -1981,26 +2611,35 @@ onUnmounted(() => {
 }
 
 .time-input {
+  height: 30px;
   padding: 4px var(--spacing-xs);
   background: var(--color-control);
   border: 1px solid var(--color-border);
   border-radius: var(--border-radius-sm);
   color: var(--color-text-primary);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--type-metadata-size);
   text-align: center;
   font-variant-numeric: tabular-nums;
   flex: 1;
   min-width: 0;
 }
 
-.time-input:focus {
+.time-input:focus-visible,
+.fade-input:focus-visible,
+.time-decrement:focus-visible,
+.time-increment:focus-visible,
+.trim-silence-btn:focus-visible,
+.normalize-btn:focus-visible,
+.normalize-mode:focus-visible,
+.normalize-target:focus-visible {
   outline: none;
   border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-focus-ring);
 }
 
 .time-input:read-only {
-  opacity: 0.6;
+  color: var(--color-text-secondary);
   cursor: default;
 }
 </style>

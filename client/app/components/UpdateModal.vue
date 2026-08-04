@@ -191,8 +191,7 @@ const handleCancel = () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(4px);
+  background: var(--dialog-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -206,9 +205,10 @@ const handleCancel = () => {
 }
 
 .modal-container {
-  background: var(--color-surface);
-  border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  background: var(--dialog-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--dialog-radius);
+  box-shadow: var(--dialog-shadow);
   overflow: hidden;
   animation: slideUp 0.3s ease;
 }

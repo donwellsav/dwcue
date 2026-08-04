@@ -10,13 +10,6 @@
   -->
   <div class="stereo-meter" :class="{ 'stereo-meter--strip': hasScaleControl }">
     <div v-if="label" class="stereo-meter__label">{{ label }}</div>
-    <div v-if="showPeakValue" class="stereo-meter__peak-text">
-      <span>{{ peakLabel }}<template v-if="meterMode === 'LUFS'"> · {{ shortTermLabel }}</template></span>
-      <span
-        class="stereo-meter__gr-text"
-        :class="{ 'is-active': gainReduction >= 0.1 }"
-      >{{ gainReductionLabel }}</span>
-    </div>
 
     <div class="stereo-meter__body">
       <div class="stereo-meter__clips">
@@ -74,9 +67,8 @@
         <div class="stereo-meter__gr-fill" :style="gainReductionFillStyle" />
       </div>
 
-      <div class="stereo-meter__chan-labels" aria-hidden="true">
-        <span>L</span>
-        <span>R</span>
+      <div v-if="showPeakValue" class="stereo-meter__peak-text">
+        {{ peakLabel }}<template v-if="meterMode === 'LUFS'"> · {{ shortTermLabel }}</template>
       </div>
 
       <!-- The fader slot shares this precise grid cell with the tick scale. -->
@@ -93,7 +85,7 @@
       </div>
       <slot name="scale-control" />
     </div>
-    <div v-if="hasScaleControl" class="stereo-meter__footer">
+    <div v-if="slots.footer" class="stereo-meter__footer">
       <slot name="footer" />
     </div>
   </div>
@@ -279,17 +271,14 @@ const holdStyleL = computed(() => holdStyle(holdL.held.value));
 const holdStyleR = computed(() => holdStyle(holdR.held.value));
 
 // Each master channel owns an independent limiter. One compact lane therefore
-// shows the worst (most-negative) side and labels it MAX; it must not imply a
-// stereo-linked envelope that the engine does not provide.
+// shows the worst (most-negative) side; it must not imply a stereo-linked
+// envelope that the engine does not provide.
 const worstGainReductionDb = computed(() => Math.min(
   0,
   leftStream.gainReduction.value,
   rightStream.gainReduction.value,
 ));
 const gainReduction = computed(() => Math.abs(worstGainReductionDb.value));
-const gainReductionLabel = computed(() =>
-  `GR MAX ${worstGainReductionDb.value < -0.05 ? '−' : ''}${gainReduction.value.toFixed(1)}`,
-);
 const gainReductionAriaLabel = computed(() =>
   `Maximum of independent left and right limiters: ${gainReduction.value.toFixed(1)} decibels`,
 );
@@ -383,15 +372,6 @@ const shortTermLabel = computed(() => {
     text-transform: none;
   }
 
-  &--strip &__peak-text {
-    color: var(--color-text-primary);
-    font-size: 14px;
-    gap: 4px;
-    line-height: 1.1;
-    text-align: left;
-    justify-items: start;
-  }
-
   &__label {
     font-family: var(--font-mono);
     font-size: 10px;
@@ -415,7 +395,7 @@ const shortTermLabel = computed(() => {
   &__body {
     display: grid;
     grid-template-columns: 26px;
-    grid-template-rows: 6px minmax(40px, 1fr) 24px;
+    grid-template-rows: 6px minmax(40px, 1fr);
     justify-content: center;
     column-gap: 4px;
     row-gap: 3px;
@@ -425,7 +405,9 @@ const shortTermLabel = computed(() => {
 
   &--strip &__body {
     grid-template-columns: 28px 8px 72px;
+    grid-template-rows: 6px minmax(40px, 1fr) 20px;
     column-gap: 8px;
+    row-gap: 2px;
   }
 
   &__clips {
@@ -686,45 +668,21 @@ const shortTermLabel = computed(() => {
     pointer-events: none;
   }
 
-  &__chan-labels {
-    grid-column: 1;
-    grid-row: 3;
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 3px;
-    justify-items: center;
-    align-items: center;
-    font-family: var(--font-mono);
-    font-size: 10px;
-    color: var(--color-text-secondary);
-    width: 26px;
-  }
-
-  &--strip &__chan-labels {
-    padding-right: 0;
-    font-size: 12px;
-    color: var(--color-text-primary);
-  }
-
   &__peak-text {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    align-self: center;
+    justify-self: stretch;
+    box-sizing: border-box;
+    padding-right: 42px;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 700;
-    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-primary);
     text-align: center;
-    flex-shrink: 0;
-    display: grid;
-    gap: 1px;
     line-height: 1;
     white-space: nowrap;
-  }
-
-  &__gr-text {
-    color: var(--color-text-secondary);
-
-    &.is-active {
-      color: var(--color-warning);
-    }
   }
 
   &__footer {
@@ -751,7 +709,7 @@ const shortTermLabel = computed(() => {
 }
 
 .stereo-meter:not(.stereo-meter--strip) .stereo-meter__body {
-  grid-template-rows: 6px minmax(0, 1fr) 11px;
+  grid-template-rows: 6px minmax(0, 1fr);
   row-gap: 2px;
 }
 

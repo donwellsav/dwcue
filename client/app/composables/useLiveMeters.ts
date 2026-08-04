@@ -89,7 +89,7 @@ export function usePeakHold(
   opts?: { holdMs?: number; clipThresholdDb?: number },
 ) {
   const holdMs  = opts?.holdMs ?? 1500;
-  const clipDb  = opts?.clipThresholdDb ?? -0.1;
+  const clipDb  = opts?.clipThresholdDb ?? 0;
   const held    = ref(-120);
   const clipped = ref(false);
   let heldAt = 0;

@@ -112,6 +112,16 @@ button > .material-symbols-rounded {
   --modal-width: 560px;
   --modal-max-height: 90vh;
 
+  // Shared dialog chrome. Content can vary without changing the visual plane.
+  --dialog-backdrop: rgba(6, 7, 11, 0.72);
+  --dialog-surface: var(--color-surface);
+  --dialog-radius: var(--border-radius-lg);
+  --dialog-shadow: 0 24px 64px rgba(0, 0, 0, 0.46);
+  --dialog-padding: var(--spacing-xl);
+  --dialog-header-padding: var(--spacing-lg) var(--spacing-xl);
+  --dialog-body-padding: var(--spacing-lg) var(--spacing-xl);
+  --dialog-footer-padding: var(--spacing-md) var(--spacing-xl);
+
   // Rack-console primitives. Existing component aliases below keep this a
   // visual overhaul rather than a risky component rewrite.
   --rack-eigengrau: #16161d;
@@ -348,6 +358,59 @@ select {
     opacity: 0.5;
     cursor: not-allowed;
   }
+}
+
+input.app-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 18px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+input.app-range:focus {
+  border: 0;
+  box-shadow: none;
+}
+
+input.app-range::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--color-control);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+input.app-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  background: var(--color-accent);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+input.app-range::-moz-range-track {
+  height: 4px;
+  background: var(--color-control);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+input.app-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--color-accent);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
 @media (prefers-reduced-motion: reduce) {

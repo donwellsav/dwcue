@@ -53,6 +53,16 @@
             >
               {{ t('actions.setAsNext') }}
             </button>
+            <button
+              v-if="showMode"
+              type="button"
+              class="preview-action-btn"
+              @click="handleOpenPreviewProperties"
+              :title="t('properties.title')"
+              :aria-label="t('properties.title')"
+            >
+              <span class="material-symbols-rounded" aria-hidden="true">tune</span>
+            </button>
             <span class="preview-cue-title">{{ previewingItem.displayName }}</span>
             <span v-if="previewLoops" class="preview-loop-pill">{{ t('endBehavior.loop') }}</span>
           </div>
@@ -113,7 +123,15 @@
               class="preview-range-span"
               :style="{ left: previewInPct + '%', width: Math.max(0, previewOutPct - previewInPct) + '%' }"
             ></div>
-            <div class="preview-progress-fill" :style="{ width: previewProgressPct + '%' }"></div>
+            <div
+              class="preview-progress-fill"
+              :style="{ transform: `scaleX(${previewProgressPct / 100})` }"
+            ></div>
+            <div
+              class="preview-playhead-indicator"
+              :style="{ left: previewProgressPct + '%' }"
+              aria-hidden="true"
+            ></div>
             <input
               type="range"
               class="preview-progress-slider"
@@ -125,6 +143,14 @@
               :aria-valuetext="`${formatPreviewTime(previewSeekValue)} / ${formatPreviewTime(previewTrackDuration)}`"
               @input="handlePreviewSeek"
             />
+            <div
+              v-if="previewStartNextPct !== null"
+              class="preview-start-next-marker"
+              :style="{ left: previewStartNextPct + '%' }"
+              role="img"
+              :aria-label="t('behaviors.startNextMarker', { time: formatPreviewPrecise(previewStartNextTime ?? 0) })"
+              :title="t('behaviors.startNextMarker', { time: formatPreviewPrecise(previewStartNextTime ?? 0) })"
+            ></div>
             <div
               class="preview-range-marker preview-range-marker--in"
               :style="{ left: previewInPct + '%' }"
@@ -182,6 +208,34 @@
         <div class="preview-tools">
           <button
             type="button"
+            class="preview-action-btn preview-marker-btn"
+            :disabled="!previewTrackDuration"
+            @click="setPreviewTrimAtPlayhead('in')"
+          >
+            {{ t('actions.setIn') }}
+          </button>
+          <button
+            type="button"
+            class="preview-action-btn preview-marker-btn"
+            :disabled="!previewTrackDuration"
+            @click="setPreviewTrimAtPlayhead('out')"
+          >
+            {{ t('actions.setOut') }}
+          </button>
+          <button
+            type="button"
+            class="preview-action-btn preview-start-next-btn"
+            :class="{ active: previewStartNextTime !== null }"
+            :disabled="!previewTrackDuration"
+            :aria-pressed="previewStartNextTime !== null"
+            @click="handleSetPreviewStartNext"
+            :title="previewStartNextTitle"
+          >
+            <span class="material-symbols-rounded" aria-hidden="true">flag</span>
+            <span>{{ t('settings.transitionModeStartNext') }}</span>
+          </button>
+          <button
+            type="button"
             class="preview-action-btn preview-save-btn"
             :disabled="!previewTrimDirty"
             @click="savePreviewTrim"
@@ -211,7 +265,7 @@ import { useLiveplayServer } from '~/composables/useLiveplayServer';
 import { useCueMeters } from '~/composables/useLiveMeters';
 
 const { activeCues, panicStop, nextItemOverrideUuid, autoNextItemUuid, setNextItem, playCue, triggerGroup } = useAudioEngine();
-const { findItemByUuid, previewItemUuid, previewCueId, stopPreview, saveProject } = useProject();
+const { findItemByUuid, previewItemUuid, previewCueId, stopPreview, saveProject, openItemProperties } = useProject();
 const { playbackMappings } = useCartHotkeys();
 const { t } = useLocalization();
 const server = useLiveplayServer();
@@ -262,6 +316,16 @@ const previewInPct = computed(() => previewTrackDuration.value
 const previewOutPct = computed(() => previewTrackDuration.value
   ? (previewTempOut.value / previewTrackDuration.value) * 100
   : 100);
+const previewStartNextTime = computed<number | null>(() => {
+  const item = previewingItem.value;
+  if (item?.type !== 'audio' || !item.startNextEnabled) return null;
+  const marker = Number(item.startNextTime);
+  if (!Number.isFinite(marker) || marker <= 0 || !previewTrackDuration.value) return null;
+  return Math.max(0, Math.min(previewTrackDuration.value, marker));
+});
+const previewStartNextPct = computed(() => previewStartNextTime.value === null
+  ? null
+  : (previewStartNextTime.value / previewTrackDuration.value) * 100);
 const previewTrimDirty = computed(() => Math.abs(previewTempIn.value - previewPermanentIn.value) >= 0.05
   || Math.abs(previewTempOut.value - previewPermanentOut.value) >= 0.05);
 const previewIsNext = computed(() => previewItemUuid.value === nextItemOverrideUuid.value);
@@ -274,6 +338,9 @@ const previewPauseLabel = computed(() => previewIsPaused.value || previewMeter.t
   : t('actions.pause'));
 const previewJumpWhole = computed(() => Math.floor(previewJumpSeconds.value));
 const previewJumpTenths = computed(() => Math.round(previewJumpSeconds.value * 10) % 10);
+const previewStartNextTitle = computed(() => t('waveform.startNextTitle', {
+  time: formatPreviewPrecise(previewStartNextTime.value ?? previewFileTime.value),
+}));
 
 watch([previewItemUuid, previewingItem], ([uuid, item]) => {
   if (!uuid || item?.type !== 'audio') return;
@@ -339,6 +406,10 @@ function setPreviewBracket(which: 'in' | 'out', value: number, commit: boolean) 
 
 function stepPreviewBracket(which: 'in' | 'out', delta: number) {
   setPreviewBracket(which, (which === 'in' ? previewTempIn.value : previewTempOut.value) + delta, true);
+}
+
+function setPreviewTrimAtPlayhead(which: 'in' | 'out') {
+  setPreviewBracket(which, previewFileTime.value, true);
 }
 
 function commitPreviewTimeInput(which: 'in' | 'out', event: Event) {
@@ -427,6 +498,29 @@ async function savePreviewTrim() {
 
 function handleSetPreviewNext() {
   if (previewItemUuid.value) setNextItem(previewItemUuid.value);
+}
+
+function handleOpenPreviewProperties() {
+  if (previewItemUuid.value) openItemProperties(previewItemUuid.value);
+}
+
+async function handleSetPreviewStartNext() {
+  const item = previewingItem.value;
+  if (item?.type !== 'audio' || !previewTrackDuration.value) return;
+  const inPoint = Math.max(0, item.inPoint || 0);
+  const outPoint = item.outPoint > inPoint ? item.outPoint : previewTrackDuration.value;
+  const marker = Math.min(outPoint, Math.max(
+    inPoint,
+    0.1,
+    Math.round(previewFileTime.value * 10) / 10,
+  ));
+  item.startNextEnabled = true;
+  item.startNextTime = marker;
+  await server.updateProjectItem(item.uuid, {
+    startNextEnabled: true,
+    startNextTime: marker,
+  });
+  await saveProject({ force: true });
 }
 
 const effectiveNextUuid = computed(() => nextItemOverrideUuid.value ?? autoNextItemUuid.value);
@@ -773,6 +867,25 @@ const handlePlayNext = () => {
   font-weight: 650;
 }
 
+.preview-start-next-btn {
+  width: auto;
+  min-width: max-content;
+  gap: 4px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.preview-start-next-btn .material-symbols-rounded {
+  font-size: 15px;
+}
+
+.preview-start-next-btn.active {
+  background-color: color-mix(in srgb, var(--state-up-next) 20%, var(--color-control));
+  border-color: color-mix(in srgb, var(--state-up-next) 58%, var(--color-border));
+  color: var(--color-text-primary);
+}
+
 .preview-set-next-btn:not(.active):hover:not(:disabled) {
   background-color: color-mix(in srgb, var(--state-up-next) 24%, var(--color-control));
   border-color: color-mix(in srgb, var(--state-up-next) 52%, var(--color-border));
@@ -834,11 +947,49 @@ const handlePlayNext = () => {
 .preview-progress-fill {
   position: relative;
   z-index: 1;
+  width: 100%;
   height: 100%;
   background-color: var(--state-preview);
   border-radius: var(--border-radius-sm);
-  transition: width 100ms linear;
+  transform-origin: left center;
   pointer-events: none;
+}
+
+.preview-playhead-indicator,
+.preview-start-next-marker {
+  position: absolute;
+  top: -5px;
+  bottom: -5px;
+  width: 2px;
+  transform: translateX(-1px);
+  pointer-events: none;
+}
+
+.preview-playhead-indicator {
+  z-index: 5;
+  background: var(--state-preview);
+  box-shadow:
+    0 0 0 1px var(--color-text-primary),
+    0 0 3px rgba(0, 0, 0, 0.8);
+}
+
+.preview-playhead-indicator::before,
+.preview-start-next-marker::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  width: 6px;
+  height: 3px;
+  transform: translateX(-50%);
+  border-radius: 1px;
+  background: inherit;
+}
+
+.preview-start-next-marker {
+  z-index: 4;
+  background: var(--state-up-next);
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.65);
 }
 
 .preview-progress-slider {
@@ -956,6 +1107,14 @@ const handlePlayNext = () => {
   justify-content: flex-end;
   gap: 8px;
   min-width: 0;
+}
+
+.preview-marker-btn {
+  width: auto;
+  min-width: 52px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 650;
 }
 
 .preview-jump-value {

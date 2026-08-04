@@ -494,7 +494,9 @@ const buildVerifiedAudioCue = async (
       outputTargetLevels.value.limiterCeilingDb,
     );
   }
-  if (reduceTruePeaks) applyTruePeakCeiling(cue, analysis, -0.1);
+  if (reduceTruePeaks) {
+    applyTruePeakCeiling(cue, analysis, outputTargetLevels.value.limiterCeilingDb);
+  }
   anchorStartNextMarker(cue);
 
   const sourceTruePeak = Number(serverWaveform.true_peak_dbtp);

@@ -85,7 +85,7 @@ async function onExit() {
 .clm-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--dialog-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -96,14 +96,14 @@ async function onExit() {
   z-index: 9500;
 }
 .clm-dialog {
-  background: var(--color-surface);
+  background: var(--dialog-surface);
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
-  border-radius: 10px;
-  padding: 24px 28px;
+  border-radius: var(--dialog-radius);
+  padding: var(--dialog-padding);
   max-width: 480px;
   width: 90%;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--dialog-shadow);
 }
 .clm-header {
   display: flex;
@@ -112,7 +112,7 @@ async function onExit() {
   margin-bottom: 8px;
 }
 .clm-header h2 { margin: 0; font-size: 18px; }
-.clm-icon { color: #da1e28; font-size: 28px; }
+.clm-icon { color: var(--color-danger); font-size: 28px; }
 .clm-body {
   color: var(--color-text-secondary);
   font-size: 14px;
@@ -147,11 +147,11 @@ async function onExit() {
 }
 .clm-error {
   font-size: 12px;
-  color: #da1e28;
-  background: rgba(218, 30, 40, 0.1);
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
   padding: 8px 10px;
-  border-radius: 6px;
-  border: 1px solid rgba(218, 30, 40, 0.3);
+  border-radius: var(--control-radius);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 30%, transparent);
 }
 .clm-actions {
   display: flex;
@@ -164,10 +164,11 @@ async function onExit() {
   gap: 6px;
   flex: 1;
   justify-content: center;
-  padding: 10px 12px;
+  min-height: var(--panel-control-height);
+  padding: 6px 12px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-background);
+  border-radius: var(--control-radius);
+  background: var(--color-surface-raised);
   color: var(--color-text-primary);
   font-size: 13px;
   cursor: pointer;
@@ -178,7 +179,7 @@ async function onExit() {
 }
 .clm-btn.primary {
   background: var(--color-accent, #0f62fe);
-  color: #fff;
+  color: var(--color-text-on-accent);
   border-color: transparent;
 }
 .clm-btn.primary:hover:not(:disabled) { filter: brightness(1.1); }

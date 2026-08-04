@@ -118,6 +118,27 @@ function cancelEdit() {
   grid-column: 3;
   grid-row: 3;
   z-index: 1;
+  justify-self: end;
+  height: 20px;
+  width: 42px;
+}
+
+.volume-slider--inline .volume-slider__label {
+  width: 42px;
+  padding-right: 10px;
+  padding-left: 4px;
+  text-align: right;
+}
+
+.volume-slider--inline .volume-slider__input {
+  right: 0;
+  left: auto;
+  transform: none;
+  box-sizing: border-box;
+  width: 42px;
+  height: 20px;
+  padding: 0 10px 0 4px;
+  text-align: right;
 }
 
 .volume-slider__label-wrap {

@@ -1052,7 +1052,6 @@ if (import.meta.client && (window as any).electronAPI) {
   background: var(--color-accent-soft);
   color: var(--color-text-primary);
   border-color: var(--color-accent);
-  box-shadow: inset 3px 0 0 var(--color-accent);
 }
 .welcome-button.primary:hover:not(:disabled) {
   background: color-mix(in srgb, var(--color-accent) 24%, var(--color-surface));
@@ -1243,24 +1242,24 @@ if (import.meta.client && (window as any).electronAPI) {
   position: fixed;
   inset: 0;
   z-index: 9200;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--dialog-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .name-dialog {
-  background: var(--color-surface);
+  background: var(--dialog-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-lg);
-  padding: var(--spacing-xl);
+  border-radius: var(--dialog-radius);
+  padding: var(--dialog-padding);
   min-width: 360px;
   max-width: 480px;
   width: 90vw;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--dialog-shadow);
 }
 
 .name-dialog__title {
@@ -1290,13 +1289,14 @@ if (import.meta.client && (window as any).electronAPI) {
 }
 
 .name-dialog__btn {
-  padding: 8px 20px;
-  border-radius: var(--border-radius-md);
-  font-size: 14px;
-  font-weight: 500;
+  min-height: var(--panel-control-height);
+  padding: 6px 12px;
+  border-radius: var(--control-radius);
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
   border: 1px solid var(--color-border);
-  background: var(--color-background);
+  background: var(--color-surface-raised);
   color: var(--color-text-primary);
   transition: background var(--transition-fast), border-color var(--transition-fast);
 }

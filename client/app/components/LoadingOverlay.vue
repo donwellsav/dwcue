@@ -26,7 +26,7 @@ const { t } = useLocalization();
 .loading-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--dialog-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -39,11 +39,11 @@ const { t } = useLocalization();
   align-items: center;
   gap: 18px;
   padding: 28px 36px;
-  background: var(--color-background);
+  background: var(--dialog-surface);
   border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: var(--dialog-radius);
   color: var(--color-text-primary);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--dialog-shadow);
   min-width: 260px;
 }
 
