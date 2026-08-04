@@ -34,7 +34,7 @@
 
     <!-- Waveform Display -->
     <div class="waveform-section">
-      <!-- Zoom Controls -->
+      <!-- Waveform Tools -->
       <div class="waveform-controls">
         <Teleport v-if="!multiSelect" defer to="#properties-transport-host">
           <div class="audition-transport" role="group" :aria-label="t('properties.playback')">
@@ -66,23 +66,6 @@
             </button>
           </div>
         </Teleport>
-        <div class="zoom-control" v-if="!multiSelect">
-          <span class="material-symbols-rounded">zoom_out</span>
-          <input
-            type="range"
-            class="zoom-slider"
-            min="1"
-            max="20"
-            step="0.5"
-            v-model.number="zoomLevel"
-            :style="{ '--range-progress': `${zoomProgress}%` }"
-            :aria-label="`${t('properties.waveform')} zoom`"
-            :aria-valuetext="`${Math.round(zoomLevel * 100)}%`"
-          />
-          <span class="material-symbols-rounded">zoom_in</span>
-        </div>
-        <span class="zoom-level-text" v-if="!multiSelect">{{ Math.round(zoomLevel * 100) }}%</span>
-
         <!-- Audio Tools -->
         <div class="audio-tools">
           <!-- Trim Silence Button -->
@@ -270,6 +253,22 @@
           :aria-label="`${t('properties.waveform')} view position`"
           @input="handleScrollInput"
         />
+        <div class="zoom-control">
+          <span class="material-symbols-rounded">zoom_out</span>
+          <input
+            type="range"
+            class="zoom-slider"
+            min="1"
+            max="20"
+            step="0.5"
+            v-model.number="zoomLevel"
+            :style="{ '--range-progress': `${zoomProgress}%` }"
+            :aria-label="`${t('properties.waveform')} zoom`"
+            :aria-valuetext="`${Math.round(zoomLevel * 100)}%`"
+          />
+          <span class="material-symbols-rounded">zoom_in</span>
+          <span class="zoom-level-text">{{ Math.round(zoomLevel * 100) }}%</span>
+        </div>
       </div>
     </div>
 
@@ -1929,7 +1928,7 @@ onUnmounted(() => {
 .waveform-controls {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   flex-wrap: wrap;
   min-height: 36px;
   padding: var(--spacing-xs) var(--spacing-sm);
@@ -2050,6 +2049,7 @@ onUnmounted(() => {
 
 .zoom-control {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: var(--spacing-xs);
 }
@@ -2524,11 +2524,16 @@ onUnmounted(() => {
 
 /* Scrollbar */
 .waveform-scrollbar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
   width: 100%;
 }
 
 .scroll-slider {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
 }
 
 /* Time Display Section (right side) */

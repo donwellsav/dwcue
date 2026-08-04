@@ -1078,8 +1078,8 @@ assert.match(
 );
 assert.match(
   waveformTrimmer,
-  /class="volume-slider-vertical"[\s\S]*class="zoom-slider"[\s\S]*class="scroll-slider"[\s\S]*@input="handleScrollInput"[\s\S]*const handleScrollInput[\s\S]*scrollPosition\.value = Math\.max/,
-  'Properties must retain its volume, zoom, and view-position controls and wire view-position input explicitly',
+  /class="volume-slider-vertical"[\s\S]*class="waveform-scrollbar"[\s\S]*class="scroll-slider"[\s\S]*@input="handleScrollInput"[\s\S]*class="zoom-control"[\s\S]*class="zoom-slider"[\s\S]*const handleScrollInput[\s\S]*scrollPosition\.value = Math\.max/,
+  'Properties must pair its wired view-position control with the zoom controls at the bottom of the waveform',
 );
 assert.match(
   waveformTrimmer,
