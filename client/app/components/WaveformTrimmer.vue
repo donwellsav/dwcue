@@ -36,34 +36,36 @@
     <div class="waveform-section">
       <!-- Zoom Controls -->
       <div class="waveform-controls">
-        <div v-if="!multiSelect" class="audition-transport" role="group" :aria-label="t('properties.playback')">
-          <button type="button" class="audition-btn" @click="jumpAudition(-1)" :title="t('actions.jumpPreviewBack')">
-            <span class="material-symbols-rounded" aria-hidden="true">fast_rewind</span>
-          </button>
-          <button type="button" class="audition-btn audition-btn--primary" @click="toggleAudition" :title="auditionToggleLabel">
-            <span class="material-symbols-rounded" aria-hidden="true">{{ auditionToggleIcon }}</span>
-          </button>
-          <button type="button" class="audition-btn audition-btn--stop" @click="stopAudition" :title="t('actions.stop')">
-            <span class="material-symbols-rounded" aria-hidden="true">stop</span>
-          </button>
-          <button type="button" class="audition-btn" @click="jumpAudition(1)" :title="t('actions.jumpPreviewForward')">
-            <span class="material-symbols-rounded" aria-hidden="true">fast_forward</span>
-          </button>
-          <label class="audition-jump">
-            <input v-model.number="auditionJumpSeconds" type="number" min="0.1" max="99.9" step="0.1" :aria-label="t('actions.previewJump')" />
-            <span>s</span>
-          </label>
-          <output class="audition-time">{{ formatTimeDetailed(playbackPosition) }}</output>
-          <button
-            v-if="previewMode"
-            type="button"
-            class="audition-set-next"
-            :class="{ active: auditionIsNext }"
-            @click="setAuditionAsNext"
-          >
-            {{ t('actions.setAsNext') }}
-          </button>
-        </div>
+        <Teleport v-if="!multiSelect" defer to="#properties-transport-host">
+          <div class="audition-transport" role="group" :aria-label="t('properties.playback')">
+            <button type="button" class="audition-btn" @click="jumpAudition(-1)" :title="t('actions.jumpPreviewBack')">
+              <span class="material-symbols-rounded" aria-hidden="true">fast_rewind</span>
+            </button>
+            <button type="button" class="audition-btn audition-btn--primary" @click="toggleAudition" :title="auditionToggleLabel">
+              <span class="material-symbols-rounded" aria-hidden="true">{{ auditionToggleIcon }}</span>
+            </button>
+            <button type="button" class="audition-btn audition-btn--stop" @click="stopAudition" :title="t('actions.stop')">
+              <span class="material-symbols-rounded" aria-hidden="true">stop</span>
+            </button>
+            <button type="button" class="audition-btn" @click="jumpAudition(1)" :title="t('actions.jumpPreviewForward')">
+              <span class="material-symbols-rounded" aria-hidden="true">fast_forward</span>
+            </button>
+            <label class="audition-jump">
+              <input v-model.number="auditionJumpSeconds" type="number" min="0.1" max="99.9" step="0.1" :aria-label="t('actions.previewJump')" />
+              <span>s</span>
+            </label>
+            <output class="audition-time">{{ formatTimeDetailed(playbackPosition) }}</output>
+            <button
+              v-if="previewMode"
+              type="button"
+              class="audition-set-next"
+              :class="{ active: auditionIsNext }"
+              @click="setAuditionAsNext"
+            >
+              {{ t('actions.setAsNext') }}
+            </button>
+          </div>
+        </Teleport>
         <div class="zoom-control" v-if="!multiSelect">
           <span class="material-symbols-rounded">zoom_out</span>
           <input

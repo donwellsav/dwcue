@@ -142,6 +142,12 @@
           <p>{{ t('properties.loadingAudioData')}}</p>
         </div>
       </div>
+
+      <div
+        v-if="activeTab === 'playback' && selectedItem.type === 'audio' && selectedItems.size === 1"
+        id="properties-transport-host"
+        class="properties-playback-info"
+      ></div>
       
       <!-- Output Tab -->
       <div v-if="activeTab === 'output' && selectedItem.type === 'audio'" class="tab-panel">
@@ -1194,6 +1200,16 @@ const formatTime = (seconds: number): string => {
   height: auto;
   min-height: 188px;
   container-type: inline-size;
+}
+
+.properties-playback-info {
+  display: flex;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  align-items: center;
+  min-width: 0;
+  padding-top: var(--spacing-xs);
+  border-top: 1px solid var(--color-border);
 }
 
 .basic-panel {

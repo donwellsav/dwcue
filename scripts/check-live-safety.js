@@ -1518,6 +1518,11 @@ assert.match(
   'the properties panel must reuse the workspace header rail',
 );
 assert.match(
+  propertiesPanel + waveformTrimmer,
+  /class="tab-panel playback-panel"[\s\S]*id="properties-transport-host"[\s\S]{0,100}class="properties-playback-info"[\s\S]*<Teleport v-if="!multiSelect" defer to="#properties-transport-host">[\s\S]{0,160}class="audition-transport"[\s\S]*class="audition-time"/,
+  'Properties transport and timecode must stay in the information rail below the waveform',
+);
+assert.match(
   propertiesPanel,
   /class="tab-panel basic-panel"[\s\S]*activeTab === 'basic' && selectedItem\.type === 'audio'[\s\S]{0,160}playback-behavior--ducking[\s\S]*playback-behavior--start[\s\S]*playback-behavior--end[\s\S]*groupOnly:\s*true[\s\S]*availableTabs\.value\.some\(tab => tab\.id === activeTab\.value\)/,
   'audio cue behaviors must stay on Basic Info while group-only sections remain reachable',
