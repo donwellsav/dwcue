@@ -128,7 +128,7 @@ assert.match(
 );
 assert.match(
   waveformTrimmer,
-  /interface WaveformLane[\s\S]*channelRms[\s\S]*const trackColor = [\s\S]*props\.audioItem\.color[\s\S]*const rmsColor = [\s\S]*0xffffff \^ Number\.parseInt\(trackColor\.slice\(1\), 16\)[\s\S]*rmsPower[\s\S]*ctx\.fillStyle = trackColor[\s\S]*fill\(envelopePath\('peak'\)\)[\s\S]*ctx\.fillStyle = rmsColor[\s\S]*fill\(envelopePath\('rms'\)\)[\s\S]*ctx\.strokeStyle = trackColor[\s\S]*stroke\(envelopePath\('peak'\)\)[\s\S]*props\.audioItem\?\.color/,
+  /interface WaveformLane[\s\S]*channelRms[\s\S]*const trackColor = computed[\s\S]*props\.audioItem\.color[\s\S]*const rmsColor = [\s\S]*0xffffff \^ Number\.parseInt\(trackColor\.value\.slice\(1\), 16\)[\s\S]*rmsPower[\s\S]*ctx\.fillStyle = trackColor\.value[\s\S]*fill\(envelopePath\('peak'\)\)[\s\S]*ctx\.fillStyle = rmsColor[\s\S]*fill\(envelopePath\('rms'\)\)[\s\S]*ctx\.strokeStyle = trackColor\.value[\s\S]*stroke\(envelopePath\('peak'\)\)[\s\S]*props\.audioItem\?\.color/,
   'Properties must render cue-coloured peaks and a distinct complementary RMS body',
 );
 assert.match(
@@ -1083,8 +1083,8 @@ assert.match(
 );
 assert.match(
   waveformTrimmer,
-  /\.volume-slider-vertical::-webkit-slider-thumb\s*\{[\s\S]{0,260}var\(--volume-handle-color,[\s\S]*\.zoom-slider,[\s\S]*\.scroll-slider\s*\{[\s\S]{0,320}var\(--color-accent\)[\s\S]*\.scroll-slider:disabled/,
-  'Properties controls must use the app fader and cue-position visual language without discarding level colour or disabled state',
+  /:style="\{ '--volume-handle-color': trackColor \}"[\s\S]*\.volume-slider-vertical::-webkit-slider-thumb\s*\{[\s\S]{0,260}var\(--volume-handle-color,[\s\S]*\.zoom-slider,[\s\S]*\.scroll-slider\s*\{[\s\S]{0,320}var\(--color-accent\)[\s\S]*\.scroll-slider:disabled/,
+  'Properties controls must use the cue colour on the fader accent and retain the cue-position control disabled state',
 );
 assert.match(
   liveplayClient,

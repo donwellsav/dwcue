@@ -18,7 +18,7 @@
           :aria-label="t('properties.volume')"
           @input="handleVolumeInput"
           @change="handleVolumeDragEnd"
-          :style="{ '--volume-handle-color': volumeHandleColor }"
+          :style="{ '--volume-handle-color': trackColor }"
         />
         <div class="volume-markers">
           <span>+10</span>
@@ -732,16 +732,9 @@ const volumeDB = computed({
   }
 });
 
-// Compute handle color based on dB level
-const volumeHandleColor = computed(() => {
-  const db = volumeDB.value;
-  if (db > 0) return '#991b1b';      // Dark red above 0dB
-  if (db > -1) return '#dc2626';     // Red 0 to -1dB
-  if (db > -6) return '#eab308';     // Yellow -1 to -6dB
-  if (db > -18) return '#16a34a';    // Green -6 to -18dB
-  if (db > -36) return '#22c55e';    // Dark green -18 to -36dB
-  return '#1a4d2e';                  // Darker green below -36dB
-});
+const trackColor = computed(() => /^#[0-9a-f]{6}$/i.test(props.audioItem.color)
+  ? props.audioItem.color
+  : '#687386');
 
 // Time values
 const inPoint = computed(() => props.audioItem?.inPoint ?? 0);
@@ -1307,10 +1300,7 @@ const drawWaveform = () => {
     const laneHeight = canvasHeight / lanes.length;
     const volumeMultiplier = props.audioItem?.volume ?? 1;
 
-    const trackColor = /^#[0-9a-f]{6}$/i.test(props.audioItem.color)
-      ? props.audioItem.color
-      : '#687386';
-    const rmsColor = `#${(0xffffff ^ Number.parseInt(trackColor.slice(1), 16))
+    const rmsColor = `#${(0xffffff ^ Number.parseInt(trackColor.value.slice(1), 16))
       .toString(16).padStart(6, '0')}`;
 
     const heightFraction = (linear: number) =>
@@ -1399,7 +1389,7 @@ const drawWaveform = () => {
       ctx.lineWidth = 1;
       ctx.stroke(envelopePath('base'));
 
-      ctx.fillStyle = trackColor;
+      ctx.fillStyle = trackColor.value;
       ctx.globalAlpha = 0.18;
       ctx.fill(envelopePath('peak'));
 
@@ -1407,7 +1397,7 @@ const drawWaveform = () => {
       ctx.globalAlpha = 0.82;
       ctx.fill(envelopePath('rms'));
 
-      ctx.strokeStyle = trackColor;
+      ctx.strokeStyle = trackColor.value;
       ctx.globalAlpha = 0.95;
       ctx.lineWidth = 1.25;
       ctx.stroke(envelopePath('peak'));
