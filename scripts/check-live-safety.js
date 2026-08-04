@@ -128,8 +128,8 @@ assert.match(
 );
 assert.match(
   waveformTrimmer,
-  /interface WaveformLane[\s\S]*channelRms[\s\S]*rmsPower[\s\S]*createLinearGradient[\s\S]*fill\(envelopePath\('rms'\)\)[\s\S]*stroke\(envelopePath\('peak'\)\)/,
-  'Properties must render a continuous RMS body with a level-coloured peak contour',
+  /interface WaveformLane[\s\S]*channelRms[\s\S]*const trackColor = [\s\S]*props\.audioItem\.color[\s\S]*const rmsColor = [\s\S]*0xffffff \^ Number\.parseInt\(trackColor\.slice\(1\), 16\)[\s\S]*rmsPower[\s\S]*ctx\.fillStyle = trackColor[\s\S]*fill\(envelopePath\('peak'\)\)[\s\S]*ctx\.fillStyle = rmsColor[\s\S]*fill\(envelopePath\('rms'\)\)[\s\S]*ctx\.strokeStyle = trackColor[\s\S]*stroke\(envelopePath\('peak'\)\)[\s\S]*props\.audioItem\?\.color/,
+  'Properties must render cue-coloured peaks and a distinct complementary RMS body',
 );
 assert.match(
   propertiesPanel,

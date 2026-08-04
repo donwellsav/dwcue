@@ -472,7 +472,7 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useLocalization();
-const { colorForLevel, levels: outputTargetLevels } = useOutputTarget();
+const { levels: outputTargetLevels } = useOutputTarget();
 
 type NormalizationMode = 'loudness' | 'truePeak';
 
@@ -1309,9 +1309,11 @@ const drawWaveform = () => {
     const laneHeight = canvasHeight / lanes.length;
     const volumeMultiplier = props.audioItem?.volume ?? 1;
 
-    // Use server-reported output-target zone colours (same palette as the
-    // stereo meter) so the waveform and meter always agree visually.
-    const getColorForDB = (db: number): string => colorForLevel(db);
+    const trackColor = /^#[0-9a-f]{6}$/i.test(props.audioItem.color)
+      ? props.audioItem.color
+      : '#687386';
+    const rmsColor = `#${(0xffffff ^ Number.parseInt(trackColor.slice(1), 16))
+      .toString(16).padStart(6, '0')}`;
 
     const heightFraction = (linear: number) =>
       Math.min(Math.max(linear, 0), 1);
@@ -1346,7 +1348,6 @@ const drawWaveform = () => {
         base: number;
         peak: number;
         rms: number;
-        color: string;
       }> = [];
 
       for (let point = 0; point < pointCount; point++) {
@@ -1371,13 +1372,11 @@ const drawWaveform = () => {
         const audiblePeak = Math.max(0, peak * volumeMultiplier);
         const measuredRms = rmsCount > 0 ? Math.sqrt(rmsPower / rmsCount) : peak;
         const audibleRms = Math.min(audiblePeak, Math.max(0, measuredRms * volumeMultiplier));
-        const peakDB = audiblePeak <= 0 ? -60 : 20 * Math.log10(audiblePeak);
         samples.push({
           x: pointCount === 1 ? 0 : (point / (pointCount - 1)) * canvasWidth.value,
           base: heightFraction(peak) * halfHeight,
           peak: heightFraction(audiblePeak) * halfHeight,
           rms: heightFraction(audibleRms) * halfHeight,
-          color: getColorForDB(peakDB),
         });
       }
       if (samples.length === 1) samples.push({ ...samples[0]!, x: canvasWidth.value });
@@ -1395,33 +1394,22 @@ const drawWaveform = () => {
         return path;
       };
 
-      // Preserve the exact output-target level colours, but apply them to a
-      // continuous energy body and peak contour instead of merged rectangles.
-      const levelGradient = ctx.createLinearGradient(0, 0, canvasWidth.value, 0);
-      let previousColor = samples[0]!.color;
-      levelGradient.addColorStop(0, previousColor);
-      for (let index = 1; index < samples.length; index++) {
-        const color = samples[index]!.color;
-        if (color === previousColor) continue;
-        const offset = samples[index]!.x / canvasWidth.value;
-        levelGradient.addColorStop(Math.max(0, offset - 0.001), previousColor);
-        levelGradient.addColorStop(offset, color);
-        previousColor = color;
-      }
-      levelGradient.addColorStop(1, previousColor);
+      // Peak matches the playlist cue colour; RMS uses its complementary hue
+      // so the energy body stays distinct for every preset track colour.
 
       ctx.strokeStyle = 'rgba(128, 128, 128, 0.28)';
       ctx.lineWidth = 1;
       ctx.stroke(envelopePath('base'));
 
-      ctx.fillStyle = levelGradient;
+      ctx.fillStyle = trackColor;
       ctx.globalAlpha = 0.18;
       ctx.fill(envelopePath('peak'));
 
+      ctx.fillStyle = rmsColor;
       ctx.globalAlpha = 0.82;
       ctx.fill(envelopePath('rms'));
 
-      ctx.strokeStyle = levelGradient;
+      ctx.strokeStyle = trackColor;
       ctx.globalAlpha = 0.95;
       ctx.lineWidth = 1.25;
       ctx.stroke(envelopePath('peak'));
@@ -1640,6 +1628,7 @@ watch([
   () => props.audioItem?.startNextEnabled,
   () => props.audioItem?.startNextTime,
   () => props.audioItem?.startNextFadeOut,
+  () => props.audioItem?.color,
   waveformData,
   playbackPosition,
   mainPlayheadPosition,
