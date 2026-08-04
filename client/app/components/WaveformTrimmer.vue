@@ -549,7 +549,7 @@ const waveformContainer = ref<HTMLDivElement | null>(null);
 const isDrawing = ref(false);
 
 // Zoom and scroll
-const MAX_ZOOM_LEVEL = 64;
+const MAX_ZOOM_LEVEL = 256;
 const ZOOM_SLIDER_MAX = Math.log2(MAX_ZOOM_LEVEL);
 const ZOOM_SLIDER_STEP = 0.25;
 const zoomLevel = ref(1);
@@ -654,7 +654,7 @@ const resolveMediaPath = (): string => {
 };
 
 // The playlist's compact 1,000-bucket waveform is enough for rows, but not
-// for a 64x editor zoom. Fetch one display-only high-resolution trace while
+// for deep editor zoom. Fetch the server's highest-resolution display trace while
 // Properties is open; saved analysis and information colours stay unchanged.
 const DETAIL_WAVEFORM_BUCKETS = 16384;
 let detailedWaveformRequest = 0;
@@ -1277,7 +1277,7 @@ const drawWaveform = () => {
   let timeStep = targetPixelsPerGrid / pixelsPerSecond;
   
   // Round to readable intervals, including sub-100 ms detail at high zoom.
-  const niceIntervals = [0.01, 0.02, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600];
+  const niceIntervals = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600];
   timeStep = niceIntervals.reduce((prev, curr) => 
     Math.abs(curr - timeStep) < Math.abs(prev - timeStep) ? curr : prev
   );
@@ -1292,7 +1292,9 @@ const drawWaveform = () => {
 
     // Draw time label - format depends on scale
     let label: string;
-    if (timeStep < 0.1) {
+    if (timeStep < 0.01) {
+      label = time.toFixed(3) + 's';
+    } else if (timeStep < 0.1) {
       label = time.toFixed(2) + 's';
     } else if (timeStep < 1) {
       // Show with decimal for sub-second intervals
