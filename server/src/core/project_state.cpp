@@ -2499,7 +2499,8 @@ std::string ProjectState::item_uuid_by_index(const std::vector<int>& path) const
 // ---------------------------------------------------------------------------
 bool ProjectState::play_item(const std::string& uuid,
                              double fade_in_override_sec,
-                             const audio::CueId& exclude_from_ducking) {
+                             const audio::CueId& exclude_from_ducking,
+                             double start_position_override_sec) {
   // Guard the whole body: a malformed item field must never throw uncaught
   // into the network layer. (#5)
   try {
@@ -2691,7 +2692,14 @@ bool ProjectState::play_item(const std::string& uuid,
         if (cm_it != cues_.end()) file_duration = cm_it->second.duration_seconds;
     }
 
-    // Prime the target around the configured in-point.
+    const double effective_end = out_point > in_point ? out_point : file_duration;
+    const double play_start = std::isfinite(start_position_override_sec) &&
+                              start_position_override_sec >= 0.0
+        ? std::clamp(start_position_override_sec, in_point,
+                     std::max(in_point, effective_end))
+        : in_point;
+
+    // Prime the target around the configured In point or Properties playhead.
     if (auto pi = engine_.find_cue(target_cue)) {
         pi->set_out_point_seconds(out_point > 0.0 ? out_point : 0.0);
         // Configure engine-level seamless looping based on endBehavior. Doing
@@ -2701,7 +2709,7 @@ bool ProjectState::play_item(const std::string& uuid,
         // re-trigger — that flap caused the client UI to drop the cue from
         // "currently playing" and grey out its stop button mid-loop.
         pi->set_loop(end_behavior_action == "loop", in_point);
-        pi->prime(2.0, in_point);
+        pi->prime(2.0, play_start);
 
         // Crossfade-in: fade the incoming cue up over the crossfade window
         // instead of using its own play-fade. play() captures the fade

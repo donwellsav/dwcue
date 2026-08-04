@@ -56,10 +56,10 @@
             </label>
             <output class="audition-time">{{ formatTimeDetailed(playbackPosition) }}</output>
             <button
-              v-if="previewMode"
               type="button"
               class="audition-set-next"
               :class="{ active: auditionIsNext }"
+              :aria-pressed="auditionIsNext"
               @click="setAuditionAsNext"
             >
               {{ t('actions.setAsNext') }}
@@ -875,8 +875,7 @@ const toggleAudition = async () => {
   } else if (regularCue.value) {
     await server.pauseItem(props.audioItem.uuid);
   } else {
-    server.seekItem(props.audioItem.uuid, position);
-    await server.playItem(props.audioItem.uuid);
+    await server.playItem(props.audioItem.uuid, position);
   }
 };
 

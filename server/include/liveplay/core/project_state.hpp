@@ -217,9 +217,13 @@ public:
     // `exclude_from_ducking`, when non-empty, is a cue that this play's ducking
     // must leave untouched — used by the crossfade so the outgoing cue keeps the
     // engine-owned fade the sequencer already started instead of being hard-cut.
+    // `start_position_override_sec` (>= 0) starts this play at that file
+    // position, clamped to the item's In/Out range. Ordinary plays omit it and
+    // retain the configured In point.
     bool play_item(const std::string& uuid,
                    double fade_in_override_sec = -1.0,
-                   const audio::CueId& exclude_from_ducking = audio::CueId{});
+                   const audio::CueId& exclude_from_ducking = audio::CueId{},
+                   double start_position_override_sec = -1.0);
     bool stop_item(const std::string& uuid);
 
     // Stop every cue for the global "Stop All" command. When `fade_ms` is

@@ -776,9 +776,16 @@ function createClient() {
   }
 
   // Transport by item uuid (preferred over cue_id — preserves duckingBehavior
-  // and inPoint semantics on the server side). The server routes `play` for
-  // a group uuid through trigger_item so group startBehavior fires.
-  function playItem(uuid: string)  { return wsSend({ type: 'play', item_uuid: uuid }, true); }
+  // and inPoint semantics on the server side). An optional start position lets
+  // Properties audition from its playhead; ordinary plays still start at In.
+  // The server routes group uuids through trigger_item so startBehavior fires.
+  function playItem(uuid: string, startSeconds?: number) {
+    return wsSend({
+      type: 'play',
+      item_uuid: uuid,
+      ...(Number.isFinite(startSeconds) ? { start_seconds: startSeconds } : {}),
+    }, true);
+  }
   function stopItem(uuid: string)  { return wsSend({ type: 'stop', item_uuid: uuid }, true); }
   function pauseItem(uuid: string) { return wsSend({ type: 'pause', item_uuid: uuid }, true); }
   function resumeItem(uuid: string){ return wsSend({ type: 'resume', item_uuid: uuid }, true); }

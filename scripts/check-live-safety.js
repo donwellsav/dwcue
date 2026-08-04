@@ -494,6 +494,16 @@ assert.match(
 );
 assert.match(
   waveformTrimmer,
+  /class="audition-set-next"[\s\S]*:aria-pressed="auditionIsNext"[\s\S]*setAuditionAsNext[\s\S]*server\.playItem\(props\.audioItem\.uuid, position\)/,
+  'Properties must expose Set As Next and start stopped audition playback at its playhead',
+);
+assert.match(
+  liveplayClient,
+  /function playItem\(uuid: string, startSeconds\?: number\)[\s\S]*Number\.isFinite\(startSeconds\)[\s\S]*start_seconds: startSeconds/,
+  'the item transport must carry an optional Properties audition start position',
+);
+assert.match(
+  waveformTrimmer,
   /time-field-label-row[\s\S]*t\('properties\.inPoint'\)[\s\S]*setInPointAtPlayhead[\s\S]*t\('actions\.setIn'\)[\s\S]*time-input-with-buttons[\s\S]*time-field-label-row[\s\S]*t\('properties\.outPoint'\)[\s\S]*setOutPointAtPlayhead[\s\S]*t\('actions\.setOut'\)[\s\S]*time-input-with-buttons/,
   'Properties Set In and Set Out actions must sit beside their matching point labels',
 );
@@ -875,6 +885,7 @@ assert.match(decodeFailurePath, /transport_\.store\(TransportState::Stopped/,
 assert.match(itemRender.slice(decodeFailureStart, naturalEndStart), /return 0;/,
   'an unexpected decoder read failure must return before natural-end/follow logic');
 
+const projectStateHeader = read('server/include/liveplay/core/project_state.hpp');
 const projectState = read('server/src/core/project_state.cpp');
 const atomicFile = read('server/include/liveplay/util/atomic_file.hpp');
 assert.match(
@@ -905,6 +916,11 @@ assert.match(atomicFile,
 
 const controlServer = read('server/src/net/control_server.cpp');
 const mainCpp = read('server/src/main.cpp');
+assert.match(
+  projectStateHeader + projectState + controlServer,
+  /start_position_override_sec[\s\S]*std::clamp\(start_position_override_sec, in_point,[\s\S]*pi->prime\(2\.0, play_start\)[\s\S]*start_seconds must be a number[\s\S]*start_seconds requires an audio item[\s\S]*state\.play_item\(uuid, -1\.0, audio::CueId\{\}, \*start_seconds\)/,
+  'the server must validate and clamp Properties audition starts before priming audio',
+);
 assert.match(
   controlServer,
   /wait_for_server_start[\s\S]*if \(!impl_->app\.is_bound\(\)\)[\s\S]*return false/,

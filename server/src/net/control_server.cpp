@@ -1618,10 +1618,22 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
             if (j.contains("item_uuid") && j["item_uuid"].is_string()) {
                 const auto uuid = j["item_uuid"].get<std::string>();
                 Logger::playback("PLAY: {}", item_playback_info(uuid, state));
-                // trigger_item dispatches by item type: audio → play_item,
-                // group → walks startBehavior. Without this, WS plays of
-                // group items were silently ignored.
-                if (!state.trigger_item(uuid))
+                std::optional<double> start_seconds;
+                if (j.contains("start_seconds")) {
+                    if (!j["start_seconds"].is_number())
+                        return command_error("play: start_seconds must be a number");
+                    start_seconds = j["start_seconds"].get<double>();
+                    if (!std::isfinite(*start_seconds) || *start_seconds < 0.0)
+                        return command_error("play: invalid start_seconds");
+                    if (!state.item_to_cue_id(uuid))
+                        return command_error("play: start_seconds requires an audio item");
+                }
+                // Ordinary plays retain group dispatch; Properties can give an
+                // audio item an explicit audition start without a seek/play race.
+                const bool played = start_seconds
+                    ? state.play_item(uuid, -1.0, audio::CueId{}, *start_seconds)
+                    : state.trigger_item(uuid);
+                if (!played)
                     return command_error("play: item not loaded into engine");
             } else {
                 auto cue = resolve_cue(j);
