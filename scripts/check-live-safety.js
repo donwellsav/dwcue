@@ -493,6 +493,11 @@ assert.match(
   'Properties must keep distinct Main and Preview playheads and capture either playhead into In or Out',
 );
 assert.match(
+  waveformTrimmer,
+  /time-field-label-row[\s\S]*t\('properties\.inPoint'\)[\s\S]*setInPointAtPlayhead[\s\S]*t\('actions\.setIn'\)[\s\S]*time-input-with-buttons[\s\S]*time-field-label-row[\s\S]*t\('properties\.outPoint'\)[\s\S]*setOutPointAtPlayhead[\s\S]*t\('actions\.setOut'\)[\s\S]*time-input-with-buttons/,
+  'Properties Set In and Set Out actions must sit beside their matching point labels',
+);
+assert.match(
   propertiesPanel,
   /trimSilence,[\s\S]*const handleTrimSilence = async[\s\S]*trimSilence\(item(?: as AudioItem)?\)[\s\S]*structuredClone\(selectedItem\.value\)[\s\S]*await saveProject\(\)/,
   'Properties Trim Silence must reuse the shared trim implementation and await persistence',

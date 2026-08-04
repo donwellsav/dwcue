@@ -54,12 +54,6 @@
             <span>s</span>
           </label>
           <output class="audition-time">{{ formatTimeDetailed(playbackPosition) }}</output>
-          <button type="button" class="audition-marker-btn" @click="setInPointAtPlayhead">
-            {{ t('actions.setIn') }}
-          </button>
-          <button type="button" class="audition-marker-btn" @click="setOutPointAtPlayhead">
-            {{ t('actions.setOut') }}
-          </button>
           <button
             v-if="previewMode"
             type="button"
@@ -280,7 +274,12 @@
     <!-- Time Display (moved to right side) -->
     <div class="time-display-section">
       <div class="time-field">
-        <label>{{ t('properties.inPoint') }}</label>
+        <div class="time-field-label-row">
+          <label>{{ t('properties.inPoint') }}</label>
+          <button v-if="!multiSelect" type="button" class="audition-marker-btn time-field-set-btn" @click="setInPointAtPlayhead">
+            {{ t('actions.setIn') }}
+          </button>
+        </div>
         <div class="time-input-with-buttons">
           <button class="time-decrement" @click="adjustInPoint(-0.5)" :title="t('waveform.decreaseBy', { seconds: '0.5' })">
             <span class="material-symbols-rounded">remove</span>
@@ -302,7 +301,12 @@
         :class="{ 'time-field-disabled': multiSelect }"
         :title="multiSelect ? t('properties.multiSelectOutPointDisabled') : undefined"
       >
-        <label>{{ t('properties.outPoint') }}</label>
+        <div class="time-field-label-row">
+          <label>{{ t('properties.outPoint') }}</label>
+          <button v-if="!multiSelect" type="button" class="audition-marker-btn time-field-set-btn" @click="setOutPointAtPlayhead">
+            {{ t('actions.setOut') }}
+          </button>
+        </div>
         <div class="time-input-with-buttons">
           <button class="time-decrement" @click="adjustOutPoint(-0.5)" :disabled="multiSelect" :title="multiSelect ? t('properties.multiSelectOutPointDisabled') : t('waveform.decreaseBy', { seconds: '0.5' })">
             <span class="material-symbols-rounded">remove</span>
@@ -2564,10 +2568,25 @@ onUnmounted(() => {
   gap: 2px;
 }
 
-.time-field label {
+.time-field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 22px;
+  gap: var(--spacing-xs);
+}
+
+.time-field-label-row label,
+.time-field > label {
   font-size: var(--type-metadata-size);
   color: var(--color-text-primary);
   font-weight: 600;
+}
+
+.time-field-set-btn {
+  height: 22px;
+  padding: 0 6px;
+  font-size: 10px;
 }
 
 .time-input-with-buttons {
