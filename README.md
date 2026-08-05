@@ -1,28 +1,28 @@
 # DonWells Cue
 
-![DonWells Cue main interface — playlist editor, cart grid and properties panel](client/public/screenshots/liveplay_screenshot.jpg)
-
 **DonWells Cue is a free, open-source app for playing back audio in live shows.** If you run sound for theatre, conferences, houses of worship, AV installs, or any live event, DonWells Cue lets you line up your music, sound effects and stings ahead of time and fire them off reliably on the night — from a laptop, a touchscreen, or even a separate stage-side machine you control over the network.
 
 You build a **show** as a list of cues plus a grid of one-touch buttons, then trigger them with a click, a tap, a keyboard shortcut, or a MIDI controller. DonWells Cue handles the fades, the transitions between tracks, and keeps a close eye on your levels so nothing clips or distorts.
 
-It runs on **Windows, macOS and Linux**, and it's completely free.
+This is the active DonWells Cue fork. Build targets are configured for **Windows x64, macOS Apple Silicon and Linux x64**. The current fork has been packaged and smoke-tested on Apple Silicon; the other targets should be treated as CI targets until their current installers are separately verified.
 
-> A public DonWells Cue release feed is not configured yet. Build locally or publish the signed artifacts from your own release workflow.
+> No installer has been published to [GitHub Releases](https://github.com/donwellsav/dwcue/releases) yet. The repository currently provides source and build workflows.
 
 ---
 
 ## What you can do with it
 
-- **🎵 Build a cue list** — arrange audio into a playlist with nested groups. Set a volume, trim the start and end, add fade-ins and fade-outs, and choose what happens when a track finishes: stop, play the next cue, loop, or jump to another cue.
+- **🎵 Build a cue list** — arrange audio into a playlist with nested groups. Set volume, In/Out points, fades, ducking, and what happens when a cue finishes: stop, play next, loop, or jump to another cue.
 - **🎛 Fire off carts** — a grid of one-touch buttons for stings, SFX, walk-on music and beds. Great for touchscreens; the cart grid can even pop out into its own window.
-- **📺 Show Mode** — switch to a simplified, touch-friendly playback view for the actual performance, so operators can trigger cues without the editing clutter. Each device remembers its own preference.
+- **🔎 Prepare cues precisely** — Properties provides a detailed peak/RMS waveform, separate program and Preview playheads, click-to-seek, editable In/Out and Start Next markers, transport controls, Trim Silence, and loudness or true-peak normalization.
+- **🎧 Preview safely** — assign a monitor output and audition a cue away from the program bus. The lower Preview panel supports transport, seeking, quick Set In/Out, saving trim, Start Next markers, and Set As Next.
+- **📺 Show Mode** — switch to a simplified, touch-friendly playback view for the actual performance. Preview remains available as the lighter-weight way to inspect and prepare a cue during a show.
 - **⏭ Smooth transitions** — automatic advance, crossfades, and radio-style "Start Next" segue markers with an on-screen countdown for seamless back-to-back playback.
-- **🔊 Sounds great, stays safe** — pick an **Output Target** for your show (Broadcast / EBU R128, Streaming, Radio, Netflix / OTT, or Live console) and DonWells Cue sets an appropriate loudness target, a true-peak limiter to stop intersample clipping, and matching meter and waveform colours automatically.
+- **🔊 Sounds great, stays safe** — pick an **Output Target** for your show (Broadcast / EBU R128, Streaming, Radio, Netflix / OTT, or Live console), normalize cues to a chosen loudness or true-peak value, and use the adjustable true-peak limiter to control intersample peaks.
 - **📊 See your levels** — real-time metering at every stage (per-cue, per-channel and master), shown in LUFS, dBFS, true-peak or RMS.
 - **🎚 Route anywhere** — send audio to multiple outputs at once (front-of-house, monitors, comms, a record bus…) across one or more sound cards.
 - **🎬 Timecode** — send SMPTE LTC timecode from a cue to keep lighting, video or other systems in sync.
-- **📥 Bring in audio easily** — drag and drop files (or import several at once), or pull audio straight from YouTube.
+- **📥 Bring in audio easily** — drag and drop local files, import several at once, download from YouTube, or review and import selected Spotify tracks into a project folder.
 - **🎹 Trigger it your way** — click, tap, keyboard hotkeys, MIDI controllers, or automation over the network (HTTP / WebSocket).
 - **🌍 Speak your language** — available in **20+ languages**, including full right-to-left support.
 - **🖥 Run it remotely** — operate a stage-side machine wired to your sound gear from a separate show laptop over the local network, with automatic discovery so you don't have to type in IP addresses.
@@ -31,7 +31,7 @@ It runs on **Windows, macOS and Linux**, and it's completely free.
 
 ## Download and install
 
-The release workflow produces installers for **Windows, macOS and Linux**. A branded public download location has not been configured yet.
+There are currently no public installer assets. When a release is published, the configured build workflow can produce:
 
 | Platform | What to download |
 |----------|------------------|
@@ -39,13 +39,13 @@ The release workflow produces installers for **Windows, macOS and Linux**. A bra
 | **macOS — Apple Silicon** (M1/M2/M3 and newer) | `DonWells-Cue-x.y.z-arm64.dmg` |
 | **Linux** | `DonWells-Cue-x.y.z.AppImage`, `DonWells-Cue-x.y.z-x64.deb`, or `DonWells-Cue-x.y.z-x64.rpm` |
 
-The macOS build is native Apple Silicon (`arm64`) for M-series Macs.
+The macOS target is native Apple Silicon (`arm64`) for M-series Macs.
 
-You only need the one installer. Everything is bundled inside it, so a normal single-machine install works with **no setup or configuration** — install, launch, and start building a show.
+Each desktop package bundles the Electron client and `dwcue-server`, so a normal single-machine build launches its own local server without manual network setup.
 
 ### First launch on macOS ("DonWells Cue is damaged and can't be opened")
 
-DonWells Cue's macOS builds are **not yet signed with an Apple Developer ID certificate or notarized** (Apple charges for this — it's on the roadmap). Because of that, macOS quarantines the app on download and refuses to open it, usually with *"DonWells Cue is damaged and can't be opened."* The app is not actually damaged — macOS just won't run an unsigned, quarantined binary.
+No public macOS artifact is currently claimed as Developer ID signed or notarized. If you distribute an unsigned local build, macOS may quarantine it and report *"DonWells Cue is damaged and can't be opened."*
 
 After dragging **DonWells Cue.app** into `/Applications`, remove the quarantine flag once from Terminal:
 
@@ -57,7 +57,7 @@ Enter your password when prompted, then launch DonWells Cue normally. You only n
 
 ### First launch on Windows ("Windows protected your PC")
 
-DonWells Cue's Windows installer isn't yet signed with a certificate that Microsoft SmartScreen recognises (code signing via [SignPath](SIGNING.md) is in progress). Until then, Windows may show a blue **"Windows protected your PC"** dialog the first time you run the installer. The app is safe — it just hasn't accumulated SmartScreen download reputation yet.
+No public Windows artifact is currently claimed as Authenticode signed. If you distribute an unsigned local build, Windows may show a blue **"Windows protected your PC"** dialog the first time it runs. See [SIGNING.md](SIGNING.md) for the repository's signing configuration.
 
 To run it:
 
@@ -70,13 +70,14 @@ If your browser blocked the download instead, choose **Keep** to save the instal
 
 ## Getting started
 
-1. Install DonWells Cue and launch it.
+1. Build DonWells Cue from source (or install a published release when one is available) and launch it.
 2. Choose **New Project** and pick a folder — DonWells Cue creates the project file and a `media/` sub-folder there.
-3. Drop audio files onto the playlist, or use **Import audio** to copy them in (you can also import from YouTube).
-4. Click a cue to open its properties, then set in/out points, fade times, volume and what happens when it ends.
-5. Assign your most-used cues to cart buttons for one-touch playback.
-6. Fire cues by clicking, tapping a cart, or pressing a keyboard shortcut. Live meters show your signal at every stage.
-7. Heading into a show? Switch on **Show Mode** for a clean, touch-friendly playback view.
+3. In **Project Settings**, choose the program output, Output Target, and—if you need private auditioning—the Preview output.
+4. Drop audio files onto the playlist, use **Import Audio**, or open the YouTube or Spotify importer.
+5. Open a cue's **Properties** to set markers, fades, normalization, volume, ducking, routing, and start/end behaviour.
+6. Assign frequently used cues to cart buttons for one-touch playback.
+7. Audition on the Preview output, set the intended next cue, and verify the program and monitor meters.
+8. Switch on **Show Mode** for the live performance.
 
 **Running on a separate machine?** Start the stage-side server with `dwcue-server --bind 0.0.0.0`. It prints a one-time access token unless `LIVEPLAY_ACCESS_TOKEN` already supplies one. On the control laptop, open **Server Settings**, choose the discovered server or enter `http://<server-host>:4480`, and enter that token. See [Network ports](#network-ports) below for firewall details.
 
@@ -84,7 +85,7 @@ If your browser blocked the download instead, choose **Keep** to save the instal
 
 ## For developers
 
-Everything below is for people who want to build DonWells Cue from source, contribute, or understand how it works under the hood. If you just want to use the app, you're all set — grab a [release](https://github.com/donwellsav/dwcue/releases) above.
+Everything below is for people who want to build DonWells Cue from source, contribute, or understand how it works under the hood. Public installers will appear on [GitHub Releases](https://github.com/donwellsav/dwcue/releases) when the first release is published.
 
 ### How it's built
 
@@ -127,7 +128,7 @@ DonWells Cue does not open firewall ports automatically. If you deliberately run
 ## Repository layout
 
 ```
-liveplay/
+dwcue/
 ├── client/         Electron + Nuxt 3 + Vue 3 desktop UI — see client/README.md
 ├── server/         C++20 audio engine + REST/WS control server — see server/README.md
 ├── docs-site/      Public-facing Nuxt 3 site (GitHub Pages) — see docs-site/README.md
@@ -178,7 +179,7 @@ Then from a clean checkout:
 
 ```sh
 git clone https://github.com/donwellsav/dwcue.git
-cd liveplay
+cd dwcue
 npm install                # installs client deps via npm workspaces
 npm run build              # builds server + client and collects installers into /build
 ```
@@ -186,7 +187,7 @@ npm run build              # builds server + client and collects installers into
 `npm run build` runs the unified pipeline in [scripts/build-all.js](scripts/build-all.js):
 
 1. Configures and builds the C++ server through CMake/vcpkg.
-2. Runs `nuxt generate` and `electron-builder` in `client/`; the server binary is bundled inside the signed desktop app.
+2. Runs `nuxt generate` and `electron-builder` in `client/`; the server binary is bundled inside the packaged desktop app.
 3. Copies the installer artefacts (`.exe`, `.dmg`, `.AppImage`, `.deb`, `.rpm`) into `build/`.
 
 Use `npm run build:clean` to wipe previous build outputs first (it preserves `vcpkg_installed/` so C++ deps don't get re-downloaded).
@@ -203,7 +204,7 @@ Use `npm run build:clean` to wipe previous build outputs first (it preserves `vc
   C:\dev\vcpkg\bootstrap-vcpkg.bat
   ```
 - Set `VCPKG_ROOT` (see above), open a fresh PowerShell, `npm install`, then `npm run build`.
-- Output: `dist-electron/DonWells-Cue-Setup-<version>.exe` (NSIS installer, x64). The `artifactName` uses hyphens (no spaces) so the local file, the GitHub release asset and the `latest.yml` auto-update manifest all reference the same name.
+- Output: `client/dist-electron/DonWells-Cue-Setup-<version>.exe` (NSIS installer, x64), copied to `build/` by the root build.
 
 ##### macOS
 
@@ -215,8 +216,8 @@ Use `npm run build:clean` to wipe previous build outputs first (it preserves `vc
   "$HOME/dev/vcpkg"/bootstrap-vcpkg.sh
   ```
 - Set `VCPKG_ROOT`, then `npm install && npm run build`.
-- Output: `build/DonWells-Cue-<version>-arm64.dmg` with a matching `.zip`. CI and local release builds target Apple Silicon only.
-- Code signing is skipped by default. Users will see a Gatekeeper warning on first launch — see [First launch on macOS](#first-launch-on-macos-donwells-cue-is-damaged-and-cant-be-opened).
+- Output: `build/DonWells-Cue-<version>-arm64.dmg`. Electron Builder also creates a `.zip` under `client/dist-electron/`; CI can attach both to a release.
+- Developer ID signing and notarization require the credentials described in [SIGNING.md](SIGNING.md). Do not describe a local build as notarized unless it has been verified.
 
 ##### Linux
 
@@ -276,7 +277,7 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-Releases are fully automated. The release pipeline lives in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml).
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). This repository does not yet have a published release, so the workflow configuration—not a downloadable artifact—is the current source of truth.
 
 ### Triggering a release
 
@@ -304,8 +305,15 @@ Contributions of all sizes are welcome — bug fixes, new features, translations
 
 1. **Fork** the repo and `git checkout -b feat/something` off `main`.
 2. **Build it locally** following the steps above. For server changes, run `npm run server:build && npm run server:run --verbose`. For client changes, `npm run dev`.
-3. **Test your change**. There's no automated test suite yet — please verify the path you touched works end-to-end in the running app. Mention any platform you couldn't test on in the PR description so reviewers can cover it.
+3. **Test your change**. At minimum, run the client typecheck and live-safety assertions. Server changes should also build the server and run the decoder self-test. Opt-in C++ assertion binaries cover control security, metering, limiting, mixing, waveform generation, and audio read-ahead. Still verify the path you touched end-to-end in the running or packaged app.
 4. **Open a PR** to `main`. CI must pass (server matrix build on the relevant platforms).
+
+```sh
+npm run typecheck --workspace=client
+node scripts/check-live-safety.js
+npm run server:build
+server/build/decoder-check --self-test   # use the platform-appropriate binary path
+```
 
 ### Style
 
@@ -315,7 +323,7 @@ Contributions of all sizes are welcome — bug fixes, new features, translations
 
 ### Translations
 
-DonWells Cue ships with 20 locale files at [`client/locales/`](client/locales/). To add a new language or fix existing translations:
+DonWells Cue ships with 21 locale files at [`client/locales/`](client/locales/). To add a new language or fix existing translations:
 
 1. Copy `en.json` to `<lang-code>.json` (e.g. `nl.json`).
 2. Update the `_metadata` block (`code`, `name`, `nativeName`, `direction`).
