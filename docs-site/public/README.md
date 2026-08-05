@@ -158,7 +158,7 @@ echo 'export VCPKG_ROOT="$HOME/dev/vcpkg"' >> ~/.zshrc
 Then from a clean checkout:
 
 ```sh
-git clone https://github.com/tdoukinitsas/liveplay.git
+git clone https://github.com/donwellsav/dwcue.git
 cd liveplay
 npm install                # installs client deps via npm workspaces
 npm run build              # builds server + client and collects installers into /build
@@ -309,7 +309,7 @@ For right-to-left languages, set `"direction": "rtl"` in `_metadata` and verify 
 
 ### Reporting bugs
 
-File issues at [github.com/tdoukinitsas/liveplay/issues](https://github.com/tdoukinitsas/liveplay/issues). Include OS, DonWells Cue version (visible in the About dialog), and a minimal repro.
+File issues at [github.com/donwellsav/dwcue/issues](https://github.com/donwellsav/dwcue/issues). Include OS, DonWells Cue version (visible in the About dialog), and a minimal repro.
 
 ---
 

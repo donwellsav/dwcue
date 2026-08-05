@@ -77,7 +77,7 @@ cp package.json  docs-site/public/package.json
 ## How it works
 
 1. **Version detection** — at runtime, the page fetches `/liveplay/package.json` and reads the `version` field. All download links are constructed from this version.
-2. **Download links** — interpolated as `https://github.com/tdoukinitsas/liveplay/releases/download/v<version>/<asset>`:
+2. **Download links** — interpolated as `https://github.com/donwellsav/dwcue/releases/download/v<version>/<asset>`:
 
    | Platform | Asset pattern                          |
    |----------|-----------------------------------------|

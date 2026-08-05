@@ -125,7 +125,7 @@
 
         <div class="github-link">
           <a 
-            href="https://github.com/tdoukinitsas/liveplay/releases/latest" 
+            href="https://github.com/donwellsav/dwcue/releases/latest"
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -272,7 +272,7 @@
         </div>
         <div class="contribute-cta">
           <a
-            href="https://github.com/tdoukinitsas/liveplay"
+            href="https://github.com/donwellsav/dwcue"
             target="_blank"
             rel="noopener noreferrer"
             class="contribute-button"
@@ -298,7 +298,7 @@
           </a>
         </p>
         <p>
-          <a href="https://github.com/tdoukinitsas/liveplay" target="_blank" rel="noopener noreferrer">
+          <a href="https://github.com/donwellsav/dwcue" target="_blank" rel="noopener noreferrer">
             {{ t('footer.viewOnGitHub') }}
           </a>
         </p>
@@ -375,7 +375,7 @@ const detectOS = (): string | null => {
 
 const downloadLinks = computed(() => {
   const v = version.value;
-  const baseUrl = `https://github.com/tdoukinitsas/liveplay/releases/download/v${v}`;
+  const baseUrl = `https://github.com/donwellsav/dwcue/releases/download/v${v}`;
   return {
     // Windows (artifactName uses hyphens so the file, GitHub asset and latest.yml all match)
     windows: `${baseUrl}/DonWells-Cue-Setup-${v}.exe`,

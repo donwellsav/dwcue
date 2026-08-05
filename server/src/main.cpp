@@ -234,7 +234,7 @@ void print_banner(const std::string& bind_iface, int port) {
                 std::string{C_RESET});
     Logger::raw("");
     Logger::raw(std::string{C_DIM} + "  Repository  " + std::string{C_RESET} +
-                "https://github.com/tdoukinitsas/liveplay");
+                "https://github.com/donwellsav/dwcue");
     Logger::raw(std::string{C_DIM} + "  License     " + std::string{C_RESET} +
                 "AGPL-3.0-only");
     Logger::raw(std::string{C_DIM} + "  Authors     " + std::string{C_RESET} +

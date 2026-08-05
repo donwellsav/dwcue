@@ -52,9 +52,9 @@
         
         <div class="info-section links">
           <a 
-            href="https://github.com/tdoukinitsas/liveplay" 
+            href="https://github.com/donwellsav/dwcue"
             class="info-link"
-            @click.prevent="openExternal('https://github.com/tdoukinitsas/liveplay')"
+            @click.prevent="openExternal('https://github.com/donwellsav/dwcue')"
           >
             <span class="material-symbols-rounded">code</span>
             <span>{{ t('about.githubRepo') }}</span>

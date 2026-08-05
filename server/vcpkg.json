@@ -3,7 +3,7 @@
   "name": "liveplay-server",
   "version-string": "2.5.11",
   "description": "DonWells Cue headless audio engine and control server.",
-  "homepage": "https://github.com/tdoukinitsas/liveplay",
+  "homepage": "https://github.com/donwellsav/dwcue",
   "license": "AGPL-3.0-only",
   "dependencies": [
     {
