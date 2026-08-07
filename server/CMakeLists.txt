@@ -35,6 +35,14 @@ project(liveplay-server
     LANGUAGES C CXX
 )
 
+if(MSVC)
+    # Keep the packaged server self-contained on a clean Windows 11 install.
+    # vcpkg deploys its DLLs beside the target; this adds the matching MSVC
+    # runtime DLLs without running a separate redistributable installer.
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
+    include(InstallRequiredSystemLibraries)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -154,6 +162,16 @@ add_executable(liveplay-server
     src/meta/waveform.cpp
 )
 set_target_properties(liveplay-server PROPERTIES OUTPUT_NAME "dwcue-server")
+
+if(MSVC AND CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS)
+    add_custom_command(TARGET liveplay-server POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS}
+            "$<TARGET_FILE_DIR:liveplay-server>"
+        COMMAND_EXPAND_LISTS
+        COMMENT "Staging MSVC runtime DLLs beside dwcue-server"
+    )
+endif()
 
 target_include_directories(liveplay-server
     PRIVATE

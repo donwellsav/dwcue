@@ -292,6 +292,8 @@ A release pipeline is configured in [`.github/workflows/build-release.yml`](.git
 
 The vcpkg binary cache (`x-gha,readwrite` backend) is reused across runs so compiled C++ dependencies don't have to be re-built from scratch every time.
 
+Manual runs are validation-only by default. They build the full matrix and smoke-test the unpacked Windows app and bundled native server without publishing anything. Enable the `publish_release` input only when the same validated installers should become a GitHub Release.
+
 ### Other workflows
 
 - **[`build-server.yml`](.github/workflows/build-server.yml)** — builds the server alone on PRs and pushes that touch `server/**`. Cross-platform matrix; uploads `dwcue-server-<platform>` artefacts for download from the Actions UI. Useful for vetting server-only PRs without running the full release pipeline.

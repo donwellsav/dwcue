@@ -11,6 +11,12 @@ on:
     paths:
       - 'package.json'
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish the validated installers as a GitHub Release
+        required: true
+        default: false
+        type: boolean
 
 jobs:
   check-version:
@@ -110,7 +116,7 @@ jobs:
                      /etc/apt/sources.list.d/azure-cli.sources
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ninja-build pkg-config \
+            ninja-build nasm pkg-config \
             libasound2-dev libpulse-dev libjack-jackd2-dev libx11-dev
 
       - name: Install macOS build tools
@@ -261,6 +267,41 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CI: true
 
+      - name: Smoke test packaged Windows app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $unpacked = "client/dist-electron/win-unpacked"
+          $app = Join-Path $unpacked "DonWells Cue.exe"
+          $server = Join-Path $unpacked "resources/server-bin/dwcue-server.exe"
+          $soundfont = Join-Path $unpacked "resources/server-bin/TimGM6mb.sf2"
+          foreach ($required in @($app, $server, $soundfont)) {
+            if (-not (Test-Path $required)) { throw "Packaged file missing: $required" }
+          }
+
+          # Starting the bundled server here catches missing app-local DLLs.
+          & $server --help
+          if ($LASTEXITCODE -ne 0) { throw "Packaged server failed with exit code $LASTEXITCODE" }
+
+          $process = Start-Process -FilePath $app -PassThru
+          try {
+            $deadline = (Get-Date).AddSeconds(30)
+            do {
+              Start-Sleep -Milliseconds 500
+              $process.Refresh()
+              if ($process.HasExited) {
+                throw "Packaged app exited during startup with code $($process.ExitCode)"
+              }
+            } while ($process.MainWindowHandle -eq 0 -and (Get-Date) -lt $deadline)
+            if ($process.MainWindowHandle -eq 0) {
+              throw "Packaged app did not create a Windows desktop window"
+            }
+          } finally {
+            if (-not $process.HasExited) {
+              & taskkill.exe /PID $process.Id /T /F | Out-Null
+            }
+          }
+
       - name: Collect installers into /build/
         shell: bash
         run: |
@@ -290,6 +331,7 @@ jobs:
 
   release:
     needs: [check-version, build]
+    if: ${{ github.event_name == 'push' || inputs.publish_release }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

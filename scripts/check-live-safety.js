@@ -9,6 +9,10 @@ const root = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 
 const pkg = JSON.parse(read('client/package.json'));
+assert.equal(pkg.build.win.target[0].target, 'nsis',
+  'Windows releases must produce an installer');
+assert.deepEqual(pkg.build.win.target[0].arch, ['x64'],
+  'Windows releases must include the Windows 11 x64 target');
 for (const target of pkg.build.mac.target) {
   assert.deepEqual(target.arch, ['arm64'], `macOS ${target.target} must be Apple Silicon-only`);
 }
@@ -40,6 +44,23 @@ assert.doesNotMatch(
   JSON.stringify(pkg.build.dmg),
   /DW Cue Server\.app/,
   'the release DMG must not contain an unsigned standalone server app',
+);
+const serverCmake = read('server/CMakeLists.txt');
+assert.match(
+  serverCmake,
+  /MSVC[\s\S]*CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE[\s\S]*InstallRequiredSystemLibraries[\s\S]*copy_if_different[\s\S]*CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS[\s\S]*TARGET_FILE_DIR:liveplay-server/,
+  'Windows packages must stage the MSVC runtime beside the native server',
+);
+const releaseWorkflow = read('.github/workflows/build-release.yml');
+assert.match(
+  releaseWorkflow,
+  /workflow_dispatch:[\s\S]*publish_release:[\s\S]*default: false[\s\S]*Smoke test packaged Windows app[\s\S]*dwcue-server\.exe[\s\S]*MainWindowHandle/,
+  'manual Windows validation must verify both the packaged server and desktop window',
+);
+assert.match(
+  releaseWorkflow,
+  /release:[\s\S]*if: \$\{\{ github\.event_name == 'push' \|\| inputs\.publish_release \}\}/,
+  'manual validation must not publish a release unless explicitly requested',
 );
 
 const engine = read('server/src/audio/engine.cpp');
