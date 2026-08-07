@@ -60,6 +60,13 @@ for (const plugin of ['FB2K', 'WINAMP', 'XMPLAY']) {
   );
 }
 const releaseWorkflow = read('.github/workflows/build-release.yml');
+const serverWorkflow = read('.github/workflows/build-server.yml');
+for (const [name, workflow] of [['release', releaseWorkflow], ['server', serverWorkflow]]) {
+  for (const tool of ['autoconf', 'autoconf-archive', 'automake', 'libtool']) {
+    assert.match(workflow, new RegExp(`\\b${tool}\\b`),
+      `${name} workflow must install ${tool} for current vcpkg Linux ports`);
+  }
+}
 assert.match(
   releaseWorkflow,
   /workflow_dispatch:[\s\S]*publish_release:[\s\S]*default: false[\s\S]*Smoke test packaged Windows app[\s\S]*dwcue-server\.exe[\s\S]*MainWindowHandle/,

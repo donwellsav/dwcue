@@ -116,7 +116,7 @@ jobs:
                      /etc/apt/sources.list.d/azure-cli.sources
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ninja-build nasm pkg-config \
+            ninja-build nasm pkg-config autoconf autoconf-archive automake libtool \
             libasound2-dev libpulse-dev libjack-jackd2-dev libx11-dev
 
       - name: Install macOS build tools

@@ -92,6 +92,10 @@ jobs:
             ninja-build \
             nasm \
             pkg-config \
+            autoconf \
+            autoconf-archive \
+            automake \
+            libtool \
             libasound2-dev \
             libpulse-dev \
             libjack-jackd2-dev \
