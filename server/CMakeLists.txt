@@ -132,7 +132,10 @@ if(WIN32)
     # Embed the app icon and version info from the Windows resource script.
     # The .rc file uses a path relative to its own location, so set the
     # RC_FLAGS include directory to assets/ so the compiler finds app.ico.
-    set(LIVEPLAY_RC "${CMAKE_CURRENT_SOURCE_DIR}/assets/server.rc")
+    set(LIVEPLAY_RC
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/server.rc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/server.manifest"
+    )
     set(CMAKE_RC_FLAGS "/I\"${CMAKE_CURRENT_SOURCE_DIR}/assets\"")
 else()
     set(LIVEPLAY_RC "")

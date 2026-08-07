@@ -1,0 +1,10 @@
+diff --git a/src/util/miniz.c b/src/util/miniz.c
+index 5174f67..f2aaf0c 100644
+--- a/src/util/miniz.c
++++ b/src/util/miniz.c
+@@ -1,4 +1,4 @@
+-#include "miniz.h"
++#include "zlib_vgmstream.h"
+ /**************************************************************************
+  *
+  * Copyright 2013-2014 RAD Game Tools and Valve Software

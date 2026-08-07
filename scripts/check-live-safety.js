@@ -64,6 +64,12 @@ assert.match(
   /vcpkg_check_linkage\(ONLY_STATIC_LIBRARY\)/,
   'vgmstream must stay static when the Windows triplet defaults to shared libraries',
 );
+assert.match(vgmstreamPort, /miniz-config\.patch/,
+  'vgmstream must disable bundled miniz archive APIs before linking the project ZIP reader');
+assert.doesNotMatch(read('server/assets/server.rc'), /RT_MANIFEST/,
+  'the Windows resource script must not duplicate CMake manifest embedding');
+assert.match(serverCmake, /LIVEPLAY_RC[\s\S]*assets\/server\.manifest/,
+  'CMake must merge the Windows application manifest during the executable link');
 const releaseWorkflow = read('.github/workflows/build-release.yml');
 const serverWorkflow = read('.github/workflows/build-server.yml');
 for (const [name, workflow] of [['release', releaseWorkflow], ['server', serverWorkflow]]) {

@@ -5,7 +5,9 @@ vcpkg_from_github(
     REPO vgmstream/vgmstream
     REF 4021c853ca5c7bc87de596a2c3b2e1b22bcdf45c
     SHA512 a6795f4125080abace1174b5f90005ca895731ace1f80cb6d9069e4815c4417a856f9da95f875c7ee70a4d4d28bd51b368db07f1dd053b593f90dcbba530a60f
-    PATCHES install-static-library.patch
+    PATCHES
+        install-static-library.patch
+        miniz-config.patch
 )
 
 vcpkg_cmake_configure(

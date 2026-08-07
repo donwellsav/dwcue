@@ -3,7 +3,6 @@
 #include <winresrc.h>
 
 IDI_APPICON ICON "app.ico"
-1 RT_MANIFEST "server.manifest"
 
 // Version information block shown in Explorer > Properties > Details.
 VS_VERSION_INFO VERSIONINFO
