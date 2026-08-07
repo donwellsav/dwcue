@@ -1,3 +1,5 @@
+vcpkg_check_linkage(ONLY_STATIC_LIBRARY)
+
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO vgmstream/vgmstream
@@ -15,7 +17,6 @@ vcpkg_cmake_configure(
         -DBUILD_FB2K=OFF
         -DBUILD_WINAMP=OFF
         -DBUILD_XMPLAY=OFF
-        -DBUILD_SHARED_LIBS=OFF
         -DUSE_MPEG=OFF
         -DUSE_VORBIS=OFF
         -DUSE_FFMPEG=OFF

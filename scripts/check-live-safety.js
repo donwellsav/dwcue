@@ -59,6 +59,11 @@ for (const plugin of ['FB2K', 'WINAMP', 'XMPLAY']) {
     `the vgmstream library build must not require the Windows ${plugin} plugin SDK`,
   );
 }
+assert.match(
+  vgmstreamPort,
+  /vcpkg_check_linkage\(ONLY_STATIC_LIBRARY\)/,
+  'vgmstream must stay static when the Windows triplet defaults to shared libraries',
+);
 const releaseWorkflow = read('.github/workflows/build-release.yml');
 const serverWorkflow = read('.github/workflows/build-server.yml');
 for (const [name, workflow] of [['release', releaseWorkflow], ['server', serverWorkflow]]) {
