@@ -91,6 +91,8 @@ find_package(FFMPEG REQUIRED)
 find_package(FluidSynth CONFIG REQUIRED)
 find_path(GME_INCLUDE_DIR gme/gme.h REQUIRED)
 find_library(GME_LIBRARY NAMES gme REQUIRED)
+# GME is static and its gzip reader needs zlib after the archive on GNU ld.
+list(APPEND GME_LIBRARY ZLIB::ZLIB)
 find_path(VGMSTREAM_INCLUDE_DIR vgmstream/libvgmstream.h REQUIRED)
 find_library(VGMSTREAM_LIBRARY NAMES vgmstream REQUIRED)
 
