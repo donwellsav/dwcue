@@ -51,6 +51,14 @@ assert.match(
   /MSVC[\s\S]*CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE[\s\S]*InstallRequiredSystemLibraries[\s\S]*copy_if_different[\s\S]*CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS[\s\S]*TARGET_FILE_DIR:liveplay-server/,
   'Windows packages must stage the MSVC runtime beside the native server',
 );
+const vgmstreamPort = read('server/ports/vgmstream/portfile.cmake');
+for (const plugin of ['FB2K', 'WINAMP', 'XMPLAY']) {
+  assert.match(
+    vgmstreamPort,
+    new RegExp(`-DBUILD_${plugin}=OFF`),
+    `the vgmstream library build must not require the Windows ${plugin} plugin SDK`,
+  );
+}
 const releaseWorkflow = read('.github/workflows/build-release.yml');
 assert.match(
   releaseWorkflow,

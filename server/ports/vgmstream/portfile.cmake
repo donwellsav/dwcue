@@ -12,6 +12,9 @@ vcpkg_cmake_configure(
         -DBUILD_CLI=OFF
         -DBUILD_V123=OFF
         -DBUILD_AUDACIOUS=OFF
+        -DBUILD_FB2K=OFF
+        -DBUILD_WINAMP=OFF
+        -DBUILD_XMPLAY=OFF
         -DBUILD_SHARED_LIBS=OFF
         -DUSE_MPEG=OFF
         -DUSE_VORBIS=OFF
