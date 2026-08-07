@@ -9,6 +9,8 @@ const root = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 
 const pkg = JSON.parse(read('client/package.json'));
+assert.equal(pkg.repository.url, 'https://github.com/donwellsav/dwcue.git',
+  'electron-builder must resolve the update repository from the app package in CI');
 assert.equal(pkg.build.win.target[0].target, 'nsis',
   'Windows releases must produce an installer');
 assert.deepEqual(pkg.build.win.target[0].arch, ['x64'],

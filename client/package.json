@@ -3,6 +3,10 @@
   "version": "2.5.11",
   "description": "Audio cue playback application for live events",
   "homepage": "https://github.com/donwellsav/dwcue",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/donwellsav/dwcue.git"
+  },
   "main": "electron/main.js",
   "type": "commonjs",
   "scripts": {
