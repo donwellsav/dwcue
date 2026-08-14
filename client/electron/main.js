@@ -14,6 +14,13 @@ const { promisify } = require('util');
 const https = require('https');
 const { fileURLToPath } = require('url');
 const { PathCapabilityRegistry } = require('./path-capabilities');
+const {
+  SPOTIFY_AUDIO_PROVIDERS,
+  normalizeSpotifyBitrate,
+  normalizeSpotifyRecovery,
+  renewSpotifyReview,
+  spotifyReviewIsValid,
+} = require('./spotify-import-reliability');
 const execPromise = promisify(exec);
 const execFilePromise = promisify(execFile);
 
@@ -468,8 +475,11 @@ function importPreferencesPath() {
 function readImportPreferences() {
   try {
     const value = JSON.parse(fs.readFileSync(importPreferencesPath(), 'utf8'));
-    return { spotifyDestination: typeof value.spotifyDestination === 'string' ? value.spotifyDestination : '' };
-  } catch { return { spotifyDestination: '' }; }
+    return {
+      spotifyDestination: typeof value.spotifyDestination === 'string' ? value.spotifyDestination : '',
+      spotifyRecovery: normalizeSpotifyRecovery(value.spotifyRecovery),
+    };
+  } catch { return { spotifyDestination: '', spotifyRecovery: null }; }
 }
 
 function writeImportPreferences(value) {
@@ -2519,11 +2529,38 @@ ipcMain.handle('get-import-preferences', (event) => {
   requireTrustedIpc(event);
   const preferences = readImportPreferences();
   const destination = preferences.spotifyDestination;
-  if (!destination || !path.isAbsolute(destination) || !fs.existsSync(destination) ||
-      !fs.statSync(destination).isDirectory()) {
-    return { spotifyDestination: '' };
+  const response = { spotifyDestination: '', spotifyRecovery: null };
+  if (destination && path.isAbsolute(destination) && fs.existsSync(destination) &&
+      fs.statSync(destination).isDirectory()) {
+    response.spotifyDestination = pathCapabilities.authorizeRoot(destination);
   }
-  return { spotifyDestination: pathCapabilities.authorizeRoot(destination) };
+  const recovery = preferences.spotifyRecovery;
+  if (recovery && [
+    recovery.activeProjectFolderPath,
+    recovery.destinationParentPath,
+    recovery.projectFolderPath,
+  ].every((folderPath) => fs.existsSync(folderPath) && fs.statSync(folderPath).isDirectory())) {
+    const availablePending = recovery.pendingTrackIds
+      .map((id, index) => ({ id, file: recovery.pendingFiles[index] }))
+      .filter(({ file }) => file && fs.existsSync(file) && fs.statSync(file).isFile());
+    const missingPendingIds = recovery.pendingTrackIds
+      .filter((id) => !availablePending.some((pending) => pending.id === id));
+    const restoredRecovery = normalizeSpotifyRecovery({
+      ...recovery,
+      failedTrackIds: [...new Set([...recovery.failedTrackIds, ...missingPendingIds])],
+      pendingTrackIds: availablePending.map(({ id }) => id),
+      pendingFiles: availablePending.map(({ file }) => file),
+    });
+    pathCapabilities.authorizeRoot(recovery.activeProjectFolderPath);
+    pathCapabilities.authorizeRoot(recovery.destinationParentPath);
+    pathCapabilities.authorizeRoot(recovery.projectFolderPath);
+    for (const { file } of availablePending) pathCapabilities.authorizeFile(file);
+    response.spotifyRecovery = restoredRecovery;
+    if (restoredRecovery && missingPendingIds.length) {
+      writeImportPreferences({ ...preferences, spotifyRecovery: restoredRecovery });
+    }
+  }
+  return response;
 });
 
 ipcMain.handle('set-spotify-import-destination', (event, destination) => {
@@ -2531,6 +2568,38 @@ ipcMain.handle('set-spotify-import-destination', (event, destination) => {
   destination = requireAuthorizedIpcPath(destination, 'destination');
   if (!fs.statSync(destination).isDirectory()) throw new TypeError('destination must be a directory');
   writeImportPreferences({ ...readImportPreferences(), spotifyDestination: destination });
+  return true;
+});
+
+ipcMain.handle('set-spotify-import-recovery', (event, rawRecovery) => {
+  requireTrustedIpc(event);
+  rawRecovery = requireBoundedIpcObject(rawRecovery, 'recovery', 1024 * 1024);
+  const recovery = normalizeSpotifyRecovery(rawRecovery);
+  if (!recovery) throw new TypeError('recovery is invalid');
+  for (const [name, folderPath] of [
+    ['activeProjectFolderPath', recovery.activeProjectFolderPath],
+    ['destinationParentPath', recovery.destinationParentPath],
+    ['projectFolderPath', recovery.projectFolderPath],
+  ]) {
+    requireAuthorizedIpcPath(folderPath, name);
+    if (!fs.statSync(folderPath).isDirectory()) throw new TypeError(`${name} must be a directory`);
+  }
+  for (const filePath of recovery.pendingFiles) {
+    requireAuthorizedIpcPath(filePath, 'pendingFile');
+    if (!fs.statSync(filePath).isFile()) throw new TypeError('pendingFile must be a file');
+  }
+  writeImportPreferences({ ...readImportPreferences(), spotifyRecovery: recovery });
+  return true;
+});
+
+ipcMain.handle('clear-spotify-import-recovery', (event, activeProjectFolderPath) => {
+  requireTrustedIpc(event);
+  activeProjectFolderPath = requireAuthorizedIpcPath(
+    activeProjectFolderPath, 'activeProjectFolderPath');
+  const preferences = readImportPreferences();
+  if (preferences.spotifyRecovery?.activeProjectFolderPath === activeProjectFolderPath) {
+    writeImportPreferences({ ...preferences, spotifyRecovery: null });
+  }
   return true;
 });
 
@@ -3204,6 +3273,152 @@ function spotifyTrackId(track) {
   return /^[A-Za-z0-9]{10,64}$/.test(id) ? id : '';
 }
 
+function spotifyContentParts(rawUrl) {
+  const parsed = rawUrl instanceof URL ? rawUrl : new URL(rawUrl);
+  if (parsed.hostname.toLowerCase() !== 'open.spotify.com') return null;
+  const parts = parsed.pathname.split('/').filter(Boolean);
+  if (/^intl-[a-z]{2}(?:-[a-z]{2})?$/i.test(parts[0] || '')) parts.shift();
+  if (parts.length !== 2 ||
+      !['track', 'album', 'playlist', 'artist'].includes(parts[0]) ||
+      !/^[A-Za-z0-9]{10,64}$/.test(parts[1])) {
+    return null;
+  }
+  return { type: parts[0], id: parts[1] };
+}
+
+function spotifyEmbedCoverUrl(entity) {
+  const sources = [
+    ...(Array.isArray(entity?.coverArt?.sources) ? entity.coverArt.sources : []),
+    ...(Array.isArray(entity?.visualIdentity?.image) ? entity.visualIdentity.image : []),
+  ];
+  return sources.find((source) => typeof source?.url === 'string')?.url || null;
+}
+
+function spotifyEmbedArtists(track) {
+  if (Array.isArray(track?.artists)) {
+    const names = track.artists
+      .map((artist) => typeof artist === 'string' ? artist : artist?.name)
+      .filter((artist) => typeof artist === 'string' && artist.trim())
+      .map((artist) => artist.trim());
+    if (names.length > 0) return names;
+  }
+  const subtitle = typeof track?.subtitle === 'string' ? track.subtitle.trim() : '';
+  return subtitle ? [subtitle] : [];
+}
+
+function spotifyEmbedDate(track, entity) {
+  const value = track?.releaseDate?.isoString || entity?.releaseDate?.isoString;
+  return typeof value === 'string' && value ? value : null;
+}
+
+async function fetchSpotifyEmbedTracks(rawUrl) {
+  let currentUrl = new URL(rawUrl);
+  let content = spotifyContentParts(currentUrl);
+  for (let redirectCount = 0; !content && redirectCount < 5; redirectCount += 1) {
+    if (!['spotify.link', 'spotify.app.link'].includes(currentUrl.hostname.toLowerCase())) {
+      throw new Error('Spotify share URL did not resolve to a supported item');
+    }
+    const redirected = await fetch(currentUrl, {
+      headers: { accept: 'text/html' },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(15000),
+    });
+    const location = redirected.headers.get('location');
+    await redirected.body?.cancel().catch(() => {});
+    if (!location) throw new Error('Spotify share URL did not redirect');
+    currentUrl = new URL(location, currentUrl);
+    if (currentUrl.protocol !== 'https:' ||
+        !['spotify.link', 'spotify.app.link', 'open.spotify.com']
+          .includes(currentUrl.hostname.toLowerCase())) {
+      throw new Error('Spotify share URL redirected to an unsupported host');
+    }
+    content = spotifyContentParts(currentUrl);
+  }
+  if (!content) throw new Error('Spotify share URL did not resolve to a supported item');
+
+  const response = await fetch(
+    `https://open.spotify.com/embed/${content.type}/${content.id}`,
+    {
+      headers: { accept: 'text/html' },
+      redirect: 'error',
+      signal: AbortSignal.timeout(15000),
+    },
+  );
+  if (!response.ok) throw new Error(`Spotify embed request failed (${response.status})`);
+  const html = await response.text();
+  const nextData = html.match(
+    /<script[^>]+id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i,
+  );
+  if (!nextData) throw new Error('Spotify embed did not include track metadata');
+
+  const entity = JSON.parse(nextData[1])?.props?.pageProps?.state?.data?.entity;
+  const sourceTracks = entity?.type === 'track'
+    ? [entity]
+    : (Array.isArray(entity?.trackList) ? entity.trackList : []);
+  if (sourceTracks.length === 0 || sourceTracks.length > 10000) {
+    throw new Error('Spotify embed returned no usable tracks');
+  }
+
+  const playlistName = typeof entity?.title === 'string' && entity.title.trim()
+    ? entity.title.trim()
+    : null;
+  const listName = entity?.type === 'track' ? null : playlistName;
+  const listLength = sourceTracks.length;
+  const coverUrl = spotifyEmbedCoverUrl(entity);
+  const listUrl = `https://open.spotify.com/${content.type}/${content.id}`;
+  const rawTracks = sourceTracks.map((track, index) => {
+    const uri = typeof track?.uri === 'string' ? track.uri : '';
+    const id = uri.match(/^spotify:track:([A-Za-z0-9]{10,64})$/)?.[1] ||
+      (typeof track?.id === 'string' && /^[A-Za-z0-9]{10,64}$/.test(track.id)
+        ? track.id
+        : '');
+    if (!id) throw new Error(`Spotify track ${index + 1} has no usable ID`);
+
+    const artists = spotifyEmbedArtists(track);
+    const durationMs = Number(track?.duration);
+    const date = spotifyEmbedDate(track, entity);
+    return {
+      name: String(track?.title || track?.name || 'Untitled').slice(0, 500),
+      artists,
+      artist: artists[0] || '',
+      genres: null,
+      disc_number: null,
+      disc_count: null,
+      album_name: null,
+      album_artist: null,
+      duration: Number.isFinite(durationMs) ? Math.max(0, Math.round(durationMs / 1000)) : 0,
+      year: null,
+      date,
+      track_number: null,
+      tracks_count: null,
+      song_id: id,
+      explicit: track?.isExplicit === true,
+      publisher: null,
+      url: `https://open.spotify.com/track/${id}`,
+      isrc: null,
+      cover_url: entity?.type === 'track' ? coverUrl : null,
+      copyright_text: null,
+      download_url: null,
+      lyrics: null,
+      popularity: null,
+      album_id: null,
+      list_name: listName,
+      list_url: listUrl,
+      list_position: index + 1,
+      list_length: listLength,
+      artist_id: null,
+      album_type: null,
+    };
+  });
+
+  return {
+    playlistName: playlistName || (rawTracks.length === 1
+      ? `${rawTracks[0].artists.join(', ')} - ${rawTracks[0].name}`
+      : 'Spotify Import'),
+    rawTracks,
+  };
+}
+
 ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
   requireTrustedIpc(event);
   jobId = requireIpcString(jobId, 'jobId', 64);
@@ -3233,57 +3448,70 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
   }
 
   let stdout = '';
+  let embedReview = null;
   try {
-    const setupResult = await Promise.race([
-      setupSpotDl().then((ready) => ({ ready }), (error) => ({ error })),
-      job.cancelledSignal.then(() => ({ cancelled: true })),
-    ]);
-    if (setupResult.cancelled || job.cancelled) throw new Error('Spotify review cancelled');
-    if (setupResult.error) throw setupResult.error;
-    if (!setupResult.ready || !spotDlPath) throw new Error('Spotify downloader is unavailable');
-    stdout = await new Promise((resolve, reject) => {
-      const child = spawn(spotDlPath, ['save', url, '--save-file', '-'], {
-        windowsHide: true,
-        detached: process.platform !== 'win32',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      job.child = child;
-      let output = '';
-      let errors = '';
-      let bytes = 0;
-      let settled = false;
-      let timeout;
-      const finish = (error, value) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeout);
-        error ? reject(error) : resolve(value);
-      };
-      const append = (chunk, stderr = false) => {
-        bytes += chunk.length;
-        if (bytes > 32 * 1024 * 1024) {
+    try {
+      embedReview = await Promise.race([
+        fetchSpotifyEmbedTracks(url),
+        job.cancelledSignal.then(() => { throw new Error('Spotify review cancelled'); }),
+      ]);
+    } catch (error) {
+      if (job.cancelled) throw new Error('Spotify review cancelled');
+      console.warn('[spotify] embed preflight unavailable; falling back to spotDL:', error.message);
+    }
+
+    if (!embedReview) {
+      const setupResult = await Promise.race([
+        setupSpotDl().then((ready) => ({ ready }), (error) => ({ error })),
+        job.cancelledSignal.then(() => ({ cancelled: true })),
+      ]);
+      if (setupResult.cancelled || job.cancelled) throw new Error('Spotify review cancelled');
+      if (setupResult.error) throw setupResult.error;
+      if (!setupResult.ready || !spotDlPath) throw new Error('Spotify downloader is unavailable');
+      stdout = await new Promise((resolve, reject) => {
+        const child = spawn(spotDlPath, ['save', url, '--save-file', '-'], {
+          windowsHide: true,
+          detached: process.platform !== 'win32',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        job.child = child;
+        let output = '';
+        let errors = '';
+        let bytes = 0;
+        let settled = false;
+        let timeout;
+        const finish = (error, value) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          error ? reject(error) : resolve(value);
+        };
+        const append = (chunk, stderr = false) => {
+          bytes += chunk.length;
+          if (bytes > 32 * 1024 * 1024) {
+            terminateSpotifyChild(child);
+            finish(new Error('Spotify review output was too large'));
+            return;
+          }
+          if (stderr) errors += chunk.toString();
+          else output += chunk.toString();
+        };
+        child.stdout.on('data', (chunk) => append(chunk));
+        child.stderr.on('data', (chunk) => append(chunk, true));
+        child.once('error', (error) => finish(error));
+        child.once('close', (code) => {
+          job.child = null;
+          if (job.cancelled) finish(new Error('Spotify review cancelled'));
+          else if (code !== 0) finish(new Error(summarizeSpotDlError(errors.split(/\r?\n/), code)));
+          else finish(null, output);
+        });
+        timeout = setTimeout(() => {
           terminateSpotifyChild(child);
-          finish(new Error('Spotify review output was too large'));
-          return;
-        }
-        if (stderr) errors += chunk.toString();
-        else output += chunk.toString();
-      };
-      child.stdout.on('data', (chunk) => append(chunk));
-      child.stderr.on('data', (chunk) => append(chunk, true));
-      child.once('error', (error) => finish(error));
-      child.once('close', (code) => {
-        job.child = null;
-        if (job.cancelled) finish(new Error('Spotify review cancelled'));
-        else if (code !== 0) finish(new Error(summarizeSpotDlError(errors.split(/\r?\n/), code)));
-        else finish(null, output);
+          finish(new Error('Spotify review timed out'));
+        }, 300000);
+        timeout.unref();
       });
-      timeout = setTimeout(() => {
-        terminateSpotifyChild(child);
-        finish(new Error('Spotify review timed out'));
-      }, 120000);
-      timeout.unref();
-    });
+    }
   } finally {
     for (const eventName of ['destroyed', 'render-process-gone', 'did-start-navigation']) {
       event.sender.removeListener(eventName, cancelOnRendererExit);
@@ -3293,10 +3521,12 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
   }
 
   const clean = stdout.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '').trim();
-  const start = clean.indexOf('[');
-  const end = clean.lastIndexOf(']');
-  if (start < 0 || end <= start) throw new Error('Spotify returned no track list');
-  const rawTracks = JSON.parse(clean.slice(start, end + 1));
+  const rawTracks = embedReview?.rawTracks || (() => {
+    const start = clean.indexOf('[');
+    const end = clean.lastIndexOf(']');
+    if (start < 0 || end <= start) throw new Error('Spotify returned no track list');
+    return JSON.parse(clean.slice(start, end + 1));
+  })();
   if (!Array.isArray(rawTracks) || rawTracks.length === 0 || rawTracks.length > 10000) {
     throw new Error('Spotify returned an invalid track list');
   }
@@ -3318,19 +3548,19 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
   });
   const preflightId = crypto.randomUUID();
   const playlistName = sanitizeSpotifyFolderName(
+    embedReview?.playlistName ||
     rawTracks.find((track) => typeof track?.list_name === 'string' && track.list_name.trim())?.list_name ||
     (tracks.length === 1 ? `${tracks[0].artists.join(', ')} - ${tracks[0].title}` : 'Spotify Import'),
   );
   for (const [id, review] of spotifyPreflights) {
     if (review.senderId === event.sender.id || review.expiresAt < Date.now()) spotifyPreflights.delete(id);
   }
-  spotifyPreflights.set(preflightId, {
+  spotifyPreflights.set(preflightId, renewSpotifyReview({
     senderId: event.sender.id,
     url,
     playlistName,
     rawTracks,
-    expiresAt: Date.now() + 15 * 60 * 1000,
-  });
+  }));
   return {
     preflightId,
     playlistName,
@@ -3396,6 +3626,12 @@ async function createSpotifyProjectFolder(destinationParentPath, playlistName, j
   throw new Error(`Could not create a unique folder for ${playlistName}`);
 }
 
+function spotifyOutputTrackId(filePath, trackIds = []) {
+  const name = path.basename(filePath);
+  return trackIds.find((id) =>
+    name.startsWith(id) && !/[A-Za-z0-9]/.test(name[id.length] || '')) || '';
+}
+
 function orderedSpotifyOutputs(stagingDir, trackIds = []) {
   const files = new Map(
     fs.readdirSync(stagingDir, { withFileTypes: true })
@@ -3406,7 +3642,8 @@ function orderedSpotifyOutputs(stagingDir, trackIds = []) {
   const listed = new Set();
   if (trackIds.length) {
     for (const id of trackIds) {
-      const match = [...files.entries()].find(([name]) => name.startsWith(`${id} - `));
+      const match = [...files.entries()].find(([, filePath]) =>
+        spotifyOutputTrackId(filePath, [id]) === id);
       if (!match) continue;
       ordered.push(match[1]);
       listed.add(match[0]);
@@ -3454,7 +3691,7 @@ async function copySpotifyOutputsToMedia(sourcePaths, mediaDir, job) {
   for (const sourcePath of sourcePaths) {
     if (job.cancelled) throw new Error('Spotify download cancelled');
     const parsed = path.parse(path.basename(sourcePath));
-    const cleanBase = parsed.base.replace(/^[A-Za-z0-9]{10,64} - /, '');
+    const cleanBase = parsed.base.replace(/^[A-Za-z0-9]{10,64}(?:\s+-\s+|[-_]+)/, '');
     const cleanParsed = path.parse(cleanBase);
     let copied = false;
     for (let suffix = 1; suffix < 100000; suffix++) {
@@ -3569,16 +3806,32 @@ ipcMain.handle(
         typeof selection.reusePreviousFolder !== 'boolean') {
       throw new TypeError('reusePreviousFolder must be a boolean');
     }
+    const audioBitrate = normalizeSpotifyBitrate(selection?.audioBitrate);
+    const activeProjectFolderPath = requireAuthorizedIpcPath(
+      selection?.activeProjectFolderPath, 'activeProjectFolderPath');
+    if (!fs.statSync(activeProjectFolderPath).isDirectory()) {
+      throw new TypeError('activeProjectFolderPath must be a directory');
+    }
+    let existingProjectFolderPath = '';
+    if (selection?.existingProjectFolderPath !== undefined) {
+      existingProjectFolderPath = requireAuthorizedIpcPath(
+        selection.existingProjectFolderPath, 'existingProjectFolderPath');
+      const relative = path.relative(destinationParentPath, existingProjectFolderPath);
+      if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) ||
+          path.isAbsolute(relative) || !fs.statSync(existingProjectFolderPath).isDirectory()) {
+        throw new TypeError('existingProjectFolderPath must be a child of destinationParentPath');
+      }
+    }
     const preflightId = requireIpcString(selection?.preflightId, 'preflightId', 64);
     if (!Array.isArray(selection?.selectedTrackIds) || selection.selectedTrackIds.length === 0 ||
         selection.selectedTrackIds.length > 10000) {
       throw new TypeError('selectedTrackIds must be a non-empty array');
     }
     const preflight = spotifyPreflights.get(preflightId);
-    if (!preflight || preflight.senderId !== event.sender.id || preflight.url !== url ||
-        preflight.expiresAt < Date.now()) {
+    if (!spotifyReviewIsValid(preflight, event.sender.id, url)) {
       throw new Error('Spotify review expired; review the link again');
     }
+    renewSpotifyReview(preflight);
     const selectedTrackIds = selection.selectedTrackIds.map((id) => {
       id = requireIpcString(id, 'trackId', 64);
       if (!/^[A-Za-z0-9]{10,64}$/.test(id)) throw new TypeError('trackId is invalid');
@@ -3661,8 +3914,9 @@ ipcMain.handle(
       const args = [
         'download',
         selectionPath,
+        '--audio', ...SPOTIFY_AUDIO_PROVIDERS,
         '--format', 'mp3',
-        '--bitrate', '320k',
+        '--bitrate', audioBitrate,
         '--ffmpeg', ffmpegPath,
         '--output', '{track-id} - {artists} - {title}.{output-ext}',
         '--m3u', 'dwcue-spotify-order.m3u8',
@@ -3753,7 +4007,9 @@ ipcMain.handle(
         destinationParentPath,
         playlistName,
         job,
-        selection.reusePreviousFolder ? preflight.projectFolderPath : '',
+        selection.reusePreviousFolder
+          ? (existingProjectFolderPath || preflight.projectFolderPath)
+          : '',
       );
       preflight.projectFolderPath = projectFolderPath;
 
@@ -3766,6 +4022,37 @@ ipcMain.handle(
       const files = await copySpotifyOutputsToMedia(outputs, mediaDir, job);
       const partial = result.code !== 0 || (total > 0 && files.length < total);
       const error = partial ? summarizeSpotDlError(tail, result.code) : undefined;
+      const completedTrackIds = outputs
+        .map((filePath) => spotifyOutputTrackId(filePath, selectedTrackIds))
+        .filter(Boolean);
+      const completedTrackIdSet = new Set(completedTrackIds);
+      const failedTrackIds = selectedTrackIds.filter((id) => !completedTrackIdSet.has(id));
+      const groupUuid = crypto.randomUUID();
+      const recovery = normalizeSpotifyRecovery({
+        version: 1,
+        activeProjectFolderPath,
+        destinationParentPath,
+        projectFolderPath,
+        url,
+        playlistName,
+        audioBitrate,
+        selectedTrackIds,
+        completedTrackIds: [],
+        failedTrackIds,
+        pendingTrackIds: completedTrackIds,
+        pendingFiles: files,
+        total: total || files.length,
+        completed: 0,
+        groupUuid,
+        updatedAt: Date.now(),
+      });
+      if (!recovery) throw new Error('Could not save Spotify recovery state');
+      writeImportPreferences({
+        ...readImportPreferences(),
+        spotifyDestination: destinationParentPath,
+        spotifyRecovery: recovery,
+      });
+      renewSpotifyReview(preflight);
       job.awaitingImport = true;
       progress('importing', {
         playlistName,
@@ -3781,9 +4068,9 @@ ipcMain.handle(
         error,
         playlistName,
         projectFolderPath,
-        completedTrackIds: outputs.map((filePath) => path.basename(filePath).split(' - ')[0]),
-        failedTrackIds: selectedTrackIds.filter((id) =>
-          !outputs.some((filePath) => path.basename(filePath).startsWith(`${id} - `))),
+        completedTrackIds,
+        failedTrackIds,
+        groupUuid,
       };
     } catch (error) {
       try {

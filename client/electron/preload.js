@@ -37,6 +37,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getImportPreferences: () => ipcRenderer.invoke('get-import-preferences'),
   setSpotifyImportDestination: (destination) =>
     ipcRenderer.invoke('set-spotify-import-destination', destination),
+  setSpotifyImportRecovery: (recovery) =>
+    ipcRenderer.invoke('set-spotify-import-recovery', recovery),
+  clearSpotifyImportRecovery: (activeProjectFolderPath) =>
+    ipcRenderer.invoke('clear-spotify-import-recovery', activeProjectFolderPath),
   
   // Get file path from dropped file
   getFilePath: (file) => {

@@ -31,8 +31,47 @@ declare global {
       ensureDirectory: (dirPath: string) => Promise<{ success: boolean; error?: string }>;
       generateWaveform: (audioPath: string, outputPath: string) => Promise<{ success: boolean; error?: string }>;
       openFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>;
-      getImportPreferences: () => Promise<{ spotifyDestination: string }>;
+      getImportPreferences: () => Promise<{
+        spotifyDestination: string;
+        spotifyRecovery: {
+          version: 1;
+          activeProjectFolderPath: string;
+          destinationParentPath: string;
+          projectFolderPath: string;
+          url: string;
+          playlistName: string;
+          audioBitrate: '192k' | '256k' | '320k';
+          selectedTrackIds: string[];
+          completedTrackIds: string[];
+          failedTrackIds: string[];
+          pendingTrackIds: string[];
+          pendingFiles: string[];
+          total: number;
+          completed: number;
+          groupUuid?: string;
+          updatedAt: number;
+        } | null;
+      }>;
       setSpotifyImportDestination: (destination: string) => Promise<boolean>;
+      setSpotifyImportRecovery: (recovery: {
+        version: 1;
+        activeProjectFolderPath: string;
+        destinationParentPath: string;
+        projectFolderPath: string;
+        url: string;
+        playlistName: string;
+        audioBitrate: '192k' | '256k' | '320k';
+        selectedTrackIds: string[];
+        completedTrackIds: string[];
+        failedTrackIds: string[];
+        pendingTrackIds: string[];
+        pendingFiles: string[];
+        total: number;
+        completed: number;
+        groupUuid?: string;
+        updatedAt: number;
+      }) => Promise<boolean>;
+      clearSpotifyImportRecovery: (activeProjectFolderPath: string) => Promise<boolean>;
       setCurrentProject: (projectPath: string) => Promise<{ success: boolean }>;
       getFilePath: (file: File) => string | null;
       checkFfmpeg: () => Promise<{ available: boolean; path: string | null }>;
@@ -80,7 +119,14 @@ declare global {
         jobId: string,
         url: string,
         destinationParentPath: string,
-        selection: { preflightId: string; selectedTrackIds: string[]; reusePreviousFolder?: boolean },
+        selection: {
+          preflightId: string;
+          selectedTrackIds: string[];
+          reusePreviousFolder?: boolean;
+          activeProjectFolderPath: string;
+          audioBitrate: '192k' | '256k' | '320k';
+          existingProjectFolderPath?: string;
+        },
         progressCallback?: (progress: {
           jobId: string;
           status: 'preparing' | 'resolving' | 'downloading' | 'importing' |
@@ -100,6 +146,7 @@ declare global {
         projectFolderPath: string;
         completedTrackIds: string[];
         failedTrackIds: string[];
+        groupUuid?: string;
       }>;
       cancelSpotifyDownload: (jobId: string) => Promise<boolean>;
       finalizeSpotifyImport: (jobId: string, keepFiles: boolean) => Promise<boolean>;

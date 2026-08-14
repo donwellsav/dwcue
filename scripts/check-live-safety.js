@@ -1386,6 +1386,11 @@ assert.match(
 );
 assert.match(
   electron,
+  /'download',[\s\S]{0,200}'--audio', \.\.\.SPOTIFY_AUDIO_PROVIDERS[\s\S]{0,200}'--format', 'mp3'/,
+  'Spotify downloads must use the guarded multi-provider fallback chain',
+);
+assert.match(
+  electron,
   /--save-file', 'dwcue-spotify-manifest\.spotdl'[\s\S]*createSpotifyProjectFolder\([\s\S]*playlistName[\s\S]*projectFolderPath/,
   'Spotify imports must retain a manifest and return their named project folder',
 );
@@ -1446,8 +1451,8 @@ assert.match(
 );
 assert.match(
   spotifyModal,
-  /sourceTypeText[\s\S]*spotifyImport\.audioFormatValue[\s\S]*destinationParentPath[\s\S]*cueProcessingSettings/,
-  'Spotify imports must disclose their source, fixed format, destination, and cue processing',
+  /sourceTypeText[\s\S]*v-model="audioBitrate"[\s\S]*destinationParentPath[\s\S]*cueProcessingSettings/,
+  'Spotify imports must disclose their source and let operators edit bitrate, destination, and cue processing',
 );
 assert.match(
   spotifyModal,
@@ -1840,8 +1845,8 @@ const numericProgressEnd = electron.indexOf(
   '\n}\n\nasync function createSpotifyProjectFolder', numericProgressStart) + 2;
 const createFolderStart = electron.indexOf('async function createSpotifyProjectFolder');
 const createFolderEnd = electron.indexOf(
-  '\n}\n\nfunction orderedSpotifyOutputs', createFolderStart) + 2;
-const orderedOutputsStart = electron.indexOf('function orderedSpotifyOutputs');
+  '\n}\n\nfunction spotifyOutputTrackId', createFolderStart) + 2;
+const orderedOutputsStart = electron.indexOf('function spotifyOutputTrackId');
 const orderedOutputsEnd = electron.indexOf(
   '\n}\n\nasync function cleanupSpotifyFiles', orderedOutputsStart) + 2;
 const cleanupOutputsStart = electron.indexOf('async function cleanupSpotifyFiles');
@@ -1859,8 +1864,10 @@ const spotDlNumericProgress = Function(
 const createSpotifyProjectFolder = Function(
   'fs', 'path', `return (${electron.slice(createFolderStart, createFolderEnd)})`,
 )(fs, path);
-const orderedSpotifyOutputs = Function(
-  'fs', 'path', `return (${electron.slice(orderedOutputsStart, orderedOutputsEnd)})`,
+const { spotifyOutputTrackId, orderedSpotifyOutputs } = Function(
+  'fs', 'path',
+  `${electron.slice(orderedOutputsStart, orderedOutputsEnd)};
+   return { spotifyOutputTrackId, orderedSpotifyOutputs };`,
 )(fs, path);
 const cleanupSpotifyFiles = Function(
   'fs', `return (${electron.slice(cleanupOutputsStart, cleanupOutputsEnd)})`,
@@ -1902,10 +1909,10 @@ async function checkSpotifyCopyTransaction() {
     const firstId = '1111111111111111111111';
     const secondId = '2222222222222222222222';
     fs.writeFileSync(path.join(staging, `${firstId} - First.mp3`), 'first');
-    fs.writeFileSync(path.join(staging, `${secondId} - Second.mp3`), 'second');
+    fs.writeFileSync(path.join(staging, `${secondId}-Second.mp3`), 'second');
     fs.writeFileSync(
       path.join(staging, 'dwcue-spotify-order.m3u8'),
-      `#EXTM3U\n${secondId} - Second.mp3\n${secondId} - Second.mp3\n${firstId} - First.mp3\n`,
+      `#EXTM3U\n${secondId}-Second.mp3\n${secondId}-Second.mp3\n${firstId} - First.mp3\n`,
     );
     fs.writeFileSync(path.join(media, 'Second.mp3'), 'existing');
     const job = {
@@ -1915,6 +1922,11 @@ async function checkSpotifyCopyTransaction() {
     };
     const copied = await copySpotifyOutputsToMedia(
       orderedSpotifyOutputs(staging, [secondId, firstId]), media, job,
+    );
+    assert.equal(
+      spotifyOutputTrackId(path.join(staging, `${secondId}-Second.mp3`), [firstId, secondId]),
+      secondId,
+      'strict filename sanitization must still map downloaded audio to its Spotify track',
     );
     assert.deepEqual(
       copied.map((file) => path.basename(file)),
@@ -2085,6 +2097,21 @@ assert.match(
   spotifyImportModal,
   /reviewSummary[\s\S]*const selectedTrackIds[\s\S]*reviewSpotify[\s\S]*retryFailed/,
   'Spotify import must show a selectable metadata review and failed-only retry',
+);
+assert.match(
+  spotifyImportModal,
+  /resultState && !isActive[\s\S]*startAnotherImport[\s\S]*retryUnmatched[\s\S]*continueWithTracks[\s\S]*continueToProject/,
+  'completed Spotify imports must make continuing primary while retaining retry and another-import paths',
+);
+assert.doesNotMatch(
+  spotifyImportModal,
+  /li\.failed \.track-info/,
+  'provider availability must not use the visual language of an application failure',
+);
+assert.equal(
+  enLocale.spotifyImport.status.partial,
+  'Import complete',
+  'provider availability must be presented as a completed import, not an application error',
 );
 assert.match(
   electronMain,

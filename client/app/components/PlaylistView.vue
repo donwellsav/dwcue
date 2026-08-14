@@ -90,6 +90,7 @@ import {
   buildWaveformFromChannels,
   trimSilence,
 } from '~/utils/audio';
+import { canonicalSpotifyMediaReference } from '~/utils/spotifyImport';
 
 const {
   currentProject,
@@ -600,7 +601,7 @@ const importSpotifyTemplate = async (
   const existingGroup = options.existingGroupUuid
     ? findItemByUuid(options.existingGroupUuid)
     : null;
-  if (options.existingGroupUuid && existingGroup?.type !== 'group') {
+  if (existingGroup && existingGroup.type !== 'group') {
     return { success: false, imported: 0, error: t('spotifyImport.cueImportFailed'), results: [] };
   }
   const targetGroup = existingGroup?.type === 'group' ? existingGroup : null;
@@ -618,11 +619,32 @@ const importSpotifyTemplate = async (
       signal,
       getAllItemsFlat(project.items).filter(item => item.type === 'audio').length,
     );
-    verificationResults = verifiedEntries.map(entry => entry.result);
-    const cueEntries = verifiedEntries.filter(
-      (entry): entry is typeof entry & { cue: AudioItem } => !!entry.cue,
+    const existingByPath = new Map(
+      (targetGroup?.children ?? [])
+        .filter((item): item is AudioItem => item.type === 'audio' && !!item.mediaServerPath)
+        .map(item => [item.mediaServerPath!, item]),
     );
-    if (cueEntries.length === 0) throw new Error(t('spotifyImport.cueImportFailed'));
+    verificationResults = verifiedEntries.map(entry => {
+      const existing = existingByPath.get(entry.sourcePath);
+      return existing
+        ? { ...entry.result, status: 'skipped' as const, itemUuid: existing.uuid }
+        : entry.result;
+    });
+    const cueEntries = verifiedEntries.filter(
+      (entry): entry is typeof entry & { cue: AudioItem } =>
+        !!entry.cue && !existingByPath.has(entry.sourcePath),
+    );
+    if (cueEntries.length === 0) {
+      const failed = verificationResults.some(result => result.status === 'failed');
+      return {
+        success: !failed,
+        imported: verificationResults.filter(result => result.status !== 'failed').length,
+        retainFiles: true,
+        groupUuid: targetGroup?.uuid || options.existingGroupUuid,
+        error: failed ? t('importAudio.partialFailure') : undefined,
+        results: verificationResults,
+      };
+    }
     const cueSpecs = cueEntries.map(entry => entry.cue);
     const templateRead = targetGroup
       ? await window.electronAPI.readFile(templatePath)
@@ -689,23 +711,20 @@ const importSpotifyTemplate = async (
     for (const [position, entry] of cueEntries.entries()) {
       const cue = entry.cue;
       const sourcePath = entry.sourcePath;
-      const destPath = await server.copyToMedia(sourcePath, signal);
       if (signal?.aborted ||
           currentProject.value !== project ||
           projectEpoch.value !== epoch) {
         throw new Error(t('spotifyImport.cancelled'));
       }
-      const fileName = destPath.split(/[\\/]/).pop() || cue.mediaFileName;
+      const media = canonicalSpotifyMediaReference(sourcePath);
       const uuid = crypto.randomUUID();
       activeCueUuids.push(uuid);
       entry.result.itemUuid = uuid;
       activeCues.push({
         ...cue,
+        ...media,
         uuid,
         index: [rootIndex, childOffset + position],
-        mediaFileName: fileName,
-        mediaPath: `media/${fileName}`,
-        mediaServerPath: destPath,
         waveformPath: `waveforms/${uuid}.json`,
       });
     }
@@ -716,7 +735,7 @@ const importSpotifyTemplate = async (
     } else {
       const activeGroup = {
         ...DEFAULT_GROUP_ITEM,
-        uuid: crypto.randomUUID(),
+        uuid: options.existingGroupUuid || crypto.randomUUID(),
         index: [rootIndex],
         displayName: options.groupName,
         type: 'group',
@@ -733,7 +752,7 @@ const importSpotifyTemplate = async (
     }
     return {
       success: !verificationResults.some(result => result.status === 'failed'),
-      imported: activeCues.length,
+      imported: verificationResults.filter(result => result.status !== 'failed').length,
       retainFiles: true,
       groupUuid: activeGroupUuid,
       error: verificationResults.some(result => result.status === 'failed')
