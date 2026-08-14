@@ -2539,6 +2539,7 @@ bool ProjectState::play_item(const std::string& uuid,
     std::string  start_behavior_target_uuid;
     std::string  end_behavior_action;
     std::string  end_behavior_target_uuid;
+    bool         one_shot = false;
     std::vector<int> end_behavior_target_index;
     audio::CueId target_cue;
     std::vector<audio::CueId> other_cues;
@@ -2568,6 +2569,7 @@ bool ProjectState::play_item(const std::string& uuid,
         if (!found && doc.contains("cartOnlyItems")) walk(doc["cartOnlyItems"]);
 
         if (found) {
+            one_shot      = is_one_shot_cue(*found);
             in_point      = json_get_or(*found, "inPoint",         0.0);
             out_point     = json_get_or(*found, "outPoint",         0.0);
             fade_out_dur  = json_get_or(*found, "fadeOutDuration",  1.0);
@@ -2803,7 +2805,7 @@ bool ProjectState::play_item(const std::string& uuid,
         bool stale = false;
         {
             std::lock_guard lock{mutex_};
-            if (!next_item_override_.empty() &&
+            if (!one_shot && !next_item_override_.empty() &&
                 !next_item_override_manual_ &&
                 next_item_override_ != uuid) {
                 std::function<bool(const json&)> in_playlist = [&](const json& arr) -> bool {
@@ -4709,6 +4711,9 @@ void ProjectState::arm_next_after_stop(const std::string& stopped_uuid,
             walk(document_["items"], p);
         }
         if (!found) return;
+        // A One Shot is an anytime trigger. Stopping or finishing it must not
+        // advance, replace, or otherwise disturb the Program Up Next pointer.
+        if (is_one_shot_cue(*found)) return;
         // Only the "nothing" end behaviour is armed here — every other action
         // is auto-advanced by the sequencer itself.
         std::string action = "nothing";

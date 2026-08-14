@@ -17,6 +17,7 @@
     "build:electron": "cross-env NODE_ENV=production nuxt generate && electron-builder",
     "electron:build": "electron-builder",
     "generate": "cross-env NODE_ENV=production nuxt generate",
+    "test:one-shots": "vite-node tests/oneShots.test.mts",
     "preview": "nuxt preview",
     "typecheck": "nuxi typecheck"
   },

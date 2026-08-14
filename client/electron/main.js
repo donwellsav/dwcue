@@ -1899,7 +1899,7 @@ function createWindow() {
   createMenu('en', isDevMode);
 }
 
-// Create detached cart player window
+// Create detached One Shots window (IPC/query names stay backward compatible).
 function createCartPlayerWindow() {
   if (cartPlayerWindow) {
     cartPlayerWindow.focus();
@@ -1911,7 +1911,7 @@ function createCartPlayerWindow() {
     height: 700,
     minWidth: 380,
     minHeight: 400,
-    title: 'DonWells Cue - Cart Player',
+    title: 'DonWells Cue - One Shots',
     icon: path.join(__dirname, '../assets/icons/2x/app_icon_darkmode@2x.png'),
     webPreferences: {
       nodeIntegration: false,
@@ -1933,7 +1933,7 @@ function createCartPlayerWindow() {
   }
 
   cartPlayerWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    console.error('[CartWindow] Failed to load:', errorCode, errorDescription);
+    console.error('[OneShotsWindow] Failed to load:', errorCode, errorDescription);
   });
 
   cartPlayerWindow.on('closed', () => {

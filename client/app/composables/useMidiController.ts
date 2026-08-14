@@ -1,4 +1,5 @@
 import { CART_SLOT_COUNT_LIMITS, type AudioItem } from '~/types/project';
+import { flattenOneShots } from '~/utils/oneShots';
 
 // MIDI binding: identifies a specific control on a MIDI device
 export interface MidiBinding {
@@ -25,11 +26,12 @@ export const DEFAULT_MASTER_VOLUME_MULTIPLIER = 1;
 
 // All available actions with display metadata
 export const MIDI_ACTIONS: { id: MidiActionId; labelKey: string; category: string; continuous: boolean; n?: number }[] = [
-  // Cart slots
+  // One Shots. Keep the legacy trigger-slot action ids so saved controller
+  // mappings remain valid after the Cart-to-One-Shot migration.
   ...Array.from({ length: CART_SLOT_COUNT_LIMITS.max }, (_, i) => ({
     id: `trigger-slot-${i}` as MidiActionId,
-    labelKey: 'controls.cartSlot',
-    category: 'Cart Slots',
+    labelKey: 'controls.oneShot',
+    category: 'One Shots',
     continuous: false,
     n: i + 1,
   })),
@@ -108,9 +110,9 @@ let lastMasterVolumeRaw: number | null = null;
 const preferredDevice = computed(() => config.value.preferredDevice ?? null);
 
 export const useMidiController = () => {
-  const { getCartItem } = useCartItems();
   const { playCue, stopCue, pauseCue, resumeCue, stopAllCues, activeCues, setMasterGain, masterGainDb, nextItemOverrideUuid, autoNextItemUuid, setNextItem, triggerGroup, queueLoopContinuation, jumpCue } = useAudioEngine();
   const { selectedItem, selectedItems, saveProject, currentProject, getAllItemsFlat, toggleItemSelection, findItemByUuid: findProjectItem, findItemByIndex } = useProject();
+  const oneShots = computed(() => flattenOneShots(currentProject.value?.items ?? []));
 
   // Same active-cue-then-selection fallback toggle-loop/pause-resume use
   // above, factored out since cue-to-continue/jump-cue need it too.
@@ -138,18 +140,10 @@ export const useMidiController = () => {
   const dispatchDiscrete = (actionId: MidiActionId) => {
     if (actionId.startsWith('trigger-slot-')) {
       const slot = parseInt(actionId.replace('trigger-slot-', ''), 10);
-      const item = getCartItem(slot);
+      const item = oneShots.value[slot];
       if (!item) return;
-      if (activeCues.value.has(item.uuid)) {
-        const cue = activeCues.value.get(item.uuid);
-        if (cue && cue.isPaused) {
-          resumeCue(item.uuid);
-        } else {
-          stopCue(item.uuid);
-        }
-      } else {
-        playCue(item);
-      }
+      if (activeCues.value.has(item.uuid) && item.oneShot?.retrigger === 'ignore') return;
+      playCue(item);
       return;
     }
 

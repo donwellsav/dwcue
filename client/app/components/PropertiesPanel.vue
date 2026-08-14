@@ -43,6 +43,18 @@
           />
         </div>
 
+        <div v-if="hasSelectedAudioItems" class="property-field one-shot-designation">
+          <label class="one-shot-designation__toggle">
+            <input
+              type="checkbox"
+              :checked="oneShotEnabled"
+              @change="handleOneShotDesignationChange"
+            />
+            <span>{{ t('oneShots.designation') }}</span>
+          </label>
+          <p class="property-help">{{ t('oneShots.designationHelp') }}</p>
+        </div>
+
         <div v-if="selectedItem.type === 'audio'" class="property-field">
           <label>{{ t('properties.file') }}</label>
           <div class="input-with-btn">
@@ -330,6 +342,12 @@ import {
   trimSilence,
   type MeasuredLoudness,
 } from '~/utils/audio';
+import {
+  isOneShot,
+  markAsOneShot,
+  nextOneShotOrder,
+  removeOneShotDesignation,
+} from '~/utils/oneShots';
 import { useOutputTarget } from '~/composables/useOutputTarget';
 
 const {
@@ -383,8 +401,23 @@ const handlePanelResizeKey = (event: KeyboardEvent) => {
 };
 
 const audioItem = computed(() => selectedItem.value as AudioItem);
-const hasSelectedAudioItems = computed(() =>
-  getSelectedItems().some(item => item.type === 'audio'));
+const selectedAudioItems = computed(() => getSelectedItems().filter(
+  (item): item is AudioItem => item.type === 'audio',
+));
+const hasSelectedAudioItems = computed(() => selectedAudioItems.value.length > 0);
+const oneShotEnabled = computed(() => selectedAudioItems.value.length > 0
+  && selectedAudioItems.value.every(isOneShot));
+
+const handleOneShotDesignationChange = (event: Event) => {
+  if (!currentProject.value) return;
+  const enabled = (event.target as HTMLInputElement).checked;
+  let order = nextOneShotOrder(currentProject.value.items);
+  selectedAudioItems.value.forEach((item) => {
+    if (enabled && !isOneShot(item)) markAsOneShot(item, order++);
+    if (!enabled) removeOneShotDesignation(item);
+  });
+  void handleSave();
+};
 
 // LTC output is only meaningful when a project-wide LTC device is configured.
 // The checkbox stays disabled until then to prevent users from "enabling"
@@ -1286,6 +1319,27 @@ const formatTime = (seconds: number): string => {
   color: var(--color-text-primary);
   font-size: var(--type-metadata-size);
   font-weight: 600;
+}
+
+.one-shot-designation {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  background: var(--color-control);
+}
+
+.one-shot-designation__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+}
+
+.one-shot-designation__toggle input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  accent-color: var(--color-accent);
 }
 
 .property-field input,

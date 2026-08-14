@@ -57,10 +57,10 @@
           <span v-if="keyErrorActionId === action.id && keyErrorMessage" class="error-msg">{{ keyErrorMessage }}</span>
         </div>
 
-        <!-- Cart Slots section -->
+        <!-- One Shots section -->
         <div class="category-header">{{ t('controls.sectionCartSlots') }}</div>
         <div
-          v-for="slot in cartSlotCount"
+          v-for="slot in oneShotCount"
           :key="slot"
           class="action-row keyboard-action-row"
           :class="{
@@ -189,7 +189,8 @@ import {
   type MidiBinding,
   type MidiActionId,
 } from '~/composables/useMidiController';
-import { normalizeCartSlotCount, type PlaybackKeyAction, type CartSlotKeyBinding } from '~/types/project';
+import type { PlaybackKeyAction, CartSlotKeyBinding } from '~/types/project';
+import { flattenOneShots } from '~/utils/oneShots';
 
 const emit = defineEmits<{ close: [] }>();
 
@@ -218,11 +219,8 @@ const {
   resetPlaybackToDefaults,
 } = useCartHotkeys();
 const { saveProject, currentProject } = useProject();
-const cartSlotCount = computed(() => normalizeCartSlotCount(
-  currentProject.value?.settings?.cartSlotCount,
-  currentProject.value?.cartItems ?? [],
-  currentProject.value?.cartSlotKeys ?? {},
-));
+const oneShots = computed(() => flattenOneShots(currentProject.value?.items ?? []));
+const oneShotCount = computed(() => oneShots.value.length);
 
 const capturingSlot = ref<number | null>(null);
 const capturingKeyAction = ref<PlaybackKeyAction | null>(null);
@@ -278,8 +276,9 @@ const getPlaybackKeyLabel = (action: PlaybackKeyAction): string => {
 };
 
 const clearSlotBinding = (slotIndex: number) => {
-  if (!currentProject.value?.cartSlotKeys) return;
-  delete currentProject.value.cartSlotKeys[slotIndex];
+  const item = oneShots.value[slotIndex];
+  if (!item?.oneShot) return;
+  delete item.oneShot.hotkey;
   saveProject();
 };
 
@@ -412,14 +411,14 @@ const midiCategories = computed(() => {
 });
 
 const categoryLabelKey = (category: string): string => {
-  if (category === 'Cart Slots') return 'controls.sectionCartSlots';
+  if (category === 'One Shots' || category === 'Cart Slots') return 'controls.sectionCartSlots';
   if (category === 'Playback')   return 'controls.sectionPlayback';
   if (category === 'Volume')     return 'controls.sectionVolume';
   return category;
 };
 
 const midiActionsByCategory = (category: string) =>
-  MIDI_ACTIONS.filter(a => a.category === category && (a.n === undefined || a.n <= cartSlotCount.value));
+  MIDI_ACTIONS.filter(a => a.category === category && (a.n === undefined || a.n <= oneShotCount.value));
 
 const getMidiBinding = (actionId: string): MidiBinding | undefined =>
   midiConfig.value.bindings[actionId];

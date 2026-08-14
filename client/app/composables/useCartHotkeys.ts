@@ -1,5 +1,6 @@
 import type { CartSlotKeyBinding, PlaybackKeyAction, AudioItem } from '~/types/project';
-import { DEFAULT_CART_SLOT_KEYS, DEFAULT_PLAYBACK_KEYS } from '~/types/project';
+import { DEFAULT_PLAYBACK_KEYS } from '~/types/project';
+import { flattenOneShots } from '~/utils/oneShots';
 
 const RESERVED_COMBOS: CartSlotKeyBinding[] = [
   { key: 's', ctrlKey: true,  shiftKey: false, altKey: false },
@@ -47,11 +48,15 @@ export const eventToBinding = (e: KeyboardEvent): CartSlotKeyBinding => ({
 
 export const useCartHotkeys = () => {
   const { currentProject, selectedItem, selectedItems, saveProject, getAllItemsFlat, toggleItemSelection, findItemByUuid } = useProject();
-  const { getCartItem } = useCartItems();
-  const { playCue, stopCue, pauseCue, resumeCue, stopAllCues, activeCues, nextItemOverrideUuid, autoNextItemUuid, setNextItem, triggerGroup, queueLoopContinuation, jumpCue } = useAudioEngine();
+  const { playCue, pauseCue, resumeCue, stopAllCues, activeCues, nextItemOverrideUuid, autoNextItemUuid, setNextItem, triggerGroup, queueLoopContinuation, jumpCue } = useAudioEngine();
 
-  const keyMappings = computed(() =>
-    currentProject.value?.cartSlotKeys ?? { ...DEFAULT_CART_SLOT_KEYS }
+  const oneShots = computed(() => flattenOneShots(currentProject.value?.items ?? []));
+  // Keep the ordinal-keyed shape used by the existing Controls screen and
+  // saved MIDI action ids, but source every binding from the canonical cue.
+  const keyMappings = computed<Record<number, CartSlotKeyBinding>>(() =>
+    Object.fromEntries(oneShots.value.flatMap((item, index) =>
+      item.oneShot?.hotkey ? [[index, item.oneShot.hotkey]] : []
+    ))
   );
 
   const playbackMappings = computed<Partial<Record<PlaybackKeyAction, CartSlotKeyBinding | null>>>(() => {
@@ -91,13 +96,12 @@ export const useCartHotkeys = () => {
   };
 
   const triggerSlot = (slotIndex: number) => {
-    const item = getCartItem(slotIndex);
+    const item = oneShots.value[slotIndex];
     if (!item) return;
     if (activeCues.value.has(item.uuid)) {
-      stopCue(item.uuid);
-    } else {
-      playCue(item);
+      if (item.oneShot?.retrigger === 'ignore') return;
     }
+    playCue(item);
   };
 
   const findSlotForEvent = (e: KeyboardEvent): number => {
@@ -241,17 +245,16 @@ export const useCartHotkeys = () => {
 
   const updateBinding = (slotIndex: number, binding: CartSlotKeyBinding): { conflict: number } => {
     if (!currentProject.value) return { conflict: -1 };
-    const mappings = currentProject.value.cartSlotKeys ?? {};
+    const mappings = keyMappings.value;
     for (const [slotStr, existing] of Object.entries(mappings)) {
       const existingSlot = parseInt(slotStr, 10);
       if (existingSlot !== slotIndex && bindingsMatch(existing, binding)) {
         return { conflict: existingSlot };
       }
     }
-    if (!currentProject.value.cartSlotKeys) {
-      currentProject.value.cartSlotKeys = {};
-    }
-    currentProject.value.cartSlotKeys[slotIndex] = binding;
+    const item = oneShots.value[slotIndex];
+    if (!item?.oneShot) return { conflict: -1 };
+    item.oneShot.hotkey = binding;
     return { conflict: -1 };
   };
 
@@ -262,8 +265,8 @@ export const useCartHotkeys = () => {
     if (!currentProject.value) return { conflictSlot: -1, conflictAction: null };
 
     if (binding !== null) {
-      // Check conflict with cart slots
-      const cartMappings = currentProject.value.cartSlotKeys ?? DEFAULT_CART_SLOT_KEYS;
+      // Check conflict with One Shots
+      const cartMappings = keyMappings.value;
       for (const [slotStr, existing] of Object.entries(cartMappings)) {
         if (bindingsMatch(existing, binding)) return { conflictSlot: parseInt(slotStr, 10), conflictAction: null };
       }
@@ -283,7 +286,9 @@ export const useCartHotkeys = () => {
 
   const resetToDefaults = () => {
     if (!currentProject.value) return;
-    currentProject.value.cartSlotKeys = {};
+    for (const item of oneShots.value) {
+      if (item.oneShot) delete item.oneShot.hotkey;
+    }
   };
 
   const resetPlaybackToDefaults = () => {

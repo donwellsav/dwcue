@@ -327,19 +327,6 @@
                 <span class="material-symbols-rounded" aria-hidden="true">grid_view</span>
                 {{ t('settings.cartPlayerLayout') }}
               </div>
-              <label class="cart-slot-count" for="cart-slot-count">
-                <span>{{ t('settings.totalCartCards') }}</span>
-                <input
-                  id="cart-slot-count"
-                  type="number"
-                  class="settings-input cart-layout-input"
-                  :min="minimumCartSlotCount"
-                  :max="CART_SLOT_COUNT_LIMITS.max"
-                  step="1"
-                  :value="cartSlotCount"
-                  @change="onCartSlotCountChange"
-                />
-              </label>
               <div class="cart-layout-grid">
                 <div class="cart-layout-grid__header">{{ t('settings.cartLayout') }}</div>
                 <div class="cart-layout-grid__header">{{ t('settings.minimumCardHeight') }}</div>
@@ -525,9 +512,7 @@
 <script setup lang="ts">
 import { useOutputTarget } from '~/composables/useOutputTarget';
 import {
-  CART_SLOT_COUNT_LIMITS,
   DEFAULT_COUNTDOWN_COLOR_BANDS,
-  normalizeCartSlotCount,
   normalizeCountdownColorBands,
   type CountdownColorBand,
 } from '~/types/project';
@@ -616,17 +601,6 @@ const countdownColorBands = computed(() => normalizeCountdownColorBands(
   (currentProject.value as any)?.settings?.countdownColorBands,
 ));
 const countdownBandError = ref('');
-const minimumCartSlotCount = computed(() => normalizeCartSlotCount(
-  CART_SLOT_COUNT_LIMITS.min,
-  currentProject.value?.cartItems ?? [],
-  currentProject.value?.cartSlotKeys ?? {},
-));
-const cartSlotCount = computed(() => normalizeCartSlotCount(
-  currentProject.value?.settings?.cartSlotCount,
-  currentProject.value?.cartItems ?? [],
-  currentProject.value?.cartSlotKeys ?? {},
-));
-
 // Make sure devices are loaded when the modal opens.
 watch(() => props.open, async (v) => {
   if (v) await server.fetchDevices();
@@ -821,21 +795,6 @@ function onCartGridLayoutChange(
     [field]: Number.isFinite(value) ? value : current,
   });
   input.value = String(cartGridLayouts.value[profile][field]);
-}
-
-function onCartSlotCountChange(e: Event) {
-  const input = e.target as HTMLInputElement;
-  if (!input.value.trim()) {
-    input.value = String(cartSlotCount.value);
-    return;
-  }
-  const value = normalizeCartSlotCount(
-    input.value,
-    currentProject.value?.cartItems ?? [],
-    currentProject.value?.cartSlotKeys ?? {},
-  );
-  input.value = String(value);
-  applyPatch({ cartSlotCount: value });
 }
 
 function close() {

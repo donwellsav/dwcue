@@ -52,13 +52,13 @@
           :class="{ 'cart-section--fullscreen': cartFullscreen }"
           :style="{ width: cartFullscreen ? '100%' : `${cartWidth}px` }"
         >
-          <CartPlayer>
+          <OneShotPanel>
             <template #header-leading>
               <button
                 type="button"
                 class="cart-toggle cart-toggle--open"
-                :aria-label="t('cart.hide')"
-                :title="t('cart.hide')"
+                :aria-label="t('oneShots.hide')"
+                :title="t('oneShots.hide')"
                 :aria-expanded="true"
                 aria-controls="cart-player-panel"
                 @click="toggleCart"
@@ -66,7 +66,7 @@
                 <span class="material-symbols-rounded" aria-hidden="true">view_sidebar</span>
               </button>
             </template>
-          </CartPlayer>
+          </OneShotPanel>
         </div>
 
         <div
@@ -84,8 +84,8 @@
                   v-if="cartClosed && !cartDetached"
                   type="button"
                   class="cart-toggle"
-                  :aria-label="t('cart.show')"
-                  :title="t('cart.show')"
+                  :aria-label="t('oneShots.show')"
+                  :title="t('oneShots.show')"
                   :aria-expanded="false"
                   @click="toggleCart"
                 >
@@ -230,6 +230,7 @@ import LocationChoiceModal from './LocationChoiceModal.vue';
 import ServerFilePickerModal from './ServerFilePickerModal.vue';
 import StereoMeter from './StereoMeter.vue';
 import VolumeSlider from './VolumeSlider.vue';
+import { flattenOneShots } from '~/utils/oneShots';
 
 const {
   selectedItem,
@@ -708,9 +709,10 @@ const isCartWindowMode = import.meta.client
 watch(currentProject, (project) => {
   // Only sync from main window, not from detached cart window
   if (!import.meta.client || !window.electronAPI || !project || isCartWindowMode) return;
-  const cartReferenced = new Set<string>(
-    (project.cartItems || []).map((ci: any) => ci.itemUuid).filter(Boolean)
-  );
+  const cartReferenced = new Set<string>([
+    ...flattenOneShots(project.items || []).map(item => item.uuid),
+    ...(project.cartItems || []).map((ci: any) => ci.itemUuid).filter(Boolean),
+  ]);
   const data = {
     ...project,
     items: stripWaveformsKeeping(project.items || [], cartReferenced),

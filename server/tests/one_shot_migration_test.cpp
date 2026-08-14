@@ -74,6 +74,7 @@ int main() {
 
     const auto* existing = find_item(doc["items"], "playlist-a");
     assert(existing);
+    assert(liveplay::core::is_one_shot_cue(*existing));
     assert((*existing)["oneShot"]["order"] == 2);
     assert((*existing)["oneShot"]["retrigger"] == "restart");
     assert((*existing)["oneShot"]["hotkey"]["key"] == "F3");
@@ -81,6 +82,7 @@ int main() {
 
     const auto* moved = find_item(doc["items"], "cart-a");
     assert(moved);
+    assert(liveplay::core::is_one_shot_cue(*moved));
     assert((*moved)["oneShot"]["order"] == 5);
     assert((*moved)["oneShot"]["hotkey"]["key"] == "F6");
     assert((*moved)["volume"] == 1.2);
@@ -88,6 +90,7 @@ int main() {
 
     const auto* unbound = find_item(doc["items"], "unbound");
     assert(unbound);
+    assert(liveplay::core::is_one_shot_cue(*unbound));
     assert((*unbound)["oneShot"]["order"] == 6);
 
     assert(doc["items"].size() == 2);
@@ -101,4 +104,7 @@ int main() {
     const json once = doc;
     assert(!liveplay::core::migrate_legacy_cart_to_one_shots(doc));
     assert(doc == once);
+
+    const auto ordinary = audio("ordinary", "Ordinary cue");
+    assert(!liveplay::core::is_one_shot_cue(ordinary));
 }

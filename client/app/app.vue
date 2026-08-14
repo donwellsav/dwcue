@@ -1,9 +1,9 @@
 <template>
   <div id="app" :data-theme="theme">
-    <!-- Cart-window mode: standalone detached cart player -->
+    <!-- Detached One Shots window (legacy query name retained for IPC compatibility). -->
     <template v-if="isCartWindow">
       <div class="cart-window-root">
-        <CartPlayer v-if="currentProject" :is-detached-window="true" />
+        <OneShotPanel v-if="currentProject" :is-detached-window="true" />
         <div v-else class="cart-window-loading">
           <span class="material-symbols-rounded">queue_music</span>
         </div>
@@ -170,7 +170,7 @@
 
 <script setup lang="ts">
 import 'material-symbols';
-import CartPlayer from './components/CartPlayer.vue';
+import OneShotPanel from './components/OneShotPanel.vue';
 
 const {
   currentProject, saveProject, openProject, closeProject, confirmUnsavedChanges,

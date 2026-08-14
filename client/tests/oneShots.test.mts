@@ -6,7 +6,7 @@ import {
   markAsOneShot,
   nextOneShotOrder,
   removeOneShotDesignation,
-} from '../app/utils/oneShots.mts';
+} from '../app/utils/oneShots.ts';
 
 const audio = (uuid: string, order?: number) => ({
   uuid,

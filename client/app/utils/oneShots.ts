@@ -1,4 +1,4 @@
-import type { AudioItem, GroupItem } from '../types/project.ts';
+import type { AudioItem, GroupItem } from '../types/project';
 
 export type OneShotPlaybackMode = 'overlay' | 'duck' | 'replace';
 export type OneShotEndMode = 'stop' | 'loop';

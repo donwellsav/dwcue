@@ -59,6 +59,11 @@ inline void mark(json& item, int order, const json* hotkey = nullptr) {
 
 } // namespace one_shot_migration_detail
 
+inline bool is_one_shot_cue(const nlohmann::json& item) {
+    return item.is_object() && item.contains("oneShot") &&
+           item["oneShot"].is_object();
+}
+
 // Upgrade the removed fixed-slot Cart model to canonical playlist One Shots.
 // Returns true only when legacy data was consumed. The transform is idempotent
 // and deliberately keeps the old top-level keys empty for older clients.
