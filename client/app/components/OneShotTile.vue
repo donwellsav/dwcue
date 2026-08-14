@@ -4,16 +4,17 @@
     class="one-shot-tile"
     :class="{ 'is-playing': isPlaying, 'show-mode': showMode, 'is-menu-open': menuOpen || removeOpen }"
     :style="tileStyle"
-    :role="showMode ? 'button' : undefined"
-    :tabindex="showMode ? 0 : undefined"
-    :aria-label="showMode ? triggerLabel : undefined"
-    @click="handleTileClick"
-    @keydown.enter.prevent="handleTileKeyboard"
-    @keydown.space.prevent="handleTileKeyboard"
   >
     <canvas ref="waveformCanvas" class="one-shot-waveform" aria-hidden="true"></canvas>
     <span class="one-shot-color-rail" aria-hidden="true"></span>
     <span v-if="isPlaying" class="one-shot-progress" :style="progressStyle" aria-hidden="true"></span>
+    <button
+      v-if="showMode"
+      type="button"
+      class="one-shot-trigger-surface"
+      :aria-label="triggerLabel"
+      @click="handleTrigger"
+    ></button>
 
     <div class="one-shot-topline">
       <span class="one-shot-mode">{{ modeLabel }}</span>
@@ -62,107 +63,125 @@
       </div>
     </div>
 
-    <div v-if="menuOpen" class="one-shot-popover" role="dialog" :aria-label="t('oneShots.settingsFor', { name: item.displayName })" @click.stop>
-      <div class="popover-heading">
-        <strong>{{ t('oneShots.settings') }}</strong>
-        <button type="button" class="popover-close" :aria-label="t('common.close')" @click="menuOpen = false">
-          <span class="material-symbols-rounded" aria-hidden="true">close</span>
+    <Teleport to="body">
+      <div
+        v-if="menuOpen"
+        ref="menuPopover"
+        class="one-shot-popover"
+        role="dialog"
+        :style="overlayStyle"
+        :aria-label="t('oneShots.settingsFor', { name: item.displayName })"
+        @click.stop
+      >
+        <div class="popover-heading">
+          <strong>{{ t('oneShots.settings') }}</strong>
+          <button type="button" class="popover-close" :aria-label="t('common.close')" @click="menuOpen = false">
+            <span class="material-symbols-rounded" aria-hidden="true">close</span>
+          </button>
+        </div>
+
+        <label class="popover-field">
+          <span>{{ t('oneShots.playback') }}</span>
+          <select :value="playbackMode" @change="onPlaybackModeChange">
+            <option value="overlay">{{ t('oneShots.overlay') }}</option>
+            <option value="duck">{{ t('oneShots.duck') }}</option>
+            <option value="replace">{{ t('oneShots.replace') }}</option>
+          </select>
+        </label>
+
+        <label class="popover-field">
+          <span>{{ t('oneShots.retrigger') }}</span>
+          <select :value="item.oneShot?.retrigger ?? 'restart'" @change="onRetriggerChange">
+            <option value="restart">{{ t('oneShots.restart') }}</option>
+            <option value="ignore">{{ t('oneShots.ignore') }}</option>
+          </select>
+        </label>
+
+        <label class="popover-field">
+          <span>{{ t('oneShots.ending') }}</span>
+          <select :value="endMode" @change="onEndModeChange">
+            <option value="stop">{{ t('oneShots.stop') }}</option>
+            <option value="loop">{{ t('oneShots.loop') }}</option>
+          </select>
+        </label>
+
+        <label class="popover-field popover-field--range">
+          <span>{{ t('oneShots.gain') }} <output>{{ volumeDb.toFixed(1) }} dB</output></span>
+          <input class="app-range" type="range" min="-60" max="12" step="0.5" :value="volumeDb" @input="onVolumeInput" @change="persist" />
+        </label>
+
+        <div class="popover-pair">
+          <label class="popover-field">
+            <span>{{ t('oneShots.fadeIn') }}</span>
+            <span class="number-with-unit"><input type="number" min="0" max="30" step="0.1" :value="item.playFade" @change="onFadeChange('playFade', $event)" /><span>s</span></span>
+          </label>
+          <label class="popover-field">
+            <span>{{ t('oneShots.fadeOut') }}</span>
+            <span class="number-with-unit"><input type="number" min="0" max="30" step="0.1" :value="item.stopFade" @change="onFadeChange('stopFade', $event)" /><span>s</span></span>
+          </label>
+        </div>
+
+        <template v-if="playbackMode === 'duck'">
+          <label class="popover-field popover-field--range">
+            <span>{{ t('oneShots.duckLevel') }} <output>{{ duckDb.toFixed(1) }} dB</output></span>
+            <input class="app-range" type="range" min="-60" max="0" step="0.5" :value="duckDb" @input="onDuckInput" @change="persist" />
+          </label>
+          <div class="popover-pair">
+            <label class="popover-field">
+              <span>{{ t('oneShots.duckAttack') }}</span>
+              <span class="number-with-unit"><input type="number" min="0" max="10" step="0.1" :value="item.duckingBehavior.duckFadeIn ?? 0.25" @change="onDuckFadeChange('duckFadeIn', $event)" /><span>s</span></span>
+            </label>
+            <label class="popover-field">
+              <span>{{ t('oneShots.duckRelease') }}</span>
+              <span class="number-with-unit"><input type="number" min="0" max="10" step="0.1" :value="item.duckingBehavior.duckFadeOut ?? 1" @change="onDuckFadeChange('duckFadeOut', $event)" /><span>s</span></span>
+            </label>
+          </div>
+        </template>
+
+        <label class="popover-field">
+          <span>{{ t('oneShots.output') }}</span>
+          <select :value="(item as any).deviceOverride ?? ''" @change="onOutputChange">
+            <option value="">{{ t('settings.useProjectDefault') }}</option>
+            <option v-for="device in devices" :key="device.id" :value="device.id">{{ device.display_name }}</option>
+          </select>
+        </label>
+
+        <div class="popover-field">
+          <span>{{ t('oneShots.shortcut') }}</span>
+          <div class="shortcut-row">
+            <button type="button" class="shortcut-capture" :class="{ 'is-capturing': capturingHotkey }" @click="startHotkeyCapture">
+              {{ capturingHotkey ? t('oneShots.pressShortcut') : (hotkeyLabel || t('oneShots.assignShortcut')) }}
+            </button>
+            <button v-if="hotkeyLabel" type="button" class="shortcut-clear" :aria-label="t('oneShots.clearShortcut')" @click="clearHotkey">
+              <span class="material-symbols-rounded" aria-hidden="true">backspace</span>
+            </button>
+          </div>
+          <small v-if="hotkeyError" class="popover-error">{{ hotkeyError }}</small>
+        </div>
+
+        <button type="button" class="open-properties" @click="openProperties">
+          <span class="material-symbols-rounded" aria-hidden="true">tune</span>
+          {{ t('oneShots.openProperties') }}
         </button>
       </div>
 
-      <label class="popover-field">
-        <span>{{ t('oneShots.playback') }}</span>
-        <select :value="playbackMode" @change="onPlaybackModeChange">
-          <option value="overlay">{{ t('oneShots.overlay') }}</option>
-          <option value="duck">{{ t('oneShots.duck') }}</option>
-          <option value="replace">{{ t('oneShots.replace') }}</option>
-        </select>
-      </label>
-
-      <label class="popover-field">
-        <span>{{ t('oneShots.retrigger') }}</span>
-        <select :value="item.oneShot?.retrigger ?? 'restart'" @change="onRetriggerChange">
-          <option value="restart">{{ t('oneShots.restart') }}</option>
-          <option value="ignore">{{ t('oneShots.ignore') }}</option>
-        </select>
-      </label>
-
-      <label class="popover-field">
-        <span>{{ t('oneShots.ending') }}</span>
-        <select :value="endMode" @change="onEndModeChange">
-          <option value="stop">{{ t('oneShots.stop') }}</option>
-          <option value="loop">{{ t('oneShots.loop') }}</option>
-        </select>
-      </label>
-
-      <label class="popover-field popover-field--range">
-        <span>{{ t('oneShots.gain') }} <output>{{ volumeDb.toFixed(1) }} dB</output></span>
-        <input class="app-range" type="range" min="-60" max="12" step="0.5" :value="volumeDb" @input="onVolumeInput" @change="persist" />
-      </label>
-
-      <div class="popover-pair">
-        <label class="popover-field">
-          <span>{{ t('oneShots.fadeIn') }}</span>
-          <span class="number-with-unit"><input type="number" min="0" max="30" step="0.1" :value="item.playFade" @change="onFadeChange('playFade', $event)" /><span>s</span></span>
-        </label>
-        <label class="popover-field">
-          <span>{{ t('oneShots.fadeOut') }}</span>
-          <span class="number-with-unit"><input type="number" min="0" max="30" step="0.1" :value="item.stopFade" @change="onFadeChange('stopFade', $event)" /><span>s</span></span>
-        </label>
-      </div>
-
-      <template v-if="playbackMode === 'duck'">
-        <label class="popover-field popover-field--range">
-          <span>{{ t('oneShots.duckLevel') }} <output>{{ duckDb.toFixed(1) }} dB</output></span>
-          <input class="app-range" type="range" min="-60" max="0" step="0.5" :value="duckDb" @input="onDuckInput" @change="persist" />
-        </label>
-        <div class="popover-pair">
-          <label class="popover-field">
-            <span>{{ t('oneShots.duckAttack') }}</span>
-            <span class="number-with-unit"><input type="number" min="0" max="10" step="0.1" :value="item.duckingBehavior.duckFadeIn ?? 0.25" @change="onDuckFadeChange('duckFadeIn', $event)" /><span>s</span></span>
-          </label>
-          <label class="popover-field">
-            <span>{{ t('oneShots.duckRelease') }}</span>
-            <span class="number-with-unit"><input type="number" min="0" max="10" step="0.1" :value="item.duckingBehavior.duckFadeOut ?? 1" @change="onDuckFadeChange('duckFadeOut', $event)" /><span>s</span></span>
-          </label>
+      <div
+        v-if="removeOpen"
+        ref="removePopover"
+        class="one-shot-confirm"
+        role="alertdialog"
+        :style="overlayStyle"
+        :aria-label="t('oneShots.removeConfirmTitle')"
+        @click.stop
+      >
+        <strong>{{ t('oneShots.removeConfirmTitle') }}</strong>
+        <p>{{ t('oneShots.removeConfirmBody') }}</p>
+        <div class="confirm-actions">
+          <button type="button" @click="removeOpen = false">{{ t('common.cancel') }}</button>
+          <button type="button" class="confirm-remove" @click="confirmRemove">{{ t('oneShots.remove') }}</button>
         </div>
-      </template>
-
-      <label class="popover-field">
-        <span>{{ t('oneShots.output') }}</span>
-        <select :value="(item as any).deviceOverride ?? ''" @change="onOutputChange">
-          <option value="">{{ t('settings.useProjectDefault') }}</option>
-          <option v-for="device in devices" :key="device.id" :value="device.id">{{ device.display_name }}</option>
-        </select>
-      </label>
-
-      <div class="popover-field">
-        <span>{{ t('oneShots.shortcut') }}</span>
-        <div class="shortcut-row">
-          <button type="button" class="shortcut-capture" :class="{ 'is-capturing': capturingHotkey }" @click="startHotkeyCapture">
-            {{ capturingHotkey ? t('oneShots.pressShortcut') : (hotkeyLabel || t('oneShots.assignShortcut')) }}
-          </button>
-          <button v-if="hotkeyLabel" type="button" class="shortcut-clear" :aria-label="t('oneShots.clearShortcut')" @click="clearHotkey">
-            <span class="material-symbols-rounded" aria-hidden="true">backspace</span>
-          </button>
-        </div>
-        <small v-if="hotkeyError" class="popover-error">{{ hotkeyError }}</small>
       </div>
-
-      <button type="button" class="open-properties" @click="openProperties">
-        <span class="material-symbols-rounded" aria-hidden="true">tune</span>
-        {{ t('oneShots.openProperties') }}
-      </button>
-    </div>
-
-    <div v-if="removeOpen" class="one-shot-confirm" role="alertdialog" :aria-label="t('oneShots.removeConfirmTitle')" @click.stop>
-      <strong>{{ t('oneShots.removeConfirmTitle') }}</strong>
-      <p>{{ t('oneShots.removeConfirmBody') }}</p>
-      <div class="confirm-actions">
-        <button type="button" @click="removeOpen = false">{{ t('common.cancel') }}</button>
-        <button type="button" class="confirm-remove" @click="confirmRemove">{{ t('oneShots.remove') }}</button>
-      </div>
-    </div>
+    </Teleport>
   </article>
 </template>
 
@@ -182,8 +201,11 @@ import { eventToBinding, formatKeyLabel, isReservedCombo } from '~/composables/u
 const props = defineProps<{ item: AudioItem; position: number }>();
 const root = ref<HTMLElement | null>(null);
 const waveformCanvas = ref<HTMLCanvasElement | null>(null);
+const menuPopover = ref<HTMLElement | null>(null);
+const removePopover = ref<HTMLElement | null>(null);
 const menuOpen = ref(false);
 const removeOpen = ref(false);
+const overlayStyle = ref({ left: '8px', top: '8px' });
 const capturingHotkey = ref(false);
 const hotkeyError = ref('');
 let resizeObserver: ResizeObserver | null = null;
@@ -244,24 +266,35 @@ const handleTransport = () => {
   else void playCue(props.item);
 };
 
-const handleTileClick = () => {
-  if (showMode.value && !menuOpen.value && !removeOpen.value) handleTrigger();
+const positionOverlay = (anchor: HTMLElement, kind: 'menu' | 'remove') => {
+  const anchorRect = anchor.getBoundingClientRect();
+  const width = kind === 'menu' ? 310 : 286;
+  const rightSide = anchorRect.right + 8;
+  const left = rightSide + width <= window.innerWidth - 8
+    ? rightSide
+    : Math.max(8, anchorRect.left - width - 8);
+  overlayStyle.value = { left: `${left}px`, top: `${Math.max(8, anchorRect.top)}px` };
+  nextTick(() => {
+    const popover = kind === 'menu' ? menuPopover.value : removePopover.value;
+    if (!popover) return;
+    const height = popover.getBoundingClientRect().height;
+    const top = Math.max(8, Math.min(anchorRect.top, window.innerHeight - height - 8));
+    overlayStyle.value = { left: `${left}px`, top: `${top}px` };
+  });
 };
 
-const handleTileKeyboard = () => {
-  if (showMode.value && !menuOpen.value && !removeOpen.value) handleTrigger();
-};
-
-const toggleMenu = () => {
+const toggleMenu = (event: MouseEvent) => {
   menuOpen.value = !menuOpen.value;
   removeOpen.value = false;
   capturingHotkey.value = false;
   hotkeyError.value = '';
+  if (menuOpen.value) positionOverlay(event.currentTarget as HTMLElement, 'menu');
 };
 
-const toggleRemove = () => {
+const toggleRemove = (event: MouseEvent) => {
   removeOpen.value = !removeOpen.value;
   menuOpen.value = false;
+  if (removeOpen.value) positionOverlay(event.currentTarget as HTMLElement, 'remove');
 };
 
 const onPlaybackModeChange = (event: Event) => {
@@ -356,7 +389,8 @@ const handleDocumentKeydown = (event: KeyboardEvent) => {
 };
 
 const handleDocumentPointerdown = (event: PointerEvent) => {
-  if (root.value?.contains(event.target as Node)) return;
+  const target = event.target as Node;
+  if (root.value?.contains(target) || menuPopover.value?.contains(target) || removePopover.value?.contains(target)) return;
   menuOpen.value = false;
   removeOpen.value = false;
   capturingHotkey.value = false;
@@ -442,10 +476,26 @@ onUnmounted(() => {
 }
 
 .one-shot-tile.show-mode:hover,
-.one-shot-tile.show-mode:focus-visible {
+.one-shot-tile.show-mode:has(.one-shot-trigger-surface:focus-visible) {
   border-color: color-mix(in srgb, var(--one-shot-color) 72%, white 10%);
   background: color-mix(in srgb, var(--one-shot-color) 16%, var(--color-surface));
   outline: none;
+}
+
+.one-shot-trigger-surface {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.one-shot-trigger-surface:focus-visible {
+  outline: 2px solid var(--color-focus, var(--color-accent));
+  outline-offset: -3px;
 }
 
 .one-shot-tile.is-playing {
@@ -531,7 +581,7 @@ onUnmounted(() => {
   font-variant-numeric: tabular-nums;
 }
 
-.one-shot-actions { display: flex; gap: 6px; }
+.one-shot-actions { position: relative; z-index: 2; display: flex; gap: 6px; }
 
 .one-shot-control,
 .popover-close,
@@ -557,11 +607,11 @@ onUnmounted(() => {
 
 .one-shot-popover,
 .one-shot-confirm {
-  position: absolute;
-  z-index: 30;
-  top: calc(100% + 6px);
-  right: 0;
+  position: fixed;
+  z-index: 1000;
   width: min(310px, calc(100vw - 32px));
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
   padding: 12px;
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md, 8px);
