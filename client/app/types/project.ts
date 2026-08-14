@@ -42,6 +42,9 @@ export interface AudioItem extends BaseItem {
   ltcEnabled?: boolean;         // output LTC on the project's ltcDevice when playing
   ltcStartTimecode?: string;    // starting timecode "HH:MM:SS:FF" (default "00:00:00:00")
   ltcFrameRate?: number;        // 0=24, 1=25, 2=29.97NDF, 3=29.97DF, 4=30 (default 4)
+  // Presence designates this canonical playlist cue as a quick-fire One Shot.
+  // Playback behavior continues to use the cue's existing audio fields.
+  oneShot?: OneShotSettings;
 }
 
 // Waveform data format (from the server's decoder, or legacy ffmpeg files)
@@ -129,6 +132,12 @@ export interface CartSlotKeyBinding {
   ctrlKey: boolean;
   shiftKey: boolean;
   altKey: boolean;
+}
+
+export interface OneShotSettings {
+  order: number;
+  retrigger: 'restart' | 'ignore';
+  hotkey?: CartSlotKeyBinding;
 }
 
 // Configurable playback keyboard actions

@@ -2,6 +2,7 @@
 // project_state.cpp — see project_state.hpp.
 // ============================================================================
 #include "liveplay/core/project_state.hpp"
+#include "liveplay/core/one_shot_migration.hpp"
 #include "liveplay/logger.hpp"
 #include "liveplay/meta/metadata.hpp"
 #include "liveplay/util/atomic_file.hpp"
@@ -642,9 +643,11 @@ void ProjectState::loader_loop() {
                     });
                     if (item_snap.is_object())
                         apply_item_properties_locked(item_snap, req.cue_id);
-                    // Cart-bound cues get primed below — they can be fired by a
-                    // hotkey/MIDI at any moment and must be hot.
-                    if (document_.contains("cartItems") &&
+                    // One Shots (and legacy Cart-bound cues) can be fired at
+                    // any moment by a hotkey/MIDI and must be hot.
+                    is_cart = item_snap.contains("oneShot") &&
+                              item_snap["oneShot"].is_object();
+                    if (!is_cart && document_.contains("cartItems") &&
                         document_["cartItems"].is_array()) {
                         for (const auto& c : document_["cartItems"]) {
                             if (c.is_object() &&
@@ -768,6 +771,8 @@ void ProjectState::start_async_mirror() {
                     if (item.value("type", std::string{}) != "audio") return;
                     const std::string uuid = item.value("uuid", std::string{});
                     if (uuid.empty()) return;
+                    if (item.contains("oneShot") && item["oneShot"].is_object())
+                        cart_uuids.insert(uuid);
                     auto path = resolve_media_path(
                         item, doc.value("folderPath", std::string{}));
                     if (!path.empty()) {
@@ -962,7 +967,8 @@ void ProjectState::start_async_mirror() {
                 engine_.ensure_default_routing();
             }
 
-            // Phase 4: prime cart cues (also unlocked — engine handles its own).
+            // Phase 4: prime One Shots / legacy cart cues (also unlocked —
+            // engine handles its own).
             std::vector<std::future<void>> prime_futures;
             for (const auto& uuid : cart_uuids) {
                 audio::CueId cue;
@@ -979,7 +985,7 @@ void ProjectState::start_async_mirror() {
             }
             for (auto& f : prime_futures) f.get();
             if (!cart_uuids.empty()) {
-                Logger::info("ProjectState: primed {} cart cue(s).", cart_uuids.size());
+                Logger::info("ProjectState: primed {} one-shot cue(s).", cart_uuids.size());
             }
         } catch (const std::exception& e) {
             Logger::error("async mirror threw: {}", e.what());
@@ -1160,6 +1166,7 @@ void ProjectState::mirror_items_to_engine_locked() {
     // Collect uuid → file_path for current document.
     std::unordered_map<std::string, std::filesystem::path> wanted;
     std::unordered_set<std::string> audio_uuids;
+    std::unordered_set<std::string> cart_uuids;
     std::size_t unresolved_media = 0;
     for_each_item(document_,
         [&](json& item, const std::string& /*parent*/) {
@@ -1167,6 +1174,8 @@ void ProjectState::mirror_items_to_engine_locked() {
             const std::string uuid = item.value("uuid", std::string{});
             if (uuid.empty()) return;
             audio_uuids.insert(uuid);
+            if (item.contains("oneShot") && item["oneShot"].is_object())
+                cart_uuids.insert(uuid);
 
             // Resolve file path: prefer relative folderPath/mediaPath (portable),
             // fall back to the absolute mediaServerPath. See resolve_media_path().
@@ -1203,7 +1212,6 @@ void ProjectState::mirror_items_to_engine_locked() {
     // Gather the set of cart slot bindings so we can prioritise priming
     // those items (cart cues need to be hot — they can be triggered at any
     // moment by a hotkey or MIDI).
-    std::unordered_set<std::string> cart_uuids;
     if (document_.contains("cartItems") && document_["cartItems"].is_array()) {
         for (const auto& c : document_["cartItems"]) {
             if (c.is_object()) {
@@ -1307,7 +1315,7 @@ void ProjectState::mirror_items_to_engine_locked() {
         }
         for (auto& f : prime_futures) f.get();
         if (!cart_uuids.empty()) {
-            Logger::info("ProjectState: primed {} cart cue(s).",
+            Logger::info("ProjectState: primed {} one-shot cue(s).",
                          cart_uuids.size());
         }
     }
@@ -1913,9 +1921,13 @@ json ProjectState::items_page(std::size_t offset, std::size_t limit) const {
 
 bool ProjectState::replace_full_document(const json& doc) {
     if (!doc.is_object()) return false;
+    json migrated = doc;
+    const bool cart_migrated = core::migrate_legacy_cart_to_one_shots(migrated);
+    if (cart_migrated)
+        Logger::info("ProjectState: migrated legacy Cart data to One Shots.");
     {
         std::lock_guard lock{mutex_};
-        document_ = doc;
+        document_ = std::move(migrated);
         if (!document_.contains("settings")) {
             document_["settings"] = json{
                 {"defaultOutputDevice", nullptr},
@@ -3906,6 +3918,9 @@ bool ProjectState::load_from_json(const json& doc_in) {
     if (is_client_document(doc_in)) {
         // Run repair before taking the lock — it's pure document transformation.
         json doc_repaired = doc_in;
+        const bool cart_migrated = core::migrate_legacy_cart_to_one_shots(doc_repaired);
+        if (cart_migrated)
+            Logger::info("ProjectState: migrated legacy Cart data to One Shots.");
         RepairInfo repair = detect_and_repair(doc_repaired);
         if (repair.repaired) {
             Logger::warn("ProjectState::load_from_json: project repaired ({} issue(s)).",

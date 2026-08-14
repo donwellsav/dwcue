@@ -236,6 +236,17 @@ endforeach()
 option(LIVEPLAY_BUILD_TESTS "Build the liveplay test binaries" OFF)
 if(LIVEPLAY_BUILD_TESTS)
     enable_testing()
+    add_executable(liveplay-one-shot-migration-tests
+        tests/one_shot_migration_test.cpp
+    )
+    target_include_directories(liveplay-one-shot-migration-tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(liveplay-one-shot-migration-tests
+        PRIVATE nlohmann_json::nlohmann_json
+    )
+    add_test(NAME one-shot-migration COMMAND liveplay-one-shot-migration-tests)
+
     add_executable(liveplay-control-security-tests
         tests/control_security_test.cpp
     )
