@@ -60,31 +60,31 @@
         <!-- One Shots section -->
         <div class="category-header">{{ t('controls.sectionCartSlots') }}</div>
         <div
-          v-for="slot in oneShotCount"
-          :key="slot"
+          v-for="entry in configuredOneShots"
+          :key="entry.item.uuid"
           class="action-row keyboard-action-row"
           :class="{
-            capturing: capturingSlot === slot - 1,
-            conflict: conflictSlot === slot - 1
+            capturing: capturingSlot === entry.slotIndex,
+            conflict: conflictSlot === entry.slotIndex
           }"
-          @click="startCaptureSlot(slot - 1)"
+          @click="startCaptureSlot(entry.slotIndex)"
         >
-          <span class="action-label">{{ t('controls.cartSlot', { n: slot }) }}</span>
+          <span class="action-label">{{ t('controls.cartSlot', { n: entry.slotIndex + 1 }) }}</span>
           <span class="action-binding">
-            <template v-if="capturingSlot === slot - 1">
+            <template v-if="capturingSlot === entry.slotIndex">
               {{ t('controls.pressAnyKey') }}
             </template>
-            <template v-else-if="getSlotKeyLabel(slot - 1)">
-              {{ getSlotKeyLabel(slot - 1) }}
+            <template v-else-if="getSlotKeyLabel(entry.slotIndex)">
+              {{ getSlotKeyLabel(entry.slotIndex) }}
             </template>
             <template v-else>—</template>
           </span>
           <button
-            v-if="keyMappings[slot - 1]"
+            v-if="keyMappings[entry.slotIndex]"
             class="clear-key-btn"
-            @click.stop="clearSlotBinding(slot - 1)"
+            @click.stop="clearSlotBinding(entry.slotIndex)"
           >{{ t('controls.clear') }}</button>
-          <span v-if="keyErrorMessage && keyErrorSlot === slot - 1" class="error-msg">{{ keyErrorMessage }}</span>
+          <span v-if="keyErrorMessage && keyErrorSlot === entry.slotIndex" class="error-msg">{{ keyErrorMessage }}</span>
         </div>
       </div>
 
@@ -190,7 +190,7 @@ import {
   type MidiActionId,
 } from '~/composables/useMidiController';
 import type { PlaybackKeyAction, CartSlotKeyBinding } from '~/types/project';
-import { flattenOneShots } from '~/utils/oneShots';
+import { buildOneShotSlots } from '~/utils/oneShots';
 
 const emit = defineEmits<{ close: [] }>();
 
@@ -219,8 +219,14 @@ const {
   resetPlaybackToDefaults,
 } = useCartHotkeys();
 const { saveProject, currentProject } = useProject();
-const oneShots = computed(() => flattenOneShots(currentProject.value?.items ?? []));
-const oneShotCount = computed(() => oneShots.value.length);
+const { cartOnlyItems } = useCartItems();
+const oneShotSlots = computed(() => buildOneShotSlots(
+  currentProject.value?.items ?? [],
+  Array.from(cartOnlyItems.value.values()),
+));
+const configuredOneShots = computed(() => oneShotSlots.value.flatMap(
+  (item, slotIndex) => item ? [{ item, slotIndex }] : [],
+));
 
 const capturingSlot = ref<number | null>(null);
 const capturingKeyAction = ref<PlaybackKeyAction | null>(null);
@@ -276,7 +282,7 @@ const getPlaybackKeyLabel = (action: PlaybackKeyAction): string => {
 };
 
 const clearSlotBinding = (slotIndex: number) => {
-  const item = oneShots.value[slotIndex];
+  const item = oneShotSlots.value[slotIndex];
   if (!item?.oneShot) return;
   delete item.oneShot.hotkey;
   saveProject();
@@ -418,7 +424,9 @@ const categoryLabelKey = (category: string): string => {
 };
 
 const midiActionsByCategory = (category: string) =>
-  MIDI_ACTIONS.filter(a => a.category === category && (a.n === undefined || a.n <= oneShotCount.value));
+  MIDI_ACTIONS.filter(a => a.category === category && (
+    a.n === undefined || !!oneShotSlots.value[a.n - 1]
+  ));
 
 const getMidiBinding = (actionId: string): MidiBinding | undefined =>
   midiConfig.value.bindings[actionId];

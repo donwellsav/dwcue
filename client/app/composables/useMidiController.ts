@@ -1,5 +1,5 @@
 import { CART_SLOT_COUNT_LIMITS, type AudioItem } from '~/types/project';
-import { flattenOneShots } from '~/utils/oneShots';
+import { buildOneShotSlots } from '~/utils/oneShots';
 
 // MIDI binding: identifies a specific control on a MIDI device
 export interface MidiBinding {
@@ -112,7 +112,11 @@ const preferredDevice = computed(() => config.value.preferredDevice ?? null);
 export const useMidiController = () => {
   const { playCue, stopCue, pauseCue, resumeCue, stopAllCues, activeCues, setMasterGain, masterGainDb, nextItemOverrideUuid, autoNextItemUuid, setNextItem, triggerGroup, queueLoopContinuation, jumpCue } = useAudioEngine();
   const { selectedItem, selectedItems, saveProject, currentProject, getAllItemsFlat, toggleItemSelection, findItemByUuid: findProjectItem, findItemByIndex } = useProject();
-  const oneShots = computed(() => flattenOneShots(currentProject.value?.items ?? []));
+  const { cartOnlyItems } = useCartItems();
+  const oneShotSlots = computed(() => buildOneShotSlots(
+    currentProject.value?.items ?? [],
+    Array.from(cartOnlyItems.value.values()),
+  ));
 
   // Same active-cue-then-selection fallback toggle-loop/pause-resume use
   // above, factored out since cue-to-continue/jump-cue need it too.
@@ -140,7 +144,7 @@ export const useMidiController = () => {
   const dispatchDiscrete = (actionId: MidiActionId) => {
     if (actionId.startsWith('trigger-slot-')) {
       const slot = parseInt(actionId.replace('trigger-slot-', ''), 10);
-      const item = oneShots.value[slot];
+      const item = oneShotSlots.value[slot];
       if (!item) return;
       if (activeCues.value.has(item.uuid) && item.oneShot?.retrigger === 'ignore') return;
       playCue(item);

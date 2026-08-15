@@ -138,6 +138,9 @@ export interface OneShotSettings {
   order: number;
   retrigger: 'restart' | 'ignore';
   hotkey?: CartSlotKeyBinding;
+  // Set when a playlist cue was copied into an independent One Shot. This is
+  // only an origin reference for the Properties toggle; playback stays local.
+  sourceUuid?: string;
 }
 
 // Configurable playback keyboard actions

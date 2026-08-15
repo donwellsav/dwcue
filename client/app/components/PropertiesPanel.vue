@@ -343,9 +343,9 @@ import {
   type MeasuredLoudness,
 } from '~/utils/audio';
 import {
+  cloneAsIndependentOneShot,
   isOneShot,
-  markAsOneShot,
-  nextOneShotOrder,
+  nextAvailableOneShotOrder,
   removeOneShotDesignation,
 } from '~/utils/oneShots';
 import { useOutputTarget } from '~/composables/useOutputTarget';
@@ -364,6 +364,7 @@ const {
 } = useProject();
 const { t } = useLocalization();
 const { uiMode } = useUiMode();
+const { cartOnlyItems, addCartOnlyItem, removeCartOnlyItem } = useCartItems();
 const { levels: outputTargetLevels } = useOutputTarget();
 const panelHeight = useState<number>('PropertiesPanel.height', () => 320);
 
@@ -405,17 +406,47 @@ const selectedAudioItems = computed(() => getSelectedItems().filter(
   (item): item is AudioItem => item.type === 'audio',
 ));
 const hasSelectedAudioItems = computed(() => selectedAudioItems.value.length > 0);
+const hasIndependentOneShot = (item: AudioItem): boolean =>
+  (cartOnlyItems.value.has(item.uuid) && isOneShot(item))
+  || Array.from(cartOnlyItems.value.values()).some(
+    oneShot => oneShot.oneShot?.sourceUuid === item.uuid,
+  );
 const oneShotEnabled = computed(() => selectedAudioItems.value.length > 0
-  && selectedAudioItems.value.every(isOneShot));
+  && selectedAudioItems.value.every(item => isOneShot(item) || hasIndependentOneShot(item)));
 
 const handleOneShotDesignationChange = (event: Event) => {
   if (!currentProject.value) return;
   const enabled = (event.target as HTMLInputElement).checked;
-  let order = nextOneShotOrder(currentProject.value.items);
+  let removedSelectedOneShot = false;
   selectedAudioItems.value.forEach((item) => {
-    if (enabled && !isOneShot(item)) markAsOneShot(item, order++);
-    if (!enabled) removeOneShotDesignation(item);
+    if (enabled && !hasIndependentOneShot(item)) {
+      const order = nextAvailableOneShotOrder(
+        currentProject.value!.items,
+        Array.from(cartOnlyItems.value.values()),
+      );
+      if (order >= 0) {
+        addCartOnlyItem(cloneAsIndependentOneShot(item, crypto.randomUUID(), order));
+        // A cue designated by an earlier build is decoupled as soon as the
+        // Properties action is used; the new copy owns all One Shot behavior.
+        if (isOneShot(item)) removeOneShotDesignation(item);
+      }
+    }
+    if (!enabled) {
+      if (cartOnlyItems.value.has(item.uuid)) {
+        removeCartOnlyItem(item.uuid);
+        selectedItems.value.delete(item.uuid);
+        removedSelectedOneShot ||= selectedItem.value?.uuid === item.uuid;
+      }
+      for (const oneShot of Array.from(cartOnlyItems.value.values())) {
+        if (oneShot.oneShot?.sourceUuid === item.uuid) removeCartOnlyItem(oneShot.uuid);
+      }
+      if (isOneShot(item)) removeOneShotDesignation(item);
+    }
   });
+  if (removedSelectedOneShot) {
+    selectedItem.value = null;
+    propertiesPanelOpen.value = false;
+  }
   void handleSave();
 };
 

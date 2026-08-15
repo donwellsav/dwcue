@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  buildOneShotSlots,
+  cloneAsIndependentOneShot,
   flattenOneShots,
   markAsOneShot,
+  nextAvailableOneShotOrder,
   nextOneShotOrder,
   removeOneShotDesignation,
 } from '../app/utils/oneShots.ts';
@@ -57,6 +60,51 @@ test('new designation uses safe quick-play defaults', () => {
   assert.deepEqual(item.endBehavior, { action: 'nothing' });
   assert.deepEqual(item.startBehavior, { action: 'nothing' });
   assert.equal(item.duckingBehavior.mode, 'no-ducking');
+});
+
+test('playlist cues copy into independent One Shots without sharing behavior', () => {
+  const source = audio('playlist-source');
+  const clone = cloneAsIndependentOneShot(source as any, 'one-shot-copy', 3);
+
+  assert.equal(clone.uuid, 'one-shot-copy');
+  assert.deepEqual(clone.index, [-1, 3]);
+  assert.equal(clone.oneShot?.sourceUuid, 'playlist-source');
+  assert.equal(clone.duckingBehavior.mode, 'no-ducking');
+  assert.deepEqual(clone.startBehavior, { action: 'nothing' });
+  assert.deepEqual(clone.endBehavior, { action: 'nothing' });
+  clone.displayName = 'Independent name';
+  assert.equal(source.displayName, 'playlist-source');
+  assert.equal((source as any).oneShot, undefined);
+});
+
+test('builds permanent addressable cells across playlist and standalone One Shots', () => {
+  const playlistItems = [audio('playlist', 2)];
+  const standaloneItems = [audio('standalone', 0), audio('later', 5)];
+  const slots = buildOneShotSlots(playlistItems as any, standaloneItems as any, 4);
+
+  assert.equal(slots.length, 6);
+  assert.equal(slots[0]?.uuid, 'standalone');
+  assert.equal(slots[1], null);
+  assert.equal(slots[2]?.uuid, 'playlist');
+  assert.equal(slots[5]?.uuid, 'later');
+  assert.deepEqual(
+    flattenOneShots(playlistItems as any, standaloneItems as any).map(item => item.uuid),
+    ['standalone', 'playlist', 'later'],
+  );
+  assert.equal(nextAvailableOneShotOrder(playlistItems as any, standaloneItems as any), 1);
+});
+
+test('repairs duplicate and invalid saved cell orders without creating an unbounded grid', () => {
+  const duplicate = audio('duplicate', 1);
+  const first = audio('first', 1);
+  const corrupt = audio('corrupt', 999_999);
+  const slots = buildOneShotSlots([first, duplicate, corrupt] as any, [], 2);
+
+  assert.equal(slots.length, 3);
+  assert.equal(slots[1]?.uuid, 'first');
+  assert.deepEqual(slots.filter(Boolean).map(item => item!.uuid).sort(), [
+    'corrupt', 'duplicate', 'first',
+  ]);
 });
 
 test('removing One Shot designation never deletes or rewrites the cue', () => {

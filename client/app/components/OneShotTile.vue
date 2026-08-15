@@ -4,6 +4,8 @@
     class="one-shot-tile"
     :class="{ 'is-playing': isPlaying, 'show-mode': showMode, 'is-menu-open': menuOpen || removeOpen }"
     :style="tileStyle"
+    :draggable="!showMode"
+    @dragstart="handleDragStart"
   >
     <canvas ref="waveformCanvas" class="one-shot-waveform" aria-hidden="true"></canvas>
     <span class="one-shot-color-rail" aria-hidden="true"></span>
@@ -17,7 +19,7 @@
     ></button>
 
     <div class="one-shot-topline">
-      <span class="one-shot-mode">{{ modeLabel }}</span>
+      <span class="one-shot-mode"><b>{{ position + 1 }}</b>{{ modeLabel }}</span>
       <kbd v-if="hotkeyLabel" class="one-shot-hotkey">{{ hotkeyLabel }}</kbd>
     </div>
 
@@ -36,6 +38,16 @@
           @click.stop="handleTransport"
         >
           <span class="material-symbols-rounded" aria-hidden="true">{{ isPlaying ? 'stop' : 'play_arrow' }}</span>
+        </button>
+        <button
+          v-if="!showMode"
+          type="button"
+          class="one-shot-control"
+          :aria-label="t('oneShots.replaceAudioFor', { name: item.displayName })"
+          :title="t('oneShots.replaceAudio')"
+          @click.stop="emit('request-import')"
+        >
+          <span class="material-symbols-rounded" aria-hidden="true">audio_file</span>
         </button>
         <button
           type="button"
@@ -190,7 +202,6 @@ import type { AudioItem } from '~/types/project';
 import {
   getOneShotEndMode,
   getOneShotPlaybackMode,
-  removeOneShotDesignation,
   setOneShotEndMode,
   setOneShotPlaybackMode,
   type OneShotEndMode,
@@ -199,6 +210,10 @@ import {
 import { eventToBinding, formatKeyLabel, isReservedCombo } from '~/composables/useCartHotkeys';
 
 const props = defineProps<{ item: AudioItem; position: number }>();
+const emit = defineEmits<{
+  (event: 'request-import'): void;
+  (event: 'remove'): void;
+}>();
 const root = ref<HTMLElement | null>(null);
 const waveformCanvas = ref<HTMLCanvasElement | null>(null);
 const menuPopover = ref<HTMLElement | null>(null);
@@ -264,6 +279,20 @@ const handleTrigger = () => {
 const handleTransport = () => {
   if (isPlaying.value) void stopCue(props.item.uuid);
   else void playCue(props.item);
+};
+
+const handleDragStart = (event: DragEvent) => {
+  if (showMode.value || !event.dataTransfer) {
+    event.preventDefault();
+    return;
+  }
+  if ((event.target as HTMLElement).closest('button')) {
+    event.preventDefault();
+    return;
+  }
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('one-shot-uuid', props.item.uuid);
+  event.dataTransfer.setData('one-shot-slot', String(props.position));
 };
 
 const positionOverlay = (anchor: HTMLElement, kind: 'menu' | 'remove') => {
@@ -402,9 +431,8 @@ const openProperties = () => {
 };
 
 const confirmRemove = () => {
-  removeOneShotDesignation(props.item);
   removeOpen.value = false;
-  persist();
+  emit('remove');
 };
 
 const drawWaveform = () => {
@@ -467,7 +495,10 @@ onUnmounted(() => {
   background: color-mix(in srgb, var(--one-shot-color) 10%, var(--color-surface));
   color: var(--color-text-primary);
   box-shadow: 0 1px 0 rgb(255 255 255 / 3%) inset;
+  cursor: grab;
 }
+
+.one-shot-tile:active { cursor: grabbing; }
 
 .one-shot-tile.show-mode {
   min-height: 140px;
@@ -547,6 +578,12 @@ onUnmounted(() => {
   text-transform: uppercase;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.one-shot-mode b {
+  margin-right: 6px;
+  color: var(--color-text-primary);
+  font: inherit;
 }
 
 .one-shot-hotkey {

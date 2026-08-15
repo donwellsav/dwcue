@@ -674,7 +674,7 @@ const toggleExpand = () => {
 
 const handleDragStart = (e: DragEvent) => {
   if (e.dataTransfer) {
-    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.effectAllowed = 'copyMove';
     e.dataTransfer.setData('item-uuid', props.item.uuid);
     e.dataTransfer.setData('item-depth', props.depth.toString());
     

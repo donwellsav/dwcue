@@ -1,6 +1,6 @@
 import type { CartSlotKeyBinding, PlaybackKeyAction, AudioItem } from '~/types/project';
 import { DEFAULT_PLAYBACK_KEYS } from '~/types/project';
-import { flattenOneShots } from '~/utils/oneShots';
+import { buildOneShotSlots } from '~/utils/oneShots';
 
 const RESERVED_COMBOS: CartSlotKeyBinding[] = [
   { key: 's', ctrlKey: true,  shiftKey: false, altKey: false },
@@ -48,14 +48,18 @@ export const eventToBinding = (e: KeyboardEvent): CartSlotKeyBinding => ({
 
 export const useCartHotkeys = () => {
   const { currentProject, selectedItem, selectedItems, saveProject, getAllItemsFlat, toggleItemSelection, findItemByUuid } = useProject();
+  const { cartOnlyItems } = useCartItems();
   const { playCue, pauseCue, resumeCue, stopAllCues, activeCues, nextItemOverrideUuid, autoNextItemUuid, setNextItem, triggerGroup, queueLoopContinuation, jumpCue } = useAudioEngine();
 
-  const oneShots = computed(() => flattenOneShots(currentProject.value?.items ?? []));
+  const oneShotSlots = computed(() => buildOneShotSlots(
+    currentProject.value?.items ?? [],
+    Array.from(cartOnlyItems.value.values()),
+  ));
   // Keep the ordinal-keyed shape used by the existing Controls screen and
   // saved MIDI action ids, but source every binding from the canonical cue.
   const keyMappings = computed<Record<number, CartSlotKeyBinding>>(() =>
-    Object.fromEntries(oneShots.value.flatMap((item, index) =>
-      item.oneShot?.hotkey ? [[index, item.oneShot.hotkey]] : []
+    Object.fromEntries(oneShotSlots.value.flatMap((item, index) =>
+      item?.oneShot?.hotkey ? [[index, item.oneShot.hotkey]] : []
     ))
   );
 
@@ -96,7 +100,7 @@ export const useCartHotkeys = () => {
   };
 
   const triggerSlot = (slotIndex: number) => {
-    const item = oneShots.value[slotIndex];
+    const item = oneShotSlots.value[slotIndex];
     if (!item) return;
     if (activeCues.value.has(item.uuid)) {
       if (item.oneShot?.retrigger === 'ignore') return;
@@ -252,7 +256,7 @@ export const useCartHotkeys = () => {
         return { conflict: existingSlot };
       }
     }
-    const item = oneShots.value[slotIndex];
+    const item = oneShotSlots.value[slotIndex];
     if (!item?.oneShot) return { conflict: -1 };
     item.oneShot.hotkey = binding;
     return { conflict: -1 };
@@ -286,8 +290,8 @@ export const useCartHotkeys = () => {
 
   const resetToDefaults = () => {
     if (!currentProject.value) return;
-    for (const item of oneShots.value) {
-      if (item.oneShot) delete item.oneShot.hotkey;
+    for (const item of oneShotSlots.value) {
+      if (item?.oneShot) delete item.oneShot.hotkey;
     }
   };
 
