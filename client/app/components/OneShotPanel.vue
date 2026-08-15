@@ -68,9 +68,18 @@
           <span class="material-symbols-rounded is-spinning" aria-hidden="true">progress_activity</span>
           <span>{{ t('oneShots.importing') }}</span>
         </div>
-        <p v-else-if="slotErrors[index]" class="one-shot-slot__error" role="alert">
-          {{ slotErrors[index] }}
-        </p>
+        <div v-else-if="slotErrors[index]" class="one-shot-slot__error" role="alert">
+          <span class="one-shot-slot__error-message">{{ slotErrors[index] }}</span>
+          <button
+            type="button"
+            class="one-shot-slot__error-clear"
+            :aria-label="t('oneShots.clearWarning')"
+            :title="t('oneShots.clearWarning')"
+            @click.stop="clearSlotError(index)"
+          >
+            <span class="material-symbols-rounded" aria-hidden="true">close</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -156,10 +165,11 @@ const importSlot = ref<number | null>(null);
 const busySlot = ref<number | null>(null);
 const dragOverSlot = ref<number | null>(null);
 const slotErrors = reactive<Record<number, string>>({});
+const clearSlotError = (slot: number) => delete slotErrors[slot];
 
 const openImport = (slot: number) => {
   if (showMode.value || !currentProject.value || busySlot.value !== null) return;
-  delete slotErrors[slot];
+  clearSlotError(slot);
   importSlot.value = slot;
 };
 
@@ -207,7 +217,7 @@ const importFromServerPath = async (
 ): Promise<boolean> => {
   if (!currentProject.value || busySlot.value !== null) return false;
   busySlot.value = slot;
-  delete slotErrors[slot];
+  clearSlotError(slot);
   try {
     let mediaServerPath = serverPath;
     if (options.fileMode === 'copy') {
@@ -278,7 +288,7 @@ const copyPlaylistItemIntoSlot = async (uuid: string, slot: number) => {
   const source = findItemByUuid(uuid);
   if (!source || source.type !== 'audio' || !currentProject.value) return;
   const clone = cloneAsIndependentOneShot(source, crypto.randomUUID(), slot);
-  delete slotErrors[slot];
+  clearSlotError(slot);
   try {
     await replaceSlotItem(slot, clone);
   } catch (error) {
@@ -332,7 +342,7 @@ const handleDrop = async (event: DragEvent, slot: number) => {
   const file = event.dataTransfer?.files?.[0];
   if (file) {
     busySlot.value = slot;
-    delete slotErrors[slot];
+    clearSlotError(slot);
     let path: string | null = null;
     try {
       path = await server.resolveDroppedFileToMedia(file);
@@ -536,11 +546,50 @@ button.one-shot-empty-cell:focus-visible {
 }
 
 .one-shot-slot__error {
-  max-height: 3.9em;
-  overflow: auto;
+  min-height: 32px;
+  max-height: 4.6em;
+  padding-right: 30px;
+  overflow: hidden;
   border-color: color-mix(in srgb, var(--color-danger) 48%, var(--color-border));
   color: var(--color-danger);
   user-select: text;
+}
+
+.one-shot-slot__error-message {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.one-shot-slot__error-clear {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm, 5px);
+  background: transparent;
+  color: currentColor;
+  cursor: pointer;
+}
+
+.one-shot-slot__error-clear:hover {
+  background: color-mix(in srgb, var(--color-danger) 16%, transparent);
+}
+
+.one-shot-slot__error-clear:focus-visible {
+  outline: 2px solid var(--color-focus, var(--color-accent));
+  outline-offset: 1px;
+}
+
+.one-shot-slot__error-clear .material-symbols-rounded {
+  font-size: 18px;
 }
 
 .is-spinning { animation: one-shot-spin .8s linear infinite; }

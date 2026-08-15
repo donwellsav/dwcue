@@ -308,6 +308,7 @@
     "dropHint": "or drop audio here",
     "importing": "Preparing audio…",
     "importFailed": "Could not import: {reason}",
+    "clearWarning": "Clear warning",
     "unknownImportError": "Unknown import problem",
     "noProject": "Open a project before importing a One Shot.",
     "saveFailed": "The One Shot could not be saved.",
