@@ -20,13 +20,15 @@
 
     <div class="one-shot-topline">
       <span class="one-shot-mode"><b>{{ position + 1 }}</b>{{ modeLabel }}</span>
-      <kbd v-if="hotkeyLabel" class="one-shot-hotkey">{{ hotkeyLabel }}</kbd>
+      <span class="one-shot-topline__meta">
+        <kbd v-if="hotkeyLabel" class="one-shot-hotkey">{{ hotkeyLabel }}</kbd>
+        <span class="one-shot-duration">{{ currentTimeLabel }}</span>
+      </span>
     </div>
 
     <div class="one-shot-title" :title="item.displayName">{{ item.displayName }}</div>
 
     <div class="one-shot-bottomline">
-      <span class="one-shot-duration">{{ currentTimeLabel }}</span>
       <div class="one-shot-actions">
         <button
           v-if="!showMode || isPlaying"
@@ -38,16 +40,6 @@
           @click.stop="handleTransport"
         >
           <span class="material-symbols-rounded" aria-hidden="true">{{ isPlaying ? 'stop' : 'play_arrow' }}</span>
-        </button>
-        <button
-          v-if="!showMode"
-          type="button"
-          class="one-shot-control"
-          :aria-label="t('oneShots.replaceAudioFor', { name: item.displayName })"
-          :title="t('oneShots.replaceAudio')"
-          @click.stop="emit('request-import')"
-        >
-          <span class="material-symbols-rounded" aria-hidden="true">audio_file</span>
         </button>
         <button
           type="button"
@@ -91,6 +83,11 @@
             <span class="material-symbols-rounded" aria-hidden="true">close</span>
           </button>
         </div>
+
+        <button v-if="!showMode" type="button" class="popover-command" @click="requestImport">
+          <span class="material-symbols-rounded" aria-hidden="true">upload_file</span>
+          {{ t('oneShots.replaceAudio') }}
+        </button>
 
         <label class="popover-field">
           <span>{{ t('oneShots.playback') }}</span>
@@ -270,6 +267,11 @@ function formatDuration(seconds: number): string {
 }
 
 const persist = () => { void saveProject(); };
+
+const requestImport = () => {
+  menuOpen.value = false;
+  emit('request-import');
+};
 
 const handleTrigger = () => {
   if (isPlaying.value && props.item.oneShot?.retrigger === 'ignore') return;
@@ -487,9 +489,9 @@ onUnmounted(() => {
   isolation: isolate;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  overflow: visible;
+  gap: 5px;
+  padding: 9px 9px 9px 12px;
+  overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--one-shot-color) 36%, var(--color-border));
   border-radius: var(--radius-md, 8px);
   background: color-mix(in srgb, var(--one-shot-color) 10%, var(--color-surface));
@@ -563,10 +565,20 @@ onUnmounted(() => {
 
 .one-shot-topline,
 .one-shot-bottomline {
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
+}
+
+.one-shot-topline__meta {
+  min-width: 0;
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
 }
 
 .one-shot-mode {
@@ -588,23 +600,23 @@ onUnmounted(() => {
 
 .one-shot-hotkey {
   flex: 0 0 auto;
-  padding: 2px 6px;
+  padding: 2px 4px;
   border: 1px solid var(--color-border-strong);
   border-radius: 5px;
   background: color-mix(in srgb, var(--color-surface-raised) 88%, transparent);
   color: var(--color-text-primary);
-  font: 600 11px/1.25 var(--font-mono, ui-monospace, monospace);
+  font: 600 10px/1.2 var(--font-mono, ui-monospace, monospace);
 }
 
 .one-shot-title {
-  min-height: 2.4em;
+  min-height: 2.3em;
   flex: 1;
   display: -webkit-box;
   overflow: hidden;
   color: var(--color-text-primary);
   font-size: 15px;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.15;
   text-shadow: 0 1px 2px var(--color-background), 0 0 5px var(--color-background);
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -613,12 +625,32 @@ onUnmounted(() => {
 .show-mode .one-shot-title { font-size: 17px; }
 
 .one-shot-duration {
+  flex: 0 0 auto;
   color: var(--color-text-secondary);
-  font: 600 12px/1.2 var(--font-mono, ui-monospace, monospace);
+  font: 600 11px/1.2 var(--font-mono, ui-monospace, monospace);
   font-variant-numeric: tabular-nums;
 }
 
-.one-shot-actions { position: relative; z-index: 2; display: flex; gap: 6px; }
+.one-shot-bottomline {
+  margin-top: auto;
+}
+
+.one-shot-actions {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--control-radius);
+  background: color-mix(in srgb, var(--color-surface-raised) 92%, transparent);
+  box-shadow: inset 0 1px rgb(255 255 255 / 4%);
+}
+
+.one-shot-tile:not(.show-mode) .one-shot-actions {
+  width: 100%;
+}
 
 .one-shot-control,
 .popover-close,
@@ -634,13 +666,40 @@ onUnmounted(() => {
   color: var(--color-text-primary);
 }
 
+.one-shot-actions .one-shot-control {
+  width: 100%;
+  height: 29px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.one-shot-actions .one-shot-control + .one-shot-control {
+  border-inline-start: 1px solid var(--color-border);
+}
+
+.one-shot-actions .material-symbols-rounded {
+  font-size: 19px;
+  font-variation-settings: 'FILL' 0, 'wght' 520, 'GRAD' 0, 'opsz' 20;
+}
+
+.show-mode .one-shot-bottomline { justify-content: flex-end; }
+.show-mode .one-shot-actions { grid-auto-columns: 36px; }
 .show-mode .one-shot-control { width: 36px; height: 36px; }
 .one-shot-control:hover,
-.one-shot-control:focus-visible,
 .one-shot-control.is-active { background: var(--color-surface-hover); border-color: var(--color-text-tertiary); }
-.one-shot-transport { border-color: color-mix(in srgb, var(--state-playing) 45%, var(--color-border)); }
+.one-shot-control:focus-visible {
+  outline: 2px solid var(--color-focus, var(--color-accent));
+  outline-offset: -3px;
+}
+.one-shot-transport {
+  background: color-mix(in srgb, var(--one-shot-color) 18%, transparent);
+  color: color-mix(in srgb, var(--one-shot-color) 62%, white);
+}
+.one-shot-transport:hover { background: color-mix(in srgb, var(--one-shot-color) 26%, transparent); }
 .one-shot-transport.is-stop { background: var(--color-danger); border-color: var(--color-danger); color: white; }
-.one-shot-remove:hover { color: var(--color-danger); border-color: var(--color-danger); }
+.one-shot-remove:hover { background: color-mix(in srgb, var(--color-danger) 14%, transparent); color: var(--color-danger); }
 
 .one-shot-popover,
 .one-shot-confirm {
@@ -666,6 +725,24 @@ onUnmounted(() => {
 }
 
 .popover-close { width: 26px; height: 26px; border-color: transparent; background: transparent; }
+.popover-command {
+  width: 100%;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.popover-command:hover { background: var(--color-surface-hover); border-color: var(--color-border-strong); }
+.popover-command:focus-visible { outline: 2px solid var(--color-focus, var(--color-accent)); outline-offset: 2px; }
+.popover-command .material-symbols-rounded { font-size: 18px; }
 .popover-field { display: grid; gap: 5px; margin-top: 9px; color: var(--color-text-secondary); font-size: 12px; }
 .popover-field > span:first-child { display: flex; justify-content: space-between; gap: 8px; }
 .popover-field select,

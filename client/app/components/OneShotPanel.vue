@@ -55,7 +55,7 @@
           @click="openImport(index)"
         >
           <span class="one-shot-empty-cell__number">{{ index + 1 }}</span>
-          <span class="material-symbols-rounded one-shot-empty-cell__icon" aria-hidden="true">add_circle</span>
+          <span class="material-symbols-rounded one-shot-empty-cell__icon" aria-hidden="true">add</span>
           <strong>{{ t('oneShots.import') }}</strong>
           <span>{{ t('oneShots.dropHint') }}</span>
         </button>
@@ -507,8 +507,22 @@ button.one-shot-empty-cell:focus-visible {
 }
 
 .one-shot-empty-cell__icon {
-  font-size: 24px;
-  color: var(--color-text-secondary);
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--control-radius);
+  background: var(--color-surface-raised);
+  color: var(--color-text-primary);
+  font-size: 19px;
+  font-variation-settings: 'FILL' 0, 'wght' 520, 'GRAD' 0, 'opsz' 20;
+}
+
+button.one-shot-empty-cell:hover .one-shot-empty-cell__icon,
+button.one-shot-empty-cell:focus-visible .one-shot-empty-cell__icon {
+  border-color: color-mix(in srgb, var(--color-accent) 56%, var(--color-border-strong));
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-raised));
 }
 
 .one-shot-empty-cell strong {
