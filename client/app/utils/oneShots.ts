@@ -133,6 +133,23 @@ export const cloneAsIndependentOneShot = (
   return clone;
 };
 
+/**
+ * Copy a One Shot into the playlist without consuming the source cell.
+ *
+ * The copy is a normal playlist cue: its quick-fire designation is removed,
+ * while the audio file, trim points, gain, and other cue settings stay intact.
+ */
+export const cloneAsPlaylistItem = (
+  source: AudioItem,
+  uuid: string,
+): AudioItem => {
+  const clone = JSON.parse(JSON.stringify(source)) as AudioItem;
+  clone.uuid = uuid;
+  clone.index = [0];
+  delete clone.oneShot;
+  return clone;
+};
+
 export const removeOneShotDesignation = (item: AudioItem): void => {
   delete item.oneShot;
 };

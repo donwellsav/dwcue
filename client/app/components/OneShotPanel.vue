@@ -356,7 +356,8 @@ const handleDrop = async (event: DragEvent, slot: number) => {
     return;
   }
 
-  const playlistUuid = event.dataTransfer?.getData('item-uuid');
+  const playlistUuid = event.dataTransfer?.getData('playlist-audio-uuid')
+    || event.dataTransfer?.getData('item-uuid');
   if (playlistUuid) await copyPlaylistItemIntoSlot(playlistUuid, slot);
 };
 

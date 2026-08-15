@@ -14,7 +14,7 @@
       </div>
     </div>
     
-    <div ref="scrollContainer" class="playlist-content" @drop="handleDrop" @dragover.prevent>
+    <div ref="scrollContainer" class="playlist-content" @drop="handleDrop" @dragover="handleDragOver">
       <div v-if="currentProject?.items.length === 0" class="empty-state">
         <p>{{ t('playlist.noItems') }}</p>
         <p class="hint">{{ t('playlist.importHint') }}</p>
@@ -91,6 +91,7 @@ import {
   trimSilence,
 } from '~/utils/audio';
 import { canonicalSpotifyMediaReference } from '~/utils/spotifyImport';
+import { cloneAsPlaylistItem } from '~/utils/oneShots';
 
 const {
   currentProject,
@@ -1016,12 +1017,39 @@ const handleAddGroup = () => {
   addItem(groupItem);
 };
 
+const handleDragOver = (e: DragEvent) => {
+  e.preventDefault();
+  if (!e.dataTransfer) return;
+  if (showMode.value) {
+    e.dataTransfer.dropEffect = 'none';
+    return;
+  }
+
+  // One Shots copy into the playlist; playlist rows reorder and OS files copy
+  // into the project media root.
+  e.dataTransfer.dropEffect = e.dataTransfer.types.includes('one-shot-uuid')
+    || e.dataTransfer.types.includes('Files')
+    ? 'copy'
+    : 'move';
+};
+
 const handleDrop = async (e: DragEvent) => {
   e.preventDefault();
 
   // Playlist is read-only in Show Mode — ignore drops (incl. OS file drops).
   if (showMode.value) return;
   if (!e.dataTransfer) return;
+
+  // A One Shot dragged back into the playlist creates a normal cue and leaves
+  // the source cell ready for the next quick-fire trigger.
+  const oneShotUuid = e.dataTransfer.getData('one-shot-uuid');
+  if (oneShotUuid && currentProject.value) {
+    const source = findItemByUuid(oneShotUuid);
+    if (!source || source.type !== 'audio') return;
+    addItem(cloneAsPlaylistItem(source as AudioItem, crypto.randomUUID()));
+    await saveProject();
+    return;
+  }
 
   // Cart slot dropped onto empty playlist space → promote it to a standalone
   // playlist item (fresh uuid) appended at the end, and free the cart slot.
@@ -1039,6 +1067,35 @@ const handleDrop = async (e: DragEvent) => {
     addItem(clone);
     deleteCartItems([cartUuid]);
     return;
+  }
+
+  // Dropping a playlist row into empty space appends it to the playlist. Row
+  // targets handle before/after/group insertion; this closes the trailing
+  // empty-space gap without changing the existing reorder semantics.
+  const draggedUuid = e.dataTransfer.getData('item-uuid');
+  if (draggedUuid && currentProject.value) {
+    const selectedItemsData = e.dataTransfer.getData('selected-items');
+    let itemsToMove: string[] = [draggedUuid];
+    if (selectedItemsData) {
+      try {
+        const parsed = JSON.parse(selectedItemsData);
+        if (Array.isArray(parsed) && parsed.length > 0) itemsToMove = parsed;
+      } catch {
+        // Keep the single-item fallback.
+      }
+    }
+
+    const itemObjects = itemsToMove
+      .map(uuid => findItemByUuid(uuid))
+      .filter((item): item is AudioItem | GroupItem => item !== null);
+    if (itemObjects.length > 0) {
+      itemObjects.forEach(item => removeItem(item.uuid));
+      currentProject.value.items.push(...itemObjects);
+      const { updateIndices } = useProject();
+      updateIndices(currentProject.value.items);
+      await saveProject();
+      return;
+    }
   }
 
   const files = Array.from(e.dataTransfer.files);

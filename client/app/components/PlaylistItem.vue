@@ -12,6 +12,7 @@
       'drag-over-top': dragPosition === 'top',
       'drag-over-bottom': dragPosition === 'bottom',
       'drag-over-group': dragPosition === 'group',
+      'is-dragging': isDragging,
       'warning-yellow': warningState === 'yellow',
       'warning-orange': warningState === 'orange',
       'warning-red': warningState === 'red'
@@ -48,6 +49,7 @@
       @click="handleSelect"
       :draggable="!showMode"
       @dragstart="handleDragStart"
+      @dragend="handleDragEnd"
     >
       <span class="item-color-rail" :style="{ backgroundColor: item.color }" aria-hidden="true"></span>
       <!-- Progress bar for playing items (audio and groups) - only in header -->
@@ -265,6 +267,7 @@ import type { AudioItem, GroupItem, BaseItem } from '~/types/project';
 import ActionButton from './ActionButton.vue';
 import { useOutputTarget, METER_COLORS } from '~/composables/useOutputTarget';
 import { exceedsTruePeakCeiling } from '~/utils/audio';
+import { cloneAsPlaylistItem } from '~/utils/oneShots';
 
 const props = defineProps<{
   item: AudioItem | GroupItem;
@@ -280,6 +283,8 @@ const {
   requestDeleteFromButton,
   findItemByUuid,
   currentProject,
+  saveProject,
+  updateIndices,
   waveformUpdateKey,
   triggerWaveformUpdate,
   formatItemIndex,
@@ -316,6 +321,7 @@ const groupToggleLabel = computed(() =>
 );
 const waveformCanvas = ref<HTMLCanvasElement | null>(null);
 const dragPosition = ref<'top' | 'bottom' | 'group' | null>(null);
+const isDragging = ref(false);
 
 const isSelected = computed(() => selectedItems.value.has(props.item.uuid));
 const isPlaying = computed(() => activeCues.value.has(props.item.uuid));
@@ -674,8 +680,14 @@ const toggleExpand = () => {
 
 const handleDragStart = (e: DragEvent) => {
   if (e.dataTransfer) {
-    e.dataTransfer.effectAllowed = 'copyMove';
+    e.dataTransfer.effectAllowed = props.item.type === 'audio' ? 'copyMove' : 'move';
     e.dataTransfer.setData('item-uuid', props.item.uuid);
+    e.dataTransfer.setData('playlist-reorder', 'true');
+    if (props.item.type === 'audio') {
+      // One Shot targets use this explicit type to treat a playlist drag as
+      // a copy while playlist rows continue to use item-uuid for reordering.
+      e.dataTransfer.setData('playlist-audio-uuid', props.item.uuid);
+    }
     e.dataTransfer.setData('item-depth', props.depth.toString());
     
     // If this item is part of a multi-selection, store all selected UUIDs
@@ -683,7 +695,13 @@ const handleDragStart = (e: DragEvent) => {
       const selectedUuids = Array.from(selectedItems.value);
       e.dataTransfer.setData('selected-items', JSON.stringify(selectedUuids));
     }
+    isDragging.value = true;
   }
+};
+
+const handleDragEnd = () => {
+  isDragging.value = false;
+  dragPosition.value = null;
 };
 
 const handleDragOver = (e: DragEvent) => {
@@ -696,7 +714,8 @@ const handleDragOver = (e: DragEvent) => {
   }
   if (!e.dataTransfer) return;
   
-  e.dataTransfer.dropEffect = 'move';
+  const isOneShotCopy = e.dataTransfer.types.includes('one-shot-uuid');
+  e.dataTransfer.dropEffect = isOneShotCopy ? 'copy' : 'move';
   
   // Determine drop position based on mouse position
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -728,6 +747,21 @@ const handleDrop = (e: DragEvent) => {
   // Rows are read-only in Show Mode — no reordering or import drops.
   if (showMode.value) return;
   if (!e.dataTransfer || !currentProject.value) return;
+
+  // A One Shot dragged back into the playlist creates a normal playlist cue
+  // and leaves the source cell armed. This is intentionally a copy: the live
+  // quick-fire surface must not disappear because a tech reorganized a show.
+  const oneShotUuid = e.dataTransfer.getData('one-shot-uuid');
+  if (oneShotUuid) {
+    if (oneShotUuid === props.item.uuid) return;
+    const source = findItemByUuid(oneShotUuid);
+    if (!source || source.type !== 'audio') return;
+    insertPlaylistCloneAtTarget(
+      cloneAsPlaylistItem(source as AudioItem, crypto.randomUUID()),
+      e,
+    );
+    return;
+  }
 
   // A cart slot dragged onto the playlist → promote it to an independent
   // playlist item (fresh uuid) and free the cart slot. A cart cue is a
@@ -858,8 +892,42 @@ const handleDrop = (e: DragEvent) => {
   }
   
   // Save project
-  const { saveProject } = useProject();
-  saveProject();
+  void saveProject();
+};
+
+const insertPlaylistCloneAtTarget = (clone: AudioItem, e: DragEvent) => {
+  if (!currentProject.value) return;
+
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const y = e.clientY - rect.top;
+  const height = rect.height;
+
+  if (props.item.type === 'group' && y > height * 0.3 && y < height * 0.7) {
+    const groupItem = props.item as GroupItem;
+    groupItem.children.push(clone);
+    updateIndices(groupItem.children, groupItem.index);
+    void saveProject();
+    return;
+  }
+
+  const insertAfter = y >= height / 2;
+  const targetIndex = props.item.index;
+  let parentArray = currentProject.value.items;
+  let parentIndex: number[] = [];
+
+  if (targetIndex.length > 1) {
+    const parentGroup = findItemByIndex(targetIndex.slice(0, -1));
+    if (parentGroup?.type === 'group') {
+      parentArray = (parentGroup as GroupItem).children;
+      parentIndex = parentGroup.index;
+    }
+  }
+
+  const itemPosInArray = parentArray.findIndex(item => item.uuid === props.item.uuid);
+  if (itemPosInArray < 0) return;
+  parentArray.splice(insertAfter ? itemPosInArray + 1 : itemPosInArray, 0, clone);
+  updateIndices(parentArray, parentIndex);
+  void saveProject();
 };
 
 // Helper to get all items flattened
@@ -1043,6 +1111,19 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   position: relative;
   z-index: 5;
   cursor: pointer;
+}
+
+.playlist-item:not(.show-mode) > .item-content {
+  cursor: grab;
+}
+
+.playlist-item:not(.show-mode) > .item-content:active,
+.playlist-item:not(.show-mode).is-dragging > .item-content {
+  cursor: grabbing;
+}
+
+.playlist-item:not(.show-mode).is-dragging {
+  opacity: 0.62;
 }
 
 .item-color-rail {

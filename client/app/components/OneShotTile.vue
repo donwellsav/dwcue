@@ -2,10 +2,11 @@
   <article
     ref="root"
     class="one-shot-tile"
-    :class="{ 'is-playing': isPlaying, 'show-mode': showMode, 'is-menu-open': menuOpen || removeOpen }"
+    :class="{ 'is-playing': isPlaying, 'show-mode': showMode, 'is-menu-open': menuOpen || removeOpen, 'is-dragging': isDragging }"
     :style="tileStyle"
     :draggable="!showMode"
     @dragstart="handleDragStart"
+    @dragend="handleDragEnd"
   >
     <canvas ref="waveformCanvas" class="one-shot-waveform" aria-hidden="true"></canvas>
     <span class="one-shot-color-rail" aria-hidden="true"></span>
@@ -220,6 +221,7 @@ const removeOpen = ref(false);
 const overlayStyle = ref({ left: '8px', top: '8px' });
 const capturingHotkey = ref(false);
 const hotkeyError = ref('');
+const isDragging = ref(false);
 let resizeObserver: ResizeObserver | null = null;
 
 const { uiMode } = useUiMode();
@@ -292,9 +294,17 @@ const handleDragStart = (event: DragEvent) => {
     event.preventDefault();
     return;
   }
-  event.dataTransfer.effectAllowed = 'move';
+  // One Shot → Playlist is a copy; One Shot → another cell remains a move.
+  // copyMove advertises both destinations without consuming the source cue.
+  event.dataTransfer.effectAllowed = 'copyMove';
   event.dataTransfer.setData('one-shot-uuid', props.item.uuid);
   event.dataTransfer.setData('one-shot-slot', String(props.position));
+  event.dataTransfer.setData('one-shot-to-playlist', 'copy');
+  isDragging.value = true;
+};
+
+const handleDragEnd = () => {
+  isDragging.value = false;
 };
 
 const positionOverlay = (anchor: HTMLElement, kind: 'menu' | 'remove') => {
@@ -501,6 +511,10 @@ onUnmounted(() => {
 }
 
 .one-shot-tile:active { cursor: grabbing; }
+.one-shot-tile.is-dragging {
+  opacity: 0.58;
+  transform: scale(0.985);
+}
 
 .one-shot-tile.show-mode {
   min-height: 140px;

@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   buildOneShotSlots,
   cloneAsIndependentOneShot,
+  cloneAsPlaylistItem,
   flattenOneShots,
   markAsOneShot,
   nextAvailableOneShotOrder,
@@ -75,6 +76,20 @@ test('playlist cues copy into independent One Shots without sharing behavior', (
   clone.displayName = 'Independent name';
   assert.equal(source.displayName, 'playlist-source');
   assert.equal((source as any).oneShot, undefined);
+});
+
+test('One Shot copies into the playlist without consuming the source cell', () => {
+  const source = audio('one-shot-source', 4);
+  source.oneShot!.sourceUuid = 'original-playlist-cue';
+  source.displayName = 'Announcement';
+
+  const clone = cloneAsPlaylistItem(source as any, 'playlist-copy');
+
+  assert.equal(clone.uuid, 'playlist-copy');
+  assert.deepEqual(clone.index, [0]);
+  assert.equal(clone.oneShot, undefined);
+  assert.equal(clone.displayName, 'Announcement');
+  assert.equal(source.oneShot?.order, 4);
 });
 
 test('builds permanent addressable cells across playlist and standalone One Shots', () => {
