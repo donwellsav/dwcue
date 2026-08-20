@@ -2,7 +2,7 @@
 
 This is the public-facing DonWells Cue static site. It is a fresh Nuxt 4 SPA built from the current desktop app and root README—not from the retired pre-fork website handover. The primary live site is [`https://dwcue.com/`](https://dwcue.com/); the GitHub Pages build remains available at [`https://tdoukinitsas.github.io/liveplay/`](https://tdoukinitsas.github.io/liveplay/) while the repository is hosted at [`donwellsav/dwcue`](https://github.com/donwellsav/dwcue).
 
-This document is the developer's guide to the docs site. For end-user docs, see the [root README](../README.md). The current screenshot set is captured from the packaged v2.5.17 app; refresh `client/public/screenshots/` when the top-level playback UI changes.
+This document is the developer's guide to the docs site. For end-user docs, see the [root README](../README.md). The current screenshot set comes from the app UI; refresh `client/public/screenshots/` when the top-level playback UI changes.
 
 ---
 
@@ -76,7 +76,7 @@ cp package.json  docs-site/public/package.json
 
 ## How it works
 
-1. **Version detection** — at runtime, the page fetches `package.json` from the active host and reads the `version` field. All download links are constructed from this version, with `2.5.17` as a safe local fallback.
+1. **Version detection** — at runtime, the page fetches `package.json` from the active host and reads the `version` field. All download links are constructed from this version, with `2.5.18` as a safe local fallback.
 2. **Download links** — interpolated as `https://github.com/donwellsav/dwcue/releases/download/v<version>/<asset>`:
 
    | Platform | Asset pattern                          |
@@ -85,7 +85,7 @@ cp package.json  docs-site/public/package.json
    | macOS    | `DonWells-Cue-<version>-arm64.dmg`, `DonWells-Cue-<version>-arm64.zip` |
    | Linux    | `DonWells-Cue-<version>-x86_64.AppImage`, `DonWells-Cue-<version>-amd64.deb`, `DonWells-Cue-<version>-x86_64.rpm` |
 
-   The current release is [v2.5.17](https://github.com/donwellsav/dwcue/releases/tag/v2.5.17). If you rename a release asset on the server side, update the URL builder in `app.vue`.
+   The current release is [v2.5.18](https://github.com/donwellsav/dwcue/releases/tag/v2.5.18). If you rename a release asset on the server side, update the URL builder in `app.vue`.
 3. **Product story** — the page explains the current workflow (Properties → Preview → Show Mode), the permanent One Shots grid, output safety, and the supported release builds. The full technical reference remains the root README, linked from the docs section.
 4. **Localisation** — `composables/useI18n.ts` detects the browser language and loads the matching JSON from the configured site base URL (`/liveplay/locales/<code>.json` on GitHub Pages or `/locales/<code>.json` on `dwcue.com`). Falls back to English. The current locale is persisted in `localStorage`. `LanguageSwitcher.vue` is the UI.
 
@@ -145,6 +145,6 @@ If a section needs reusable layout (image-on-left, image-on-right, alternating),
 ## Troubleshooting
 
 - **Old version shows after a release** — GitHub Pages caches aggressively. Hard-refresh (Ctrl/Cmd+Shift+R). If it persists after ~5 minutes, check that the deploy workflow actually re-ran (Actions tab).
-- **404 on downloads** — the linked release must already exist on GitHub. The docs read the version from `package.json`, so publish the matching release before deploying a version bump. For the current build, check [v2.5.17](https://github.com/donwellsav/dwcue/releases/tag/v2.5.17).
+- **404 on downloads** — the linked release must already exist on GitHub. The docs read the version from `package.json`, so publish the matching release before deploying a version bump. For the current build, check [v2.5.18](https://github.com/donwellsav/dwcue/releases/tag/v2.5.18).
 - **404 on assets** — confirm the file is in `public/` (not just `assets/` — Nuxt's `assets/` is bundle-only). Check the `/liveplay/` base path is in the URL.
 - **Build fails** — reproduce locally with `npm run generate`. The most common cause is a missing file in `public/` that wasn't copied in (CI usually handles this — if running locally, copy manually as described above).

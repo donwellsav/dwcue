@@ -407,14 +407,14 @@ assert.match(
   'the docked stereo fader must link both channels and make its −∞ detent truly silent',
 );
 const workspaceOrder = [
-  mainWorkspace.indexOf('<CartPlayer>'),
+  mainWorkspace.indexOf('<OneShotPanel>'),
   mainWorkspace.indexOf('<PlaylistView>'),
   mainWorkspace.indexOf('class="output-console"'),
 ];
 assert.ok(
   workspaceOrder.every(position => position >= 0) &&
     workspaceOrder[0] < workspaceOrder[1] && workspaceOrder[1] < workspaceOrder[2],
-  'the workspace must order the cart, playlist, then output console',
+  'the workspace must order One Shots, playlist, then output console',
 );
 assert.match(
   mainWorkspace,
@@ -433,8 +433,8 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /class="workspace-panels"[\s\S]*id="cart-player-panel"[\s\S]*<CartPlayer>[\s\S]*#header-leading[\s\S]*class="cart-toggle cart-toggle--open"[\s\S]*t\('cart\.hide'\)[\s\S]*@click="toggleCart"[\s\S]*<PlaylistView>[\s\S]*#header-leading[\s\S]*v-if="cartClosed && !cartDetached"[\s\S]*class="cart-toggle"[\s\S]*t\('cart\.show'\)[\s\S]*@click="toggleCart"[\s\S]*function toggleCart\(\)[\s\S]*cartClosed\.value = !cartClosed\.value[\s\S]*cartFullscreen\.value = false/,
-  'the cart toggle must stay in the active panel header and leave resizing to the splitter',
+  /class="workspace-panels"[\s\S]*id="cart-player-panel"[\s\S]*<OneShotPanel>[\s\S]*#header-leading[\s\S]*class="cart-toggle cart-toggle--open"[\s\S]*t\('oneShots\.hide'\)[\s\S]*@click="toggleCart"[\s\S]*<PlaylistView>[\s\S]*#header-leading[\s\S]*v-if="cartClosed && !cartDetached"[\s\S]*class="cart-toggle"[\s\S]*t\('oneShots\.show'\)[\s\S]*@click="toggleCart"[\s\S]*function toggleCart\(\)[\s\S]*cartClosed\.value = !cartClosed\.value[\s\S]*cartFullscreen\.value = false/,
+  'the One Shots toggle must stay in the active panel header and leave resizing to the splitter',
 );
 assert.match(
   mainWorkspace,
@@ -447,9 +447,9 @@ assert.doesNotMatch(
   'the cart toggle must not use absolute positioning or compensating header classes',
 );
 assert.match(
-  read('client/app/components/CartPlayer.vue') + playlistView,
-  /cart-header workspace-panel-header[\s\S]*workspace-panel-header__leading[\s\S]*slot name="header-leading"[\s\S]*playlist-header workspace-panel-header[\s\S]*workspace-panel-header__leading[\s\S]*slot name="header-leading"/,
-  'cart and playlist headers must expose the same in-flow leading-control lane',
+  read('client/app/components/OneShotPanel.vue') + playlistView,
+  /one-shot-header workspace-panel-header[\s\S]*workspace-panel-header__leading[\s\S]*slot name="header-leading"[\s\S]*playlist-header workspace-panel-header[\s\S]*workspace-panel-header__leading[\s\S]*slot name="header-leading"/,
+  'One Shots and playlist headers must expose the same in-flow leading-control lane',
 );
 assert.doesNotMatch(
   mainWorkspace,
@@ -1469,8 +1469,8 @@ assert.match(
   /const projectFolderPath = props\.projectFolderPath[\s\S]*const projectEpoch = props\.projectEpoch[\s\S]*props\.projectFolderPath !== projectFolderPath[\s\S]*props\.projectEpoch !== projectEpoch/,
   'a Spotify job must stay bound to the project generation that started it',
 );
-const cart = read('client/app/components/CartPlayer.vue');
-const cartSlot = read('client/app/components/CartSlot.vue');
+const oneShotPanel = read('client/app/components/OneShotPanel.vue');
+const oneShotTile = read('client/app/components/OneShotTile.vue');
 const youtubeImport = read('client/app/components/YouTubeImportModal.vue');
 const controlConfig = read('client/app/components/ControlConfigModal.vue');
 const midiController = read('client/app/composables/useMidiController.ts');
@@ -1572,15 +1572,15 @@ assert.match(
   /&--strip &__gr-track\s*\{[\s\S]{0,120}background:\s*var\(--color-control\);[\s\S]{0,60}box-shadow:\s*none;[\s\S]*&--strip &__gr-track::before\s*\{\s*content:\s*none;[\s\S]*&--strip &__track\s*\{[\s\S]{0,120}background:\s*var\(--color-control\);[\s\S]{0,60}box-shadow:\s*none;/,
   'the output meter wells must stay flat while retaining their live level data',
 );
-assert.doesNotMatch(
-  cartSlot,
-  /&\.warning-(?:yellow|orange|red)\s*\{[^}]*border-width:/,
-  'cart warning states must not change the structural card border',
+assert.match(
+  oneShotPanel,
+  /v-else-if="slotErrors\[index\]"[\s\S]{0,220}role="alert"[\s\S]{0,700}clearSlotError\(index\)/,
+  'One Shot import warnings must stay visible until the operator explicitly clears them',
 );
 assert.match(
-  cartSlot,
-  /&\.warning-yellow::after,[\s\S]{0,100}&\.warning-red::after\s*\{[\s\S]{0,180}inset:\s*0;[\s\S]{0,180}border:\s*4px solid var\(--cart-warning-color\);[\s\S]{0,100}animation:\s*cart-warning-flash var\(--cart-warning-rate\)/,
-  'cart warnings must draw inside the card without moving its contents',
+  oneShotTile,
+  /v-if="!showMode"[\s\S]*class="one-shot-control one-shot-remove"[\s\S]*v-if="removeOpen"[\s\S]*role="alertdialog"/,
+  'One Shot removal must remain an explicit regular-mode-only confirmation',
 );
 assert.match(
   propertiesPanel,
@@ -1743,9 +1743,9 @@ assert.match(
   'YouTube results must block live downloads and retain saved-file information',
 );
 assert.match(
-  cartSlot,
-  /importFromServerPath[\s\S]*color: colorForNewAudioItem\(currentProject\.value\.settings, props\.slot\)/,
-  'new cart imports must receive their slot-ordered palette color',
+  oneShotPanel,
+  /importFromServerPath[\s\S]*color: colorForNewAudioItem\(currentProject\.value\.settings, slot\)/,
+  'new One Shot imports must receive their slot-ordered palette color',
 );
 assert.match(
   propertiesPanel,
@@ -1788,9 +1788,9 @@ assert.match(
   'workspace column headers must share one fixed geometry and title style',
 );
 assert.match(
-  playlistView + cart + mainWorkspace,
-  /playlist-header workspace-panel-header[\s\S]*cart-header workspace-panel-header[\s\S]*output-console__header workspace-panel-header/,
-  'Playlist, Cart, and Output must all use the shared header system',
+  playlistView + oneShotPanel + mainWorkspace,
+  /playlist-header workspace-panel-header[\s\S]*one-shot-header workspace-panel-header[\s\S]*output-console__header workspace-panel-header/,
+  'Playlist, One Shots, and Output must all use the shared header system',
 );
 assert.match(
   playlistView,
@@ -2160,19 +2160,19 @@ assert.match(
   'cart layouts must keep four bounded per-device profiles',
 );
 assert.match(
-  cart,
-  /props\.isDetachedWindow[\s\S]*'detachedShow'[\s\S]*'detachedRegular'[\s\S]*'attachedShow'[\s\S]*'attachedRegular'[\s\S]*--cart-columns[\s\S]*--cart-card-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--cart-columns, 2\), minmax\(0, 1fr\)\)[\s\S]*grid-auto-rows:\s*var\(--cart-card-row-height, 88px\)/,
-  'the cart must honor the exact row, column, and minimum-height values for each profile',
+  oneShotPanel,
+  /props\.isDetachedWindow[\s\S]*'detachedShow'[\s\S]*'detachedRegular'[\s\S]*'attachedShow'[\s\S]*'attachedRegular'[\s\S]*--one-shot-columns[\s\S]*--one-shot-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--one-shot-columns, 2\), minmax\(0, 1fr\)\)[\s\S]*grid-auto-rows:\s*var\(--one-shot-row-height, 106px\)/,
+  'One Shots must honor the exact row, column, and minimum-height values for each profile',
 );
 assert.doesNotMatch(
-  cart,
-  /grid-template-columns:\s*repeat\(\s*auto-fit|--cart-min-card-width|--cart-target-card-width/,
-  'automatic fitting must not override the operator-selected cart columns',
+  oneShotPanel,
+  /grid-template-columns:\s*repeat\(\s*auto-fit|--one-shot-min-card-width|--one-shot-target-card-width/,
+  'automatic fitting must not override the operator-selected One Shot columns',
 );
 assert.match(
-  cart,
-  /\.cart-header,\s*\.cart-grid\s*\{\s*scrollbar-gutter:\s*stable;/,
-  'the cart header and card grid must reserve the same scrollbar gutter',
+  oneShotPanel,
+  /\.one-shot-grid\s*\{[\s\S]{0,500}scrollbar-gutter:\s*stable;/,
+  'the One Shot grid must reserve a stable scrollbar gutter',
 );
 assert.match(
   playlistView,
@@ -2180,30 +2180,30 @@ assert.match(
   'the playlist header and track list must reserve the same scrollbar gutter',
 );
 assert.match(
-  cartSlot,
-  /\.slot-footer\s*\{[\s\S]{0,180}gap:\s*var\(--spacing-xs\);[\s\S]*@container \(max-width: 145px\)\s*\{[\s\S]{0,120}\.cart-slot\.show-mode \.behavior-icon\s*\{[\s\S]{0,60}font-size:\s*13px;[\s\S]{0,120}\.cart-slot\.show-mode \.slot-duration\s*\{[\s\S]{0,60}font-size:\s*11px;/,
-  'compact Show cart cards must retain their full footer without clipping metadata',
+  oneShotTile,
+  /\.one-shot-tile\.show-mode\s*\{[\s\S]{0,120}min-height:\s*112px;[\s\S]*\.show-mode \.one-shot-actions\s*\{\s*grid-auto-columns:\s*34px;[\s\S]*\.show-mode \.one-shot-control\s*\{\s*width:\s*34px;\s*height:\s*34px;/,
+  'compact Show Mode One Shot cells must retain clear transport controls without becoming oversized',
 );
 assert.match(
-  cart,
-  /v-for="slot in cartSlotCount"[\s\S]*:max-slot="cartSlotCount - 1"[\s\S]*normalizeCartSlotCount\([\s\S]*cartItems[\s\S]*cartSlotKeys/,
-  'the cart must render the safe project-wide card count and pass its reorder boundary to every slot',
+  oneShotPanel,
+  /buildOneShotSlots\([\s\S]*layout\.rows \* layout\.columns[\s\S]*roundedLength[\s\S]*slots\.push\(null\)/,
+  'One Shot cells must remain a permanent grid sized by the active layout rather than playlist contents',
 );
-assert.doesNotMatch(cart, /v-for="slot in 16"/, 'the cart must not return to a fixed 16-card grid');
+assert.doesNotMatch(oneShotPanel, /v-for="slot in 16"/, 'One Shots must not return to a fixed 16-cell grid');
 assert.match(
-  cartSlot,
-  /maxSlot:\s*number[\s\S]*firstFree > props\.maxSlot/,
-  'cart reorder must follow the rendered card count instead of a fixed slot 15 ceiling',
+  oneShotPanel,
+  /moveOneShotToSlot[\s\S]*source\.oneShot\.order = targetSlot[\s\S]*if \(target\?\.oneShot\) target\.oneShot\.order = sourceSlot/,
+  'One Shot reordering must swap its permanent cell assignments instead of rebuilding the list',
 );
 assert.match(
   projectSettingsModal,
-  /cartPlayerLayout[\s\S]*totalCartCards[\s\S]*CART_SLOT_COUNT_LIMITS\.max[\s\S]*minimumCardHeight[\s\S]*visibleRows[\s\S]*columns[\s\S]*cartLayoutAttachedRegular[\s\S]*cartLayoutAttachedShow[\s\S]*cartLayoutDetachedRegular[\s\S]*cartLayoutDetachedShow[\s\S]*onCartGridLayoutChange[\s\S]*onCartSlotCountChange[\s\S]*input\.value\.trim\(\)[\s\S]*input\.value = String\(cartSlotCount\.value\)[\s\S]*applyPatch\(\{ cartSlotCount: value \}\)/,
-  'settings must expose the safe total plus height, visible rows, and columns for all four cart profiles',
+  /cartPlayerLayout[\s\S]*minimumCardHeight[\s\S]*visibleRows[\s\S]*columns[\s\S]*cartGridProfileOptions[\s\S]*attachedRegular[\s\S]*attachedShow[\s\S]*detachedRegular[\s\S]*detachedShow[\s\S]*onCartGridLayoutChange[\s\S]*input\.value\.trim\(\)[\s\S]*setCartGridLayout/,
+  'settings must expose height, visible rows, and columns for all four One Shot layout profiles',
 );
 assert.match(
   controlConfig,
-  /v-for="slot in cartSlotCount"[\s\S]*normalizeCartSlotCount\([\s\S]*a\.n <= cartSlotCount\.value/,
-  'keyboard and MIDI configuration must follow the active project card count',
+  /v-for="entry in configuredOneShots"[\s\S]*entry\.slotIndex[\s\S]*buildOneShotSlots[\s\S]*const configuredOneShots/,
+  'keyboard and MIDI configuration must follow the configured One Shot cells',
 );
 assert.match(
   `${locationChoiceModal}\n${quitConfirmModal}`,
@@ -2259,41 +2259,44 @@ assert.match(
   'an empty cart layout field must restore the current value instead of snapping to its minimum',
 );
 assert.match(
-  cartSlot,
-  /container-type:\s*size[\s\S]*@container \(max-height:\s*110px\)[\s\S]*grid-template-rows:\s*20px minmax\(0, 1fr\) 28px[\s\S]*position:\s*static/,
-  'short cart cards must switch to a compact layout instead of overlapping their content',
-);
-
-assert.match(cart, /handleCartKeydown[\s\S]*showMode\.value[\s\S]*requestDeleteFromKeyboard/, 'Show Mode must block detached-cart deletion');
-assert.match(
-  cart,
-  /id="cart-load-hint"[\s\S]*t\('cart\.clickToImport'\)/,
-  'the cart must show one shared loading instruction in its header',
+  oneShotTile,
+  /\.one-shot-tile\.show-mode\s*\{[\s\S]{0,120}min-height:\s*112px;[\s\S]*\.show-mode \.one-shot-title[\s\S]{0,120}font-size:\s*15px;/,
+  'Show Mode One Shot tiles must keep their compact visual hierarchy intact',
 );
 assert.match(
-  cartSlot,
-  /<button\b(?=[^>]*v-if="!hasItem && !showMode")(?=[^>]*class="empty-slot")(?=[^>]*:aria-label)(?=[^>]*aria-describedby="cart-load-hint")(?=[^>]*@click="handleImport")[^>]*>/,
-  'editable empty cart slots must be named keyboard buttons',
+  oneShotTile,
+  /v-if="!showMode"[\s\S]*class="one-shot-control one-shot-remove"[\s\S]*v-if="removeOpen"/,
+  'Show Mode must block One Shot removal while regular mode retains the confirmation control',
 );
 assert.match(
-  cartSlot,
-  /<div\b(?=[^>]*v-else-if="!hasItem")(?=[^>]*class="[^"]*\bempty-slot--inert\b)[^>]*>/,
-  'empty cart slots must stay inert in Show Mode',
+  oneShotPanel,
+  /one-shot-header[\s\S]{0,300}v-if="!showMode"[\s\S]{0,120}t\('oneShots\.hint'\)/,
+  'the One Shots header must reserve its import guidance for editable regular mode',
+);
+assert.match(
+  oneShotPanel,
+  /<button[\s\S]{0,160}v-else-if="!showMode"[\s\S]{0,240}class="one-shot-empty-cell"[\s\S]{0,240}:aria-label[\s\S]{0,180}@click="openImport\(index\)"/,
+  'editable empty One Shot cells must be named keyboard buttons',
+);
+assert.match(
+  oneShotPanel,
+  /<div v-else class="one-shot-empty-cell show-mode" aria-hidden="true">/,
+  'empty One Shot cells must stay inert in Show Mode',
 );
 assert.doesNotMatch(
-  cartSlot,
+  oneShotTile,
   /:aria-pressed="showMode \? isPlaying/,
-  'the Show Mode cart action must not mix a changing Play/Stop name with toggle semantics',
-);
-assert.doesNotMatch(
-  cartSlot,
-  /slotRef\.value\s*&&\s*!showMode\.value/,
-  'cart drag/drop listeners must not be permanently decided by the mode at mount',
+  'the Show Mode One Shot action must not mix a changing Play/Stop name with toggle semantics',
 );
 assert.match(
-  cartSlot,
-  /addEventListener\('dragover'[\s\S]{0,400}if \(showMode\.value\)[\s\S]{0,200}dropEffect = 'none'/,
-  'cart drag feedback must follow the current Show Mode state',
+  oneShotTile,
+  /const handleDragStart[\s\S]{0,260}if \(showMode\.value \|\| !event\.dataTransfer\)[\s\S]{0,160}event\.preventDefault\(\)/,
+  'One Shot drag behavior must follow the current Show Mode state',
+);
+assert.match(
+  oneShotPanel,
+  /const handleDragOver[\s\S]{0,220}if \(showMode\.value \|\| !currentProject\.value \|\| busySlot\.value !== null\) return[\s\S]{0,260}dropEffect = event\.dataTransfer\.types\.includes\('one-shot-uuid'\) \? 'move' : 'copy'/,
+  'One Shot drag feedback must clearly distinguish move and copy while editing',
 );
 assert.match(
   playlistItem,
@@ -2306,9 +2309,9 @@ assert.match(
   'silence-warning placement must react to internal header content changes',
 );
 assert.doesNotMatch(
-  cartSlot,
+  oneShotPanel,
   /class="slot-hint"/,
-  'empty cart slots must not repeat the shared loading instruction',
+  'empty One Shot cells must not repeat obsolete cart loading copy',
 );
 
 const serverSettings = read('client/app/components/ServerSettingsModal.vue');
