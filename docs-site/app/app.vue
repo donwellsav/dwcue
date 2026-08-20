@@ -292,14 +292,15 @@ const detectedOSLabel = computed(() => detectedOS.value === 'mac' ? 'macOS Apple
 
 const downloadLinks = computed<Record<string, string>>(() => {
   const v = version.value;
-  const baseUrl = `https://github.com/donwellsav/dwcue/releases/download/v${v}`;
+  const releaseBaseUrl = `https://github.com/donwellsav/dwcue/releases/download/v${v}`;
+  const macBaseUrl = baseURL === '/' ? `${siteURL}downloads` : releaseBaseUrl;
   return {
-    windows: `${baseUrl}/DonWells-Cue-Setup-${v}.exe`,
-    macArm: `${baseUrl}/DonWells-Cue-${v}-arm64.dmg`,
-    linux: `${baseUrl}/DonWells-Cue-${v}-x86_64.AppImage`,
-    deb: `${baseUrl}/DonWells-Cue-${v}-amd64.deb`,
-    rpm: `${baseUrl}/DonWells-Cue-${v}-x86_64.rpm`,
-    macArmZip: `${baseUrl}/DonWells-Cue-${v}-arm64.zip`
+    windows: `${releaseBaseUrl}/DonWells-Cue-Setup-${v}.exe`,
+    macArm: `${macBaseUrl}/DonWells-Cue-${v}-arm64.dmg`,
+    linux: `${releaseBaseUrl}/DonWells-Cue-${v}-x86_64.AppImage`,
+    deb: `${releaseBaseUrl}/DonWells-Cue-${v}-amd64.deb`,
+    rpm: `${releaseBaseUrl}/DonWells-Cue-${v}-x86_64.rpm`,
+    macArmZip: `${macBaseUrl}/DonWells-Cue-${v}-arm64.zip`
   };
 });
 
