@@ -517,8 +517,8 @@ onUnmounted(() => {
 }
 
 .one-shot-tile.show-mode {
-  min-height: 140px;
-  padding: 14px;
+  min-height: 112px;
+  padding: 10px;
   cursor: pointer;
 }
 
@@ -636,7 +636,10 @@ onUnmounted(() => {
   -webkit-line-clamp: 2;
 }
 
-.show-mode .one-shot-title { font-size: 17px; }
+.show-mode .one-shot-title {
+  min-height: 2.15em;
+  font-size: 15px;
+}
 
 .one-shot-duration {
   flex: 0 0 auto;
@@ -699,8 +702,8 @@ onUnmounted(() => {
 }
 
 .show-mode .one-shot-bottomline { justify-content: flex-end; }
-.show-mode .one-shot-actions { grid-auto-columns: 36px; }
-.show-mode .one-shot-control { width: 36px; height: 36px; }
+.show-mode .one-shot-actions { grid-auto-columns: 34px; }
+.show-mode .one-shot-control { width: 34px; height: 34px; }
 .one-shot-control:hover,
 .one-shot-control.is-active { background: var(--color-surface-hover); border-color: var(--color-text-tertiary); }
 .one-shot-control:focus-visible {

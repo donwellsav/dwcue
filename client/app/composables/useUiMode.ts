@@ -31,7 +31,7 @@ export const CART_GRID_PROFILES = {
   attachedShow: {
     minHeight: 72,
     maxHeight: 600,
-    default: { rows: 8, columns: 2, minHeight: 150 },
+    default: { rows: 8, columns: 2, minHeight: 112 },
   },
   detachedRegular: {
     minHeight: 64,
@@ -41,7 +41,7 @@ export const CART_GRID_PROFILES = {
   detachedShow: {
     minHeight: 72,
     maxHeight: 600,
-    default: { rows: 6, columns: 3, minHeight: 150 },
+    default: { rows: 6, columns: 3, minHeight: 112 },
   },
 } as const;
 
