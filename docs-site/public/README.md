@@ -135,7 +135,7 @@ DonWells Cue does not open firewall ports automatically. If you deliberately run
 dwcue/
 ├── client/         Electron + Nuxt 3 + Vue 3 desktop UI — see client/README.md
 ├── server/         C++20 audio engine + REST/WS control server — see server/README.md
-├── docs-site/      Public-facing Nuxt 3 site (GitHub Pages) — see docs-site/README.md
+├── docs-site/      Public-facing Nuxt 4 site (GitHub Pages) — see docs-site/README.md
 ├── scripts/        Cross-platform build orchestrator scripts — see scripts/README.md
 ├── build/          Collected installer artefacts after `npm run build`
 ├── .github/workflows/
