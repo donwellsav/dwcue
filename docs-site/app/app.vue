@@ -265,7 +265,7 @@ const baseURL = useRuntimeConfig().app.baseURL;
 const asset = (path: string) => `${baseURL}${path.replace(/^\/+/, '')}`;
 const siteURL = baseURL === '/' ? 'https://dwcue.com/' : 'https://tdoukinitsas.github.io/liveplay/';
 
-const version = ref('2.5.18');
+const version = ref('2.5.19');
 const detectedOS = ref<string | null>(null);
 
 const workflowSteps = [

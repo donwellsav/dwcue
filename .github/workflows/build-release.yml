@@ -219,32 +219,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.triplet }}-electron-
 
-      - name: Configure available signing credentials
+      - name: Configure available Windows signing credentials
+        if: runner.os == 'Windows'
         shell: bash
         env:
-          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-          SIGN_APPLE_ID: ${{ secrets.APPLE_ID }}
-          SIGN_APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          SIGN_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          if [ "$RUNNER_OS" = "macOS" ] &&
-             [ -n "$MAC_CSC_LINK" ] && [ -n "$MAC_CSC_KEY_PASSWORD" ]; then
-            printf 'CSC_LINK=%s\nCSC_KEY_PASSWORD=%s\n' \
-              "$MAC_CSC_LINK" "$MAC_CSC_KEY_PASSWORD" >> "$GITHUB_ENV"
-          elif [ "$RUNNER_OS" = "Windows" ] &&
-               [ -n "$WIN_CSC_LINK" ] && [ -n "$WIN_CSC_KEY_PASSWORD" ]; then
+          if [ -n "$WIN_CSC_LINK" ] && [ -n "$WIN_CSC_KEY_PASSWORD" ]; then
             printf 'CSC_LINK=%s\nCSC_KEY_PASSWORD=%s\n' \
               "$WIN_CSC_LINK" "$WIN_CSC_KEY_PASSWORD" >> "$GITHUB_ENV"
-          fi
-          if [ "$RUNNER_OS" = "macOS" ] &&
-             [ -n "$SIGN_APPLE_ID" ] && [ -n "$SIGN_APPLE_PASSWORD" ] &&
-             [ -n "$SIGN_APPLE_TEAM_ID" ]; then
-            printf 'APPLE_ID=%s\nAPPLE_APP_SPECIFIC_PASSWORD=%s\nAPPLE_TEAM_ID=%s\n' \
-              "$SIGN_APPLE_ID" "$SIGN_APPLE_PASSWORD" "$SIGN_APPLE_TEAM_ID" \
-              >> "$GITHUB_ENV"
           fi
 
       - name: Build Electron app
@@ -266,6 +250,33 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CI: true
+
+      - name: Validate packaged macOS DMG
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          dmg_files=(client/dist-electron/*.dmg)
+          if [ "${#dmg_files[@]}" -ne 1 ]; then
+            echo "Expected exactly one macOS DMG, found ${#dmg_files[@]}" >&2
+            exit 1
+          fi
+
+          hdiutil verify "${dmg_files[0]}"
+          mac_mount_dir=$(mktemp -d "$RUNNER_TEMP/dwcue-dmg.XXXXXX")
+          cleanup_mac_mount() {
+            hdiutil detach "$mac_mount_dir" >/dev/null 2>&1 || true
+            rmdir "$mac_mount_dir" >/dev/null 2>&1 || true
+          }
+          trap cleanup_mac_mount EXIT
+
+          hdiutil attach -readonly -nobrowse -mountpoint "$mac_mount_dir" "${dmg_files[0]}" >/dev/null
+          mac_app="$mac_mount_dir/DonWells Cue.app"
+          test -f "$mac_app/Contents/_CodeSignature/CodeResources"
+          codesign --verify --deep --strict --verbose=4 "$mac_app"
+          codesign -dv --verbose=4 "$mac_app" 2>&1 | grep -q '^Signature=adhoc$'
+          codesign -dv --verbose=4 "$mac_app" 2>&1 | grep -q '^Identifier=com.donwells.cue$'
 
       - name: Smoke test packaged Windows app
         if: runner.os == 'Windows'

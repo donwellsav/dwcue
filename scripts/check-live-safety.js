@@ -19,9 +19,18 @@ for (const target of pkg.build.mac.target) {
   assert.deepEqual(target.arch, ['arm64'], `macOS ${target.target} must be Apple Silicon-only`);
 }
 assert.equal(pkg.build.mac.sign, 'scripts/sign-mac.js',
-  'macOS packaging must customize native-server signing before notarization');
+  'macOS packaging must customize native-server signing');
+assert.equal(pkg.build.mac.identity, '-',
+  'macOS packaging must explicitly apply a complete ad-hoc signature');
+assert.equal(pkg.build.mac.notarize, false,
+  'macOS packaging must remain intentionally unnotarized');
 assert.equal(pkg.build.afterSign, undefined,
-  'macOS packaging must not invalidate notarization with an afterSign re-sign');
+  'macOS packaging must not invalidate its bundle signature with an afterSign re-sign');
+assert.match(
+  read('.github/workflows/build-release.yml'),
+  /name: Validate packaged macOS DMG[\s\S]*hdiutil verify[\s\S]*_CodeSignature\/CodeResources[\s\S]*codesign --verify --deep --strict[\s\S]*Signature=adhoc/,
+  'release CI must verify the complete ad-hoc signature inside the exact DMG',
+);
 assert.doesNotMatch(
   read('.github/workflows/build-release.yml'),
   /x64-osx|macos-x64-build|macOS Intel/,

@@ -1,6 +1,6 @@
 {
   "name": "donwells-cue",
-  "version": "2.5.18",
+  "version": "2.5.19",
   "description": "Audio cue playback application for live events",
   "homepage": "https://github.com/donwellsav/dwcue",
   "repository": {
@@ -129,11 +129,12 @@
     },
     "mac": {
       "sign": "scripts/sign-mac.js",
+      "identity": "-",
       "hardenedRuntime": true,
       "minimumSystemVersion": "13.3",
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.inherit.plist",
-      "notarize": true,
+      "notarize": false,
       "target": [
         {
           "target": "dmg",

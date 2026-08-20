@@ -4,11 +4,11 @@
 
 You build a **show** as a list of cues plus a grid of one-touch buttons, then trigger them with a click, a tap, a keyboard shortcut, or a MIDI controller. DonWells Cue handles the fades, the transitions between tracks, and keeps a close eye on your levels so nothing clips or distorts.
 
-This is the active DonWells Cue fork. Build targets are configured for **Windows x64, macOS Apple Silicon and Linux x64**. The current release is **v2.5.18**; the Apple Silicon package has been package-validated locally and the release page contains the platform artefacts produced by CI.
+This is the active DonWells Cue fork. Build targets are configured for **Windows x64, macOS Apple Silicon and Linux x64**. The current release is **v2.5.19**; the Apple Silicon package is completely ad-hoc signed and package-validated, and the release page contains the platform artefacts produced by CI.
 
-> **Current release:** [DonWells Cue v2.5.18](https://github.com/donwellsav/dwcue/releases/tag/v2.5.18). Local builds are still useful when you need to validate a change before distributing it.
+> **Current release:** [DonWells Cue v2.5.19](https://github.com/donwellsav/dwcue/releases/tag/v2.5.19). Local builds are still useful when you need to validate a change before distributing it.
 
-![DonWells Cue 2.5.18 showing the playlist, permanent One Shots grid, and output metering](client/public/screenshots/donwells_cue_main.jpg)
+![DonWells Cue 2.5.19 showing the playlist, permanent One Shots grid, and output metering](client/public/screenshots/donwells_cue_main.jpg)
 
 The screenshots in this README and the public docs site come from the current app UI. Refresh these canonical images when the top-level playback UI changes.
 
@@ -35,7 +35,7 @@ The screenshots in this README and the public docs site come from the current ap
 
 ## Download and install
 
-Download the latest installer from the [v2.5.18 release page](https://github.com/donwellsav/dwcue/releases/tag/v2.5.18). The release workflow produces:
+Download the latest installer from the [v2.5.19 release page](https://github.com/donwellsav/dwcue/releases/tag/v2.5.19). The release workflow produces:
 
 | Platform | What to download |
 |----------|------------------|
@@ -281,7 +281,7 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). The current published release is [v2.5.18](https://github.com/donwellsav/dwcue/releases/tag/v2.5.18); the workflow remains the source of truth for future versioned artefacts.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). The current published release is [v2.5.19](https://github.com/donwellsav/dwcue/releases/tag/v2.5.19); the workflow remains the source of truth for future versioned artefacts.
 
 ### Triggering a release
 
