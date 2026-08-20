@@ -43,6 +43,9 @@ const localeData = ref<LocaleData | null>(null);
 const fallbackData = ref<LocaleData | null>(null);
 
 export const useI18n = () => {
+  const baseURL = useRuntimeConfig().app.baseURL || '/';
+  const localeURL = (locale: string) => `${baseURL}locales/${locale}.json`;
+
   // Get URL parameter
   const getUrlParam = (param: string): string | null => {
     if (typeof window === 'undefined') return null;
@@ -64,7 +67,7 @@ export const useI18n = () => {
   // Load locale data
   const loadLocale = async (locale: string) => {
     try {
-      const response = await fetch(`/liveplay/locales/${locale}.json`);
+      const response = await fetch(localeURL(locale));
       const data = await response.json();
       localeData.value = data;
       currentLocale.value = locale;
@@ -74,7 +77,7 @@ export const useI18n = () => {
         fallbackData.value = data;
       } else if (!fallbackData.value) {
         try {
-          const enResponse = await fetch('/liveplay/locales/en.json');
+          const enResponse = await fetch(localeURL('en'));
           fallbackData.value = await enResponse.json();
         } catch { /* fallback is best-effort */ }
       }

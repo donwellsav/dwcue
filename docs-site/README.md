@@ -87,7 +87,7 @@ cp package.json  docs-site/public/package.json
 
    The current release is [v2.5.17](https://github.com/donwellsav/dwcue/releases/tag/v2.5.17). If you rename a release asset on the server side, update the URL builder in `app.vue`.
 3. **Product story** — the page explains the current workflow (Properties → Preview → Show Mode), the permanent One Shots grid, output safety, and the supported release builds. The full technical reference remains the root README, linked from the docs section.
-4. **Localisation** — `composables/useI18n.ts` detects the browser language and loads the matching JSON from `/liveplay/locales/<code>.json`. Falls back to English. The current locale is persisted in `localStorage`. `LanguageSwitcher.vue` is the UI.
+4. **Localisation** — `composables/useI18n.ts` detects the browser language and loads the matching JSON from the configured site base URL (`/liveplay/locales/<code>.json` on GitHub Pages or `/locales/<code>.json` on `dwcue.com`). Falls back to English. The current locale is persisted in `localStorage`. `LanguageSwitcher.vue` is the UI.
 
 ---
 
