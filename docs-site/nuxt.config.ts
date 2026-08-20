@@ -33,7 +33,8 @@ export default defineNuxtConfig({
         { name: 'twitter:image', content: `${siteURL}screenshots/donwells_cue_main.jpg` }
       ],
       link: [
-        { rel: 'icon', type: 'image/x-icon', href: `${baseURL}favicon.ico` },
+        // Use a versioned brand path so browsers do not retain the pre-fork favicon.
+        { rel: 'icon', type: 'image/x-icon', href: `${baseURL}favicon-cue.ico` },
         { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap' }
       ]
     }
