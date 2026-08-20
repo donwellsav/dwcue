@@ -4,16 +4,20 @@
 
 You build a **show** as a list of cues plus a grid of one-touch buttons, then trigger them with a click, a tap, a keyboard shortcut, or a MIDI controller. DonWells Cue handles the fades, the transitions between tracks, and keeps a close eye on your levels so nothing clips or distorts.
 
-This is the active DonWells Cue fork. Build targets are configured for **Windows x64, macOS Apple Silicon and Linux x64**. The current fork has been packaged and smoke-tested on Apple Silicon; the other targets should be treated as CI targets until their current installers are separately verified.
+This is the active DonWells Cue fork. Build targets are configured for **Windows x64, macOS Apple Silicon and Linux x64**. The current release is **v2.5.17**; the Apple Silicon package has been smoke-tested locally and the release page contains the platform artefacts produced by CI.
 
-> No installer has been published to [GitHub Releases](https://github.com/donwellsav/dwcue/releases) yet. The repository currently provides source and build workflows.
+> **Current release:** [DonWells Cue v2.5.17](https://github.com/donwellsav/dwcue/releases/tag/v2.5.17). Local builds are still useful when you need to validate a change before distributing it.
+
+![DonWells Cue 2.5.17 showing the playlist, permanent One Shots grid, and output metering](client/public/screenshots/donwells_cue_main.jpg)
+
+The screenshots in this README and the public docs site are captured from the packaged v2.5.17 app. Refresh these canonical images when the top-level playback UI changes.
 
 ---
 
 ## What you can do with it
 
 - **🎵 Build a cue list** — arrange audio into a playlist with nested groups. Set volume, In/Out points, fades, ducking, and what happens when a cue finishes: stop, play next, loop, or jump to another cue.
-- **🎛 Fire off carts** — a grid of one-touch buttons for stings, SFX, walk-on music and beds. Great for touchscreens; the cart grid can even pop out into its own window.
+- **⚡ Fire One Shots** — a permanent, configurable grid of one-touch cells for stings, SFX, announcements, walk-on music and beds. Drag a local file or a playlist cue into a cell to copy it without changing the source list; the panel can detach into its own window.
 - **🔎 Prepare cues precisely** — Properties provides a detailed peak/RMS waveform, separate program and Preview playheads, click-to-seek, editable In/Out and Start Next markers, transport controls, Trim Silence, and loudness or true-peak normalization.
 - **🎧 Preview safely** — assign a monitor output and audition a cue away from the program bus. The lower Preview panel supports transport, seeking, quick Set In/Out, saving trim, Start Next markers, and Set As Next.
 - **📺 Show Mode** — switch to a simplified, touch-friendly playback view for the actual performance. Preview remains available as the lighter-weight way to inspect and prepare a cue during a show.
@@ -31,13 +35,13 @@ This is the active DonWells Cue fork. Build targets are configured for **Windows
 
 ## Download and install
 
-There are currently no public installer assets. When a release is published, the configured build workflow can produce:
+Download the latest installer from the [v2.5.17 release page](https://github.com/donwellsav/dwcue/releases/tag/v2.5.17). The release workflow produces:
 
 | Platform | What to download |
 |----------|------------------|
 | **Windows** | `DonWells-Cue-Setup-x.y.z.exe` (installer, 64-bit) |
-| **macOS — Apple Silicon** (M1/M2/M3 and newer) | `DonWells-Cue-x.y.z-arm64.dmg` |
-| **Linux** | `DonWells-Cue-x.y.z.AppImage`, `DonWells-Cue-x.y.z-x64.deb`, or `DonWells-Cue-x.y.z-x64.rpm` |
+| **macOS — Apple Silicon** (M1/M2/M3 and newer) | `DonWells-Cue-x.y.z-arm64.dmg` or `.zip` |
+| **Linux** | `DonWells-Cue-x.y.z.AppImage`, `.deb`, or `.rpm` |
 
 The macOS target is native Apple Silicon (`arm64`) for M-series Macs.
 
@@ -70,12 +74,12 @@ If your browser blocked the download instead, choose **Keep** to save the instal
 
 ## Getting started
 
-1. Build DonWells Cue from source (or install a published release when one is available) and launch it.
+1. Install the [latest release](https://github.com/donwellsav/dwcue/releases/latest), or build DonWells Cue from source, and launch it.
 2. Choose **New Project** and pick a folder — DonWells Cue creates the project file and a `media/` sub-folder there.
 3. In **Project Settings**, choose the program output, Output Target, and—if you need private auditioning—the Preview output.
 4. Drop audio files onto the playlist, use **Import Audio**, or open the YouTube or Spotify importer.
 5. Open a cue's **Properties** to set markers, fades, normalization, volume, ducking, routing, and start/end behaviour.
-6. Assign frequently used cues to cart buttons for one-touch playback.
+6. Drag frequently used playlist cues into One Shot cells for one-touch playback. The copy leaves the playlist cue unchanged.
 7. Audition on the Preview output, set the intended next cue, and verify the program and monitor meters.
 8. Switch on **Show Mode** for the live performance.
 
@@ -85,7 +89,7 @@ If your browser blocked the download instead, choose **Keep** to save the instal
 
 ## For developers
 
-Everything below is for people who want to build DonWells Cue from source, contribute, or understand how it works under the hood. Public installers will appear on [GitHub Releases](https://github.com/donwellsav/dwcue/releases) when the first release is published.
+Everything below is for people who want to build DonWells Cue from source, contribute, or understand how it works under the hood. Public installers are attached to [GitHub Releases](https://github.com/donwellsav/dwcue/releases).
 
 ### How it's built
 
@@ -100,7 +104,7 @@ Made with some help from Claude Sonnet 4.5, Claude Sonnet 4.6 and Claude Opus 4.
 |  client/                       | <----- meters @ ~60 Hz ---------> |  server/  (dwcue-server)          |
 |  Electron + Nuxt 3 + Vue 3     | <----- transport / route cmds --- |  C++20, miniaudio, Crow, TagLib   |
 |                                |        REST  (http://host:4480)   |                                   |
-|  - Playlist / cart / routing UI| <----- list / load / waveform --> |  - AudioEngine (mixer + limiter)  |
+|  - Playlist / One Shots / routing UI| <----- list / load / waveform --> |  - AudioEngine (mixer + limiter)  |
 |  - WaveformCanvas              |                                   |  - ProjectState (.liveplay I/O)   |
 |  - LiveMeterBar                |                                   |  - ControlServer (REST + WS)      |
 |                                |                                   |  - Metadata + waveform services   |
@@ -131,7 +135,7 @@ DonWells Cue does not open firewall ports automatically. If you deliberately run
 dwcue/
 ├── client/         Electron + Nuxt 3 + Vue 3 desktop UI — see client/README.md
 ├── server/         C++20 audio engine + REST/WS control server — see server/README.md
-├── docs-site/      Public-facing Nuxt 3 site (GitHub Pages) — see docs-site/README.md
+├── docs-site/      Public-facing Nuxt 4 site (GitHub Pages) — see docs-site/README.md
 ├── scripts/        Cross-platform build orchestrator scripts — see scripts/README.md
 ├── build/          Collected installer artefacts after `npm run build`
 ├── .github/workflows/
@@ -230,7 +234,7 @@ Use `npm run build:clean` to wipe previous build outputs first (it preserves `vc
   (use the equivalent `dnf` / `pacman` packages on Fedora / Arch).
 - Install Node.js 20 LTS via your distro or [nvm](https://github.com/nvm-sh/nvm).
 - Bootstrap vcpkg as on macOS, set `VCPKG_ROOT`, then `npm install && npm run build`.
-- Output: `build/DonWells-Cue-<version>.AppImage`, `DonWells-Cue-<version>-x64.deb`, `DonWells-Cue-<version>-x64.rpm`.
+- Output: `build/DonWells-Cue-<version>-x86_64.AppImage`, `DonWells-Cue-<version>-amd64.deb`, `DonWells-Cue-<version>-x86_64.rpm`.
 
 ---
 
@@ -277,7 +281,7 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). This repository does not yet have a published release, so the workflow configuration—not a downloadable artifact—is the current source of truth.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). The current published release is [v2.5.17](https://github.com/donwellsav/dwcue/releases/tag/v2.5.17); the workflow remains the source of truth for future versioned artefacts.
 
 ### Triggering a release
 

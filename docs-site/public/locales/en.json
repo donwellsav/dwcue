@@ -9,7 +9,7 @@
     "tagline": "Audio Cue Playback for Live Events",
     "version": "Version",
     "logoAlt": "DonWells Cue logo",
-    "screenshotAlt": "DonWells Cue main interface showing the playlist editor, cue cart, and properties panel"
+    "screenshotAlt": "DonWells Cue 2.5.17 showing the playlist editor, permanent One Shots grid, and output metering"
   },
   "common": {
     "changeLanguage": "Change language"
@@ -70,9 +70,25 @@
   },
   "features": {
     "title": "Key Features",
+    "workspace": {
+      "title": "Playlist workspace",
+      "description": "Keep the show in one clear, color-coded playlist. Each row exposes the waveform, duration, preview, edit, delete, and play-next controls without hiding the information an operator needs during a live event."
+    },
+    "oneShots": {
+      "title": "Permanent One Shots grid",
+      "description": "Keep a configurable grid of quick-play cells beside the playlist for announcements, stings, effects, and beds. Drop a file or copy a playlist cue into a cell; the source cue stays in place, and the cell remains ready for the next show."
+    },
+    "showMode": {
+      "title": "Show Mode for live operation",
+      "description": "Switch to a simplified performance view when the show starts. Large transport controls, the current cue, the next cue, and the output meter stay easy to read while edit-only controls stay out of the way."
+    },
+    "audioSafety": {
+      "title": "Meters and true-peak protection",
+      "description": "See the program output and true-peak limiter at a glance. Adjustable ceiling, gain-reduction readout, clip indicators, and color-coded meter zones make it clear when a signal is safe and when it needs attention."
+    },
     "interface": {
       "title": "Intuitive Interface",
-      "description": "DonWells Cue features a clean, simple and modern interface designed specifically for live sound operators. Organize your main sound files in playlists, and add sounds to a cart player for quick access or announcements. Audio files added to the cart will automatically behave as announcements, ducking any background audio when played."
+      "description": "DonWells Cue features a clean, simple and modern interface designed specifically for live sound operators. Organize your main sound files in playlists, and keep announcements, stings, effects, and beds ready in a permanent One Shots grid."
     },
     "audioEngine": {
       "title": "Robust C++ Audio Engine",

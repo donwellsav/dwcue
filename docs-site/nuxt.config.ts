@@ -1,3 +1,6 @@
+const baseURL = process.env.NUXT_APP_BASE_URL || '/liveplay/'
+const siteURL = baseURL === '/' ? 'https://dwcue.com/' : 'https://tdoukinitsas.github.io/liveplay/'
+
 export default defineNuxtConfig({
   ssr: false,
   
@@ -5,7 +8,7 @@ export default defineNuxtConfig({
   rootDir: './',
 
   app: {
-    baseURL: '/liveplay/',
+    baseURL,
     buildAssetsDir: 'assets',
     head: {
       title: 'DonWells Cue - Audio Cue Playback for Live Events',
@@ -18,8 +21,8 @@ export default defineNuxtConfig({
         { property: 'og:title', content: 'DonWells Cue - Audio Cue Playback for Live Events' },
         { property: 'og:description', content: 'Free, open-source audio playback system for live sound operators. Available for Windows, macOS, and Linux.' },
         { property: 'og:type', content: 'website' },
-        { property: 'og:url', content: 'https://tdoukinitsas.github.io/liveplay/' },
-        { property: 'og:image', content: 'https://tdoukinitsas.github.io/liveplay/screenshots/liveplay_screenshot.jpg' },
+        { property: 'og:url', content: siteURL },
+        { property: 'og:image', content: `${siteURL}screenshots/donwells_cue_main.jpg` },
         { property: 'og:image:width', content: '1920' },
         { property: 'og:image:height', content: '1080' },
         { property: 'og:image:type', content: 'image/jpeg' },
@@ -27,11 +30,11 @@ export default defineNuxtConfig({
         { name: 'twitter:card', content: 'summary_large_image' },
         { name: 'twitter:title', content: 'DonWells Cue - Audio Cue Playback for Live Events' },
         { name: 'twitter:description', content: 'Free, open-source audio playback system for live sound operators. Available for Windows, macOS, and Linux.' },
-        { name: 'twitter:image', content: 'https://tdoukinitsas.github.io/liveplay/screenshots/liveplay_screenshot.jpg' }
+        { name: 'twitter:image', content: `${siteURL}screenshots/donwells_cue_main.jpg` }
       ],
       link: [
-        { rel: 'icon', type: 'image/x-icon', href: '/liveplay/favicon.ico' },
-        { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap' }
+        { rel: 'icon', type: 'image/x-icon', href: `${baseURL}favicon.ico` },
+        { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap' }
       ]
     }
   },

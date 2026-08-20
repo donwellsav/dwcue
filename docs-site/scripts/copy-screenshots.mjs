@@ -19,5 +19,10 @@ if (!existsSync(src)) {
 
 await rm(dest, { recursive: true, force: true });
 await mkdir(dest, { recursive: true });
-await cp(src, dest, { recursive: true });
-console.log(`[copy-screenshots] copied ${src} -> ${dest}`);
+const canonical = ['donwells_cue_main.jpg', 'donwells_cue_one_shots.jpg', 'donwells_cue_show_mode.jpg'];
+for (const filename of canonical) {
+  const source = resolve(src, filename);
+  if (!existsSync(source)) throw new Error(`[copy-screenshots] missing canonical screenshot: ${source}`);
+  await cp(source, resolve(dest, filename));
+}
+console.log(`[copy-screenshots] copied ${canonical.length} current screenshots -> ${dest}`);

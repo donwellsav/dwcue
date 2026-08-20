@@ -4,9 +4,10 @@
       class="language-button"
       @click="toggleDropdown"
       :aria-label="t('common.changeLanguage')"
+      :aria-expanded="isOpen"
     >
-      <span class="material-symbols-rounded">language</span>
       <span class="current-locale">{{ locale }}</span>
+      <span class="language-chevron" aria-hidden="true">⌄</span>
     </button>
     
     <div v-if="isOpen" class="language-dropdown">
@@ -63,29 +64,33 @@ onUnmounted(() => {
   .language-button {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    color: white;
+    gap: 0.35rem;
+    min-height: 36px;
+    padding: 0 10px;
+    background: transparent;
+    border: 1px solid rgba(21, 24, 29, 0.15);
+    border-radius: 4px;
+    color: #15181d;
     cursor: pointer;
-    transition: all 0.2s ease;
-    font-size: 1rem;
+    transition: background 0.16s ease, border-color 0.16s ease;
+    font-size: 12px;
 
     &:hover {
-      background: rgba(255, 255, 255, 0.1);
-      border-color: #315FCF;
+      background: rgba(49, 95, 207, 0.08);
+      border-color: #315fcf;
     }
 
-    .material-symbols-rounded {
-      font-size: 20px;
+    .language-chevron {
+      color: #65707b;
+      font-size: 15px;
+      line-height: 1;
     }
 
     .current-locale {
       text-transform: uppercase;
       font-weight: 600;
-      font-size: 0.875rem;
+      font: 600 10px/1 'IBM Plex Mono', ui-monospace, monospace;
+      letter-spacing: 0.1em;
     }
   }
 
@@ -93,40 +98,39 @@ onUnmounted(() => {
     position: absolute;
     top: calc(100% + 0.5rem);
     right: 0;
-    background: rgba(30, 30, 30, 0.98);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-    min-width: 180px;
+    background: #f3f1ec;
+    border: 1px solid rgba(21, 24, 29, 0.18);
+    border-radius: 4px;
+    box-shadow: 8px 10px 0 rgba(21, 24, 29, 0.08), 0 12px 24px rgba(21, 24, 29, 0.12);
+    min-width: 150px;
     overflow: hidden;
     z-index: 1000;
-    backdrop-filter: blur(10px);
 
     .language-option {
       display: block;
       width: 100%;
-      padding: 0.875rem 1.25rem;
+      padding: 10px 12px;
       background: transparent;
       border: none;
-      color: rgba(255, 255, 255, 0.85);
+      color: #65707b;
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: background 0.16s ease, color 0.16s ease;
       text-align: left;
-      font-size: 0.9375rem;
+      font-size: 12px;
 
       &:hover {
-        background: rgba(255, 255, 255, 0.1);
-        color: white;
+        background: rgba(49, 95, 207, 0.08);
+        color: #15181d;
       }
 
       &.active {
-        background: rgba(218, 30, 40, 0.2);
-        color: #315FCF;
+        background: rgba(49, 95, 207, 0.1);
+        color: #315fcf;
         font-weight: 600;
       }
 
       &:not(:last-child) {
-        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        border-bottom: 1px solid rgba(21, 24, 29, 0.09);
       }
     }
   }
@@ -135,10 +139,10 @@ onUnmounted(() => {
 @media (max-width: 480px) {
   .language-switcher {
     .language-button {
-      padding: 0.625rem 0.875rem;
+      padding: 0 9px;
 
       .current-locale {
-        display: none;
+        font-size: 9px;
       }
     }
   }
