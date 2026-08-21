@@ -369,6 +369,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      # PAT with contents:write on donwellsav/homebrew-tap; when absent the
+      # tap-update step skips quietly and the release proceeds normally.
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
     steps:
       - name: Checkout code
@@ -506,6 +510,106 @@ jobs:
             artifacts/*.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # The cask in donwellsav/homebrew-tap pins version + sha256 of each
+      # published DMG. Regenerate it from the exact bytes just released so the
+      # tap can never drift from the GitHub Release. Skips quietly when the
+      # HOMEBREW_TAP_TOKEN secret is not configured.
+      - name: Update Homebrew tap cask
+        if: env.HOMEBREW_TAP_TOKEN != ''
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.check-version.outputs.version }}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 \
+            "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/donwellsav/homebrew-tap.git" \
+            tap-checkout
+          mkdir -p tap-checkout/Casks
+
+          python3 - <<'PY'
+          import glob, hashlib, os
+
+          version = os.environ["RELEASE_TAG"].lstrip("v")
+
+          def sha256(path):
+              h = hashlib.sha256()
+              with open(path, "rb") as fh:
+                  for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                      h.update(chunk)
+              return h.hexdigest()
+
+          dmgs = {os.path.basename(p): sha256(p) for p in glob.glob("artifacts/*.dmg")}
+          arm = next((v for k, v in dmgs.items() if k.endswith("-arm64.dmg")), None)
+          intel = next((v for k, v in dmgs.items() if k.endswith("-x64.dmg")), None)
+          if arm is None:
+              raise SystemExit(f"No arm64 DMG among release artifacts: {sorted(dmgs)}")
+
+          head = f'''cask "donwells-cue" do
+            version "{version}"
+          '''
+          if intel:
+              head += f'''  arch arm: "arm64", intel: "x64"
+            sha256 arm:   "{arm}",
+                   intel: "{intel}"
+
+            url "https://github.com/donwellsav/dwcue/releases/download/v#{{version}}/DonWells-Cue-#{{version}}-#{{arch}}.dmg"
+          '''
+              arch_dep = ""
+          else:
+              head += f'''  sha256 "{arm}"
+
+            url "https://github.com/donwellsav/dwcue/releases/download/v#{{version}}/DonWells-Cue-#{{version}}-arm64.dmg"
+          '''
+              arch_dep = "  depends_on arch: :arm64\n"
+
+          cask = head + '''
+            name "DonWells Cue"
+            desc "Audio cue playback application for live sound operators"
+            homepage "https://github.com/donwellsav/dwcue"
+
+            livecheck do
+              url :url
+              strategy :github_latest
+            end
+
+            # minimumSystemVersion in the app's Info.plist is 13.3.
+            depends_on macos: :ventura
+          ''' + arch_dep + '''
+            app "DonWells Cue.app"
+
+            zap trash: [
+              "~/Library/Application Support/LivePlay",
+              "~/Library/Caches/com.donwells.cue",
+              "~/Library/Preferences/com.donwells.cue.plist",
+              "~/Library/Saved Application State/com.donwells.cue.savedState",
+            ]
+
+            caveats <<~EOS
+              DonWells Cue is currently unsigned and not notarized (see SIGNING.md in the
+              source repo). If Gatekeeper blocks the first launch with "damaged" or
+              "cannot be opened", run:
+
+                xattr -dr com.apple.quarantine "/Applications/DonWells Cue.app"
+            EOS
+          end
+          '''
+
+          with open("tap-checkout/Casks/donwells-cue.rb", "w") as fh:
+              fh.write(cask)
+          print(cask)
+          PY
+
+          cd tap-checkout
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/donwells-cue.rb
+          if git diff --cached --quiet; then
+            echo "Cask already up to date for ${RELEASE_TAG}"
+            exit 0
+          fi
+          git commit -m "donwells-cue ${RELEASE_TAG}"
+          git push
 
       - name: Update latest release
         run: |
