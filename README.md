@@ -60,11 +60,13 @@ This installs the same `arm64` DMG published on the release page, and `brew upgr
 
 The app is still unsigned, so the Gatekeeper quarantine prompt below applies to Homebrew installs too — `brew info --cask donwellsav/tap/donwells-cue` prints the `xattr` fix under "Caveats".
 
-### First launch on macOS ("DonWells Cue is damaged and can't be opened")
+### First launch on macOS (Gatekeeper warning)
 
-No public macOS artifact is currently claimed as Developer ID signed or notarized. If you distribute an unsigned local build, macOS may quarantine it and report *"DonWells Cue is damaged and can't be opened."*
+No public macOS artifact is currently claimed as Developer ID signed or notarized. When you download the DMG or zip in a browser, macOS quarantines the app and blocks the first launch with *"Apple could not verify 'DonWells Cue.app' is free of malware"* (on older macOS versions: *"DonWells Cue is damaged and can't be opened"*). This is Gatekeeper, not a broken download — the app runs normally once you clear the block, either way below:
 
-After dragging **DonWells Cue.app** into `/Applications`, remove the quarantine flag once from Terminal:
+**Option 1 — no Terminal (macOS 15 Sequoia and newer):** try to open the app, dismiss the warning, then open **System Settings → Privacy & Security**, scroll to the security section at the bottom, and click **Open Anyway** next to the DonWells Cue entry.
+
+**Option 2 — Terminal (works on every macOS):** after dragging **DonWells Cue.app** into `/Applications`, remove the quarantine flag once:
 
 ```sh
 sudo xattr -rd com.apple.quarantine "/Applications/DonWells Cue.app"
