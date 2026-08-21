@@ -64,7 +64,7 @@ The app is still unsigned, so the Gatekeeper quarantine prompt below applies to 
 
 No public macOS artifact is currently claimed as Developer ID signed or notarized. When you download the DMG or zip in a browser, macOS quarantines the app and blocks the first launch with *"Apple could not verify 'DonWells Cue.app' is free of malware"* (on older macOS versions: *"DonWells Cue is damaged and can't be opened"*). This is Gatekeeper, not a broken download — the app runs normally once you clear the block, either way below:
 
-**Option 1 — no Terminal (macOS 15 Sequoia and newer):** try to open the app, dismiss the warning, then open **System Settings → Privacy & Security**, scroll to the security section at the bottom, and click **Open Anyway** next to the DonWells Cue entry.
+**Option 1 — no Terminal (macOS 15 Sequoia and newer):** try to open the app, dismiss the warning (**Done**), then open **System Settings → Privacy & Security**, scroll to the security section at the bottom, and click **Open Anyway** next to the DonWells Cue entry. Confirm **Open Anyway** in the second dialog and authenticate with Touch ID or your password — the app opens and stays allowed.
 
 **Option 2 — Terminal (works on every macOS):** after dragging **DonWells Cue.app** into `/Applications`, remove the quarantine flag once:
 
