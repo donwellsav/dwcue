@@ -1,6 +1,6 @@
 {
   "name": "donwells-cue",
-  "version": "2.5.19",
+  "version": "2.5.21",
   "description": "Audio cue playback application for live events",
   "homepage": "https://github.com/donwellsav/dwcue",
   "repository": {
@@ -17,7 +17,7 @@
     "build:electron": "cross-env NODE_ENV=production nuxt generate && electron-builder",
     "electron:build": "electron-builder",
     "generate": "cross-env NODE_ENV=production nuxt generate",
-    "test:one-shots": "vite-node tests/oneShots.test.mts",
+    "test:one-shots": "nuxt prepare && vite-node tests/oneShots.test.mts",
     "preview": "nuxt preview",
     "typecheck": "nuxi typecheck"
   },
@@ -137,16 +137,10 @@
       "notarize": false,
       "target": [
         {
-          "target": "dmg",
-          "arch": [
-            "arm64"
-          ]
+          "target": "dmg"
         },
         {
-          "target": "zip",
-          "arch": [
-            "arm64"
-          ]
+          "target": "zip"
         }
       ],
       "icon": "assets/icons/4092w/app_icon_darkmode@4092px.png",

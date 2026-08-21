@@ -26,7 +26,7 @@
           <span>{{ tab.label }}</span>
         </button>
       </div>
-      <button class="close-btn" :title="t('cart.close')" :aria-label="t('cart.close')" @click="handleClose">
+      <button class="close-btn" :title="t('actions.close')" :aria-label="t('actions.close')" @click="handleClose">
         <span class="material-symbols-rounded">close</span>
       </button>
     </div>

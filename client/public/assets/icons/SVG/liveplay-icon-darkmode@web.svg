@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#16161d"/>
-  <text x="256" y="280" fill="#f5f3ee" font-family="Helvetica Neue,Arial Narrow,Arial,sans-serif" font-size="154" font-weight="800" text-anchor="middle" letter-spacing="-9">CUE</text>
-  <rect x="102" y="316" width="308" height="18" fill="#315fcf"/>
-  <text x="256" y="390" fill="#9297a6" font-family="Helvetica Neue,Arial,sans-serif" font-size="34" font-weight="700" text-anchor="middle" letter-spacing="10">DONWELLS</text>
-</svg>

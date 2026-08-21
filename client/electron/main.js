@@ -47,7 +47,6 @@ const EXTERNAL_HTTPS_HOSTS = new Set([
   'www.youtube.com',
   'youtube.com',
   'youtu.be',
-  'tdoukinitsas.github.io',
 ]);
 
 function isPathInside(candidate, root) {
@@ -4528,6 +4527,15 @@ if (!gotTheLock) {
 
     createWindow();
 
+    // Register this only after ready. macOS may emit `activate` during the
+    // ready transition; constructing a BrowserWindow from that early event
+    // throws before the app has completed initialization.
+    app.on('activate', () => {
+      if (mainWindow === null || mainWindow.isDestroyed()) {
+        createWindow();
+      }
+    });
+
     // Tool probing must never gate first paint. Feature handlers await the
     // same bounded setup promise if the user reaches them immediately.
     void setupFfmpeg().then((ready) => {
@@ -4661,11 +4669,5 @@ app.on('window-all-closed', () => {
   // lockfile.
   if (process.platform !== 'darwin') {
     app.quit();
-  }
-});
-
-app.on('activate', () => {
-  if (mainWindow === null) {
-    createWindow();
   }
 });

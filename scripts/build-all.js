@@ -33,7 +33,19 @@ function run(cmd, args, opts = {}) {
 run('node', [path.join('scripts', 'build-server.js')], { cwd: REPO_ROOT });
 
 // 2. Client (Nuxt generate + electron-builder) -----------------------------
-run('npm', ['run', 'build:electron', '--workspace=client'], { cwd: REPO_ROOT });
+// A local build must package the same architecture as the native server just
+// built. CI runs one job per architecture; silently asking electron-builder
+// for both here would put an arm64 server inside an x64 app (or vice versa).
+const clientBuildArgs = ['run', 'build:electron', '--workspace=client'];
+if (process.platform === 'darwin') {
+  const macArch = process.env.DWCUE_MAC_ARCH || (process.arch === 'x64' ? 'x64' : 'arm64');
+  if (!['arm64', 'x64'].includes(macArch)) {
+    console.error(`[build-all] DWCUE_MAC_ARCH must be arm64 or x64, received ${macArch}`);
+    process.exit(1);
+  }
+  clientBuildArgs.push('--', '--mac', macArch === 'x64' ? '--x64' : '--arm64', '--publish', 'never');
+}
+run('npm', clientBuildArgs, { cwd: REPO_ROOT });
 
 // 3. Collect installers into /build/ at the repo root ----------------------
 fs.mkdirSync(ROOT_BUILD, { recursive: true });
@@ -43,6 +55,7 @@ fs.mkdirSync(ROOT_BUILD, { recursive: true });
 const INSTALLER_PATTERNS = [
   /\.exe$/i,        // Windows NSIS installer
   /\.dmg$/i,        // macOS disk image
+  /\.zip$/i,        // macOS archive (also used by Homebrew distribution)
   /\.pkg$/i,        // macOS installer package (if ever enabled)
   /\.AppImage$/i,   // Linux portable
   /\.deb$/i,        // Debian / Ubuntu

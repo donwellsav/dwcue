@@ -14,9 +14,9 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const FILES_TO_UPDATE = [
   { path: 'package.json', key: 'version', type: 'json' },
   { path: 'client/package.json', key: 'version', type: 'json' },
-  { path: 'docs-site/package.json', key: 'version', type: 'json' },
   { path: 'server/vcpkg.json', key: 'version-string', type: 'json' },
-  { path: 'docs-site/app/app.vue', key: null, type: 'vue' }
+  { path: 'client/app/components/AboutModal.vue', key: null, type: 'vue' },
+  { path: 'client/app/components/WelcomeScreen.vue', key: null, type: 'vue' }
 ];
 
 function readVersion() {
@@ -72,10 +72,12 @@ function updateVueFile(filePath, newVersion) {
   const fullPath = path.join(REPO_ROOT, filePath);
   let content = fs.readFileSync(fullPath, 'utf8');
 
-  content = content.replace(
-    /const version = ref\(['"][\d.]+['"]\)/,
-    `const version = ref('${newVersion}')`
-  );
+  const versionPattern = /const (version|appVersion) = ref\(['"][\d.]+['"]\);?/;
+  const match = content.match(versionPattern);
+  if (!match) {
+    throw new Error(`Could not find a version fallback in ${filePath}`);
+  }
+  content = content.replace(versionPattern, (_match, name) => `const ${name} = ref('${newVersion}');`);
 
   fs.writeFileSync(fullPath, content, 'utf8');
   console.log(`✓ Updated ${filePath}`);

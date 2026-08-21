@@ -1,6 +1,6 @@
 # DonWells Cue Client — developer guide
 
-The DonWells Cue client is a Vue 3 + Nuxt 3 application wrapped in Electron. It is a **remote control** for the DonWells Cue audio server: it owns no audio decoding, no playback, no Web Audio nodes. Every user action turns into a REST call or WebSocket frame sent to `dwcue-server`, and every meter / waveform / state update comes back the same way.
+The DonWells Cue client is a Vue 3 + Nuxt 4 application wrapped in Electron. It is a **remote control** for the DonWells Cue audio server: it owns no audio decoding, no playback, no Web Audio nodes. Every user action turns into a REST call or WebSocket frame sent to `dwcue-server`, and every meter / waveform / state update comes back the same way.
 
 This document is the developer's guide to the client. For the audio engine, see [`server/README.md`](../server/README.md). For the overall project, see the [root README](../README.md).
 
@@ -17,7 +17,7 @@ This document is the developer's guide to the client. For the audio engine, see 
   - [Local server lifecycle](#local-server-lifecycle)
 - [Composables](#composables)
 - [Components](#components)
-- [Localisation (20 languages, RTL)](#localisation-20-languages-rtl)
+- [Localisation (21 languages, RTL)](#localisation-21-languages-rtl)
 - [Theming](#theming)
 - [Auto-updates](#auto-updates)
 - [Packaging](#packaging)
@@ -30,7 +30,7 @@ This document is the developer's guide to the client. For the audio engine, see 
 | Layer            | Library                                                         |
 |------------------|-----------------------------------------------------------------|
 | Shell            | Electron 42                                                     |
-| Renderer         | Nuxt 3 (Vue 3 Composition API, TypeScript, SCSS)                |
+| Renderer         | Nuxt 4 (Vue 3 Composition API, TypeScript, SCSS)                |
 | UI primitives    | Material Symbols icons; in-house components — no UI framework   |
 | Local server     | C++ `dwcue-server` binary spawned as a child process         |
 | Media tooling    | `@ffmpeg-installer/ffmpeg`, `@ffprobe-installer/ffprobe`        |
@@ -46,26 +46,28 @@ Audio playback, waveform extraction, metering and routing all live in the C++ se
 
 ```
 client/
+├── app/
+│   ├── app.vue                  Nuxt root and application shell
+│   ├── components/              Vue SFCs (all in one flat folder)
+│   ├── composables/             Reactive state + server bindings
+│   │   ├── useLiveplayServer.ts singleton REST + WebSocket client — every component goes through this
+│   │   ├── useLiveMeters.ts     meter subscription helpers
+│   │   ├── useProject.ts        project CRUD as exposed by the server
+│   │   ├── useAudioEngine.ts    transport facade (play / stop / fade / seek / ducking)
+│   │   ├── useCartItems.ts      one-shot grid state (legacy cart storage facade)
+│   │   ├── useCartHotkeys.ts    keyboard hotkey bindings → One Shot triggers
+│   │   ├── useMidiController.ts Web MIDI → One Shot triggers
+│   │   ├── useStateViewer.ts    feeds the diagnostics popup window
+│   │   └── useLocalization.ts   21-language i18n + RTL handling
+│   ├── plugins/                 Nuxt plugins (liveplay-server.client.ts connects on boot)
+│   ├── types/                   TypeScript DTOs (server.ts, project.ts, global.d.ts)
+│   └── utils/                   Pure helpers (audio.ts, indexDisplay.ts)
 ├── electron/
 │   ├── main.js                  Electron main process: window, menu, IPC, server lifecycle, REST shim
 │   ├── preload.js               contextBridge → `window.electronAPI`
 │   └── preload-state-viewer.js  separate preload for the state-viewer popup window
-├── components/                   Vue SFCs (all in one flat folder, ~33 files)
-├── composables/                  Reactive state + server bindings
-│   ├── useLiveplayServer.ts     singleton REST + WebSocket client — every component goes through this
-│   ├── useLiveMeters.ts          meter subscription helpers
-│   ├── useProject.ts             project CRUD as exposed by the server
-│   ├── useAudioEngine.ts         transport facade (play / stop / fade / seek / ducking)
-│   ├── useCartItems.ts           cart-grid state
-│   ├── useCartHotkeys.ts         keyboard hotkey bindings → cart triggers
-│   ├── useMidiController.ts      Web MIDI → cart triggers
-│   ├── useStateViewer.ts         feeds the diagnostics popup window
-│   └── useLocalization.ts        20-language i18n + RTL handling
-├── plugins/                      Nuxt plugins (client.ts: auto-connect on boot)
 ├── locales/                      JSON locale files (21 files — en + 20 translations)
-├── types/                        TypeScript DTOs (server.ts, project.ts, global.d.ts)
-├── utils/                        Pure helpers (audio.ts: dB/RMS math, indexDisplay.ts: playlist index formatting)
-├── public/                       Static assets — screenshots, fonts, icons
+├── public/                       Current app screenshots used by the top-level README
 ├── assets/                       Bundled styles (main.scss, variables.scss)
 ├── scripts/                      Workspace-local utilities (locale sync, etc.)
 ├── nuxt.config.ts                Nuxt configuration
@@ -88,7 +90,8 @@ To work on just the renderer (no Electron shell): `npm run dev:nuxt` and visit `
 Production build (Nuxt static generate + electron-builder):
 
 ```sh
-npm run build:electron        # in client/, or `npm run build:client:electron` at the root
+npm run build:electron -- --mac --arm64   # Apple Silicon
+npm run build:electron -- --mac --x64     # Intel
 ```
 
 Outputs land in `client/dist-electron/`. The root `npm run build` script copies the installers from there into `build/` at the repo root.
@@ -116,16 +119,16 @@ Key IPC channels (non-exhaustive):
 | `check-for-updates` / `download-update` / `install-update` / `get-app-version` | `electron-updater` controls. |
 | `update-menu-language` / `get-system-locale` / `get-available-locales` / `get-locale-data` | Dynamic menu localisation. |
 | `open-folder` / `open-external` / `app:relaunch` / `app:exit` | OS integration. |
-| `open-cart-player-window` / `cart-player-window-attach` / `sync-project-data` | Second-window cart-player surface. |
+| `open-cart-player-window` / `cart-player-window-attach` / `sync-project-data` | Second-window One Shots surface; the cart-player channel names remain for compatibility. |
 
 The audio data path is **not** via IPC — it's directly between the renderer and `dwcue-server` over HTTP + WebSocket. IPC is used only for things Electron needs to do as a desktop application.
 
 ### The renderer ↔ DW Cue server link
 
-`composables/useLiveplayServer.ts` is the single source of truth. It is a Vue singleton — every component that calls `useLiveplayServer()` receives the **same** WebSocket connection and the **same** reactive state. The contract:
+`app/composables/useLiveplayServer.ts` is the single source of truth. It is a Vue singleton — every component that calls `useLiveplayServer()` receives the **same** WebSocket connection and the **same** reactive state. The contract:
 
 - The server URL and optional LAN access token are read from `localStorage` (`liveplay.serverUrl` and `liveplay.accessToken`; local default `http://127.0.0.1:4480`). Change them via the **Server Settings** modal.
-- On boot, the [`plugins/liveplay-server.client.ts`](plugins/liveplay-server.client.ts) plugin connects. The connection is lazy-retried if it drops (showing `ConnectionLostModal` in the meantime).
+- On boot, the [`app/plugins/liveplay-server.client.ts`](app/plugins/liveplay-server.client.ts) plugin connects. The connection is lazy-retried if it drops (showing `ConnectionLostModal` in the meantime).
 - REST calls return promises; WebSocket frames update reactive refs.
 - Outbound frames are mostly transport commands (`play`, `stop`, `seek`) that take a fast WS path to avoid the HTTP round-trip; everything mutating goes through `PATCH /api/project/...` so the server can echo a `doc_patch` to all connected clients.
 
@@ -152,14 +155,14 @@ All composables are Vue `setup()`-time helpers, typed in TypeScript.
 | Composable             | Responsibility |
 |------------------------|----------------|
 | `useLiveplayServer`    | REST + WS singleton. Holds connection state, project document, server config. Every other composable builds on this. |
-| `useLiveMeters`        | Subscribes to the `meters` WS frame and exposes per-cue / per-mixer / per-master reactive refs at 60 Hz. Drives `LiveMeterBar`, `StereoMeter`, `VUMeter`. |
+| `useLiveMeters`        | Subscribes to the `meters` WS frame and exposes per-cue / per-mixer / per-master reactive refs at 60 Hz. Drives `LiveMeterBar` and `StereoMeter`. |
 | `useProject`           | Project CRUD as exposed by the server (new, open, save, close, item add/remove/move/patch). Wraps `useLiveplayServer` calls into ergonomic methods. |
 | `useAudioEngine`       | Transport facade: `playCue`, `stopCue`, `stopAllCues`, `seek`, `setVolume`, ducking mode helpers. All implemented by forwarding to the server — no audio runs in the renderer. |
-| `useCartItems`         | The cart grid model (slot → cue mapping). |
-| `useCartHotkeys`       | Configurable keyboard shortcuts → cart triggers. See `CartHotkeyConfig.vue` for the UI. |
-| `useMidiController`    | Web MIDI bindings → cart triggers. See `ControlConfigModal.vue`. |
+| `useCartItems`         | The One Shots grid model (slot → cue mapping); storage keeps the legacy cart shape for compatibility. |
+| `useCartHotkeys`       | Configurable keyboard shortcuts → One Shot triggers. See `ControlConfigModal.vue` for the current UI. |
+| `useMidiController`    | Web MIDI bindings → One Shot triggers. See `ControlConfigModal.vue`. |
 | `useStateViewer`       | Feeds the live diagnostics popup window (project doc + connection + server status). |
-| `useLocalization`      | i18n (20 languages, RTL). See [Localisation](#localisation-20-languages-rtl). |
+| `useLocalization`      | i18n (21 languages, RTL). See [Localisation](#localisation-21-languages-rtl). |
 
 **Rule of thumb**: components don't import `useLiveplayServer` directly unless they're presenting a low-level diagnostic. They use one of the facades above so the surface stays small and testable.
 
@@ -167,18 +170,18 @@ All composables are Vue `setup()`-time helpers, typed in TypeScript.
 
 ## Components
 
-The component tree is intentionally flat — every SFC lives directly in [`components/`](components/). The big ones to know:
+The component tree is intentionally flat — every SFC lives directly in [`app/components/`](app/components/). The big ones to know:
 
 - `WelcomeScreen.vue` — project picker before a project is loaded.
 - `MainWorkspace.vue` — top-level layout once a project is loaded.
 - `PlaybackControls.vue`, `ActiveCueItem.vue` — top-of-screen transport.
 - `PlaylistView.vue`, `PlaylistItem.vue` — recursive playlist tree.
-- `CartPlayer.vue`, `CartSlot.vue` — configurable 1–64 slot cart grid (cart-player can pop out into its own window).
+- `OneShotPanel.vue`, `OneShotTile.vue` — permanent 1–64 cell quick-play grid (the detached window retains legacy cart-player IPC names).
 - `PropertiesPanel.vue` — properties for the selected item (gain, fades, behaviours, ducking).
 - `WaveformCanvas.vue` — canvas-rendered waveform fetched from `GET /api/waveform/<cueId>`.
 - `WaveformTrimmer.vue` — interactive in/out trimming + normalise.
 - `RoutingMatrixPanel.vue` — the 3-tier routing matrix UI.
-- `LiveMeterBar.vue`, `StereoMeter.vue`, `VUMeter.vue` — meter widgets driven by `useLiveMeters`.
+- `LiveMeterBar.vue`, `StereoMeter.vue` — meter widgets driven by `useLiveMeters`.
 - `ServerSettingsModal.vue`, `LocalServerStatus.vue`, `ConnectionLostModal.vue` — server connection management.
 - `ServerFileBrowser.vue`, `ServerFilePickerModal.vue` — `GET /api/fs/list` browser, used when the client and server live on different machines.
 - `AudioImportModal.vue`, `YouTubeImportModal.vue` — media import surfaces.
@@ -190,9 +193,9 @@ Style: Composition API + `<script setup lang="ts">`, scoped SCSS, CSS variables 
 
 ---
 
-## Localisation (20 languages, RTL)
+## Localisation (21 languages, RTL)
 
-DonWells Cue ships with [`client/locales/*.json`](locales/) — one file per language. Currently shipped: **en, ar, bn, de, el, es, fa, fr, hi, it, ja, ko, no, pt, ro, ru, sq, sv, tr, ur, zh**. Arabic, Farsi and Urdu use RTL layout.
+DonWells Cue ships with [`locales/*.json`](locales/) — one file per language. Currently shipped: **en, ar, bn, de, el, es, fa, fr, hi, it, ja, ko, no, pt, ro, ru, sq, sv, tr, ur, zh**. Arabic, Farsi and Urdu use RTL layout.
 
 ### Using translations in a component
 
@@ -264,7 +267,7 @@ Theme mode + accent colour are persisted on the project, not per-user — every 
 
 ## Auto-updates
 
-The updater wiring remains in place, but production checks are currently disabled by `DWCUE_UPDATES_CONFIGURED` in `electron/main.js` because no DonWells Cue release feed exists yet. This prevents the rebranded app from installing incompatible upstream builds.
+The updater wiring remains in place, but production checks are currently disabled by `DWCUE_UPDATES_CONFIGURED` in `electron/main.js` because no DonWells Cue release feed exists yet. This prevents the app from installing incompatible upstream builds.
 
 When the branded repository is ready, configure its electron-builder publish provider and enable that flag. `UpdateModal.vue` and the check/download/install IPC handlers then provide the existing update flow. The `latest.yml` / `latest-mac.yml` / `latest-linux.yml` metadata files must be attached to each release; the [release workflow](../.github/workflows/build-release.yml) already uploads them.
 
@@ -286,9 +289,15 @@ The `build` block in [`package.json`](package.json) drives `electron-builder`:
 To build locally:
 
 ```sh
-npm run build:electron               # Nuxt generate + electron-builder for the host
+npm run build:electron -- --mac --arm64  # Apple Silicon
+npm run build:electron -- --mac --x64    # Intel
 npm run electron:build -- --win --x64    # explicit platform/arch flags
 ```
+
+The macOS architecture flag must match the native `dwcue-server` built in
+`server/build`; the root `npm run build` command selects the host architecture
+automatically. The release workflow builds and validates arm64 and x64 in
+separate jobs.
 
 For multi-platform builds, use the [GitHub Actions release workflow](../.github/workflows/build-release.yml) — cross-compiling Electron locally is unreliable.
 
@@ -298,7 +307,7 @@ For multi-platform builds, use the [GitHub Actions release workflow](../.github/
 
 ### A new component
 
-1. Create `components/MyThing.vue` with `<script setup lang="ts">`.
+1. Create `app/components/MyThing.vue` with `<script setup lang="ts">`.
 2. If it needs server state, use a composable (not `useLiveplayServer` directly) — add the new method to the composable rather than calling REST inline.
 3. Add translation keys to `locales/en.json`; run `node ../scripts/sync-locale-keys.js` to backfill the other languages.
 4. Use CSS variables for colours and spacing; scoped SCSS for styling.
@@ -306,7 +315,7 @@ For multi-platform builds, use the [GitHub Actions release workflow](../.github/
 ### A new server-backed action
 
 1. Add the REST/WS handler on the server side (see [`server/README.md`](../server/README.md#adding-features)).
-2. Add the matching method to `composables/useLiveplayServer.ts`.
+2. Add the matching method to `app/composables/useLiveplayServer.ts`.
 3. Expose it through one of the facade composables (`useProject`, `useAudioEngine`, …) if it's user-facing.
 4. Wire it into a component.
 
@@ -316,7 +325,7 @@ Use IPC **only** for capabilities that genuinely need the Electron main process 
 
 1. `ipcMain.handle('my-channel', async (event, …args) => { … })` in [`electron/main.js`](electron/main.js).
 2. Expose it via `contextBridge.exposeInMainWorld('electronAPI', { … })` in [`electron/preload.js`](electron/preload.js).
-3. Add the type to `types/global.d.ts`.
+3. Add the type to `app/types/global.d.ts`.
 4. Call `window.electronAPI.myChannel(...)` from the renderer.
 
 ### Debugging

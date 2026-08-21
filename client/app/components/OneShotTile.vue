@@ -80,7 +80,7 @@
       >
         <div class="popover-heading">
           <strong>{{ t('oneShots.settings') }}</strong>
-          <button type="button" class="popover-close" :aria-label="t('common.close')" @click="menuOpen = false">
+          <button type="button" class="popover-close" :aria-label="t('actions.close')" @click="menuOpen = false">
             <span class="material-symbols-rounded" aria-hidden="true">close</span>
           </button>
         </div>
@@ -416,7 +416,7 @@ const handleDocumentKeydown = (event: KeyboardEvent) => {
   }
   const binding = eventToBinding(event);
   if (isReservedCombo(binding)) {
-    hotkeyError.value = t('cart.reserved');
+    hotkeyError.value = t('controls.reserved');
     return;
   }
   const result = updateBinding(props.position, binding);

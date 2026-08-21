@@ -274,7 +274,7 @@
     }
   },
   "cart": {
-    "title": "Cart Player",
+    "title": "One Shots",
     "emptySlot": "Click to import or drag item here",
     "clickToImport": "Click to import or drag item here",
     "configureHotkeys": "Configure Hotkeys",
@@ -282,17 +282,17 @@
     "hotkeyConfig": "Hotkey Configuration",
     "tabKeyboard": "Keyboard",
     "tabMidi": "MIDI",
-    "slot": "Slot",
+    "slot": "One Shot",
     "currentBinding": "Current Binding",
     "pressAnyKey": "Press any key...",
-    "conflict": "Already assigned to Slot {slot}",
+    "conflict": "Already assigned to One Shot {slot}",
     "reserved": "This key combination is reserved",
     "resetDefaults": "Reset to Defaults",
     "close": "Close",
     "detach": "Detach",
     "attach": "Attach",
-    "show": "Show Cart Player",
-    "hide": "Hide Cart Player"
+    "show": "Show One Shots",
+    "hide": "Hide One Shots"
   },
   "oneShots": {
     "title": "One Shots",
@@ -685,6 +685,7 @@
     "shortcutBtn": "Shortcuts",
     "tabKeyboard": "Keyboard",
     "tabMidi": "MIDI",
+    "sectionOneShots": "One Shots",
     "sectionCartSlots": "One Shots",
     "sectionPlayback": "Playback",
     "sectionVolume": "Volume",
@@ -701,6 +702,7 @@
     "masterVolume": "Master Volume",
     "midiDevice": "MIDI Device",
     "allDevices": "All Devices",
+    "conflictOneShot": "Already assigned to One Shot {n}",
     "conflictSlot": "Already assigned to One Shot {n}",
     "conflictAction": "Already assigned to {action}",
     "pressAnyKey": "Press any key...",

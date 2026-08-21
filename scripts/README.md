@@ -12,19 +12,19 @@ These are the scripts wired into `npm run …` commands at the root. They are th
 
 | Script | Invoked by | What it does |
 |--------|-----------|--------------|
-| [`build-all.js`](build-all.js)               | `npm run build`              | Unified release build: builds the C++ server, runs `nuxt generate` + `electron-builder`, and copies the installer artefacts (`.exe`, `.dmg`, `.AppImage`, `.deb`, `.rpm`) into `/build/` at the repo root. |
+| [`build-all.js`](build-all.js)               | `npm run build`              | Unified release build: builds the C++ server, runs `nuxt generate` + `electron-builder`, and copies the installer artefacts (`.exe`, `.dmg`, `.zip`, `.AppImage`, `.deb`, `.rpm`) into `/build/` at the repo root. |
 | [`build-clean.js`](build-clean.js)           | `npm run build:clean`        | Wipes build outputs, then delegates to `build-all.js`. Deliberately **preserves** `server/build/vcpkg_installed/` so the (slow) compiled C++ dependencies are not re-downloaded. |
-| [`build-server.js`](build-server.js)         | `npm run server:build` / CI  | Configures (idempotently) and builds the C++ server using the appropriate CMake preset (`vs2022` on Windows, `default` elsewhere). |
-| [`build-server-app-mac.js`](build-server-app-mac.js) | Manual (macOS only) | Wraps `dwcue-server` as a standalone development helper app. Release DMGs use the server embedded in DonWells Cue so every executable is covered by the main signing/notarization flow. |
+| [`build-server.js`](build-server.js)         | `npm run server:build` / CI  | Configures (idempotently) and builds the C++ server using the appropriate CMake preset (`vs2022` on Windows, `default` elsewhere). On macOS, `DWCUE_MAC_ARCH=arm64|x64` selects the matching native server and vcpkg triplet. |
+| [`build-server-app-mac.js`](build-server-app-mac.js) | Manual (macOS only) | Wraps `dwcue-server` as a standalone development helper app. Release DMGs use the server embedded in DonWells Cue so every executable is covered by the main packaging and ad-hoc signing flow. |
 | [`ensure-server.js`](ensure-server.js)       | `npm run dev`                | Pre-flight check before launching the renderer. If the server binary is already built, this is a no-op (fast dev-loop iteration). Otherwise it triggers a configure + build. |
 | [`run-server.js`](run-server.js)             | `npm run server:run` (and `npm run dev:all`) | Locates the compiled `dwcue-server[.exe]` (searching both single-config and multi-config CMake output directories) and execs it, forwarding stdio and any CLI args. |
-| [`smoke-packaged-app-mac.js`](smoke-packaged-app-mac.js) | `npm run check:packaged:mac` | Verifies the built Apple Silicon app starts, checks its one main window when macOS UI scripting is available, then quits and cleans up. |
+| [`smoke-packaged-app-mac.js`](smoke-packaged-app-mac.js) | `npm run check:packaged:mac [-- --arch arm64|x64]` | Verifies the matching packaged macOS app starts, checks its one main window when macOS UI scripting is available, then quits and cleans up. |
 
 ### Versioning
 
 | Script | Invoked by | What it does |
 |--------|-----------|--------------|
-| [`version.js`](version.js) | `npm run version -- 2.1.4` (set) or `npm run bump -- patch|minor|major` (bump) | Updates the version across the monorepo. Touches every place a version is referenced: `package.json`, `client/package.json`, `docs-site/package.json`, `server/vcpkg.json` (`version-string`), and the version constant in `docs-site/app.vue`. |
+| [`version.js`](version.js) | `npm run version -- 2.1.4` (set) or `npm run bump -- patch|minor|major` (bump) | Updates the version across the app: `package.json`, `client/package.json`, and `server/vcpkg.json` (`version-string`). The standalone website keeps its own public version snapshot. |
 
 Bumping the version on `main` is what triggers the [release workflow](../.github/workflows/build-release.yml).
 

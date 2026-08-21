@@ -11,11 +11,22 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const clientPackage = require(path.join(REPO_ROOT, 'client', 'package.json'));
 const productName = clientPackage.build.productName;
 const bundleId = clientPackage.build.appId;
+const archEqualsArg = process.argv.find((arg) => arg.startsWith('--arch='));
+const archFlagIndex = process.argv.indexOf('--arch');
+const archArg = archEqualsArg?.split('=', 2)[1]
+  || (archFlagIndex >= 0 ? process.argv[archFlagIndex + 1] : undefined);
+const requestedArch = archArg || (process.arch === 'x64' ? 'x64' : 'arm64');
+if (!['arm64', 'x64'].includes(requestedArch)) {
+  throw new Error(`--arch must be arm64 or x64, received: ${requestedArch}`);
+}
+// electron-builder keeps the Intel unpacked app in `mac/` and suffixes the
+// Apple Silicon app as `mac-arm64/`.
+const appOutputDir = requestedArch === 'x64' ? 'mac' : 'mac-arm64';
 const appPath = path.join(
   REPO_ROOT,
   'client',
   clientPackage.build.directories.output,
-  'mac-arm64',
+  appOutputDir,
   `${productName}.app`,
 );
 const executable = path.join(appPath, 'Contents', 'MacOS', productName);
@@ -100,10 +111,11 @@ async function main() {
     throw new Error(`Could not inspect app architecture: ${(lipo.stderr || lipo.error?.message || '').trim()}`);
   }
   const architectures = lipo.stdout.trim();
-  if (architectures !== 'arm64') {
-    throw new Error(`Expected an arm64 app, found: ${architectures || 'no architecture'}`);
+  const expectedMachOArch = requestedArch === 'x64' ? 'x86_64' : 'arm64';
+  if (architectures !== expectedMachOArch) {
+    throw new Error(`Expected a ${requestedArch} app, found: ${architectures || 'no architecture'}`);
   }
-  console.log(`${prefix} architecture: arm64`);
+  console.log(`${prefix} architecture: ${requestedArch}`);
 
   if (runningPid()) throw new Error(`${productName} is already running; quit it and retry.`);
 

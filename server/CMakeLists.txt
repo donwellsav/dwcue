@@ -1,19 +1,29 @@
 cmake_minimum_required(VERSION 3.21)
 
 if(CMAKE_HOST_APPLE)
-    set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING
-        "DW Cue macOS builds are Apple Silicon-only")
+    # Keep local builds deterministic, while allowing the release matrix to
+    # pass x86_64 for Intel Macs.  The native server must match the Electron
+    # architecture that packages it; it cannot be a single arm64-only binary.
+    if(NOT CMAKE_OSX_ARCHITECTURES)
+        set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING
+            "DW Cue macOS architecture (arm64 or x86_64)")
+    endif()
     if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
         set(CMAKE_OSX_DEPLOYMENT_TARGET "13.3" CACHE STRING
-            "Minimum macOS version for the Apple Silicon build")
+            "Minimum macOS version for the desktop build")
     endif()
     if(NOT VCPKG_OVERLAY_TRIPLETS)
         set(VCPKG_OVERLAY_TRIPLETS "${CMAKE_CURRENT_SOURCE_DIR}/triplets"
             CACHE STRING "DW Cue vcpkg triplets" FORCE)
     endif()
     if(NOT VCPKG_TARGET_TRIPLET OR VCPKG_TARGET_TRIPLET STREQUAL "arm64-osx")
-        set(VCPKG_TARGET_TRIPLET "arm64-osx-dwcue" CACHE STRING
-            "DW Cue Apple Silicon dependency triplet" FORCE)
+        if(CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64")
+            set(VCPKG_TARGET_TRIPLET "x64-osx-dwcue" CACHE STRING
+                "DW Cue Intel dependency triplet" FORCE)
+        else()
+            set(VCPKG_TARGET_TRIPLET "arm64-osx-dwcue" CACHE STRING
+                "DW Cue Apple Silicon dependency triplet" FORCE)
+        endif()
     endif()
 endif()
 

@@ -33,15 +33,15 @@ DonWells Cue is an open-source audio cue playback application for live sound ope
 | Path | What it is |
 |---|---|
 | `client/app/` | Nuxt app — all UI components, composables, types |
-| `client/app/types/project.ts` | **The project data model** (AudioItem, GroupItem, EndBehavior, CustomAction, CartItem, Project) |
+| `client/app/types/project.ts` | **The project data model** (AudioItem, GroupItem, EndBehavior, CustomAction, One Shot storage, Project) |
 | `client/app/composables/useProject.ts` | Project load/save/mutation, doc-patch sync (~1,860 lines) |
 | `client/app/composables/useLiveplayServer.ts` | REST/WS client to the C++ server (~1,030 lines) |
 | `client/app/composables/useAudioEngine.ts` | Client-side playback orchestration glue (~640 lines) |
 | `client/app/composables/useMidiController.ts` | Web-MIDI input → action bindings (client-side only) |
-| `client/app/components/MainWorkspace.vue` | Top-level layout: playlist + cart + properties panel |
+| `client/app/components/MainWorkspace.vue` | Top-level layout: playlist + One Shots + properties panel |
 | `client/app/components/PropertiesPanel.vue` | Per-item editor (fades, trim, end behaviour, LTC…) (~1,200 lines) |
 | `client/app/components/PlaylistItem.vue` / `PlaylistView.vue` | Cue list rows / list |
-| `client/app/components/CartPlayer.vue` / `CartSlot.vue` | 4×4 hot-key cart wall |
+| `client/app/components/OneShotPanel.vue` / `OneShotTile.vue` | Permanent hot-key One Shots grid |
 | `client/app/components/RoutingMatrixPanel.vue` | Existing routing UI (items → mixers → masters → device channels) |
 | `client/electron/main.js` | Electron main: server lifecycle, dialogs, ffmpeg, yt-dlp, updater |
 | `server/src/audio/engine.cpp` (+`include/liveplay/audio/engine.hpp`) | **AudioEngine**: devices, PlaybackItems, MixerChannels, routing topology (lock-free atomic snapshot), render thread, per-master Limiter+Meter |
@@ -52,7 +52,7 @@ DonWells Cue is an open-source audio cue playback application for live sound ope
 | `server/src/core/project_state.cpp` (~3,480 lines) | Project JSON store, **sequencer** (end behaviours, ducking, start-next segue, custom-action dispatch), autosave |
 | `server/src/net/control_server.cpp` (~2,500 lines) | Crow REST + WebSocket API (see §1.2), meter broadcast, doc-patch fan-out |
 | `server/src/net/discovery.cpp` | UDP LAN discovery (port 4481) |
-| `docs-site/` | Nuxt documentation website (i18n, English fallback) |
+| Public website (separate project) | Nuxt public website (i18n, English fallback) |
 | `scripts/` | Monorepo build scripts (build server via CMake preset `vs2022` on Windows, package Electron) |
 
 ### 1.2 Server API surface (existing, in `control_server.cpp`)
@@ -78,16 +78,16 @@ WebSocket `/ws`: server→client `meters` (~10 Hz, client interpolates), `cue_st
 - **Per-master Limiter + Meter** already exist and are persistent across topology rebuilds
   (`MasterChannelState` in `engine.hpp`). → The multiband compressor and EQ (§5) slot in beside them.
 - **Output Target** feature: platform loudness presets (EBU R128 etc.); the server owns the numbers.
-- **Client-side MIDI input** exists (Web MIDI, `useMidiController.ts`) for triggering carts/transport.
-- **Index paths**: items are addressed by `index: number[]` (nested groups); carts are `[-1, slot]`.
-- **No automated tests exist anywhere in the repo** (see §8.1).
+- **Client-side MIDI input** exists (Web MIDI, `useMidiController.ts`) for triggering One Shots/transport.
+- **Index paths**: items are addressed by `index: number[]` (nested groups); One Shot cells retain the legacy `[-1, slot]` addressing.
+- **Automated tests now exist**: client One Shot and Electron path tests, Spotify import reliability checks, and C++ tests under `server/tests`. Coverage is still incomplete, so the test gaps below remain useful.
 
 ### 1.4 Build & run
 
 - `npm run dev:all` — server + client dev concurrently. `npm run server:build` — CMake build
   (Windows preset `vs2022`, output `server/build/Release/dwcue-server.exe`).
 - Dependencies: server via vcpkg (`server/vcpkg.json`); client is npm workspace `client`.
-- Version bumps via `npm run bump` (syncs root, client, server, docs-site versions).
+- Version bumps via `npm run bump` (syncs root, client, and server versions). The standalone website keeps its own public version snapshot.
 
 ---
 
@@ -114,16 +114,16 @@ accidental edits, no misclicks.
   inline rename, routing matrix, import buttons, delete actions (PlaylistItem.vue,
   ProjectHeader.vue, etc.).
 - **What remains, enlarged:** playlist (read-only rows, touch-friendly min ~56 px height),
-  GO / panic (stop-all) transport bar, cart wall grid, master fader, up-next display.
+  GO / panic (stop-all) transport bar, One Shots grid, master fader, up-next display.
 - **Exit affordance:** toggle in header (deliberate click); no long-press exit guard needed.
 - **i18n:** All strings (`showMode.toggle`, `showMode.toggleHint`, etc.) through useLocalization,
   stubs added to all locale files.
 
 ### Actual Files Touched ✓
 `client/app/composables/useUiMode.ts` (new), `ProjectHeader.vue`, `MainWorkspace.vue`,
-`PlaybackControls.vue`, `PlaylistView.vue`, `PlaylistItem.vue`, `CartPlayer.vue`,
-`CartSlot.vue`, `client/electron/main.js` (IPC broadcast), `client/locales/*.json` (i18n),
-`client/app/assets/styles/` (`.show-mode` styling).
+`PlaybackControls.vue`, `PlaylistView.vue`, `PlaylistItem.vue`, `OneShotPanel.vue`,
+`OneShotTile.vue`, `client/electron/main.js` (IPC broadcast), `client/locales/*.json` (i18n),
+`client/assets/styles/` (`.show-mode` styling).
 
 ### Notes
 - **Misclick protection note:** Long-press / two-tap guards on destructive actions (stop-all)
@@ -234,14 +234,14 @@ Companion module registry (`companion-module-<name>`, base package
 `@companion-module/base`). The module is a *client* of DonWells Cue's existing API — so this
 workstream is 20 % DonWells Cue changes, 80 % a new small repo.
 
-1. **New repo** `companion-module-tdoukinitsas-liveplay` (scaffold with
+1. **New repo** `companion-module-donwells-cue` (scaffold with
    `yo @companion-module/generator` or copy an existing module; check current Companion v3+
    docs at github.com/bitfocus/companion-module-base — verify current API, knowledge may be stale).
    - **Config:** host + port (default 4480). Optionally use DonWells Cue's UDP 4481 discovery for a
      "found instances" dropdown.
    - **Actions:** play/stop/pause item by index path or UUID, GO (play-next), stop-all (with
-     fade ms), trigger cart slot 1–16, master gain set/step, toggle limiter, load project.
-   - **Feedbacks:** item playing/paused (button turns green/red), cart slot active, connection
+     fade ms), trigger One Shot slot 1–16, master gain set/step, toggle limiter, load project.
+   - **Feedbacks:** item playing/paused (button turns green/red), One Shot slot active, connection
      state, limiter engaged.
    - **Variables:** current item name, elapsed/remaining time, up-next name, master gain,
      project name, LUFS/meter values (throttled).
@@ -252,13 +252,13 @@ workstream is 20 % DonWells Cue changes, 80 % a new small repo.
    - Ensure every action listed above is reachable via REST/WS with **index-path addressing**
      (`play-index` exists in the custom-action vocabulary; expose it as a first-class endpoint,
      e.g. `POST /api/transport/play_index { index: [2,0] }`, `POST /api/transport/go`).
-   - Document the protocol in `docs-site` under a new "External control / API" page — this also
+   - Document the protocol in the standalone public website under a new "External control / API" page — this also
      serves the event system (§3) and any future integration.
 3. Publish the module via Bitfocus' PR process; meanwhile users can sideload it
    (Companion dev-modules folder).
 
 ### Files to touch
-DonWells Cue: `server/src/net/control_server.cpp` (+summary/transport endpoints), docs-site.
+DonWells Cue: `server/src/net/control_server.cpp` (+summary/transport endpoints); the separate website project will document the API.
 New repo: full Companion module (TS).
 
 ### Risks
@@ -367,7 +367,7 @@ The engine **already has the full 3-tier routing architecture**: PlaybackItems �
    `MixerChannel`, extend the WS meter broadcast with a `mixers` section).
 3. **Mixer UI:** new `MixerPanel.vue` — vertical strips (fader = existing `CanvasFader.vue`,
    mute/solo, meter = existing `LiveMeterBar.vue`, bus DSP button opening the §5 EQ/comp for
-   that bus), plus a bus selector dropdown on each playlist/cart item (PropertiesPanel + a
+  that bus), plus a bus selector dropdown on each playlist/One Shot item (PropertiesPanel + a
    compact badge on `PlaylistItem.vue`).
 4. **Workspaces / detachable panels:** two options —
    - *Workspaces (recommended first):* named layout presets (Playlist / Mixer / Editing /
@@ -415,10 +415,10 @@ layout persistence.
 
 | Improvement | Why / What |
 |---|---|
-| **Automated test infrastructure** | There are currently **zero tests**. Add: (a) C++ unit tests (Catch2 via vcpkg) for DSP (limiter, upcoming EQ/comp), sequencer end-behaviour logic, project (de)serialisation; (b) Vitest for composables (`useProject` mutations, index-path math); (c) one API smoke test that boots the server headless and exercises REST. Without this, the DSP work in §5 is not verifiable. **Model: Sonnet** (mechanical, high volume). |
+| **Automated test coverage** | Existing C++ tests cover limiter, meters, mixing, waveform generation, audio/render stress, control security, and One Shot migration; client tests cover One Shot state and Electron path capabilities, with a Spotify import reliability check. Add the missing composable and headless REST coverage, then wire the full matrix into the regular local workflow. **Model: Sonnet** (mechanical, high volume). |
 | **Undo/redo** | An editor for live shows without undo is dangerous. `useProject.ts` centralises mutations — add a command/patch history (the doc-patch mechanism is already patch-shaped; record inverse patches). Multi-client makes global undo hard: scope it to *local* edits first. **Model: Fable/Opus** (concurrency semantics), UI trivial. |
 | **Show-mode safety lock** | Complements §2: while any cue is playing, guard destructive edits (delete item, close project) behind confirmation. Cheap, high value. **Model: Sonnet.** |
-| **API documentation page** | Document REST/WS in docs-site (needed by §4 Companion and §3 plugins anyway). **Model: Sonnet/Haiku.** |
+| **API documentation page** | Document REST/WS in the separate website project (needed by §4 Companion and §3 plugins anyway). **Model: Sonnet/Haiku.** |
 
 ### 7.2 Stage 2
 
@@ -456,7 +456,7 @@ Recommended overall order (respects dependencies):
 |---|---|
 | C++ DSP, audio-thread/lock-free code, plugin hosting, undo semantics, streaming decode | **Claude Fable 5 / Opus** — highest reasoning need, mistakes are audible or crash shows |
 | Server protocol encoders (OSC/Art-Net/MSC), event dispatcher threading | **Fable/Opus** |
-| Vue UI (touch mode, mixer panel, forms, modals), Companion TS module, tests, docs-site | **Claude Sonnet** — fast, cheap, strong on well-patterned web code |
+| Vue UI (touch mode, mixer panel, forms, modals), Companion TS module, tests, website | **Claude Sonnet** — fast, cheap, strong on well-patterned web code |
 | Locale stubs, mechanical refactors, doc formatting | **Claude Haiku** |
 | EQ canvas editor (interaction design + numerics) | **Fable/Opus** for the core, Sonnet for polish |
 

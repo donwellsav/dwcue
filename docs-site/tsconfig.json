@@ -1,7 +1,0 @@
-{
-  // Extend the flat, reference-free tsconfig Nuxt writes into the build dir on
-  // every `nuxt prepare`/`nuxt generate`. See client/tsconfig.json for why we
-  // avoid TS project `references` to the split-context configs (they break the
-  // Vite/esbuild transform in fresh CI checkouts with ENOENT).
-  "extends": "./.nuxt/tsconfig.json"
-}

@@ -25,7 +25,7 @@
       v-if="!hasItem && !showMode"
       type="button"
       class="empty-slot"
-      :aria-label="`${t('project.importAudio')}, ${t('cart.slot')} ${slot + 1}`"
+      :aria-label="t('oneShots.importInto', { number: slot + 1 })"
       aria-describedby="cart-load-hint"
       @click="handleImport"
     >
@@ -539,7 +539,7 @@ const isPreviewing = computed(() =>
 const showModeAccessibleName = computed(() => {
   if (!props.item) return '';
   return [
-    `${t('cart.slot')} ${props.slot + 1}`,
+    t('oneShots.importInto', { number: props.slot + 1 }),
     props.item.displayName,
     isPlaying.value ? t('status.playing') : (isQueuedNext.value ? t('status.upNext') : ''),
     isPreviewing.value ? t('status.previewing') : '',

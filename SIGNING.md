@@ -39,7 +39,7 @@ The unsigned NSIS installer is already uploaded by the Windows matrix job as the
 ### One-time SignPath portal setup
 
 1. Once the OSS certificate is approved, create a **Project** in SignPath (slug,
-   e.g. `liveplay`).
+   e.g. `dwcue`).
 2. Add an **Artifact configuration** that matches the NSIS installer
    (`DonWells Cue-Setup-*.exe`).
 3. Create a **Signing policy** (e.g. `release-signing`) bound to the
@@ -53,7 +53,7 @@ The unsigned NSIS installer is already uploaded by the Windows matrix job as the
 |------|------|-------|
 | `SIGNPATH_API_TOKEN`        | secret   | SignPath CI user API token |
 | `SIGNPATH_ORGANIZATION_ID`  | variable | SignPath organization GUID |
-| `SIGNPATH_PROJECT_SLUG`     | variable | e.g. `liveplay` |
+| `SIGNPATH_PROJECT_SLUG`     | variable | e.g. `dwcue` |
 | `SIGNPATH_POLICY_SLUG`      | variable | e.g. `release-signing` |
 
 ### Ready-to-enable job

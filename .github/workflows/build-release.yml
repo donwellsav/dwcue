@@ -2,7 +2,7 @@ name: Build and Release
 
 # Cuts a release whenever the monorepo root version (package.json) changes on
 # main. Builds the C++ server and the Electron client together on each
-# platform — Windows x64, macOS Apple Silicon (arm64), and Linux x64 — and
+# platform — Windows x64, macOS arm64 + Intel x64, and Linux x64 — and
 # publishes a single GitHub Release with all installers.
 on:
   push:
@@ -72,12 +72,20 @@ jobs:
             artifact_name: linux-build
             electron_args: --linux --x64 --publish never
             cmake_args: ""
-          - os: macos-latest
+          - os: macos-15
             label: macOS Apple Silicon (arm64)
             triplet: arm64-osx-dwcue
             artifact_name: macos-arm64-build
             electron_args: --mac --arm64 --publish never
-            cmake_args: "-DCMAKE_OSX_DEPLOYMENT_TARGET=13.3"
+            mac_arch: arm64
+            cmake_args: "-DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3"
+          - os: macos-15-intel
+            label: macOS Intel (x64)
+            triplet: x64-osx-dwcue
+            artifact_name: macos-x64-build
+            electron_args: --mac --x64 --publish never
+            mac_arch: x64
+            cmake_args: "-DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3"
     runs-on: ${{ matrix.os }}
     name: ${{ matrix.label }}
 
@@ -121,7 +129,7 @@ jobs:
 
       - name: Install macOS build tools
         if: runner.os == 'macOS'
-        run: brew install ninja pkg-config
+        run: brew install nasm ninja pkg-config
 
       - name: Install Windows build tools
         if: runner.os == 'Windows'
@@ -277,6 +285,15 @@ jobs:
           codesign --verify --deep --strict --verbose=4 "$mac_app"
           codesign -dv --verbose=4 "$mac_app" 2>&1 | grep -q '^Signature=adhoc$'
           codesign -dv --verbose=4 "$mac_app" 2>&1 | grep -q '^Identifier=com.donwells.cue$'
+          expected_arch='${{ matrix.mac_arch }}'
+          expected_macho_arch="$expected_arch"
+          if [ "$expected_arch" = x64 ]; then expected_macho_arch=x86_64; fi
+          app_archs=$(lipo -archs "$mac_app/Contents/MacOS/DonWells Cue")
+          test "$app_archs" = "$expected_macho_arch"
+          server_archs=$(lipo -archs "$mac_app/Contents/Resources/server-bin/dwcue-server")
+          test "$server_archs" = "$expected_macho_arch"
+
+          node scripts/smoke-packaged-app-mac.js --arch "$expected_arch"
 
       - name: Smoke test packaged Windows app
         if: runner.os == 'Windows'
@@ -318,6 +335,12 @@ jobs:
         run: |
           mkdir -p build
           shopt -s nullglob
+          # Both macOS jobs generate `latest-mac.yml`. Namespace the disabled
+          # updater manifests before artifact upload so the Intel and arm64
+          # jobs cannot overwrite one another in the release job.
+          if [ "${{ runner.os }}" = "macOS" ] && [ -f client/dist-electron/latest-mac.yml ]; then
+            mv client/dist-electron/latest-mac.yml "client/dist-electron/latest-mac-${{ matrix.mac_arch }}.yml"
+          fi
           # Copy installer artefacts only (skip unpacked dirs / debug yaml).
           for f in client/dist-electron/*.exe \
                    client/dist-electron/*.exe.blockmap \
@@ -369,6 +392,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: macos-arm64-build
+          path: ./artifacts
+
+      - name: Download macOS Intel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-x64-build
           path: ./artifacts
 
       - name: List downloaded artifacts

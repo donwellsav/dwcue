@@ -195,7 +195,7 @@ Every cue's audio goes through three explicit tiers, in order, on the engine's r
    own decoder)            solo/fade)             limiter)
 ```
 
-- **Tier 1 — [`PlaybackItem`](include/liveplay/audio/playback_item.hpp)**: one instance per active cue, with its own `ma_decoder`, gain/fade state machine, optional LTC generator, and a per-source-channel meter. Loading the same `.wav` into two cart slots yields **two independent instances**; attenuating one never affects the other.
+- **Tier 1 — [`PlaybackItem`](include/liveplay/audio/playback_item.hpp)**: one instance per active cue, with its own `ma_decoder`, gain/fade state machine, optional LTC generator, and a per-source-channel meter. Loading the same `.wav` into two One Shot cells yields **two independent instances**; attenuating one never affects the other.
 - **Tier 2 — [`MixerChannel`](include/liveplay/audio/mixer_channel.hpp)**: a virtual strip with gain, mute, solo, and a smooth-fade ramp. Many items can route into one channel; one item's source channels can fan out to multiple channels.
 - **Tier 3 — Master output bus** ([`engine.hpp`](include/liveplay/audio/engine.hpp)): up to 64 logical master channels (configurable). Each carries a limiter + meter and is assigned to exactly one `(Device, HardwareChannelIndex)` tuple.
 
@@ -444,7 +444,10 @@ Mutating routes return `{ ok: true, ... }` only — the full document is **not**
 
 Project UI settings such as `settings.indexDisplayStart` only change the numbers shown and entered in the client. REST by-index paths stay zero-based for backwards compatibility.
 
-#### Cart slots
+#### One Shot cells (legacy cart API)
+
+The current UI calls these quick-play cells **One Shots**. The HTTP paths and broadcast
+event names retain `cart` for compatibility with saved projects and external clients.
 
 | Method · Path | Body | Response | Broadcast op |
 |---------------|------|----------|--------------|
@@ -565,8 +568,8 @@ Unknown `type` values get a `{ "type": "error", "message": "unknown type" }` rep
 ### Network event lifecycle (cue trigger)
 
 ```
-1. User presses Cart #3.
-2. CartSlot.vue → useLiveplayServer().play(cueId)
+1. User triggers One Shot #3.
+2. OneShotTile.vue → useLiveplayServer().play(cueId)
 3. WebSocket frame { "type": "play", "cue_id": "…" } sent to server.
 4. ControlServer::handle_ws_message → engine_.play(cueId) — O(1) atomic state flip.
 5. AudioEngine render thread, next block:
@@ -631,7 +634,7 @@ Inter-thread communication is lock-free atomics where it's on the audio path; ev
 1. Register the route in `install_routes()` inside [`src/net/control_server.cpp`](src/net/control_server.cpp).
 2. Validate inputs via nlohmann/json — return `crow::status::BAD_REQUEST` on malformed bodies.
 3. If the handler mutates `ProjectState`, build a JSON Patch and call `broadcast_doc_patch()` so connected clients stay in sync.
-4. Add the matching call on the client in `client/composables/useLiveplayServer.ts`.
+4. Add the matching call on the client in `client/app/composables/useLiveplayServer.ts`.
 
 ### A new audio feature
 

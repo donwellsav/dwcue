@@ -2,7 +2,7 @@
   <div class="hotkey-config-overlay" @click.self="$emit('close')">
     <div class="hotkey-config-panel">
       <div class="config-header">
-        <h3>{{ t('cart.hotkeyConfig') }}</h3>
+        <h3>{{ t('controls.title') }}</h3>
         <button class="close-btn" @click="$emit('close')">&times;</button>
       </div>
 
@@ -17,7 +17,7 @@
           <span class="slot-index">{{ slot }}</span>
           <span class="slot-binding">
             <template v-if="capturingSlot === slot - 1">
-              {{ t('cart.pressAnyKey') }}
+              {{ t('controls.pressAnyKey') }}
             </template>
             <template v-else>
               {{ getLabel(slot - 1) }}
@@ -28,8 +28,8 @@
       </div>
 
       <div class="config-footer">
-        <button class="reset-btn" @click="handleReset">{{ t('cart.resetDefaults') }}</button>
-        <button class="done-btn" @click="$emit('close')">{{ t('cart.close') }}</button>
+        <button class="reset-btn" @click="handleReset">{{ t('controls.resetKeyboard') }}</button>
+        <button class="done-btn" @click="$emit('close')">{{ t('controls.close') }}</button>
       </div>
     </div>
   </div>
@@ -84,7 +84,7 @@ const handleKeydown = (e: KeyboardEvent) => {
 
   // Check reserved combos
   if (isReservedCombo(binding)) {
-    errorMessage.value = t('cart.reserved');
+    errorMessage.value = t('controls.reserved');
     errorSlot.value = capturingSlot.value;
     return;
   }
@@ -92,7 +92,7 @@ const handleKeydown = (e: KeyboardEvent) => {
   // Try to update binding
   const result = updateBinding(capturingSlot.value, binding);
   if (result.conflict >= 0) {
-    errorMessage.value = `Already assigned to Slot ${result.conflict + 1}`;
+    errorMessage.value = t('controls.conflictOneShot', { n: result.conflict + 1 });
     errorSlot.value = capturingSlot.value;
     conflictSlot.value = result.conflict;
     return;

@@ -21,6 +21,10 @@ export default defineNuxtConfig({
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' }
+      ],
+      link: [
+        // Keep the Electron/web shell on the current DonWells Cue mark.
+        { rel: 'icon', type: 'image/svg+xml', href: './assets/icons/SVG/app_icon_darkmode@web.svg' }
       ]
     },
     // Use relative paths for Electron

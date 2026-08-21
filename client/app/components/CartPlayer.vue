@@ -4,9 +4,9 @@
       <div class="workspace-panel-header__leading">
         <slot name="header-leading" />
         <div class="cart-header__copy">
-          <h2 class="workspace-panel-header__title">{{ t('cart.title') }}</h2>
+          <h2 class="workspace-panel-header__title">{{ t('oneShots.title') }}</h2>
           <span v-if="!showMode" id="cart-load-hint" class="cart-header__hint">
-            {{ t('cart.clickToImport') }}
+            {{ t('oneShots.hint') }}
           </span>
         </div>
       </div>
@@ -14,14 +14,14 @@
         <Btn
           v-if="!isDetachedWindow"
           icon="open_in_new"
-          :text="t('cart.detach')"
+          :text="t('oneShots.detach')"
           :disabled="!currentProject"
           @click="handleDetach"
         />
         <Btn
           v-else
           icon="picture_in_picture_alt"
-          :text="t('cart.attach')"
+          :text="t('oneShots.attach')"
           @click="handleAttach"
         />
       </div>

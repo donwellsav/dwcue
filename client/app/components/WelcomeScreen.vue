@@ -3,7 +3,7 @@
     <div class="welcome-container">
       <div class="welcome-header">
         <img
-          :src="isDark ? './assets/icons/SVG/liveplay-icon-darkmode@web.svg' : './assets/icons/SVG/liveplay-icon-lightmode@web.svg'"
+          :src="isDark ? './assets/icons/SVG/app_icon_darkmode@web.svg' : './assets/icons/SVG/app_icon_lightmode@web.svg'"
           alt="DonWells Cue"
           class="welcome-logo"
         />
@@ -374,7 +374,7 @@ const pickerStart         = ref<string>('');
 const pickerIntent        = ref<'new' | 'open'>('open');
 
 // Get app version
-const appVersion = ref('1.1.3');
+const appVersion = ref('2.5.21');
 onMounted(async () => {
   if (import.meta.client && (window as any).electronAPI?.getAppVersion) {
     appVersion.value = await (window as any).electronAPI.getAppVersion();

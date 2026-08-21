@@ -4,13 +4,13 @@
 
 You build a **show** as a list of cues plus a grid of one-touch buttons, then trigger them with a click, a tap, a keyboard shortcut, or a MIDI controller. DonWells Cue handles the fades, the transitions between tracks, and keeps a close eye on your levels so nothing clips or distorts.
 
-This is the active DonWells Cue fork. Build targets are configured for **Windows x64, macOS Apple Silicon and Linux x64**. The current release is **v2.5.19**; the Apple Silicon package is completely ad-hoc signed and package-validated, and the release page contains the platform artefacts produced by CI.
+This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. The current source version is **v2.5.21**. macOS packages are completely ad-hoc signed and package-validated; they are intentionally not notarized.
 
-> **Current release:** [DonWells Cue v2.5.19](https://github.com/donwellsav/dwcue/releases/tag/v2.5.19). Local builds are still useful when you need to validate a change before distributing it.
+> **Current source version:** v2.5.21. Check the [release page](https://github.com/donwellsav/dwcue/releases) for the latest published installers. Local builds are still useful when you need to validate a change before distributing it.
 
-![DonWells Cue 2.5.19 showing the playlist, permanent One Shots grid, and output metering](client/public/screenshots/donwells_cue_main.jpg)
+![DonWells Cue 2.5.21 showing the playlist, permanent One Shots grid, and output metering](client/public/screenshots/donwells_cue_main.jpg)
 
-The screenshots in this README and the public docs site come from the current app UI. Refresh these canonical images when the top-level playback UI changes.
+The screenshots in this README come from the current app UI. Refresh these canonical images when the top-level playback UI changes. The standalone website keeps its own copied screenshot set.
 
 ---
 
@@ -28,22 +28,23 @@ The screenshots in this README and the public docs site come from the current ap
 - **🎬 Timecode** — send SMPTE LTC timecode from a cue to keep lighting, video or other systems in sync.
 - **📥 Bring in audio easily** — drag and drop local files, import several at once, download from YouTube, or review and import selected Spotify tracks into a project folder.
 - **🎹 Trigger it your way** — click, tap, keyboard hotkeys, MIDI controllers, or automation over the network (HTTP / WebSocket).
-- **🌍 Speak your language** — available in **20+ languages**, including full right-to-left support.
+- **🌍 Speak your language** — available in **21 languages**, including full right-to-left support.
 - **🖥 Run it remotely** — operate a stage-side machine wired to your sound gear from a separate show laptop over the local network, with automatic discovery so you don't have to type in IP addresses.
 
 ---
 
 ## Download and install
 
-Download the latest installer from the [v2.5.19 release page](https://github.com/donwellsav/dwcue/releases/tag/v2.5.19). The release workflow produces:
+Download the latest installer from the [release page](https://github.com/donwellsav/dwcue/releases). The release workflow produces:
 
 | Platform | What to download |
 |----------|------------------|
 | **Windows** | `DonWells-Cue-Setup-x.y.z.exe` (installer, 64-bit) |
 | **macOS — Apple Silicon** (M1/M2/M3 and newer) | `DonWells-Cue-x.y.z-arm64.dmg` or `.zip` |
+| **macOS — Intel** (x86_64 Macs supported by macOS 13.3+) | `DonWells-Cue-x.y.z-x64.dmg` or `.zip` |
 | **Linux** | `DonWells-Cue-x.y.z.AppImage`, `.deb`, or `.rpm` |
 
-The macOS target is native Apple Silicon (`arm64`) for M-series Macs.
+The macOS release is native per architecture: the `arm64` package is for Apple Silicon and the `x64` package is for Intel. Both bundle a matching native `dwcue-server`; neither package relies on Rosetta or a machine-local server.
 
 Each desktop package bundles the Electron client and `dwcue-server`, so a normal single-machine build launches its own local server without manual network setup.
 
@@ -102,7 +103,7 @@ Made with some help from Claude Sonnet 4.5, Claude Sonnet 4.6 and Claude Opus 4.
 ```
 +--------------------------------+   WebSocket (ws://host:4480/ws)   +-----------------------------------+
 |  client/                       | <----- meters @ ~60 Hz ---------> |  server/  (dwcue-server)          |
-|  Electron + Nuxt 3 + Vue 3     | <----- transport / route cmds --- |  C++20, miniaudio, Crow, TagLib   |
+|  Electron + Nuxt 4 + Vue 3     | <----- transport / route cmds --- |  C++20, miniaudio, Crow, TagLib   |
 |                                |        REST  (http://host:4480)   |                                   |
 |  - Playlist / One Shots / routing UI| <----- list / load / waveform --> |  - AudioEngine (mixer + limiter)  |
 |  - WaveformCanvas              |                                   |  - ProjectState (.liveplay I/O)   |
@@ -133,15 +134,13 @@ DonWells Cue does not open firewall ports automatically. If you deliberately run
 
 ```
 dwcue/
-├── client/         Electron + Nuxt 3 + Vue 3 desktop UI — see client/README.md
+├── client/         Electron + Nuxt 4 + Vue 3 desktop UI — see client/README.md
 ├── server/         C++20 audio engine + REST/WS control server — see server/README.md
-├── docs-site/      Public-facing Nuxt 4 site (GitHub Pages) — see docs-site/README.md
 ├── scripts/        Cross-platform build orchestrator scripts — see scripts/README.md
 ├── build/          Collected installer artefacts after `npm run build`
 ├── .github/workflows/
 │   ├── build-release.yml   Cuts releases on version bumps to package.json
-│   ├── build-server.yml    Standalone server matrix build (Win / macOS / Linux)
-│   └── deploy-docs.yml     Publishes the docs site to GitHub Pages
+│   └── build-server.yml    Standalone server matrix build (Win / macOS / Linux)
 ├── package.json    Monorepo root — orchestrator scripts only
 ├── LICENCE.txt     AGPL-3.0-only
 └── README.md       This file
@@ -213,15 +212,16 @@ Use `npm run build:clean` to wipe previous build outputs first (it preserves `vc
 ##### macOS
 
 - Install Xcode Command Line Tools (`xcode-select --install`).
-- Install Homebrew deps: `brew install node cmake ninja pkg-config`.
+- Install Homebrew deps: `brew install node cmake ninja nasm pkg-config`.
 - Bootstrap vcpkg:
   ```sh
   git clone https://github.com/microsoft/vcpkg "$HOME/dev/vcpkg"
   "$HOME/dev/vcpkg"/bootstrap-vcpkg.sh
   ```
 - Set `VCPKG_ROOT`, then `npm install && npm run build`.
-- Output: `build/DonWells-Cue-<version>-arm64.dmg`. Electron Builder also creates a `.zip` under `client/dist-electron/`; CI can attach both to a release.
-- Developer ID signing and notarization require the credentials described in [SIGNING.md](SIGNING.md). Do not describe a local build as notarized unless it has been verified.
+- On an Apple Silicon host, set `DWCUE_MAC_ARCH=x64` to cross-build the Intel package; otherwise the root build selects the host architecture.
+- Output on Apple Silicon: `build/DonWells-Cue-<version>-arm64.dmg` (and matching `.zip`). On Intel, the same command produces `...-x64.dmg` and `.zip`; the native server and Electron app are built for the same architecture.
+- Developer ID signing and notarization require the credentials described in [SIGNING.md](SIGNING.md). Local packages remain intentionally ad-hoc signed and are not notarized.
 
 ##### Linux
 
@@ -275,13 +275,13 @@ For deeper development notes:
 - **Server internals** (mixer tiers, routing, LTC, project-file format, REST/WS surface): [`server/README.md`](server/README.md)
 - **Client internals** (composables, IPC, Electron main process, localisation, MIDI/hotkeys): [`client/README.md`](client/README.md)
 - **Build/utility scripts**: [`scripts/README.md`](scripts/README.md)
-- **Public docs site**: [`docs-site/README.md`](docs-site/README.md)
+- **Public website**: maintained separately from this app repository.
 
 ---
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). The current published release is [v2.5.19](https://github.com/donwellsav/dwcue/releases/tag/v2.5.19); the workflow remains the source of truth for future versioned artefacts.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). The current source version is **v2.5.21**; the workflow remains the source of truth for future versioned artefacts.
 
 ### Triggering a release
 
@@ -290,6 +290,7 @@ A release pipeline is configured in [`.github/workflows/build-release.yml`](.git
 3. The `build-release` workflow detects the version change and runs the platform matrix:
    - **Windows x64** (MSVC, WASAPI)
    - **macOS Apple Silicon arm64** (Clang, CoreAudio, deployment target 13.3)
+   - **macOS Intel x64** (Clang, CoreAudio, deployment target 13.3)
    - **Linux x64** (GCC, ALSA + PulseAudio + JACK)
 4. Each job builds the C++ server through CMake/vcpkg, then runs the client `electron-builder` step with `extraResources` picking up the freshly compiled server binary.
 5. All artefacts are uploaded, then a final `release` job downloads them, auto-generates a changelog from git commits since the last tag, and creates a GitHub Release tagged `v<version>` with every installer attached.
@@ -301,7 +302,6 @@ Manual runs are validation-only by default. They build the full matrix and smoke
 ### Other workflows
 
 - **[`build-server.yml`](.github/workflows/build-server.yml)** — builds the server alone on PRs and pushes that touch `server/**`. Cross-platform matrix; uploads `dwcue-server-<platform>` artefacts for download from the Actions UI. Useful for vetting server-only PRs without running the full release pipeline.
-- **[`deploy-docs.yml`](.github/workflows/deploy-docs.yml)** — rebuilds the static docs site when `docs-site/`, the root `README.md`, or `package.json` changes.
 
 ---
 

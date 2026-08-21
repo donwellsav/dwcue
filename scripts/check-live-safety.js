@@ -16,7 +16,8 @@ assert.equal(pkg.build.win.target[0].target, 'nsis',
 assert.deepEqual(pkg.build.win.target[0].arch, ['x64'],
   'Windows releases must include the Windows 11 x64 target');
 for (const target of pkg.build.mac.target) {
-  assert.deepEqual(target.arch, ['arm64'], `macOS ${target.target} must be Apple Silicon-only`);
+  assert.equal(target.arch, undefined,
+    `macOS ${target.target} must let the build matrix select one native architecture`);
 }
 assert.equal(pkg.build.mac.sign, 'scripts/sign-mac.js',
   'macOS packaging must customize native-server signing');
@@ -31,20 +32,45 @@ assert.match(
   /name: Validate packaged macOS DMG[\s\S]*hdiutil verify[\s\S]*_CodeSignature\/CodeResources[\s\S]*codesign --verify --deep --strict[\s\S]*Signature=adhoc/,
   'release CI must verify the complete ad-hoc signature inside the exact DMG',
 );
-assert.doesNotMatch(
+assert.match(
   read('.github/workflows/build-release.yml'),
-  /x64-osx|macos-x64-build|macOS Intel/,
-  'desktop releases must remain Apple Silicon-only on macOS',
+  /macos-15-intel[\s\S]*x64-osx-dwcue[\s\S]*macos-x64-build[\s\S]*--x64/,
+  'desktop releases must build and publish a real Intel macOS artifact',
+);
+assert.match(
+  read('.github/workflows/build-release.yml'),
+  /os: macos-15[\s\S]*label: macOS Apple Silicon \(arm64\)/,
+  'desktop releases must use an explicit Apple Silicon runner',
+);
+assert.match(
+  read('.github/workflows/build-server.yml'),
+  /macos-15-intel[\s\S]*x64-osx-dwcue[\s\S]*CMAKE_OSX_ARCHITECTURES=x86_64[\s\S]*dwcue-server-macos-x64/,
+  'server CI must build the Intel native engine on an Intel runner',
+);
+assert.match(
+  read('.github/workflows/build-server.yml'),
+  /os: macos-15[\s\S]*label: macOS Apple Silicon \(Clang\)/,
+  'server CI must use an explicit Apple Silicon runner',
+);
+assert.match(
+  read('.github/workflows/build-release.yml'),
+  /latest-mac-\$\{\{ matrix\.mac_arch \}\}\.yml/,
+  'macOS updater manifests must remain separate per architecture',
 );
 assert.match(
   read('server/CMakeLists.txt'),
   /CMAKE_HOST_APPLE[\s\S]*CMAKE_OSX_DEPLOYMENT_TARGET "13\.3"/,
-  'local Apple Silicon server builds must target macOS 13.3 or newer',
+  'local Apple server builds must target macOS 13.3 or newer',
 );
 assert.match(
   read('server/triplets/arm64-osx-dwcue.cmake'),
   /VCPKG_TARGET_ARCHITECTURE arm64[\s\S]*VCPKG_OSX_DEPLOYMENT_TARGET 13\.3/,
-  'bundled server dependencies must also target Apple Silicon and macOS 13.3',
+  'bundled Apple Silicon server dependencies must target macOS 13.3',
+);
+assert.match(
+  read('server/triplets/x64-osx-dwcue.cmake'),
+  /VCPKG_TARGET_ARCHITECTURE x64[\s\S]*VCPKG_OSX_ARCHITECTURES x86_64[\s\S]*VCPKG_OSX_DEPLOYMENT_TARGET 13\.3/,
+  'bundled Intel server dependencies must target macOS 13.3',
 );
 assert.doesNotMatch(
   read('server/CMakeLists.txt'),
@@ -1311,12 +1337,12 @@ assert.doesNotMatch(
 );
 assert.doesNotMatch(
   electron,
-  /checkForManualUpdate|manual-update-available|tdoukinitsas\.github\.io\/liveplay\/package\.json/,
+  /checkForManualUpdate|manual-update-available|github\.io\/liveplay\/package\.json/,
   'DonWells Cue must never install or advertise upstream LivePlay updates',
 );
 assert.doesNotMatch(
   updateModal,
-  /isManualUpdate|downloadUrl|tdoukinitsas\.github\.io\/liveplay/,
+  /isManualUpdate|downloadUrl|github\.io\/liveplay/,
   'the update UI must not fall back to upstream LivePlay downloads',
 );
 assert.match(

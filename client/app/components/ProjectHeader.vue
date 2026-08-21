@@ -3,7 +3,7 @@
     <div ref="leftRef" class="header-left">
       <img
         ref="logoRef"
-        :src="isDark ? './assets/icons/SVG/liveplay-icon-darkmode@web.svg' : './assets/icons/SVG/liveplay-icon-lightmode@web.svg'"
+        :src="isDark ? './assets/icons/SVG/app_icon_darkmode@web.svg' : './assets/icons/SVG/app_icon_lightmode@web.svg'"
         alt="DonWells Cue"
         class="header-logo"
       />

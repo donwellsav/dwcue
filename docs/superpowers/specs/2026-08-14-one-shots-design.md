@@ -2,7 +2,7 @@
 
 ## Product intent
 
-Replace Cart Player's fixed, duplicated slot model with a compact live surface over the existing playlist. A One Shot is an audio cue with `oneShot` metadata, never a second copy of that cue. It is intended for announcements, stingers, walk-up sounds, and effects that must remain ready and may be fired without changing Up Next.
+Replace the retired fixed-slot model with a compact live surface over the existing playlist. A One Shot is an audio cue with `oneShot` metadata, never a second copy of that cue. It is intended for announcements, stingers, walk-up sounds, and effects that must remain ready and may be fired without changing Up Next.
 
 ## Operator model
 
@@ -11,7 +11,7 @@ Replace Cart Player's fixed, duplicated slot model with a compact live surface o
 - Firing a One Shot does not arm or consume Up Next.
 - After playback finishes, its tile remains ready.
 - Removing a tile clears only its One Shot designation. It never deletes the cue or media.
-- Legacy Cart slots migrate losslessly: playlist-backed slots flag their cue; Cart-only audio moves into a root `One Shots` group in slot order.
+- Legacy quick-play bindings migrate losslessly: playlist-backed cells flag their cue; cell-only audio moves into a root `One Shots` group in cell order.
 
 ## Tile interaction
 
@@ -39,4 +39,3 @@ Unsupported concepts such as simultaneous layering of the same cue UUID or press
 - Empty and disabled states explain how to add a One Shot.
 - Tile and controls have distinct accessible names and keyboard behavior.
 - Hotkeys do not fire while typing in an input or while a modal/popover is capturing a key.
-

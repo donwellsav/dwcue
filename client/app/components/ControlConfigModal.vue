@@ -58,7 +58,7 @@
         </div>
 
         <!-- One Shots section -->
-        <div class="category-header">{{ t('controls.sectionCartSlots') }}</div>
+        <div class="category-header">{{ t('controls.sectionOneShots') }}</div>
         <div
           v-for="entry in configuredOneShots"
           :key="entry.item.uuid"
@@ -69,7 +69,7 @@
           }"
           @click="startCaptureSlot(entry.slotIndex)"
         >
-          <span class="action-label">{{ t('controls.cartSlot', { n: entry.slotIndex + 1 }) }}</span>
+          <span class="action-label">{{ t('controls.oneShot', { n: entry.slotIndex + 1 }) }}</span>
           <span class="action-binding">
             <template v-if="capturingSlot === entry.slotIndex">
               {{ t('controls.pressAnyKey') }}
@@ -363,7 +363,7 @@ const handleKeydown = (e: KeyboardEvent) => {
     }
     const result = updateKeyBinding(capturingSlot.value, binding);
     if (result.conflict >= 0) {
-      keyErrorMessage.value = t('controls.conflictSlot', { n: result.conflict + 1 });
+      keyErrorMessage.value = t('controls.conflictOneShot', { n: result.conflict + 1 });
       keyErrorSlot.value = capturingSlot.value;
       conflictSlot.value = result.conflict;
       return;
@@ -379,7 +379,7 @@ const handleKeydown = (e: KeyboardEvent) => {
     for (const [slotStr, slotBinding] of Object.entries(keyMappings.value)) {
       if (slotBinding.key.toLowerCase() === binding.key.toLowerCase()
         && slotBinding.ctrlKey === binding.ctrlKey && slotBinding.shiftKey === binding.shiftKey && slotBinding.altKey === binding.altKey) {
-        keyErrorMessage.value = t('controls.conflictSlot', { n: parseInt(slotStr, 10) + 1 });
+        keyErrorMessage.value = t('controls.conflictOneShot', { n: parseInt(slotStr, 10) + 1 });
         keyErrorActionId.value = action;
         keyConflictSlotForAction.value = action;
         return;
@@ -393,7 +393,7 @@ const handleKeydown = (e: KeyboardEvent) => {
       return;
     }
     if (result.conflictSlot >= 0) {
-      keyErrorMessage.value = t('controls.conflictSlot', { n: result.conflictSlot + 1 });
+      keyErrorMessage.value = t('controls.conflictOneShot', { n: result.conflictSlot + 1 });
       keyErrorActionId.value = action;
       return;
     }
@@ -417,7 +417,7 @@ const midiCategories = computed(() => {
 });
 
 const categoryLabelKey = (category: string): string => {
-  if (category === 'One Shots' || category === 'Cart Slots') return 'controls.sectionCartSlots';
+  if (category === 'One Shots' || category === 'Cart Slots') return 'controls.sectionOneShots';
   if (category === 'Playback')   return 'controls.sectionPlayback';
   if (category === 'Volume')     return 'controls.sectionVolume';
   return category;
