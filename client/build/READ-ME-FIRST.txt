@@ -17,8 +17,8 @@ about 30 seconds, once:
       "DonWells Cue was blocked ..."
       Click  Open Anyway  next to it.
 
-  4.  Click  Open  in the confirmation, then approve with
-      Touch ID or your password.
+  4.  In the confirmation dialog, click  Open Anyway  once more,
+      then approve with Touch ID or your password.
 
 Done — the app now opens normally every time. You never repeat this.
 
