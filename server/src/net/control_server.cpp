@@ -174,6 +174,18 @@ struct ControlSecurityMiddleware {
 
     void after_handle(crow::request& req, crow::response& res, context&) {
         add_cors_headers(req, res);
+        // Crow's router answers OPTIONS itself with a fresh response object
+        // (res = response(NO_CONTENT) + Allow header), wiping the preflight
+        // headers set in before_handle. Re-add them here, after routing, so
+        // browser clients see a usable preflight either way.
+        if (req.method == crow::HTTPMethod::Options &&
+            security::origin_allowed(req.get_header_value("Origin"), allowed_origins)) {
+            res.set_header("Access-Control-Allow-Methods",
+                           "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+            res.set_header("Access-Control-Allow-Headers",
+                           "Authorization, Content-Type");
+            res.set_header("Access-Control-Max-Age", "600");
+        }
     }
 };
 
