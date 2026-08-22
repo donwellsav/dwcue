@@ -5,17 +5,20 @@ plan for signing each platform and contains the ready-to-enable wiring so that
 turning signing on is a matter of adding secrets — not re-engineering the
 release pipeline.
 
-> **Status (June 2026)**
+> **Status (August 2026)**
 > - **Windows:** SignPath.io open-source certificate **applied for**. Wiring
 >   below is staged but inert (no secrets configured → release stays unsigned).
-> - **macOS:** unsigned + un-notarized. Users must clear the quarantine flag
->   once per install — see
->   [README → First launch on macOS](README.md#first-launch-on-macos-donwells-cue-is-damaged-and-cant-be-opened).
+> - **macOS:** **signed + notarized** (Developer ID Application, team
+>   `SSX53S943P`). Active since all five secrets below exist on the repo —
+>   `electron-builder.config.js` flips signing on when `MAC_SIGNING=true`
+>   (set by the workflow when the `MAC_CSC_*` secrets are present). Ad-hoc
+>   fallback for forks/local builds is unchanged.
 > - **Linux:** AppImage/deb/rpm are unsigned (normal for these formats).
 
 Nothing in this document changes the current build. The release workflow
 ([.github/workflows/build-release.yml](.github/workflows/build-release.yml))
-continues to publish unsigned artifacts until the secrets named below exist.
+continues to publish unsigned artifacts whenever the secrets named below are
+absent.
 
 ---
 
@@ -127,13 +130,19 @@ prompt requires Apple's own chain:
    [`@electron/notarize`](https://github.com/electron/notarize)).
 
 The hardened runtime, entitlements and notarization settings are already in
-[client/package.json](client/package.json), and the release workflow already
-passes the required values. To enable the final signing step, provide:
+[client/package.json](client/package.json) (gated through
+[client/electron-builder.config.js](client/electron-builder.config.js)), and the
+release workflow maps the signing secrets onto electron-builder's `CSC_*`
+environment. The secrets (all present as of 2026-08-22):
 
 - `MAC_CSC_LINK` — the Developer ID Application certificate exported as `.p12`
-  (or its base64 value).
+  (base64, single line).
 - `MAC_CSC_KEY_PASSWORD` — the `.p12` password.
 - `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` — notarization
   credentials.
 
-Until then the README documents the one-time `xattr` workaround for users.
+Regenerating the certificate: create a CSR (`openssl req -new -newkey rsa:2048
+-nodes -keyout devid.key -out devid.csr -subj "/CN=<name>"`), upload it under
+developer.apple.com → Certificates → Developer ID Application, then
+`openssl pkcs12 -export -out devid.p12 -inkey devid.key -in devid.cer` and
+update `MAC_CSC_LINK`/`MAC_CSC_KEY_PASSWORD`.

@@ -248,6 +248,21 @@ jobs:
               "$WIN_CSC_LINK" "$WIN_CSC_KEY_PASSWORD" >> "$GITHUB_ENV"
           fi
 
+      - name: Configure macOS signing credentials
+        if: runner.os == 'macOS'
+        shell: bash
+        # Maps the MAC_CSC_* secrets to electron-builder's CSC_* variables and
+        # arms the signing path (electron-builder.config.js reads MAC_SIGNING).
+        # Absent secrets keep macOS builds ad-hoc signed, e.g. on forks.
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+        run: |
+          if [ -n "$MAC_CSC_LINK" ] && [ -n "$MAC_CSC_KEY_PASSWORD" ]; then
+            printf 'CSC_LINK=%s\nCSC_KEY_PASSWORD=%s\nMAC_SIGNING=true\n' \
+              "$MAC_CSC_LINK" "$MAC_CSC_KEY_PASSWORD" >> "$GITHUB_ENV"
+          fi
+
       - name: Build Electron app
         working-directory: client
         shell: bash
@@ -267,6 +282,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CI: true
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Validate packaged macOS DMG
         if: runner.os == 'macOS'
@@ -292,7 +310,12 @@ jobs:
           mac_app="$mac_mount_dir/DonWells Cue.app"
           test -f "$mac_app/Contents/_CodeSignature/CodeResources"
           codesign --verify --deep --strict --verbose=4 "$mac_app"
-          codesign -dv --verbose=4 "$mac_app" 2>&1 | grep -q '^Signature=adhoc$'
+          if [ "${MAC_SIGNING:-}" = "true" ]; then
+            codesign -dv --verbose=4 "$mac_app" 2>&1 | grep -q '^Authority=Developer ID Application: '
+            spctl -a -vv "$mac_app" 2>&1 | grep -q 'source=Notarized Developer ID'
+          else
+            codesign -dv --verbose=4 "$mac_app" 2>&1 | grep -q '^Signature=adhoc$'
+          fi
           codesign -dv --verbose=4 "$mac_app" 2>&1 | grep -q '^Identifier=com.donwells.cue$'
           expected_arch='${{ matrix.mac_arch }}'
           expected_macho_arch="$expected_arch"
