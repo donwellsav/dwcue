@@ -633,11 +633,8 @@ jobs:
             ]
 
             caveats <<~EOS
-              DonWells Cue is currently unsigned and not notarized (see SIGNING.md in the
-              source repo). If Gatekeeper blocks the first launch with "damaged" or
-              "cannot be opened", run:
-
-                xattr -dr com.apple.quarantine "/Applications/DonWells Cue.app"
+              DonWells Cue is signed with an Apple Developer ID and notarized by
+              Apple, so it opens normally on first launch — no Gatekeeper warning.
             EOS
           end
           '''

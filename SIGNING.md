@@ -1,9 +1,9 @@
 # Code signing
 
-DonWells Cue's released installers are currently **unsigned**. This file tracks the
-plan for signing each platform and contains the ready-to-enable wiring so that
-turning signing on is a matter of adding secrets — not re-engineering the
-release pipeline.
+DonWells Cue's macOS installers are **signed and notarized**; Windows and Linux
+artifacts are currently unsigned. This file tracks the signing status of each
+platform and contains the wiring so that keeping signing on is a matter of
+keeping secrets in place — not re-engineering the release pipeline.
 
 > **Status (August 2026)**
 > - **Windows:** SignPath.io open-source certificate **applied for**. Wiring
