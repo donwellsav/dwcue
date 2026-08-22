@@ -269,9 +269,16 @@ jobs:
         # Retry to ride out transient network failures while electron-builder
         # downloads the Electron binary from GitHub.
         run: |
+          # macOS: point electron-builder at electron-builder.config.js so the
+          # MAC_SIGNING env switch applies (config-file auto-discovery is not
+          # relied upon — the package.json "build" field otherwise wins).
+          cfg=()
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            cfg=(--config electron-builder.config.js)
+          fi
           for attempt in 1 2 3; do
             echo "electron:build attempt $attempt"
-            if npm run electron:build -- ${{ matrix.electron_args }}; then
+            if npm run electron:build -- "${cfg[@]}" ${{ matrix.electron_args }}; then
               exit 0
             fi
             echo "Attempt $attempt failed; retrying in $((attempt * 15))s..."

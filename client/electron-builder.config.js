@@ -17,13 +17,19 @@ const pkg = require('./package.json');
 
 const signingEnabled = process.env.MAC_SIGNING === 'true';
 
+// NB: electron-builder treats `identity: null` as "explicitly skip signing" —
+// when signing is enabled the key must be ABSENT (undefined), not null.
 const mac = {
   ...pkg.build.mac,
-  identity: signingEnabled ? null : '-',
+  notarize: signingEnabled,
 };
+if (signingEnabled) {
+  delete mac.identity;
+} else {
+  mac.identity = '-';
+}
 
 module.exports = {
   ...pkg.build,
   mac,
-  notarize: signingEnabled,
 };
