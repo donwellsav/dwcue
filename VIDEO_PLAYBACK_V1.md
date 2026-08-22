@@ -29,6 +29,7 @@ the show laptop). v1 is **one video at a time, cuts only**.
 | A video with **no audio stream** cannot be decoded by the engine | Same test: video-only MP4 → `open failed` (`av_find_best_stream` finds no audio). Drives the silent-transport requirement (§5.3). |
 | Playhead position already streams to clients | `control_server.cpp` `meters` broadcast (~60 Hz, absolute-deadline schedule) carries per-item `playhead_seconds` + transport enum; `cue_state` edge events fire on transport transitions; `playback_snapshot` is sent on (re)connect. No server protocol additions needed for sync. |
 | Multiple clients per server | By design (doc-patch fan-out); the Video Output window is just another WS client. |
+| External prior art converged on the same design | **Inkue** (GPLv3, Tauri+Rust, `FonograF/Inkue`) plays video muted via libmpv and decodes the audio track as a normal engine voice with fades/VU — after abandoning a PCM-pipe approach for A/V desync and deadlocks (their v0.4.2). Their measured A/V drift without any active resync is a few ms over minutes; they list active resync as an optional future refinement. Our chase-sync is comfortably above that bar. |
 | Detached-window pattern exists | `client/electron/main.js` `cartPlayerWindow` loads the same Nuxt app with `?cartWindow=1`. The output window mirrors this with `?videoOutput=1`. |
 | No display management exists yet | No Electron `screen` / `powerSaveBlocker` usage anywhere in `main.js` — greenfield, no conflicts. |
 | Item model is extensible | `client/app/types/project.ts` `BaseItem.type: 'audio' \| 'group' \| 'action'` ("Extensible for future item types"); `ProjectSettings` exists for global settings. |
@@ -94,11 +95,16 @@ applies unchanged. Video-ness is **derived**, not declared:
 - `AudioItem.imagePath?: string` — per-cue still (project-relative, like `mediaPath`).
 - `ProjectSettings.videoStandbyImage?: string` — global standby image.
 - `ProjectSettings.videoOutputEnabled?: boolean` — master arm for the output window.
-- `ProjectSettings.videoOutputDisplayId?: string` — remembered display assignment
-  (Electron display id is unstable across reconnects; persist screen resolution +
-  connector label as a fallback fingerprint).
-- App-level (not project) setting: `hideNetworkUi` (default **true** for v1), gating
-  `ServerSettingsModal.vue` entry points.
+- App-level (not project) settings: `hideNetworkUi` (default **true** for v1), gating
+  `ServerSettingsModal.vue` entry points; and the **display assignment**
+  (`videoOutputDisplayId` + resolution/connector fingerprint).
+
+> Display assignment is **machine-specific, not show-specific** — the same show file
+> travels between laptops with different displays. Inkue's machine-config split
+> (per-OS config dir vs. show file) and FreeShow's per-output `screen` setting both
+> keep it out of the project document; we do the same (Electron local config, e.g.
+> alongside `readLiveplayConfig()`), so a `.liveplay` opened on another machine never
+> drags the previous operator's display choice with it.
 
 ### 5.3 Silent-video transport (the only engine work)
 
@@ -134,13 +140,25 @@ native) and consumes, via `useLiveplayServer.ts`'s existing subscriber pattern:
 
 Chase algorithm (in a new `useVideoOutput.ts` composable):
 
-1. **Start:** on `cue_state → Playing/FadingIn` for a video item, load the file muted,
+1. **Preload:** when a video cue becomes armed/Up Next (or is loaded in Preview), the
+   output window already loads the file muted, seeks to the in-point, and waits paused
+   ("paused-load start" — Inkue's term; their first-GO freeze disappeared once the
+   pipeline was created ahead of GO, and ours will too).
+2. **Start:** on `cue_state → Playing/FadingIn` for a video item,
    `currentTime = inPoint + playhead_seconds`, `play()`.
-2. **Steady state:** each meter tick, `err = enginePlayhead - videoTime` (both relative to
+3. **Steady state:** each meter tick, `err = enginePlayhead - videoTime` (both relative to
    in-point). `|err| > 80 ms` → hard seek. Otherwise `playbackRate = clamp(1 + err·k, 0.97, 1.03)`.
-3. **Pause/resume:** mirror transport enum directly.
-4. **End:** on out-point (`playhead_seconds ≥ outPoint`) or `Stopped`, cut to the layer
-   below (§4.5). No tail — cuts only.
+   (The chase acts on the *video* side deliberately: the audio render path — limiter, PA
+   feed — is the safety anchor and is never disturbed. Video is muted, so rate nudges only
+   shift frame cadence, inaudibly. Inkue's planned direction is the opposite — nudging the
+   audio voice — because their video clock lives in libmpv; ours lives in Chromium, which
+   we control.)
+4. **Pause/resume:** mirror transport enum directly.
+5. **End:** on out-point (`playhead_seconds ≥ outPoint`) or `Stopped`, cut to the layer
+   below (§4.5) **in the same frame** — never leave a frozen last frame up (Inkue's
+   hard-cut bug: their fix forces opaque black over the frozen frame; our layer stack
+   gives the same result by construction, provided the `<video>` is hidden the moment
+   playback stops). No tail — cuts only.
 5. **Startup skew** (tens of ms while Chromium spins up decode) is absorbed by the same
    hard-seek threshold; audio fades land exactly because they live in the engine.
 
@@ -158,7 +176,12 @@ Mirrors the `cartPlayerWindow` pattern in `client/electron/main.js`:
   loads the Nuxt app with `?videoOutput=1` (dev: `loadURL('http://localhost:3000/?videoOutput=1')`,
   prod: `loadFile(indexPath, { query: { videoOutput: '1' } })`).
 - **Display pinning** via Electron `screen` API: place on the persisted display
-  (§5.2); if absent, stay hidden and warn in the control window.
+  (§5.2); if absent, stay hidden and warn in the control window. War stories from
+  FreeShow's `OutputBounds.ts` worth copying exactly: (a) `setBounds` may need a
+  double-call plus a delayed (~80 ms) re-assert to stick on Windows; (b) re-attach logic
+  matches the saved display id, falling back to `getDisplayNearestPoint` of the window's
+  last center; (c) use raw display bounds for physical outputs — DPI scaling corrections
+  apply only to capture-only outputs (future NDI), never to the HDMI window.
 - **Watchdog:** `screen.on('display-added'/'display-removed'/'display-metrics-changed')` →
   re-acquire the assigned display and re-fullscreen. Detect OS **display mirroring** and
   warn prominently (operator-facing, control window).
@@ -167,7 +190,9 @@ Mirrors the `cartPlayerWindow` pattern in `client/electron/main.js`:
 - **Test card:** output name + native resolution + safe-frame guides + 1 kHz-free (silent),
   toggled from the control window's video settings (and output-window context menu in dev).
 - Lifecycle: opened/armed from the control window; closing the main window closes it;
-  `Esc` never exits fullscreen in Show Mode.
+  `Esc` never exits fullscreen in Show Mode. **Degrade, don't fail** (Inkue's stance):
+  no second display, unsupported codec, or decode failure never blocks the show — the
+  control window shows a banner and the app remains fully usable audio-only.
 
 New IPC (follow existing conventions: `ipcMain.handle` + `requireTrustedIpc` + bounded
 validators; cross-window fan-out via `BrowserWindow.getAllWindows()` skip-sender):
@@ -195,6 +220,13 @@ Video crossfades / fade-to-black · multiple simultaneous video streams · ProRe
 NDI output · remote (networked) video rendering · video effects/overlays · HDMI audio ·
 slide-advance animations. The `hideNetworkUi` gate is a UI simplification, not a removal.
 
+Seen in the wild, parked for later: **NDI** (FreeShow models it as just another output on
+the same abstraction — a flag plus an `invisible` capture-only output whose bounds are
+DPI-corrected instead of fullscreened — so building our output as an "output target"
+abstraction keeps the NDI door open); **camera cues** (Inkue: webcam/capture/RTSP onto the
+output surface); **text cues** and an **OSD countdown timer** on the output; **QLab
+workspace import** (Inkue ships a beta).
+
 ## 10. Risks
 
 | Risk | Mitigation |
@@ -203,6 +235,7 @@ slide-advance animations. The `hideNetworkUi` gate is a UI simplification, not a
 | Operator arrives with mirrored displays | Detect + prominent warning at arm time |
 | Windows HEVC decode gaps (GPU/OS codec pack) | Docs steer to H.264; runtime decode failure falls back to image layer + control-window warning |
 | Decode CPU spikes starve audio | Chromium decodes in its own process/GPU; engine RT thread untouched (existing `check-audio-rt-safety` discipline); 1080p targets |
+| GPU/compositor contention: control UI (60 Hz meters, progress bars, CSS animations) competes with the presenting output window on weak iGPUs | Inkue hit this hard (WebKitGTK UI froze to ~0 fps while video played). Their fix maps to us: prefer `transform`/`opacity` compositor-only animations, no infinite CSS keyframes, discrete updates; ensure hardware decode; test on a low-end corporate laptop before calling v1 done |
 | Project JSON drift | All new fields optional/additive; old builds ignore them |
 | vcpkg ffmpeg demuxer coverage differs on Windows/Linux CI builds | Add `.mp4` (H.264+AAC) and video-only cases to `tests/decoder_check.cpp` self-tests so CI proves the capability per-platform |
 
@@ -223,7 +256,23 @@ slide-advance animations. The `hideNetworkUi` gate is a UI simplification, not a
 8. Network/remote-server UI is hidden by default and re-enableable.
 9. A project saved with video cues loads on a build without the feature (fields ignored).
 
-## 12. Suggested implementation slices
+## 12. References (deep-search findings, 2026-08-22)
+
+- **`FonograF/Inkue`** (GPLv3, Tauri+Rust+React) — closest prior art. Read `PROGRESS.md`
+  for the full war story: PCM-pipe A/V desync → muted mpv + engine audio voice + lockstep
+  start (0.4.2); two-window flicker → unified persistent output window (0.4.0); hard-cut
+  frozen-frame bug (0.9.2); GPU compositor contention freeze (0.9.26); machine-config vs
+  show-file settings split (0.9.3).
+- **`ChurchApps/FreeShow`** (1.2k★, Electron+Svelte) — the Electron output-window
+  reference: `src/types/Output.ts` (one Output abstraction carrying screen/bounds/
+  alwaysOnTop + ndi/blackmagic/webrtc/rtmp flags), `src/electron/output/helpers/OutputBounds.ts`
+  (display re-attach, setBounds double-call, HiDPI rules).
+- **`space928/QPlayer`** (C#/WPF), **`TheRealDuckers/WebCue`** (browser), LiSP
+  (Linux/GStreamer), MultiPlay (free, closed, Windows) — landscape only; Inkue + FreeShow
+  cover the reusable techniques. Upstream `tdoukinitsas/liveplay` is audio-only — no video
+  work exists there to mine.
+
+## 13. Suggested implementation slices
 
 1. **Output window skeleton** — `?videoOutput=1` page, Electron window + display pinning +
    persistence, black layer, test card, watchdog, powerSaveBlocker. (Pure client/Electron.)
