@@ -1,26 +1,13 @@
 ========================================================================
-  DonWells Cue — READ ME FIRST (first launch on macOS, one-time)
+  DonWells Cue — READ ME FIRST
 ========================================================================
 
-This build is not signed with an Apple Developer certificate yet,
-so macOS shows a one-time security warning the first time you open
-the app. That is expected — the app is fine. Getting past it takes
-about 30 seconds, once:
+This app is signed with an Apple Developer ID and notarized by
+Apple, so macOS opens it normally — no security warning, no extra
+steps.
 
-  1.  Double-click "DonWells Cue". macOS shows
-      "Apple could not verify DonWells Cue is free of malware".
-      Click  Done  (the app will not open yet — that's normal).
-
-  2.  Open  System Settings → Privacy & Security.
-
-  3.  Scroll to the bottom. You'll see
-      "DonWells Cue was blocked ..."
-      Click  Open Anyway  next to it.
-
-  4.  In the confirmation dialog, click  Open Anyway  once more,
-      then approve with Touch ID or your password.
-
-Done — the app now opens normally every time. You never repeat this.
+  1.  Drag "DonWells Cue" into the Applications folder.
+  2.  Double-click it. It opens.
 
   Windows: if SmartScreen appears, click "More info" → "Run anyway".
 

@@ -144,5 +144,9 @@ environment. The secrets (all present as of 2026-08-22):
 Regenerating the certificate: create a CSR (`openssl req -new -newkey rsa:2048
 -nodes -keyout devid.key -out devid.csr -subj "/CN=<name>"`), upload it under
 developer.apple.com → Certificates → Developer ID Application, then
-`openssl pkcs12 -export -out devid.p12 -inkey devid.key -in devid.cer` and
+`openssl pkcs12 -export -legacy -out devid.p12 -inkey devid.key -in devid.cer` and
 update `MAC_CSC_LINK`/`MAC_CSC_KEY_PASSWORD`.
+
+The `-legacy` flag is required: OpenSSL 3's default PBES2/AES-256 PKCS#12
+encryption is rejected by macOS `security import` with a misleading
+"MAC verification failed during PKCS12 import" error.
