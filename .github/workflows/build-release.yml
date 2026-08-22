@@ -373,6 +373,10 @@ jobs:
       # PAT with contents:write on donwellsav/homebrew-tap; when absent the
       # tap-update step skips quietly and the release proceeds normally.
       HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      # Cloudflare API token (Workers R2 Storage:Edit) + account ID used to
+      # push the macOS downloads to dwcue.com; when absent that step skips.
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
 
     steps:
       - name: Checkout code
@@ -610,6 +614,40 @@ jobs:
           fi
           git commit -m "donwells-cue ${RELEASE_TAG}"
           git push
+
+      # dwcue.com is served by the dwcue-web Worker out of the R2 bucket
+      # dwcue-site (binding env.SITE). Workers static assets cap at 25 MiB,
+      # so the macOS installers live in R2 as downloads/<filename>; upload
+      # each DMG/ZIP with the same content headers the dashboard used. The
+      # glob is pinned to the macOS -arm64/-x64 names on purpose: the global
+      # artifactName (DonWells-Cue-<ver>-<arch>.<ext>) means a future Windows
+      # zip target would collide with the Intel macOS zip's R2 key.
+      # Skips quietly when CLOUDFLARE_API_TOKEN is not configured.
+      - name: Upload macOS downloads to dwcue.com (R2)
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(artifacts/DonWells-Cue-*-arm64.dmg artifacts/DonWells-Cue-*-arm64.zip \
+                 artifacts/DonWells-Cue-*-x64.dmg artifacts/DonWells-Cue-*-x64.zip)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No macOS DMG/ZIP artifacts found; skipping"
+            exit 0
+          fi
+          for f in "${files[@]}"; do
+            base=$(basename "$f")
+            case "$base" in
+              *.dmg) mime="application/x-apple-diskimage" ;;
+              *.zip) mime="application/zip" ;;
+            esac
+            echo "Uploading $base -> dwcue-site/downloads/$base"
+            npx --yes wrangler@4 r2 object put "dwcue-site/downloads/$base" \
+              --remote --file "$f" \
+              --content-type "$mime" \
+              --content-disposition "attachment; filename=\"$base\"" \
+              --cache-control "public, max-age=31536000, immutable"
+          done
 
       - name: Update latest release
         run: |
