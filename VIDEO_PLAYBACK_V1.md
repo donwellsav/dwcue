@@ -159,7 +159,7 @@ Chase algorithm (in a new `useVideoOutput.ts` composable):
    hard-cut bug: their fix forces opaque black over the frozen frame; our layer stack
    gives the same result by construction, provided the `<video>` is hidden the moment
    playback stops). No tail — cuts only.
-5. **Startup skew** (tens of ms while Chromium spins up decode) is absorbed by the same
+6. **Startup skew** (tens of ms while Chromium spins up decode) is absorbed by the same
    hard-seek threshold; audio fades land exactly because they live in the engine.
 
 Tolerance target: ±2 frames at 30 fps. Corporate switcher downstream makes this
