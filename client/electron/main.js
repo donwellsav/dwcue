@@ -2087,6 +2087,11 @@ function createVideoOutputWindow() {
       webviewTag: false,
       allowRunningInsecureContent: false,
       experimentalFeatures: false,
+      // This surface is the show's picture: it must keep painting and chasing
+      // the playhead while the operator works in the main window. Without
+      // this, Chromium suspends rAF/timers (and on macOS stops committing
+      // frames entirely) the moment the window is occluded or unfocused.
+      backgroundThrottling: false,
     },
   };
 

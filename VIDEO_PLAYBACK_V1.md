@@ -3,7 +3,8 @@
 > **Audience:** fresh agent / developer with zero prior context. Read
 > `IMPROVEMENTS_PLAN.md` §1 first for the general architecture.
 > **Branch:** `feature/video-playback` (worktree `../dwvideo`).
-> **Status:** slices 1–2 landed (see §13); slice 3 (playback + chase sync) next.
+> **Status:** slices 1–3 landed (see §13); slice 4 (polish: badges, per-cue image
+> picker, network gate, docs) next.
 
 ---
 
@@ -187,6 +188,11 @@ Mirrors the `cartPlayerWindow` pattern in `client/electron/main.js`:
   warn prominently (operator-facing, control window).
 - **Show hygiene:** `powerSaveBlocker.start('prevent-display-sleep')` while the output is
   armed; block the window from showing on the primary display unless explicitly assigned.
+- **No background throttling** (`backgroundThrottling: false` in `webPreferences`) —
+  non-negotiable: the window paints the show while the operator works in the control
+  window. Without it, Chromium clamps timers/rAF on unfocused windows and macOS stops
+  committing frames entirely under occlusion — the output freezes mid-show (found the
+  hard way in slice 3 verification: unfocused preview window never re-rendered).
 - **Test card:** output name + native resolution + safe-frame guides + 1 kHz-free (silent),
   toggled from the control window's video settings (and output-window context menu in dev).
 - Lifecycle: opened/armed from the control window; closing the main window closes it;
@@ -284,7 +290,14 @@ workspace import** (Inkue ships a beta).
    into all four cue-build sites (playlist/one-shot/cart/replace). Video-only containers
    still fail import at the waveform step ("waveform decode failed") until slice 3's
    silent-video transport.
-3. **Playback + sync** — video cue render, chase algorithm, layer stack with per-cue/standby
-   images; silent-video transport in the engine.
+3. **Playback + sync — LANDED.** Silent-video transport at the decoder-backend level
+   (video-only containers get a zero-PCM data source with container duration: import,
+   waveform, metadata and playlist advance all work unchanged); `/api/media?path=`
+   streaming endpoint with manual Range support (Crow can't); `useVideoOutput`
+   composable (dumb doc mirror, transport state machine, chase loop §6) +
+   `VideoOutputView` layer stack + standby-image picker in Project Settings.
+   Verified live: H.264 + HEVC picture with engine audio, video-only MP4 plays and
+   advances, standby/per-cue image layers, EOF→standby, next-item paused-preload,
+   `backgroundThrottling: false` fix (§7).
 4. **Hygiene & gating** — network-UI gate, playlist badges, properties pickers, locales,
    docs, decoder self-tests in CI.

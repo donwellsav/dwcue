@@ -523,7 +523,12 @@
     "countdownRangeAndAbove": "{start}s and above",
     "countdownRangeBetween": "{start}–{end}s",
     "countdownThresholdInvalid": "Use a unique whole number of 1 second or more.",
-    "countdownSaveFailed": "The countdown color settings could not be saved."
+    "countdownSaveFailed": "The countdown color settings could not be saved.",
+    "videoOutputStandbyImage": "Standby image",
+    "videoOutputStandbyImageHelp": "Shown when no cue is supplying picture. The file is copied into the project media folder; per-cue images and video sit on top of it.",
+    "videoOutputStandbyChoose": "Choose…",
+    "videoOutputStandbyClear": "Clear",
+    "videoOutputStandbyNone": "None (black)"
   },
   "common": {
     "default": "varsayılan",

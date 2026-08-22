@@ -16,8 +16,42 @@
 <template>
   <div class="video-output" aria-hidden="true">
     <!-- Layer stack, bottom to top: black < standby image < per-cue image <
-         video. Slice 1 ships only the black base + test card overlay. -->
+         video. Lower layers show through whenever the layers above them are
+         empty — no visibility logic needed beyond the top two. -->
     <div class="layer layer-black" />
+
+    <img
+      v-if="standbySrc"
+      class="layer layer-media"
+      :src="standbySrc"
+      alt=""
+      draggable="false"
+    >
+
+    <img
+      v-if="cueImageSrc"
+      class="layer layer-media"
+      :src="cueImageSrc"
+      alt=""
+      draggable="false"
+    >
+
+    <!-- Muted always: video audio goes through the engine to the PA, never
+         to HDMI. Stay mounted (v-show, not v-if) so preloading an armed cue
+         doesn't tear down the element when the previous cue stops. -->
+    <video
+      v-show="showVideo"
+      ref="videoEl"
+      class="layer layer-media"
+      :src="videoSrc ?? undefined"
+      muted
+      playsinline
+      preload="auto"
+      disablepictureinpicture
+      @loadedmetadata="onVideoLoadedMetadata"
+      @canplay="onVideoCanPlay"
+      @error="onVideoError"
+    />
 
     <div v-if="testCard" class="layer layer-testcard">
       <div class="safe-area safe-area--action" />
@@ -41,6 +75,11 @@
 </template>
 
 <script setup lang="ts">
+const {
+  videoEl, videoSrc, showVideo, cueImageSrc, standbySrc,
+  onVideoLoadedMetadata, onVideoCanPlay, onVideoError,
+} = useVideoOutput();
+
 const testCard = ref(false);
 const displayLabel = ref<string | null>(null);
 
@@ -119,6 +158,14 @@ onBeforeUnmount(() => {
 
 .layer-black {
   background: #000;
+}
+
+/* Video + stills: letterbox, never crop — a switcher expects the full frame.
+   The black base layer makes the letterbox bars invisible by construction. */
+.layer-media {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 /* --- Test card -----------------------------------------------------------

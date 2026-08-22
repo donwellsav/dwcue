@@ -535,6 +535,33 @@
               <p class="settings-help">{{ t('settings.videoOutputDisplayHelp') }}</p>
             </section>
 
+            <!-- Global standby image: shown whenever no cue is supplying
+                 picture (below per-cue images and video in the layer stack).
+                 Project-level (unlike arm/display, which stay machine-level). -->
+            <section class="settings-field">
+              <div class="settings-label">
+                <span class="material-symbols-rounded" aria-hidden="true">image</span>
+                {{ t('settings.videoOutputStandbyImage') }}
+              </div>
+              <div class="video-output-standby">
+                <span class="video-output-standby-path" :title="voStandbyImage">
+                  {{ voStandbyImage || t('settings.videoOutputStandbyNone') }}
+                </span>
+                <button type="button" class="modal-btn" @click="voStandbyPickerOpen = true">
+                  {{ t('settings.videoOutputStandbyChoose') }}
+                </button>
+                <button
+                  v-if="voStandbyImage"
+                  type="button"
+                  class="modal-btn"
+                  @click="onVideoOutputStandbyClear"
+                >
+                  {{ t('settings.videoOutputStandbyClear') }}
+                </button>
+              </div>
+              <p class="settings-help">{{ t('settings.videoOutputStandbyImageHelp') }}</p>
+            </section>
+
             <!-- Test card for the switcher/projector end of the chain -->
             <section class="settings-field">
               <label class="settings-label settings-label--checkbox">
@@ -567,6 +594,15 @@
         <button class="modal-btn" @click="close">{{ t('settings.close') }}</button>
       </footer>
     </div>
+
+    <ServerFilePickerModal
+      :open="voStandbyPickerOpen"
+      mode="file"
+      filter=".png,.jpg,.jpeg,.webp,.gif,.svg"
+      :start-path="voStandbyPickerStart"
+      @pick="onVideoOutputStandbyPicked"
+      @close="voStandbyPickerOpen = false"
+    />
   </div>
 </template>
 
@@ -718,6 +754,33 @@ async function onVideoOutputTestCardChange(event: Event) {
   const api = window.electronAPI?.videoOutput;
   if (!api) return;
   await api.setTestCard(show);
+}
+
+// Standby image — the one video-output setting that IS project-level (it
+// belongs to the show, not the machine). The picked file is copied into the
+// project media folder and stored relative, so the show file stays portable.
+const voStandbyImage = computed(() =>
+  (currentProject.value as any)?.settings?.videoStandbyImage || '');
+const voStandbyPickerOpen = ref(false);
+const voStandbyPickerStart = computed(() =>
+  (currentProject.value as any)?.folderPath || '');
+
+async function onVideoOutputStandbyPicked(path: string) {
+  voStandbyPickerOpen.value = false;
+  try {
+    const dest = await server.copyToMedia(path);
+    const folder: string = (currentProject.value as any)?.folderPath || '';
+    const relative = folder && dest.startsWith(folder)
+      ? dest.slice(folder.length).replace(/^[\\/]+/, '').replace(/\\/g, '/')
+      : dest;
+    await applyPatch({ videoStandbyImage: relative });
+  } catch (e) {
+    console.warn('[ProjectSettings] standby image copy failed:', e);
+  }
+}
+
+function onVideoOutputStandbyClear() {
+  void applyPatch({ videoStandbyImage: null });
 }
 
 let voOffStatus: (() => void) | null = null;
@@ -1076,6 +1139,21 @@ function close() {
 .video-output-status--warn {
   color: var(--color-warning, #f1c21b);
   font-weight: 600;
+}
+.video-output-standby {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.video-output-standby-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .track-height-control {

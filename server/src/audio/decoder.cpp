@@ -1513,6 +1513,95 @@ ma_result on_get_length(ma_data_source* data_source, ma_uint64* length) {
 ma_data_source_vtable data_source_vtable{
     on_read, on_seek, on_get_format, on_get_cursor, on_get_length, nullptr, 0};
 
+// ---------------------------------------------------------------------------
+// Silent-video transport (spec VIDEO_PLAYBACK_V1.md §5.3).
+//
+// A video container without an audio stream cannot feed the FFmpeg source
+// (av_find_best_stream fails), but the cue must still play, advance, and
+// report progress: the client renders the picture in the Video Output
+// window while the engine remains the clock master. When the open container
+// shows a presentable video stream with a known duration, open_ffmpeg
+// substitutes this zero-PCM source of exactly that length. Everything
+// downstream — playhead meters, end-of-file playlist advance, waveform (a
+// flat line), the metadata duration fallback — works unchanged.
+// ---------------------------------------------------------------------------
+
+struct SilentDataSource {
+    ma_data_source_base base{};
+    ma_uint64 length = 0;
+    ma_uint64 cursor = 0;
+};
+
+ma_result silent_on_read(ma_data_source* data_source, void* output, ma_uint64 frame_count,
+                         ma_uint64* frames_read) {
+    auto& source = *reinterpret_cast<SilentDataSource*>(data_source);
+    if (source.cursor >= source.length) {
+        if (frames_read) *frames_read = 0;
+        return MA_AT_END;
+    }
+    const ma_uint64 count = std::min(frame_count, source.length - source.cursor);
+    if (output) {
+        std::memset(output, 0, static_cast<std::size_t>(count) * 2 * sizeof(float));
+    }
+    source.cursor += count;
+    if (frames_read) *frames_read = count;
+    return MA_SUCCESS;
+}
+
+ma_result silent_on_seek(ma_data_source* data_source, ma_uint64 frame_index) {
+    auto& source = *reinterpret_cast<SilentDataSource*>(data_source);
+    source.cursor = std::min(frame_index, source.length);
+    return MA_SUCCESS;
+}
+
+ma_result silent_on_get_cursor(ma_data_source* data_source, ma_uint64* cursor) {
+    if (!cursor) return MA_INVALID_ARGS;
+    *cursor = reinterpret_cast<SilentDataSource*>(data_source)->cursor;
+    return MA_SUCCESS;
+}
+
+ma_result silent_on_get_length(ma_data_source* data_source, ma_uint64* length) {
+    if (!length) return MA_INVALID_ARGS;
+    *length = reinterpret_cast<SilentDataSource*>(data_source)->length;
+    return *length == 0 ? MA_NOT_IMPLEMENTED : MA_SUCCESS;
+}
+
+ma_data_source_vtable silent_data_source_vtable{
+    silent_on_read, silent_on_seek, midi_on_get_format, silent_on_get_cursor,
+    silent_on_get_length, nullptr, 0};
+
+ma_result open_silent(ma_uint64 length_frames, ma_data_source** backend) {
+    if (!backend) return MA_INVALID_ARGS;
+    auto* source = new (std::nothrow) SilentDataSource{};
+    if (!source) return MA_OUT_OF_MEMORY;
+    source->length = length_frames;
+    ma_data_source_config config = ma_data_source_config_init();
+    config.vtable = &silent_data_source_vtable;
+    const ma_result result = ma_data_source_init(&config, &source->base);
+    if (result != MA_SUCCESS) {
+        delete source;
+        return result;
+    }
+    *backend = source;
+    return MA_SUCCESS;
+}
+
+// Scan an open container for a presentable video stream — the same predicate
+// file_has_video_stream applies (real video stream, not attached-pic cover
+// art). Call between avformat_find_stream_info and avformat_close_input.
+bool has_presentable_video_stream(const AVFormatContext* format) {
+    if (!format) return false;
+    for (unsigned i = 0; i < format->nb_streams; ++i) {
+        const AVStream* s = format->streams[i];
+        if (s && s->codecpar && s->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
+            s->codecpar->codec_id != AV_CODEC_ID_NONE &&
+            !(s->disposition & AV_DISPOSITION_ATTACHED_PIC)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 ma_result open_ffmpeg(const char* path, ma_data_source** backend) {
     if (!path || !backend) return MA_INVALID_ARGS;
     auto* source = new (std::nothrow) FfmpegDataSource{};
@@ -1523,6 +1612,20 @@ ma_result open_ffmpeg(const char* path, ma_data_source** backend) {
     if (result >= 0) {
         result = av_find_best_stream(source->format, AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
         source->stream_index = result;
+    }
+
+    // Silent-video transport: no audio stream, but a presentable video stream
+    // with a known container duration → the cue plays as exactly-that-long
+    // silence (see SilentDataSource above). Unknown duration stays an error:
+    // an endless silent source would never auto-advance the playlist.
+    if (result < 0 && source->format &&
+        has_presentable_video_stream(source->format) &&
+        source->format->duration != AV_NOPTS_VALUE && source->format->duration > 0) {
+        const ma_uint64 length = static_cast<ma_uint64>(av_rescale_q(
+            source->format->duration, AV_TIME_BASE_Q, AVRational{1, 48000}));
+        close(*source);
+        delete source;
+        return open_silent(length, backend);
     }
 
     const AVCodec* decoder = nullptr;
@@ -1612,6 +1715,15 @@ ma_result backend_init_file_w(void*, const wchar_t* path, const ma_decoding_back
 
 void backend_uninit(void*, ma_data_source* backend, const ma_allocation_callbacks*) {
     if (!backend) return;
+    // open_ffmpeg may substitute a SilentDataSource for a video-only
+    // container (silent-video transport) — dispatch on the data source's own
+    // vtable rather than assuming the FFmpeg layout.
+    if (reinterpret_cast<ma_data_source_base*>(backend)->vtable == &silent_data_source_vtable) {
+        auto* source = reinterpret_cast<SilentDataSource*>(backend);
+        ma_data_source_uninit(&source->base);
+        delete source;
+        return;
+    }
     auto* source = reinterpret_cast<FfmpegDataSource*>(backend);
     ma_data_source_uninit(&source->base);
     close(*source);
@@ -1647,18 +1759,8 @@ bool file_has_video_stream(const std::filesystem::path& path) noexcept {
     // only inspects streams — no decoder is opened.
     if (avformat_open_input(&format, utf8.c_str(),
                             raw_input_format(utf8.c_str()), nullptr) < 0) return false;
-    bool found = false;
-    if (avformat_find_stream_info(format, nullptr) >= 0) {
-        for (unsigned i = 0; i < format->nb_streams; ++i) {
-            const AVStream* s = format->streams[i];
-            if (s && s->codecpar && s->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
-                s->codecpar->codec_id != AV_CODEC_ID_NONE &&
-                !(s->disposition & AV_DISPOSITION_ATTACHED_PIC)) {
-                found = true;
-                break;
-            }
-        }
-    }
+    const bool found = avformat_find_stream_info(format, nullptr) >= 0 &&
+                       has_presentable_video_stream(format);
     avformat_close_input(&format);
     return found;
 }
