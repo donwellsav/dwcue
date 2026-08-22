@@ -58,7 +58,8 @@
     "rescan": "再スキャン",
     "scanning": "スキャン中…",
     "noServersFound": "サーバーがまだ見つかりません — このネットワークでサーバーが実行されていることを確認してください。",
-    "forget": "削除"
+    "forget": "削除",
+    "showNetworkUi": "Connect to a server on the network…"
   },
   "project": {
     "enterName": "プロジェクト名を入力",
@@ -80,7 +81,8 @@
     "addGroup": "グループを追加",
     "noItems": "プレイリストにアイテムがありません",
     "importAudio": "オーディオをインポート",
-    "importHint": "インポートボタンを使用するか、ファイルをここにドラッグしてください"
+    "importHint": "インポートボタンを使用するか、ファイルをここにドラッグしてください",
+    "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
     "title": "One Shots",
@@ -174,7 +176,12 @@
     "normalizeMode": "Normalization measurement",
     "normalizeTarget": "Normalization level",
     "loudnessTargets": "Loudness (LUFS)",
-    "truePeakTargets": "True peak (dBTP)"
+    "truePeakTargets": "True peak (dBTP)",
+    "cueImage": "Cue image",
+    "cueImageNone": "No image set",
+    "cueImageChoose": "Choose…",
+    "cueImageClear": "Clear the cue image",
+    "cueImageHelp": "Shown on the Video Output while this cue plays if it has no video."
   },
   "playback": {
     "panic": "すべての信号を停止",

@@ -58,7 +58,8 @@
     "rescan": "다시 검색",
     "scanning": "검색 중…",
     "noServersFound": "아직 서버를 찾지 못했습니다 — 이 네트워크에서 서버가 실행 중인지 확인하세요.",
-    "forget": "삭제"
+    "forget": "삭제",
+    "showNetworkUi": "Connect to a server on the network…"
   },
   "project": {
     "enterName": "프로젝트 이름 입력",
@@ -80,7 +81,8 @@
     "addGroup": "그룹 추가",
     "noItems": "재생 목록에 항목 없음",
     "importAudio": "오디오 가져오기",
-    "importHint": "가져오기 버튼을 사용하거나 파일을 여기로 드래그하세요"
+    "importHint": "가져오기 버튼을 사용하거나 파일을 여기로 드래그하세요",
+    "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
     "title": "One Shots",
@@ -174,7 +176,12 @@
     "normalizeMode": "Normalization measurement",
     "normalizeTarget": "Normalization level",
     "loudnessTargets": "Loudness (LUFS)",
-    "truePeakTargets": "True peak (dBTP)"
+    "truePeakTargets": "True peak (dBTP)",
+    "cueImage": "Cue image",
+    "cueImageNone": "No image set",
+    "cueImageChoose": "Choose…",
+    "cueImageClear": "Clear the cue image",
+    "cueImageHelp": "Shown on the Video Output while this cue plays if it has no video."
   },
   "playback": {
     "panic": "모든 신호 중지",

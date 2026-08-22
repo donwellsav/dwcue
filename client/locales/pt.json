@@ -58,7 +58,8 @@
     "rescan": "Procurar novamente",
     "scanning": "A procurar…",
     "noServersFound": "Ainda não foram encontrados servidores — certifique-se de que existe um servidor em execução nesta rede.",
-    "forget": "Esquecer"
+    "forget": "Esquecer",
+    "showNetworkUi": "Connect to a server on the network…"
   },
   "project": {
     "enterName": "Digite o Nome do Projeto",
@@ -80,7 +81,8 @@
     "addGroup": "Adicionar Grupo",
     "noItems": "Nenhum item na lista de reprodução",
     "importAudio": "Importar Áudio",
-    "importHint": "Use os botões de importação ou arraste arquivos aqui"
+    "importHint": "Use os botões de importação ou arraste arquivos aqui",
+    "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
     "title": "One Shots",
@@ -174,7 +176,12 @@
     "normalizeMode": "Normalization measurement",
     "normalizeTarget": "Normalization level",
     "loudnessTargets": "Loudness (LUFS)",
-    "truePeakTargets": "True peak (dBTP)"
+    "truePeakTargets": "True peak (dBTP)",
+    "cueImage": "Cue image",
+    "cueImageNone": "No image set",
+    "cueImageChoose": "Choose…",
+    "cueImageClear": "Clear the cue image",
+    "cueImageHelp": "Shown on the Video Output while this cue plays if it has no video."
   },
   "playback": {
     "panic": "Parar Todos os Sinais",

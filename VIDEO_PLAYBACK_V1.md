@@ -3,8 +3,7 @@
 > **Audience:** fresh agent / developer with zero prior context. Read
 > `IMPROVEMENTS_PLAN.md` §1 first for the general architecture.
 > **Branch:** `feature/video-playback` (worktree `../dwvideo`).
-> **Status:** slices 1–3 landed (see §13); slice 4 (polish: badges, per-cue image
-> picker, network gate, docs) next.
+> **Status:** slices 1–4 landed (see §13). v1 complete.
 
 ---
 
@@ -282,8 +281,8 @@ workspace import** (Inkue ships a beta).
 
 1. **Output window skeleton** — `?videoOutput=1` page, Electron window + display pinning +
    persistence, black layer, test card, watchdog, powerSaveBlocker. (Pure client/Electron.)
-   **Landed** (73d479e), incl. a pre-existing dev-mode CORS preflight fix it surfaced
-   (96b6a49).
+   **Landed** (149f70a), incl. a pre-existing dev-mode CORS preflight fix it surfaced
+   (1008d86).
 2. **Cue model + probe** — server stream-flag probe, `imagePath`/settings fields end-to-end,
    import accepts video. **Landed** (this commit): `file_has_video_stream()` in the decoder
    (attached-pic cover art excluded), `has_video` on `GET /api/metadata`, `hasVideo` wired
@@ -299,5 +298,10 @@ workspace import** (Inkue ships a beta).
    Verified live: H.264 + HEVC picture with engine audio, video-only MP4 plays and
    advances, standby/per-cue image layers, EOF→standby, next-item paused-preload,
    `backgroundThrottling: false` fix (§7).
-4. **Hygiene & gating** — network-UI gate, playlist badges, properties pickers, locales,
-   docs, decoder self-tests in CI.
+4. **Hygiene & gating — LANDED.** Per-cue image picker in Properties (copyToMedia →
+   project-relative `imagePath`), 🎬 badge on playlist cue rows, network/remote-server
+   UI hidden behind a per-device toggle (`useNetworkUiVisibility`, localStorage;
+   reveal link on the welcome screen + checkbox in Server Settings), `decoder-check`
+   self-test case: embedded 0.5 s video-only MP4 fixture asserts the silent-transport
+   contract (opens, exact container-duration EOF, all-zero PCM, seekable,
+   `file_has_video_stream` true), README video-output section.

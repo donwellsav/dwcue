@@ -69,6 +69,35 @@
           <label>{{ t('properties.duration') }}</label>
           <input :value="formatTime(audioItem.duration)" readonly />
         </div>
+
+        <!-- Per-cue still image: shown on the video output while this cue
+             plays (sits above the global standby image, below video). -->
+        <div v-if="selectedItem.type === 'audio'" class="property-field">
+          <label>{{ t('properties.cueImage') }}</label>
+          <div class="input-with-btn">
+            <input
+              :value="audioItem.imagePath || ''"
+              readonly
+              :placeholder="t('properties.cueImageNone')"
+            />
+            <button
+              class="icon-btn"
+              :title="t('properties.cueImageChoose')"
+              @click="cueImagePickerOpen = true"
+            >
+              <span class="material-symbols-rounded">image</span>
+            </button>
+            <button
+              v-if="audioItem.imagePath"
+              class="icon-btn"
+              :title="t('properties.cueImageClear')"
+              @click="handleClearCueImage"
+            >
+              <span class="material-symbols-rounded">close</span>
+            </button>
+          </div>
+          <p class="property-help">{{ t('properties.cueImageHelp') }}</p>
+        </div>
         
         <div class="property-field">
           <label>{{ t('properties.color') }}</label>
@@ -329,6 +358,15 @@
         </div>
       </div>
     </div>
+
+    <ServerFilePickerModal
+      :open="cueImagePickerOpen"
+      mode="file"
+      filter=".png,.jpg,.jpeg,.webp,.gif,.svg"
+      :start-path="cueImagePickerStart"
+      @pick="handleCueImagePicked"
+      @close="cueImagePickerOpen = false"
+    />
   </div>
 </template>
 
@@ -402,6 +440,35 @@ const handlePanelResizeKey = (event: KeyboardEvent) => {
 };
 
 const audioItem = computed(() => selectedItem.value as AudioItem);
+
+// Per-cue still image for the video output. The picked file is copied into
+// the project media folder and stored relative, same portability rule as
+// mediaPath and the global standby image.
+const cueImagePickerOpen = ref(false);
+const cueImagePickerStart = computed(() => currentProject.value?.folderPath || '');
+
+const handleCueImagePicked = async (path: string) => {
+  cueImagePickerOpen.value = false;
+  const item = audioItem.value;
+  if (!item || item.type !== 'audio') return;
+  try {
+    const dest = await _server.copyToMedia(path);
+    const folder = currentProject.value?.folderPath || '';
+    item.imagePath = folder && dest.startsWith(folder)
+      ? dest.slice(folder.length).replace(/^[\\/]+/, '').replace(/\\/g, '/')
+      : dest;
+    await handleSave();
+  } catch (e) {
+    console.warn('[PropertiesPanel] cue image copy failed:', e);
+  }
+};
+
+const handleClearCueImage = async () => {
+  const item = audioItem.value;
+  if (!item || item.type !== 'audio') return;
+  delete item.imagePath;
+  await handleSave();
+};
 const selectedAudioItems = computed(() => getSelectedItems().filter(
   (item): item is AudioItem => item.type === 'audio',
 ));

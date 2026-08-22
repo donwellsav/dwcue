@@ -58,7 +58,8 @@
     "rescan": "Rescan",
     "scanning": "Scanning…",
     "noServersFound": "No servers found yet — make sure a server is running on this network.",
-    "forget": "Forget"
+    "forget": "Forget",
+    "showNetworkUi": "Connect to a server on the network…"
   },
   "settings": {
     "title": "Project Settings",
@@ -201,7 +202,8 @@
     "addGroup": "Add Group",
     "noItems": "No items in playlist",
     "importAudio": "Import Audio",
-    "importHint": "Use the import buttons or drag files here"
+    "importHint": "Use the import buttons or drag files here",
+    "videoCue": "Video cue — picture plays on the Video Output"
   },
   "spotifyImport": {
     "button": "Spotify",
@@ -464,7 +466,12 @@
     "regeneratingWaveform": "Regenerating...",
     "noWaveformData": "No waveform data available",
     "multiSelectWaveform": "Multiple items selected — choose a single item to display its waveform.",
-    "multiSelectOutPointDisabled": "Disabled for multiple selection (out point depends on each item's duration)."
+    "multiSelectOutPointDisabled": "Disabled for multiple selection (out point depends on each item's duration).",
+    "cueImage": "Cue image",
+    "cueImageNone": "No image set",
+    "cueImageChoose": "Choose…",
+    "cueImageClear": "Clear the cue image",
+    "cueImageHelp": "Shown on the Video Output while this cue plays if it has no video."
   },
   "outputConsole": {
     "limiter": "TP Limiter",

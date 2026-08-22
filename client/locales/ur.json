@@ -58,7 +58,8 @@
     "rescan": "دوبارہ اسکین کریں",
     "scanning": "اسکین ہو رہا ہے…",
     "noServersFound": "ابھی تک کوئی سرور نہیں ملا — یقینی بنائیں کہ اس نیٹ ورک پر کوئی سرور چل رہا ہے۔",
-    "forget": "بھول جائیں"
+    "forget": "بھول جائیں",
+    "showNetworkUi": "Connect to a server on the network…"
   },
   "project": {
     "enterName": "پروجیکٹ کا نام درج کریں",
@@ -80,7 +81,8 @@
     "addGroup": "گروپ شامل کریں",
     "noItems": "پلے لسٹ میں کوئی آئٹم نہیں",
     "importAudio": "آڈیو درآمد کریں",
-    "importHint": "درآمد بٹن استعمال کریں یا فائلیں یہاں گھسیٹیں"
+    "importHint": "درآمد بٹن استعمال کریں یا فائلیں یہاں گھسیٹیں",
+    "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
     "title": "One Shots",
@@ -174,7 +176,12 @@
     "normalizeMode": "Normalization measurement",
     "normalizeTarget": "Normalization level",
     "loudnessTargets": "Loudness (LUFS)",
-    "truePeakTargets": "True peak (dBTP)"
+    "truePeakTargets": "True peak (dBTP)",
+    "cueImage": "Cue image",
+    "cueImageNone": "No image set",
+    "cueImageChoose": "Choose…",
+    "cueImageClear": "Clear the cue image",
+    "cueImageHelp": "Shown on the Video Output while this cue plays if it has no video."
   },
   "playback": {
     "panic": "تمام سگنلز روکیں",

@@ -58,7 +58,8 @@
     "rescan": "重新扫描",
     "scanning": "正在扫描…",
     "noServersFound": "尚未找到服务器 — 请确保该网络上有服务器正在运行。",
-    "forget": "忘记"
+    "forget": "忘记",
+    "showNetworkUi": "Connect to a server on the network…"
   },
   "project": {
     "enterName": "输入项目名称",
@@ -80,7 +81,8 @@
     "addGroup": "添加组",
     "noItems": "播放列表中无项目",
     "importAudio": "导入音频",
-    "importHint": "使用导入按钮或将文件拖到此处"
+    "importHint": "使用导入按钮或将文件拖到此处",
+    "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
     "title": "One Shots",
@@ -174,7 +176,12 @@
     "normalizeMode": "Normalization measurement",
     "normalizeTarget": "Normalization level",
     "loudnessTargets": "Loudness (LUFS)",
-    "truePeakTargets": "True peak (dBTP)"
+    "truePeakTargets": "True peak (dBTP)",
+    "cueImage": "Cue image",
+    "cueImageNone": "No image set",
+    "cueImageChoose": "Choose…",
+    "cueImageClear": "Clear the cue image",
+    "cueImageHelp": "Shown on the Video Output while this cue plays if it has no video."
   },
   "playback": {
     "panic": "停止所有信号",

@@ -20,9 +20,11 @@
       <div v-if="stage === 'mode'" class="welcome-stage">
         <h2 class="stage-title">{{ t('welcome.modeTitle') }}</h2>
         <p class="stage-subtitle">{{ t('welcome.modeSubtitle') }}</p>
-        <div class="welcome-actions">
+                <div class="welcome-actions" :class="{ 'welcome-actions--single': !showNetworkUi }">
+
           <button
-            ref="localModeButton"
+            
+ref="localModeButton"
             class="welcome-button primary"
             type="button"
             :disabled="connecting"
@@ -40,7 +42,7 @@
             </span>
           </button>
 
-          <button class="welcome-button" type="button" :disabled="connecting" @click="chooseRemote">
+          <button v-if="showNetworkUi" class="welcome-button" type="button" :disabled="connecting" @click="chooseRemote">
             <span class="button-icon"><span class="material-symbols-rounded" aria-hidden="true">lan</span></span>
             <span class="button-label">
               <span class="button-label-line">{{ t('welcome.remoteMode') }}</span>
@@ -48,6 +50,14 @@
             </span>
           </button>
         </div>
+        <!-- v1 is same-machine only; the remote path is hidden by default
+             but stays one click away for the future networked renderer. -->
+        <button
+          v-if="!showNetworkUi"
+          class="link-button network-reveal"
+          type="button"
+          @click="revealNetworkUi"
+        >{{ t('welcome.showNetworkUi') }}</button>
         <p
           v-if="connectionError"
           class="remote-error"
@@ -620,6 +630,13 @@ function beginImportDestination() {
   if (lpa) pendingLpaImportReady.value = lpa;
 }
 
+const { showNetworkUi, setNetworkUiVisible } = useNetworkUiVisibility();
+
+function revealNetworkUi() {
+  setNetworkUiVisible(true);
+  chooseRemote();
+}
+
 function chooseRemote() {
   mode.value = 'remote';
   connectionError.value = '';
@@ -1027,6 +1044,17 @@ if (import.meta.client && (window as any).electronAPI) {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--spacing-sm);
   margin-top: var(--spacing-xs);
+}
+
+.welcome-actions--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.network-reveal {
+  justify-self: center;
+  margin-top: var(--spacing-sm);
+  font-size: 0.85em;
+  opacity: 0.75;
 }
 
 .welcome-button {

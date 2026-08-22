@@ -58,7 +58,8 @@
     "rescan": "Skann på nytt",
     "scanning": "Skanner…",
     "noServersFound": "Ingen servere funnet ennå — kontroller at en server kjører på dette nettverket.",
-    "forget": "Glem"
+    "forget": "Glem",
+    "showNetworkUi": "Connect to a server on the network…"
   },
   "project": {
     "enterName": "Skriv inn prosjektnavn",
@@ -80,7 +81,8 @@
     "addGroup": "Legg til gruppe",
     "noItems": "Ingen elementer i spillelisten",
     "importAudio": "Importer lyd",
-    "importHint": "Bruk importknappene eller dra filer hit"
+    "importHint": "Bruk importknappene eller dra filer hit",
+    "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
     "title": "One Shots",
@@ -174,7 +176,12 @@
     "normalizeMode": "Normalization measurement",
     "normalizeTarget": "Normalization level",
     "loudnessTargets": "Loudness (LUFS)",
-    "truePeakTargets": "True peak (dBTP)"
+    "truePeakTargets": "True peak (dBTP)",
+    "cueImage": "Cue image",
+    "cueImageNone": "No image set",
+    "cueImageChoose": "Choose…",
+    "cueImageClear": "Clear the cue image",
+    "cueImageHelp": "Shown on the Video Output while this cue plays if it has no video."
   },
   "playback": {
     "panic": "Stopp alle signaler",

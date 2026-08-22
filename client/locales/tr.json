@@ -58,7 +58,8 @@
     "rescan": "Yeniden tara",
     "scanning": "Taranıyor…",
     "noServersFound": "Henüz sunucu bulunamadı — bu ağda bir sunucunun çalıştığından emin olun.",
-    "forget": "Unut"
+    "forget": "Unut",
+    "showNetworkUi": "Connect to a server on the network…"
   },
   "project": {
     "enterName": "Proje Adını Girin",
@@ -80,7 +81,8 @@
     "addGroup": "Grup Ekle",
     "noItems": "Çalma listesinde öğe yok",
     "importAudio": "Ses İçe Aktar",
-    "importHint": "İçe aktarma düğmelerini kullanın veya dosyaları buraya sürükleyin"
+    "importHint": "İçe aktarma düğmelerini kullanın veya dosyaları buraya sürükleyin",
+    "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
     "title": "One Shots",
@@ -174,7 +176,12 @@
     "normalizeMode": "Normalization measurement",
     "normalizeTarget": "Normalization level",
     "loudnessTargets": "Loudness (LUFS)",
-    "truePeakTargets": "True peak (dBTP)"
+    "truePeakTargets": "True peak (dBTP)",
+    "cueImage": "Cue image",
+    "cueImageNone": "No image set",
+    "cueImageChoose": "Choose…",
+    "cueImageClear": "Clear the cue image",
+    "cueImageHelp": "Shown on the Video Output while this cue plays if it has no video."
   },
   "playback": {
     "panic": "Tüm Sinyalleri Durdur",

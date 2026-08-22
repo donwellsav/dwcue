@@ -58,7 +58,8 @@
     "rescan": "اسکن مجدد",
     "scanning": "در حال اسکن…",
     "noServersFound": "هنوز سروری پیدا نشد — مطمئن شوید سروری روی این شبکه در حال اجراست.",
-    "forget": "فراموش کردن"
+    "forget": "فراموش کردن",
+    "showNetworkUi": "Connect to a server on the network…"
   },
   "project": {
     "enterName": "نام پروژه را وارد کنید",
@@ -80,7 +81,8 @@
     "addGroup": "افزودن گروه",
     "noItems": "هیچ موردی در لیست پخش نیست",
     "importAudio": "وارد کردن صدا",
-    "importHint": "از دکمه‌های وارد کردن استفاده کنید یا فایل‌ها را اینجا بکشید"
+    "importHint": "از دکمه‌های وارد کردن استفاده کنید یا فایل‌ها را اینجا بکشید",
+    "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
     "title": "One Shots",
@@ -174,7 +176,12 @@
     "normalizeMode": "Normalization measurement",
     "normalizeTarget": "Normalization level",
     "loudnessTargets": "Loudness (LUFS)",
-    "truePeakTargets": "True peak (dBTP)"
+    "truePeakTargets": "True peak (dBTP)",
+    "cueImage": "Cue image",
+    "cueImageNone": "No image set",
+    "cueImageChoose": "Choose…",
+    "cueImageClear": "Clear the cue image",
+    "cueImageHelp": "Shown on the Video Output while this cue plays if it has no video."
   },
   "playback": {
     "panic": "توقف همه سیگنال‌ها",

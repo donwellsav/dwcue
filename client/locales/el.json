@@ -58,7 +58,8 @@
     "rescan": "Επανασάρωση",
     "scanning": "Σάρωση…",
     "noServersFound": "Δεν βρέθηκαν διακομιστές ακόμη — βεβαιωθείτε ότι εκτελείται διακομιστής σε αυτό το δίκτυο.",
-    "forget": "Διαγραφή"
+    "forget": "Διαγραφή",
+    "showNetworkUi": "Connect to a server on the network…"
   },
   "project": {
     "enterName": "Εισάγετε το Όνομα της Εκδήλωσης",
@@ -80,7 +81,8 @@
     "addGroup": "Προσθήκη Ομάδας",
     "noItems": "Δεν υπάρχουν στοιχεία στη λίστα αναπαραγωγής",
     "importAudio": "Εισαγωγή Ήχου",
-    "importHint": "Χρησιμοποιήστε τα κουμπιά εισαγωγής ή σύρετε αρχεία εδώ"
+    "importHint": "Χρησιμοποιήστε τα κουμπιά εισαγωγής ή σύρετε αρχεία εδώ",
+    "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
     "title": "One Shots",
@@ -174,7 +176,12 @@
     "normalizeMode": "Normalization measurement",
     "normalizeTarget": "Normalization level",
     "loudnessTargets": "Loudness (LUFS)",
-    "truePeakTargets": "True peak (dBTP)"
+    "truePeakTargets": "True peak (dBTP)",
+    "cueImage": "Cue image",
+    "cueImageNone": "No image set",
+    "cueImageChoose": "Choose…",
+    "cueImageClear": "Clear the cue image",
+    "cueImageHelp": "Shown on the Video Output while this cue plays if it has no video."
   },
   "playback": {
     "panic": "Σταματημα Όλων",

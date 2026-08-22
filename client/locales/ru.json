@@ -58,7 +58,8 @@
     "rescan": "Сканировать снова",
     "scanning": "Сканирование…",
     "noServersFound": "Серверы пока не найдены — убедитесь, что сервер запущен в этой сети.",
-    "forget": "Забыть"
+    "forget": "Забыть",
+    "showNetworkUi": "Connect to a server on the network…"
   },
   "project": {
     "enterName": "Введите название проекта",
@@ -80,7 +81,8 @@
     "addGroup": "Добавить группу",
     "noItems": "Нет элементов в плейлисте",
     "importAudio": "Импортировать аудио",
-    "importHint": "Используйте кнопки импорта или перетащите файлы сюда"
+    "importHint": "Используйте кнопки импорта или перетащите файлы сюда",
+    "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
     "title": "One Shots",
@@ -174,7 +176,12 @@
     "normalizeMode": "Normalization measurement",
     "normalizeTarget": "Normalization level",
     "loudnessTargets": "Loudness (LUFS)",
-    "truePeakTargets": "True peak (dBTP)"
+    "truePeakTargets": "True peak (dBTP)",
+    "cueImage": "Cue image",
+    "cueImageNone": "No image set",
+    "cueImageChoose": "Choose…",
+    "cueImageClear": "Clear the cue image",
+    "cueImageHelp": "Shown on the Video Output while this cue plays if it has no video."
   },
   "playback": {
     "panic": "Остановить все сигналы",
