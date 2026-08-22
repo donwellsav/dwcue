@@ -1,6 +1,6 @@
 {
   "name": "donwells-cue",
-  "version": "2.5.21",
+  "version": "2.5.22",
   "description": "Audio cue playback application for live events",
   "homepage": "https://github.com/donwellsav/dwcue",
   "repository": {
@@ -170,6 +170,12 @@
           "x": 190,
           "y": 220,
           "type": "file"
+        },
+        {
+          "x": 350,
+          "y": 220,
+          "type": "file",
+          "path": "build/READ-ME-FIRST.txt"
         },
         {
           "x": 510,

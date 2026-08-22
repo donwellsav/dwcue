@@ -374,7 +374,7 @@ const pickerStart         = ref<string>('');
 const pickerIntent        = ref<'new' | 'open'>('open');
 
 // Get app version
-const appVersion = ref('2.5.21');
+const appVersion = ref('2.5.22');
 onMounted(async () => {
   if (import.meta.client && (window as any).electronAPI?.getAppVersion) {
     appVersion.value = await (window as any).electronAPI.getAppVersion();
