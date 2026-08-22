@@ -3143,6 +3143,7 @@ void ControlServer::install_routes() {
                 {"sample_rate",  md.sample_rate},
                 {"channels",     md.channels},
                 {"bitrate_kbps", md.bitrate_kbps},
+                {"has_video",    md.has_video},
             });
         });
 

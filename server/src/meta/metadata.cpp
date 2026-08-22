@@ -42,6 +42,9 @@ std::chrono::milliseconds duration_via_miniaudio(const std::filesystem::path& pa
 AudioFileMetadata read_metadata(const std::filesystem::path& path) noexcept {
     AudioFileMetadata out;
     const std::string utf8 = util::path_to_utf8(path);
+    // Probed once up front so every TagLib/miniaudio fallback path below
+    // carries the flag; failures read as "no video" by construction.
+    out.has_video = audio::file_has_video_stream(path);
     try {
 #if defined(_WIN32)
         // TagLib's FileName typedef on Windows is wchar_t* — pass UTF-16 so

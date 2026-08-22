@@ -1050,6 +1050,9 @@ const handleReplaceMedia = async () => {
     item.duration = duration;
     item.inPoint = usedWholeFile ? 0 : Math.min(snapshot.inPoint, Math.max(0, duration - 0.01));
     item.outPoint = usedWholeFile ? duration : Math.min(duration, Math.max(item.inPoint + Math.min(0.01, duration), Math.min(snapshot.outPoint, duration)));
+    // Re-probe: swapping media can add or remove the video stream.
+    if ((metadata as any)?.has_video === true) item.hasVideo = true;
+    else delete item.hasVideo;
     if (typeof item.startNextTime === 'number') {
       item.startNextTime = Math.max(item.inPoint, Math.min(item.startNextTime, item.outPoint));
     }

@@ -27,6 +27,8 @@ struct AudioFileMetadata {
     std::uint32_t               channels     = 0;
     std::uint32_t               bitrate_kbps = 0;
     bool                        valid        = false;
+    // Container carries a real video stream (attached-pic cover art excluded).
+    bool                        has_video    = false;
 };
 
 // Read metadata from a file. Always returns a struct — `valid` indicates

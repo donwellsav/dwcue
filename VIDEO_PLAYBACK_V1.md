@@ -3,7 +3,7 @@
 > **Audience:** fresh agent / developer with zero prior context. Read
 > `IMPROVEMENTS_PLAN.md` §1 first for the general architecture.
 > **Branch:** `feature/video-playback` (worktree `../dwvideo`).
-> **Status:** design locked with product owner; foundations verified (see §2); implementation not started.
+> **Status:** slices 1–2 landed (see §13); slice 3 (playback + chase sync) next.
 
 ---
 
@@ -276,8 +276,14 @@ workspace import** (Inkue ships a beta).
 
 1. **Output window skeleton** — `?videoOutput=1` page, Electron window + display pinning +
    persistence, black layer, test card, watchdog, powerSaveBlocker. (Pure client/Electron.)
+   **Landed** (73d479e), incl. a pre-existing dev-mode CORS preflight fix it surfaced
+   (96b6a49).
 2. **Cue model + probe** — server stream-flag probe, `imagePath`/settings fields end-to-end,
-   import accepts video.
+   import accepts video. **Landed** (this commit): `file_has_video_stream()` in the decoder
+   (attached-pic cover art excluded), `has_video` on `GET /api/metadata`, `hasVideo` wired
+   into all four cue-build sites (playlist/one-shot/cart/replace). Video-only containers
+   still fail import at the waveform step ("waveform decode failed") until slice 3's
+   silent-video transport.
 3. **Playback + sync** — video cue render, chase algorithm, layer stack with per-cue/standby
    images; silent-video transport in the engine.
 4. **Hygiene & gating** — network-UI gate, playlist badges, properties pickers, locales,

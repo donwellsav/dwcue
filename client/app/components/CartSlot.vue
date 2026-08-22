@@ -370,9 +370,11 @@ const importFromServerPath = async (serverPath: string) => {
     const uuid = crypto.randomUUID();
 
     let duration = 0;
+    let hasVideo = false;
     try {
       const md: any = await server.fetchMetadata(destPath);
       if (md && typeof md.duration_ms === 'number') duration = md.duration_ms / 1000;
+      hasVideo = md?.has_video === true;
     } catch (e) {
       console.warn('[cart import] fetchMetadata failed, falling back to 0 duration:', e);
     }
@@ -393,6 +395,7 @@ const importFromServerPath = async (serverPath: string) => {
       duration,
       outPoint: duration,
       index: [-1, props.slot],
+      ...(hasVideo ? { hasVideo: true as const } : {}),
     } as AudioItem;
 
     addCartOnlyItem(newItem);

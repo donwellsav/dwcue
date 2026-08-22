@@ -1639,6 +1639,30 @@ ma_decoding_backend_vtable* backends[] = {
 
 } // namespace
 
+bool file_has_video_stream(const std::filesystem::path& path) noexcept {
+    if (path.empty()) return false;
+    AVFormatContext* format = nullptr;
+    const std::string utf8 = util::path_to_utf8(path);
+    // Mirrors open_ffmpeg's container handling (same raw-format override), but
+    // only inspects streams — no decoder is opened.
+    if (avformat_open_input(&format, utf8.c_str(),
+                            raw_input_format(utf8.c_str()), nullptr) < 0) return false;
+    bool found = false;
+    if (avformat_find_stream_info(format, nullptr) >= 0) {
+        for (unsigned i = 0; i < format->nb_streams; ++i) {
+            const AVStream* s = format->streams[i];
+            if (s && s->codecpar && s->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
+                s->codecpar->codec_id != AV_CODEC_ID_NONE &&
+                !(s->disposition & AV_DISPOSITION_ATTACHED_PIC)) {
+                found = true;
+                break;
+            }
+        }
+    }
+    avformat_close_input(&format);
+    return found;
+}
+
 ma_decoder_config decoder_config(ma_format format, ma_uint32 channels, ma_uint32 sample_rate) {
     ma_decoder_config config = ma_decoder_config_init(format, channels, sample_rate);
     config.ppCustomBackendVTables = backends;
