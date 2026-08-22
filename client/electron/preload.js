@@ -241,4 +241,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
     recentRemove: (path) => ipcRenderer.invoke('liveplay-projects:recent-remove', path),
     recentClear:  ()     => ipcRenderer.invoke('liveplay-projects:recent-clear'),
   },
+  // Video Output window (slice 1: window lifecycle, display assignment, test
+  // card). Display identity is machine-level state owned by the main process;
+  // renderers only arm/disarm and pick a display.
+  videoOutput: {
+    open:         ()           => ipcRenderer.invoke('video-output:open'),
+    close:        ()           => ipcRenderer.invoke('video-output:close'),
+    status:       ()           => ipcRenderer.invoke('video-output:status'),
+    listDisplays: ()           => ipcRenderer.invoke('video-output:list-displays'),
+    setDisplay:   (displayId)  => ipcRenderer.invoke('video-output:set-display', displayId),
+    setTestCard:  (show)       => ipcRenderer.invoke('video-output:test-card', show),
+    onStatus: (callback) => {
+      const listener = (_e, status) => callback(status);
+      ipcRenderer.on('video-output:status-changed', listener);
+      return () => ipcRenderer.removeListener('video-output:status-changed', listener);
+    },
+    onTestCard: (callback) => {
+      const listener = (_e, show) => callback(show === true);
+      ipcRenderer.on('video-output:test-card', listener);
+      return () => ipcRenderer.removeListener('video-output:test-card', listener);
+    },
+  },
 });

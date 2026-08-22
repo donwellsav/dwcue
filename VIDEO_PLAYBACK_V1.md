@@ -94,10 +94,10 @@ applies unchanged. Video-ness is **derived**, not declared:
 
 - `AudioItem.imagePath?: string` — per-cue still (project-relative, like `mediaPath`).
 - `ProjectSettings.videoStandbyImage?: string` — global standby image.
-- `ProjectSettings.videoOutputEnabled?: boolean` — master arm for the output window.
-- App-level (not project) settings: `hideNetworkUi` (default **true** for v1), gating
-  `ServerSettingsModal.vue` entry points; and the **display assignment**
-  (`videoOutputDisplayId` + resolution/connector fingerprint).
+- App-level (not project) settings in `<userData>/video-output.json`:
+  `enabled` (arm state), `displayId` + resolution/label fingerprint (display
+  assignment), plus `hideNetworkUi` (default **true** for v1), gating
+  `ServerSettingsModal.vue` entry points.
 
 > Display assignment is **machine-specific, not show-specific** — the same show file
 > travels between laptops with different displays. Inkue's machine-config split

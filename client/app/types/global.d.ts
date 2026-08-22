@@ -199,7 +199,36 @@ declare global {
         recentRemove: (path: string) => Promise<Array<{ path: string; name: string; folderPath: string; lastOpened: number }>>;
         recentClear: () => Promise<Array<never>>;
       };
+      // Video Output window (machine-level display assignment; slice 1).
+      videoOutput?: {
+        open: () => Promise<VideoOutputStatus>;
+        close: () => Promise<VideoOutputStatus>;
+        status: () => Promise<VideoOutputStatus>;
+        listDisplays: () => Promise<VideoOutputDisplay[]>;
+        setDisplay: (displayId: string | null) => Promise<VideoOutputStatus>;
+        setTestCard: (show: boolean) => Promise<boolean>;
+        onStatus: (callback: (status: VideoOutputStatus) => void) => () => void;
+        onTestCard: (callback: (show: boolean) => void) => () => void;
+      };
     };
+  }
+  interface VideoOutputDisplay {
+    id: string;
+    label: string;
+    width: number;
+    height: number;
+    primary: boolean;
+  }
+
+  interface VideoOutputStatus {
+    enabled: boolean;
+    open: boolean;
+    displayId: string | null;
+    targetId: string | null;
+    targetLabel: string | null;
+    displays: VideoOutputDisplay[];
+    warning: 'single-display' | 'display-missing' | 'display-shared-with-control' | null;
+    testCard: boolean;
   }
 
   interface ImportMeta {

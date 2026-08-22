@@ -500,6 +500,67 @@
               <p class="settings-help">{{ t('settings.scrollToPlayingHelp') }}</p>
             </section>
           </template>
+          <!-- ================= Video Output ================= -->
+          <template v-else-if="activeTab === 'video'">
+            <!-- Enable/arm the output window. Machine-level, immediate. -->
+            <section class="settings-field">
+              <label class="settings-label settings-label--checkbox">
+                <input
+                  type="checkbox"
+                  :checked="voEnabled"
+                  @change="onVideoOutputEnableChange"
+                />
+                {{ t('settings.videoOutputEnable') }}
+              </label>
+              <p class="settings-help">{{ t('settings.videoOutputEnableHelp') }}</p>
+            </section>
+
+            <!-- Which physical display feeds the switcher/projector -->
+            <section class="settings-field">
+              <label class="settings-label">
+                <span class="material-symbols-rounded" aria-hidden="true">monitor</span>
+                {{ t('settings.videoOutputDisplay') }}
+              </label>
+              <select
+                class="settings-select"
+                :value="voStatus?.displayId ?? ''"
+                :disabled="!voEnabled"
+                @change="onVideoOutputDisplayChange"
+              >
+                <option :value="''">{{ t('settings.videoOutputNoDisplay') }}</option>
+                <option v-for="d in voDisplays" :key="d.id" :value="d.id">
+                  {{ d.label }} — {{ d.width }}×{{ d.height }}{{ d.primary ? ' (' + t('common.default') + ')' : '' }}
+                </option>
+              </select>
+              <p class="settings-help">{{ t('settings.videoOutputDisplayHelp') }}</p>
+            </section>
+
+            <!-- Test card for the switcher/projector end of the chain -->
+            <section class="settings-field">
+              <label class="settings-label settings-label--checkbox">
+                <input
+                  type="checkbox"
+                  :checked="voStatus?.testCard === true"
+                  :disabled="!voStatus?.open"
+                  @change="onVideoOutputTestCardChange"
+                />
+                {{ t('settings.videoOutputTestCard') }}
+              </label>
+              <p class="settings-help">{{ t('settings.videoOutputTestCardHelp') }}</p>
+            </section>
+
+            <!-- Live status line: where the output is, or why it isn't -->
+            <section class="settings-field">
+              <div class="settings-label">
+                <span class="material-symbols-rounded" aria-hidden="true">info</span>
+                {{ t('settings.videoOutputStatus') }}
+              </div>
+              <p class="settings-help video-output-status" :class="{ 'video-output-status--warn': !!voWarningText }">
+                {{ voWarningText || voStatusText }}
+              </p>
+              <p class="settings-help">{{ t('settings.videoOutputMachineNote') }}</p>
+            </section>
+          </template>
         </div>
 
       <footer class="modal-footer">
@@ -559,11 +620,12 @@ const devices = computed(() => server.devices ?? []);
 //  - audio    : device routing + loudness target
 //  - playback : transitions, auto-cue, stop-all fade, processing toggles
 //  - ui       : metering + list behaviour
-const activeTab = ref<'audio' | 'playback' | 'ui'>('audio');
+const activeTab = ref<'audio' | 'playback' | 'ui' | 'video'>('audio');
 const tabs = computed(() => [
   { id: 'audio'    as const, icon: 'graphic_eq', label: t('settings.tabAudioRouting') },
   { id: 'playback' as const, icon: 'play_circle', label: t('settings.tabPlaybackBehaviour') },
   { id: 'ui'       as const, icon: 'desktop_windows', label: t('settings.tabUserInterface') },
+  { id: 'video'    as const, icon: 'monitor', label: t('settings.tabVideoOutput') },
 ]);
 
 // The settings live on the project document; we read them from there and
@@ -604,6 +666,79 @@ const countdownBandError = ref('');
 // Make sure devices are loaded when the modal opens.
 watch(() => props.open, async (v) => {
   if (v) await server.fetchDevices();
+});
+// ---------------------------------------------------------------------------
+// Video Output tab. Arm state + display assignment are machine-level and live
+// in the Electron main process (<userData>/video-output.json) — deliberately
+// NOT on the project document, because a show file travels between laptops.
+// All mutations return the fresh status; the onStatus push keeps this panel
+// live while it is open (e.g. when the watchdog reacts to a display event).
+// ---------------------------------------------------------------------------
+const voStatus = ref<VideoOutputStatus | null>(null);
+
+const voEnabled  = computed(() => voStatus.value?.enabled === true);
+const voDisplays = computed(() => voStatus.value?.displays ?? []);
+
+const voTargetDisplay = computed(() =>
+  voDisplays.value.find((d) => d.id === voStatus.value?.targetId) ?? null);
+
+const voStatusText = computed(() => {
+  const s = voStatus.value;
+  if (!s || !s.enabled) return t('settings.videoOutputStatusOff');
+  const d = voTargetDisplay.value;
+  if (!s.open) return t('settings.videoOutputStatusOff');
+  if (!d) return t('settings.videoOutputStatusPreview');
+  return t('settings.videoOutputStatusOn', { label: d.label, size: `${d.width}×${d.height}` });
+});
+
+const voWarningText = computed(() => {
+  const w = voStatus.value?.warning;
+  if (w === 'single-display') return t('settings.videoOutputWarnSingleDisplay');
+  if (w === 'display-missing') return t('settings.videoOutputWarnMissing');
+  if (w === 'display-shared-with-control') return t('settings.videoOutputWarnShared');
+  return '';
+});
+
+async function onVideoOutputEnableChange(event: Event) {
+  const enabled = (event.target as HTMLInputElement).checked;
+  const api = window.electronAPI?.videoOutput;
+  if (!api) return;
+  voStatus.value = enabled ? await api.open() : await api.close();
+}
+
+async function onVideoOutputDisplayChange(event: Event) {
+  const value = (event.target as HTMLSelectElement).value;
+  const api = window.electronAPI?.videoOutput;
+  if (!api) return;
+  voStatus.value = await api.setDisplay(value || null);
+}
+
+async function onVideoOutputTestCardChange(event: Event) {
+  const show = (event.target as HTMLInputElement).checked;
+  const api = window.electronAPI?.videoOutput;
+  if (!api) return;
+  await api.setTestCard(show);
+}
+
+let voOffStatus: (() => void) | null = null;
+
+watch(() => props.open, async (v) => {
+  if (!v) return;
+  const api = window.electronAPI?.videoOutput;
+  if (!api) return;
+  try { voStatus.value = await api.status(); } catch { /* main not ready yet */ }
+});
+
+onMounted(() => {
+  const api = window.electronAPI?.videoOutput;
+  if (!api) return;
+  api.status().then((s) => { voStatus.value = s; }).catch(() => {});
+  voOffStatus = api.onStatus((s) => { voStatus.value = s; });
+});
+
+onBeforeUnmount(() => {
+  voOffStatus?.();
+  voOffStatus = null;
 });
 
 // Refresh devices on first mount too.
@@ -933,6 +1068,14 @@ function close() {
   margin: 0;
   font-size: 12px;
   color: var(--color-text-secondary);
+}
+.video-output-status {
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+.video-output-status--warn {
+  color: var(--color-warning, #f1c21b);
+  font-weight: 600;
 }
 
 .track-height-control {
