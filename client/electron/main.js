@@ -29,7 +29,10 @@ app.setName('DonWells Cue');
 // it contains projects, preferences, Chromium state, and the detached server's
 // pidfile. Keeping it also lets the new client safely retire a running legacy
 // server instead of losing its identity during an upgrade.
-app.setPath('userData', path.join(app.getPath('appData'), 'LivePlay'));
+// DWCUE_USERDATA overrides it for a dev instance that must run alongside an
+// installed production copy (the single-instance lock and server port would
+// otherwise collide); it is unset in every packaged build.
+app.setPath('userData', process.env.DWCUE_USERDATA || path.join(app.getPath('appData'), 'LivePlay'));
 
 let ffmpegPath = null;
 let ffmpegAvailable = false;
