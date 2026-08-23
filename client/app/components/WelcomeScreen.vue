@@ -13,6 +13,7 @@
             <span class="version-badge">v{{ appVersion }}</span>
           </h1>
           <p class="welcome-subtitle">{{ t('welcome.subtitle') }}</p>
+          <p class="welcome-byline">by <strong>Don Wells</strong></p>
         </div>
       </div>
 
@@ -987,6 +988,17 @@ if (import.meta.client && (window as any).electronAPI) {
   font-weight: 500;
   color: var(--color-text-tertiary);
   letter-spacing: 0.02em;
+}
+
+.welcome-byline {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin: 2px 0 0;
+}
+
+.welcome-byline strong {
+  color: var(--color-text-primary);
+  font-weight: 600;
 }
 
 .welcome-subtitle {

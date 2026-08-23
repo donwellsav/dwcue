@@ -1015,7 +1015,10 @@ function close() {
   background: var(--dialog-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--dialog-radius);
-  width: min(var(--modal-width), 92vw);
+  /* This dialog packs dense grids (countdown bands, audio routing) that
+     wrap and force scrolling at the shared 560px token width — give it
+     real room; small confirm dialogs keep using --modal-width. */
+  width: min(800px, 94vw);
   max-height: var(--modal-max-height);
   overflow: hidden;
   display: flex;

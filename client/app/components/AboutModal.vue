@@ -23,7 +23,12 @@
       <div class="about-info">
         <div class="info-section">
           <p class="developer">
-            <strong>DonWells</strong>
+            © {{ new Date().getFullYear() }}
+            <a
+              href="https://dwcue.com"
+              class="translator-link"
+              @click.prevent="openExternal('https://dwcue.com')"
+            ><strong>Don Wells</strong></a>
           </p>
           <p class="original-credit">
             Original software © Thomas Doukinitsas and contributors.
@@ -51,6 +56,15 @@
         </div>
         
         <div class="info-section links">
+          <a
+            href="https://dwcue.com"
+            class="info-link"
+            @click.prevent="openExternal('https://dwcue.com')"
+          >
+            <span class="material-symbols-rounded">language</span>
+            <span>dwcue.com</span>
+          </a>
+
           <a 
             href="https://github.com/donwellsav/dwcue"
             class="info-link"

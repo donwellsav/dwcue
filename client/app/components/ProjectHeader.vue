@@ -7,11 +7,17 @@
         alt="DonWells Cue"
         class="header-logo"
       />
-      <h2
-        class="project-name"
-        :class="{ 'project-name--hidden': hideTitle }"
-        :title="currentProject?.name || t('project.noProject')"
-      >{{ currentProject?.name || t('project.noProject') }}</h2>
+      <div class="header-titles">
+        <span
+          class="brand-wordmark"
+          :class="{ 'brand-wordmark--hidden': hideTitle }"
+        >{{ t('app.name') }}</span>
+        <h2
+          class="project-name"
+          :class="{ 'project-name--hidden': hideTitle }"
+          :title="currentProject?.name || t('project.noProject')"
+        >{{ currentProject?.name || t('project.noProject') }}</h2>
+      </div>
       <span
         v-if="currentProject && !autoSaveEnabled && hasUnsavedChanges"
         class="unsaved-pill"
@@ -415,6 +421,29 @@ onMounted(() => {
   width: 30px;
   height: 30px;
   object-fit: contain;
+}
+
+/* Brand lockup: product wordmark sits over the project name so the header
+   carries DonWells identity at all times, not just the icon. */
+.header-titles {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.brand-wordmark {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  white-space: nowrap;
+  color: var(--color-text-secondary);
+}
+
+.brand-wordmark--hidden {
+  display: none;
 }
 
 .project-name {
