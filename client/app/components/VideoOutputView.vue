@@ -60,10 +60,14 @@
       <div class="crosshair crosshair--v" />
 
       <div class="testcard-text">
+        <!-- :src binding, never a static src: Vite rewrites static asset
+             attrs against the component dir and the URL 404s. -->
+        <img class="testcard-logo" :src="brandIcon" alt="" draggable="false">
         <div class="testcard-app">DONWELLS CUE</div>
         <div class="testcard-title">VIDEO OUTPUT</div>
         <div class="testcard-meta">{{ resolutionText }}</div>
         <div v-if="displayText" class="testcard-meta testcard-meta--dim">{{ displayText }}</div>
+        <div class="testcard-url">dwcue.com</div>
       </div>
 
       <div class="testcard-corner testcard-corner--tl" />
@@ -82,6 +86,11 @@ const {
 
 const testCard = ref(false);
 const displayLabel = ref<string | null>(null);
+
+// The test card faces the switcher/projector during tech rehearsal — the one
+// moment rivals see the output surface. The card surface is always black, so
+// the dark-mode mark is always the right one.
+const brandIcon = './assets/icons/SVG/app_icon_darkmode@web.svg';
 
 // Physical pixels matter to the person at the switcher — CSS pixels lie on
 // scaled displays (macOS Retina, Windows 125%/150%).
@@ -227,7 +236,9 @@ onBeforeUnmount(() => {
   text-indent: 0.35em; /* optically re-centre the tracked text */
 }
 
-.testcard-app   { font-size: 2.2vh; opacity: 0.7; }
+.testcard-logo  { width: 9vh; height: 9vh; object-fit: contain; opacity: 0.95; margin-bottom: 1vh; }
+.testcard-app   { font-size: 3.4vh; font-weight: 700; opacity: 0.95; }
+.testcard-url   { font-size: 2vh; opacity: 0.55; }
 .testcard-title { font-size: 6vh; font-weight: 700; }
 .testcard-meta  { font-size: 2.6vh; letter-spacing: 0.15em; text-indent: 0.15em; }
 .testcard-meta--dim { opacity: 0.55; }

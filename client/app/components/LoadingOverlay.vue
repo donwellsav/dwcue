@@ -1,6 +1,11 @@
 <template>
   <div v-if="visible" class="loading-overlay">
     <div class="loading-panel">
+      <img
+        :src="isDark ? './assets/icons/SVG/app_icon_darkmode@web.svg' : './assets/icons/SVG/app_icon_lightmode@web.svg'"
+        alt="DonWells Cue"
+        class="loading-logo"
+      />
       <div class="spinner">
         <div class="spinner-ring"></div>
       </div>
@@ -20,6 +25,9 @@ defineProps<{
 }>();
 
 const { t } = useLocalization();
+
+const theme = useState('theme', () => 'dark');
+const isDark = computed(() => theme.value === 'dark');
 </script>
 
 <style scoped>
@@ -31,6 +39,12 @@ const { t } = useLocalization();
   align-items: center;
   justify-content: center;
   z-index: 2000;
+}
+
+.loading-logo {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
 }
 
 .loading-panel {

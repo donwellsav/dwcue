@@ -963,8 +963,8 @@ if (import.meta.client && (window as any).electronAPI) {
 }
 
 .welcome-logo {
-  width: 52px;
-  height: 52px;
+  width: 80px;
+  height: 80px;
   object-fit: contain;
 }
 
