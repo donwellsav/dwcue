@@ -446,10 +446,12 @@ onMounted(async () => {
         else                          handleOpenProject();
       });
     } else {
-      // Always go through the mode-picker so the user is in control of the
-      // current session's server target. We could skip if connected, but the
-      // first-impression UI value of a deliberate choice outweighs the click.
-      stage.value = 'mode';
+      // This release ships local-only: skip the server-choice screen and go
+      // straight to the embedded engine. The remote/network UI stays in place
+      // (behind the per-device toggle) for a future update. stage is already
+      // 'mode', so if the local server fails to start the picker reappears
+      // with the error visible.
+      void chooseLocal();
     }
   }
 
@@ -507,7 +509,10 @@ async function handlePendingFileOpen(p: { path: string; kind: 'liveplay' | 'lpa'
   } else {
     pendingLpaPath.value = p.path;
     importAfterConnect.value = true;
-    stage.value = 'mode';
+    // Local-only release: a double-clicked .lpa goes straight through the
+    // local server instead of asking which server to import into.
+    // chooseLocal sees importAfterConnect and resumes the import.
+    void chooseLocal();
   }
 }
 
