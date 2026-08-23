@@ -544,7 +544,8 @@
     "helpIntro": "Documentation, downloads and support for DonWells Cue.",
     "helpDocs": "Website & documentation",
     "helpIssues": "Report an issue",
-    "helpShortcuts": "Keyboard Shortcuts…"
+    "helpShortcuts": "Keyboard Shortcuts…",
+    "helpShortcutsTitle": "Keyboard shortcuts"
   },
   "common": {
     "default": "προεπιλογή",

@@ -610,11 +610,24 @@
                   <span class="material-symbols-rounded" aria-hidden="true">bug_report</span>
                   <span>{{ t('settings.helpIssues') }}</span>
                 </a>
-                <button type="button" class="help-link help-link--button" @click="emit('open-shortcuts')">
-                  <span class="material-symbols-rounded" aria-hidden="true">keyboard</span>
-                  <span>{{ t('settings.helpShortcuts') }}</span>
-                </button>
               </div>
+            </section>
+
+            <section class="settings-field">
+              <label class="settings-label">
+                <span class="material-symbols-rounded" aria-hidden="true">keyboard</span>
+                {{ t('settings.helpShortcutsTitle') }}
+              </label>
+              <div class="shortcut-summary">
+                <div v-for="action in PLAYBACK_ACTIONS" :key="action.id" class="shortcut-summary-row">
+                  <span class="shortcut-summary-action">{{ t(action.labelKey) }}</span>
+                  <span class="shortcut-summary-key">{{ playbackKeyLabel(action.id) || '—' }}</span>
+                </div>
+              </div>
+              <button type="button" class="help-link help-link--button" @click="emit('open-shortcuts')">
+                <span class="material-symbols-rounded" aria-hidden="true">keyboard</span>
+                <span>{{ t('settings.helpShortcuts') }}</span>
+              </button>
             </section>
           </template>
 
@@ -658,6 +671,8 @@ import {
 } from '~/composables/useUiMode';
 import { normalizeIndexDisplayStart } from '~/utils/indexDisplay';
 import AboutContent from './AboutContent.vue';
+import { PLAYBACK_ACTIONS, formatKeyLabel, useCartHotkeys } from '~/composables/useCartHotkeys';
+import type { PlaybackKeyAction } from '~/types/project';
 
 const props = defineProps<{ open: boolean }>();
 const emit  = defineEmits<{ (e: 'close'): void; (e: 'open-shortcuts'): void }>();
@@ -667,6 +682,13 @@ const server = useLiveplayServer();
 
 const openExternal = (url: string) => {
   if (import.meta.client && window.electronAPI?.openExternal) window.electronAPI.openExternal(url);
+};
+
+// Read-only shortcut summary for the Help tab — same data the editor binds.
+const { playbackMappings } = useCartHotkeys();
+const playbackKeyLabel = (action: PlaybackKeyAction): string => {
+  const binding = playbackMappings.value[action];
+  return binding ? formatKeyLabel(binding) : '';
 };
 const { currentProject, saveProject } = useProject();
 const {
@@ -1442,6 +1464,33 @@ function close() {
 
 .help-link .material-symbols-rounded {
   font-size: 20px;
+}
+
+.shortcut-summary {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-md);
+  overflow: hidden;
+  margin-bottom: var(--spacing-xs);
+}
+
+.shortcut-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 12px;
+  font-size: 13px;
+}
+
+.shortcut-summary-row:nth-child(odd) {
+  background: var(--color-background);
+}
+
+.shortcut-summary-key {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-secondary);
 }
 
 .modal-footer {

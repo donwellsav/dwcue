@@ -181,7 +181,7 @@
 </template>
 
 <script setup lang="ts">
-import { formatKeyLabel, eventToBinding, isReservedCombo } from '~/composables/useCartHotkeys';
+import { formatKeyLabel, eventToBinding, isReservedCombo, PLAYBACK_ACTIONS } from '~/composables/useCartHotkeys';
 import {
   MIDI_ACTIONS,
   formatMidiBinding,
@@ -195,19 +195,6 @@ import { buildOneShotSlots } from '~/utils/oneShots';
 const emit = defineEmits<{ close: [] }>();
 
 const { t } = useLocalization();
-
-// Playback actions metadata (mirrors MIDI_ACTIONS order for the keyboard tab)
-const PLAYBACK_ACTIONS: { id: PlaybackKeyAction; labelKey: string }[] = [
-  { id: 'play-next',     labelKey: 'controls.playNext'     },
-  { id: 'pause-resume',  labelKey: 'controls.pauseResume'  },
-  { id: 'toggle-loop',   labelKey: 'controls.toggleLoop'   },
-  { id: 'cue-to-continue', labelKey: 'controls.cueToContinue' },
-  { id: 'jump-cue',      labelKey: 'controls.jumpCue'      },
-  { id: 'stop-all',      labelKey: 'controls.stopAll'      },
-  { id: 'select-up',     labelKey: 'controls.selectUp'     },
-  { id: 'select-down',   labelKey: 'controls.selectDown'   },
-  { id: 'play-selected', labelKey: 'controls.playSelected' },
-];
 
 // Keyboard state
 const {

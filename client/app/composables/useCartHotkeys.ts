@@ -46,6 +46,20 @@ export const eventToBinding = (e: KeyboardEvent): CartSlotKeyBinding => ({
   altKey: e.altKey,
 });
 
+// Playback action metadata (order mirrors MIDI_ACTIONS). Shared by the
+// shortcuts editor and the read-only shortcuts summary on the Help tab.
+export const PLAYBACK_ACTIONS: { id: PlaybackKeyAction; labelKey: string }[] = [
+  { id: 'play-next',     labelKey: 'controls.playNext'     },
+  { id: 'pause-resume',  labelKey: 'controls.pauseResume'  },
+  { id: 'toggle-loop',   labelKey: 'controls.toggleLoop'   },
+  { id: 'cue-to-continue', labelKey: 'controls.cueToContinue' },
+  { id: 'jump-cue',      labelKey: 'controls.jumpCue'      },
+  { id: 'stop-all',      labelKey: 'controls.stopAll'      },
+  { id: 'select-up',     labelKey: 'controls.selectUp'     },
+  { id: 'select-down',   labelKey: 'controls.selectDown'   },
+  { id: 'play-selected', labelKey: 'controls.playSelected' },
+];
+
 export const useCartHotkeys = () => {
   const { currentProject, selectedItem, selectedItems, saveProject, getAllItemsFlat, toggleItemSelection, findItemByUuid } = useProject();
   const { cartOnlyItems } = useCartItems();
