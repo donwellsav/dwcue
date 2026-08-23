@@ -4271,16 +4271,18 @@ ipcMain.handle(
         path.dirname(ffmpegPath),
         env[pathKey],
       ].filter(Boolean).join(path.delimiter);
+      // Keep spotDL's log lines unwrapped so match results parse one per line.
+      env.COLUMNS = '2000';
 
       // spotDL's bundled yt-dlp is frozen at its build date and can no longer
       // download from YouTube (HTTP 403 since the 2026-08 PO-token rollout).
-      // spotDL remains the best metadata matcher, so run it per track in
-      // match-only mode (`spotdl url` — one process per track keeps results
-      // aligned), then download and convert with our own maintained yt-dlp.
+      // spotDL remains the best metadata matcher, so run it in match-only
+      // mode (`spotdl url`) for the whole playlist in one process, then
+      // download and convert with our own maintained yt-dlp.
       const total = selectedTrackIds.length;
       let playlistName = preflight.playlistName;
       const failures = [];
-      const runTracked = (command, commandArgs, timeoutMs) => new Promise((resolve, reject) => {
+      const runTracked = (command, commandArgs, timeoutMs, onLine = null, onSpawn = null) => new Promise((resolve, reject) => {
         const tracked = spawn(command, commandArgs, {
           cwd: stagingDir,
           env,
@@ -4289,9 +4291,21 @@ ipcMain.handle(
           detached: process.platform !== 'win32',
         });
         job.children.add(tracked);
+        if (onSpawn) onSpawn(tracked);
         let outputTail = '';
+        let lineBuf = '';
         const onData = (chunk) => {
-          outputTail = (outputTail + chunk.toString('utf8')).slice(-8000);
+          const text = chunk.toString('utf8');
+          outputTail = (outputTail + text).slice(-8000);
+          if (onLine) {
+            lineBuf += text;
+            let nl = lineBuf.indexOf('\n');
+            while (nl !== -1) {
+              onLine(lineBuf.slice(0, nl).trimEnd());
+              lineBuf = lineBuf.slice(nl + 1);
+              nl = lineBuf.indexOf('\n');
+            }
+          }
         };
         tracked.stdout.on('data', onData);
         tracked.stderr.on('data', onData);
@@ -4311,59 +4325,50 @@ ipcMain.handle(
         const track = selectedRawTracks[index];
         return `${track.artists.join(', ') || track.artist} - ${track.name}`;
       };
-      const runPool = async (concurrency, visit) => {
+      const runPool = async (concurrency, count, visit) => {
         let cursor = 0;
         const worker = async () => {
-          for (let index = cursor; index < total; index = cursor) {
+          for (let index = cursor; index < count; index = cursor) {
             cursor += 1;
             if (job.cancelled) return;
             await visit(index);
           }
         };
         await Promise.all(
-          Array.from({ length: Math.min(concurrency, total) }, () => worker()));
+          Array.from({ length: Math.min(concurrency, count) }, () => worker()));
       };
 
       progress('resolving', { total, completed: 0, message: 'Matching tracks…' });
       const matchedUrls = new Array(total).fill(null);
+      const trackIndexById = new Map(selectedTrackIds.map((id, index) => [id, index]));
       let matched = 0;
-      await runPool(4, async (index) => {
-        const track = selectedRawTracks[index];
-        for (let attempt = 1; attempt <= 2 && !job.cancelled; attempt += 1) {
-          const result = await runTracked(spotDlPath, [
-            'url', track.url,
-            '--audio', ...SPOTIFY_AUDIO_PROVIDERS,
-            '--max-retries', '1',
-            '--cache-path', path.join(stagingDir, `match-cache-${selectedTrackIds[index]}`),
-            '--log-level', 'ERROR',
-          ], 120000);
-          const urlMatch = result.tail.match(/https?:\/\/\S+/);
-          if (urlMatch) {
-            matchedUrls[index] = urlMatch[0];
-            break;
-          }
-        }
-        matched += 1;
-        if (!matchedUrls[index]) {
-          failures.push(`${trackLabel(index)}: no audio source matched`);
-        }
-        progress('resolving', { total, completed: matched, message: trackLabel(index) });
-      });
-      if (job.cancelled) {
-        progress('cancelled', { message: 'Download cancelled' });
-        throw new Error('Spotify download cancelled');
-      }
+      let resolveFinished = false;
 
-      progress('downloading', { total, completed: 0, message: 'Downloading…' });
       const sanitizeFilePart = (value) => String(value || '')
         .normalize('NFKD')
-        .replace(/[̀-ͯ]/g, '')
+        .replace(/[\u0300-\u036f]/g, '')
         .replace(/[<>:"/\\|?*\x00-\x1F]/g, ' ')
         .replace(/\s+/g, ' ')
         .trim()
         .replace(/[. ]+$/, '');
+
+      // Download pipeline: each match is queued the moment it lands so saving
+      // overlaps matching — a long playlist starts landing MP3s within a
+      // couple of minutes instead of only after the full match phase.
+      // 'downloading' progress events are held until matching finishes so the
+      // modal shows one phase at a time; the first event then already carries
+      // the overlapped count.
+      const downloadQueue = [];
+      const parkedWorkers = new Set();
+      const wakeWorkers = () => {
+        for (const park of [...parkedWorkers]) park();
+      };
       let attempted = 0;
-      await runPool(4, async (index) => {
+      const enqueueDownload = (index) => {
+        downloadQueue.push(index);
+        wakeWorkers();
+      };
+      const downloadTrack = async (index) => {
         const providerUrl = matchedUrls[index];
         const track = selectedRawTracks[index];
         if (!providerUrl) {
@@ -4407,8 +4412,141 @@ ipcMain.handle(
           }
         }
         attempted += 1;
-        progress('downloading', { total, completed: attempted, message: trackLabel(index) });
-      });
+        if (resolveFinished) {
+          progress('downloading', { total, completed: attempted, message: trackLabel(index) });
+        }
+      };
+      const downloadWorker = async () => {
+        for (;;) {
+          if (job.cancelled) return;
+          while (downloadQueue.length === 0 && !resolveFinished && !job.cancelled) {
+            await new Promise((resolve) => {
+              const park = () => {
+                parkedWorkers.delete(park);
+                resolve();
+              };
+              parkedWorkers.add(park);
+            });
+          }
+          if (job.cancelled || (downloadQueue.length === 0 && resolveFinished)) return;
+          await downloadTrack(downloadQueue.shift());
+        }
+      };
+      const downloadWorkers = Array.from(
+        { length: Math.min(4, total) },
+        () => downloadWorker(),
+      );
+
+      // Match every selected track in one spotDL process — one interpreter
+      // start and one Spotify session for the whole playlist, with spotDL's
+      // own thread pool running the provider searches. Measured on this
+      // playlist: one process per track at concurrency 4 took 42-73s per
+      // track and left the progress counter at 0 for over a minute; the
+      // threaded batch lands a match about every 11s. Per-track results are
+      // parsed from MATCH-level log lines, which carry the Spotify track id.
+      const onMatchLine = (line) => {
+        const resultMatch = line.match(
+          /^\[([A-Za-z0-9]{10,64})\]\s+Returning (?:verified )?best result\s+(\S+)/);
+        if (!resultMatch) return;
+        const index = trackIndexById.get(resultMatch[1]);
+        if (index === undefined || matchedUrls[index]) return;
+        matchedUrls[index] = resultMatch[2];
+        matched += 1;
+        progress('resolving', { total, completed: matched, message: trackLabel(index) });
+        enqueueDownload(index);
+      };
+      // Split the playlist into a few chunks matched by concurrent spotDL
+      // processes. spotDL fetches each track's Spotify metadata serially
+      // inside a process (~5s per track — the phase that used to leave the
+      // counter at 0 for many minutes on long playlists), so chunking
+      // parallelizes exactly the part that dominates. --threads 2 per chunk
+      // keeps ~8 provider searches in flight overall, the highest measured
+      // rate that does not trigger throttling.
+      let lastMatchActivity = Date.now();
+      const batchChildren = new Set();
+      const chunkCount = Math.min(4, Math.max(1, Math.ceil(total / 10)));
+      const chunkSize = Math.ceil(total / chunkCount);
+      const chunkRuns = [];
+      let metadataSeen = 0;
+      const onChunkLine = (line) => {
+        lastMatchActivity = Date.now();
+        if (/^Processing query: https?:\/\/open\.spotify\.com\/track\//.test(line)) {
+          metadataSeen += 1;
+          if (!matchedUrls.some(Boolean)) {
+            progress('resolving', {
+              total,
+              completed: 0,
+              message: `Reading Spotify metadata ${Math.min(metadataSeen, total)}/${total}…`,
+            });
+          }
+          return;
+        }
+        onMatchLine(line);
+      };
+      for (let c = 0; c < total; c += chunkSize) {
+        const chunkTracks = selectedRawTracks.slice(c, c + chunkSize);
+        const chunkIndex = chunkRuns.length;
+        chunkRuns.push(runTracked(spotDlPath, [
+          'url', ...chunkTracks.map((track) => track.url),
+          '--audio', ...SPOTIFY_AUDIO_PROVIDERS,
+          '--max-retries', '1',
+          '--threads', '2',
+          '--cache-path', path.join(stagingDir, `match-cache-batch-${chunkIndex}`),
+          '--log-level', 'MATCH',
+          '--log-format', '%(message)s',
+        ], Math.max(300000, chunkTracks.length * 60000), onChunkLine,
+        (tracked) => batchChildren.add(tracked)));
+      }
+      // A hung track can stall a batch matcher; cut it loose and let the
+      // per-track fallback below take the stragglers.
+      const watchdog = setInterval(() => {
+        if (!job.cancelled && Date.now() - lastMatchActivity > 240000) {
+          console.warn('[spotify] match batch stalled; falling back to per-track matching');
+          for (const child of batchChildren) terminateSpotifyChild(child);
+        }
+      }, 30000);
+      try {
+        await Promise.all(chunkRuns);
+      } finally {
+        clearInterval(watchdog);
+      }
+
+      if (!job.cancelled) {
+        const missed = [];
+        for (let index = 0; index < total; index += 1) {
+          if (!matchedUrls[index]) missed.push(index);
+        }
+        await runPool(4, missed.length, async (missedCursor) => {
+          const index = missed[missedCursor];
+          const track = selectedRawTracks[index];
+          for (let attempt = 1; attempt <= 2 && !job.cancelled; attempt += 1) {
+            const result = await runTracked(spotDlPath, [
+              'url', track.url,
+              '--audio', ...SPOTIFY_AUDIO_PROVIDERS,
+              '--max-retries', '1',
+              '--cache-path', path.join(stagingDir, `match-cache-${selectedTrackIds[index]}`),
+              '--log-level', 'ERROR',
+            ], 120000);
+            const urlMatch = result.tail.match(/https?:\/\/\S+/);
+            if (urlMatch) {
+              matchedUrls[index] = urlMatch[0];
+              break;
+            }
+          }
+          if (!matchedUrls[index]) {
+            failures.push(`${trackLabel(index)}: no audio source matched`);
+          } else {
+            matched += 1;
+            progress('resolving', { total, completed: matched, message: trackLabel(index) });
+            enqueueDownload(index);
+          }
+        });
+      }
+
+      resolveFinished = true;
+      wakeWorkers();
+      progress('downloading', { total, completed: attempted, message: 'Downloading…' });
+      await Promise.all(downloadWorkers);
       if (job.cancelled) {
         progress('cancelled', { message: 'Download cancelled' });
         throw new Error('Spotify download cancelled');
