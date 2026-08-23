@@ -15,7 +15,7 @@ const FILES_TO_UPDATE = [
   { path: 'package.json', key: 'version', type: 'json' },
   { path: 'client/package.json', key: 'version', type: 'json' },
   { path: 'server/vcpkg.json', key: 'version-string', type: 'json' },
-  { path: 'client/app/components/AboutModal.vue', key: null, type: 'vue' },
+  { path: 'client/app/components/AboutContent.vue', key: null, type: 'vue' },
   { path: 'client/app/components/WelcomeScreen.vue', key: null, type: 'vue' }
 ];
 
