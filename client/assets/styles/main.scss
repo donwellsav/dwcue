@@ -205,11 +205,11 @@ body {
   background-color: var(--color-background);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  // The app is a desktop-style workspace where dragging reorders cues — it
-  // should never accidentally select UI text. Text selection is re-enabled
-  // for genuine text-entry surfaces below.
-  user-select: none;
-  -webkit-user-select: none;
+  // All text is selectable/copyable by default — error messages that can't be
+  // copied are useless. Cue/cart reordering uses native HTML5 drag
+  // (draggable=true), which never starts a text selection; genuine drag
+  // surfaces (faders, trim handles, grab zones) opt out with their own
+  // user-select: none rules.
 }
 
 // Shared chrome for the three workspace columns. Keeping this global makes
@@ -247,8 +247,8 @@ body {
   min-width: 0;
 }
 
-// Re-enable text selection where it actually makes sense: editable fields
-// and anything explicitly opted-in with .selectable.
+// Editable fields stay selectable everywhere (belt and braces with the
+// global default); .selectable remains as a legacy opt-in.
 input,
 textarea,
 [contenteditable='true'],

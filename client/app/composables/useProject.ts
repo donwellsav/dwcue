@@ -200,6 +200,16 @@ export const useProject = () => {
   const projectFilePathRef = useState<string>('useProject.projectFilePath', () => '');
 
   // Bumped every time the client re-hydrates its project from the server.
+  // Tell the main process which project file is live so it can authorize the
+  // folder for local file IPC (imports, copy-file, …). The renderer can
+  // already read/write this project through the server REST API, so this adds
+  // no new trust — it keeps the path-capability registry in sync for projects
+  // no dialog ever picked (server auto-restore, recents after restart).
+  const reportOpenProjectPath = (path: string) => {
+    if (import.meta.client && path) {
+      void (window as any).electronAPI?.setCurrentProject?.(path);
+    }
+  };
   // Components that memoise per-project work keyed on name/folderPath can't
   // see a reload of the *same* project (both are unchanged), which is exactly
   // what session recovery does — this counter gives them the edge they need.
@@ -613,6 +623,7 @@ export const useProject = () => {
       const projectFilePath = `${folderPath}/${name}.liveplay`;
       await server.saveProjectTo(projectFilePath);
       projectFilePathRef.value = projectFilePath;
+      reportOpenProjectPath(projectFilePath);
       recordRecentProject(projectFilePath);
       return true;
     } catch (error) {
@@ -714,6 +725,7 @@ export const useProject = () => {
         isHydrating.value = false;
       }
       projectFilePathRef.value = projectFilePath;
+      reportOpenProjectPath(projectFilePath);
 
       // Restore cart-only items to client-side memory store (used by CartSlot).
       const { clearCartOnlyItems, addCartOnlyItem } = useCartItems();
@@ -848,6 +860,7 @@ export const useProject = () => {
     if (!header || typeof header !== 'object') return;
     if (header.server?.projectFilePath) {
       projectFilePathRef.value = header.server.projectFilePath;
+      reportOpenProjectPath(header.server.projectFilePath);
     }
     const project: Project = {
       name:           header.name ?? 'Untitled',

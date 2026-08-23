@@ -3311,11 +3311,18 @@ ipcMain.handle('set-current-project', async (event, projectPath) => {
     currentProject = null;
   } else {
     const checked = requireIpcString(projectPath, 'projectPath', MAX_IPC_PATH_LENGTH);
-    if (path.isAbsolute(checked) && pathCapabilities.allows(checked)) {
-      const canonical = pathCapabilities.require(checked, { label: 'projectPath' });
-      currentProject = /\.liveplay$/i.test(canonical) && fs.existsSync(canonical)
-        ? pathCapabilities.authorizeProjectFile(canonical)
-        : canonical;
+    // A live local .liveplay file is authorized on report, even if no dialog
+    // ever picked it (server auto-restore, recent list after restart). The
+    // renderer can already drive reads/writes of the server's open project
+    // through the REST API, so gating the same folder in the renderer's file
+    // IPC (imports, copy-file) adds no real boundary — it only broke imports
+    // into restored projects.
+    const isLiveProjectFile = path.isAbsolute(checked) &&
+      /\.liveplay$/i.test(checked) && fs.existsSync(checked);
+    if (isLiveProjectFile || (path.isAbsolute(checked) && pathCapabilities.allows(checked))) {
+      currentProject = isLiveProjectFile
+        ? pathCapabilities.authorizeProjectFile(checked)
+        : pathCapabilities.require(checked, { label: 'projectPath' });
     } else {
       // Server-side paths may be absolute but are not local capabilities.
       currentProject = checked;

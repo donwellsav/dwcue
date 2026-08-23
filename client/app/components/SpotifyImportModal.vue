@@ -32,8 +32,23 @@
           <p class="hint selectable">{{ t('spotifyImport.hint') }}</p>
 
           <section class="import-plan selectable" :aria-labelledby="planId">
-            <h3 :id="planId">{{ t('spotifyImport.importPlan') }}</h3>
+            <button
+              type="button"
+              class="plan-toggle"
+              :aria-expanded="!planCollapsed"
+              :aria-controls="planBodyId"
+              @click="planCollapsed = !planCollapsed"
+            >
+              <span
+                class="material-symbols-rounded plan-chevron"
+                :class="{ open: !planCollapsed }"
+                aria-hidden="true"
+              >chevron_right</span>
+              <span :id="planId" class="plan-title">{{ t('spotifyImport.importPlan') }}</span>
+              <span v-if="planCollapsed" class="plan-summary">{{ planSummary }}</span>
+            </button>
 
+            <div v-show="!planCollapsed" :id="planBodyId" class="plan-body">
             <dl class="plan-list">
               <div class="plan-row">
                 <dt>{{ t('spotifyImport.source') }}</dt>
@@ -133,6 +148,7 @@
               <p v-if="settingsSaveError" class="settings-save-error" role="alert">
                 {{ settingsSaveError }}
               </p>
+            </div>
             </div>
           </section>
 
@@ -449,6 +465,17 @@ const server = useLiveplayServer();
 
 const titleId = `spotify-import-${Math.random().toString(36).slice(2)}`;
 const planId = `${titleId}-plan`;
+const planBodyId = `${planId}-body`;
+// Accordion: the import plan folds away once tracks load so the review list
+// and the Download button sit next to each other without scrolling. It
+// reopens when the review is dismissed (start another import).
+const planCollapsed = ref(false);
+const planSummary = computed(() => {
+  const parts: string[] = [audioBitrate.value];
+  const dest = destinationParentPath.value.split(/[\\/]/).filter(Boolean).pop();
+  if (dest) parts.push(dest);
+  return parts.join(' · ');
+});
 const urlInput = ref<HTMLInputElement | null>(null);
 const spotifyUrl = ref('');
 const storedAudioBitrate = import.meta.client
@@ -465,6 +492,10 @@ const resultState = ref<SpotifyDownloadResult | null>(null);
 const errorMessage = ref('');
 const technicalMessage = ref('');
 const reviewState = ref<SpotifyPreflight | null>(null);
+watch(reviewState, (state, prev) => {
+  if (state && !prev) planCollapsed.value = true;
+  if (!state) planCollapsed.value = false;
+});
 const trackImportResults = ref<Record<string, NonNullable<ImportBatchResult['results']>[number]>>({});
 const selectedTrackIds = ref<string[]>([]);
 const isReviewing = ref(false);
@@ -1383,17 +1414,62 @@ input {
   border-radius: 8px;
   background: var(--color-background);
 
-  h3,
+    .plan-title,
   p,
   dl,
   dd {
     margin: 0;
   }
 
-  h3 {
+    .plan-title {
     font-size: 13px;
     font-weight: 650;
   }
+}
+
+.plan-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+.plan-chevron {
+  font-size: 18px;
+  color: var(--color-text-tertiary);
+  transition: transform 0.15s ease;
+
+  &.open { transform: rotate(90deg); }
+}
+
+.plan-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.plan-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .plan-list {
