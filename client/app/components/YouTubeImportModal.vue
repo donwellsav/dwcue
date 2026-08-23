@@ -141,7 +141,7 @@
                 <span class="video-title">{{ download.title }}</span>
                 <span class="queue-status" aria-live="polite">{{ getDownloadStatus(download) }}</span>
                 <span class="queue-format">
-                  {{ download.outputMode === 'source' ? t('youtube.outputFormatSource') : download.outputMode === 'video' ? t('youtube.outputFormatVideo') : t('youtube.outputFormatMp3V0') }}
+                  {{ formatLabels[download.outputMode] }}
                 </span>
                 <span v-if="download.savedPath" class="saved-path" :title="download.savedPath">
                   {{ t('youtube.savedPath', { path: download.savedPath }) }}
@@ -272,6 +272,11 @@ const titleId = `youtube-import-${Math.random().toString(36).slice(2)}`;
 const planTitleId = `${titleId}-plan`;
 
 const mediaDestination = computed(() => appendPath(props.projectFolderPath, 'media'));
+const formatLabels = computed<Record<DownloadProgress['outputMode'], string>>(() => ({
+  source: t('youtube.outputFormatSource'),
+  mp3: t('youtube.outputFormatMp3V0'),
+  video: t('youtube.outputFormatVideo'),
+}));
 
 const processingSettings = computed(() => {
   const settings = currentProject.value?.settings;
