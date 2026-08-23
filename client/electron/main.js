@@ -1889,6 +1889,9 @@ function createWindow() {
   mainWindow.on('close', (e) => {
     if (quitConfirmed) return;
     if (!mainWindow || mainWindow.webContents.isDestroyed()) return;
+    // Packaged-app smoke test launches with --smoke-quit: no human is
+    // present to answer the quit-confirmation dialogs, so skip the veto.
+    if (process.argv.includes('--smoke-quit')) return;
     e.preventDefault();
     mainWindow.webContents.send('app:request-quit');
   });

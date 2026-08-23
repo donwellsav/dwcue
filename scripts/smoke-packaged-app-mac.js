@@ -121,7 +121,10 @@ async function main() {
 
   let appPid;
   try {
-    const launch = run('/usr/bin/open', ['-n', appPath]);
+    // --smoke-quit: main.js skips the interactive quit-confirmation veto for
+    // this launch, since the app's quit flow shows renderer dialogs that need
+    // a human (local-server prompt appears whenever a local server runs).
+    const launch = run('/usr/bin/open', ['-n', appPath, '--args', '--smoke-quit']);
     if (launch.status !== 0) {
       throw new Error(`Launch Services failed: ${(launch.stderr || launch.error?.message || '').trim()}`);
     }
