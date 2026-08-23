@@ -1134,7 +1134,7 @@ const handleDrop = async (e: DragEvent) => {
   font-size: 16px;
   color: var(--color-danger);
   flex-shrink: 0;
-  cursor: help;
+  cursor: default;
   line-height: 1;
   margin-top: 1px;
 }

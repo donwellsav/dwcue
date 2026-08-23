@@ -120,6 +120,17 @@ function readCueState(value: unknown): CueStateEvent | null {
   };
 }
 
+// One sounding cue as reported by playback_snapshot.cues[]. The snapshot is
+// the only way a (re)connecting output window learns about a cue that is
+// already playing — cue_state edges only fire on transitions, so without
+// restoring from it the screen would sit black until the next cue started.
+interface SnapshotActive {
+  itemUuid: string;
+  cueId: string | null;
+  transport: number;
+  playheadSeconds: number;
+}
+
 export function useVideoOutput() {
   const server = useLiveplayServer();
 
@@ -138,10 +149,15 @@ export function useVideoOutput() {
   // happen in rehearsal), and a local GET of a small document is cheap.
   const doc = shallowRef<DocMirror | null>(null);
 
+  // A snapshot-restore that arrived before the document finished fetching;
+  // applied by refetchDoc once the item map is available.
+  let pendingActive: SnapshotActive | null = null;
+
   let refetchTimer: number | undefined;
   async function refetchDoc() {
     try {
       doc.value = readDoc(await server.fetchProject());
+      if (pendingActive) applySnapshotActive(pendingActive);
     } catch { /* server mid-load; the next patch retries */ }
   }
   function scheduleRefetch() {
@@ -230,9 +246,30 @@ export function useVideoOutput() {
     }
   }
 
+  // Adopt an already-sounding cue reported by a playback snapshot, following
+  // the same cut rules as a live edge. When the document fetch is still in
+  // flight the restore is deferred via pendingActive.
+  function applySnapshotActive(active: SnapshotActive) {
+    const item = doc.value?.items.get(active.itemUuid);
+    if (!item) { pendingActive = active; return; }
+    pendingActive = null;
+    if (active.itemUuid !== activeItemUuid.value) {
+      const el = videoEl.value;
+      if (el) { el.pause(); el.playbackRate = 1; }
+      activeItemUuid.value = active.itemUuid;
+      activeCueId.value = active.cueId;
+      applyItem(item, active.playheadSeconds);
+    } else if (active.cueId && active.cueId !== activeCueId.value) {
+      activeCueId.value = active.cueId;
+    }
+    applyTransport(active.transport);
+  }
+
   const offCueState = server.onCueState((raw: unknown) => {
     const state = readCueState(raw);
     if (!state) return;
+    // A live edge is fresher than any deferred snapshot restore.
+    pendingActive = null;
     if (state.itemUuid && state.itemUuid === previewItemUuid.value) return;
 
     if (state.transport === TRANSPORT_STOPPED) {
@@ -312,10 +349,39 @@ export function useVideoOutput() {
   });
 
   const offSnapshot = server.onPlaybackSnapshot((raw: unknown) => {
-    const next = raw && typeof raw === 'object'
-      ? readString((raw as Record<string, unknown>).next_item_uuid)
+    if (!raw || typeof raw !== 'object') return;
+    const snap = raw as Record<string, unknown>;
+    nextItemUuid.value = readString(snap.next_item_uuid);
+
+    // The snapshot carries the server's authoritative list of sounding cues —
+    // the only way this surface learns about playback that started before it
+    // connected. Prefer a video-bearing item; otherwise the first sounding
+    // cue wins (an audio-only activation just reveals the image layers).
+    const preview = snap.preview && typeof snap.preview === 'object'
+      ? snap.preview as Record<string, unknown>
       : null;
-    nextItemUuid.value = next;
+    if (preview) previewItemUuid.value = readString(preview.item_uuid);
+
+    const candidates: SnapshotActive[] = [];
+    for (const entry of Array.isArray(snap.cues) ? snap.cues : []) {
+      if (!entry || typeof entry !== 'object') continue;
+      const e = entry as Record<string, unknown>;
+      const itemUuid = readString(e.item_uuid);
+      if (!itemUuid || itemUuid === previewItemUuid.value) continue;
+      candidates.push({
+        itemUuid,
+        cueId: readString(e.cue_id),
+        transport: readNumber(e.transport) ?? TRANSPORT_STOPPED,
+        playheadSeconds: readNumber(e.playhead_seconds) ?? 0,
+      });
+    }
+    const active = candidates.find((c) => doc.value?.items.get(c.itemUuid)?.hasVideo)
+      ?? candidates[0]
+      ?? null;
+    if (active) applySnapshotActive(active);
+    else if (activeItemUuid.value) clearActive();   // server: nothing playing
+    else pendingActive = null;
+
     void refetchDoc();   // reconnect catch-up: the doc may have changed offline
   });
 

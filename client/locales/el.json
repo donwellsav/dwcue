@@ -250,7 +250,9 @@
     "githubRepo": "Αποθετήριο GitHub",
     "developerName": "Θωμάς Δουκινίτσας",
     "contributors": "Συνεισφέροντες",
-    "license": "Άδεια AGPL-3.0 αποκλειστικά"
+    "license": "Άδεια AGPL-3.0 αποκλειστικά",
+    "licenseText": "DonWells Cue is free software, licensed under the GNU Affero General Public License version 3.0 (AGPL-3.0-only).",
+    "sourceText": "The complete corresponding source code is available at github.com/donwellsav/dwcue."
   },
   "localServer": {
     "restartServer": "Επανεκκίνηση διακομιστή",
@@ -536,7 +538,14 @@
     "videoOutputStandbyImageHelp": "Shown when no cue is supplying picture. The file is copied into the project media folder; per-cue images and video sit on top of it.",
     "videoOutputStandbyChoose": "Choose…",
     "videoOutputStandbyClear": "Clear",
-    "videoOutputStandbyNone": "None (black)"
+    "videoOutputStandbyNone": "None (black)",
+    "tabHelp": "Help",
+    "tabAbout": "About",
+    "helpIntro": "Documentation, downloads and support for DonWells Cue.",
+    "helpDocs": "Website & documentation",
+    "helpIssues": "Report an issue",
+    "helpShortcuts": "Keyboard Shortcuts…",
+    "helpShortcutsTitle": "Keyboard shortcuts"
   },
   "common": {
     "default": "προεπιλογή",

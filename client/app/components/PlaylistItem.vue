@@ -1297,7 +1297,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   font-size: 18px;
   color: var(--color-danger);
   flex-shrink: 0;
-  cursor: help;
+  cursor: default;
   line-height: 1;
 }
 
@@ -1309,7 +1309,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   font-size: 18px;
   color: var(--color-accent);
   flex-shrink: 0;
-  cursor: help;
+  cursor: default;
   line-height: 1;
 }
 

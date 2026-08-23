@@ -13,6 +13,7 @@
             <span class="version-badge">v{{ appVersion }}</span>
           </h1>
           <p class="welcome-subtitle">{{ t('welcome.subtitle') }}</p>
+          <p class="welcome-byline">by <strong>Don Wells</strong></p>
         </div>
       </div>
 
@@ -384,7 +385,7 @@ const pickerStart         = ref<string>('');
 const pickerIntent        = ref<'new' | 'open'>('open');
 
 // Get app version
-const appVersion = ref('2.6.0');
+const appVersion = ref('2.6.1');
 onMounted(async () => {
   if (import.meta.client && (window as any).electronAPI?.getAppVersion) {
     appVersion.value = await (window as any).electronAPI.getAppVersion();
@@ -962,8 +963,8 @@ if (import.meta.client && (window as any).electronAPI) {
 }
 
 .welcome-logo {
-  width: 52px;
-  height: 52px;
+  width: 80px;
+  height: 80px;
   object-fit: contain;
 }
 
@@ -987,6 +988,17 @@ if (import.meta.client && (window as any).electronAPI) {
   font-weight: 500;
   color: var(--color-text-tertiary);
   letter-spacing: 0.02em;
+}
+
+.welcome-byline {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin: 2px 0 0;
+}
+
+.welcome-byline strong {
+  color: var(--color-text-primary);
+  font-weight: 600;
 }
 
 .welcome-subtitle {

@@ -16,6 +16,12 @@
     
     <div ref="scrollContainer" class="playlist-content" @drop="handleDrop" @dragover="handleDragOver">
       <div v-if="currentProject?.items.length === 0" class="empty-state">
+        <img
+          :src="isDark ? './assets/icons/SVG/app_icon_darkmode@web.svg' : './assets/icons/SVG/app_icon_lightmode@web.svg'"
+          alt=""
+          class="empty-state-logo"
+          draggable="false"
+        />
         <p>{{ t('playlist.noItems') }}</p>
         <p class="hint">{{ t('playlist.importHint') }}</p>
       </div>
@@ -103,6 +109,8 @@ const {
   projectEpoch,
 } = useProject();
 const { t } = useLocalization();
+const theme = useState('theme', () => 'dark');
+const isDark = computed(() => theme.value === 'dark');
 const { levels: outputTargetLevels } = useOutputTarget();
 const { activeCues, nextItemOverrideUuid } = useAudioEngine();
 const {
@@ -1176,6 +1184,14 @@ const handleDrop = async (e: DragEvent) => {
 .playlist-content::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-tertiary);
   background-clip: padding-box;
+}
+
+.empty-state-logo {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  opacity: 0.25;
+  margin-bottom: 12px;
 }
 
 .empty-state {
