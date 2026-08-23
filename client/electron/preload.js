@@ -251,6 +251,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     listDisplays: ()           => ipcRenderer.invoke('video-output:list-displays'),
     setDisplay:   (displayId)  => ipcRenderer.invoke('video-output:set-display', displayId),
     setTestCard:  (show)       => ipcRenderer.invoke('video-output:test-card', show),
+    setFullscreen:    (on)     => ipcRenderer.invoke('video-output:set-fullscreen', on),
+    toggleFullscreen: ()       => ipcRenderer.invoke('video-output:toggle-fullscreen'),
     onStatus: (callback) => {
       const listener = (_e, status) => callback(status);
       ipcRenderer.on('video-output:status-changed', listener);

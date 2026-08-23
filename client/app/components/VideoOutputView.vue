@@ -125,6 +125,13 @@ onMounted(() => {
     testCard.value = status.testCard;
   }).catch(() => { /* main not ready yet; the onStatus push will land */ });
 
+  // Fullscreen hygiene: double-click toggles, Escape always exits. Handled
+  // here (renderer) so the keystroke works on the borderless fullscreen
+  // window, which has no menu/chrome of its own. Escape while windowed is a
+  // harmless no-op in the main process.
+  window.addEventListener('keydown', onKeydown);
+  window.addEventListener('dblclick', onDblClick);
+
   offStatus = api.onStatus((status) => {
     displayLabel.value = status.targetLabel;
   });
@@ -133,8 +140,20 @@ onMounted(() => {
   });
 });
 
+function onKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    window.electronAPI?.videoOutput?.setFullscreen(false);
+  }
+}
+
+function onDblClick() {
+  window.electronAPI?.videoOutput?.toggleFullscreen();
+}
+
 onBeforeUnmount(() => {
   window.removeEventListener('resize', readViewport);
+  window.removeEventListener('keydown', onKeydown);
+  window.removeEventListener('dblclick', onDblClick);
   offStatus?.();
   offTestCard?.();
 });

@@ -96,7 +96,7 @@ declare global {
         videoId: string,
         title: string,
         projectFolderPath: string,
-        outputMode: 'source' | 'mp3',
+        outputMode: 'source' | 'mp3' | 'video',
         progressCallback?: (progress: { jobId: string; videoId: string; percentage: number; status: string }) => void
       ) => Promise<{ success: boolean; file: string; fileName: string; title: string }>;
       cancelYouTubeDownload: (jobId: string) => Promise<boolean>;
@@ -207,6 +207,8 @@ declare global {
         listDisplays: () => Promise<VideoOutputDisplay[]>;
         setDisplay: (displayId: string | null) => Promise<VideoOutputStatus>;
         setTestCard: (show: boolean) => Promise<boolean>;
+        setFullscreen: (on: boolean) => Promise<VideoOutputStatus>;
+        toggleFullscreen: () => Promise<VideoOutputStatus>;
         onStatus: (callback: (status: VideoOutputStatus) => void) => () => void;
         onTestCard: (callback: (show: boolean) => void) => () => void;
       };
@@ -229,6 +231,7 @@ declare global {
     displays: VideoOutputDisplay[];
     warning: 'single-display' | 'display-missing' | 'display-shared-with-control' | null;
     testCard: boolean;
+    fullscreen: boolean;
   }
 
   interface ImportMeta {
