@@ -26,10 +26,22 @@ The screenshots in this README come from the current app UI. Refresh these canon
 - **📊 See your levels** — real-time metering at every stage (per-cue, per-channel and master), shown in LUFS, dBFS, true-peak or RMS.
 - **🎚 Route anywhere** — send audio to multiple outputs at once (front-of-house, monitors, comms, a record bus…) across one or more sound cards.
 - **🎬 Timecode** — send SMPTE LTC timecode from a cue to keep lighting, video or other systems in sync.
+- **🎞 Play video cues** — H.264/HEVC media shows a picture on a dedicated fullscreen output (projector, LED wall, confidence monitor) while the audio plays through the normal engine path and mixer.
 - **📥 Bring in audio easily** — drag and drop local files, import several at once, download from YouTube, or review and import selected Spotify tracks into a project folder.
 - **🎹 Trigger it your way** — click, tap, keyboard hotkeys, MIDI controllers, or automation over the network (HTTP / WebSocket).
 - **🌍 Speak your language** — available in **21 languages**, including full right-to-left support.
-- **🖥 Run it remotely** — operate a stage-side machine wired to your sound gear from a separate show laptop over the local network, with automatic discovery so you don't have to type in IP addresses.
+- **🖥 Run it remotely** — operate a stage-side machine wired to your sound gear from a separate show laptop over the local network, with automatic discovery so you don't have to type in IP addresses. (v1 keeps the app same-machine only by default: the remote-server options are hidden until you enable **Show network/server options** in Server Settings or on the welcome screen.)
+
+---
+
+## Video output
+
+Video cues are ordinary audio cues whose media file also carries a picture (H.264 or HEVC — ProRes and other production codecs are not supported yet). The audio track plays through the normal engine, mixer, fades and metering; the picture renders in a separate **Video Output** window designed to sit fullscreen on the machine's video output (HDMI → switcher → projector). Cues with video show a 🎬 badge in the playlist.
+
+- **Enable it** from the View menu → **Video Output**. The window opens on the configured display and paints black until content plays. Display assignment is a machine-level setting (stored outside the project file), so the same show file adapts to whatever screen each venue machine has.
+- **Idle layers** — when no video cue is playing the output shows, in priority order: the cue's own **image** (set in Properties for audio-only cues), otherwise the project's **standby image** (Project Settings), otherwise black.
+- **In sync with audio** — the picture chases the engine's playhead: cuts are frame-accurate to the audio, pauses freeze the frame, and drift is corrected inaudibly (tiny playback-rate nudges, re-anchoring only if drift ever exceeds ~80 ms).
+- **Silent videos** — a video file with no audio track still plays: the engine runs a silent transport of the container's duration so the cue advances, auto-follows and reports progress exactly like an audible cue.
 
 ---
 

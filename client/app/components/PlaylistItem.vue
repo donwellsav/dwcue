@@ -111,6 +111,15 @@
             draggable="false"
             @click.stop
           >bomb</span>
+          <span
+            v-if="item.type === 'audio' && item.hasVideo"
+            class="material-symbols-rounded video-badge-icon"
+            :title="t('playlist.videoCue')"
+            role="img"
+            :aria-label="t('playlist.videoCue')"
+            draggable="false"
+            @click.stop
+          >movie</span>
         </div>
 
         <div class="item-state">
@@ -1232,7 +1241,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .playlist-item.is-audio .item-index,
 .playlist-item.is-audio .item-duration,
 .playlist-item.is-audio .behavior-icon,
-.playlist-item.is-audio .peak-warning-icon {
+.playlist-item.is-audio .peak-warning-icon,
+.playlist-item.is-audio .video-badge-icon {
   text-shadow:
     0 2px 3px rgba(0, 0, 0, 0.95),
     0 0 7px rgba(0, 0, 0, 0.72);
@@ -1286,6 +1296,18 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   grid-column: 3;
   font-size: 18px;
   color: var(--color-danger);
+  flex-shrink: 0;
+  cursor: help;
+  line-height: 1;
+}
+
+/* Video cue badge: column 4 in the identity grid. When the peak warning is
+   absent its auto column collapses to zero width, so the badge still sits
+   flush after the cue name. */
+.video-badge-icon {
+  grid-column: 4;
+  font-size: 18px;
+  color: var(--color-accent);
   flex-shrink: 0;
   cursor: help;
   line-height: 1;

@@ -1,7 +1,12 @@
 <template>
   <div id="app" :data-theme="theme">
+    <!-- Video Output window: passive render surface — no app chrome, no modals. -->
+    <template v-if="isVideoOutputWindow">
+      <VideoOutputView />
+    </template>
+
     <!-- Detached One Shots window (legacy query name retained for IPC compatibility). -->
-    <template v-if="isCartWindow">
+    <template v-else-if="isCartWindow">
       <div class="cart-window-root">
         <OneShotPanel v-if="currentProject" :is-detached-window="true" />
         <div v-else class="cart-window-loading">
@@ -215,6 +220,10 @@ watch(theme, (value) => {
 const isCartWindow = import.meta.client
   ? new URLSearchParams(window.location.search).get('cartWindow') === '1'
   : false;
+// Detect if this window is the video output window (?videoOutput=1)
+const isVideoOutputWindow = import.meta.client
+  ? new URLSearchParams(window.location.search).get('videoOutput') === '1'
+  : false;
 
 // Initialize state viewer for dev mode
 useStateViewer();
@@ -289,6 +298,10 @@ function applyCartWindowProjectData(projectData: any) {
 // Listen to menu events
 onMounted(() => {
   if (import.meta.client && window.electronAPI) {
+    // The video output window renders passively and dies with the app: no
+    // menu, file-association, or quit-flow listeners belong here.
+    if (isVideoOutputWindow) return;
+
     // Cart window initialisation: load project data then listen for updates
     if (isCartWindow) {
       window.electronAPI.getCartWindowProjectData().then((projectData: any) => {

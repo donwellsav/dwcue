@@ -1,10 +1,9 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, session, screen, powerSaveBlocker } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { spawn, exec, execFile } = require('child_process');
-const readline = require('readline');
 const { Readable, Transform } = require('stream');
 const { pipeline } = require('stream/promises');
 const youtubesearchapi = require('youtube-search-api');
@@ -1433,23 +1432,23 @@ function setupFfmpeg() {
 // Deno binary hashes below are derived from those verified release archives.
 // ===========================================================================
 const YT_DLP_RELEASE = Object.freeze({
-  version: '2026.07.04',
+  version: '2026.08.19',
   assets: Object.freeze({
     'darwin:arm64': {
       name: 'yt-dlp_macos',
-      sha256: '498bd0dae17855c599d371d68ec5bafc439a9d8640e838be25c765a9792f261b',
+      sha256: '0f192b7ec147ab6288885d6351d9ab67367640029b4377576ef46dd79cf7b202',
     },
     'darwin:x64': {
       name: 'yt-dlp_macos',
-      sha256: '498bd0dae17855c599d371d68ec5bafc439a9d8640e838be25c765a9792f261b',
+      sha256: '0f192b7ec147ab6288885d6351d9ab67367640029b4377576ef46dd79cf7b202',
     },
     'linux:x64': {
       name: 'yt-dlp_linux',
-      sha256: '6bbb3d314cde4febe36e5fa1d55462e29c974f63444e707871834f6d8cc210ae',
+      sha256: '58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a',
     },
     'win32:x64': {
       name: 'yt-dlp.exe',
-      sha256: '52fe3c26dcf71fbdc85b528589020bb0b8e383155cfa81b64dd447bbe35e24b8',
+      sha256: '66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a',
     },
   }),
 });
@@ -1949,6 +1948,366 @@ function createCartPlayerWindow() {
     }
   });
 }
+// ===========================================================================
+// Video Output window (video playback, slice 1 — see VIDEO_PLAYBACK_V1.md).
+//
+// One persistent, borderless, always-on-top window fullscreen on the display
+// the operator assigned as the video output (typically the HDMI feed to a
+// switcher/projector). The Nuxt page at ?videoOutput=1 renders the layer
+// stack (black / standby image / per-cue image / muted video); this block
+// only owns the window, the display assignment, and show hygiene.
+//
+// Assignment is MACHINE-level state in <userData>/video-output.json — it must
+// never travel in the project file, because a show moves between laptops.
+// ===========================================================================
+const VIDEO_OUTPUT_CONFIG_FILENAME = 'video-output.json';
+
+let videoOutputWindow = null;
+let videoOutputPowerSaveId = null;
+let videoOutputWatchdogInstalled = false;
+let videoOutputWatchdogTimer = null;
+let videoOutputTestCard = false;
+
+function videoOutputConfigPath() {
+  return path.join(app.getPath('userData'), VIDEO_OUTPUT_CONFIG_FILENAME);
+}
+
+function readVideoOutputConfig() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(videoOutputConfigPath(), 'utf-8'));
+    return {
+      enabled: parsed.enabled === true,
+      displayId: typeof parsed.displayId === 'string' ? parsed.displayId : null,
+      // Resolution+label hint for re-attach when the OS hands out a new display
+      // id after a reconnect. Ambiguous for two identical projectors — the id
+      // stays the primary key; the fingerprint is only a fallback hint.
+      displayFingerprint: typeof parsed.displayFingerprint === 'string'
+        ? parsed.displayFingerprint : null,
+    };
+  } catch {
+    return { enabled: false, displayId: null, displayFingerprint: null };
+  }
+}
+
+function writeVideoOutputConfig(cfg) {
+  try {
+    fs.writeFileSync(videoOutputConfigPath(), JSON.stringify(cfg, null, 2));
+  } catch (e) {
+    console.error('[video-output] failed to persist config:', e);
+  }
+}
+
+function videoOutputFingerprint(d) {
+  return `${d.size.width}x${d.size.height}:${d.label || ''}`;
+}
+
+function videoOutputDisplays() {
+  const primaryId = screen.getPrimaryDisplay().id;
+  return screen.getAllDisplays().map((d) => ({
+    id: String(d.id),
+    label: d.label || `Display ${d.id}`,
+    width: d.size.width,
+    height: d.size.height,
+    primary: d.id === primaryId,
+  }));
+}
+
+function resolveVideoOutputDisplay(cfg) {
+  const displays = screen.getAllDisplays();
+  if (cfg.displayId) {
+    const hit = displays.find((d) => String(d.id) === cfg.displayId);
+    if (hit) return hit;
+  }
+  if (cfg.displayFingerprint) {
+    const hit = displays.find(
+      (d) => videoOutputFingerprint(d) === cfg.displayFingerprint);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function videoOutputStatus() {
+  const cfg = readVideoOutputConfig();
+  const displays = videoOutputDisplays();
+  const target = resolveVideoOutputDisplay(cfg);
+  let warning = null;
+  if (cfg.enabled) {
+    if (!target) {
+      // One logical display can also mean the OS is mirroring — either way the
+      // projector is not independently addressable right now.
+      warning = displays.length < 2 ? 'single-display' : 'display-missing';
+    } else if (mainWindow && !mainWindow.isDestroyed() &&
+               screen.getDisplayMatching(mainWindow.getBounds()).id === target.id) {
+      // Output and control on the same screen = mirrored displays or a
+      // mis-assignment; the operator must know before showtime.
+      warning = 'display-shared-with-control';
+    }
+  }
+  return {
+    enabled: cfg.enabled,
+    open: videoOutputWindow !== null,
+    displayId: cfg.displayId,
+    targetId: target ? String(target.id) : null,
+    targetLabel: target ? (target.label || `Display ${target.id}`) : null,
+    displays,
+    warning,
+    testCard: videoOutputTestCard,
+    fullscreen: videoOutputWindow !== null &&
+                !videoOutputWindow.isDestroyed() &&
+                videoOutputWindow.isFullScreen(),
+  };
+}
+
+function broadcastVideoOutputStatus() {
+  const status = videoOutputStatus();
+  for (const win of [mainWindow, videoOutputWindow]) {
+    if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+      win.webContents.send('video-output:status-changed', status);
+    }
+  }
+  return status;
+}
+
+function createVideoOutputWindow() {
+  if (videoOutputWindow) return;
+
+  const cfg = readVideoOutputConfig();
+  const target = resolveVideoOutputDisplay(cfg);
+  const realOutput = target !== null && screen.getAllDisplays().length > 1;
+
+  const options = {
+    title: 'DonWells Cue - Video Output',
+    icon: path.join(__dirname, '../assets/icons/2x/app_icon_darkmode@2x.png'),
+    backgroundColor: '#000000',
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      preload: path.join(__dirname, 'preload.js'),
+      webSecurity: true,
+      webviewTag: false,
+      allowRunningInsecureContent: false,
+      experimentalFeatures: false,
+      // This surface is the show's picture: it must keep painting and chasing
+      // the playhead while the operator works in the main window. Without
+      // this, Chromium suspends rAF/timers (and on macOS stops committing
+      // frames entirely) the moment the window is occluded or unfocused.
+      backgroundThrottling: false,
+    },
+  };
+
+  if (realOutput) {
+    // Raw display bounds: this is a physical output, so no DPI correction
+    // (correction is only for capture-only outputs, e.g. a future NDI sink).
+    Object.assign(options, {
+      x: target.bounds.x,
+      y: target.bounds.y,
+      width: target.bounds.width,
+      height: target.bounds.height,
+      frame: false,
+      fullscreen: true,
+      skipTaskbar: true,
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      closable: false,
+      alwaysOnTop: true,
+    });
+  } else {
+    // Preview mode: single-display (or unassigned) machines get a normal
+    // window instead of a hostile fullscreen black takeover.
+    Object.assign(options, { width: 960, height: 540, minWidth: 320, minHeight: 180 });
+  }
+
+  videoOutputWindow = new BrowserWindow(options);
+  if (realOutput) {
+    videoOutputWindow.setAlwaysOnTop(true, 'screen-saver');
+  }
+  videoOutputWindow.once('ready-to-show', () => {
+    if (videoOutputWindow && !videoOutputWindow.isDestroyed()) videoOutputWindow.show();
+  });
+
+  if (isDevMode) {
+    videoOutputWindow.loadURL('http://localhost:3000/?videoOutput=1');
+  } else {
+    const indexPath = path.join(__dirname, '../.output/public/index.html');
+    videoOutputWindow.loadFile(indexPath, { query: { videoOutput: '1' } });
+  }
+
+  videoOutputWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error('[video-output] Failed to load:', errorCode, errorDescription);
+  });
+
+  videoOutputWindow.webContents.once('did-finish-load', () => {
+    // Restore a test card left on across a window reload/recreation.
+    videoOutputWindow.webContents.send('video-output:test-card', videoOutputTestCard);
+    broadcastVideoOutputStatus();
+  });
+
+  videoOutputWindow.on('enter-full-screen', broadcastVideoOutputStatus);
+  videoOutputWindow.on('leave-full-screen', broadcastVideoOutputStatus);
+
+  videoOutputWindow.on('closed', () => {
+    videoOutputWindow = null;
+    if (videoOutputPowerSaveId !== null) {
+      try { powerSaveBlocker.stop(videoOutputPowerSaveId); } catch { /* already stopped */ }
+      videoOutputPowerSaveId = null;
+    }
+    broadcastVideoOutputStatus();
+  });
+
+  // The projector/switcher chain must never sleep mid-show.
+  if (videoOutputPowerSaveId === null || !powerSaveBlocker.isStarted(videoOutputPowerSaveId)) {
+    videoOutputPowerSaveId = powerSaveBlocker.start('prevent-display-sleep');
+  }
+}
+
+function closeVideoOutputWindow() {
+  if (videoOutputWindow && !videoOutputWindow.isDestroyed()) {
+    videoOutputWindow.destroy(); // destroy(): the frameless output window must not veto via 'close'
+  }
+  videoOutputWindow = null;
+}
+
+// Watchdog: when the display topology changes (switcher EDID renegotiation,
+// cable replug, OS reshuffle), keep the output on its assigned display or take
+// it down cleanly — it must never silently settle onto the control screen.
+function installVideoOutputWatchdog() {
+  if (videoOutputWatchdogInstalled) return;
+  videoOutputWatchdogInstalled = true;
+  const onDisplayChange = () => {
+    // Display events arrive in bursts; settle before reacting.
+    clearTimeout(videoOutputWatchdogTimer);
+    videoOutputWatchdogTimer = setTimeout(() => {
+      videoOutputWatchdogTimer = null;
+      const cfg = readVideoOutputConfig();
+      if (!cfg.enabled) { broadcastVideoOutputStatus(); return; }
+      const target = resolveVideoOutputDisplay(cfg);
+      if (videoOutputWindow && cfg.displayId && !target) {
+        // Assigned display is gone: close rather than let the OS park the
+        // fullscreen window on the operator's control display. Preview mode
+        // (no display assigned) intentionally lives on the control screen —
+        // metrics events there (e.g. entering fullscreen) must not kill it.
+        closeVideoOutputWindow();
+      } else if (!videoOutputWindow && target) {
+        // Display (re)appeared while armed: re-acquire it.
+        createVideoOutputWindow();
+      } else if (videoOutputWindow && target &&
+                 screen.getAllDisplays().length > 1 &&
+                 !videoOutputWindow.isDestroyed()) {
+        // Still present but possibly reshuffled: re-assert bounds. Physical
+        // output → raw bounds. (Electron can need a delayed second call on
+        // Windows for the move to stick.)
+        const wBounds = videoOutputWindow.getBounds();
+        const tBounds = target.bounds;
+        if (JSON.stringify(wBounds) !== JSON.stringify(tBounds)) {
+          videoOutputWindow.setBounds(tBounds);
+          setTimeout(() => {
+            if (videoOutputWindow && !videoOutputWindow.isDestroyed()) {
+              videoOutputWindow.setBounds(tBounds);
+            }
+          }, 80);
+        }
+      }
+      broadcastVideoOutputStatus();
+    }, 300);
+  };
+  screen.on('display-added', onDisplayChange);
+  screen.on('display-removed', onDisplayChange);
+  screen.on('display-metrics-changed', onDisplayChange);
+}
+
+// Restore an armed output at launch (called from app.whenReady).
+function restoreVideoOutputWindow() {
+  const cfg = readVideoOutputConfig();
+  if (!cfg.enabled) return;
+  installVideoOutputWatchdog();
+  createVideoOutputWindow();
+}
+
+ipcMain.handle('video-output:open', (event) => {
+  requireTrustedIpc(event);
+  const cfg = readVideoOutputConfig();
+  cfg.enabled = true;
+  writeVideoOutputConfig(cfg);
+  installVideoOutputWatchdog();
+  createVideoOutputWindow();
+  return broadcastVideoOutputStatus();
+});
+
+ipcMain.handle('video-output:close', (event) => {
+  requireTrustedIpc(event);
+  const cfg = readVideoOutputConfig();
+  cfg.enabled = false;
+  writeVideoOutputConfig(cfg);
+  closeVideoOutputWindow();
+  return broadcastVideoOutputStatus();
+});
+
+ipcMain.handle('video-output:status', (event) => {
+  requireTrustedIpc(event);
+  return videoOutputStatus();
+});
+
+ipcMain.handle('video-output:list-displays', (event) => {
+  requireTrustedIpc(event);
+  return videoOutputDisplays();
+});
+
+ipcMain.handle('video-output:set-display', (event, displayId) => {
+  requireTrustedIpc(event);
+  const checked = displayId === null
+    ? null
+    : requireIpcString(displayId, 'displayId', 64);
+  const cfg = readVideoOutputConfig();
+  cfg.displayId = checked;
+  const target = checked
+    ? screen.getAllDisplays().find((d) => String(d.id) === checked)
+    : null;
+  cfg.displayFingerprint = target ? videoOutputFingerprint(target) : null;
+  writeVideoOutputConfig(cfg);
+  if (cfg.enabled && videoOutputWindow) {
+    // Re-place on the new display; recreate is the only clean way to move a
+    // fullscreen frameless window across displays.
+    closeVideoOutputWindow();
+    createVideoOutputWindow();
+  }
+  return broadcastVideoOutputStatus();
+});
+
+// Fullscreen toggle for the output window. The assigned-display case is
+// already fullscreen/borderless by construction; this covers the preview
+// window (single-display machines) and lets the operator drop a real output
+// back to windowed for setup. The renderer drives it: double-click toggles,
+// Escape exits.
+ipcMain.handle('video-output:set-fullscreen', (event, on) => {
+  requireTrustedIpc(event);
+  if (videoOutputWindow && !videoOutputWindow.isDestroyed()) {
+    videoOutputWindow.setFullScreen(on === true);
+  }
+  return broadcastVideoOutputStatus();
+});
+
+ipcMain.handle('video-output:toggle-fullscreen', (event) => {
+  requireTrustedIpc(event);
+  if (videoOutputWindow && !videoOutputWindow.isDestroyed()) {
+    videoOutputWindow.setFullScreen(!videoOutputWindow.isFullScreen());
+  }
+  return broadcastVideoOutputStatus();
+});
+
+ipcMain.handle('video-output:test-card', (event, show) => {
+  requireTrustedIpc(event);
+  const visible = show === true;
+  videoOutputTestCard = visible;
+  if (videoOutputWindow && !videoOutputWindow.isDestroyed()) {
+    videoOutputWindow.webContents.send('video-output:test-card', visible);
+  }
+  broadcastVideoOutputStatus();
+  return visible;
+});
 
 // Create state viewer window for debugging
 function createStateViewerWindow() {
@@ -3583,18 +3942,6 @@ ipcMain.handle('cancel-spotify-preflight', async (event, jobId) => {
   return cancelSpotifyPreflight(jobId, event.sender.id);
 });
 
-function spotDlNumericProgress(line) {
-  const match = line.match(/\b(\d+)\s*\/\s*(\d+)\s+complete\b/i);
-  if (!match) return null;
-  const completed = Number(match[1]);
-  const total = Number(match[2]);
-  if (!Number.isSafeInteger(completed) || !Number.isSafeInteger(total) ||
-      completed < 0 || total < 1) {
-    return null;
-  }
-  return { completed: Math.min(completed, total), total };
-}
-
 async function createSpotifyProjectFolder(destinationParentPath, playlistName, job, reusePath = '') {
   if (reusePath) {
     const relative = path.relative(destinationParentPath, reusePath);
@@ -3739,7 +4086,8 @@ async function cancelSpotifyDownload(
   if (!job || (senderId !== null && job.senderId !== senderId)) return false;
   job.cancelled = true;
   job.abortController.abort();
-  terminateSpotifyChild(job.child);
+  if (job.children) for (const tracked of job.children) terminateSpotifyChild(tracked);
+  else terminateSpotifyChild(job.child);
   if (job.awaitingImport) {
     job.awaitingImport = false;
     try {
@@ -3857,7 +4205,7 @@ ipcMain.handle(
     let resolveDone;
     const done = new Promise((resolve) => { resolveDone = resolve; });
     const job = {
-      child: null,
+      children: new Set(),
       cancelled: false,
       abortController,
       cancelledSignal,
@@ -3906,28 +4254,6 @@ ipcMain.handle(
       if (!spotDlReady || !spotDlPath) throw new Error('Spotify downloader is unavailable');
       if (!ffmpegReady || !ffmpegPath) throw new Error('FFmpeg is unavailable');
 
-      const cacheDir = path.join(app.getPath('userData'), 'spotdl');
-      fs.mkdirSync(cacheDir, { recursive: true });
-      const selectionPath = path.join(stagingDir, 'dwcue-selected.spotdl');
-      fs.writeFileSync(selectionPath, JSON.stringify(selectedRawTracks));
-      const args = [
-        'download',
-        selectionPath,
-        '--audio', ...SPOTIFY_AUDIO_PROVIDERS,
-        '--format', 'mp3',
-        '--bitrate', audioBitrate,
-        '--ffmpeg', ffmpegPath,
-        '--output', '{track-id} - {artists} - {title}.{output-ext}',
-        '--m3u', 'dwcue-spotify-order.m3u8',
-        '--save-file', 'dwcue-spotify-manifest.spotdl',
-        '--overwrite', 'skip',
-        '--restrict', 'strict',
-        '--max-filename-length', '180',
-        '--cache-path', path.join(cacheDir, 'spotify-cache'),
-        '--max-retries', '3',
-        '--print-errors',
-        '--simple-tui',
-      ];
       const env = { ...process.env };
       const pathKey = Object.keys(env).find((key) => key.toLowerCase() === 'path') || 'PATH';
       env[pathKey] = [
@@ -3936,62 +4262,143 @@ ipcMain.handle(
         env[pathKey],
       ].filter(Boolean).join(path.delimiter);
 
-      progress('resolving', { message: 'Reading Spotify list…' });
-      const child = spawn(spotDlPath, args, {
-        cwd: stagingDir,
-        env,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        windowsHide: true,
-        detached: process.platform !== 'win32',
-      });
-      job.child = child;
-
-      let total = selectedTrackIds.length;
+      // spotDL's bundled yt-dlp is frozen at its build date and can no longer
+      // download from YouTube (HTTP 403 since the 2026-08 PO-token rollout).
+      // spotDL remains the best metadata matcher, so run it per track in
+      // match-only mode (`spotdl url` — one process per track keeps results
+      // aligned), then download and convert with our own maintained yt-dlp.
+      const total = selectedTrackIds.length;
       let playlistName = preflight.playlistName;
-      let completed = 0;
-      const tail = [];
-      const onLine = (rawLine) => {
-        const line = rawLine
-          .replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '')
-          .trim();
-        if (!line) return;
-        tail.push(line);
-        if (tail.length > 60) tail.shift();
-
-        const found = line.match(/Found\s+(\d+)\s+songs?/i);
-        if (found) {
-          total = Number(found[1]);
-          playlistName =
-            line.match(/songs?\s+in\s+(.+?)\s+\(/i)?.[1]?.trim() || playlistName;
-        }
-        const numericProgress = spotDlNumericProgress(line);
-        if (numericProgress) {
-          total = numericProgress.total;
-          completed = numericProgress.completed;
-        }
-        const downloaded = line.match(/^Downloaded\s+"([^"]+)"/i);
-        if (found || numericProgress || downloaded) {
-          progress('downloading', {
-            playlistName,
-            total,
-            completed,
-            message: downloaded ? downloaded[1] : 'Downloading…',
-          });
-        }
-      };
-      const stdoutLines = readline.createInterface({ input: child.stdout });
-      const stderrLines = readline.createInterface({ input: child.stderr });
-      stdoutLines.on('line', onLine);
-      stderrLines.on('line', onLine);
-
-      const result = await new Promise((resolve, reject) => {
-        child.once('error', reject);
-        child.once('close', (code, signal) => resolve({ code, signal }));
+      const failures = [];
+      const runTracked = (command, commandArgs, timeoutMs) => new Promise((resolve, reject) => {
+        const tracked = spawn(command, commandArgs, {
+          cwd: stagingDir,
+          env,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true,
+          detached: process.platform !== 'win32',
+        });
+        job.children.add(tracked);
+        let outputTail = '';
+        const onData = (chunk) => {
+          outputTail = (outputTail + chunk.toString('utf8')).slice(-8000);
+        };
+        tracked.stdout.on('data', onData);
+        tracked.stderr.on('data', onData);
+        const timer = setTimeout(() => terminateSpotifyChild(tracked), timeoutMs);
+        tracked.once('error', (error) => {
+          clearTimeout(timer);
+          job.children.delete(tracked);
+          reject(error);
+        });
+        tracked.once('close', (code, signal) => {
+          clearTimeout(timer);
+          job.children.delete(tracked);
+          resolve({ code, signal, tail: outputTail });
+        });
       });
-      stdoutLines.close();
-      stderrLines.close();
-      job.child = null;
+      const trackLabel = (index) => {
+        const track = selectedRawTracks[index];
+        return `${track.artists.join(', ') || track.artist} - ${track.name}`;
+      };
+      const runPool = async (concurrency, visit) => {
+        let cursor = 0;
+        const worker = async () => {
+          for (let index = cursor; index < total; index = cursor) {
+            cursor += 1;
+            if (job.cancelled) return;
+            await visit(index);
+          }
+        };
+        await Promise.all(
+          Array.from({ length: Math.min(concurrency, total) }, () => worker()));
+      };
 
+      progress('resolving', { total, completed: 0, message: 'Matching tracks…' });
+      const matchedUrls = new Array(total).fill(null);
+      let matched = 0;
+      await runPool(4, async (index) => {
+        const track = selectedRawTracks[index];
+        for (let attempt = 1; attempt <= 2 && !job.cancelled; attempt += 1) {
+          const result = await runTracked(spotDlPath, [
+            'url', track.url,
+            '--audio', ...SPOTIFY_AUDIO_PROVIDERS,
+            '--max-retries', '1',
+            '--cache-path', path.join(stagingDir, `match-cache-${selectedTrackIds[index]}`),
+            '--log-level', 'ERROR',
+          ], 120000);
+          const urlMatch = result.tail.match(/https?:\/\/\S+/);
+          if (urlMatch) {
+            matchedUrls[index] = urlMatch[0];
+            break;
+          }
+        }
+        matched += 1;
+        if (!matchedUrls[index]) {
+          failures.push(`${trackLabel(index)}: no audio source matched`);
+        }
+        progress('resolving', { total, completed: matched, message: trackLabel(index) });
+      });
+      if (job.cancelled) {
+        progress('cancelled', { message: 'Download cancelled' });
+        throw new Error('Spotify download cancelled');
+      }
+
+      progress('downloading', { total, completed: 0, message: 'Downloading…' });
+      const sanitizeFilePart = (value) => String(value || '')
+        .normalize('NFKD')
+        .replace(/[̀-ͯ]/g, '')
+        .replace(/[<>:"/\\|?*\x00-\x1F]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/[. ]+$/, '');
+      let attempted = 0;
+      await runPool(4, async (index) => {
+        const providerUrl = matchedUrls[index];
+        const track = selectedRawTracks[index];
+        if (!providerUrl) {
+          attempted += 1;
+          return;
+        }
+        const baseName = [
+          selectedTrackIds[index],
+          sanitizeFilePart(track.artists.join(', ')),
+          sanitizeFilePart(track.name),
+        ].filter(Boolean).join(' - ').slice(0, 160);
+        const outputPath = path.join(stagingDir, `${baseName}.mp3`);
+        for (let attempt = 1; attempt <= 2 && !job.cancelled; attempt += 1) {
+          const result = await runTracked(ytDlpPath, [
+            '-f', 'bestaudio',
+            '-x', '--audio-format', 'mp3', '--audio-quality', audioBitrate,
+            '--ffmpeg-location', ffmpegPath,
+            '--no-playlist', '--newline', '--retries', '3',
+            '-o', path.join(stagingDir, `${baseName}.%(ext)s`),
+            providerUrl,
+          ], 600000);
+          if (result.code === 0 && fs.existsSync(outputPath)) break;
+          if (attempt === 2) {
+            failures.push(`${trackLabel(index)}: download failed`);
+          }
+        }
+        if (!job.cancelled && fs.existsSync(outputPath)) {
+          const taggedPath = `${outputPath}.tagged.mp3`;
+          const tagResult = await runTracked(ffmpegPath, [
+            '-y', '-i', outputPath, '-c', 'copy', '-id3v2_version', '3',
+            '-metadata', `title=${track.name}`,
+            '-metadata', `artist=${track.artists.join(', ')}`,
+            '-metadata', `album=${playlistName}`,
+            '-metadata', `track=${index + 1}`,
+            taggedPath,
+          ], 120000);
+          if (tagResult.code === 0 && fs.existsSync(taggedPath)) {
+            fs.renameSync(taggedPath, outputPath);
+          } else {
+            fs.rmSync(taggedPath, { force: true });
+          }
+        }
+        attempted += 1;
+        progress('downloading', { total, completed: attempted, message: trackLabel(index) });
+      });
       if (job.cancelled) {
         progress('cancelled', { message: 'Download cancelled' });
         throw new Error('Spotify download cancelled');
@@ -3999,7 +4406,9 @@ ipcMain.handle(
 
       const outputs = orderedSpotifyOutputs(stagingDir, selectedTrackIds);
       if (outputs.length === 0) {
-        throw new Error(summarizeSpotDlError(tail, result.code));
+        throw new Error(failures.length
+          ? `No tracks could be downloaded. ${failures.slice(0, 3).join('; ')}`
+          : 'No tracks could be downloaded');
       }
       playlistName = sanitizeSpotifyFolderName(playlistName);
       const { projectFolderPath, mediaDir } = await createSpotifyProjectFolder(
@@ -4019,8 +4428,10 @@ ipcMain.handle(
         message: 'Adding tracks to project…',
       });
       const files = await copySpotifyOutputsToMedia(outputs, mediaDir, job);
-      const partial = result.code !== 0 || (total > 0 && files.length < total);
-      const error = partial ? summarizeSpotDlError(tail, result.code) : undefined;
+      const partial = failures.length > 0 || (total > 0 && files.length < total);
+      const error = partial
+        ? `${total - files.length} of ${total} track(s) failed${failures.length ? ` — ${failures[0]}` : ''}`
+        : undefined;
       const completedTrackIds = outputs
         .map((filePath) => spotifyOutputTrackId(filePath, selectedTrackIds))
         .filter(Boolean);
@@ -4206,7 +4617,7 @@ ipcMain.handle('download-youtube-audio', async (event, jobId, videoId, title, pr
   title = requireIpcString(title, 'title', 500);
   projectFolderPath = requireAuthorizedIpcPath(projectFolderPath, 'projectFolderPath');
   outputMode = requireIpcString(outputMode, 'outputMode', 16);
-  if (!['source', 'mp3'].includes(outputMode)) throw new TypeError('outputMode is invalid');
+  if (!['source', 'mp3', 'video'].includes(outputMode)) throw new TypeError('outputMode is invalid');
   if (activeYouTubeDownloads.has(jobId)) throw new Error('YouTube job already exists');
   const job = {
     child: null,
@@ -4237,9 +4648,10 @@ ipcMain.handle('download-youtube-audio', async (event, jobId, videoId, title, pr
     
     // Clean filename
     const sanitizedTitle = title.replace(/[<>:"/\\|?*]/g, '').trim().substring(0, 180)
-      || `YouTube audio ${videoId}`;
+      || `YouTube ${outputMode === 'video' ? 'video' : 'audio'} ${videoId}`;
     const outputBaseName = `${sanitizedTitle} [${videoId}]`;
-    const fileName = outputMode === 'mp3' ? `${outputBaseName}.mp3` : '';
+    const fileName = outputMode === 'mp3' ? `${outputBaseName}.mp3`
+      : outputMode === 'video' ? `${outputBaseName}.mp4` : '';
     const outputTemplate = path.join(outputPath, outputBaseName);
     const outputPrefix = `${outputBaseName}.`;
     const existingOutputs = new Set(
@@ -4269,14 +4681,22 @@ ipcMain.handle('download-youtube-audio', async (event, jobId, videoId, title, pr
     catch (error) { reject(error); return; }
     if (job.cancelled) { reject(new Error('YouTube download cancelled')); return; }
     
-    if (outputMode === 'mp3' && !(await setupFfmpeg())) {
+    // Video mode needs ffmpeg to mux the separate video+audio streams; mp3
+    // mode needs it for transcode.
+    if ((outputMode === 'mp3' || outputMode === 'video') && !(await setupFfmpeg())) {
       reject(new Error('Bundled FFmpeg failed to initialize. Please restart the application.'));
       return;
     }
     
     try {
-      // Build yt-dlp arguments
-      const args = [videoUrl, '-f', 'bestaudio'];
+      // Build yt-dlp arguments. Video mode strongly prefers an H.264+AAC pair
+      // (the engine decodes the AAC track; Chromium shows the picture) and
+      // caps at 1080p — plenty for a cue projector, kind to weak iGPUs.
+      const args = outputMode === 'video'
+        ? [videoUrl, '-f',
+           'bv*[height<=1080][vcodec^=avc1]+ba[acodec^=mp4a]/b[height<=1080][ext=mp4]/bv*[height<=1080]+ba/b',
+           '--merge-output-format', 'mp4']
+        : [videoUrl, '-f', 'bestaudio'];
       if (outputMode === 'mp3') {
         args.push(
           '--extract-audio',
@@ -4292,7 +4712,7 @@ ipcMain.handle('download-youtube-audio', async (event, jobId, videoId, title, pr
       );
       
       // Add ffmpeg path if we have it
-      if (outputMode === 'mp3' && ffmpegPath) {
+      if ((outputMode === 'mp3' || outputMode === 'video') && ffmpegPath) {
         args.push('--ffmpeg-location', ffmpegPath);
       }
 
@@ -4345,7 +4765,7 @@ ipcMain.handle('download-youtube-audio', async (event, jobId, videoId, title, pr
               jobId,
               videoId,
               percentage: percentage,
-              status: outputMode === 'mp3' && percentage >= 100
+              status: (outputMode === 'mp3' || outputMode === 'video') && percentage >= 100
                 ? 'converting'
                 : 'downloading'
             });
@@ -4354,6 +4774,14 @@ ipcMain.handle('download-youtube-audio', async (event, jobId, videoId, title, pr
         
         // Check for post-processing
         if (outputMode === 'mp3' && output.includes('[ExtractAudio]')) {
+          event.sender.send('youtube-download-progress', {
+            jobId,
+            videoId,
+            percentage: 95,
+            status: 'converting'
+          });
+        }
+        if (outputMode === 'video' && output.includes('[Merger]')) {
           event.sender.send('youtube-download-progress', {
             jobId,
             videoId,
@@ -4434,7 +4862,8 @@ ipcMain.handle('download-youtube-audio', async (event, jobId, videoId, title, pr
             const parsed = path.parse(f);
             return parsed.name === outputBaseName &&
               !/\.(?:part|ytdl|tmp)$/i.test(f) &&
-              (outputMode === 'source' || parsed.ext.toLowerCase() === '.mp3');
+              (outputMode === 'source' ||
+               parsed.ext.toLowerCase() === (outputMode === 'video' ? '.mp4' : '.mp3'));
           });
           
           if (matchingFile) {
@@ -4552,6 +4981,9 @@ if (!gotTheLock) {
     // Start listening for discovery beacons early so the welcome screen's
     // picker is already populated by the time the user reaches it.
     try { startDiscoveryListener(); } catch (e) { console.warn('[liveplay-discovery]', e); }
+    // Re-arm the video output window if it was enabled when the app last ran —
+    // a show laptop rebooted mid-rig must come back with the projector fed.
+    try { restoreVideoOutputWindow(); } catch (e) { console.warn('[video-output]', e); }
 
     // NOTE: a file opened before the app was ready (cold start) is delivered
     // via the pull path — the renderer calls `get-pending-open-file` on mount

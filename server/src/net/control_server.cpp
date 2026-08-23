@@ -174,6 +174,18 @@ struct ControlSecurityMiddleware {
 
     void after_handle(crow::request& req, crow::response& res, context&) {
         add_cors_headers(req, res);
+        // Crow's router answers OPTIONS itself with a fresh response object
+        // (res = response(NO_CONTENT) + Allow header), wiping the preflight
+        // headers set in before_handle. Re-add them here, after routing, so
+        // browser clients see a usable preflight either way.
+        if (req.method == crow::HTTPMethod::Options &&
+            security::origin_allowed(req.get_header_value("Origin"), allowed_origins)) {
+            res.set_header("Access-Control-Allow-Methods",
+                           "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+            res.set_header("Access-Control-Allow-Headers",
+                           "Authorization, Content-Type");
+            res.set_header("Access-Control-Max-Age", "600");
+        }
     }
 };
 
@@ -3131,6 +3143,7 @@ void ControlServer::install_routes() {
                 {"sample_rate",  md.sample_rate},
                 {"channels",     md.channels},
                 {"bitrate_kbps", md.bitrate_kbps},
+                {"has_video",    md.has_video},
             });
         });
 
@@ -3194,6 +3207,100 @@ void ControlServer::install_routes() {
                 return json_err(400, e.what());
             } catch (const std::exception& e) { return json_err(500, e.what()); }
             catch (...) { return json_err(500, "unknown error computing waveform"); }
+        });
+
+    // ---- Media streaming (Video Output window) ----
+    // Serves a local media file with HTTP Range support: Chromium's media
+    // stack probes MP4s with byte-range GETs and cannot seek without 206
+    // responses, so Crow's set_static_file_info (no ranges) is not enough.
+    // Same trust model as /api/waveform_path — the server is a same-machine
+    // tool and the caller may read any local path.
+    CROW_ROUTE(app, "/api/media").methods(crow::HTTPMethod::Get, crow::HTTPMethod::Head)
+        ([](const crow::request& req) {
+            static const std::unordered_map<std::string, std::string> kMime = {
+                {".mp4",  "video/mp4"},        {".m4v",  "video/mp4"},
+                {".mov",  "video/quicktime"},  {".mkv",  "video/x-matroska"},
+                {".webm", "video/webm"},       {".mp3",  "audio/mpeg"},
+                {".wav",  "audio/wav"},        {".flac", "audio/flac"},
+                {".png",  "image/png"},        {".jpg",  "image/jpeg"},
+                {".jpeg", "image/jpeg"},       {".gif",  "image/gif"},
+                {".webp", "image/webp"},       {".svg",  "image/svg+xml"},
+            };
+            try {
+                const char* path_param = req.url_params.get("path");
+                if (!path_param || !*path_param) return json_err(400, "missing ?path=");
+                const fs::path file_path =
+                    liveplay::util::utf8_to_path(std::string{path_param});
+
+                std::error_code ec;
+                const std::uint64_t size =
+                    static_cast<std::uint64_t>(fs::file_size(file_path, ec));
+                if (ec || fs::is_directory(file_path, ec)) return json_err(404, "not found");
+
+                std::string ext = file_path.extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                const auto mime_it = kMime.find(ext);
+                const std::string mime =
+                    mime_it != kMime.end() ? mime_it->second : "application/octet-stream";
+
+                // Range: bytes=start-end | bytes=start- | bytes=-suffix
+                std::uint64_t begin = 0;
+                std::uint64_t end = size > 0 ? size - 1 : 0;
+                bool partial = false;
+                const std::string range = req.get_header_value("Range");
+                if (range.rfind("bytes=", 0) == 0 && size > 0) {
+                    const std::string spec = range.substr(6);
+                    const auto dash = spec.find('-');
+                    if (dash == std::string::npos) return crow::response(416);
+                    const std::string first = spec.substr(0, dash);
+                    const std::string last = spec.substr(dash + 1);
+                    try {
+                        if (first.empty()) {
+                            const auto suffix = std::stoull(last);
+                            if (suffix == 0) return crow::response(416);
+                            begin = suffix >= size ? 0 : size - suffix;
+                        } else {
+                            begin = std::stoull(first);
+                            if (!last.empty())
+                                end = std::min<std::uint64_t>(std::stoull(last), size - 1);
+                        }
+                    } catch (...) { return crow::response(416); }
+                    if (begin >= size || begin > end) {
+                        crow::response unsatisfiable(416);
+                        unsatisfiable.add_header("Content-Range",
+                                                 "bytes */" + std::to_string(size));
+                        return unsatisfiable;
+                    }
+                    partial = begin != 0 || end != size - 1;
+                }
+
+                crow::response r;
+                r.code = partial ? 206 : 200;
+                r.add_header("Content-Type", mime);
+                r.add_header("Accept-Ranges", "bytes");
+                r.add_header("Cache-Control", "no-store");
+                if (partial) {
+                    r.add_header("Content-Range",
+                                 "bytes " + std::to_string(begin) + "-" +
+                                     std::to_string(end) + "/" + std::to_string(size));
+                }
+
+                // Content-Length is derived from r.body by Crow — never set
+                // it manually (a duplicate header would corrupt framing).
+                const std::uint64_t length = size == 0 ? 0 : end - begin + 1;
+                if (req.method == crow::HTTPMethod::Head || length == 0) return r;
+
+                std::ifstream in(file_path, std::ios::binary);
+                if (!in) return json_err(404, "not found");
+                in.seekg(static_cast<std::streamoff>(begin), std::ios::beg);
+                std::string body(static_cast<std::size_t>(length), '\0');
+                in.read(body.data(), static_cast<std::streamsize>(length));
+                body.resize(static_cast<std::size_t>(
+                    std::max<std::streamsize>(0, in.gcount())));
+                r.body = std::move(body);
+                return r;
+            } catch (const std::exception& e) { return json_err(500, e.what()); }
         });
 
     // ---- Project I/O ----

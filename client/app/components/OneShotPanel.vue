@@ -260,6 +260,7 @@ const importFromServerPath = async (
       waveform,
       duration,
       outPoint: duration,
+      ...(metadata as any)?.has_video === true ? { hasVideo: true as const } : {},
     } as AudioItem;
     markAsOneShot(item, slot);
     await replaceSlotItem(slot, item);

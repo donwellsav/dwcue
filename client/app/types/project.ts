@@ -18,6 +18,13 @@ export interface AudioItem extends BaseItem {
   // uploading a file to the server's media_root (rather than the old local
   // copy-into-project-folder path).
   mediaServerPath?: string;
+  // Server-probed at import (decoder file_has_video_stream): the media file is
+  // a video container with a real video stream. Drives the Video Output
+  // window; audio still plays through the engine exactly as before.
+  hasVideo?: boolean;
+  // Optional per-cue still image, project-relative like mediaPath, shown on
+  // the video output while this audio-only cue plays.
+  imagePath?: string;
   waveformPath: string;
   waveform?: WaveformData; // Optional: waveform data for visualization
   inPoint: number; // in seconds
@@ -213,6 +220,9 @@ export interface ProjectSettings {
   autoSave?: boolean;
   countdownColorBands?: CountdownColorBand[];
   cartSlotCount?: number;
+  // Global standby image for the video output, project-relative. Shown when
+  // nothing is playing and no black/test card is up.
+  videoStandbyImage?: string;
 
   /**
    * Number shown for the first playlist item.

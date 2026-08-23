@@ -60,6 +60,7 @@
               <select v-model="outputMode">
                 <option value="source">{{ t('youtube.outputFormatSource') }}</option>
                 <option value="mp3">{{ t('youtube.outputFormatMp3V0') }}</option>
+                <option value="video">{{ t('youtube.outputFormatVideo') }}</option>
               </select>
             </label>
 
@@ -140,7 +141,7 @@
                 <span class="video-title">{{ download.title }}</span>
                 <span class="queue-status" aria-live="polite">{{ getDownloadStatus(download) }}</span>
                 <span class="queue-format">
-                  {{ download.outputMode === 'source' ? t('youtube.outputFormatSource') : t('youtube.outputFormatMp3V0') }}
+                  {{ formatLabels[download.outputMode] }}
                 </span>
                 <span v-if="download.savedPath" class="saved-path" :title="download.savedPath">
                   {{ t('youtube.savedPath', { path: download.savedPath }) }}
@@ -225,7 +226,7 @@ interface DownloadProgress {
   title: string;
   progress: number;
   status: 'downloading' | 'converting' | 'importing' | 'completed' | 'cancelled' | 'error';
-  outputMode: 'source' | 'mp3';
+  outputMode: 'source' | 'mp3' | 'video';
   savedPath?: string;
   folderPath?: string;
   error?: string;
@@ -259,7 +260,10 @@ const storedOptions = (() => {
   catch { return {}; }
 })();
 const addDownloadedAudio = ref(storedOptions.addDownloadedAudio !== false);
-const outputMode = ref<'source' | 'mp3'>(storedOptions.outputMode === 'mp3' ? 'mp3' : 'source');
+const outputMode = ref<'source' | 'mp3' | 'video'>(
+  storedOptions.outputMode === 'mp3' || storedOptions.outputMode === 'video'
+    ? storedOptions.outputMode : 'source',
+);
 watch([addDownloadedAudio, outputMode], () => localStorage.setItem(
   'liveplay-youtube-import-options',
   JSON.stringify({ addDownloadedAudio: addDownloadedAudio.value, outputMode: outputMode.value }),
@@ -268,6 +272,11 @@ const titleId = `youtube-import-${Math.random().toString(36).slice(2)}`;
 const planTitleId = `${titleId}-plan`;
 
 const mediaDestination = computed(() => appendPath(props.projectFolderPath, 'media'));
+const formatLabels = computed<Record<DownloadProgress['outputMode'], string>>(() => ({
+  source: t('youtube.outputFormatSource'),
+  mp3: t('youtube.outputFormatMp3V0'),
+  video: t('youtube.outputFormatVideo'),
+}));
 
 const processingSettings = computed(() => {
   const settings = currentProject.value?.settings;

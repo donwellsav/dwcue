@@ -1,5 +1,7 @@
 #include "liveplay/audio/decoder.hpp"
 
+#include "video_only_fixture.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -12,7 +14,14 @@
 
 namespace fs = std::filesystem;
 
-std::vector<fs::path> self_test_files() {
+struct test_case {
+    fs::path path;
+    // Video-only containers intentionally render as zeros (silent-video
+    // transport); everything else must contain audible samples.
+    bool expect_silence = false;
+};
+
+std::vector<test_case> self_test_files() {
     const auto directory = fs::temp_directory_path() / "liveplay-decoder-self-test";
     fs::remove_all(directory);
     fs::create_directories(directory);
@@ -58,7 +67,12 @@ std::vector<fs::path> self_test_files() {
                  "  TRACK 02 AUDIO\n"
                  "    INDEX 01 00:02:00\n";
     mixed_cue.close();
-    return {directory / "note.rmi", directory / "disc.cue", directory / "mixed.cue"};
+
+    std::ofstream vid(directory / "video_only.mp4", std::ios::binary);
+    vid.write(reinterpret_cast<const char*>(kVideoOnlyMp4), kVideoOnlyMp4Len);
+    vid.close();
+    return {{directory / "note.rmi"}, {directory / "disc.cue"},
+            {directory / "mixed.cue"}, {directory / "video_only.mp4", true}};
 }
 
 int main(int argc, char** argv) {
@@ -67,16 +81,16 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    const std::vector<fs::path> self_tests =
+    const std::vector<test_case> self_tests =
         argc == 2 && std::string_view{argv[1]} == "--self-test"
-            ? self_test_files() : std::vector<fs::path>{};
-    std::vector<fs::path> files = self_tests;
+            ? self_test_files() : std::vector<test_case>{};
+    std::vector<test_case> files = self_tests;
     if (files.empty()) {
-        for (int i = 1; i < argc; ++i) files.emplace_back(argv[i]);
+        for (int i = 1; i < argc; ++i) files.push_back({fs::path{argv[i]}, false});
     }
 
     int failures = 0;
-    for (const fs::path& path : files) {
+    for (const auto& [path, expect_silence] : files) {
         std::size_t before_count = 0;
         for (const auto& entry : fs::directory_iterator{path.parent_path()}) {
             if (entry.is_regular_file()) ++before_count;
@@ -104,13 +118,35 @@ int main(int argc, char** argv) {
             non_silent = std::any_of(pcm.begin(), pcm.begin() + frames * channels,
                                      [](float sample) { return std::fabs(sample) > 0.0001f; });
         }
-        if ((read != MA_SUCCESS && read != MA_AT_END) || rendered == 0 || !non_silent ||
+        const bool silence_ok = expect_silence ? !non_silent : non_silent;
+        if ((read != MA_SUCCESS && read != MA_AT_END) || rendered == 0 || !silence_ok ||
             channels == 0 || sample_rate != 48000) {
             std::cerr << path << ": render failed (result=" << ma_result_description(read)
                       << ", frames=" << rendered << ", channels=" << channels
                       << ", sample-rate=" << sample_rate
                       << ", non-silent=" << non_silent << ")\n";
             ++failures;
+        }
+
+        if (expect_silence) {
+            // Silent-video transport contract: the video stream flag is set,
+            // the container duration drives EOF exactly, and the source is
+            // seekable (the shared seek check below covers that part).
+            if (!liveplay::audio::file_has_video_stream(path)) {
+                std::cerr << path << ": video stream not detected\n";
+                ++failures;
+            }
+            if (read != MA_AT_END) {
+                std::cerr << path << ": did not stop at its container duration\n";
+                ++failures;
+            }
+            ma_uint64 length = 0;
+            if (ma_decoder_get_length_in_pcm_frames(&decoder, &length) != MA_SUCCESS ||
+                length != 24000) {
+                std::cerr << path << ": silent duration wrong (" << length
+                          << " frames instead of 24000)\n";
+                ++failures;
+            }
         }
 
         if (ma_decoder_seek_to_pcm_frame(&decoder, 0) != MA_SUCCESS) {

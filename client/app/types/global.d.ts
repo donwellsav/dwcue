@@ -96,7 +96,7 @@ declare global {
         videoId: string,
         title: string,
         projectFolderPath: string,
-        outputMode: 'source' | 'mp3',
+        outputMode: 'source' | 'mp3' | 'video',
         progressCallback?: (progress: { jobId: string; videoId: string; percentage: number; status: string }) => void
       ) => Promise<{ success: boolean; file: string; fileName: string; title: string }>;
       cancelYouTubeDownload: (jobId: string) => Promise<boolean>;
@@ -199,7 +199,39 @@ declare global {
         recentRemove: (path: string) => Promise<Array<{ path: string; name: string; folderPath: string; lastOpened: number }>>;
         recentClear: () => Promise<Array<never>>;
       };
+      // Video Output window (machine-level display assignment; slice 1).
+      videoOutput?: {
+        open: () => Promise<VideoOutputStatus>;
+        close: () => Promise<VideoOutputStatus>;
+        status: () => Promise<VideoOutputStatus>;
+        listDisplays: () => Promise<VideoOutputDisplay[]>;
+        setDisplay: (displayId: string | null) => Promise<VideoOutputStatus>;
+        setTestCard: (show: boolean) => Promise<boolean>;
+        setFullscreen: (on: boolean) => Promise<VideoOutputStatus>;
+        toggleFullscreen: () => Promise<VideoOutputStatus>;
+        onStatus: (callback: (status: VideoOutputStatus) => void) => () => void;
+        onTestCard: (callback: (show: boolean) => void) => () => void;
+      };
     };
+  }
+  interface VideoOutputDisplay {
+    id: string;
+    label: string;
+    width: number;
+    height: number;
+    primary: boolean;
+  }
+
+  interface VideoOutputStatus {
+    enabled: boolean;
+    open: boolean;
+    displayId: string | null;
+    targetId: string | null;
+    targetLabel: string | null;
+    displays: VideoOutputDisplay[];
+    warning: 'single-display' | 'display-missing' | 'display-shared-with-control' | null;
+    testCard: boolean;
+    fullscreen: boolean;
   }
 
   interface ImportMeta {

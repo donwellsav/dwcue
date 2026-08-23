@@ -38,7 +38,7 @@
                   :key="p"
                   :class="{ selected: selectedLocal.includes(p) }"
                   @click="toggleLocal(p, i, $event)">
-                <span class="icon material-symbols-rounded">audio_file</span>
+                <span class="icon material-symbols-rounded">{{ isVideoPath(p) ? 'movie' : 'audio_file' }}</span>
                 <span class="name">{{ basename(p) }}</span>
               </li>
             </ul>
@@ -76,7 +76,7 @@
                 :key="p"
                 :class="{ selected: selectedUploaded.includes(p) }"
                 @click="toggleUploaded(p, i, $event)">
-              <span class="icon material-symbols-rounded">audio_file</span>
+              <span class="icon material-symbols-rounded">{{ isVideoPath(p) ? 'movie' : 'audio_file' }}</span>
               <span class="name">{{ basename(p) }}</span>
               <span v-if="uploadedSizes[p] !== undefined" class="size">
                 {{ formatBytes(uploadedSizes[p]) }}
@@ -305,6 +305,17 @@ const knownSelectionCount = computed<number | null>(() => {
   // ServerFileBrowser owns and displays its own selection count.
   return null;
 });
+
+// Browse-time hint only (container extension); the authoritative flag is the
+// server's has_video probe, attached to the item at import.
+const VIDEO_CONTAINER_EXT = new Set([
+  '.mp4', '.m4v', '.mov', '.mkv', '.webm', '.avi', '.mpg', '.mpeg',
+  '.m2ts', '.mts', '.wmv', '.flv', '.3gp',
+]);
+function isVideoPath(p: string): boolean {
+  const m = /\.[a-z0-9]+$/i.exec(p);
+  return !!m && VIDEO_CONTAINER_EXT.has(m[0].toLowerCase());
+}
 
 function close()       { if (!props.busy) emit('close'); }
 function basename(p: string): string { return p.split(/[\\/]/).pop() || p; }

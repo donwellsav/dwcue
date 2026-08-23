@@ -1350,8 +1350,13 @@ export const useProject = () => {
   const isCartWindowMode = import.meta.client
     ? new URLSearchParams(window.location.search).get('cartWindow') === '1'
     : false;
+  // The video output window (?videoOutput=1) is a passive render surface: it
+  // must never push project mutations, exactly like the detached cart window.
+  const isVideoOutputWindowMode = import.meta.client
+    ? new URLSearchParams(window.location.search).get('videoOutput') === '1'
+    : false;
 
-  if (import.meta.client && !_syncWatchersInstalled && !isCartWindowMode) {
+  if (import.meta.client && !_syncWatchersInstalled && !isCartWindowMode && !isVideoOutputWindowMode) {
     _syncWatchersInstalled = true;
     // Per-section debounced sync timers.
     let itemsTimer:    ReturnType<typeof setTimeout> | null = null;

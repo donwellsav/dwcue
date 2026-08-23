@@ -477,6 +477,8 @@ const buildVerifiedAudioCue = async (
     waveform,
     outPoint: duration,
     duration,
+    // Server-probed video stream → this cue also drives the Video Output.
+    ...(metadata as any)?.has_video === true ? { hasVideo: true as const } : {},
   } as AudioItem;
 
   const trimmed = settings?.autoTrimSilenceOnImport === true ? trimSilence(cue) : false;
