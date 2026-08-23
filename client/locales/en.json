@@ -114,6 +114,12 @@
     "tabPlaybackBehaviour": "Playback Behaviour",
     "tabUserInterface": "User Interface",
     "tabVideoOutput": "Video Output",
+    "tabHelp": "Help",
+    "tabAbout": "About",
+    "helpIntro": "Documentation, downloads and support for DonWells Cue.",
+    "helpDocs": "Website & documentation",
+    "helpIssues": "Report an issue",
+    "helpShortcuts": "Keyboard Shortcuts…",
     "videoOutputEnable": "Enable video output window",
     "videoOutputEnableHelp": "Opens a fullscreen black window on the chosen display to feed a projector or video switcher over HDMI. Reopens automatically when the app launches.",
     "videoOutputDisplay": "Output display",
@@ -551,7 +557,9 @@
     "githubRepo": "GitHub Repository",
     "developerName": "Thomas Doukinitsas",
     "contributors": "Contributors",
-    "license": "AGPL-3.0-only License"
+    "license": "AGPL-3.0-only License",
+    "licenseText": "DonWells Cue is free software, licensed under the GNU Affero General Public License version 3.0 (AGPL-3.0-only).",
+    "sourceText": "The complete corresponding source code is available at github.com/donwellsav/dwcue."
   },
   "connectionLost": {
     "title": "Connection lost",

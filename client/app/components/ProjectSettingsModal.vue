@@ -588,6 +588,40 @@
               <p class="settings-help">{{ t('settings.videoOutputMachineNote') }}</p>
             </section>
           </template>
+
+          <!-- ================= Help ================= -->
+          <template v-else-if="activeTab === 'help'">
+            <section class="settings-field">
+              <p class="settings-help settings-help-intro">{{ t('settings.helpIntro') }}</p>
+              <div class="help-links">
+                <a
+                  href="https://dwcue.com"
+                  class="help-link"
+                  @click.prevent="openExternal('https://dwcue.com')"
+                >
+                  <span class="material-symbols-rounded" aria-hidden="true">language</span>
+                  <span>{{ t('settings.helpDocs') }}</span>
+                </a>
+                <a
+                  href="https://github.com/donwellsav/dwcue/issues"
+                  class="help-link"
+                  @click.prevent="openExternal('https://github.com/donwellsav/dwcue/issues')"
+                >
+                  <span class="material-symbols-rounded" aria-hidden="true">bug_report</span>
+                  <span>{{ t('settings.helpIssues') }}</span>
+                </a>
+                <button type="button" class="help-link help-link--button" @click="emit('open-shortcuts')">
+                  <span class="material-symbols-rounded" aria-hidden="true">keyboard</span>
+                  <span>{{ t('settings.helpShortcuts') }}</span>
+                </button>
+              </div>
+            </section>
+          </template>
+
+          <!-- ================= About ================= -->
+          <template v-else-if="activeTab === 'about'">
+            <AboutContent />
+          </template>
         </div>
 
       <footer class="modal-footer">
@@ -623,12 +657,17 @@ import {
   type PlaylistRowMode,
 } from '~/composables/useUiMode';
 import { normalizeIndexDisplayStart } from '~/utils/indexDisplay';
+import AboutContent from './AboutContent.vue';
 
 const props = defineProps<{ open: boolean }>();
-const emit  = defineEmits<{ (e: 'close'): void }>();
+const emit  = defineEmits<{ (e: 'close'): void; (e: 'open-shortcuts'): void }>();
 
 const { t } = useLocalization();
 const server = useLiveplayServer();
+
+const openExternal = (url: string) => {
+  if (import.meta.client && window.electronAPI?.openExternal) window.electronAPI.openExternal(url);
+};
 const { currentProject, saveProject } = useProject();
 const {
   regularPlaylistRowHeight,
@@ -656,12 +695,18 @@ const devices = computed(() => server.devices ?? []);
 //  - audio    : device routing + loudness target
 //  - playback : transitions, auto-cue, stop-all fade, processing toggles
 //  - ui       : metering + list behaviour
-const activeTab = ref<'audio' | 'playback' | 'ui' | 'video'>('audio');
+// help/about are informational tabs, not project settings — nothing in
+// them patches the document.
+const activeTab = ref<'audio' | 'playback' | 'ui' | 'video' | 'help' | 'about'>('audio');
 const tabs = computed(() => [
   { id: 'audio'    as const, icon: 'graphic_eq', label: t('settings.tabAudioRouting') },
   { id: 'playback' as const, icon: 'play_circle', label: t('settings.tabPlaybackBehaviour') },
   { id: 'ui'       as const, icon: 'desktop_windows', label: t('settings.tabUserInterface') },
   { id: 'video'    as const, icon: 'monitor', label: t('settings.tabVideoOutput') },
+  // menu_book, NOT help: a circled "?" reads as a tooltip affordance and
+  // the operator has repeatedly rejected those.
+  { id: 'help'     as const, icon: 'menu_book', label: t('settings.tabHelp') },
+  { id: 'about'    as const, icon: 'info', label: t('settings.tabAbout') },
 ]);
 
 // The settings live on the project document; we read them from there and
@@ -1358,6 +1403,45 @@ function close() {
   height: 16px;
   cursor: pointer;
   accent-color: var(--color-accent);
+}
+
+.settings-help-intro {
+  margin-top: 0;
+}
+
+.help-links {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.help-link {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-md);
+  color: var(--color-text-primary);
+  text-decoration: none;
+  font-size: 14px;
+  text-align: left;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.help-link:hover {
+  background-color: var(--color-surface-hover);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.help-link .material-symbols-rounded {
+  font-size: 20px;
 }
 
 .modal-footer {

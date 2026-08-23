@@ -104,6 +104,7 @@
   <ProjectSettingsModal
     :open="showProjectSettings"
     @close="showProjectSettings = false"
+    @open-shortcuts="showProjectSettings = false; showControlConfig = true"
   />
 </template>
 
