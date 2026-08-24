@@ -266,5 +266,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('video-output:test-card', listener);
       return () => ipcRenderer.removeListener('video-output:test-card', listener);
     },
+    onFrame: (callback) => {
+      const listener = (_e, frame) => callback(frame);
+      ipcRenderer.on('video-output:frame', listener);
+      return () => ipcRenderer.removeListener('video-output:frame', listener);
+    },
   },
 });

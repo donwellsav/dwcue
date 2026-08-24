@@ -1973,6 +1973,35 @@ let videoOutputPowerSaveId = null;
 let videoOutputWatchdogInstalled = false;
 let videoOutputWatchdogTimer = null;
 let videoOutputTestCard = false;
+let videoOutputFrameTimer = null;
+
+// Confidence monitor: 1 fps JPEG thumbnails of the output window for the
+// operator UI. capturePage renders exactly what the audience sees — video,
+// standby image, test card, or a hung frame (which is itself the alarm).
+// Runs only while the output window exists.
+function startVideoOutputFrames() {
+  if (videoOutputFrameTimer !== null) return;
+  videoOutputFrameTimer = setInterval(async () => {
+    if (!videoOutputWindow || videoOutputWindow.isDestroyed()) return;
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    try {
+      const img = await videoOutputWindow.webContents.capturePage();
+      if (!img || img.isEmpty()) return;
+      const thumb = img.resize({ width: 320, quality: 'good' });
+      mainWindow.webContents.send('video-output:frame', {
+        jpeg: thumb.toJPEG(60).toString('base64'),
+        at: Date.now(),
+      });
+    } catch { /* window mid-teardown; the closed handler stops the timer */ }
+  }, 1000);
+}
+
+function stopVideoOutputFrames() {
+  if (videoOutputFrameTimer !== null) {
+    clearInterval(videoOutputFrameTimer);
+    videoOutputFrameTimer = null;
+  }
+}
 
 function videoOutputConfigPath() {
   return path.join(app.getPath('userData'), VIDEO_OUTPUT_CONFIG_FILENAME);
@@ -2131,6 +2160,7 @@ function createVideoOutputWindow() {
   if (realOutput) {
     videoOutputWindow.setAlwaysOnTop(true, 'screen-saver');
   }
+  startVideoOutputFrames();
   videoOutputWindow.once('ready-to-show', () => {
     if (videoOutputWindow && !videoOutputWindow.isDestroyed()) videoOutputWindow.show();
   });
@@ -2157,6 +2187,7 @@ function createVideoOutputWindow() {
 
   videoOutputWindow.on('closed', () => {
     videoOutputWindow = null;
+    stopVideoOutputFrames();
     if (videoOutputPowerSaveId !== null) {
       try { powerSaveBlocker.stop(videoOutputPowerSaveId); } catch { /* already stopped */ }
       videoOutputPowerSaveId = null;

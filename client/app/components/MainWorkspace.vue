@@ -7,6 +7,7 @@
          warnings all render exactly as in edit mode. -->
     <ProjectHeader />
     <PlaybackControls />
+    <LevelCheckBar />
 
     <div class="workspace-content">
       <aside
@@ -226,6 +227,7 @@
 </template>
 
 <script setup lang="ts">
+import LevelCheckBar from './LevelCheckBar.vue';
 import LocationChoiceModal from './LocationChoiceModal.vue';
 import ServerFilePickerModal from './ServerFilePickerModal.vue';
 import StereoMeter from './StereoMeter.vue';

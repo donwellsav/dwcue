@@ -770,6 +770,21 @@
     "upNext": "Up Next",
     "previewing": "Preview"
   },
+  "videoConfidence": {
+    "title": "Audience output",
+    "live": "Live",
+    "updated": "Updated {seconds}s ago",
+    "stale": "No signal"
+  },
+  "levelCheck": {
+    "title": "Level Check",
+    "hint": "Plays the loudest 5 seconds of each cue",
+    "replay": "Replay peak",
+    "next": "Next cue",
+    "prev": "Previous cue",
+    "exit": "Exit",
+    "progress": "Cue {index} of {total}"
+  },
   "repair": {
     "title": "Corrupt Project Detected",
     "message": "This project was found to have issues and has been automatically repaired. The following problems were detected:",

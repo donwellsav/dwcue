@@ -875,5 +875,20 @@
     "limiterBypass": "True-peak limiter bypass",
     "bypassLimiter": "Bypass true-peak limiter",
     "enableLimiter": "Enable true-peak limiter"
+  },
+  "videoConfidence": {
+    "title": "Audience output",
+    "live": "Live",
+    "updated": "Updated {seconds}s ago",
+    "stale": "No signal"
+  },
+  "levelCheck": {
+    "title": "Level Check",
+    "hint": "Plays the loudest 5 seconds of each cue",
+    "replay": "Replay peak",
+    "next": "Next cue",
+    "prev": "Previous cue",
+    "exit": "Exit",
+    "progress": "Cue {index} of {total}"
   }
 }
