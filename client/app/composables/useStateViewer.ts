@@ -2,6 +2,10 @@
 // Sends application state to the state viewer window in real-time
 
 let updateInterval: NodeJS.Timeout | null = null;
+// Only true while a state viewer window is open (main tells us via IPC).
+// Broadcasting whole-project state every 500ms with no viewer attached was
+// pure churn — and payloads over the 2MB IPC bound spammed rejections.
+let viewerActive = false;
 
 export const useStateViewer = () => {
   const { currentProject } = useProject();
@@ -13,8 +17,9 @@ export const useStateViewer = () => {
     if (updateInterval) return; // Already running
 
     // Update every 500ms
-    updateInterval = setInterval(() => {
+        updateInterval = setInterval(() => {
       if (!window.electronAPI) return;
+      if (!viewerActive) return;
       
       const electronAPI = window.electronAPI as any;
       if (!electronAPI.updateAppState) return;
@@ -55,8 +60,16 @@ export const useStateViewer = () => {
       // Send to main process. Electron's structured-clone IPC is stricter
       // than JSON (rejects Proxies, Maps, Sets, class instances, etc.) so
       // funnel through JSON first and swallow any leftover non-cloneables.
+      // Waveform data is the bulk of a large project and useless in the
+      // viewer — it's a WaveformData object whose peaks/rms/channel arrays
+      // are the weight, so collapse it to its shape + loudness summary.
       try {
-        electronAPI.updateAppState(JSON.parse(JSON.stringify(state)));
+        const slim = JSON.parse(JSON.stringify(state, (key, value) =>
+          key === 'waveform' && value && typeof value === 'object' && !Array.isArray(value)
+            ? { peaks: value.peaks?.length ?? 0, channels: value.channelPeaks?.length ?? 0, integrated_lufs: value.integrated_lufs ?? null }
+            : value
+        ));
+        electronAPI.updateAppState(slim);
       } catch (err) {
         // One tick of state viewer is not worth crashing the renderer over.
         // Stay quiet after the first warning to avoid log spam.
@@ -79,6 +92,7 @@ export const useStateViewer = () => {
   onMounted(async () => {
     if (import.meta.client && window.electronAPI) {
       const electronAPI = window.electronAPI as any;
+      electronAPI.onStateViewerActive?.((active: boolean) => { viewerActive = active; });
       if (electronAPI.isDevMode) {
         const isDevMode = await electronAPI.isDevMode();
         if (isDevMode) {

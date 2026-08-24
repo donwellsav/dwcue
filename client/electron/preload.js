@@ -177,6 +177,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // State viewer - send state updates to main process
   updateAppState: (state) => ipcRenderer.send('update-app-state', state),
+  // Main tells us when a state viewer window opens/closes; the renderer only
+  // broadcasts state while one is open (avoids 500ms whole-project churn).
+  onStateViewerActive: (callback) => ipcRenderer.on('state-viewer:active', (_event, active) => callback(active)),
   
   // Check if dev mode is enabled
   isDevMode: () => ipcRenderer.invoke('is-dev-mode'),

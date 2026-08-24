@@ -2321,6 +2321,10 @@ function createStateViewerWindow() {
     stateViewerWindow.focus();
     return;
   }
+  // Tell the main renderer a viewer exists so it starts broadcasting state
+  // (it stays silent otherwise — serialising whole-project state every
+  // 500ms for nobody was the update-app-state spam source).
+  mainWindow?.webContents.send('state-viewer:active', true);
 
   stateViewerWindow = new BrowserWindow({
     width: 1200,
@@ -2604,6 +2608,7 @@ function createStateViewerWindow() {
 
   stateViewerWindow.on('closed', () => {
     stateViewerWindow = null;
+    mainWindow?.webContents.send('state-viewer:active', false);
   });
 }
 
@@ -3456,7 +3461,6 @@ ipcMain.on('update-app-state', (event, state) => {
   if (stateViewerWindow && !stateViewerWindow.isDestroyed()) {
     // Make sure webContents is ready
     if (stateViewerWindow.webContents && !stateViewerWindow.webContents.isDestroyed()) {
-      console.log('[Main] Forwarding state to viewer window');
       stateViewerWindow.webContents.send('state-update', state);
     }
   }
@@ -5104,6 +5108,15 @@ if (!gotTheLock) {
   app.whenReady().then(async () => {
     configureSessionSecurity();
     initializeCapabilitiesFromRecentProjects();
+
+    // Native OS About panel (macOS app-menu "About DonWells Cue"): same
+    // brand + license facts as the in-app About surfaces.
+    app.setAboutPanelOptions({
+      applicationName: 'DonWells Cue',
+      applicationVersion: app.getVersion(),
+      copyright: `© ${new Date().getFullYear()} Don Wells — dwcue.com`,
+      credits: 'Free software under AGPL-3.0-only — source: github.com/donwellsav/dwcue',
+    });
 
     createWindow();
 

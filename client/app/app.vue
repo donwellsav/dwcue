@@ -8,6 +8,15 @@
     <!-- Detached One Shots window (legacy query name retained for IPC compatibility). -->
     <template v-else-if="isCartWindow">
       <div class="cart-window-root">
+        <header class="cart-window-brand">
+          <img
+            :src="theme === 'dark' ? './assets/icons/SVG/app_icon_darkmode@web.svg' : './assets/icons/SVG/app_icon_lightmode@web.svg'"
+            alt=""
+            class="cart-brand-logo"
+          />
+          <span class="cart-brand-wordmark">DONWELLS CUE</span>
+          <span class="cart-brand-url">dwcue.com</span>
+        </header>
         <OneShotPanel v-if="currentProject" :is-detached-window="true" />
         <div v-else class="cart-window-loading">
           <span class="material-symbols-rounded">queue_music</span>
@@ -712,6 +721,40 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   background-color: var(--color-background);
+
+  :deep(.one-shot-panel) {
+    flex: 1;
+    min-height: 0;
+  }
+}
+
+.cart-window-brand {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.cart-brand-logo {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+.cart-brand-wordmark {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--color-text-secondary);
+}
+
+.cart-brand-url {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  opacity: 0.7;
 }
 
 .cart-window-loading {
