@@ -318,6 +318,12 @@ function isVideoPath(p: string): boolean {
 }
 
 function close()       { if (!props.busy) emit('close'); }
+// Auto-close once the import finishes cleanly. Any failed file keeps the
+// modal open so the result list and retry affordance stay visible.
+watch([() => props.result, () => props.busy], ([result, busy]) => {
+  if (!result || busy) return;
+  if (result.results.length > 0 && result.results.every(item => item.status !== 'failed')) close();
+});
 function basename(p: string): string { return p.split(/[\\/]/).pop() || p; }
 
 // Server file browser emits a batch of already-on-server paths.
