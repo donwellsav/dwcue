@@ -40,6 +40,12 @@
 
       <Btn icon="tune" :text="t('settings.title')" @click="showProjectSettings = true" />
       <Btn icon="keyboard" :text="t('controls.shortcutBtn')" @click="showControlConfig = true" />
+      <Btn
+        :icon="videoOutputOpen ? 'videocam' : 'videocam_off'"
+        :text="t('settings.tabVideoOutput')"
+        :class="{ 'video-toggle--active': videoOutputOpen }"
+        @click="toggleVideoOutput"
+      />
 
       <!-- Autosave toggle: on by default; when off the project is only saved
            via File > Save and an "Unsaved Changes" pill appears by the title. -->
@@ -373,6 +379,27 @@ const ltcTimecode = computed<string | null>(() => {
   return null;
 });
 
+// Video Output window toggle: state comes from main (status poll once, then
+// the push channel keeps it in sync however the window was opened/closed).
+const videoOutputOpen = ref(false);
+let stopVideoStatus: (() => void) | null = null;
+
+const toggleVideoOutput = () => {
+  const api = (window as any).electronAPI?.videoOutput;
+  if (!api) return;
+  if (videoOutputOpen.value) void api.close();
+  else void api.open();
+};
+
+onMounted(async () => {
+  if (!import.meta.client || !(window as any).electronAPI?.videoOutput) return;
+  const api = (window as any).electronAPI.videoOutput;
+  const s = await api.status();
+  videoOutputOpen.value = !!s?.open;
+  stopVideoStatus = api.onStatus((status: any) => { videoOutputOpen.value = !!status?.open; });
+  onUnmounted(() => { stopVideoStatus?.(); });
+});
+
 onMounted(() => {
   updateClock();
   const clockInterval = setInterval(updateClock, 1000);
@@ -476,6 +503,10 @@ onMounted(() => {
   border-color: transparent;
   border-radius: var(--control-radius);
   box-shadow: none;
+}
+
+.header-right :deep(.video-toggle--active) {
+  color: var(--color-accent);
 }
 
 .header-right :deep(.btn:hover:not(:disabled)),
