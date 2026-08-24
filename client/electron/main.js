@@ -2608,6 +2608,7 @@ function createStateViewerWindow() {
 
   stateViewerWindow.on('closed', () => {
     stateViewerWindow = null;
+    console.log('[Main] State viewer closed — notifying renderer to stop state broadcasts');
     mainWindow?.webContents.send('state-viewer:active', false);
   });
 }
