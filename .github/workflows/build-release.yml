@@ -350,7 +350,10 @@ jobs:
           & $server --help
           if ($LASTEXITCODE -ne 0) { throw "Packaged server failed with exit code $LASTEXITCODE" }
 
-          $process = Start-Process -FilePath $app -PassThru
+          # --smoke-quit: main.js skips the interactive quit-confirmation veto
+          # (the renderer's "close the server too?" dialog needs a human) so the
+          # graceful-quit path can be validated unattended.
+          $process = Start-Process -FilePath $app -ArgumentList '--smoke-quit' -PassThru
           try {
             $deadline = (Get-Date).AddSeconds(30)
             do {
@@ -362,6 +365,19 @@ jobs:
             } while ($process.MainWindowHandle -eq 0 -and (Get-Date) -lt $deadline)
             if ($process.MainWindowHandle -eq 0) {
               throw "Packaged app did not create a Windows desktop window"
+            }
+
+            # taskkill without /F posts WM_CLOSE to the app's windows — the
+            # same graceful quit a user triggers. The app must exit on its own;
+            # a hang here is exactly the quit-flow regression this step guards.
+            & taskkill.exe /PID $process.Id | Out-Null
+            $quitDeadline = (Get-Date).AddSeconds(15)
+            do {
+              Start-Sleep -Milliseconds 500
+              $process.Refresh()
+            } while (-not $process.HasExited -and (Get-Date) -lt $quitDeadline)
+            if (-not $process.HasExited) {
+              throw "Packaged app did not quit gracefully within 15 seconds"
             }
           } finally {
             if (-not $process.HasExited) {

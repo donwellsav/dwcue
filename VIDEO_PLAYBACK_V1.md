@@ -307,3 +307,13 @@ workspace import** (Inkue ships a beta).
    self-test case: embedded 0.5 s video-only MP4 fixture asserts the silent-transport
    contract (opens, exact container-duration EOF, all-zero PCM, seekable,
    `file_has_video_stream` true), README video-output section.
+
+**Windows verification status (2026-08-24).** CI covers, on every release: packaged
+file layout, bundled-server DLL load (`--help`), app launch with a real desktop
+window, no early exit, and graceful quit within 15 s (`--smoke-quit` skips the
+interactive quit-confirmation veto so CI can drive it). Still pending real Windows
+hardware (no VM/box on the dev Mac): dual-display output pinning + EDID-reshuffle
+watchdog behavior, Chromium HEVC decode on a mid-range GPU, and the `/api/media`
+endpoint under Windows Defender/firewall defaults. All macOS-side behavior in this
+spec was verified live; treat the Windows column as build-green but show-unproven
+until that laptop run happens.
