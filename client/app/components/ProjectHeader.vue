@@ -45,7 +45,6 @@
         :class="{ 'video-toggle--active': videoOutputOpen }"
         @click="toggleVideoOutput"
       />
-      <VideoConfidenceChip :open="videoOutputOpen" />
       <Btn
         :text="t('levelCheck.title')"
         :class="{ 'level-check-toggle--active': levelCheckActive }"
@@ -93,6 +92,7 @@
            LTC output device is configured in Project Settings — otherwise
            it's permanent header clutter that never does anything. -->
       <div class="clock-pair">
+        <VideoConfidenceChip :open="videoOutputOpen" />
         <div class="digital-clock clock--large" :class="primaryActiveCue ? 'clock--active' : 'clock--inactive'">
           <span class="clock-label">{{ t('project.timeLeft') }}</span>
           <span class="clock-value" :style="{ color: timeLeftColor ?? undefined }">{{ timeLeft }}</span>

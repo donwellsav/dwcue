@@ -8,10 +8,6 @@
     <div class="confidence-chip__frame">
       <img v-if="frameUrl" :src="frameUrl" :alt="t('videoConfidence.title')" />
     </div>
-    <div class="confidence-chip__meta">
-      <span class="confidence-chip__label">{{ t('videoConfidence.title') }}</span>
-      <span class="confidence-chip__value">{{ caption }}</span>
-    </div>
   </div>
 </template>
 
@@ -33,12 +29,6 @@ let ticker: ReturnType<typeof setInterval> | null = null;
 
 const secondsAgo = computed(() => Math.max(0, Math.floor((now.value - lastFrameAt.value) / 1000)));
 const stale = computed(() => lastFrameAt.value === 0 || secondsAgo.value > 3);
-const caption = computed(() => {
-  if (stale.value) return t('videoConfidence.stale');
-  if (secondsAgo.value <= 1) return t('videoConfidence.live');
-  return t('videoConfidence.updated', { seconds: secondsAgo.value });
-});
-
 watch(() => props.open, (open) => {
   if (!open) {
     frameUrl.value = '';
@@ -90,8 +80,8 @@ onUnmounted(() => {
 }
 
 .confidence-chip__frame {
-  width: 56px;
-  height: 32px;
+  width: 64px;
+  height: 36px;
   border-radius: 3px;
   overflow: hidden;
   background: #000;
@@ -105,33 +95,4 @@ onUnmounted(() => {
   display: block;
 }
 
-.confidence-chip__meta {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-width: 0;
-}
-
-.confidence-chip__label {
-  font-family: var(--font-mono);
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--color-text-secondary);
-  white-space: nowrap;
-}
-
-.confidence-chip__value {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-text-primary);
-  white-space: nowrap;
-}
-
-.confidence-chip--stale .confidence-chip__value {
-  color: var(--color-danger, #e5484d);
-}
 </style>
