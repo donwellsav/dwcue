@@ -194,7 +194,8 @@ Mirrors the `cartPlayerWindow` pattern in `client/electron/main.js`:
   hard way in slice 3 verification: unfocused preview window never re-rendered).
 - **Test card:** output name + native resolution + safe-frame guides + 1 kHz-free (silent),
   toggled from the control window's video settings (and output-window context menu in dev).
-- Lifecycle: opened/armed from the control window; closing the main window closes it;
+- Lifecycle: opened/armed from the control window (Video Output tab in Project
+  Settings, or the header's Video Output toggle button); closing the main window closes it;
   `Esc` never exits fullscreen in Show Mode. **Degrade, don't fail** (Inkue's stance):
   no second display, unsupported codec, or decode failure never blocks the show — the
   control window shows a banner and the app remains fully usable audio-only.
@@ -214,6 +215,7 @@ validators; cross-window fan-out via `BrowserWindow.getAllWindows()` skip-sender
 | Item model | `client/app/types/project.ts` | `imagePath?` on `AudioItem`; settings fields (§5.2) |
 | Properties | `PropertiesPanel.vue` | Per-cue image picker (file dialog → copy into `media/`), clear-image; video badge readout from server probe |
 | Playlist row | `PlaylistItem.vue` | Video badge/icon on video items |
+| Header toggle | `ProjectHeader.vue` | One-click open/close of the output window; live open state via `video-output:status-changed` |
 | Settings | Project Settings component | Standby image picker, output enable + display picker, test-card button |
 | Network UI gate | `ServerSettingsModal.vue` + its entry points | Hidden by default (`hideNetworkUi`), re-enable via app settings |
 | Import | import composables, drop handlers | Accept video extensions; label "Import Media" |
