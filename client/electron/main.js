@@ -5109,6 +5109,15 @@ if (!gotTheLock) {
     configureSessionSecurity();
     initializeCapabilitiesFromRecentProjects();
 
+    // Native OS About panel (macOS app-menu "About DonWells Cue"): same
+    // brand + license facts as the in-app About surfaces.
+    app.setAboutPanelOptions({
+      applicationName: 'DonWells Cue',
+      applicationVersion: app.getVersion(),
+      copyright: `© ${new Date().getFullYear()} Don Wells — dwcue.com`,
+      credits: 'Free software under AGPL-3.0-only — source: github.com/donwellsav/dwcue',
+    });
+
     createWindow();
 
     // Register this only after ready. macOS may emit `activate` during the
