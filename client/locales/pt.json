@@ -426,7 +426,7 @@
     "previewing": "Pré-visualização"
   },
   "settings": {
-    "title": "Definições do Projeto",
+    "title": "Definições",
     "audioDevice": "Dispositivo de Áudio",
     "audioDeviceHelp": "Dispositivo padrão para reprodução de sinais.",
     "previewDevice": "Dispositivo de Pré-visualização",

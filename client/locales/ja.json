@@ -426,7 +426,7 @@
     "previewing": "プレビュー"
   },
   "settings": {
-    "title": "プロジェクト設定",
+    "title": "設定",
     "audioDevice": "オーディオデバイス",
     "audioDeviceHelp": "キュー再生のデフォルトデバイス。",
     "previewDevice": "プレビューデバイス",

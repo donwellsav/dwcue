@@ -426,7 +426,7 @@
     "previewing": "Aperçu"
   },
   "settings": {
-    "title": "Paramètres du Projet",
+    "title": "Paramètres",
     "audioDevice": "Périphérique Audio",
     "audioDeviceHelp": "Périphérique par défaut pour la lecture des signaux.",
     "previewDevice": "Périphérique d'Aperçu",

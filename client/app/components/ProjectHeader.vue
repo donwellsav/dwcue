@@ -38,17 +38,15 @@
       <!-- Appears the moment the socket drops; spins for as long as we retry. -->
       <ConnectionStatusPill />
 
-      <Btn icon="tune" :text="t('settings.title')" @click="showProjectSettings = true" />
-      <Btn icon="keyboard" :text="t('controls.shortcutBtn')" @click="showControlConfig = true" />
+      <Btn :text="t('settings.title')" @click="showProjectSettings = true" />
+      <Btn :text="t('controls.shortcutBtn')" @click="showControlConfig = true" />
       <Btn
-        :icon="videoOutputOpen ? 'videocam' : 'videocam_off'"
         :text="t('settings.tabVideoOutput')"
         :class="{ 'video-toggle--active': videoOutputOpen }"
         @click="toggleVideoOutput"
       />
       <VideoConfidenceChip :open="videoOutputOpen" />
       <Btn
-        icon="graphic_eq"
         :text="t('levelCheck.title')"
         :class="{ 'level-check-toggle--active': levelCheckActive }"
         :disabled="levelCheckCount === 0"

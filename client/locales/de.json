@@ -426,7 +426,7 @@
     "previewing": "Vorschau"
   },
   "settings": {
-    "title": "Projekteinstellungen",
+    "title": "Einstellungen",
     "audioDevice": "Audiogerät",
     "audioDeviceHelp": "Standardgerät für die Signal-Wiedergabe.",
     "previewDevice": "Vorschaugerät",

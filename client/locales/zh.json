@@ -426,7 +426,7 @@
     "previewing": "预听中"
   },
   "settings": {
-    "title": "项目设置",
+    "title": "设置",
     "audioDevice": "音频设备",
     "audioDeviceHelp": "信号播放的默认设备。",
     "previewDevice": "预听设备",

@@ -426,7 +426,7 @@
     "previewing": "Forhåndsvisning"
   },
   "settings": {
-    "title": "Prosjektinnstillinger",
+    "title": "Innstillinger",
     "audioDevice": "Lydenhet",
     "audioDeviceHelp": "Standard enhet for signaleavspilling.",
     "previewDevice": "Forhåndsvisningsenhet",

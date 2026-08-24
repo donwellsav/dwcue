@@ -426,7 +426,7 @@
     "previewing": "Ön İzleme"
   },
   "settings": {
-    "title": "Proje Ayarları",
+    "title": "Ayarlar",
     "audioDevice": "Ses Cihazı",
     "audioDeviceHelp": "Sinyal oynatma için varsayılan cihaz.",
     "previewDevice": "Ön İzleme Cihazı",

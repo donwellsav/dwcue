@@ -426,7 +426,7 @@
     "previewing": "미리 듣기"
   },
   "settings": {
-    "title": "프로젝트 설정",
+    "title": "설정",
     "audioDevice": "오디오 장치",
     "audioDeviceHelp": "큐 재생을 위한 기본 장치.",
     "previewDevice": "미리 듣기 장치",

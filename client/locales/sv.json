@@ -426,7 +426,7 @@
     "previewing": "Förhandsgranskning"
   },
   "settings": {
-    "title": "Projektinställningar",
+    "title": "Inställningar",
     "audioDevice": "Ljudenhet",
     "audioDeviceHelp": "Standardenhet för signaluppspelning.",
     "previewDevice": "Förhandsgranskningsenhet",

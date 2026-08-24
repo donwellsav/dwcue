@@ -62,7 +62,7 @@
     "showNetworkUi": "Connect to a server on the network…"
   },
   "settings": {
-    "title": "Project Settings",
+    "title": "Settings",
     "audioDevice": "Audio Device",
     "audioDeviceHelp": "Default device for cue playback.",
     "previewDevice": "Preview Device",

@@ -426,7 +426,7 @@
     "previewing": "Previzualizare"
   },
   "settings": {
-    "title": "Setări Proiect",
+    "title": "Setări",
     "audioDevice": "Dispozitiv Audio",
     "audioDeviceHelp": "Dispozitiv implicit pentru redarea semnalelor.",
     "previewDevice": "Dispozitiv de Previzualizare",

@@ -426,7 +426,7 @@
     "previewing": "معاينة"
   },
   "settings": {
-    "title": "إعدادات المشروع",
+    "title": "إعدادات",
     "audioDevice": "جهاز الصوت",
     "audioDeviceHelp": "الجهاز الافتراضي لتشغيل الإشارات.",
     "previewDevice": "جهاز المعاينة",

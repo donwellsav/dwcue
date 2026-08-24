@@ -426,7 +426,7 @@
     "previewing": "Vista previa"
   },
   "settings": {
-    "title": "Configuración del Proyecto",
+    "title": "Configuración",
     "audioDevice": "Dispositivo de Audio",
     "audioDeviceHelp": "Dispositivo predeterminado para la reproducción de señales.",
     "previewDevice": "Dispositivo de Vista Previa",

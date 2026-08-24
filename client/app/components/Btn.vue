@@ -4,14 +4,14 @@
     :disabled="disabled"
     v-bind="$attrs"
   >
-    <span class="material-symbols-rounded" aria-hidden="true">{{ icon }}</span>
+    <span v-if="icon" class="material-symbols-rounded" aria-hidden="true">{{ icon }}</span>
     <span>{{ text }}</span>
   </button>
 </template>
 
 <script setup lang="ts">
 withDefaults(defineProps<{
-  icon: string;
+  icon?: string;
   text: string;
   disabled?: boolean;
 }>(), {
