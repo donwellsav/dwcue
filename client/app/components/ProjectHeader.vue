@@ -46,6 +46,14 @@
         :class="{ 'video-toggle--active': videoOutputOpen }"
         @click="toggleVideoOutput"
       />
+      <VideoConfidenceChip :open="videoOutputOpen" />
+      <Btn
+        icon="graphic_eq"
+        :text="t('levelCheck.title')"
+        :class="{ 'level-check-toggle--active': levelCheckActive }"
+        :disabled="levelCheckCount === 0"
+        @click="toggleLevelCheck"
+      />
 
       <!-- Autosave toggle: on by default; when off the project is only saved
            via File > Save and an "Unsaved Changes" pill appears by the title. -->
@@ -117,6 +125,7 @@
 <script setup lang="ts">
 import ProjectSettingsModal from './ProjectSettingsModal.vue';
 import Btn from './Btn.vue';
+import VideoConfidenceChip from './VideoConfidenceChip.vue';
 import { countdownColorForSeconds, type AudioItem } from '~/types/project';
 
 const { currentProject, findItemByUuid, findItemByIndex, autoSaveEnabled, hasUnsavedChanges, setAutoSave } = useProject();
@@ -391,6 +400,21 @@ const toggleVideoOutput = () => {
   else void api.open();
 };
 
+// Level Check: soundcheck walk through each cue's loudest window on the
+// PROGRAM output (the external mixer must see it — preview routes elsewhere).
+// The bar lives in MainWorkspace; this only toggles the mode.
+const {
+  active: levelCheckActive,
+  items: levelCheckItems,
+  start: startLevelCheck,
+  exit: exitLevelCheck,
+} = useLevelCheck();
+const levelCheckCount = computed(() => levelCheckItems.value.length);
+const toggleLevelCheck = () => {
+  if (levelCheckActive.value) void exitLevelCheck();
+  else startLevelCheck();
+};
+
 onMounted(async () => {
   if (!import.meta.client || !(window as any).electronAPI?.videoOutput) return;
   const api = (window as any).electronAPI.videoOutput;
@@ -505,7 +529,8 @@ onMounted(() => {
   box-shadow: none;
 }
 
-.header-right :deep(.video-toggle--active) {
+.header-right :deep(.video-toggle--active),
+.header-right :deep(.level-check-toggle--active) {
   color: var(--color-accent);
 }
 
