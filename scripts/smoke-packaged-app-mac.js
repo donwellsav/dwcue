@@ -43,7 +43,10 @@ function canUseUiScripting() {
   ]);
   if (result.status === 0) return result.stdout.trim() === 'true';
   const message = (result.stderr || result.error?.message || '').trim();
-  if (/not authorized|not allowed assistive access|-1719|-1743/i.test(message)) {
+  // ETIMEDOUT: osascript/UI scripting wedges under runner load (has blocked
+  // releases on both mac legs); the window check is best-effort by design,
+  // so a wedged probe degrades to "skipped" exactly like unauthorized does.
+  if (/ETIMEDOUT|not authorized|not allowed assistive access|-1719|-1743/i.test(message)) {
     return false;
   }
   throw new Error(`Could not inspect macOS UI scripting: ${message || 'unknown error'}`);
@@ -88,7 +91,8 @@ function windowInfo(pid) {
   ], 2_000);
   if (result.status !== 0) {
     const message = (result.stderr || result.error?.message || '').trim();
-    if (/can't get|can’t get|not found|-1728/i.test(message)) return null;
+    // ETIMEDOUT: transient UI-scripting wedge — poll again instead of dying.
+    if (/can't get|can’t get|not found|-1728|ETIMEDOUT/i.test(message)) return null;
     throw new Error(`Could not inspect startup window: ${message || 'unknown error'}`);
   }
   const match = /^(true|false), (\d+)$/.exec(result.stdout?.trim());
