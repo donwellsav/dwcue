@@ -39,7 +39,7 @@
       <ConnectionStatusPill />
 
       <Btn :text="t('settings.title')" @click="showProjectSettings = true" />
-      <Btn :text="t('controls.shortcutBtn')" @click="showControlConfig = true" />
+      <Btn :text="t('controls.shortcutBtn')" @click="showShortcutsBar = !showShortcutsBar" />
       <Btn
         :text="t('settings.tabVideoOutput')"
         :class="{ 'video-toggle--active': videoOutputOpen }"
@@ -131,7 +131,8 @@ const { t } = useLocalization();
 const { activeCues } = useAudioEngine();
 const { uiMode, toggleUiMode } = useUiMode();
 
-const showControlConfig = ref(false);
+const showControlConfig = useState('showControlConfig', () => false);
+const showShortcutsBar = useState('showShortcutsBar', () => false);
 const showProjectSettings = useState('showProjectSettings', () => false);
 
 const isDark = computed(() => currentProject.value?.theme.mode === 'dark');
