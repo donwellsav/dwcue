@@ -73,18 +73,23 @@ const formatTime = (seconds: number): string => {
 };
 
 // Capture phase so these keys win over the cart/playback hotkeys while the
-// bar is up; Space replays, arrows walk cues, Esc exits. Never fires while
-// the operator is typing in a field.
+// bar is up. Keys are deliberately NOT the show-critical ones — Escape and
+// Space must keep reaching panic and play-next during a check: R replays,
+// [ / ] walk cues, Q exits. Letter keys only fire unmodified, so Cmd+R
+// (reload) and similar chords still pass through. Never fires while the
+// operator is typing in a field.
 const isEditingTarget = (e: KeyboardEvent): boolean => {
   const el = e.target as HTMLElement | null;
   return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
 };
 const onKeydown = (e: KeyboardEvent) => {
   if (!active.value || isEditingTarget(e)) return;
-  if (e.key === ' ') { e.preventDefault(); e.stopPropagation(); void playCurrent(); }
-  else if (e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); void next(); }
-  else if (e.key === 'ArrowLeft') { e.preventDefault(); e.stopPropagation(); void prev(); }
-  else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); void exit(); }
+  const key = e.key.toLowerCase();
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (key === 'r') { e.preventDefault(); e.stopPropagation(); void playCurrent(); }
+  else if (e.key === ']') { e.preventDefault(); e.stopPropagation(); void next(); }
+  else if (e.key === '[') { e.preventDefault(); e.stopPropagation(); void prev(); }
+  else if (key === 'q') { e.preventDefault(); e.stopPropagation(); void exit(); }
 };
 
 onMounted(() => window.addEventListener('keydown', onKeydown, { capture: true }));
