@@ -18,7 +18,7 @@
           @click="toggle"
         >
           <span class="material-symbols-rounded" aria-hidden="true">{{ armed ? 'lock_open' : 'lock' }}</span>
-          <span>{{ armed ? t('oneShots.armed') : t('oneShots.arm') }}</span>
+          <span>{{ armed ? t('oneShots.armed') : t('oneShots.safe') }}</span>
         </button>
         <Btn
           v-if="!isDetachedWindow"
@@ -36,7 +36,7 @@
       </div>
     </header>
 
-    <div class="one-shot-grid" :class="{ 'one-shot-grid--disarmed': fireBlocked }" :style="oneShotGridStyle">
+    <div class="one-shot-grid" :class="{ 'one-shot-grid--disarmed': fireBlocked, 'one-shot-grid--armed': showMode && armed }" :style="oneShotGridStyle">
       <div
         v-for="(item, index) in oneShotSlots"
         :key="item?.uuid ?? `empty-${index}`"
@@ -499,11 +499,15 @@ onUnmounted(() => {
 .one-shot-arm--armed {
   border-color: var(--color-danger, #e5484d);
   background-color: color-mix(in srgb, var(--color-danger, #e5484d) 14%, transparent);
-  animation: one-shot-arm-pulse 1.2s ease-in-out infinite;
+  color: var(--color-danger, #e5484d);
+  font-weight: 800;
 }
-
-@keyframes one-shot-arm-pulse {
-  50% { border-color: color-mix(in srgb, var(--color-danger, #e5484d) 35%, transparent); }
+/* Armed cells read HOT: solid danger ring + glow, full brightness. Playing
+   tiles keep their own (stronger) is-playing treatment via specificity. */
+.one-shot-grid--armed .one-shot-slot > :deep(.one-shot-tile:not(.is-playing)) {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--color-danger, #e5484d) 80%, transparent),
+    0 0 14px color-mix(in srgb, var(--color-danger, #e5484d) 35%, transparent);
 }
 
 .one-shot-slot.is-drag-over {

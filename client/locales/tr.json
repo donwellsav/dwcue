@@ -865,7 +865,8 @@
     "designation": "Add to One Shots",
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
     "arm": "One Shot'ları Kur",
-    "armed": "One Shot'lar Kurulu"
+    "armed": "One Shot'lar Kurulu",
+    "safe": "One Shot'lar Güvenli"
   },
   "outputConsole": {
     "limiter": "TP Limiter",

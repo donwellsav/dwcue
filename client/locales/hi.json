@@ -865,7 +865,8 @@
     "designation": "Add to One Shots",
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
     "arm": "वन शॉट तैयार करें",
-    "armed": "वन शॉट तैयार"
+    "armed": "वन शॉट तैयार",
+    "safe": "वन शॉट सुरक्षित"
   },
   "outputConsole": {
     "limiter": "TP Limiter",

@@ -865,7 +865,8 @@
     "designation": "Add to One Shots",
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
     "arm": "آماده‌سازی One Shots",
-    "armed": "One Shots آماده"
+    "armed": "One Shots آماده",
+    "safe": "One Shots امن"
   },
   "outputConsole": {
     "limiter": "TP Limiter",
