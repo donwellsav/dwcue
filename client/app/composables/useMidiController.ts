@@ -147,6 +147,11 @@ export const useMidiController = () => {
       const item = oneShotSlots.value[slot];
       if (!item) return;
       if (activeCues.value.has(item.uuid) && item.oneShot?.retrigger === 'ignore') return;
+      // Same show-mode arm gate as tile clicks and slot hotkeys: pads only
+      // fire while armed, and firing disarms again.
+      const { showMode, fireBlocked, disarm } = useOneShotArm();
+      if (fireBlocked.value) return;
+      if (showMode.value) disarm();
       playCue(item);
       return;
     }

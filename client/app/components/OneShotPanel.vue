@@ -444,47 +444,6 @@ onUnmounted(() => {
   min-height: 0;
   flex: 1;
   display: grid;
-// Show-mode arm safety: while disarmed, idle tiles dim so the grid reads as
-// "not hot". Playing tiles keep full contrast — their stop control must stay
-// obvious — and remain clickable because the gate only swallows fires.
-.one-shot-grid--disarmed .one-shot-tile:not(.is-playing) {
-  opacity: 0.55;
-}
-
-.one-shot-arm {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: var(--panel-control-height);
-  padding: 6px var(--spacing-md);
-  border: 1px solid var(--color-border);
-  border-radius: var(--control-radius);
-  background-color: var(--color-surface-raised);
-  color: var(--color-text-primary);
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-  cursor: pointer;
-
-  .material-symbols-rounded {
-    font-size: 18px;
-  }
-
-  &:hover {
-    background-color: var(--color-surface-hover);
-    border-color: var(--color-border-strong);
-  }
-}
-
-.one-shot-arm--armed {
-  border-color: var(--color-danger, #e5484d);
-  background-color: color-mix(in srgb, var(--color-danger, #e5484d) 14%, transparent);
-  animation: one-shot-arm-pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes one-shot-arm-pulse {
-  50% { border-color: color-mix(in srgb, var(--color-danger, #e5484d) 35%, transparent); }
-}
   grid-template-columns: repeat(var(--one-shot-columns, 2), minmax(0, 1fr));
   grid-auto-rows: var(--one-shot-row-height, 106px);
   align-content: start;
@@ -504,6 +463,47 @@ onUnmounted(() => {
 .one-shot-slot > :deep(.one-shot-tile) {
   height: 100%;
   box-sizing: border-box;
+}
+/* Show-mode arm safety: while disarmed, idle tiles dim so the grid reads as
+   "not hot". Playing tiles keep full contrast — their stop control must stay
+   obvious — and remain clickable because the gate only swallows fires. */
+.one-shot-grid--disarmed .one-shot-slot > :deep(.one-shot-tile:not(.is-playing)) {
+  opacity: 0.55;
+}
+
+.one-shot-arm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--panel-control-height);
+  padding: 6px var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  background-color: var(--color-surface-raised);
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.one-shot-arm .material-symbols-rounded {
+  font-size: 18px;
+}
+
+.one-shot-arm:hover {
+  background-color: var(--color-surface-hover);
+  border-color: var(--color-border-strong);
+}
+
+.one-shot-arm--armed {
+  border-color: var(--color-danger, #e5484d);
+  background-color: color-mix(in srgb, var(--color-danger, #e5484d) 14%, transparent);
+  animation: one-shot-arm-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes one-shot-arm-pulse {
+  50% { border-color: color-mix(in srgb, var(--color-danger, #e5484d) 35%, transparent); }
 }
 
 .one-shot-slot.is-drag-over {
