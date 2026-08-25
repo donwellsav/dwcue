@@ -262,7 +262,7 @@ const storedOptions = (() => {
 const addDownloadedAudio = ref(storedOptions.addDownloadedAudio !== false);
 const outputMode = ref<'source' | 'mp3' | 'video'>(
   storedOptions.outputMode === 'mp3' || storedOptions.outputMode === 'video'
-    ? storedOptions.outputMode : 'source',
+    ? storedOptions.outputMode : 'video',
 );
 watch([addDownloadedAudio, outputMode], () => localStorage.setItem(
   'liveplay-youtube-import-options',
@@ -403,6 +403,13 @@ const downloadVideo = async (video: YouTubeVideo) => {
       }
 
       item.status = 'completed';
+
+      // Auto-close once every queued download has landed successfully. Any
+      // errored item keeps the modal open so the failure stays visible.
+      if (downloadQueue.value.length > 0
+          && downloadQueue.value.every(d => !isActiveDownload(d) && d.status !== 'error')) {
+        void closeModal();
+      }
     }
   } catch (error: any) {
     const item = downloadQueue.value.find(d => d.jobId === downloadItem.jobId);

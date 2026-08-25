@@ -4878,10 +4878,10 @@ ipcMain.handle('download-youtube-audio', async (event, jobId, videoId, title, pr
     try {
       // Build yt-dlp arguments. Video mode strongly prefers an H.264+AAC pair
       // (the engine decodes the AAC track; Chromium shows the picture) and
-      // caps at 1080p — plenty for a cue projector, kind to weak iGPUs.
+      // takes the highest resolution available in that pairing.
       const args = outputMode === 'video'
         ? [videoUrl, '-f',
-           'bv*[height<=1080][vcodec^=avc1]+ba[acodec^=mp4a]/b[height<=1080][ext=mp4]/bv*[height<=1080]+ba/b',
+           'bv*[vcodec^=avc1]+ba[acodec^=mp4a]/b[ext=mp4]/bv*+ba/b',
            '--merge-output-format', 'mp4']
         : [videoUrl, '-f', 'bestaudio'];
       if (outputMode === 'mp3') {

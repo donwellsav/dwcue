@@ -190,6 +190,8 @@
 
     <div id="preview-lower-panel" class="preview-lower-panel" aria-live="polite"></div>
 
+    <ShortcutsBar />
+    
     <PropertiesPanel
       v-if="propertiesPanelOpen && selectedItem && (uiMode !== 'playback' || selectedItem.uuid === previewItemUuid)"
     />

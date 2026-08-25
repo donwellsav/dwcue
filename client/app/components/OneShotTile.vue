@@ -232,6 +232,7 @@ const { updateBinding } = useCartHotkeys();
 const server = useLiveplayServer();
 
 const showMode = computed(() => uiMode.value === 'playback');
+const { fireBlocked, disarm } = useOneShotArm();
 const activeCue = computed(() => activeCues.value.get(props.item.uuid));
 const isPlaying = computed(() => !!activeCue.value);
 const devices = computed(() => server.devices ?? []);
@@ -277,12 +278,18 @@ const requestImport = () => {
 
 const handleTrigger = () => {
   if (isPlaying.value && props.item.oneShot?.retrigger === 'ignore') return;
+  // Show-mode arm gate: cells only fire while armed; firing disarms.
+  if (fireBlocked.value) return;
+  if (showMode.value) disarm();
   void playCue(props.item);
 };
 
 const handleTransport = () => {
-  if (isPlaying.value) void stopCue(props.item.uuid);
-  else void playCue(props.item);
+  if (isPlaying.value) { void stopCue(props.item.uuid); return; }
+  // Stop is never gated; the play branch is (show-mode arm safety).
+  if (fireBlocked.value) return;
+  if (showMode.value) disarm();
+  void playCue(props.item);
 };
 
 const handleDragStart = (event: DragEvent) => {

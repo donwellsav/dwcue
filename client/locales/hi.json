@@ -426,7 +426,7 @@
     "previewing": "पूर्वावलोकन"
   },
   "settings": {
-    "title": "प्रोजेक्ट सेटिंग",
+    "title": "सेटिंग",
     "audioDevice": "ऑडियो डिवाइस",
     "audioDeviceHelp": "क्यू प्लेबैक के लिए डिफ़ॉल्ट डिवाइस।",
     "previewDevice": "पूर्वावलोकन डिवाइस",
@@ -863,7 +863,9 @@
     "triggerNamed": "Trigger {name}",
     "playingIgnored": "{name} is already playing; retrigger is set to Ignore",
     "designation": "Add to One Shots",
-    "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue."
+    "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
+    "arm": "वन शॉट तैयार करें",
+    "armed": "वन शॉट तैयार"
   },
   "outputConsole": {
     "limiter": "TP Limiter",

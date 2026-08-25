@@ -38,17 +38,14 @@
       <!-- Appears the moment the socket drops; spins for as long as we retry. -->
       <ConnectionStatusPill />
 
-      <Btn icon="tune" :text="t('settings.title')" @click="showProjectSettings = true" />
-      <Btn icon="keyboard" :text="t('controls.shortcutBtn')" @click="showControlConfig = true" />
+      <Btn :text="t('settings.title')" @click="showProjectSettings = true" />
+      <Btn :text="t('controls.shortcutBtn')" @click="showShortcutsBar = !showShortcutsBar" />
       <Btn
-        :icon="videoOutputOpen ? 'videocam' : 'videocam_off'"
         :text="t('settings.tabVideoOutput')"
         :class="{ 'video-toggle--active': videoOutputOpen }"
         @click="toggleVideoOutput"
       />
-      <VideoConfidenceChip :open="videoOutputOpen" />
       <Btn
-        icon="graphic_eq"
         :text="t('levelCheck.title')"
         :class="{ 'level-check-toggle--active': levelCheckActive }"
         :disabled="levelCheckCount === 0"
@@ -95,6 +92,7 @@
            LTC output device is configured in Project Settings — otherwise
            it's permanent header clutter that never does anything. -->
       <div class="clock-pair">
+        <VideoConfidenceChip :open="videoOutputOpen" />
         <div class="digital-clock clock--large" :class="primaryActiveCue ? 'clock--active' : 'clock--inactive'">
           <span class="clock-label">{{ t('project.timeLeft') }}</span>
           <span class="clock-value" :style="{ color: timeLeftColor ?? undefined }">{{ timeLeft }}</span>
@@ -133,7 +131,8 @@ const { t } = useLocalization();
 const { activeCues } = useAudioEngine();
 const { uiMode, toggleUiMode } = useUiMode();
 
-const showControlConfig = ref(false);
+const showControlConfig = useState('showControlConfig', () => false);
+const showShortcutsBar = useState('showShortcutsBar', () => false);
 const showProjectSettings = useState('showProjectSettings', () => false);
 
 const isDark = computed(() => currentProject.value?.theme.mode === 'dark');
