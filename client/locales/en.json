@@ -781,10 +781,10 @@
   "levelCheck": {
     "title": "Level Check",
     "hint": "Plays the loudest 5 seconds of each cue",
-    "replay": "Replay peak",
-    "next": "Next cue",
-    "prev": "Previous cue",
-    "exit": "Exit",
+    "replay": "Replay peak (R)",
+    "next": "Next cue (])",
+    "prev": "Previous cue ([)",
+    "exit": "Exit (Q)",
     "progress": "Cue {index} of {total}"
   },
   "repair": {
