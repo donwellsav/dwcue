@@ -63,7 +63,7 @@ export const PLAYBACK_ACTIONS: { id: PlaybackKeyAction; labelKey: string }[] = [
 export const useCartHotkeys = () => {
   const { currentProject, selectedItem, selectedItems, saveProject, getAllItemsFlat, toggleItemSelection, findItemByUuid } = useProject();
   const { cartOnlyItems } = useCartItems();
-  const { showMode, fireBlocked, disarm } = useOneShotArm();
+  const { fireBlocked } = useOneShotArm();
   const { playCue, pauseCue, resumeCue, stopAllCues, activeCues, nextItemOverrideUuid, autoNextItemUuid, setNextItem, triggerGroup, queueLoopContinuation, jumpCue } = useAudioEngine();
 
   const oneShotSlots = computed(() => buildOneShotSlots(
@@ -120,10 +120,9 @@ export const useCartHotkeys = () => {
     if (activeCues.value.has(item.uuid)) {
       if (item.oneShot?.retrigger === 'ignore') return;
     }
-    // Show-mode arm gate: a hotkey only fires while armed, and firing
-    // disarms again so the next press needs a fresh arm.
+    // Show-mode arm gate: a hotkey only fires while armed. Armed is a
+    // latched mode — firing does NOT disarm.
     if (fireBlocked.value) return;
-    if (showMode.value) disarm();
     playCue(item);
   };
 

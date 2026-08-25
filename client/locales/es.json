@@ -865,7 +865,8 @@
     "designation": "Add to One Shots",
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
     "arm": "Armar One Shots",
-    "armed": "One Shots armados"
+    "armed": "One Shots armados",
+    "safe": "One Shots seguros"
   },
   "outputConsole": {
     "limiter": "TP Limiter",

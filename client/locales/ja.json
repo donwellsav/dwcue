@@ -865,7 +865,8 @@
     "designation": "Add to One Shots",
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
     "arm": "ワンショットをアーム",
-    "armed": "ワンショット アーム中"
+    "armed": "ワンショット アーム中",
+    "safe": "ワンショット 安全"
   },
   "outputConsole": {
     "limiter": "TP Limiter",

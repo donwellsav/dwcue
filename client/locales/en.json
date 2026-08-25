@@ -383,7 +383,8 @@
     "designation": "Add to One Shots",
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
     "arm": "Arm One Shots",
-    "armed": "One Shots armed"
+    "armed": "One Shots armed",
+    "safe": "One Shots safe"
   },
   "behaviors": {
     "startPlayNext": "Start: Play Next",
