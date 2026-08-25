@@ -108,8 +108,9 @@ export const nextOneShotOrder = (
 
 export const markAsOneShot = (item: AudioItem, order: number): void => {
   item.oneShot = { order, retrigger: 'restart' };
-  // Safe quick-fire defaults: do not stop Program and do not advance Up Next.
-  item.duckingBehavior = { ...item.duckingBehavior, mode: 'no-ducking' };
+  // Quick-fire defaults: duck Program under the hit (music dips, effect stays
+  // intelligible) and do not advance Up Next.
+  item.duckingBehavior = { ...item.duckingBehavior, mode: 'duck-others', duckLevel: 0.1 };
   item.startBehavior = { action: 'nothing' };
   item.endBehavior = { action: 'nothing' };
 };
