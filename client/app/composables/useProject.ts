@@ -1300,8 +1300,12 @@ export const useProject = () => {
     let currentItem: AudioItem | GroupItem | null = null;
 
     for (const idx of index) {
-      if (idx >= items.length) return null;
+      // Cart-only One Shots carry sentinel indices ([-1, 0]) — they are not in
+      // the playlist tree, so negative (or otherwise unresolvable) indices
+      // must miss cleanly instead of reading undefined.
+      if (idx < 0 || idx >= items.length) return null;
       currentItem = items[idx];
+      if (!currentItem) return null;
       if (currentItem.type === 'group') {
         items = currentItem.children;
       }

@@ -2,7 +2,7 @@
   <article
     ref="root"
     class="one-shot-tile"
-    :class="{ 'is-playing': isPlaying, 'show-mode': showMode, 'is-menu-open': menuOpen || removeOpen, 'is-dragging': isDragging }"
+    :class="{ 'is-playing': isPlaying, 'show-mode': showMode, 'is-armed': armed, 'is-menu-open': menuOpen || removeOpen, 'is-dragging': isDragging }"
     :style="tileStyle"
     :draggable="!showMode"
     @dragstart="handleDragStart"
@@ -20,10 +20,19 @@
     ></button>
 
     <div class="one-shot-topline">
-      <span class="one-shot-mode"><b>{{ position + 1 }}</b>{{ modeLabel }}</span>
+      <span class="one-shot-mode"><b>{{ position + 1 }}</b></span>
       <span class="one-shot-topline__meta">
         <kbd v-if="hotkeyLabel" class="one-shot-hotkey">{{ hotkeyLabel }}</kbd>
         <span class="one-shot-duration">{{ currentTimeLabel }}</span>
+        <button
+          type="button"
+          class="one-shot-arm-toggle"
+          :class="{ 'is-armed': armed }"
+          :aria-pressed="armed"
+          :aria-label="armed ? t('oneShots.disarmCell', { name: item.displayName }) : t('oneShots.armCell', { name: item.displayName })"
+          :title="armed ? t('oneShots.disarmCell', { name: item.displayName }) : t('oneShots.armCell', { name: item.displayName })"
+          @click.stop="toggleArmed"
+        >{{ armed ? 'ARMED' : 'UNARMED' }}</button>
       </span>
     </div>
 
@@ -43,6 +52,7 @@
           <span class="material-symbols-rounded" aria-hidden="true">{{ isPlaying ? 'stop' : 'play_arrow' }}</span>
         </button>
         <button
+          v-if="!showMode"
           type="button"
           class="one-shot-control"
           :class="{ 'is-active': menuOpen }"
@@ -105,6 +115,14 @@
             <option value="restart">{{ t('oneShots.restart') }}</option>
             <option value="ignore">{{ t('oneShots.ignore') }}</option>
           </select>
+        </label>
+        <label class="popover-field popover-field--checkbox">
+          <input
+            type="checkbox"
+            :checked="item.oneShot?.autoDisarm !== false"
+            @change="onAutoDisarmChange"
+          />
+          <span>{{ t('oneShots.autoDisarm') }}</span>
         </label>
 
         <label class="popover-field">
@@ -232,7 +250,9 @@ const { updateBinding } = useCartHotkeys();
 const server = useLiveplayServer();
 
 const showMode = computed(() => uiMode.value === 'playback');
-const { fireBlocked, disarm } = useOneShotArm();
+const { isArmed, setArmed, fireBlocked, afterFire } = useOneShotArm();
+const armed = computed(() => isArmed(props.item));
+const toggleArmed = () => { setArmed(props.item, !armed.value); persist(); };
 const activeCue = computed(() => activeCues.value.get(props.item.uuid));
 const isPlaying = computed(() => !!activeCue.value);
 const devices = computed(() => server.devices ?? []);
@@ -245,9 +265,6 @@ const duckDb = computed(() => {
 });
 const hotkeyLabel = computed(() => props.item.oneShot?.hotkey
   ? formatKeyLabel(props.item.oneShot.hotkey) : '');
-const modeLabel = computed(() => playbackMode.value === 'duck'
-  ? t('oneShots.duck')
-  : playbackMode.value === 'replace' ? t('oneShots.replace') : t('oneShots.overlay'));
 const transportLabel = computed(() => isPlaying.value
   ? t('oneShots.stopNamed', { name: props.item.displayName })
   : t('oneShots.playNamed', { name: props.item.displayName }));
@@ -261,7 +278,7 @@ const progressStyle = computed(() => {
 });
 const currentTimeLabel = computed(() => {
   if (!activeCue.value) return formatDuration(Math.max(0, props.item.outPoint - props.item.inPoint || props.item.duration));
-  return `${formatDuration(activeCue.value.currentTime)} / ${formatDuration(activeCue.value.duration)}`;
+  return `−${formatDuration(Math.max(0, activeCue.value.duration - activeCue.value.currentTime))}`;
 });
 
 function formatDuration(seconds: number): string {
@@ -270,6 +287,12 @@ function formatDuration(seconds: number): string {
 }
 
 const persist = () => { void saveProject(); };
+const onAutoDisarmChange = (event: Event) => {
+  if (!props.item.oneShot) return;
+  if ((event.target as HTMLInputElement).checked) delete props.item.oneShot.autoDisarm;
+  else props.item.oneShot.autoDisarm = false;
+  persist();
+};
 
 const requestImport = () => {
   menuOpen.value = false;
@@ -278,17 +301,17 @@ const requestImport = () => {
 
 const handleTrigger = () => {
   if (isPlaying.value && props.item.oneShot?.retrigger === 'ignore') return;
-  // Show-mode arm gate: cells only fire while armed; firing disarms.
-  if (fireBlocked.value) return;
-  if (showMode.value) disarm();
+  // Show-mode arm gate: this cell only fires while it is armed; with
+  // auto-disarm on (default), firing re-safes the cell again.
+  if (fireBlocked(props.item)) return;
   void playCue(props.item);
+  afterFire(props.item);
 };
 
 const handleTransport = () => {
   if (isPlaying.value) { void stopCue(props.item.uuid); return; }
-  // Stop is never gated; the play branch is (show-mode arm safety).
-  if (fireBlocked.value) return;
-  if (showMode.value) disarm();
+  // Stop is never gated. The play branch only exists in edit mode (in show
+  // mode this button is stop-only), so the per-cell arm gate does not apply.
   void playCue(props.item);
 };
 
@@ -502,7 +525,6 @@ onUnmounted(() => {
   --one-shot-color: var(--color-accent);
   position: relative;
   min-width: 0;
-  min-height: 106px;
   isolation: isolate;
   display: flex;
   flex-direction: column;
@@ -524,7 +546,6 @@ onUnmounted(() => {
 }
 
 .one-shot-tile.show-mode {
-  min-height: 112px;
   padding: 10px;
   cursor: pointer;
 }
@@ -605,7 +626,7 @@ onUnmounted(() => {
 .one-shot-mode {
   overflow: hidden;
   color: var(--color-text-secondary);
-  font-size: 11px;
+  font-size: calc(11px * var(--one-shot-font-scale, 1));
   font-weight: 700;
   letter-spacing: .06em;
   text-transform: uppercase;
@@ -626,7 +647,7 @@ onUnmounted(() => {
   border-radius: 5px;
   background: color-mix(in srgb, var(--color-surface-raised) 88%, transparent);
   color: var(--color-text-primary);
-  font: 600 10px/1.2 var(--font-mono, ui-monospace, monospace);
+  font: 600 calc(10px * var(--one-shot-font-scale, 1)) / 1.2 var(--font-mono, ui-monospace, monospace);
 }
 
 .one-shot-title {
@@ -635,7 +656,7 @@ onUnmounted(() => {
   display: -webkit-box;
   overflow: hidden;
   color: var(--color-text-primary);
-  font-size: 15px;
+  font-size: calc(15px * var(--one-shot-font-scale, 1));
   font-weight: 700;
   line-height: 1.15;
   text-shadow: 0 1px 2px var(--color-background), 0 0 5px var(--color-background);
@@ -645,13 +666,13 @@ onUnmounted(() => {
 
 .show-mode .one-shot-title {
   min-height: 2.15em;
-  font-size: 15px;
+  font-size: calc(15px * var(--one-shot-font-scale, 1));
 }
 
 .one-shot-duration {
   flex: 0 0 auto;
   color: var(--color-text-secondary);
-  font: 600 11px/1.2 var(--font-mono, ui-monospace, monospace);
+  font: 600 calc(13px * var(--one-shot-font-scale, 1)) / 1.2 var(--font-mono, ui-monospace, monospace);
   font-variant-numeric: tabular-nums;
 }
 
@@ -706,6 +727,53 @@ onUnmounted(() => {
 .one-shot-actions .material-symbols-rounded {
   font-size: 19px;
   font-variation-settings: 'FILL' 0, 'wght' 520, 'GRAD' 0, 'opsz' 20;
+}
+/* Per-cell arm: the toggle sits first in the actions row. Armed = hot
+   danger tint on the toggle and a ring around the whole tile so the cell's
+   state reads from across the desk. In show mode, disarmed idle tiles dim
+   (playing tiles keep full contrast — their stop control must stay obvious). */
+.popover-field--checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.popover-field--checkbox input {
+  margin: 0;
+}
+
+.one-shot-arm-toggle {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border: 1px solid var(--color-text-tertiary);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--color-surface-raised) 88%, transparent);
+  color: var(--color-text-primary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.one-shot-arm-toggle:hover { background: var(--color-surface-hover); color: var(--color-text-primary); }
+
+.one-shot-arm-toggle.is-armed {
+  border-color: color-mix(in srgb, var(--color-danger, #e5484d) 55%, transparent);
+  background: color-mix(in srgb, var(--color-danger, #e5484d) 16%, transparent);
+  color: var(--color-danger, #e5484d);
+}
+
+.one-shot-tile.is-armed {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-danger, #e5484d) 80%, transparent),
+    0 0 14px color-mix(in srgb, var(--color-danger, #e5484d) 35%, transparent);
+}
+
+.one-shot-tile.show-mode:not(.is-armed):not(.is-playing) {
+  opacity: 0.55;
 }
 
 .show-mode .one-shot-bottomline { justify-content: flex-end; }

@@ -1,24 +1,54 @@
 import { computed, watch } from 'vue';
+import type { AudioItem } from '~/types/project';
+
+/** Minimal structural shape this composable needs from a one-shot item. */
+type OneShotArmable = Pick<AudioItem, 'oneShot'> | null | undefined;
 
 /**
- * Show-mode One Shot safety: while armed is false, tile clicks and slot
- * hotkeys will not fire. Arming is a deliberate first press; firing any cell
- * disarms again (arm → fire → arm). Leaving show mode always disarms.
- * Stopping a playing One Shot is never gated.
+ * Show-mode One Shot safety, per cell: each tile carries its own persisted
+ * armed flag (item.oneShot.armed) and only fires while armed. Auto-disarm
+ * (item.oneShot.autoDisarm, default on) re-safes a cell after it fires; the
+ * cell's settings popover can disable that per cell. Leaving show mode
+ * disarms every cell. Stopping a playing One Shot is never gated.
  */
 export const useOneShotArm = () => {
   const { uiMode } = useUiMode();
-  const armed = useState('oneShotArmed', () => false);
+  const { getAllItemsFlat, saveProject } = useProject();
+  const { cartOnlyItems } = useCartItems();
   const showMode = computed(() => uiMode.value === 'playback');
 
-  watch(showMode, (on) => { if (!on) armed.value = false; });
+  const isArmed = (item: OneShotArmable) => !!item?.oneShot?.armed;
+  const autoDisarms = (item: OneShotArmable) => item?.oneShot?.autoDisarm !== false;
 
-  const arm = () => { armed.value = true; };
-  const disarm = () => { armed.value = false; };
-  const toggle = () => { armed.value = !armed.value; };
+  const setArmed = (item: OneShotArmable, on: boolean) => {
+    if (!item?.oneShot) return;
+    if (on) item.oneShot.armed = true;
+    else delete item.oneShot.armed;
+  };
 
-  /** True when a fire attempt should be swallowed (show mode, not armed). */
-  const fireBlocked = computed(() => showMode.value && !armed.value);
+  /** Per-cell fire gate: true when a fire attempt should be swallowed. */
+  const fireBlocked = (item: OneShotArmable) => showMode.value && !isArmed(item);
 
-  return { armed, showMode, fireBlocked, arm, disarm, toggle };
+  /** Call after a cell actually fires: re-safe it unless auto-disarm is off. */
+  const afterFire = (item: OneShotArmable) => {
+    if (!showMode.value || !autoDisarms(item) || !isArmed(item)) return;
+    setArmed(item, false);
+    void saveProject();
+  };
+
+  const disarmAll = () => {
+    let changed = false;
+    for (const item of [...getAllItemsFlat(), ...cartOnlyItems.value.values()]) {
+      const oneShot = (item as AudioItem | undefined)?.oneShot;
+      if (oneShot?.armed) {
+        delete oneShot.armed;
+        changed = true;
+      }
+    }
+    if (changed) void saveProject();
+  };
+
+  watch(showMode, (on) => { if (!on) disarmAll(); });
+
+  return { showMode, isArmed, setArmed, fireBlocked, afterFire, disarmAll };
 };

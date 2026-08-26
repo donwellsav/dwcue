@@ -113,7 +113,7 @@ export const useMidiController = () => {
   const { playCue, stopCue, pauseCue, resumeCue, stopAllCues, activeCues, setMasterGain, masterGainDb, nextItemOverrideUuid, autoNextItemUuid, setNextItem, triggerGroup, queueLoopContinuation, jumpCue } = useAudioEngine();
   const { selectedItem, selectedItems, saveProject, currentProject, getAllItemsFlat, toggleItemSelection, findItemByUuid: findProjectItem, findItemByIndex } = useProject();
   const { cartOnlyItems } = useCartItems();
-  const { showMode, fireBlocked, disarm } = useOneShotArm();
+  const { fireBlocked, afterFire } = useOneShotArm();
   const oneShotSlots = computed(() => buildOneShotSlots(
     currentProject.value?.items ?? [],
     Array.from(cartOnlyItems.value.values()),
@@ -148,11 +148,11 @@ export const useMidiController = () => {
       const item = oneShotSlots.value[slot];
       if (!item) return;
       if (activeCues.value.has(item.uuid) && item.oneShot?.retrigger === 'ignore') return;
-      // Same show-mode arm gate as tile clicks and slot hotkeys: pads only
-      // fire while armed, and firing disarms again.
-      if (fireBlocked.value) return;
-      if (showMode.value) disarm();
+      // Same per-cell show-mode arm gate as tile clicks and slot hotkeys:
+      // pads only fire while that cell is armed; auto-disarm re-safes it.
+      if (fireBlocked(item)) return;
       playCue(item);
+      afterFire(item);
       return;
     }
 

@@ -37,7 +37,7 @@ import type { PlaybackKeyAction } from '~/types/project';
 const { t } = useLocalization();
 const { playbackMappings } = useCartHotkeys();
 
-const open = useState('showShortcutsBar', () => false);
+const open = useState('showShortcutsBar', () => true);
 const showControlConfig = useState('showControlConfig', () => false);
 
 const playbackKeyLabel = (action: PlaybackKeyAction): string => {

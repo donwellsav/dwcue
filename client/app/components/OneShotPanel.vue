@@ -1,5 +1,5 @@
 <template>
-  <section class="one-shot-panel" :class="{ 'show-mode': showMode }" aria-labelledby="one-shot-title">
+  <section class="one-shot-panel" :class="{ 'show-mode': showMode }" :style="{ '--one-shot-font-scale': String(oneShotFontScale / 100) }" aria-labelledby="one-shot-title">
     <header class="one-shot-header workspace-panel-header">
       <div class="workspace-panel-header__leading">
         <slot name="header-leading" />
@@ -9,17 +9,6 @@
         </div>
       </div>
       <div class="one-shot-header__actions">
-        <button
-          v-if="showMode"
-          type="button"
-          class="one-shot-arm"
-          :class="{ 'one-shot-arm--armed': armed }"
-          :aria-pressed="armed"
-          @click="toggle"
-        >
-          <span class="material-symbols-rounded" aria-hidden="true">{{ armed ? 'lock_open' : 'lock' }}</span>
-          <span>{{ armed ? t('oneShots.armed') : t('oneShots.arm') }}</span>
-        </button>
         <Btn
           v-if="!isDetachedWindow"
           icon="open_in_new"
@@ -36,7 +25,7 @@
       </div>
     </header>
 
-    <div class="one-shot-grid" :class="{ 'one-shot-grid--disarmed': fireBlocked }" :style="oneShotGridStyle">
+    <div class="one-shot-grid" :style="oneShotGridStyle">
       <div
         v-for="(item, index) in oneShotSlots"
         :key="item?.uuid ?? `empty-${index}`"
@@ -129,14 +118,13 @@ const {
   selectedItems,
 } = useProject();
 const { cartOnlyItems, addCartOnlyItem, removeCartOnlyItem } = useCartItems();
-const { uiMode, cartGridLayouts } = useUiMode();
+const { uiMode, cartGridLayouts, oneShotFontScale } = useUiMode();
 const { t } = useLocalization();
 const { mount: mountHotkeys, unmount: unmountHotkeys } = useCartHotkeys();
 const { mount: mountMidi, unmount: unmountMidi } = useMidiController();
 const server = useLiveplayServer();
 
 const showMode = computed(() => uiMode.value === 'playback');
-const { armed, fireBlocked, toggle } = useOneShotArm();
 const GRID_GAP_PX = 8;
 const gridProfile = computed<CartGridProfile>(() => {
   if (props.isDetachedWindow) return showMode.value ? 'detachedShow' : 'detachedRegular';
@@ -464,48 +452,6 @@ onUnmounted(() => {
   height: 100%;
   box-sizing: border-box;
 }
-/* Show-mode arm safety: while disarmed, idle tiles dim so the grid reads as
-   "not hot". Playing tiles keep full contrast — their stop control must stay
-   obvious — and remain clickable because the gate only swallows fires. */
-.one-shot-grid--disarmed .one-shot-slot > :deep(.one-shot-tile:not(.is-playing)) {
-  opacity: 0.55;
-}
-
-.one-shot-arm {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: var(--panel-control-height);
-  padding: 6px var(--spacing-md);
-  border: 1px solid var(--color-border);
-  border-radius: var(--control-radius);
-  background-color: var(--color-surface-raised);
-  color: var(--color-text-primary);
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.one-shot-arm .material-symbols-rounded {
-  font-size: 18px;
-}
-
-.one-shot-arm:hover {
-  background-color: var(--color-surface-hover);
-  border-color: var(--color-border-strong);
-}
-
-.one-shot-arm--armed {
-  border-color: var(--color-danger, #e5484d);
-  background-color: color-mix(in srgb, var(--color-danger, #e5484d) 14%, transparent);
-  animation: one-shot-arm-pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes one-shot-arm-pulse {
-  50% { border-color: color-mix(in srgb, var(--color-danger, #e5484d) 35%, transparent); }
-}
-
 .one-shot-slot.is-drag-over {
   outline: 2px solid var(--color-focus, var(--color-accent));
   outline-offset: 2px;

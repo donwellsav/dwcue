@@ -507,6 +507,10 @@
     "playlistWaveforms": "Playlist waveforms",
     "waveformOpacity": "Opacity",
     "waveformOpacityHelp": "Controls how strongly waveforms appear in playlist tracks on this Mac.",
+    "interfaceFontSize": "Μέγεθος γραμματοσειράς διεπαφής",
+    "interfaceFontSizeHelp": "Κλιμακώνει όλο το κείμενο της διεπαφής. Το 100% είναι το αρχικό μέγεθος.",
+    "oneShotFontSize": "Μέγεθος κειμένου one-shot",
+    "oneShotFontSizeHelp": "Κλιμακώνει το κείμενο των κελιών one-shot, ανεξάρτητα από το μέγεθος γραμματοσειράς της διεπαφής.",
     "cycleTrackColors": "Cycle new track colors",
     "cycleTrackColorsHelp": "Assigns palette colors in order to newly imported tracks. Existing track colors do not change.",
     "cartPlayerLayout": "One Shots layout",
@@ -864,8 +868,9 @@
     "playingIgnored": "{name} is already playing; retrigger is set to Ignore",
     "designation": "Add to One Shots",
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
-    "arm": "Οπλισμός One Shots",
-    "armed": "One Shots οπλισμένα"
+    "armCell": "Οπλισμός {name}",
+    "disarmCell": "Αφοπλισμός {name}",
+    "autoDisarm": "Αυτόματος αφοπλισμός μετά την ενεργοποίηση"
   },
   "outputConsole": {
     "limiter": "TP Limiter",

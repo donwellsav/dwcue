@@ -26,7 +26,7 @@ export const CART_GRID_PROFILES = {
   attachedRegular: {
     minHeight: 64,
     maxHeight: 600,
-    default: { rows: 8, columns: 2, minHeight: 88 },
+    default: { rows: 8, columns: 2, minHeight: 112 },
   },
   attachedShow: {
     minHeight: 72,
@@ -36,7 +36,7 @@ export const CART_GRID_PROFILES = {
   detachedRegular: {
     minHeight: 64,
     maxHeight: 600,
-    default: { rows: 6, columns: 3, minHeight: 88 },
+    default: { rows: 6, columns: 3, minHeight: 112 },
   },
   detachedShow: {
     minHeight: 72,
@@ -71,6 +71,10 @@ export const PLAYLIST_ROW_HEIGHTS = {
 } as const;
 
 export const WAVEFORM_OPACITY = { min: 0, max: 100, default: 10 } as const;
+// Percentages: 100 = the original interface text size. Defaults sit below
+// 100 — both were introduced as "smaller than before" preferences.
+export const UI_FONT_SCALE = { min: 80, max: 110, default: 90 } as const;
+export const ONE_SHOT_FONT_SCALE = { min: 70, max: 130, default: 85 } as const;
 
 export type PlaylistRowMode = keyof typeof PLAYLIST_ROW_HEIGHTS;
 
@@ -85,6 +89,21 @@ export const normalizeWaveformOpacity = (value: unknown): number =>
     WAVEFORM_OPACITY.min,
     WAVEFORM_OPACITY.max,
     WAVEFORM_OPACITY.default,
+  );
+export const normalizeUiFontScale = (value: unknown): number =>
+  normalizeBoundedInteger(
+    value,
+    UI_FONT_SCALE.min,
+    UI_FONT_SCALE.max,
+    UI_FONT_SCALE.default,
+  );
+
+export const normalizeOneShotFontScale = (value: unknown): number =>
+  normalizeBoundedInteger(
+    value,
+    ONE_SHOT_FONT_SCALE.min,
+    ONE_SHOT_FONT_SCALE.max,
+    ONE_SHOT_FONT_SCALE.default,
   );
 
 export const normalizeCartGridLayouts = (value: unknown): CartGridLayouts => {
@@ -122,6 +141,8 @@ const REGULAR_ROW_HEIGHT_KEY = 'liveplay-playlist-row-height-regular';
 const SHOW_ROW_HEIGHT_KEY = 'liveplay-playlist-row-height-show';
 const FOLDER_ROW_HEIGHT_KEY = 'liveplay-playlist-row-height-folder';
 const WAVEFORM_OPACITY_KEY = 'liveplay-playlist-waveform-opacity';
+const UI_FONT_SCALE_KEY = 'liveplay-ui-font-scale';
+const ONE_SHOT_FONT_SCALE_KEY = 'liveplay-one-shot-font-scale';
 const CART_GRID_LAYOUTS_KEY = 'liveplay-cart-grid-layouts-v1';
 
 const parseCartGridLayouts = (value: string | null): CartGridLayouts => {
@@ -151,6 +172,14 @@ export const useUiMode = () => {
     'useUiMode.waveformOpacity',
     () => WAVEFORM_OPACITY.default,
   );
+  const uiFontScale = useState<number>(
+    'useUiMode.uiFontScale',
+    () => UI_FONT_SCALE.default,
+  );
+  const oneShotFontScale = useState<number>(
+    'useUiMode.oneShotFontScale',
+    () => ONE_SHOT_FONT_SCALE.default,
+  );
   const cartGridLayouts = useState<CartGridLayouts>(
     'useUiMode.cartGridLayouts',
     () => normalizeCartGridLayouts(null),
@@ -176,6 +205,12 @@ export const useUiMode = () => {
       waveformOpacity.value = normalizeWaveformOpacity(
         localStorage.getItem(WAVEFORM_OPACITY_KEY),
       );
+      uiFontScale.value = normalizeUiFontScale(
+        localStorage.getItem(UI_FONT_SCALE_KEY),
+      );
+      oneShotFontScale.value = normalizeOneShotFontScale(
+        localStorage.getItem(ONE_SHOT_FONT_SCALE_KEY),
+      );
       cartGridLayouts.value = parseCartGridLayouts(localStorage.getItem(CART_GRID_LAYOUTS_KEY));
     } catch {
       // localStorage unavailable (e.g. private browsing) — fall back to 'edit'.
@@ -198,6 +233,10 @@ export const useUiMode = () => {
           folderPlaylistRowHeight.value = normalizePlaylistRowHeight(e.newValue, 'folder');
         } else if (e.key === WAVEFORM_OPACITY_KEY) {
           waveformOpacity.value = normalizeWaveformOpacity(e.newValue);
+        } else if (e.key === UI_FONT_SCALE_KEY) {
+          uiFontScale.value = normalizeUiFontScale(e.newValue);
+        } else if (e.key === ONE_SHOT_FONT_SCALE_KEY) {
+          oneShotFontScale.value = normalizeOneShotFontScale(e.newValue);
         } else if (e.key === CART_GRID_LAYOUTS_KEY) {
           cartGridLayouts.value = parseCartGridLayouts(e.newValue);
         }
@@ -261,6 +300,21 @@ export const useUiMode = () => {
       try { localStorage.setItem(WAVEFORM_OPACITY_KEY, String(next)); } catch {}
     }
   };
+  const setUiFontScale = (value: unknown) => {
+    const next = normalizeUiFontScale(value);
+    uiFontScale.value = next;
+    if (import.meta.client) {
+      try { localStorage.setItem(UI_FONT_SCALE_KEY, String(next)); } catch {}
+    }
+  };
+
+  const setOneShotFontScale = (value: unknown) => {
+    const next = normalizeOneShotFontScale(value);
+    oneShotFontScale.value = next;
+    if (import.meta.client) {
+      try { localStorage.setItem(ONE_SHOT_FONT_SCALE_KEY, String(next)); } catch {}
+    }
+  };
 
   const setCartGridLayout = (
     profile: CartGridProfile,
@@ -288,12 +342,16 @@ export const useUiMode = () => {
     showPlaylistRowHeight,
     folderPlaylistRowHeight,
     waveformOpacity,
+    uiFontScale,
+    oneShotFontScale,
     cartGridLayouts,
     setUiMode,
     setRegularPlaylistRowHeight,
     setShowPlaylistRowHeight,
     setFolderPlaylistRowHeight,
     setWaveformOpacity,
+    setUiFontScale,
+    setOneShotFontScale,
     setCartGridLayout,
     enterPlaybackMode,
     exitPlaybackMode,

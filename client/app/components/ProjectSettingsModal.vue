@@ -309,6 +309,47 @@
               </div>
               <p class="settings-help">{{ t('settings.waveformOpacityHelp') }}</p>
             </section>
+            <section class="settings-field">
+              <div class="settings-label">
+                <span class="material-symbols-rounded" aria-hidden="true">format_size</span>
+                {{ t('settings.interfaceFontSize') }}
+              </div>
+              <div class="track-height-control">
+                <label for="ui-font-scale">{{ t('settings.interfaceFontSize') }}</label>
+                <input
+                  id="ui-font-scale"
+                  type="range"
+                  :min="UI_FONT_SCALE.min"
+                  :max="UI_FONT_SCALE.max"
+                  step="5"
+                  :value="uiFontScale"
+                  @input="onUiFontScaleInput"
+                />
+                <output for="ui-font-scale">{{ uiFontScale }}%</output>
+              </div>
+              <p class="settings-help">{{ t('settings.interfaceFontSizeHelp') }}</p>
+            </section>
+
+            <section class="settings-field">
+              <div class="settings-label">
+                <span class="material-symbols-rounded" aria-hidden="true">text_fields</span>
+                {{ t('settings.oneShotFontSize') }}
+              </div>
+              <div class="track-height-control">
+                <label for="one-shot-font-scale">{{ t('settings.oneShotFontSize') }}</label>
+                <input
+                  id="one-shot-font-scale"
+                  type="range"
+                  :min="ONE_SHOT_FONT_SCALE.min"
+                  :max="ONE_SHOT_FONT_SCALE.max"
+                  step="5"
+                  :value="oneShotFontScale"
+                  @input="onOneShotFontScaleInput"
+                />
+                <output for="one-shot-font-scale">{{ oneShotFontScale }}%</output>
+              </div>
+              <p class="settings-help">{{ t('settings.oneShotFontSizeHelp') }}</p>
+            </section>
 
             <section class="settings-field">
               <label class="settings-label settings-label--checkbox">
@@ -665,6 +706,8 @@ import {
   CART_GRID_PROFILES,
   PLAYLIST_ROW_HEIGHTS,
   WAVEFORM_OPACITY,
+  UI_FONT_SCALE,
+  ONE_SHOT_FONT_SCALE,
   type CartGridLayout,
   type CartGridProfile,
   type PlaylistRowMode,
@@ -696,11 +739,15 @@ const {
   showPlaylistRowHeight,
   folderPlaylistRowHeight,
   waveformOpacity,
+  uiFontScale,
+  oneShotFontScale,
   cartGridLayouts,
   setRegularPlaylistRowHeight,
   setShowPlaylistRowHeight,
   setFolderPlaylistRowHeight,
   setWaveformOpacity,
+  setUiFontScale,
+  setOneShotFontScale,
   setCartGridLayout,
 } = useUiMode();
 
@@ -1042,6 +1089,13 @@ function onPlaylistRowHeightInput(mode: PlaylistRowMode, e: Event) {
 
 function onWaveformOpacityInput(e: Event) {
   setWaveformOpacity((e.target as HTMLInputElement).value);
+}
+function onUiFontScaleInput(e: Event) {
+  setUiFontScale((e.target as HTMLInputElement).value);
+}
+
+function onOneShotFontScaleInput(e: Event) {
+  setOneShotFontScale((e.target as HTMLInputElement).value);
 }
 
 function onCartGridLayoutChange(

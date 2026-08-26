@@ -132,7 +132,7 @@ const { activeCues } = useAudioEngine();
 const { uiMode, toggleUiMode } = useUiMode();
 
 const showControlConfig = useState('showControlConfig', () => false);
-const showShortcutsBar = useState('showShortcutsBar', () => false);
+const showShortcutsBar = useState('showShortcutsBar', () => true);
 const showProjectSettings = useState('showProjectSettings', () => false);
 
 const isDark = computed(() => currentProject.value?.theme.mode === 'dark');
