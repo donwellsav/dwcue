@@ -419,7 +419,7 @@ void emit_crash_report(const std::string& reason, const std::string& trace) {
         cmdline.push_back(L'\0');
         CreateProcessW(g_exe_path_w, cmdline.data(),
                        nullptr, nullptr, FALSE,
-                       CREATE_NEW_CONSOLE,
+                       CREATE_NO_WINDOW,
                        nullptr, nullptr, &si, &pi);
         if (pi.hProcess) CloseHandle(pi.hProcess);
         if (pi.hThread)  CloseHandle(pi.hThread);
