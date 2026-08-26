@@ -865,8 +865,7 @@
     "designation": "Add to One Shots",
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
     "arm": "Οπλισμός One Shots",
-    "armed": "One Shots οπλισμένα",
-    "safe": "One Shots ασφαλή"
+    "armed": "One Shots οπλισμένα"
   },
   "outputConsole": {
     "limiter": "TP Limiter",

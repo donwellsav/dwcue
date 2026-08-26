@@ -1,10 +1,10 @@
 import { computed, watch } from 'vue';
 
 /**
- * Show-mode One Shot safety: while armed is false, tile clicks, slot
- * hotkeys, and MIDI pads will not fire. Armed is a LATCHED mode — arm once,
- * fire as many cells as needed, disarm deliberately. Leaving show mode
- * always disarms. Stopping a playing One Shot is never gated.
+ * Show-mode One Shot safety: while armed is false, tile clicks and slot
+ * hotkeys will not fire. Arming is a deliberate first press; firing any cell
+ * disarms again (arm → fire → arm). Leaving show mode always disarms.
+ * Stopping a playing One Shot is never gated.
  */
 export const useOneShotArm = () => {
   const { uiMode } = useUiMode();

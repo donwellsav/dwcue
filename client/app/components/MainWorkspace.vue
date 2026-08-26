@@ -846,7 +846,6 @@ onUnmounted(() => {
   display: flex;
   overflow: hidden;
   position: relative;
-  container-type: inline-size;
 }
 
 .playlist-section {
@@ -1239,26 +1238,6 @@ onUnmounted(() => {
 
   &.cart-section--fullscreen {
     max-width: none;
-  }
-}
-/* Narrow windows: the playlist's fixed minimum (637px in show mode) plus the
-   side consoles can leave the cart section a zero-width "open" strip. Below
-   the fit threshold the panel becomes an overlay drawer instead of being
-   squeezed to nothing. Inline width is set from JS, hence !important. */
-@container (max-width: 925px) {
-  .cart-section:not(.cart-section--fullscreen) {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: min(320px, 85%) !important;
-    max-width: none;
-    z-index: 20;
-    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.45);
-  }
-
-  .resize-handle:not(.collapsed-left):not(.collapsed-right) {
-    display: none;
   }
 }
 </style>
