@@ -857,31 +857,16 @@ async function startLiveplayServerOnce() {
   ];
   let launcher;
   try {
-    if (process.platform === 'win32') {
-      // `cmd /c start "" /D "<cwd>" "<exe>" <args>` opens a visible console
-      // window in the taskbar. The empty-string title avoids the Windows quirk
-      // where the first quoted arg to `start` is treated as the window title
-      // instead of the executable. The server binary's own embedded icon and
-      // the title it sets via SetConsoleTitle() then appear in the taskbar.
-      launcher = spawn(
-        'cmd.exe',
-        ['/c', 'start', '',
-         '/D', path.dirname(exePath),
-         exePath, ...serverArgs],
-        {
-          stdio: 'ignore',
-          windowsHide: false,
-          detached: true,
-        },
-      );
-    } else {
-      // macOS / other POSIX: spawn directly without opening a terminal.
-      launcher = spawn(exePath, serverArgs, {
-        cwd: path.dirname(exePath),
-        stdio: 'ignore',
-        detached: true,
-      });
-    }
+    // All platforms: spawn the server directly and headless. On Windows
+    // `windowsHide: true` prevents the console-subsystem server binary from
+    // opening a terminal window in the taskbar; server logs remain available
+    // via the log file.
+    launcher = spawn(exePath, serverArgs, {
+      cwd: path.dirname(exePath),
+      stdio: 'ignore',
+      windowsHide: true,
+      detached: true,
+    });
   } catch (e) {
     console.error('[liveplay-server] spawn failed:', e);
     notifyServerStateChange();
@@ -895,10 +880,9 @@ async function startLiveplayServerOnce() {
     notifyServerStateChange();
   });
 
-  // The spawn handle we hold is either cmd.exe (Windows) or the server itself
-  // (POSIX). We don't track its lifetime — the real
-  // server's PID arrives via the pidfile within ~1 s. unref() so Electron
-  // can quit independently.
+  // We don't track the spawn handle's lifetime — the server's real PID
+  // arrives via the pidfile within ~1 s. unref() so Electron can quit
+  // independently.
   try { launcher.unref(); } catch {}
 
   // Adopt the real PID before completing this launch so a concurrent stop or

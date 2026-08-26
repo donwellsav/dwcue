@@ -311,6 +311,16 @@ onMounted(() => {
     // menu, file-association, or quit-flow listeners belong here.
     if (isVideoOutputWindow) return;
 
+    // Mouse-activated controls must not keep focus: a focused button treats
+    // Space/Enter as "click me again", which hijacks the global transport
+    // shortcuts after any mouse click. Keyboard activation has detail === 0
+    // and is left alone, so Tab+Space navigation still works.
+    window.addEventListener('click', (e: MouseEvent) => {
+      if (e.detail === 0) return;
+      const el = (e.target as HTMLElement | null)?.closest?.('button, [role="button"], a[href], summary') as HTMLElement | null;
+      if (el && typeof el.blur === 'function') el.blur();
+    }, true);
+
     // Cart window initialisation: load project data then listen for updates
     if (isCartWindow) {
       window.electronAPI.getCartWindowProjectData().then((projectData: any) => {
