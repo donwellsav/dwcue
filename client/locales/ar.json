@@ -507,6 +507,10 @@
     "playlistWaveforms": "Playlist waveforms",
     "waveformOpacity": "Opacity",
     "waveformOpacityHelp": "Controls how strongly waveforms appear in playlist tracks on this Mac.",
+    "interfaceFontSize": "حجم خط الواجهة",
+    "interfaceFontSizeHelp": "يغيّر حجم كل نص الواجهة. 100% هو الحجم الأصلي.",
+    "oneShotFontSize": "حجم نص اللقطات الفورية",
+    "oneShotFontSizeHelp": "يغيّر حجم نص خلايا اللقطات الفورية بشكل مستقل عن حجم خط الواجهة.",
     "cycleTrackColors": "Cycle new track colors",
     "cycleTrackColorsHelp": "Assigns palette colors in order to newly imported tracks. Existing track colors do not change.",
     "cartPlayerLayout": "One Shots layout",
@@ -864,9 +868,9 @@
     "playingIgnored": "{name} is already playing; retrigger is set to Ignore",
     "designation": "Add to One Shots",
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
-    "arm": "جهّز One Shots",
-    "armed": "One Shots جاهزة",
-    "safe": "One Shots آمنة"
+    "armCell": "جهّز {name}",
+    "disarmCell": "ألغِ تجهيز {name}",
+    "autoDisarm": "إلغاء التجهيز تلقائيًا بعد التشغيل"
   },
   "outputConsole": {
     "limiter": "TP Limiter",

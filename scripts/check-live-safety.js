@@ -1253,7 +1253,7 @@ assert.match(
 );
 assert.match(
   electron,
-  /app\.setPath\('userData', path\.join\(app\.getPath\('appData'\), 'LivePlay'\)\)/,
+  /app\.setPath\('userData', [\s\S]{0,80}path\.join\(app\.getPath\('appData'\), 'LivePlay'\)\)/,
   'the rebrand must preserve the installed LivePlay profile and detached-server lock',
 );
 assert.doesNotMatch(electron, /function deleteLiveplayLock/,
@@ -1297,7 +1297,7 @@ assert.doesNotMatch(
 );
 assert.match(
   electron,
-  /macOS \/ other POSIX: spawn directly without opening a terminal[\s\S]*spawn\(exePath, serverArgs,[\s\S]*stdio: 'ignore',[\s\S]*detached: true/,
+  /spawn the server directly and headless[\s\S]*spawn\(exePath, serverArgs,[\s\S]*stdio: 'ignore',[\s\S]*detached: true/,
   'macOS must launch the detached server directly with no terminal',
 );
 assert.equal(

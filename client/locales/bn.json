@@ -507,6 +507,10 @@
     "playlistWaveforms": "Playlist waveforms",
     "waveformOpacity": "Opacity",
     "waveformOpacityHelp": "Controls how strongly waveforms appear in playlist tracks on this Mac.",
+    "interfaceFontSize": "ইন্টারফেস ফন্ট সাইজ",
+    "interfaceFontSizeHelp": "সমস্ত ইন্টারফেস টেক্সট স্কেল করে। 100% হলো মূল সাইজ।",
+    "oneShotFontSize": "ওয়ান-শট টেক্সট সাইজ",
+    "oneShotFontSizeHelp": "ইন্টারফেস ফন্ট সাইজ থেকে স্বাধীনভাবে ওয়ান-শট সেলের টেক্সট স্কেল করে।",
     "cycleTrackColors": "Cycle new track colors",
     "cycleTrackColorsHelp": "Assigns palette colors in order to newly imported tracks. Existing track colors do not change.",
     "cartPlayerLayout": "One Shots layout",
@@ -864,9 +868,9 @@
     "playingIgnored": "{name} is already playing; retrigger is set to Ignore",
     "designation": "Add to One Shots",
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
-    "arm": "ওয়ান শট প্রস্তুত করুন",
-    "armed": "ওয়ান শট প্রস্তুত",
-    "safe": "ওয়ান শট নিরাপদ"
+    "armCell": "{name} প্রস্তুত করুন",
+    "disarmCell": "{name} অপ্রস্তুত করুন",
+    "autoDisarm": "চালুর পর স্বয়ংক্রিয়ভাবে অপ্রস্তুত"
   },
   "outputConsole": {
     "limiter": "TP Limiter",

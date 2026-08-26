@@ -1241,6 +1241,7 @@ onUnmounted(() => {
     max-width: none;
   }
 }
+
 /* Narrow windows: the playlist's fixed minimum (637px in show mode) plus the
    side consoles can leave the cart section a zero-width "open" strip. Below
    the fit threshold the panel becomes an overlay drawer instead of being

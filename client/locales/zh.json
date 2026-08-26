@@ -507,6 +507,10 @@
     "playlistWaveforms": "Playlist waveforms",
     "waveformOpacity": "Opacity",
     "waveformOpacityHelp": "Controls how strongly waveforms appear in playlist tracks on this Mac.",
+    "interfaceFontSize": "界面字体大小",
+    "interfaceFontSizeHelp": "缩放所有界面文本。100% 为原始大小。",
+    "oneShotFontSize": "单次触发文本大小",
+    "oneShotFontSizeHelp": "独立于界面字体大小，缩放单次触发单元格的文本。",
     "cycleTrackColors": "Cycle new track colors",
     "cycleTrackColorsHelp": "Assigns palette colors in order to newly imported tracks. Existing track colors do not change.",
     "cartPlayerLayout": "One Shots layout",
@@ -864,9 +868,9 @@
     "playingIgnored": "{name} is already playing; retrigger is set to Ignore",
     "designation": "Add to One Shots",
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
-    "arm": "预备 One Shots",
-    "armed": "One Shots 已预备",
-    "safe": "One Shots 已锁定"
+    "armCell": "预备 {name}",
+    "disarmCell": "解除预备 {name}",
+    "autoDisarm": "触发后自动解除预备"
   },
   "outputConsole": {
     "limiter": "TP Limiter",

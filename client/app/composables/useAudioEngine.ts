@@ -384,6 +384,10 @@ export const useAudioEngine = () => {
       const item = findItemByUuid(uuid);
       if (!item || item.type !== 'audio') continue;
       const audioItem = item as AudioItem;
+      // Cart-only One Shots live outside the playlist tree (sentinel index
+      // [-1, 0]): there is no "next playlist item" after one, so they never
+      // contribute an Up Next target — and must not walk the tree at all.
+      if (audioItem.index.some((i) => i < 0)) continue;
       switch (audioItem.endBehavior.action) {
         case 'next': {
           const nextIndex = [...audioItem.index];

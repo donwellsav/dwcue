@@ -507,6 +507,10 @@
     "playlistWaveforms": "Playlist waveforms",
     "waveformOpacity": "Opacity",
     "waveformOpacityHelp": "Controls how strongly waveforms appear in playlist tracks on this Mac.",
+    "interfaceFontSize": "Madhësia e shkrimit të ndërfaqes",
+    "interfaceFontSizeHelp": "Shkallon të gjithë tekstin e ndërfaqes. 100% është madhësia origjinale.",
+    "oneShotFontSize": "Madhësia e tekstit të one-shot-eve",
+    "oneShotFontSizeHelp": "Shkallon tekstin e qelizave one-shot, pavarësisht nga madhësia e shkrimit të ndërfaqes.",
     "cycleTrackColors": "Cycle new track colors",
     "cycleTrackColorsHelp": "Assigns palette colors in order to newly imported tracks. Existing track colors do not change.",
     "cartPlayerLayout": "One Shots layout",
@@ -864,9 +868,9 @@
     "playingIgnored": "{name} is already playing; retrigger is set to Ignore",
     "designation": "Add to One Shots",
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
-    "arm": "Armatos One Shots",
-    "armed": "One Shots të armatosura",
-    "safe": "One Shots të sigurta"
+    "armCell": "Armatos {name}",
+    "disarmCell": "Çarmatos {name}",
+    "autoDisarm": "Çarmatose automatikisht pas aktivizimit"
   },
   "outputConsole": {
     "limiter": "TP Limiter",

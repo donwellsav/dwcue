@@ -1,5 +1,5 @@
 <template>
-  <div id="app" :data-theme="theme">
+  <div id="app" :data-theme="theme" :style="isVideoOutputWindow ? undefined : { zoom: uiFontScale / 100 }">
     <!-- Video Output window: passive render surface — no app chrome, no modals. -->
     <template v-if="isVideoOutputWindow">
       <VideoOutputView />
@@ -220,6 +220,10 @@ import LocationChoiceModal from './components/LocationChoiceModal.vue';
 import ServerFilePickerModal from './components/ServerFilePickerModal.vue';
 const { currentLocale, setLocale, getDirection, t } = useLocalization();
 const theme = useState('theme', () => 'dark');
+// Global interface text scale (Settings → Interface font size). The app's
+// styles are px-based, so the lever is `zoom` on the root — it scales text
+// and chrome uniformly without touching hundreds of px rules.
+const { uiFontScale } = useUiMode();
 
 watch(theme, (value) => {
   if (import.meta.client) document.documentElement.dataset.theme = value;

@@ -507,6 +507,10 @@
     "playlistWaveforms": "Playlist waveforms",
     "waveformOpacity": "Opacity",
     "waveformOpacityHelp": "Controls how strongly waveforms appear in playlist tracks on this Mac.",
+    "interfaceFontSize": "인터페이스 글꼴 크기",
+    "interfaceFontSizeHelp": "모든 인터페이스 텍스트 크기를 조정합니다. 100%가 원래 크기입니다.",
+    "oneShotFontSize": "원샷 텍스트 크기",
+    "oneShotFontSizeHelp": "원샷 셀의 텍스트를 인터페이스 글꼴 크기와 독립적으로 조정합니다.",
     "cycleTrackColors": "Cycle new track colors",
     "cycleTrackColorsHelp": "Assigns palette colors in order to newly imported tracks. Existing track colors do not change.",
     "cartPlayerLayout": "One Shots layout",
@@ -864,9 +868,9 @@
     "playingIgnored": "{name} is already playing; retrigger is set to Ignore",
     "designation": "Add to One Shots",
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
-    "arm": "원샷 준비",
-    "armed": "원샷 준비됨",
-    "safe": "원샷 안전"
+    "armCell": "{name} 준비",
+    "disarmCell": "{name} 준비 해제",
+    "autoDisarm": "발사 후 자동 준비 해제"
   },
   "outputConsole": {
     "limiter": "TP Limiter",

@@ -10,20 +10,6 @@
       <span class="icon" aria-hidden="true">⚠</span>
       <span>{{ t('playback.panic') }}</span>
     </button>
-    <!-- Show-mode One Shot safety latch. Lives in the transport row because
-         the One Shots panel can be collapsed — the armed state must be
-         glanceable wherever the operator is actually looking. -->
-    <button
-      v-if="showMode"
-      type="button"
-      class="one-shot-master-arm"
-      :class="{ 'is-armed': oneShotArmed }"
-      :aria-pressed="oneShotArmed"
-      @click="toggleOneShotArm"
-    >
-      <span class="material-symbols-rounded" aria-hidden="true">{{ oneShotArmed ? 'lock_open' : 'lock' }}</span>
-      <span>{{ oneShotArmed ? t('oneShots.armed') : t('oneShots.safe') }}</span>
-    </button>
     
     <div class="active-cues">
       <div v-if="activeCues.size === 0" class="no-cues">
@@ -284,7 +270,6 @@ const { playbackMappings } = useCartHotkeys();
 const { t } = useLocalization();
 const server = useLiveplayServer();
 const { uiMode } = useUiMode();
-const { armed: oneShotArmed, toggle: toggleOneShotArm } = useOneShotArm();
 // Show Mode enlarges the GO / Stop-All buttons for touch.
 const showMode = computed(() => uiMode.value === 'playback');
 
@@ -591,10 +576,6 @@ const handlePlayNext = () => {
 /* Show Mode — bigger GO / Stop-All buttons. */
 .playback-controls.show-mode {
   min-height: calc(var(--playback-controls-height) + var(--spacing-lg));
-  /* The One Shot safety latch only exists in show mode — give it its own
-     grid track between panic and the active-cues strip. */
-  grid-template-columns: var(--transport-side-width) auto minmax(0, 1fr) var(--transport-side-width);
-  grid-template-areas: 'panic arm live next';
 
   .control-btn {
     padding: var(--spacing-lg) var(--spacing-xl);
@@ -621,48 +602,6 @@ const handlePlayNext = () => {
   width: 32px;
   height: 32px;
   font-size: 24px;
-}
-/* One Shot safety latch: deliberately loud and STATIC — a pulsing red in
-   peripheral vision on a dark stage distracts without informing. Disarmed
-   reads "safe"; armed is an unmistakable solid danger block. */
-.one-shot-master-arm {
-  grid-area: arm;
-  display: flex;
-  align-items: center;
-  align-self: stretch;
-  justify-content: center;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-lg) var(--spacing-xl);
-  font-size: 17px;
-  font-weight: 700;
-  white-space: nowrap;
-  cursor: pointer;
-  border-radius: var(--control-radius);
-  border: 1px solid var(--color-border-strong);
-  background-color: var(--color-control);
-  color: var(--color-text-secondary);
-}
-
-.one-shot-master-arm .material-symbols-rounded {
-  font-size: 26px;
-}
-
-.one-shot-master-arm:hover {
-  background-color: var(--color-surface-hover);
-}
-
-.one-shot-master-arm.is-armed {
-  background-color: var(--color-danger);
-  border-color: var(--color-danger);
-  color: #fff;
-  box-shadow:
-    0 0 0 2px color-mix(in srgb, var(--color-danger) 45%, transparent),
-    0 0 18px color-mix(in srgb, var(--color-danger) 55%, transparent);
-}
-
-.one-shot-master-arm.is-armed:hover {
-  background-color: var(--color-danger);
-  filter: brightness(1.08);
 }
 
 .control-btn {

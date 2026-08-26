@@ -507,6 +507,10 @@
     "playlistWaveforms": "Playlist waveforms",
     "waveformOpacity": "Opacity",
     "waveformOpacityHelp": "Controls how strongly waveforms appear in playlist tracks on this Mac.",
+    "interfaceFontSize": "Tamaño de fuente de la interfaz",
+    "interfaceFontSizeHelp": "Escala todo el texto de la interfaz. El 100 % es el tamaño original.",
+    "oneShotFontSize": "Tamaño del texto de los one-shots",
+    "oneShotFontSizeHelp": "Escala el texto de las celdas de one-shot, independientemente del tamaño de fuente de la interfaz.",
     "cycleTrackColors": "Cycle new track colors",
     "cycleTrackColorsHelp": "Assigns palette colors in order to newly imported tracks. Existing track colors do not change.",
     "cartPlayerLayout": "One Shots layout",
@@ -864,9 +868,9 @@
     "playingIgnored": "{name} is already playing; retrigger is set to Ignore",
     "designation": "Add to One Shots",
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
-    "arm": "Armar One Shots",
-    "armed": "One Shots armados",
-    "safe": "One Shots seguros"
+    "armCell": "Armar {name}",
+    "disarmCell": "Desarmar {name}",
+    "autoDisarm": "Desarmar automáticamente tras disparar"
   },
   "outputConsole": {
     "limiter": "TP Limiter",

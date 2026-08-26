@@ -63,7 +63,7 @@ export const PLAYBACK_ACTIONS: { id: PlaybackKeyAction; labelKey: string }[] = [
 export const useCartHotkeys = () => {
   const { currentProject, selectedItem, selectedItems, saveProject, getAllItemsFlat, toggleItemSelection, findItemByUuid } = useProject();
   const { cartOnlyItems } = useCartItems();
-  const { fireBlocked } = useOneShotArm();
+  const { fireBlocked, afterFire } = useOneShotArm();
   const { playCue, pauseCue, resumeCue, stopAllCues, activeCues, nextItemOverrideUuid, autoNextItemUuid, setNextItem, triggerGroup, queueLoopContinuation, jumpCue } = useAudioEngine();
 
   const oneShotSlots = computed(() => buildOneShotSlots(
@@ -120,10 +120,11 @@ export const useCartHotkeys = () => {
     if (activeCues.value.has(item.uuid)) {
       if (item.oneShot?.retrigger === 'ignore') return;
     }
-    // Show-mode arm gate: a hotkey only fires while armed. Armed is a
-    // latched mode — firing does NOT disarm.
-    if (fireBlocked.value) return;
+    // Per-cell show-mode arm gate: a hotkey only fires while that cell is
+    // armed; with auto-disarm on (default), firing re-safes the cell.
+    if (fireBlocked(item)) return;
     playCue(item);
+    afterFire(item);
   };
 
   const findSlotForEvent = (e: KeyboardEvent): number => {
