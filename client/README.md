@@ -115,7 +115,7 @@ Key IPC channels (non-exhaustive):
 | `read-file` / `write-file` / `copy-file` | Authorized project filesystem helpers. |
 | `get-binary-file-info` / `read-binary-file-chunk` | Bounded local archive reads for remote imports. |
 | `download-archive-to-file` | Streams a server archive directly to an authorized local destination. |
-| `export-project` / `import-project` / `import-lpa-file` | `.lpa` archive round-trip (zip-based project bundle). |
+| `menu-export-project` / `menu-import-project` (main → renderer) | Menu-triggered `.lpa` archive round-trip; the renderer owns the export/import dialogs. |
 | `check-for-updates` / `download-update` / `install-update` / `get-app-version` | `electron-updater` controls. |
 | `update-menu-language` / `get-system-locale` / `get-available-locales` / `get-locale-data` | Dynamic menu localisation. |
 | `open-folder` / `open-external` / `app:relaunch` / `app:exit` | OS integration. |
@@ -158,11 +158,12 @@ All composables are Vue `setup()`-time helpers, typed in TypeScript.
 | `useLiveMeters`        | Subscribes to the `meters` WS frame and exposes per-cue / per-mixer / per-master reactive refs at 60 Hz. Drives `LiveMeterBar` and `StereoMeter`. |
 | `useProject`           | Project CRUD as exposed by the server (new, open, save, close, item add/remove/move/patch). Wraps `useLiveplayServer` calls into ergonomic methods. |
 | `useAudioEngine`       | Transport facade: `playCue`, `stopCue`, `stopAllCues`, `seek`, `setVolume`, ducking mode helpers. All implemented by forwarding to the server — no audio runs in the renderer. |
-| `useCartItems`         | The One Shots grid model (slot → cue mapping); storage keeps the legacy cart shape for compatibility. |
+| `useCartItems`         | The One Shots grid model (slot → cue mapping, per-cell arm state); storage keeps the legacy cart shape for compatibility. |
 | `useCartHotkeys`       | Configurable keyboard shortcuts → One Shot triggers. See `ControlConfigModal.vue` for the current UI. |
 | `useMidiController`    | Web MIDI bindings → One Shot triggers. See `ControlConfigModal.vue`. |
 | `useStateViewer`       | Feeds the live diagnostics popup window (project doc + connection + server status). |
 | `useLocalization`      | i18n (21 languages, RTL). See [Localisation](#localisation-21-languages-rtl). |
+| `useUiMode`            | UI preferences singleton: theme, waveform opacity, playlist track heights, UI font scale (80–110 %, CSS `zoom` on `#app`, excluded in the video output window) and One Shot text scale (70–130 %). |
 
 **Rule of thumb**: components don't import `useLiveplayServer` directly unless they're presenting a low-level diagnostic. They use one of the facades above so the surface stays small and testable.
 
@@ -176,7 +177,7 @@ The component tree is intentionally flat — every SFC lives directly in [`app/c
 - `MainWorkspace.vue` — top-level layout once a project is loaded.
 - `PlaybackControls.vue`, `ActiveCueItem.vue` — top-of-screen transport.
 - `PlaylistView.vue`, `PlaylistItem.vue` — recursive playlist tree.
-- `OneShotPanel.vue`, `OneShotTile.vue` — permanent 1–64 cell quick-play grid (the detached window retains legacy cart-player IPC names).
+- `OneShotPanel.vue`, `OneShotTile.vue` — permanent 1–64 cell quick-play grid with per-cell ARMED/UNARMED gating (the detached window retains legacy cart-player IPC names).
 - `PropertiesPanel.vue` — properties for the selected item (gain, fades, behaviours, ducking).
 - `WaveformCanvas.vue` — canvas-rendered waveform fetched from `GET /api/waveform/<cueId>`.
 - `WaveformTrimmer.vue` — interactive in/out trimming + normalise.
@@ -188,6 +189,8 @@ The component tree is intentionally flat — every SFC lives directly in [`app/c
 - `ProjectSelectionModal.vue`, `ProjectSettingsModal.vue`, `ProjectRepairModal.vue` — project management.
 - `UpdateModal.vue` — auto-update UI.
 - `AboutModal.vue`, `ProgressModal.vue`, `LoadingOverlay.vue`, `LocationChoiceModal.vue` — misc.
+- `ShortcutsBar.vue` — on-screen hotkey reference strip, visible by default.
+- `VideoOutputView.vue`, `VideoConfidenceChip.vue` — the `?videoOutput=1` render surface and its 1 fps confidence thumbnail in the header.
 
 Style: Composition API + `<script setup lang="ts">`, scoped SCSS, CSS variables for theming (see [Theming](#theming)).
 

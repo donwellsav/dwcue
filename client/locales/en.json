@@ -198,7 +198,7 @@
     "placeholder": "My Project",
     "cancel": "Cancel",
     "ok": "OK",
-    "importAudio": "Import Audio",
+    "importAudio": "Import Media",
     "noProject": "No Project",
     "silenceWarning": "WARNING: SILENCE IN",
     "seconds": "SECONDS",
@@ -209,11 +209,11 @@
   },
   "playlist": {
     "title": "Playlist",
-    "import": "Import Audio",
+    "import": "Import Media",
     "addGroup": "Add Group",
     "noItems": "No items in playlist",
-    "importAudio": "Import Audio",
-    "importHint": "Use the import buttons or drag files here",
+    "importAudio": "Import Media",
+    "importHint": "Use the import buttons or drag files here — audio and video both work",
     "videoCue": "Video cue — picture plays on the Video Output"
   },
   "spotifyImport": {
@@ -597,7 +597,7 @@
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
   },
   "audioImport": {
-    "title": "Import audio",
+    "title": "Import Media",
     "tabServer": "On server",
     "tabUpload": "Upload from this computer",
     "serverHint": "Files already on the server. Double-click a folder to descend, or click Add next to a file.",
@@ -674,13 +674,15 @@
     "statusCancelled": "Cancelled",
     "statusError": "Error",
     "cancel": "Cancel",
-    "retry": "Retry",
+    "retry": "Retry download",
     "downloadError": "Download failed. Please try again.",
     "savedPath": "Saved: {path}",
     "openFolder": "Open Folder",
     "openFolderError": "Could not open the download folder.",
     "importError": "The audio was downloaded, but could not be added to the playlist.",
-    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist."
+    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist.",
+    "retryImport": "Add to playlist",
+    "importFailed": "Downloaded, but the playlist import failed: {error}"
   },
   "update": {
     "updateAvailable": "Update Available",
@@ -812,7 +814,7 @@
     "fromThisComputer": "From This Computer"
   },
   "importAudio": {
-    "title": "Import audio",
+    "title": "Import Media",
     "tabServer": "On server",
     "tabUpload": "Upload from this computer",
     "serverHint": "Files already on the server. Double-click a folder to open it; click files to select (Shift or Ctrl/Cmd-click for multiple), then Import selected.",

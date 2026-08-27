@@ -178,6 +178,15 @@
                 <span>{{ t('youtube.cancel') }}</span>
               </button>
               <button
+                v-if="download.status === 'error' && download.savedPath"
+                type="button"
+                class="action-btn download-btn"
+                @click="retryImport(download)"
+              >
+                <span class="material-symbols-rounded" aria-hidden="true">playlist_add</span>
+                <span>{{ t('youtube.retryImport') }}</span>
+              </button>
+              <button
                 v-else-if="download.status === 'error' || download.status === 'cancelled'"
                 type="button"
                 class="action-btn download-btn"
@@ -196,9 +205,11 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
+import { waitForDownloadedMediaReady } from '../utils/youtubeImport';
 
 const { t } = useLocalization();
 const { currentProject } = useProject();
+const server = useLiveplayServer();
 
 interface YouTubeVideo {
   id: string;
@@ -230,6 +241,7 @@ interface DownloadProgress {
   savedPath?: string;
   folderPath?: string;
   error?: string;
+  importError?: string;
   actionError?: string;
 }
 
@@ -389,6 +401,7 @@ const downloadVideo = async (video: YouTubeVideo) => {
 
       if (shouldImport) {
         item.status = 'importing';
+        await preflightDownloadedMedia(result.file, projectFolderPath, projectEpoch);
         const imported = await props.importFiles(
           [result.file],
           undefined,
@@ -403,6 +416,7 @@ const downloadVideo = async (video: YouTubeVideo) => {
       }
 
       item.status = 'completed';
+      item.importError = '';
 
       // Auto-close once every queued download has landed successfully. Any
       // errored item keeps the modal open so the failure stays visible.
@@ -414,8 +428,14 @@ const downloadVideo = async (video: YouTubeVideo) => {
   } catch (error: any) {
     const item = downloadQueue.value.find(d => d.jobId === downloadItem.jobId);
     if (item && item.status !== 'cancelled') {
+      // savedPath/folderPath were set as soon as the download landed, so a
+      // failed import still shows the file on disk for retry/reveal.
+      const stage = item.status === 'importing' ? 'import' : 'download';
       item.status = 'error';
-      item.error = error.message || t('youtube.downloadError');
+      item.importError = stage === 'import' ? (error.message || t('youtube.importError')) : '';
+      item.error = stage === 'import'
+        ? t('youtube.importFailed', { error: error.message || t('youtube.importError') })
+        : (error.message || t('youtube.downloadError'));
     }
     console.error('YouTube download error:', error);
   }
@@ -442,6 +462,60 @@ const retryDownload = (download: DownloadProgress) => {
     thumbnail: '',
     channelTitle: '',
   });
+};
+
+// Wait for the server to read a newly muxed/downloaded file before mutating
+// the project. The probe can retry safely; the project import runs once.
+const preflightDownloadedMedia = async (
+  filePath: string,
+  projectFolderPath: string,
+  projectEpoch: number,
+) => {
+  const canContinue = () =>
+    props.projectFolderPath === projectFolderPath && props.projectEpoch === projectEpoch;
+  await waitForDownloadedMediaReady(async () => {
+    const [metadata, waveform] = await Promise.all([
+      server.fetchMetadata(filePath),
+      server.fetchWaveformByPath(filePath),
+    ]);
+    const metadataDuration = Number((metadata as any)?.duration_ms);
+    const waveformDuration = Number((waveform as any)?.duration_ms);
+    if ((metadata as any)?.valid !== true ||
+        !(metadataDuration > 0 || waveformDuration > 0) ||
+        !Array.isArray((waveform as any)?.channels)) {
+      throw new Error(t('importAudio.decodeFailed'));
+    }
+  }, canContinue);
+};
+
+// Re-run only the playlist import for a file that already downloaded.
+const retryImport = async (download: DownloadProgress) => {
+  if (!download.savedPath) return;
+  const projectFolderPath = props.projectFolderPath;
+  const projectEpoch = props.projectEpoch;
+  download.actionError = '';
+  download.importError = '';
+  download.status = 'importing';
+  try {
+    await preflightDownloadedMedia(download.savedPath, projectFolderPath, projectEpoch);
+    const imported = await props.importFiles(
+      [download.savedPath],
+      undefined,
+      { displayNames: [download.title] },
+    );
+    if (props.projectFolderPath !== projectFolderPath || props.projectEpoch !== projectEpoch) {
+      throw new Error(t('youtube.projectChanged'));
+    }
+    if (!imported.success || imported.imported !== 1) {
+      throw new Error(imported.error || t('youtube.importError'));
+    }
+    download.status = 'completed';
+  } catch (error: any) {
+    download.status = 'error';
+    download.importError = error.message || t('youtube.importError');
+    download.error = t('youtube.importFailed', { error: download.importError });
+    console.error('YouTube retry-import error:', error);
+  }
 };
 
 const getDownloadStatus = (download: DownloadProgress) => {

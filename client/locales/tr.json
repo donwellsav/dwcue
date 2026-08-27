@@ -66,7 +66,7 @@
     "placeholder": "Benim Projem",
     "cancel": "İptal",
     "ok": "Tamam",
-    "importAudio": "Ses İçe Aktar",
+    "importAudio": "Medya içe aktar",
     "noProject": "Proje Yok",
     "silenceWarning": "UYARI: SESSİZLİK",
     "seconds": "SANİYE",
@@ -77,11 +77,11 @@
   },
   "playlist": {
     "title": "Çalma Listesi",
-    "import": "Ses İçe Aktar",
+    "import": "Medya içe aktar",
     "addGroup": "Grup Ekle",
     "noItems": "Çalma listesinde öğe yok",
-    "importAudio": "Ses İçe Aktar",
-    "importHint": "İçe aktarma düğmelerini kullanın veya dosyaları buraya sürükleyin",
+    "importAudio": "Medya içe aktar",
+    "importHint": "İçe aktarma düğmelerini kullanın veya dosyaları buraya sürükleyin — ses ve video ikisi de çalışır",
     "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
@@ -323,12 +323,14 @@
     "statusImporting": "Adding to playlist…",
     "statusCancelled": "Cancelled",
     "cancel": "Cancel",
-    "retry": "Retry",
+    "retry": "İndirmeyi yeniden dene",
     "savedPath": "Saved: {path}",
     "openFolder": "Open Folder",
     "openFolderError": "Could not open the download folder.",
     "importError": "The audio was downloaded, but could not be added to the playlist.",
-    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist."
+    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist.",
+    "retryImport": "Çalma listesine ekle",
+    "importFailed": "İndirildi, ancak çalma listesine aktarma başarısız: {error}"
   },
   "update": {
     "updateAvailable": "Güncelleme Mevcut",
@@ -577,7 +579,7 @@
     "fromThisComputer": "Bu Bilgisayardan"
   },
   "importAudio": {
-    "title": "Ses içe aktar",
+    "title": "Medya içe aktar",
     "tabServer": "Sunucuda",
     "tabUpload": "Bu bilgisayardan yükle",
     "serverHint": "Sunucuda zaten bulunan dosyalar. Açmak için bir klasöre çift tıklayın; seçmek için dosyalara tıklayın (birden fazlası için Shift veya Ctrl/Cmd tıklama), ardından \"Seçilenleri içe aktar\".",
@@ -683,7 +685,7 @@
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
   },
   "audioImport": {
-    "title": "Ses içe aktar",
+    "title": "Medya içe aktar",
     "tabServer": "Sunucuda",
     "tabUpload": "Bu bilgisayardan yükle",
     "serverHint": "Sunucuda zaten bulunan dosyalar. Bir klasöre girmek için çift tıklayın veya bir dosyanın yanındaki Ekle'ye tıklayın.",

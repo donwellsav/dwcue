@@ -66,7 +66,7 @@
     "placeholder": "Η Εκδήλωσή Μου",
     "cancel": "Ακύρωση",
     "ok": "OK",
-    "importAudio": "Εισαγωγή Ήχου",
+    "importAudio": "Εισαγωγή πολυμέσων",
     "noProject": "Κανένα Έργο",
     "silenceWarning": "ΠΡΟΕΙΔΟΠΟΙΗΣΗ: ΣΙΩΠΗ ΣΕ",
     "seconds": "ΔΕΥΤΕΡΟΛΕΠΤΑ",
@@ -77,11 +77,11 @@
   },
   "playlist": {
     "title": "Λίστα Αναπαραγωγής",
-    "import": "Εισαγωγή Ήχου",
+    "import": "Εισαγωγή πολυμέσων",
     "addGroup": "Προσθήκη Ομάδας",
     "noItems": "Δεν υπάρχουν στοιχεία στη λίστα αναπαραγωγής",
-    "importAudio": "Εισαγωγή Ήχου",
-    "importHint": "Χρησιμοποιήστε τα κουμπιά εισαγωγής ή σύρετε αρχεία εδώ",
+    "importAudio": "Εισαγωγή πολυμέσων",
+    "importHint": "Χρησιμοποιήστε τα κουμπιά εισαγωγής ή σύρετε αρχεία εδώ — ήχος και βίντεο λειτουργούν",
     "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
@@ -323,12 +323,14 @@
     "statusImporting": "Adding to playlist…",
     "statusCancelled": "Cancelled",
     "cancel": "Cancel",
-    "retry": "Retry",
+    "retry": "Επανάληψη λήψης",
     "savedPath": "Saved: {path}",
     "openFolder": "Open Folder",
     "openFolderError": "Could not open the download folder.",
     "importError": "The audio was downloaded, but could not be added to the playlist.",
-    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist."
+    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist.",
+    "retryImport": "Προσθήκη στη λίστα",
+    "importFailed": "Έγιν λήψη, αλλά η εισαγωγή στη λίστα απέτυχε: {error}"
   },
   "update": {
     "updateAvailable": "Διαθέσιμη Ενημέρωση",
@@ -577,7 +579,7 @@
     "fromThisComputer": "Από αυτόν τον υπολογιστή"
   },
   "importAudio": {
-    "title": "Εισαγωγή ήχου",
+    "title": "Εισαγωγή πολυμέσων",
     "tabServer": "Στον διακομιστή",
     "tabUpload": "Μεταφόρτωση από αυτόν τον υπολογιστή",
     "serverHint": "Αρχεία που βρίσκονται ήδη στον διακομιστή. Κάντε διπλό κλικ σε έναν φάκελο για να τον ανοίξετε· κάντε κλικ στα αρχεία για να τα επιλέξετε (Shift ή Ctrl/Cmd-κλικ για πολλά) και μετά «Εισαγωγή επιλεγμένων».",
@@ -683,7 +685,7 @@
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
   },
   "audioImport": {
-    "title": "Εισαγωγή ήχου",
+    "title": "Εισαγωγή πολυμέσων",
     "tabServer": "Στον διακομιστή",
     "tabUpload": "Μεταφόρτωση από αυτόν τον υπολογιστή",
     "serverHint": "Αρχεία που βρίσκονται ήδη στον διακομιστή. Κάντε διπλό κλικ σε έναν φάκελο για να μπείτε, ή κάντε κλικ στο Προσθήκη δίπλα σε ένα αρχείο.",

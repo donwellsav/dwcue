@@ -66,7 +66,7 @@
     "placeholder": "Mitt prosjekt",
     "cancel": "Avbryt",
     "ok": "OK",
-    "importAudio": "Importer lyd",
+    "importAudio": "Importer media",
     "noProject": "Ingen prosjekt",
     "silenceWarning": "ADVARSEL: STILLHET OM",
     "seconds": "SEKUNDER",
@@ -77,11 +77,11 @@
   },
   "playlist": {
     "title": "Spilleliste",
-    "import": "Importer lyd",
+    "import": "Importer media",
     "addGroup": "Legg til gruppe",
     "noItems": "Ingen elementer i spillelisten",
-    "importAudio": "Importer lyd",
-    "importHint": "Bruk importknappene eller dra filer hit",
+    "importAudio": "Importer media",
+    "importHint": "Bruk importknappene eller dra filer hit — lyd og video fungerer begge",
     "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
@@ -323,12 +323,14 @@
     "statusImporting": "Adding to playlist…",
     "statusCancelled": "Cancelled",
     "cancel": "Cancel",
-    "retry": "Retry",
+    "retry": "Prøv nedlasting på nytt",
     "savedPath": "Saved: {path}",
     "openFolder": "Open Folder",
     "openFolderError": "Could not open the download folder.",
     "importError": "The audio was downloaded, but could not be added to the playlist.",
-    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist."
+    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist.",
+    "retryImport": "Legg til i spillelisten",
+    "importFailed": "Nedlastet, men importen til spillelisten mislyktes: {error}"
   },
   "update": {
     "updateAvailable": "Oppdatering tilgjengelig",
@@ -577,7 +579,7 @@
     "fromThisComputer": "Fra denne datamaskinen"
   },
   "importAudio": {
-    "title": "Importer lyd",
+    "title": "Importer media",
     "tabServer": "På serveren",
     "tabUpload": "Last opp fra denne datamaskinen",
     "serverHint": "Filer som allerede ligger på serveren. Dobbeltklikk på en mappe for å åpne den; klikk på filer for å velge dem (Shift eller Ctrl/Cmd-klikk for flere), og deretter «Importer valgte».",
@@ -683,7 +685,7 @@
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
   },
   "audioImport": {
-    "title": "Importer lyd",
+    "title": "Importer media",
     "tabServer": "På serveren",
     "tabUpload": "Last opp fra denne datamaskinen",
     "serverHint": "Filer som allerede er på serveren. Dobbeltklikk på en mappe for å åpne den, eller klikk Legg til ved siden av en fil.",

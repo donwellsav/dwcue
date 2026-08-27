@@ -66,7 +66,7 @@
     "placeholder": "내 프로젝트",
     "cancel": "취소",
     "ok": "확인",
-    "importAudio": "오디오 가져오기",
+    "importAudio": "미디어 가져오기",
     "noProject": "프로젝트 없음",
     "silenceWarning": "경고: 무음까지",
     "seconds": "초",
@@ -77,11 +77,11 @@
   },
   "playlist": {
     "title": "재생 목록",
-    "import": "오디오 가져오기",
+    "import": "미디어 가져오기",
     "addGroup": "그룹 추가",
     "noItems": "재생 목록에 항목 없음",
-    "importAudio": "오디오 가져오기",
-    "importHint": "가져오기 버튼을 사용하거나 파일을 여기로 드래그하세요",
+    "importAudio": "미디어 가져오기",
+    "importHint": "가져오기 버튼을 사용하거나 파일을 여기로 드래그 — 오디오와 비디오 모두 지원",
     "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
@@ -323,12 +323,14 @@
     "statusImporting": "Adding to playlist…",
     "statusCancelled": "Cancelled",
     "cancel": "Cancel",
-    "retry": "Retry",
+    "retry": "다운로드 재시도",
     "savedPath": "Saved: {path}",
     "openFolder": "Open Folder",
     "openFolderError": "Could not open the download folder.",
     "importError": "The audio was downloaded, but could not be added to the playlist.",
-    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist."
+    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist.",
+    "retryImport": "플레이리스트에 추가",
+    "importFailed": "다운로드 완료, 그러나 플레이리스트 가져오기 실패: {error}"
   },
   "update": {
     "updateAvailable": "업데이트 사용 가능",
@@ -577,7 +579,7 @@
     "fromThisComputer": "이 컴퓨터에서"
   },
   "importAudio": {
-    "title": "오디오 가져오기",
+    "title": "미디어 가져오기",
     "tabServer": "서버에서",
     "tabUpload": "이 컴퓨터에서 업로드",
     "serverHint": "이미 서버에 있는 파일입니다. 폴더를 더블클릭하여 열고, 파일을 클릭하여 선택한 후(여러 개는 Shift 또는 Ctrl/Cmd 클릭) \"선택 항목 가져오기\"를 누르세요.",
@@ -683,7 +685,7 @@
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
   },
   "audioImport": {
-    "title": "오디오 가져오기",
+    "title": "미디어 가져오기",
     "tabServer": "서버에서",
     "tabUpload": "이 컴퓨터에서 업로드",
     "serverHint": "이미 서버에 있는 파일입니다. 폴더를 더블 클릭하여 들어가거나, 파일 옆의 추가를 클릭하세요.",

@@ -2,8 +2,9 @@
 
 > **Audience:** fresh agent / developer with zero prior context. Read
 > `IMPROVEMENTS_PLAN.md` §1 first for the general architecture.
-> **Branch:** `feature/video-playback` (worktree `../dwvideo`).
-> **Status:** slices 1–4 landed (see §13). v1 complete.
+> **Branch:** merged to `main` and released (v2.6.0–v2.6.8); the historical
+> `feature/video-playback` worktree (`../dwvideo`) no longer exists.
+> **Status:** slices 1–4 landed (see §13). v1 complete and shipped.
 
 ---
 
