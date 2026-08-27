@@ -2901,7 +2901,19 @@ ipcMain.handle('select-project-file', async (event) => {
 ipcMain.handle('select-audio-files', async (event) => {
   requireTrustedIpc(event);
   const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openFile', 'multiSelections']
+    properties: ['openFile', 'multiSelections'],
+    // Audio plus the video containers the engine decodes (H.264/HEVC tracks);
+    // imported video cues play their audio through the engine and drive the
+    // Video Output window.
+    filters: [{
+      name: 'Audio & video',
+      extensions: [
+        'mp3', 'wav', 'aiff', 'aif', 'flac', 'ogg', 'oga', 'm4a', 'aac', 'mp2',
+        'wma', 'opus', 'ac3', 'amr', 'au', 'caf',
+        'mp4', 'm4v', 'mov', 'mkv', 'webm', 'avi', 'mpg', 'mpeg', 'm2ts', 'mts',
+        'wmv', 'flv', '3gp',
+      ],
+    }],
   });
 
   if (!result.canceled && result.filePaths.length > 0) {

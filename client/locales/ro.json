@@ -66,7 +66,7 @@
     "placeholder": "Proiectul meu",
     "cancel": "Anuleaza",
     "ok": "OK",
-    "importAudio": "Importa Audio",
+    "importAudio": "Importă media",
     "noProject": "Niciun Proiect",
     "silenceWarning": "ATENTIE: SILENCE IN",
     "seconds": "SECUNDE",
@@ -77,11 +77,11 @@
   },
   "playlist": {
     "title": "Lista de redare",
-    "import": "Importa Audio",
+    "import": "Importă media",
     "addGroup": "Adauga Grup",
     "noItems": "Nu exista elemente in lista de redare",
-    "importAudio": "Importa Audio",
-    "importHint": "Folosesre butoanele de import sau trage fișierele aici",
+    "importAudio": "Importă media",
+    "importHint": "Folosiți butoanele de import sau trageți fișiere aici — audio și video funcționează",
     "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
@@ -323,12 +323,14 @@
     "statusImporting": "Adding to playlist…",
     "statusCancelled": "Cancelled",
     "cancel": "Cancel",
-    "retry": "Retry",
+    "retry": "Reîncearcă descărcarea",
     "savedPath": "Saved: {path}",
     "openFolder": "Open Folder",
     "openFolderError": "Could not open the download folder.",
     "importError": "The audio was downloaded, but could not be added to the playlist.",
-    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist."
+    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist.",
+    "retryImport": "Adaugă în playlist",
+    "importFailed": "Descărcat, dar importul în playlist a eșuat: {error}"
   },
   "update": {
     "updateAvailable": "Actualizare Disponibila",
@@ -577,7 +579,7 @@
     "fromThisComputer": "De pe acest computer"
   },
   "importAudio": {
-    "title": "Importă audio",
+    "title": "Importă media",
     "tabServer": "Pe server",
     "tabUpload": "Încarcă de pe acest computer",
     "serverHint": "Fișiere aflate deja pe server. Faceți dublu clic pe un folder pentru a-l deschide; faceți clic pe fișiere pentru a le selecta (Shift sau Ctrl/Cmd-clic pentru mai multe), apoi „Importă selecția”.",
@@ -683,7 +685,7 @@
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
   },
   "audioImport": {
-    "title": "Importă audio",
+    "title": "Importă media",
     "tabServer": "Pe server",
     "tabUpload": "Încarcă de pe acest computer",
     "serverHint": "Fișiere deja prezente pe server. Fă dublu clic pe un folder pentru a intra, sau clic pe Adaugă lângă un fișier.",

@@ -66,7 +66,7 @@
     "placeholder": "Mi Proyecto",
     "cancel": "Cancelar",
     "ok": "OK",
-    "importAudio": "Importar Audio",
+    "importAudio": "Importar medios",
     "noProject": "Sin Proyecto",
     "silenceWarning": "ADVERTENCIA: SILENCIO EN",
     "seconds": "SEGUNDOS",
@@ -77,11 +77,11 @@
   },
   "playlist": {
     "title": "Lista de Reproducción",
-    "import": "Importar Audio",
+    "import": "Importar medios",
     "addGroup": "Agregar Grupo",
     "noItems": "No hay elementos en la lista de reproducción",
-    "importAudio": "Importar Audio",
-    "importHint": "Use los botones de importación o arrastre archivos aquí",
+    "importAudio": "Importar medios",
+    "importHint": "Use los botones de importación o arrastre archivos aquí — audio y vídeo funcionan",
     "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
@@ -323,12 +323,14 @@
     "statusImporting": "Adding to playlist…",
     "statusCancelled": "Cancelled",
     "cancel": "Cancel",
-    "retry": "Retry",
+    "retry": "Reintentar descarga",
     "savedPath": "Saved: {path}",
     "openFolder": "Open Folder",
     "openFolderError": "Could not open the download folder.",
     "importError": "The audio was downloaded, but could not be added to the playlist.",
-    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist."
+    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist.",
+    "retryImport": "Añadir a la playlist",
+    "importFailed": "Descargado, pero la importación a la playlist falló: {error}"
   },
   "update": {
     "updateAvailable": "Actualización Disponible",
@@ -577,7 +579,7 @@
     "fromThisComputer": "Desde este equipo"
   },
   "importAudio": {
-    "title": "Importar audio",
+    "title": "Importar medios",
     "tabServer": "En el servidor",
     "tabUpload": "Subir desde este equipo",
     "serverHint": "Archivos que ya están en el servidor. Haga doble clic en una carpeta para abrirla; haga clic en los archivos para seleccionarlos (Mayús o Ctrl/Cmd-clic para varios) y luego en «Importar selección».",
@@ -683,7 +685,7 @@
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
   },
   "audioImport": {
-    "title": "Importar audio",
+    "title": "Importar medios",
     "tabServer": "En el servidor",
     "tabUpload": "Subir desde este equipo",
     "serverHint": "Archivos que ya están en el servidor. Haga doble clic en una carpeta para abrirla, o haga clic en Añadir junto a un archivo.",

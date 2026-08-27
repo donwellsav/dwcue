@@ -4,13 +4,13 @@
 
 You build a **show** as a list of cues plus a grid of one-touch buttons, then trigger them with a click, a tap, a keyboard shortcut, or a MIDI controller. DonWells Cue handles the fades, the transitions between tracks, and keeps a close eye on your levels so nothing clips or distorts.
 
-This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. The current source version is **v2.6.8**. macOS packages are Developer ID signed, notarized, and package-validated.
+This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. The current source version is **v2.6.9**. macOS packages are Developer ID signed, notarized, and package-validated.
 
-> **Current source version:** v2.6.8. Check the [release page](https://github.com/donwellsav/dwcue/releases) for the latest published installers. Local builds are still useful when you need to validate a change before distributing it.
+> **Current source version:** v2.6.9. Check the [release page](https://github.com/donwellsav/dwcue/releases) for the latest published installers. Local builds are still useful when you need to validate a change before distributing it.
 
-![DonWells Cue 2.6.8 showing the playlist, permanent One Shots grid, and output metering](client/public/screenshots/donwells_cue_main.jpg)
+![DonWells Cue showing the playlist, One Shots grid, and output metering](client/public/screenshots/donwells_cue_main.jpg)
 
-The screenshots in this README come from the current app UI. Refresh these canonical images when the top-level playback UI changes. The standalone website keeps its own copied screenshot set.
+The screenshots in this README are representative captures and may lag the newest UI; treat the running app as the source of truth. The standalone website keeps its own copied screenshot set.
 
 ---
 
@@ -304,7 +304,7 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). The current source version is **v2.6.8**; the workflow remains the source of truth for future versioned artefacts.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). The current source version is **v2.6.9**; the workflow remains the source of truth for future versioned artefacts.
 
 ### Triggering a release
 

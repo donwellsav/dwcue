@@ -66,7 +66,7 @@
     "placeholder": "আমার প্রকল্প",
     "cancel": "বাতিল করুন",
     "ok": "ঠিক আছে",
-    "importAudio": "অডিও আমদানি করুন",
+    "importAudio": "মিডিয়া আমদানি",
     "noProject": "কোনো প্রকল্প নেই",
     "silenceWarning": "সতর্কতা: নীরবতা",
     "seconds": "সেকেন্ড",
@@ -77,11 +77,11 @@
   },
   "playlist": {
     "title": "প্লেলিস্ট",
-    "import": "অডিও আমদানি করুন",
+    "import": "মিডিয়া আমদানি",
     "addGroup": "গ্রুপ যোগ করুন",
     "noItems": "প্লেলিস্টে কোনো আইটেম নেই",
-    "importAudio": "অডিও আমদানি করুন",
-    "importHint": "আমদানি বোতাম ব্যবহার করুন বা ফাইল এখানে টেনে আনুন",
+    "importAudio": "মিডিয়া আমদানি",
+    "importHint": "আমদানি বটন ব্যবহার করুন বা ফাইল এখানে টেনে আনুন — অডিও ও ভিডিও দুটোই চলে",
     "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
@@ -323,12 +323,14 @@
     "statusImporting": "Adding to playlist…",
     "statusCancelled": "Cancelled",
     "cancel": "Cancel",
-    "retry": "Retry",
+    "retry": "ডাউনলোড আবার চেষ্টা",
     "savedPath": "Saved: {path}",
     "openFolder": "Open Folder",
     "openFolderError": "Could not open the download folder.",
     "importError": "The audio was downloaded, but could not be added to the playlist.",
-    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist."
+    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist.",
+    "retryImport": "প্লেলিস্টে যোগ করুন",
+    "importFailed": "ডাউনলোড হয়েছে, কিন্তু প্লেলিস্টে আমদানি ব্যর্থ: {error}"
   },
   "update": {
     "updateAvailable": "আপডেট উপলব্ধ",
@@ -577,7 +579,7 @@
     "fromThisComputer": "এই কম্পিউটার থেকে"
   },
   "importAudio": {
-    "title": "অডিও আমদানি",
+    "title": "মিডিয়া আমদানি",
     "tabServer": "সার্ভারে",
     "tabUpload": "এই কম্পিউটার থেকে আপলোড",
     "serverHint": "সার্ভারে ইতিমধ্যেই থাকা ফাইল। খুলতে একটি ফোল্ডারে ডবল-ক্লিক করুন; নির্বাচন করতে ফাইলে ক্লিক করুন (একাধিকের জন্য Shift বা Ctrl/Cmd-ক্লিক), তারপর \"নির্বাচিত আমদানি করুন\"।",
@@ -683,7 +685,7 @@
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
   },
   "audioImport": {
-    "title": "অডিও আমদানি করুন",
+    "title": "মিডিয়া আমদানি",
     "tabServer": "সার্ভারে",
     "tabUpload": "এই কম্পিউটার থেকে আপলোড করুন",
     "serverHint": "সার্ভারে ইতিমধ্যে থাকা ফাইল। একটি ফোল্ডারে প্রবেশ করতে ডবল-ক্লিক করুন, বা একটি ফাইলের পাশে যোগ করুন ক্লিক করুন।",

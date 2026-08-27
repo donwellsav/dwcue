@@ -66,7 +66,7 @@
     "placeholder": "我的项目",
     "cancel": "取消",
     "ok": "确定",
-    "importAudio": "导入音频",
+    "importAudio": "导入媒体",
     "noProject": "无项目",
     "silenceWarning": "警告：静音倒计时",
     "seconds": "秒",
@@ -77,11 +77,11 @@
   },
   "playlist": {
     "title": "播放列表",
-    "import": "导入音频",
+    "import": "导入媒体",
     "addGroup": "添加组",
     "noItems": "播放列表中无项目",
-    "importAudio": "导入音频",
-    "importHint": "使用导入按钮或将文件拖到此处",
+    "importAudio": "导入媒体",
+    "importHint": "使用导入按钮或将文件拖到此处 — 音频和视频均可",
     "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
@@ -323,12 +323,14 @@
     "statusImporting": "Adding to playlist…",
     "statusCancelled": "Cancelled",
     "cancel": "Cancel",
-    "retry": "Retry",
+    "retry": "重试下载",
     "savedPath": "Saved: {path}",
     "openFolder": "Open Folder",
     "openFolderError": "Could not open the download folder.",
     "importError": "The audio was downloaded, but could not be added to the playlist.",
-    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist."
+    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist.",
+    "retryImport": "添加到播放列表",
+    "importFailed": "已下载，但导入播放列表失败：{error}"
   },
   "update": {
     "updateAvailable": "有可用更新",
@@ -577,7 +579,7 @@
     "fromThisComputer": "来自此计算机"
   },
   "importAudio": {
-    "title": "导入音频",
+    "title": "导入媒体",
     "tabServer": "在服务器上",
     "tabUpload": "从此计算机上传",
     "serverHint": "已在服务器上的文件。双击文件夹将其打开；单击文件进行选择（按住 Shift 或 Ctrl/Cmd 单击可多选），然后点击“导入所选”。",
@@ -683,7 +685,7 @@
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
   },
   "audioImport": {
-    "title": "导入音频",
+    "title": "导入媒体",
     "tabServer": "服务器上",
     "tabUpload": "从本电脑上传",
     "serverHint": "服务器上已有的文件。双击文件夹进入，或点击文件旁边的添加。",

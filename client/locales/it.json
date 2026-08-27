@@ -66,7 +66,7 @@
     "placeholder": "Il Mio Progetto",
     "cancel": "Annulla",
     "ok": "OK",
-    "importAudio": "Importa Audio",
+    "importAudio": "Importa media",
     "noProject": "Nessun Progetto",
     "silenceWarning": "AVVISO: SILENZIO TRA",
     "seconds": "SECONDI",
@@ -77,11 +77,11 @@
   },
   "playlist": {
     "title": "Playlist",
-    "import": "Importa Audio",
+    "import": "Importa media",
     "addGroup": "Aggiungi Gruppo",
     "noItems": "Nessun elemento nella playlist",
-    "importAudio": "Importa Audio",
-    "importHint": "Usa i pulsanti di importazione o trascina i file qui",
+    "importAudio": "Importa media",
+    "importHint": "Usa i pulsanti di import o trascina i file qui — audio e video funzionano",
     "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
@@ -323,12 +323,14 @@
     "statusImporting": "Adding to playlist…",
     "statusCancelled": "Cancelled",
     "cancel": "Cancel",
-    "retry": "Retry",
+    "retry": "Riprova download",
     "savedPath": "Saved: {path}",
     "openFolder": "Open Folder",
     "openFolderError": "Could not open the download folder.",
     "importError": "The audio was downloaded, but could not be added to the playlist.",
-    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist."
+    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist.",
+    "retryImport": "Aggiungi alla playlist",
+    "importFailed": "Scaricato, ma l'import nella playlist è fallito: {error}"
   },
   "update": {
     "updateAvailable": "Aggiornamento Disponibile",
@@ -577,7 +579,7 @@
     "fromThisComputer": "Da questo computer"
   },
   "importAudio": {
-    "title": "Importa audio",
+    "title": "Importa media",
     "tabServer": "Sul server",
     "tabUpload": "Carica da questo computer",
     "serverHint": "File già sul server. Fai doppio clic su una cartella per aprirla; fai clic sui file per selezionarli (Maiusc o Ctrl/Cmd-clic per selezionarne più di uno), quindi su «Importa selezione».",
@@ -683,7 +685,7 @@
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
   },
   "audioImport": {
-    "title": "Importa audio",
+    "title": "Importa media",
     "tabServer": "Sul server",
     "tabUpload": "Carica da questo computer",
     "serverHint": "File già presenti sul server. Fai doppio clic su una cartella per aprirla, o clicca su Aggiungi accanto a un file.",

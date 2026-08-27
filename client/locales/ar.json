@@ -66,7 +66,7 @@
     "placeholder": "مشروعي",
     "cancel": "إلغاء",
     "ok": "موافق",
-    "importAudio": "استيراد صوت",
+    "importAudio": "استيراد الوسائط",
     "noProject": "لا يوجد مشروع",
     "silenceWarning": "تحذير: صمت في",
     "seconds": "ثواني",
@@ -77,11 +77,11 @@
   },
   "playlist": {
     "title": "قائمة التشغيل",
-    "import": "استيراد صوت",
+    "import": "استيراد الوسائط",
     "addGroup": "إضافة مجموعة",
     "noItems": "لا توجد عناصر في قائمة التشغيل",
-    "importAudio": "استيراد صوت",
-    "importHint": "استخدم أزرار الاستيراد أو اسحب الملفات هنا",
+    "importAudio": "استيراد الوسائط",
+    "importHint": "استخدم أزرار الاستيراد أو اسحب الملفات هنا — الصوت والفيديو يعملان",
     "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
@@ -323,12 +323,14 @@
     "statusImporting": "Adding to playlist…",
     "statusCancelled": "Cancelled",
     "cancel": "Cancel",
-    "retry": "Retry",
+    "retry": "إعادة التنزيل",
     "savedPath": "Saved: {path}",
     "openFolder": "Open Folder",
     "openFolderError": "Could not open the download folder.",
     "importError": "The audio was downloaded, but could not be added to the playlist.",
-    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist."
+    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist.",
+    "retryImport": "إضافة إلى قائمة التشغيل",
+    "importFailed": "تم التنزيل، لكن فشل الاستيراد إلى قائمة التشغيل: {error}"
   },
   "update": {
     "updateAvailable": "تحديث متاح",
@@ -577,7 +579,7 @@
     "fromThisComputer": "من هذا الكمبيوتر"
   },
   "importAudio": {
-    "title": "استيراد الصوت",
+    "title": "استيراد الوسائط",
     "tabServer": "على الخادم",
     "tabUpload": "تحميل من هذا الكمبيوتر",
     "serverHint": "ملفات موجودة بالفعل على الخادم. انقر نقرًا مزدوجًا فوق مجلد لفتحه؛ انقر فوق الملفات لتحديدها (مع Shift أو Ctrl/Cmd للتحديد المتعدد)، ثم انقر فوق \"استيراد المحدد\".",
@@ -683,7 +685,7 @@
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
   },
   "audioImport": {
-    "title": "استيراد الصوت",
+    "title": "استيراد الوسائط",
     "tabServer": "على الخادم",
     "tabUpload": "تحميل من هذا الكمبيوتر",
     "serverHint": "ملفات موجودة بالفعل على الخادم. انقر نقرًا مزدوجًا على مجلد للدخول إليه، أو انقر على إضافة بجوار ملف.",

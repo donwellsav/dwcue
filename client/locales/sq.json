@@ -66,7 +66,7 @@
     "placeholder": "Projekti Im",
     "cancel": "Anulo",
     "ok": "OK",
-    "importAudio": "Importo Audio",
+    "importAudio": "Importo media",
     "noProject": "Asnjë Projekt",
     "silenceWarning": "PARALAJMËRIM: HESHTJE NË",
     "seconds": "SEKONDA",
@@ -77,11 +77,11 @@
   },
   "playlist": {
     "title": "Lista e Luajtjes",
-    "import": "Importo Audio",
+    "import": "Importo media",
     "addGroup": "Shto Grup",
     "noItems": "Asnjë artikull në listën e luajtjes",
-    "importAudio": "Importo Audio",
-    "importHint": "Përdor butonat e importimit ose zvarrit skedarët këtu",
+    "importAudio": "Importo media",
+    "importHint": "Përdor butonat e importit ose tërhiq skedarët këtu — audio dhe video funksionojnë",
     "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
@@ -323,12 +323,14 @@
     "statusImporting": "Adding to playlist…",
     "statusCancelled": "Cancelled",
     "cancel": "Cancel",
-    "retry": "Retry",
+    "retry": "Riprovo shkarkimin",
     "savedPath": "Saved: {path}",
     "openFolder": "Open Folder",
     "openFolderError": "Could not open the download folder.",
     "importError": "The audio was downloaded, but could not be added to the playlist.",
-    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist."
+    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist.",
+    "retryImport": "Shto në playlist",
+    "importFailed": "U shkarkua, por importi në playlist dështoi: {error}"
   },
   "update": {
     "updateAvailable": "Përditësim i Disponueshëm",
@@ -577,7 +579,7 @@
     "fromThisComputer": "Nga ky kompjuter"
   },
   "importAudio": {
-    "title": "Importo audio",
+    "title": "Importo media",
     "tabServer": "Në server",
     "tabUpload": "Ngarko nga ky kompjuter",
     "serverHint": "Skedarë tashmë në server. Klikoni dy herë mbi një dosje për ta hapur; klikoni mbi skedarët për t'i zgjedhur (Shift ose Ctrl/Cmd-klik për disa), pastaj «Importo të zgjedhurat».",
@@ -683,7 +685,7 @@
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
   },
   "audioImport": {
-    "title": "Importo audio",
+    "title": "Importo media",
     "tabServer": "Në server",
     "tabUpload": "Ngarko nga ky kompjuter",
     "serverHint": "Skedarë që janë tashmë në server. Kliko dy herë mbi një dosje për të hyrë, ose kliko Shto pranë një skedari.",

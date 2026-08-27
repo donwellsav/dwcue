@@ -66,7 +66,7 @@
     "placeholder": "میرا پروجیکٹ",
     "cancel": "منسوخ کریں",
     "ok": "ٹھیک ہے",
-    "importAudio": "آڈیو درآمد کریں",
+    "importAudio": "میڈیا امپورٹ کریں",
     "noProject": "کوئی پروجیکٹ نہیں",
     "silenceWarning": "انتباہ: خاموشی میں",
     "seconds": "سیکنڈ",
@@ -77,11 +77,11 @@
   },
   "playlist": {
     "title": "پلے لسٹ",
-    "import": "آڈیو درآمد کریں",
+    "import": "میڈیا امپورٹ کریں",
     "addGroup": "گروپ شامل کریں",
     "noItems": "پلے لسٹ میں کوئی آئٹم نہیں",
-    "importAudio": "آڈیو درآمد کریں",
-    "importHint": "درآمد بٹن استعمال کریں یا فائلیں یہاں گھسیٹیں",
+    "importAudio": "میڈیا امپورٹ کریں",
+    "importHint": "امپورٹ بٹن استعمال کریں یا فائلیں یہاں کھینچیں — آڈیو اور ویڈیو دونوں چلتی ہیں",
     "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
@@ -323,12 +323,14 @@
     "statusImporting": "Adding to playlist…",
     "statusCancelled": "Cancelled",
     "cancel": "Cancel",
-    "retry": "Retry",
+    "retry": "ڈاؤن لوڈ دوبارہ کریں",
     "savedPath": "Saved: {path}",
     "openFolder": "Open Folder",
     "openFolderError": "Could not open the download folder.",
     "importError": "The audio was downloaded, but could not be added to the playlist.",
-    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist."
+    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist.",
+    "retryImport": "پلے لسٹ میں شامل کریں",
+    "importFailed": "ڈاؤن لوڈ ہو گیا، مگر پلے لسٹ امپورٹ ناکام: {error}"
   },
   "update": {
     "updateAvailable": "اپ ڈیٹ دستیاب ہے",
@@ -577,7 +579,7 @@
     "fromThisComputer": "اس کمپیوٹر سے"
   },
   "importAudio": {
-    "title": "آڈیو امپورٹ کریں",
+    "title": "میڈیا امپورٹ کریں",
     "tabServer": "سرور پر",
     "tabUpload": "اس کمپیوٹر سے اپلوڈ کریں",
     "serverHint": "فائلیں جو پہلے سے سرور پر موجود ہیں۔ کھولنے کے لیے کسی فولڈر پر ڈبل کلک کریں؛ منتخب کرنے کے لیے فائلوں پر کلک کریں (ایک سے زیادہ کے لیے Shift یا Ctrl/Cmd کلک)، پھر \"منتخب کردہ درآمد کریں\"۔",
@@ -683,7 +685,7 @@
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
   },
   "audioImport": {
-    "title": "آڈیو درآمد کریں",
+    "title": "میڈیا امپورٹ کریں",
     "tabServer": "سرور پر",
     "tabUpload": "اس کمپیوٹر سے اپ لوڈ کریں",
     "serverHint": "فائلیں جو پہلے سے سرور پر ہیں۔ کسی فولڈر میں جانے کے لیے ڈبل کلک کریں، یا کسی فائل کے ساتھ شامل کریں پر کلک کریں۔",

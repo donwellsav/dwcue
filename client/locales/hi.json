@@ -66,7 +66,7 @@
     "placeholder": "मेरा प्रोजेक्ट",
     "cancel": "रद्द करें",
     "ok": "ठीक है",
-    "importAudio": "ऑडियो आयात करें",
+    "importAudio": "मीडिया आयात करें",
     "noProject": "कोई प्रोजेक्ट नहीं",
     "silenceWarning": "चेतावनी: मौन में",
     "seconds": "सेकंड",
@@ -77,11 +77,11 @@
   },
   "playlist": {
     "title": "प्लेलिस्ट",
-    "import": "ऑडियो आयात करें",
+    "import": "मीडिया आयात करें",
     "addGroup": "समूह जोड़ें",
     "noItems": "प्लेलिस्ट में कोई आइटम नहीं",
-    "importAudio": "ऑडियो आयात करें",
-    "importHint": "आयात बटन का उपयोग करें या फ़ाइलें यहाँ खींचें",
+    "importAudio": "मीडिया आयात करें",
+    "importHint": "आयात बटन उपयोग करें या फ़ाइलें यहाँ खींचें — ऑडियो और वीडियो दोनों चलते हैं",
     "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
@@ -323,12 +323,14 @@
     "statusImporting": "Adding to playlist…",
     "statusCancelled": "Cancelled",
     "cancel": "Cancel",
-    "retry": "Retry",
+    "retry": "डाउनलोड पुनः प्रयास",
     "savedPath": "Saved: {path}",
     "openFolder": "Open Folder",
     "openFolderError": "Could not open the download folder.",
     "importError": "The audio was downloaded, but could not be added to the playlist.",
-    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist."
+    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist.",
+    "retryImport": "प्लेलिस्ट में जोड़ें",
+    "importFailed": "डाउनलोड हो गया, लेकिन प्लेलिस्ट आयात विफल: {error}"
   },
   "update": {
     "updateAvailable": "अपडेट उपलब्ध",
@@ -577,7 +579,7 @@
     "fromThisComputer": "इस कंप्यूटर से"
   },
   "importAudio": {
-    "title": "ऑडियो आयात करें",
+    "title": "मीडिया आयात करें",
     "tabServer": "सर्वर पर",
     "tabUpload": "इस कंप्यूटर से अपलोड करें",
     "serverHint": "सर्वर पर पहले से मौजूद फ़ाइलें। खोलने के लिए किसी फ़ोल्डर पर डबल-क्लिक करें; चुनने के लिए फ़ाइलों पर क्लिक करें (एक से अधिक के लिए Shift या Ctrl/Cmd-क्लिक), फिर \"चयनित आयात करें\"।",
@@ -683,7 +685,7 @@
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
   },
   "audioImport": {
-    "title": "ऑडियो आयात करें",
+    "title": "मीडिया आयात करें",
     "tabServer": "सर्वर पर",
     "tabUpload": "इस कंप्यूटर से अपलोड करें",
     "serverHint": "फ़ाइलें जो पहले से सर्वर पर हैं। किसी फ़ोल्डर में जाने के लिए डबल-क्लिक करें, या किसी फ़ाइल के बगल में जोड़ें पर क्लिक करें।",

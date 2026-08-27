@@ -66,7 +66,7 @@
     "placeholder": "Мой проект",
     "cancel": "Отмена",
     "ok": "ОК",
-    "importAudio": "Импортировать аудио",
+    "importAudio": "Импорт медиа",
     "noProject": "Нет проекта",
     "silenceWarning": "ВНИМАНИЕ: ТИШИНА ЧЕРЕЗ",
     "seconds": "СЕКУНД",
@@ -77,11 +77,11 @@
   },
   "playlist": {
     "title": "Плейлист",
-    "import": "Импортировать аудио",
+    "import": "Импорт медиа",
     "addGroup": "Добавить группу",
     "noItems": "Нет элементов в плейлисте",
-    "importAudio": "Импортировать аудио",
-    "importHint": "Используйте кнопки импорта или перетащите файлы сюда",
+    "importAudio": "Импорт медиа",
+    "importHint": "Используйте кнопки импорта или перетащите файлы сюда — аудио и видео работают",
     "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
@@ -323,12 +323,14 @@
     "statusImporting": "Adding to playlist…",
     "statusCancelled": "Cancelled",
     "cancel": "Cancel",
-    "retry": "Retry",
+    "retry": "Повторить загрузку",
     "savedPath": "Saved: {path}",
     "openFolder": "Open Folder",
     "openFolderError": "Could not open the download folder.",
     "importError": "The audio was downloaded, but could not be added to the playlist.",
-    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist."
+    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist.",
+    "retryImport": "Добавить в плейлист",
+    "importFailed": "Загружено, но импорт в плейлист не удался: {error}"
   },
   "update": {
     "updateAvailable": "Доступно обновление",
@@ -577,7 +579,7 @@
     "fromThisComputer": "С этого компьютера"
   },
   "importAudio": {
-    "title": "Импорт аудио",
+    "title": "Импорт медиа",
     "tabServer": "На сервере",
     "tabUpload": "Загрузить с этого компьютера",
     "serverHint": "Файлы уже на сервере. Дважды щёлкните по папке, чтобы открыть её; щёлкайте по файлам, чтобы выбрать их (Shift или Ctrl/Cmd-щелчок для нескольких), затем «Импортировать выбранное».",
@@ -683,7 +685,7 @@
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
   },
   "audioImport": {
-    "title": "Импорт аудио",
+    "title": "Импорт медиа",
     "tabServer": "На сервере",
     "tabUpload": "Загрузить с этого компьютера",
     "serverHint": "Файлы, уже находящиеся на сервере. Дважды щёлкните папку, чтобы открыть её, или нажмите Добавить рядом с файлом.",

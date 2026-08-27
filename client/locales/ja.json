@@ -66,7 +66,7 @@
     "placeholder": "マイプロジェクト",
     "cancel": "キャンセル",
     "ok": "OK",
-    "importAudio": "オーディオをインポート",
+    "importAudio": "メディアをインポート",
     "noProject": "プロジェクトなし",
     "silenceWarning": "警告：無音まで",
     "seconds": "秒",
@@ -77,11 +77,11 @@
   },
   "playlist": {
     "title": "プレイリスト",
-    "import": "オーディオをインポート",
+    "import": "メディアをインポート",
     "addGroup": "グループを追加",
     "noItems": "プレイリストにアイテムがありません",
-    "importAudio": "オーディオをインポート",
-    "importHint": "インポートボタンを使用するか、ファイルをここにドラッグしてください",
+    "importAudio": "メディアをインポート",
+    "importHint": "インポートボタンを使うか、ここにファイルをドロップ — 音声も動画も対応",
     "videoCue": "Video cue — picture plays on the Video Output"
   },
   "cart": {
@@ -323,12 +323,14 @@
     "statusImporting": "Adding to playlist…",
     "statusCancelled": "Cancelled",
     "cancel": "Cancel",
-    "retry": "Retry",
+    "retry": "ダウンロードを再試行",
     "savedPath": "Saved: {path}",
     "openFolder": "Open Folder",
     "openFolderError": "Could not open the download folder.",
     "importError": "The audio was downloaded, but could not be added to the playlist.",
-    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist."
+    "projectChanged": "The project changed while this download was running. The audio was saved but was not added to the playlist.",
+    "retryImport": "プレイリストに追加",
+    "importFailed": "ダウンロード済みですが、プレイリストへのインポートに失敗しました: {error}"
   },
   "update": {
     "updateAvailable": "アップデート可能",
@@ -577,7 +579,7 @@
     "fromThisComputer": "このコンピューターから"
   },
   "importAudio": {
-    "title": "オーディオをインポート",
+    "title": "メディアをインポート",
     "tabServer": "サーバー上",
     "tabUpload": "このコンピューターからアップロード",
     "serverHint": "すでにサーバー上にあるファイルです。フォルダーをダブルクリックして開き、ファイルをクリックして選択し（複数選択は Shift または Ctrl/Cmd クリック）、「選択した項目をインポート」を押します。",
@@ -683,7 +685,7 @@
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
   },
   "audioImport": {
-    "title": "オーディオをインポート",
+    "title": "メディアをインポート",
     "tabServer": "サーバー上",
     "tabUpload": "このコンピューターからアップロード",
     "serverHint": "すでにサーバー上にあるファイル。フォルダーをダブルクリックして開くか、ファイルの横の追加をクリックします。",
