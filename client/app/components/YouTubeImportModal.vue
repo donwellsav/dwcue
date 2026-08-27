@@ -205,9 +205,11 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
+import { waitForDownloadedMediaReady } from '../utils/youtubeImport';
 
 const { t } = useLocalization();
 const { currentProject } = useProject();
+const server = useLiveplayServer();
 
 interface YouTubeVideo {
   id: string;
@@ -399,6 +401,7 @@ const downloadVideo = async (video: YouTubeVideo) => {
 
       if (shouldImport) {
         item.status = 'importing';
+        await preflightDownloadedMedia(result.file, projectFolderPath, projectEpoch);
         const imported = await props.importFiles(
           [result.file],
           undefined,
@@ -461,18 +464,48 @@ const retryDownload = (download: DownloadProgress) => {
   });
 };
 
+// Wait for the server to read a newly muxed/downloaded file before mutating
+// the project. The probe can retry safely; the project import runs once.
+const preflightDownloadedMedia = async (
+  filePath: string,
+  projectFolderPath: string,
+  projectEpoch: number,
+) => {
+  const canContinue = () =>
+    props.projectFolderPath === projectFolderPath && props.projectEpoch === projectEpoch;
+  await waitForDownloadedMediaReady(async () => {
+    const [metadata, waveform] = await Promise.all([
+      server.fetchMetadata(filePath),
+      server.fetchWaveformByPath(filePath),
+    ]);
+    const metadataDuration = Number((metadata as any)?.duration_ms);
+    const waveformDuration = Number((waveform as any)?.duration_ms);
+    if ((metadata as any)?.valid !== true ||
+        !(metadataDuration > 0 || waveformDuration > 0) ||
+        !Array.isArray((waveform as any)?.channels)) {
+      throw new Error(t('importAudio.decodeFailed'));
+    }
+  }, canContinue);
+};
+
 // Re-run only the playlist import for a file that already downloaded.
 const retryImport = async (download: DownloadProgress) => {
   if (!download.savedPath) return;
+  const projectFolderPath = props.projectFolderPath;
+  const projectEpoch = props.projectEpoch;
   download.actionError = '';
   download.importError = '';
   download.status = 'importing';
   try {
+    await preflightDownloadedMedia(download.savedPath, projectFolderPath, projectEpoch);
     const imported = await props.importFiles(
       [download.savedPath],
       undefined,
       { displayNames: [download.title] },
     );
+    if (props.projectFolderPath !== projectFolderPath || props.projectEpoch !== projectEpoch) {
+      throw new Error(t('youtube.projectChanged'));
+    }
     if (!imported.success || imported.imported !== 1) {
       throw new Error(imported.error || t('youtube.importError'));
     }
