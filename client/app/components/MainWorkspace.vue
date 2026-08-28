@@ -736,6 +736,10 @@ const isTextInputFocused = (): boolean => {
   return tag === 'input' || tag === 'textarea' || el.isContentEditable;
 };
 
+const isForwardedFromVideoOutput = (e: KeyboardEvent): boolean =>
+  (e as KeyboardEvent & { dwcueForwardedFromVideoOutput?: boolean })
+    .dwcueForwardedFromVideoOutput === true;
+
 const handleKeydown = (e: KeyboardEvent) => {
   // Save on F1 key (alternative to big play button)
   if (e.key === 'F1') {
@@ -751,7 +755,7 @@ const handleKeydown = (e: KeyboardEvent) => {
   const key = e.key.toLowerCase();
   const destructiveShortcut = e.key === 'Delete' || e.key === 'Backspace' ||
     (ctrl && !e.altKey && (key === 'd' || key === 'v'));
-  if (uiMode.value === 'playback' && !isTextInputFocused() && destructiveShortcut) {
+  if (uiMode.value === 'playback' && (!isTextInputFocused() || isForwardedFromVideoOutput(e)) && destructiveShortcut) {
     e.preventDefault();
     return;
   }
@@ -760,14 +764,15 @@ const handleKeydown = (e: KeyboardEvent) => {
   // the confirm dialog; a single item is removed outright. Must defer to
   // native editing inside text fields.
   if (e.key === 'Delete' || e.key === 'Backspace') {
-    if (isTextInputFocused() || !currentProject.value) return;
+    if ((!isForwardedFromVideoOutput(e) && isTextInputFocused()) || !currentProject.value) return;
     if (requestDeleteFromKeyboard()) e.preventDefault();
     return;
   }
 
   // Selection / clipboard shortcuts. These all require a project and must not
   // fire while editing text (so native Ctrl+A/C/V keep working in inputs).
-  if (!ctrl || e.altKey || !currentProject.value || isTextInputFocused()) return;
+  if (!ctrl || e.altKey || !currentProject.value ||
+      (!isForwardedFromVideoOutput(e) && isTextInputFocused())) return;
 
   if (key === 'a') {
     e.preventDefault();

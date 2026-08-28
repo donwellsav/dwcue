@@ -337,6 +337,25 @@ onMounted(() => {
       return; // skip main-window-only event listeners below
     }
 
+    // When the frameless Video Output owns keyboard focus (most visibly on
+    // Windows), main forwards app shortcuts here. Re-dispatching one marked
+    // event keeps every existing shortcut binding on the control renderer.
+    window.electronAPI.videoOutput?.onShortcut?.((shortcut) => {
+      const event = new KeyboardEvent('keydown', {
+        key: shortcut.key,
+        code: shortcut.code,
+        ctrlKey: shortcut.ctrlKey,
+        shiftKey: shortcut.shiftKey,
+        altKey: shortcut.altKey,
+        metaKey: shortcut.metaKey,
+        repeat: shortcut.repeat,
+        bubbles: true,
+        cancelable: true,
+      });
+      Object.defineProperty(event, 'dwcueForwardedFromVideoOutput', { value: true });
+      window.dispatchEvent(event);
+    });
+
     // Main pushes this when the window is about to close; we run the
     // quit-confirmation dialogs then call confirmQuit to actually quit.
     (window as any).electronAPI.app?.onRequestQuit?.(() => { void runQuitFlow(); });

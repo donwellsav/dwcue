@@ -95,10 +95,12 @@ applies unchanged. Video-ness is **derived**, not declared:
 
 - `AudioItem.imagePath?: string` — per-cue still (project-relative, like `mediaPath`).
 - `ProjectSettings.videoStandbyImage?: string` — global standby image.
-- App-level (not project) settings in `<userData>/video-output.json`:
-  `enabled` (arm state), `displayId` + resolution/label fingerprint (display
-  assignment), plus `hideNetworkUi` (default **true** for v1), gating
-  `ServerSettingsModal.vue` entry points.
+- Session-level `enabled` state in Electron main memory. It always starts
+  **false** on launch and is never persisted, so the operator must open Video
+  Output manually for every app session.
+- Machine-level settings in `<userData>/video-output.json`: `displayId` +
+  resolution/label fingerprint (display assignment), plus `hideNetworkUi`
+  (default **true** for v1), gating `ServerSettingsModal.vue` entry points.
 
 > Display assignment is **machine-specific, not show-specific** — the same show file
 > travels between laptops with different displays. Inkue's machine-config split

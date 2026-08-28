@@ -27,7 +27,11 @@
     "fullscreen": "Vollbild",
     "language": "Sprache",
     "help": "Hilfe",
-    "about": "Über DonWells Cue"
+    "about": "Über DonWells Cue",
+    "videoOutputEnterFullscreen": "Enter Full Screen",
+    "videoOutputExitFullscreen": "Exit Full Screen",
+    "videoOutputShowTestCard": "Show Test Card",
+    "videoOutputExit": "Exit Video Output"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -486,10 +490,11 @@
     "autoReduceTruePeaksOnImport": "Reduce true peaks on import",
     "autoReduceTruePeaksOnImportHelp": "Turns down newly imported audio only when needed to keep its measured true peak at or below the project's active limiter ceiling. Audio is never boosted.",
     "tabVideoOutput": "Video Output",
-    "videoOutputEnable": "Enable video output window",
-    "videoOutputEnableHelp": "Opens a fullscreen black window on the chosen display to feed a projector or video switcher over HDMI. Reopens automatically when the app launches.",
+    "videoOutputEnable": "Open video output for this session",
+    "videoOutputEnableHelp": "Opens a fullscreen black window on the chosen display to feed a projector or video switcher over HDMI. The window always starts closed when the app launches and must be opened manually for each session.",
     "videoOutputDisplay": "Output display",
-    "videoOutputDisplayHelp": "The display connected to your switcher/projector. The output window stays pinned to it and is re-acquired automatically if the display disconnects and returns.",
+    "videoOutputDisplayHelp": "The display connected to your switcher/projector. Click Identify displays to show a number on every screen. The assignment is remembered, but the output stays closed until you open it.",
+    "videoOutputIdentifyDisplays": "Identify displays",
     "videoOutputNoDisplay": "Not assigned",
     "videoOutputTestCard": "Show test card",
     "videoOutputTestCardHelp": "Displays the output name, resolution and framing guides on the video output — use it to line up the switcher and projector before showtime.",

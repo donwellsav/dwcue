@@ -562,17 +562,22 @@
                 <span class="material-symbols-rounded" aria-hidden="true">monitor</span>
                 {{ t('settings.videoOutputDisplay') }}
               </label>
-              <select
-                class="settings-select"
-                :value="voStatus?.displayId ?? ''"
-                :disabled="!voEnabled"
-                @change="onVideoOutputDisplayChange"
-              >
-                <option :value="''">{{ t('settings.videoOutputNoDisplay') }}</option>
-                <option v-for="d in voDisplays" :key="d.id" :value="d.id">
-                  {{ d.label }} — {{ d.width }}×{{ d.height }}{{ d.primary ? ' (' + t('common.default') + ')' : '' }}
-                </option>
-              </select>
+              <div class="video-output-display-row">
+                <select
+                  class="settings-select"
+                  :value="voStatus?.displayId ?? ''"
+                  @change="onVideoOutputDisplayChange"
+                >
+                  <option :value="''">{{ t('settings.videoOutputNoDisplay') }}</option>
+                  <option v-for="d in voDisplays" :key="d.id" :value="d.id">
+                    {{ d.index }} — {{ d.label }} — {{ d.width }}×{{ d.height }}{{ d.primary ? ' (' + t('common.default') + ')' : '' }}
+                  </option>
+                </select>
+                <button type="button" class="modal-btn video-output-identify" @click="onVideoOutputIdentifyDisplays">
+                  <span class="material-symbols-rounded" aria-hidden="true">screenshot_monitor</span>
+                  {{ t('settings.videoOutputIdentifyDisplays') }}
+                </button>
+              </div>
               <p class="settings-help">{{ t('settings.videoOutputDisplayHelp') }}</p>
             </section>
 
@@ -817,12 +822,10 @@ const countdownBandError = ref('');
 watch(() => props.open, async (v) => {
   if (v) await server.fetchDevices();
 });
-// ---------------------------------------------------------------------------
-// Video Output tab. Arm state + display assignment are machine-level and live
-// in the Electron main process (<userData>/video-output.json) — deliberately
-// NOT on the project document, because a show file travels between laptops.
-// All mutations return the fresh status; the onStatus push keeps this panel
-// live while it is open (e.g. when the watchdog reacts to a display event).
+// Video Output tab. Open/closed state is session-only; display assignment is
+// machine-level state in the Electron main process (<userData>/video-output.json)
+// and deliberately NOT in the project document. All mutations return fresh
+// status; the onStatus push keeps this panel live while it is open.
 // ---------------------------------------------------------------------------
 const voStatus = ref<VideoOutputStatus | null>(null);
 
@@ -861,6 +864,12 @@ async function onVideoOutputDisplayChange(event: Event) {
   const api = window.electronAPI?.videoOutput;
   if (!api) return;
   voStatus.value = await api.setDisplay(value || null);
+}
+
+async function onVideoOutputIdentifyDisplays() {
+  const api = window.electronAPI?.videoOutput;
+  if (!api) return;
+  await api.identifyDisplays();
 }
 
 async function onVideoOutputTestCardChange(event: Event) {
@@ -1263,6 +1272,21 @@ function close() {
 .video-output-status--warn {
   color: var(--color-warning, #f1c21b);
   font-weight: 600;
+}
+.video-output-display-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+.video-output-identify {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.video-output-identify .material-symbols-rounded {
+  font-size: 18px;
 }
 .video-output-standby {
   display: flex;
