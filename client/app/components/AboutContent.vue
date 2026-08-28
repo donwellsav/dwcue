@@ -100,7 +100,7 @@ const contributors = computed(() =>
 );
 
 // Get app version
-const appVersion = ref('2.6.9');
+const appVersion = ref('2.6.11');
 onMounted(async () => {
   if (import.meta.client && window.electronAPI?.getAppVersion) {
     appVersion.value = await window.electronAPI.getAppVersion();
