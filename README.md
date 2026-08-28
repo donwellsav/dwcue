@@ -4,9 +4,9 @@
 
 You build a **show** as a list of cues plus a grid of one-touch buttons, then trigger them with a click, a tap, a keyboard shortcut, or a MIDI controller. DonWells Cue handles the fades, the transitions between tracks, and keeps a close eye on your levels so nothing clips or distorts.
 
-This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. The current source version is **v2.6.9**. macOS packages are Developer ID signed, notarized, and package-validated.
+This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. The current source version is **v2.6.10**. macOS packages are Developer ID signed, notarized, and package-validated.
 
-> **Current source version:** v2.6.9. Check the [release page](https://github.com/donwellsav/dwcue/releases) for the latest published installers. Local builds are still useful when you need to validate a change before distributing it.
+> **Current source version:** v2.6.10. Check the [release page](https://github.com/donwellsav/dwcue/releases) for the latest published installers. Local builds are still useful when you need to validate a change before distributing it.
 
 ![DonWells Cue showing the playlist, One Shots grid, and output metering](client/public/screenshots/donwells_cue_main.jpg)
 
@@ -39,7 +39,10 @@ The screenshots in this README are representative captures and may lag the newes
 
 Video cues are ordinary audio cues whose media file also carries a picture (H.264 or HEVC — ProRes and other production codecs are not supported yet). The audio track plays through the normal engine, mixer, fades and metering; the picture renders in a separate **Video Output** window designed to sit fullscreen on the machine's video output (HDMI → switcher → projector). Cues with video show a 🎬 badge in the playlist.
 
-- **Enable it** from the toolbar **Video Output** toggle or Project Settings → **Video Output** tab (the enable switch, display assignment, standby image and test card all live there). The window opens on the configured display and paints black until content plays.
+- **Open it for each session** from the toolbar **Video Output** button or Project Settings → **Video Output**. The app always launches with Video Output closed; it remembers the assigned display but never reopens the output automatically.
+- **Identify the physical screens** before assigning one: click **Identify displays** to show a large number, OS display name and resolution on every connected screen for five seconds. You can choose the display while the output is closed. If no independent display is assigned, DonWells Cue opens a normal preview window rather than taking over the control screen with fullscreen black.
+- **Recover from the output itself** by right-clicking it. The context menu can enter or leave fullscreen, show the test card, or **Exit Video Output**. On Windows, **Alt+F4** also closes only the Video Output window; **Esc** leaves fullscreen. Closing it disarms the output for the rest of the session until you open it again.
+- **Keep using shortcuts** even if the Video Output window owns keyboard focus. DonWells Cue forwards application and One Shot shortcuts to the control window while preserving operating-system and native app shortcuts such as Windows Alt+F4 and the normal Ctrl/Cmd file commands.
 - **Idle layers** — when no video cue is playing the output shows, in priority order: the cue's own **image** (set in Properties for audio-only cues), otherwise the project's **standby image** (Project Settings), otherwise black.
 - **In sync with audio** — the picture chases the engine's playhead: cuts are frame-accurate to the audio, pauses freeze the frame, and drift is corrected inaudibly (tiny playback-rate nudges, re-anchoring only if drift ever exceeds ~80 ms).
 - **Silent videos** — a video file with no audio track still plays: the engine runs a silent transport of the container's duration so the cue advances, auto-follows and reports progress exactly like an audible cue.
@@ -101,11 +104,12 @@ If your browser blocked the download instead, choose **Keep** to save the instal
 1. Install the [latest release](https://github.com/donwellsav/dwcue/releases/latest), or build DonWells Cue from source, and launch it.
 2. Choose **New Project** and pick a folder — DonWells Cue creates the project file and a `media/` sub-folder there.
 3. In **Project Settings**, choose the program output, Output Target, and—if you need private auditioning—the Preview output.
-4. Drop audio files onto the playlist, use **Import Audio**, or open the YouTube or Spotify importer.
+4. Drop audio or video files onto the playlist, use **Import Media**, or open the YouTube or Spotify importer.
 5. Open a cue's **Properties** to set markers, fades, normalization, volume, ducking, routing, and start/end behaviour.
 6. Drag frequently used playlist cues into One Shot cells for one-touch playback. The copy leaves the playlist cue unchanged.
 7. Audition on the Preview output, set the intended next cue, and verify the program and monitor meters.
-8. Switch on **Show Mode** for the live performance.
+8. If the show uses video, open Project Settings → **Video Output**, click **Identify displays**, assign the projector/switcher display, then manually open the output and verify the test card.
+9. Switch on **Show Mode** for the live performance.
 
 **Running on a separate machine?** Start the stage-side server with `dwcue-server --bind 0.0.0.0`. It prints a one-time access token unless `LIVEPLAY_ACCESS_TOKEN` already supplies one. On the control laptop, open **Server Settings**, choose the discovered server or enter `http://<server-host>:4480`, and enter that token. See [Network ports](#network-ports) below for firewall details.
 
@@ -278,11 +282,14 @@ npm run server:run               # launch the compiled binary (forwards CLI args
 # Nuxt + Electron in dev mode against it
 npm run dev
 
-# Running both in side-by-side terminals (the server in one pane, client dev in the other)
-npm run dev:all
 ```
 
 The default `npm run dev` calls [scripts/ensure-server.js](scripts/ensure-server.js), which is a no-op if the server binary already exists and otherwise configures + builds it. After that it launches `nuxt dev` + Electron in the `client/` workspace.
+
+Use `npm run dev` for the normal desktop loop. The legacy `npm run dev:all` starts a
+foreground server beside Electron and can make Electron's own PID-file/health-check
+lifecycle report that the local server failed to start; keep it only for low-level
+process debugging where you deliberately manage that conflict.
 
 Bumping versions across the monorepo:
 
@@ -304,7 +311,7 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). The current source version is **v2.6.9**; the workflow remains the source of truth for future versioned artefacts.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). The current source version is **v2.6.10**; the workflow remains the source of truth for future versioned artefacts.
 
 ### Triggering a release
 

@@ -63,8 +63,10 @@ client/
 │   ├── types/                   TypeScript DTOs (server.ts, project.ts, global.d.ts)
 │   └── utils/                   Pure helpers (audio.ts, indexDisplay.ts)
 ├── electron/
-│   ├── main.js                  Electron main process: window, menu, IPC, server lifecycle, REST shim
+│   ├── main.js                  Electron main process: windows, menus, IPC, server lifecycle, video output
 │   ├── preload.js               contextBridge → `window.electronAPI`
+│   ├── video-output-shortcuts.js pure keyboard-forwarding policy for the passive output window
+│   ├── video-output-context-menu.js pure context-menu template for output recovery controls
 │   └── preload-state-viewer.js  separate preload for the state-viewer popup window
 ├── locales/                      JSON locale files (21 files — en + 20 translations)
 ├── public/                       Current app screenshots used by the top-level README
@@ -120,6 +122,10 @@ Key IPC channels (non-exhaustive):
 | `update-menu-language` / `get-system-locale` / `get-available-locales` / `get-locale-data` | Dynamic menu localisation. |
 | `open-folder` / `open-external` / `app:relaunch` / `app:exit` | OS integration. |
 | `open-cart-player-window` / `cart-player-window-attach` / `sync-project-data` | Second-window One Shots surface; the cart-player channel names remain for compatibility. |
+| `video-output:open` / `close` / `status` | Session-only Video Output lifecycle and status. |
+| `video-output:list-displays` / `identify-displays` / `set-display` | Enumerate, identify and persist the machine's assigned physical output. |
+| `video-output:set-fullscreen` / `toggle-fullscreen` / `test-card` | Operator controls for the passive output surface. |
+| `video-output:shortcut` (main → renderer) | Forward application shortcuts when the Video Output window owns keyboard focus. |
 
 The audio data path is **not** via IPC — it's directly between the renderer and `dwcue-server` over HTTP + WebSocket. IPC is used only for things Electron needs to do as a desktop application.
 
@@ -145,6 +151,25 @@ When DonWells Cue is installed as a desktop app, [`electron/main.js`](electron/m
 5. The app can explicitly stop or restart that process. Switching **Server Settings** to a remote server cleanly stops the local child first.
 
 `liveplay-discovery:*` IPC channels run a UDP listener that picks up announce broadcasts from `dwcue-server` instances on the LAN, so the connection UI can present a one-click list.
+
+### Video Output lifecycle and keyboard ownership
+
+The Video Output window is deliberately **session-only** even though its display assignment is machine-specific:
+
+- `<userData>/video-output.json` persists only `displayId` and `displayFingerprint`. Legacy `enabled` values are ignored.
+- Every app launch starts with the output closed. `video-output:open` arms it for the current process; an operator close disarms it, while an internal display-watchdog recreation preserves the current session.
+- The display selector works while the output is closed. `video-output:identify-displays` creates click-through, always-on-top number cards on every connected screen for five seconds.
+- A valid independently addressable display gets a frameless fullscreen window. An unassigned or single-display setup gets a normal 960×540 preview window instead of a fullscreen takeover.
+- The output's native context menu exposes fullscreen, test-card and **Exit Video Output** actions. On Windows the real output remains `closable` so Alt+F4 is always an escape hatch.
+
+The passive output can own keyboard focus, especially on Windows. Its Electron
+`before-input-event` handler therefore forwards application-level keys to the control
+renderer through `video-output:shortcut`, where they are re-dispatched into the existing
+shortcut system. OS and native application accelerators are intentionally excluded from
+forwarding: Windows Alt+F4, Windows-key combinations, F11, the standard Ctrl/Cmd
+N/O/S/W/Q commands, and development shortcuts. Keep this policy in
+[`electron/video-output-shortcuts.js`](electron/video-output-shortcuts.js); do not create a
+second shortcut implementation in the output renderer.
 
 ---
 
@@ -338,5 +363,6 @@ Use IPC **only** for capabilities that genuinely need the Electron main process 
 - **IPC tracing**: add a log inside the handler and inside the call site — handy when wiring up a new channel.
 - **Server traffic**: open the WebSocket frame inspector in DevTools (Network → WS).
 - **Live state**: open the diagnostics popup via the View menu — driven by `useStateViewer` and its separate preload.
+- **Video Output safety policy**: run `npm run test:video-output` from `client/` (or `npm run test:video-output --workspace=client` from the monorepo root) after changing shortcut forwarding or the native recovery menu.
 
 For the audio/transport side of any bug (timing, fades, routing, meters), the issue is almost always server-side — see [`server/README.md`](../server/README.md).
