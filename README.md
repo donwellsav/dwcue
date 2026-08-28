@@ -30,7 +30,7 @@ The screenshots in this README are representative captures and may lag the newes
 - **📥 Bring in audio easily** — drag and drop local files, import several at once, download from YouTube, or review and import selected Spotify tracks into a project folder.
 - **🎹 Trigger it your way** — click, tap, keyboard hotkeys (with an on-screen shortcuts bar, shown by default), MIDI controllers, or automation over the network (HTTP / WebSocket).
 - **🔠 Read it your size** — scale the interface text and the One Shot cell text independently from Settings → User Interface; the video output window is never scaled.
-- **🌍 Speak your language** — available in **21 languages**, including full right-to-left support.
+- **🌍 Speak your language** — choose any of the app's **21 languages** from Settings → User Interface, including full right-to-left support for Arabic, Persian and Urdu.
 - **🖥 Run it remotely** — operate a stage-side machine wired to your sound gear from a separate show laptop over the local network, with automatic discovery so you don't have to type in IP addresses. (v1 keeps the app same-machine only by default: the remote-server options are hidden until you enable **Show network/server options** in Server Settings or on the welcome screen.)
 
 ---
@@ -112,6 +112,16 @@ If your browser blocked the download instead, choose **Keep** to save the instal
 9. Switch on **Show Mode** for the live performance.
 
 **Running on a separate machine?** Start the stage-side server with `dwcue-server --bind 0.0.0.0`. It prints a one-time access token unless `LIVEPLAY_ACCESS_TOKEN` already supplies one. On the control laptop, open **Server Settings**, choose the discovered server or enter `http://<server-host>:4480`, and enter that token. See [Network ports](#network-ports) below for firewall details.
+
+---
+
+## Change the app language
+
+Open Project Settings → **User Interface** and choose **Language**. The same choices are available from the desktop **View → Language** menu; both controls stay synchronized.
+
+DonWells Cue includes Arabic, Bengali, Chinese, English, French, German, Greek, Hindi, Italian, Japanese, Korean, Norwegian, Persian, Portuguese, Romanian, Russian, Albanian, Spanish, Swedish, Turkish and Urdu. The selection is saved on the current device and applies to the whole app rather than an individual project.
+
+Arabic, Persian and Urdu automatically switch the interface to a right-to-left layout. If a translated string is unavailable, the app displays its English text instead of an untranslated key.
 
 ---
 
@@ -365,7 +375,7 @@ DonWells Cue ships with 21 locale files at [`client/locales/`](client/locales/).
 2. Update the `_metadata` block (`code`, `name`, `nativeName`, `direction`).
 3. Translate the values. Don't change keys; missing keys auto-fall-back to English at runtime.
 4. Run `node scripts/sync-locale-keys.js` to ensure your new file has every key `en.json` has.
-5. The locale is picked up automatically — no code changes needed.
+5. The locale is picked up automatically in Project Settings → **User Interface** and **View → Language** — no code changes are needed.
 
 For right-to-left languages, set `"direction": "rtl"` in `_metadata` and verify the layout in-app.
 
