@@ -262,11 +262,11 @@ Each locale starts with a `_metadata` block:
 2. Update `_metadata` (`code`, `name`, `nativeName`, `direction`).
 3. Translate the values; don't change the keys.
 4. From the monorepo root: `node scripts/sync-locale-keys.js` to backfill any keys you missed from `en.json`.
-5. The language appears automatically in the **View → Language** menu — `useLocalization` discovers locales at runtime, and the Electron menu is generated from the same source via the `get-available-locales` / `get-locale-data` IPC channels.
+5. The language appears automatically in both Settings → **User Interface** and the **View → Language** menu — `useLocalization` discovers locales at runtime, and the Electron menu is generated from the same source via the `get-available-locales` / `get-locale-data` IPC channels.
 
 ### Persistence
 
-The chosen locale is stored in `localStorage` under `liveplay-locale` and synced into the Electron menu on launch.
+The chosen locale is stored in `localStorage` under `liveplay-locale` and stays synchronized between Settings → **User Interface** and the Electron menu.
 
 ---
 

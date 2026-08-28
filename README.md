@@ -30,7 +30,7 @@ The screenshots in this README are representative captures and may lag the newes
 - **📥 Bring in audio easily** — drag and drop local files, import several at once, download from YouTube, or review and import selected Spotify tracks into a project folder.
 - **🎹 Trigger it your way** — click, tap, keyboard hotkeys (with an on-screen shortcuts bar, shown by default), MIDI controllers, or automation over the network (HTTP / WebSocket).
 - **🔠 Read it your size** — scale the interface text and the One Shot cell text independently from Settings → User Interface; the video output window is never scaled.
-- **🌍 Speak your language** — available in **21 languages**, including full right-to-left support.
+- **🌍 Speak your language** — choose any of the app's **21 languages** from Settings → User Interface, including full right-to-left support for Arabic, Persian and Urdu.
 - **🖥 Run it remotely** — operate a stage-side machine wired to your sound gear from a separate show laptop over the local network, with automatic discovery so you don't have to type in IP addresses. (v1 keeps the app same-machine only by default: the remote-server options are hidden until you enable **Show network/server options** in Server Settings or on the welcome screen.)
 
 ---

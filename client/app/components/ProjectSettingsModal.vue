@@ -224,6 +224,28 @@
           <!-- ================= User Interface ================= -->
           <template v-else-if="activeTab === 'ui'">
 
+            <!-- Per-device application language -->
+            <section class="settings-field">
+              <label class="settings-label" for="app-language">
+                <span class="material-symbols-rounded" aria-hidden="true">language</span>
+                {{ t('menu.language') }}
+              </label>
+              <select
+                id="app-language"
+                class="settings-select"
+                :value="currentLocale"
+                @change="onLocaleChange"
+              >
+                <option
+                  v-for="locale in availableLocales"
+                  :key="locale.code"
+                  :value="locale.code"
+                >
+                  {{ locale.name }}
+                </option>
+              </select>
+            </section>
+
             <!-- Playlist numbering -->
             <section class="settings-field">
               <label class="settings-label">
@@ -725,11 +747,19 @@ import type { PlaybackKeyAction } from '~/types/project';
 const props = defineProps<{ open: boolean }>();
 const emit  = defineEmits<{ (e: 'close'): void; (e: 'open-shortcuts'): void }>();
 
-const { t } = useLocalization();
+const { t, currentLocale, setLocale, availableLocales } = useLocalization();
 const server = useLiveplayServer();
 
 const openExternal = (url: string) => {
   if (import.meta.client && window.electronAPI?.openExternal) window.electronAPI.openExternal(url);
+};
+
+const onLocaleChange = (event: Event) => {
+  const locale = (event.target as HTMLSelectElement).value;
+  setLocale(locale);
+  if (window.electronAPI?.updateMenuLanguage) {
+    void window.electronAPI.updateMenuLanguage(locale);
+  }
 };
 
 // Read-only shortcut summary for the Help tab — same data the editor binds.
