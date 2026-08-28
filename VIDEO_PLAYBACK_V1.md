@@ -2,9 +2,8 @@
 
 > **Audience:** fresh agent / developer with zero prior context. Read
 > `IMPROVEMENTS_PLAN.md` §1 first for the general architecture.
-> **Branch:** merged to `main` and released (v2.6.0–v2.6.8); the historical
-> `feature/video-playback` worktree (`../dwvideo`) no longer exists.
-> **Status:** slices 1–4 landed (see §13). v1 complete and shipped.
+> **Status:** v1 is complete and shipped. The current v2.6.10 source adds the
+> session-safety, recovery and shortcut-focus hardening documented in §7.
 
 ---
 
@@ -174,52 +173,60 @@ control window (never on the output).
 
 Mirrors the `cartPlayerWindow` pattern in `client/electron/main.js`:
 
-- New `BrowserWindow`: `fullscreen: true`, `frame: false`, `alwaysOnTop` (level
-  `screen-saver`), hidden cursor (CSS `cursor: none` on the page), black background,
-  loads the Nuxt app with `?videoOutput=1` (dev: `loadURL('http://localhost:3000/?videoOutput=1')`,
-  prod: `loadFile(indexPath, { query: { videoOutput: '1' } })`).
-- **Display pinning** via Electron `screen` API: place on the persisted display
-  (§5.2); if absent, stay hidden and warn in the control window. War stories from
-  FreeShow's `OutputBounds.ts` worth copying exactly: (a) `setBounds` may need a
-  double-call plus a delayed (~80 ms) re-assert to stick on Windows; (b) re-attach logic
-  matches the saved display id, falling back to `getDisplayNearestPoint` of the window's
-  last center; (c) use raw display bounds for physical outputs — DPI scaling corrections
-  apply only to capture-only outputs (future NDI), never to the HDMI window.
-- **Watchdog:** `screen.on('display-added'/'display-removed'/'display-metrics-changed')` →
-  re-acquire the assigned display and re-fullscreen. Detect OS **display mirroring** and
-  warn prominently (operator-facing, control window).
-- **Show hygiene:** `powerSaveBlocker.start('prevent-display-sleep')` while the output is
-  armed; block the window from showing on the primary display unless explicitly assigned.
+- The assigned-display `BrowserWindow` is fullscreen, frameless, always on top at
+  `screen-saver` level, closable, cursor-hidden, black-backed, and loads the Nuxt app
+  with `?videoOutput=1` (dev: `loadURL('http://localhost:3000/?videoOutput=1')`, prod:
+  `loadFile(indexPath, { query: { videoOutput: '1' } })`). With no independently
+  addressable assigned display, the app opens a normal 960×540 preview window instead
+  of taking over the control display.
+- **Display pinning** uses Electron's `screen` API and persists a machine-specific
+  `displayId` plus a resolution/label fingerprint. The selector remains available while
+  the output is closed. `Identify displays` shows a click-through, always-on-top number
+  card with the OS display name and resolution on every connected screen for five
+  seconds.
+- **Watchdog:** `screen.on('display-added'/'display-removed'/'display-metrics-changed')`
+  re-acquires the assigned display and recreates the fullscreen output when necessary.
+  An internal recreation preserves the current session; an operator close does not.
+  Missing, mirrored or control-shared displays produce a warning in the control window.
+- **Show hygiene:** `powerSaveBlocker.start('prevent-display-sleep')` runs while the
+  output is armed. The app never opens Video Output automatically: each process starts
+  disarmed, while display assignment remains remembered. Legacy persisted
+  `enabled: true` values are ignored.
 - **No background throttling** (`backgroundThrottling: false` in `webPreferences`) —
   non-negotiable: the window paints the show while the operator works in the control
   window. Without it, Chromium clamps timers/rAF on unfocused windows and macOS stops
-  committing frames entirely under occlusion — the output freezes mid-show (found the
-  hard way in slice 3 verification: unfocused preview window never re-rendered).
-- **Test card:** output name + native resolution + safe-frame guides + 1 kHz-free (silent),
-  toggled from the control window's video settings (and output-window context menu in dev).
-- Lifecycle: opened/armed from the control window (Video Output tab in Project
-  Settings, or the header's Video Output toggle button); closing the main window closes it;
-  `Esc` never exits fullscreen in Show Mode. **Degrade, don't fail** (Inkue's stance):
-  no second display, unsupported codec, or decode failure never blocks the show — the
-  control window shows a banner and the app remains fully usable audio-only.
+  committing frames entirely under occlusion — the output freezes mid-show.
+- **Test card and recovery menu:** the test card shows output name, native resolution
+  and safe-frame guides with no tone. Right-clicking the output opens native actions for
+  enter/exit fullscreen, test-card visibility and **Exit Video Output**. Windows
+  Alt+F4 closes only the output and disarms it; Escape leaves fullscreen.
+- **Keyboard focus:** the output's `before-input-event` handler forwards app-level keys
+  to the control renderer so playback, One Shot and configurable shortcuts continue to
+  work while the passive output owns focus. OS/native accelerators remain local,
+  including Windows Alt+F4, Windows-key combinations, F11, Ctrl/Cmd N/O/S/W/Q and
+  development shortcuts.
+- **Degrade, don't fail:** no second display, unsupported codec or decode failure never
+  blocks the show. The control window warns and the app remains usable audio-only.
 
-New IPC (follow existing conventions: `ipcMain.handle` + `requireTrustedIpc` + bounded
-validators; cross-window fan-out via `BrowserWindow.getAllWindows()` skip-sender):
+Video Output IPC follows the existing `ipcMain.handle` + `requireTrustedIpc` convention:
 
 - `video-output:open` / `video-output:close` / `video-output:status`
-- `video-output:list-displays` / `video-output:set-display`
+- `video-output:list-displays` / `video-output:identify-displays` /
+  `video-output:set-display`
+- `video-output:set-fullscreen` / `video-output:toggle-fullscreen`
 - `video-output:test-card` (show/hide)
+- `video-output:shortcut` (main → control renderer)
 
 ## 8. Client UI changes
 
 | Area | File(s) | Change |
 |---|---|---|
-| Output page | `client/app/pages/` (new) + `useVideoOutput.ts` composable | Layer stack render, `<video>` muted, chase sync, images, black, test card |
+| Output surface | `client/app/components/VideoOutputView.vue` + `useVideoOutput.ts` composable | Layer stack render, muted `<video>`, chase sync, images, black and test card |
 | Item model | `client/app/types/project.ts` | `imagePath?` on `AudioItem`; settings fields (§5.2) |
 | Properties | `PropertiesPanel.vue` | Per-cue image picker (file dialog → copy into `media/`), clear-image; video badge readout from server probe |
 | Playlist row | `PlaylistItem.vue` | Video badge/icon on video items |
 | Header toggle | `ProjectHeader.vue` | One-click open/close of the output window; live open state via `video-output:status-changed` |
-| Settings | Project Settings component | Standby image picker, output enable + display picker, test-card button |
+| Settings | `ProjectSettingsModal.vue` | Session-only open switch, display picker + five-second display identifiers, standby image picker, test card and live status/warnings |
 | Network UI gate | `ServerSettingsModal.vue` + its entry points | Hidden by default (`hideNetworkUi`), re-enable via app settings |
 | Import | import composables, drop handlers | Accept video extensions; label "Import Media" |
 | i18n | `client/locales/*` + `scripts/sync-locale-keys.js` | New keys for all of the above (21 locales, English fallback pattern) |
@@ -311,12 +318,14 @@ workspace import** (Inkue ships a beta).
    contract (opens, exact container-duration EOF, all-zero PCM, seekable,
    `file_has_video_stream` true), README video-output section.
 
-**Windows verification status (2026-08-24).** CI covers, on every release: packaged
-file layout, bundled-server DLL load (`--help`), app launch with a real desktop
-window, no early exit, and graceful quit within 15 s (`--smoke-quit` skips the
-interactive quit-confirmation veto so CI can drive it). Still pending real Windows
-hardware (no VM/box on the dev Mac): dual-display output pinning + EDID-reshuffle
-watchdog behavior, Chromium HEVC decode on a mid-range GPU, and the `/api/media`
-endpoint under Windows Defender/firewall defaults. All macOS-side behavior in this
-spec was verified live; treat the Windows column as build-green but show-unproven
-until that laptop run happens.
+**Windows verification status (2026-08-24).** CI covers packaged file layout,
+bundled-server DLL load (`--help`), app launch with a real desktop window, no early
+exit, and graceful quit within 15 s (`--smoke-quit` skips the interactive
+quit-confirmation veto so CI can drive it). The v2.6.10 regression fixtures exercise
+Win32 shortcut forwarding and explicitly preserve Alt+F4 and native app accelerators.
+An Electron smoke run verifies session-only open/close, migration from legacy
+`enabled: true` config, remembered display assignment and the identifier overlay.
+Physical Windows dual-display verification is still required for focus delivery,
+Alt+F4, EDID reshuffling, Chromium HEVC decode on a mid-range GPU, and `/api/media`
+under Windows Defender/firewall defaults. Treat Windows as build-green but
+show-unproven until that laptop run happens.
