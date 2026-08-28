@@ -96,6 +96,10 @@ export const useCartHotkeys = () => {
     return false;
   };
 
+  const isForwardedFromVideoOutput = (e: KeyboardEvent): boolean =>
+    (e as KeyboardEvent & { dwcueForwardedFromVideoOutput?: boolean })
+      .dwcueForwardedFromVideoOutput === true;
+
   const getTargetItem = (): AudioItem | null => {
     if (activeCues.value.size > 0) {
       const firstUuid = activeCues.value.keys().next().value;
@@ -245,7 +249,7 @@ export const useCartHotkeys = () => {
   };
 
   const handleKeydown = (e: KeyboardEvent) => {
-    if (isTextInputFocused()) return;
+    if (!isForwardedFromVideoOutput(e) && isTextInputFocused()) return;
     if (!currentProject.value) return;
 
     // Playback actions

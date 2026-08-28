@@ -205,17 +205,30 @@ declare global {
         close: () => Promise<VideoOutputStatus>;
         status: () => Promise<VideoOutputStatus>;
         listDisplays: () => Promise<VideoOutputDisplay[]>;
+        identifyDisplays: () => Promise<VideoOutputDisplay[]>;
         setDisplay: (displayId: string | null) => Promise<VideoOutputStatus>;
         setTestCard: (show: boolean) => Promise<boolean>;
         setFullscreen: (on: boolean) => Promise<VideoOutputStatus>;
         toggleFullscreen: () => Promise<VideoOutputStatus>;
         onStatus: (callback: (status: VideoOutputStatus) => void) => () => void;
         onTestCard: (callback: (show: boolean) => void) => () => void;
+        onShortcut: (callback: (shortcut: VideoOutputShortcut) => void) => () => void;
       };
     };
   }
+  interface VideoOutputShortcut {
+    key: string;
+    code: string;
+    ctrlKey: boolean;
+    shiftKey: boolean;
+    altKey: boolean;
+    metaKey: boolean;
+    repeat: boolean;
+  }
+
   interface VideoOutputDisplay {
     id: string;
+    index: number;
     label: string;
     width: number;
     height: number;

@@ -252,10 +252,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     close:        ()           => ipcRenderer.invoke('video-output:close'),
     status:       ()           => ipcRenderer.invoke('video-output:status'),
     listDisplays: ()           => ipcRenderer.invoke('video-output:list-displays'),
+    identifyDisplays: ()       => ipcRenderer.invoke('video-output:identify-displays'),
     setDisplay:   (displayId)  => ipcRenderer.invoke('video-output:set-display', displayId),
     setTestCard:  (show)       => ipcRenderer.invoke('video-output:test-card', show),
     setFullscreen:    (on)     => ipcRenderer.invoke('video-output:set-fullscreen', on),
     toggleFullscreen: ()       => ipcRenderer.invoke('video-output:toggle-fullscreen'),
+    onShortcut: (callback) => {
+      const listener = (_e, shortcut) => callback(shortcut);
+      ipcRenderer.on('video-output:shortcut', listener);
+      return () => ipcRenderer.removeListener('video-output:shortcut', listener);
+    },
     onStatus: (callback) => {
       const listener = (_e, status) => callback(status);
       ipcRenderer.on('video-output:status-changed', listener);

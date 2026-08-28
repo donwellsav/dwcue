@@ -14,6 +14,11 @@ const https = require('https');
 const { fileURLToPath } = require('url');
 const { PathCapabilityRegistry } = require('./path-capabilities');
 const {
+  shouldForwardVideoOutputShortcut,
+  toRendererShortcut,
+} = require('./video-output-shortcuts');
+const { buildVideoOutputContextTemplate } = require('./video-output-context-menu');
+const {
   SPOTIFY_AUDIO_PROVIDERS,
   normalizeSpotifyBitrate,
   normalizeSpotifyRecovery,
@@ -1941,23 +1946,28 @@ function createCartPlayerWindow() {
 // ===========================================================================
 // Video Output window (video playback, slice 1 — see VIDEO_PLAYBACK_V1.md).
 //
-// One persistent, borderless, always-on-top window fullscreen on the display
-// the operator assigned as the video output (typically the HDMI feed to a
-// switcher/projector). The Nuxt page at ?videoOutput=1 renders the layer
-// stack (black / standby image / per-cue image / muted video); this block
-// only owns the window, the display assignment, and show hygiene.
+// One session-scoped, borderless, always-on-top window fullscreen on the
+// display the operator assigned as the video output (typically the HDMI feed
+// to a switcher/projector). The Nuxt page at ?videoOutput=1 renders the layer
+// stack (black / standby image / per-cue image / muted video); this block owns
+// the window, display assignment, shortcut forwarding, and show hygiene.
 //
-// Assignment is MACHINE-level state in <userData>/video-output.json — it must
-// never travel in the project file, because a show moves between laptops.
+// Display assignment is MACHINE-level state in <userData>/video-output.json.
+// Open/closed state is deliberately never persisted: every app launch starts
+// closed so a stale assignment cannot black out the operator's control screen.
 // ===========================================================================
 const VIDEO_OUTPUT_CONFIG_FILENAME = 'video-output.json';
 
 let videoOutputWindow = null;
+let videoOutputSessionEnabled = false;
 let videoOutputPowerSaveId = null;
 let videoOutputWatchdogInstalled = false;
 let videoOutputWatchdogTimer = null;
 let videoOutputTestCard = false;
 let videoOutputFrameTimer = null;
+let displayIdentifierWindows = [];
+let displayIdentifierTimer = null;
+const videoOutputWindowsPreservingSession = new WeakSet();
 
 // Confidence monitor: 1 fps JPEG thumbnails of the output window for the
 // operator UI. capturePage renders exactly what the audience sees — video,
@@ -1995,7 +2005,6 @@ function readVideoOutputConfig() {
   try {
     const parsed = JSON.parse(fs.readFileSync(videoOutputConfigPath(), 'utf-8'));
     return {
-      enabled: parsed.enabled === true,
       displayId: typeof parsed.displayId === 'string' ? parsed.displayId : null,
       // Resolution+label hint for re-attach when the OS hands out a new display
       // id after a reconnect. Ambiguous for two identical projectors — the id
@@ -2004,7 +2013,7 @@ function readVideoOutputConfig() {
         ? parsed.displayFingerprint : null,
     };
   } catch {
-    return { enabled: false, displayId: null, displayFingerprint: null };
+    return { displayId: null, displayFingerprint: null };
   }
 }
 
@@ -2020,10 +2029,16 @@ function videoOutputFingerprint(d) {
   return `${d.size.width}x${d.size.height}:${d.label || ''}`;
 }
 
+function orderedVideoOutputDisplays() {
+  return [...screen.getAllDisplays()].sort((a, b) =>
+    a.bounds.x - b.bounds.x || a.bounds.y - b.bounds.y || a.id - b.id);
+}
+
 function videoOutputDisplays() {
   const primaryId = screen.getPrimaryDisplay().id;
-  return screen.getAllDisplays().map((d) => ({
+  return orderedVideoOutputDisplays().map((d, position) => ({
     id: String(d.id),
+    index: position + 1,
     label: d.label || `Display ${d.id}`,
     width: d.size.width,
     height: d.size.height,
@@ -2050,7 +2065,7 @@ function videoOutputStatus() {
   const displays = videoOutputDisplays();
   const target = resolveVideoOutputDisplay(cfg);
   let warning = null;
-  if (cfg.enabled) {
+  if (videoOutputSessionEnabled) {
     if (!target) {
       // One logical display can also mean the OS is mirroring — either way the
       // projector is not independently addressable right now.
@@ -2063,8 +2078,8 @@ function videoOutputStatus() {
     }
   }
   return {
-    enabled: cfg.enabled,
-    open: videoOutputWindow !== null,
+    enabled: videoOutputSessionEnabled,
+    open: videoOutputWindow !== null && !videoOutputWindow.isDestroyed(),
     displayId: cfg.displayId,
     targetId: target ? String(target.id) : null,
     targetLabel: target ? (target.label || `Display ${target.id}`) : null,
@@ -2086,9 +2101,126 @@ function broadcastVideoOutputStatus() {
   }
   return status;
 }
+function videoOutputContextLabels() {
+  const t = menuTranslations[currentLocale] || menuTranslations.en || {};
+  return {
+    enterFullscreen: t.videoOutputEnterFullscreen || 'Enter Full Screen',
+    exitFullscreen: t.videoOutputExitFullscreen || 'Exit Full Screen',
+    showTestCard: t.videoOutputShowTestCard || 'Show Test Card',
+    exitOutput: t.videoOutputExit || 'Exit Video Output',
+  };
+}
+
+function showVideoOutputContextMenu(outputWindow) {
+  if (!outputWindow || outputWindow.isDestroyed()) return;
+  const template = buildVideoOutputContextTemplate({
+    fullscreen: outputWindow.isFullScreen(),
+    testCard: videoOutputTestCard,
+    labels: videoOutputContextLabels(),
+    onToggleFullscreen: () => {
+      if (!outputWindow.isDestroyed()) {
+        outputWindow.setFullScreen(!outputWindow.isFullScreen());
+      }
+    },
+    onToggleTestCard: (visible) => {
+      videoOutputTestCard = visible;
+      if (!outputWindow.isDestroyed()) {
+        outputWindow.webContents.send('video-output:test-card', videoOutputTestCard);
+      }
+      broadcastVideoOutputStatus();
+    },
+    onExit: () => closeVideoOutputWindow(),
+  });
+  Menu.buildFromTemplate(template).popup({ window: outputWindow });
+}
+
+function closeDisplayIdentifierWindows() {
+  if (displayIdentifierTimer !== null) {
+    clearTimeout(displayIdentifierTimer);
+    displayIdentifierTimer = null;
+  }
+  for (const identifierWindow of displayIdentifierWindows) {
+    if (!identifierWindow.isDestroyed()) identifierWindow.destroy();
+  }
+  displayIdentifierWindows = [];
+}
+
+function escapeDisplayIdentifierText(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function identifyVideoOutputDisplays() {
+  closeDisplayIdentifierWindows();
+  const displays = orderedVideoOutputDisplays();
+  const primaryId = screen.getPrimaryDisplay().id;
+
+  displayIdentifierWindows = displays.map((display, position) => {
+    const width = Math.min(360, Math.max(240, Math.round(display.bounds.width * 0.22)));
+    const height = Math.min(240, Math.max(180, Math.round(display.bounds.height * 0.22)));
+    const identifierWindow = new BrowserWindow({
+      x: display.bounds.x + Math.round((display.bounds.width - width) / 2),
+      y: display.bounds.y + Math.round((display.bounds.height - height) / 2),
+      width,
+      height,
+      frame: false,
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      closable: false,
+      focusable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      show: false,
+      backgroundColor: '#0b1327',
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: true,
+        webSecurity: true,
+      },
+    });
+    identifierWindow.setAlwaysOnTop(true, 'screen-saver');
+    identifierWindow.setIgnoreMouseEvents(true);
+    try {
+      identifierWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    } catch { /* not supported by every Linux window manager */ }
+
+    const label = escapeDisplayIdentifierText(display.label || `Display ${display.id}`);
+    const primary = display.id === primaryId ? ' · Primary' : '';
+    const html = `<!doctype html>
+      <html><head><meta charset="utf-8">
+      <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+      <style>
+        html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#0b1327;color:#fff}
+        body{display:grid;place-items:center;font-family:Arial,sans-serif;text-align:center;
+          box-sizing:border-box;border:8px solid #5b8cff}
+        strong{display:block;font-size:clamp(72px,42vw,144px);line-height:.8;font-weight:800}
+        span{display:block;margin-top:18px;font-size:18px;font-weight:700}
+        small{display:block;margin-top:7px;color:#b8c8ee;font-size:13px}
+      </style></head><body><div>
+        <strong>${position + 1}</strong>
+        <span>${label}</span>
+        <small>${display.size.width}×${display.size.height}${primary}</small>
+      </div></body></html>`;
+    identifierWindow.loadURL(`data:text/html;charset=UTF-8,${encodeURIComponent(html)}`);
+    identifierWindow.once('ready-to-show', () => {
+      if (!identifierWindow.isDestroyed()) identifierWindow.showInactive();
+    });
+    return identifierWindow;
+  });
+
+  displayIdentifierTimer = setTimeout(closeDisplayIdentifierWindows, 5000);
+  return videoOutputDisplays();
+}
 
 function createVideoOutputWindow() {
-  if (videoOutputWindow) return;
+  if (videoOutputWindow && !videoOutputWindow.isDestroyed()) return;
 
   const cfg = readVideoOutputConfig();
   const target = resolveVideoOutputDisplay(cfg);
@@ -2131,7 +2263,9 @@ function createVideoOutputWindow() {
       movable: false,
       minimizable: false,
       maximizable: false,
-      closable: false,
+      // Keep the Windows Alt+F4 escape hatch available even though this output
+      // has no frame. The closed handler disarms the session so it stays shut.
+      closable: true,
       alwaysOnTop: true,
     });
   } else {
@@ -2140,37 +2274,58 @@ function createVideoOutputWindow() {
     Object.assign(options, { width: 960, height: 540, minWidth: 320, minHeight: 180 });
   }
 
-  videoOutputWindow = new BrowserWindow(options);
-  if (realOutput) {
-    videoOutputWindow.setAlwaysOnTop(true, 'screen-saver');
-  }
+  const outputWindow = new BrowserWindow(options);
+  videoOutputWindow = outputWindow;
+  if (realOutput) outputWindow.setAlwaysOnTop(true, 'screen-saver');
   startVideoOutputFrames();
-  videoOutputWindow.once('ready-to-show', () => {
-    if (videoOutputWindow && !videoOutputWindow.isDestroyed()) videoOutputWindow.show();
+
+  outputWindow.once('ready-to-show', () => {
+    if (!outputWindow.isDestroyed()) outputWindow.show();
   });
 
   if (isDevMode) {
-    videoOutputWindow.loadURL('http://localhost:3000/?videoOutput=1');
+    outputWindow.loadURL('http://localhost:3000/?videoOutput=1');
   } else {
     const indexPath = path.join(__dirname, '../.output/public/index.html');
-    videoOutputWindow.loadFile(indexPath, { query: { videoOutput: '1' } });
+    outputWindow.loadFile(indexPath, { query: { videoOutput: '1' } });
   }
 
-  videoOutputWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+  outputWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
     console.error('[video-output] Failed to load:', errorCode, errorDescription);
   });
 
-  videoOutputWindow.webContents.once('did-finish-load', () => {
+  outputWindow.webContents.once('did-finish-load', () => {
     // Restore a test card left on across a window reload/recreation.
-    videoOutputWindow.webContents.send('video-output:test-card', videoOutputTestCard);
+    outputWindow.webContents.send('video-output:test-card', videoOutputTestCard);
     broadcastVideoOutputStatus();
   });
 
-  videoOutputWindow.on('enter-full-screen', broadcastVideoOutputStatus);
-  videoOutputWindow.on('leave-full-screen', broadcastVideoOutputStatus);
+  // The passive output renderer otherwise owns keyboard focus on Windows.
+  // Forward app-level shortcuts back to the control renderer while preserving
+  // native app accelerators and OS escape hatches such as Alt+F4.
+  outputWindow.webContents.on('before-input-event', (event, input) => {
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
+    if (!shouldForwardVideoOutputShortcut(input, process.platform)) return;
+    const shortcut = toRendererShortcut(input);
+    if (shortcut.key === 'Escape' && outputWindow.isFullScreen()) {
+      outputWindow.setFullScreen(false);
+    }
+    mainWindow.webContents.send('video-output:shortcut', shortcut);
+    event.preventDefault();
+  });
 
-  videoOutputWindow.on('closed', () => {
-    videoOutputWindow = null;
+  outputWindow.webContents.on('context-menu', (event) => {
+    event.preventDefault();
+    showVideoOutputContextMenu(outputWindow);
+  });
+
+  outputWindow.on('enter-full-screen', broadcastVideoOutputStatus);
+  outputWindow.on('leave-full-screen', broadcastVideoOutputStatus);
+
+  outputWindow.on('closed', () => {
+    const preserveSession = videoOutputWindowsPreservingSession.delete(outputWindow);
+    if (!preserveSession) videoOutputSessionEnabled = false;
+    if (videoOutputWindow === outputWindow) videoOutputWindow = null;
     stopVideoOutputFrames();
     if (videoOutputPowerSaveId !== null) {
       try { powerSaveBlocker.stop(videoOutputPowerSaveId); } catch { /* already stopped */ }
@@ -2185,11 +2340,16 @@ function createVideoOutputWindow() {
   }
 }
 
-function closeVideoOutputWindow() {
-  if (videoOutputWindow && !videoOutputWindow.isDestroyed()) {
-    videoOutputWindow.destroy(); // destroy(): the frameless output window must not veto via 'close'
+function closeVideoOutputWindow({ preserveSession = false } = {}) {
+  const outputWindow = videoOutputWindow;
+  if (!preserveSession) videoOutputSessionEnabled = false;
+  if (!outputWindow || outputWindow.isDestroyed()) {
+    videoOutputWindow = null;
+    return;
   }
-  videoOutputWindow = null;
+  if (preserveSession) videoOutputWindowsPreservingSession.add(outputWindow);
+  outputWindow.destroy();
+  if (videoOutputWindow === outputWindow) videoOutputWindow = null;
 }
 
 // Watchdog: when the display topology changes (switcher EDID renegotiation,
@@ -2204,14 +2364,14 @@ function installVideoOutputWatchdog() {
     videoOutputWatchdogTimer = setTimeout(() => {
       videoOutputWatchdogTimer = null;
       const cfg = readVideoOutputConfig();
-      if (!cfg.enabled) { broadcastVideoOutputStatus(); return; }
+      if (!videoOutputSessionEnabled) { broadcastVideoOutputStatus(); return; }
       const target = resolveVideoOutputDisplay(cfg);
       if (videoOutputWindow && cfg.displayId && !target) {
         // Assigned display is gone: close rather than let the OS park the
         // fullscreen window on the operator's control display. Preview mode
         // (no display assigned) intentionally lives on the control screen —
         // metrics events there (e.g. entering fullscreen) must not kill it.
-        closeVideoOutputWindow();
+        closeVideoOutputWindow({ preserveSession: true });
       } else if (!videoOutputWindow && target) {
         // Display (re)appeared while armed: re-acquire it.
         createVideoOutputWindow();
@@ -2240,19 +2400,10 @@ function installVideoOutputWatchdog() {
   screen.on('display-metrics-changed', onDisplayChange);
 }
 
-// Restore an armed output at launch (called from app.whenReady).
-function restoreVideoOutputWindow() {
-  const cfg = readVideoOutputConfig();
-  if (!cfg.enabled) return;
-  installVideoOutputWatchdog();
-  createVideoOutputWindow();
-}
 
 ipcMain.handle('video-output:open', (event) => {
   requireTrustedIpc(event);
-  const cfg = readVideoOutputConfig();
-  cfg.enabled = true;
-  writeVideoOutputConfig(cfg);
+  videoOutputSessionEnabled = true;
   installVideoOutputWatchdog();
   createVideoOutputWindow();
   return broadcastVideoOutputStatus();
@@ -2260,9 +2411,6 @@ ipcMain.handle('video-output:open', (event) => {
 
 ipcMain.handle('video-output:close', (event) => {
   requireTrustedIpc(event);
-  const cfg = readVideoOutputConfig();
-  cfg.enabled = false;
-  writeVideoOutputConfig(cfg);
   closeVideoOutputWindow();
   return broadcastVideoOutputStatus();
 });
@@ -2277,6 +2425,11 @@ ipcMain.handle('video-output:list-displays', (event) => {
   return videoOutputDisplays();
 });
 
+ipcMain.handle('video-output:identify-displays', (event) => {
+  requireTrustedIpc(event);
+  return identifyVideoOutputDisplays();
+});
+
 ipcMain.handle('video-output:set-display', (event, displayId) => {
   requireTrustedIpc(event);
   const checked = displayId === null
@@ -2289,10 +2442,10 @@ ipcMain.handle('video-output:set-display', (event, displayId) => {
     : null;
   cfg.displayFingerprint = target ? videoOutputFingerprint(target) : null;
   writeVideoOutputConfig(cfg);
-  if (cfg.enabled && videoOutputWindow) {
+  if (videoOutputSessionEnabled && videoOutputWindow) {
     // Re-place on the new display; recreate is the only clean way to move a
     // fullscreen frameless window across displays.
-    closeVideoOutputWindow();
+    closeVideoOutputWindow({ preserveSession: true });
     createVideoOutputWindow();
   }
   return broadcastVideoOutputStatus();
@@ -2684,7 +2837,11 @@ const menuTranslations = Object.entries(localeFiles).reduce((acc, [code, data]) 
     fullscreen: data.menu.fullscreen,
     language: data.menu.language,
     help: data.menu.help,
-    about: data.menu.about
+    about: data.menu.about,
+    videoOutputEnterFullscreen: data.menu.videoOutputEnterFullscreen,
+    videoOutputExitFullscreen: data.menu.videoOutputExitFullscreen,
+    videoOutputShowTestCard: data.menu.videoOutputShowTestCard,
+    videoOutputExit: data.menu.videoOutputExit
   };
   return acc;
 }, {});
@@ -5173,9 +5330,6 @@ if (!gotTheLock) {
     // Start listening for discovery beacons early so the welcome screen's
     // picker is already populated by the time the user reaches it.
     try { startDiscoveryListener(); } catch (e) { console.warn('[liveplay-discovery]', e); }
-    // Re-arm the video output window if it was enabled when the app last ran —
-    // a show laptop rebooted mid-rig must come back with the projector fed.
-    try { restoreVideoOutputWindow(); } catch (e) { console.warn('[video-output]', e); }
 
     // NOTE: a file opened before the app was ready (cold start) is delivered
     // via the pull path — the renderer calls `get-pending-open-file` on mount

@@ -1,6 +1,6 @@
 {
   "name": "donwells-cue",
-  "version": "2.6.9",
+  "version": "2.6.10",
   "description": "Audio cue playback application for live events",
   "homepage": "https://github.com/donwellsav/dwcue",
   "repository": {
@@ -19,6 +19,7 @@
     "generate": "cross-env NODE_ENV=production nuxt generate",
     "test:one-shots": "nuxt prepare && vite-node tests/oneShots.test.mts",
     "test:youtube-import": "nuxt prepare && vite-node tests/youtubeImport.test.mts",
+    "test:video-output": "node --test tests/videoOutputShortcuts.test.cjs",
     "preview": "nuxt preview",
     "typecheck": "nuxi typecheck"
   },
