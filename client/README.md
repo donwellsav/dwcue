@@ -223,7 +223,9 @@ Style: Composition API + `<script setup lang="ts">`, scoped SCSS, CSS variables 
 
 ## Localisation (21 languages, RTL)
 
-DonWells Cue ships with [`locales/*.json`](locales/) — one file per language. Currently shipped: **en, ar, bn, de, el, es, fa, fr, hi, it, ja, ko, no, pt, ro, ru, sq, sv, tr, ur, zh**. Arabic, Farsi and Urdu use RTL layout.
+DonWells Cue ships with [`locales/*.json`](locales/) — one file per language. The 21 locale codes are **ar, bn, de, el, en, es, fa, fr, hi, it, ja, ko, no, pt, ro, ru, sq, sv, tr, ur, zh**: Arabic, Bengali, German, Greek, English, Spanish, Persian, French, Hindi, Italian, Japanese, Korean, Norwegian, Portuguese, Romanian, Russian, Albanian, Swedish, Turkish, Urdu and Chinese.
+
+Arabic, Persian and Urdu use RTL layout. A missing translated value falls back to English, so every source key remains renderable while translations catch up.
 
 ### Using translations in a component
 
@@ -266,7 +268,7 @@ Each locale starts with a `_metadata` block:
 
 ### Persistence
 
-The chosen locale is stored in `localStorage` under `liveplay-locale` and stays synchronized between Settings → **User Interface** and the Electron menu.
+The chosen locale is a per-device application preference stored in `localStorage` under `liveplay-locale`; it is not saved in the project. Settings → **User Interface** and the Electron menu stay synchronized.
 
 ---
 

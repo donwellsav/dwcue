@@ -115,6 +115,16 @@ If your browser blocked the download instead, choose **Keep** to save the instal
 
 ---
 
+## Change the app language
+
+Open Project Settings → **User Interface** and choose **Language**. The same choices are available from the desktop **View → Language** menu; both controls stay synchronized.
+
+DonWells Cue includes Arabic, Bengali, Chinese, English, French, German, Greek, Hindi, Italian, Japanese, Korean, Norwegian, Persian, Portuguese, Romanian, Russian, Albanian, Spanish, Swedish, Turkish and Urdu. The selection is saved on the current device and applies to the whole app rather than an individual project.
+
+Arabic, Persian and Urdu automatically switch the interface to a right-to-left layout. If a translated string is unavailable, the app displays its English text instead of an untranslated key.
+
+---
+
 ## For developers
 
 Everything below is for people who want to build DonWells Cue from source, contribute, or understand how it works under the hood. Public installers are attached to [GitHub Releases](https://github.com/donwellsav/dwcue/releases).
@@ -365,7 +375,7 @@ DonWells Cue ships with 21 locale files at [`client/locales/`](client/locales/).
 2. Update the `_metadata` block (`code`, `name`, `nativeName`, `direction`).
 3. Translate the values. Don't change keys; missing keys auto-fall-back to English at runtime.
 4. Run `node scripts/sync-locale-keys.js` to ensure your new file has every key `en.json` has.
-5. The locale is picked up automatically — no code changes needed.
+5. The locale is picked up automatically in Project Settings → **User Interface** and **View → Language** — no code changes are needed.
 
 For right-to-left languages, set `"direction": "rtl"` in `_metadata` and verify the layout in-app.
 
