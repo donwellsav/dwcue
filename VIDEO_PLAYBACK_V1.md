@@ -2,7 +2,7 @@
 
 > **Audience:** fresh agent / developer with zero prior context. Read
 > `IMPROVEMENTS_PLAN.md` §1 first for the general architecture.
-> **Status:** v1 is complete and shipped. The current v2.6.10 source adds the
+> **Status:** v1 is complete and shipped. The current v2.6.11 source includes the
 > session-safety, recovery and shortcut-focus hardening documented in §7.
 
 ---
