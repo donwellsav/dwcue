@@ -54,6 +54,8 @@ const EXTERNAL_HTTPS_HOSTS = new Set([
   'www.youtube.com',
   'youtube.com',
   'youtu.be',
+  'dwcue.com',
+  'www.dwcue.com',
 ]);
 
 function isPathInside(candidate, root) {
@@ -1053,11 +1055,15 @@ ipcMain.handle('app:exit', async (event) => {
 
 // Two-step quit confirmation. The renderer drives the dialogs (unsaved
 // changes → optionally shut the local audio server down); once the user
-// has decided it calls `app:confirm-quit`. We stop the local server only
-// when asked, flip quitConfirmed so the next `close` is allowed through,
-// then quit for real.
+// has decided it calls `app:confirm-quit`. Update-on-exit uses the same
+// IPC boundary so the managed server is stopped before replacing binaries.
 ipcMain.handle('app:confirm-quit', async (event, opts) => {
   requireTrustedIpc(event);
+  if (opts?.installUpdate === true) {
+    return installDownloadedUpdate({
+      runAfterInstall: opts.runAfterInstall !== false,
+    });
+  }
   if (opts && opts.stopServer) await stopLiveplayServer();
   await cancelAllSpotifyDownloads(true);
   await cancelAllYouTubeDownloads();
@@ -1763,19 +1769,104 @@ const isDevMode = process.argv.includes('--dev') || !app.isPackaged;
 
 // Configure auto-updater
 autoUpdater.autoDownload = false; // Don't auto-download, ask user first
-autoUpdater.autoInstallOnAppQuit = true;
+// Installation is always explicit: Install Now calls quitAndInstall, while
+// Install on Exit arms a guarded quit path in the renderer.
+autoUpdater.autoInstallOnAppQuit = false;
 
-// ponytail: no branded release feed exists yet; enable updates when the
-// DonWells Cue repository is ready rather than installing upstream builds.
-const DWCUE_UPDATES_CONFIGURED = false;
+// The update feed is the DonWells Cue GitHub Releases of this repository.
+// Pin it explicitly (setFeedURL) rather than trusting the app-update.yml
+// electron-builder derives from package.json "repository": a fork rename or
+// a dev build would otherwise silently retarget updates at some other repo's
+// binaries. The repo ships signed+notarized macOS and (for now) unsigned
+// Windows installers; the updater itself enforces macOS notarization via
+// Squirrel.Mac and Windows signature checks are publisher-gated by
+// app-update.yml only when a publisher name is configured (currently none).
+autoUpdater.setFeedURL({
+  provider: 'github',
+  owner: 'donwellsav',
+  repo: 'dwcue',
+});
 
-// Auto-updater event handlers
+// Linux: only the AppImage build can update in place. The deb/rpm installs
+// can't be replaced while running (dpkg/rpm would need root and a package
+// transaction), so a "deb"-typed updater cannot self-install. electron-updater
+// picks the updater class from the resources/package-type file, so gate on
+// that: AppImage (no file / AppImageUpdater) checks and installs; deb/rpm
+// installs are surfaced to the renderer via install-update returning false
+// and the UI routes the user to the downloads page instead.
+const packageTypeFile = (() => {
+  try {
+    return fs.existsSync(path.join(process.resourcesPath, 'package-type'))
+      ? fs.readFileSync(path.join(process.resourcesPath, 'package-type'), 'utf8').trim()
+      : null;
+  } catch { return null; }
+})();
+const updatesInstallSupported =
+  process.platform === 'darwin' ||
+  process.platform === 'win32' ||
+  !packageTypeFile; // Linux AppImage: no package-type file present
+
+// True when the update flow is active. Always true now that the branded
+// release feed exists; the flag stays as a single switch for the safety
+// script to assert on and for any future channel-splitting.
+const DWCUE_UPDATES_CONFIGURED = true;
+
+// Manual check semantics: the Help → "Check for Updates…" item wants explicit
+// feedback for BOTH outcomes ("update available" and "you're up to date").
+// autoUpdater.checkForUpdates() emits update-available / update-not-available
+// events itself; route the not-available case back to the renderer so it can
+// show a transient confirmation instead of doing nothing.
+let manualCheckPending = false;
+// electron-updater reports installer-launch failures through its error event
+// instead of throwing from quitAndInstall. Keep the close veto armed only
+// while an install attempt is actually live.
+let updateInstallAttemptActive = false;
+// A downloaded update must not replace the app while the detached audio
+// server still owns files from the current installation (especially the old
+// Windows executable). Both Install Now and Install on Exit use this helper.
+async function installDownloadedUpdate({ runAfterInstall = true } = {}) {
+  if (!DWCUE_UPDATES_CONFIGURED || !updatesInstallSupported) return false;
+  try {
+    const serverStopped = await stopLiveplayServer();
+    if (!serverStopped) {
+      console.error('[update] refusing install while the managed server is running');
+      return false;
+    }
+    await cancelAllSpotifyDownloads(true);
+    await cancelAllYouTubeDownloads();
+    const shouldRunAfterInstall = runAfterInstall !== false;
+    // BaseUpdater uses autoRunAppAfterInstall for non-silent installs. The
+    // exit path is silent on Windows and must also set this property because
+    // MacUpdater reads it later when Squirrel finishes downloading.
+    autoUpdater.autoRunAppAfterInstall = shouldRunAfterInstall;
+    updateInstallAttemptActive = true;
+    quitConfirmed = true;
+    autoUpdater.quitAndInstall(!shouldRunAfterInstall, shouldRunAfterInstall);
+    return updateInstallAttemptActive;
+  } catch (error) {
+    updateInstallAttemptActive = false;
+    autoUpdater.autoRunAppAfterInstall = true;
+    quitConfirmed = false;
+    console.error('[update] failed to prepare install:', error);
+    return false;
+  }
+}
+
+autoUpdater.on('update-not-available', (info) => {
+  console.log('Update not available. Current version is latest:', info.version);
+  if (manualCheckPending && mainWindow) {
+    manualCheckPending = false;
+    mainWindow.webContents.send('update-up-to-date', { version: info.version });
+  }
+});
+
 autoUpdater.on('checking-for-update', () => {
   console.log('Checking for updates...');
 });
 
 autoUpdater.on('update-available', (info) => {
   console.log('Update available:', info.version);
+  manualCheckPending = false;
   if (mainWindow) {
     mainWindow.webContents.send('update-available', {
       currentVersion: app.getVersion(),
@@ -1786,15 +1877,16 @@ autoUpdater.on('update-available', (info) => {
   }
 });
 
-autoUpdater.on('update-not-available', (info) => {
-  console.log('Update not available. Current version is latest:', info.version);
-});
-
 autoUpdater.on('error', (err) => {
   console.error('Error in auto-updater:', err);
+  manualCheckPending = false;
+  if (updateInstallAttemptActive) {
+    updateInstallAttemptActive = false;
+    quitConfirmed = false;
+    autoUpdater.autoRunAppAfterInstall = true;
+  }
   if (mainWindow) mainWindow.webContents.send('update-error', err.message);
 });
-
 autoUpdater.on('download-progress', (progressObj) => {
   console.log(`Download speed: ${progressObj.bytesPerSecond} - Downloaded ${progressObj.percent}%`);
   if (mainWindow) {
@@ -1859,7 +1951,8 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     
-    // Check for updates only when the branded release feed exists.
+    // Silent startup check against the pinned GitHub feed. The renderer
+    // defers showing the update modal while Show Mode is active.
     if (!isDevMode && DWCUE_UPDATES_CONFIGURED) {
       // Wait a bit for the window to fully load before checking updates
       setTimeout(() => {
@@ -2837,6 +2930,7 @@ const menuTranslations = Object.entries(localeFiles).reduce((acc, [code, data]) 
     fullscreen: data.menu.fullscreen,
     language: data.menu.language,
     help: data.menu.help,
+    checkForUpdates: data.menu.checkForUpdates,
     about: data.menu.about,
     videoOutputEnterFullscreen: data.menu.videoOutputEnterFullscreen,
     videoOutputExitFullscreen: data.menu.videoOutputExitFullscreen,
@@ -3015,6 +3109,15 @@ function createMenu(locale = 'en', isDev = false) {
     {
       label: t.help,
       submenu: [
+        ...(!isDev ? [
+          {
+            label: t.checkForUpdates,
+            click: () => {
+              mainWindow.webContents.send('menu-check-for-updates');
+            }
+          },
+          { type: 'separator' },
+        ] : []),
         {
           label: t.about,
           click: () => {
@@ -3422,7 +3525,8 @@ ipcMain.handle('update-menu-language', async (event, locale) => {
   return { success: true };
 });
 
-// Auto-updater IPC handlers
+// Auto-updater IPC handlers. The feed is configured above (setFeedURL pins
+// donwellsav/dwcue); these only run the flow.
 ipcMain.handle('check-for-updates', async (event) => {
   requireTrustedIpc(event);
   if (!DWCUE_UPDATES_CONFIGURED) {
@@ -3430,9 +3534,14 @@ ipcMain.handle('check-for-updates', async (event) => {
   }
   try {
     console.log('Manual update check requested');
+    manualCheckPending = true;
     const result = await autoUpdater.checkForUpdates();
-    return { success: true, updateInfo: result?.updateInfo };
+    // update-available / update-not-available events carry the renderer
+    // notification; this return also reports which update was found (null
+    // when current version is the latest).
+    return { success: true, updateInfo: result?.updateInfo ?? null };
   } catch (error) {
+    manualCheckPending = false;
     console.error('Check for updates error:', error);
     return { success: false, error: error.message };
   }
@@ -3442,6 +3551,9 @@ ipcMain.handle('download-update', async (event) => {
   requireTrustedIpc(event);
   if (!DWCUE_UPDATES_CONFIGURED) {
     return { success: false, error: 'Updates are not configured for this build.' };
+  }
+  if (!updatesInstallSupported) {
+    return { success: false, error: 'updates-unsupported-package' };
   }
   try {
     await autoUpdater.downloadUpdate();
@@ -3454,14 +3566,15 @@ ipcMain.handle('download-update', async (event) => {
 
 ipcMain.handle('install-update', async (event) => {
   requireTrustedIpc(event);
-  if (!DWCUE_UPDATES_CONFIGURED) return false;
-  // The user already opted into the update, so bypass the close veto /
-  // quit-confirmation dialog and let electron-updater quit + relaunch.
-  await cancelAllSpotifyDownloads(true);
-  await cancelAllYouTubeDownloads();
-  quitConfirmed = true;
-  autoUpdater.quitAndInstall(false, true);
-  return true;
+  return installDownloadedUpdate();
+});
+
+// Whether this install can self-update in place (see updatesInstallSupported
+// above): macOS/Windows always; Linux only for the AppImage build. The deb/rpm
+// UI uses this to offer the downloads page instead of in-place install.
+ipcMain.handle('get-update-install-supported', (event) => {
+  requireTrustedIpc(event);
+  return updatesInstallSupported;
 });
 
 ipcMain.handle('get-app-version', (event) => {

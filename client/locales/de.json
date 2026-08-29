@@ -31,7 +31,8 @@
     "videoOutputEnterFullscreen": "Enter Full Screen",
     "videoOutputExitFullscreen": "Exit Full Screen",
     "videoOutputShowTestCard": "Show Test Card",
-    "videoOutputExit": "Exit Video Output"
+    "videoOutputExit": "Exit Video Output",
+    "checkForUpdates": "Nach Updates suchen…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -351,7 +352,8 @@
     "goToDownloadPage": "Zur Download-Seite",
     "installNow": "Jetzt installieren",
     "installOnExit": "Beim Beenden installieren",
-    "downloadFailed": "Update-Download fehlgeschlagen"
+    "downloadFailed": "Update-Download fehlgeschlagen",
+    "upToDate": "Sie verwenden die neueste Version (v{version})."
   },
   "translationContributor": {
     "title": "Übersetzungsmitwirkende",

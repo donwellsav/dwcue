@@ -23,7 +23,8 @@
             <div class="notes-content" @click="handleNotesClick" v-html="sanitizedReleaseNotes"></div>
           </div>
 
-          <p class="update-prompt">{{ t('update.updatePrompt') }}</p>
+          <p v-if="!installSupported" class="update-prompt">{{ t('update.manualUpdatePrompt') }}</p>
+          <p v-else class="update-prompt">{{ t('update.updatePrompt') }}</p>
         </div>
 
         <div v-if="downloading" class="download-progress">
@@ -58,11 +59,18 @@
           {{ t('update.later') }}
         </button>
         <button
-          v-if="!downloading && !downloaded"
-          class="button button-primary" 
+          v-if="!downloading && !downloaded && installSupported"
+          class="button button-primary"
           @click="handleDownload"
         >
           {{ t('update.downloadAndInstall') }}
+        </button>
+        <button
+          v-if="!downloading && !downloaded && !installSupported"
+          class="button button-primary"
+          @click="openDownloadsPage"
+        >
+          {{ t('update.goToDownloadPage') }}
         </button>
         <button 
           v-if="downloaded" 
@@ -74,7 +82,7 @@
         <button 
           v-if="downloaded" 
           class="button button-secondary" 
-          @click="handleCancel"
+          @click="handleInstallOnExit"
         >
           {{ t('update.installOnExit') }}
         </button>
@@ -93,10 +101,19 @@ const props = defineProps<{
   releaseDate?: string;
 }>();
 
+// Whether this install can self-update in place (macOS/Windows/AppImage).
+// deb/rpm installs route to the downloads page instead.
+const installSupported = ref(true);
+onMounted(async () => {
+  if (import.meta.client && window.electronAPI?.getUpdateInstallSupported) {
+    installSupported.value = await window.electronAPI.getUpdateInstallSupported();
+  }
+});
 const emit = defineEmits<{
   close: [];
   download: [];
   install: [];
+  installOnExit: [];
 }>();
 
 const { t } = useLocalization();
@@ -173,7 +190,19 @@ const handleDownload = async () => {
 
 const handleInstall = () => {
   if (import.meta.client && window.electronAPI) {
-    window.electronAPI.installUpdate();
+    emit('install');
+  }
+};
+const handleInstallOnExit = () => {
+  if (downloaded.value) {
+    emit('installOnExit');
+  }
+};
+
+// deb/rpm builds can't self-install; send the user to the website.
+const openDownloadsPage = () => {
+  if (import.meta.client && window.electronAPI) {
+    window.electronAPI.openExternal('https://dwcue.com/downloads');
   }
 };
 

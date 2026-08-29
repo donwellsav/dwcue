@@ -2028,20 +2028,24 @@ export const useProject = () => {
   const confirmRepair = () => { _repairPromiseResolve?.(true);  _repairPromiseResolve = null; };
   const cancelRepair  = () => { _repairPromiseResolve?.(false); _repairPromiseResolve = null; };
 
-  // Guard a project-leaving action (New / Open / Close). Resolves true when
-  // it's safe to proceed, false when the user cancels. When autosave is on or
-  // nothing is pending, it's a no-op that proceeds immediately. Otherwise it
-  // pops the unsaved-changes modal and acts on the choice: "save" force-saves
-  // first, "discard" proceeds without saving, "cancel" aborts.
+  // Guard an action that can discard current project state (New / Open /
+  // Close / update install). Resolves true when there are no pending edits.
+  // When edits are pending it pops the unsaved-changes modal and acts on the
+  // choice: "save" force-saves first, "discard" proceeds without saving,
+  // "cancel" aborts. This also catches an autosave failure, which marks the
+  // project dirty even when autosave is on.
   const confirmUnsavedChanges = (): Promise<boolean> => {
-    if (autoSaveEnabled.value || !hasUnsavedChanges.value) return Promise.resolve(true);
+    if (!hasUnsavedChanges.value) return Promise.resolve(true);
     unsavedDialogVisible.value = true;
     return new Promise<boolean>((resolve) => {
       _unsavedPromiseResolve = async (choice) => {
         unsavedDialogVisible.value = false;
         _unsavedPromiseResolve = null;
         if (choice === 'cancel') { resolve(false); return; }
-        if (choice === 'save') { await saveProject({ force: true }); }
+        if (choice === 'save') {
+          const saved = await saveProject({ force: true });
+          if (!saved) { resolve(false); return; }
+        }
         resolve(true);
       };
     });

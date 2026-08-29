@@ -35,7 +35,7 @@ This document is the developer's guide to the client. For the audio engine, see 
 | Local server     | C++ `dwcue-server` binary spawned as a child process         |
 | Media tooling    | `@ffmpeg-installer/ffmpeg`, `@ffprobe-installer/ffprobe`        |
 | YouTube import   | `yt-dlp-wrap` + `youtube-search-api`                            |
-| Updates          | `electron-updater` wiring (disabled until the branded feed exists) |
+| Updates          | `electron-updater` (GitHub Releases feed: `donwellsav/dwcue`)      |
 | File transport   | Server-backed REST upload/download for `.lpa` project archives  |
 
 Audio playback, waveform extraction, metering and routing all live in the C++ server. The renderer never decodes audio.
@@ -118,7 +118,8 @@ Key IPC channels (non-exhaustive):
 | `get-binary-file-info` / `read-binary-file-chunk` | Bounded local archive reads for remote imports. |
 | `download-archive-to-file` | Streams a server archive directly to an authorized local destination. |
 | `menu-export-project` / `menu-import-project` (main → renderer) | Menu-triggered `.lpa` archive round-trip; the renderer owns the export/import dialogs. |
-| `check-for-updates` / `download-update` / `install-update` / `get-app-version` | `electron-updater` controls. |
+| `check-for-updates` / `download-update` / `install-update` / `get-update-install-supported` / `get-app-version` | `electron-updater` controls. |
+| `update-available` / `update-up-to-date` / `update-download-progress` / `update-downloaded` / `update-error` / `menu-check-for-updates` (main → renderer) | Update flow events; `menu-check-for-updates` is the Help-menu trigger. |
 | `update-menu-language` / `get-system-locale` / `get-available-locales` / `get-locale-data` | Dynamic menu localisation. |
 | `open-folder` / `open-external` / `app:relaunch` / `app:exit` | OS integration. |
 | `open-cart-player-window` / `cart-player-window-attach` / `sync-project-data` | Second-window One Shots surface; the cart-player channel names remain for compatibility. |
@@ -297,11 +298,17 @@ Theme mode + accent colour are persisted on the project, not per-user — every 
 
 ## Auto-updates
 
-The updater wiring remains in place, but production checks are currently disabled by `DWCUE_UPDATES_CONFIGURED` in `electron/main.js` because no DonWells Cue release feed exists yet. This prevents the app from installing incompatible upstream builds.
+Updates are **enabled** and pinned to this repository's GitHub Releases via `autoUpdater.setFeedURL` in [`electron/main.js`](electron/main.js) (`donwellsav/dwcue`) — the app never checks any other feed.
+Existing v2.6.11 installs shipped with the updater disabled, so they must install the first updater-enabled release manually; later releases update in-app.
 
-When the branded repository is ready, configure its electron-builder publish provider and enable that flag. `UpdateModal.vue` and the check/download/install IPC handlers then provide the existing update flow. The `latest.yml` / `latest-mac.yml` / `latest-linux.yml` metadata files must be attached to each release; the [release workflow](../.github/workflows/build-release.yml) already uploads them.
+Behaviour:
 
-Update IPC: `check-for-updates`, `download-update`, `install-update`, `get-app-version` (see [The renderer ↔ Electron-main split](#the-renderer--electron-main-split)).
+- **Startup check** — a silent check runs a few seconds after the window appears (packaged builds only). If an update exists, the renderer defers showing `UpdateModal.vue` while Show Mode is active, so a running show is never interrupted.
+- **Manual check** — Help → **Check for Updates…** (hidden in dev builds). "Update available" opens the modal; "up to date" shows a transient toast.
+- **Install** — ask-first (`autoDownload = false`, `autoInstallOnAppQuit = false`): the user downloads, then chooses **Install Now** (relaunch after install) or **Install on Exit** (install during quit without relaunching). Both paths pass the unsaved-changes guard and stop the managed audio server before replacing app files.
+- **Linux** — only the AppImage build self-updates. deb/rpm installs surface the update but the modal's primary action routes to dwcue.com/downloads instead of an in-place install (dpkg/rpm can't replace a running package).
+
+The updater fetches `latest.yml` (Windows) / `latest-mac.yml` (macOS) / `latest-linux.yml` (Linux) from the latest GitHub release. The release job recomputes every manifest checksum from the published bytes and **merges the two per-arch macOS manifests into one `latest-mac.yml`** (electron-updater always requests that name; `MacUpdater` picks the arm64/x64 file itself at download time). See the [release workflow](../.github/workflows/build-release.yml).
 
 ---
 

@@ -73,7 +73,15 @@
       :release-notes="updateInfo.releaseNotes"
       :release-date="updateInfo.releaseDate"
       @close="showUpdateModal = false"
+      @install="handleUpdateInstall"
+      @install-on-exit="handleUpdateInstallOnExit"
     />
+
+    <!-- Transient confirmation for Help → Check for Updates when the
+         current version is already the latest. -->
+    <Transition name="update-toast">
+      <div v-if="upToDateToast" class="update-toast">{{ upToDateToast }}</div>
+    </Transition>
     
     <!-- Progress Modal for Import/Export -->
     <ProgressModal
@@ -223,7 +231,7 @@ const theme = useState('theme', () => 'dark');
 // Global interface text scale (Settings → Interface font size). The app's
 // styles are px-based, so the lever is `zoom` on the root — it scales text
 // and chrome uniformly without touching hundreds of px rules.
-const { uiFontScale } = useUiMode();
+const { uiFontScale, uiMode } = useUiMode();
 
 watch(theme, (value) => {
   if (import.meta.client) document.documentElement.dataset.theme = value;
@@ -272,6 +280,10 @@ const updateInfo = ref({
   releaseNotes: '',
   releaseDate: ''
 });
+// Transient "you're up to date" confirmation for the manual Help-menu check.
+const upToDateToast = ref('');
+let upToDateToastTimer: number | null = null;
+let installOnExitRequested = false;
 
 const accentColors = [
   '#315fcf', '#3c6fe0', '#5a83e8', // DonWells cobalt
@@ -392,10 +404,43 @@ onMounted(() => {
       startImportFlow();
     });
 
-    // Listen for update events
-    window.electronAPI.onUpdateAvailable((event: any, info: any) => {
-      updateInfo.value = info;
+    // Update flow. The modal is deferred while Show Mode is active — never
+    // interrupt a running show — and shown as soon as the operator exits
+    // back to edit mode. A check that finds nothing (manual Help-menu check)
+    // gets a transient "up to date" toast instead of silence.
+    interface UpdateAvailableInfo {
+      currentVersion: string;
+      newVersion: string;
+      releaseNotes?: string;
+      releaseDate?: string;
+    }
+    let pendingUpdateInfo: UpdateAvailableInfo | null = null;
+    const presentUpdateInfo = () => {
+      if (uiMode.value === 'playback') return; // defer during a show
+      if (!pendingUpdateInfo) return;
+      updateInfo.value = {
+        currentVersion: pendingUpdateInfo.currentVersion,
+        newVersion: pendingUpdateInfo.newVersion,
+        releaseNotes: pendingUpdateInfo.releaseNotes ?? '',
+        releaseDate: pendingUpdateInfo.releaseDate ?? '',
+      };
+      pendingUpdateInfo = null;
       showUpdateModal.value = true;
+    };
+    window.electronAPI.onUpdateAvailable((_event, info) => {
+      pendingUpdateInfo = info;
+      presentUpdateInfo();
+    });
+    watch(uiMode, (mode) => {
+      if (mode !== 'playback') presentUpdateInfo();
+    });
+    window.electronAPI.onUpdateUpToDate((_event, info) => {
+      upToDateToast.value = t('update.upToDate', { version: info.version });
+      if (upToDateToastTimer) clearTimeout(upToDateToastTimer);
+      upToDateToastTimer = window.setTimeout(() => { upToDateToast.value = ''; }, 4000);
+    });
+    window.electronAPI.onMenuCheckForUpdates(() => {
+      void window.electronAPI.checkForUpdates();
     });
     
     // File association (.liveplay / .lpa double-click). Both the warm-start
@@ -472,19 +517,32 @@ async function runQuitFlow() {
   quitFlowActive = true;
   const api = (window as any).electronAPI;
   try {
-    // Step 1 — unsaved changes (pending edits with autosave off).
+    // Step 1 — unsaved changes (including a failed autosave).
     if (hasUnsavedChanges.value) {
       const choice = await askQuitUnsaved();
       if (choice === 'cancel') return;
       if (choice === 'save') {
         try {
-          await saveProject({ force: true });
+          const saved = await saveProject({ force: true });
+          if (!saved) {
+            console.error('[quit] save failed, aborting quit');
+            return;
+          }
         } catch (e) {
           console.error('[quit] save failed, aborting quit:', e);
           return;
         }
       }
     }
+    if (installOnExitRequested) {
+      const accepted = await api?.app?.confirmQuit?.({
+        installUpdate: true,
+        runAfterInstall: false,
+      });
+      if (accepted) installOnExitRequested = false;
+      return;
+    }
+
 
     // Step 2 — local audio server (only when we manage one that's running).
     let serverIsLocal = false;
@@ -506,6 +564,22 @@ async function runQuitFlow() {
     quitFlowActive = false;
   }
 }
+// An update install is a quit action too: run the same unsaved-changes guard
+// before handing control to electron-updater. A failed forced save aborts.
+async function handleUpdateInstall() {
+  if (!import.meta.client || !window.electronAPI) return;
+  if (!(await confirmUnsavedChanges())) return;
+  const accepted = await window.electronAPI.installUpdate();
+  if (!accepted) {
+    console.warn('[update] install request was not accepted');
+  }
+}
+
+const handleUpdateInstallOnExit = () => {
+  installOnExitRequested = true;
+  showUpdateModal.value = false;
+};
+
 
 const changeAccentColor = (color: string) => {
   if (currentProject.value) {
@@ -733,6 +807,31 @@ onMounted(() => {
 .color-option:hover {
   transform: scale(1.1);
   border-color: var(--color-text-primary);
+}
+
+.update-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-lg);
+  color: var(--color-text-primary);
+  z-index: var(--z-modal);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.update-toast-enter-active,
+.update-toast-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.update-toast-enter-from,
+.update-toast-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(8px);
 }
 
 .close-dialog {

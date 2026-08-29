@@ -31,7 +31,8 @@
     "videoOutputEnterFullscreen": "Enter Full Screen",
     "videoOutputExitFullscreen": "Exit Full Screen",
     "videoOutputShowTestCard": "Show Test Card",
-    "videoOutputExit": "Exit Video Output"
+    "videoOutputExit": "Exit Video Output",
+    "checkForUpdates": "আপডেটের জন্য পরীক্ষা করুন…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -351,7 +352,8 @@
     "goToDownloadPage": "ডাউনলোড পৃষ্ঠায় যান",
     "installNow": "এখন ইনস্টল করুন",
     "installOnExit": "প্রস্থান করার সময় ইনস্টল করুন",
-    "downloadFailed": "আপডেট ডাউনলোড ব্যর্থ হয়েছে"
+    "downloadFailed": "আপডেট ডাউনলোড ব্যর্থ হয়েছে",
+    "upToDate": "আপনি সর্বশেষ সংস্করণ (v{version}) ব্যবহার করছেন।"
   },
   "translationContributor": {
     "title": "অনুবাদ অবদানকারী",

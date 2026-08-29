@@ -31,7 +31,8 @@
     "videoOutputEnterFullscreen": "Enter Full Screen",
     "videoOutputExitFullscreen": "Exit Full Screen",
     "videoOutputShowTestCard": "Show Test Card",
-    "videoOutputExit": "Exit Video Output"
+    "videoOutputExit": "Exit Video Output",
+    "checkForUpdates": "Güncellemeleri denetle…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -351,7 +352,8 @@
     "goToDownloadPage": "İndirme Sayfasına Git",
     "installNow": "Şimdi Yükle",
     "installOnExit": "Çıkışta Yükle",
-    "downloadFailed": "Güncelleme indirme başarısız oldu"
+    "downloadFailed": "Güncelleme indirme başarısız oldu",
+    "upToDate": "En güncel sürümü (v{version}) kullanıyorsunuz."
   },
   "translationContributor": {
     "title": "Çeviri Katkıda Bulunan",

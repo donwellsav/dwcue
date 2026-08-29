@@ -145,11 +145,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   downloadUpdate: () => ipcRenderer.invoke('download-update'),
   installUpdate: () => ipcRenderer.invoke('install-update'),
+  getUpdateInstallSupported: () => ipcRenderer.invoke('get-update-install-supported'),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   onUpdateAvailable: (callback) => ipcRenderer.on('update-available', callback),
+  onUpdateUpToDate: (callback) => ipcRenderer.on('update-up-to-date', callback),
   onUpdateDownloadProgress: (callback) => ipcRenderer.on('update-download-progress', callback),
   onUpdateDownloaded: (callback) => ipcRenderer.on('update-downloaded', callback),
   onUpdateError: (callback) => ipcRenderer.on('update-error', callback),
+  onMenuCheckForUpdates: (callback) => ipcRenderer.on('menu-check-for-updates', callback),
 
   // Project data sync between the main and detached cart windows.
   syncProjectData: (data) => ipcRenderer.send('sync-project-data', data),
@@ -210,8 +213,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     exit:     () => ipcRenderer.invoke('app:exit'),
     // Quit confirmation: main vetoes the window close and pushes
     // `app:request-quit`; the renderer shows its dialogs then calls
-    // confirmQuit({ stopServer }) to actually quit (optionally shutting
-    // the local audio server down first).
+    // confirmQuit({ stopServer, installUpdate?, runAfterInstall? }) to
+    // actually quit (optionally shutting the local audio server down first).
     confirmQuit: (opts) => ipcRenderer.invoke('app:confirm-quit', opts),
     onRequestQuit: (callback) => {
       const listener = () => callback();
