@@ -31,7 +31,8 @@
     "videoOutputEnterFullscreen": "Enter Full Screen",
     "videoOutputExitFullscreen": "Exit Full Screen",
     "videoOutputShowTestCard": "Show Test Card",
-    "videoOutputExit": "Exit Video Output"
+    "videoOutputExit": "Exit Video Output",
+    "checkForUpdates": "Verifică actualizările…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -351,7 +352,8 @@
     "goToDownloadPage": "Mergi la pagina de descarcare",
     "installNow": "Instalează Acum",
     "installOnExit": "Instalează când închizi aplicația",
-    "downloadFailed": "Am esuat sa descarc actualizarea"
+    "downloadFailed": "Am esuat sa descarc actualizarea",
+    "upToDate": "Folosești cea mai recentă versiune (v{version})."
   },
   "translationContributor": {
     "title": "Traducere realizată de",

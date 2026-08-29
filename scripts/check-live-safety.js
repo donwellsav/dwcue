@@ -58,6 +58,11 @@ assert.match(
   'macOS updater manifests must remain separate per architecture',
 );
 assert.match(
+  read('.github/workflows/build-release.yml'),
+  /required = \{"latest-mac-arm64\.yml", "latest-mac-x64\.yml"\}[\s\S]*if missing:[\s\S]*Missing required macOS update manifest/,
+  'canonical macOS updater metadata must require both architecture manifests',
+);
+assert.match(
   read('server/CMakeLists.txt'),
   /CMAKE_HOST_APPLE[\s\S]*CMAKE_OSX_DEPLOYMENT_TARGET "13\.3"/,
   'local Apple server builds must target macOS 13.3 or newer',
@@ -364,6 +369,16 @@ const volumeSlider = read('client/app/components/VolumeSlider.vue');
 const projectHeader = read('client/app/components/ProjectHeader.vue');
 const projectSettingsModal = read('client/app/components/ProjectSettingsModal.vue');
 const projectStore = read('client/app/composables/useProject.ts');
+assert.match(
+  projectStore,
+  /const confirmUnsavedChanges[\s\S]{0,240}if \(!hasUnsavedChanges\.value\)/,
+  'project-leaving guards must inspect dirty state even when autosave is enabled',
+);
+assert.match(
+  projectStore,
+  /choice === 'save'[\s\S]{0,180}const saved = await saveProject\(\{ force: true \}\)[\s\S]{0,120}if \(!saved\)/,
+  'failed forced saves must abort guarded actions',
+);
 assert.match(
   mainWorkspace,
   /const outputPairs = computed[\s\S]{0,1800}pairs\.push\(\{ key: 'main', leftIndex: 0, rightIndex: 1, label: mainLabel \}\);[\s\S]{0,100}pairs\.push\(\.\.\.overridePairs\)/,
@@ -1248,8 +1263,13 @@ assert.match(electron, /ipcMain\.handle\('app:confirm-quit', async[\s\S]*await s
 assert.match(electron, /ipcMain\.handle\('liveplay-server:restart', async[\s\S]*await stopLiveplayServer\(\)[\s\S]*await startLiveplayServer\(\)/, 'restart must not overlap two servers');
 assert.match(
   electron,
-  /ipcMain\.handle\('install-update', async \(event\) =>[\s\S]*await cancelAllSpotifyDownloads\(true\)[\s\S]*quitAndInstall/,
-  'installing an update must await active Spotify import cleanup before relaunch',
+  /ipcMain\.handle\('install-update', async \(event\) =>[\s\S]*requireTrustedIpc\(event\);[\s\S]*return installDownloadedUpdate\(\);/,
+  'installing an update must use the guarded install helper',
+);
+assert.match(
+  electron,
+  /async function installDownloadedUpdate\([\s\S]{0,700}await cancelAllSpotifyDownloads\(true\)[\s\S]{0,200}await cancelAllYouTubeDownloads\(\)/,
+  'installing an update must await active media import cleanup before relaunch',
 );
 assert.match(
   electron,
@@ -1345,10 +1365,59 @@ assert.doesNotMatch(
   /isManualUpdate|downloadUrl|github\.io\/liveplay/,
   'the update UI must not fall back to upstream LivePlay downloads',
 );
+// The branded release feed now exists: updates are ON, pinned to this
+// repository's GitHub Releases. The gate asserts the pin so the updater can
+// never silently retarget at some other repo's binaries, and the update
+// handlers still fail closed if the switch is ever turned off.
 assert.match(
   electron,
-  /DWCUE_UPDATES_CONFIGURED = false[\s\S]*Updates are not configured for this build/,
-  'updates must fail closed until a branded release feed exists',
+  /autoUpdater\.setFeedURL\(\{\s*provider: 'github',\s*owner: 'donwellsav',\s*repo: 'dwcue',\s*\}\)/,
+  'the update feed must be pinned to donwellsav/dwcue',
+);
+assert.match(
+  electron,
+  /const DWCUE_UPDATES_CONFIGURED = true/,
+  'updates must be enabled for the branded release feed',
+);
+assert.match(
+  electron,
+  /check-for-updates[\s\S]{0,400}if \(!DWCUE_UPDATES_CONFIGURED\)/,
+  'the manual update check must fail closed when updates are disabled',
+);
+assert.match(
+  electron,
+  /const isLinuxAppImage =[\s\S]{0,300}const updatesInstallSupported =[\s\S]{0,300}if \(process\.platform === 'linux' && app\.isPackaged && !isLinuxAppImage\) \{[\s\S]{0,120}autoUpdater\.forceDevUpdateConfig = true;/,
+  'packaged non-AppImage Linux installs must keep update discovery active',
+);
+assert.match(
+  electron,
+  /download-update[\s\S]{0,500}if \(!updatesInstallSupported\)[\s\S]{0,120}updates-unsupported-package/,
+  'non-AppImage Linux installs must not self-install downloaded updates',
+);
+assert.match(
+  electron,
+  /autoUpdater\.autoDownload = false/,
+  'updates must wait for explicit download consent',
+);
+assert.match(
+  electron,
+  /autoUpdater\.autoInstallOnAppQuit = false/,
+  'updates must wait for an explicit install-on-now or install-on-exit choice',
+);
+assert.match(
+  electron,
+  /async function installDownloadedUpdate\([\s\S]{0,900}const shouldRunAfterInstall = runAfterInstall !== false[\s\S]{0,500}autoUpdater\.autoRunAppAfterInstall = shouldRunAfterInstall[\s\S]{0,180}autoUpdater\.quitAndInstall\(!shouldRunAfterInstall, shouldRunAfterInstall\)/,
+  'Install Now and Install on Exit must preserve the requested post-install relaunch mode',
+);
+assert.match(
+  electron,
+  /autoUpdater\.on\('error', \(err\) => \{[\s\S]{0,400}if \(updateInstallAttemptActive\) \{[\s\S]{0,200}updateInstallAttemptActive = false;[\s\S]{0,200}quitConfirmed = false;[\s\S]{0,200}autoUpdater\.autoRunAppAfterInstall = true;/,
+  'failed installer launches must release the close veto and restore normal relaunch behavior',
+);
+assert.match(
+  electron,
+  /updateInstallAttemptActive = true;[\s\S]{0,120}quitConfirmed = true;[\s\S]{0,120}autoUpdater\.quitAndInstall/,
+  'update installs must track the active attempt before lifting the close veto',
 );
 const readyStart = electron.indexOf('app.whenReady().then');
 const readyEnd = electron.indexOf('\\n  });', readyStart);
@@ -2069,6 +2138,11 @@ assert.match(
   appVue,
   /projectFiles\.length === 0[\s\S]*server\.lastError = 'Import failed:[\s\S]*catch \(e\)[\s\S]*server\.lastError = `Import failed:/,
   'archive import failures must be visible to the operator',
+);
+assert.match(
+  appVue,
+  /if \(installOnExitRequested\)[\s\S]{0,260}runAfterInstall: false/,
+  'Install on Exit must pass the no-relaunch mode through the quit IPC',
 );
 
 const macSigner = read('client/scripts/sign-mac.js');

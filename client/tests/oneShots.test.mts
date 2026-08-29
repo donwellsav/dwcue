@@ -60,7 +60,7 @@ test('new designation uses safe quick-play defaults', () => {
   assert.deepEqual((item as any).oneShot, { order: 4, retrigger: 'restart' });
   assert.deepEqual(item.endBehavior, { action: 'nothing' });
   assert.deepEqual(item.startBehavior, { action: 'nothing' });
-  assert.equal(item.duckingBehavior.mode, 'no-ducking');
+  assert.deepEqual(item.duckingBehavior, { mode: 'duck-others', duckLevel: 0.1 });
 });
 
 test('playlist cues copy into independent One Shots without sharing behavior', () => {
@@ -70,7 +70,7 @@ test('playlist cues copy into independent One Shots without sharing behavior', (
   assert.equal(clone.uuid, 'one-shot-copy');
   assert.deepEqual(clone.index, [-1, 3]);
   assert.equal(clone.oneShot?.sourceUuid, 'playlist-source');
-  assert.equal(clone.duckingBehavior.mode, 'no-ducking');
+  assert.deepEqual(clone.duckingBehavior, { mode: 'duck-others', duckLevel: 0.1 });
   assert.deepEqual(clone.startBehavior, { action: 'nothing' });
   assert.deepEqual(clone.endBehavior, { action: 'nothing' });
   clone.displayName = 'Independent name';
@@ -80,7 +80,7 @@ test('playlist cues copy into independent One Shots without sharing behavior', (
 
 test('One Shot copies into the playlist without consuming the source cell', () => {
   const source = audio('one-shot-source', 4);
-  source.oneShot!.sourceUuid = 'original-playlist-cue';
+  (source as any).oneShot.sourceUuid = 'original-playlist-cue';
   source.displayName = 'Announcement';
 
   const clone = cloneAsPlaylistItem(source as any, 'playlist-copy');

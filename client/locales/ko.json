@@ -31,7 +31,8 @@
     "videoOutputEnterFullscreen": "Enter Full Screen",
     "videoOutputExitFullscreen": "Exit Full Screen",
     "videoOutputShowTestCard": "Show Test Card",
-    "videoOutputExit": "Exit Video Output"
+    "videoOutputExit": "Exit Video Output",
+    "checkForUpdates": "업데이트 확인…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -351,7 +352,8 @@
     "goToDownloadPage": "다운로드 페이지로 이동",
     "installNow": "지금 설치",
     "installOnExit": "종료 시 설치",
-    "downloadFailed": "업데이트 다운로드 실패"
+    "downloadFailed": "업데이트 다운로드 실패",
+    "upToDate": "최신 버전(v{version})을 사용하고 있습니다."
   },
   "translationContributor": {
     "title": "번역 기여자",

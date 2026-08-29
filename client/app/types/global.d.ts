@@ -169,12 +169,15 @@ declare global {
       getLocaleData: (localeCode: string) => Promise<any>;
       checkForUpdates: () => Promise<{ success: boolean; updateInfo?: any; error?: string }>;
       downloadUpdate: () => Promise<{ success: boolean; error?: string }>;
-      installUpdate: () => void;
+      installUpdate: () => Promise<boolean>;
+      getUpdateInstallSupported: () => Promise<boolean>;
       getAppVersion: () => Promise<string>;
       onUpdateAvailable: (callback: (event: any, info: { currentVersion: string; newVersion: string; releaseNotes?: string; releaseDate?: string }) => void) => void;
+      onUpdateUpToDate: (callback: (event: any, info: { version: string }) => void) => void;
       onUpdateDownloadProgress: (callback: (event: any, progress: { percent: number; transferred: number; total: number }) => void) => void;
       onUpdateDownloaded: (callback: (event: any, info: { version: string }) => void) => void;
       onUpdateError: (callback: (event: any, error: string) => void) => void;
+      onMenuCheckForUpdates: (callback: () => void) => void;
       syncProjectData: (data: any) => void;
       onOpenFileAssociation: (callback: (event: any, data: { filePath: string; kind: 'liveplay' | 'lpa' }) => void) => void;
       getPendingOpenFile: () => Promise<{ filePath: string; kind: 'liveplay' | 'lpa' } | null>;
