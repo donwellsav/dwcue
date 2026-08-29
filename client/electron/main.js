@@ -1787,24 +1787,23 @@ autoUpdater.setFeedURL({
   repo: 'dwcue',
 });
 
-// Linux: only the AppImage build can update in place. The deb/rpm installs
-// can't be replaced while running (dpkg/rpm would need root and a package
-// transaction), so a "deb"-typed updater cannot self-install. electron-updater
-// picks the updater class from the resources/package-type file, so gate on
-// that: AppImage (no file / AppImageUpdater) checks and installs; deb/rpm
-// installs are surfaced to the renderer via install-update returning false
-// and the UI routes the user to the downloads page instead.
-const packageTypeFile = (() => {
-  try {
-    return fs.existsSync(path.join(process.resourcesPath, 'package-type'))
-      ? fs.readFileSync(path.join(process.resourcesPath, 'package-type'), 'utf8').trim()
-      : null;
-  } catch { return null; }
-})();
+// Linux: only an AppImage build can update in place. Package installs
+// (deb/rpm and other non-AppImage packages) can still discover releases, but
+// their installers must be obtained from the downloads page. electron-updater
+// uses AppImageUpdater for Linux by default, whose isUpdaterActive() returns
+// false when APPIMAGE is absent. Force that updater's check-only path for a
+// packaged non-AppImage install; download-update and install-update remain
+// blocked by updatesInstallSupported.
+const isLinuxAppImage =
+  process.platform === 'linux' && process.env.APPIMAGE != null;
 const updatesInstallSupported =
   process.platform === 'darwin' ||
   process.platform === 'win32' ||
-  !packageTypeFile; // Linux AppImage: no package-type file present
+  (isLinuxAppImage && app.isPackaged);
+
+if (process.platform === 'linux' && app.isPackaged && !isLinuxAppImage) {
+  autoUpdater.forceDevUpdateConfig = true;
+}
 
 // True when the update flow is active. Always true now that the branded
 // release feed exists; the flag stays as a single switch for the safety
@@ -3570,8 +3569,8 @@ ipcMain.handle('install-update', async (event) => {
 });
 
 // Whether this install can self-update in place (see updatesInstallSupported
-// above): macOS/Windows always; Linux only for the AppImage build. The deb/rpm
-// UI uses this to offer the downloads page instead of in-place install.
+// above): macOS/Windows always; Linux only when launched as an AppImage. Other
+// Linux package installs use this to offer the downloads page instead.
 ipcMain.handle('get-update-install-supported', (event) => {
   requireTrustedIpc(event);
   return updatesInstallSupported;

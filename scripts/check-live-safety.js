@@ -1386,6 +1386,16 @@ assert.match(
 );
 assert.match(
   electron,
+  /const isLinuxAppImage =[\s\S]{0,300}const updatesInstallSupported =[\s\S]{0,300}if \(process\.platform === 'linux' && app\.isPackaged && !isLinuxAppImage\) \{[\s\S]{0,120}autoUpdater\.forceDevUpdateConfig = true;/,
+  'packaged non-AppImage Linux installs must keep update discovery active',
+);
+assert.match(
+  electron,
+  /download-update[\s\S]{0,500}if \(!updatesInstallSupported\)[\s\S]{0,120}updates-unsupported-package/,
+  'non-AppImage Linux installs must not self-install downloaded updates',
+);
+assert.match(
+  electron,
   /autoUpdater\.autoDownload = false/,
   'updates must wait for explicit download consent',
 );
