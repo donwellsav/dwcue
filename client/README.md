@@ -81,7 +81,7 @@ client/
 
 ## Running
 
-From the monorepo root, `npm run dev` (or `npm run dev --workspace=client`) does the full loop:
+From the monorepo root, `npm run dev` (equivalently `npm run dev:client`) does the full loop:
 
 1. [`scripts/ensure-server.js`](../scripts/ensure-server.js) checks whether the C++ server is built; if not, builds it.
 2. `nuxt dev` starts on `http://localhost:3000` with HMR.
@@ -110,8 +110,8 @@ Key IPC channels (non-exhaustive):
 
 | Channel                               | Purpose |
 |---------------------------------------|---------|
-| `liveplay-server:get-config` / `set-config` | Read/write the persisted server connection settings. |
-| `liveplay-server:get-status` / `ensure-running` / `restart` / `shutdown` | Manage the bundled server child process. |
+| `liveplay-server:get-config` / `set-config` | Read/write the persisted server mode, URL, and remote-user connection settings; managed credentials are excluded. |
+| `liveplay-server:get-status` / `ensure-running` / `restart` / `shutdown` / `state` | Manage the bundled server child process. Trusted status/state replies deliver the current managed credential to the renderer. |
 | `liveplay-discovery:start` / `list`   | Browse for `dwcue-server` instances on the LAN. |
 | `select-project-folder` / `select-project-file` / `select-audio-files` | Native file pickers. |
 | `read-file` / `write-file` / `copy-file` | Authorized project filesystem helpers. |
@@ -134,10 +134,12 @@ The audio data path is **not** via IPC — it's directly between the renderer an
 
 `app/composables/useLiveplayServer.ts` is the single source of truth. It is a Vue singleton — every component that calls `useLiveplayServer()` receives the **same** WebSocket connection and the **same** reactive state. The contract:
 
-- The server URL and optional LAN access token are read from `localStorage` (`liveplay.serverUrl` and `liveplay.accessToken`; local default `http://127.0.0.1:4480`). Change them via the **Server Settings** modal.
-- On boot, the [`app/plugins/liveplay-server.client.ts`](app/plugins/liveplay-server.client.ts) plugin connects. The connection is lazy-retried if it drops (showing `ConnectionLostModal` in the meantime).
-- REST calls return promises; WebSocket frames update reactive refs.
-- Outbound frames are mostly transport commands (`play`, `stop`, `seek`) that take a fast WS path to avoid the HTTP round-trip; everything mutating goes through `PATCH /api/project/...` so the server can echo a `doc_patch` to all connected clients.
+- The server URL and a remote user's token are stored in `localStorage` under `liveplay.serverUrl` and `liveplay.accessToken`; change them via **Server Settings**. A managed local token is session-only in the renderer and is never written there.
+- Every local and remote control call is authenticated except `GET /api/health`. REST uses `Authorization: Bearer <token>`; bearer-in-query is restricted to browser WebSocket `/ws` and media-element `/api/media` requests.
+- Browser origins must exactly match `LIVEPLAY_ALLOWED_ORIGINS`. Source development uses `http://localhost:3000`, not an arbitrary loopback origin. Packaged Electron's opaque `Origin: null` is accepted, but it still requires the token.
+- On boot, the [`app/plugins/liveplay-server.client.ts`](app/plugins/liveplay-server.client.ts) plugin connects. The connection is lazy-retried if it drops (showing `ConnectionLostModal` in the meantime). If a changed server project meets dirty local edits, the modal requires **Join server** or **Keep local** instead of overwriting either side silently.
+- A close-side `project_changed` clears both the renderer's project document and its remembered path. Saves are serialized and revision-fenced: completion only marks the exact saved revision clean, so an older response cannot erase a newer dirty edit.
+- REST calls return promises; WebSocket frames update reactive refs. Outbound frames are mostly transport commands (`play`, `stop`, `seek`) that take a fast WS path; project mutations use `PATCH /api/project/...` so the server can echo a `doc_patch` to all connected clients.
 
 For the full REST and WebSocket surface, see [`server/README.md`](../server/README.md#control-surface).
 
@@ -146,10 +148,11 @@ For the full REST and WebSocket surface, see [`server/README.md`](../server/READ
 When DonWells Cue is installed as a desktop app, [`electron/main.js`](electron/main.js) is also responsible for spawning the bundled server. The recipe:
 
 1. `electron-builder` copies `dwcue-server[.exe]` into `resources/server-bin/` via `extraResources` (see the `build` block in `package.json`).
-2. On first launch, main resolves the binary path and spawns it as a detached child process bound to `127.0.0.1:<port>`.
-3. A lockfile records the PID so subsequent launches reattach to the running instance rather than spawning a duplicate.
-4. Closing the UI leaves the detached server running so a renderer restart cannot interrupt show audio; the next launch reattaches through the PID file.
-5. The app can explicitly stop or restart that process. Switching **Server Settings** to a remote server cleanly stops the local child first.
+2. Each newly spawned backend generation receives a fresh random 64-character lowercase-hex token through `LIVEPLAY_ACCESS_TOKEN` while remaining bound to `127.0.0.1:<port>`.
+3. The lock records PID, port, generation identity, and token so a later launch can reattach. It is owner-only (`0600` on POSIX), read without following symlinks, and the token is never logged.
+4. Trusted `liveplay-server:*` IPC replies deliver that managed token to the renderer for the current session; config and browser storage never persist it.
+5. Closing the UI leaves the detached server running so a renderer restart cannot interrupt show state; the next launch reattaches through the lock.
+6. The app can explicitly stop or restart that process. Switching **Server Settings** to a remote server cleanly stops the local child first.
 
 `liveplay-discovery:*` IPC channels run a UDP listener that picks up announce broadcasts from `dwcue-server` instances on the LAN, so the connection UI can present a one-click list.
 
@@ -182,9 +185,9 @@ All composables are Vue `setup()`-time helpers, typed in TypeScript.
 |------------------------|----------------|
 | `useLiveplayServer`    | REST + WS singleton. Holds connection state, project document, server config. Every other composable builds on this. |
 | `useLiveMeters`        | Subscribes to the `meters` WS frame and exposes per-cue / per-mixer / per-master reactive refs at 60 Hz. Drives `LiveMeterBar` and `StereoMeter`. |
-| `useProject`           | Project CRUD as exposed by the server (new, open, save, close, item add/remove/move/patch). Wraps `useLiveplayServer` calls into ergonomic methods. |
-| `useAudioEngine`       | Transport facade: `playCue`, `stopCue`, `stopAllCues`, `seek`, `setVolume`, ducking mode helpers. All implemented by forwarding to the server — no audio runs in the renderer. |
-| `useCartItems`         | The One Shots grid model (slot → cue mapping, per-cell arm state); storage keeps the legacy cart shape for compatibility. |
+| `useProject`           | Project CRUD and sync as exposed by the server. It clears document/path on remote close and serializes revision-fenced saves so only the latest persisted revision becomes clean. |
+| `useAudioEngine`       | Transport facade. **Cue to Continue** is runtime-only for one playback instance: it never rewrites `endBehavior`, and Stop, remove, replay, Stop All, media replacement, or project switch cancels it. |
+| `useCartItems`         | The One Shots grid model (slot → cue mapping, per-cell arm state). An arm is consumed only after accepted play; repeated identical arming is coalesced. Storage keeps the legacy cart shape for compatibility. |
 | `useCartHotkeys`       | Configurable keyboard shortcuts → One Shot triggers. See `ControlConfigModal.vue` for the current UI. |
 | `useMidiController`    | Web MIDI bindings → One Shot triggers. See `ControlConfigModal.vue`. |
 | `useStateViewer`       | Feeds the live diagnostics popup window (project doc + connection + server status). |
@@ -199,20 +202,20 @@ All composables are Vue `setup()`-time helpers, typed in TypeScript.
 
 The component tree is intentionally flat — every SFC lives directly in [`app/components/`](app/components/). The big ones to know:
 
-- `WelcomeScreen.vue` — project picker before a project is loaded.
+- `WelcomeScreen.vue` — project picker and **New Show** entry; creation collects name and location in one dialog.
 - `MainWorkspace.vue` — top-level layout once a project is loaded.
-- `PlaybackControls.vue`, `ActiveCueItem.vue` — top-of-screen transport.
+- `PlaybackControls.vue`, `ActiveCueItem.vue` — top-of-screen GO transport and named **Play Next** target. GO clears the target only after accepted play; a failed or not-yet-loaded target remains ready for retry, and duplicate inputs are coalesced.
 - `PlaylistView.vue`, `PlaylistItem.vue` — recursive playlist tree.
-- `OneShotPanel.vue`, `OneShotTile.vue` — permanent 1–64 cell quick-play grid with per-cell ARMED/UNARMED gating (the detached window retains legacy cart-player IPC names).
+- `OneShotPanel.vue`, `OneShotTile.vue` — 1–64 cell quick-play grid with per-cell ARMED/UNARMED gating. An unused panel starts collapsed unless the user explicitly makes it visible; the detached window retains legacy cart-player IPC names.
 - `PropertiesPanel.vue` — properties for the selected item (gain, fades, behaviours, ducking).
 - `WaveformCanvas.vue` — canvas-rendered waveform fetched from `GET /api/waveform/<cueId>`.
 - `WaveformTrimmer.vue` — interactive in/out trimming + normalise.
 - `RoutingMatrixPanel.vue` — the 3-tier routing matrix UI.
 - `LiveMeterBar.vue`, `StereoMeter.vue` — meter widgets driven by `useLiveMeters`.
-- `ServerSettingsModal.vue`, `LocalServerStatus.vue`, `ConnectionLostModal.vue` — server connection management.
-- `ServerFileBrowser.vue`, `ServerFilePickerModal.vue` — `GET /api/fs/list` browser, used when the client and server live on different machines.
-- `AudioImportModal.vue`, `YouTubeImportModal.vue` — media import surfaces.
-- `ProjectSelectionModal.vue`, `ProjectSettingsModal.vue`, `ProjectRepairModal.vue` — project management.
+- `ServerSettingsModal.vue`, `LocalServerStatus.vue`, `ConnectionLostModal.vue` — authenticated server connection management and explicit dirty-reconnect **Join server** / **Keep local** choice.
+- `ServerFileBrowser.vue`, `ServerFilePickerModal.vue` — the advanced `GET /api/fs/list` browser for media already on another server; it stays collapsed in the normal local-import flow and disables unsupported non-media entries.
+- `AudioImportModal.vue`, `YouTubeImportModal.vue` — media import surfaces; local **Choose files** is the primary action.
+- `ProjectSelectionModal.vue`, `ProjectSettingsModal.vue`, `ProjectRepairModal.vue` — project management, including the combined name-and-location **New Show** flow.
 - `UpdateModal.vue` — auto-update UI.
 - `AboutModal.vue`, `ProgressModal.vue`, `LoadingOverlay.vue`, `LocationChoiceModal.vue` — misc.
 - `ShortcutsBar.vue` — on-screen hotkey reference strip, visible by default.

@@ -38,6 +38,7 @@
     "title": "DonWells Cue",
     "subtitle": "लाइव इवेंट्स के लिए ऑडियो प्लेबैक",
     "newProject": "नया प्रोजेक्ट",
+    "newShow": "नया शो",
     "openProject": "प्रोजेक्ट खोलें",
     "modeTitle": "सर्वर मोड चुनें",
     "modeSubtitle": "DonWells Cue ऑडियो इंजन कहाँ चलाए?",
@@ -67,6 +68,11 @@
     "showNetworkUi": "Connect to a server on the network…"
   },
   "project": {
+    "newShow": "नया शो",
+    "showName": "शो का नाम",
+    "location": "स्थान",
+    "chooseLocation": "चुनें…",
+    "createShow": "शो बनाएँ",
     "enterName": "प्रोजेक्ट का नाम दर्ज करें",
     "placeholder": "मेरा प्रोजेक्ट",
     "cancel": "रद्द करें",
@@ -587,6 +593,11 @@
   },
   "importAudio": {
     "title": "मीडिया आयात करें",
+    "localIntro": "इस कंप्यूटर से ऑडियो या वीडियो फ़ाइलें चुनें।",
+    "advanced": "उन्नत विकल्प",
+    "unsupportedFileType": "फ़ाइल प्रकार समर्थित नहीं है",
+    "verifyFileType": "फ़ाइल प्रकार की जाँच की जाएगी",
+    "emptyServerFolder": "इस स्थान पर कोई मीडिया फ़ाइल या सबफ़ोल्डर नहीं है।",
     "tabServer": "सर्वर पर",
     "tabUpload": "इस कंप्यूटर से अपलोड करें",
     "serverHint": "सर्वर पर पहले से मौजूद फ़ाइलें। खोलने के लिए किसी फ़ोल्डर पर डबल-क्लिक करें; चुनने के लिए फ़ाइलों पर क्लिक करें (एक से अधिक के लिए Shift या Ctrl/Cmd-क्लिक), फिर \"चयनित आयात करें\"।",
@@ -686,7 +697,7 @@
     "resumeHint": "‘सत्र जारी रखें’ इस प्रोजेक्ट को सर्वर पर फिर से खोलता है ताकि आप काम जारी रख सकें।",
     "startFreshHint": "‘नए सिरे से शुरू करें’ इसे बंद करके स्वागत स्क्रीन पर लौटा देता है।",
     "projectChangedTitle": "Server project changed",
-    "projectChangedMessage": "While this client was offline, the server opened “{name}”. Your local project has unsaved changes, so nothing was replaced automatically.",
+    "projectChangedMessage": "सर्वर का “{name}” प्रोजेक्ट बदल गया है। आपके लोकल प्रोजेक्ट में सेव न किए गए बदलाव हैं, इसलिए कुछ भी अपने-आप नहीं बदला गया।",
     "useServerProject": "Use server project",
     "keepLocalProject": "Restore local project",
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."

@@ -224,6 +224,7 @@ import {
   type OneShotPlaybackMode,
 } from '~/utils/oneShots';
 import { eventToBinding, formatKeyLabel, isReservedCombo } from '~/composables/useCartHotkeys';
+import { oneShotFireActionKey, runAcknowledgedAction } from '~/utils/acknowledgedAction';
 
 const props = defineProps<{ item: AudioItem; position: number }>();
 const emit = defineEmits<{
@@ -299,20 +300,21 @@ const requestImport = () => {
   emit('request-import');
 };
 
-const handleTrigger = () => {
+const handleTrigger = async () => {
   if (isPlaying.value && props.item.oneShot?.retrigger === 'ignore') return;
-  // Show-mode arm gate: this cell only fires while it is armed; with
-  // auto-disarm on (default), firing re-safes the cell again.
-  if (fireBlocked(props.item)) return;
-  void playCue(props.item);
-  afterFire(props.item);
+  // Show-mode arm gate: only re-safe after confirmed playback.
+  if (fireBlocked(props.item)) return false;
+  return runAcknowledgedAction(
+    oneShotFireActionKey(props.item.uuid),
+    () => playCue(props.item),
+    () => afterFire(props.item),
+  );
 };
 
 const handleTransport = () => {
-  if (isPlaying.value) { void stopCue(props.item.uuid); return; }
   // Stop is never gated. The play branch only exists in edit mode (in show
   // mode this button is stop-only), so the per-cell arm gate does not apply.
-  void playCue(props.item);
+  return isPlaying.value ? stopCue(props.item.uuid) : playCue(props.item);
 };
 
 const handleDragStart = (event: DragEvent) => {

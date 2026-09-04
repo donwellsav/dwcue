@@ -34,7 +34,10 @@
       :title="playNextTooltip"
     >
       <span class="material-symbols-rounded" aria-hidden="true">fast_forward</span>
-      <span>{{ t('controls.playNext') }}</span>
+      <span class="play-next-label">
+        <span>{{ t('controls.playNext') }}</span>
+        <span class="play-next-target">{{ effectiveNextName }}</span>
+      </span>
     </button>
 
     <!-- Preview is deliberately isolated in MainWorkspace's lower panel. -->
@@ -260,11 +263,10 @@
 //     server via useLiveplayServer().stopAll(). Removing the legacy call
 //     is safe once all play paths route through the server.
 import { formatKeyLabel } from '~/composables/useCartHotkeys';
-import type { AudioItem } from '~/types/project';
 import { useLiveplayServer } from '~/composables/useLiveplayServer';
 import { useCueMeters } from '~/composables/useLiveMeters';
 
-const { activeCues, panicStop, nextItemOverrideUuid, autoNextItemUuid, setNextItem, playCue, triggerGroup } = useAudioEngine();
+const { activeCues, panicStop, nextItemOverrideUuid, autoNextItemUuid, setNextItem, playNext } = useAudioEngine();
 const { findItemByUuid, previewItemUuid, previewCueId, stopPreview, saveProject, openItemProperties } = useProject();
 const { playbackMappings } = useCartHotkeys();
 const { t } = useLocalization();
@@ -536,23 +538,22 @@ const stopAllTooltip = computed(() => {
   const shortcut = binding ? formatKeyLabel(binding) : '';
   return shortcut ? `${t('playback.panic')} (${shortcut})` : t('playback.panic');
 });
+const effectiveNextItem = computed(() => effectiveNextUuid.value
+  ? findItemByUuid(effectiveNextUuid.value)
+  : null);
+const effectiveNextName = computed(() => effectiveNextItem.value?.displayName || '-');
 
 const handlePanic = () => {
   // Stop everything, fading over the project-wide Stop All time
   // (settings.stopAllFadeMs, default 1 s; set to 0 for an instant panic).
   // panicStop() forwards to the server with no explicit fade so the server
   // applies that project setting.
-  panicStop();
+  return panicStop();
 };
 
-const handlePlayNext = () => {
-  const uuid = effectiveNextUuid.value;
-  if (!uuid) return;
-  const item = findItemByUuid(uuid);
-  if (!item) return;
-  if (nextItemOverrideUuid.value) setNextItem(null);
-  if (item.type === 'audio') playCue(item as AudioItem);
-  else if (item.type === 'group') triggerGroup(item);
+const handlePlayNext = async () => {
+  if (!effectiveNextUuid.value) return false;
+  return playNext();
 };
 </script>
 
@@ -644,6 +645,33 @@ const handlePlayNext = () => {
       filter: brightness(1.06);
     }
   }
+}
+
+
+.play-next-label {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-align: left;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.1;
+}
+
+.play-next-target {
+  overflow: hidden;
+  max-width: 100%;
+  color: currentColor;
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0.78;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playback-controls.show-mode .play-next-target {
+  font-size: 16px;
 }
 
 .panic-btn {

@@ -85,22 +85,18 @@ struct ControlSecurityMiddleware {
     std::size_t max_upload_bytes{256ull * 1024 * 1024};
 
     bool authorized(const crow::request& req) const {
-        if (access_token.empty()) return true;
-
-        constexpr std::string_view bearer = "Bearer ";
-        const std::string authorization = req.get_header_value("Authorization");
-        if (authorization.starts_with(bearer) &&
-            security::constant_time_equal(
-                std::string_view{authorization}.substr(bearer.size()), access_token)) {
-            return true;
+        std::string_view query_access_token;
+        // Browser WebSockets and HTML media elements cannot attach an
+        // Authorization header. Restrict bearer-in-query to those two routes.
+        if (req.url == "/ws" || req.url == "/api/media") {
+            if (const char* token = req.url_params.get("access_token")) {
+                query_access_token = token;
+            }
         }
-
-        // Browser WebSocket does not support arbitrary request headers.
-        if (req.url == "/ws") {
-            if (const char* token = req.url_params.get("access_token"))
-                return security::constant_time_equal(token, access_token);
-        }
-        return false;
+        const std::string authorization =
+            req.get_header_value("Authorization");
+        return security::access_token_authorized(
+            access_token, authorization, query_access_token);
     }
 
     void add_cors_headers(const crow::request& req, crow::response& res) const {
@@ -1048,12 +1044,11 @@ ControlServer::~ControlServer() { stop(); }
 
 bool ControlServer::start() {
     if (running_.exchange(true)) return true;
-    if (!security::is_loopback_address(cfg_.bind_address) &&
-        cfg_.access_token.size() < 16) {
+    if (cfg_.access_token.size() < 16) {
         running_.store(false);
         Logger::error(
-            "ControlServer: non-loopback bind requires an access token "
-            "of at least 16 characters.");
+            "ControlServer: every bind requires an access token of at least "
+            "16 characters.");
         return false;
     }
     purge_orphan_export_files();
@@ -1742,6 +1737,14 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
                 return command_error("nothing armed to GO to");
             }
             Logger::playback("GO: {}", item_playback_info(uuid, state));
+        }
+        else if (type == "cue_to_continue") {
+            const std::string uuid = j.value("item_uuid", std::string{});
+            if (uuid.empty())
+                return command_error("cue_to_continue: missing item_uuid");
+            if (!state.cue_to_continue(uuid))
+                return command_error("cue_to_continue: item cannot be cued");
+            Logger::playback("CUE TO CONTINUE: {}", item_playback_info(uuid, state));
         }
         else if (type == "gain") {
             auto cue = resolve_cue(j);

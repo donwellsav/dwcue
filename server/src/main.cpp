@@ -45,6 +45,7 @@
     #pragma comment(lib, "ws2_32.lib")
 #else
     #include <arpa/inet.h>
+    #include <fcntl.h>
     #include <ifaddrs.h>
     #include <net/if.h>        // IFF_UP, IFF_LOOPBACK (macOS/BSD don't expose
                                // these via <sys/socket.h> the way Linux does)
@@ -359,7 +360,7 @@ CliOptions parse_cli(int argc, char** argv) {
                 "Usage: %s [options]\n"
                 "  -p, --port <port>     Port to listen on (default %d)\n"
                 "  -b, --bind <addr>     Interface to bind (default 127.0.0.1)\n"
-                "                         Non-loopback generates a session token;\n"
+                "                         Every bind requires a session token;\n"
                 "                         set LIVEPLAY_ACCESS_TOKEN (16+ chars) to supply one\n"
                 "      LIVEPLAY_ALLOWED_ORIGINS  Comma-separated browser origins\n"
                 "      --pidfile <path>  Write JSON process identity after binding\n"
@@ -563,27 +564,28 @@ int main(int argc, char** argv) {
     }
     if (opts.verbose) Logger::set_min_level(LogLevel::Debug);
     const bool lan_mode = !net::security::is_loopback_address(opts.bind_addr);
-    if (lan_mode && !opts.access_token.empty() && opts.access_token.size() < 16) {
+    if (!opts.access_token.empty() && opts.access_token.size() < 16) {
         Logger::error(
-            "Refusing non-loopback bind '{}': LIVEPLAY_ACCESS_TOKEN "
-            "must be at least 16 characters.", opts.bind_addr);
+            "Refusing bind '{}': LIVEPLAY_ACCESS_TOKEN must be at least "
+            "16 characters.", opts.bind_addr);
         return 2;
     }
-    if (lan_mode && opts.access_token.empty()) {
+    if (opts.access_token.empty()) {
         try {
             opts.access_token = net::security::random_hex_token(16);
         } catch (const std::exception& e) {
-            Logger::error("Could not generate a LAN access token: {}", e.what());
+            Logger::error("Could not generate an access token: {}", e.what());
             return 2;
         }
-        // Logger file output is configured later, deliberately: this
-        // session-only credential is shown once in the visible console.
+        // Logger file output is configured later, deliberately: a standalone
+        // operator can copy this session credential from the visible console,
+        // while Electron supplies its own token and never enters this branch.
         Logger::raw("");
-        Logger::raw("  LAN access token (shown once): " + opts.access_token);
+        Logger::raw("  Access token (shown once): " + opts.access_token);
         Logger::raw("");
         if (!net::security::persist_access_token_for_restart(opts.access_token)) {
             Logger::error(
-                "Could not preserve the generated LAN access token for crash restart.");
+                "Could not preserve the generated access token for crash restart.");
             return 2;
         }
     }
@@ -729,16 +731,50 @@ int main(int argc, char** argv) {
                 {"port", opts.port},
                 {"startedAt", static_cast<long long>(pidfile_started_at)},
                 {"instanceToken", opts.instance_token},
+                {"accessToken", opts.access_token},
             };
             std::filesystem::path temporary = pidfile_path;
             temporary += ".tmp." + std::to_string(process_id);
+            const std::string payload = j.dump(2);
+#if !defined(_WIN32)
+            int flags = O_WRONLY | O_CREAT | O_TRUNC;
+#  if defined(O_NOFOLLOW)
+            flags |= O_NOFOLLOW;
+#  endif
+            const int descriptor = ::open(
+                temporary.c_str(), flags, S_IRUSR | S_IWUSR);
+            if (descriptor < 0) {
+                throw std::runtime_error{"could not create private temporary pidfile"};
+            }
+            if (::fchmod(descriptor, S_IRUSR | S_IWUSR) != 0) {
+                ::close(descriptor);
+                std::error_code remove_ec;
+                std::filesystem::remove(temporary, remove_ec);
+                throw std::runtime_error{"could not restrict temporary pidfile permissions"};
+            }
+            std::FILE* file = ::fdopen(descriptor, "wb");
+            if (!file) {
+                ::close(descriptor);
+                std::error_code remove_ec;
+                std::filesystem::remove(temporary, remove_ec);
+                throw std::runtime_error{"could not open temporary pidfile stream"};
+            }
+            const bool wrote =
+                std::fwrite(payload.data(), 1, payload.size(), file) == payload.size();
+            const bool closed = std::fclose(file) == 0;
+            if (!wrote || !closed) {
+                std::error_code remove_ec;
+                std::filesystem::remove(temporary, remove_ec);
+                throw std::runtime_error{"could not write temporary pidfile"};
+            }
+#else
             {
-                std::ofstream f{
-                    temporary, std::ios::binary | std::ios::trunc};
-                if (!f || !(f << j.dump(2))) {
+                std::ofstream f{temporary, std::ios::binary | std::ios::trunc};
+                if (!f || !(f << payload)) {
                     throw std::runtime_error{"could not write temporary pidfile"};
                 }
             }
+#endif
             std::error_code replace_ec;
             if (!replace_file_atomically(temporary, pidfile_path, replace_ec)) {
                 std::filesystem::remove(temporary, replace_ec);

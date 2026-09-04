@@ -486,12 +486,12 @@ const handleSelect = (event?: MouseEvent) => {
 
 const handlePlay = () => {
   if (!props.item) return;
-  playCue(props.item);
+  return playCue(props.item);
 };
 
 const handleStop = () => {
   if (!props.item) return;
-  stopCue(props.item.uuid);
+  return stopCue(props.item.uuid);
 };
 
 const handleSetAsNext = () => {

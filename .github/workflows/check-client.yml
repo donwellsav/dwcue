@@ -1,0 +1,48 @@
+name: Check Client
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-client-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  client:
+    name: Client safety and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      # Match the release workflow's npm version for Nuxt's optional binaries.
+      - name: Update npm
+        run: npm install -g npm@11
+
+      - name: Install dependencies
+        run: npm ci --include=optional
+        env:
+          CI: true
+
+      - name: Type-check client
+        run: npm run typecheck --workspace=client
+
+      - name: Check client safety contracts
+        run: npm run check:client
+
+      - name: Build client
+        run: npm run build --workspace=client

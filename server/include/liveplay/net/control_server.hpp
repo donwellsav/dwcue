@@ -73,8 +73,8 @@ namespace liveplay::net {
 struct ControlServerConfig {
     std::string   bind_address       = "127.0.0.1";
     std::uint16_t port               = 4480;
-    // Empty is permitted only for a loopback-only server. LAN binding is
-    // rejected by main before ControlServer starts.
+    // Required for every bind. main generates one when a standalone operator
+    // does not provide LIVEPLAY_ACCESS_TOKEN.
     std::string   access_token;
     // Per-process launcher identity. This is not an access credential; the
     // desktop client uses it to distinguish its detached server from a stale

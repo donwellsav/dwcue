@@ -16,9 +16,11 @@ These are the scripts wired into `npm run …` commands at the root. They are th
 | [`build-clean.js`](build-clean.js)           | `npm run build:clean`        | Wipes build outputs, then delegates to `build-all.js`. Deliberately **preserves** `server/build/vcpkg_installed/` so the (slow) compiled C++ dependencies are not re-downloaded. |
 | [`build-server.js`](build-server.js)         | `npm run server:build` / CI  | Configures (idempotently) and builds the C++ server using the appropriate CMake preset (`vs2022` on Windows, `default` elsewhere). On macOS, `DWCUE_MAC_ARCH=arm64|x64` selects the matching native server and vcpkg triplet. |
 | [`build-server-app-mac.js`](build-server-app-mac.js) | Manual (macOS only) | Wraps `dwcue-server` as a standalone development helper app. Release DMGs use the server embedded in DonWells Cue so every executable is covered by the main packaging and ad-hoc signing flow. |
-| [`ensure-server.js`](ensure-server.js)       | `npm run dev`                | Pre-flight check before launching the renderer. If the server binary is already built, this is a no-op (fast dev-loop iteration). Otherwise it triggers a configure + build. |
-| [`run-server.js`](run-server.js)             | `npm run server:run` (and `npm run dev:all`) | Locates the compiled `dwcue-server[.exe]` (searching both single-config and multi-config CMake output directories) and execs it, forwarding stdio and any CLI args. |
+| [`ensure-server.js`](ensure-server.js)       | `npm run dev` / `npm run dev:client` | Pre-flight check before launching the desktop client. If the server binary is already built, this is a no-op; otherwise it triggers configure + build. Electron then owns its managed backend lifecycle. |
+| [`run-server.js`](run-server.js)             | `npm run server:run`          | Explicit server-only launcher. Locates the compiled `dwcue-server[.exe]` in single- or multi-config CMake output, then execs it with forwarded stdio and CLI arguments. |
 | [`smoke-packaged-app-mac.js`](smoke-packaged-app-mac.js) | `npm run check:packaged:mac [-- --arch arm64|x64]` | Verifies the matching packaged macOS app starts, checks its one main window when macOS UI scripting is available, then quits and cleans up. |
+
+Use `npm run dev` or `npm run dev:client` for the normal desktop loop. Start `npm run server:run` separately only for server-only work or a renderer-only `npm run dev:nuxt` session; do not put a foreground server beside Electron's managed backend.
 
 ### Versioning
 

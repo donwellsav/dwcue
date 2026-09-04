@@ -703,6 +703,7 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
                            &dev->ma_dev->playback.id);
             });
         if (existing != devices_.end()) {
+            (*existing)->open_references.acquire();
             const auto existing_id = (*existing)->id;
             ma_device_uninit(dev->ma_dev.get());
             ma_pcm_rb_uninit(dev->ring.get());
@@ -762,6 +763,7 @@ void AudioEngine::close_device(const DeviceId& id) {
         auto it = std::find_if(devices_.begin(), devices_.end(),
                                [&](const std::shared_ptr<Device>& d){ return d->id == id; });
         if (it == devices_.end()) return;
+        if (!(*it)->open_references.release_is_final()) return;
         closing = *it;
         closing->closing.store(true, std::memory_order_seq_cst);
         closing->runtime_state.store(
@@ -941,9 +943,20 @@ void AudioEngine::ensure_default_routing() {
     DeviceId chosen_device{};
     {
         std::lock_guard lock{mutex_};
-        if (!devices_.empty()) chosen_device = devices_.front()->id;
+        // An existing Main master assignment already owns its device. Merely
+        // finding some other open device is not ownership: preview may have
+        // opened it first and is allowed to release its own reference later.
+        for (std::size_t i = 0;
+             i < 2 && i < pending_.master_destinations.size(); ++i) {
+            if (pending_.master_destinations[i]) {
+                chosen_device = pending_.master_destinations[i]->device;
+                break;
+            }
+        }
     }
     if (chosen_device.empty()) {
+        // Acquire a dedicated Main reference even when this resolves to native
+        // hardware already opened by preview or another routing owner.
         chosen_device = open_default_device(2);
         if (chosen_device.empty()) {
             Logger::warn("ensure_default_routing: could not open default device — playback will be silent.");

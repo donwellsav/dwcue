@@ -38,6 +38,7 @@
     "title": "DonWells Cue",
     "subtitle": "Luajtje audio për ngjarje të drejtpërdrejta",
     "newProject": "Projekt i Ri",
+    "newShow": "Shfaqje e re",
     "openProject": "Hap Projektin",
     "modeTitle": "Zgjidh Modalitetin e Serverit",
     "modeSubtitle": "Ku duhet DonWells Cue të ekzekutojë motorin audio?",
@@ -67,6 +68,11 @@
     "showNetworkUi": "Connect to a server on the network…"
   },
   "project": {
+    "newShow": "Shfaqje e re",
+    "showName": "Emri i shfaqjes",
+    "location": "Vendndodhja",
+    "chooseLocation": "Zgjidh…",
+    "createShow": "Krijo shfaqjen",
     "enterName": "Vendos Emrin e Projektit",
     "placeholder": "Projekti Im",
     "cancel": "Anulo",
@@ -587,6 +593,11 @@
   },
   "importAudio": {
     "title": "Importo media",
+    "localIntro": "Zgjidh skedarë audio ose video nga ky kompjuter.",
+    "advanced": "Opsione të avancuara",
+    "unsupportedFileType": "Lloj skedari i pambështetur",
+    "verifyFileType": "Lloji i skedarit do të verifikohet",
+    "emptyServerFolder": "Nuk ka skedarë media ose nëndosje në këtë vendndodhje.",
     "tabServer": "Në server",
     "tabUpload": "Ngarko nga ky kompjuter",
     "serverHint": "Skedarë tashmë në server. Klikoni dy herë mbi një dosje për ta hapur; klikoni mbi skedarët për t'i zgjedhur (Shift ose Ctrl/Cmd-klik për disa), pastaj «Importo të zgjedhurat».",
@@ -686,7 +697,7 @@
     "resumeHint": "Vazhdo sesionin e rihap këtë projekt në server që të mund të vazhdoni.",
     "startFreshHint": "Fillo nga e para e mbyll atë dhe kthehet te ekrani i mirëseardhjes.",
     "projectChangedTitle": "Server project changed",
-    "projectChangedMessage": "While this client was offline, the server opened “{name}”. Your local project has unsaved changes, so nothing was replaced automatically.",
+    "projectChangedMessage": "Projekti “{name}” në server ka ndryshuar. Projekti yt lokal ka ndryshime të paruajtura, ndaj asgjë nuk u zëvendësua automatikisht.",
     "useServerProject": "Use server project",
     "keepLocalProject": "Restore local project",
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."

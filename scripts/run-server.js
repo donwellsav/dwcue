@@ -3,7 +3,7 @@
 // scripts/run-server.js
 // -----------------------------------------------------------------------------
 // Locate the built liveplay-server binary and exec it, forwarding stdio and
-// any CLI args. Used by `npm run server:run` and by `npm run dev:all`.
+// any CLI args. Used by `npm run server:run` for intentional standalone runs.
 // =============================================================================
 const fs        = require('node:fs');
 const path      = require('node:path');

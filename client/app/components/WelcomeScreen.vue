@@ -219,7 +219,7 @@ ref="localModeButton"
         <div class="welcome-actions">
           <button ref="newProjectButton" class="welcome-button primary" type="button" @click="handleNewProject">
             <span class="button-icon"><span class="material-symbols-rounded" aria-hidden="true">add</span></span>
-            <span>{{ t('welcome.newProject') }}</span>
+            <span>{{ t('welcome.newShow') }}</span>
           </button>
 
           <button class="welcome-button" type="button" @click="handleOpenProject">
@@ -264,9 +264,8 @@ ref="localModeButton"
       </div>
     </div>
 
-    <!-- Server-side file picker. Used to choose either the project's parent
-         folder (New) or a .liveplay file (Open). The picker browses the
-         server's filesystem (drives, network paths, anywhere). -->
+    <!-- The New Show form owns both values. Browsing for a location temporarily
+         swaps to the server-side picker so remote servers remain supported. -->
     <ServerFilePickerModal
       :open="showPicker"
       :mode="pickerMode"
@@ -274,37 +273,45 @@ ref="localModeButton"
       :filter-options="pickerFilterOptions"
       :start-path="pickerStart"
       @pick="onPickerPick"
-      @close="showPicker = false"
+      @close="onPickerClose"
     />
 
-    <!-- New-project name dialog.
-         data-theme is mirrored onto the teleported root: <Teleport to="body">
-         hoists this OUT of #app (which carries the data-theme attribute), so
-         without it the [data-theme='…'] CSS variables resolve to nothing and
-         the dialog renders transparent. -->
     <Teleport to="body">
-      <div v-if="showNameDialog" class="name-dialog-backdrop" :data-theme="theme" @click.self="cancelNameDialog">
-        <div
-          class="name-dialog"
+      <div v-if="showNewShowDialog" class="name-dialog-backdrop" :data-theme="theme" @click.self="cancelNewShowDialog">
+        <form
+          class="name-dialog new-show-dialog"
           role="dialog"
           aria-modal="true"
-          :aria-labelledby="nameDialogTitleId"
+          :aria-labelledby="newShowDialogTitleId"
+          @submit.prevent="createNewShow"
+          @keydown.escape.prevent="cancelNewShowDialog"
         >
-          <h3 :id="nameDialogTitleId" class="name-dialog__title">{{ t('project.enterName') }}</h3>
-          <input
-            ref="nameDialogInput"
-            class="name-dialog__input"
-            v-model="nameDialogValue"
-            :aria-label="t('project.enterName')"
-            :placeholder="t('project.placeholder')"
-            @keydown.enter="confirmNameDialog"
-            @keydown.escape="cancelNameDialog"
-          />
-          <div class="name-dialog__actions">
-            <button class="name-dialog__btn" @click="cancelNameDialog">{{ t('project.cancel') }}</button>
-            <button class="name-dialog__btn name-dialog__btn--primary" :disabled="!nameDialogValue.trim()" @click="confirmNameDialog">{{ t('project.ok') }}</button>
+          <h3 :id="newShowDialogTitleId" class="name-dialog__title">{{ t('project.newShow') }}</h3>
+          <label class="new-show-field" for="welcome-new-show-name">
+            <span>{{ t('project.showName') }}</span>
+            <input
+              id="welcome-new-show-name"
+              ref="newShowNameInput"
+              class="name-dialog__input"
+              v-model="newShowName"
+              :placeholder="t('project.placeholder')"
+              autocomplete="off"
+            />
+          </label>
+          <div class="new-show-field">
+            <label for="welcome-new-show-location">{{ t('project.location') }}</label>
+            <div class="new-show-location">
+              <input id="welcome-new-show-location" class="name-dialog__input" :value="newShowLocation" readonly />
+              <button ref="newShowBrowseButton" type="button" class="name-dialog__btn" @click="browseNewShowLocation">
+                {{ t('project.chooseLocation') }}
+              </button>
+            </div>
           </div>
-        </div>
+          <div class="name-dialog__actions">
+            <button type="button" class="name-dialog__btn" :disabled="creatingNewShow" @click="cancelNewShowDialog">{{ t('common.cancel') }}</button>
+            <button type="submit" class="name-dialog__btn name-dialog__btn--primary" :disabled="!canCreateNewShow || creatingNewShow">{{ t('project.createShow') }}</button>
+          </div>
+        </form>
       </div>
     </Teleport>
   </div>
@@ -370,19 +377,22 @@ const localModeButton = ref<HTMLButtonElement | null>(null);
 const remoteAddressInput = ref<HTMLInputElement | null>(null);
 const changeModeButton = ref<HTMLButtonElement | null>(null);
 const newProjectButton = ref<HTMLButtonElement | null>(null);
-const nameDialogReturnFocus = ref<HTMLElement | null>(null);
-const nameDialogTitleId = 'welcome-project-name-title';
+const newShowNameInput = ref<HTMLInputElement | null>(null);
+const newShowBrowseButton = ref<HTMLButtonElement | null>(null);
+const newShowDialogReturnFocus = ref<HTMLElement | null>(null);
+const newShowDialogTitleId = 'welcome-new-show-title';
 
 // Computed reflection of the currently-configured server URL.
 const serverUrlDisplay = computed(() => server.serverUrl ?? 'http://127.0.0.1:4480');
 
-// Server file picker state — shared by New and Open flows.
+// Server file picker state — Open Project, plus the location chooser launched
+// from the combined New Show form.
 const showPicker          = ref(false);
 const pickerMode          = ref<'file' | 'directory'>('directory');
 const pickerFilter        = ref<string>('.liveplay,.lpa');
 const pickerFilterOptions = ref<string[]>(['.liveplay,.lpa', 'all']);
 const pickerStart         = ref<string>('');
-const pickerIntent        = ref<'new' | 'open'>('open');
+const pickerIntent        = ref<'new-location' | 'open'>('open');
 
 // Get app version
 const appVersion = ref('2.6.12');
@@ -399,11 +409,9 @@ onMounted(async () => {
       if (cfg?.mode === 'remote' && cfg.remoteUrl) {
         mode.value = 'remote';
         remoteAddress.value = stripScheme(cfg.remoteUrl);
-        server.setServerUrl(cfg.remoteUrl);
+        server.configureRemoteConnection(cfg.remoteUrl, server.accessToken);
       } else if (cfg?.mode === 'local') {
         mode.value = 'local';
-        const url = `http://127.0.0.1:${cfg.localPort ?? 4480}`;
-        server.setServerUrl(url);
       }
     }
   } catch (e) {
@@ -583,24 +591,22 @@ async function probeServerReachable(url: string): Promise<void> {
 // Shared by the Local button and the .liveplay file-association path.
 async function ensureLocalServer(): Promise<boolean> {
   const api = (window as any).electronAPI?.liveplayServer;
-  if (import.meta.client && api?.setConfig) {
-    const cfg = await api.setConfig({ mode: 'local' });
-    const url = `http://127.0.0.1:${cfg.localPort ?? 4480}`;
-    server.setAccessToken('');
-    server.setServerUrl(url);
-    if (api.ensureRunning) {
-      const res = await api.ensureRunning();
-      if (!res?.ok) {
-        connectionError.value = res?.error
-          ? `Local server failed to start: ${res.error}`
-          : 'Local server failed to start';
-        return false;
-      }
-    }
-  } else {
-    server.setAccessToken('');
-    server.setServerUrl('http://127.0.0.1:4480');
+  if (!import.meta.client || !api?.setConfig || !api?.ensureRunning) {
+    connectionError.value = t('welcome.connectionFailed') + ' (local server controls unavailable)';
+    return false;
   }
+
+  const cfg = await api.setConfig({ mode: 'local' });
+  const res = await api.ensureRunning();
+  if (!res?.ok || !res.accessToken) {
+    connectionError.value = res?.error
+      ? 'Local server failed to start: ' + res.error
+      : 'Local server failed to provide an access credential. Restart DonWells Cue and try again.';
+    return false;
+  }
+
+  const port = res.port ?? cfg.localPort ?? 4480;
+  server.configureManagedConnection('http://127.0.0.1:' + port, res.accessToken);
   return true;
 }
 
@@ -672,8 +678,7 @@ async function connectToRemote() {
     // Probe the server's /api/health before committing.
     await probeServerReachable(url);
 
-    server.setAccessToken(remoteAccessToken.value);
-    server.setServerUrl(url);
+    server.configureRemoteConnection(url, remoteAccessToken.value);
     if (import.meta.client && (window as any).electronAPI?.liveplayServer?.setConfig) {
       await (window as any).electronAPI.liveplayServer.setConfig({
         mode: 'remote',
@@ -709,8 +714,7 @@ async function connectToDiscovered(srv: DiscoveredServer) {
     // commit so a blocked port shows an error instead of a fake welcome screen.
     await probeServerReachable(url);
     remoteAddress.value = stripScheme(url);
-    server.setAccessToken(remoteAccessToken.value);
-    server.setServerUrl(url);
+    server.configureRemoteConnection(url, remoteAccessToken.value);
     if (import.meta.client && (window as any).electronAPI?.liveplayServer?.setConfig) {
       await (window as any).electronAPI.liveplayServer.setConfig({
         mode: 'remote',
@@ -821,15 +825,51 @@ async function removeRecentProject(project: RecentProject) {
   } catch {}
 }
 
+
+function focusIfConnected(el: HTMLElement | null | undefined) {
+  if (el?.isConnected) el.focus();
+}
+
+function queueStageFocus(targetStage = stage.value) {
+  nextTick(() => {
+    if (showNewShowDialog.value || showPicker.value) return;
+    if (targetStage === 'remote') {
+      focusIfConnected(remoteAddressInput.value);
+      return;
+    }
+    if (targetStage === 'project') {
+      focusIfConnected(newProjectButton.value ?? changeModeButton.value);
+      return;
+    }
+    focusIfConnected(localModeButton.value);
+  });
+}
 // ---- Project pickers -------------------------------------------------------
+const showNewShowDialog = ref(false);
+const newShowName = ref('');
+const newShowLocation = ref('');
+const creatingNewShow = ref(false);
+const canCreateNewShow = computed(() => !!newShowName.value.trim() && !!newShowLocation.value.trim());
+
 const handleNewProject = () => {
-  pickerIntent.value        = 'new';
+  newShowName.value = '';
+  newShowLocation.value = recentProjectStartPath();
+  newShowDialogReturnFocus.value = document.activeElement instanceof HTMLElement
+    ? document.activeElement
+    : null;
+  showNewShowDialog.value = true;
+  nextTick(() => newShowNameInput.value?.focus());
+};
+
+function browseNewShowLocation() {
+  pickerIntent.value        = 'new-location';
   pickerMode.value          = 'directory';
   pickerFilter.value        = 'all';
   pickerFilterOptions.value = ['all'];
-  pickerStart.value         = recentProjectStartPath();
+  pickerStart.value         = newShowLocation.value || recentProjectStartPath();
+  showNewShowDialog.value   = false;
   showPicker.value          = true;
-};
+}
 
 const handleOpenProject = () => {
   pickerIntent.value        = 'open';
@@ -842,79 +882,53 @@ const handleOpenProject = () => {
 
 const onPickerPick = async (fullPath: string) => {
   showPicker.value = false;
-  if (!fullPath) return;
-
-  if (pickerIntent.value === 'new') {
-    const projectName = await getProjectName();
-    if (!projectName) return;
-    const ok = await createNewProject(projectName, fullPath);
-    if (!ok) alert('Failed to create project');
-  } else {
-    const ok = await openProject(fullPath);
-    if (!ok) alert('Failed to open project');
+  if (pickerIntent.value === 'new-location') {
+    if (fullPath) newShowLocation.value = fullPath;
+    showNewShowDialog.value = true;
+    nextTick(() => newShowBrowseButton.value?.focus());
+    return;
   }
+  if (!fullPath) return;
+  const ok = await openProject(fullPath);
+  if (!ok) alert('Failed to open project');
 };
 
-// Vue-reactive project-name dialog — replaces the old imperative DOM version.
-const showNameDialog   = ref(false);
-const nameDialogValue  = ref('');
-const nameDialogInput  = ref<HTMLInputElement | null>(null);
-let   nameDialogResolve: ((v: string | null) => void) | null = null;
-
-function focusIfConnected(el: HTMLElement | null | undefined) {
-  if (el?.isConnected) el.focus();
+function onPickerClose() {
+  showPicker.value = false;
+  if (pickerIntent.value !== 'new-location') return;
+  showNewShowDialog.value = true;
+  nextTick(() => newShowBrowseButton.value?.focus());
 }
 
-function queueStageFocus(targetStage = stage.value) {
+function restoreNewShowDialogFocus() {
   nextTick(() => {
-    if (showNameDialog.value || showPicker.value) return;
-    if (targetStage === 'remote') {
-      focusIfConnected(remoteAddressInput.value);
-      return;
-    }
-    if (targetStage === 'project') {
-      focusIfConnected(newProjectButton.value ?? changeModeButton.value);
-      return;
-    }
-    focusIfConnected(localModeButton.value);
-  });
-}
-
-function restoreNameDialogFocus() {
-  nextTick(() => {
-    if (nameDialogReturnFocus.value?.isConnected) {
-      nameDialogReturnFocus.value.focus();
+    if (newShowDialogReturnFocus.value?.isConnected) {
+      newShowDialogReturnFocus.value.focus();
       return;
     }
     queueStageFocus();
   });
 }
 
-const getProjectName = (): Promise<string | null> => {
-  nameDialogValue.value = '';
-  nameDialogReturnFocus.value = document.activeElement instanceof HTMLElement
-    ? document.activeElement
-    : null;
-  showNameDialog.value  = true;
-  nextTick(() => nameDialogInput.value?.focus());
-  return new Promise((resolve) => {
-    nameDialogResolve = resolve;
-  });
-};
-
-function confirmNameDialog() {
-  const v = nameDialogValue.value.trim();
-  showNameDialog.value = false;
-  nameDialogResolve?.(v || null);
-  nameDialogResolve = null;
-  restoreNameDialogFocus();
+async function createNewShow() {
+  const name = newShowName.value.trim();
+  const location = newShowLocation.value.trim();
+  if (!name || !location || creatingNewShow.value) return;
+  creatingNewShow.value = true;
+  const ok = await createNewProject(name, location);
+  creatingNewShow.value = false;
+  if (!ok) {
+    alert('Failed to create project');
+    nextTick(() => newShowNameInput.value?.focus());
+    return;
+  }
+  showNewShowDialog.value = false;
 }
 
-function cancelNameDialog() {
-  showNameDialog.value = false;
-  nameDialogResolve?.(null);
-  nameDialogResolve = null;
-  restoreNameDialogFocus();
+function cancelNewShowDialog() {
+  if (creatingNewShow.value) return;
+  showNewShowDialog.value = false;
+  restoreNewShowDialogFocus();
 }
 
 // Listen for menu events
@@ -1326,6 +1340,29 @@ if (import.meta.client && (window as any).electronAPI) {
 }
 
 .name-dialog__input:focus { border-color: var(--color-accent); }
+
+.new-show-dialog { width: min(520px, 92vw); }
+
+.new-show-field {
+  display: grid;
+  gap: 6px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.new-show-location {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--spacing-sm);
+}
+
+.new-show-location .name-dialog__input {
+  min-width: 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+}
 
 .name-dialog__actions {
   display: flex;

@@ -169,7 +169,8 @@ export function useVideoOutput() {
   // Mirrors the server's resolve_media_path: relative paths join the project
   // folder; absolute paths pass through. The /api/media endpoint streams any
   // local file with Range support (same trust model as /api/waveform_path).
-  // v1 is same-machine only, so no access-token query support here.
+  // HTML media elements cannot attach Authorization, so this one route accepts
+  // the same access token in a query parameter as the browser WebSocket.
   function mediaUrl(pathStr: string | null): string | null {
     if (!pathStr) return null;
     let abs = pathStr;
@@ -179,7 +180,10 @@ export function useVideoOutput() {
       abs = folder.replace(/[\\/]+$/, '') + '/' + pathStr;
     }
     const base = String(server.serverUrl || '').replace(/\/+$/, '');
-    return `${base}/api/media?path=${encodeURIComponent(abs)}`;
+    const params = new URLSearchParams({ path: abs });
+    const token = String(server.effectiveAccessToken || '');
+    if (token) params.set('access_token', token);
+    return `${base}/api/media?${params}`;
   }
 
   // Standby image: project-level setting, same resolution rules as item media.

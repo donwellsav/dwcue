@@ -21,6 +21,7 @@
 // it's holding and, if the answer is "nothing", hand the operator the choice
 // between reopening their project and starting fresh (SessionRecoveryModal).
 //
+
 // Wired once per renderer from plugins/liveplay-server.client.ts.
 // =====================================================================
 
@@ -142,7 +143,6 @@ export const useConnectionGuard = () => {
       const {
         currentProject,
         hasUnsavedChanges,
-        projectFilePath,
         tryRejoinExistingProject,
       } = useProject();
       if (!currentProject.value || sessionLost.value || recovering.value) return;
@@ -155,22 +155,19 @@ export const useConnectionGuard = () => {
           return;
         }
 
-        const serverPath = header.server?.projectFilePath ?? '';
-        const localPath = projectFilePath.value;
-        const sameProject = serverPath || localPath
-          ? serverPath === localPath
-          : header.name === currentProject.value.name &&
-            header.folderPath === currentProject.value.folderPath &&
-            header.createdAt === currentProject.value.createdAt;
-        if (!sameProject) {
-          if (hasUnsavedChanges.value) {
-            serverProjectName.value = header.name || 'Untitled';
-            projectChanged.value = true;
-            sessionLost.value = true;
-          } else {
-            await tryRejoinExistingProject(header);
-          }
+        if (hasUnsavedChanges.value) {
+          // Identity equality cannot prove the remote document stayed equal
+          // while this renderer was disconnected. Require an explicit choice
+          // before either side can overwrite the other.
+          serverProjectName.value = header.name || 'Untitled';
+          projectChanged.value = true;
+          sessionLost.value = true;
+          return;
         }
+
+        // A clean mirror can always accept the authoritative reconnect header,
+        // including same-project edits made by another client while offline.
+        await tryRejoinExistingProject(header);
       } catch (e) {
         // Couldn't ask — don't throw an unnecessary dialog at the operator on
         // the strength of a failed probe. The next reconnect re-checks.

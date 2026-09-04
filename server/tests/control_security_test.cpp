@@ -73,14 +73,26 @@ int main(int argc, char** argv) {
     assert(!constant_time_equal(std::string(272, '\0'),
                                 std::string(16, '\0')));
 
-    const std::vector<std::string> extra{"https://controller.example"};
+    const std::string expected_token = "0123456789abcdef0123456789abcdef";
+    assert(access_token_authorized(
+        expected_token, "Bearer 0123456789abcdef0123456789abcdef"));
+    assert(access_token_authorized(
+        expected_token, "", "0123456789abcdef0123456789abcdef"));
+    assert(!access_token_authorized(expected_token, "Bearer wrong"));
+    assert(!access_token_authorized(expected_token, "", "wrong"));
+    assert(!access_token_authorized("", "Bearer ", ""));
+    assert(!access_token_authorized("short", "Bearer short"));
+
+    const std::vector<std::string> extra{
+        "http://localhost:3000", "https://controller.example"};
     assert(origin_allowed("", extra));
     assert(origin_allowed("null", extra));
     assert(origin_allowed("http://localhost:3000", extra));
-    assert(origin_allowed("https://127.0.0.1:8443", extra));
     assert(origin_allowed("https://controller.example", extra));
+    assert(!origin_allowed("file://", extra));
+    assert(!origin_allowed("http://localhost:3001", extra));
+    assert(!origin_allowed("https://127.0.0.1:8443", extra));
     assert(!origin_allowed("https://localhost.example", extra));
-    assert(!origin_allowed("https://localhost:", extra));
     assert(!origin_allowed("https://evil.example", extra));
 
     assert(!upload_exceeds_limit(256, "256", 256));

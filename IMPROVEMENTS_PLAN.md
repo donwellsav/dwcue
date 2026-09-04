@@ -13,7 +13,7 @@ DonWells Cue is an open-source audio cue playback application for live sound ope
 (theatre, radio, events). It is a **client/server** app:
 
 ```
-┌─────────────────────────────┐        TCP 4480 (REST + WebSocket)        ┌──────────────────────────────┐
+┌─────────────────────────────┐   TCP 4480 (token-authenticated REST + WS)   ┌──────────────────────────────┐
 │  Client                     │ ◄───────────────────────────────────────► │  Server                      │
 │  Vue 3 / Nuxt 4 / Electron  │        UDP 4481 (LAN discovery)           │  C++20, miniaudio, Crow      │
 │  client/                    │                                           │  server/                     │
@@ -38,12 +38,12 @@ DonWells Cue is an open-source audio cue playback application for live sound ope
 | `client/app/composables/useLiveplayServer.ts` | REST/WS client to the C++ server (~1,030 lines) |
 | `client/app/composables/useAudioEngine.ts` | Client-side playback orchestration glue (~640 lines) |
 | `client/app/composables/useMidiController.ts` | Web-MIDI input → action bindings (client-side only) |
-| `client/app/components/MainWorkspace.vue` | Top-level layout: playlist + One Shots + properties panel |
+| `client/app/components/MainWorkspace.vue` | Top-level layout: playlist + collapsible One Shots + properties panel |
 | `client/app/components/PropertiesPanel.vue` | Per-item editor (fades, trim, end behaviour, LTC…) (~1,200 lines) |
 | `client/app/components/PlaylistItem.vue` / `PlaylistView.vue` | Cue list rows / list |
-| `client/app/components/OneShotPanel.vue` / `OneShotTile.vue` | Permanent hot-key One Shots grid |
+| `client/app/components/OneShotPanel.vue` / `OneShotTile.vue` | Hot-key One Shots grid; unused panel collapses unless explicitly shown |
 | `client/app/components/RoutingMatrixPanel.vue` | Existing routing UI (items → mixers → masters → device channels) |
-| `client/electron/main.js` | Electron main: server lifecycle, dialogs, ffmpeg, yt-dlp, updater |
+| `client/electron/main.js` | Electron main: authenticated server lifecycle, trusted IPC, dialogs, ffmpeg, yt-dlp, updater |
 | `server/src/audio/engine.cpp` (+`include/liveplay/audio/engine.hpp`) | **AudioEngine**: devices, PlaybackItems, MixerChannels, routing topology (lock-free atomic snapshot), render thread, per-master Limiter+Meter |
 | `server/src/audio/playback_item.cpp` | One cue = one PlaybackItem (decode, gain, fades) |
 | `server/src/audio/mixer_channel.cpp` | Tier-2 mixer strip |
@@ -57,12 +57,11 @@ DonWells Cue is an open-source audio cue playback application for live sound ope
 
 ### 1.2 Server API surface (existing, in `control_server.cpp`)
 
-REST: `/api/health`, `/api/devices[...]`, `/api/cues[...]` (register/play/stop/gain/fade/ltc),
-`/api/transport/stop_all`, `/api/routing/{item_to_mixer,mixer_to_master,master_to_device}`,
-`/api/mixers`, `/api/fs/list`, `/api/upload`, `/api/project/{load,save}`, `GET /api/project`.
+REST: `/api/health`, `/api/devices[...]`, `/api/cues[...]` (register/play/stop/gain/fade/ltc), `/api/transport/stop_all`, `/api/routing/{item_to_mixer,mixer_to_master,master_to_device}`, `/api/mixers`, `/api/fs/list`, `/api/upload`, `/api/project/{load,save}`, and `GET /api/project`.
 
-WebSocket `/ws`: server→client `meters` (~10 Hz, client interpolates), `cue_state` transitions,
-`doc_patch` (multi-client project sync); client→server transport commands.
+`GET /api/health` is the sole public application route; every local and remote control route requires a token. REST uses a bearer header. Access-token query parameters are limited to browser `/ws` and `/api/media`. Browser origins match `LIVEPLAY_ALLOWED_ORIGINS` exactly (`http://localhost:3000` for source development); packaged Electron's opaque `Origin: null` remains token-authenticated.
+
+WebSocket `/ws`: server→client `meters`, `cue_state` transitions, and `doc_patch` multi-client sync; client→server transport commands.
 
 ### 1.3 Key existing concepts you will build on
 
@@ -80,12 +79,15 @@ WebSocket `/ws`: server→client `meters` (~10 Hz, client interpolates), `cue_st
 - **Output Target** feature: platform loudness presets (EBU R128 etc.); the server owns the numbers.
 - **Client-side MIDI input** exists (Web MIDI, `useMidiController.ts`) for triggering One Shots/transport.
 - **Index paths**: items are addressed by `index: number[]` (nested groups); One Shot cells retain the legacy `[-1, slot]` addressing.
+- **Runtime continuation and trigger acceptance**: `cue_to_continue` is a one-play, non-serialized override and never mutates saved `endBehavior`; Stop/remove/replay/Stop All/media replacement/project switch cancel it. GO, group play, and One Shot arming consume state only after a child actually starts. Failed/not-loaded targets remain armed, and repeated identical inputs are coalesced.
+- **Project lifetime and save ordering**: a close-side `project_changed` clears the renderer document and path. A dirty reconnect requires **Join server** or **Keep local**. Client saves run through one latest-write queue and a revision/identity fence, so stale completion cannot mark newer edits clean.
+- **Managed authentication**: standalone servers use a ≥16-character `LIVEPLAY_ACCESS_TOKEN` or generate and print a 32-hex token once. Electron creates a fresh 64-hex token per backend generation, passes it in the environment, persists it only in the owner-private server lock, and exposes it to the renderer through trusted IPC for that session—not `localStorage`.
+- **Current creation/import UX**: **New Show** combines name and location. **Import Media** leads with local **Choose files**; advanced/server browsing is collapsed and unsupported non-media entries are disabled. The target is named **Play Next**. Unused One Shots stay collapsed unless the user explicitly asks to see them.
 - **Automated tests now exist**: client One Shot and Electron path tests, Spotify import reliability checks, and C++ tests under `server/tests`. Coverage is still incomplete, so the test gaps below remain useful.
 
 ### 1.4 Build & run
 
-- `npm run dev:all` — server + client dev concurrently. `npm run server:build` — CMake build
-  (Windows preset `vs2022`, output `server/build/Release/dwcue-server.exe`).
+- `npm run dev` or `npm run dev:client` — normal desktop loop; Electron owns the managed backend. `npm run server:run` — explicit standalone/server-only process. `npm run server:build` — CMake build (Windows preset `vs2022`, output `server/build/Release/dwcue-server.exe`).
 - Dependencies: server via vcpkg (`server/vcpkg.json`); client is npm workspace `client`.
 - Version bumps via `npm run bump` (syncs root, client, and server versions). The standalone website keeps its own public version snapshot.
 
@@ -114,7 +116,7 @@ accidental edits, no misclicks.
   inline rename, routing matrix, import buttons, delete actions (PlaylistItem.vue,
   ProjectHeader.vue, etc.).
 - **What remains, enlarged:** playlist (read-only rows, touch-friendly min ~56 px height),
-  GO / panic (stop-all) transport bar, One Shots grid, master fader, up-next display.
+  GO / panic (stop-all) transport bar, One Shots grid, master fader, **Play Next** display.
 - **Exit affordance:** toggle in header (deliberate click); no long-press exit guard needed.
 - **i18n:** All strings (`showMode.toggle`, `showMode.toggleHint`, etc.) through useLocalization,
   stubs added to all locale files.
@@ -243,12 +245,12 @@ workstream is 20 % DonWells Cue changes, 80 % a new small repo.
      fade ms), trigger One Shot slot 1–16, master gain set/step, toggle limiter, load project.
    - **Feedbacks:** item playing/paused (button turns green/red), One Shot slot active, connection
      state, limiter engaged.
-   - **Variables:** current item name, elapsed/remaining time, up-next name, master gain,
+   - **Variables:** current item name, elapsed/remaining time, Play Next name, master gain,
      project name, LUFS/meter values (throttled).
    - Transport: reuse the WebSocket `/ws` for push state (`cue_state`, `meters`) — poll nothing.
 2. **DonWells Cue server additions** (small): a stable **external-control surface** —
    - `GET /api/state/summary` — compact machine-readable transport state (playing items with
-     index, name, elapsed/duration, up-next) so Companion doesn't need the whole project JSON.
+     index, name, elapsed/duration, Play Next target) so Companion doesn't need the whole project JSON.
    - Ensure every action listed above is reachable via REST/WS with **index-path addressing**
      (`play-index` exists in the custom-action vocabulary; expose it as a first-class endpoint,
      e.g. `POST /api/transport/play_index { index: [2,0] }`, `POST /api/transport/go`).
@@ -465,4 +467,4 @@ Recommended overall order (respects dependencies):
 - The server owns state; the client mutates via REST/WS and receives `doc_patch` fan-out — never fork state client-side.
 - New engine state read by the render thread must use the snapshot/atomic pattern (`AtomicSharedPtr`, see `engine.hpp`) — no locks or allocation on the audio path.
 - Project-schema additions must be optional-with-defaults so old project files load unchanged; bump `Project.version` when semantics change.
-- Version bumps via `npm run bump`; Windows server build via `npm run server:build` (CMake preset `vs2022`); dev loop via `npm run dev:all`.
+- Version bumps via `npm run bump`; Windows server build via `npm run server:build` (CMake preset `vs2022`); desktop dev loop via `npm run dev` or `npm run dev:client`; explicit standalone server via `npm run server:run`.

@@ -623,14 +623,14 @@ const handleSelect = (event: MouseEvent) => {
 
 const handlePlay = () => {
   if (props.item.type === 'audio') {
-    playCue(props.item as AudioItem);
-  } else if (props.item.type === 'group') {
-    triggerGroup(props.item);
+    return playCue(props.item as AudioItem);
   }
+  if (props.item.type === 'group') return triggerGroup(props.item);
+  return false;
 };
 
 const handleStop = () => {
-  stopCue(props.item.uuid);
+  return stopCue(props.item.uuid);
 };
 
 const handleEdit = () => {

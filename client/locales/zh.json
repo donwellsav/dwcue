@@ -38,6 +38,7 @@
     "title": "DonWells Cue",
     "subtitle": "现场活动音频播放",
     "newProject": "新建项目",
+    "newShow": "新建演出",
     "openProject": "打开项目",
     "modeTitle": "选择服务器模式",
     "modeSubtitle": "DonWells Cue 应在哪里运行音频引擎？",
@@ -67,6 +68,11 @@
     "showNetworkUi": "Connect to a server on the network…"
   },
   "project": {
+    "newShow": "新建演出",
+    "showName": "演出名称",
+    "location": "位置",
+    "chooseLocation": "选择…",
+    "createShow": "创建演出",
     "enterName": "输入项目名称",
     "placeholder": "我的项目",
     "cancel": "取消",
@@ -587,6 +593,11 @@
   },
   "importAudio": {
     "title": "导入媒体",
+    "localIntro": "从此计算机选择音频或视频文件。",
+    "advanced": "高级选项",
+    "unsupportedFileType": "不支持的文件类型",
+    "verifyFileType": "将验证文件类型",
+    "emptyServerFolder": "此位置没有媒体文件或子文件夹。",
     "tabServer": "在服务器上",
     "tabUpload": "从此计算机上传",
     "serverHint": "已在服务器上的文件。双击文件夹将其打开；单击文件进行选择（按住 Shift 或 Ctrl/Cmd 单击可多选），然后点击“导入所选”。",
@@ -686,7 +697,7 @@
     "resumeHint": "“继续会话”会在服务器上重新打开该项目，以便您继续工作。",
     "startFreshHint": "“重新开始”会关闭该项目并返回欢迎界面。",
     "projectChangedTitle": "Server project changed",
-    "projectChangedMessage": "While this client was offline, the server opened “{name}”. Your local project has unsaved changes, so nothing was replaced automatically.",
+    "projectChangedMessage": "服务器上的项目“{name}”已发生更改。您的本地项目有未保存的更改，因此未自动替换任何内容。",
     "useServerProject": "Use server project",
     "keepLocalProject": "Restore local project",
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."

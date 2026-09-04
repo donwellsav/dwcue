@@ -242,9 +242,24 @@ function liveplayLockPath() {
   return path.join(app.getPath('userData'), LIVEPLAY_LOCK_FILENAME);
 }
 
+function validManagedAccessToken(value) {
+  return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+}
+
 function readLiveplayLock() {
+  let fd;
   try {
-    const raw = fs.readFileSync(liveplayLockPath(), 'utf-8');
+    const lockPath = liveplayLockPath();
+    const noFollow = process.platform === 'win32' ? 0 : (fs.constants.O_NOFOLLOW ?? 0);
+    fd = fs.openSync(lockPath, fs.constants.O_RDONLY | noFollow);
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile()) return null;
+    // Tighten permissions through the already-open descriptor before reading
+    // a credential, avoiding both disclosure windows and symlink races.
+    if (process.platform !== 'win32' && (stat.mode & 0o777) !== 0o600) {
+      fs.fchmodSync(fd, 0o600);
+    }
+    const raw = fs.readFileSync(fd, 'utf-8');
     const j = JSON.parse(raw);
     if (Number.isSafeInteger(j.pid) && j.pid > 0 &&
         Number.isSafeInteger(j.port) && j.port >= 1 && j.port <= 65535 &&
@@ -252,9 +267,17 @@ function readLiveplayLock() {
          (Number.isSafeInteger(j.startedAt) && j.startedAt > 0)) &&
         (j.instanceToken === undefined ||
          /^[0-9a-f]{32}$/.test(j.instanceToken))) {
-      return j;
+      // Keep malformed/missing credentials from becoming usable, but retain
+      // the process identity so an owned older generation can be stopped
+      // safely instead of launching a second audio engine beside it.
+      return {
+        ...j,
+        accessToken: validManagedAccessToken(j.accessToken) ? j.accessToken : '',
+      };
     }
-  } catch {}
+  } catch {} finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
   return null;
 }
 
@@ -703,6 +726,9 @@ function adoptLiveplayIdentity(identity) {
     port: identity.port,
     startedAt: identity.startedAt,
     instanceToken: identity.instanceToken,
+    accessToken: validManagedAccessToken(identity.accessToken)
+      ? identity.accessToken
+      : '',
     legacy: identity.legacy === true,
   };
   return liveplayServerIdentity;
@@ -713,9 +739,9 @@ function sameLiveplayIdentity(left, right) {
     left.pid === right.pid &&
     left.port === right.port &&
     left.instanceToken === right.instanceToken &&
+    left.accessToken === right.accessToken &&
     left.startedAt === right.startedAt;
 }
-
 function clearLiveplayIdentity(identity = null) {
   if (!identity || sameLiveplayIdentity(liveplayServerIdentity, identity)) {
     liveplayServerIdentity = null;
@@ -726,6 +752,8 @@ async function verifyLiveplayLock(lock) {
   if (!lock || !isPidAlive(lock.pid)) return null;
   const health = await probeServerHealth(lock.port);
   if (/^[0-9a-f]{32}$/.test(lock.instanceToken || '')) {
+    // A tokenless generation from an older release may be stopped only after
+    // the existing PID + health/process identity checks prove we own it.
     if (healthMatchesIdentity(health, lock) ||
         await processRunsOwnedServer(lock.pid, lock.instanceToken)) {
       return { ...lock, legacy: false };
@@ -745,6 +773,7 @@ async function waitForCrashReplacement(staleIdentity, timeoutMs = 6500) {
     const lock = readLiveplayLock();
     if (lock && lock.pid !== staleIdentity.pid &&
         lock.instanceToken === staleIdentity.instanceToken &&
+        lock.accessToken === staleIdentity.accessToken &&
         isPidAlive(lock.pid)) {
       const replacement = await verifyLiveplayLock(lock);
       if (replacement) return adoptLiveplayIdentity(replacement);
@@ -805,7 +834,8 @@ async function tryReattachLiveplayServer() {
     await stopVerifiedLiveplayServer(identity);
     return null;
   }
-  if (identity.legacy || identity.port !== cfg.localPort) {
+  if (identity.legacy || !validManagedAccessToken(identity.accessToken) ||
+      identity.port !== cfg.localPort) {
     if (!(await stopVerifiedLiveplayServer(identity))) return identity;
     return startLiveplayServer();
   }
@@ -828,7 +858,8 @@ async function startLiveplayServerOnce() {
 
   const current = await reconcileLiveplayServerIdentity(true);
   if (current) {
-    if (!current.legacy && current.port === cfg.localPort) return current;
+    if (!current.legacy && validManagedAccessToken(current.accessToken) &&
+        current.port === cfg.localPort) return current;
     if (!(await stopVerifiedLiveplayServer(current))) return null;
   }
 
@@ -855,7 +886,8 @@ async function startLiveplayServerOnce() {
   // lockfile and persists logs under its state directory.
   const lockPath = liveplayLockPath();
   const instanceToken = crypto.randomBytes(16).toString('hex');
-
+  const accessToken = crypto.randomBytes(32).toString('hex');
+  const allowedOrigins = app.isPackaged ? '' : 'http://localhost:3000';
   console.log('[liveplay-server] launching in background', exePath, 'on port', cfg.localPort);
   const serverArgs = [
     '--port',           String(cfg.localPort),
@@ -873,6 +905,11 @@ async function startLiveplayServerOnce() {
       stdio: 'ignore',
       windowsHide: true,
       detached: true,
+      env: {
+        ...process.env,
+        LIVEPLAY_ACCESS_TOKEN: accessToken,
+        LIVEPLAY_ALLOWED_ORIGINS: allowedOrigins,
+      },
     });
   } catch (e) {
     console.error('[liveplay-server] spawn failed:', e);
@@ -895,7 +932,7 @@ async function startLiveplayServerOnce() {
   // Adopt the real PID before completing this launch so a concurrent stop or
   // restart cannot miss the new server in the pidfile handoff window.
   const identity = await pollPidfileForServerPid(
-    lockPath, instanceToken, cfg.localPort, launchState,
+    lockPath, instanceToken, accessToken, cfg.localPort, launchState,
   );
 
   notifyServerStateChange();
@@ -906,7 +943,7 @@ async function startLiveplayServerOnce() {
 // time out). Crash replacements publish before their hand-off delay, so health
 // identity—not mere file presence—is the readiness check.
 async function pollPidfileForServerPid(
-  lockPath, expectedInstanceToken, expectedPort, launchState,
+  lockPath, expectedInstanceToken, expectedAccessToken, expectedPort, launchState,
 ) {
   const deadline = Date.now() + 8000;
   while (Date.now() < deadline) {
@@ -914,6 +951,7 @@ async function pollPidfileForServerPid(
     const lock = readLiveplayLock();
     const health = lock ? await probeServerHealth(lock.port) : null;
     if (lock?.instanceToken === expectedInstanceToken &&
+        lock.accessToken === expectedAccessToken &&
         lock.port === expectedPort &&
         healthMatchesIdentity(health, lock)) {
       const identity = adoptLiveplayIdentity({ ...lock, legacy: false });
@@ -960,16 +998,23 @@ async function stopLiveplayServer() {
 
 function liveplayServerStatus() {
   const pid = liveplayServerIdentity?.pid ?? null;
+  const accessToken = validManagedAccessToken(liveplayServerIdentity?.accessToken)
+    ? liveplayServerIdentity.accessToken
+    : '';
   return {
     running: !!pid,
     pid,
-    config:  readLiveplayConfig(),
+    accessToken,
+    config: readLiveplayConfig(),
   };
 }
 
 function notifyServerStateChange() {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('liveplay-server:state', liveplayServerStatus());
+  const status = liveplayServerStatus();
+  for (const window of new Set([mainWindow, cartPlayerWindow, videoOutputWindow])) {
+    if (window && !window.isDestroyed()) {
+      window.webContents.send('liveplay-server:state', status);
+    }
   }
 }
 
@@ -1018,7 +1063,9 @@ ipcMain.handle('liveplay-server:set-config', async (event, incoming) => {
     // verified legacy or wrong-port generation before launching.
     await startLiveplayServer();
     const identity = await reconcileLiveplayServerIdentity();
-    if (identity && (identity.legacy || identity.port !== next.localPort)) {
+    if (identity && (identity.legacy ||
+        !validManagedAccessToken(identity.accessToken) ||
+        identity.port !== next.localPort)) {
       if (await stopVerifiedLiveplayServer(identity)) await startLiveplayServer();
     }
   }
@@ -1090,7 +1137,7 @@ ipcMain.handle('liveplay-server:shutdown', async (event) => {
 // Start the server (if not already running) and wait until /api/health
 // answers. The welcome screen calls this when the user picks Local mode
 // so the renderer doesn't try to connect before the server is bound.
-// Returns { ok, port, error? } — never throws.
+// Returns { ok, port, accessToken?, error? } — never throws.
 ipcMain.handle('liveplay-server:ensure-running', async (event) => {
   requireTrustedIpc(event);
   const cfg = readLiveplayConfig();
@@ -1108,9 +1155,16 @@ ipcMain.handle('liveplay-server:ensure-running', async (event) => {
       ? await probeServerHealth(cfg.localPort, 800)
       : null;
     if (lock && healthMatchesIdentity(health, lock)) {
-      adoptLiveplayIdentity({ ...lock, legacy: false });
+      if (!validManagedAccessToken(lock.accessToken)) {
+        return {
+          ok: false,
+          port: cfg.localPort,
+          error: 'owned server must be restarted to enable local authentication',
+        };
+      }
+      const identity = adoptLiveplayIdentity({ ...lock, legacy: false });
       notifyServerStateChange();
-      return { ok: true, port: cfg.localPort };
+      return { ok: true, port: cfg.localPort, accessToken: identity.accessToken };
     }
     await new Promise(r => setTimeout(r, 200));
   }
@@ -3615,7 +3669,7 @@ ipcMain.handle('get-locale-data', (event, localeCode) => {
 
 ipcMain.handle('set-current-project', async (event, projectPath) => {
   requireTrustedIpc(event);
-  if (projectPath === null) {
+  if (projectPath === null || projectPath === '') {
     currentProject = null;
   } else {
     const checked = requireIpcString(projectPath, 'projectPath', MAX_IPC_PATH_LENGTH);

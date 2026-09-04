@@ -1,5 +1,6 @@
 import { CART_SLOT_COUNT_LIMITS, type AudioItem } from '~/types/project';
 import { buildOneShotSlots } from '~/utils/oneShots';
+import { oneShotFireActionKey, runAcknowledgedAction } from '~/utils/acknowledgedAction';
 
 // MIDI binding: identifies a specific control on a MIDI device
 export interface MidiBinding {
@@ -110,8 +111,8 @@ let lastMasterVolumeRaw: number | null = null;
 const preferredDevice = computed(() => config.value.preferredDevice ?? null);
 
 export const useMidiController = () => {
-  const { playCue, stopCue, pauseCue, resumeCue, stopAllCues, activeCues, setMasterGain, masterGainDb, nextItemOverrideUuid, autoNextItemUuid, setNextItem, triggerGroup, queueLoopContinuation, jumpCue } = useAudioEngine();
-  const { selectedItem, selectedItems, saveProject, currentProject, getAllItemsFlat, toggleItemSelection, findItemByUuid: findProjectItem, findItemByIndex } = useProject();
+  const { playCue, playNext, pauseCue, resumeCue, stopAllCues, activeCues, setMasterGain, masterGainDb, queueLoopContinuation, jumpCue } = useAudioEngine();
+  const { selectedItem, selectedItems, saveProject, currentProject, getAllItemsFlat, toggleItemSelection, findItemByUuid: findProjectItem } = useProject();
   const { cartOnlyItems } = useCartItems();
   const { fireBlocked, afterFire } = useOneShotArm();
   const oneShotSlots = computed(() => buildOneShotSlots(
@@ -142,18 +143,19 @@ export const useMidiController = () => {
   /**
    * Dispatch a discrete action.
    */
-  const dispatchDiscrete = (actionId: MidiActionId) => {
+  const dispatchDiscrete = async (actionId: MidiActionId) => {
     if (actionId.startsWith('trigger-slot-')) {
       const slot = parseInt(actionId.replace('trigger-slot-', ''), 10);
       const item = oneShotSlots.value[slot];
       if (!item) return;
       if (activeCues.value.has(item.uuid) && item.oneShot?.retrigger === 'ignore') return;
-      // Same per-cell show-mode arm gate as tile clicks and slot hotkeys:
-      // pads only fire while that cell is armed; auto-disarm re-safes it.
-      if (fireBlocked(item)) return;
-      playCue(item);
-      afterFire(item);
-      return;
+      // Re-safe only after the server confirms that this cell actually fired.
+      if (fireBlocked(item)) return false;
+      return runAcknowledgedAction(
+        oneShotFireActionKey(item.uuid),
+        () => playCue(item),
+        () => afterFire(item),
+      );
     }
 
     if (actionId === 'pause-resume') {
@@ -177,15 +179,9 @@ export const useMidiController = () => {
       if (!targetItem) return;
       if (activeCues.value.has(targetItem.uuid)) {
         const cue = activeCues.value.get(targetItem.uuid);
-        if (cue && cue.isPaused) {
-          resumeCue(targetItem.uuid);
-        } else {
-          pauseCue(targetItem.uuid);
-        }
-      } else {
-        playCue(targetItem);
+        return cue?.isPaused ? resumeCue(targetItem.uuid) : pauseCue(targetItem.uuid);
       }
-      return;
+      return playCue(targetItem);
     }
 
     if (actionId === 'toggle-loop') {
@@ -218,21 +214,16 @@ export const useMidiController = () => {
     if (actionId === 'cue-to-continue') {
       const item = getLoopTargetItem();
       if (!item) return;
-      queueLoopContinuation(item, resolveLoopContinuationTarget(item));
-      return;
+      return queueLoopContinuation(item);
     }
 
     if (actionId === 'jump-cue') {
       const item = getLoopTargetItem();
       if (!item) return;
-      jumpCue(item);
-      return;
+      return jumpCue(item);
     }
 
-    if (actionId === 'stop-all') {
-      stopAllCues();
-      return;
-    }
+    if (actionId === 'stop-all') return stopAllCues();
 
     if (actionId === 'select-up' || actionId === 'select-down') {
       const project = currentProject.value;
@@ -259,19 +250,11 @@ export const useMidiController = () => {
       if (!uuid) return;
       const item = findProjectItem(uuid);
       if (!item || item.type !== 'audio') return;
-      playCue(item as import('~/types/project').AudioItem);
-      return;
+      return playCue(item as import('~/types/project').AudioItem);
     }
 
     if (actionId === 'play-next') {
-      const effectiveUuid = nextItemOverrideUuid.value ?? autoNextItemUuid.value;
-      if (!effectiveUuid) return;
-      const item = findProjectItem(effectiveUuid);
-      if (!item) return;
-      if (nextItemOverrideUuid.value) setNextItem(null);
-      if (item.type === 'audio') playCue(item as import('~/types/project').AudioItem);
-      else if (item.type === 'group') triggerGroup(item);
-      return;
+      return playNext();
     }
   };
 
@@ -342,14 +325,14 @@ export const useMidiController = () => {
         } else if (parsed.type === 'pitchbend') {
           // Pitchbend as discrete: trigger at top of range
           if (parsed.value > 63) {
-            dispatchDiscrete(actionId as MidiActionId);
+            void dispatchDiscrete(actionId as MidiActionId);
           }
         } else {
           // Only trigger on note-on or CC > 63 (button press)
           if (parsed.type === 'note' && parsed.value > 0) {
-            dispatchDiscrete(actionId as MidiActionId);
+            void dispatchDiscrete(actionId as MidiActionId);
           } else if (parsed.type === 'cc' && parsed.value > 63) {
-            dispatchDiscrete(actionId as MidiActionId);
+            void dispatchDiscrete(actionId as MidiActionId);
           }
         }
         break;

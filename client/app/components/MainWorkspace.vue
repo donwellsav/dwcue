@@ -84,13 +84,14 @@
                 <button
                   v-if="cartClosed && !cartDetached"
                   type="button"
-                  class="cart-toggle"
+                  class="cart-toggle cart-toggle--reveal"
                   :aria-label="t('oneShots.show')"
                   :title="t('oneShots.show')"
                   :aria-expanded="false"
                   @click="toggleCart"
                 >
                   <span class="material-symbols-rounded" aria-hidden="true">view_sidebar</span>
+                  <span class="cart-toggle__label">{{ t('oneShots.show') }}</span>
                 </button>
               </template>
             </PlaylistView>
@@ -268,7 +269,22 @@ const progressModal = ref({
 // Resizable cart width
 const cartWidth = ref(300);
 const isResizing = ref(false);
-const cartClosed = ref(false);
+const cartClosed = ref(true);
+const cartVisibilityExplicit = ref(false);
+const hasAssignedOneShots = computed(() => {
+  const project = currentProject.value;
+  return !!project && flattenOneShots(
+    project.items ?? [],
+    project.cartOnlyItems ?? [],
+  ).length > 0;
+});
+watch(hasAssignedOneShots, (assigned) => {
+  if (cartVisibilityExplicit.value) return;
+  cartClosed.value = !assigned;
+  // Once existing assigned content arrives through paged project hydration,
+  // keep the user's resulting panel state stable.
+  if (assigned) cartVisibilityExplicit.value = true;
+}, { immediate: true });
 const cartFullscreen = ref(false);
 const cartDetached = ref(false);
 const outputConsoleMinDb = -60;
@@ -406,6 +422,7 @@ function cancelLimiterCeilingDrag(event: PointerEvent) {
 }
 
 function toggleCart() {
+  cartVisibilityExplicit.value = true;
   cartClosed.value = !cartClosed.value;
   cartFullscreen.value = false;
 }
@@ -482,6 +499,7 @@ const startResize = (e: PointerEvent) => {
   // Ignore secondary mouse buttons and any second finger landing on the bar —
   // a concurrent drag would register a duplicate set of document listeners.
   if (isResizing.value || !e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  cartVisibilityExplicit.value = true;
   const handle = e.currentTarget as HTMLElement | null;
   isResizing.value = true;
   e.preventDefault();
@@ -746,7 +764,7 @@ const handleKeydown = (e: KeyboardEvent) => {
     e.preventDefault();
     if (selectedItem.value && selectedItem.value.type === 'audio') {
       const { playCue } = useAudioEngine();
-      playCue(selectedItem.value as any);
+      void playCue(selectedItem.value as any);
     }
     return;
   }
@@ -1220,6 +1238,20 @@ onUnmounted(() => {
     font-size: 20px;
   }
 
+
+  &.cart-toggle--reveal {
+    width: auto;
+    flex-basis: auto;
+    grid-auto-flow: column;
+    gap: 6px;
+    padding-inline: 10px;
+  }
+
+  .cart-toggle__label {
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
   &.cart-toggle--open {
     color: var(--color-accent);
     border-color: var(--color-accent);

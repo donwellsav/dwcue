@@ -303,50 +303,26 @@ inline bool constant_time_equal(std::string_view provided, std::string_view expe
     return difference == 0;
 }
 
-inline bool is_loopback_origin(std::string_view origin) {
-    const auto scheme_end = origin.find("://");
-    if (scheme_end == std::string_view::npos) return false;
-    const auto scheme = origin.substr(0, scheme_end);
-    if (scheme != "http" && scheme != "https") return false;
-
-    auto authority = origin.substr(scheme_end + 3);
-    if (authority.empty() || authority.find('/') != std::string_view::npos ||
-        authority.find('@') != std::string_view::npos) {
-        return false;
+inline bool access_token_authorized(
+    std::string_view expected,
+    std::string_view authorization,
+    std::string_view query_access_token = {}) {
+    constexpr std::string_view bearer = "Bearer ";
+    if (expected.size() < 16) return false;
+    if (authorization.starts_with(bearer) &&
+        constant_time_equal(authorization.substr(bearer.size()), expected)) {
+        return true;
     }
-
-    std::string_view host = authority;
-    std::string_view port;
-    bool has_port = false;
-    if (authority.starts_with('[')) {
-        const auto close = authority.find(']');
-        if (close == std::string_view::npos) return false;
-        host = authority.substr(1, close - 1);
-        if (close + 1 < authority.size()) {
-            if (authority[close + 1] != ':') return false;
-            has_port = true;
-            port = authority.substr(close + 2);
-        }
-    } else if (const auto colon = authority.rfind(':');
-               colon != std::string_view::npos) {
-        has_port = true;
-        host = authority.substr(0, colon);
-        port = authority.substr(colon + 1);
-    }
-
-    if (has_port && (port.empty() ||
-        !std::all_of(port.begin(), port.end(), [](unsigned char c) {
-            return std::isdigit(c) != 0;
-        }))) {
-        return false;
-    }
-    return is_loopback_address(host);
+    return !query_access_token.empty() &&
+           constant_time_equal(query_access_token, expected);
 }
 
 inline bool origin_allowed(std::string_view origin,
                            const std::vector<std::string>& allowed_origins) {
-    if (origin.empty() || origin == "null" || origin == "file://") return true;
-    if (is_loopback_origin(origin)) return true;
+    // Native launchers and command-line clients do not send Origin. Packaged
+    // Electron renderers have an opaque origin serialized by Chromium as
+    // "null"; they still must present the access token.
+    if (origin.empty() || origin == "null") return true;
     return std::find(allowed_origins.begin(), allowed_origins.end(), origin) !=
            allowed_origins.end();
 }

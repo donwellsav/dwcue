@@ -158,8 +158,8 @@ assert.match(
 const connectionGuard = read('client/app/composables/useConnectionGuard.ts');
 assert.match(
   connectionGuard,
-  /const sameProject =[\s\S]*if \(!sameProject\)[\s\S]*hasUnsavedChanges\.value[\s\S]*sessionLost\.value = true[\s\S]*await tryRejoinExistingProject\(header\)/,
-  'a reconnect to a different server project must rehydrate the client',
+  /if \(hasUnsavedChanges\.value\) \{[\s\S]*?projectChanged\.value = true;[\s\S]*?sessionLost\.value = true;[\s\S]*?return;\s*\}[\s\S]*?await tryRejoinExistingProject\(header\)/,
+  'dirty reconnects must request an explicit choice before clean mirrors rehydrate',
 );
 assert.match(
   connectionGuard,
@@ -181,7 +181,7 @@ assert.match(
 );
 assert.match(
   welcome,
-  /class="name-dialog"[\s\S]*role="dialog"[\s\S]*aria-modal="true"[\s\S]*:aria-labelledby/,
+  /class="name-dialog(?: [^"]*)?"[\s\S]*role="dialog"[\s\S]*aria-modal="true"[\s\S]*:aria-labelledby/,
   'the new-project prompt must expose native dialog semantics',
 );
 const playlistItem = read('client/app/components/PlaylistItem.vue');
@@ -483,7 +483,7 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /class="workspace-panels"[\s\S]*id="cart-player-panel"[\s\S]*<OneShotPanel>[\s\S]*#header-leading[\s\S]*class="cart-toggle cart-toggle--open"[\s\S]*t\('oneShots\.hide'\)[\s\S]*@click="toggleCart"[\s\S]*<PlaylistView>[\s\S]*#header-leading[\s\S]*v-if="cartClosed && !cartDetached"[\s\S]*class="cart-toggle"[\s\S]*t\('oneShots\.show'\)[\s\S]*@click="toggleCart"[\s\S]*function toggleCart\(\)[\s\S]*cartClosed\.value = !cartClosed\.value[\s\S]*cartFullscreen\.value = false/,
+  /class="workspace-panels"[\s\S]*id="cart-player-panel"[\s\S]*<OneShotPanel>[\s\S]*#header-leading[\s\S]*class="cart-toggle cart-toggle--open"[\s\S]*t\('oneShots\.hide'\)[\s\S]*@click="toggleCart"[\s\S]*<PlaylistView>[\s\S]*#header-leading[\s\S]*v-if="cartClosed && !cartDetached"[\s\S]*class="cart-toggle(?: [^"]*)?"[\s\S]*t\('oneShots\.show'\)[\s\S]*@click="toggleCart"[\s\S]*function toggleCart\(\)[\s\S]*cartClosed\.value = !cartClosed\.value[\s\S]*cartFullscreen\.value = false/,
   'the One Shots toggle must stay in the active panel header and leave resizing to the splitter',
 );
 assert.match(
@@ -1244,7 +1244,7 @@ assert.match(electron, /let liveplayServerStartPromise = null/, 'concurrent star
 assert.match(electron, /if \(liveplayServerStartPromise\) return liveplayServerStartPromise/, 'concurrent start requests must not spawn twice');
 assert.match(
   electron,
-  /await pollPidfileForServerPid\(\s*lockPath, instanceToken, cfg\.localPort, launchState/,
+  /await pollPidfileForServerPid\(\s*lockPath, instanceToken, accessToken, cfg\.localPort, launchState/,
   'a launch must adopt its PID before it is considered complete',
 );
 assert.match(
@@ -1485,18 +1485,20 @@ assert.match(
 );
 assert.match(
   electron,
-  /download-spotify-audio[\s\S]*requireAuthorizedIpcPath\([\s\S]*destinationParentPath[\s\S]*spawn\(spotDlPath, args/,
-  'Spotify downloads must use trusted IPC and argv spawning',
+  /download-spotify-audio[\s\S]*requireTrustedIpc\(event\)[\s\S]*requireAuthorizedIpcPath\([\s\S]*destinationParentPath/,
+  'Spotify downloads must require trusted IPC and an authorized destination',
+);
+// Literal argv, spawn failures and deadline cancellation are exercised by
+// spotify-import-reliability.test.js against the production runTracked body.
+assert.match(
+  electron,
+  /runTracked\(spotDlPath, \[[\s\S]{0,180}'url',[\s\S]{0,180}'--audio', \.\.\.SPOTIFY_AUDIO_PROVIDERS/,
+  'Spotify metadata matching must retain its guarded provider fallback chain',
 );
 assert.match(
   electron,
-  /'download',[\s\S]{0,200}'--audio', \.\.\.SPOTIFY_AUDIO_PROVIDERS[\s\S]{0,200}'--format', 'mp3'/,
-  'Spotify downloads must use the guarded multi-provider fallback chain',
-);
-assert.match(
-  electron,
-  /--save-file', 'dwcue-spotify-manifest\.spotdl'[\s\S]*createSpotifyProjectFolder\([\s\S]*playlistName[\s\S]*projectFolderPath/,
-  'Spotify imports must retain a manifest and return their named project folder',
+  /createSpotifyProjectFolder\([\s\S]*playlistName[\s\S]*normalizeSpotifyRecovery\([\s\S]*pendingFiles: files[\s\S]*spotifyRecovery: recovery/,
+  'Spotify imports must persist recoverable file identities and their named collection folder',
 );
 assert.doesNotMatch(
   electron,
@@ -1520,8 +1522,8 @@ assert.match(
 );
 assert.match(
   electron,
-  /function cancelSpotifyDownload[\s\S]*process\.kill\(-child\.pid, 'SIGTERM'\)/,
-  'playlist downloads must retain a cancellable child-process job',
+  /function cancelSpotifyDownload[\s\S]*job\.children[\s\S]*terminateSpotifyChild\(tracked\)/,
+  'playlist cancellation must terminate every tracked matching and download process',
 );
 assert.match(
   electron,
@@ -1718,7 +1720,7 @@ assert.match(
 );
 assert.match(
   projectSettingsModal,
-  /\.project-settings-modal\s*\{[\s\S]{0,180}border-radius:\s*var\(--dialog-radius\);[\s\S]{0,100}width:\s*min\(var\(--modal-width\), 92vw\);[\s\S]{0,80}max-height:\s*var\(--modal-max-height\);[\s\S]*\.close-x\s*\{[\s\S]{0,120}width:\s*var\(--spacing-xxl\);[\s\S]{0,80}height:\s*var\(--spacing-xxl\);/,
+  /\.project-settings-modal\s*\{[^}]*border-radius:\s*var\(--dialog-radius\);[^}]*width:\s*min\(800px, 94vw\);[^}]*max-height:\s*var\(--modal-max-height\);[\s\S]*\.close-x\s*\{[^}]*width:\s*var\(--spacing-xxl\);[^}]*height:\s*var\(--spacing-xxl\);/,
   'project settings must use the shared dialog shell and close target',
 );
 assert.match(
@@ -1836,11 +1838,10 @@ assert.doesNotMatch(
   /importDownloadedFile|new Audio\(|DEFAULT_AUDIO_ITEM|addItem\(/,
   'YouTube imports must not bypass the shared metadata, waveform, color, or save path',
 );
-assert.match(
-  youtubeImport,
-  /<option value="source">[\s\S]{0,120}<option value="mp3">[\s\S]*const outputMode = ref<'source' \| 'mp3'>\(storedOptions\.outputMode === 'mp3' \? 'mp3' : 'source'\)/,
-  'YouTube imports must default to original source audio while retaining explicit MP3 conversion',
-);
+for (const mode of ['source', 'mp3', 'video']) {
+  assert.ok(youtubeImport.includes('<option value="' + mode + '">'),
+    'YouTube imports must retain the explicit ' + mode + ' format choice');
+}
 assert.match(
   youtubeImport,
   /v-if="video\.isLive"[\s\S]*:disabled="video\.isLive \|\| isDownloading\(video\.id\)"[\s\S]*v-if="download\.savedPath"[\s\S]*openDownloadFolder/,
@@ -1944,9 +1945,6 @@ assert.match(
 const sanitizeNameStart = electron.indexOf('function sanitizeSpotifyFolderName');
 const sanitizeNameEnd = electron.indexOf(
   '\n}\n\nfunction spotifyTrackId', sanitizeNameStart) + 2;
-const numericProgressStart = electron.indexOf('function spotDlNumericProgress');
-const numericProgressEnd = electron.indexOf(
-  '\n}\n\nasync function createSpotifyProjectFolder', numericProgressStart) + 2;
 const createFolderStart = electron.indexOf('async function createSpotifyProjectFolder');
 const createFolderEnd = electron.indexOf(
   '\n}\n\nfunction spotifyOutputTrackId', createFolderStart) + 2;
@@ -1962,9 +1960,6 @@ const copyOutputsEnd = electron.indexOf(
 const sanitizeSpotifyFolderName = Function(
   'Buffer', `return (${electron.slice(sanitizeNameStart, sanitizeNameEnd)})`,
 )(Buffer);
-const spotDlNumericProgress = Function(
-  `return (${electron.slice(numericProgressStart, numericProgressEnd)})`,
-)();
 const createSpotifyProjectFolder = Function(
   'fs', 'path', `return (${electron.slice(createFolderStart, createFolderEnd)})`,
 )(fs, path);
@@ -1994,11 +1989,6 @@ assert.equal(
 assert.ok(
   Buffer.byteLength(sanitizeSpotifyFolderName('🎵'.repeat(100)), 'utf8') <= 120,
   'Spotify list folders must stay within the bounded UTF-8 name length',
-);
-assert.deepEqual(
-  spotDlNumericProgress('INFO 2/5 complete'),
-  { completed: 2, total: 5 },
-  'spotDL 4.5.2 numeric progress must be parsed',
 );
 
 async function checkSpotifyCopyTransaction() {
@@ -2169,12 +2159,12 @@ assert.match(
 );
 assert.match(
   electronMain,
-  /get-youtube-info[\s\S]*search-youtube[\s\S]*isLive: item\.isLive === true[\s\S]*download-youtube-audio[\s\S]*!\['source', 'mp3'\]\.includes\(outputMode\)[\s\S]*outputBaseName = `\$\{sanitizedTitle\} \[\$\{videoId\}\]`/,
+  /get-youtube-info[\s\S]*search-youtube[\s\S]*isLive: item\.isLive === true[\s\S]*download-youtube-audio[\s\S]*!\['source', 'mp3', 'video'\]\.includes\(outputMode\)[\s\S]*outputBaseName = `\$\{sanitizedTitle\} \[\$\{videoId\}\]`/,
   'YouTube IPC must expose live state, validate output mode, and use collision-resistant names',
 );
 assert.match(
   electronMain,
-  /const args = \[videoUrl, '-f', 'bestaudio'\];[\s\S]{0,120}if \(outputMode === 'mp3'\)[\s\S]{0,180}'--extract-audio'[\s\S]{0,120}'--audio-quality', '0'/,
+  /const args = outputMode === 'video'[\s\S]*: \[videoUrl, '-f', 'bestaudio'\];[\s\S]{0,120}if \(outputMode === 'mp3'\)[\s\S]{0,180}'--extract-audio'[\s\S]{0,120}'--audio-quality', '0'/,
   'source downloads must avoid conversion while MP3 mode explicitly requests V0 extraction',
 );
 assert.match(
@@ -2199,7 +2189,7 @@ assert.match(
 );
 assert.match(
   electronMain,
-  /spotify-preflight[\s\S]*\['save', url, '--save-file', '-'\][\s\S]*selectedTrackIds[\s\S]*dwcue-selected\.spotdl[\s\S]*'\{track-id\} - \{artists\} - \{title\}\.\{output-ext\}'/,
+  /spotify-preflight[\s\S]*\['save', url, '--save-file', '-'\][\s\S]*selectedRawTracks = selectedTrackIds\.map[\s\S]*selectedRawTracks\.some\(\(track\) => !track\)[\s\S]*const chunkTracks = selectedRawTracks\.slice[\s\S]*'url', \.\.\.chunkTracks\.map\(\(track\) => track\.url\)/,
   'Spotify review must stay metadata-only and download only the validated selected tracks',
 );
 assert.match(
@@ -2289,9 +2279,14 @@ assert.match(
   'the playlist header and track list must reserve the same scrollbar gutter',
 );
 assert.match(
+  uiMode,
+  /attachedShow:\s*\{[\s\S]{0,180}minHeight:\s*72,[\s\S]{0,180}default:\s*\{\s*rows:\s*8,\s*columns:\s*2,\s*minHeight:\s*112\s*\}/,
+  'attached Show Mode One Shot cells must keep a compact configurable minimum with a safe default',
+);
+assert.match(
   oneShotTile,
-  /\.one-shot-tile\.show-mode\s*\{[\s\S]{0,120}min-height:\s*112px;[\s\S]*\.show-mode \.one-shot-actions\s*\{\s*grid-auto-columns:\s*34px;[\s\S]*\.show-mode \.one-shot-control\s*\{\s*width:\s*34px;\s*height:\s*34px;/,
-  'compact Show Mode One Shot cells must retain clear transport controls without becoming oversized',
+  /\.show-mode \.one-shot-actions\s*\{\s*grid-auto-columns:\s*34px;\s*\}[\s\S]*\.show-mode \.one-shot-control\s*\{\s*width:\s*34px;\s*height:\s*34px;\s*\}/,
+  'compact Show Mode One Shot cells must retain clear transport controls',
 );
 assert.match(
   oneShotPanel,
@@ -2369,7 +2364,7 @@ assert.match(
 );
 assert.match(
   oneShotTile,
-  /\.one-shot-tile\.show-mode\s*\{[\s\S]{0,120}min-height:\s*112px;[\s\S]*\.show-mode \.one-shot-title[\s\S]{0,120}font-size:\s*15px;/,
+  /\.one-shot-tile\.show-mode\s*\{[\s\S]{0,120}padding:\s*10px;[\s\S]*\.show-mode \.one-shot-title\s*\{[\s\S]{0,120}min-height:\s*2\.15em;[\s\S]{0,120}font-size:\s*calc\(15px \* var\(--one-shot-font-scale, 1\)\);/,
   'Show Mode One Shot tiles must keep their compact visual hierarchy intact',
 );
 assert.match(

@@ -50,7 +50,7 @@
 
         <!-- Bottom bar: selection + filter + action buttons -->
         <footer class="footer">
-          <div class="filename-row">
+          <div v-if="mode === 'file'" class="filename-row">
             <label>File:&nbsp;</label>
             <input class="filename" v-model="filenameDraft" placeholder="(select a file above)" />
           </div>
@@ -69,7 +69,7 @@
             <button class="btn small" @click="cancelNewFolder">Cancel</button>
           </div>
           <div class="filter-row">
-            <select v-model="filter" @change="reload" class="filter">
+            <select v-if="mode === 'file'" v-model="filter" @change="reload" class="filter">
               <option v-if="filterOptions.includes('audio')" value="audio">Audio files</option>
               <option v-for="opt in filterOptions.filter(o => o !== 'audio' && o !== 'all')"
                       :key="opt" :value="opt">{{ filterDisplay(opt) }}</option>

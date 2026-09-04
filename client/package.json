@@ -20,6 +20,8 @@
     "test:one-shots": "nuxt prepare && vite-node tests/oneShots.test.mts",
     "test:youtube-import": "nuxt prepare && vite-node tests/youtubeImport.test.mts",
     "test:video-output": "node --test tests/videoOutputShortcuts.test.cjs",
+    "test:playback-safety": "nuxt prepare && vite-node tests/projectIdentity.test.mts && vite-node tests/acknowledgedAction.test.mts",
+    "test:local-auth": "nuxt prepare && vite-node tests/liveplayAuth.test.mts",
     "preview": "nuxt preview",
     "typecheck": "nuxi typecheck"
   },

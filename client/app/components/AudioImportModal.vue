@@ -11,26 +11,23 @@
              different machine; otherwise "upload" makes no sense and we
              skip the tabs entirely. -->
         <div v-if="!server.isLocalServer" class="tabs">
-          <button class="tab" :class="{ active: tab === 'server' }" @click="tab = 'server'">
-            {{ t('importAudio.tabServer') }}
-          </button>
           <button class="tab" :class="{ active: tab === 'upload' }" @click="tab = 'upload'">
-            {{ t('importAudio.tabUpload') }}
+            {{ t('importProject.fromThisComputer') }}
+          </button>
+          <button class="tab" :class="{ active: tab === 'server' }" @click="tab = 'server'">
+            {{ t('importProject.fromServer') }}
           </button>
         </div>
 
-        <!-- "On server" tab — browses the server's filesystem via /api/fs/list -->
+        <!-- Local installs lead with the native picker. Server browsing stays
+             available without making operators navigate a filesystem first. -->
         <section v-if="tab === 'server'" class="pane">
-          <ServerFileBrowser :start-path="projectStartPath" @select="onServerPick" />
-          <p class="hint">{{ t('importAudio.serverHint') }}</p>
-
-          <!-- Local file picker: only shown on local server (Electron only) -->
           <template v-if="server.isLocalServer && hasElectron">
-            <div class="divider">{{ t('importAudio.orFromComputer') }}</div>
+            <p>{{ t('importAudio.localIntro') }}</p>
             <div class="row">
               <button class="btn primary" :disabled="pickingLocal || busy" @click="pickLocal">
-                <span class="material-symbols-rounded" style="font-size:16px;vertical-align:middle;">folder_open</span>
-                {{ pickingLocal ? t('importAudio.uploading') : t('importAudio.chooseFiles') }}
+                <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
+                {{ pickingLocal ? t('importAudio.verifying') : t('importAudio.chooseFiles') }}
               </button>
             </div>
             <ul v-if="localPicked.length" class="uploaded">
@@ -47,6 +44,15 @@
                 {{ busy ? t('importAudio.verifying') : t('importAudio.importSelected') }}<span v-if="selectedLocal.length"> ({{ selectedLocal.length }})</span>
               </button>
             </div>
+            <details class="source-browser">
+              <summary>{{ t('importProject.fromServer') }}</summary>
+              <ServerFileBrowser :start-path="projectStartPath" @select="onServerPick" />
+              <p class="hint">{{ t('importAudio.serverHint') }}</p>
+            </details>
+          </template>
+          <template v-else>
+            <ServerFileBrowser :start-path="projectStartPath" @select="onServerPick" />
+            <p class="hint">{{ t('importAudio.serverHint') }}</p>
           </template>
         </section>
 
@@ -60,6 +66,7 @@
               class="file-input"
               type="file"
               multiple
+              :accept="mediaAccept"
               @change="uploadSelectedFiles"
             >
             <button class="btn primary" :disabled="uploading || busy" @click="uploadInput?.click()">
@@ -90,61 +97,63 @@
           </div>
         </section>
 
-        <section v-if="tab === 'server'" class="import-options" :aria-label="t('importAudio.fileHandling')">
-          <label>
-            <span>{{ t('importAudio.fileHandling') }}</span>
-            <select v-model="fileMode" :disabled="busy">
-              <option value="copy">{{ t('importAudio.copyFiles') }}</option>
-              <option value="link">{{ t('importAudio.linkFiles') }}</option>
-            </select>
-          </label>
-          <label v-if="fileMode === 'copy'">
-            <span>{{ t('importAudio.duplicates') }}</span>
-            <select v-model="duplicatePolicy" :disabled="busy">
-              <option value="reuse">{{ t('importAudio.reuseDuplicate') }}</option>
-              <option value="skip">{{ t('importAudio.skipDuplicate') }}</option>
-              <option value="keep">{{ t('importAudio.keepDuplicate') }}</option>
-            </select>
-          </label>
-          <p v-if="fileMode === 'link'" class="option-note">{{ t('importAudio.linkWarning') }}</p>
-        </section>
+        <details class="import-advanced">
+          <summary>{{ t('importAudio.advanced') }}</summary>
+          <section v-if="tab === 'server'" class="import-options" :aria-label="t('importAudio.fileHandling')">
+            <label>
+              <span>{{ t('importAudio.fileHandling') }}</span>
+              <select v-model="fileMode" :disabled="busy">
+                <option value="copy">{{ t('importAudio.copyFiles') }}</option>
+                <option value="link">{{ t('importAudio.linkFiles') }}</option>
+              </select>
+            </label>
+            <label v-if="fileMode === 'copy'">
+              <span>{{ t('importAudio.duplicates') }}</span>
+              <select v-model="duplicatePolicy" :disabled="busy">
+                <option value="reuse">{{ t('importAudio.reuseDuplicate') }}</option>
+                <option value="skip">{{ t('importAudio.skipDuplicate') }}</option>
+                <option value="keep">{{ t('importAudio.keepDuplicate') }}</option>
+              </select>
+            </label>
+            <p v-if="fileMode === 'link'" class="option-note">{{ t('importAudio.linkWarning') }}</p>
+          </section>
+
+          <section class="import-plan" :aria-label="t('importAudio.planTitle')">
+            <div class="plan-heading">
+              <h3>{{ t('importAudio.planTitle') }}</h3>
+              <span v-if="knownSelectionCount !== null" class="plan-count">
+                {{ t('importAudio.selectedCount', { count: knownSelectionCount }) }}
+              </span>
+            </div>
+            <dl class="plan-grid">
+              <div>
+                <dt>{{ t('importAudio.destination') }}</dt>
+                <dd>
+                  <span class="destination" :title="mediaDestination">{{ mediaDestination }}</span>
+                  <span class="destination-note">{{ t('importAudio.destinationFallback') }}</span>
+                </dd>
+              </div>
+              <div>
+                <dt>{{ t('importAudio.processing') }}</dt>
+                <dd class="settings-summary">
+                  <span class="setting-pill">
+                    {{ t('importAudio.playlistTransition') }} {{ transitionLabel }}
+                  </span>
+                  <span v-for="setting in importSettings" :key="setting.label" class="setting-pill">
+                    {{ setting.label }}
+                    <strong :class="setting.enabled ? 'on' : 'off'">
+                      {{ setting.enabled ? t('importAudio.enabled') : t('importAudio.disabled') }}
+                    </strong>
+                  </span>
+                </dd>
+              </div>
+            </dl>
+          </section>
+        </details>
 
         <section v-if="busy && progress" class="import-progress" role="status" aria-live="polite">
           <span>{{ t('importAudio.progress', progress) }}</span>
           <button type="button" class="btn small" @click="emit('cancel')">{{ t('importAudio.cancelImport') }}</button>
-        </section>
-
-        <section class="import-plan" :aria-label="t('importAudio.planTitle')">
-          <div class="plan-heading">
-            <h3>{{ t('importAudio.planTitle') }}</h3>
-            <span v-if="knownSelectionCount !== null" class="plan-count">
-              {{ t('importAudio.selectedCount', { count: knownSelectionCount }) }}
-            </span>
-          </div>
-
-          <dl class="plan-grid">
-            <div>
-              <dt>{{ t('importAudio.destination') }}</dt>
-              <dd>
-                <span class="destination" :title="mediaDestination">{{ mediaDestination }}</span>
-                <span class="destination-note">{{ t('importAudio.destinationFallback') }}</span>
-              </dd>
-            </div>
-            <div>
-              <dt>{{ t('importAudio.processing') }}</dt>
-              <dd class="settings-summary">
-                <span class="setting-pill">
-                  {{ t('importAudio.playlistTransition') }} {{ transitionLabel }}
-                </span>
-                <span v-for="setting in importSettings" :key="setting.label" class="setting-pill">
-                  {{ setting.label }}
-                  <strong :class="setting.enabled ? 'on' : 'off'">
-                    {{ setting.enabled ? t('importAudio.enabled') : t('importAudio.disabled') }}
-                  </strong>
-                </span>
-              </dd>
-            </div>
-          </dl>
         </section>
 
         <section v-if="result" class="import-results" aria-live="polite">
@@ -180,9 +189,9 @@
 <!--
   AudioImportModal.vue
   -----------------------------------------------------------------------
-  Replaces the native OS file dialog for audio import. Two tabs:
-   * "On server"  — browse the server's filesystem with ServerFileBrowser.
-   * "Upload"     — use the browser's file picker and upload directly.
+  Leads with files on this computer. Remote clients upload their selections;
+  local Electron clients pass native paths directly. Server filesystem browse
+  remains available for remote media and decoder-supported specialist formats.
 
   Emits:
     pick(serverPaths: string[]) — caller proceeds to create AudioItems for
@@ -236,23 +245,18 @@ const server = useLiveplayServer();
 const { currentProject } = useProject();
 const { t }  = useLocalization();
 
-// When the server is on this same machine, "Upload from this computer" is
-// meaningless — we just want the server file browser.
-const tab    = ref<'server' | 'upload'>('server');
-const storedOptions = (() => {
-  try { return JSON.parse(localStorage.getItem('liveplay-import-options') || '{}'); }
-  catch { return {}; }
-})();
-const fileMode = ref<FileMode>(storedOptions.fileMode === 'link' ? 'link' : 'copy');
-const duplicatePolicy = ref<DuplicatePolicy>(
-  ['reuse', 'skip', 'keep'].includes(storedOptions.duplicatePolicy)
-    ? storedOptions.duplicatePolicy
-    : 'reuse',
-);
-watch([fileMode, duplicatePolicy], () => localStorage.setItem('liveplay-import-options', JSON.stringify({
-  fileMode: fileMode.value,
-  duplicatePolicy: duplicatePolicy.value,
-})));
+// Local Electron uses the server tab shell for its native picker; remote
+// clients lead with upload and can switch to the server browser.
+const tab = ref<'server' | 'upload'>(server.isLocalServer ? 'server' : 'upload');
+const fileMode = ref<FileMode>('copy');
+const duplicatePolicy = ref<DuplicatePolicy>('reuse');
+
+watch(() => props.open, (open) => {
+  if (!open) return;
+  tab.value = server.isLocalServer ? 'server' : 'upload';
+  fileMode.value = 'copy';
+  duplicatePolicy.value = 'reuse';
+});
 
 const projectStartPath = computed(() => currentProject.value?.folderPath || '');
 const mediaDestination = computed(() => {
@@ -292,6 +296,13 @@ const selectedUploaded    = ref<string[]>([]);
 const uploadedSizes       = ref<Record<string, number>>({});
 const uploadedAnchor      = { i: -1 };
 const uploadInput          = ref<HTMLInputElement | null>(null);
+const mediaAccept = [
+  'mp3', 'wav', 'aiff', 'aif', 'flac', 'ogg', 'oga', 'm4a', 'aac', 'mp2',
+  'wma', 'opus', 'ac3', 'amr', 'au', 'caf', 'mp4', 'm4v', 'mov', 'mkv',
+  'webm', 'avi', 'mpg', 'mpeg', 'm2ts', 'mts', 'wmv', 'flv', '3gp',
+].map(extension => '.' + extension).join(',');
+type ImportSource = 'server' | 'local' | 'upload';
+const lastImportSource = ref<ImportSource>('local');
 
 // Local file picker (used when server is local — same machine, so local paths = server paths)
 const hasElectron = !!(globalThis as any).electronAPI?.selectAudioFiles;
@@ -328,26 +339,32 @@ function basename(p: string): string { return p.split(/[\\/]/).pop() || p; }
 
 // Server file browser emits a batch of already-on-server paths.
 function onServerPick(serverPaths: string[]) {
-  if (serverPaths.length && !props.busy) emitPick(serverPaths);
+  if (serverPaths.length && !props.busy) emitPick(serverPaths, 'server');
 }
 
 function importLocalSelected() {
-  if (selectedLocal.value.length && !props.busy) emitPick([...selectedLocal.value]);
+  if (selectedLocal.value.length && !props.busy) emitPick([...selectedLocal.value], 'local');
 }
 
 function importUploadedSelected() {
-  if (selectedUploaded.value.length && !props.busy) emitPick([...selectedUploaded.value]);
+  if (selectedUploaded.value.length && !props.busy) emitPick([...selectedUploaded.value], 'upload');
 }
 
-function emitPick(paths: string[]) {
-  emit('pick', paths, { fileMode: fileMode.value, duplicatePolicy: duplicatePolicy.value });
+function emitPick(paths: string[], source: ImportSource = lastImportSource.value) {
+  lastImportSource.value = source;
+  const options = source === 'upload'
+    ? { fileMode: 'copy' as const, duplicatePolicy: 'reuse' as const }
+    : { fileMode: fileMode.value, duplicatePolicy: duplicatePolicy.value };
+  emit('pick', paths, options);
 }
 
 const failedPaths = computed(() => props.result?.results
   .filter(item => item.status === 'failed')
   .map(item => item.sourcePath) ?? []);
 
-function retryFailed() { if (failedPaths.value.length) emitPick(failedPaths.value); }
+function retryFailed() {
+  if (failedPaths.value.length) emitPick(failedPaths.value, lastImportSource.value);
+}
 async function openMediaFolder() {
   if (hasElectron && projectStartPath.value) {
     await (globalThis as any).electronAPI.openFolder(mediaDestination.value);
@@ -505,7 +522,34 @@ function formatBytes(n: number): string {
   .divider {
     display: flex; align-items: center; gap: 8px;
     font-size: 11px; color: var(--color-text-tertiary); margin: 4px 0;
+
     &::before, &::after { content: ''; flex: 1; border-top: 1px solid var(--color-border); }
+  }
+
+  .source-browser,
+  .import-advanced {
+    border: 1px solid var(--color-border);
+    border-radius: var(--control-radius);
+    background: var(--color-background);
+    overflow: hidden;
+
+    > summary {
+      cursor: pointer;
+      padding: 9px 10px;
+      color: var(--color-text-secondary);
+      font-size: 12px;
+      font-weight: 700;
+      user-select: none;
+    }
+
+    &[open] > summary {
+      border-bottom: 1px solid var(--color-border);
+    }
+  }
+
+  .source-browser > :not(summary),
+  .import-advanced > :not(summary) {
+    margin: 10px;
   }
 
   .btn {

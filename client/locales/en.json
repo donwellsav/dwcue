@@ -38,6 +38,7 @@
     "title": "DonWells Cue",
     "subtitle": "Audio cue playback for live events",
     "newProject": "New Project",
+    "newShow": "New Show",
     "openProject": "Open Project",
     "modeTitle": "Choose Server Mode",
     "modeSubtitle": "Where should DonWells Cue run the audio engine?",
@@ -200,6 +201,11 @@
     "cancel": "Cancel"
   },
   "project": {
+    "newShow": "New Show",
+    "showName": "Show name",
+    "location": "Location",
+    "chooseLocation": "Choose…",
+    "createShow": "Create Show",
     "enterName": "Enter Project Name",
     "placeholder": "My Project",
     "cancel": "Cancel",
@@ -597,7 +603,7 @@
     "resumeHint": "Continue session reopens this project on the server so you can carry on.",
     "startFreshHint": "Start fresh closes it and returns to the welcome screen.",
     "projectChangedTitle": "Server project changed",
-    "projectChangedMessage": "While this client was offline, the server opened “{name}”. Your local project has unsaved changes, so nothing was replaced automatically.",
+    "projectChangedMessage": "The server’s project “{name}” has changed. Your local project has unsaved changes, so nothing was replaced automatically.",
     "useServerProject": "Use server project",
     "keepLocalProject": "Restore local project",
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
@@ -822,6 +828,11 @@
   },
   "importAudio": {
     "title": "Import Media",
+    "localIntro": "Choose audio or video files from this computer.",
+    "advanced": "Advanced options",
+    "unsupportedFileType": "Unsupported file type",
+    "verifyFileType": "File type will be verified",
+    "emptyServerFolder": "No media files or subfolders in this location.",
     "tabServer": "On server",
     "tabUpload": "Upload from this computer",
     "serverHint": "Files already on the server. Double-click a folder to open it; click files to select (Shift or Ctrl/Cmd-click for multiple), then Import selected.",

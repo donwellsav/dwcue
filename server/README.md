@@ -142,20 +142,17 @@ dwcue-server [options]
 
 Environment:
   LIVEPLAY_PORT             Same as --port
-  LIVEPLAY_ACCESS_TOKEN     LAN bearer token (minimum 16 characters)
-  LIVEPLAY_ALLOWED_ORIGINS  Additional browser origins, comma-separated
+  LIVEPLAY_ACCESS_TOKEN     Control bearer token (minimum 16 characters)
+  LIVEPLAY_ALLOWED_ORIGINS  Exact browser origins, comma-separated
   NO_COLOR=1                Disable ANSI colour in logs
   FORCE_COLOR=1             Force colour even when stdout isn't a tty
 ```
 
-The default control surface is local-only on `127.0.0.1:4480`. Passing a
-non-loopback `--bind` enables LAN mode, requires bearer authentication, and starts the
-[discovery beacon](include/liveplay/net/discovery.hpp) on **UDP 4481**. If
-`LIVEPLAY_ACCESS_TOKEN` is unset, the server generates a 128-bit session token and
-prints it once before file logging starts. REST clients send
-`Authorization: Bearer <token>`; browser WebSocket clients connect to
-`/ws?access_token=<token>`. Discovery advertises connection details only, never the
-open project or show state.
+The default control surface binds to `127.0.0.1:4480`, but loopback is not a trust boundary: every local and remote control route requires the bearer token. `GET /api/health` is the sole public application route. Passing a non-loopback `--bind` also starts the [discovery beacon](include/liveplay/net/discovery.hpp) on **UDP 4481**.
+
+A standalone process uses `LIVEPLAY_ACCESS_TOKEN` when it contains at least 16 characters. Otherwise it generates a 128-bit token (32 lowercase hex characters) and prints it once before file logging starts; crash-restart preserves the same token. Electron-managed launches instead supply a fresh 64-character lowercase-hex token for each backend generation.
+
+REST clients send `Authorization: Bearer <token>`. Browser WebSockets may connect to `/ws?access_token=<token>`, and HTML media requests may use the same query parameter on `/api/media`; no other route accepts the control bearer in the query string. Discovery advertises connection details only, never the token, open project, or show state.
 
 Open TCP 4480 and UDP 4481 through a firewall only when intentionally operating a
 remote server. DonWells Cue never creates firewall rules automatically.
@@ -239,20 +236,27 @@ All three stop paths funnel through the same fade-out envelope:
 
 `stop()` calls `start_fade()` which feeds the same state machine the natural-end branch uses. The contract is documented inline in [`src/audio/playback_item.cpp`](src/audio/playback_item.cpp) (search for `// Manual-stop fade contract:`).
 
+### Sequencer trigger invariants
+
+- **Cue to Continue** arms a one-pass, runtime-only continuation for the cue's current playback instance. It temporarily supersedes saved Loop, Start Next, crossfade/stop-fade, and end-behaviour advance; at natural end it starts the resolved target. Stop, remove, replay, Stop All, media replacement, or project switch cancels the arm, so replay falls back to the saved behaviour. `cue_to_continue` is never serialized.
+- A manual **Play Next** override is consumed only when GO successfully starts its target. Failed or not-yet-loaded targets remain armed for retry. For a group, play-first succeeds only when its selected child starts; play-all succeeds when at least one child starts. One Shot arming follows the same accepted-play rule.
+- Repeated identical arming is coalesced without another state broadcast. Successful GO clears its override; failed GO leaves it intact.
+
 ---
 
 ## Control surface
 
-`ControlServer` (in [`net/control_server.cpp`](src/net/control_server.cpp)) hosts a Crow app on the configured port. CORS is wide-open by design (it's a LAN service).
+`ControlServer` (in [`net/control_server.cpp`](src/net/control_server.cpp)) hosts a token-authenticated Crow app on the configured port. Browser CORS is an exact allowlist, not a LAN- or loopback-wide exception.
 
 The authoritative endpoint list is the table of `CROW_ROUTE` registrations in [`src/net/control_server.cpp`](src/net/control_server.cpp). What follows is the same surface with request/response schemas.
 
 ### Conventions
 
-- Every JSON response carries `Content-Type: application/json`. Browser origins are restricted to the packaged app and explicitly configured `LIVEPLAY_ALLOWED_ORIGINS`.
-- Every error follows `{ "error": "<message>" }` with an appropriate 4xx/5xx status code. `400` covers malformed bodies; `404` covers unknown ids/paths; `413` covers oversize uploads; `500` covers internal failures.
-- Allowed-origin `OPTIONS` requests return `204` with matching CORS preflight headers.
-- All IDs are opaque strings unless typed otherwise. `<int>` path parameters are 32-bit signed.
+- Every JSON response carries `Content-Type: application/json`. `GET /api/health` is public; every other local or remote application route requires the control bearer.
+- REST authentication uses `Authorization: Bearer <token>`. Access-token query parameters are accepted only by `/ws` and `/api/media`; the unrelated one-shot export `downloadToken` does not replace control authentication.
+- Browser `Origin` values must exactly match `LIVEPLAY_ALLOWED_ORIGINS`; source development uses `http://localhost:3000`, not arbitrary loopback spellings. Native clients without an Origin are allowed, as is packaged Electron's opaque `Origin: null`, but both still authenticate.
+- Every error follows `{ "error": "<message>" }` with an appropriate 4xx/5xx status code. `400` covers malformed bodies; `401` covers missing/invalid authentication; `404` covers unknown ids/paths; `413` covers oversize uploads; `500` covers internal failures.
+- Allowed-origin `OPTIONS` requests return `204` with matching CORS preflight headers. All IDs are opaque strings unless typed otherwise; `<int>` path parameters are 32-bit signed.
 - `cue_id` (engine-level) ≠ `item_uuid` (project-document level). The server maintains the mapping in `ProjectState`; most transport endpoints accept either.
 
 ### REST endpoints
@@ -261,8 +265,8 @@ The authoritative endpoint list is the table of `CROW_ROUTE` registrations in [`
 
 | Method · Path      | Body | Response | Notes |
 |--------------------|------|----------|-------|
-| `GET /api/health`  | —    | `{ "ok": true, "name": "dwcue-server" }` | Liveness probe. |
-| `GET /api/whoami`  | —    | `{ "clientIp": "192.168.1.10", "isLocal": false }` | `isLocal` is true for loopback callers (127.0.0.0/8, `::1`). |
+| `GET /api/health`  | —    | `{ "ok": true, "name": "dwcue-server" }` | Sole unauthenticated route; liveness/launcher identity probe. |
+| `GET /api/whoami`  | —    | `{ "clientIp": "192.168.1.10", "isLocal": false }` | Bearer required; `isLocal` reports whether the caller is loopback, not whether authentication is required. |
 
 #### Devices
 
@@ -370,7 +374,7 @@ Entries are sorted by the OS directory iterator. Hidden entries (leading `.`) ar
 |---------------|------|----------|
 | `POST /api/upload` | `multipart/form-data` (one or more file parts); request size capped at `cfg.max_upload_bytes` (default 256 MiB) | `{ "saved": [ "/abs/path/in/media/file1", … ] }` · `413` if too large |
 | `POST /api/copy_to_media` | `{ "source_path": "/abs/src.wav" }` | `{ "dest_path": "/abs/<project>/media/src.wav" }` |
-| `GET /api/file/download?token=<token>` | (one-shot download token from `/api/project/export`) | `application/octet-stream` stream of the file; token consumed on success; `404` if expired/invalid |
+| `GET /api/file/download?token=<downloadToken>` | (one-shot download token from `/api/project/export`, plus the normal bearer header) | `application/octet-stream` stream of the file; download token consumed on success; `404` if expired/invalid |
 
 Uploads land in `state.media_root()` (the loaded project's `media/` sub-folder). Filenames are sanitised — directory components in the multipart `filename` are stripped.
 
@@ -420,7 +424,7 @@ Plays an item on `settings.previewDevice` without routing through the live mixer
 | `GET /api/project/items?offset=0&limit=100` | — | `{ "offset": int, "limit": int, "total": int, "items": [...] }` | `limit` clamps to [1,1000]. Top-level items only (groups carry their children inline). |
 | `GET /api/project/progress`     | — | `{ "ready": bool, "loading": bool, "loaded": int, "total": int, "failedCount": int, "failures": [...] }` | Cheap poll for playback readiness and missing/unreadable media. |
 | `POST /api/project/load`        | `{ "path": "/abs/file.liveplay" }` *or* `{ "document": { … } }` | header object, augmented with `needsRepair`/`repairIssues` if the document was auto-repaired on load | broadcasts `project_changed`. `400` if neither field is present or load fails. |
-| `POST /api/project/close`       | — | `{ "closed": true }` | broadcasts `project_changed` |
+| `POST /api/project/close`       | — | `{ "closed": true }` | broadcasts `project_changed`; clients clear both their project document and remembered path |
 | `PUT /api/project/document`     | full project JSON document | header object | Replaces the entire in-memory document. Broadcasts `project_changed`. |
 | `POST /api/project/save`        | `{ "path": "/abs/file.liveplay" (optional) }` | `{ "ok": true, "path": "…" }` | Saves to the supplied path or the currently-loaded one. `400` if neither is set. |
 | `POST /api/project/repair`      | — | `{ "repaired": bool, "issues": [string], "saved": bool }` | Forces a re-save of the (already auto-repaired on load) in-memory document. |
@@ -560,7 +564,7 @@ Mostly mirror the REST surface so transport commands can skip the HTTP request/r
 | `gain`           | `{ "item_uuid"\|"cue_id": "…", "db": float }` | Sets the per-cue gain. |
 | `fade`           | `{ "item_uuid"\|"cue_id": "…", "in_ms": int, "out_ms": int }` | Sets fade durations. |
 | `stop_all`       | `{ "fade_ms": 0 }` | Stops every active cue. |
-| `set_next_item`  | `{ "item_uuid": "…" }` (empty/missing clears) | Sets the user-overridden "Up Next" target. Echoed to all clients as `next_item_set`. |
+| `set_next_item`  | `{ "item_uuid": "…" }` (empty/missing clears) | Sets the user-overridden **Play Next** target. Echoed to all clients as `next_item_set`. |
 | `ping`           | `{}` | Server replies with `{ "type": "pong" }`. |
 
 Unknown `type` values get a `{ "type": "error", "message": "unknown type" }` reply.
@@ -583,7 +587,7 @@ Unknown `type` values get a `{ "type": "error", "message": "unknown type" }` rep
 9. Client's LiveMeterBar.vue reflects the new levels in the next frame paint.
 ```
 
-Round-trip from keypress to first sample at the DAC is dominated by the chosen render-block size + the device's hardware buffer — typically well under 20 ms on Windows with default WASAPI settings.
+End-to-end transport latency depends on the configured render-block size and the target device's buffering; validate those settings on the deployment hardware.
 
 ---
 

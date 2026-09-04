@@ -38,6 +38,7 @@
     "title": "DonWells Cue",
     "subtitle": "تشغيل إشارات الصوت للأحداث المباشرة",
     "newProject": "مشروع جديد",
+    "newShow": "عرض جديد",
     "openProject": "فتح مشروع",
     "modeTitle": "اختيار وضع الخادم",
     "modeSubtitle": "أين يجب أن يشغّل DonWells Cue محرك الصوت؟",
@@ -67,6 +68,11 @@
     "showNetworkUi": "Connect to a server on the network…"
   },
   "project": {
+    "newShow": "عرض جديد",
+    "showName": "اسم العرض",
+    "location": "الموقع",
+    "chooseLocation": "اختر…",
+    "createShow": "إنشاء عرض",
     "enterName": "أدخل اسم المشروع",
     "placeholder": "مشروعي",
     "cancel": "إلغاء",
@@ -587,6 +593,11 @@
   },
   "importAudio": {
     "title": "استيراد الوسائط",
+    "localIntro": "اختر ملفات صوت أو فيديو من هذا الكمبيوتر.",
+    "advanced": "خيارات متقدمة",
+    "unsupportedFileType": "نوع ملف غير مدعوم",
+    "verifyFileType": "سيتم التحقق من نوع الملف",
+    "emptyServerFolder": "لا توجد ملفات وسائط أو مجلدات فرعية في هذا الموقع.",
     "tabServer": "على الخادم",
     "tabUpload": "تحميل من هذا الكمبيوتر",
     "serverHint": "ملفات موجودة بالفعل على الخادم. انقر نقرًا مزدوجًا فوق مجلد لفتحه؛ انقر فوق الملفات لتحديدها (مع Shift أو Ctrl/Cmd للتحديد المتعدد)، ثم انقر فوق \"استيراد المحدد\".",
@@ -686,7 +697,7 @@
     "resumeHint": "«متابعة الجلسة» تعيد فتح هذا المشروع على الخادم لتتمكن من المتابعة.",
     "startFreshHint": "«البدء من جديد» يغلقه ويعود إلى شاشة الترحيب.",
     "projectChangedTitle": "Server project changed",
-    "projectChangedMessage": "While this client was offline, the server opened “{name}”. Your local project has unsaved changes, so nothing was replaced automatically.",
+    "projectChangedMessage": "طرأ تغيير على مشروع الخادم «{name}». يحتوي مشروعك المحلي على تغييرات غير محفوظة، لذا لم يتم استبدال أي شيء تلقائيًا.",
     "useServerProject": "Use server project",
     "keepLocalProject": "Restore local project",
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."

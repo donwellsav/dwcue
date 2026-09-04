@@ -21,16 +21,22 @@
       <li v-for="(entry, idx) in sortedEntries"
           :key="entry.full_path"
           class="entry"
-          :class="[entry.kind, { selected: isSelected(entry.full_path) }]"
+          :class="[entry.kind, {
+            selected: isSelected(entry.full_path),
+            'unsupported-file': isObviouslyNonMedia(entry),
+            'unknown-file': isUnknownFileType(entry),
+          }]"
+          :aria-disabled="isObviouslyNonMedia(entry) ? 'true' : undefined"
           @click="onEntryClick(entry, idx, $event)"
           @dblclick="onEntryActivate(entry)">
         <span class="icon material-symbols-rounded">{{ iconFor(entry) }}</span>
         <span class="name">{{ entry.name }}</span>
-        <span v-if="entry.kind === 'file' && entry.size != null"
-              class="size">{{ formatBytes(entry.size) }}</span>
+        <span v-if="isObviouslyNonMedia(entry)" class="size file-type-note unsupported">{{ t('importAudio.unsupportedFileType') }}</span>
+        <span v-else-if="isUnknownFileType(entry)" class="size file-type-note">{{ t('importAudio.verifyFileType') }}</span>
+        <span v-else-if="entry.kind === 'file' && entry.size != null" class="size">{{ formatBytes(entry.size) }}</span>
       </li>
       <li v-if="(listing?.entries?.length ?? 0) === 0" class="empty">
-        (no audio files or subdirectories)
+        {{ t('importAudio.emptyServerFolder') }}
       </li>
     </ul>
 
@@ -106,11 +112,45 @@ const selectedCountLabel = computed(() =>
 
 function isSelected(p: string): boolean { return selected.value.includes(p); }
 
+const AUDIO_EXTENSIONS = new Set([
+  '.mp3', '.wav', '.aiff', '.aif', '.flac', '.ogg', '.oga', '.m4a', '.aac',
+  '.mp2', '.wma', '.opus', '.ac3', '.amr', '.au', '.caf',
+]);
+const VIDEO_EXTENSIONS = new Set([
+  '.mp4', '.m4v', '.mov', '.mkv', '.webm', '.avi', '.mpg', '.mpeg', '.m2ts',
+  '.mts', '.wmv', '.flv', '.3gp',
+]);
+const OBVIOUS_NON_MEDIA_EXTENSIONS = new Set([
+  '.txt', '.md', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+  '.json', '.xml', '.csv', '.html', '.css', '.js', '.ts', '.vue', '.liveplay',
+  '.lpa', '.zip', '.rar', '.7z', '.tar', '.gz', '.dmg', '.exe', '.app',
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg',
+]);
+
+function fileExtension(entry: ServerFsEntry): string {
+  if (entry.kind !== 'file') return '';
+  const match = /\.[a-z0-9]+$/i.exec(entry.name);
+  return match?.[0].toLowerCase() ?? '';
+}
+
+function isObviouslyNonMedia(entry: ServerFsEntry): boolean {
+  return OBVIOUS_NON_MEDIA_EXTENSIONS.has(fileExtension(entry));
+}
+
+function isUnknownFileType(entry: ServerFsEntry): boolean {
+  if (entry.kind !== 'file' || isObviouslyNonMedia(entry)) return false;
+  const extension = fileExtension(entry);
+  return !AUDIO_EXTENSIONS.has(extension) && !VIDEO_EXTENSIONS.has(extension);
+}
+
 function iconFor(entry: ServerFsEntry): string {
-  if (entry.kind === 'home')  return 'home';
+  if (entry.kind === 'home') return 'home';
   if (entry.kind === 'drive') return 'storage';
-  if (entry.kind === 'dir')   return 'folder';
-  return 'audio_file';
+  if (entry.kind === 'dir') return 'folder';
+  const extension = fileExtension(entry);
+  if (VIDEO_EXTENSIONS.has(extension)) return 'movie';
+  if (AUDIO_EXTENSIONS.has(extension)) return 'audio_file';
+  return 'draft';
 }
 
 async function goTo(path: string) {
@@ -135,7 +175,7 @@ function goUp() {
 }
 
 function onEntryClick(entry: ServerFsEntry, index: number, e: MouseEvent) {
-  if (!props.canSelect || entry.kind !== 'file') return;
+  if (!props.canSelect || entry.kind !== 'file' || isObviouslyNonMedia(entry)) return;
   const multi = e.ctrlKey || e.metaKey;
   const range = e.shiftKey;
 
@@ -143,7 +183,7 @@ function onEntryClick(entry: ServerFsEntry, index: number, e: MouseEvent) {
     const [lo, hi] = anchorIndex < index ? [anchorIndex, index] : [index, anchorIndex];
     const inRange = sortedEntries.value
       .slice(lo, hi + 1)
-      .filter(en => en.kind === 'file')
+      .filter(en => en.kind === 'file' && !isObviouslyNonMedia(en))
       .map(en => en.full_path);
     selected.value = multi
       ? Array.from(new Set([...selected.value, ...inRange]))
@@ -160,8 +200,11 @@ function onEntryClick(entry: ServerFsEntry, index: number, e: MouseEvent) {
 }
 
 function onEntryActivate(entry: ServerFsEntry) {
-  if (entry.kind === 'dir' || entry.kind === 'drive' || entry.kind === 'home') goTo(entry.full_path);
-  else if (props.canSelect) emit('select', [entry.full_path]);
+  if (entry.kind === 'dir' || entry.kind === 'drive' || entry.kind === 'home') {
+    goTo(entry.full_path);
+  } else if (props.canSelect && !isObviouslyNonMedia(entry)) {
+    emit('select', [entry.full_path]);
+  }
 }
 
 function importSelected() {
@@ -254,6 +297,24 @@ watch(() => props.startPath, p => goTo(p));
       &.home .name { font-weight: 600; }
       .icon { font-size: 18px; text-align: center; color: var(--color-text-primary); }
       &.file .icon { color: var(--color-accent); }
+
+      &.unsupported-file {
+        cursor: not-allowed;
+        opacity: .58;
+
+        .icon,
+        .name,
+        .size { color: var(--color-text-tertiary); }
+      }
+
+      &.unknown-file .icon { color: var(--color-text-secondary); }
+
+      .file-type-note {
+        font-size: 10px;
+        font-style: italic;
+      }
+
+      .file-type-note.unsupported { color: var(--color-danger); }
       &.selected {
         background: var(--color-accent);
         .name, .icon, .size { color: var(--color-text-on-accent); }

@@ -38,6 +38,7 @@
     "title": "DonWells Cue",
     "subtitle": "Reprodução de sinais de áudio para eventos ao vivo",
     "newProject": "Novo Projeto",
+    "newShow": "Novo show",
     "openProject": "Abrir Projeto",
     "modeTitle": "Escolher Modo de Servidor",
     "modeSubtitle": "Onde o DonWells Cue deve executar o motor de áudio?",
@@ -67,6 +68,11 @@
     "showNetworkUi": "Connect to a server on the network…"
   },
   "project": {
+    "newShow": "Novo show",
+    "showName": "Nome do show",
+    "location": "Localização",
+    "chooseLocation": "Escolher…",
+    "createShow": "Criar show",
     "enterName": "Digite o Nome do Projeto",
     "placeholder": "Meu Projeto",
     "cancel": "Cancelar",
@@ -587,6 +593,11 @@
   },
   "importAudio": {
     "title": "Importar mídia",
+    "localIntro": "Escolha arquivos de áudio ou vídeo deste computador.",
+    "advanced": "Opções avançadas",
+    "unsupportedFileType": "Tipo de arquivo não suportado",
+    "verifyFileType": "O tipo de arquivo será verificado",
+    "emptyServerFolder": "Não há arquivos de mídia nem subpastas neste local.",
     "tabServer": "No servidor",
     "tabUpload": "Enviar deste computador",
     "serverHint": "Arquivos já no servidor. Clique duas vezes em uma pasta para abri-la; clique nos arquivos para selecioná-los (Shift ou Ctrl/Cmd-clique para vários) e depois em «Importar selecionados».",
@@ -686,7 +697,7 @@
     "resumeHint": "Continuar sessão volta a abrir este projeto no servidor para poder prosseguir.",
     "startFreshHint": "Começar de novo fecha-o e regressa ao ecrã de boas-vindas.",
     "projectChangedTitle": "Server project changed",
-    "projectChangedMessage": "While this client was offline, the server opened “{name}”. Your local project has unsaved changes, so nothing was replaced automatically.",
+    "projectChangedMessage": "O projeto “{name}” no servidor foi alterado. Seu projeto local tem alterações não salvas, por isso nada foi substituído automaticamente.",
     "useServerProject": "Use server project",
     "keepLocalProject": "Restore local project",
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."

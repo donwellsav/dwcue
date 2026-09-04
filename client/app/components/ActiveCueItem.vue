@@ -221,26 +221,20 @@ const warningState = computed(() => {
   return null;
 });
 
-const handleStop = () => {
-  stopCue(props.cue.uuid);
+const handleStop = () => stopCue(props.cue.uuid);
+
+const handlePause = () => pauseCue(props.cue.uuid);
+
+const handleResume = () => resumeCue(props.cue.uuid);
+
+const handleContinue = async () => {
+  if (!audioItem.value) return false;
+  return queueLoopContinuation(audioItem.value);
 };
 
-const handlePause = () => {
-  pauseCue(props.cue.uuid);
-};
-
-const handleResume = () => {
-  resumeCue(props.cue.uuid);
-};
-
-const handleContinue = () => {
-  if (!audioItem.value) return;
-  queueLoopContinuation(audioItem.value, resolveLoopContinuationTarget(audioItem.value));
-};
-
-const handleJumpCue = () => {
-  if (!audioItem.value) return;
-  jumpCue(audioItem.value);
+const handleJumpCue = async () => {
+  if (!audioItem.value) return false;
+  return jumpCue(audioItem.value);
 };
 
 const handleSeek = (e: Event) => {
