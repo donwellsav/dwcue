@@ -2,7 +2,7 @@
 
 `dwcue-server` is the headless C++20 audio engine and control surface that backs the DonWells Cue client. It owns the audio graph, the routing matrix, the loaded project file, and exposes a REST + WebSocket API. It runs as either a child process spawned by the desktop client (single-machine installs) or as a standalone daemon on a stage-side machine that the client connects to over the LAN.
 
-This document is the developer's guide to the server. For end-user docs or the overall project orientation, see the [root README](../README.md). For the client-side, see [`client/README.md`](../client/README.md).
+This document tracks the current source and is the developer's guide to the server; post-v2.6.12 source behaviour may not exist in the latest downloaded installer. For show preparation and operation, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For client internals, see [`client/README.md`](../client/README.md); for overall project and release context, see the [root README](../README.md).
 
 ---
 
@@ -21,7 +21,7 @@ This document is the developer's guide to the server. For end-user docs or the o
   - [Manual-stop fade-out contract](#manual-stop-fade-out-contract)
 - [Control surface](#control-surface)
   - [REST endpoints](#rest-endpoints)
-  - [WebSocket frames](#websocket-frames)
+  - [WebSocket](#websocket)
 - [Project state & file format](#project-state--file-format)
 - [Threading model](#threading-model)
 - [Adding features](#adding-features)
@@ -120,12 +120,12 @@ Useful presets:
 ### From the monorepo root
 
 ```sh
-npm run server:configure         # one-time
-npm run server:build             # rebuild
+npm run server:build             # host-aware configure + build
 npm run server:run -- --verbose  # launch with debug logs
+npm run server:configure         # Windows-only explicit vs2022 configure
 ```
 
-`npm run server:build` shells out to [`scripts/build-server.js`](../scripts/build-server.js), which selects the right preset for the host platform and is idempotent.
+`npm run server:build` shells out to [`scripts/build-server.js`](../scripts/build-server.js), which always configures idempotently with the host preset before building. The separate `server:configure` script is fixed to the Windows `vs2022` preset and is normally unnecessary.
 
 ---
 
@@ -135,22 +135,25 @@ npm run server:run -- --verbose  # launch with debug logs
 dwcue-server [options]
   -p, --port <port>         Port to listen on (default 4480)
   -b, --bind <addr>         Interface to bind (default 127.0.0.1)
-      --pidfile <path>      Write JSON {pid,port,startedAt} after binding
+      --pidfile <path>      Write private JSON process identity after binding
+      --instance-token <32 hex chars>  Launcher process identity
       --start-delay-ms <n>  Wait <n> ms before binding (used by crash-restart)
   -v, --verbose             Enable debug-level logging
   -h, --help                Show this help and exit
 
 Environment:
   LIVEPLAY_PORT             Same as --port
-  LIVEPLAY_ACCESS_TOKEN     Control bearer token (minimum 16 characters)
+  LIVEPLAY_ACCESS_TOKEN     Control bearer token (unset/empty generates; otherwise minimum 16 characters)
   LIVEPLAY_ALLOWED_ORIGINS  Exact browser origins, comma-separated
   NO_COLOR=1                Disable ANSI colour in logs
   FORCE_COLOR=1             Force colour even when stdout isn't a tty
 ```
 
+When `--pidfile` is supplied, its owner-private JSON contains `pid`, `port`, `startedAt`, `instanceToken`, and `accessToken`. Treat it as a credential file: do not log, copy, or relax its permissions.
+
 The default control surface binds to `127.0.0.1:4480`, but loopback is not a trust boundary: every local and remote control route requires the bearer token. `GET /api/health` is the sole public application route. Passing a non-loopback `--bind` also starts the [discovery beacon](include/liveplay/net/discovery.hpp) on **UDP 4481**.
 
-A standalone process uses `LIVEPLAY_ACCESS_TOKEN` when it contains at least 16 characters. Otherwise it generates a 128-bit token (32 lowercase hex characters) and prints it once before file logging starts; crash-restart preserves the same token. Electron-managed launches instead supply a fresh 64-character lowercase-hex token for each backend generation.
+A standalone process uses `LIVEPLAY_ACCESS_TOKEN` when it contains at least 16 characters. If the value is unset or empty, it generates a 128-bit token (32 lowercase hex characters) and prints it once before file logging starts; a non-empty value shorter than 16 characters refuses startup. Crash-restart preserves the same token. Electron-managed launches instead supply a fresh 64-character lowercase-hex token for each backend generation.
 
 REST clients send `Authorization: Bearer <token>`. Browser WebSockets may connect to `/ws?access_token=<token>`, and HTML media requests may use the same query parameter on `/api/media`; no other route accepts the control bearer in the query string. Discovery advertises connection details only, never the token, open project, or show state.
 
@@ -194,9 +197,11 @@ Every cue's audio goes through three explicit tiers, in order, on the engine's r
 
 - **Tier 1 — [`PlaybackItem`](include/liveplay/audio/playback_item.hpp)**: one instance per active cue, with its own `ma_decoder`, gain/fade state machine, optional LTC generator, and a per-source-channel meter. Loading the same `.wav` into two One Shot cells yields **two independent instances**; attenuating one never affects the other.
 - **Tier 2 — [`MixerChannel`](include/liveplay/audio/mixer_channel.hpp)**: a virtual strip with gain, mute, solo, and a smooth-fade ramp. Many items can route into one channel; one item's source channels can fan out to multiple channels.
-- **Tier 3 — Master output bus** ([`engine.hpp`](include/liveplay/audio/engine.hpp)): up to 64 logical master channels (configurable). Each carries a limiter + meter and is assigned to exactly one `(Device, HardwareChannelIndex)` tuple.
+- **Tier 3 — Master output bus** ([`engine.hpp`](include/liveplay/audio/engine.hpp)): the current executable exposes 32 logical master channels. Each carries a limiter + meter and is assigned to exactly one `(Device, HardwareChannelIndex)` tuple.
 
 All three tiers run at a 256-frame block (~5.3 ms at 48 kHz). Meters and limiter envelopes update once per block.
+
+Control-plane registries and immutable topology snapshots share ownership of playback items, mixer channels, and output devices, so removing an object cannot destroy storage still visible to the render thread. Native devices are deduplicated and reference-counted: Main and Preview can share one physical device, and releasing Preview cannot close Main's device. Device initialisation and shutdown are serialized; retired device storage stays off the real-time destruction path until engine shutdown.
 
 ### Multi-device routing matrix
 
@@ -224,7 +229,7 @@ Supported frame rates: 24, 25, 29.97 NDF, 29.97 DF, 30. Drop-frame handling is i
 
 ### Real-time metering
 
-Every tier has its own [`Meter`](include/liveplay/audio/meter.hpp) — VU-style attack/release peak envelope plus a leaky-integrator RMS over ~300 ms. The audio thread pushes blocks via `push_block()`; the meter publishes lock-free atomics. A dedicated broadcast thread snapshots all meters at ~60 Hz and fans them out to every WebSocket client. See [WebSocket frames](#websocket-frames) below.
+Every tier has its own [`Meter`](include/liveplay/audio/meter.hpp) — VU-style attack/release peak envelope plus a leaky-integrator RMS over ~300 ms. The audio thread pushes blocks via `push_block()`; the meter publishes lock-free atomics. A dedicated broadcast thread snapshots all meters at the configured cadence (30 Hz by default) and fans them out to every WebSocket client. See [WebSocket](#websocket) below.
 
 ### Manual-stop fade-out contract
 
@@ -241,6 +246,9 @@ All three stop paths funnel through the same fade-out envelope:
 - **Cue to Continue** arms a one-pass, runtime-only continuation for the cue's current playback instance. It temporarily supersedes saved Loop, Start Next, crossfade/stop-fade, and end-behaviour advance; at natural end it starts the resolved target. Stop, remove, replay, Stop All, media replacement, or project switch cancels the arm, so replay falls back to the saved behaviour. `cue_to_continue` is never serialized.
 - A manual **Play Next** override is consumed only when GO successfully starts its target. Failed or not-yet-loaded targets remain armed for retry. For a group, play-first succeeds only when its selected child starts; play-all succeeds when at least one child starts. One Shot arming follows the same accepted-play rule.
 - Repeated identical arming is coalesced without another state broadcast. Successful GO clears its override; failed GO leaves it intact.
+- Each play receives a server-side generation fence. Replay, stop, removal, media replacement, and project changes invalidate older generations so a copied terminal action from an earlier playback instance cannot advance or otherwise affect the new one.
+- Group Start Behavior is implemented for **Play First** and **Play All**, but the server does not currently consume a group's End Behavior. `Play Next` resolves only the next sibling in the current immediate container; the final child needs an explicit **Go to Item** or **Go to Index** target to leave the group.
+- The audio-cue Start Behavior values rendered by the current Properties UI (`play-next`, `play-item`, `play-index`) are not interpreted by `ProjectState::play_item`, which only recognizes the legacy `stop` and `play` actions. Do not build show logic on those controls. Natural-end **End Behavior** and timed **Start Next at Marker** / **Start Next At** / **Fade Out at Marker** remain the working sequencing paths.
 
 ---
 
@@ -265,7 +273,7 @@ The authoritative endpoint list is the table of `CROW_ROUTE` registrations in [`
 
 | Method · Path      | Body | Response | Notes |
 |--------------------|------|----------|-------|
-| `GET /api/health`  | —    | `{ "ok": true, "name": "dwcue-server" }` | Sole unauthenticated route; liveness/launcher identity probe. |
+| `GET /api/health`  | —    | `{ "ok": true, "name": "dwcue-server", "pid": number, "instanceToken": string }` | Sole unauthenticated route; liveness and launcher-generation identity probe. `instanceToken` is not the control bearer. |
 | `GET /api/whoami`  | —    | `{ "clientIp": "192.168.1.10", "isLocal": false }` | Bearer required; `isLocal` reports whether the caller is loopback, not whether authentication is required. |
 
 #### Devices
@@ -484,13 +492,13 @@ If `outputPath` is omitted on export, the archive is staged in `<tempdir>/livepl
 
 Single endpoint at `ws://<host>:<port>/ws`. Frames are UTF-8 JSON objects with a `type` discriminator. Binary frames are silently dropped.
 
-On connect, the server adds the connection to the broadcast set and queues a one-shot `playback_snapshot` frame for it (delivered on the next ~16 ms broadcast tick — sending it inline races the broadcast thread on the same connection and was a historical crash source).
+On connect, the server adds the connection to the broadcast set and queues a one-shot `playback_snapshot` frame for it (delivered on the next default ~33 ms broadcast tick — sending it inline races the broadcast thread on the same connection and was a historical crash source).
 
 #### Server → client frames
 
 | `type`                | Cadence            | Payload |
 |-----------------------|--------------------|---------|
-| `meters`              | ~60 Hz             | per-cue / per-mixer / per-master meters (see below) |
+| `meters`              | ~30 Hz (default)   | per-cue / per-mixer / per-master meters (see below) |
 | `cue_state`           | On transport edge  | `{ "type": "cue_state", "cue_id": "…", "transport": 0\|1\|2\|3, "playhead_seconds": float, "item_uuid": "…" (when known) }` |
 | `playback_snapshot`   | On WS connect      | `{ "type": "playback_snapshot", "cues": [{cue_id,transport,playhead_seconds,item_uuid?}], "next_item_uuid": "…", "master_gain_db": float, "output_channel_gains": [{channel,db}], "preview": {item_uuid, cue_id} }` — lets a freshly-reconnected client mirror state without waiting for the next transport edge. |
 | `doc_patch`           | On every server-side document mutation | `{ "type": "doc_patch", "op": "<op-name>", …op-specific fields }` — see the `op` table below |
@@ -583,7 +591,7 @@ Unknown `type` values get a `{ "type": "error", "message": "unknown type" }` rep
      Buffers pushed into each device's miniaudio ring buffer.
 6. Per-device miniaudio callback drains the ring → hardware DAC.
 7. Render thread also pushes amplitude into the 3-tier meters.
-8. Broadcast thread, ~16 ms later: snapshot all meters → JSON → fan out to every WS client.
+8. Broadcast thread, ~33 ms later at the default cadence: snapshot all meters → JSON → fan out to every WS client.
 9. Client's LiveMeterBar.vue reflects the new levels in the next frame paint.
 ```
 
@@ -603,7 +611,7 @@ A `.liveplay` project is a folder containing a JSON document plus a `media/` sub
 - Synthesises stereo master assignments: master channel 0 → default device hw ch 0, master channel 1 → default device hw ch 1.
 - Auto-creates one per-cue mixer channel so each cue still has independent gain/fade.
 
-Result: existing `.liveplay` projects open and play identically. Operators can then open the new Routing UI to split source channels or send to additional devices.
+The upgrade reconstructs legacy cues and baseline routes so old projects remain loadable. Verify an upgraded show before live use. The server exposes the full routing API, but the current client does not mount `RoutingMatrixPanel.vue` as an operator screen; the available UI is Settings → **Audio Routing** for devices and Properties → **Output device** / **LTC** for a cue.
 
 ### Backups
 
@@ -617,17 +625,22 @@ Result: existing `.liveplay` projects open and play identically. Operators can t
 
 ## Threading model
 
-The server runs ~5 threads:
+The server uses several long-lived service threads plus backend-owned audio callbacks and temporary parallel workers during bulk project loads; the count is not fixed.
 
-| Thread             | Owns                                                             |
-|--------------------|------------------------------------------------------------------|
-| Main               | Crow's I/O reactor, REST handlers, lifecycle, signal handling.   |
-| Engine render      | `AudioEngine::render_block()` driven by miniaudio per-device callbacks. Lock-free; no allocations, no exceptions, no syscalls. |
-| Meter broadcast    | Snapshots meters at ~60 Hz and pushes JSON to every WS client.    |
-| Waveform worker    | Drains an async queue of `/api/waveform_generate` requests off-thread (so REST stays responsive). |
-| Discovery          | UDP broadcaster announcing this server on the LAN.                |
+| Thread / worker           | Owns |
+|---------------------------|------|
+| Crow I/O + workers        | REST/WS handlers and connection lifecycle. |
+| Engine render             | `AudioEngine::render_loop()`; refills per-device rings from immutable topology snapshots. No locks, allocations, exceptions, or syscalls in the render path. |
+| Native device callbacks   | One real-time callback per open native device; drains its ring and wakes the render thread after consumption. |
+| Engine decode             | Bounded read-ahead for loaded playback items, outside the render thread. |
+| Sequencer                 | End behaviours, timed actions, ducking transitions, and playback-generation terminal actions. |
+| Project loaders           | One persistent single-item/media-swap loader; bulk project loads may temporarily fan out to parallel workers. |
+| Meter/event broadcast     | Snapshots meters and transport edges at the default ~30 Hz cadence and fans JSON out to WebSocket clients. |
+| Waveform worker           | Drains the async `/api/waveform_generate` queue. |
+| Backup worker             | Rotating project backups. |
+| Discovery                 | UDP announcements when LAN mode is active. |
 
-Inter-thread communication is lock-free atomics where it's on the audio path; everywhere else, a `std::mutex` guarding the relevant section is fine. **Do not call any potentially-blocking API from the engine render thread.**
+Inter-thread communication is lock-free atomics or immutable shared snapshots on the audio path; elsewhere, a `std::mutex` guarding the relevant section is fine. **Do not call any potentially blocking API from the engine render thread or native device callbacks.**
 
 ---
 

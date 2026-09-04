@@ -1,9 +1,15 @@
 # DonWells Cue — Video Playback v1 Spec
 
 > **Audience:** fresh agent / developer with zero prior context. Read
-> `IMPROVEMENTS_PLAN.md` §1 first for the general architecture.
-> **Status:** v1 is complete and shipped. The current v2.6.12 source includes the
-> session-safety, recovery and shortcut-focus hardening documented in §7.
+> [`IMPROVEMENTS_PLAN.md` §1](IMPROVEMENTS_PLAN.md#1-current-architecture-read-this-first) first for the
+> general architecture.
+> **Status:** Video Playback v1 shipped in the latest published release, v2.6.12. Section 7
+> also records session, recovery, and shortcut-focus hardening in the current source.
+> The working source still reports v2.6.12 but is one post-tag commit ahead; do not assume
+> every §7 safeguard is present in the downloaded v2.6.12 installers.
+> This is an implementation/design record and retains some proposal tense, not an operator guide.
+> For show operation, use the [operator manual (PDF)](docs/operators-manual.pdf) or its
+> [Markdown source](docs/operators-manual.md).
 
 ---
 
@@ -27,7 +33,7 @@ the show laptop). v1 is **one video at a time, cuts only**.
 |---|---|
 | The engine can play a video file's audio track as a normal cue | `server/src/audio/decoder.cpp` registers an FFmpeg decoding backend (`open_ffmpeg`, `av_find_best_stream(..., AVMEDIA_TYPE_AUDIO, ...)`). Empirically verified with the built `decoder-check` binary: H.264+AAC MP4 ✓, HEVC+AAC MP4 ✓ (open, non-silent render @48 kHz, seek). |
 | A video with **no audio stream** cannot be decoded by the engine | Same test: video-only MP4 → `open failed` (`av_find_best_stream` finds no audio). Drives the silent-transport requirement (§5.3). |
-| Playhead position already streams to clients | `control_server.cpp` `meters` broadcast (~60 Hz, absolute-deadline schedule) carries per-item `playhead_seconds` + transport enum; `cue_state` edge events fire on transport transitions; `playback_snapshot` is sent on (re)connect. No server protocol additions needed for sync. |
+| Playhead position already streams to clients | `control_server.cpp` `meters` broadcast (~30 Hz by default, absolute-deadline schedule) carries per-item `playhead_seconds` + transport enum; `cue_state` edge events fire on transport transitions; `playback_snapshot` is sent on (re)connect. No server protocol additions needed for sync. |
 | Multiple clients per server | By design (doc-patch fan-out); the Video Output window is just another WS client. |
 | External prior art converged on the same design | **Inkue** (GPLv3, Tauri+Rust, `FonograF/Inkue`) plays video muted via libmpv and decodes the audio track as a normal engine voice with fades/VU — after abandoning a PCM-pipe approach for A/V desync and deadlocks (their v0.4.2). Their measured A/V drift without any active resync is a few ms over minutes; they list active resync as an optional future refinement. Our chase-sync is comfortably above that bar. |
 | Detached-window pattern exists | `client/electron/main.js` `cartPlayerWindow` loads the same Nuxt app with `?cartWindow=1`. The output window mirrors this with `?videoOutput=1`. |
@@ -45,7 +51,7 @@ the show laptop). v1 is **one video at a time, cuts only**.
 │        │                       fades · limiter · meters       image / standby /   │
 │        │  fire cue (REST/WS)   routing → interface → PA       black / test card   │
 │        └──────────────────────▶        │                             ▲          │
-│                                        │ meters WS (~60 Hz):          │          │
+│                                        │ meters WS (~30 Hz default):  │          │
 │                                        │ playhead_seconds, transport  │          │
 │                                        └──────────────────────────────┘          │
 │                                        cue_state edges, playback_snapshot        │
@@ -64,7 +70,7 @@ always muted; the switcher receives picture only.
 1. **Same-machine only.** Network/remote-server UI is *hidden* (not deleted) behind a
    settings toggle, defaulting to hidden. The capability stays for a future v2 remote
    video renderer.
-2. **Cuts only.** No fade-to-black, no crossfades (the downstream switcher owns transitions).
+2. **Cuts only.** No fade-to-black, no crossfades (the downstream switcher owns transitions). The passive black base layer is an idle/fallback state, not a dedicated operator blackout control.
    **Audio fades still apply** — they are engine-side and free.
 3. **Codecs:** H.264 / HEVC in MP4/MOV, decoded by Chromium in the output window. No ProRes,
    no alpha. Docs guidance: "MP4/H.264 recommended; HEVC best-effort" (Windows HEVC support
@@ -135,7 +141,7 @@ The Video Output window opens its **own WebSocket** to the local server (multi-c
 native) and consumes, via `useLiveplayServer.ts`'s existing subscriber pattern:
 
 - `cue_state` edges → start/stop/pause/fade events for the active video cue.
-- `meters` (~60 Hz) → `playhead_seconds` for chase correction.
+- `meters` (~30 Hz by default) → `playhead_seconds` for chase correction.
 - `playback_snapshot` → rebuild state on (re)connect / window reopen mid-show.
 - Project document via REST + `doc_patch` → item fields (`mediaPath`, in/out points,
   `imagePath`) and settings.
@@ -235,7 +241,9 @@ Video Output IPC follows the existing `ipcMain.handle` + `requireTrustedIpc` con
 
 Video crossfades / fade-to-black · multiple simultaneous video streams · ProRes / alpha ·
 NDI output · remote (networked) video rendering · video effects/overlays · HDMI audio ·
-slide-advance animations. The `hideNetworkUi` gate is a UI simplification, not a removal.
+slide-advance animations. The black/test-card idle layer is not an operator blackout control,
+and the current app has no dedicated blackout command. The `hideNetworkUi` gate is a UI
+simplification, not a removal.
 
 Seen in the wild, parked for later: **NDI** (FreeShow models it as just another output on
 the same abstraction — a flag plus an `invisible` capture-only output whose bounds are
@@ -252,7 +260,7 @@ workspace import** (Inkue ships a beta).
 | Operator arrives with mirrored displays | Detect + prominent warning at arm time |
 | Windows HEVC decode gaps (GPU/OS codec pack) | Docs steer to H.264; runtime decode failure falls back to image layer + control-window warning |
 | Decode CPU spikes starve audio | Chromium decodes in its own process/GPU; engine RT thread untouched (existing `check-audio-rt-safety` discipline); 1080p targets |
-| GPU/compositor contention: control UI (60 Hz meters, progress bars, CSS animations) competes with the presenting output window on weak iGPUs | Inkue hit this hard (WebKitGTK UI froze to ~0 fps while video played). Their fix maps to us: prefer `transform`/`opacity` compositor-only animations, no infinite CSS keyframes, discrete updates; ensure hardware decode; test on a low-end corporate laptop before calling v1 done |
+| GPU/compositor contention: control UI (~30 Hz meters, progress bars, CSS animations) competes with the presenting output window on weak iGPUs | Inkue hit this hard (WebKitGTK UI froze to ~0 fps while video played). Their fix maps to us: prefer `transform`/`opacity` compositor-only animations, no infinite CSS keyframes, discrete updates; ensure hardware decode; validate on a low-end corporate laptop before declaring that machine show-ready |
 | Project JSON drift | All new fields optional/additive; old builds ignore them |
 | vcpkg ffmpeg demuxer coverage differs on Windows/Linux CI builds | Add `.mp4` (H.264+AAC) and video-only cases to `tests/decoder_check.cpp` self-tests so CI proves the capability per-platform |
 
@@ -261,7 +269,7 @@ workspace import** (Inkue ships a beta).
 1. Fire a video cue → picture on HDMI output, audio on program output through the
    limiter/meters; lipsync within ±2 frames over a 10-minute clip (chase holds).
 2. Fire an audio cue with an image → image on output; without an image → global standby;
-   with neither → black. No desktop flash at any transition.
+   with neither → the passive black idle fallback. That fallback is not an operator blackout command. No desktop flash at any transition.
 3. Video in/out points and audio fades behave identically to audio cues; out-point cuts
    picture and sound together.
 4. Video without an audio track plays full-length, auto-advances, and shows progress.

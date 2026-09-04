@@ -1,9 +1,12 @@
 # DonWells Cue — Improvements & Feature Plan
 
 > **Audience:** This document is written for a fresh agent (or developer) with **zero prior context**.
-> It describes the current architecture, then specifies six feature workstreams in implementation
-> stages, with design notes, files to touch, risks, and a recommended AI model per task.
-> **Stage 1 — Touch-Friendly Playback Mode is complete.**
+> Section 1 tracks the current source, whose package metadata remains v2.6.12 but which includes
+> post-v2.6.12 changes not present in the latest published installers.
+> Sections 3–7 are proposed workstreams, not delivered features, even where they name concrete files.
+> Only **Stage 1 — Touch-Friendly Playback Mode** is marked complete here.
+> For show operation, use the [operator manual (PDF)](docs/operators-manual.pdf) or its
+> [Markdown source](docs/operators-manual.md).
 
 ---
 
@@ -34,23 +37,23 @@ DonWells Cue is an open-source audio cue playback application for live sound ope
 |---|---|
 | `client/app/` | Nuxt app — all UI components, composables, types |
 | `client/app/types/project.ts` | **The project data model** (AudioItem, GroupItem, EndBehavior, CustomAction, One Shot storage, Project) |
-| `client/app/composables/useProject.ts` | Project load/save/mutation, doc-patch sync (~1,860 lines) |
-| `client/app/composables/useLiveplayServer.ts` | REST/WS client to the C++ server (~1,030 lines) |
-| `client/app/composables/useAudioEngine.ts` | Client-side playback orchestration glue (~640 lines) |
+| `client/app/composables/useProject.ts` | Project load/save/mutation and doc-patch sync |
+| `client/app/composables/useLiveplayServer.ts` | REST/WS client to the C++ server |
+| `client/app/composables/useAudioEngine.ts` | Client-side playback orchestration glue |
 | `client/app/composables/useMidiController.ts` | Web-MIDI input → action bindings (client-side only) |
 | `client/app/components/MainWorkspace.vue` | Top-level layout: playlist + collapsible One Shots + properties panel |
-| `client/app/components/PropertiesPanel.vue` | Per-item editor (fades, trim, end behaviour, LTC…) (~1,200 lines) |
+| `client/app/components/PropertiesPanel.vue` | Per-item editor (fades, trim, end behaviour, LTC…); also exposes current unsupported sequencing controls noted below |
 | `client/app/components/PlaylistItem.vue` / `PlaylistView.vue` | Cue list rows / list |
 | `client/app/components/OneShotPanel.vue` / `OneShotTile.vue` | Hot-key One Shots grid; unused panel collapses unless explicitly shown |
-| `client/app/components/RoutingMatrixPanel.vue` | Existing routing UI (items → mixers → masters → device channels) |
+| `client/app/components/RoutingMatrixPanel.vue` | Unmounted routing-matrix component; full matrix is server-API-only in the current client |
 | `client/electron/main.js` | Electron main: authenticated server lifecycle, trusted IPC, dialogs, ffmpeg, yt-dlp, updater |
 | `server/src/audio/engine.cpp` (+`include/liveplay/audio/engine.hpp`) | **AudioEngine**: devices, PlaybackItems, MixerChannels, routing topology (lock-free atomic snapshot), render thread, per-master Limiter+Meter |
 | `server/src/audio/playback_item.cpp` | One cue = one PlaybackItem (decode, gain, fades) |
 | `server/src/audio/mixer_channel.cpp` | Tier-2 mixer strip |
 | `server/src/audio/limiter.cpp`, `meter.cpp` | Brickwall limiter, K-style meter (per master channel) |
 | `server/src/audio/ltc_generator.cpp` | SMPTE LTC output |
-| `server/src/core/project_state.cpp` (~3,480 lines) | Project JSON store, **sequencer** (end behaviours, ducking, start-next segue, custom-action dispatch), autosave |
-| `server/src/net/control_server.cpp` (~2,500 lines) | Crow REST + WebSocket API (see §1.2), meter broadcast, doc-patch fan-out |
+| `server/src/core/project_state.cpp` | Project JSON store, **sequencer** (end behaviours, ducking, start-next segue, custom-action dispatch), autosave |
+| `server/src/net/control_server.cpp` | Crow REST + WebSocket API (see §1.2), meter broadcast, doc-patch fan-out |
 | `server/src/net/discovery.cpp` | UDP LAN discovery (port 4481) |
 | Public website (separate project) | Nuxt public website (i18n, English fallback) |
 | `scripts/` | Monorepo build scripts (build server via CMake preset `vs2022` on Windows, package Electron) |
@@ -67,9 +70,9 @@ WebSocket `/ws`: server→client `meters`, `cue_state` transitions, and `doc_pat
 
 - **CustomAction** (`client/app/types/project.ts`): per-item timed actions already exist —
   `{ timePoint: seconds, action }` where action ∈ `play-item | play-index | stop-all | http-request`.
-  The **server sequencer** fires them when the playhead crosses `timePoint`
-  (`project_state.cpp` ~line 3100, `execute_custom_action` ~line 3287). `http-request` is
-  currently **delegated to a connected client** via the broadcast hook (server does not do HTTP out).
+  The **server sequencer** fires them through `ProjectState::execute_custom_action` when the
+  playhead crosses `timePoint`. `http-request` is currently **delegated to a connected client**
+  via the broadcast hook (server does not do HTTP out).
   → The per-item event system (§3) is a generalisation of this machinery.
 - **MixerChannel / routing matrix / 32 master buses** already exist in the engine
   (items → mixers → masters → device channels, immutable `Topology` snapshot read lock-free
@@ -80,14 +83,16 @@ WebSocket `/ws`: server→client `meters`, `cue_state` transitions, and `doc_pat
 - **Client-side MIDI input** exists (Web MIDI, `useMidiController.ts`) for triggering One Shots/transport.
 - **Index paths**: items are addressed by `index: number[]` (nested groups); One Shot cells retain the legacy `[-1, slot]` addressing.
 - **Runtime continuation and trigger acceptance**: `cue_to_continue` is a one-play, non-serialized override and never mutates saved `endBehavior`; Stop/remove/replay/Stop All/media replacement/project switch cancel it. GO, group play, and One Shot arming consume state only after a child actually starts. Failed/not-loaded targets remain armed, and repeated identical inputs are coalesced.
-- **Project lifetime and save ordering**: a close-side `project_changed` clears the renderer document and path. A dirty reconnect requires **Join server** or **Keep local**. Client saves run through one latest-write queue and a revision/identity fence, so stale completion cannot mark newer edits clean.
-- **Managed authentication**: standalone servers use a ≥16-character `LIVEPLAY_ACCESS_TOKEN` or generate and print a 32-hex token once. Electron creates a fresh 64-hex token per backend generation, passes it in the environment, persists it only in the owner-private server lock, and exposes it to the renderer through trusted IPC for that session—not `localStorage`.
-- **Current creation/import UX**: **New Show** combines name and location. **Import Media** leads with local **Choose files**; advanced/server browsing is collapsed and unsupported non-media entries are disabled. The target is named **Play Next**. Unused One Shots stay collapsed unless the user explicitly asks to see them.
+- **Real-time lifetime safety**: immutable topology snapshots hold shared ownership of playback items, mixers, and devices until readers drain. Native output devices are deduplicated and reference-counted so Preview churn cannot close a device still owned by Main; device lifecycle calls are serialized. Playback-generation fences reject terminal actions copied from an older play instance.
+- **Current sequencing gaps**: group **Play First** / **Play All** start actions work, but group End Behavior is not consumed and `Play Next` never climbs out of the current sibling list. The audio Start Behavior dropdown's `play-next`, `play-item`, and `play-index` values are not interpreted by `ProjectState::play_item`; use audio End Behavior or timed Start Next marker controls instead. One Shot **Duck Level** works, but its visible **Duck Time** and **Release Time** do not have a server consumer.
+- **Project lifetime and save ordering**: a close-side `project_changed` clears the renderer document and path. A dirty reconnect requires **Use server project** (discard local/adopt server) or **Restore local project** (replace server/keep local dirty). Client saves run through one latest-write queue and a revision/identity fence, so stale completion cannot mark newer edits clean.
+- **Managed authentication**: standalone servers use a ≥16-character `LIVEPLAY_ACCESS_TOKEN`; when it is unset/empty they generate and print a 32-hex token once, while a non-empty shorter value refuses startup. Electron creates a fresh 64-hex token per backend generation, passes it in the environment, persists it only in the owner-private server lock, and exposes it to the renderer through trusted IPC for that session—not `localStorage`.
+- **Current creation/import UX**: **New Show** combines a name field with a read-only Location selected through **Choose…**. **Import Media** leads with local **Choose files**; advanced/server browsing is collapsed and unsupported non-media entries are disabled. The target is named **Play Next**. Unused One Shots stay collapsed unless the user explicitly asks to see them.
 - **Automated tests now exist**: client One Shot and Electron path tests, Spotify import reliability checks, and C++ tests under `server/tests`. Coverage is still incomplete, so the test gaps below remain useful.
 
 ### 1.4 Build & run
 
-- `npm run dev` or `npm run dev:client` — normal desktop loop; Electron owns the managed backend. `npm run server:run` — explicit standalone/server-only process. `npm run server:build` — CMake build (Windows preset `vs2022`, output `server/build/Release/dwcue-server.exe`).
+- `npm run dev` — normal desktop loop; it runs `ensure-server.js`, which builds only when no server binary exists, then starts the client workspace. `npm run dev:client` — Nuxt + Electron only; it skips that server check and is not equivalent. Neither detects stale C++ output, so rebuild server changes with `npm run server:build`. `npm run server:run` — explicit standalone/server-only process (build first).
 - Dependencies: server via vcpkg (`server/vcpkg.json`); client is npm workspace `client`.
 - Version bumps via `npm run bump` (syncs root, client, and server versions). The standalone website keeps its own public version snapshot.
 
@@ -147,7 +152,7 @@ definitions.
 
 ### Design principle
 **Extend, don't replace, the existing `CustomAction` machinery.** The sequencer already fires
-`customActions` at time points server-side (`project_state.cpp` ~3100). Two changes:
+`customActions` at time points server-side through `ProjectState::execute_custom_action`. Two changes:
 
 1. **Widen the action type** in `client/app/types/project.ts` and the server dispatcher:
 
@@ -357,8 +362,7 @@ new mixer surface.
 
 ### What already exists (important!)
 The engine **already has the full 3-tier routing architecture**: PlaybackItems → MixerChannels
-→ 32 master buses → device channels, with a routing matrix API (`/api/routing/*`,
-`RoutingMatrixPanel.vue`). "Buses" ≈ MixerChannels. What's missing is:
+→ 32 master buses → device channels, with a routing matrix API (`/api/routing/*`). A `RoutingMatrixPanel.vue` component exists but has no mounting callsite in the current client, so it is not an operator screen. "Buses" ≈ MixerChannels. What's missing is:
 1. **Project-level bus semantics:** named, ordered, persistent buses in the project file
    (`buses: [{ id, name, color, gainDb, mute, solo, masterSends }]`), an `AudioItem.busId`
    assignment (default "Main"), and ProjectState code that materialises these into engine
@@ -467,4 +471,4 @@ Recommended overall order (respects dependencies):
 - The server owns state; the client mutates via REST/WS and receives `doc_patch` fan-out — never fork state client-side.
 - New engine state read by the render thread must use the snapshot/atomic pattern (`AtomicSharedPtr`, see `engine.hpp`) — no locks or allocation on the audio path.
 - Project-schema additions must be optional-with-defaults so old project files load unchanged; bump `Project.version` when semantics change.
-- Version bumps via `npm run bump`; Windows server build via `npm run server:build` (CMake preset `vs2022`); desktop dev loop via `npm run dev` or `npm run dev:client`; explicit standalone server via `npm run server:run`.
+- Version bumps via `npm run bump`; Windows server build via `npm run server:build` (CMake preset `vs2022`); full desktop dev loop via `npm run dev`; client-only workspace loop via `npm run dev:client` (skips the server check); explicit standalone server via `npm run server:run`.
