@@ -421,8 +421,8 @@ const drawWaveform = () => {
   // Clear canvas
   ctx.clearRect(0, 0, rect.width, rect.height);
 
-  // Keep the waveform neutral so the authored cue colour remains a dedicated
-  // rail rather than tinting the row or its text.
+  // Draw the real decoded peaks in the cue's authored colour. The canvas-level
+  // opacity keeps the controls and labels readable without desaturating the hue.
   ctx.fillStyle = getComputedStyle(canvas).color;
 
   const peaks = audioItem.waveform.peaks;
@@ -589,7 +589,7 @@ const itemStyle = computed(() => {
     marginLeft: showMode.value ? '0px' : `${depthOffset}px`,
     '--item-depth-offset': `${depthOffset}px`,
     '--folder-background': 'var(--color-surface-raised)',
-    '--waveform-color': 'var(--color-text-tertiary)',
+    '--waveform-color': props.item.color || 'var(--color-text-tertiary)',
   };
 });
 
@@ -1272,6 +1272,10 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   justify-self: start;
   max-width: 100%;
   box-sizing: border-box;
+  color: var(--state-playing);
+}
+
+.playlist-item.is-paused > .item-content .item-name {
   color: var(--color-text-primary);
 }
 

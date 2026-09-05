@@ -5,7 +5,6 @@
         type="button"
         class="control-btn panic-btn"
         @click="handlePanic"
-        :disabled="activeCues.size === 0"
         :title="stopAllTooltip"
       >
         <span class="material-symbols-rounded" aria-hidden="true">stop_circle</span>
@@ -263,11 +262,9 @@
 </template>
 
 <script setup lang="ts">
-// PlaybackControls migration (Milestone 5):
-//   * Panic / stop-all now fans out to BOTH the legacy useAudioEngine
-//     (until every component is migrated away from it) AND the new C++
-//     server via useLiveplayServer().stopAll(). Removing the legacy call
-//     is safe once all play paths route through the server.
+// Stop All is server-authoritative. Native diagnostics and orphaned cues are
+// intentionally outside the project-backed activeCues map, so the panic
+// control must remain callable even when that local map is empty.
 import { formatKeyLabel } from '~/composables/useCartHotkeys';
 import { useLiveplayServer } from '~/composables/useLiveplayServer';
 import { useCueMeters } from '~/composables/useLiveMeters';
@@ -299,6 +296,7 @@ const previewingItem = computed(() => {
 const previewMeter = useCueMeters(() => previewCueId.value || null);
 const previewTempIn = ref(0);
 const previewTempOut = ref(0);
+const previewTrimSaveFailed = ref(false);
 const previewJumpSeconds = useState<number>('PlaybackControls.previewJumpSeconds', () => 5);
 const previewJumpDigit = ref<'whole' | 'tenths'>('whole');
 
@@ -343,7 +341,8 @@ const previewStartNextPct = computed(() => previewStartNextTime.value === null
   ? null
   : (previewStartNextTime.value / previewTrackDuration.value) * 100);
 const previewTrimDirty = computed(() => Math.abs(previewTempIn.value - previewPermanentIn.value) >= 0.05
-  || Math.abs(previewTempOut.value - previewPermanentOut.value) >= 0.05);
+  || Math.abs(previewTempOut.value - previewPermanentOut.value) >= 0.05
+  || previewTrimSaveFailed.value);
 const previewIsNext = computed(() => previewItemUuid.value === nextItemOverrideUuid.value);
 const previewIsPaused = computed(() => previewMeter.transport.value === 4);
 const previewPauseIcon = computed(() => previewIsPaused.value || previewMeter.transport.value === 0
@@ -360,6 +359,7 @@ const previewStartNextTitle = computed(() => t('waveform.startNextTitle', {
 
 watch([previewItemUuid, previewingItem], ([uuid, item]) => {
   if (!uuid || item?.type !== 'audio') return;
+  previewTrimSaveFailed.value = false;
   previewTempIn.value = Math.max(0, item.inPoint || 0);
   const out = item.outPoint || item.duration || 0;
   previewTempOut.value = Math.max(previewTempIn.value + 0.1, out);
@@ -508,8 +508,7 @@ async function savePreviewTrim() {
   if (item?.type !== 'audio' || !previewTrimDirty.value) return;
   item.inPoint = previewTempIn.value;
   item.outPoint = previewTempOut.value;
-  await server.updateProjectItem(item.uuid, { inPoint: item.inPoint, outPoint: item.outPoint });
-  await saveProject({ force: true });
+  previewTrimSaveFailed.value = !await saveProject({ force: true });
 }
 
 function handleSetPreviewNext() {
@@ -532,10 +531,6 @@ async function handleSetPreviewStartNext() {
   ));
   item.startNextEnabled = true;
   item.startNextTime = marker;
-  await server.updateProjectItem(item.uuid, {
-    startNextEnabled: true,
-    startNextTime: marker,
-  });
   await saveProject({ force: true });
 }
 
@@ -662,14 +657,15 @@ const handlePlayNext = async () => {
 }
 
 .play-next-btn.has-next {
-  background-color: color-mix(in srgb, var(--state-up-next) 18%, var(--color-control));
+  background-color: var(--state-up-next);
   border-color: var(--state-up-next);
-  color: var(--color-text-primary);
+  color: #171b25;
 }
 
 .play-next-btn.has-next:hover:not(:disabled) {
-  background-color: color-mix(in srgb, var(--state-up-next) 25%, var(--color-control));
+  background-color: var(--state-up-next);
   border-color: var(--state-up-next);
+  filter: brightness(1.06);
 }
 
 .play-next-label {

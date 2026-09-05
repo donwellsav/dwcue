@@ -113,7 +113,10 @@
               @click="toggleLimiter"
             >
               <span class="limiter-toggle__label">{{ t('outputConsole.limiter') }}</span>
-              <span class="limiter-toggle__gr">{{ limiterGainReductionLabel }}</span>
+              <span
+                class="limiter-toggle__gr"
+                :class="{ 'is-reducing': limiterGainReductionDb > 0.05 }"
+              >{{ limiterGainReductionLabel }}</span>
             </button>
             <div class="limiter-ceiling-control">
               <div class="limiter-ceiling-value">
@@ -121,6 +124,7 @@
                   ref="limiterCeilingInput"
                   type="number"
                   class="limiter-ceiling-input"
+                  :class="{ 'is-danger': limiterCeilingDb >= -0.05 }"
                   :value="limiterCeilingDb.toFixed(1)"
                   min="-60"
                   max="0"
@@ -315,12 +319,15 @@ const limiterCeilingLabel = computed(() => {
 const limiterToggleLabel = computed(() =>
   t(limiterEnabled.value ? 'outputConsole.bypassLimiter' : 'outputConsole.enableLimiter'),
 );
-const limiterGainReductionLabel = computed(() => {
+const limiterGainReductionDb = computed(() => {
   const channels = server.meters?.master_channels ?? [];
   const left = channels.find(channel => channel.index === 0)?.gain_reduction_db ?? 0;
   const right = channels.find(channel => channel.index === 1)?.gain_reduction_db ?? 0;
-  return `GR −${Math.abs(Math.min(0, left, right)).toFixed(1)}`;
+  return Math.abs(Math.min(0, left, right));
 });
+const limiterGainReductionLabel = computed(() =>
+  `GR −${limiterGainReductionDb.value.toFixed(1)}`,
+);
 
 async function patchLimiterSettings(patch: Record<string, unknown>) {
   const project = currentProject.value as any;
@@ -970,7 +977,7 @@ onUnmounted(() => {
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: var(--color-text-primary);
+  color: var(--color-warning);
   font-family: var(--font-mono);
   font-size: 14px;
   font-weight: 600;
@@ -989,6 +996,10 @@ onUnmounted(() => {
   &:focus-visible {
     outline: 2px solid var(--color-focus-ring);
     outline-offset: 1px;
+  }
+
+  &.is-danger {
+    color: var(--color-danger);
   }
 }
 
@@ -1048,7 +1059,7 @@ onUnmounted(() => {
     color var(--transition-fast);
 
   &.is-enabled {
-    background: var(--color-control);
+    background: color-mix(in srgb, var(--color-success) 12%, var(--color-control));
     border-color: color-mix(in srgb, var(--color-success) 55%, var(--color-border));
     color: var(--color-text-primary);
   }
@@ -1060,7 +1071,7 @@ onUnmounted(() => {
   }
 
   &.is-enabled:hover {
-    background: color-mix(in srgb, var(--color-success) 8%, var(--color-control));
+    background: color-mix(in srgb, var(--color-success) 16%, var(--color-control));
     border-color: color-mix(in srgb, var(--color-success) 65%, var(--color-border));
   }
 
@@ -1081,6 +1092,10 @@ onUnmounted(() => {
   font-size: 11px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+
+  &.is-reducing {
+    color: var(--color-warning);
+  }
 }
 
 .output-pair {

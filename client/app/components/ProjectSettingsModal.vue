@@ -29,6 +29,9 @@
         </div>
 
         <div class="modal-body">
+          <p v-if="settingsError" class="settings-error" role="alert">
+            {{ settingsError }}
+          </p>
           <!-- ================= Audio Routing ================= -->
           <template v-if="activeTab === 'audio'">
             <!-- Audio device (default for cue playback) -->
@@ -645,6 +648,22 @@
               <p class="settings-help">{{ t('settings.videoOutputTestCardHelp') }}</p>
             </section>
 
+            <section class="settings-field settings-field--test-card-controls">
+              <TestCardControls
+                :config="voTestCardConfig"
+                :disabled="!voStatus"
+                @change="onVideoOutputTestCardConfigChange"
+              />
+              <p
+                v-if="voStatus?.testCardError"
+                class="settings-help video-output-playback-error"
+                role="alert"
+              >
+                <strong>{{ t('common.error') }}:</strong>
+                {{ voStatus.testCardError }}
+              </p>
+            </section>
+
             <!-- Live status line: where the output is, or why it isn't -->
             <section class="settings-field">
               <div class="settings-label">
@@ -653,6 +672,14 @@
               </div>
               <p class="settings-help video-output-status" :class="{ 'video-output-status--warn': !!voWarningText }">
                 {{ voWarningText || voStatusText }}
+              </p>
+              <p
+                v-if="voStatus?.playbackError"
+                class="settings-help video-output-playback-error"
+                role="alert"
+              >
+                <strong>{{ t('common.error') }}:</strong>
+                {{ voStatus.playbackError.message }}
               </p>
               <p class="settings-help">{{ t('settings.videoOutputMachineNote') }}</p>
             </section>
@@ -744,6 +771,8 @@ import { normalizeIndexDisplayStart } from '~/utils/indexDisplay';
 import AboutContent from './AboutContent.vue';
 import { PLAYBACK_ACTIONS, formatKeyLabel, useCartHotkeys } from '~/composables/useCartHotkeys';
 import type { PlaybackKeyAction } from '~/types/project';
+import TestCardControls from './TestCardControls.vue';
+import { createTestCardConfig, type TestCardConfig } from '../../electron/test-card-config';
 
 const props = defineProps<{ open: boolean }>();
 const emit  = defineEmits<{ (e: 'close'): void; (e: 'open-shortcuts'): void }>();
@@ -857,9 +886,24 @@ const countdownColorBands = computed(() => normalizeCountdownColorBands(
   (currentProject.value as any)?.settings?.countdownColorBands,
 ));
 const countdownBandError = ref('');
+const settingsError = ref('');
+
+function describeSettingsError(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : t('common.error');
+}
+
+async function refreshDevices() {
+  settingsError.value = '';
+  try {
+    await server.fetchDevices();
+  } catch (error) {
+    settingsError.value = describeSettingsError(error);
+  }
+}
+
 // Make sure devices are loaded when the modal opens.
 watch(() => props.open, async (v) => {
-  if (v) await server.fetchDevices();
+  if (v) await refreshDevices();
 });
 // Video Output tab. Open/closed state is session-only; display assignment is
 // machine-level state in the Electron main process (<userData>/video-output.json)
@@ -867,6 +911,7 @@ watch(() => props.open, async (v) => {
 // status; the onStatus push keeps this panel live while it is open.
 // ---------------------------------------------------------------------------
 const voStatus = ref<VideoOutputStatus | null>(null);
+const voTestCardConfig = ref<TestCardConfig>(createTestCardConfig());
 
 const voEnabled  = computed(() => voStatus.value?.enabled === true);
 const voDisplays = computed(() => voStatus.value?.displays ?? []);
@@ -891,31 +936,95 @@ const voWarningText = computed(() => {
   return '';
 });
 
+let voTestCardConfigWriting = false;
+let voHasLocalTestCardConfigIntent = false;
+let voPendingTestCardConfig: TestCardConfig | null = null;
+
+function receiveVideoOutputStatus(status: VideoOutputStatus, forceConfig = false): void {
+  voStatus.value = status;
+  if (voTestCardConfigWriting) return;
+  if (forceConfig || !voHasLocalTestCardConfigIntent) {
+    voTestCardConfig.value = createTestCardConfig(status.testCardConfig);
+    if (forceConfig) voHasLocalTestCardConfigIntent = false;
+  }
+}
+
 async function onVideoOutputEnableChange(event: Event) {
   const enabled = (event.target as HTMLInputElement).checked;
   const api = window.electronAPI?.videoOutput;
   if (!api) return;
-  voStatus.value = enabled ? await api.open() : await api.close();
+  settingsError.value = '';
+  try {
+    receiveVideoOutputStatus(enabled ? await api.open() : await api.close());
+  } catch (error) {
+    settingsError.value = describeSettingsError(error);
+  }
 }
 
 async function onVideoOutputDisplayChange(event: Event) {
   const value = (event.target as HTMLSelectElement).value;
   const api = window.electronAPI?.videoOutput;
   if (!api) return;
-  voStatus.value = await api.setDisplay(value || null);
+  settingsError.value = '';
+  try {
+    receiveVideoOutputStatus(await api.setDisplay(value || null));
+  } catch (error) {
+    settingsError.value = describeSettingsError(error);
+  }
 }
 
 async function onVideoOutputIdentifyDisplays() {
   const api = window.electronAPI?.videoOutput;
   if (!api) return;
-  await api.identifyDisplays();
+  settingsError.value = '';
+  try {
+    await api.identifyDisplays();
+  } catch (error) {
+    settingsError.value = describeSettingsError(error);
+  }
 }
 
 async function onVideoOutputTestCardChange(event: Event) {
   const show = (event.target as HTMLInputElement).checked;
   const api = window.electronAPI?.videoOutput;
   if (!api) return;
-  await api.setTestCard(show);
+  settingsError.value = '';
+  try {
+    await api.setTestCard(show);
+  } catch (error) {
+    settingsError.value = describeSettingsError(error);
+  }
+}
+
+function onVideoOutputTestCardConfigChange(config: TestCardConfig): void {
+  const normalized = createTestCardConfig(config);
+  voTestCardConfig.value = normalized;
+  voHasLocalTestCardConfigIntent = true;
+  voPendingTestCardConfig = normalized;
+  void drainVideoOutputTestCardConfig();
+}
+
+async function drainVideoOutputTestCardConfig(): Promise<void> {
+  if (voTestCardConfigWriting) return;
+  const api = window.electronAPI?.videoOutput;
+  if (!api) return;
+
+  voTestCardConfigWriting = true;
+  while (voPendingTestCardConfig) {
+    const config = voPendingTestCardConfig;
+    voPendingTestCardConfig = null;
+    settingsError.value = '';
+    try {
+      const status = await api.setTestCardConfig(config);
+      voStatus.value = status;
+      if (!voPendingTestCardConfig) {
+        voTestCardConfig.value = createTestCardConfig(status.testCardConfig);
+      }
+    } catch (error) {
+      settingsError.value = describeSettingsError(error);
+    }
+  }
+  voTestCardConfigWriting = false;
 }
 
 // Standby image — the one video-output setting that IS project-level (it
@@ -929,6 +1038,7 @@ const voStandbyPickerStart = computed(() =>
 
 async function onVideoOutputStandbyPicked(path: string) {
   voStandbyPickerOpen.value = false;
+  settingsError.value = '';
   try {
     const dest = await server.copyToMedia(path);
     const folder: string = (currentProject.value as any)?.folderPath || '';
@@ -936,13 +1046,14 @@ async function onVideoOutputStandbyPicked(path: string) {
       ? dest.slice(folder.length).replace(/^[\\/]+/, '').replace(/\\/g, '/')
       : dest;
     await applyPatch({ videoStandbyImage: relative });
-  } catch (e) {
-    console.warn('[ProjectSettings] standby image copy failed:', e);
+  } catch (error) {
+    console.warn('[ProjectSettings] standby image copy failed:', error);
+    settingsError.value = describeSettingsError(error);
   }
 }
 
-function onVideoOutputStandbyClear() {
-  void applyPatch({ videoStandbyImage: null });
+async function onVideoOutputStandbyClear() {
+  await applyPatch({ videoStandbyImage: null });
 }
 
 let voOffStatus: (() => void) | null = null;
@@ -951,14 +1062,14 @@ watch(() => props.open, async (v) => {
   if (!v) return;
   const api = window.electronAPI?.videoOutput;
   if (!api) return;
-  try { voStatus.value = await api.status(); } catch { /* main not ready yet */ }
+  try { receiveVideoOutputStatus(await api.status(), true); } catch { /* main not ready yet */ }
 });
 
 onMounted(() => {
   const api = window.electronAPI?.videoOutput;
   if (!api) return;
-  api.status().then((s) => { voStatus.value = s; }).catch(() => {});
-  voOffStatus = api.onStatus((s) => { voStatus.value = s; });
+  api.status().then((status) => receiveVideoOutputStatus(status, true)).catch(() => {});
+  voOffStatus = api.onStatus((status) => receiveVideoOutputStatus(status));
 });
 
 onBeforeUnmount(() => {
@@ -968,24 +1079,69 @@ onBeforeUnmount(() => {
 
 // Refresh devices on first mount too.
 onMounted(async () => {
-  try { await server.fetchDevices(); } catch { /* connection may not be ready yet */ }
+  await refreshDevices();
 });
 
 type PatchResult = 'saved' | 'unsaved' | 'failed';
+type PreviousSetting = { exists: boolean; value: unknown };
 
-async function applyPatch(patch: Record<string, any>): Promise<PatchResult> {
-  // Optimistic local update so the UI reflects the change immediately.
-  if (currentProject.value) {
-    const settings = ((currentProject.value as any).settings ?? {});
-    (currentProject.value as any).settings = { ...settings, ...patch };
-  }
-  try {
-    await server.patchSettings(patch);
-  } catch (e) {
-    console.warn('[ProjectSettings] patch failed:', e);
-    return 'failed';
-  }
-  return await saveProject() ? 'saved' : 'unsaved';
+let settingsPatchQueue = Promise.resolve();
+
+function applyPatch(patch: Record<string, any>): Promise<PatchResult> {
+  const project = currentProject.value as any;
+  const queued = settingsPatchQueue.then(async (): Promise<PatchResult> => {
+    if (!project || currentProject.value !== project) return 'saved';
+
+    const settings = (project.settings ?? {});
+    const previousSettings = new Map<string, PreviousSetting>();
+    settingsError.value = '';
+    for (const key of Object.keys(patch)) {
+      previousSettings.set(key, {
+        exists: Object.prototype.hasOwnProperty.call(settings, key),
+        value: settings[key],
+      });
+    }
+    project.settings = { ...settings, ...patch };
+
+    try {
+      await server.patchSettings(patch);
+    } catch (error) {
+      console.warn('[ProjectSettings] patch failed:', error);
+      if (currentProject.value !== project) return 'saved';
+
+      const restored = { ...(project.settings ?? {}) };
+      for (const [key, previous] of previousSettings) {
+        if (previous.exists) restored[key] = previous.value;
+        else delete restored[key];
+      }
+      project.settings = restored;
+      settingsError.value = describeSettingsError(error);
+      return 'failed';
+    }
+
+    // The server accepted this project's live change. Never save whichever
+    // project happens to become current while that acknowledgement is pending.
+    if (currentProject.value !== project) return 'saved';
+    try {
+      const saved = await saveProject();
+      if (currentProject.value !== project) return 'saved';
+      if (saved) return 'saved';
+    } catch (error) {
+      if (currentProject.value !== project) return 'saved';
+      settingsError.value = describeSettingsError(error);
+      return 'unsaved';
+    }
+
+    settingsError.value = server.reconnecting
+      ? `${t('project.unsavedChanges')} — ${t('connectionLost.attempting')}`
+      : t('project.unsavedChanges');
+    return 'unsaved';
+  });
+
+  // Serialize edits so a rejected optimistic value can never become the
+  // rollback baseline for another in-flight change to the same setting.
+  settingsPatchQueue = queued.then(() => undefined, () => undefined);
+  return queued;
 }
 
 function countdownBandRange(index: number): string {
@@ -1006,21 +1162,13 @@ let countdownMutationVersion = 0;
 
 async function persistCountdownBands(bands: CountdownColorBand[]) {
   const mutationVersion = ++countdownMutationVersion;
-  const previous = countdownColorBands.value.map(band => ({ ...band }));
   countdownBandError.value = '';
   const next = normalizeCountdownColorBands(bands);
   const result = await applyPatch({ countdownColorBands: next });
   if (mutationVersion !== countdownMutationVersion || result === 'saved') return;
 
-  // A failed disk save leaves the accepted live setting in place and visibly
-  // unsaved. Only a rejected server patch is safe to roll back.
-  if (result === 'failed' && currentProject.value) {
-    const settings = ((currentProject.value as any).settings ?? {});
-    (currentProject.value as any).settings = {
-      ...settings,
-      countdownColorBands: previous,
-    };
-  }
+  // applyPatch restores a rejected live change. A disk-save failure leaves the
+  // accepted server value in place and marks it visibly unsaved.
   countdownBandError.value = t('settings.countdownSaveFailed');
 }
 
@@ -1065,67 +1213,67 @@ function removeCountdownBand(index: number) {
   void persistCountdownBands(bands);
 }
 
-function onAudioDeviceChange(e: Event) {
+async function onAudioDeviceChange(e: Event) {
   const v = (e.target as HTMLSelectElement).value;
-  applyPatch({ defaultOutputDevice: v || null });
+  await applyPatch({ defaultOutputDevice: v || null });
 }
-function onPreviewDeviceChange(e: Event) {
+async function onPreviewDeviceChange(e: Event) {
   const v = (e.target as HTMLSelectElement).value;
-  applyPatch({ previewDevice: v || null });
+  await applyPatch({ previewDevice: v || null });
 }
-function onLtcDeviceChange(e: Event) {
+async function onLtcDeviceChange(e: Event) {
   const v = (e.target as HTMLSelectElement).value;
-  applyPatch({ ltcDevice: v || null });
+  await applyPatch({ ltcDevice: v || null });
 }
-function onOutputTargetChange(e: Event) {
+async function onOutputTargetChange(e: Event) {
   const v = (e.target as HTMLSelectElement).value;
-  applyPatch({ outputTarget: v });
+  await applyPatch({ outputTarget: v });
 }
-function onMeterModeChange(e: Event) {
+async function onMeterModeChange(e: Event) {
   const v = (e.target as HTMLSelectElement).value;
-  applyPatch({ meterMode: v });
+  await applyPatch({ meterMode: v });
 }
-function onMeterBallisticsChange(e: Event) {
+async function onMeterBallisticsChange(e: Event) {
   const v = (e.target as HTMLSelectElement).value;
-  applyPatch({ meterBallistics: v });
+  await applyPatch({ meterBallistics: v });
 }
-function onAutoTrimSilenceOnImportChange(e: Event) {
-  applyPatch({ autoTrimSilenceOnImport: (e.target as HTMLInputElement).checked });
+async function onAutoTrimSilenceOnImportChange(e: Event) {
+  await applyPatch({ autoTrimSilenceOnImport: (e.target as HTMLInputElement).checked });
 }
-function onAutoMatchLoudnessOnImportChange(e: Event) {
-  applyPatch({ autoMatchLoudnessOnImport: (e.target as HTMLInputElement).checked });
+async function onAutoMatchLoudnessOnImportChange(e: Event) {
+  await applyPatch({ autoMatchLoudnessOnImport: (e.target as HTMLInputElement).checked });
 }
-function onAutoReduceTruePeaksOnImportChange(e: Event) {
-  applyPatch({ autoReduceTruePeaksOnImport: (e.target as HTMLInputElement).checked });
+async function onAutoReduceTruePeaksOnImportChange(e: Event) {
+  await applyPatch({ autoReduceTruePeaksOnImport: (e.target as HTMLInputElement).checked });
 }
-function onCycleTrackColorsChange(e: Event) {
-  applyPatch({ cycleTrackColors: (e.target as HTMLInputElement).checked });
+async function onCycleTrackColorsChange(e: Event) {
+  await applyPatch({ cycleTrackColors: (e.target as HTMLInputElement).checked });
 }
-function onDisableLimiterChange(e: Event) {
-  applyPatch({ disableLimiter: (e.target as HTMLInputElement).checked });
+async function onDisableLimiterChange(e: Event) {
+  await applyPatch({ disableLimiter: (e.target as HTMLInputElement).checked });
 }
-function onDisableSilenceWarningChange(e: Event) {
-  applyPatch({ disableSilenceWarning: (e.target as HTMLInputElement).checked });
+async function onDisableSilenceWarningChange(e: Event) {
+  await applyPatch({ disableSilenceWarning: (e.target as HTMLInputElement).checked });
 }
-function onDefaultTransitionModeChange(e: Event) {
-  applyPatch({ defaultTransitionMode: (e.target as HTMLSelectElement).value });
+async function onDefaultTransitionModeChange(e: Event) {
+  await applyPatch({ defaultTransitionMode: (e.target as HTMLSelectElement).value });
 }
-function onIndexDisplayStartChange(e: Event) {
+async function onIndexDisplayStartChange(e: Event) {
   const input = e.target as HTMLInputElement;
   const value = normalizeIndexDisplayStart(input.value);
   input.value = String(value);
-  applyPatch({ indexDisplayStart: value });
+  await applyPatch({ indexDisplayStart: value });
 }
-function onAutoCueNextChange(e: Event) {
-  applyPatch({ autoCueNextWithoutEndBehavior: (e.target as HTMLInputElement).checked });
+async function onAutoCueNextChange(e: Event) {
+  await applyPatch({ autoCueNextWithoutEndBehavior: (e.target as HTMLInputElement).checked });
 }
-function onStopAllFadeChange(e: Event) {
+async function onStopAllFadeChange(e: Event) {
   const seconds = parseFloat((e.target as HTMLInputElement).value);
   const ms = Number.isFinite(seconds) ? Math.max(0, Math.round(seconds * 1000)) : 1000;
-  applyPatch({ stopAllFadeMs: ms });
+  await applyPatch({ stopAllFadeMs: ms });
 }
-function onScrollToPlayingChange(e: Event) {
-  applyPatch({ uiScrollToPlaying: (e.target as HTMLInputElement).checked });
+async function onScrollToPlayingChange(e: Event) {
+  await applyPatch({ uiScrollToPlaying: (e.target as HTMLInputElement).checked });
 }
 
 function onPlaylistRowHeightInput(mode: PlaylistRowMode, e: Event) {
@@ -1315,6 +1463,13 @@ function close() {
 .video-output-status--warn {
   color: var(--color-warning, #f1c21b);
   font-weight: 600;
+}
+.video-output-playback-error {
+  padding: 8px 10px;
+  color: var(--color-danger);
+  background: var(--color-surface);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--control-radius);
 }
 .video-output-display-row {
   display: grid;

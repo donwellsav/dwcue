@@ -168,10 +168,11 @@ public:
     // so these fades don't disturb the "explicit-stop" fade setting.
     void stop_with_fade(std::chrono::milliseconds dur);
 
-    // Position the decoder at `start_seconds` and synchronously fill the
-    // bounded read-ahead queue. `seconds` caps how much is filled; the queue
-    // itself is deliberately much smaller than two seconds. Returns false
-    // when the decoder isn't ready.
+    // For a stopped cue, position the decoder at `start_seconds` and
+    // synchronously fill the bounded read-ahead queue. Active cues are left
+    // unchanged. `seconds` caps how much is filled; the queue itself is
+    // deliberately much smaller than two seconds. Returns false when the
+    // decoder isn't ready.
     bool prime(double seconds = 2.0, double start_seconds = 0.0) noexcept;
 
     // Decode-worker entry point. Fills at most `max_blocks` free read-ahead

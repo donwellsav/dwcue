@@ -31,6 +31,12 @@
         <p class="original-credit">
           Original software © Thomas Doukinitsas and contributors.
         </p>
+        <p class="original-credit">
+          {{ t('testCard.cardType') }}:
+          <a href="https://github.com/Alteka/Kards" class="translator-link"
+             @click.prevent="openExternal('https://github.com/Alteka/Kards')">Alteka Kards</a>
+          · GPL-3.0-only
+        </p>
         <p class="translator" v-if="t('translationContributor.name')">
           <strong>{{ t('translationContributor.title') }}: </strong>
           <a
@@ -100,7 +106,7 @@ const contributors = computed(() =>
 );
 
 // Get app version
-const appVersion = ref('2.6.13');
+const appVersion = ref('2.6.14');
 onMounted(async () => {
   if (import.meta.client && window.electronAPI?.getAppVersion) {
     appVersion.value = await window.electronAPI.getAppVersion();

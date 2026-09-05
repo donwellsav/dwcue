@@ -1,12 +1,12 @@
 # DonWells Cue
 
-**DonWells Cue is a free, open-source app for playing back audio in live shows.** If you run sound for theatre, conferences, houses of worship, AV installs, or any live event, DonWells Cue lets you line up your music, sound effects and stings ahead of time and fire them off reliably on the night — from a laptop, a touchscreen, or even a separate stage-side machine you control over the network.
+**DonWells Cue is a free, open-source app for playing back audio and video in live shows.** If you run sound for theatre, conferences, houses of worship, AV installs, or any live event, DonWells Cue lets you line up your music, sound effects and stings ahead of time and fire them off reliably on the night — from a laptop, a touchscreen, or even a separate stage-side machine you control over the network.
 
 You build a **show** as a list of cues plus a grid of one-touch buttons, then trigger them with a click, a tap, a keyboard shortcut, or a MIDI controller. DonWells Cue handles the fades, the transitions between tracks, and keeps a close eye on your levels so nothing clips or distorts.
 
 This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. Published macOS packages are Developer ID signed, notarized, and package-validated.
 
-> **Current source:** package metadata is **v2.6.13**. The release page is authoritative for published installers and release assets; verify the installed About version before relying on a behaviour. This source includes the playback-safety, project-save/reconnect, managed local-authentication, show-creation/import, and .dwcue naming work described below.
+> **Current source:** package metadata is **v2.6.14**. The release page is authoritative for published installers and release assets; verify the installed About version before relying on a behaviour. This source includes the playback-safety, project-save/reconnect, managed local-authentication, show-creation/import, and .dwcue naming work described below.
 
 > **Operating a show?** Use the [operator manual (PDF)](docs/operators-manual.pdf) or its [Markdown source](docs/operators-manual.md). Those instructions track the current source. The client and server READMEs linked later are developer references, not show-day instructions.
 
@@ -50,8 +50,13 @@ Video cues are ordinary audio cues whose media file also carries a picture (H.26
 - **Recover from the output itself** by right-clicking it. The context menu can enter or leave fullscreen, show the test card, or **Exit Video Output**. On Windows, **Alt+F4** also closes only the Video Output window; **Esc** leaves fullscreen. Closing it disarms the output for the rest of the session until you open it again.
 - **Keep using shortcuts** even if the Video Output window owns keyboard focus. DonWells Cue forwards application and One Shot shortcuts to the control window while preserving operating-system and native app shortcuts such as Windows Alt+F4 and the normal Ctrl/Cmd file commands.
 - **Idle layers** — when no video cue is playing the output shows, in priority order: the cue's own **image** (set in Properties for audio-only cues), otherwise the project's **standby image** (Project Settings), otherwise black. Black is a fallback layer, not a dedicated operator blackout: the current UI has no blackout or fade-to-black control.
-- **In sync with audio** — the picture chases the engine's playhead: pauses freeze the frame, while small playback-rate corrections and thresholded re-anchoring keep the two timelines aligned.
+- **In sync with audio** — the picture follows the native engine clock, including file-absolute paused seeks, loops, and authored Out points. It freezes when native progress stops and resumes only with fresh progress; it does not free-run through an audio stall.
 - **Silent videos** — a video file with no audio track still plays: the engine runs a silent transport of the container's duration so the cue advances, auto-follows and reports progress exactly like an audible cue.
+- **Grouped cues and One Shots** — nested video/image cues and cart-only video are supported; video uses the same media resolution as native audio. Reopening the output restores the most recently fired program source, not arbitrary cue-list order.
+- **Visible failures** — unsupported or undecodable video tracks produce an error in the control window and do not leave a misleading picture on the audience output. A healthy replacement source clears the error.
+- **Audio output recovery** — a stalled callback clock produces an operator warning. **Retry now** restarts that device in place, preserving its identity, routes, and loaded cues. Request acceptance is not success: the warning clears only after the matching restart receives a real callback. A failed attempt remains retryable.
+- **Diagnostic test cards** — Project Settings → Video Output offers the DonWells Cue signature card, Simple/SMPTE/ARIB/HDR/SDI/Single bars, Grid, Ramp, Name, AV Sync, DeGhost and LED Wall. These reproduce [Alteka Kards](https://github.com/Alteka/Kards) geometry, levels and diagnostic motion with DonWells Cue branding; their card-specific controls include colours, levels, grids, ramps, masks, logos and LED dimensions. Settings stay on this machine rather than modifying the project.
+- **Native AV Sync** — the original bundled 24, 25, 29.97, 30, 50, 59.94, 60, 100 and 120 FPS clips use the existing native decoder, loop, mixer and selected PA output. Their picture uses the same muted, native-clocked video element as Program playback. **Stop All** stops the diagnostic even when no project cue is active; switch the test card off and on to restart it. Switching away, closing the output or quitting unloads the transient diagnostic without adding or editing project cues. Preferences persist, but the output and test card remain disarmed on app launch.
 
 ---
 
@@ -107,7 +112,7 @@ If your browser blocked the download instead, choose **Keep** to save the instal
 
 ## Getting started
 
-These steps describe the current v2.6.13 working tree. It writes native show documents as `.dwcue` files and portable exports as `.dwcuepack` archives.
+These steps describe the current v2.6.14 working tree. It writes native show documents as `.dwcue` files and portable exports as `.dwcuepack` archives.
 
 1. Install the [latest release](https://github.com/donwellsav/dwcue/releases/latest), or build DonWells Cue from source, and launch it.
 2. Choose **New Show**, enter its name, use **Choose…** to select the read-only Location, and create it — DonWells Cue writes `<show name>.dwcue` and a `media/` sub-folder there.
@@ -335,7 +340,7 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.13**; the release page remains the source of truth for published artefacts and their checksums.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.14**; the release page remains the source of truth for published artefacts and their checksums.
 
 ### Triggering a release
 

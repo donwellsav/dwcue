@@ -275,6 +275,9 @@ The authoritative endpoint list is the table of `CROW_ROUTE` registrations in [`
 |--------------------|------|----------|-------|
 | `GET /api/health`  | —    | `{ "ok": true, "name": "dwcue-server", "pid": number, "instanceToken": string }` | Sole unauthenticated route; liveness and launcher-generation identity probe. `instanceToken` is not the control bearer. |
 | `GET /api/whoami`  | —    | `{ "clientIp": "192.168.1.10", "isLocal": false }` | Bearer required; `isLocal` reports whether the caller is loopback, not whether authentication is required. |
+| `POST /api/diagnostics/av-sync` | JSON `{ "file_path": "/abs/60.webm", "output_device_id": "default" }`, or multipart `file` + `output_device_id` | Full cue object, stopped and primed for native looping | Fresh runtime-only diagnostic; never adds a show item or reuses a project cue. |
+
+AV Sync uses the existing native decoder, loop and mixer. `default` follows the project's Program output; an explicit selector must exactly match a catalog device name or an opened-device ID. Start with `POST /api/cues/<id>/play` and stop/unload with `DELETE /api/cues/<id>`. Uploaded media is staged outside the show and deleted on unload, project reset or server shutdown; a caller-supplied local file is never deleted. The same cue appears in native meter/state broadcasts without a project item UUID. Media streams through the authenticated `/api/media?path=...` endpoint. The output owner must unload its diagnostic when hidden, replaced or closed; global Stop All also stops the test signal.
 
 #### Devices
 
@@ -283,6 +286,11 @@ The authoritative endpoint list is the table of `CROW_ROUTE` registrations in [`
 | `GET /api/devices` | — | `[ { "id": "…", "display_name": "…", "channel_count": 8, "sample_rate": 48000, "is_default": true } ]` |
 | `POST /api/devices/open` | `{ "name": "…" (optional), "channels": 2 }` — empty `name` opens the default device | `{ "device_id": "…" }` · `400` if open fails |
 | `POST /api/devices/close` | `{ "id": "…" }` | `{ "ok": true }` |
+| `POST /api/devices/<id>/recover` | `{}` | `202` with `{ "accepted": true, "request_id": number }` when queued; `404` when the device cannot accept recovery |
+
+Open-device snapshots include `runtime_state`, `is_clock_master`, `callback_entry_count`, `stream_recovery_count`, `recovery_request_id`, and `recovery_status` (`idle`, `pending`, `succeeded`, or `failed`). A successful backend start remains `starting` until a real callback arrives; a missing callback clock becomes `stalled` and cannot be clock master. Recovery stops and starts the existing stream without replacing its ID or cue routing. Match the returned request ID against full `{ "type": "device_state", "device": { ... } }` WebSocket events; only `succeeded` with `runtime_state: "running"` establishes recovered output. Restart errors and callback-startup timeout publish `failed` and permit another request.
+
+Authenticated `GET`/`HEAD /api/media?item_uuid=<uuid>` resolves the exact project media path used by native audio, including valid fallback paths. Byte ranges and the legacy `path` query remain supported. Live `cue_state` and reconnect `playback_snapshot` cues carry authoritative `trigger_seq` firing order for video-source selection.
 
 #### Cues (engine-direct)
 

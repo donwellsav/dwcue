@@ -28,11 +28,13 @@ import type {
   MasterChannelIndex,
   MetersBroadcast,
   MixerChannelId,
-  ServerCue,
   ServerAudioReadiness,
+  ServerCue,
+  ServerCueState,
   ServerDeviceInfo,
   ServerFsListing,
   ServerMixerChannel,
+  ServerPlaybackSnapshot,
   ServerWaveform,
   WaveformAnalysisRange,
 } from '~/types/server';
@@ -78,6 +80,13 @@ function createClient() {
     if (next && !/^[0-9a-f]{64}$/.test(next)) {
       throw new Error('Managed server returned an invalid access token');
     }
+    if (serverUrl.value === url && managedAccessToken.value === next) {
+      connect();
+      return;
+    }
+    const sameEndpoint = httpBase.value === url.replace(/\/+$/, '');
+    reconnectProbePending = sameEndpoint &&
+      (hasEverConnected || reconnectProbePending);
     serverUrl.value = url;
     managedAccessToken.value = next;
     if (typeof window !== 'undefined') {
@@ -89,8 +98,18 @@ function createClient() {
   }
 
   function configureRemoteConnection(url: string, token: string) {
+    const next = token.trim();
+    if (serverUrl.value === url &&
+        managedAccessToken.value === null &&
+        accessToken.value === next) {
+      connect();
+      return;
+    }
+    const sameEndpoint = httpBase.value === url.replace(/\/+$/, '');
+    reconnectProbePending = sameEndpoint &&
+      (hasEverConnected || reconnectProbePending);
     serverUrl.value = url;
-    accessToken.value = token.trim();
+    accessToken.value = next;
     managedAccessToken.value = null;
     if (typeof window !== 'undefined') {
       window.localStorage?.setItem('liveplay.serverUrl', url);
@@ -100,7 +119,6 @@ function createClient() {
     disconnect();
     connect();
   }
-
   function clearLastError() {
     lastError.value = null;
   }
@@ -128,9 +146,7 @@ function createClient() {
   }
 
   // Subscribers for cue transport-state transitions emitted by the server.
-  // Payload: { cue_id, transport (0=Stopped,1=Playing,2=FadingIn,3=FadingOut), playhead_seconds }
-  type CueStatePayload = { cue_id: string; transport: number; playhead_seconds: number };
-  type CueStateSubscriber = (s: CueStatePayload) => void;
+  type CueStateSubscriber = (s: ServerCueState) => void;
   const cueStateSubscribers = new Set<CueStateSubscriber>();
   function onCueState(cb: CueStateSubscriber): () => void {
     cueStateSubscribers.add(cb);
@@ -141,26 +157,16 @@ function createClient() {
   // every (re)connect so the client can rebuild its idea of what's playing,
   // what's "Up Next", and any active preview without waiting for the next
   // transport edge to fire.
-  type PlaybackSnapshot = {
-    cues: Array<{ cue_id: string; transport: number; playhead_seconds: number }>;
-    next_item_uuid: string;
-    master_gain_db: number;
-    output_channel_gains: Array<{ channel: number; db: number }>;
-    selected_item_uuid: string;
-    show_mode: boolean;
-    locale: string;
-    preview: { item_uuid: string; cue_id: string };
-  };
-  type PlaybackSnapshotSubscriber = (s: PlaybackSnapshot) => void;
+  type PlaybackSnapshotSubscriber = (s: ServerPlaybackSnapshot) => void;
   const playbackSnapshotSubscribers = new Set<PlaybackSnapshotSubscriber>();
   function onPlaybackSnapshot(cb: PlaybackSnapshotSubscriber): () => void {
     playbackSnapshotSubscribers.add(cb);
     return () => playbackSnapshotSubscribers.delete(cb);
   }
 
-  // Subscribers notified when the socket comes back *after* the connection was
-  // declared lost. Distinct from a plain `connected` watch, which also fires on
-  // the first connect of the session.
+  // Subscribers notified whenever a previously-open connection is restored on
+  // the same endpoint. This is deliberately independent of the modal's grace
+  // period so a fast server restart still triggers project reconciliation.
   type ReconnectedSubscriber = () => void;
   const reconnectedSubscribers = new Set<ReconnectedSubscriber>();
   function onReconnected(cb: ReconnectedSubscriber): () => void {
@@ -185,10 +191,12 @@ function createClient() {
   }>();
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectDelay = 1500;         // start higher; backs off to 10 s
-  // True after the *very first* successful onopen for this session. Used to
-  // skip the expensive triple-fetch (cues, mixers, devices) on every reconnect
-  // — those don't change just because the WS bounced.
+  // True after this endpoint has opened successfully. Idempotent state pushes
+  // preserve it; a genuine target change resets it for first-connect behavior.
   let hasEverConnected = false;
+  // A transport recovery requires project reconciliation even if it completes
+  // before the delayed connection-lost modal becomes visible.
+  let reconnectProbePending = false;
   // Count of consecutive failed reconnect attempts. Resets on every onopen.
   // Informational only (surfaced in the modal) — the "we're really down"
   // decision is time-based, see below.
@@ -248,6 +256,7 @@ function createClient() {
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     reconnectDelay = 1500;
     failedReconnectAttempts.value = 0;
+    if (hasEverConnected) reconnectProbePending = true;
     disconnect();
     connect();
   }
@@ -256,10 +265,12 @@ function createClient() {
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
       return;
     }
+    let socket: WebSocket;
     try {
       // eslint-disable-next-line no-console
       console.log('[liveplay] connecting to', httpBase.value.replace(/^http/i, 'ws') + '/ws');
-      ws = new WebSocket(wsUrl.value);
+      socket = new WebSocket(wsUrl.value);
+      ws = socket;
     } catch (e) {
       lastError.value = String(e);
       // eslint-disable-next-line no-console
@@ -267,21 +278,21 @@ function createClient() {
       scheduleReconnect();
       return;
     }
-
-    ws.onopen = () => {
+    socket.onopen = () => {
+      if (ws !== socket) return;
       connected.value = true;
       reconnecting.value = false;
       reconnectDelay = 1500;
       lastError.value = null;
       failedReconnectAttempts.value = 0;
       clearConnectionLostTimer();
-      const wasLost = connectionLost.value;
+      const shouldProbeAfterReconnect = reconnectProbePending;
+      reconnectProbePending = false;
       connectionLost.value = false;
-      // Fires only on a recovery, never on the very first connect. Subscribers
-      // (useConnectionGuard) use this to verify the server still holds the
-      // session we think it does — a restarted server accepts the socket but
-      // has forgotten the project.
-      if (wasLost) {
+      // Never fires on the first connection to an endpoint. Every later
+      // transport recovery does fire, including one that beats the modal's
+      // grace period and a managed restart that rotates only the token.
+      if (shouldProbeAfterReconnect) {
         for (const cb of reconnectedSubscribers) {
           try { cb(); } catch (e) { console.warn('[liveplay] reconnect handler threw:', e); }
         }
@@ -308,7 +319,9 @@ function createClient() {
       }
     };
 
-    ws.onclose = () => {
+    socket.onclose = () => {
+      if (ws !== socket) return;
+      ws = null;
       const wasConnected = connected.value;
       connected.value = false;
       failPendingCommands('Connection closed before the server confirmed the command.');
@@ -319,17 +332,22 @@ function createClient() {
       // lockout. Only meaningful once we've had a connection to lose: at cold
       // boot the welcome screen is the right place to notice a dead server,
       // not a modal over an empty app.
-      if (hasEverConnected) armConnectionLostTimer();
+      if (hasEverConnected) {
+        reconnectProbePending = true;
+        armConnectionLostTimer();
+      }
       scheduleReconnect();
     };
 
-    ws.onerror = (ev) => {
+    socket.onerror = (ev) => {
+      if (ws !== socket) return;
       lastError.value = 'WebSocket error';
       // onerror is followed by onclose; reconnection happens there.
       void ev;
     };
 
-    ws.onmessage = (ev) => {
+    socket.onmessage = (ev) => {
+      if (ws !== socket) return;
       let payload: any;
       try { payload = JSON.parse(ev.data); } catch { return; }
       if (!payload || typeof payload !== 'object' || !payload.type) return;
@@ -344,7 +362,7 @@ function createClient() {
           // The snapshot is sparse: stopped cues and 0 dB channel gains are
           // omitted. Treat it as authoritative so state that changed while
           // this client was offline cannot survive the reconnect.
-          const snap = payload as PlaybackSnapshot;
+          const snap = payload as ServerPlaybackSnapshot;
           const active = new Map((snap.cues ?? []).map(c => [c.cue_id, c]));
           const notified = new Set<string>();
           for (const cue of cues.value) {
@@ -382,7 +400,15 @@ function createClient() {
             cues.value[idx].playhead_seconds = payload.playhead_seconds;
           }
           // Notify subscribers (e.g. useAudioEngine cleans up activeCues on stop).
-          for (const cb of cueStateSubscribers) cb(payload as CueStatePayload);
+          for (const cb of cueStateSubscribers) cb(payload as ServerCueState);
+          break;
+        }
+        case 'device_state': {
+          const device = payload.device as ServerDeviceInfo | undefined;
+          if (!device || typeof device.id !== 'string') break;
+          const idx = devices.value.findIndex(existing => existing.id === device.id);
+          if (idx >= 0) devices.value[idx] = device;
+          else devices.value.push(device);
           break;
         }
         case 'doc_patch': {
@@ -439,10 +465,11 @@ function createClient() {
     // An intentional teardown isn't a lost connection. Any in-flight grace
     // period is void; a genuine failure after this re-arms it from onclose.
     clearConnectionLostTimer();
-    if (ws) {
-      ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
-      try { ws.close(); } catch {}
-      ws = null;
+    const socket = ws;
+    ws = null;
+    if (socket) {
+      socket.onopen = socket.onclose = socket.onerror = socket.onmessage = null;
+      try { socket.close(); } catch {}
     }
     connected.value = false;
     reconnecting.value = false;
@@ -782,9 +809,10 @@ function createClient() {
       body: JSON.stringify({ item, parentUuid, cartOnly }),
     }).then(p => { fetchCues(); return p; });
   }
-  async function updateProjectItem(uuid: string, patch: any) {
+  async function updateProjectItem(uuid: string, patch: any, clientMutationId: string) {
     return rest<any>(`/api/project/items/${encodeURIComponent(uuid)}`, {
       method: 'PATCH',
+      headers: { 'X-DWCUE-Mutation-ID': clientMutationId },
       body: JSON.stringify(patch),
     });
   }
@@ -1000,6 +1028,12 @@ function createClient() {
       body: JSON.stringify({ id }),
     });
     fetchDevices().catch(() => {});
+  }
+  async function recoverDevice(id: DeviceId) {
+    return rest<{ accepted: true; request_id: number }>(
+      `/api/devices/${encodeURIComponent(id)}/recover`,
+      { method: 'POST' },
+    );
   }
 
   // ---- Filesystem ---------------------------------------------------
@@ -1299,6 +1333,7 @@ function createClient() {
     // devices
     openDevice,
     closeDevice,
+    recoverDevice,
 
     // fs / uploads / waveform
     listServerPath,

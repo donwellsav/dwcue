@@ -35,7 +35,11 @@ export default defineNuxtPlugin(async () => {
     const isManagedToken = (value: unknown): value is string =>
       typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
 
-    const applyElectronConfig = async (cfg: any, status?: any) => {
+    const applyElectronConfig = async (
+      cfg: any,
+      status?: any,
+      startLocalIfNeeded = false,
+    ) => {
       const revision = ++configRevision;
       if (cfg.mode === 'remote') {
         server.configureRemoteConnection(cfg.remoteUrl, String(server.accessToken || ''));
@@ -46,10 +50,16 @@ export default defineNuxtPlugin(async () => {
       const currentToken = status?.running && isManagedToken(status.accessToken)
         ? status.accessToken
         : '';
-      // Select local mode before any asynchronous startup work so a saved
-      // remote credential can never be sent to a loopback endpoint.
-      server.configureManagedConnection(localUrl, currentToken);
-      if (currentToken) return;
+      if (currentToken) {
+        server.configureManagedConnection(localUrl, currentToken);
+        return;
+      }
+
+      // Never open an unauthenticated socket while Electron is starting or
+      // replacing the managed server. State pushes consume a ready token but
+      // must not turn an explicit shutdown into an automatic restart.
+      server.disconnect();
+      if (!startLocalIfNeeded) return;
 
       const ready = await ep.ensureRunning();
       if (revision !== configRevision) return;
@@ -61,11 +71,10 @@ export default defineNuxtPlugin(async () => {
         ready.accessToken,
       );
     };
-
     try {
       const status = await ep.getStatus();
       const cfg = status?.config ?? await ep.getConfig();
-      await applyElectronConfig(cfg, status);
+      await applyElectronConfig(cfg, status, true);
     } catch (e) {
       console.warn('[liveplay] failed to configure Electron server:', e);
       server.disconnect();

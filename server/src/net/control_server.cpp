@@ -38,6 +38,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cctype>
 #include <charconv>
 #include <chrono>
 #include <cmath>
@@ -56,6 +57,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -130,7 +132,7 @@ struct ControlSecurityMiddleware {
             res.set_header("Access-Control-Allow-Methods",
                            "GET, POST, PUT, PATCH, DELETE, OPTIONS");
             res.set_header("Access-Control-Allow-Headers",
-                           "Authorization, Content-Type");
+                           "Authorization, Content-Type, X-DWCUE-Mutation-ID");
             res.set_header("Access-Control-Max-Age", "600");
             res.end();
             return;
@@ -143,7 +145,8 @@ struct ControlSecurityMiddleware {
             return;
         }
 
-        if (req.url == "/api/upload" || req.url == "/api/project/import") {
+        if (req.url == "/api/upload" || req.url == "/api/project/import" ||
+            req.url == "/api/diagnostics/av-sync") {
             // Crow invokes middleware after buffering the HTTP body. This
             // prevents multipart parsing/staging above the limit, but Crow
             // itself needs an upstream parser cap to bound receive memory.
@@ -180,7 +183,7 @@ struct ControlSecurityMiddleware {
             res.set_header("Access-Control-Allow-Methods",
                            "GET, POST, PUT, PATCH, DELETE, OPTIONS");
             res.set_header("Access-Control-Allow-Headers",
-                           "Authorization, Content-Type");
+                           "Authorization, Content-Type, X-DWCUE-Mutation-ID");
             res.set_header("Access-Control-Max-Age", "600");
         }
     }
@@ -618,12 +621,16 @@ json device_info_to_json(const audio::DeviceInfo& d) {
         {"is_available",  d.is_available},
         {"is_clock_master", d.is_clock_master},
         {"runtime_state", d.runtime_state},
+        {"recovery_request_id", d.recovery_request_id},
+        {"recovery_status", d.recovery_status},
         {"underrun_count", d.underrun_count},
         {"underrun_frames", d.underrun_frames},
         {"overrun_count", d.overrun_count},
         {"hard_resync_count", d.hard_resync_count},
         {"device_loss_count", d.device_loss_count},
         {"device_recovery_count", d.device_recovery_count},
+        {"callback_entry_count", d.callback_entry_count},
+        {"stream_recovery_count", d.stream_recovery_count},
         {"reroute_count", d.reroute_count},
         {"interruption_count", d.interruption_count},
         {"correction_limit_count", d.correction_limit_count},
@@ -793,6 +800,12 @@ void ControlServer::broadcast_loop() {
     // rounds every sleep up); sleep_until against an advancing deadline
     // self-corrects, so the average rate converges on meter_broadcast_hz.
     auto next_tick = clock::now() + period;
+    // Edge-triggered runtime, clock-role, and recovery state. Including the
+    // request id guarantees a fast terminal result still emits an event even
+    // when the runtime state is Running before and after the restart.
+    using DeviceStateSignature =
+        std::tuple<std::string, bool, std::uint64_t, std::string>;
+    std::unordered_map<std::string, DeviceStateSignature> prev_device_states;
     auto next_download_cleanup = clock::now() + std::chrono::minutes(1);
     auto next_upload_cleanup = clock::now() + std::chrono::minutes(1);
 
@@ -910,20 +923,46 @@ void ControlServer::broadcast_loop() {
                 const auto current = item
                     ? item->stats().transport
                     : audio::TransportState::Stopped;
-                auto& prev = prev_transports[cue.id.value]; // default → Stopped (0)
+                auto& prev = prev_transports[cue.id.value];
                 if (current != prev) {
                     prev = current;
-                    json evt;
-                    evt["type"]             = "cue_state";
-                    evt["cue_id"]           = cue.id.value;
-                    evt["transport"]        = static_cast<int>(current);
-                    evt["playhead_seconds"] = item ? item->stats().playhead_seconds : 0.0;
-                    if (auto uuid = state_.cue_to_item_uuid(cue.id)) evt["item_uuid"] = *uuid;
+                    json evt{
+                        {"type", "cue_state"},
+                        {"cue_id", cue.id.value},
+                        {"transport", static_cast<int>(current)},
+                        {"playhead_seconds", item ? item->stats().playhead_seconds : 0.0},
+                    };
+                    if (auto uuid = state_.cue_to_item_uuid(cue.id)) {
+                        evt["item_uuid"] = *uuid;
+                        if (auto seq = state_.item_trigger_seq(*uuid)) evt["trigger_seq"] = *seq;
+                    }
                     cue_state_events.push_back(evt.dump());
                 }
             }
         } catch (const std::exception& e) {
             Logger::error("broadcast_loop: failed to build cue_state events: {}", e.what());
+        }
+
+        std::vector<std::string> device_state_events;
+        try {
+            for (const auto& device : engine_.enumerate_devices()) {
+                const auto signature = DeviceStateSignature{
+                    device.runtime_state,
+                    device.is_clock_master,
+                    device.recovery_request_id,
+                    device.recovery_status,
+                };
+                const auto previous = prev_device_states.find(device.id.value);
+                if (previous == prev_device_states.end() || previous->second != signature) {
+                    device_state_events.push_back(json{
+                        {"type", "device_state"},
+                        {"device", device_info_to_json(device)},
+                    }.dump());
+                }
+                prev_device_states[device.id.value] = signature;
+            }
+        } catch (const std::exception& e) {
+            Logger::error("broadcast_loop: failed to build device_state events: {}", e.what());
         }
 
         // Build any pending playback_snapshot payload WITHOUT holding ws_mutex.
@@ -957,8 +996,8 @@ void ControlServer::broadcast_loop() {
                 }
                 c->send_text(serialized);
                 for (const auto& e : cue_state_events) c->send_text(e);
-            }
-            catch (...) { /* connection will be cleaned up by onclose */ }
+                for (const auto& e : device_state_events) c->send_text(e);
+            } catch (...) { /* connection will be cleaned up by onclose */ }
         }
 
         // Sleep to maintain the broadcast cadence (absolute deadline; see
@@ -1118,7 +1157,12 @@ static json build_playback_snapshot(audio::AudioEngine& engine,
             {"transport",        static_cast<int>(s.transport)},
             {"playhead_seconds", s.playhead_seconds},
         };
-        if (auto uuid = state.cue_to_item_uuid(cue.id)) entry["item_uuid"] = *uuid;
+        if (auto uuid = state.cue_to_item_uuid(cue.id)) {
+            entry["item_uuid"] = *uuid;
+            if (auto seq = state.item_trigger_seq(*uuid)) {
+                entry["trigger_seq"] = *seq;
+            }
+        }
         cues_arr.push_back(std::move(entry));
     }
     json out_gains = json::array();
@@ -1603,6 +1647,118 @@ void ControlServer::install_routes() {
                 engine_.close_device(audio::DeviceId{j.at("id").get<std::string>()});
                 return json_ok(json({{"ok", true}}));
             } catch (const std::exception& e) { return json_err(400, e.what()); }
+        });
+
+    CROW_ROUTE(app, "/api/devices/<string>/recover").methods(crow::HTTPMethod::Post)
+        ([this](std::string id) {
+            const auto request_id = engine_.request_device_recovery(
+                audio::DeviceId{std::move(id)});
+            if (!request_id) {
+                return json_err(404, "device not found or recovery unavailable");
+            }
+            crow::response response{202, json({
+                {"accepted", true},
+                {"request_id", *request_id},
+            }).dump()};
+            response.set_header("Content-Type", "application/json");
+            return response;
+        });
+
+    CROW_ROUTE(app, "/api/diagnostics/av-sync").methods(crow::HTTPMethod::Post)
+        ([this](const crow::request& req) {
+            try {
+                if (req.body.size() > cfg_.max_upload_bytes)
+                    return json_err(413, "payload too large");
+
+                fs::path file_path;
+                std::string output_device_id = "default";
+                ScopedFileRemoval staged_upload;
+                const std::string content_type = req.get_header_value("Content-Type");
+
+                if (content_type.find("multipart/") != std::string::npos) {
+                    crow::multipart::message_view multipart{req};
+                    const crow::multipart::part_view* file_part = nullptr;
+                    std::string upload_filename;
+                    bool output_device_seen = false;
+
+                    for (const auto& part : multipart.parts) {
+                        const auto disposition = part.headers.find("Content-Disposition");
+                        if (disposition == part.headers.end()) continue;
+                        const auto name = disposition->second.params.find("name");
+                        if (name == disposition->second.params.end()) continue;
+                        if (name->second == "file") {
+                            if (file_part) return json_err(400, "duplicate 'file' parts");
+                            file_part = &part;
+                            const auto filename = disposition->second.params.find("filename");
+                            if (filename == disposition->second.params.end() || filename->second.empty())
+                                return json_err(400, "file part must include a non-empty filename");
+                            upload_filename = security::sanitize_upload_filename(filename->second);
+                        } else if (name->second == "output_device_id") {
+                            if (output_device_seen)
+                                return json_err(400, "duplicate 'output_device_id' parts");
+                            output_device_seen = true;
+                            output_device_id = std::string{part.body};
+                        }
+                    }
+
+                    if (!file_part) return json_err(400, "missing 'file' part");
+                    if (file_part->body.empty()) return json_err(400, "uploaded file is empty");
+                    if (file_part->body.size() > cfg_.max_upload_bytes)
+                        return json_err(413, "uploaded file too large");
+                    if (output_device_id.empty())
+                        return json_err(400, "output_device_id must not be empty");
+
+                    std::string extension = liveplay::util::path_to_utf8(
+                        liveplay::util::utf8_to_path(upload_filename).extension());
+                    std::transform(extension.begin(), extension.end(), extension.begin(),
+                                           [](unsigned char c) {
+                                               return static_cast<char>(std::tolower(c));
+                                           });
+                    if (extension != ".webm")
+                        return json_err(400, "diagnostic upload must be a WebM file");
+
+                    const fs::path temp_root =
+                        fs::temp_directory_path() / "liveplay-diagnostics";
+                    fs::create_directories(temp_root);
+                    file_path = temp_root / (make_download_token() + ".webm");
+                    staged_upload.path = file_path;
+                    std::ofstream stream{file_path, std::ios::binary};
+                    if (!stream) return json_err(500, "failed to stage diagnostic upload");
+                    stream.write(file_part->body.data(),
+                                 static_cast<std::streamsize>(file_part->body.size()));
+                    stream.close();
+                    if (!stream) return json_err(500, "failed to stage diagnostic upload");
+                } else {
+                    const auto body = json::parse(req.body);
+                    if (!body.contains("file_path") || !body["file_path"].is_string() ||
+                        body["file_path"].get_ref<const std::string&>().empty()) {
+                        return json_err(400, "expected non-empty 'file_path'");
+                    }
+                    file_path = liveplay::util::utf8_to_path(
+                        body["file_path"].get<std::string>());
+                    if (body.contains("output_device_id")) {
+                        if (!body["output_device_id"].is_string() ||
+                            body["output_device_id"].get_ref<const std::string&>().empty()) {
+                            return json_err(400, "output_device_id must be a non-empty string");
+                        }
+                        output_device_id = body["output_device_id"].get<std::string>();
+                    }
+                }
+
+                const auto result = state_.add_av_sync_diagnostic_cue(
+                    file_path, output_device_id, staged_upload.path);
+                if (result.cue_id.empty()) return json_err(400, result.error);
+
+                const auto cue = state_.find_cue(result.cue_id);
+                if (!cue) {
+                    state_.remove_cue(result.cue_id);
+                    return json_err(500, "diagnostic cue registration failed");
+                }
+                staged_upload.path.clear();
+                return json_ok(cue_to_json(*cue, engine_));
+            } catch (const std::exception& e) {
+                return json_err(400, e.what());
+            }
         });
 
     // ---- Cues ----
@@ -2863,7 +3019,7 @@ void ControlServer::install_routes() {
     // Same trust model as /api/waveform_path — the server is a same-machine
     // tool and the caller may read any local path.
     CROW_ROUTE(app, "/api/media").methods(crow::HTTPMethod::Get, crow::HTTPMethod::Head)
-        ([](const crow::request& req) {
+        ([this](const crow::request& req) {
             static const std::unordered_map<std::string, std::string> kMime = {
                 {".mp4",  "video/mp4"},        {".m4v",  "video/mp4"},
                 {".mov",  "video/quicktime"},  {".mkv",  "video/x-matroska"},
@@ -2874,10 +3030,18 @@ void ControlServer::install_routes() {
                 {".webp", "image/webp"},       {".svg",  "image/svg+xml"},
             };
             try {
+                const char* item_uuid = req.url_params.get("item_uuid");
                 const char* path_param = req.url_params.get("path");
-                if (!path_param || !*path_param) return json_err(400, "missing ?path=");
-                const fs::path file_path =
-                    liveplay::util::utf8_to_path(std::string{path_param});
+                fs::path file_path;
+                if (item_uuid && *item_uuid) {
+                    const auto resolved = state_.resolve_item_path(item_uuid);
+                    if (!resolved) return json_err(404, "media item not found");
+                    file_path = *resolved;
+                } else if (path_param && *path_param) {
+                    file_path = liveplay::util::utf8_to_path(std::string{path_param});
+                } else {
+                    return json_err(400, "missing ?item_uuid= or ?path=");
+                }
 
                 std::error_code ec;
                 const std::uint64_t size =
@@ -3616,6 +3780,8 @@ void ControlServer::install_routes() {
         ([this](const crow::request& req, std::string uuid){
             try {
                 auto patch = json::parse(req.body);
+                const std::string client_mutation_id =
+                    req.get_header_value("X-DWCUE-Mutation-ID");
                 Logger::api_request("Client ({}) -> Server ({}) : PATCH /api/project/items/{}",
                                     req.remote_ip_address, impl_->server_addr, uuid);
                 if (!state_.update_item(uuid, patch)) {
@@ -3624,10 +3790,14 @@ void ControlServer::install_routes() {
                 }
                 Logger::api_response("Client ({}) <- Server ({}) : PATCH /api/project/items/{} OK",
                                      req.remote_ip_address, impl_->server_addr, uuid);
-                broadcast_doc_patch(json{
+                json event{
                     {"type", "doc_patch"}, {"op", "item_updated"},
                     {"uuid", uuid}, {"patch", patch},
-                });
+                };
+                if (!client_mutation_id.empty() && client_mutation_id.size() <= 128) {
+                    event["clientMutationId"] = client_mutation_id;
+                }
+                broadcast_doc_patch(event);
                 return json_ok(json({{"ok", true}, {"uuid", uuid}}));
             } catch (const std::exception& e) {
                 Logger::error("PATCH /api/project/items/{} threw: {}", uuid, e.what());

@@ -67,9 +67,32 @@
           </div>
         </Teleport>
         <!-- Audio Tools -->
+        <div v-if="waveformLoadError" class="waveform-error-state" role="alert">
+          <span class="material-symbols-rounded" aria-hidden="true">warning</span>
+          <span class="waveform-error-message" :title="waveformLoadError">
+            {{ t('properties.waveform') }} · {{ t('common.error') }}: {{ waveformLoadError }}
+          </span>
+          <button
+            type="button"
+            class="waveform-error-retry"
+            :disabled="waveformRequestPending"
+            @click="retryWaveform"
+          >
+            <span class="material-symbols-rounded" aria-hidden="true">
+              {{ waveformRequestPending ? 'progress_activity' : 'refresh' }}
+            </span>
+            <span>{{ waveformRequestPending ? t('properties.regeneratingWaveform') : t('properties.regenerateWaveform') }}</span>
+          </button>
+        </div>
         <div class="audio-tools">
           <!-- Trim Silence Button -->
-          <button class="trim-silence-btn" @click="trimSilence" :title="t('properties.trimSilence')">
+          <button
+            type="button"
+            class="trim-silence-btn"
+            :disabled="!hasWaveform || waveformRequestPending"
+            :title="t('properties.trimSilence')"
+            @click="trimSilence"
+          >
             <span class="material-symbols-rounded">content_cut</span>
             <span>{{ t('properties.trimSilence') }}</span>
           </button>
@@ -657,20 +680,48 @@ const resolveMediaPath = (): string => {
 // for deep editor zoom. Fetch the server's highest-resolution display trace while
 // Properties is open; saved analysis and information colours stay unchanged.
 const DETAIL_WAVEFORM_BUCKETS = 16384;
+const waveformLoadError = ref('');
+const detailedWaveformLoading = ref(false);
+const waveformGenerationRequesting = ref(false);
+const waveformRequestPending = computed(() =>
+  detailedWaveformLoading.value || waveformGenerationRequesting.value,
+);
 let detailedWaveformRequest = 0;
+
+const describeWaveformError = (error: unknown): string => {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === 'string' && error.trim()) return error;
+  return t('properties.noWaveformData');
+};
+
 const loadDetailedWaveform = async () => {
   const request = ++detailedWaveformRequest;
+  detailedWaveformLoading.value = false;
   detailedWaveform.value = null;
   const waveform = props.audioItem.waveform;
   if (props.multiSelect || !waveform?.peaks?.length || waveform.peaks.length >= DETAIL_WAVEFORM_BUCKETS) return;
   const path = resolveMediaPath();
-  if (!path) return;
+  if (!path) {
+    waveformLoadError.value = t('properties.noWaveformData');
+    return;
+  }
+  detailedWaveformLoading.value = true;
   try {
     const data = await server.fetchWaveformByPath(path, DETAIL_WAVEFORM_BUCKETS);
     const built = buildWaveformFromChannels(data.channels, data.duration_ms / 1000, data);
-    if (request === detailedWaveformRequest && built) detailedWaveform.value = built;
-  } catch {
-    // The persisted waveform remains the complete fallback.
+    if (request !== detailedWaveformRequest) return;
+    if (built) {
+      detailedWaveform.value = built;
+      waveformLoadError.value = '';
+    } else {
+      waveformLoadError.value = t('properties.noWaveformData');
+    }
+  } catch (error) {
+    if (request === detailedWaveformRequest) {
+      waveformLoadError.value = describeWaveformError(error);
+    }
+  } finally {
+    if (request === detailedWaveformRequest) detailedWaveformLoading.value = false;
   }
 };
 
@@ -678,7 +729,10 @@ watch([
   () => props.audioItem.uuid,
   () => props.audioItem.waveform?.peaks?.length,
   () => props.multiSelect,
-], loadDetailedWaveform, { immediate: true });
+], () => {
+  waveformLoadError.value = '';
+  void loadDetailedWaveform();
+}, { immediate: true });
 
 // Guard so we don't spam the server while a generation is in flight. Reset
 // when the item changes or once a waveform actually arrives.
@@ -692,17 +746,41 @@ let waveformRequestedFor: string | null = null;
 let ensureWaveformTimer: ReturnType<typeof setTimeout> | null = null;
 const SELF_HEAL_DELAY_MS = 600;
 
-const requestWaveformNow = () => {
+const requestWaveformNow = async (): Promise<void> => {
   const it = props.audioItem;
   if (!it || it.type !== 'audio') return;
   if (props.multiSelect) return;
   if (hasWaveform.value) { waveformRequestedFor = null; return; }
   if (waveformRequestedFor === it.uuid) return;
   const path = resolveMediaPath();
-  if (!path) return;
-  waveformRequestedFor = it.uuid;
-  useLiveplayServer().requestWaveformGeneration(path, it.uuid, true)
-    .catch(() => { /* best-effort — the manual button remains as a fallback */ });
+  if (!path) {
+    waveformLoadError.value = t('properties.noWaveformData');
+    return;
+  }
+  const itemUuid = it.uuid;
+  waveformRequestedFor = itemUuid;
+  waveformGenerationRequesting.value = true;
+  try {
+    await server.requestWaveformGeneration(path, itemUuid, true);
+    if (props.audioItem.uuid === itemUuid) waveformLoadError.value = '';
+  } catch (error) {
+    if (props.audioItem.uuid === itemUuid) {
+      waveformRequestedFor = null;
+      waveformLoadError.value = describeWaveformError(error);
+    }
+  } finally {
+    if (props.audioItem.uuid === itemUuid) waveformGenerationRequesting.value = false;
+  }
+};
+
+const retryWaveform = async () => {
+  if (waveformRequestPending.value) return;
+  if (hasWaveform.value) {
+    await loadDetailedWaveform();
+    return;
+  }
+  waveformRequestedFor = null;
+  await requestWaveformNow();
 };
 
 const ensureWaveform = () => {
@@ -716,7 +794,10 @@ const ensureWaveform = () => {
   // Debounce: re-check after the echo window. A transient drop heals itself and
   // this becomes a no-op; only a real, persistent gap reaches the server.
   if (ensureWaveformTimer) clearTimeout(ensureWaveformTimer);
-  ensureWaveformTimer = setTimeout(() => { ensureWaveformTimer = null; requestWaveformNow(); }, SELF_HEAL_DELAY_MS);
+  ensureWaveformTimer = setTimeout(() => {
+    ensureWaveformTimer = null;
+    void requestWaveformNow();
+  }, SELF_HEAL_DELAY_MS);
 };
 
 // React to the panel switching items, or a waveform appearing/disappearing.
@@ -725,6 +806,7 @@ const ensureWaveform = () => {
 watch(() => props.audioItem?.uuid, () => {
   if (ensureWaveformTimer) { clearTimeout(ensureWaveformTimer); ensureWaveformTimer = null; }
   waveformRequestedFor = null;
+  waveformGenerationRequesting.value = false;
   if (!hasWaveform.value) ensureWaveform();
 });
 watch(hasWaveform, (has) => {
@@ -1956,6 +2038,56 @@ onUnmounted(() => {
   gap: var(--spacing-md);
 }
 
+.waveform-error-state {
+  display: flex;
+  flex: 1 1 320px;
+  align-items: center;
+  gap: var(--spacing-xs);
+  min-width: 0;
+  color: var(--color-danger);
+  font-size: var(--type-metadata-size);
+}
+
+.waveform-error-state > .material-symbols-rounded {
+  flex: 0 0 auto;
+  font-size: 18px;
+}
+
+.waveform-error-message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.waveform-error-retry {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 3px var(--spacing-sm);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 42%, var(--color-border));
+  border-radius: var(--border-radius-sm);
+  background: var(--color-control);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.waveform-error-retry:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-danger) 12%, var(--color-control));
+}
+
+.waveform-error-retry:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.waveform-error-retry:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
 .audition-transport {
   display: flex;
   align-items: center;
@@ -2299,6 +2431,15 @@ onUnmounted(() => {
   .material-symbols-rounded {
     font-size: 18px;
   }
+}
+
+.trim-silence-btn:disabled,
+.trim-silence-btn:disabled:hover {
+  background: var(--color-control);
+  border-color: var(--color-border);
+  color: var(--color-text-secondary);
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 

@@ -110,6 +110,8 @@ function draw() {
   const border = readCssVar('--color-border', '#444');
   const borderStrong = readCssVar('--color-border-strong', '#666');
   const accent = readCssVar('--color-accent', '#0f62fe');
+  const success = readCssVar('--color-success', '#42be65');
+  const warning = readCssVar('--color-warning', '#f1c21b');
   const surfaceRaised = readCssVar('--color-surface-raised', '#2b2f36');
   const control = readCssVar('--color-control', '#121319');
   const background = readCssVar('--color-background', '#0d0f13');
@@ -159,8 +161,12 @@ function draw() {
   ctx.strokeStyle = borderStrong;
   ctx.lineWidth = 1;
   ctx.stroke();
-  ctx.strokeStyle = accent;
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = props.db > 0.05
+    ? warning
+    : Math.abs(props.db) <= 0.05
+      ? success
+      : accent;
+  ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(capX + 5, valY);
   ctx.lineTo(capX + capW - 5, valY);

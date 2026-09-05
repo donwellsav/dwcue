@@ -16,6 +16,7 @@
       <span
         v-if="!isEditing"
         class="volume-slider__label"
+        :class="gainStateClass"
         :title="t('actions.clickToEdit')"
         @click="startEdit"
       >
@@ -62,6 +63,12 @@ const { t } = useLocalization();
 const isEditing = ref(false);
 const editValue = ref(0);
 const inputRef = ref<HTMLInputElement | null>(null);
+
+const gainStateClass = computed(() => {
+  if (props.db > 0.05) return 'is-boost';
+  if (Math.abs(props.db) <= 0.05) return 'is-unity';
+  return 'is-cut';
+});
 
 function formatLabel(db: number): string {
   if (db <= -60) return '−∞';
@@ -176,6 +183,18 @@ function cancelEdit() {
   min-width: 0;
   font-variant-numeric: tabular-nums;
   text-align: right;
+}
+
+.volume-slider__label.is-boost .volume-slider__value {
+  color: var(--color-warning);
+}
+
+.volume-slider__label.is-unity .volume-slider__value {
+  color: var(--color-success);
+}
+
+.volume-slider__label.is-cut .volume-slider__value {
+  color: color-mix(in srgb, var(--color-accent) 45%, var(--color-text-primary));
 }
 
 .volume-slider__unit {

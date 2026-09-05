@@ -67,7 +67,11 @@
         <div class="stereo-meter__gr-fill" :style="gainReductionFillStyle" />
       </div>
 
-      <div v-if="showPeakValue" class="stereo-meter__peak-text">
+      <div
+        v-if="showPeakValue"
+        class="stereo-meter__peak-text"
+        :style="{ color: peakReadoutColor }"
+      >
         {{ peakLabel }}<template v-if="meterMode === 'LUFS'"> · {{ shortTermLabel }}</template>
       </div>
 
@@ -127,7 +131,7 @@ const leftStream  = useMasterMeter(() => props.leftIndex);
 const rightStream = useMasterMeter(() => props.rightIndex);
 
 // Server-reported output-target levels and meter mode.
-const { levels, meterMode, colorForLevel } = useOutputTarget();
+const { levels, meterMode, colorForLevel, textColorForLevel } = useOutputTarget();
 
 // A meter measures signal level, not fader gain. Keep the fader's +40…−60
 // scale untouched while giving every signal bar its own standard dBFS range.
@@ -296,6 +300,12 @@ const gainReductionFillStyle = computed(() => ({
   height: `${gainReductionExtent.value.toFixed(2)}%`,
 }));
 
+// Bars keep the high-chroma meter palette. Numeric readouts use the theme's
+// semantic equivalents so those thresholds stay legible in both themes.
+const peakReadoutColor = computed(() =>
+  textColorForLevel(Math.max(displayL.value, displayR.value)),
+);
+
 // Scale tick marks at key zone boundary levels from the server-reported
 // output target. Ticks use the zone colour for their position.
 const scaleMarks = computed(() => {
@@ -319,7 +329,7 @@ const scaleMarks = computed(() => {
       db,
       pct: dbToConsolePosition(db, minDb, maxDb) * 100,
       label: db > 0 ? `+${Math.round(db)}` : String(Math.round(db)).replace('-', '−'),
-      labelColor: db > 0 ? 'var(--color-warning)' : 'var(--color-text-primary)',
+      labelColor: textColorForLevel(db),
       color: colorForLevel(db),
     }));
 });

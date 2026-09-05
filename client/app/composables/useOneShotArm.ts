@@ -5,6 +5,32 @@ import type { AudioItem } from '~/types/project';
 type OneShotArmable = Pick<AudioItem, 'oneShot'> | null | undefined;
 
 /**
+ * Mode-aware arm policy shared by tile, keyboard, and MIDI trigger paths.
+ * Edit mode is deliberately arm-free: it never reports, sets, gates, or
+ * auto-clears an arm. The persisted flag is exclusively Show Mode state.
+ */
+export const createOneShotArmPolicy = (isShowMode: () => boolean) => {
+  const isArmed = (item: OneShotArmable) => isShowMode() && !!item?.oneShot?.armed;
+  const autoDisarms = (item: OneShotArmable) => item?.oneShot?.autoDisarm !== false;
+
+  const setArmed = (item: OneShotArmable, on: boolean): boolean => {
+    if (!isShowMode() || !item?.oneShot || !!item.oneShot.armed === on) return false;
+    if (on) item.oneShot.armed = true;
+    else delete item.oneShot.armed;
+    return true;
+  };
+
+  const fireBlocked = (item: OneShotArmable) => isShowMode() && !isArmed(item);
+
+  const afterFire = (item: OneShotArmable): boolean => {
+    if (!isShowMode() || !autoDisarms(item) || !isArmed(item)) return false;
+    return setArmed(item, false);
+  };
+
+  return { isArmed, setArmed, fireBlocked, afterFire };
+};
+
+/**
  * Show-mode One Shot safety, per cell: each tile carries its own persisted
  * armed flag (item.oneShot.armed) and only fires while armed. Auto-disarm
  * (item.oneShot.autoDisarm, default on) re-safes a cell after it fires; the
@@ -17,23 +43,11 @@ export const useOneShotArm = () => {
   const { cartOnlyItems } = useCartItems();
   const showMode = computed(() => uiMode.value === 'playback');
 
-  const isArmed = (item: OneShotArmable) => !!item?.oneShot?.armed;
-  const autoDisarms = (item: OneShotArmable) => item?.oneShot?.autoDisarm !== false;
-
-  const setArmed = (item: OneShotArmable, on: boolean) => {
-    if (!item?.oneShot) return;
-    if (on) item.oneShot.armed = true;
-    else delete item.oneShot.armed;
-  };
-
-  /** Per-cell fire gate: true when a fire attempt should be swallowed. */
-  const fireBlocked = (item: OneShotArmable) => showMode.value && !isArmed(item);
+  const armPolicy = createOneShotArmPolicy(() => showMode.value);
 
   /** Call after a cell actually fires: re-safe it unless auto-disarm is off. */
   const afterFire = (item: OneShotArmable) => {
-    if (!showMode.value || !autoDisarms(item) || !isArmed(item)) return;
-    setArmed(item, false);
-    void saveProject();
+    if (armPolicy.afterFire(item)) void saveProject();
   };
 
   const disarmAll = () => {
@@ -50,5 +64,5 @@ export const useOneShotArm = () => {
 
   watch(showMode, (on) => { if (!on) disarmAll(); });
 
-  return { showMode, isArmed, setArmed, fireBlocked, afterFire, disarmAll };
+  return { showMode, ...armPolicy, afterFire, disarmAll };
 };

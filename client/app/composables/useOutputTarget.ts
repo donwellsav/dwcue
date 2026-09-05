@@ -78,5 +78,15 @@ export function useOutputTarget() {
     return METER_COLORS.blue;
   }
 
-  return { levels, meterMode, colorForLevel };
+  // Text uses theme-aware semantic colours at the same server-defined
+  // thresholds so small values remain readable against either neutral theme.
+  function textColorForLevel(db: number): string {
+    const lv = levels.value;
+    if (db >= lv.redAbove) return 'var(--color-danger)';
+    if (db >= lv.yellowMin) return 'var(--color-warning)';
+    if (db >= lv.greenMin) return 'var(--color-success)';
+    return 'color-mix(in srgb, var(--color-accent) 45%, var(--color-text-primary))';
+  }
+
+  return { levels, meterMode, colorForLevel, textColorForLevel };
 }

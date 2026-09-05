@@ -275,14 +275,53 @@ onUnmounted(() => {
 // streamItemPages() has pushed any pages, so the items array is still
 // empty at that moment. Instead we react to items actually appearing
 // (length change), debounced so each streamed page doesn't fire its
-// own request storm, and track which uuids we've already requested
-// so we don't re-queue on every change.
-const requestedWaveformUuids = new Set<string>();
+// own request storm, and track which item/path pairs we've already requested
+// so we don't re-queue on every change. A path is part of the key so replacing
+// media under an existing item UUID makes that item eligible again.
+const requestedWaveformKeys = new Set<string>();
+const failedWaveformKeys = new Set<string>();
+const waveformRequestKeyByUuid = new Map<string, string>();
 let waveformScanTimer: ReturnType<typeof setTimeout> | null = null;
+
+const waveformRequestKey = (itemUuid: string, path: string) => `${itemUuid}\u0000${path}`;
+
+const resolveWaveformPath = (item: AudioItem, folder: string): string => {
+  if (item.mediaServerPath) return item.mediaServerPath;
+  if (!item.mediaPath || !folder) return '';
+  const rel = item.mediaPath.replace(/^[\\/]+/, '');
+  return `${folder.replace(/[\\/]+$/, '')}/${rel}`;
+};
+
+const prepareWaveformRequestKey = (itemUuid: string, path: string): string => {
+  const key = waveformRequestKey(itemUuid, path);
+  const previousKey = waveformRequestKeyByUuid.get(itemUuid);
+  if (previousKey && previousKey !== key) {
+    requestedWaveformKeys.delete(previousKey);
+    failedWaveformKeys.delete(previousKey);
+  }
+  waveformRequestKeyByUuid.set(itemUuid, key);
+  return key;
+};
+
+const queueWaveformGeneration = (
+  path: string,
+  itemUuid: string,
+  onRejected?: (error: unknown) => void,
+) => {
+  const key = prepareWaveformRequestKey(itemUuid, path);
+  if (requestedWaveformKeys.has(key) || failedWaveformKeys.has(key)) return;
+  requestedWaveformKeys.add(key);
+  server.requestWaveformGeneration(path, itemUuid).catch((error) => {
+    if (waveformRequestKeyByUuid.get(itemUuid) === key) {
+      requestedWaveformKeys.delete(key);
+    }
+    onRejected?.(error);
+  });
+};
+
 const scanForMissingWaveforms = async () => {
-  if (!currentProject.value) return;
+  if (!currentProject.value || !server.connected) return;
   try {
-    const server = (await import('~/composables/useLiveplayServer')).useLiveplayServer();
     const folder = currentProject.value.folderPath || '';
     // Include cart-only items too — they live in a separate array and the
     // playlist flatten wouldn't otherwise reach them, so cart slots backed
@@ -293,27 +332,26 @@ const scanForMissingWaveforms = async () => {
       if (item.type !== 'audio') continue;
       const ai = item as AudioItem;
       if (ai.waveform?.analysis_version === 1) continue;
-      if (requestedWaveformUuids.has(ai.uuid)) continue;
 
       // Prefer the explicit server-absolute path written by the new import
       // flow. Fall back to project-folder + relative mediaPath for items
       // saved before mediaServerPath was introduced, so legacy projects
       // still get waveforms after a reopen.
-      let path = ai.mediaServerPath || '';
-      if (!path && ai.mediaPath && folder) {
-        const rel = ai.mediaPath.replace(/^[\\/]+/, '');
-        path = `${folder.replace(/[\\/]+$/, '')}/${rel}`;
-      }
+      const path = resolveWaveformPath(ai, folder);
       if (!path) continue;
-
-      requestedWaveformUuids.add(ai.uuid);
-      server.requestWaveformGeneration(path, ai.uuid).catch(() => {
-        requestedWaveformUuids.delete(ai.uuid);
-      });
+      queueWaveformGeneration(path, ai.uuid);
     }
   } catch (e) {
     console.warn('[waveform] project-load waveform generation failed:', e);
   }
+};
+
+const scheduleWaveformScan = () => {
+  if (waveformScanTimer) clearTimeout(waveformScanTimer);
+  waveformScanTimer = setTimeout(() => {
+    waveformScanTimer = null;
+    void scanForMissingWaveforms();
+  }, 150);
 };
 watch(
   () => [
@@ -323,32 +361,67 @@ watch(
     projectEpoch.value,
   ] as const,
   ([folder, name, , epoch], [prevFolder, prevName, , prevEpoch]) => {
-    // Reset the "already requested" tracker when the project changes. Temporary
-    // group reveals go with it — they point at uuids from the old document.
-    //
-    // The epoch check covers reloads of the SAME project, where folderPath and
-    // name are both unchanged: session recovery re-hydrates from the server
-    // with fresh items that carry no peaks, and without a reset every uuid
-    // would still be marked "already requested" from before the disconnect, so
-    // nothing would ever ask the server for them again.
+    // Reset the request state when the project changes. The epoch check covers
+    // reloads of the same project after session recovery.
     if (folder !== prevFolder || name !== prevName || epoch !== prevEpoch) {
-      requestedWaveformUuids.clear();
+      requestedWaveformKeys.clear();
+      failedWaveformKeys.clear();
+      waveformRequestKeyByUuid.clear();
       clearReveals();
     }
-    if (waveformScanTimer) clearTimeout(waveformScanTimer);
-    waveformScanTimer = setTimeout(scanForMissingWaveforms, 150);
+    scheduleWaveformScan();
   },
 );
 // Also watch cartOnlyItems separately — the scanner needs to re-run when
 // new cart items appear (cart hydration happens after the playlist).
 watch(
   () => currentProject.value?.cartOnlyItems?.length ?? 0,
-  () => {
-    if (waveformScanTimer) clearTimeout(waveformScanTimer);
-    waveformScanTimer = setTimeout(scanForMissingWaveforms, 150);
-  },
+  scheduleWaveformScan,
   { immediate: true },
 );
+
+// The generation POST acknowledges queueing, not completion. If the socket
+// bounces before waveform_ready arrives, retry after the next connection; the
+// server's disk cache makes the replay cheap. Keep observed decode failures
+// terminal for this item/path so reconnects cannot create an endless retry loop.
+const stopWaveformPatchSubscription = server.onDocPatch((patch) => {
+  if (patch.op !== 'waveform_ready' && patch.op !== 'waveform_failed') return;
+  const itemUuid = typeof patch.item_uuid === 'string' ? patch.item_uuid : '';
+  const key = waveformRequestKeyByUuid.get(itemUuid);
+  if (!key) return;
+
+  requestedWaveformKeys.delete(key);
+  if (patch.op === 'waveform_failed') {
+    failedWaveformKeys.add(key);
+  } else {
+    failedWaveformKeys.delete(key);
+    waveformRequestKeyByUuid.delete(itemUuid);
+  }
+});
+
+let waveformSocketWasDisconnected = !server.connected;
+const stopWaveformConnectionWatch = watch(
+  () => server.connected,
+  (connected) => {
+    if (!connected) {
+      waveformSocketWasDisconnected = true;
+      return;
+    }
+    if (!waveformSocketWasDisconnected) return;
+    waveformSocketWasDisconnected = false;
+    requestedWaveformKeys.clear();
+    scheduleWaveformScan();
+  },
+);
+
+onUnmounted(() => {
+  stopWaveformPatchSubscription();
+  stopWaveformConnectionWatch();
+  if (waveformScanTimer) {
+    clearTimeout(waveformScanTimer);
+    waveformScanTimer = null;
+  }
+});
 
 const handleImport = () => {
   if (!currentProject.value) return;
@@ -996,9 +1069,7 @@ const importFromServerPaths = async (
   if (currentProject.value === project && projectEpoch.value === epoch) {
     for (const entry of prepared) {
       results[entry.resultIndex]!.itemUuid = entry.audioItem.uuid;
-      requestedWaveformUuids.add(entry.audioItem.uuid);
-      server.requestWaveformGeneration(entry.mediaServerPath, entry.audioItem.uuid).catch((e) => {
-        requestedWaveformUuids.delete(entry.audioItem.uuid);
+      queueWaveformGeneration(entry.mediaServerPath, entry.audioItem.uuid, (e) => {
         console.warn(`[waveform] generation request failed for ${entry.audioItem.displayName}:`, e);
       });
     }

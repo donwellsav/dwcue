@@ -113,7 +113,7 @@ button > .material-symbols-rounded {
   --modal-max-height: 90vh;
 
   // Shared dialog chrome. Content can vary without changing the visual plane.
-  --dialog-backdrop: rgba(6, 9, 11, 0.76);
+  --dialog-backdrop: rgba(10, 10, 14, 0.76);
   --dialog-surface: var(--color-surface);
   --dialog-radius: var(--border-radius-lg);
   --dialog-shadow: 0 16px 48px rgba(0, 0, 0, 0.32);
@@ -162,18 +162,20 @@ button > .material-symbols-rounded {
   --color-warning: #8c6416;
 }
 
+// Neutral chrome shares the #16161d hue; colour is reserved for cue data and
+// operational states (playback, metering, focus, warnings and errors).
 [data-theme='dark'] {
   --color-background: #16161d;
-  --color-surface: #191f24;
-  --color-surface-raised: #232b31;
-  --color-surface-hover: #2a343c;
-  --color-control: #131a1e;
-  --color-border: #303b43;
-  --color-border-strong: #51616c;
-  --color-text-primary: #edf2f4;
-  --color-text-secondary: #b1bfc7;
-  --color-text-tertiary: #8d9da7;
-  --color-text-disabled: #637580;
+  --color-surface: #1d1d25;
+  --color-surface-raised: #25252f;
+  --color-surface-hover: #2e2e3a;
+  --color-control: #121218;
+  --color-border: #363640;
+  --color-border-strong: #5b5b69;
+  --color-text-primary: #f0f0f5;
+  --color-text-secondary: #b9b9c8;
+  --color-text-tertiary: #9898ab;
+  --color-text-disabled: #666678;
   --color-accent: var(--color-accent-custom, var(--signal-blue));
   --color-accent-hover: var(--signal-blue-hover);
   --color-danger: #ed6c78;

@@ -28,6 +28,7 @@
 // ============================================================================
 #pragma once
 
+#include "liveplay/audio/callback_liveness.hpp"
 #include "liveplay/audio/limiter.hpp"
 #include "liveplay/audio/meter.hpp"
 #include "liveplay/audio/mixer_channel.hpp"
@@ -133,6 +134,7 @@ enum class DeviceRuntimeState : std::uint8_t {
     Available,
     Starting,
     Running,
+    Stalled,
     Interrupted,
     Disconnected,
     Closing,
@@ -148,12 +150,16 @@ struct DeviceInfo {
     bool         is_available = true;
     bool         is_clock_master = false;
     std::string  runtime_state = "available";
+    std::uint64_t recovery_request_id = 0;
+    std::string  recovery_status = "idle";
     std::uint64_t underrun_count = 0;
     std::uint64_t underrun_frames = 0;
     std::uint64_t overrun_count = 0;
     std::uint64_t hard_resync_count = 0;
     std::uint64_t device_loss_count = 0;
     std::uint64_t device_recovery_count = 0;
+    std::uint64_t callback_entry_count = 0;
+    std::uint64_t stream_recovery_count = 0;
     std::uint64_t reroute_count = 0;
     std::uint64_t interruption_count = 0;
     std::uint64_t correction_limit_count = 0;
@@ -243,6 +249,10 @@ public:
 
     void close_device(const DeviceId& id);
 
+    // Queue an in-place stop/start of an opened local stream. A returned id
+    // confirms queue acceptance only; success still requires a new callback.
+    std::optional<std::uint64_t> request_device_recovery(const DeviceId& id);
+
     // ---- Items / cues ----------------------------------------------------
     // Create a fresh, independent PlaybackItem for `file_path`. Two carts
     // loading the same file get two PlaybackItems with their own state —
@@ -285,6 +295,9 @@ public:
     // source channels through Main (stereo → lanes L/R, mono → both lanes).
     // Idempotent — safe to call any number of times.
     void ensure_default_routing();
+    // Establish the same Main -> OS-default path, but attach only one cue.
+    // Existing cue routes are left untouched.
+    void ensure_default_routing_for_cue(const CueId& cue);
 
     // ---- Mixer channels --------------------------------------------------
     MixerChannelId create_mixer_channel(std::string display_name);
@@ -394,6 +407,8 @@ private:
         detail::DeviceReferenceCount open_references;
         std::atomic<bool>           started{false};
         std::atomic<bool>           closing{false};
+        std::atomic<bool>           recovery_in_progress{false};
+        std::atomic<bool>           recovery_requested{false};
         std::atomic<bool>           render_active{false};
         std::atomic<bool>           callback_active{false};
         std::atomic<bool>           reset_requested{true};
@@ -401,6 +416,15 @@ private:
         std::atomic<bool>           clock_master{false};
         std::atomic<DeviceRuntimeState> runtime_state{
             DeviceRuntimeState::Starting};
+        CallbackEntryCounter        callback_entries;
+        CallbackLivenessMonitor     callback_liveness; // watchdog thread only
+        std::atomic<std::uint64_t>  liveness_epoch{0};
+        std::uint64_t               observed_liveness_epoch = 0; // watchdog only
+        std::atomic<bool>           native_recovery_pending{false};
+        // Guarded by device_lifecycle_mutex_. The started id binds liveness
+        // completion to the request whose replacement stream was armed.
+        DeviceRecoveryRequest       recovery_request;
+        std::uint64_t               started_recovery_request_id = 0;
         DeviceClockController       clock_controller; // callback, or paused reset
         bool                        correction_was_limited = false;
         std::atomic<std::int32_t>   applied_rate_ppm{0};
@@ -412,6 +436,7 @@ private:
         std::atomic<std::uint64_t>  hard_resync_count{0};
         std::atomic<std::uint64_t>  device_loss_count{0};
         std::atomic<std::uint64_t>  device_recovery_count{0};
+        std::atomic<std::uint64_t>  stream_recovery_count{0};
         std::atomic<std::uint64_t>  reroute_count{0};
         std::atomic<std::uint64_t>  interruption_count{0};
         std::atomic<std::uint64_t>  correction_limit_count{0};
@@ -432,8 +457,10 @@ private:
     // atomics let the render thread read without copying or taking mutex_.
     std::unique_ptr<std::atomic<float>[]>         output_channel_gains_;
     // miniaudio device init/uninit mutates backend-global state on some
-    // platforms and must not run concurrently.
+    // platforms and must not run concurrently. Recovery request state and its
+    // monotonically increasing id source are guarded by the same lock.
     mutable std::mutex                           device_lifecycle_mutex_;
+    std::uint64_t                                next_recovery_request_id_ = 1;
     mutable std::mutex                           mutex_;          // guards registries + topology rebuild
     std::unordered_map<std::string, std::shared_ptr<PlaybackItem>>  items_;
     std::unordered_map<std::string, std::shared_ptr<MixerChannel>>  mixers_;
@@ -493,8 +520,11 @@ private:
     std::atomic<bool>                running_{false};
     std::thread                      render_thread_;
     std::thread                      decode_thread_;
+    std::thread                      device_watchdog_thread_;
     std::condition_variable          decode_cv_;
     std::mutex                       decode_wait_mutex_;
+    std::condition_variable          device_watchdog_cv_;
+    std::mutex                       device_watchdog_wait_mutex_;
     std::atomic<std::uint64_t>       render_error_count_{0};
 
     // Device-callback-driven render trigger. Each device callback bumps
@@ -504,6 +534,7 @@ private:
 
     // -- Helpers ---------------------------------------------------------
     void rebuild_topology_locked();
+    void ensure_default_routing_impl(const std::optional<CueId>& cue_filter);
     void publish_topology(std::shared_ptr<const Topology> snap);
     std::shared_ptr<const Topology> snapshot_topology() const noexcept;
     void publish_device_snapshot_locked();
@@ -512,6 +543,8 @@ private:
     void render_loop();
     void render_one_block(const Topology& topo);
     void decode_loop();
+    void device_watchdog_loop();
+    void recover_device(Device& device) noexcept;
     bool reset_device_if_requested(Device& device) noexcept;
 
     Device* find_device_locked(const DeviceId& id) const;

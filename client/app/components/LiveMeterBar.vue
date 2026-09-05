@@ -5,7 +5,7 @@
       <div class="live-meter__fill" :style="peakStyle" />
     </div>
     <div v-if="showLabel" class="live-meter__label">
-      <span class="peak">{{ peakLabel }}</span>
+      <span class="peak" :style="{ color: peakLabelColor }">{{ peakLabel }}</span>
       <span v-if="gainReduction != null && gainReduction < -0.1" class="gr">
         GR {{ gainReduction.toFixed(1) }} dB
       </span>
@@ -20,6 +20,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useCueMeters, useMixerMeter, useMasterMeter } from '~/composables/useLiveMeters';
+import { useOutputTarget } from '~/composables/useOutputTarget';
 
 type Source = 'cue' | 'mixer' | 'master';
 
@@ -62,6 +63,8 @@ const rmsDb = computed<number>(() => {
 });
 const gainReduction = computed<number | null>(() =>
   masterStream ? masterStream.gainReduction.value : null);
+const { textColorForLevel } = useOutputTarget();
+const peakLabelColor = computed(() => textColorForLevel(peakDb.value));
 
 // EBU R128-inspired gradient matching StereoMeter.vue
 const ebuGradient = computed(() => {
@@ -129,7 +132,7 @@ const rmsStyle  = computed(() => fillStyle(rmsDb.value,  0.4));
     color: var(--color-text-secondary);
     display: flex;
     gap: 6px;
-    .gr { color: #ffb050; }
+    .gr { color: var(--color-warning); }
   }
 
   &.vertical {

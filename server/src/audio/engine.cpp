@@ -64,6 +64,7 @@ const char* device_runtime_state_name(DeviceRuntimeState state) noexcept {
         case DeviceRuntimeState::Available:    return "available";
         case DeviceRuntimeState::Starting:     return "starting";
         case DeviceRuntimeState::Running:      return "running";
+        case DeviceRuntimeState::Stalled:      return "stalled";
         case DeviceRuntimeState::Interrupted:  return "interrupted";
         case DeviceRuntimeState::Disconnected: return "disconnected";
         case DeviceRuntimeState::Closing:      return "closing";
@@ -136,6 +137,7 @@ bool AudioEngine::start() {
 
     render_thread_ = std::thread([this] { render_loop(); });
     decode_thread_ = std::thread([this] { decode_loop(); });
+    device_watchdog_thread_ = std::thread([this] { device_watchdog_loop(); });
 
 #if defined(_WIN32)
     // Lift the render thread above generic worker threads so consumption_counter_
@@ -154,11 +156,13 @@ bool AudioEngine::start() {
 void AudioEngine::stop() {
     if (!running_.exchange(false)) return;
     decode_cv_.notify_all();
+    device_watchdog_cv_.notify_all();
     // Kick the render thread out of any consumption_counter_.wait().
     consumption_counter_.fetch_add(1, std::memory_order_release);
     consumption_counter_.notify_all();
     if (render_thread_.joinable()) render_thread_.join();
     if (decode_thread_.joinable()) decode_thread_.join();
+    if (device_watchdog_thread_.joinable()) device_watchdog_thread_.join();
     Logger::info("AudioEngine: stopped.");
 }
 
@@ -288,11 +292,15 @@ std::vector<DeviceInfo> AudioEngine::enumerate_devices() const {
         // enumeration-only hardware-name id.
         info.id = dev.id;
         info.is_open = true;
+        info.recovery_request_id = dev.recovery_request.request_id();
+        info.recovery_status = device_recovery_status_name(
+            dev.recovery_request.status());
+        const auto runtime_state =
+            dev.runtime_state.load(std::memory_order_acquire);
         info.is_clock_master =
-            info.is_clock_master ||
+            runtime_state == DeviceRuntimeState::Running &&
             dev.clock_master.load(std::memory_order_acquire);
-        info.runtime_state = device_runtime_state_name(
-            dev.runtime_state.load(std::memory_order_acquire));
+        info.runtime_state = device_runtime_state_name(runtime_state);
         info.underrun_count +=
             dev.underrun_count.load(std::memory_order_acquire);
         info.underrun_frames +=
@@ -305,6 +313,9 @@ std::vector<DeviceInfo> AudioEngine::enumerate_devices() const {
             dev.device_loss_count.load(std::memory_order_acquire);
         info.device_recovery_count +=
             dev.device_recovery_count.load(std::memory_order_acquire);
+        info.callback_entry_count = dev.callback_entries.value();
+        info.stream_recovery_count +=
+            dev.stream_recovery_count.load(std::memory_order_acquire);
         info.reroute_count +=
             dev.reroute_count.load(std::memory_order_acquire);
         info.interruption_count +=
@@ -396,26 +407,40 @@ void AudioEngine::ma_notification_callback(
         device->engine->consumption_counter_.fetch_add(
             1, std::memory_order_release);
         device->engine->consumption_counter_.notify_all();
+        device->engine->device_watchdog_cv_.notify_one();
     };
-    const auto mark_running = [&] {
-        const auto previous = device->runtime_state.exchange(
-            DeviceRuntimeState::Running, std::memory_order_acq_rel);
-        if (previous == DeviceRuntimeState::Disconnected ||
-            previous == DeviceRuntimeState::Interrupted) {
-            device->device_recovery_count.fetch_add(
-                1, std::memory_order_relaxed);
+    const auto await_verified_callback = [&](DeviceRuntimeState previous) {
+        if (device->runtime_state.load(std::memory_order_acquire) != previous) {
+            return;
         }
-        device->reset_requested.store(true, std::memory_order_release);
+
+        // Publish a new baseline generation before Starting.  The watchdog
+        // samples state first and the generation second, so it cannot accept
+        // a callback counted before this recovery edge.
+        device->liveness_epoch.fetch_add(1, std::memory_order_release);
+        auto expected = previous;
+        if (device->runtime_state.compare_exchange_strong(
+                expected, DeviceRuntimeState::Starting,
+                std::memory_order_release, std::memory_order_acquire)) {
+            device->native_recovery_pending.store(
+                true, std::memory_order_release);
+            device->reset_requested.store(true, std::memory_order_release);
+        }
     };
 
     switch (notification->type) {
         case ma_device_notification_type_started:
-            mark_running();
+            if (!device->recovery_in_progress.load(std::memory_order_acquire)) {
+                await_verified_callback(DeviceRuntimeState::Disconnected);
+            }
             break;
         case ma_device_notification_type_stopped: {
             if (device->closing.load(std::memory_order_acquire)) {
                 device->runtime_state.store(
                     DeviceRuntimeState::Closing, std::memory_order_release);
+                break;
+            }
+            if (device->recovery_in_progress.load(std::memory_order_acquire)) {
                 break;
             }
             const auto previous = device->runtime_state.exchange(
@@ -429,7 +454,8 @@ void AudioEngine::ma_notification_callback(
         }
         case ma_device_notification_type_rerouted:
             device->reroute_count.fetch_add(1, std::memory_order_relaxed);
-            mark_running();
+            await_verified_callback(DeviceRuntimeState::Disconnected);
+            device->reset_requested.store(true, std::memory_order_release);
             break;
         case ma_device_notification_type_interruption_began:
             device->interruption_count.fetch_add(1, std::memory_order_relaxed);
@@ -438,7 +464,7 @@ void AudioEngine::ma_notification_callback(
             device->reset_requested.store(true, std::memory_order_release);
             break;
         case ma_device_notification_type_interruption_ended:
-            mark_running();
+            await_verified_callback(DeviceRuntimeState::Interrupted);
             break;
         case ma_device_notification_type_unlocked:
             break;
@@ -458,6 +484,8 @@ void AudioEngine::ma_data_callback(ma_device* dev,
         std::memset(out, 0, frames * dev->playback.channels * sizeof(Sample));
         return;
     }
+    // Liveness accounting on the RT thread is deliberately one relaxed atomic.
+    device->callback_entries.record_entry();
     // The callback never waits. The render thread briefly claims this flag
     // only while resetting ring/resampler state; a collision emits silence
     // for this callback and lets the render thread finish the hard re-lock.
@@ -712,6 +740,8 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
     }
 
     dev->scratch.assign(cfg_.render_block * output_channels, 0.0f);
+    dev->callback_liveness.arm(
+        dev->callback_entries.value(), CallbackLivenessMonitor::Clock::now());
     if (ma_device_start(dev->ma_dev.get()) != MA_SUCCESS) {
         Logger::error("ma_device_start failed for '{}'", dev->display_name);
         ma_device_uninit(dev->ma_dev.get());
@@ -719,35 +749,20 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
         return {};
     }
 
+    dev->started.store(true, std::memory_order_release);
     DeviceId id = dev->id;
     const std::string display_name = dev->display_name;
     {
         std::lock_guard lock{mutex_};
-        const bool have_healthy_clock_master = std::any_of(
-            devices_.begin(), devices_.end(),
-            [](const std::shared_ptr<Device>& candidate) {
-                return !candidate->closing.load(std::memory_order_acquire) &&
-                       candidate->runtime_state.load(
-                           std::memory_order_acquire) ==
-                           DeviceRuntimeState::Running &&
-                       candidate->clock_master.load(
-                           std::memory_order_acquire);
-            });
-        dev->clock_master.store(
-            !have_healthy_clock_master, std::memory_order_release);
         devices_.emplace_back(dev);
         publish_device_snapshot_locked();
     }
-    dev->started.store(true, std::memory_order_release);
-    auto starting = DeviceRuntimeState::Starting;
-    dev->runtime_state.compare_exchange_strong(
-        starting, DeviceRuntimeState::Running,
-        std::memory_order_acq_rel, std::memory_order_acquire);
     // Wake render thread: when we boot with no devices it idles on a coarse
     // timer; opening the first device should kick it into the live path
     // immediately so the first audio block lands before the device starves.
     consumption_counter_.fetch_add(1, std::memory_order_release);
     consumption_counter_.notify_all();
+    device_watchdog_cv_.notify_one();
 
     Logger::success("Opened audio device '{}' ({} ch @ {} Hz) → DeviceId {}",
                     display_name, output_channels,
@@ -802,6 +817,30 @@ void AudioEngine::close_device(const DeviceId& id) {
     // was the last device it should drop into the idle-timer path).
     consumption_counter_.fetch_add(1, std::memory_order_release);
     consumption_counter_.notify_all();
+}
+
+std::optional<std::uint64_t> AudioEngine::request_device_recovery(
+    const DeviceId& id) {
+    if (!running_.load(std::memory_order_acquire)) return std::nullopt;
+
+    std::lock_guard lifecycle_lock{device_lifecycle_mutex_};
+    std::uint64_t request_id = 0;
+    {
+        std::lock_guard lock{mutex_};
+        auto* device = find_device_locked(id);
+        if (!device || !device->ma_dev ||
+            device->closing.load(std::memory_order_acquire) ||
+            device->recovery_in_progress.load(std::memory_order_acquire) ||
+            device->recovery_requested.load(std::memory_order_acquire) ||
+            device->recovery_request.status() == DeviceRecoveryStatus::Pending) {
+            return std::nullopt;
+        }
+        request_id = next_recovery_request_id_++;
+        if (!device->recovery_request.begin(request_id)) return std::nullopt;
+        device->recovery_requested.store(true, std::memory_order_release);
+    }
+    device_watchdog_cv_.notify_one();
+    return request_id;
 }
 
 AudioEngine::Device* AudioEngine::find_device_locked(const DeviceId& id) const {
@@ -938,6 +977,15 @@ void AudioEngine::stop_all(std::chrono::milliseconds fade, bool force_fade) {
 // + route + assign master explicitly. Idempotent.
 // ---------------------------------------------------------------------------
 void AudioEngine::ensure_default_routing() {
+    ensure_default_routing_impl(std::nullopt);
+}
+
+void AudioEngine::ensure_default_routing_for_cue(const CueId& cue) {
+    ensure_default_routing_impl(cue);
+}
+
+void AudioEngine::ensure_default_routing_impl(
+    const std::optional<CueId>& cue_filter) {
     // Step 1: open a device if none open. open_device_by_name takes its own
     // lock; we must therefore call it OUTSIDE the engine mutex.
     DeviceId chosen_device{};
@@ -1014,6 +1062,7 @@ void AudioEngine::ensure_default_routing() {
         // LTC-enabled cues) is deliberately excluded — it has its own
         // dedicated device routing managed by apply_ltc_device_routing().
         for (auto& [cue_id, item] : items_) {
+            if (cue_filter && cue_id != cue_filter->value) continue;
             auto& srcs = pending_.item_sources[cue_id].by_source_channel;
             const auto src_count = item->source_channel_count();
             if (srcs.size() < src_count) srcs.resize(src_count);
@@ -1275,6 +1324,180 @@ float AudioEngine::read_master_gain_reduction_db(MasterChannelIndex master) cons
     return master_state_[master].limiter->gain_reduction_db();
 }
 
+void AudioEngine::recover_device(Device& device) noexcept {
+    const auto request_id = device.recovery_request.request_id();
+    if (!running_.load(std::memory_order_acquire) ||
+        !device.ma_dev || !device.ring ||
+        device.closing.load(std::memory_order_acquire)) {
+        (void)device.recovery_request.fail(request_id);
+        return;
+    }
+
+    device.recovery_in_progress.store(true, std::memory_order_seq_cst);
+    device.runtime_state.store(
+        DeviceRuntimeState::Starting, std::memory_order_release);
+    device.started.store(false, std::memory_order_release);
+    device.clock_master.store(false, std::memory_order_release);
+    device.reset_requested.store(true, std::memory_order_release);
+    consumption_counter_.fetch_add(1, std::memory_order_release);
+    consumption_counter_.notify_all();
+
+    // Match close_device's exclusion: after publishing a non-running state,
+    // wait off the RT threads before touching the native stream or its buffers.
+    while (device.render_active.load(std::memory_order_seq_cst)) {
+        std::this_thread::yield();
+    }
+    ma_device_stop(device.ma_dev.get());
+    while (device.callback_active.load(std::memory_order_seq_cst)) {
+        std::this_thread::yield();
+    }
+
+    ma_pcm_rb_reset(device.ring.get());
+    bool reset_ok = true;
+    if (device.clock_resampler_initialized && device.clock_resampler) {
+        reset_ok =
+            ma_resampler_reset(device.clock_resampler.get()) == MA_SUCCESS &&
+            ma_resampler_set_rate(
+                device.clock_resampler.get(), 1'000'000, 1'000'000) ==
+                MA_SUCCESS;
+    }
+    device.clock_controller.reset();
+    device.correction_was_limited = false;
+    device.applied_rate_ppm.store(0, std::memory_order_relaxed);
+    device.clock_correction_ppm.store(0.0f, std::memory_order_relaxed);
+    device.ring_occupancy_frames.store(0, std::memory_order_relaxed);
+    device.reset_applied = true;
+    device.native_recovery_pending.store(false, std::memory_order_release);
+    device.started_recovery_request_id = reset_ok ? request_id : 0;
+    device.callback_liveness.arm(
+        device.callback_entries.value(), CallbackLivenessMonitor::Clock::now());
+    device.observed_liveness_epoch =
+        device.liveness_epoch.load(std::memory_order_acquire);
+
+    if (reset_ok && ma_device_start(device.ma_dev.get()) == MA_SUCCESS) {
+        device.started.store(true, std::memory_order_release);
+    } else {
+        device.started_recovery_request_id = 0;
+        device.runtime_state.store(
+            DeviceRuntimeState::Disconnected, std::memory_order_release);
+        (void)device.recovery_request.fail(request_id);
+    }
+    device.recovery_in_progress.store(false, std::memory_order_seq_cst);
+    consumption_counter_.fetch_add(1, std::memory_order_release);
+    consumption_counter_.notify_all();
+}
+
+void AudioEngine::device_watchdog_loop() {
+    constexpr auto kWatchdogPeriod = std::chrono::milliseconds{10};
+
+    while (running_.load(std::memory_order_acquire)) {
+        {
+            std::unique_lock wait_lock{device_watchdog_wait_mutex_};
+            device_watchdog_cv_.wait_for(wait_lock, kWatchdogPeriod);
+        }
+        if (!running_.load(std::memory_order_acquire)) break;
+
+        bool wake_render = false;
+        std::lock_guard lifecycle_lock{device_lifecycle_mutex_};
+        const auto devices = snapshot_devices();
+        if (!devices) continue;
+
+        for (const auto& device : *devices) {
+            if (device->recovery_requested.exchange(
+                    false, std::memory_order_acq_rel)) {
+                recover_device(*device);
+                wake_render = true;
+            }
+        }
+
+        const auto now = CallbackLivenessMonitor::Clock::now();
+        for (const auto& device : *devices) {
+            if (device->closing.load(std::memory_order_acquire) ||
+                device->recovery_in_progress.load(std::memory_order_acquire)) {
+                continue;
+            }
+
+            auto runtime_state =
+                device->runtime_state.load(std::memory_order_acquire);
+            const auto epoch =
+                device->liveness_epoch.load(std::memory_order_acquire);
+            if (epoch != device->observed_liveness_epoch) {
+                device->callback_liveness.arm(
+                    device->callback_entries.value(), now);
+                device->observed_liveness_epoch = epoch;
+                continue;
+            }
+
+            if (runtime_state != DeviceRuntimeState::Starting &&
+                runtime_state != DeviceRuntimeState::Running &&
+                runtime_state != DeviceRuntimeState::Stalled) {
+                const auto recovery_request_id =
+                    device->started_recovery_request_id;
+                if (recovery_request_id != 0) {
+                    device->started_recovery_request_id = 0;
+                    (void)device->recovery_request.fail(
+                        recovery_request_id);
+                }
+                continue;
+            }
+
+            const auto liveness = device->callback_liveness.tick(
+                device->callback_entries.value(), now);
+            if (liveness == CallbackLivenessState::Running &&
+                runtime_state != DeviceRuntimeState::Running) {
+                const auto previous = runtime_state;
+                if (device->runtime_state.compare_exchange_strong(
+                        runtime_state, DeviceRuntimeState::Running,
+                        std::memory_order_acq_rel, std::memory_order_acquire)) {
+                    const auto recovery_request_id =
+                        device->started_recovery_request_id;
+                    if (recovery_request_id != 0) {
+                        device->stream_recovery_count.fetch_add(
+                            1, std::memory_order_relaxed);
+                        device->started_recovery_request_id = 0;
+                        (void)device->recovery_request.succeed(
+                            recovery_request_id);
+                    }
+                    const bool native_recovery =
+                        device->native_recovery_pending.exchange(
+                            false, std::memory_order_acq_rel);
+                    if (previous == DeviceRuntimeState::Stalled ||
+                        native_recovery) {
+                        device->device_recovery_count.fetch_add(
+                            1, std::memory_order_relaxed);
+                    }
+                    device->reset_requested.store(
+                        true, std::memory_order_release);
+                    wake_render = true;
+                }
+            } else if (liveness == CallbackLivenessState::Stalled &&
+                       runtime_state != DeviceRuntimeState::Stalled) {
+                if (device->runtime_state.compare_exchange_strong(
+                        runtime_state, DeviceRuntimeState::Stalled,
+                        std::memory_order_acq_rel, std::memory_order_acquire)) {
+                    device->device_loss_count.fetch_add(
+                        1, std::memory_order_relaxed);
+                    device->reset_requested.store(
+                        true, std::memory_order_release);
+                    const auto recovery_request_id =
+                        device->started_recovery_request_id;
+                    if (recovery_request_id != 0) {
+                        device->started_recovery_request_id = 0;
+                        (void)device->recovery_request.fail(
+                            recovery_request_id);
+                    }
+                    wake_render = true;
+                }
+            }
+        }
+
+        if (wake_render) {
+            consumption_counter_.fetch_add(1, std::memory_order_release);
+            consumption_counter_.notify_all();
+        }
+    }
+}
+
 bool AudioEngine::reset_device_if_requested(Device& device) noexcept {
     if (!device.reset_requested.load(std::memory_order_acquire) ||
         device.reset_applied) {
@@ -1362,45 +1585,45 @@ void AudioEngine::render_loop() {
                 // backends that only expose an unexpected stop through the
                 // native device state.
                 for (const auto& dev : *device_snap) {
-                    if (!dev->ma_dev) {
+                    if (!dev->ma_dev ||
+                        dev->recovery_in_progress.load(std::memory_order_seq_cst)) {
                         continue;
                     }
                     dev->render_active.store(
                         true, std::memory_order_seq_cst);
                     AtomicActiveGuard device_guard{dev->render_active};
-                    if (dev->closing.load(
-                            std::memory_order_seq_cst)) {
+                    if (dev->closing.load(std::memory_order_seq_cst) ||
+                        dev->recovery_in_progress.load(std::memory_order_seq_cst)) {
                         continue;
                     }
 
                     const auto native_state =
                         ma_device_get_state(dev->ma_dev.get());
-                    const auto runtime_state =
+                    auto runtime_state =
                         dev->runtime_state.load(std::memory_order_acquire);
                     if (native_state == ma_device_state_started) {
-                        if (runtime_state == DeviceRuntimeState::Starting ||
-                            runtime_state ==
-                                DeviceRuntimeState::Disconnected) {
-                            const auto previous =
-                                dev->runtime_state.exchange(
-                                    DeviceRuntimeState::Running,
-                                    std::memory_order_acq_rel);
-                            if (previous ==
-                                DeviceRuntimeState::Disconnected) {
-                                dev->device_recovery_count.fetch_add(
-                                    1, std::memory_order_relaxed);
+                        if (runtime_state == DeviceRuntimeState::Disconnected) {
+                            // Publish the new baseline generation before
+                            // exposing Starting to the watchdog.
+                            dev->liveness_epoch.fetch_add(
+                                1, std::memory_order_release);
+                            if (dev->runtime_state.compare_exchange_strong(
+                                    runtime_state, DeviceRuntimeState::Starting,
+                                    std::memory_order_release,
+                                    std::memory_order_acquire)) {
+                                dev->native_recovery_pending.store(
+                                    true, std::memory_order_release);
                             }
-                            dev->reset_requested.store(
-                                true, std::memory_order_release);
                         }
-                    } else if (runtime_state ==
-                               DeviceRuntimeState::Running) {
-                        const auto previous =
-                            dev->runtime_state.exchange(
-                                DeviceRuntimeState::Disconnected,
-                                std::memory_order_acq_rel);
-                        if (previous !=
-                            DeviceRuntimeState::Disconnected) {
+                    } else if (
+                        (runtime_state == DeviceRuntimeState::Starting ||
+                         runtime_state == DeviceRuntimeState::Running ||
+                         runtime_state == DeviceRuntimeState::Stalled) &&
+                        dev->runtime_state.compare_exchange_strong(
+                            runtime_state, DeviceRuntimeState::Disconnected,
+                            std::memory_order_acq_rel,
+                            std::memory_order_acquire)) {
+                        if (runtime_state != DeviceRuntimeState::Stalled) {
                             dev->device_loss_count.fetch_add(
                                 1, std::memory_order_relaxed);
                         }

@@ -380,10 +380,18 @@ const formatTime = (seconds: number): string => {
   justify-content: center;
 }
 
+.action-btn.pause-btn,
+.action-btn.resume-btn,
+.action-btn.jump-cue-btn {
+  background-color: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-text-on-accent);
+}
+
 .action-btn.continue-btn {
-  border-color: color-mix(in srgb, var(--state-playing) 70%, var(--color-border));
-  background-color: color-mix(in srgb, var(--state-playing) 14%, var(--color-control));
-  color: var(--state-playing);
+  border-color: var(--state-playing);
+  background-color: var(--state-playing);
+  color: var(--color-background);
 }
 
 .action-btn.stop-btn {

@@ -1,4 +1,5 @@
 // Bounded read-ahead and render-thread stress checks. No test framework.
+#include "liveplay/audio/callback_liveness.hpp"
 #include "liveplay/audio/device_clock_controller.hpp"
 #include "liveplay/audio/engine.hpp"
 #include "liveplay/core/project_state.hpp"
@@ -172,6 +173,76 @@ void test_item_gain_path(PlaybackItem& item) {
           "gain: -6 dB is exactly the cue-stage 0.501187 ratio");
     item.stop_now();
     item.set_gain_db(0.0f);
+}
+
+void test_active_mirror_prime_is_noop(PlaybackItem& item) {
+    const auto runtime_unchanged = [](const PlaybackItemStats& before,
+                                      const PlaybackItemStats& after) {
+        return after.transport == before.transport &&
+               after.playhead_frame == before.playhead_frame &&
+               after.read_ahead_blocks == before.read_ahead_blocks;
+    };
+    const auto advance_one_block = [&item] {
+        Output output;
+        item.service_read_ahead(1);
+        return item.render_block(output.channels, 2, kBlock) == kBlock;
+    };
+
+    item.stop_now();
+    item.set_loop(false);
+    item.set_out_point_seconds(0.0);
+    item.set_fade_in(std::chrono::milliseconds{250});
+    item.set_fade_out(std::chrono::milliseconds{250});
+
+    check(item.prime(2.0, 0.5),
+          "mirror prime: stopped one-shot still primes");
+    const auto stopped = item.stats();
+    check(stopped.transport == TransportState::Stopped &&
+              stopped.playhead_frame == kRate / 2 &&
+              stopped.read_ahead_blocks > 0,
+          "mirror prime: stopped cue is positioned and prefetched");
+
+    item.play();
+    check(advance_one_block(), "mirror prime: active fixture renders");
+    const auto fading_in = item.stats();
+    check(fading_in.transport == TransportState::FadingIn,
+          "mirror prime: active fixture starts in fade-in");
+    check(item.prime(2.0, 0.0),
+          "mirror prime: fading-in cue accepts no-op prime");
+    check(runtime_unchanged(fading_in, item.stats()),
+          "mirror prime: fading-in runtime is preserved");
+
+    check(advance_one_block(), "mirror prime: pre-pause block renders");
+    item.pause();
+    const auto paused = item.stats();
+    check(item.prime(2.0, 0.0),
+          "mirror prime: paused cue accepts no-op prime");
+    check(runtime_unchanged(paused, item.stats()),
+          "mirror prime: paused runtime is preserved");
+
+    item.resume();
+    check(advance_one_block(), "mirror prime: resumed block renders");
+    const auto playing = item.stats();
+    check(playing.transport == TransportState::Playing,
+          "mirror prime: resume enters playing");
+    check(item.prime(2.0, 0.0),
+          "mirror prime: playing cue accepts no-op prime");
+    check(runtime_unchanged(playing, item.stats()),
+          "mirror prime: playing runtime is preserved");
+
+    check(advance_one_block(), "mirror prime: pre-stop block renders");
+    item.stop();
+    const auto fading_out = item.stats();
+    check(fading_out.transport == TransportState::FadingOut,
+          "mirror prime: stop enters fade-out");
+    check(item.prime(2.0, 0.0),
+          "mirror prime: fading-out cue accepts no-op prime");
+    check(runtime_unchanged(fading_out, item.stats()),
+          "mirror prime: fading-out runtime is preserved");
+
+    item.stop_now();
+    item.set_fade_in(std::chrono::milliseconds{0});
+    item.set_fade_out(std::chrono::milliseconds{0});
 }
 
 void test_bounded_prefill_and_recovery(PlaybackItem& item) {
@@ -371,6 +442,84 @@ void test_loop_continue_stop_and_replay(PlaybackItem& item) {
           "continue replay: restored loop does not auto-advance");
 }
 
+void test_callback_liveness() {
+    using namespace std::chrono_literals;
+    using Monitor = CallbackLivenessMonitor;
+
+    CallbackEntryCounter counter;
+    static_assert(noexcept(counter.record_entry()));
+    Monitor monitor{100ms};
+    const Monitor::TimePoint origin{};
+    monitor.arm(counter.value(), origin);
+
+    check(monitor.state() == CallbackLivenessState::Starting,
+          "liveness: armed stream starts as Starting");
+    check(!is_healthy_clock_source(monitor.state()),
+          "liveness: Starting stream is excluded from clock election");
+    check(monitor.tick(counter.value(), origin + 99ms) ==
+              CallbackLivenessState::Starting,
+          "liveness: unchanged counter remains Starting before timeout");
+
+    counter.record_entry();
+    check(monitor.tick(counter.value(), origin + 100ms) ==
+              CallbackLivenessState::Running,
+          "liveness: first post-start callback establishes Running");
+    check(is_healthy_clock_source(monitor.state()),
+          "liveness: only Running is eligible for clock election");
+    check(monitor.tick(counter.value(), origin + 199ms) ==
+              CallbackLivenessState::Running,
+          "liveness: callback remains live before stall timeout");
+    check(monitor.tick(counter.value(), origin + 200ms) ==
+              CallbackLivenessState::Stalled,
+          "liveness: unchanged Running counter becomes Stalled");
+    check(!is_healthy_clock_source(monitor.state()),
+          "liveness: Stalled stream is excluded from clock election");
+
+    counter.record_entry();
+    check(monitor.tick(counter.value(), origin + 201ms) ==
+              CallbackLivenessState::Running,
+          "liveness: resumed callback recovers a stalled stream");
+
+    // A restart must capture the current counter as its baseline. Entries from
+    // the old stream cannot make the replacement appear alive.
+    monitor.arm(counter.value(), origin + 300ms);
+    check(monitor.tick(counter.value(), origin + 300ms) ==
+              CallbackLivenessState::Starting,
+          "liveness: stale pre-recovery count does not restore Running");
+    check(monitor.tick(counter.value(), origin + 400ms) ==
+              CallbackLivenessState::Stalled,
+          "liveness: recovered stream without callbacks becomes Stalled");
+    counter.record_entry();
+    check(monitor.tick(counter.value(), origin + 401ms) ==
+              CallbackLivenessState::Running,
+          "liveness: first post-recovery callback restores Running");
+}
+
+void test_recovery_request_correlation() {
+    DeviceRecoveryRequest recovery;
+    check(recovery.request_id() == 0 &&
+              recovery.status() == DeviceRecoveryStatus::Idle,
+          "recovery request: starts idle without an id");
+
+    check(recovery.begin(1),
+          "recovery request: first attempt is accepted");
+    check(!recovery.begin(2),
+          "recovery request: pending attempt excludes another request");
+    check(recovery.fail(1) &&
+              recovery.status() == DeviceRecoveryStatus::Failed,
+          "recovery request: matching startup failure is terminal");
+
+    check(recovery.begin(2) && recovery.request_id() == 2 &&
+              recovery.status() == DeviceRecoveryStatus::Pending,
+          "recovery request: failed attempt releases inflight for retry");
+    check(!recovery.succeed(1) && recovery.request_id() == 2 &&
+              recovery.status() == DeviceRecoveryStatus::Pending,
+          "recovery request: stale completion cannot succeed the retry");
+    check(recovery.succeed(2) &&
+              recovery.status() == DeviceRecoveryStatus::Succeeded,
+          "recovery request: only matching completion succeeds");
+}
+
 struct ClockSimulation {
     double correction_ppm = 0.0;
     double min_occupancy = 0.0;
@@ -452,12 +601,15 @@ int main() {
     check(item.load(), "fixture: WAV loads");
     if (failures == 0) {
         test_item_gain_path(item);
+        test_active_mirror_prime_is_noop(item);
         test_device_reference_churn();
         test_project_runtime_fences();
         test_bounded_prefill_and_recovery(item);
         test_soft_out_point_fade(item);
         test_loop_and_concurrent_stress(item);
         test_loop_continue_stop_and_replay(item);
+        test_callback_liveness();
+        test_recovery_request_correlation();
         test_continuous_clock_correction();
     }
 
