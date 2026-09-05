@@ -235,16 +235,18 @@ export const useCartHotkeys = () => {
 
   const handleKeydown = (e: KeyboardEvent) => {
     if (!isForwardedFromVideoOutput(e) && isTextInputFocused()) return;
-    if (!currentProject.value) return;
 
-    // Playback actions
+    // Stop All is a server-global panic action: native diagnostics and orphaned
+    // cues can remain active without a project document or local activeCue.
     const playbackAction = findPlaybackActionForEvent(e);
-    if (playbackAction) {
+    if (playbackAction && (currentProject.value || playbackAction === 'stop-all')) {
       e.preventDefault();
       e.stopPropagation();
       void dispatchPlaybackAction(playbackAction);
       return;
     }
+
+    if (!currentProject.value) return;
 
     // Cart slot hotkeys
     const slotIndex = findSlotForEvent(e);

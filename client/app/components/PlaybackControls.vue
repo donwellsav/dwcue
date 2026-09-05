@@ -5,7 +5,6 @@
         type="button"
         class="control-btn panic-btn"
         @click="handlePanic"
-        :disabled="activeCues.size === 0"
         :title="stopAllTooltip"
       >
         <span class="material-symbols-rounded" aria-hidden="true">stop_circle</span>
@@ -263,11 +262,9 @@
 </template>
 
 <script setup lang="ts">
-// PlaybackControls migration (Milestone 5):
-//   * Panic / stop-all now fans out to BOTH the legacy useAudioEngine
-//     (until every component is migrated away from it) AND the new C++
-//     server via useLiveplayServer().stopAll(). Removing the legacy call
-//     is safe once all play paths route through the server.
+// Stop All is server-authoritative. Native diagnostics and orphaned cues are
+// intentionally outside the project-backed activeCues map, so the panic
+// control must remain callable even when that local map is empty.
 import { formatKeyLabel } from '~/composables/useCartHotkeys';
 import { useLiveplayServer } from '~/composables/useLiveplayServer';
 import { useCueMeters } from '~/composables/useLiveMeters';

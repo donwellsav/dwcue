@@ -26,6 +26,9 @@ const {
   toRendererShortcut,
 } = require('./video-output-shortcuts');
 const { buildVideoOutputContextTemplate } = require('./video-output-context-menu');
+const os = require('node:os');
+const { createTestCardConfig, AUDIO_SYNC_RATES } = require('./test-card-config');
+const { TestCardPlayback } = require('./test-card-playback');
 const {
   SPOTIFY_AUDIO_PROVIDERS,
   normalizeSpotifyBitrate,
@@ -1097,6 +1100,7 @@ ipcMain.handle('liveplay-server:get-status', async (event) => {
 // `exit` just quits without touching the server.
 ipcMain.handle('app:relaunch', async (event) => {
   requireTrustedIpc(event);
+  await stopTestCardForQuit();
   await cancelAllSpotifyDownloads(true);
   await cancelAllYouTubeDownloads();
   app.relaunch();
@@ -1105,6 +1109,7 @@ ipcMain.handle('app:relaunch', async (event) => {
 });
 ipcMain.handle('app:exit', async (event) => {
   requireTrustedIpc(event);
+  await stopTestCardForQuit();
   await cancelAllSpotifyDownloads(true);
   await cancelAllYouTubeDownloads();
   app.exit(0);
@@ -1117,6 +1122,7 @@ ipcMain.handle('app:exit', async (event) => {
 // IPC boundary so the managed server is stopped before replacing binaries.
 ipcMain.handle('app:confirm-quit', async (event, opts) => {
   requireTrustedIpc(event);
+  await stopTestCardForQuit();
   if (opts?.installUpdate === true) {
     return installDownloadedUpdate({
       runAfterInstall: opts.runAfterInstall !== false,
@@ -2128,6 +2134,45 @@ let displayIdentifierWindows = [];
 let displayIdentifierTimer = null;
 const videoOutputWindowsPreservingSession = new WeakSet();
 
+let videoOutputTestCardConnection = null;
+const testCardPlayback = new TestCardPlayback({
+  assetPath: (rate) => {
+    if (!AUDIO_SYNC_RATES.includes(rate)) throw new Error('Invalid AV Sync frame rate');
+    const root = app.isPackaged
+      ? path.join(app.getAppPath().replace(/\.asar$/, '.asar.unpacked'), '.output', 'public')
+      : path.join(app.getAppPath(), 'public');
+    return path.join(root, 'assets', 'testcards', 'audiosync', rate + '.webm');
+  },
+  onChange: () => broadcastVideoOutputStatus(),
+});
+
+function reconcileTestCardPlayback() {
+  const config = readVideoOutputConfig().testCardConfig;
+  const active = videoOutputTestCard && videoOutputWindow && !videoOutputWindow.isDestroyed()
+    && config.cardType === 'audioSync' && videoOutputTestCardConnection;
+  return testCardPlayback.update(active ? {
+    rate: config.audioSync.rate,
+    deviceId: config.audioSync.deviceId,
+    connection: videoOutputTestCardConnection,
+  } : null, videoOutputTestCardConnection);
+}
+
+async function setVideoOutputTestCard(show) {
+  videoOutputTestCard = show === true;
+  broadcastVideoOutputStatus();
+  await reconcileTestCardPlayback();
+  return videoOutputTestCard;
+}
+
+async function stopTestCardForQuit() {
+  videoOutputTestCard = false;
+  const connection = videoOutputTestCardConnection;
+  videoOutputTestCardConnection = null;
+  await testCardPlayback.update(null, connection);
+  if (testCardPlayback.session) throw new Error(testCardPlayback.error || 'Could not stop AV Sync.');
+}
+
+
 function requireVideoOutputIpc(event) {
   if (!videoOutputWindow || videoOutputWindow.isDestroyed() ||
       event.sender !== videoOutputWindow.webContents) {
@@ -2203,9 +2248,10 @@ function readVideoOutputConfig() {
       // stays the primary key; the fingerprint is only a fallback hint.
       displayFingerprint: typeof parsed.displayFingerprint === 'string'
         ? parsed.displayFingerprint : null,
+      testCardConfig: createTestCardConfig(parsed.testCardConfig),
     };
   } catch {
-    return { displayId: null, displayFingerprint: null };
+    return { displayId: null, displayFingerprint: null, testCardConfig: createTestCardConfig() };
   }
 }
 
@@ -2279,6 +2325,16 @@ function videoOutputStatus() {
     warning,
     playbackError: videoOutputPlaybackError,
     testCard: videoOutputTestCard,
+    testCardConfig: cfg.testCardConfig,
+    testCardPlayback: testCardPlayback.playback,
+    testCardError: testCardPlayback.error ? sanitizeVideoPlaybackErrorMessage(testCardPlayback.error) : null,
+    testCardInfo: {
+      displayFrequency: (target || (videoOutputWindow && !videoOutputWindow.isDestroyed()
+        ? screen.getDisplayMatching(videoOutputWindow.getBounds()) : screen.getPrimaryDisplay())).displayFrequency || 0,
+      network: [...new Set(Object.values(os.networkInterfaces()).flat()
+        .filter(entry => entry && entry.family === 'IPv4' && !entry.internal)
+        .map(entry => entry.address))],
+    },
     fullscreen: videoOutputWindow !== null &&
                 !videoOutputWindow.isDestroyed() &&
                 videoOutputWindow.isFullScreen(),
@@ -2315,13 +2371,7 @@ function showVideoOutputContextMenu(outputWindow) {
         outputWindow.setFullScreen(!outputWindow.isFullScreen());
       }
     },
-    onToggleTestCard: (visible) => {
-      videoOutputTestCard = visible;
-      if (!outputWindow.isDestroyed()) {
-        outputWindow.webContents.send('video-output:test-card', videoOutputTestCard);
-      }
-      broadcastVideoOutputStatus();
-    },
+    onToggleTestCard: (visible) => { void setVideoOutputTestCard(visible); },
     onExit: () => closeVideoOutputWindow(),
   });
   Menu.buildFromTemplate(template).popup({ window: outputWindow });
@@ -2484,14 +2534,23 @@ function createVideoOutputWindow() {
     outputWindow.loadFile(indexPath, { query: { videoOutput: '1' } });
   }
 
-  outputWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+  outputWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _url, isMainFrame) => {
     console.error('[video-output] Failed to load:', errorCode, errorDescription);
+    if (isMainFrame && errorCode !== -3) {
+      const connection = videoOutputTestCardConnection;
+      videoOutputTestCardConnection = null;
+      void testCardPlayback.update(null, connection);
+    }
   });
 
-  outputWindow.webContents.once('did-finish-load', () => {
-    // Restore a test card left on across a window reload/recreation.
-    outputWindow.webContents.send('video-output:test-card', videoOutputTestCard);
+  outputWindow.webContents.on('did-finish-load', () => {
     broadcastVideoOutputStatus();
+    void reconcileTestCardPlayback();
+  });
+  outputWindow.webContents.on('render-process-gone', () => {
+    const connection = videoOutputTestCardConnection;
+    videoOutputTestCardConnection = null;
+    void testCardPlayback.update(null, connection);
   });
 
   // The passive output renderer otherwise owns keyboard focus on Windows.
@@ -2521,6 +2580,9 @@ function createVideoOutputWindow() {
     if (!preserveSession) videoOutputSessionEnabled = false;
     if (videoOutputWindow === outputWindow) videoOutputWindow = null;
     videoOutputPlaybackError = null;
+    const connection = videoOutputTestCardConnection;
+    videoOutputTestCardConnection = null;
+    void testCardPlayback.update(null, connection);
     stopVideoOutputFrames();
     if (videoOutputPowerSaveId !== null) {
       try { powerSaveBlocker.stop(videoOutputPowerSaveId); } catch { /* already stopped */ }
@@ -2541,6 +2603,9 @@ function closeVideoOutputWindow({ preserveSession = false } = {}) {
   if (!outputWindow || outputWindow.isDestroyed()) {
     videoOutputWindow = null;
     videoOutputPlaybackError = null;
+    const connection = videoOutputTestCardConnection;
+    videoOutputTestCardConnection = null;
+    void testCardPlayback.update(null, connection);
     return;
   }
   if (preserveSession) videoOutputWindowsPreservingSession.add(outputWindow);
@@ -2615,9 +2680,13 @@ ipcMain.handle('video-output:status', (event) => {
   requireTrustedIpc(event);
   return videoOutputStatus();
 });
-ipcMain.handle('video-output:report-playback-error', (event, payload) => {
+ipcMain.handle('video-output:report-playback-error', async (event, payload) => {
   requireVideoOutputIpc(event);
   videoOutputPlaybackError = normalizeVideoPlaybackError(payload);
+  if (videoOutputPlaybackError?.itemUuid === testCardPlayback.session?.cue.id
+    && videoOutputPlaybackError) {
+    await testCardPlayback.fail(videoOutputPlaybackError.message, videoOutputTestCardConnection);
+  }
   return broadcastVideoOutputStatus();
 });
 
@@ -2673,15 +2742,45 @@ ipcMain.handle('video-output:toggle-fullscreen', (event) => {
   return broadcastVideoOutputStatus();
 });
 
-ipcMain.handle('video-output:test-card', (event, show) => {
+ipcMain.handle('video-output:test-card', async (event, show) => {
   requireTrustedIpc(event);
-  const visible = show === true;
-  videoOutputTestCard = visible;
-  if (videoOutputWindow && !videoOutputWindow.isDestroyed()) {
-    videoOutputWindow.webContents.send('video-output:test-card', visible);
-  }
+  return setVideoOutputTestCard(show);
+});
+
+ipcMain.handle('video-output:test-card-config', async (event, value) => {
+  requireTrustedIpc(event);
+  const config = readVideoOutputConfig();
+  config.testCardConfig = createTestCardConfig(value);
+  writeVideoOutputConfig(config);
   broadcastVideoOutputStatus();
-  return visible;
+  await reconcileTestCardPlayback();
+  return videoOutputStatus();
+});
+
+ipcMain.handle('video-output:test-card-connection', async (event, value) => {
+  requireVideoOutputIpc(event);
+  const previousConnection = videoOutputTestCardConnection;
+  if (value === null) {
+    videoOutputTestCardConnection = null;
+  } else {
+    const config = readLiveplayConfig();
+    const expectedUrl = config.mode === 'remote'
+      ? config.remoteUrl : 'http://127.0.0.1:' + config.localPort;
+    const serverUrl = new URL(requireIpcString(value?.serverUrl, 'serverUrl', 2048));
+    if (!['http:', 'https:'].includes(serverUrl.protocol) || serverUrl.username || serverUrl.password
+      || serverUrl.toString().replace(/\/+$/, '') !== new URL(expectedUrl).toString().replace(/\/+$/, '')) {
+      throw new Error('AV Sync must use the selected Cue server.');
+    }
+    const accessToken = typeof value.accessToken === 'string' ? value.accessToken : '';
+    if (accessToken.length > 8192 || /[\0\r\n]/.test(accessToken)) throw new Error('Invalid server credential.');
+    videoOutputTestCardConnection = {
+      serverUrl: serverUrl.toString().replace(/\/+$/, ''), accessToken,
+      local: config.mode !== 'remote',
+    };
+  }
+  if (value === null) await testCardPlayback.update(null, previousConnection);
+  else await reconcileTestCardPlayback();
+  return videoOutputStatus();
 });
 
 // Create state viewer window for debugging
@@ -5664,4 +5763,17 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+// The audio server is deliberately detached. Even quit paths without a live
+// control renderer must settle this window-owned diagnostic before exiting.
+app.on('will-quit', (event) => {
+  event.preventDefault();
+  void stopTestCardForQuit().catch((error) => {
+    console.error('[video-output] AV Sync cleanup on exit failed:', error.message);
+  }).finally(() => {
+    // All windows have already accepted closing. Complete this quit after
+    // cleanup rather than reentering Electron's in-progress app.quit().
+    app.exit(0);
+  });
 });

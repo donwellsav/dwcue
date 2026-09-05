@@ -1,0 +1,49 @@
+DonWells Cue test-card renderer attribution and modification notice
+
+This renderer and its nine audio/video synchronization media files are derived
+from Alteka Kards, a cross-platform test-card generator for AV professionals:
+
+  Project: https://github.com/Alteka/Kards
+  Source revision: 394800538a012c2090d621b2b883a7be24896efa
+  Upstream version at that revision: 1.3.1
+  Upstream license: GNU General Public License version 3 only
+
+The complete upstream GPL text is distributed beside this notice as
+KARDS-GPL-3.0.txt.
+
+DonWells Cue modifications:
+- Ported the test-card components and renderer surface from the standalone
+  Kards Electron application into the DonWells Cue Vue 3/Nuxt client.
+- Replaced visible Alteka/Kards branding and credits with DonWells Cue and
+  dwcue.com while retaining the upstream test geometry, levels and layout.
+- Removed the standalone Kards IPC, keyboard, export, wallpaper, audio-device
+  selection and control-window shell.
+- Replaced the nine autonomous browser video/audio elements with one named
+  audio-sync slot for DonWells Cue's native-clocked, muted video output.
+- Replaced viewport-global measurement and resize hooks with surface-local
+  ResizeObserver measurement and deterministic teardown.
+- Vendored the vue3-resize-text 0.1.0 sizing behavior and added element-local
+  observation plus teardown of delayed work.
+- Scoped Font Awesome Free styling to the test-card surface.
+- Modified particles.js 2.0.0 teardown so its resize listener is removable and
+  its global instance registry remains reusable during local reinitialization.
+- Preserved upstream diagnostic-motion semantics: the animation option controls
+  only signals originally bound to it, while Deghost and Audio Sync continue
+  their diagnostic loops independently.
+
+Audio-sync WebM SHA-256 values:
+  100.webm    cea9a9c9cea5bf2868512f81109bbfbe512d2e5b2d538149b5635c61924e1558
+  120.webm    a012b14a1e1eb8e6b4a2019e48e260dbd6594b14776cdd1403297b5444531b1e
+  24.webm     14b586b9f358e710bcb0ef743c039e017fdedc54c2f0a3b51d1f832dcddc2348
+  25.webm     f29abec8cdf7f6b6930fdb1ebc8b127df5b4938e8173bb235508faddce999927
+  29.97.webm  0666e6eef10dd35310259469912eec258d8e9521c9e5f9adb3ca2d6db70ab470
+  30.webm     302c5b23480f3dd0e0bfb953fc58d63ac8843bf5b774b0310303d7e2483e2628
+  50.webm     6a60e2881c9f839ee7f4cccbec54a2dbb59b5eba653337686fec8c45ec5eb736
+  59.94.webm  3c187d313e4250daf50cab16526c0b3b5ff5cc55a65bf2a26f40b20b5f264c68
+  60.webm     8ed05c7b2cb59494aff773cfaada5fbbc0a166526ba0ddd97b411615d004bbc9
+
+Bundled third-party licenses:
+- Sansation Regular: SANSATION-OFL-1.1.txt
+- Font Awesome Free 6.7.2: FONT-AWESOME-FREE.txt
+- particles.js 2.0.0: PARTICLES-JS-MIT.txt
+- vue3-resize-text 0.1.0: VUE3-RESIZE-TEXT-MIT.txt

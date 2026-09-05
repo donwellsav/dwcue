@@ -1,169 +1,116 @@
-<!--
-  VideoOutputView.vue
-  ---------------------------------------------------------------------------
-  The ?videoOutput=1 audience surface: opaque black, standby and cue images,
-  native-clocked muted video, and an explicitly enabled diagnostic test card.
-
-  Rules that matter here (learned the hard way by Inkue/FreeShow):
-  - The window must paint OPAQUE BLACK when idle — never nothing (Wayland and
-    some switchers treat a never-committed frame as "no signal").
-  - A cut replaces content in the same frame; never leave a frozen last frame.
-  - Nothing on this surface may animate continuously; each repaint is GPU work
-    that competes with video decode on weak iGPUs.
-  - No cursor, no selection, no scrolling, no window chrome interactions.
--->
+<!-- Audience output: the existing native-clocked video is also used by AV Sync.
+     Test-card animation is explicit; the ordinary idle surface stays black. -->
 <template>
   <div class="video-output" aria-hidden="true">
-    <!-- Layer stack, bottom to top: black < standby image < per-cue image <
-         video. Lower layers show through whenever the layers above them are
-         empty — no visibility logic needed beyond the top two. -->
     <div class="layer layer-black" />
+    <img v-if="standbySrc" class="layer layer-media" :src="standbySrc" alt="" draggable="false">
+    <img v-if="cueImageSrc" class="layer layer-media" :src="cueImageSrc" alt="" draggable="false">
 
-    <img
-      v-if="standbySrc"
-      class="layer layer-media"
-      :src="standbySrc"
-      alt=""
-      draggable="false"
+    <!-- The target must exist before Teleport resolves an updated destination. -->
+    <KardsTestCard
+      v-if="testCard"
+      class="layer"
+      :config="config"
+      :display-frequency="status?.testCardInfo.displayFrequency ?? 0"
+      :network="status?.testCardInfo.network ?? []"
+      :audio-description="status?.testCardPlayback?.description ?? 'Program output'"
     >
+      <template #audio-sync><div id="test-card-video-target" /></template>
+    </KardsTestCard>
 
-    <img
-      v-if="cueImageSrc"
-      class="layer layer-media"
-      :src="cueImageSrc"
-      alt=""
-      draggable="false"
-    >
-
-    <!-- Muted always: video audio goes through the engine to the PA, never
-         to HDMI. Stay mounted (v-show, not v-if) so preloading an armed cue
-         doesn't tear down the element when the previous cue stops. -->
-    <video
-      v-show="showVideo"
-      ref="videoEl"
-      class="layer layer-media"
-      :src="videoSrc ?? undefined"
-      muted
-      playsinline
-      preload="auto"
-      disablepictureinpicture
-      @loadedmetadata="onVideoLoadedMetadata"
-      @canplay="onVideoCanPlay"
-      @error="onVideoError"
-    />
-
-    <div v-if="testCard" class="layer layer-testcard">
-      <div class="safe-area safe-area--action" />
-      <div class="safe-area safe-area--title" />
-      <div class="crosshair crosshair--h" />
-      <div class="crosshair crosshair--v" />
-
-      <div class="testcard-text">
-        <!-- :src binding, never a static src: Vite rewrites static asset
-             attrs against the component dir and the URL 404s. -->
-        <img class="testcard-logo" :src="brandIcon" alt="" draggable="false">
-        <div class="testcard-app">DONWELLS CUE</div>
-        <div class="testcard-title">VIDEO OUTPUT</div>
-        <div class="testcard-meta">{{ resolutionText }}</div>
-        <div v-if="displayText" class="testcard-meta testcard-meta--dim">{{ displayText }}</div>
-        <div class="testcard-url">dwcue.com</div>
-      </div>
-
-      <div class="testcard-corner testcard-corner--tl" />
-      <div class="testcard-corner testcard-corner--tr" />
-      <div class="testcard-corner testcard-corner--bl" />
-      <div class="testcard-corner testcard-corner--br" />
-    </div>
+    <!-- Move, rather than recreate, the same muted video into Kards' original
+         AV Sync rectangle. Native audio remains the only audio/clock source. -->
+    <Teleport defer :disabled="!showAudioSyncCard" :to="showAudioSyncCard ? '#test-card-video-target' : 'body'">
+      <video
+        v-show="showVideo && (!testCard || (showAudioSyncCard && diagnosticSource !== null))"
+        ref="videoEl"
+        :class="showAudioSyncCard ? 'vt' : 'layer layer-media'"
+        :src="videoSrc ?? undefined"
+        muted
+        playsinline
+        preload="auto"
+        disablepictureinpicture
+        @loadedmetadata="onVideoLoadedMetadata"
+        @canplay="onVideoCanPlay"
+        @error="onVideoError"
+      />
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
+import KardsTestCard from './testcards/KardsTestCard.vue';
+import { createTestCardConfig } from '../../electron/test-card-config';
+
+const server = useLiveplayServer();
+const status = shallowRef<VideoOutputStatus | null>(null);
+const config = computed(() => status.value?.testCardConfig ?? createTestCardConfig());
+const testCard = computed(() => status.value?.testCard === true);
+const showAudioSyncCard = computed(() => testCard.value && config.value.cardType === 'audioSync');
+const diagnosticSource = computed(() => showAudioSyncCard.value ? status.value?.testCardPlayback ?? null : null);
 const {
   videoEl, videoSrc, showVideo, cueImageSrc, standbySrc,
   onVideoLoadedMetadata, onVideoCanPlay, onVideoError,
-} = useVideoOutput();
+} = useVideoOutput(diagnosticSource);
 
-const testCard = ref(false);
-const displayLabel = ref<string | null>(null);
+useHead({ title: 'DonWells Cue — Video Output' });
+let offStatus: (() => void) | null = null;
+let statusRevision = 0;
+let infoTimer: ReturnType<typeof setInterval> | undefined;
 
-// The test card faces the switcher/projector during tech rehearsal — the one
-// moment rivals see the output surface. The card surface is always black, so
-// the dark-mode mark is always the right one.
-const brandIcon = './assets/icons/SVG/app_icon_darkmode@web.svg';
-
-// Physical pixels matter to the person at the switcher — CSS pixels lie on
-// scaled displays (macOS Retina, Windows 125%/150%).
-const cssWidth = ref(0);
-const cssHeight = ref(0);
-
-const resolutionText = computed(() => {
-  if (!cssWidth.value || !cssHeight.value) return '';
-  const scale = window.devicePixelRatio || 1;
-  const w = Math.round(cssWidth.value * scale);
-  const h = Math.round(cssHeight.value * scale);
-  return scale !== 1
-    ? `${w} × ${h}  (${cssWidth.value} × ${cssHeight.value} @ ${scale}x)`
-    : `${w} × ${h}`;
-});
-
-const displayText = computed(() => displayLabel.value ?? '');
-
-function readViewport() {
-  cssWidth.value = window.innerWidth;
-  cssHeight.value = window.innerHeight;
+async function refreshStatus() {
+  const api = window.electronAPI?.videoOutput;
+  if (!api) return;
+  const revision = statusRevision;
+  try {
+    const next = await api.status();
+    if (revision === statusRevision) status.value = next;
+  } catch { /* A later status push restores the projection. */ }
 }
 
-let offStatus: (() => void) | null = null;
-let offTestCard: (() => void) | null = null;
-
-// Distinct OS-level title so the output is identifiable in Mission Control,
-// the Window menu, and screen-sharing pickers. Must go through useHead —
-// Nuxt's head manager owns <title> and would revert a raw assignment.
-useHead({ title: 'DonWells Cue — Video Output' });
-
-onMounted(() => {
-  readViewport();
-  window.addEventListener('resize', readViewport);
-
+function syncConnection() {
   const api = window.electronAPI?.videoOutput;
-  if (!api) return; // pure-browser dev preview
-
-  api.status().then((status) => {
-    displayLabel.value = status.targetLabel;
-    testCard.value = status.testCard;
-  }).catch(() => { /* main not ready yet; the onStatus push will land */ });
-
-  // Fullscreen hygiene: double-click toggles, Escape always exits. Handled
-  // here (renderer) so the keystroke works on the borderless fullscreen
-  // window, which has no menu/chrome of its own. Escape while windowed is a
-  // harmless no-op in the main process.
-  window.addEventListener('keydown', onKeydown);
-  window.addEventListener('dblclick', onDblClick);
-
-  offStatus = api.onStatus((status) => {
-    displayLabel.value = status.targetLabel;
+  if (!api) return;
+  void api.setTestCardConnection(server.connected ? {
+    serverUrl: server.serverUrl, accessToken: server.effectiveAccessToken,
+  } : null).catch((error) => {
+    void api.reportPlaybackError({
+      itemUuid: null,
+      message: error instanceof Error ? error.message : String(error),
+    });
   });
-  offTestCard = api.onTestCard((show) => {
-    testCard.value = show;
-  });
+}
+
+watch(() => [server.connected, server.serverUrl, server.effectiveAccessToken], syncConnection);
+watch(testCard, (visible) => {
+  clearInterval(infoTimer);
+  infoTimer = visible ? setInterval(() => { void refreshStatus(); }, 10000) : undefined;
 });
 
 function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape') {
-    window.electronAPI?.videoOutput?.setFullscreen(false);
-  }
+  if (event.key === 'Escape') void window.electronAPI?.videoOutput?.setFullscreen(false);
 }
-
 function onDblClick() {
-  window.electronAPI?.videoOutput?.toggleFullscreen();
+  void window.electronAPI?.videoOutput?.toggleFullscreen();
 }
 
+onMounted(() => {
+  const api = window.electronAPI?.videoOutput;
+  if (!api) return;
+  offStatus = api.onStatus((next) => { statusRevision += 1; status.value = next; });
+  void refreshStatus();
+  syncConnection();
+  window.addEventListener('keydown', onKeydown);
+  window.addEventListener('dblclick', onDblClick);
+});
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', readViewport);
+  clearInterval(infoTimer);
+  offStatus?.();
   window.removeEventListener('keydown', onKeydown);
   window.removeEventListener('dblclick', onDblClick);
-  offStatus?.();
-  offTestCard?.();
+  void window.electronAPI?.videoOutput?.setTestCardConnection(null).catch(() => {
+    /* The closing output may already be destroyed; main owns native cleanup. */
+  });
 });
 </script>
 
@@ -177,79 +124,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   -webkit-app-region: no-drag;
 }
-
-.layer {
-  position: absolute;
-  inset: 0;
-}
-
-.layer-black {
-  background: #000;
-}
-
-/* Video + stills: letterbox, never crop — a switcher expects the full frame.
-   The black base layer makes the letterbox bars invisible by construction. */
-.layer-media {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-/* --- Test card -----------------------------------------------------------
-   Thin 65%-white lines on black: readable on a projector at distance without
-   lighting up the room. Safe areas follow the classic 90% action / 80% title
-   convention so the switcher op can check framing. */
-
-.layer-testcard {
-  border: 2px solid rgba(255, 255, 255, 0.65);
-  box-sizing: border-box;
-}
-
-.safe-area {
-  position: absolute;
-  border: 1px dashed rgba(255, 255, 255, 0.4);
-  box-sizing: border-box;
-}
-.safe-area--action { inset: 5%; }
-.safe-area--title  { inset: 10%; }
-
-.crosshair {
-  position: absolute;
-  background: rgba(255, 255, 255, 0.35);
-}
-.crosshair--h { left: 0; right: 0; top: 50%; height: 1px; }
-.crosshair--v { top: 0; bottom: 0; left: 50%; width: 1px; }
-
-.testcard-text {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1.2vh;
-  color: rgba(255, 255, 255, 0.85);
-  font-family: var(--font-mono);
-  text-align: center;
-  letter-spacing: 0.35em;
-  text-indent: 0.35em; /* optically re-centre the tracked text */
-}
-
-.testcard-logo  { width: 9vh; height: 9vh; object-fit: contain; opacity: 0.95; margin-bottom: 1vh; }
-.testcard-app   { font-size: 3.4vh; font-weight: 700; opacity: 0.95; }
-.testcard-url   { font-size: 2vh; opacity: 0.55; }
-.testcard-title { font-size: 6vh; font-weight: 700; }
-.testcard-meta  { font-size: 2.6vh; letter-spacing: 0.15em; text-indent: 0.15em; }
-.testcard-meta--dim { opacity: 0.55; }
-
-.testcard-corner {
-  position: absolute;
-  width: 3vh;
-  height: 3vh;
-  border: 2px solid rgba(255, 255, 255, 0.65);
-}
-.testcard-corner--tl { top: 2vh;    left: 2vh;  border-right: none; border-bottom: none; }
-.testcard-corner--tr { top: 2vh;    right: 2vh; border-left: none;  border-bottom: none; }
-.testcard-corner--bl { bottom: 2vh; left: 2vh;  border-right: none; border-top: none; }
-.testcard-corner--br { bottom: 2vh; right: 2vh; border-left: none;  border-top: none; }
+.layer { position: absolute; inset: 0; }
+.layer-black { background: #000; }
+.layer-media { width: 100%; height: 100%; object-fit: contain; }
 </style>

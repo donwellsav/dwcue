@@ -47,6 +47,13 @@ export default defineNuxtConfig({
           additionalData: '@use "~~/assets/styles/variables.scss" as *;'
         }
       }
+    },
+    build: {
+      commonjsOptions: {
+        // test-card-config is deliberately shared with Electron main. Include
+        // this local CommonJS module so renderer imports use the same validator.
+        include: [/node_modules/, /electron\/test-card-config\.js$/]
+      }
     }
   },
 

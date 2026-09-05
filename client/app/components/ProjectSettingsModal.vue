@@ -648,6 +648,22 @@
               <p class="settings-help">{{ t('settings.videoOutputTestCardHelp') }}</p>
             </section>
 
+            <section class="settings-field settings-field--test-card-controls">
+              <TestCardControls
+                :config="voTestCardConfig"
+                :disabled="!voStatus"
+                @change="onVideoOutputTestCardConfigChange"
+              />
+              <p
+                v-if="voStatus?.testCardError"
+                class="settings-help video-output-playback-error"
+                role="alert"
+              >
+                <strong>{{ t('common.error') }}:</strong>
+                {{ voStatus.testCardError }}
+              </p>
+            </section>
+
             <!-- Live status line: where the output is, or why it isn't -->
             <section class="settings-field">
               <div class="settings-label">
@@ -755,6 +771,8 @@ import { normalizeIndexDisplayStart } from '~/utils/indexDisplay';
 import AboutContent from './AboutContent.vue';
 import { PLAYBACK_ACTIONS, formatKeyLabel, useCartHotkeys } from '~/composables/useCartHotkeys';
 import type { PlaybackKeyAction } from '~/types/project';
+import TestCardControls from './TestCardControls.vue';
+import { createTestCardConfig, type TestCardConfig } from '../../electron/test-card-config';
 
 const props = defineProps<{ open: boolean }>();
 const emit  = defineEmits<{ (e: 'close'): void; (e: 'open-shortcuts'): void }>();
@@ -893,6 +911,7 @@ watch(() => props.open, async (v) => {
 // status; the onStatus push keeps this panel live while it is open.
 // ---------------------------------------------------------------------------
 const voStatus = ref<VideoOutputStatus | null>(null);
+const voTestCardConfig = ref<TestCardConfig>(createTestCardConfig());
 
 const voEnabled  = computed(() => voStatus.value?.enabled === true);
 const voDisplays = computed(() => voStatus.value?.displays ?? []);
@@ -917,13 +936,26 @@ const voWarningText = computed(() => {
   return '';
 });
 
+let voTestCardConfigWriting = false;
+let voHasLocalTestCardConfigIntent = false;
+let voPendingTestCardConfig: TestCardConfig | null = null;
+
+function receiveVideoOutputStatus(status: VideoOutputStatus, forceConfig = false): void {
+  voStatus.value = status;
+  if (voTestCardConfigWriting) return;
+  if (forceConfig || !voHasLocalTestCardConfigIntent) {
+    voTestCardConfig.value = createTestCardConfig(status.testCardConfig);
+    if (forceConfig) voHasLocalTestCardConfigIntent = false;
+  }
+}
+
 async function onVideoOutputEnableChange(event: Event) {
   const enabled = (event.target as HTMLInputElement).checked;
   const api = window.electronAPI?.videoOutput;
   if (!api) return;
   settingsError.value = '';
   try {
-    voStatus.value = enabled ? await api.open() : await api.close();
+    receiveVideoOutputStatus(enabled ? await api.open() : await api.close());
   } catch (error) {
     settingsError.value = describeSettingsError(error);
   }
@@ -935,7 +967,7 @@ async function onVideoOutputDisplayChange(event: Event) {
   if (!api) return;
   settingsError.value = '';
   try {
-    voStatus.value = await api.setDisplay(value || null);
+    receiveVideoOutputStatus(await api.setDisplay(value || null));
   } catch (error) {
     settingsError.value = describeSettingsError(error);
   }
@@ -962,6 +994,37 @@ async function onVideoOutputTestCardChange(event: Event) {
   } catch (error) {
     settingsError.value = describeSettingsError(error);
   }
+}
+
+function onVideoOutputTestCardConfigChange(config: TestCardConfig): void {
+  const normalized = createTestCardConfig(config);
+  voTestCardConfig.value = normalized;
+  voHasLocalTestCardConfigIntent = true;
+  voPendingTestCardConfig = normalized;
+  void drainVideoOutputTestCardConfig();
+}
+
+async function drainVideoOutputTestCardConfig(): Promise<void> {
+  if (voTestCardConfigWriting) return;
+  const api = window.electronAPI?.videoOutput;
+  if (!api) return;
+
+  voTestCardConfigWriting = true;
+  while (voPendingTestCardConfig) {
+    const config = voPendingTestCardConfig;
+    voPendingTestCardConfig = null;
+    settingsError.value = '';
+    try {
+      const status = await api.setTestCardConfig(config);
+      voStatus.value = status;
+      if (!voPendingTestCardConfig) {
+        voTestCardConfig.value = createTestCardConfig(status.testCardConfig);
+      }
+    } catch (error) {
+      settingsError.value = describeSettingsError(error);
+    }
+  }
+  voTestCardConfigWriting = false;
 }
 
 // Standby image — the one video-output setting that IS project-level (it
@@ -999,14 +1062,14 @@ watch(() => props.open, async (v) => {
   if (!v) return;
   const api = window.electronAPI?.videoOutput;
   if (!api) return;
-  try { voStatus.value = await api.status(); } catch { /* main not ready yet */ }
+  try { receiveVideoOutputStatus(await api.status(), true); } catch { /* main not ready yet */ }
 });
 
 onMounted(() => {
   const api = window.electronAPI?.videoOutput;
   if (!api) return;
-  api.status().then((s) => { voStatus.value = s; }).catch(() => {});
-  voOffStatus = api.onStatus((s) => { voStatus.value = s; });
+  api.status().then((status) => receiveVideoOutputStatus(status, true)).catch(() => {});
+  voOffStatus = api.onStatus((status) => receiveVideoOutputStatus(status));
 });
 
 onBeforeUnmount(() => {

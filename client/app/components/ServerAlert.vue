@@ -72,7 +72,10 @@ const audioHealthMessage = computed(() => {
   }
   return t('audioHealth.stalled', { name: device.display_name });
 });
-const videoPlaybackError = computed(() => videoStatus.value?.playbackError ?? null);
+const videoPlaybackError = computed(() => {
+  const error = videoStatus.value?.testCardError;
+  return error ? { itemUuid: null, message: error } : videoStatus.value?.playbackError ?? null;
+});
 
 watch(
   () => {

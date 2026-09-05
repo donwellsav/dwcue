@@ -26,7 +26,7 @@ function productionFunctionSource(name) {
   throw new Error(`unterminated ${name} in Electron main process`);
 }
 
-function createVideoPlaybackErrorHarness() {
+function createVideoPlaybackErrorHarness(testCardPlayback = { session: null }) {
   const handlerStart = mainSource.indexOf(
     "ipcMain.handle('video-output:report-playback-error'");
   const handlerEnd = mainSource.indexOf(
@@ -38,6 +38,8 @@ function createVideoPlaybackErrorHarness() {
   const broadcasts = [];
   const context = {
     URL,
+    testCardPlayback,
+    videoOutputTestCardConnection: null,
     ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
     broadcastVideoOutputStatus: () => {
       const status = { playbackError: context.getPlaybackError() };
@@ -141,13 +143,13 @@ test('video output context menu exposes recovery and exit actions', () => {
   template[3].click();
   assert.deepEqual(calls, ['fullscreen', 'test-card:true', 'exit']);
 });
-test('accepts playback errors only from the current output and propagates safe status', () => {
+test('accepts playback errors only from the current output and propagates safe status', async () => {
   const harness = createVideoPlaybackErrorHarness();
   const firstOutput = {};
   const replacementOutput = {};
   harness.setCurrentOutputSender(firstOutput);
 
-  const status = harness.report({ sender: firstOutput }, {
+  const status = await harness.report({ sender: firstOutput }, {
     itemUuid: 'video-1',
     message: 'Decoder rejected http://127.0.0.1:4480/api/media?item_uuid=video-1&access_token=secret',
   });
@@ -158,20 +160,64 @@ test('accepts playback errors only from the current output and propagates safe s
   assert.equal(harness.broadcasts.length, 1);
   assert.equal(harness.broadcasts[0].playbackError.message, status.playbackError.message);
 
-  assert.throws(
+  await assert.rejects(
     () => harness.report({ sender: {} }, null),
     /sender is not the video output window/,
   );
   assert.equal(harness.getPlaybackError().itemUuid, 'video-1');
 
   harness.setCurrentOutputSender(replacementOutput);
-  assert.throws(
+  await assert.rejects(
     () => harness.report({ sender: firstOutput }, null),
     /sender is not the video output window/,
   );
   assert.equal(harness.getPlaybackError().itemUuid, 'video-1');
 
-  const cleared = harness.report({ sender: replacementOutput }, null);
+  const cleared = await harness.report({ sender: replacementOutput }, null);
   assert.equal(cleared.playbackError, null);
   assert.equal(harness.getPlaybackError(), null);
+});
+
+
+test('an AV Sync decode error awaits its native tone cleanup before returning status', async () => {
+  const cleanup = Promise.withResolvers();
+  const entered = Promise.withResolvers();
+  const failures = [];
+  const harness = createVideoPlaybackErrorHarness({
+    session: { cue: { id: 'diagnostic' } },
+    async fail(message) { entered.resolve(); await cleanup.promise; failures.push(message); },
+  });
+  const sender = {};
+  harness.setCurrentOutputSender(sender);
+  const reported = harness.report({ sender }, { itemUuid: 'diagnostic', message: 'Video could not decode' });
+  await entered.promise;
+  assert.equal(harness.broadcasts.length, 0);
+  cleanup.resolve();
+  await reported;
+  assert.deepEqual(failures, ['Video could not decode']);
+  assert.equal(harness.broadcasts.length, 1);
+});
+
+
+test('quit waits for native diagnostic cleanup before terminating', async () => {
+  const cleanup = Promise.withResolvers();
+  let handler;
+  let vetoed = false;
+  const exits = [];
+  const app = {
+    on(_name, callback) { handler = callback; },
+    exit(code) { exits.push(code); },
+  };
+  vm.runInNewContext(mainSource.slice(mainSource.indexOf("app.on('will-quit', (event) => {")), {
+    app,
+    stopTestCardForQuit: () => cleanup.promise,
+    console,
+  });
+  handler({ preventDefault() { vetoed = true; } });
+  assert.equal(vetoed, true);
+  assert.deepEqual(exits, []);
+  cleanup.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(exits, [0]);
 });

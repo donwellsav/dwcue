@@ -183,13 +183,15 @@ function createHarness(initialProject: unknown, connected = true) {
   });
 
   const scope = effectScope();
-  const controller = scope.run(() => useVideoOutput());
+  const diagnostic = shallowRef<VideoTestCardPlayback | null>(null);
+  const controller = scope.run(() => useVideoOutput(diagnostic));
   assert.ok(controller);
   const element = videoElement();
   controller.videoEl.value = element as unknown as HTMLVideoElement;
 
   return {
     controller,
+    diagnostic,
     element,
     reports,
     server,
@@ -480,4 +482,62 @@ test('missing and pinned native meters freeze video until progress, including de
   harness.controller.onVideoError();
   assert.equal(harness.reports.at(-1), null, 'late error from replaced media is ignored');
   harness.stop();
+});
+
+test('AV Sync shares the native clock and restores the current Program cue without document mutation', async () => {
+  const doc = project([audioItem('program', { hasVideo: true })]);
+  const before = JSON.stringify(doc);
+  const h = createHarness(doc);
+  await flush();
+  h.emitCue(snapshotCue('program', 'program-cue', 1, 1));
+  h.controller.onVideoCanPlay();
+  const source = { cueId: 'diagnostic', path: '/bundled/60.webm', duration: 4.008, description: 'Program output' };
+  h.diagnostic.value = source;
+  await flush();
+  assert.equal(new URL(h.controller.videoSrc.value!).searchParams.get('path'), source.path);
+  assert.equal(new URL(h.controller.videoSrc.value!).searchParams.has('item_uuid'), false);
+  h.controller.onVideoCanPlay();
+  h.emitCue({ cue_id: 'diagnostic', transport: 1, playhead_seconds: 2 });
+  assert.equal(h.element.currentTime, 2);
+  assert.equal(h.element.paused, false);
+  const plays = h.element.playCount;
+  h.diagnostic.value = { ...source };
+  await flush();
+  assert.equal(h.element.currentTime, 2, 'status refresh must not rewind the existing diagnostic');
+  assert.equal(h.element.playCount, plays);
+  h.emitMeters({ items: [
+    { cue_id: 'program-cue', transport: 1, playhead_seconds: 9 },
+    { cue_id: 'diagnostic', transport: 1, playhead_seconds: 2.2 },
+  ] });
+  assert.equal(h.element.currentTime, 2.2);
+  h.emitCue({ cue_id: 'diagnostic', transport: 4, playhead_seconds: 1.75 });
+  assert.equal(h.element.currentTime, 1.75);
+  assert.equal(h.element.paused, true);
+  h.diagnostic.value = null;
+  await flush();
+  h.controller.onVideoCanPlay();
+  assert.equal(new URL(h.controller.videoSrc.value!).searchParams.get('item_uuid'), 'program');
+  assert.equal(h.element.currentTime, 9);
+  assert.equal(h.element.paused, false);
+  assert.equal(JSON.stringify(doc), before);
+  h.stop();
+});
+
+test('AV Sync accepts orphan reconnect snapshots and freezes on the same clock-loss rule', async () => {
+  const h = createHarness(project([]));
+  h.diagnostic.value = { cueId: 'diagnostic', path: '/bundled/60.webm', duration: 4.008, description: 'Program output' };
+  await flush();
+  h.emitSnapshot({ cues: [{ cue_id: 'diagnostic', transport: 1, playhead_seconds: 2.8 }] });
+  h.controller.onVideoCanPlay();
+  assert.equal(h.element.currentTime, 2.8);
+  assert.equal(h.element.paused, false);
+  h.element.fireVideoFrame(0);
+  h.element.fireVideoFrame(251);
+  assert.equal(h.element.paused, true);
+  h.emitMeters({ items: [{ cue_id: 'diagnostic', transport: 1, playhead_seconds: 0.1 }] });
+  assert.equal(h.element.currentTime, 0.1);
+  assert.equal(h.element.paused, false, 'native loop-wrap is fresh progress');
+  h.emitCue({ cue_id: 'diagnostic', transport: 0, playhead_seconds: 0.1 });
+  assert.equal(h.element.paused, true, 'Stop All does not silently restart the diagnostic');
+  h.stop();
 });

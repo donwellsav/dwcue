@@ -6,6 +6,7 @@
 // there is no healthy engine clock.
 // ============================================================================
 
+import type { Ref } from 'vue';
 import type { MetersBroadcast } from '~/types/server';
 
 const TRANSPORT_STOPPED = 0;
@@ -114,7 +115,7 @@ function readActiveCue(value: unknown): ActiveCue | null {
   };
 }
 
-export function useVideoOutput() {
+export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlayback | null>>) {
   const server = useLiveplayServer();
 
   const videoEl = ref<HTMLVideoElement | null>(null);
@@ -134,6 +135,8 @@ export function useVideoOutput() {
   const previewItemUuid = ref<string | null>(null);
   const nextItemUuid = ref<string | null>(null);
   const activeCues = new Map<string, ActiveCue>();
+  let diagnosticCue: ActiveCue | null = null;
+  let diagnosticItem: OutputItem | null = null;
   let activeTriggerSeq = -1;
   let highestTriggerSeqSeen = -1;
   let acceptNextSnapshot = true;
@@ -195,10 +198,10 @@ export function useVideoOutput() {
     sourceItemUuid = item.uuid;
     sourceSignature = signature;
     const base = String(server.serverUrl || '').replace(/\/+$/, '');
-    const params = new URLSearchParams({
-      item_uuid: item.uuid,
-      source_revision: String(sourceVersion),
-    });
+    const params = new URLSearchParams(diagnosticItem === item
+      ? { path: item.mediaServerPath ?? '' }
+      : { item_uuid: item.uuid });
+    params.set('source_revision', String(sourceVersion));
     const token = String(server.effectiveAccessToken || '');
     if (token) params.set('access_token', token);
     return `${base}/api/media?${params}`;
@@ -355,6 +358,7 @@ export function useVideoOutput() {
   }
 
   function newestActiveCue(): ActiveCue | null {
+    if (diagnosticCue) return diagnosticCue;
     let newest: ActiveCue | null = null;
     for (const active of activeCues.values()) {
       if (!newest || active.triggerSeq > newest.triggerSeq) newest = active;
@@ -380,7 +384,7 @@ export function useVideoOutput() {
       if (activeItemUuid.value) clearActive();
       return;
     }
-    const item = doc.value?.items.get(active.itemUuid);
+    const item = active === diagnosticCue ? diagnosticItem : doc.value?.items.get(active.itemUuid);
     if (!item) return;
 
     const sourceChanged = active.itemUuid !== activeItemUuid.value
@@ -426,7 +430,21 @@ export function useVideoOutput() {
     refetchTimer = window.setTimeout(() => { void refetchDoc(); }, 300);
   }
 
+  function acceptDiagnosticState(raw: unknown): boolean {
+    if (!diagnosticCue?.cueId || !raw || typeof raw !== 'object') return false;
+    const state = raw as Record<string, unknown>;
+    if (state.cue_id !== diagnosticCue.cueId) return false;
+    const transport = readNumber(state.transport);
+    if (transport === null) return false;
+    diagnosticCue.transport = transport;
+    diagnosticCue.playheadSeconds = readNumber(state.playhead_seconds) ?? 0;
+    recordNativePosition(diagnosticCue.cueId, diagnosticCue.playheadSeconds, false);
+    renderNewestActive();
+    return true;
+  }
+
   const offCueState = server.onCueState((raw: unknown) => {
+    if (acceptDiagnosticState(raw)) return;
     const state = readActiveCue(raw);
     if (!state) return;
     acceptNextSnapshot = false;
@@ -447,10 +465,27 @@ export function useVideoOutput() {
   });
 
   const offMeters = server.onMeters((meters: MetersBroadcast) => {
+    if (diagnosticCue) {
+      // Keep Program positions current while the card owns the picture.
+      for (const cue of activeCues.values()) {
+        const background = meters.items.find(item => item.cue_id === cue.cueId);
+        if (background && (hasHealthyClock.value || background.transport === TRANSPORT_PAUSED)) {
+          cue.playheadSeconds = background.playhead_seconds;
+          cue.transport = background.transport;
+        }
+      }
+    }
     const active = newestActiveCue();
     if (!active?.cueId) return;
     const meter = meters.items.find((item) => item.cue_id === active.cueId);
-    if (!meter || meter.transport === TRANSPORT_STOPPED) return;
+    if (!meter) return;
+    if (meter.transport === TRANSPORT_STOPPED) {
+      if (active === diagnosticCue) {
+        active.transport = TRANSPORT_STOPPED;
+        renderNewestActive(false);
+      }
+      return;
+    }
 
     if (meter.transport !== TRANSPORT_PAUSED && !hasHealthyClock.value) return;
 
@@ -520,6 +555,7 @@ export function useVideoOutput() {
 
     const candidates: ActiveCue[] = [];
     for (const entry of Array.isArray(snapshot.cues) ? snapshot.cues : []) {
+      if (acceptDiagnosticState(entry)) continue;
       const active = readActiveCue(entry);
       if (!active || active.transport === TRANSPORT_STOPPED
         || active.itemUuid === previewItemUuid.value) continue;
@@ -608,6 +644,28 @@ export function useVideoOutput() {
     markPlaybackFailure(sourceItemUuid, 'Video playback could not be decoded.');
   }
 
+  const stopDiagnosticWatch = watch(() => diagnosticSource?.value ?? null, (source) => {
+    if (source?.cueId === diagnosticCue?.cueId && source?.path === diagnosticItem?.mediaServerPath
+      && source?.duration === diagnosticItem?.outPoint) return;
+    diagnosticCue = source ? {
+      itemUuid: source.cueId,
+      cueId: source.cueId,
+      transport: TRANSPORT_STOPPED,
+      playheadSeconds: 0,
+      triggerSeq: 0,
+    } : null;
+    diagnosticItem = source ? {
+      uuid: source.cueId,
+      hasVideo: true,
+      imagePath: null,
+      mediaPath: source.path,
+      mediaServerPath: source.path,
+      inPoint: 0,
+      outPoint: source.duration,
+    } : null;
+    renderNewestActive();
+  }, { immediate: true });
+
   const stopClockWatch = watch(hasHealthyClock, (healthy, wasHealthy) => {
     if (!healthy) {
       waitingForHealthyClockSample = true;
@@ -638,6 +696,7 @@ export function useVideoOutput() {
     stopNextItemWatch();
     stopClockWatch();
     stopConnectedWatch();
+    stopDiagnosticWatch();
   });
 
   return {

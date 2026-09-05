@@ -1,4 +1,5 @@
 export {};
+import type { TestCardConfig } from '../../electron/test-card-config';
 type ProjectFileKind =
   | 'native-project'
   | 'native-archive'
@@ -216,11 +217,12 @@ declare global {
         identifyDisplays: () => Promise<VideoOutputDisplay[]>;
         setDisplay: (displayId: string | null) => Promise<VideoOutputStatus>;
         setTestCard: (show: boolean) => Promise<boolean>;
+        setTestCardConfig: (config: TestCardConfig) => Promise<VideoOutputStatus>;
+        setTestCardConnection: (connection: { serverUrl: string; accessToken: string } | null) => Promise<VideoOutputStatus>;
         setFullscreen: (on: boolean) => Promise<VideoOutputStatus>;
         toggleFullscreen: () => Promise<VideoOutputStatus>;
         reportPlaybackError: (error: VideoPlaybackError | null) => Promise<VideoOutputStatus>;
         onStatus: (callback: (status: VideoOutputStatus) => void) => () => void;
-        onTestCard: (callback: (show: boolean) => void) => () => void;
         onShortcut: (callback: (shortcut: VideoOutputShortcut) => void) => () => void;
       };
     };
@@ -248,6 +250,13 @@ declare global {
     message: string;
   }
 
+  interface VideoTestCardPlayback {
+    cueId: string;
+    path: string;
+    duration: number;
+    description: string;
+  }
+
   interface VideoOutputStatus {
     enabled: boolean;
     open: boolean;
@@ -258,6 +267,10 @@ declare global {
     warning: 'single-display' | 'display-missing' | 'display-shared-with-control' | null;
     playbackError: VideoPlaybackError | null;
     testCard: boolean;
+    testCardConfig: TestCardConfig;
+    testCardPlayback: VideoTestCardPlayback | null;
+    testCardError: string | null;
+    testCardInfo: { displayFrequency: number; network: string[] };
     fullscreen: boolean;
   }
 

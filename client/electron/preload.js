@@ -258,6 +258,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     identifyDisplays: ()       => ipcRenderer.invoke('video-output:identify-displays'),
     setDisplay:   (displayId)  => ipcRenderer.invoke('video-output:set-display', displayId),
     setTestCard:  (show)       => ipcRenderer.invoke('video-output:test-card', show),
+    setTestCardConfig: (config) => ipcRenderer.invoke('video-output:test-card-config', config),
+    setTestCardConnection: (connection) => ipcRenderer.invoke('video-output:test-card-connection', connection),
     setFullscreen:    (on)     => ipcRenderer.invoke('video-output:set-fullscreen', on),
     toggleFullscreen: ()       => ipcRenderer.invoke('video-output:toggle-fullscreen'),
     reportPlaybackError: (error) =>
@@ -271,11 +273,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const listener = (_e, status) => callback(status);
       ipcRenderer.on('video-output:status-changed', listener);
       return () => ipcRenderer.removeListener('video-output:status-changed', listener);
-    },
-    onTestCard: (callback) => {
-      const listener = (_e, show) => callback(show === true);
-      ipcRenderer.on('video-output:test-card', listener);
-      return () => ipcRenderer.removeListener('video-output:test-card', listener);
     },
     onFrame: (callback) => {
       const listener = (_e, frame) => callback(frame);
