@@ -182,6 +182,25 @@
           <span class="material-symbols-rounded">pending</span>
           <p>{{ t('properties.loadingAudioData')}}</p>
         </div>
+        <div
+          v-if="propertySaveFailed"
+          class="trim-save-feedback"
+          role="alert"
+        >
+          <span class="material-symbols-rounded" aria-hidden="true">warning</span>
+          <span>{{ t('project.unsavedChanges') }}</span>
+          <button
+            type="button"
+            class="icon-btn regen-btn trim-save-retry"
+            :disabled="propertySavePending"
+            @click="retryPropertySave"
+          >
+            <span class="material-symbols-rounded" aria-hidden="true">
+              {{ propertySavePending ? 'progress_activity' : 'save' }}
+            </span>
+            <span>{{ propertySavePending ? t('common.loading') : t('actions.saveTrim') }}</span>
+          </button>
+        </div>
       </div>
 
       <div
@@ -406,6 +425,9 @@ const { uiMode } = useUiMode();
 const { cartOnlyItems, addCartOnlyItem, removeCartOnlyItem } = useCartItems();
 const { levels: outputTargetLevels } = useOutputTarget();
 const panelHeight = useState<number>('PropertiesPanel.height', () => 320);
+const propertySaveFailed = ref(false);
+const propertySavePending = ref(false);
+let propertySaveAttempt = 0;
 
 const clampPanelHeight = (height: number) => Math.max(
   240,
@@ -770,6 +792,9 @@ watch(selectedItem, (newItem, oldItem) => {
     const isDifferentItem = !oldItem || newItem.uuid !== oldItem.uuid;
     
     if (isDifferentItem) {
+      propertySaveAttempt += 1;
+      propertySaveFailed.value = false;
+      propertySavePending.value = false;
       isInitializing.value = true;
       originalSnapshot.value = JSON.parse(JSON.stringify(newItem));
       
@@ -784,6 +809,9 @@ watch(selectedItem, (newItem, oldItem) => {
       }, 0);
     }
   } else {
+    propertySaveAttempt += 1;
+    propertySaveFailed.value = false;
+    propertySavePending.value = false;
     originalSnapshot.value = null;
   }
 }, { immediate: true });
@@ -792,13 +820,36 @@ const handleClose = () => {
   // Close the panel but leave the current selection intact so the highlighted
   // rows stay highlighted. Only the panel's visibility is toggled here.
   propertiesPanelOpen.value = false;
+  propertySaveAttempt += 1;
+  propertySaveFailed.value = false;
+  propertySavePending.value = false;
   originalSnapshot.value = null;
 };
 
+const persistPropertyChanges = async (): Promise<boolean> => {
+  const attempt = ++propertySaveAttempt;
+  propertySavePending.value = true;
+  let saved = false;
+  try {
+    saved = await saveProject();
+  } catch (error) {
+    console.error('Error saving properties:', error);
+  }
+  if (attempt === propertySaveAttempt) {
+    propertySavePending.value = false;
+    propertySaveFailed.value = !saved;
+  }
+  return saved;
+};
+
+const retryPropertySave = () => {
+  void persistPropertyChanges();
+};
+
 const handleSave = async () => {
-  // End any active drag batch so stale intermediate values are never
-  // PATCHed to the server and echoed back as item_updated reversions.
-  endItemBatch();
+  // Drain the final item PATCH before saving the authoritative document so an
+  // older edit cannot arrive after the save and restore stale cue values.
+  await endItemBatch();
   // If multiple items are selected, update all of them with ONLY changed properties
   const items = getSelectedItems();
   if (items.length > 1 && originalSnapshot.value && selectedItem.value) {
@@ -863,7 +914,7 @@ const handleSave = async () => {
     originalSnapshot.value = JSON.parse(JSON.stringify(selectedItem.value));
   }
 
-  await saveProject();
+  await persistPropertyChanges();
 };
 
 const handleCycleSelectedColors = async () => {
@@ -979,8 +1030,8 @@ const handleTrimSilence = async () => {
   });
 
   if (trimmedCount > 0) {
-    if (selectedItem.value) originalSnapshot.value = structuredClone(selectedItem.value);
-    await saveProject();
+    if (selectedItem.value) originalSnapshot.value = JSON.parse(JSON.stringify(selectedItem.value));
+    await persistPropertyChanges();
     console.log(`Trimmed ${trimmedCount} item(s)`);
   }
 };
@@ -1085,7 +1136,7 @@ const handleReplaceMedia = async () => {
   const item = audioItem.value;
   if (!sourcePath || !item) return;
 
-  const snapshot = structuredClone(item);
+  const snapshot = JSON.parse(JSON.stringify(item));
   let mutated = false;
   isReplacingMedia.value = true;
   replaceMediaError.value = false;
@@ -1126,7 +1177,7 @@ const handleReplaceMedia = async () => {
     }
 
     if (!await saveProject()) throw new Error(t('properties.replacementSaveFailed'));
-    originalSnapshot.value = structuredClone(item);
+    originalSnapshot.value = JSON.parse(JSON.stringify(item));
     replaceMediaStatus.value = t('properties.replacementComplete');
     void _server.requestWaveformGeneration(mediaServerPath, item.uuid, true).catch(() => {});
   } catch (error: any) {
@@ -1619,6 +1670,29 @@ const formatTime = (seconds: number): string => {
 
 .property-help--error {
   color: var(--color-danger);
+}
+
+.trim-save-feedback {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 42%, var(--color-border));
+  border-radius: var(--control-radius);
+  background: color-mix(in srgb, var(--color-warning) 10%, transparent);
+  color: var(--color-text-primary);
+  font-size: var(--type-metadata-size);
+}
+
+.trim-save-feedback > .material-symbols-rounded {
+  color: var(--color-warning);
+  font-size: 18px;
+}
+
+.trim-save-retry {
+  margin-left: auto;
+  color: var(--color-text-primary);
 }
 
 .loading-message {

@@ -11,6 +11,7 @@ import {
   nextOneShotOrder,
   removeOneShotDesignation,
 } from '../app/utils/oneShots.ts';
+import { createOneShotArmPolicy } from '../app/composables/useOneShotArm.ts';
 
 const audio = (uuid: string, order?: number) => ({
   uuid,
@@ -130,4 +131,34 @@ test('removing One Shot designation never deletes or rewrites the cue', () => {
   removeOneShotDesignation(item as any);
 
   assert.deepEqual(item, expected);
+});
+
+test('arming is exclusive to Show Mode across every One Shot trigger path', () => {
+  let showMode = false;
+  const policy = createOneShotArmPolicy(() => showMode);
+  const item = audio('mode-policy', 0) as any;
+
+  assert.equal(policy.isArmed(item), false);
+  assert.equal(policy.fireBlocked(item), false, 'regular-mode click, hotkey, and MIDI triggers play directly');
+  assert.equal(policy.setArmed(item, true), false, 'regular mode cannot arm a cell');
+  assert.equal(item.oneShot?.armed, undefined);
+
+  showMode = true;
+  assert.equal(policy.fireBlocked(item), true, 'Show Mode blocks an unarmed cell');
+  assert.equal(policy.setArmed(item, true), true);
+  assert.equal(policy.isArmed(item), true);
+  assert.equal(policy.fireBlocked(item), false, 'Show Mode allows an armed cell');
+  assert.equal(policy.afterFire(item), true, 'default auto-disarm clears the arm after a confirmed fire');
+  assert.equal(item.oneShot?.armed, undefined);
+
+  assert.equal(policy.setArmed(item, true), true);
+  if (item.oneShot) item.oneShot.autoDisarm = false;
+  assert.equal(policy.afterFire(item), false, 'disabled auto-disarm preserves the Show Mode arm');
+  assert.equal(item.oneShot?.armed, true);
+
+  showMode = false;
+  assert.equal(policy.isArmed(item), false, 'persisted Show Mode state is not regular-mode state');
+  assert.equal(policy.fireBlocked(item), false);
+  assert.equal(policy.afterFire(item), false, 'regular-mode triggers never mutate the arm');
+  assert.equal(item.oneShot?.armed, true);
 });

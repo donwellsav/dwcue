@@ -646,7 +646,7 @@ onMounted(() => {
 }
 
 .clock--active .clock-value {
-  color: var(--color-text-primary);
+  color: color-mix(in srgb, var(--color-accent) 72%, var(--color-text-primary));
 }
 
 .clock--time-left.clock--active .clock-value {
@@ -716,15 +716,17 @@ onMounted(() => {
 .silence-warning.warning-yellow,
 .silence-warning.flash-slow {
   border-color: var(--state-up-next);
+  color: var(--state-up-next);
 }
 
 .silence-warning.flash-medium {
   border-color: rgb(245, 109, 31);
+  color: color-mix(in srgb, rgb(245, 109, 31) 72%, var(--color-text-primary));
 }
 
 .silence-warning.flash-fast {
   border-color: var(--color-danger);
-  color: var(--color-text-primary);
+  color: var(--color-danger);
 }
 
 @media (max-width: 1320px) {

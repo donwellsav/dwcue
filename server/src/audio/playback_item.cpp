@@ -481,12 +481,20 @@ void PlaybackItem::set_loop(bool enabled, double in_seconds) noexcept {
 }
 
 bool PlaybackItem::prime(double seconds, double start_seconds) noexcept {
+    // Priming is a stopped-cue preparation step. Project mirroring may revisit
+    // one-shot cues while they are live; seeking an active decoder here would
+    // reset its playhead and discard its queued audio. Check again under the
+    // decoder lock so a state change observed while waiting also wins.
+    if (transport_.load(std::memory_order_acquire) != TransportState::Stopped)
+        return true;
     ma_uint64 start_frame = (start_seconds <= 0.0)
         ? ma_uint64{0}
         : static_cast<ma_uint64>(start_seconds *
                                  static_cast<double>(desc_.mix_sample_rate));
     {
         std::lock_guard lock{decoder_mutex_};
+        if (transport_.load(std::memory_order_acquire) != TransportState::Stopped)
+            return true;
         if (!decoder_ || !decoder_ready_) return false;
         begin_render_exclusion();
         ma_decoder_seek_to_pcm_frame(decoder_.get(), start_frame);

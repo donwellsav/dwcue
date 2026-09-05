@@ -292,8 +292,8 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.item-name\s*\{[\s\S]{0,260}color:\s*var\(--color-text-primary\);[\s\S]*\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]{0,180}color:\s*var\(--color-text-primary\);/,
-  'cue titles must remain neutral and readable while state is communicated independently',
+  /\.item-name\s*\{[\s\S]{0,260}color:\s*var\(--color-text-primary\);[\s\S]*\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]{0,180}color:\s*var\(--state-playing\);[\s\S]*\.playlist-item\.is-paused > \.item-content \.item-name\s*\{[\s\S]{0,120}color:\s*var\(--color-text-primary\);/,
+  'playing cue titles must carry playing-state color while paused titles return to neutral',
 );
 assert.match(
   playlistItem,
@@ -307,8 +307,8 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /const itemStyle = computed[\s\S]{0,320}'--folder-background': 'var\(--color-surface-raised\)'[\s\S]{0,120}'--waveform-color': 'var\(--color-text-tertiary\)'/,
-  'audio rows and waveforms must stay neutral instead of borrowing the authored cue colour',
+  /const itemStyle = computed[\s\S]{0,320}'--folder-background': 'var\(--color-surface-raised\)'/,
+  'playlist structural surfaces must remain neutral independently of cue data colours',
 );
 assert.match(
   playlistItem,
@@ -317,8 +317,8 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /getComputedStyle\(canvas\)\.color[\s\S]*'--waveform-color': 'var\(--color-text-tertiary\)'[\s\S]*color:\s*var\(--waveform-color, var\(--color-text-primary\)\)/,
-  'playlist waveforms must use the neutral visual lane rather than competing with cue identity',
+  /getComputedStyle\(canvas\)\.color[\s\S]*color:\s*var\(--waveform-color, var\(--color-text-primary\)\)/,
+  'playlist waveforms must draw with the resolved CSS colour so cue data tint stays theme-aware',
 );
 assert.match(
   playlistItem,
@@ -416,7 +416,7 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /const limiterGainReductionLabel = computed[\s\S]{0,420}master_channels[\s\S]{0,180}index === 0[\s\S]{0,120}gain_reduction_db[\s\S]{0,180}index === 1[\s\S]{0,120}gain_reduction_db[\s\S]{0,160}Math\.min\(0, left, right\)[\s\S]{0,80}toFixed\(1\)/,
+  /const limiterGainReductionDb = computed[\s\S]{0,420}master_channels[\s\S]{0,180}index === 0[\s\S]{0,120}gain_reduction_db[\s\S]{0,180}index === 1[\s\S]{0,120}gain_reduction_db[\s\S]{0,160}Math\.min\(0, left, right\)[\s\S]{0,180}limiterGainReductionDb\.value\.toFixed\(1\)/,
   'the limiter button must show the worst live L/R gain-reduction value',
 );
 assert.doesNotMatch(
@@ -588,7 +588,7 @@ assert.match(
 );
 assert.match(
   playbackControls,
-  /preview-playhead-indicator[\s\S]*left: previewProgressPct[\s\S]*preview-start-next-marker[\s\S]*previewStartNextPct[\s\S]*preview-start-next-btn[\s\S]*handleSetPreviewStartNext[\s\S]*startNextEnabled:\s*true[\s\S]*startNextTime:\s*marker/,
+  /preview-playhead-indicator[\s\S]*left: previewProgressPct[\s\S]*preview-start-next-marker[\s\S]*previewStartNextPct[\s\S]*preview-start-next-btn[\s\S]*handleSetPreviewStartNext[\s\S]*item\.startNextEnabled\s*=\s*true[\s\S]*item\.startNextTime\s*=\s*marker[\s\S]*await saveProject\(\{ force: true \}\)/,
   'Preview must show its live playhead and let the operator save that position as the cue Start Next marker',
 );
 assert.match(
@@ -618,7 +618,7 @@ assert.match(
 );
 assert.match(
   propertiesPanel,
-  /trimSilence,[\s\S]*const handleTrimSilence = async[\s\S]*trimSilence\(item(?: as AudioItem)?\)[\s\S]*structuredClone\(selectedItem\.value\)[\s\S]*await saveProject\(\)/,
+  /trimSilence,[\s\S]*const persistPropertyChanges = async[\s\S]*await saveProject\(\)[\s\S]*const handleTrimSilence = async[\s\S]*trimSilence\(item(?: as AudioItem)?\)[\s\S]*await persistPropertyChanges\(\)/,
   'Properties Trim Silence must reuse the shared trim implementation and await persistence',
 );
 assert.match(
@@ -762,7 +762,7 @@ assert.match(
 );
 assert.match(
   canvasFader,
-  /Purpose-built console rail[\s\S]*const capW = Math\.min\(34, w - 8\)[\s\S]*const capH = 18[\s\S]*ctx\.fillStyle = surfaceRaised[\s\S]*ctx\.strokeStyle = borderStrong[\s\S]*ctx\.strokeStyle = accent/,
+  /Purpose-built console rail[\s\S]*const capW = Math\.min\(34, w - 8\)[\s\S]*const capH = 18[\s\S]*ctx\.fillStyle = surfaceRaised[\s\S]*ctx\.strokeStyle = borderStrong[\s\S]*ctx\.strokeStyle = props\.db > 0\.05[\s\S]*warning[\s\S]*success[\s\S]*accent/,
   'the aligned console fader must retain a substantial grab cap with precise control-surface styling',
 );
 assert.doesNotMatch(
@@ -832,8 +832,8 @@ assert.match(
 );
 assert.match(
   projectSettingsModal,
-  /countdownMutationVersion[\s\S]*mutationVersion !== countdownMutationVersion[\s\S]*result === 'failed' && currentProject\.value/,
-  'stale countdown saves must not roll back newer settings, and disk-save failures must preserve accepted live settings',
+  /let settingsPatchQueue = Promise\.resolve\(\);[\s\S]*const queued = settingsPatchQueue\.then[\s\S]*currentProject\.value !== project[\s\S]*await server\.patchSettings\(patch\)[\s\S]*project\.settings = restored[\s\S]*await saveProject\(\)[\s\S]*settingsPatchQueue = queued\.then/,
+  'settings edits must serialize acknowledgements, restore rejected values, and retain project identity through save',
 );
 assert.match(
   projectSettingsModal,
@@ -1844,8 +1844,8 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]{0,100}justify-self:\s*start;[\s\S]{0,100}max-width:\s*100%;[\s\S]{0,100}box-sizing:\s*border-box;[\s\S]{0,100}color:\s*var\(--color-text-primary\);\s*\}/,
-  'the neutral playing title must remain on the shared identity axis',
+  /\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]{0,100}justify-self:\s*start;[\s\S]{0,100}max-width:\s*100%;[\s\S]{0,100}box-sizing:\s*border-box;[\s\S]{0,100}color:\s*var\(--state-playing\);\s*\}/,
+  'the playing title must retain the shared identity axis while its text conveys state',
 );
 assert.doesNotMatch(
   playlistItem,
@@ -1943,13 +1943,13 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /const itemStyle = computed[\s\S]{0,320}'--folder-background': 'var\(--color-surface-raised\)'[\s\S]{0,120}'--waveform-color': 'var\(--color-text-tertiary\)'[\s\S]*\.playlist-item\s*\{[\s\S]{0,500}background:\s*var\(--color-surface\);[\s\S]*&\.is-group > \.item-content\s*\{[\s\S]{0,100}background:\s*var\(--folder-background\)/,
+  /const itemStyle = computed[\s\S]{0,320}'--folder-background': 'var\(--color-surface-raised\)'[\s\S]*\.playlist-item\s*\{[\s\S]{0,500}background:\s*var\(--color-surface\);[\s\S]*&\.is-group > \.item-content\s*\{[\s\S]{0,100}background:\s*var\(--folder-background\)/,
   'audio rows must stay neutral while folder headers retain a distinct raised surface',
 );
 assert.doesNotMatch(
   playlistItem,
-  /hexToRgba\(props\.item\.color|--folder-background': props\.item|--waveform-color': \x60color-mix/,
-  'authored cue colours must not tint row, folder, or waveform surfaces',
+  /hexToRgba\(props\.item\.color|--folder-background': props\.item/,
+  'authored cue colours must not tint structural row or folder backgrounds',
 );
 assert.doesNotMatch(
   playlistItem,
@@ -2313,7 +2313,7 @@ assert.match(
 );
 assert.match(
   propertiesPanel,
-  /buildWaveformFromChannels[\s\S]*handleReplaceMedia[\s\S]*structuredClone\(item\)[\s\S]*Object\.assign\(item, snapshot\)/,
+  /buildWaveformFromChannels[\s\S]*handleReplaceMedia[\s\S]*const snapshot = JSON\.parse\(JSON\.stringify\(item\)\)[\s\S]*Object\.assign\(item, snapshot\)/,
   'media replacement must decode first and restore the original cue when replacement fails',
 );
 assert.match(
@@ -2354,8 +2354,8 @@ assert.match(
 );
 assert.match(
   oneShotTile,
-  /\.show-mode \.one-shot-actions\s*\{\s*grid-auto-columns:\s*34px;\s*\}[\s\S]*\.show-mode \.one-shot-control\s*\{\s*width:\s*34px;\s*height:\s*34px;\s*\}/,
-  'compact Show Mode One Shot cells must retain clear transport controls',
+  /\.show-mode \.one-shot-actions\s*\{\s*width:\s*100%;\s*grid-auto-columns:\s*minmax\(0, 1fr\);\s*\}[\s\S]*\.show-mode \.one-shot-control\s*\{\s*width:\s*34px;\s*height:\s*34px;\s*\}/,
+  'Show Mode One Shot cells must use a full-width bottom action strip with clear transport targets',
 );
 assert.match(
   oneShotPanel,
@@ -2433,8 +2433,8 @@ assert.match(
 );
 assert.match(
   oneShotTile,
-  /\.one-shot-tile\s*\{[\s\S]{0,240}display:\s*grid;[\s\S]{0,120}grid-template-rows:\s*22px minmax\(0, 1fr\) 31px;[\s\S]{0,120}padding:\s*7px 8px 7px 11px;[\s\S]*\.one-shot-tile\.show-mode\s*\{[\s\S]{0,120}grid-template-rows:\s*22px minmax\(0, 1fr\) 36px;[\s\S]{0,120}padding:\s*7px 8px 7px 11px;[\s\S]*\.one-shot-topline\s*\{[\s\S]{0,180}display:\s*grid;[\s\S]{0,140}grid-template-columns:\s*16px minmax\(0, 1fr\) minmax\(0, 28px\) 42px 54px;[\s\S]{0,100}grid-template-areas:\s*'index state hotkey time arm';[\s\S]*\.one-shot-arm-toggle\s*\{[\s\S]{0,160}grid-area:\s*arm;[\s\S]{0,100}width:\s*54px;[\s\S]*@container \(max-width: 210px\)\s*\{[\s\S]{0,220}grid-template-rows:\s*47px minmax\(0, 1fr\) 31px;[\s\S]{0,220}grid-template-rows:\s*47px minmax\(0, 1fr\) 36px;[\s\S]*\.one-shot-topline\s*\{[\s\S]{0,180}grid-template-columns:\s*14px minmax\(0, 1fr\) 54px;[\s\S]{0,100}grid-template-rows:\s*22px 22px;[\s\S]{0,160}'index hotkey time'[\s\S]{0,100}'state state arm';[\s\S]{0,100}column-gap:\s*2px;[\s\S]{0,80}row-gap:\s*3px;\s*\}\s*\}/,
-  'One Shot tiles must keep non-overlapping metadata and arm rows while preserving two title lines at narrow widths',
+  /class="one-shot-bottomline"[\s\S]{0,100}class="one-shot-actions"[\s\S]*v-if="showMode"[\s\S]{0,100}class="one-shot-control one-shot-arm-toggle"[\s\S]*\.one-shot-topline\s*\{[\s\S]{0,180}grid-template-columns:\s*16px minmax\(0, 1fr\) minmax\(0, 28px\) 42px;[\s\S]{0,100}grid-template-areas:\s*'index state hotkey time';/,
+  'One Shot metadata must stay separate from the Show Mode arm control in the bottom action strip',
 );
 assert.match(
   oneShotTile,

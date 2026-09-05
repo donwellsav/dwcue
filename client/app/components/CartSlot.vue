@@ -594,8 +594,8 @@ const drawWaveform = () => {
   
   ctx.clearRect(0, 0, rect.width, rect.height);
 
-  // Keep the waveform neutral; the authored cue colour belongs to the rail.
-  ctx.fillStyle = getComputedStyle(canvas).color;
+  // Use the authored cue colour; opacity in CSS preserves the neutral surface.
+  ctx.fillStyle = audioItem.color || '#ffffff';
 
   const peaks = audioItem.waveform.peaks;
   
@@ -1272,8 +1272,7 @@ const handleDrop = async (e: DragEvent) => {
   left: 0;
   width: 100%;
   height: 100%;
-  color: var(--color-text-tertiary);
-  opacity: 0.2;
+  opacity: 0.3;
   pointer-events: none;
   z-index: 0;
 }

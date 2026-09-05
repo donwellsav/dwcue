@@ -174,6 +174,76 @@ void test_item_gain_path(PlaybackItem& item) {
     item.set_gain_db(0.0f);
 }
 
+void test_active_mirror_prime_is_noop(PlaybackItem& item) {
+    const auto runtime_unchanged = [](const PlaybackItemStats& before,
+                                      const PlaybackItemStats& after) {
+        return after.transport == before.transport &&
+               after.playhead_frame == before.playhead_frame &&
+               after.read_ahead_blocks == before.read_ahead_blocks;
+    };
+    const auto advance_one_block = [&item] {
+        Output output;
+        item.service_read_ahead(1);
+        return item.render_block(output.channels, 2, kBlock) == kBlock;
+    };
+
+    item.stop_now();
+    item.set_loop(false);
+    item.set_out_point_seconds(0.0);
+    item.set_fade_in(std::chrono::milliseconds{250});
+    item.set_fade_out(std::chrono::milliseconds{250});
+
+    check(item.prime(2.0, 0.5),
+          "mirror prime: stopped one-shot still primes");
+    const auto stopped = item.stats();
+    check(stopped.transport == TransportState::Stopped &&
+              stopped.playhead_frame == kRate / 2 &&
+              stopped.read_ahead_blocks > 0,
+          "mirror prime: stopped cue is positioned and prefetched");
+
+    item.play();
+    check(advance_one_block(), "mirror prime: active fixture renders");
+    const auto fading_in = item.stats();
+    check(fading_in.transport == TransportState::FadingIn,
+          "mirror prime: active fixture starts in fade-in");
+    check(item.prime(2.0, 0.0),
+          "mirror prime: fading-in cue accepts no-op prime");
+    check(runtime_unchanged(fading_in, item.stats()),
+          "mirror prime: fading-in runtime is preserved");
+
+    check(advance_one_block(), "mirror prime: pre-pause block renders");
+    item.pause();
+    const auto paused = item.stats();
+    check(item.prime(2.0, 0.0),
+          "mirror prime: paused cue accepts no-op prime");
+    check(runtime_unchanged(paused, item.stats()),
+          "mirror prime: paused runtime is preserved");
+
+    item.resume();
+    check(advance_one_block(), "mirror prime: resumed block renders");
+    const auto playing = item.stats();
+    check(playing.transport == TransportState::Playing,
+          "mirror prime: resume enters playing");
+    check(item.prime(2.0, 0.0),
+          "mirror prime: playing cue accepts no-op prime");
+    check(runtime_unchanged(playing, item.stats()),
+          "mirror prime: playing runtime is preserved");
+
+    check(advance_one_block(), "mirror prime: pre-stop block renders");
+    item.stop();
+    const auto fading_out = item.stats();
+    check(fading_out.transport == TransportState::FadingOut,
+          "mirror prime: stop enters fade-out");
+    check(item.prime(2.0, 0.0),
+          "mirror prime: fading-out cue accepts no-op prime");
+    check(runtime_unchanged(fading_out, item.stats()),
+          "mirror prime: fading-out runtime is preserved");
+
+    item.stop_now();
+    item.set_fade_in(std::chrono::milliseconds{0});
+    item.set_fade_out(std::chrono::milliseconds{0});
+}
+
 void test_bounded_prefill_and_recovery(PlaybackItem& item) {
     check(item.prime(2.0, 0.0), "prefill: prime succeeds");
     const auto prefetched = item.stats().read_ahead_blocks;
@@ -452,6 +522,7 @@ int main() {
     check(item.load(), "fixture: WAV loads");
     if (failures == 0) {
         test_item_gain_path(item);
+        test_active_mirror_prime_is_noop(item);
         test_device_reference_churn();
         test_project_runtime_fences();
         test_bounded_prefill_and_recovery(item);

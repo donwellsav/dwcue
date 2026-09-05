@@ -130,7 +130,7 @@ struct ControlSecurityMiddleware {
             res.set_header("Access-Control-Allow-Methods",
                            "GET, POST, PUT, PATCH, DELETE, OPTIONS");
             res.set_header("Access-Control-Allow-Headers",
-                           "Authorization, Content-Type");
+                           "Authorization, Content-Type, X-DWCUE-Mutation-ID");
             res.set_header("Access-Control-Max-Age", "600");
             res.end();
             return;
@@ -180,7 +180,7 @@ struct ControlSecurityMiddleware {
             res.set_header("Access-Control-Allow-Methods",
                            "GET, POST, PUT, PATCH, DELETE, OPTIONS");
             res.set_header("Access-Control-Allow-Headers",
-                           "Authorization, Content-Type");
+                           "Authorization, Content-Type, X-DWCUE-Mutation-ID");
             res.set_header("Access-Control-Max-Age", "600");
         }
     }
@@ -3616,6 +3616,8 @@ void ControlServer::install_routes() {
         ([this](const crow::request& req, std::string uuid){
             try {
                 auto patch = json::parse(req.body);
+                const std::string client_mutation_id =
+                    req.get_header_value("X-DWCUE-Mutation-ID");
                 Logger::api_request("Client ({}) -> Server ({}) : PATCH /api/project/items/{}",
                                     req.remote_ip_address, impl_->server_addr, uuid);
                 if (!state_.update_item(uuid, patch)) {
@@ -3624,10 +3626,14 @@ void ControlServer::install_routes() {
                 }
                 Logger::api_response("Client ({}) <- Server ({}) : PATCH /api/project/items/{} OK",
                                      req.remote_ip_address, impl_->server_addr, uuid);
-                broadcast_doc_patch(json{
+                json event{
                     {"type", "doc_patch"}, {"op", "item_updated"},
                     {"uuid", uuid}, {"patch", patch},
-                });
+                };
+                if (!client_mutation_id.empty() && client_mutation_id.size() <= 128) {
+                    event["clientMutationId"] = client_mutation_id;
+                }
+                broadcast_doc_patch(event);
                 return json_ok(json({{"ok", true}, {"uuid", uuid}}));
             } catch (const std::exception& e) {
                 Logger::error("PATCH /api/project/items/{} threw: {}", uuid, e.what());

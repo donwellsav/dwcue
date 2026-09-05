@@ -17,6 +17,7 @@
   ],
   "scripts": {
     "dev": "node scripts/ensure-server.js && npm run dev --workspace=client",
+    "test:server-integration": "node --test scripts/control-server-integration.test.js",
     "dev:client": "npm run dev --workspace=client",
     "build": "node scripts/build-all.js",
     "build:clean": "node scripts/build-clean.js",

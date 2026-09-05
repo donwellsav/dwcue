@@ -72,10 +72,8 @@ import { createLatestWriteQueue } from '~/utils/latestWriteQueue';
 // ---------------------------------------------------------------------------
 let _syncWatchersInstalled = false;
 let _refreshItemsBaselineAfterHydrate: () => void = () => {};
-let _captureBaselinesFn: () => void = () => {};
-// Bridges endItemBatch (outer composable scope) to syncItemsDiff (defined
-// inside the one-time sync-watcher init block) — see endItemBatch's comment
-// for why calling this directly, not just captureBaselines, matters.
+// Bridges endItemBatch (outer composable scope) to the serialized item diff
+// queue defined inside the one-time sync-watcher block.
 let _syncItemsDiffFn: () => Promise<void> = async () => {};
 let _installItemsWatcherFn:   null | (() => void) = null;
 let _uninstallItemsWatcherFn: null | (() => void) = null;
@@ -87,6 +85,20 @@ interface ProjectSaveRequest {
   write: () => Promise<boolean>;
 }
 const _projectSaveQueue = createLatestWriteQueue<ProjectSaveRequest>();
+
+const createItemPatchMutationIdentity = (clientId: string) => {
+  const prefix = `${clientId}:`;
+  let revision = 0;
+  return {
+    next(): string {
+      revision += 1;
+      return `${prefix}${revision}`;
+    },
+    owns(value: unknown): boolean {
+      return typeof value === 'string' && value.startsWith(prefix);
+    },
+  };
+};
 
 // UUIDs of items that were just added in this session and are waiting for
 // their first waveform so the enabled import processing can run.
@@ -1080,6 +1092,22 @@ export const useProject = () => {
     if (!isNativeProjectPath(path) || !server.connected ||
         sessionLost.value || recoveringProject.value) return false;
 
+    // The full-document POST is authoritative. Drain every queued item PATCH
+    // first so no older granular write can land after this snapshot.
+    try {
+      await _syncItemsDiffFn();
+    } catch (error) {
+      console.warn('[useProject] item diff before save failed:', error);
+    }
+    if (!isCurrentSaveIdentity(
+      project,
+      path,
+      epoch,
+      currentProject.value,
+      projectFilePathRef.value,
+      projectEpoch.value,
+    )) return false;
+
     project.lastModified = new Date().toISOString();
     const docSnapshot = buildDocumentSnapshot();
     const request: ProjectSaveRequest = {
@@ -1436,9 +1464,9 @@ export const useProject = () => {
     // against the empty array we started with and re-push the whole
     // playlist as "client adds".
     _refreshItemsBaselineAfterHydrate = captureBaselines;
-    _captureBaselinesFn = captureBaselines;
 
     const server = () => useLiveplayServer();
+    const itemPatchIdentity = createItemPatchMutationIdentity(crypto.randomUUID());
 
     // ---- Inbound doc_patch handler (multi-client mirror) ----
     // Helper that finds an item anywhere in the items tree.
@@ -1464,6 +1492,10 @@ export const useProject = () => {
       const p = currentProject.value;
       if (!p) return;
       const op = patch?.op;
+      // Own PATCH acknowledgements can arrive after a newer local edit. Ignore
+      // them before hydration suppression starts: toggling isHydrating would
+      // recapture the newer edit as a synced baseline and swallow its PATCH.
+      if (op === 'item_updated' && itemPatchIdentity.owns(patch.clientMutationId)) return;
       // All patch application happens under isHydrating so the local
       // diff-watcher doesn't echo these back to the server as fresh edits.
       isHydrating.value = true;
@@ -1717,7 +1749,9 @@ export const useProject = () => {
                             ) || changed;
                           }
                           if (changed) {
-                            void _syncItemsDiffFn();
+                            void _syncItemsDiffFn().catch(error =>
+                              console.warn('[useProject] import processing item sync failed:', error)
+                            );
                             void saveProject();
                           }
                         }).catch((e: Error) => {
@@ -1733,7 +1767,9 @@ export const useProject = () => {
                           // ponytail: whole-file fallback may over-attenuate a
                           // trimmed cue; retry the range if import retry UI lands.
                           if (applyTruePeakCeiling(current, built, limiterCeilingDb)) {
-                            void _syncItemsDiffFn();
+                            void _syncItemsDiffFn().catch(error =>
+                              console.warn('[useProject] true-peak item sync failed:', error)
+                            );
                             void saveProject();
                           }
                         });
@@ -1746,7 +1782,9 @@ export const useProject = () => {
                       // The outer microtask yields to applyDocPatch's hydration
                       // reset; the inner one then syncs the deliberate edit.
                       queueMicrotask(() => queueMicrotask(() => {
-                        void _syncItemsDiffFn();
+                        void _syncItemsDiffFn().catch(error =>
+                          console.warn('[useProject] waveform item sync failed:', error)
+                        );
                         void saveProject();
                       }));
                     }
@@ -1891,12 +1929,23 @@ export const useProject = () => {
     // installing the watcher up front: `installItemsWatcher` is called
     // from `refreshItemsBaselineAfterHydrate` (the hook fired after
     // streamItemPages finishes), and torn down in closeProject.
+    // Keep item PATCHes strictly ordered. A save waits on this same chain so
+    // an older PATCH can never land after a newer full-document save.
+    let itemsSyncTail: Promise<void> = Promise.resolve();
+    const queueItemsDiff = (): Promise<void> => {
+      const run = itemsSyncTail.then(() => syncItemsDiff());
+      itemsSyncTail = run.catch(() => {});
+      return run;
+    };
     const scheduleItemsDiff = () => {
       if (isHydrating.value || _suppressItemSyncCount.value > 0 || !currentProject.value) return;
       if (itemsTimer) clearTimeout(itemsTimer);
-      itemsTimer = setTimeout(() => syncItemsDiff().catch(e =>
-        console.warn('[useProject] items diff failed:', e)
-      ), 300);
+      itemsTimer = setTimeout(() => {
+        itemsTimer = null;
+        queueItemsDiff().catch(e =>
+          console.warn('[useProject] items diff failed:', e)
+        );
+      }, 300);
     };
 
     let stopItemsWatcher:    null | (() => void) = null;
@@ -1984,12 +2033,10 @@ export const useProject = () => {
       // group here, carrying a full snapshot of every child. The server's
       // update_item does a blind per-key merge (`it[k] = v`), so if that
       // group-level patch is built from a snapshot older than the child's own
-      // more specific patch and lands after it (a real race under rapid edits
-      // or concurrent activity — overlapping syncItemsDiff calls don't
-      // serialize against each other), it silently reverts the child back to
-      // the stale value embedded in the group's snapshot. Children are already
-      // synced via their own uuid entries in this same loop — a group patch
-      // should only ever carry the group's own metadata, never children.
+      // more specific patch, it can silently revert the child to the stale
+      // value embedded in the group's snapshot under rapid edits or concurrent
+      // client activity. Each child is already synced through its own UUID
+      // entry, so a group patch must never carry embedded children.
       const withoutChildren = (it: any) =>
         it && it.type === 'group' ? { ...it, children: undefined } : it;
       for (const [uuid, { item, parentUuid, cartOnly }] of curr) {
@@ -1999,7 +2046,10 @@ export const useProject = () => {
         const beforeCompare = withoutChildren(before.item);
         const nowCompare    = withoutChildren(item);
         if (stableJson(beforeCompare) === stableJson(nowCompare)) continue;
-        try { await srv.updateProjectItem(uuid, nowCompare); } catch {}
+        const clientMutationId = itemPatchIdentity.next();
+        try {
+          await srv.updateProjectItem(uuid, nowCompare, clientMutationId);
+        } catch {}
       }
 
       // 5. Reorder: for each parent level, if the item order changed call
@@ -2035,7 +2085,7 @@ export const useProject = () => {
         }
       }
     }
-    _syncItemsDiffFn = syncItemsDiff;
+    _syncItemsDiffFn = queueItemsDiff;
 
     // ---- Fallback for keys without granular endpoints ----
     // Only fires when one of the specific "no-endpoint-yet" fields changes
@@ -2092,19 +2142,17 @@ export const useProject = () => {
   // Drag-batch helpers — defined at composable scope so they're always
   // accessible from the return object regardless of the init-block latch.
   const beginItemBatch = () => { _suppressItemSyncCount.value++; };
-  // Bug fix: this used to call only _captureBaselinesFn(), which re-snapshots
-  // the *current* (just-dragged, never-sent) item state as the new baseline —
-  // marking the drag's final value as "already in sync" without ever pushing
-  // it to the server. The change looked fine locally but the server (and the
-  // saved project file) kept the pre-drag value, so it silently reverted on
-  // the next reload. _syncItemsDiffFn() (syncItemsDiff) is what actually
-  // diffs against the old baseline and pushes the change before rotating it —
-  // call that first, then _captureBaselinesFn() as a safety net for the
-  // non-item fields (cart/theme/settings) it also baselines.
-  const endItemBatch = () => {
+  // The queued diff snapshots and advances only the state it actually sends.
+  // Do not recapture after awaiting it: another edit can happen while a PATCH
+  // is in flight, and resnapshotting then would mark that newer value as synced
+  // without sending its granular update.
+  const endItemBatch = async (): Promise<void> => {
     _suppressItemSyncCount.value = 0;
-    _syncItemsDiffFn().catch(e => console.warn('[useProject] endItemBatch sync failed:', e));
-    _captureBaselinesFn();
+    try {
+      await _syncItemsDiffFn();
+    } catch (error) {
+      console.warn('[useProject] endItemBatch sync failed:', error);
+    }
   };
 
   return {
