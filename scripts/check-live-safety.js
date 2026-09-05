@@ -84,7 +84,7 @@ assert.doesNotMatch(
 );
 assert.doesNotMatch(
   JSON.stringify(pkg.build.dmg),
-  /DW Cue Server\.app/,
+  /(?:DW Cue|DonWells Cue) Server\.app/,
   'the release DMG must not contain an unsigned standalone server app',
 );
 const serverCmake = read('server/CMakeLists.txt');
@@ -158,8 +158,8 @@ assert.match(
 const connectionGuard = read('client/app/composables/useConnectionGuard.ts');
 assert.match(
   connectionGuard,
-  /const sameProject =[\s\S]*if \(!sameProject\)[\s\S]*hasUnsavedChanges\.value[\s\S]*sessionLost\.value = true[\s\S]*await tryRejoinExistingProject\(header\)/,
-  'a reconnect to a different server project must rehydrate the client',
+  /if \(hasUnsavedChanges\.value\) \{[\s\S]*?projectChanged\.value = true;[\s\S]*?sessionLost\.value = true;[\s\S]*?return;\s*\}[\s\S]*?await tryRejoinExistingProject\(header\)/,
+  'dirty reconnects must request an explicit choice before clean mirrors rehydrate',
 );
 assert.match(
   connectionGuard,
@@ -181,7 +181,7 @@ assert.match(
 );
 assert.match(
   welcome,
-  /class="name-dialog"[\s\S]*role="dialog"[\s\S]*aria-modal="true"[\s\S]*:aria-labelledby/,
+  /class="name-dialog(?: [^"]*)?"[\s\S]*role="dialog"[\s\S]*aria-modal="true"[\s\S]*:aria-labelledby/,
   'the new-project prompt must expose native dialog semantics',
 );
 const playlistItem = read('client/app/components/PlaylistItem.vue');
@@ -287,33 +287,43 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /<span class="item-name"[^>]*>\{\{ item\.displayName \}\}<\/span>[\s\S]*\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]*color:\s*var\(--color-danger\);[\s\S]*background:\s*color-mix/,
-  'only the playing cue title must use red text with a text-sized contrast plate',
+  /<span class="item-color-rail" :style="\{ backgroundColor: item\.color \}" aria-hidden="true"><\/span>[\s\S]*<span class="item-name"[^>]*>\{\{ item\.displayName \}\}<\/span>[\s\S]*v-if="isPaused" class="status-pill paused"[\s\S]*v-else-if="isPlaying" class="status-pill playing"[\s\S]*v-else-if="isQueuedNext" class="status-pill up-next"/,
+  'cue colour must remain an independent rail while paused, playing, and next states have explicit priority',
 );
 assert.match(
   playlistItem,
-  /\.playlist-item\.is-audio \.item-identity\s*\{[\s\S]*grid-template-columns:\s*40px minmax\(0, 1fr\) auto;[\s\S]*\.item-name\s*\{[\s\S]*font-weight:\s*700;[\s\S]*font-size:\s*var\(--type-track-size\);[\s\S]*\.playlist-item\.is-audio \.item-name\s*\{[\s\S]*text-shadow:[\s\S]*\.playlist-item\.show-mode\s*\{[\s\S]*&\.is-audio \.item-identity\s*\{[\s\S]*grid-template-columns:\s*44px minmax\(0, 1fr\) auto;[\s\S]*\.item-name\s*\{\s*font-size:\s*var\(--type-track-show-size\);[\s\S]*&\.is-audio \.item-name\s*\{[\s\S]*-webkit-line-clamp:\s*2;[\s\S]*white-space:\s*normal;/,
-  'audio titles must reclaim the empty icon lane and stay readable over two high-contrast Show Mode lines',
+  /\.item-name\s*\{[\s\S]{0,260}color:\s*var\(--color-text-primary\);[\s\S]*\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]{0,180}color:\s*var\(--color-text-primary\);/,
+  'cue titles must remain neutral and readable while state is communicated independently',
 );
 assert.match(
   playlistItem,
-  /const backgroundColor = isGroupPlaying\.value[\s\S]*hexToRgba\(props\.item\.color, 0\.5\)[\s\S]*hexToRgba\(props\.item\.color, 0\.14\)/,
-  'playing audio must retain its normal cue tint while only active groups receive the stronger tint',
+  /\.playlist-item\.is-up-next:not\(\.is-playing\)\s*\{[\s\S]{0,140}var\(--state-up-next\)[\s\S]*\.playlist-item\.is-playing\s*\{[\s\S]{0,140}var\(--state-playing\)[\s\S]*\.playlist-item\.is-playing\.is-paused\s*\{[\s\S]{0,120}var\(--color-text-tertiary\)[\s\S]*\.item-progress\s*\{[\s\S]{0,260}background:\s*var\(--state-playing\);[\s\S]*\.playlist-item\.is-paused \.item-progress\s*\{[\s\S]{0,100}var\(--color-text-tertiary\)[\s\S]*&\.playing\s*\{[\s\S]{0,120}background-color:\s*var\(--state-playing\)[\s\S]*&\.up-next\s*\{[\s\S]{0,120}background-color:\s*var\(--state-up-next\)[\s\S]*&\.paused\s*\{[\s\S]{0,180}background-color:\s*var\(--color-control\);[\s\S]{0,100}color:\s*var\(--color-text-primary\);/,
+  'playlist rows must use green playing, amber next, and an explicit neutral paused treatment',
 );
 assert.match(
   playlistItem,
-  /backgroundColor:\s*'var\(--color-danger\)'[\s\S]*\.item-progress\s*\{[\s\S]{0,100}bottom:\s*0;[\s\S]{0,100}height:\s*3px;/,
-  'playback progress must be a visible red line rather than a distracting row fill',
+  /\.item-identity\s*\{[\s\S]*grid-template-columns:\s*var\(--cue-number-width, 48px\) minmax\(0, 1fr\) auto;[\s\S]*\.playlist-item\.is-audio \.item-identity\s*\{[\s\S]{0,120}grid-template-columns:\s*var\(--cue-number-width, 48px\) minmax\(0, 1fr\) auto;[\s\S]*\.item-name\s*\{[\s\S]{0,260}font-size:\s*var\(--type-track-size\);[\s\S]{0,180}color:\s*var\(--color-text-primary\);[\s\S]*\.playlist-item\.show-mode\s*\{[\s\S]*\.item-identity\s*\{[\s\S]{0,160}var\(--cue-number-width, 52px\)[\s\S]*&\.is-audio \.item-identity\s*\{[\s\S]{0,160}var\(--cue-number-width, 52px\)[\s\S]*&\.is-audio \.item-name\s*\{[\s\S]{0,180}-webkit-line-clamp:\s*2;[\s\S]{0,100}white-space:\s*normal;/,
+  'audio and folder titles must share a stable number lane and remain readable over two neutral Show Mode lines',
 );
 assert.match(
   playlistItem,
-  /getComputedStyle\(canvas\)\.color[\s\S]*'--waveform-color':\s*`color-mix\(in srgb, \$\{props\.item\.color\} 40%, #687386\)`[\s\S]*color:\s*var\(--waveform-color, var\(--color-text-primary\)\)/,
-  'playlist waveforms must preserve cue hue while normalizing extreme luminance',
+  /const itemStyle = computed[\s\S]{0,320}'--folder-background': 'var\(--color-surface-raised\)'[\s\S]{0,120}'--waveform-color': 'var\(--color-text-tertiary\)'/,
+  'audio rows and waveforms must stay neutral instead of borrowing the authored cue colour',
 );
 assert.match(
   playlistItem,
-  /grid-template-columns:\s*34px minmax\(112px, 1fr\) minmax\(0, max-content\) 64px max-content 32px;[\s\S]*\.item-identity\s*\{[\s\S]*grid-template-columns:\s*40px minmax\(0, 1fr\) auto;[\s\S]*\.item-icon\s*\{[\s\S]*grid-column:\s*1;[\s\S]*justify-self:\s*end;/,
-  'folder and audio titles must share one origin while empty state lanes return space to long titles',
+  /\.item-progress\s*\{[\s\S]{0,100}bottom:\s*0;[\s\S]{0,100}height:\s*3px;[\s\S]{0,160}background:\s*var\(--state-playing\);/,
+  'playback progress must be a compact green state line rather than a distracting row fill',
+);
+assert.match(
+  playlistItem,
+  /getComputedStyle\(canvas\)\.color[\s\S]*'--waveform-color': 'var\(--color-text-tertiary\)'[\s\S]*color:\s*var\(--waveform-color, var\(--color-text-primary\)\)/,
+  'playlist waveforms must use the neutral visual lane rather than competing with cue identity',
+);
+assert.match(
+  playlistItem,
+  /\.item-left\s*\{[\s\S]{0,220}grid-template-columns:\s*34px minmax\(112px, 1fr\) var\(--cue-state-width, 108px\) var\(--cue-time-width, 72px\) 140px 32px;[\s\S]*\.item-identity\s*\{[\s\S]{0,220}grid-template-columns:\s*var\(--cue-number-width, 48px\) minmax\(0, 1fr\) auto;[\s\S]*\.item-icon\s*\{[\s\S]{0,160}grid-column:\s*1;[\s\S]{0,100}justify-self:\s*end;/,
+  'folder and audio titles must share one origin beside aligned state, time, action, and arm lanes',
 );
 assert.match(
   playlistItem,
@@ -357,7 +367,7 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /'is-sticky-group': item\.type === 'group' && isExpanded && depth === 0[\s\S]*'--item-background': backgroundColor[\s\S]*&\.is-sticky-group\s*\{\s*overflow:\s*clip;[\s\S]*&\.is-sticky-group > \.item-content\s*\{[\s\S]*position:\s*sticky;[\s\S]*top:\s*0;/,
+  /'is-sticky-group': item\.type === 'group' && isExpanded && depth === 0[\s\S]*'--folder-background': 'var\(--color-surface-raised\)'[\s\S]*&\.is-sticky-group\s*\{\s*overflow:\s*clip;[\s\S]*&\.is-sticky-group > \.item-content\s*\{[\s\S]*position:\s*sticky;[\s\S]*top:\s*0;/,
   'expanded folder headers must stay collapsible while their children scroll',
 );
 const mainWorkspace = read('client/app/components/MainWorkspace.vue');
@@ -483,7 +493,7 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /class="workspace-panels"[\s\S]*id="cart-player-panel"[\s\S]*<OneShotPanel>[\s\S]*#header-leading[\s\S]*class="cart-toggle cart-toggle--open"[\s\S]*t\('oneShots\.hide'\)[\s\S]*@click="toggleCart"[\s\S]*<PlaylistView>[\s\S]*#header-leading[\s\S]*v-if="cartClosed && !cartDetached"[\s\S]*class="cart-toggle"[\s\S]*t\('oneShots\.show'\)[\s\S]*@click="toggleCart"[\s\S]*function toggleCart\(\)[\s\S]*cartClosed\.value = !cartClosed\.value[\s\S]*cartFullscreen\.value = false/,
+  /class="workspace-panels"[\s\S]*id="cart-player-panel"[\s\S]*<OneShotPanel>[\s\S]*#header-leading[\s\S]*class="cart-toggle cart-toggle--open"[\s\S]*t\('oneShots\.hide'\)[\s\S]*@click="toggleCart"[\s\S]*<PlaylistView>[\s\S]*#header-leading[\s\S]*v-if="cartClosed && !cartDetached"[\s\S]*class="cart-toggle(?: [^"]*)?"[\s\S]*t\('oneShots\.show'\)[\s\S]*@click="toggleCart"[\s\S]*function toggleCart\(\)[\s\S]*cartClosed\.value = !cartClosed\.value[\s\S]*cartFullscreen\.value = false/,
   'the One Shots toggle must stay in the active panel header and leave resizing to the splitter',
 );
 assert.match(
@@ -533,8 +543,8 @@ assert.doesNotMatch(
 );
 assert.match(
   mainWorkspace,
-  /\.monitor-console\s*\{[\s\S]*border-left:\s*0;[\s\S]*border-right:\s*1px solid var\(--color-border\)/,
-  'the conditional Monitor strip must dock on the left edge',
+  /\.monitor-console\s*\{[\s\S]{0,120}border-inline-start:\s*0;[\s\S]{0,120}border-inline-end:\s*1px solid var\(--color-border\)/,
+  'the conditional Monitor strip must dock on the logical left edge',
 );
 assert.doesNotMatch(
   playbackControls,
@@ -553,8 +563,8 @@ assert.ok(
 );
 assert.match(
   playbackControls,
-  /\.playback-controls\s*\{[\s\S]*--transport-side-width:\s*var\(--output-strip-width\);[\s\S]*grid-template-columns:\s*var\(--transport-side-width\) minmax\(0, 1fr\) var\(--transport-side-width\);[\s\S]*\.control-btn\s*\{[\s\S]*align-self:\s*stretch;[\s\S]*width:\s*100%;[\s\S]*\.active-cues\s*\{[\s\S]*min-width:\s*0;/,
-  'the transport buttons must match the output rail around a flexible cue lane',
+  /\.playback-controls\s*\{[\s\S]{0,180}--transport-stop-width:\s*clamp\(148px, 12vw, 176px\);[\s\S]{0,100}--transport-next-width:\s*clamp\(264px, 23vw, 320px\);[\s\S]{0,300}grid-template-columns:\s*var\(--transport-stop-width\) minmax\(0, 1fr\) var\(--transport-next-width\);[\s\S]{0,100}grid-template-areas:\s*'panic live next';[\s\S]*\.control-btn\s*\{[\s\S]{0,180}align-self:\s*stretch;[\s\S]{0,100}width:\s*100%;[\s\S]*\.play-next-btn\s*\{[\s\S]{0,100}grid-area:\s*next;[\s\S]*\.panic-zone\s*\{[\s\S]{0,100}grid-area:\s*panic;[\s\S]*\.active-cues\s*\{[\s\S]{0,100}grid-area:\s*live;[\s\S]{0,180}min-width:\s*0;/,
+  'aligned console controls must keep dedicated Stop All and Play Next widths around a flexible active-cue lane',
 );
 assert.match(
   playbackControls,
@@ -684,13 +694,13 @@ assert.match(
 );
 assert.match(
   stereoMeter,
-  /const bodyL = computed\(\(\) => meterMode\.value === 'LUFS'[\s\S]*function peakCapStyle[\s\S]*const rmsStyleL\s*= computed\(\(\) => fillStyle\(bodyL\.value\)\)[\s\S]*&__rms-fill[\s\S]*opacity:\s*0\.58[\s\S]*&__peak-cap[\s\S]*background:\s*currentColor[\s\S]*&__hold[\s\S]*background:\s*var\(--color-text-primary\)/,
-  'meters must render a dim body, a brighter peak cap, and a separate held peak line',
+  /const bodyL = computed\(\(\) => meterMode\.value === 'LUFS'[\s\S]*function peakCapStyle[\s\S]*const rmsStyleL\s*= computed\(\(\) => fillStyle\(bodyL\.value\)\)[\s\S]*&__rms-fill[\s\S]*opacity:\s*0\.72[\s\S]*&__peak-cap[\s\S]*background:\s*currentColor[\s\S]*&__hold[\s\S]*background:\s*var\(--color-text-primary\)/,
+  'meters must render a readable body, a precise peak cap, and a separate held peak line',
 );
 assert.match(
   stereoMeter,
-  /&__track::after[\s\S]*repeating-linear-gradient\([\s\S]*rgba\(255,\s*255,\s*255,\s*0\.06\) 0 1px,\s*transparent 1px 6px/,
-  'meter tracks must show visible segment guides even when unlit',
+  /&__track::after[\s\S]*repeating-linear-gradient\([\s\S]*transparent 0 4px,[\s\S]*var\(--color-control\) 4px 6px/,
+  'meter tracks must keep consistent segment guides across lit and unlit levels',
 );
 assert.match(
   meterTemplate,
@@ -752,8 +762,8 @@ assert.match(
 );
 assert.match(
   canvasFader,
-  /Flat rail and cap[\s\S]*const capW = Math\.min\(38, w - 6\)[\s\S]*const capH = 22[\s\S]*ctx\.fillStyle = surfaceRaised[\s\S]*ctx\.strokeStyle = accent/,
-  'the fader must retain a substantial grab cap while using the app control surfaces',
+  /Purpose-built console rail[\s\S]*const capW = Math\.min\(34, w - 8\)[\s\S]*const capH = 18[\s\S]*ctx\.fillStyle = surfaceRaised[\s\S]*ctx\.strokeStyle = borderStrong[\s\S]*ctx\.strokeStyle = accent/,
+  'the aligned console fader must retain a substantial grab cap with precise control-surface styling',
 );
 assert.doesNotMatch(
   canvasFader,
@@ -787,13 +797,13 @@ assert.match(
 );
 assert.match(
   volumeSlider,
-  /volume-slider--inline[\s\S]*display:\s*contents;[\s\S]*grid-column:\s*3;[\s\S]*grid-row:\s*2;[\s\S]*volume-slider__label-wrap[\s\S]*grid-column:\s*3;[\s\S]*grid-row:\s*3;[\s\S]{0,80}justify-self:\s*end;[\s\S]{0,80}height:\s*20px;[\s\S]{0,80}width:\s*42px;/,
-  'the editable fader value must sit under the right-aligned numeric scale',
+  /volume-slider--inline[\s\S]*display:\s*contents;[\s\S]*grid-column:\s*3;[\s\S]*grid-row:\s*2;[\s\S]*volume-slider__label-wrap[\s\S]*grid-column:\s*3;[\s\S]*grid-row:\s*3;[\s\S]{0,80}justify-self:\s*end;[\s\S]{0,80}height:\s*20px;[\s\S]{0,80}width:\s*64px;/,
+  'the editable fader value must sit under the aligned 64-pixel console readout lane',
 );
 assert.match(
   volumeSlider,
-  /volume-slider--inline \.volume-slider__label\s*\{[\s\S]{0,160}padding-right:\s*10px;[\s\S]{0,100}text-align:\s*right;[\s\S]*volume-slider--inline \.volume-slider__input\s*\{[\s\S]{0,220}right:\s*0;[\s\S]{0,220}width:\s*42px;[\s\S]{0,120}padding:\s*0 10px 0 4px;[\s\S]{0,80}text-align:\s*right;/,
-  'the displayed and edited fader values must share the scale numbers\' zero column',
+  /volume-slider--inline \.volume-slider__label\s*\{[\s\S]{0,160}width:\s*64px;[\s\S]{0,100}padding:\s*2px 4px;[\s\S]*volume-slider--inline \.volume-slider__input\s*\{[\s\S]{0,220}right:\s*0;[\s\S]{0,260}width:\s*64px;[\s\S]{0,120}padding:\s*0 4px;[\s\S]{0,80}text-align:\s*right;[\s\S]*\.volume-slider__label\s*\{[\s\S]{0,160}display:\s*grid;[\s\S]{0,100}grid-template-columns:\s*minmax\(0, 1fr\) auto;[\s\S]{0,80}gap:\s*3px;[\s\S]{0,180}min-width:\s*64px;[\s\S]{0,100}padding:\s*3px 4px;[\s\S]{0,260}font-size:\s*12px;[\s\S]*\.volume-slider__value\s*\{[\s\S]{0,100}text-align:\s*right;[\s\S]*\.volume-slider__unit\s*\{[\s\S]{0,140}font-size:\s*9px;[\s\S]{0,120}text-transform:\s*none;/,
+  'the displayed and edited fader values must fit one legible 64-pixel console column',
 );
 assert.match(
   projectHeader,
@@ -1014,6 +1024,45 @@ assert.match(atomicFile,
   'Windows project replacement must atomically replace the existing save');
 
 const controlServer = read('server/src/net/control_server.cpp');
+const projectFileHeader = read('server/include/liveplay/core/project_file.hpp');
+const projectFile = read('server/src/core/project_file.cpp');
+const projectArchive = read('server/src/net/project_archive.cpp');
+const controlSecurity = read('server/include/liveplay/net/control_security.hpp');
+assert.match(
+  projectFileHeader,
+  /kNativeProjectExtension = "\.dwcue"[\s\S]*kLegacyProjectExtension = "\.liveplay"[\s\S]*kNativeArchiveExtension = "\.dwcuepack"[\s\S]*kLegacyArchiveExtension = "\.lpa"/,
+  'native and one-way legacy file classifications must remain explicit',
+);
+assert.match(
+  projectFile,
+  /lower_extension[\s\S]*std::tolower[\s\S]*bool is_native_project[\s\S]*kNativeProjectExtension[\s\S]*bool is_native_archive[\s\S]*kNativeArchiveExtension/,
+  'project and archive extension classification must remain case-insensitive',
+);
+assert.match(
+  projectFile,
+  /bool valid_legacy_destination[\s\S]*is_native_project\(destination\)[\s\S]*destination_parent != source_parent[\s\S]*path_is_occupied\(destination/,
+  'legacy conversion must target an unused canonical sibling',
+);
+assert.match(
+  projectFile,
+  /bool write_new_canonical_project[\s\S]*CreateFileW\([\s\S]*CREATE_NEW[\s\S]*O_EXCL/,
+  'canonical legacy conversion must use exclusive creation on every platform',
+);
+assert.match(
+  projectArchive,
+  /normalize_archive_entry_path\(raw_name\)[\s\S]*archive_entry_type_is_safe[\s\S]*charge_archive_entry[\s\S]*archive_destination_is_safe/,
+  'archive extraction must reject traversal, links, special entries, and budget overruns before writing',
+);
+assert.match(
+  projectArchive,
+  /bool archive_destination_is_safe[\s\S]*symlink_status[\s\S]*is_symlink[\s\S]*canonical_path_is_within/,
+  'archive extraction must reject symlink and canonical-path escapes',
+);
+assert.match(
+  `${atomicFile}\n${projectArchive}`,
+  /inline bool rename_no_replace[\s\S]*MoveFileExW\(source\.c_str\(\), target\.c_str\(\), MOVEFILE_WRITE_THROUGH\)[\s\S]*renamex_np\(source\.c_str\(\), target\.c_str\(\), RENAME_EXCL\)[\s\S]*SYS_renameat2[\s\S]*kRenameNoReplace[\s\S]*OperationResult reserve_and_publish[\s\S]*if \(!state\.exists\)[\s\S]*rename_no_replace\(staging, destination, error\)[\s\S]*error == std::errc::file_exists[\s\S]*rename_no_replace\(destination, empty_placeholder, error\)[\s\S]*symlink_status\(empty_placeholder, error\)[\s\S]*is_directory\(placeholder_status\)[\s\S]*!fs::is_symlink\(placeholder_status\)[\s\S]*is_empty\(empty_placeholder, error\)[\s\S]*rename_no_replace\(empty_placeholder, destination, restore_error\)[\s\S]*rename_no_replace\(staging, destination, error\)[\s\S]*rename_no_replace\(empty_placeholder, destination, restore_error\)[\s\S]*is_directory\(final_status\)[\s\S]*!fs::is_symlink\(final_status\)[\s\S]*is_empty\(empty_placeholder, error\)/,
+  'archive import publication must use native no-replace moves, preserve empty destinations, and restore only into unused names',
+);
 const mainCpp = read('server/src/main.cpp');
 assert.match(
   projectStateHeader + projectState + controlServer,
@@ -1031,14 +1080,14 @@ assert.match(
   'temporary Preview ranges must be validated and applied only to the active Preview cue',
 );
 assert.match(
-  controlServer,
-  /if \(fs::equivalent\(it->path\(\), out_zip, equivalent_ec\)\s*&&\s*!equivalent_ec\)\s*\{\s*continue;\s*\}/m,
-  'project exports must skip the archive file itself during zip creation',
+  projectArchive,
+  /bool output_is_excluded[\s\S]*paths_equivalent\(candidate, output_zip\)[\s\S]*paths_equivalent\(candidate, excluded_final_output\)[\s\S]*output_is_excluded\(\s*it->path\(\), output_zip, excluded_final_output\)[\s\S]*continue;/,
+  'project exports must skip both staging and final archive outputs during zip creation',
 );
 assert.match(
-  controlServer,
-  /is_chunked_upload_staging_name\([\s\S]*is_export_staging_name\([\s\S]*continue;/,
-  'project exports must skip upload and orphan export staging files',
+  projectArchive,
+  /is_chunked_upload_staging_name\(filename\)[\s\S]*is_export_staging_name\(filename\)[\s\S]*output_is_excluded[\s\S]*paths_equivalent\(it->path\(\), active_project\)[\s\S]*continue;/,
+  'project exports must skip upload staging, orphan export staging, output archives, and duplicate project roots',
 );
 assert.match(
   controlServer,
@@ -1047,7 +1096,7 @@ assert.match(
 );
 assert.match(
   controlServer,
-  /out = tmp \/ \(download_token \+ "\.lpa"\);[\s\S]*download_token/,
+  /out = tmp \/ \(download_token \+ "\.dwcuepack"\);[\s\S]*download_token/,
   'temporary archive exports should use generated tokens, not projectName-derived paths',
 );
 const downloadRouteStart = controlServer.indexOf('CROW_ROUTE(app, "/api/file/download")');
@@ -1074,22 +1123,27 @@ const exportRouteEnd = controlServer.indexOf('CROW_ROUTE(app, "/api/file/downloa
 const exportRoute = controlServer.slice(exportRouteStart, exportRouteEnd);
 assert.match(
   exportRoute,
-  /out = tmp \/ \(download_token \+ "\.lpa"\);/,
-  'temporary archive output must be token-named instead of projectName-derived',
+  /out = tmp \/ \(download_token \+ "\.dwcuepack"\);/,
+  'temporary canonical archive output must be token-named instead of projectName-derived',
 );
 assert.match(
   exportRoute,
   /const std::string default_name = safe_download_filename\(\s*j.value\("projectName"/,
-  'projectName must only drive user-facing default filename, not filesystem paths',
+  'projectName must only drive the user-facing default filename, not filesystem paths',
 );
 assert.match(
   controlServer,
-  /safe_download_filename[\s\S]*sanitize_upload_filename\(name \+ "\.lpa", "project\.lpa"\)/,
-  'suggested archive filenames must preserve valid UTF-8 at the byte limit',
+  /static std::string safe_download_filename[\s\S]*security::canonical_archive_download_filename\(name\)/,
+  'archive download names must use the canonical security helper',
+);
+assert.match(
+  controlSecurity,
+  /sanitize_upload_filename[\s\S]*while \(cut > 0[\s\S]*0xc0u[\s\S]*base.resize[\s\S]*name = std::move\(base\) \+ extension[\s\S]*canonical_archive_download_filename[\s\S]*stem \+ "\.dwcuepack", "project\.dwcuepack"/,
+  'suggested canonical archive filenames must retain the .dwcuepack suffix without splitting valid UTF-8',
 );
 assert.match(
   exportRoute,
-  /staged_out[\s\S]*zip_pack_directory\(src, staged_out, out\)[\s\S]*replace_file_atomically\(\s*staged_out, out/,
+  /staged_out[\s\S]*project_archive::export_project\(\s*src, active_project, staged_out, out\)[\s\S]*replace_file_atomically\(\s*staged_out, out/,
   'exports must stage completely before atomically replacing the destination',
 );
 
@@ -1098,8 +1152,8 @@ const importRouteEnd = controlServer.indexOf('CROW_ROUTE(app, "/api/mixers")', i
 const importRoute = controlServer.slice(importRouteStart, importRouteEnd);
 assert.match(
   importRoute,
-  /archive_path = tmp \/ \(make_download_token\(\) \+ "\.lpa"\);/,
-  'multipart imports must stage to random-token temp paths',
+  /trusted_archive_filename =\s*[\s\S]*sanitize_upload_filename\([\s\S]*filename_it->second[\s\S]*archive_kind\(trusted_archive_filename\)[\s\S]*archive_path = tmp \/ \(make_download_token\(\) \+ "\.part"\);/,
+  'multipart imports must validate the trusted source filename classification before random-token .part staging',
 );
 assert.match(
   controlServer,
@@ -1117,9 +1171,14 @@ assert.match(
   'server stop must clear queued waveform work before worker shutdown',
 );
 assert.match(
-  controlServer,
-  /extract_archive_locked[\s\S]*g_media_import_mutex[\s\S]*zip_extract_to/,
+  importRoute,
+  /std::lock_guard import_lock\{g_media_import_mutex\};[\s\S]*project_archive::import_project\(/,
   'archive imports must share the media snapshot lock with exports',
+);
+assert.match(
+  projectArchive,
+  /ImportResult import_project[\s\S]*extract_zip_to\(archive_path, staging\)/,
+  'locked archive imports must extract only through the validated staging implementation',
 );
 
 // The pidfile should be written atomically before any start delay so a crash
@@ -1244,7 +1303,7 @@ assert.match(electron, /let liveplayServerStartPromise = null/, 'concurrent star
 assert.match(electron, /if \(liveplayServerStartPromise\) return liveplayServerStartPromise/, 'concurrent start requests must not spawn twice');
 assert.match(
   electron,
-  /await pollPidfileForServerPid\(\s*lockPath, instanceToken, cfg\.localPort, launchState/,
+  /await pollPidfileForServerPid\(\s*lockPath, instanceToken, accessToken, cfg\.localPort, launchState/,
   'a launch must adopt its PID before it is considered complete',
 );
 assert.match(
@@ -1485,18 +1544,20 @@ assert.match(
 );
 assert.match(
   electron,
-  /download-spotify-audio[\s\S]*requireAuthorizedIpcPath\([\s\S]*destinationParentPath[\s\S]*spawn\(spotDlPath, args/,
-  'Spotify downloads must use trusted IPC and argv spawning',
+  /download-spotify-audio[\s\S]*requireTrustedIpc\(event\)[\s\S]*requireAuthorizedIpcPath\([\s\S]*destinationParentPath/,
+  'Spotify downloads must require trusted IPC and an authorized destination',
+);
+// Literal argv, spawn failures and deadline cancellation are exercised by
+// spotify-import-reliability.test.js against the production runTracked body.
+assert.match(
+  electron,
+  /runTracked\(spotDlPath, \[[\s\S]{0,180}'url',[\s\S]{0,180}'--audio', \.\.\.SPOTIFY_AUDIO_PROVIDERS/,
+  'Spotify metadata matching must retain its guarded provider fallback chain',
 );
 assert.match(
   electron,
-  /'download',[\s\S]{0,200}'--audio', \.\.\.SPOTIFY_AUDIO_PROVIDERS[\s\S]{0,200}'--format', 'mp3'/,
-  'Spotify downloads must use the guarded multi-provider fallback chain',
-);
-assert.match(
-  electron,
-  /--save-file', 'dwcue-spotify-manifest\.spotdl'[\s\S]*createSpotifyProjectFolder\([\s\S]*playlistName[\s\S]*projectFolderPath/,
-  'Spotify imports must retain a manifest and return their named project folder',
+  /createSpotifyProjectFolder\([\s\S]*playlistName[\s\S]*normalizeSpotifyRecovery\([\s\S]*pendingFiles: files[\s\S]*spotifyRecovery: recovery/,
+  'Spotify imports must persist recoverable file identities and their named collection folder',
 );
 assert.doesNotMatch(
   electron,
@@ -1520,8 +1581,8 @@ assert.match(
 );
 assert.match(
   electron,
-  /function cancelSpotifyDownload[\s\S]*process\.kill\(-child\.pid, 'SIGTERM'\)/,
-  'playlist downloads must retain a cancellable child-process job',
+  /function cancelSpotifyDownload[\s\S]*job\.children[\s\S]*terminateSpotifyChild\(tracked\)/,
+  'playlist cancellation must terminate every tracked matching and download process',
 );
 assert.match(
   electron,
@@ -1593,13 +1654,13 @@ assert.match(
 );
 assert.match(
   projectHeader,
-  /flex:\s*0 0 var\(--app-header-height\);[\s\S]{0,100}height:\s*var\(--app-header-height\);[\s\S]*\.header-right\s*\{[\s\S]{0,160}gap:\s*var\(--spacing-sm\);[\s\S]*\.autosave-toggle\s*\{[\s\S]{0,260}padding:\s*4px var\(--spacing-sm\);/,
-  'header controls must share an eight-pixel gutter inside a band tall enough for the clocks',
+  /flex:\s*0 0 var\(--app-header-height\);[\s\S]{0,100}height:\s*var\(--app-header-height\);[\s\S]*\.header-right\s*\{[\s\S]{0,160}gap:\s*6px;[\s\S]*\.autosave-toggle\s*\{[\s\S]{0,260}min-height:\s*32px;[\s\S]{0,180}padding:\s*4px var\(--spacing-sm\);/,
+  'header controls must use a compact aligned rhythm inside a band tall enough for the clocks',
 );
 assert.match(
   projectHeader,
-  /\.digital-clock\.clock--large\s*\{[\s\S]{0,120}width:\s*var\(--output-strip-width\);[\s\S]{0,100}min-width:\s*var\(--output-strip-width\);/,
-  'the clocks must share the visible output-rail width',
+  /\.digital-clock\.clock--large\s*\{[\s\S]{0,120}width:\s*clamp\(148px, 13vw, var\(--output-strip-width\)\);[\s\S]{0,120}min-width:\s*clamp\(148px, 13vw, var\(--output-strip-width\)\);/,
+  'the clocks must stay responsive while remaining aligned to the console rail scale',
 );
 assert.match(
   mainWorkspace,
@@ -1638,8 +1699,8 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /\.output-console__header-controls\s*\{[\s\S]*gap:\s*var\(--spacing-sm\);[\s\S]*\.limiter-ceiling-control\s*\{[\s\S]*flex:\s*1 1 0;[\s\S]*\.limiter-ceiling-value\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) 20px;[\s\S]*width:\s*100%;[\s\S]*\.limiter-ceiling-input\s*\{[\s\S]*width:\s*100%;[\s\S]*font-size:\s*13px;[\s\S]*\.limiter-toggle\s*\{[\s\S]*flex-direction:\s*column;[\s\S]*min-width:\s*92px;[\s\S]*\.limiter-toggle__label\s*\{[\s\S]*font-size:\s*13\.5px;[\s\S]*\.limiter-toggle__gr\s*\{[\s\S]*font-size:\s*10px;/,
-  'the output header controls must use readable live-operation spacing and type',
+  /\.output-console__header-controls\s*\{[\s\S]*gap:\s*var\(--spacing-sm\);[\s\S]*\.limiter-ceiling-control\s*\{[\s\S]*flex:\s*1 1 0;[\s\S]*\.limiter-ceiling-value\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) 20px;[\s\S]*width:\s*100%;[\s\S]*\.limiter-ceiling-input\s*\{[\s\S]*width:\s*100%;[\s\S]*font-size:\s*14px;[\s\S]*\.limiter-toggle\s*\{[\s\S]*flex-direction:\s*column;[\s\S]*min-width:\s*92px;[\s\S]*\.limiter-toggle__label\s*\{[\s\S]*font-size:\s*13\.5px;[\s\S]*\.limiter-toggle__gr\s*\{[\s\S]*font-size:\s*11px;/,
+  'the output header controls must use readable, aligned live-operation spacing and type',
 );
 assert.match(
   playlistView,
@@ -1648,17 +1709,17 @@ assert.match(
 );
 assert.match(
   playbackControls,
-  /\.panic-btn\s*\{[\s\S]*&:disabled\s*\{[\s\S]*opacity:\s*1;[\s\S]*background-color:\s*var\(--color-control\);[\s\S]*color:\s*var\(--color-text-disabled\);/,
+  /\.panic-btn:disabled\s*\{[\s\S]{0,160}opacity:\s*1;[\s\S]{0,100}background-color:\s*var\(--color-control\);[\s\S]{0,120}color:\s*var\(--color-text-disabled\);/,
   'disabled Stop All must use a neutral surface instead of looking armed',
 );
 assert.match(
   mainWorkspace,
-  /\.output-console__strips\s*\{[\s\S]{0,260}background:\s*var\(--color-background\);[\s\S]{0,60}box-shadow:\s*none;[\s\S]*\.limiter-ceiling-control\s*\{[\s\S]{0,420}background:\s*var\(--color-surface-raised\);[\s\S]*\.output-pair :deep\(\.stereo-meter--strip\)\s*\{[\s\S]{0,180}background:\s*var\(--color-surface\);[\s\S]{0,100}box-shadow:\s*none;/,
+  /\.output-console__strips\s*\{[\s\S]{0,260}background:\s*var\(--color-background\);[\s\S]{0,60}box-shadow:\s*none;[\s\S]*\.limiter-ceiling-control\s*\{[\s\S]{0,420}background:\s*var\(--color-control\);[\s\S]*\.output-pair :deep\(\.stereo-meter--strip\)\s*\{[\s\S]{0,180}background:\s*var\(--color-surface\);[\s\S]{0,100}box-shadow:\s*none;/,
   'the output rail must reuse the app panel and control surfaces instead of separate rack chrome',
 );
 assert.match(
   stereoMeter,
-  /&--strip\s*\{\s*width:\s*var\(--output-strip-width,\s*192px\);[\s\S]{0,120}padding:\s*7px 10px;[\s\S]{0,80}gap:\s*7px;[\s\S]*&--strip &__label\s*\{[\s\S]{0,240}font-size:\s*15px;[\s\S]{0,80}font-weight:\s*700;[\s\S]{0,120}min-height:\s*36px;[\s\S]{0,120}justify-content:\s*flex-start;[\s\S]{0,80}text-align:\s*left;/,
+  /&--strip\s*\{\s*width:\s*var\(--output-strip-width,\s*192px\);[\s\S]{0,120}padding:\s*6px 8px;[\s\S]{0,80}gap:\s*6px;[\s\S]*&--strip &__label\s*\{[\s\S]{0,240}font-size:\s*15px;[\s\S]{0,80}font-weight:\s*700;[\s\S]{0,120}min-height:\s*36px;[\s\S]{0,120}justify-content:\s*flex-start;[\s\S]{0,80}text-align:\s*left;/,
   'the stereo meter strip must inherit the shared output-rail width',
 );
 assert.doesNotMatch(
@@ -1668,13 +1729,18 @@ assert.doesNotMatch(
 );
 assert.match(
   stereoMeter,
-  /&__peak-text\s*\{[\s\S]{0,100}grid-column:\s*1 \/ -1;[\s\S]{0,60}grid-row:\s*3;[\s\S]{0,140}padding-right:\s*42px;[\s\S]{0,180}font-size:\s*13px;[\s\S]{0,120}font-variant-numeric:\s*tabular-nums;/,
-  'the live meter value must keep its row and use the width left of the fader value',
+  /&__peak-text\s*\{[\s\S]{0,100}grid-column:\s*1 \/ -1;[\s\S]{0,60}grid-row:\s*3;[\s\S]{0,140}padding-right:\s*64px;[\s\S]{0,180}font-size:\s*12px;[\s\S]{0,120}font-variant-numeric:\s*tabular-nums;/,
+  'the live meter value must keep its row and reserve the aligned 64-pixel fader readout lane',
 );
 assert.match(
   stereoMeter,
-  /&--strip &__gr-track\s*\{[\s\S]{0,120}background:\s*var\(--color-control\);[\s\S]{0,60}box-shadow:\s*none;[\s\S]*&--strip &__gr-track::before\s*\{\s*content:\s*none;[\s\S]*&--strip &__track\s*\{[\s\S]{0,120}background:\s*var\(--color-control\);[\s\S]{0,60}box-shadow:\s*none;/,
-  'the output meter wells must stay flat while retaining their live level data',
+  /&__gr-track\s*\{[\s\S]{0,140}border:\s*1px solid var\(--color-border\);[\s\S]{0,100}background:\s*var\(--color-control\);[\s\S]*&__track\s*\{[\s\S]{0,220}border:\s*1px solid var\(--color-border\);[\s\S]{0,100}background:\s*var\(--color-control\);/,
+  'the shared output meter wells must use flat control surfaces while retaining live level data',
+);
+assert.doesNotMatch(
+  stereoMeter,
+  /&__(?:gr-track|track)\s*\{[^}]*box-shadow:/,
+  'meter wells must not regain decorative rack shadows',
 );
 assert.match(
   oneShotPanel,
@@ -1718,7 +1784,7 @@ assert.match(
 );
 assert.match(
   projectSettingsModal,
-  /\.project-settings-modal\s*\{[\s\S]{0,180}border-radius:\s*var\(--dialog-radius\);[\s\S]{0,100}width:\s*min\(var\(--modal-width\), 92vw\);[\s\S]{0,80}max-height:\s*var\(--modal-max-height\);[\s\S]*\.close-x\s*\{[\s\S]{0,120}width:\s*var\(--spacing-xxl\);[\s\S]{0,80}height:\s*var\(--spacing-xxl\);/,
+  /\.project-settings-modal\s*\{[^}]*border-radius:\s*var\(--dialog-radius\);[^}]*width:\s*min\(800px, 94vw\);[^}]*max-height:\s*var\(--modal-max-height\);[\s\S]*\.close-x\s*\{[^}]*width:\s*var\(--spacing-xxl\);[^}]*height:\s*var\(--spacing-xxl\);/,
   'project settings must use the shared dialog shell and close target',
 );
 assert.match(
@@ -1743,8 +1809,8 @@ assert.match(
 );
 assert.match(
   playbackControls,
-  /\.playback-controls\s*\{[\s\S]{0,360}display:\s*grid;[\s\S]{0,140}grid-template-columns:\s*var\(--transport-side-width\) minmax\(0, 1fr\) var\(--transport-side-width\);[\s\S]{0,180}padding:\s*var\(--workspace-gutter\);/,
-  'transport sides and active-cue lane must stay on one three-column grid',
+  /\.playback-controls\s*\{[\s\S]{0,420}display:\s*grid;[\s\S]{0,140}grid-template-columns:\s*var\(--transport-stop-width\) minmax\(0, 1fr\) var\(--transport-next-width\);[\s\S]{0,100}grid-template-areas:\s*'panic live next';[\s\S]{0,180}padding:\s*var\(--workspace-gutter\);/,
+  'Stop All, active cues, and Play Next must stay aligned on one named three-column console grid',
 );
 assert.match(
   playlistView,
@@ -1778,13 +1844,13 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]{0,220}padding:\s*2px 6px;/,
-  'the playing-title contrast chip must not move its text off the shared identity axis',
+  /\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]{0,100}justify-self:\s*start;[\s\S]{0,100}max-width:\s*100%;[\s\S]{0,100}box-sizing:\s*border-box;[\s\S]{0,100}color:\s*var\(--color-text-primary\);\s*\}/,
+  'the neutral playing title must remain on the shared identity axis',
 );
 assert.doesNotMatch(
   playlistItem,
-  /\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]{0,220}margin-left:/,
-  'the playing-title contrast chip must stay on the shared identity axis',
+  /\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[^}]*(?:padding|margin-left|background|color:\s*var\(--color-danger\))/,
+  'playing state must not turn the cue title into a shifted or coloured contrast chip',
 );
 assert.match(
   playlistItem,
@@ -1836,11 +1902,10 @@ assert.doesNotMatch(
   /importDownloadedFile|new Audio\(|DEFAULT_AUDIO_ITEM|addItem\(/,
   'YouTube imports must not bypass the shared metadata, waveform, color, or save path',
 );
-assert.match(
-  youtubeImport,
-  /<option value="source">[\s\S]{0,120}<option value="mp3">[\s\S]*const outputMode = ref<'source' \| 'mp3'>\(storedOptions\.outputMode === 'mp3' \? 'mp3' : 'source'\)/,
-  'YouTube imports must default to original source audio while retaining explicit MP3 conversion',
-);
+for (const mode of ['source', 'mp3', 'video']) {
+  assert.ok(youtubeImport.includes('<option value="' + mode + '">'),
+    'YouTube imports must retain the explicit ' + mode + ' format choice');
+}
 assert.match(
   youtubeImport,
   /v-if="video\.isLive"[\s\S]*:disabled="video\.isLive \|\| isDownloading\(video\.id\)"[\s\S]*v-if="download\.savedPath"[\s\S]*openDownloadFolder/,
@@ -1873,13 +1938,18 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /class="item-color-rail"[\s\S]*hexToRgba\(props\.item\.color, 0\.14\)[\s\S]*\.item-color-rail\s*\{[\s\S]*width:\s*4px/,
-  'inactive cues must keep a solid identity rail while their row tint recedes',
+  /class="item-color-rail" :style="\{ backgroundColor: item\.color \}" aria-hidden="true"[\s\S]*\.item-color-rail\s*\{[\s\S]{0,180}width:\s*4px;[\s\S]{0,100}z-index:\s*6;/,
+  'every cue must keep its authored colour on a solid independent identity rail',
 );
 assert.match(
   playlistItem,
-  /const backgroundColor = isGroupPlaying\.value[\s\S]*hexToRgba\(props\.item\.color, 0\.14\)[\s\S]*'--folder-background': props\.item\.type === 'group'[\s\S]*color-mix\(in srgb, \$\{props\.item\.color\} 50%, var\(--color-background\)\)[\s\S]*&\.is-group > \.item-content\s*\{[\s\S]*background:\s*var\(--folder-background\)/,
-  'only the folder header row must use an opaque colour mix; audio tracks keep their original tint',
+  /const itemStyle = computed[\s\S]{0,320}'--folder-background': 'var\(--color-surface-raised\)'[\s\S]{0,120}'--waveform-color': 'var\(--color-text-tertiary\)'[\s\S]*\.playlist-item\s*\{[\s\S]{0,500}background:\s*var\(--color-surface\);[\s\S]*&\.is-group > \.item-content\s*\{[\s\S]{0,100}background:\s*var\(--folder-background\)/,
+  'audio rows must stay neutral while folder headers retain a distinct raised surface',
+);
+assert.doesNotMatch(
+  playlistItem,
+  /hexToRgba\(props\.item\.color|--folder-background': props\.item|--waveform-color': \x60color-mix/,
+  'authored cue colours must not tint row, folder, or waveform surfaces',
 );
 assert.doesNotMatch(
   playlistItem,
@@ -1944,9 +2014,6 @@ assert.match(
 const sanitizeNameStart = electron.indexOf('function sanitizeSpotifyFolderName');
 const sanitizeNameEnd = electron.indexOf(
   '\n}\n\nfunction spotifyTrackId', sanitizeNameStart) + 2;
-const numericProgressStart = electron.indexOf('function spotDlNumericProgress');
-const numericProgressEnd = electron.indexOf(
-  '\n}\n\nasync function createSpotifyProjectFolder', numericProgressStart) + 2;
 const createFolderStart = electron.indexOf('async function createSpotifyProjectFolder');
 const createFolderEnd = electron.indexOf(
   '\n}\n\nfunction spotifyOutputTrackId', createFolderStart) + 2;
@@ -1962,9 +2029,6 @@ const copyOutputsEnd = electron.indexOf(
 const sanitizeSpotifyFolderName = Function(
   'Buffer', `return (${electron.slice(sanitizeNameStart, sanitizeNameEnd)})`,
 )(Buffer);
-const spotDlNumericProgress = Function(
-  `return (${electron.slice(numericProgressStart, numericProgressEnd)})`,
-)();
 const createSpotifyProjectFolder = Function(
   'fs', 'path', `return (${electron.slice(createFolderStart, createFolderEnd)})`,
 )(fs, path);
@@ -1994,11 +2058,6 @@ assert.equal(
 assert.ok(
   Buffer.byteLength(sanitizeSpotifyFolderName('🎵'.repeat(100)), 'utf8') <= 120,
   'Spotify list folders must stay within the bounded UTF-8 name length',
-);
-assert.deepEqual(
-  spotDlNumericProgress('INFO 2/5 complete'),
-  { completed: 2, total: 5 },
-  'spotDL 4.5.2 numeric progress must be parsed',
 );
 
 async function checkSpotifyCopyTransaction() {
@@ -2169,12 +2228,12 @@ assert.match(
 );
 assert.match(
   electronMain,
-  /get-youtube-info[\s\S]*search-youtube[\s\S]*isLive: item\.isLive === true[\s\S]*download-youtube-audio[\s\S]*!\['source', 'mp3'\]\.includes\(outputMode\)[\s\S]*outputBaseName = `\$\{sanitizedTitle\} \[\$\{videoId\}\]`/,
+  /get-youtube-info[\s\S]*search-youtube[\s\S]*isLive: item\.isLive === true[\s\S]*download-youtube-audio[\s\S]*!\['source', 'mp3', 'video'\]\.includes\(outputMode\)[\s\S]*outputBaseName = `\$\{sanitizedTitle\} \[\$\{videoId\}\]`/,
   'YouTube IPC must expose live state, validate output mode, and use collision-resistant names',
 );
 assert.match(
   electronMain,
-  /const args = \[videoUrl, '-f', 'bestaudio'\];[\s\S]{0,120}if \(outputMode === 'mp3'\)[\s\S]{0,180}'--extract-audio'[\s\S]{0,120}'--audio-quality', '0'/,
+  /const args = outputMode === 'video'[\s\S]*: \[videoUrl, '-f', 'bestaudio'\];[\s\S]{0,120}if \(outputMode === 'mp3'\)[\s\S]{0,180}'--extract-audio'[\s\S]{0,120}'--audio-quality', '0'/,
   'source downloads must avoid conversion while MP3 mode explicitly requests V0 extraction',
 );
 assert.match(
@@ -2199,7 +2258,7 @@ assert.match(
 );
 assert.match(
   electronMain,
-  /spotify-preflight[\s\S]*\['save', url, '--save-file', '-'\][\s\S]*selectedTrackIds[\s\S]*dwcue-selected\.spotdl[\s\S]*'\{track-id\} - \{artists\} - \{title\}\.\{output-ext\}'/,
+  /spotify-preflight[\s\S]*\['save', url, '--save-file', '-'\][\s\S]*selectedRawTracks = selectedTrackIds\.map[\s\S]*selectedRawTracks\.some\(\(track\) => !track\)[\s\S]*const chunkTracks = selectedRawTracks\.slice[\s\S]*'url', \.\.\.chunkTracks\.map\(\(track\) => track\.url\)/,
   'Spotify review must stay metadata-only and download only the validated selected tracks',
 );
 assert.match(
@@ -2270,8 +2329,8 @@ assert.match(
 );
 assert.match(
   oneShotPanel,
-  /props\.isDetachedWindow[\s\S]*'detachedShow'[\s\S]*'detachedRegular'[\s\S]*'attachedShow'[\s\S]*'attachedRegular'[\s\S]*--one-shot-columns[\s\S]*--one-shot-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--one-shot-columns, 2\), minmax\(0, 1fr\)\)[\s\S]*grid-auto-rows:\s*var\(--one-shot-row-height, 106px\)/,
-  'One Shots must honor the exact row, column, and minimum-height values for each profile',
+  /props\.isDetachedWindow[\s\S]*'detachedShow'[\s\S]*'detachedRegular'[\s\S]*'attachedShow'[\s\S]*'attachedRegular'[\s\S]*const contentMinHeight = Math\.ceil\(104 \+ 35 \* oneShotFontScale\.value \/ 100\);[\s\S]{0,100}const minHeight = Math\.max\(layout\.minHeight, contentMinHeight\);[\s\S]{0,220}--one-shot-columns[\s\S]*--one-shot-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--one-shot-columns, 2\), minmax\(128px, 1fr\)\)[\s\S]{0,160}grid-auto-rows:\s*var\(--one-shot-row-height, 106px\)[\s\S]{0,240}overflow-x:\s*auto;[\s\S]{0,80}overflow-y:\s*auto;/,
+  'One Shots must preserve exact profile columns while reserving a measured safe width and font-scaled two-line row height',
 );
 assert.doesNotMatch(
   oneShotPanel,
@@ -2289,9 +2348,14 @@ assert.match(
   'the playlist header and track list must reserve the same scrollbar gutter',
 );
 assert.match(
+  uiMode,
+  /attachedShow:\s*\{[\s\S]{0,180}minHeight:\s*72,[\s\S]{0,180}default:\s*\{\s*rows:\s*8,\s*columns:\s*2,\s*minHeight:\s*112\s*\}/,
+  'attached Show Mode One Shot cells must keep a compact configurable minimum with a safe default',
+);
+assert.match(
   oneShotTile,
-  /\.one-shot-tile\.show-mode\s*\{[\s\S]{0,120}min-height:\s*112px;[\s\S]*\.show-mode \.one-shot-actions\s*\{\s*grid-auto-columns:\s*34px;[\s\S]*\.show-mode \.one-shot-control\s*\{\s*width:\s*34px;\s*height:\s*34px;/,
-  'compact Show Mode One Shot cells must retain clear transport controls without becoming oversized',
+  /\.show-mode \.one-shot-actions\s*\{\s*grid-auto-columns:\s*34px;\s*\}[\s\S]*\.show-mode \.one-shot-control\s*\{\s*width:\s*34px;\s*height:\s*34px;\s*\}/,
+  'compact Show Mode One Shot cells must retain clear transport controls',
 );
 assert.match(
   oneShotPanel,
@@ -2369,8 +2433,8 @@ assert.match(
 );
 assert.match(
   oneShotTile,
-  /\.one-shot-tile\.show-mode\s*\{[\s\S]{0,120}min-height:\s*112px;[\s\S]*\.show-mode \.one-shot-title[\s\S]{0,120}font-size:\s*15px;/,
-  'Show Mode One Shot tiles must keep their compact visual hierarchy intact',
+  /\.one-shot-tile\s*\{[\s\S]{0,240}display:\s*grid;[\s\S]{0,120}grid-template-rows:\s*22px minmax\(0, 1fr\) 31px;[\s\S]{0,120}padding:\s*7px 8px 7px 11px;[\s\S]*\.one-shot-tile\.show-mode\s*\{[\s\S]{0,120}grid-template-rows:\s*22px minmax\(0, 1fr\) 36px;[\s\S]{0,120}padding:\s*7px 8px 7px 11px;[\s\S]*\.one-shot-topline\s*\{[\s\S]{0,180}display:\s*grid;[\s\S]{0,140}grid-template-columns:\s*16px minmax\(0, 1fr\) minmax\(0, 28px\) 42px 54px;[\s\S]{0,100}grid-template-areas:\s*'index state hotkey time arm';[\s\S]*\.one-shot-arm-toggle\s*\{[\s\S]{0,160}grid-area:\s*arm;[\s\S]{0,100}width:\s*54px;[\s\S]*@container \(max-width: 210px\)\s*\{[\s\S]{0,220}grid-template-rows:\s*47px minmax\(0, 1fr\) 31px;[\s\S]{0,220}grid-template-rows:\s*47px minmax\(0, 1fr\) 36px;[\s\S]*\.one-shot-topline\s*\{[\s\S]{0,180}grid-template-columns:\s*14px minmax\(0, 1fr\) 54px;[\s\S]{0,100}grid-template-rows:\s*22px 22px;[\s\S]{0,160}'index hotkey time'[\s\S]{0,100}'state state arm';[\s\S]{0,100}column-gap:\s*2px;[\s\S]{0,80}row-gap:\s*3px;\s*\}\s*\}/,
+  'One Shot tiles must keep non-overlapping metadata and arm rows while preserving two title lines at narrow widths',
 );
 assert.match(
   oneShotTile,

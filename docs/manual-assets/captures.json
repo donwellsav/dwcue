@@ -1,0 +1,13 @@
+{
+  "application": "DonWells Cue",
+  "version": "2.6.12",
+  "sourceRevision": "bfec86b",
+  "capturedOn": "2026-09-04",
+  "surface": "Electron desktop application using locally built production renderer assets",
+  "fixture": "Isolated Evening Show with generated silent practice media; no user projects or credentials",
+  "images": [
+    { "file": "import-media.png", "view": "Local-first Import Media dialog" },
+    { "file": "edit-workspace.png", "view": "Edit workspace with a prepared practice cue list" },
+    { "file": "show-mode.png", "view": "Show Mode with an active cue and named Play Next target" }
+  ]
+}

@@ -358,7 +358,7 @@ void emit_crash_report(const std::string& reason, const std::string& trace) {
         const auto path = resolve_crash_log_path();
         std::ofstream f{path, std::ios::binary | std::ios::trunc};
         if (f) {
-            f << "DW Cue Server — Crash Report\n"
+            f << "DonWells Cue Server — Crash Report\n"
               << "================================\n"
               << "Time   : " << timestamp_for_filename() << "\n"
               << "PID    : " << current_pid() << "\n"
@@ -508,7 +508,7 @@ void async_signal_crash(const char* reason) {
 
     const int fd = ::open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd >= 0) {
-        as_write_str(fd, "DW Cue Server — Crash Report\n"
+        as_write_str(fd, "DonWells Cue Server — Crash Report\n"
                          "================================\n"
                          "Time (epoch): ");
         as_write_ll(fd, epoch);

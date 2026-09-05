@@ -103,6 +103,25 @@ private:
 
 #endif // __cpp_lib_atomic_shared_ptr
 
+// Control-plane ownership for one deduplicated native audio device. The
+// initial opener owns one reference. release_is_final() deliberately leaves
+// the count at one because the caller destroys the Device on that path.
+class DeviceReferenceCount {
+public:
+    void acquire() noexcept { ++value_; }
+
+    [[nodiscard]] bool release_is_final() noexcept {
+        if (value_ == 1) return true;
+        --value_;
+        return false;
+    }
+
+    [[nodiscard]] std::size_t value() const noexcept { return value_; }
+
+private:
+    std::size_t value_ = 1;
+};
+
 } // namespace liveplay::audio::detail
 
 namespace liveplay::audio {
@@ -370,6 +389,9 @@ private:
         std::unique_ptr<ma_resampler> clock_resampler;
         bool                        clock_resampler_initialized = false;
         std::vector<Sample>         scratch;          // interleaved staging buffer
+        // Number of control-plane owners that acquired this native device.
+        // Guarded by AudioEngine::mutex_; never read by a real-time thread.
+        detail::DeviceReferenceCount open_references;
         std::atomic<bool>           started{false};
         std::atomic<bool>           closing{false};
         std::atomic<bool>           render_active{false};

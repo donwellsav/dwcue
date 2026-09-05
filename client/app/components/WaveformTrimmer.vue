@@ -1262,10 +1262,10 @@ const drawWaveform = () => {
   const middleY = canvasHeight / 2;
 
   // Draw time grid (always shown, behind waveform if present)
-  ctx.strokeStyle = 'rgba(128, 128, 128, 0.3)';
+  ctx.strokeStyle = rootStyle.getPropertyValue('--color-border').trim();
   ctx.lineWidth = 1;
-  ctx.font = '10px sans-serif';
-  ctx.fillStyle = 'rgba(128, 128, 128, 0.6)';
+  ctx.font = `11px ${rootStyle.getPropertyValue('--font-mono').trim()}`;
+  ctx.fillStyle = rootStyle.getPropertyValue('--color-text-tertiary').trim();
 
   // Calculate dynamic time step based on visible duration and zoom level
   // Goal: Show grid lines every ~50-100 pixels
@@ -1440,8 +1440,8 @@ const drawWaveform = () => {
     });
   } else {
     // Draw "No Waveform Data" message
-    ctx.font = '14px sans-serif';
-    ctx.fillStyle = 'rgba(128, 128, 128, 0.5)';
+    ctx.font = `14px ${rootStyle.getPropertyValue('--font-sans').trim()}`;
+    ctx.fillStyle = rootStyle.getPropertyValue('--color-text-secondary').trim();
     ctx.textAlign = 'center';
     ctx.fillText(t('properties.noWaveformData'), canvasWidth.value / 2, middleY);
     ctx.textAlign = 'left';

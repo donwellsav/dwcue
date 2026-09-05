@@ -1,4 +1,9 @@
 export {};
+type ProjectFileKind =
+  | 'native-project'
+  | 'native-archive'
+  | 'legacy-project'
+  | 'legacy-archive';
 
 declare global {
   interface Window {
@@ -179,8 +184,8 @@ declare global {
       onUpdateError: (callback: (event: any, error: string) => void) => void;
       onMenuCheckForUpdates: (callback: () => void) => void;
       syncProjectData: (data: any) => void;
-      onOpenFileAssociation: (callback: (event: any, data: { filePath: string; kind: 'liveplay' | 'lpa' }) => void) => void;
-      getPendingOpenFile: () => Promise<{ filePath: string; kind: 'liveplay' | 'lpa' } | null>;
+      onOpenFileAssociation: (callback: (event: any, data: { filePath: string; kind: ProjectFileKind }) => void) => void;
+      getPendingOpenFile: () => Promise<{ filePath: string; kind: ProjectFileKind } | null>;
       readMidiConfig: () => Promise<Record<string, any>>;
       writeMidiConfig: (config: Record<string, any>) => Promise<{ success: boolean }>;
       // Cart player window
@@ -195,7 +200,7 @@ declare global {
       onUiModeSet: (callback: (event: any, mode: 'edit' | 'playback') => void) => void;
       broadcastCartGridLayouts: (layouts: string) => void;
       onCartGridLayoutsSet: (callback: (event: any, layouts: string) => void) => void;
-      // Recent-projects history (last 10 .liveplay files opened on this client).
+      // Recent-projects history (last 10 canonical shows opened on this client).
       liveplayProjects?: {
         recentList: () => Promise<Array<{ path: string; name: string; folderPath: string; lastOpened: number }>>;
         recentAdd: (entry: { path: string; name?: string; folderPath?: string }) => Promise<Array<{ path: string; name: string; folderPath: string; lastOpened: number }>>;

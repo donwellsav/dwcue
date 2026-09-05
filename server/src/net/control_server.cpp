@@ -16,7 +16,9 @@
 #endif
 
 #include "liveplay/net/control_server.hpp"
+#include "liveplay/core/project_file.hpp"
 #include "liveplay/net/control_security.hpp"
+#include "liveplay/net/project_archive.hpp"
 #include "liveplay/logger.hpp"
 #include "liveplay/meta/metadata.hpp"
 #include "liveplay/meta/waveform.hpp"
@@ -32,7 +34,6 @@
 
 #include <crow.h>
 #include <crow/middlewares/cors.h>
-#include <miniz.h>
 
 #include <algorithm>
 #include <array>
@@ -85,22 +86,18 @@ struct ControlSecurityMiddleware {
     std::size_t max_upload_bytes{256ull * 1024 * 1024};
 
     bool authorized(const crow::request& req) const {
-        if (access_token.empty()) return true;
-
-        constexpr std::string_view bearer = "Bearer ";
-        const std::string authorization = req.get_header_value("Authorization");
-        if (authorization.starts_with(bearer) &&
-            security::constant_time_equal(
-                std::string_view{authorization}.substr(bearer.size()), access_token)) {
-            return true;
+        std::string_view query_access_token;
+        // Browser WebSockets and HTML media elements cannot attach an
+        // Authorization header. Restrict bearer-in-query to those two routes.
+        if (req.url == "/ws" || req.url == "/api/media") {
+            if (const char* token = req.url_params.get("access_token")) {
+                query_access_token = token;
+            }
         }
-
-        // Browser WebSocket does not support arbitrary request headers.
-        if (req.url == "/ws") {
-            if (const char* token = req.url_params.get("access_token"))
-                return security::constant_time_equal(token, access_token);
-        }
-        return false;
+        const std::string authorization =
+            req.get_header_value("Authorization");
+        return security::access_token_authorized(
+            access_token, authorization, query_access_token);
     }
 
     void add_cors_headers(const crow::request& req, crow::response& res) const {
@@ -319,353 +316,6 @@ static std::string item_playback_info(const std::string& item_uuid, core::Projec
                        liveplay::util::path_to_utf8(meta->file_path));
 }
 
-// ---------------------------------------------------------------------------
-// Zip helpers (.lpa = zip of a project folder)
-// ---------------------------------------------------------------------------
-// Recursively pack every regular file under `root` into a .zip at `out_zip`.
-// Entries are stored with paths relative to `root` using forward slashes,
-// so the archive is portable between OSes.
-static bool zip_pack_directory(const fs::path& root,
-                               const fs::path& out_zip,
-                               const fs::path& excluded_output = {}) {
-    mz_zip_archive zip{};
-    std::memset(&zip, 0, sizeof(zip));
-    const std::string out_utf8 = liveplay::util::path_to_utf8(out_zip);
-    if (!mz_zip_writer_init_file(&zip, out_utf8.c_str(), 0)) {
-        Logger::error("zip_pack_directory: init failed for '{}'", out_utf8);
-        return false;
-    }
-    bool ok = true;
-    try {
-        for (auto it = fs::recursive_directory_iterator(root);
-             it != fs::recursive_directory_iterator(); ++it) {
-            if (!it->is_regular_file()) continue;
-            if (security::is_chunked_upload_staging_name(
-                    liveplay::util::path_to_utf8(it->path().filename())) ||
-                security::is_export_staging_name(
-                    liveplay::util::path_to_utf8(it->path().filename()))) {
-                continue;
-            }
-            std::error_code equivalent_ec;
-            if (fs::equivalent(it->path(), out_zip, equivalent_ec) &&
-                !equivalent_ec) {
-                continue;
-            }
-            if (!excluded_output.empty()) {
-                equivalent_ec.clear();
-                if (fs::equivalent(
-                        it->path(), excluded_output, equivalent_ec) &&
-                    !equivalent_ec) {
-                    continue;
-                }
-            }
-            const fs::path rel = fs::relative(it->path(), root);
-            // Forward-slash, UTF-8 entry name.
-            std::string entry = liveplay::util::path_to_utf8(rel);
-            std::replace(entry.begin(), entry.end(), '\\', '/');
-            const std::string src = liveplay::util::path_to_utf8(it->path());
-            if (!mz_zip_writer_add_file(&zip, entry.c_str(), src.c_str(),
-                                        nullptr, 0, MZ_DEFAULT_LEVEL)) {
-                Logger::error("zip_pack_directory: add '{}' failed", entry);
-                ok = false;
-                break;
-            }
-        }
-    } catch (const std::exception& e) {
-        Logger::error("zip_pack_directory: walk threw: {}", e.what());
-        ok = false;
-    }
-    if (ok && !mz_zip_writer_finalize_archive(&zip)) {
-        Logger::error("zip_pack_directory: finalize failed");
-        ok = false;
-    }
-    mz_zip_writer_end(&zip);
-    if (!ok) { std::error_code ec; fs::remove(out_zip, ec); }
-    return ok;
-}
-
-struct ZipExtractResult {
-    bool ok{false};
-    int status{500};
-    std::string error;
-};
-
-struct ZipEntryPlan {
-    mz_uint index{0};
-    std::string relative_utf8;
-    fs::path destination;
-    bool directory{false};
-    std::uint64_t expanded_bytes{0};
-};
-
-struct ZipReaderGuard {
-    mz_zip_archive* archive{};
-    bool active{true};
-
-    void close() noexcept {
-        if (active && archive) mz_zip_reader_end(archive);
-        active = false;
-    }
-    ~ZipReaderGuard() { close(); }
-};
-
-struct BoundedZipWriter {
-    std::ofstream output;
-    std::uint64_t expected_bytes{0};
-    std::uint64_t written_bytes{0};
-    bool failed{false};
-};
-
-static size_t write_bounded_zip_entry(void* opaque, mz_uint64 file_offset,
-                                      const void* data, size_t size) {
-    auto& writer = *static_cast<BoundedZipWriter*>(opaque);
-    if (writer.failed || file_offset != writer.written_bytes ||
-        writer.written_bytes > writer.expected_bytes ||
-        size > writer.expected_bytes - writer.written_bytes) {
-        writer.failed = true;
-        return 0;
-    }
-    writer.output.write(static_cast<const char*>(data),
-                        static_cast<std::streamsize>(size));
-    if (!writer.output) {
-        writer.failed = true;
-        return 0;
-    }
-    writer.written_bytes += size;
-    return size;
-}
-
-static std::string archive_path_key(std::string path) {
-#if defined(_WIN32)
-    std::transform(path.begin(), path.end(), path.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-#endif
-    return path;
-}
-
-static bool archive_destination_is_safe(const fs::path& canonical_root,
-                                        const std::string& relative_utf8,
-                                        bool directory,
-                                        fs::path& destination,
-                                        std::string& error) {
-    const fs::path relative = liveplay::util::utf8_to_path(relative_utf8);
-    destination = canonical_root / relative;
-
-    // Reject every existing symlink/junction/reparse component, even one that
-    // currently resolves back inside the root. This prevents later retargeting
-    // from changing where an archive entry lands.
-    fs::path current = canonical_root;
-    std::error_code ec;
-    for (const auto& component : relative) {
-        current /= component;
-        const auto status = fs::symlink_status(current, ec);
-        if (ec) {
-            if (ec == std::errc::no_such_file_or_directory) {
-                ec.clear();
-                break;
-            }
-            error = "cannot inspect archive destination";
-            return false;
-        }
-        if (fs::is_symlink(status)) {
-            error = "archive destination contains a link or reparse point";
-            return false;
-        }
-#if defined(_WIN32)
-        const DWORD attributes = GetFileAttributesW(current.c_str());
-        if (attributes != INVALID_FILE_ATTRIBUTES &&
-            (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
-            error = "archive destination contains a link or reparse point";
-            return false;
-        }
-#endif
-    }
-
-    const fs::path resolved = fs::weakly_canonical(destination, ec);
-    if (ec || !security::canonical_path_is_within(canonical_root, resolved)) {
-        error = "archive entry escapes extraction directory";
-        return false;
-    }
-
-    const auto status = fs::symlink_status(destination, ec);
-    if (ec && ec != std::errc::no_such_file_or_directory) {
-        error = "cannot inspect archive destination";
-        return false;
-    }
-    if (!ec && fs::exists(status)) {
-        if (fs::is_symlink(status)) {
-            error = "archive destination is a link or reparse point";
-            return false;
-        }
-        if (!directory || !fs::is_directory(status)) {
-            error = "archive would overwrite an existing path";
-            return false;
-        }
-    }
-    return true;
-}
-
-// Extract every entry only after a complete central-directory preflight.
-// The callback enforces the declared expanded size while inflating, so a
-// malformed archive cannot bypass the preflight by lying in its metadata.
-static ZipExtractResult zip_extract_to(const fs::path& src_zip,
-                                       const fs::path& out_dir) {
-    std::error_code ec;
-    const auto archive_size = fs::file_size(src_zip, ec);
-    if (ec) return {false, 400, "cannot read archive"};
-    if (archive_size > security::kMaxArchiveCompressedBytes)
-        return {false, 413, "archive exceeds compressed-size limit"};
-
-    fs::create_directories(out_dir, ec);
-    if (ec) return {false, 500, "cannot create extraction directory"};
-    const fs::path canonical_root = fs::canonical(out_dir, ec);
-    if (ec) return {false, 500, "cannot resolve extraction directory"};
-
-    mz_zip_archive zip{};
-    const std::string in_utf8 = liveplay::util::path_to_utf8(src_zip);
-    if (!mz_zip_reader_init_file(&zip, in_utf8.c_str(), 0)) {
-        Logger::warn("zip_extract_to: invalid archive '{}'", in_utf8);
-        return {false, 400, "invalid archive"};
-    }
-    ZipReaderGuard zip_guard{&zip};
-    const auto finish = [&](ZipExtractResult result) {
-        zip_guard.close();
-        return result;
-    };
-
-    const mz_uint count = mz_zip_reader_get_num_files(&zip);
-    if (count > security::kMaxArchiveEntries)
-        return finish({false, 413, "archive contains too many entries"});
-
-    security::ArchiveBudget budget;
-    std::vector<ZipEntryPlan> plans;
-    plans.reserve(count);
-    std::unordered_set<std::string> all_paths;
-    std::unordered_set<std::string> file_paths;
-
-    for (mz_uint i = 0; i < count; ++i) {
-        mz_zip_archive_file_stat stat{};
-        if (!mz_zip_reader_file_stat(&zip, i, &stat))
-            return finish({false, 400, "invalid archive directory"});
-        if (stat.m_is_encrypted || !stat.m_is_supported)
-            return finish({false, 400, "encrypted or unsupported archive entry"});
-
-        const mz_uint filename_bytes =
-            mz_zip_reader_get_filename(&zip, i, nullptr, 0);
-        if (filename_bytes <= 1 ||
-            filename_bytes > security::kMaxArchivePathBytes + 1) {
-            return finish({false, 400, "invalid or overlong archive entry path"});
-        }
-        std::vector<char> filename(filename_bytes);
-        if (mz_zip_reader_get_filename(
-                &zip, i, filename.data(), filename_bytes) != filename_bytes) {
-            return finish({false, 400, "invalid archive entry path"});
-        }
-        std::string raw_name{filename.data(), filename_bytes - 1};
-        if (raw_name.find('\0') != std::string::npos)
-            return finish({false, 400, "archive entry path contains NUL"});
-
-        const bool directory = stat.m_is_directory != 0;
-        const auto normalized =
-            security::normalize_archive_entry_path(raw_name);
-        if (!normalized)
-            return finish({false, 400, "unsafe archive entry path"});
-        if (!security::archive_entry_type_is_safe(
-                stat.m_version_made_by, stat.m_external_attr, directory)) {
-            return finish({false, 400, "archive contains a link or special entry"});
-        }
-        if (const auto limit_error = security::charge_archive_entry(
-                budget, stat.m_comp_size, stat.m_uncomp_size, directory)) {
-            return finish({false, 413, std::string{*limit_error}});
-        }
-
-        const std::string key = archive_path_key(*normalized);
-        if (!all_paths.insert(key).second)
-            return finish({false, 400, "archive contains duplicate paths"});
-
-        fs::path destination;
-        std::string destination_error;
-        if (!archive_destination_is_safe(
-                canonical_root, *normalized, directory,
-                destination, destination_error)) {
-            return finish({false, 400, std::move(destination_error)});
-        }
-        plans.push_back(ZipEntryPlan{
-            i, *normalized, std::move(destination), directory,
-            static_cast<std::uint64_t>(stat.m_uncomp_size),
-        });
-        if (!directory) file_paths.insert(key);
-    }
-
-    // A file cannot also be the parent of another entry ("a" and "a/b").
-    for (const auto& plan : plans) {
-        const std::string key = archive_path_key(plan.relative_utf8);
-        for (auto slash = key.find('/'); slash != std::string::npos;
-             slash = key.find('/', slash + 1)) {
-            if (file_paths.contains(key.substr(0, slash)))
-                return finish({false, 400, "archive path has a file as its parent"});
-        }
-    }
-
-    const auto space = fs::space(canonical_root, ec);
-    if (!ec && budget.expanded_bytes > space.available)
-        return finish({false, 507, "insufficient space for expanded archive"});
-
-    std::vector<fs::path> created_files;
-    created_files.reserve(plans.size());
-    const auto fail_extract = [&](int status, std::string message) {
-        for (auto it = created_files.rbegin(); it != created_files.rend(); ++it) {
-            std::error_code remove_error;
-            fs::remove(*it, remove_error);
-        }
-        return finish({false, status, std::move(message)});
-    };
-
-    for (const auto& plan : plans) {
-        if (plan.directory) {
-            fs::create_directories(plan.destination, ec);
-            if (ec) return fail_extract(500, "cannot create archive directory");
-            continue;
-        }
-
-        fs::create_directories(plan.destination.parent_path(), ec);
-        if (ec) return fail_extract(500, "cannot create archive parent directory");
-
-        fs::path checked_destination;
-        std::string destination_error;
-        if (!archive_destination_is_safe(
-                canonical_root, plan.relative_utf8, false,
-                checked_destination, destination_error)) {
-            return fail_extract(400, std::move(destination_error));
-        }
-
-        BoundedZipWriter writer{
-            std::ofstream{checked_destination,
-                          std::ios::binary | std::ios::trunc},
-            plan.expanded_bytes,
-        };
-        if (!writer.output)
-            return fail_extract(500, "cannot create extracted file");
-        created_files.push_back(checked_destination);
-
-        const bool extracted = mz_zip_reader_extract_to_callback(
-            &zip, plan.index, write_bounded_zip_entry, &writer, 0);
-        writer.output.close();
-        if (!extracted || writer.failed ||
-            writer.written_bytes != writer.expected_bytes) {
-            return fail_extract(400, "archive entry data is invalid");
-        }
-
-        const auto status = fs::symlink_status(checked_destination, ec);
-        if (ec || !fs::is_regular_file(status) ||
-            fs::file_size(checked_destination, ec) != plan.expanded_bytes || ec) {
-            return fail_extract(400, "extracted file failed validation");
-        }
-    }
-
-    return finish({true, 200, {}});
-}
 
 // One-shot download tokens. GET claims a token and DELETE acknowledges a
 // completed transfer. Claimed files remain until acknowledged or expired so
@@ -761,8 +411,7 @@ static bool valid_download_token(std::string_view token) {
 }
 
 static std::string safe_download_filename(std::string name) {
-    name = security::sanitize_upload_filename(name, "project");
-    return security::sanitize_upload_filename(name + ".lpa", "project.lpa");
+    return security::canonical_archive_download_filename(name);
 }
 
 static void purge_orphan_export_files() {
@@ -883,31 +532,11 @@ static void purge_orphan_chunked_upload_files(const fs::path& media_root) {
     }
 }
 
-static json imported_project_response(const fs::path& extract_path) {
-    json project_files = json::array();
-    for (auto& entry : fs::directory_iterator(extract_path)) {
-        if (entry.is_regular_file() &&
-            entry.path().extension() == ".liveplay") {
-            project_files.push_back(
-                liveplay::util::path_to_utf8(entry.path().filename()));
-        }
-    }
-    return json{
-        {"extractPath", liveplay::util::path_to_utf8(extract_path)},
-        {"projectFiles", std::move(project_files)},
-    };
-}
-
 // ponytail: media imports are operator-driven; one process-wide lock keeps
 // collision naming and creation atomic. Shard by media root if bulk ingest
 // throughput ever matters.
 static std::mutex g_media_import_mutex;
 
-static ZipExtractResult extract_archive_locked(const fs::path& src_zip,
-                                               const fs::path& out_dir) {
-    std::lock_guard import_lock{g_media_import_mutex};
-    return zip_extract_to(src_zip, out_dir);
-}
 
 static fs::path unused_media_path(const fs::path& media,
                                   const fs::path& filename) {
@@ -1048,12 +677,11 @@ ControlServer::~ControlServer() { stop(); }
 
 bool ControlServer::start() {
     if (running_.exchange(true)) return true;
-    if (!security::is_loopback_address(cfg_.bind_address) &&
-        cfg_.access_token.size() < 16) {
+    if (cfg_.access_token.size() < 16) {
         running_.store(false);
         Logger::error(
-            "ControlServer: non-loopback bind requires an access token "
-            "of at least 16 characters.");
+            "ControlServer: every bind requires an access token of at least "
+            "16 characters.");
         return false;
     }
     purge_orphan_export_files();
@@ -1742,6 +1370,14 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
                 return command_error("nothing armed to GO to");
             }
             Logger::playback("GO: {}", item_playback_info(uuid, state));
+        }
+        else if (type == "cue_to_continue") {
+            const std::string uuid = j.value("item_uuid", std::string{});
+            if (uuid.empty())
+                return command_error("cue_to_continue: missing item_uuid");
+            if (!state.cue_to_continue(uuid))
+                return command_error("cue_to_continue: item cannot be cued");
+            Logger::playback("CUE TO CONTINUE: {}", item_playback_info(uuid, state));
         }
         else if (type == "gain") {
             auto cue = resolve_cue(j);
@@ -2770,6 +2406,9 @@ void ControlServer::install_routes() {
                     body.value("purpose", std::string{"media"});
                 if (!security::valid_chunked_upload_purpose(purpose))
                     return json_err(400, "invalid purpose");
+                const fs::path filename = liveplay::util::utf8_to_path(
+                    security::sanitize_upload_filename(
+                        body["filename"].get<std::string>()));
 
                 const std::uint64_t expected_bytes =
                     size_value->get<std::uint64_t>();
@@ -2778,6 +2417,8 @@ void ControlServer::install_routes() {
                 fs::path staging_root;
                 fs::path extract_path;
                 if (purpose == "project_import") {
+                    if (!core::project_file::archive_kind(filename))
+                        return json_err(400, "project import filename must use .dwcuepack or .lpa");
                     const auto extract_value = body.find("extract_path");
                     if (extract_value == body.end() ||
                         !extract_value->is_string()) {
@@ -2804,9 +2445,6 @@ void ControlServer::install_routes() {
                 if (!chunked_upload_has_space(staging_root, expected_bytes))
                     return json_err(507, "insufficient space for upload");
 
-                const fs::path filename = liveplay::util::utf8_to_path(
-                    security::sanitize_upload_filename(
-                        body["filename"].get<std::string>()));
                 const std::string upload_id = make_chunked_upload_id();
                 const fs::path temp_path =
                     staging_root / liveplay::util::utf8_to_path(
@@ -2909,7 +2547,7 @@ void ControlServer::install_routes() {
         });
 
     CROW_ROUTE(app, "/api/upload/<string>/finish").methods(crow::HTTPMethod::Post)
-        ([](const crow::request&, const std::string& upload_id) {
+        ([this](const crow::request&, const std::string& upload_id) {
             try {
                 purge_chunked_uploads();
                 if (!valid_download_token(upload_id))
@@ -2956,11 +2594,15 @@ void ControlServer::install_routes() {
                 };
                 try {
                     if (purpose == ChunkedUploadSession::Purpose::ProjectImport) {
-                        const auto extraction =
-                            extract_archive_locked(temp_path, extract_path);
-                        if (!extraction.ok) {
+                        project_archive::ImportResult imported;
+                        {
+                            std::lock_guard import_lock{g_media_import_mutex};
+                            imported = project_archive::import_project(
+                                temp_path, filename, extract_path);
+                        }
+                        if (!imported.ok) {
                             reset_finalizing();
-                            return json_err(extraction.status, extraction.error);
+                            return json_err(imported.status, imported.error);
                         }
                         {
                             std::lock_guard lock{g_chunked_uploads_mutex};
@@ -2968,7 +2610,12 @@ void ControlServer::install_routes() {
                         }
                         std::error_code cleanup_ec;
                         fs::remove(temp_path, cleanup_ec);
-                        return json_ok(imported_project_response(extract_path));
+                        return json_ok(json{
+                            {"extractPath", liveplay::util::path_to_utf8(extract_path)},
+                            {"projectFiles", json::array({
+                                liveplay::util::path_to_utf8(
+                                    imported.project_file.filename())})},
+                        });
                     }
 
                     fs::path dest;
@@ -3365,6 +3012,12 @@ void ControlServer::install_routes() {
                     Logger::api_request("Client ({}) -> Server ({}) : POST /api/project/load path='{}'",
                                         req.remote_ip_address, impl_->server_addr, path_str);
                     const fs::path p = liveplay::util::utf8_to_path(path_str);
+                    if (core::project_file::is_legacy_project(p)) {
+                        return json_err(400,
+                            "legacy .liveplay projects must be imported via /api/project/import-legacy");
+                    }
+                    if (!core::project_file::is_native_project(p))
+                        return json_err(400, "project path must use .dwcue");
                     if (!state_.load(p)) {
                         Logger::error("POST /api/project/load FAILED — load returned false for '{}'", path_str);
                         return json_err(400, "load failed");
@@ -3404,6 +3057,113 @@ void ControlServer::install_routes() {
             }
         });
 
+    CROW_ROUTE(app, "/api/project/import-legacy").methods(crow::HTTPMethod::Post)
+        ([this](const crow::request& req) {
+            try {
+                const auto body = json::parse(req.body);
+                const auto source_value = body.find("path");
+                if (source_value == body.end() || !source_value->is_string())
+                    return json_err(400, "expected 'path'");
+                const fs::path source = liveplay::util::utf8_to_path(
+                    source_value->get<std::string>());
+
+                core::project_file::PreparedDocument prepared;
+                std::string preparation_error;
+                if (!core::project_file::read_legacy_project(
+                        source, prepared, preparation_error)) {
+                    return json_err(400, preparation_error);
+                }
+
+                const auto destination_value = body.find("destinationPath");
+                const bool explicit_destination =
+                    destination_value != body.end();
+                fs::path destination;
+                if (explicit_destination) {
+                    if (!destination_value->is_string() ||
+                        destination_value->get<std::string>().empty()) {
+                        return json_err(400, "destinationPath must be a non-empty string");
+                    }
+                    destination = liveplay::util::utf8_to_path(
+                        destination_value->get<std::string>());
+                    std::string destination_error;
+                    if (!core::project_file::valid_legacy_destination(
+                            source, destination, destination_error)) {
+                        const int status = destination_error ==
+                                "destinationPath already exists"
+                            ? 409 : 400;
+                        return json_err(status, destination_error);
+                    }
+                }
+
+                std::error_code write_error;
+                {
+                    std::lock_guard import_lock{g_media_import_mutex};
+                    if (explicit_destination) {
+                        if (!core::project_file::write_new_canonical_project(
+                                destination, prepared.document, write_error)) {
+                            return json_err(
+                                write_error == std::errc::file_exists ? 409 : 500,
+                                write_error == std::errc::file_exists
+                                    ? "destinationPath already exists"
+                                    : "failed to create canonical project");
+                        }
+                    } else {
+                        bool created = false;
+                        for (unsigned attempt = 0; attempt < 100; ++attempt) {
+                            std::string destination_error;
+                            const auto candidate =
+                                core::project_file::unique_legacy_destination(
+                                    source, destination_error);
+                            if (!candidate)
+                                return json_err(500, destination_error);
+                            destination = *candidate;
+                            if (core::project_file::write_new_canonical_project(
+                                    destination, prepared.document, write_error)) {
+                                created = true;
+                                break;
+                            }
+                            if (write_error != std::errc::file_exists)
+                                return json_err(500, "failed to create canonical project");
+                        }
+                        if (!created)
+                            return json_err(409, "could not reserve a unique .dwcue sibling");
+                    }
+
+                    if (!state_.load(destination)) {
+                        return json_err(400,
+                            "legacy project was converted to '" +
+                            liveplay::util::path_to_utf8(destination) +
+                            "' but could not be opened");
+                    }
+                }
+
+                auto load_repair = state_.consume_repair_info();
+                core::RepairInfo repair{
+                    prepared.repair.repaired || load_repair.repaired,
+                    prepared.repair.issues,
+                };
+                repair.issues.insert(repair.issues.end(),
+                                     load_repair.issues.begin(),
+                                     load_repair.issues.end());
+                auto header = state_.header_document();
+                header["needsRepair"] = repair.repaired;
+                if (repair.repaired)
+                    header["repairIssues"] = repair.issues;
+                broadcast_doc_patch(json{
+                    {"type", "doc_patch"}, {"op", "project_changed"},
+                });
+                Logger::api_response(
+                    "Client ({}) <- Server ({}) : POST /api/project/import-legacy OK — '{}'",
+                    req.remote_ip_address, impl_->server_addr,
+                    liveplay::util::path_to_utf8(destination));
+                return json_ok(header);
+            } catch (const std::exception& exception) {
+                Logger::error("POST /api/project/import-legacy threw: {}",
+                              exception.what());
+                return json_err(400, exception.what());
+            }
+        });
+
     // Close the currently-loaded project on the server. After this the
     // server has no open project — the next /api/project/header will report
     // hasOpenProject=false and clients land back on the welcome screen. We
@@ -3427,12 +3187,13 @@ void ControlServer::install_routes() {
             }
         });
 
-    // ---- Project export / import (.lpa archives) ----
-    // Package a project folder into a .lpa (zip) archive on the server side.
+    // ---- Project export / import (.dwcuepack and legacy .lpa archives) ----
+    // Package the active canonical show and its project folder into a raw ZIP
+    // with the .dwcuepack extension.
     // Request body:
     //   {
     //     "folderPath": "/abs/path/to/project/folder",   // required
-    //     "outputPath": "/abs/path/to/save/here.lpa",    // optional; when
+    //     "outputPath": "/abs/path/to/save/here.dwcuepack", // optional
     //                                                    // present, the file
     //                                                    // is written to this
     //                                                    // server location.
@@ -3461,6 +3222,11 @@ void ControlServer::install_routes() {
                 if (!fs::exists(src) || !fs::is_directory(src)) {
                     return json_err(400, "folderPath does not exist or is not a directory");
                 }
+                const fs::path active_project = state_.project_file_path();
+                if (active_project.empty() ||
+                    !core::project_file::is_native_project(active_project)) {
+                    return json_err(400, "no canonical .dwcue project is open");
+                }
                 const std::string default_name = safe_download_filename(
                     j.value("projectName",
                             liveplay::util::path_to_utf8(src.filename())));
@@ -3476,11 +3242,13 @@ void ControlServer::install_routes() {
                     fs::path tmp = export_temp_root();
                     fs::create_directories(tmp);
                     download_token = make_download_token();
-                    out = tmp / (download_token + ".lpa");
+                    out = tmp / (download_token + ".dwcuepack");
                     to_temp = true;
                 }
                 if (!out.is_absolute())
                     return json_err(400, "outputPath must be absolute");
+                if (!core::project_file::is_native_archive(out))
+                    return json_err(400, "outputPath must use .dwcuepack");
                 std::error_code output_ec;
                 fs::create_directories(out.parent_path(), output_ec);
                 if (output_ec)
@@ -3493,9 +3261,10 @@ void ControlServer::install_routes() {
 
                 {
                     std::lock_guard media_snapshot_lock{g_media_import_mutex};
-                    if (!zip_pack_directory(src, staged_out, out)) {
-                        return json_err(500, "failed to package archive");
-                    }
+                    const auto packaged = project_archive::export_project(
+                        src, active_project, staged_out, out);
+                    if (!packaged.ok)
+                        return json_err(packaged.status, packaged.error);
                 }
                 if (!liveplay::util::replace_file_atomically(
                         staged_out, out, output_ec)) {
@@ -3559,15 +3328,15 @@ void ControlServer::install_routes() {
             }
         });
 
-    // Import a .lpa archive that the client uploaded via multipart, OR an
-    // archive already sitting on the server's filesystem (by absolute path).
+    // Import a canonical .dwcuepack or legacy .lpa archive uploaded through
+    // multipart, chunked upload, or already present on the server filesystem.
+    // The existing request/response shape is preserved. Successful responses
+    // contain exactly one canonical root filename in projectFiles.
     // Request body:
-    //   * multipart/form-data with one part named "file" and the uploaded
-    //     .lpa, PLUS a "extractPath" form field for the destination directory
-    //     on the server. The archive is extracted, then the upload is
-    //     deleted. Response includes `projectFiles` (list of .liveplay files
-    //     discovered) and `extractPath`.
-    //   * application/json: { "archivePath": "/abs/path.lpa", "extractPath": "/abs/dest" }
+    //   * multipart/form-data with one part named "file" and an
+    //     "extractPath" form field.
+    //   * application/json: { "archivePath": "/abs/path.dwcuepack",
+    //                         "extractPath": "/abs/dest" }
     //     Same response shape; no upload step.
     //   * chunked upload via /api/upload/start with
     //     { "filename": "...", "size": N, "purpose": "project_import",
@@ -3581,6 +3350,7 @@ void ControlServer::install_routes() {
                 Logger::api_request("Client ({}) -> Server ({}) : POST /api/project/import",
                                     req.remote_ip_address, impl_->server_addr);
                 fs::path archive_path;
+                fs::path trusted_archive_filename;
                 fs::path extract_path;
                 ScopedFileRemoval staged_upload;
 
@@ -3590,26 +3360,45 @@ void ControlServer::install_routes() {
                 if (ct.find("multipart/") != std::string::npos) {
                     crow::multipart::message_view mp{req};
                     const crow::multipart::part_view* file_part = nullptr;
+                    bool file_filename_missing = false;
                     for (const auto& part : mp.parts) {
                         auto cd = part.headers.find("Content-Disposition");
                         if (cd == part.headers.end()) continue;
                         auto name_it = cd->second.params.find("name");
                         if (name_it == cd->second.params.end()) continue;
                         if (name_it->second == "file") {
+                            if (file_part)
+                                return json_err(400, "duplicate 'file' parts");
                             file_part = &part;
+                            const auto filename_it =
+                                cd->second.params.find("filename");
+                            if (filename_it == cd->second.params.end() ||
+                                filename_it->second.empty()) {
+                                file_filename_missing = true;
+                            } else {
+                                trusted_archive_filename =
+                                    liveplay::util::utf8_to_path(
+                                        security::sanitize_upload_filename(
+                                            filename_it->second));
+                            }
                         } else if (name_it->second == "extractPath") {
                             extract_path = liveplay::util::utf8_to_path(
                                 std::string{part.body});
                         }
                     }
                     if (!file_part) return json_err(400, "missing 'file' part");
+                    if (file_filename_missing)
+                        return json_err(400,
+                            "file part must include a non-empty filename");
+                    if (!core::project_file::archive_kind(trusted_archive_filename))
+                        return json_err(400, "archive filename must use .dwcuepack or .lpa");
                     if (file_part->body.size() > cfg_.max_upload_bytes)
                         return json_err(413, "uploaded archive too large");
                     if (extract_path.empty())
                         return json_err(400, "missing 'extractPath' form field");
                     fs::path tmp = fs::temp_directory_path() / "liveplay-imports";
                     fs::create_directories(tmp);
-                    archive_path = tmp / (make_download_token() + ".lpa");
+                    archive_path = tmp / (make_download_token() + ".part");
                     staged_upload.path = archive_path;
                     std::ofstream of{archive_path, std::ios::binary};
                     if (!of) return json_err(500, "failed to stage uploaded archive");
@@ -3625,6 +3414,9 @@ void ControlServer::install_routes() {
                         return json_err(400, "expected 'extractPath'");
                     archive_path = liveplay::util::utf8_to_path(j["archivePath"].get<std::string>());
                     extract_path = liveplay::util::utf8_to_path(j["extractPath"].get<std::string>());
+                    trusted_archive_filename = archive_path.filename();
+                    if (!core::project_file::archive_kind(trusted_archive_filename))
+                        return json_err(400, "archivePath must use .dwcuepack or .lpa");
                 }
 
                 if (extract_path.empty())
@@ -3632,12 +3424,21 @@ void ControlServer::install_routes() {
                 if (!fs::exists(archive_path) || !fs::is_regular_file(archive_path))
                     return json_err(400, "archive does not exist");
 
-                const auto extraction =
-                    extract_archive_locked(archive_path, extract_path);
-                if (!extraction.ok)
-                    return json_err(extraction.status, extraction.error);
+                project_archive::ImportResult imported;
+                {
+                    std::lock_guard import_lock{g_media_import_mutex};
+                    imported = project_archive::import_project(
+                        archive_path, trusted_archive_filename, extract_path);
+                }
+                if (!imported.ok)
+                    return json_err(imported.status, imported.error);
 
-                json resp = imported_project_response(extract_path);
+                json resp = {
+                    {"extractPath", liveplay::util::path_to_utf8(extract_path)},
+                    {"projectFiles", json::array({
+                        liveplay::util::path_to_utf8(
+                            imported.project_file.filename())})},
+                };
                 Logger::api_response("Client ({}) <- Server ({}) : POST /api/project/import OK — extracted to '{}'",
                                      req.remote_ip_address, impl_->server_addr,
                                      liveplay::util::path_to_utf8(extract_path));
@@ -3690,9 +3491,10 @@ void ControlServer::install_routes() {
             try {
                 auto j = json::parse(req.body);
                 fs::path p;
-                if (j.contains("path") && j["path"].is_string()) {
+                const bool path_provided =
+                    j.contains("path") && j["path"].is_string();
+                if (path_provided) {
                     p = liveplay::util::utf8_to_path(j["path"].get<std::string>());
-                    state_.set_project_file_path(p);
                 } else {
                     p = state_.project_file_path();
                     if (p.empty()) {
@@ -3700,6 +3502,9 @@ void ControlServer::install_routes() {
                         return json_err(400, "no project file path set");
                     }
                 }
+                if (!core::project_file::is_native_project(p))
+                    return json_err(400, "project path must use .dwcue");
+                if (path_provided) state_.set_project_file_path(p);
                 // Authoritative-save path: if the client included the latest
                 // document in the body, replace the in-memory document AND
                 // re-mirror it to the audio engine before writing to disk.

@@ -11,12 +11,10 @@
 // On load(), the ProjectState walks the document and instructs the
 // AudioEngine to mirror it (load cues, create mixer channels, wire routes).
 //
-// Legacy compatibility:
-//   * `.liveplay` JSON projects from the 1.x client are accepted by load().
-//     The translator maps the old "stereo file → mono speaker pair" routing
-//     to the new matrix:  L→(default-device, hwCh 0), R→(default-device, hwCh 1).
-//   * If the document already has a "v2" routing block (new schema), it's
-//     used as-is.
+// Native persistence uses .dwcue JSON. Legacy .liveplay files are converted
+// through the explicit one-way import path before ProjectState::load() sees
+// them. In-memory server routing documents remain supported for control-plane
+// compatibility.
 // ============================================================================
 #pragma once
 
@@ -26,6 +24,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <deque>
 #include <filesystem>
 #include <functional>
@@ -41,6 +40,57 @@
 namespace liveplay::core {
 
 using json = nlohmann::json;
+
+namespace detail {
+
+// Generation tokens fence sequencer work copied for unlocked dispatch from a
+// later replay/cancellation of the same logical cue. Guarded by the owning
+// ProjectState's sequencer mutex.
+class PlaybackGenerationFence {
+public:
+    using Generation = std::uint64_t;
+
+    [[nodiscard]] Generation begin(const std::string& uuid) {
+        const auto generation = ++next_;
+        current_[uuid] = generation;
+        return generation;
+    }
+
+    [[nodiscard]] bool is_current(const std::string& uuid,
+                                  Generation generation) const {
+        const auto it = current_.find(uuid);
+        return it != current_.end() && it->second == generation;
+    }
+
+    void cancel(const std::string& uuid) { current_.erase(uuid); }
+    void cancel_all() { current_.clear(); }
+
+    [[nodiscard]] bool claim_terminal(const std::string& uuid,
+                                      Generation generation) {
+        const auto it = current_.find(uuid);
+        if (it == current_.end() || it->second != generation) return false;
+        current_.erase(it);
+        return true;
+    }
+
+private:
+    Generation next_ = 0;
+    std::unordered_map<std::string, Generation> current_;
+};
+
+[[nodiscard]] inline bool should_consume_group_override(
+    const std::string& armed_uuid, const std::string& group_uuid,
+    bool any_child_started) noexcept {
+    return any_child_started && armed_uuid == group_uuid;
+}
+
+[[nodiscard]] inline bool same_media_identity(
+    const std::filesystem::path& lhs,
+    const std::filesystem::path& rhs) noexcept {
+    return lhs.lexically_normal() == rhs.lexically_normal();
+}
+
+} // namespace detail
 
 struct CueMeta {
     audio::CueId             id;
@@ -101,7 +151,7 @@ public:
     explicit ProjectState(audio::AudioEngine& engine);
     ~ProjectState();
 
-    // Load a project file (.liveplay JSON). Returns true on success. On
+    // Load a canonical project file (.dwcue JSON). Returns true on success. On
     // failure, the previous state is preserved.
     bool load(const std::filesystem::path& path);
     bool save(const std::filesystem::path& path) const;
@@ -147,8 +197,8 @@ public:
     // are stored verbatim for the client to read back.
     bool replace_full_document(const json& doc);
 
-    // Path to the open project file (.liveplay), if any. Empty if the project
-    // is in-memory only.
+    // Path to the open canonical project file (.dwcue), if any. Empty if the
+    // project is in-memory only.
     std::filesystem::path project_file_path() const;
     void set_project_file_path(std::filesystem::path p);
 
@@ -225,6 +275,11 @@ public:
                    const audio::CueId& exclude_from_ducking = audio::CueId{},
                    double start_position_override_sec = -1.0);
     bool stop_item(const std::string& uuid);
+    // Arm a currently-playing looping item to finish its present pass and then
+    // advance once. This is runtime-only: the project document's endBehavior is
+    // never modified, and replaying the item restores its saved loop behavior.
+    // Returns false when uuid is not an active, sequenced loop or is already armed.
+    bool cue_to_continue(const std::string& uuid);
 
     // Stop every cue for the global "Stop All" command. When `fade_ms` is
     // provided it is used directly; when omitted the project-wide
@@ -338,6 +393,9 @@ public:
     // dedicated mixer + two master channels routed to it. Returns the
     // mixer id, or empty on failure (device not found).
     audio::MixerChannelId ensure_device_routing(const std::string& device_name);
+    // Release per-project override mixers/master pairs/device references.
+    // Owns ProjectState locking; call without mutex_.
+    void release_device_routings();
 
     // Route a cue's first two source channels to the given mixer, removing
     // any prior item-to-mixer routes for this cue (so the cue plays through
@@ -418,6 +476,9 @@ private:
     audio::AudioEngine&        engine_;
     mutable std::mutex         mutex_;
     std::mutex                 mirror_mutex_;
+    // Incremented whenever the complete project document is replaced. Async
+    // decoder publication must match the generation it snapshotted.
+    std::uint64_t              document_generation_ = 0;
 
     std::unordered_map<std::string, CueMeta>          cues_;
     std::unordered_map<std::string, MixerChannelMeta> mixers_;
@@ -491,6 +552,9 @@ private:
         audio::MasterChannelIndex  master_r;
     };
     std::unordered_map<std::string, DeviceRouting> device_routings_;
+    // Serializes route creation with project-boundary release across mirror,
+    // settings, and transport callers. Always acquire before mutex_.
+    std::mutex device_routing_mutex_;
     // Next free master channel pair when allocating new device routings.
     // Default device occupies 0/1; preview occupies 30/31; overrides start
     // at 2 and increment by 2.
@@ -521,6 +585,7 @@ private:
     struct SequencedItem {
         std::string              uuid;
         audio::CueId             cue_id;
+        detail::PlaybackGenerationFence::Generation playback_generation = 0;
         double                   crossfade_sec       = 0.0;
         double                   stop_fade_sec       = 0.0;
         double                   effective_end       = 0.0;
@@ -544,11 +609,19 @@ private:
         std::string              goto_target_uuid;      // goto-item target
         std::vector<int>         goto_target_index;     // goto-index path
         bool                     advance_triggered    = false;
+        // Runtime-only Cue to Continue state. The resolved target is captured
+        // when the operator arms the current pass; it is never serialized.
+        bool                     continue_armed       = false;
+        std::string              continue_target_uuid;
         std::vector<DuckedEntry> ducked;
         std::vector<ScheduledCustomAction> custom_actions;
     };
     std::vector<SequencedItem> sequenced_items_;
     std::mutex                 sequencer_mutex_;
+    // Serializes control-plane playback lifetime changes with unlocked
+    // sequencer dispatch. Recursive because a follow action can trigger play.
+    std::recursive_mutex         playback_lifecycle_mutex_;
+    detail::PlaybackGenerationFence playback_generations_;
     std::thread                sequencer_thread_;
     std::atomic<bool>          sequencer_running_{false};
 
@@ -564,6 +637,11 @@ private:
     // override exactly once, mirroring handle_item_ended. Takes its own locks —
     // call with no lock held. Used by the sequencer's seamless-advance pre-roll.
     std::string resolve_advance_target(const SequencedItem& item);
+
+    // Resolve Cue to Continue's target without consulting endBehavior.action:
+    // targetUuid, then targetIndex, then the next sibling. Caller holds mutex_.
+    std::string resolve_loop_continuation_target_locked(
+        const std::string& current_uuid);
 
     // Server-authoritative "Up Next" arming for cues with no end behaviour
     // (endBehavior.action == "nothing") when settings.autoCueNextWithoutEnd-
@@ -610,9 +688,6 @@ private:
     json upgrade_legacy_document(const json& legacy) const;
     bool is_legacy_document(const json& doc) const;
 
-    // Recognise the *client*-flavoured project document (camelCase, has
-    // "items" with uuid/displayName, etc.) as written by the Electron client.
-    bool is_client_document(const json& doc) const;
 
     // Build an initial empty document with default theme + empty sections.
     static json default_empty_document();

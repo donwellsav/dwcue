@@ -8,6 +8,8 @@
       'is-sticky-group': item.type === 'group' && isExpanded && depth === 0,
       'is-audio': item.type === 'audio',
       'is-playing': isPlaying,
+      'is-paused': isPaused,
+      'is-up-next': isQueuedNext,
       'show-mode': showMode,
       'drag-over-top': dragPosition === 'top',
       'drag-over-bottom': dragPosition === 'bottom',
@@ -123,7 +125,8 @@
         </div>
 
         <div class="item-state">
-          <span v-if="isPlaying" class="status-pill playing">{{ t('status.playing') }}</span>
+          <span v-if="isPaused" class="status-pill paused">{{ t('status.paused') }}</span>
+          <span v-else-if="isPlaying" class="status-pill playing">{{ t('status.playing') }}</span>
           <span v-else-if="isQueuedNext" class="status-pill up-next">{{ t('status.upNext') }}</span>
           <ActionButton
             v-if="isPlaying && item.type === 'audio'"
@@ -205,7 +208,7 @@
           <ActionButton
             v-if="item.type === 'audio'"
             class="preview-action"
-            :icon="'headphones'"
+            symbol="preview"
             highlight-color="var(--state-preview)"
             :is-active="isPreviewing"
             :class="{ 'no-device': !hasPreviewDevice }"
@@ -334,6 +337,9 @@ const isDragging = ref(false);
 
 const isSelected = computed(() => selectedItems.value.has(props.item.uuid));
 const isPlaying = computed(() => activeCues.value.has(props.item.uuid));
+const isPaused = computed(() =>
+  props.item.type === 'audio' && activeCues.value.get(props.item.uuid)?.isPaused === true,
+);
 // Manual override — drives the button highlight and toggle behaviour
 const isManuallyQueued = computed(() => nextItemOverrideUuid.value === props.item.uuid);
 // Effective "up next" — manual override wins; falls back to auto-derived from end behavior
@@ -415,9 +421,8 @@ const drawWaveform = () => {
   // Clear canvas
   ctx.clearRect(0, 0, rect.width, rect.height);
 
-  // Keep the cue hue while narrowing the luminance range between very bright
-  // and very dark user colours. CSS resolves the mix for Canvas, so no second
-  // colour parser can drift from the row styling.
+  // Keep the waveform neutral so the authored cue colour remains a dedicated
+  // rail rather than tinting the row or its text.
   ctx.fillStyle = getComputedStyle(canvas).color;
 
   const peaks = audioItem.waveform.peaks;
@@ -578,40 +583,19 @@ const warningState = computed(() => {
   return null;
 });
 
-// Helper to convert hex to rgba
-const hexToRgba = (hex: string, alpha: number) => {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-};
-
 const itemStyle = computed(() => {
   const depthOffset = props.depth > 0 ? 24 : 0;
-  // Playing audio keeps the same cue tint as idle audio. Playback state is
-  // already conveyed by the title, status, controls, waveform, and progress.
-  const backgroundColor = isGroupPlaying.value
-    ? hexToRgba(props.item.color, 0.5)
-    : hexToRgba(props.item.color, 0.14);
-  const styles: any = {
+  return {
     marginLeft: showMode.value ? '0px' : `${depthOffset}px`,
     '--item-depth-offset': `${depthOffset}px`,
-    '--item-background': backgroundColor,
-    '--waveform-color': `color-mix(in srgb, ${props.item.color} 40%, #687386)`,
-    '--folder-background': props.item.type === 'group'
-      ? `color-mix(in srgb, ${props.item.color} 50%, var(--color-background))`
-      : backgroundColor,
-    backgroundColor,
+    '--folder-background': 'var(--color-surface-raised)',
+    '--waveform-color': 'var(--color-text-tertiary)',
   };
-  return styles;
 });
 
-const progressStyle = computed(() => {
-  return {
-    width: `${playbackProgress.value}%`,
-    backgroundColor: 'var(--color-danger)',
-  };
-});
+const progressStyle = computed(() => ({
+  width: `${playbackProgress.value}%`,
+}));
 
 const handleSelect = (event: MouseEvent) => {
   // Rows are not selectable in Show Mode — it's a playback surface, not an
@@ -623,14 +607,14 @@ const handleSelect = (event: MouseEvent) => {
 
 const handlePlay = () => {
   if (props.item.type === 'audio') {
-    playCue(props.item as AudioItem);
-  } else if (props.item.type === 'group') {
-    triggerGroup(props.item);
+    return playCue(props.item as AudioItem);
   }
+  if (props.item.type === 'group') return triggerGroup(props.item);
+  return false;
 };
 
 const handleStop = () => {
-  stopCue(props.item.uuid);
+  return stopCue(props.item.uuid);
 };
 
 const handleEdit = () => {
@@ -970,13 +954,16 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   --current-playlist-row-height: var(--playlist-row-height, 44px);
   --folder-play-action: color-mix(in srgb, var(--state-playing) 82%, var(--color-accent));
   --folder-next-action: color-mix(in srgb, var(--state-up-next) 84%, var(--color-accent));
-  border-radius: var(--border-radius-sm);
-  margin-bottom: 0;
-  transition:
-    background-color var(--transition-fast),
-    box-shadow var(--transition-fast);
   position: relative;
   overflow: hidden;
+  margin-bottom: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  background: var(--color-surface);
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
   scroll-margin-top: var(--current-playlist-row-height);
 
   /* Native sticky positioning keeps every open folder's collapse control in
@@ -999,7 +986,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
   
   &.is-selected {
-    box-shadow: inset 3px 0 0 var(--color-accent);
+    outline: 1px solid var(--color-focus-ring);
+    outline-offset: -1px;
   }
 
   &.is-group {
@@ -1045,6 +1033,18 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   &.drag-over-group {
     box-shadow: inset 0 0 0 3px var(--color-accent);
   }
+}
+
+.playlist-item.is-up-next:not(.is-playing) {
+  border-color: color-mix(in srgb, var(--state-up-next) 72%, var(--color-border));
+}
+
+.playlist-item.is-playing {
+  border-color: color-mix(in srgb, var(--state-playing) 78%, var(--color-border));
+}
+
+.playlist-item.is-playing.is-paused {
+  border-color: var(--color-text-tertiary);
 }
 
 .playlist-item.is-group + .playlist-item.is-group {
@@ -1109,6 +1109,11 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   transition: width 100ms linear;
   pointer-events: none;
   z-index: 2;
+  background: var(--state-playing);
+}
+
+.playlist-item.is-paused .item-progress {
+  background: var(--color-text-tertiary);
 }
 
 .item-content {
@@ -1145,7 +1150,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .item-left {
   display: grid;
-  grid-template-columns: 34px minmax(112px, 1fr) minmax(0, max-content) 64px max-content 32px;
+  grid-template-columns: 34px minmax(112px, 1fr) var(--cue-state-width, 108px) var(--cue-time-width, 72px) 140px 32px;
   grid-template-areas: 'expand identity state duration actions arm';
   align-items: center;
   gap: var(--spacing-sm);
@@ -1193,14 +1198,14 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .item-identity {
   grid-area: identity;
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) auto;
+  grid-template-columns: var(--cue-number-width, 48px) minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
   min-width: 0;
 }
 
 .playlist-item.is-audio .item-identity {
-  grid-template-columns: 40px minmax(0, 1fr) auto;
+  grid-template-columns: var(--cue-number-width, 48px) minmax(0, 1fr) auto;
 }
 
 .item-index {
@@ -1237,16 +1242,6 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   color: var(--color-text-primary);
 }
 
-.playlist-item.is-audio .item-name,
-.playlist-item.is-audio .item-index,
-.playlist-item.is-audio .item-duration,
-.playlist-item.is-audio .behavior-icon,
-.playlist-item.is-audio .peak-warning-icon,
-.playlist-item.is-audio .video-badge-icon {
-  text-shadow:
-    0 2px 3px rgba(0, 0, 0, 0.95),
-    0 0 7px rgba(0, 0, 0, 0.72);
-}
 
 .playlist-item.is-audio .item-index,
 .playlist-item.is-audio .item-duration,
@@ -1266,16 +1261,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .playlist-item.is-audio > .item-content :deep(.action-btn--playlist) {
   background-color: var(--color-control);
-  box-shadow:
-    inset 0 1px rgba(255, 255, 255, 0.035),
-    0 2px 3px rgba(0, 0, 0, 0.85),
-    0 0 7px rgba(0, 0, 0, 0.55);
-}
-
-.playlist-item.is-audio > .item-content :deep(.action-btn--playlist .material-symbols-rounded) {
-  text-shadow:
-    0 2px 3px rgba(0, 0, 0, 0.95),
-    0 0 7px rgba(0, 0, 0, 0.72);
+  box-shadow: none;
 }
 
 .playlist-item.is-audio .peak-warning-icon {
@@ -1286,10 +1272,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   justify-self: start;
   max-width: 100%;
   box-sizing: border-box;
-  padding: 2px 6px;
-  border-radius: var(--control-radius);
-  color: var(--color-danger);
-  background: color-mix(in srgb, var(--color-background) 88%, transparent);
+  color: var(--color-text-primary);
 }
 
 .peak-warning-icon {
@@ -1379,6 +1362,12 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
     color: black;
   }
 
+  &.paused {
+    border: 1px solid var(--color-text-tertiary);
+    background-color: var(--color-control);
+    color: var(--color-text-primary);
+  }
+
   &.preview {
     background-color: var(--state-preview);
     color: var(--color-text-on-accent);
@@ -1401,6 +1390,19 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .play-action { grid-column: 2; }
 .edit-action { grid-column: 3; }
 .delete-action { grid-column: 4; }
+
+.playlist-item:not(.show-mode) .item-actions,
+.playlist-item:not(.show-mode) .item-arm {
+  opacity: 0.72;
+  transition: opacity var(--transition-fast);
+}
+
+.playlist-item:not(.show-mode):hover .item-actions,
+.playlist-item:not(.show-mode):hover .item-arm,
+.playlist-item:not(.show-mode) .item-actions:focus-within,
+.playlist-item:not(.show-mode) .item-arm:focus-within {
+  opacity: 1;
+}
 
 .no-device {
   opacity: 1;
@@ -1426,7 +1428,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
    lanes remain fixed, but state and transport move to a second console row. */
 @container (max-width: 560px) {
   .item-left {
-    grid-template-columns: 34px minmax(0, 1fr) max-content 32px;
+    grid-template-columns: 34px minmax(0, 1fr) 140px 32px;
     grid-template-areas:
       'expand identity duration arm'
       'state state actions actions';
@@ -1439,10 +1441,10 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 /* ------------------------------------------------------------------ */
-/* Show Mode — larger, touch-friendly rows. Same content, bigger hit  */
-/* areas: taller rows, bigger name/duration text, and chunky play/    */
-/* stop / set-next buttons. Waveform, colour tint, flags and warnings  */
-/* are untouched so the row still reads exactly like the editor.       */
+/* Show Mode — larger, touch-friendly rows. Same operator information, */
+/* bigger hit areas: taller rows, stable number/time lanes, and chunky */
+/* play/stop / set-next buttons. The independent cue-colour rail,      */
+/* waveform, behavior flags, and warnings remain visible.              */
 /* ------------------------------------------------------------------ */
 .playlist-item.show-mode {
   --current-playlist-row-height: var(--show-playlist-row-height, 68px);
@@ -1460,7 +1462,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .item-left {
-    grid-template-columns: 44px 88px minmax(0, 1fr) max-content 64px max-content;
+    grid-template-columns: 44px 88px minmax(0, 1fr) var(--cue-state-width, 108px) var(--cue-time-width, 72px) 184px;
     grid-template-areas: 'expand arm identity state duration actions';
     gap: var(--spacing-sm);
   }
@@ -1479,12 +1481,12 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .item-identity {
-    grid-template-columns: 44px minmax(0, 1fr) auto;
+    grid-template-columns: var(--cue-number-width, 52px) minmax(0, 1fr) auto;
     gap: var(--spacing-sm);
   }
 
   &.is-audio .item-identity {
-    grid-template-columns: 44px minmax(0, 1fr) auto;
+    grid-template-columns: var(--cue-number-width, 52px) minmax(0, 1fr) auto;
   }
 
   .item-index {
@@ -1565,7 +1567,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 @container (max-width: 620px) {
   .playlist-item.show-mode .item-left {
-    grid-template-columns: 44px 88px minmax(0, 1fr) max-content;
+    grid-template-columns: 44px 88px minmax(0, 1fr) 184px;
     grid-template-areas:
       'expand arm identity duration'
       'state state state actions';

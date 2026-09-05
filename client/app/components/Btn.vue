@@ -4,7 +4,8 @@
     :disabled="disabled"
     v-bind="$attrs"
   >
-    <span v-if="icon" class="material-symbols-rounded" aria-hidden="true">{{ icon }}</span>
+    <CueSymbol v-if="symbol" :name="symbol" />
+    <span v-else-if="icon" class="material-symbols-rounded" aria-hidden="true">{{ icon }}</span>
     <span>{{ text }}</span>
   </button>
 </template>
@@ -12,6 +13,7 @@
 <script setup lang="ts">
 withDefaults(defineProps<{
   icon?: string;
+  symbol?: 'preview' | 'one-shots' | 'ltc' | 'video-output';
   text: string;
   disabled?: boolean;
 }>(), {
@@ -35,7 +37,8 @@ withDefaults(defineProps<{
   white-space: nowrap;
   box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
 
-  .material-symbols-rounded {
+  .material-symbols-rounded,
+  :deep(.cue-symbol) {
     font-size: 18px;
   }
 

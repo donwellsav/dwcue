@@ -5,6 +5,8 @@
     :class="{
       'has-item': hasItem,
       'is-playing': isPlaying,
+      'is-paused': isPaused,
+      'is-up-next': isQueuedNext,
       'is-selected': isSelected,
       'show-mode': showMode,
       'warning-yellow': warningState === 'yellow',
@@ -18,6 +20,8 @@
     <AudioImportModal :open="showImportModal"
                       @pick="onImportPick"
                       @close="showImportModal = false" />
+
+    <span v-if="hasItem" class="cart-color-rail" aria-hidden="true"></span>
 
     <!-- Empty slot: importing is an edit action, so in Show Mode the slot is
          inert (just a dimmed number) rather than a "click to import" target. -->
@@ -64,7 +68,8 @@
         <div class="slot-meta">
           <span class="slot-number">{{ slot + 1 }}</span>
           <div class="slot-state">
-            <span v-if="isPlaying" class="status-pill playing">{{ t('status.playing') }}</span>
+            <span v-if="isPaused" class="status-pill paused">{{ t('status.paused') }}</span>
+            <span v-else-if="isPlaying" class="status-pill playing">{{ t('status.playing') }}</span>
             <span v-else-if="isQueuedNext" class="status-pill up-next">{{ t('status.upNext') }}</span>
             <span v-if="isPreviewing" class="status-pill preview">{{ t('status.previewing') }}</span>
             <span v-if="keyLabel" class="key-label">{{ keyLabel }}</span>
@@ -105,7 +110,7 @@
         <div v-if="!showMode" class="slot-actions">
           <ActionButton
             v-if="item.type === 'audio'"
-            :icon="'headphones'"
+            symbol="preview"
             highlight-color="var(--state-preview)"
             :is-active="isPreviewing"
             :class="{ 'no-device': !hasPreviewDevice }"
@@ -249,7 +254,10 @@ const isPeaking = computed(() => {
     outputTargetLevels.value.limiterCeilingDb,
   );
 });
-const isPlaying = computed(() => props.item ? activeCues.value.has(props.item.uuid) : false);
+const activeCue = computed(() => props.item ? activeCues.value.get(props.item.uuid) : undefined);
+// Membership remains the active/stop contract; pause is rendered separately.
+const isPlaying = computed(() => !!activeCue.value);
+const isPaused = computed(() => activeCue.value?.isPaused === true);
 const isSelected = computed(() => props.item ? selectedItems.value.has(props.item.uuid) : false);
 const isManuallyQueued = computed(() => props.item ? nextItemOverrideUuid.value === props.item.uuid : false);
 const isQueuedNext = computed(() => {
@@ -258,37 +266,13 @@ const isQueuedNext = computed(() => {
   return autoNextItemUuid.value === props.item.uuid;
 });
 
-// Helper to convert hex to rgba
-const hexToRgba = (hex: string, alpha: number) => {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-};
+const slotStyle = computed(() => props.item ? {
+  '--cart-item-color': props.item.color || 'var(--color-accent)',
+} : {});
 
-const slotStyle = computed(() => {
-  if (!props.item) return {};
-  
-  const styles: any = {
-    borderColor: props.item.color
-  };
-  
-  if (isPlaying.value) {
-    styles.backgroundColor = hexToRgba(props.item.color, 0.3);
-  } else {
-    styles.backgroundColor = hexToRgba(props.item.color, 0.15);
-  }
-  
-  return styles;
-});
-
-const progressStyle = computed(() => {
-  if (!props.item) return {};
-  return {
-    width: `${playbackProgress.value}%`,
-    backgroundColor: hexToRgba(props.item.color, 0.5),
-  };
-});
+const progressStyle = computed(() => ({
+  width: `${playbackProgress.value}%`,
+}));
 
 // Watch for playback
 let progressInterval: any = null;
@@ -486,12 +470,12 @@ const handleSelect = (event?: MouseEvent) => {
 
 const handlePlay = () => {
   if (!props.item) return;
-  playCue(props.item);
+  return playCue(props.item);
 };
 
 const handleStop = () => {
   if (!props.item) return;
-  stopCue(props.item.uuid);
+  return stopCue(props.item.uuid);
 };
 
 const handleSetAsNext = () => {
@@ -544,7 +528,7 @@ const showModeAccessibleName = computed(() => {
   return [
     t('oneShots.importInto', { number: props.slot + 1 }),
     props.item.displayName,
-    isPlaying.value ? t('status.playing') : (isQueuedNext.value ? t('status.upNext') : ''),
+    isPaused.value ? t('status.paused') : (isPlaying.value ? t('status.playing') : (isQueuedNext.value ? t('status.upNext') : '')),
     isPreviewing.value ? t('status.previewing') : '',
     isPlaying.value ? t('actions.stop') : t('actions.play'),
   ].filter(Boolean).join(', ');
@@ -610,8 +594,8 @@ const drawWaveform = () => {
   
   ctx.clearRect(0, 0, rect.width, rect.height);
 
-  // Use the item's own colour; opacity:0.3 in CSS gives a natural dark tint.
-  ctx.fillStyle = audioItem.color || '#ffffff';
+  // Keep the waveform neutral; the authored cue colour belongs to the rail.
+  ctx.fillStyle = getComputedStyle(canvas).color;
 
   const peaks = audioItem.waveform.peaks;
   
@@ -914,20 +898,20 @@ const handleDrop = async (e: DragEvent) => {
 <style scoped lang="scss">
 .cart-slot {
   container-type: size;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-md);
+  border-radius: var(--border-radius-sm);
   background-color: var(--color-surface);
+  color: var(--color-text-primary);
   cursor: pointer;
   transition:
     background-color var(--transition-fast),
     border-color var(--transition-fast),
     box-shadow var(--transition-fast),
     transform var(--transition-fast);
-  position: relative;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  
   &:hover {
     background-color: var(--color-surface-hover);
   }
@@ -937,13 +921,26 @@ const handleDrop = async (e: DragEvent) => {
   }
 
   &.is-selected {
-    box-shadow: inset 3px 0 0 var(--color-accent);
+    outline: 1px solid var(--color-focus-ring);
+    outline-offset: -1px;
+  }
+
+  &.is-up-next:not(.is-playing) {
+    border-color: var(--state-up-next);
+  }
+
+  &.is-playing {
+    border-color: var(--state-playing);
+  }
+
+  &.is-playing.is-paused {
+    border-color: var(--color-text-tertiary);
   }
   
   &.drag-over {
     background-color: var(--color-accent);
     opacity: 0.5;
-    transform: scale(1.05);
+    transform: scale(1.02);
     border-color: var(--color-accent);
   }
   
@@ -977,6 +974,16 @@ const handleDrop = async (e: DragEvent) => {
     border-radius: inherit;
     animation: cart-warning-flash var(--cart-warning-rate) ease-in-out infinite;
   }
+}
+
+.cart-color-rail {
+  position: absolute;
+  z-index: 4;
+  inset: 7px auto 7px 4px;
+  width: 3px;
+  border-radius: var(--pill-radius);
+  background: var(--cart-item-color, var(--color-accent));
+  pointer-events: none;
 }
 
 @keyframes cart-warning-flash {
@@ -1032,6 +1039,7 @@ const handleDrop = async (e: DragEvent) => {
   flex-direction: column;
   position: relative;
   padding: var(--spacing-sm);
+  padding-left: 12px;
   padding-bottom: 36px; /* Space for absolute positioned footer */
   cursor: grab;
   min-height: 0;
@@ -1162,6 +1170,12 @@ const handleDrop = async (e: DragEvent) => {
     color: black;
   }
 
+  &.paused {
+    border: 1px solid var(--color-text-tertiary);
+    background-color: var(--color-control);
+    color: var(--color-text-primary);
+  }
+
   &.preview {
     background-color: var(--state-preview);
     color: var(--color-text-on-accent);
@@ -1172,7 +1186,7 @@ const handleDrop = async (e: DragEvent) => {
   display: flex;
   gap: 3px;
   flex-shrink: 0;
-  opacity: 0.84;
+  opacity: 0.68;
   transition: opacity var(--transition-fast);
 
   &:focus-within {
@@ -1258,7 +1272,8 @@ const handleDrop = async (e: DragEvent) => {
   left: 0;
   width: 100%;
   height: 100%;
-  opacity: 0.3;
+  color: var(--color-text-tertiary);
+  opacity: 0.2;
   pointer-events: none;
   z-index: 0;
 }
@@ -1270,6 +1285,11 @@ const handleDrop = async (e: DragEvent) => {
   bottom: 0;
   pointer-events: none;
   z-index: 1;
+  background: color-mix(in srgb, var(--state-playing) 14%, transparent);
+}
+
+.cart-slot.is-paused .cart-progress {
+  background: color-mix(in srgb, var(--color-text-tertiary) 14%, transparent);
 }
 
 .content-footer {

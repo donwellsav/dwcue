@@ -1,5 +1,7 @@
 // Bounded read-ahead and render-thread stress checks. No test framework.
 #include "liveplay/audio/device_clock_controller.hpp"
+#include "liveplay/audio/engine.hpp"
+#include "liveplay/core/project_state.hpp"
 #include "liveplay/audio/playback_item.hpp"
 
 #include <algorithm>
@@ -24,6 +26,64 @@ int failures = 0;
 void check(bool ok, const char* name) {
     std::printf("%-58s %s\n", name, ok ? "PASS" : "FAIL");
     if (!ok) ++failures;
+}
+
+void test_device_reference_churn() {
+    detail::DeviceReferenceCount references;
+    bool preview_release_closed_native = false;
+    bool stable_owner_count = true;
+    constexpr int preview_switches = 10'000;
+
+    // Main owns the initial reference. Each preview selection acquires the
+    // same deduplicated native device, then switching away releases only the
+    // preview owner. The native device must remain owned exactly once.
+    for (int i = 0; i < preview_switches; ++i) {
+        references.acquire();
+        preview_release_closed_native |= references.release_is_final();
+        stable_owner_count &= references.value() == 1;
+    }
+    check(!preview_release_closed_native,
+          "device refs: preview churn never physically closes Main");
+    check(stable_owner_count,
+          "device refs: preview churn returns to one Main owner");
+    check(references.release_is_final(),
+          "device refs: final Main release permits physical close");
+}
+
+void test_project_runtime_fences() {
+    liveplay::core::detail::PlaybackGenerationFence fence;
+    const auto old_play = fence.begin("cue-a");
+    check(fence.is_current("cue-a", old_play),
+          "generation: initial play is current");
+
+    const auto replay = fence.begin("cue-a");
+    check(!fence.is_current("cue-a", old_play),
+          "generation: replay invalidates copied old action");
+    check(!fence.claim_terminal("cue-a", old_play),
+          "generation: old terminal action cannot claim replay");
+    check(fence.claim_terminal("cue-a", replay),
+          "generation: current terminal action claims exactly once");
+    check(!fence.claim_terminal("cue-a", replay),
+          "generation: terminal claim is one-shot");
+
+    const auto cancelled = fence.begin("cue-a");
+    fence.cancel("cue-a");
+    check(!fence.is_current("cue-a", cancelled),
+          "generation: explicit cancellation rejects copied action");
+
+    using liveplay::core::detail::should_consume_group_override;
+    check(!should_consume_group_override("group-a", "group-a", false),
+          "group GO: failed children preserve armed override");
+    check(should_consume_group_override("group-a", "group-a", true),
+          "group GO: successful child consumes armed override");
+    check(!should_consume_group_override("group-b", "group-a", true),
+          "group GO: successful unrelated group preserves override");
+
+    using liveplay::core::detail::same_media_identity;
+    check(same_media_identity("show/audio/../new.wav", "show/new.wav"),
+          "media identity: normalized equivalent path reuses decoder");
+    check(!same_media_identity("show/old.wav", "show/new.wav"),
+          "media identity: same UUID with new path reloads decoder");
 }
 
 void write_u16(std::ofstream& out, std::uint16_t value) {
@@ -252,6 +312,65 @@ void test_loop_and_concurrent_stress(PlaybackItem& item) {
         static_cast<unsigned long long>(seeks));
 }
 
+void test_loop_continue_stop_and_replay(PlaybackItem& item) {
+    item.stop_now();
+    (void)item.take_natural_end();
+    item.set_fade_out(std::chrono::milliseconds{0});
+    item.set_out_point_seconds(768.0 / kRate);
+    item.set_loop(true, 256.0 / kRate);
+    check(item.prime(2.0, 0.0), "continue: looping pass primes");
+    item.play();
+
+    Output output;
+    for (int i = 0; i < 12; ++i) {
+        item.service_read_ahead(1);
+        item.render_block(output.channels, 2, kBlock);
+    }
+    check(item.stats().transport == TransportState::Playing,
+          "continue: saved loop remains active before arming");
+    check(!item.take_natural_end(),
+          "continue: looping crossings do not raise a follow edge");
+
+    // This is the PlaybackItem operation used by the server's runtime-only Cue
+    // to Continue command: disable looping without touching saved cue data.
+    item.set_loop(false);
+    for (int i = 0;
+         i < 32 && item.stats().transport != TransportState::Stopped;
+         ++i) {
+        item.service_read_ahead(1);
+        item.render_block(output.channels, 2, kBlock);
+    }
+    check(item.stats().transport == TransportState::Stopped,
+          "continue: current pass reaches a natural stop after arming");
+    check(item.take_natural_end(),
+          "continue: completion raises exactly one follow edge");
+    check(!item.take_natural_end(),
+          "continue: follow edge remains one-shot");
+
+    // Explicit stop cancels the pending completion edge.
+    item.set_loop(true, 256.0 / kRate);
+    check(item.prime(2.0, 0.0), "continue stop: pass primes");
+    item.play();
+    item.set_loop(false);
+    item.stop_now();
+    check(!item.take_natural_end(),
+          "continue stop: explicit stop raises no follow edge");
+
+    // Replay reapplies the saved loop state rather than inheriting the runtime
+    // one-shot override from the previous play.
+    item.set_loop(true, 256.0 / kRate);
+    check(item.prime(2.0, 0.0), "continue replay: pass primes");
+    item.play();
+    for (int i = 0; i < 24; ++i) {
+        item.service_read_ahead(1);
+        item.render_block(output.channels, 2, kBlock);
+    }
+    check(item.stats().transport == TransportState::Playing,
+          "continue replay: saved loop behavior is restored");
+    check(!item.take_natural_end(),
+          "continue replay: restored loop does not auto-advance");
+}
+
 struct ClockSimulation {
     double correction_ppm = 0.0;
     double min_occupancy = 0.0;
@@ -333,9 +452,12 @@ int main() {
     check(item.load(), "fixture: WAV loads");
     if (failures == 0) {
         test_item_gain_path(item);
+        test_device_reference_churn();
+        test_project_runtime_fences();
         test_bounded_prefill_and_recovery(item);
         test_soft_out_point_fade(item);
         test_loop_and_concurrent_stress(item);
+        test_loop_continue_stop_and_replay(item);
         test_continuous_clock_correction();
     }
 

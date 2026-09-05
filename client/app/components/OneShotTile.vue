@@ -2,7 +2,14 @@
   <article
     ref="root"
     class="one-shot-tile"
-    :class="{ 'is-playing': isPlaying, 'show-mode': showMode, 'is-armed': armed, 'is-menu-open': menuOpen || removeOpen, 'is-dragging': isDragging }"
+    :class="{
+      'is-playing': isPlaying,
+      'is-paused': isPaused,
+      'show-mode': showMode,
+      'is-armed': armed,
+      'is-menu-open': menuOpen || removeOpen,
+      'is-dragging': isDragging,
+    }"
     :style="tileStyle"
     :draggable="!showMode"
     @dragstart="handleDragStart"
@@ -20,20 +27,20 @@
     ></button>
 
     <div class="one-shot-topline">
-      <span class="one-shot-mode"><b>{{ position + 1 }}</b></span>
-      <span class="one-shot-topline__meta">
-        <kbd v-if="hotkeyLabel" class="one-shot-hotkey">{{ hotkeyLabel }}</kbd>
-        <span class="one-shot-duration">{{ currentTimeLabel }}</span>
-        <button
-          type="button"
-          class="one-shot-arm-toggle"
-          :class="{ 'is-armed': armed }"
-          :aria-pressed="armed"
-          :aria-label="armed ? t('oneShots.disarmCell', { name: item.displayName }) : t('oneShots.armCell', { name: item.displayName })"
-          :title="armed ? t('oneShots.disarmCell', { name: item.displayName }) : t('oneShots.armCell', { name: item.displayName })"
-          @click.stop="toggleArmed"
-        >{{ armed ? 'ARMED' : 'UNARMED' }}</button>
-      </span>
+      <b class="one-shot-index">{{ position + 1 }}</b>
+      <span v-if="isPaused" class="one-shot-runtime-state is-paused" :title="t('status.paused')">{{ t('status.paused') }}</span>
+      <span v-else-if="isPlaying" class="one-shot-runtime-state is-playing" :title="t('status.playing')">{{ t('status.playing') }}</span>
+      <kbd v-if="hotkeyLabel" class="one-shot-hotkey" :title="hotkeyLabel">{{ hotkeyLabel }}</kbd>
+      <span class="one-shot-duration">{{ currentTimeLabel }}</span>
+      <button
+        type="button"
+        class="one-shot-arm-toggle"
+        :class="{ 'is-armed': armed }"
+        :aria-pressed="armed"
+        :aria-label="armed ? t('oneShots.disarmCell', { name: item.displayName }) : t('oneShots.armCell', { name: item.displayName })"
+        :title="armed ? t('oneShots.disarmCell', { name: item.displayName }) : t('oneShots.armCell', { name: item.displayName })"
+        @click.stop="toggleArmed"
+      >{{ armed ? 'ARMED' : 'UNARMED' }}</button>
     </div>
 
     <div class="one-shot-title" :title="item.displayName">{{ item.displayName }}</div>
@@ -224,6 +231,7 @@ import {
   type OneShotPlaybackMode,
 } from '~/utils/oneShots';
 import { eventToBinding, formatKeyLabel, isReservedCombo } from '~/composables/useCartHotkeys';
+import { oneShotFireActionKey, runAcknowledgedAction } from '~/utils/acknowledgedAction';
 
 const props = defineProps<{ item: AudioItem; position: number }>();
 const emit = defineEmits<{
@@ -254,7 +262,9 @@ const { isArmed, setArmed, fireBlocked, afterFire } = useOneShotArm();
 const armed = computed(() => isArmed(props.item));
 const toggleArmed = () => { setArmed(props.item, !armed.value); persist(); };
 const activeCue = computed(() => activeCues.value.get(props.item.uuid));
+// Map membership remains the active/stop contract; pause is a visual sub-state.
 const isPlaying = computed(() => !!activeCue.value);
+const isPaused = computed(() => activeCue.value?.isPaused === true);
 const devices = computed(() => server.devices ?? []);
 const playbackMode = computed(() => getOneShotPlaybackMode(props.item));
 const endMode = computed(() => getOneShotEndMode(props.item));
@@ -299,20 +309,21 @@ const requestImport = () => {
   emit('request-import');
 };
 
-const handleTrigger = () => {
+const handleTrigger = async () => {
   if (isPlaying.value && props.item.oneShot?.retrigger === 'ignore') return;
-  // Show-mode arm gate: this cell only fires while it is armed; with
-  // auto-disarm on (default), firing re-safes the cell again.
-  if (fireBlocked(props.item)) return;
-  void playCue(props.item);
-  afterFire(props.item);
+  // Show-mode arm gate: only re-safe after confirmed playback.
+  if (fireBlocked(props.item)) return false;
+  return runAcknowledgedAction(
+    oneShotFireActionKey(props.item.uuid),
+    () => playCue(props.item),
+    () => afterFire(props.item),
+  );
 };
 
 const handleTransport = () => {
-  if (isPlaying.value) { void stopCue(props.item.uuid); return; }
   // Stop is never gated. The play branch only exists in edit mode (in show
   // mode this button is stop-only), so the per-cell arm gate does not apply.
-  void playCue(props.item);
+  return isPlaying.value ? stopCue(props.item.uuid) : playCue(props.item);
 };
 
 const handleDragStart = (event: DragEvent) => {
@@ -489,7 +500,7 @@ const drawWaveform = () => {
   if (!context) return;
   context.setTransform(dpr, 0, 0, dpr, 0, 0);
   context.clearRect(0, 0, rect.width, rect.height);
-  context.strokeStyle = props.item.color || '#315FCF';
+  context.strokeStyle = getComputedStyle(canvas).color;
   context.globalAlpha = 0.58;
   context.lineWidth = 1;
   const middle = rect.height / 2;
@@ -526,17 +537,21 @@ onUnmounted(() => {
   position: relative;
   min-width: 0;
   isolation: isolate;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: 22px minmax(0, 1fr) 31px;
   gap: 5px;
-  padding: 9px 9px 9px 12px;
+  padding: 7px 8px 7px 11px;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--one-shot-color) 36%, var(--color-border));
-  border-radius: var(--radius-md, 8px);
-  background: color-mix(in srgb, var(--one-shot-color) 10%, var(--color-surface));
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  background: var(--color-surface);
   color: var(--color-text-primary);
-  box-shadow: 0 1px 0 rgb(255 255 255 / 3%) inset;
+  box-shadow: inset 0 1px rgb(255 255 255 / 3%);
   cursor: grab;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 
 .one-shot-tile:active { cursor: grabbing; }
@@ -546,14 +561,15 @@ onUnmounted(() => {
 }
 
 .one-shot-tile.show-mode {
-  padding: 10px;
+  grid-template-rows: 22px minmax(0, 1fr) 36px;
+  padding: 7px 8px 7px 11px;
   cursor: pointer;
 }
 
 .one-shot-tile.show-mode:hover,
 .one-shot-tile.show-mode:has(.one-shot-trigger-surface:focus-visible) {
-  border-color: color-mix(in srgb, var(--one-shot-color) 72%, white 10%);
-  background: color-mix(in srgb, var(--one-shot-color) 16%, var(--color-surface));
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-hover);
   outline: none;
 }
 
@@ -575,8 +591,12 @@ onUnmounted(() => {
 
 .one-shot-tile.is-playing {
   border-color: var(--state-playing);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--state-playing) 55%, transparent),
-              0 0 18px color-mix(in srgb, var(--state-playing) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--state-playing) 48%, transparent);
+}
+
+.one-shot-tile.is-playing.is-paused {
+  border-color: var(--color-text-tertiary);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-text-tertiary) 45%, transparent);
 }
 
 .one-shot-waveform,
@@ -589,12 +609,16 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
-.one-shot-waveform { z-index: -1; opacity: 0.42; }
+.one-shot-waveform { z-index: -1; color: var(--color-text-tertiary); opacity: 0.24; }
 .one-shot-progress {
   right: auto;
   z-index: -1;
   border-radius: inherit 0 0 inherit;
   background: color-mix(in srgb, var(--state-playing) 17%, transparent);
+}
+
+.one-shot-tile.is-paused .one-shot-progress {
+  background: color-mix(in srgb, var(--color-text-tertiary) 17%, transparent);
 }
 
 .one-shot-color-rail {
@@ -605,54 +629,82 @@ onUnmounted(() => {
   background: var(--one-shot-color);
 }
 
-.one-shot-topline,
-.one-shot-bottomline {
+.one-shot-topline {
   min-width: 0;
-  display: flex;
+  min-height: 22px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) minmax(0, 28px) 42px 54px;
+  grid-template-areas: 'index state hotkey time arm';
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-}
-
-.one-shot-topline__meta {
-  min-width: 0;
-  flex: 0 1 auto;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-}
-
-.one-shot-mode {
-  overflow: hidden;
+  gap: 3px;
   color: var(--color-text-secondary);
-  font-size: calc(11px * var(--one-shot-font-scale, 1));
+  font-size: clamp(9px, calc(11px * var(--one-shot-font-scale, 1)), 12px);
   font-weight: 700;
-  letter-spacing: .06em;
+  letter-spacing: .04em;
+  line-height: 1;
   text-transform: uppercase;
+}
+
+.one-shot-index {
+  grid-area: index;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.one-shot-mode b {
-  margin-right: 6px;
-  color: var(--color-text-primary);
-  font: inherit;
+.one-shot-bottomline {
+  min-width: 0;
+  min-height: 31px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.one-shot-runtime-state {
+  grid-area: state;
+  min-width: 0;
+  overflow: hidden;
+  padding: 2px 3px;
+  border: 1px solid currentColor;
+  border-radius: var(--control-radius);
+  letter-spacing: .03em;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.one-shot-runtime-state.is-playing {
+  color: var(--state-playing);
+}
+
+.one-shot-runtime-state.is-paused {
+  color: var(--color-text-secondary);
 }
 
 .one-shot-hotkey {
-  flex: 0 0 auto;
+  grid-area: hotkey;
+  justify-self: end;
+  min-width: 0;
+  max-width: 100%;
   padding: 2px 4px;
+  overflow: hidden;
   border: 1px solid var(--color-border-strong);
   border-radius: 5px;
   background: color-mix(in srgb, var(--color-surface-raised) 88%, transparent);
   color: var(--color-text-primary);
   font: 600 calc(10px * var(--one-shot-font-scale, 1)) / 1.2 var(--font-mono, ui-monospace, monospace);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .one-shot-title {
-  min-height: 2.3em;
-  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  align-self: start;
   display: -webkit-box;
   overflow: hidden;
   color: var(--color-text-primary);
@@ -665,20 +717,22 @@ onUnmounted(() => {
 }
 
 .show-mode .one-shot-title {
-  min-height: 2.15em;
+  min-height: 0;
   font-size: calc(15px * var(--one-shot-font-scale, 1));
 }
 
 .one-shot-duration {
-  flex: 0 0 auto;
+  grid-area: time;
+  justify-self: end;
+  min-width: 0;
+  overflow: hidden;
   color: var(--color-text-secondary);
-  font: 600 calc(13px * var(--one-shot-font-scale, 1)) / 1.2 var(--font-mono, ui-monospace, monospace);
+  font: 600 clamp(10px, calc(13px * var(--one-shot-font-scale, 1)), 12px) / 1.2 var(--font-mono, ui-monospace, monospace);
   font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.one-shot-bottomline {
-  margin-top: auto;
-}
 
 .one-shot-actions {
   position: relative;
@@ -695,6 +749,13 @@ onUnmounted(() => {
 
 .one-shot-tile:not(.show-mode) .one-shot-actions {
   width: 100%;
+  opacity: 0.72;
+  transition: opacity var(--transition-fast);
+}
+
+.one-shot-tile:not(.show-mode):hover .one-shot-actions,
+.one-shot-tile:not(.show-mode) .one-shot-actions:focus-within {
+  opacity: 1;
 }
 
 .one-shot-control,
@@ -728,10 +789,9 @@ onUnmounted(() => {
   font-size: 19px;
   font-variation-settings: 'FILL' 0, 'wght' 520, 'GRAD' 0, 'opsz' 20;
 }
-/* Per-cell arm: the toggle sits first in the actions row. Armed = hot
-   danger tint on the toggle and a ring around the whole tile so the cell's
-   state reads from across the desk. In show mode, disarmed idle tiles dim
-   (playing tiles keep full contrast — their stop control must stay obvious). */
+/* Per-cell arm stays independent from playback: amber marks an armed pad, */
+/* green marks confirmed playback, and red is reserved for Stop/fault.     */
+/* Disarmed idle pads remain fully legible in Show Mode.                   */
 .popover-field--checkbox {
   flex-direction: row;
   align-items: center;
@@ -746,34 +806,40 @@ onUnmounted(() => {
 .one-shot-arm-toggle {
   position: relative;
   z-index: 2;
-  flex: 0 0 auto;
-  padding: 3px 7px;
+  grid-area: arm;
+  width: 54px;
+  min-width: 0;
+  justify-self: end;
+  padding: 2px;
+  overflow: hidden;
   border: 1px solid var(--color-text-tertiary);
   border-radius: 5px;
   background: color-mix(in srgb, var(--color-surface-raised) 88%, transparent);
   color: var(--color-text-primary);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
-  letter-spacing: .08em;
+  letter-spacing: .04em;
   line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .one-shot-arm-toggle:hover { background: var(--color-surface-hover); color: var(--color-text-primary); }
 
 .one-shot-arm-toggle.is-armed {
-  border-color: color-mix(in srgb, var(--color-danger, #e5484d) 55%, transparent);
-  background: color-mix(in srgb, var(--color-danger, #e5484d) 16%, transparent);
-  color: var(--color-danger, #e5484d);
+  border-color: color-mix(in srgb, var(--state-up-next) 64%, transparent);
+  background: color-mix(in srgb, var(--state-up-next) 14%, transparent);
+  color: var(--state-up-next);
 }
 
-.one-shot-tile.is-armed {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-danger, #e5484d) 80%, transparent),
-    0 0 14px color-mix(in srgb, var(--color-danger, #e5484d) 35%, transparent);
+.one-shot-tile.is-armed:not(.is-playing) {
+  border-color: var(--state-up-next);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--state-up-next) 46%, transparent);
 }
 
 .one-shot-tile.show-mode:not(.is-armed):not(.is-playing) {
-  opacity: 0.55;
+  opacity: 0.82;
 }
 
 .show-mode .one-shot-bottomline { justify-content: flex-end; }
@@ -786,12 +852,34 @@ onUnmounted(() => {
   outline-offset: -3px;
 }
 .one-shot-transport {
-  background: color-mix(in srgb, var(--one-shot-color) 18%, transparent);
-  color: color-mix(in srgb, var(--one-shot-color) 62%, white);
+  background: color-mix(in srgb, var(--state-playing) 12%, transparent);
+  color: var(--state-playing);
 }
-.one-shot-transport:hover { background: color-mix(in srgb, var(--one-shot-color) 26%, transparent); }
+.one-shot-transport:hover { background: color-mix(in srgb, var(--state-playing) 20%, transparent); }
 .one-shot-transport.is-stop { background: var(--color-danger); border-color: var(--color-danger); color: white; }
 .one-shot-remove:hover { background: color-mix(in srgb, var(--color-danger) 14%, transparent); color: var(--color-danger); }
+
+@container (max-width: 210px) {
+  .one-shot-tile {
+    grid-template-rows: 47px minmax(0, 1fr) 31px;
+    gap: 4px;
+    padding-block: 3px;
+  }
+
+  .one-shot-tile.show-mode {
+    grid-template-rows: 47px minmax(0, 1fr) 36px;
+  }
+
+  .one-shot-topline {
+    grid-template-columns: 14px minmax(0, 1fr) 54px;
+    grid-template-rows: 22px 22px;
+    grid-template-areas:
+      'index hotkey time'
+      'state state arm';
+    column-gap: 2px;
+    row-gap: 3px;
+  }
+}
 
 .one-shot-popover,
 .one-shot-confirm {

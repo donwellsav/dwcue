@@ -2,7 +2,7 @@
 
 The DonWells Cue client is a Vue 3 + Nuxt 4 application wrapped in Electron. It is a **remote control** for the DonWells Cue audio server: it owns no audio decoding, no playback, no Web Audio nodes. Every user action turns into a REST call or WebSocket frame sent to `dwcue-server`, and every meter / waveform / state update comes back the same way.
 
-This document is the developer's guide to the client. For the audio engine, see [`server/README.md`](../server/README.md). For the overall project, see the [root README](../README.md).
+This document tracks the current v2.6.13 source and is the developer's guide to the client; use the release page to determine which behaviour is present in a downloaded installer. For show-day use, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For the audio engine, see [`server/README.md`](../server/README.md); for overall project and release context, see the [root README](../README.md).
 
 ---
 
@@ -13,7 +13,7 @@ This document is the developer's guide to the client. For the audio engine, see 
 - [Running](#running)
 - [Architecture](#architecture)
   - [The renderer ↔ Electron-main split](#the-renderer--electron-main-split)
-  - [The renderer ↔ DW Cue server link](#the-renderer--dw-cue-server-link)
+  - [The renderer ↔ DonWells Cue server link](#the-renderer--donwells-cue-server-link)
   - [Local server lifecycle](#local-server-lifecycle)
 - [Composables](#composables)
 - [Components](#components)
@@ -36,7 +36,7 @@ This document is the developer's guide to the client. For the audio engine, see 
 | Media tooling    | `@ffmpeg-installer/ffmpeg`, `@ffprobe-installer/ffprobe`        |
 | YouTube import   | `yt-dlp-wrap` + `youtube-search-api`                            |
 | Updates          | `electron-updater` (GitHub Releases feed: `donwellsav/dwcue`)      |
-| File transport   | Server-backed REST upload/download for `.lpa` project archives  |
+| File transport   | Server-backed REST upload/download for `.dwcuepack` project archives; one-way `.lpa` legacy import |
 
 Audio playback, waveform extraction, metering and routing all live in the C++ server. The renderer never decodes audio.
 
@@ -81,13 +81,15 @@ client/
 
 ## Running
 
-From the monorepo root, `npm run dev` (or `npm run dev --workspace=client`) does the full loop:
+From the monorepo root, `npm run dev` does the full loop:
 
-1. [`scripts/ensure-server.js`](../scripts/ensure-server.js) checks whether the C++ server is built; if not, builds it.
+1. [`scripts/ensure-server.js`](../scripts/ensure-server.js) checks whether either expected C++ server binary exists and builds one only when both are missing.
 2. `nuxt dev` starts on `http://localhost:3000` with HMR.
 3. `wait-on` waits for Nuxt, then `electron .` launches with DevTools open.
 
-To work on just the renderer (no Electron shell): `npm run dev:nuxt` and visit `http://localhost:3000` in a browser. The renderer still tries to talk to a running `dwcue-server`; start one separately with `npm run server:run` from the monorepo root.
+`npm run dev:client` (equivalent to `npm run dev --workspace=client`) skips `ensure-server.js` and starts only the Nuxt + Electron workspace loop. It is not equivalent to `npm run dev`: use it only when the server binary is already built. Neither command detects changed C++ sources once a binary exists, so run `npm run server:build` after server changes.
+
+To work on just the renderer (no Electron shell), run `npm run dev:nuxt --workspace=client` from the monorepo root (or `npm run dev:nuxt` inside `client/`) and visit `http://localhost:3000`. The renderer still needs a separately running `dwcue-server`; build it with `npm run server:build`, then start it from the root with `npm run server:run`.
 
 Production build (Nuxt static generate + electron-builder):
 
@@ -110,14 +112,14 @@ Key IPC channels (non-exhaustive):
 
 | Channel                               | Purpose |
 |---------------------------------------|---------|
-| `liveplay-server:get-config` / `set-config` | Read/write the persisted server connection settings. |
-| `liveplay-server:get-status` / `ensure-running` / `restart` / `shutdown` | Manage the bundled server child process. |
+| `liveplay-server:get-config` / `set-config` | Read/write the persisted server mode, URL, and remote-user connection settings; managed credentials are excluded. |
+| `liveplay-server:get-status` / `ensure-running` / `restart` / `shutdown` / `state` | Manage the bundled server child process. Trusted status/state replies deliver the current managed credential to the renderer. |
 | `liveplay-discovery:start` / `list`   | Browse for `dwcue-server` instances on the LAN. |
 | `select-project-folder` / `select-project-file` / `select-audio-files` | Native file pickers. |
 | `read-file` / `write-file` / `copy-file` | Authorized project filesystem helpers. |
 | `get-binary-file-info` / `read-binary-file-chunk` | Bounded local archive reads for remote imports. |
 | `download-archive-to-file` | Streams a server archive directly to an authorized local destination. |
-| `menu-export-project` / `menu-import-project` (main → renderer) | Menu-triggered `.lpa` archive round-trip; the renderer owns the export/import dialogs. |
+| `menu-export-project` / `menu-import-project` (main → renderer) | Menu-triggered `.dwcuepack` export/import plus explicit `.lpa` legacy import; the renderer owns the dialogs. |
 | `check-for-updates` / `download-update` / `install-update` / `get-update-install-supported` / `get-app-version` | `electron-updater` controls. |
 | `update-available` / `update-up-to-date` / `update-download-progress` / `update-downloaded` / `update-error` / `menu-check-for-updates` (main → renderer) | Update flow events; `menu-check-for-updates` is the Help-menu trigger. |
 | `update-menu-language` / `get-system-locale` / `get-available-locales` / `get-locale-data` | Dynamic menu localisation. |
@@ -130,14 +132,18 @@ Key IPC channels (non-exhaustive):
 
 The audio data path is **not** via IPC — it's directly between the renderer and `dwcue-server` over HTTP + WebSocket. IPC is used only for things Electron needs to do as a desktop application.
 
-### The renderer ↔ DW Cue server link
+New shows and normal saves use the native `.dwcue` JSON document. New portable exports are ZIP archives named `.dwcuepack`; no additional manifest is required. The import UI also reads legacy `.liveplay` documents and `.lpa` archives as a one-way conversion. A direct `.liveplay` import writes an available `.dwcue` sibling; an `.lpa` import writes one canonical `.dwcue` in a fresh extraction directory. Both preserve the original legacy bytes and continue saving the canonical result rather than the legacy source.
+
+### The renderer ↔ DonWells Cue server link
 
 `app/composables/useLiveplayServer.ts` is the single source of truth. It is a Vue singleton — every component that calls `useLiveplayServer()` receives the **same** WebSocket connection and the **same** reactive state. The contract:
 
-- The server URL and optional LAN access token are read from `localStorage` (`liveplay.serverUrl` and `liveplay.accessToken`; local default `http://127.0.0.1:4480`). Change them via the **Server Settings** modal.
-- On boot, the [`app/plugins/liveplay-server.client.ts`](app/plugins/liveplay-server.client.ts) plugin connects. The connection is lazy-retried if it drops (showing `ConnectionLostModal` in the meantime).
-- REST calls return promises; WebSocket frames update reactive refs.
-- Outbound frames are mostly transport commands (`play`, `stop`, `seek`) that take a fast WS path to avoid the HTTP round-trip; everything mutating goes through `PATCH /api/project/...` so the server can echo a `doc_patch` to all connected clients.
+- The server URL and a remote user's token are stored in `localStorage` under `liveplay.serverUrl` and `liveplay.accessToken`; change them via **Server Settings**. A managed local token is session-only in the renderer and is never written there.
+- Every local and remote control call is authenticated except `GET /api/health`. REST uses `Authorization: Bearer <token>`; bearer-in-query is restricted to browser WebSocket `/ws` and media-element `/api/media` requests.
+- Browser origins must exactly match `LIVEPLAY_ALLOWED_ORIGINS`. Source development uses `http://localhost:3000`, not an arbitrary loopback origin. Packaged Electron's opaque `Origin: null` is accepted, but it still requires the token.
+- On boot, the [`app/plugins/liveplay-server.client.ts`](app/plugins/liveplay-server.client.ts) plugin connects. The connection is lazy-retried if it drops (showing `ConnectionLostModal` in the meantime). If a changed server project meets dirty local edits, the modal requires **Use server project** (discard local/adopt server) or **Restore local project** (replace server/keep local dirty) instead of overwriting either side silently.
+- A close-side `project_changed` clears both the renderer's project document and its remembered path. Saves are serialized and revision-fenced: completion only marks the exact saved revision clean, so an older response cannot erase a newer dirty edit.
+- REST calls return promises; WebSocket frames update reactive refs. Outbound frames are mostly transport commands (`play`, `stop`, `seek`) that take a fast WS path; project mutations use `PATCH /api/project/...` so the server can echo a `doc_patch` to all connected clients.
 
 For the full REST and WebSocket surface, see [`server/README.md`](../server/README.md#control-surface).
 
@@ -146,10 +152,13 @@ For the full REST and WebSocket surface, see [`server/README.md`](../server/READ
 When DonWells Cue is installed as a desktop app, [`electron/main.js`](electron/main.js) is also responsible for spawning the bundled server. The recipe:
 
 1. `electron-builder` copies `dwcue-server[.exe]` into `resources/server-bin/` via `extraResources` (see the `build` block in `package.json`).
-2. On first launch, main resolves the binary path and spawns it as a detached child process bound to `127.0.0.1:<port>`.
-3. A lockfile records the PID so subsequent launches reattach to the running instance rather than spawning a duplicate.
-4. Closing the UI leaves the detached server running so a renderer restart cannot interrupt show audio; the next launch reattaches through the PID file.
-5. The app can explicitly stop or restart that process. Switching **Server Settings** to a remote server cleanly stops the local child first.
+2. Each newly spawned backend generation receives a fresh random 64-character lowercase-hex token through `LIVEPLAY_ACCESS_TOKEN` while remaining bound to `127.0.0.1:<port>`.
+3. The lock records PID, port, generation identity, and token so a later launch can reattach. It is owner-only (`0600` on POSIX), read without following symlinks, and the token is never logged.
+4. Trusted `liveplay-server:*` IPC replies deliver that managed token to the renderer for the current session; config and browser storage never persist it.
+5. Closing the UI leaves the detached server running so a renderer restart cannot interrupt show state; the next launch reattaches through the lock.
+6. The app can explicitly stop or restart that process. Switching **Server Settings** to a remote server cleanly stops the local child first.
+
+For upgrade compatibility, Electron's managed backend intentionally keeps the existing platform `userData` profile named `LivePlay` (for example, `~/Library/Application Support/LivePlay` on macOS). Managed server configuration, PID/lock state, and logs remain there; startup does not copy, move, or rename the profile. This is a storage-compatibility boundary, not the product's visible name. Standalone server state uses the branded DonWells Cue location documented in the operator manual.
 
 `liveplay-discovery:*` IPC channels run a UDP listener that picks up announce broadcasts from `dwcue-server` instances on the LAN, so the connection UI can present a one-click list.
 
@@ -161,7 +170,7 @@ The Video Output window is deliberately **session-only** even though its display
 - Every app launch starts with the output closed. `video-output:open` arms it for the current process; an operator close disarms it, while an internal display-watchdog recreation preserves the current session.
 - The display selector works while the output is closed. `video-output:identify-displays` creates click-through, always-on-top number cards on every connected screen for five seconds.
 - A valid independently addressable display gets a frameless fullscreen window. An unassigned or single-display setup gets a normal 960×540 preview window instead of a fullscreen takeover.
-- The output's native context menu exposes fullscreen, test-card and **Exit Video Output** actions. On Windows the real output remains `closable` so Alt+F4 is always an escape hatch.
+- The output's native context menu exposes fullscreen, test-card and **Exit Video Output** actions. On Windows the real output remains `closable` so Alt+F4 is always an escape hatch. Black is the idle base layer, not a dedicated operator blackout; no blackout/fade-to-black IPC command exists.
 
 The passive output can own keyboard focus, especially on Windows. Its Electron
 `before-input-event` handler therefore forwards application-level keys to the control
@@ -181,10 +190,10 @@ All composables are Vue `setup()`-time helpers, typed in TypeScript.
 | Composable             | Responsibility |
 |------------------------|----------------|
 | `useLiveplayServer`    | REST + WS singleton. Holds connection state, project document, server config. Every other composable builds on this. |
-| `useLiveMeters`        | Subscribes to the `meters` WS frame and exposes per-cue / per-mixer / per-master reactive refs at 60 Hz. Drives `LiveMeterBar` and `StereoMeter`. |
-| `useProject`           | Project CRUD as exposed by the server (new, open, save, close, item add/remove/move/patch). Wraps `useLiveplayServer` calls into ergonomic methods. |
-| `useAudioEngine`       | Transport facade: `playCue`, `stopCue`, `stopAllCues`, `seek`, `setVolume`, ducking mode helpers. All implemented by forwarding to the server — no audio runs in the renderer. |
-| `useCartItems`         | The One Shots grid model (slot → cue mapping, per-cell arm state); storage keeps the legacy cart shape for compatibility. |
+| `useLiveMeters`        | Subscribes to the `meters` WS frame and exposes per-cue / per-mixer / per-master reactive refs at the server's default 30 Hz cadence. Drives `LiveMeterBar` and `StereoMeter`. |
+| `useProject`           | Project CRUD and sync as exposed by the server. It clears document/path on remote close and serializes revision-fenced saves so only the latest persisted revision becomes clean. |
+| `useAudioEngine`       | Transport facade. **Cue to Continue** is runtime-only for one playback instance: it never rewrites `endBehavior`, and Stop, remove, replay, Stop All, media replacement, or project switch cancels it. |
+| `useCartItems`         | The One Shots grid model (slot → cue mapping, per-cell arm state). An arm is consumed only after accepted play; repeated identical arming is coalesced. Storage keeps the legacy cart shape for compatibility. |
 | `useCartHotkeys`       | Configurable keyboard shortcuts → One Shot triggers. See `ControlConfigModal.vue` for the current UI. |
 | `useMidiController`    | Web MIDI bindings → One Shot triggers. See `ControlConfigModal.vue`. |
 | `useStateViewer`       | Feeds the live diagnostics popup window (project doc + connection + server status). |
@@ -199,24 +208,28 @@ All composables are Vue `setup()`-time helpers, typed in TypeScript.
 
 The component tree is intentionally flat — every SFC lives directly in [`app/components/`](app/components/). The big ones to know:
 
-- `WelcomeScreen.vue` — project picker before a project is loaded.
+- `WelcomeScreen.vue` — project picker and **New Show** entry; creation combines a name field with a read-only Location chosen through **Choose…**.
 - `MainWorkspace.vue` — top-level layout once a project is loaded.
-- `PlaybackControls.vue`, `ActiveCueItem.vue` — top-of-screen transport.
+- `PlaybackControls.vue`, `ActiveCueItem.vue` — top-of-screen GO transport and named **Play Next** target. GO clears the target only after accepted play; a failed or not-yet-loaded target remains ready for retry, and duplicate inputs are coalesced.
 - `PlaylistView.vue`, `PlaylistItem.vue` — recursive playlist tree.
-- `OneShotPanel.vue`, `OneShotTile.vue` — permanent 1–64 cell quick-play grid with per-cell ARMED/UNARMED gating (the detached window retains legacy cart-player IPC names).
-- `PropertiesPanel.vue` — properties for the selected item (gain, fades, behaviours, ducking).
+- `OneShotPanel.vue`, `OneShotTile.vue` — 1–64 cell quick-play grid with per-cell ARMED/UNARMED gating. An unused panel starts collapsed unless the user explicitly makes it visible; the detached window retains legacy cart-player IPC names. **Duck Level** is consumed by the server, but the visible **Duck Time** and **Release Time** values are not; playback gain uses fixed smoothing.
+- `PropertiesPanel.vue` — properties for the selected item (gain, fades, behaviours, ducking, output device and LTC). It currently exposes the unsupported audio Start Behavior and group End Behavior controls described below.
 - `WaveformCanvas.vue` — canvas-rendered waveform fetched from `GET /api/waveform/<cueId>`.
 - `WaveformTrimmer.vue` — interactive in/out trimming + normalise.
-- `RoutingMatrixPanel.vue` — the 3-tier routing matrix UI.
+- `RoutingMatrixPanel.vue` — an unmounted 3-tier routing-matrix component; there is no import/callsite that exposes it in the current app. The operator-facing controls are Settings → **Audio Routing** for devices and Properties → **Output device** / **LTC** per cue; the full matrix remains available through the server API.
 - `LiveMeterBar.vue`, `StereoMeter.vue` — meter widgets driven by `useLiveMeters`.
-- `ServerSettingsModal.vue`, `LocalServerStatus.vue`, `ConnectionLostModal.vue` — server connection management.
-- `ServerFileBrowser.vue`, `ServerFilePickerModal.vue` — `GET /api/fs/list` browser, used when the client and server live on different machines.
-- `AudioImportModal.vue`, `YouTubeImportModal.vue` — media import surfaces.
-- `ProjectSelectionModal.vue`, `ProjectSettingsModal.vue`, `ProjectRepairModal.vue` — project management.
+- `ServerSettingsModal.vue`, `LocalServerStatus.vue`, `ConnectionLostModal.vue` — authenticated server connection management and explicit dirty-reconnect **Use server project** (discard local/adopt server) / **Restore local project** (replace server/keep local dirty) choice.
+- `ServerFileBrowser.vue`, `ServerFilePickerModal.vue` — the advanced `GET /api/fs/list` browser for media already on another server; it stays collapsed in the normal local-import flow and disables unsupported non-media entries.
+- `AudioImportModal.vue`, `YouTubeImportModal.vue` — media import surfaces; local **Choose files** is the primary action.
+- `ProjectSelectionModal.vue`, `ProjectSettingsModal.vue`, `ProjectRepairModal.vue` — project management, including the combined name-and-location **New Show** flow.
 - `UpdateModal.vue` — auto-update UI.
 - `AboutModal.vue`, `ProgressModal.vue`, `LoadingOverlay.vue`, `LocationChoiceModal.vue` — misc.
 - `ShortcutsBar.vue` — on-screen hotkey reference strip, visible by default.
-- `VideoOutputView.vue`, `VideoConfidenceChip.vue` — the `?videoOutput=1` render surface and its 1 fps confidence thumbnail in the header.
+- `VideoOutputView.vue`, `VideoConfidenceChip.vue` — the `?videoOutput=1` render surface and its 1 fps confidence thumbnail in the header. Black is only the idle base layer; there is no dedicated blackout or fade-to-black command.
+
+**Current sequencing contract:** **Play First** triggers a group's first immediate child and **Play All** triggers all immediate children. Although Properties currently renders End Behavior controls for a group, the server does not consume a group-level End Behavior. An audio cue's **Play Next** resolves only its next sibling in the same group; the final child must use **Go to Item** or **Go to Index** to leave the group.
+
+The audio cue Start Behavior dropdown values `play-next`, `play-item`, and `play-index` are also not interpreted by the current server. Use natural-end **End Behavior**, or **Start Next at Marker** / **Start Next At** / **Fade Out at Marker** for timed overlaps.
 
 Style: Composition API + `<script setup lang="ts">`, scoped SCSS, CSS variables for theming (see [Theming](#theming)).
 
@@ -299,7 +312,7 @@ Theme mode + accent colour are persisted on the project, not per-user — every 
 ## Auto-updates
 
 Updates are **enabled** and pinned to this repository's GitHub Releases via `autoUpdater.setFeedURL` in [`electron/main.js`](electron/main.js) (`donwellsav/dwcue`) — the app never checks any other feed.
-Existing v2.6.11 installs shipped with the updater disabled, so they must install the first updater-enabled release manually; later releases update in-app.
+The v2.6.12 release introduced updater support. v2.6.13 continues the same GitHub Releases feed; existing v2.6.11 installs must first install v2.6.12 or later manually.
 
 Behaviour:
 
@@ -321,20 +334,17 @@ The `build` block in [`package.json`](package.json) drives `electron-builder`:
 - `files`: includes `.output/`, `electron/`, `assets/`, `locales/`. Locales must be listed explicitly or they don't ship.
 - `extraResources`: copies the C++ server binary into `resources/server-bin/`.
 - `asarUnpack`: the ffmpeg/ffprobe installers can't run from inside an asar, so they're unpacked.
-- `fileAssociations`: registers the `.liveplay` extension.
+- `fileAssociations`: registers the native `.dwcue` document and `.dwcuepack` archive extensions. Legacy `.liveplay` and `.lpa` inputs remain available through **Import Project**, not as canonical OS associations.
 
-To build locally:
+Run the unified package build from the monorepo root so the matching native server is configured and rebuilt before Electron packaging:
 
 ```sh
 npm run build:electron -- --mac --arm64  # Apple Silicon
 npm run build:electron -- --mac --x64    # Intel
-npm run electron:build -- --win --x64    # explicit platform/arch flags
+npm run build:electron -- --win --x64    # Windows
 ```
 
-The macOS architecture flag must match the native `dwcue-server` built in
-`server/build`; the root `npm run build` command selects the host architecture
-automatically. The release workflow builds and validates arm64 and x64 in
-separate jobs.
+The macOS architecture flag must match the native `dwcue-server` built in `server/build`; the root command handles that pairing. The release workflow builds and validates arm64 and x64 in separate jobs.
 
 For multi-platform builds, use the [GitHub Actions release workflow](../.github/workflows/build-release.yml) — cross-compiling Electron locally is unreliable.
 

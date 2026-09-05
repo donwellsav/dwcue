@@ -38,6 +38,7 @@
     "title": "DonWells Cue",
     "subtitle": "Redare audio pentru evenimente live",
     "newProject": "Proiect Nou",
+    "newShow": "Spectacol nou",
     "openProject": "Deschide Proiect",
     "modeTitle": "Alege Modul Server",
     "modeSubtitle": "Unde ar trebui DonWells Cue să ruleze motorul audio?",
@@ -67,6 +68,11 @@
     "showNetworkUi": "Connect to a server on the network…"
   },
   "project": {
+    "newShow": "Spectacol nou",
+    "showName": "Numele spectacolului",
+    "location": "Locație",
+    "chooseLocation": "Alegeți…",
+    "createShow": "Creați spectacolul",
     "enterName": "Introduceti Nume Proiect",
     "placeholder": "Proiectul meu",
     "cancel": "Anuleaza",
@@ -430,6 +436,7 @@
   },
   "status": {
     "playing": "Se redă",
+    "paused": "În pauză",
     "upNext": "Următor",
     "previewing": "Previzualizare"
   },
@@ -587,6 +594,11 @@
   },
   "importAudio": {
     "title": "Importă media",
+    "localIntro": "Alegeți fișiere audio sau video de pe acest computer.",
+    "advanced": "Opțiuni avansate",
+    "unsupportedFileType": "Tip de fișier neacceptat",
+    "verifyFileType": "Tipul de fișier va fi verificat",
+    "emptyServerFolder": "Nu există fișiere media sau subfoldere în această locație.",
     "tabServer": "Pe server",
     "tabUpload": "Încarcă de pe acest computer",
     "serverHint": "Fișiere aflate deja pe server. Faceți dublu clic pe un folder pentru a-l deschide; faceți clic pe fișiere pentru a le selecta (Shift sau Ctrl/Cmd-clic pentru mai multe), apoi „Importă selecția”.",
@@ -686,7 +698,7 @@
     "resumeHint": "Continuă sesiunea redeschide acest proiect pe server, ca să puteți continua.",
     "startFreshHint": "Începe de la zero îl închide și revine la ecranul de întâmpinare.",
     "projectChangedTitle": "Server project changed",
-    "projectChangedMessage": "While this client was offline, the server opened “{name}”. Your local project has unsaved changes, so nothing was replaced automatically.",
+    "projectChangedMessage": "Proiectul „{name}” de pe server s-a modificat. Proiectul local are modificări nesalvate, așa că nimic nu a fost înlocuit automat.",
     "useServerProject": "Use server project",
     "keepLocalProject": "Restore local project",
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
@@ -773,7 +785,7 @@
     "chooseDestination": "Choose Folder",
     "changeDestination": "Change",
     "destinationFailed": "Could not choose the destination folder.",
-    "createsDescription": "Creates one child folder for the collection. Its media files are used directly by both the reusable .liveplay template and the current project — no second copy.",
+    "createsDescription": "Creates one child folder for the collection. Its media files are used directly by both the reusable .dwcue template and the current project — no second copy.",
     "cueSetup": "Cue setup",
     "settingOn": "On",
     "settingOff": "Off",

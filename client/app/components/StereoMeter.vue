@@ -79,7 +79,7 @@
           class="stereo-meter__mark"
           :style="{ bottom: m.pct + '%' }"
         >
-          <span class="stereo-meter__mark-text" :style="{ color: m.color }">{{ m.label }}</span>
+          <span class="stereo-meter__mark-text" :style="{ color: m.labelColor }">{{ m.label }}</span>
           <span class="stereo-meter__mark-tick" :style="{ background: m.color }" />
         </div>
       </div>
@@ -319,6 +319,7 @@ const scaleMarks = computed(() => {
       db,
       pct: dbToConsolePosition(db, minDb, maxDb) * 100,
       label: db > 0 ? `+${Math.round(db)}` : String(Math.round(db)).replace('-', '−'),
+      labelColor: db > 0 ? 'var(--color-warning)' : 'var(--color-text-primary)',
       color: colorForLevel(db),
     }));
 });
@@ -344,19 +345,19 @@ const shortTermLabel = computed(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 4px 5px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  box-sizing: border-box;
   width: 54px;
-  flex-shrink: 0;
+  padding: 4px 5px;
+  box-sizing: border-box;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  background: var(--color-surface);
   gap: 3px;
+  flex-shrink: 0;
 
   &--strip {
     width: var(--output-strip-width, 192px);
-    padding: 7px 10px;
-    gap: 7px;
+    padding: 6px 8px;
+    gap: 6px;
   }
 
   &--strip &__label {
@@ -426,6 +427,20 @@ const shortTermLabel = computed(() => {
     position: relative;
     min-width: 0;
     margin: 10px 0;
+    border-left: 1px solid var(--color-border);
+  }
+
+  &__scale::before {
+    content: 'GAIN';
+    position: absolute;
+    top: -9px;
+    left: 4px;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 7px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    line-height: 1;
   }
 
   &__mark {
@@ -441,45 +456,64 @@ const shortTermLabel = computed(() => {
   }
 
   &__mark-text {
+    color: var(--color-text-secondary);
     font-family: var(--font-mono);
     font-size: 11px;
-    font-weight: 700;
-    color: var(--color-text-secondary);
-    opacity: 0.95;
-    text-align: right;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
     line-height: 1;
+    text-align: right;
     white-space: nowrap;
   }
 
   &--strip &__mark-text {
-    font-size: 13px;
     color: var(--color-text-primary);
+    font-size: 12px;
   }
 
   &__mark-tick {
     display: block;
-    width: 6px;
+    width: 5px;
     height: 1px;
-    background: var(--color-border);
+    background: var(--color-border-strong);
     flex-shrink: 0;
   }
 
-  // Stereo bar pair — fixed gap between L and R channels
+  // Stereo signal pair has its own fixed -60..0 dBFS travel. It is visibly
+  // separated from the +40..-60 gain control so neither rail implies the
+  // other's numeric range.
   &__bars {
     grid-column: 1;
     grid-row: 2;
     display: flex;
     flex-direction: row;
-    gap: 2px;
+    position: relative;
+    width: 26px;
     min-height: 0;
-    justify-content: center;
     padding: 10px 0;
     box-sizing: border-box;
-    width: 26px;
+    gap: 2px;
+    justify-content: center;
     justify-self: start;
   }
 
-  // Dedicated GR lane between signal and shared scale/fader.
+  &--strip &__bars::before {
+    content: 'LVL';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 7px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    line-height: 1;
+    text-align: center;
+  }
+
+  // Each master channel owns its limiter. This lane shows the larger absolute
+  // reduction, growing down from zero; it is not a stereo-linked envelope.
   &__gr-lane {
     grid-column: 2;
     grid-row: 2;
@@ -490,11 +524,23 @@ const shortTermLabel = computed(() => {
     margin: 10px 0;
   }
 
+  &--strip &__gr-lane::before {
+    content: 'GR';
+    position: absolute;
+    top: -9px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 7px;
+    font-weight: 600;
+    line-height: 1;
+  }
+
   &__gr-track,
   &__gr-fill {
     position: absolute;
-    left: 0;
-    right: 0;
+    inset-inline: 0;
     top: 0;
     bottom: 0;
     border-radius: 1px;
@@ -503,48 +549,14 @@ const shortTermLabel = computed(() => {
 
   &__gr-track {
     border: 1px solid var(--color-border);
-    background:
-      repeating-linear-gradient(
-        to bottom,
-        rgba(255, 255, 255, 0.06) 0 1px,
-        transparent 1px 6px
-      ),
-      color-mix(in srgb, var(--color-background) 84%, black);
-    box-shadow: inset 0 0 3px rgba(0, 0, 0, 0.8);
-
-    &::before {
-      content: '';
-      position: absolute;
-      top: -1px;
-      left: -2px;
-      right: -2px;
-      height: 2px;
-      border-radius: 1px;
-      background: #ffc400;
-      opacity: 0.72;
-    }
+    background: var(--color-control);
   }
 
   &__gr-fill {
     z-index: 1;
-    background: color-mix(in srgb, #ffc400 76%, #715c18);
-    box-shadow: 0 0 3px rgba(255, 196, 0, 0.24);
     bottom: auto;
-    transition: height 35ms linear;
-  }
-
-  &--strip &__gr-track {
-    background: var(--color-control);
-    box-shadow: none;
-  }
-
-  &--strip &__gr-track::before {
-    content: none;
-  }
-
-  &--strip &__gr-fill {
     background: var(--color-warning);
-    box-shadow: none;
+    transition: height 35ms linear;
   }
 
   &__chan {
@@ -553,21 +565,20 @@ const shortTermLabel = computed(() => {
     flex-shrink: 0;
   }
 
-  // Clip latch dot above each bar. Dim until a raw sample crosses the clip
-  // threshold; click to acknowledge/reset.
+  // Clip lamps remain independent buttons: raw max latches each side and the
+  // operator acknowledges it by activating the corresponding lamp.
   &__clip {
     appearance: none;
+    position: relative;
     width: 11px;
     height: 5px;
     padding: 0;
-    border: 0;
+    border: 1px solid var(--color-border-strong);
     border-radius: 1px;
-    background: var(--color-border);
+    background: var(--color-control);
     cursor: pointer;
     flex-shrink: 0;
-    position: relative;
 
-    // Preserve the compact lamp while giving pointer users a practical target.
     &::before {
       content: '';
       position: absolute;
@@ -575,12 +586,12 @@ const shortTermLabel = computed(() => {
     }
 
     &.is-clipped {
-      background: #ff1744;
-      box-shadow: 0 0 4px rgba(255, 23, 68, 0.8);
+      border-color: var(--color-danger);
+      background: var(--color-danger);
     }
 
     &:focus-visible {
-      outline: 2px solid var(--color-text-primary);
+      outline: 2px solid var(--color-focus-ring);
       outline-offset: 2px;
     }
   }
@@ -592,79 +603,59 @@ const shortTermLabel = computed(() => {
     min-height: 0;
   }
 
-  // Segmented broadcast-style signal bar with a fixed level-zone ladder.
+  // Matte segmented signal bar. The engine owns ballistics; CSS only bridges
+  // one broadcast frame so the display does not shimmer between updates.
   &__track {
+    position: relative;
     width: 11px;
     height: 100%;
-    flex-shrink: 0;
-    background:
-      linear-gradient(
-        to bottom,
-        rgba(255, 255, 255, 0.05),
-        rgba(0, 0, 0, 0.18)
-      ),
-      color-mix(in srgb, var(--color-background) 84%, black);
-    border: 1px solid var(--color-border);
-    border-radius: 2px;
-    position: relative;
     overflow: hidden;
-    box-shadow: inset 0 0 3px rgba(0, 0, 0, 0.8);
+    border: 1px solid var(--color-border);
+    border-radius: 1px;
+    background: var(--color-control);
+    flex-shrink: 0;
   }
 
   &__track::after {
     content: '';
     position: absolute;
     inset: 0;
-    background:
-      repeating-linear-gradient(
-        to top,
-        rgba(255, 255, 255, 0.06) 0 1px,
-        transparent 1px 6px
-      );
+    background: repeating-linear-gradient(
+      to top,
+      transparent 0 4px,
+      var(--color-control) 4px 6px
+    );
     pointer-events: none;
-  }
-
-  &--strip &__track {
-    background: var(--color-control);
-    box-shadow: none;
   }
 
   &__rms-fill {
     position: absolute;
     inset: 0;
+    opacity: 0.72;
     transition: clip-path 35ms linear;
-    -webkit-mask: repeating-linear-gradient(to top, #000 0 4px, transparent 4px 6px);
-    mask: repeating-linear-gradient(to top, #000 0 4px, transparent 4px 6px);
-    opacity: 0.58;
   }
 
-  // DAW-style bright edge over a dimmer body so peaks read instantly.
+  // Peak and hold are precise reference lines, not glowing decoration.
   &__peak-cap {
     position: absolute;
     left: 1px;
     right: 1px;
-    height: 4px;
+    height: 2px;
     z-index: 2;
-    border-radius: 1px;
+    border-radius: 0;
     background: currentColor;
-    box-shadow:
-      0 0 4px color-mix(in srgb, currentColor 60%, white),
-      0 0 1px rgba(255, 255, 255, 0.7);
     pointer-events: none;
     transform: translateY(50%);
     transition: bottom 35ms linear, color 35ms linear;
   }
 
-  // Peak-hold line — no transition: it snaps to new peaks and drops on
-  // release, like a hardware meter's hold segment.
   &__hold {
     position: absolute;
     left: 0;
     right: 0;
-    height: 2px;
+    height: 1px;
     z-index: 3;
     background: var(--color-text-primary);
-    box-shadow: 0 0 3px rgba(255, 255, 255, 0.55);
     pointer-events: none;
   }
 
@@ -674,14 +665,14 @@ const shortTermLabel = computed(() => {
     align-self: center;
     justify-self: stretch;
     box-sizing: border-box;
-    padding-right: 42px;
-    font-family: var(--font-mono);
-    font-size: 13px;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
+    padding-right: 64px;
     color: var(--color-text-primary);
-    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
     line-height: 1;
+    text-align: center;
     white-space: nowrap;
   }
 

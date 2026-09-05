@@ -46,8 +46,8 @@ function collectAudioEntries(root) {
 
 function loadProject(inputPath) {
   const requestedPath = path.resolve(inputPath);
-  if (path.extname(requestedPath).toLowerCase() !== '.liveplay') {
-    throw new Error(`${requestedPath}: expected a .liveplay project`);
+  if (path.extname(requestedPath).toLowerCase() !== '.dwcue') {
+    throw new Error(`${requestedPath}: expected a .dwcue show`);
   }
   const filePath = fs.realpathSync(requestedPath);
   if (!fs.statSync(filePath).isFile()) {
@@ -391,8 +391,8 @@ function selfCheck() {
       waveformPath: 'waveforms/missing.json',
     };
 
-    const activePath = path.join(directory, 'active.liveplay');
-    const detachedPath = path.join(directory, 'detached.liveplay');
+    const activePath = path.join(directory, 'active.DWCUE');
+    const detachedPath = path.join(directory, 'detached.dwcue');
     const activeProject = {
       settings: {
         outputTargetLevels: { loudnessTargetLufs: targetDb },
@@ -402,6 +402,19 @@ function selfCheck() {
     const detachedProject = { items: [detachedCue] };
     fs.writeFileSync(activePath, JSON.stringify(activeProject, null, 2));
     fs.writeFileSync(detachedPath, JSON.stringify(detachedProject, null, 2));
+    const legacyPath = path.join(directory, 'legacy.liveplay');
+    const legacyRaw = JSON.stringify(activeProject, null, 2);
+    fs.writeFileSync(legacyPath, legacyRaw);
+    assert.throws(
+      () => loadProject(legacyPath),
+      /expected a \.dwcue show/,
+      'legacy .liveplay input must be rejected',
+    );
+    assert.equal(
+      fs.readFileSync(legacyPath, 'utf8'),
+      legacyRaw,
+      'rejecting a legacy show must not mutate it',
+    );
 
     const projects = [loadProject(activePath), loadProject(detachedPath)];
     const repairs = planRepairs(projects);
@@ -446,7 +459,7 @@ function selfCheck() {
 function usage() {
   console.log(
     'Usage: node scripts/repair-generated-auto-gain.js [--apply] ' +
-    '<project.liveplay> [more.liveplay ...]\n' +
+    '<show.dwcue> [more.dwcue ...]\n' +
     '       node scripts/repair-generated-auto-gain.js --self-check',
   );
 }

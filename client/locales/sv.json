@@ -38,6 +38,7 @@
     "title": "DonWells Cue",
     "subtitle": "Ljuduppspelning för liveevenemang",
     "newProject": "Nytt projekt",
+    "newShow": "Ny föreställning",
     "openProject": "Öppna projekt",
     "modeTitle": "Välj serverläge",
     "modeSubtitle": "Var ska DonWells Cue köra ljudmotorn?",
@@ -67,6 +68,11 @@
     "showNetworkUi": "Connect to a server on the network…"
   },
   "project": {
+    "newShow": "Ny föreställning",
+    "showName": "Föreställningens namn",
+    "location": "Plats",
+    "chooseLocation": "Välj…",
+    "createShow": "Skapa föreställning",
     "enterName": "Ange projektnamn",
     "placeholder": "Mitt projekt",
     "cancel": "Avbryt",
@@ -269,7 +275,7 @@
     "restartTitle": "Starta om server"
   },
   "serverSettings": {
-    "title": "DW Cue Server",
+    "title": "DonWells Cue Server",
     "connected": "● Ansluten",
     "reconnecting": "● Återansluter…",
     "disconnected": "● Frånkopplad",
@@ -430,6 +436,7 @@
   },
   "status": {
     "playing": "Spelas",
+    "paused": "Pausad",
     "upNext": "Nästa",
     "previewing": "Förhandsgranskning"
   },
@@ -587,6 +594,11 @@
   },
   "importAudio": {
     "title": "Importera media",
+    "localIntro": "Välj ljud- eller videofiler från den här datorn.",
+    "advanced": "Avancerade alternativ",
+    "unsupportedFileType": "Filtypen stöds inte",
+    "verifyFileType": "Filtypen kommer att verifieras",
+    "emptyServerFolder": "Det finns inga mediefiler eller undermappar på den här platsen.",
     "tabServer": "På servern",
     "tabUpload": "Ladda upp från den här datorn",
     "serverHint": "Filer som redan finns på servern. Dubbelklicka på en mapp för att öppna den; klicka på filer för att markera dem (Skift eller Ctrl/Cmd-klick för flera) och klicka sedan på ”Importera markerade”.",
@@ -686,7 +698,7 @@
     "resumeHint": "Fortsätt sessionen öppnar det här projektet på servern igen så att du kan fortsätta.",
     "startFreshHint": "Börja om stänger det och återgår till välkomstskärmen.",
     "projectChangedTitle": "Server project changed",
-    "projectChangedMessage": "While this client was offline, the server opened “{name}”. Your local project has unsaved changes, so nothing was replaced automatically.",
+    "projectChangedMessage": "Serverprojektet ”{name}” har ändrats. Ditt lokala projekt har osparade ändringar, så ingenting ersattes automatiskt.",
     "useServerProject": "Use server project",
     "keepLocalProject": "Restore local project",
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
@@ -773,7 +785,7 @@
     "chooseDestination": "Choose Folder",
     "changeDestination": "Change",
     "destinationFailed": "Could not choose the destination folder.",
-    "createsDescription": "Creates one child folder for the collection. Its media files are used directly by both the reusable .liveplay template and the current project — no second copy.",
+    "createsDescription": "Creates one child folder for the collection. Its media files are used directly by both the reusable .dwcue template and the current project — no second copy.",
     "cueSetup": "Cue setup",
     "settingOn": "On",
     "settingOff": "Off",

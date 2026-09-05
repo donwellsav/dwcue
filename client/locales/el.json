@@ -38,6 +38,7 @@
     "title": "DonWells Cue",
     "subtitle": "Αναπαραγωγή αρχείων ήχου για ζωντανές εκδηλώσεις",
     "newProject": "Νέα Εκδήλωση",
+    "newShow": "Νέα παράσταση",
     "openProject": "Άνοιγμα Εκδήλωσης",
     "modeTitle": "Επιλογή Λειτουργίας Διακομιστή",
     "modeSubtitle": "Πού να εκτελεί το DonWells Cue τον κινητήρα ήχου;",
@@ -67,6 +68,11 @@
     "showNetworkUi": "Connect to a server on the network…"
   },
   "project": {
+    "newShow": "Νέα παράσταση",
+    "showName": "Όνομα παράστασης",
+    "location": "Τοποθεσία",
+    "chooseLocation": "Επιλογή…",
+    "createShow": "Δημιουργία παράστασης",
     "enterName": "Εισάγετε το Όνομα της Εκδήλωσης",
     "placeholder": "Η Εκδήλωσή Μου",
     "cancel": "Ακύρωση",
@@ -430,6 +436,7 @@
   },
   "status": {
     "playing": "Σε αναπαραγωγή",
+    "paused": "Σε παύση",
     "upNext": "Επόμενο",
     "previewing": "Προεπισκόπηση"
   },
@@ -587,6 +594,11 @@
   },
   "importAudio": {
     "title": "Εισαγωγή πολυμέσων",
+    "localIntro": "Επιλέξτε αρχεία ήχου ή βίντεο από αυτόν τον υπολογιστή.",
+    "advanced": "Σύνθετες επιλογές",
+    "unsupportedFileType": "Μη υποστηριζόμενος τύπος αρχείου",
+    "verifyFileType": "Ο τύπος αρχείου θα επαληθευτεί",
+    "emptyServerFolder": "Δεν υπάρχουν αρχεία πολυμέσων ή υποφάκελοι σε αυτήν την τοποθεσία.",
     "tabServer": "Στον διακομιστή",
     "tabUpload": "Μεταφόρτωση από αυτόν τον υπολογιστή",
     "serverHint": "Αρχεία που βρίσκονται ήδη στον διακομιστή. Κάντε διπλό κλικ σε έναν φάκελο για να τον ανοίξετε· κάντε κλικ στα αρχεία για να τα επιλέξετε (Shift ή Ctrl/Cmd-κλικ για πολλά) και μετά «Εισαγωγή επιλεγμένων».",
@@ -686,7 +698,7 @@
     "resumeHint": "Η συνέχιση συνεδρίας ανοίγει ξανά αυτό το έργο στον διακομιστή για να συνεχίσετε.",
     "startFreshHint": "Η νέα αρχή το κλείνει και επιστρέφει στην οθόνη υποδοχής.",
     "projectChangedTitle": "Server project changed",
-    "projectChangedMessage": "While this client was offline, the server opened “{name}”. Your local project has unsaved changes, so nothing was replaced automatically.",
+    "projectChangedMessage": "Το έργο «{name}» στον διακομιστή άλλαξε. Το τοπικό έργο σας έχει μη αποθηκευμένες αλλαγές, επομένως δεν αντικαταστάθηκε τίποτα αυτόματα.",
     "useServerProject": "Use server project",
     "keepLocalProject": "Restore local project",
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
@@ -773,7 +785,7 @@
     "chooseDestination": "Choose Folder",
     "changeDestination": "Change",
     "destinationFailed": "Could not choose the destination folder.",
-    "createsDescription": "Creates one child folder for the collection. Its media files are used directly by both the reusable .liveplay template and the current project — no second copy.",
+    "createsDescription": "Creates one child folder for the collection. Its media files are used directly by both the reusable .dwcue template and the current project — no second copy.",
     "cueSetup": "Cue setup",
     "settingOn": "On",
     "settingOff": "Off",

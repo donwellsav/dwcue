@@ -1,5 +1,5 @@
 <template>
-  <div class="playlist-view" :style="playlistRowStyle">
+  <div class="playlist-view" :class="{ 'show-mode': showMode }" :style="playlistRowStyle">
     <div class="playlist-header workspace-panel-header">
       <div class="workspace-panel-header__leading">
         <slot name="header-leading" />
@@ -98,6 +98,7 @@ import {
 } from '~/utils/audio';
 import { canonicalSpotifyMediaReference } from '~/utils/spotifyImport';
 import { cloneAsPlaylistItem } from '~/utils/oneShots';
+import { projectPathInFolder } from '~/utils/projectFileFormats';
 
 const {
   currentProject,
@@ -586,8 +587,7 @@ const importSpotifyTemplate = async (
 
   const templateName = options.templateFolderPath.split(/[\\/]/).filter(Boolean).pop()
     || options.groupName;
-  const templatePath =
-    `${options.templateFolderPath.replace(/[\\/]+$/, '')}/${templateName}.liveplay`;
+  const templatePath = projectPathInFolder(options.templateFolderPath, templateName);
   const settings: ProjectSettings = {
     ...DEFAULT_PROJECT_SETTINGS,
     ...(project.settings?.outputTarget
@@ -1127,11 +1127,18 @@ const handleDrop = async (e: DragEvent) => {
 
 <style scoped>
 .playlist-view {
+  --cue-number-width: 48px;
+  --cue-state-width: 108px;
+  --cue-time-width: 72px;
   width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
   background-color: var(--color-background);
+}
+
+.playlist-view.show-mode {
+  --cue-number-width: 52px;
 }
 
 .playlist-actions {
@@ -1213,8 +1220,9 @@ const handleDrop = async (e: DragEvent) => {
   container-type: inline-size;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   padding-top: var(--workspace-gutter);
+  border-block-end: 1px solid var(--color-border);
 }
 
 .item-list-progress {

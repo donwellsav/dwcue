@@ -55,35 +55,48 @@ function createClient() {
   const defaultAccessToken = (typeof window !== 'undefined' &&
                               window.localStorage?.getItem('liveplay.accessToken')) || '';
   const serverUrl = ref<string>(defaultUrl);
+  // User-entered remote credential. The Electron-managed local credential is
+  // session-only and must never overwrite this localStorage-backed value.
   const accessToken = ref<string>(defaultAccessToken);
+  const managedAccessToken = ref<string | null>(null);
+  const effectiveAccessToken = computed(() =>
+    managedAccessToken.value === null
+      ? accessToken.value
+      : managedAccessToken.value,
+  );
 
   const httpBase = computed(() => serverUrl.value.replace(/\/+$/, ''));
   const wsUrl = computed(() => {
     const base = httpBase.value.replace(/^http/i, 'ws') + '/ws';
-    return accessToken.value
-      ? `${base}?access_token=${encodeURIComponent(accessToken.value)}`
+    return effectiveAccessToken.value
+      ? `${base}?access_token=${encodeURIComponent(effectiveAccessToken.value)}`
       : base;
   });
 
-  function setServerUrl(url: string) {
+  function configureManagedConnection(url: string, token: string) {
+    const next = token.trim();
+    if (next && !/^[0-9a-f]{64}$/.test(next)) {
+      throw new Error('Managed server returned an invalid access token');
+    }
     serverUrl.value = url;
+    managedAccessToken.value = next;
     if (typeof window !== 'undefined') {
       window.localStorage?.setItem('liveplay.serverUrl', url);
     }
-    // URL change → treat as a brand-new session. Force re-fetch on next
-    // onopen by clearing the first-connect guard.
     hasEverConnected = false;
     disconnect();
     connect();
   }
 
-  function setAccessToken(token: string) {
-    const next = token.trim();
-    if (next === accessToken.value) return;
-    accessToken.value = next;
+  function configureRemoteConnection(url: string, token: string) {
+    serverUrl.value = url;
+    accessToken.value = token.trim();
+    managedAccessToken.value = null;
     if (typeof window !== 'undefined') {
+      window.localStorage?.setItem('liveplay.serverUrl', url);
       window.localStorage?.setItem('liveplay.accessToken', accessToken.value);
     }
+    hasEverConnected = false;
     disconnect();
     connect();
   }
@@ -245,7 +258,7 @@ function createClient() {
     }
     try {
       // eslint-disable-next-line no-console
-      console.log('[liveplay] connecting to', wsUrl.value);
+      console.log('[liveplay] connecting to', httpBase.value.replace(/^http/i, 'ws') + '/ws');
       ws = new WebSocket(wsUrl.value);
     } catch (e) {
       lastError.value = String(e);
@@ -466,6 +479,10 @@ function createClient() {
   // ---- Transport (WS — low-latency) ---------------------------------
   function play(cue: CueId) { return wsSend({ type: 'play', cue_id: cue }, true); }
   function stop(cue: CueId) { return wsSend({ type: 'stop', cue_id: cue }, true); }
+  function go(): Promise<boolean> { return wsSend({ type: 'go' }, true); }
+  function cueToContinue(itemUuid: string): Promise<boolean> {
+    return wsSend({ type: 'cue_to_continue', item_uuid: itemUuid }, true);
+  }
   // Omit fadeMs to let the server apply the project-wide Stop All fade
   // (settings.stopAllFadeMs, default 1000 ms). Pass a number (incl. 0 for an
   // instant panic) to override it for this call.
@@ -492,7 +509,9 @@ function createClient() {
       if (init?.body != null && !headers.has('Content-Type')) {
         headers.set('Content-Type', 'application/json');
       }
-      if (accessToken.value) headers.set('Authorization', `Bearer ${accessToken.value}`);
+      if (effectiveAccessToken.value) {
+        headers.set('Authorization', `Bearer ${effectiveAccessToken.value}`);
+      }
       res = await fetch(url, {
         ...init,
         headers,
@@ -578,11 +597,17 @@ function createClient() {
       body: JSON.stringify({ path }),
     }).then(p => { fetchCues(); fetchMixerChannels(); return p; });
   }
-  async function loadProjectFromDocument(document: any) {
-    return rest<any>('/api/project/load', {
+  async function importLegacyProjectFromPath(path: string, destinationPath?: string) {
+    const body: { path: string; destinationPath?: string } = { path };
+    if (destinationPath) body.destinationPath = destinationPath;
+    return rest<any>('/api/project/import-legacy', {
       method: 'POST',
-      body: JSON.stringify({ document }),
-    }).then(p => { fetchCues(); fetchMixerChannels(); return p; });
+      body: JSON.stringify(body),
+    }).then(project => {
+      fetchCues();
+      fetchMixerChannels();
+      return project;
+    });
   }
   async function saveProjectTo(path?: string, document?: any, signal?: AbortSignal) {
     // Authoritative-save: when the caller provides the latest document, send
@@ -644,7 +669,7 @@ function createClient() {
     }
   }
 
-  // Package a project folder server-side into a .lpa archive.
+  // Package a project folder server-side into a canonical .dwcuepack archive.
   //  * outputPath set → archive written there on the server; no download token.
   //  * outputPath empty → archive staged in server temp dir; response carries
   //    a one-shot download token streamed directly to a local file.
@@ -676,13 +701,13 @@ function createClient() {
       baseUrl: httpBase.value,
       token,
       destination,
-      accessToken: accessToken.value,
+      accessToken: effectiveAccessToken.value,
     });
     if (!result.success) throw new Error(result.error || 'download failed');
   }
 
-  // Upload a .lpa archive from the client and have the server extract it
-  // into `extractPath` (server-side absolute path).
+  // Upload a .dwcuepack or legacy .lpa archive and have the server extract it
+  // into the server-side absolute extractPath.
   async function importProjectArchiveUpload(file: File | Blob,
                                             extractPath: string,
                                             filename?: string) {
@@ -690,7 +715,7 @@ function createClient() {
       extractPath: string;
       projectFiles: string[];
     }>(file.size, {
-      filename: filename ?? (file as File).name ?? 'import.lpa',
+      filename: filename ?? (file as File).name ?? 'import.dwcuepack',
       purpose: 'project_import',
       extract_path: extractPath,
     }, (offset, length) => file.slice(offset, offset + length),
@@ -714,7 +739,7 @@ function createClient() {
       extractPath: string;
       projectFiles: string[];
     }>(info.size, {
-      filename: filename ?? info.name ?? 'import.lpa',
+      filename: filename ?? info.name ?? 'import.dwcuepack',
       purpose: 'project_import',
       extract_path: extractPath,
     }, async (offset, length) => {
@@ -726,8 +751,8 @@ function createClient() {
     }, 60 * 60 * 1000);
   }
 
-  // Have the server extract a .lpa archive that already exists on its
-  // filesystem (chosen via the server file browser).
+  // Have the server extract a canonical or legacy archive that already exists
+  // on its filesystem (chosen via the server file browser).
   async function importProjectArchiveFromServer(archivePath: string,
                                                 extractPath: string) {
     return rest<{ extractPath: string; projectFiles: string[] }>(
@@ -978,8 +1003,8 @@ function createClient() {
   }
 
   // ---- Filesystem ---------------------------------------------------
-  // filter:  'audio' (default), 'all', or a comma list of extensions like
-  //          '.liveplay,.lpa'. Server side enforces; client just passes through.
+  // filter: 'audio' (default), 'all', or a comma-separated extension list.
+  // The server enforces it; the client only passes it through.
   async function listServerPath(path: string, filter: string = 'audio') {
     const url = '/api/fs/list?path=' + encodeURIComponent(path) +
                 '&filter=' + encodeURIComponent(filter);
@@ -1219,6 +1244,7 @@ function createClient() {
     // state
     serverUrl,
     accessToken,
+    effectiveAccessToken,
     connected,
     reconnecting,
     connectionLost,
@@ -1230,8 +1256,8 @@ function createClient() {
     meters,
 
     // config
-    setServerUrl,
-    setAccessToken,
+    configureManagedConnection,
+    configureRemoteConnection,
     clearLastError,
 
     // lifecycle
@@ -1248,6 +1274,8 @@ function createClient() {
     // transport
     play,
     stop,
+    go,
+    cueToContinue,
     stopAll,
     setGainDb,
     setFade,
@@ -1291,7 +1319,7 @@ function createClient() {
     fetchProjectItemsPage,
     fetchProjectProgress,
     loadProjectFromPath,
-    loadProjectFromDocument,
+    importLegacyProjectFromPath,
     replaceProjectDocument,
     saveProjectTo,
     repairProject,

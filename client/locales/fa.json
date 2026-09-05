@@ -38,6 +38,7 @@
     "title": "DonWells Cue",
     "subtitle": "پخش سیگنال‌های صوتی برای رویدادهای زنده",
     "newProject": "پروژه جدید",
+    "newShow": "اجرای جدید",
     "openProject": "باز کردن پروژه",
     "modeTitle": "انتخاب حالت سرور",
     "modeSubtitle": "DonWells Cue موتور صوتی را کجا اجرا کند؟",
@@ -67,6 +68,11 @@
     "showNetworkUi": "Connect to a server on the network…"
   },
   "project": {
+    "newShow": "اجرای جدید",
+    "showName": "نام اجرا",
+    "location": "مکان",
+    "chooseLocation": "انتخاب…",
+    "createShow": "ایجاد اجرا",
     "enterName": "نام پروژه را وارد کنید",
     "placeholder": "پروژه من",
     "cancel": "لغو",
@@ -430,6 +436,7 @@
   },
   "status": {
     "playing": "در حال پخش",
+    "paused": "در حالت مکث",
     "upNext": "بعدی",
     "previewing": "پیش‌نمایش"
   },
@@ -587,6 +594,11 @@
   },
   "importAudio": {
     "title": "وارد کردن رسانه",
+    "localIntro": "فایل‌های صوتی یا ویدیویی را از این رایانه انتخاب کنید.",
+    "advanced": "گزینه‌های پیشرفته",
+    "unsupportedFileType": "نوع فایل پشتیبانی نمی‌شود",
+    "verifyFileType": "نوع فایل بررسی خواهد شد",
+    "emptyServerFolder": "هیچ فایل رسانه‌ای یا زیرپوشه‌ای در این مکان وجود ندارد.",
     "tabServer": "روی سرور",
     "tabUpload": "آپلود از این رایانه",
     "serverHint": "فایل‌هایی که از قبل روی سرور هستند. برای باز کردن یک پوشه روی آن دوبار کلیک کنید؛ برای انتخاب فایل‌ها روی آن‌ها کلیک کنید (برای انتخاب چندتایی Shift یا Ctrl/Cmd را نگه دارید)، سپس «وارد کردن موارد انتخاب‌شده» را بزنید.",
@@ -686,7 +698,7 @@
     "resumeHint": "«ادامه نشست» این پروژه را دوباره روی سرور باز می‌کند تا بتوانید کار را ادامه دهید.",
     "startFreshHint": "«شروع تازه» آن را می‌بندد و به صفحه خوش‌آمدگویی بازمی‌گردد.",
     "projectChangedTitle": "Server project changed",
-    "projectChangedMessage": "While this client was offline, the server opened “{name}”. Your local project has unsaved changes, so nothing was replaced automatically.",
+    "projectChangedMessage": "پروژهٔ «{name}» روی سرور تغییر کرده است. پروژهٔ محلی شما تغییرات ذخیره‌نشده دارد، بنابراین هیچ‌چیز به‌طور خودکار جایگزین نشد.",
     "useServerProject": "Use server project",
     "keepLocalProject": "Restore local project",
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
@@ -773,7 +785,7 @@
     "chooseDestination": "Choose Folder",
     "changeDestination": "Change",
     "destinationFailed": "Could not choose the destination folder.",
-    "createsDescription": "Creates one child folder for the collection. Its media files are used directly by both the reusable .liveplay template and the current project — no second copy.",
+    "createsDescription": "Creates one child folder for the collection. Its media files are used directly by both the reusable .dwcue template and the current project — no second copy.",
     "cueSetup": "Cue setup",
     "settingOn": "On",
     "settingOff": "Off",

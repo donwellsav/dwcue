@@ -1,4 +1,5 @@
 #include "liveplay/core/backup_manager.hpp"
+#include "liveplay/core/project_file.hpp"
 #include "liveplay/logger.hpp"
 
 #include <algorithm>
@@ -69,7 +70,8 @@ void BackupManager::loop() {
 
 void BackupManager::do_backup() {
     const fs::path src = project_.project_file_path();
-    if (src.empty() || !fs::exists(src)) return;
+    if (src.empty() || !project_file::is_native_project(src) ||
+        !fs::exists(src)) return;
 
     const fs::path backup_dir = src.parent_path() / "backups";
     std::error_code ec;
@@ -99,7 +101,7 @@ void BackupManager::do_backup() {
     // project name keeps its native encoding. Going through a narrow std::string
     // here would throw std::system_error for names outside the active code page.
     fs::path dst = backup_dir / src.stem();
-    dst += "_backup_" + timestamp + ".liveplay";
+    dst += "_backup_" + timestamp + ".dwcue";
 
     // Prune oldest backups if we're at the cap.
     {
@@ -107,7 +109,7 @@ void BackupManager::do_backup() {
         for (const auto& entry : fs::directory_iterator(backup_dir, ec)) {
             if (!ec && entry.is_regular_file()) {
                 const auto& p = entry.path();
-                if (p.extension() == ".liveplay") existing.push_back(p);
+                if (project_file::is_native_project(p)) existing.push_back(p);
             }
         }
         std::sort(existing.begin(), existing.end());  // lexicographic = chronological

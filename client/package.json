@@ -1,6 +1,6 @@
 {
   "name": "donwells-cue",
-  "version": "2.6.12",
+  "version": "2.6.13",
   "description": "Audio cue playback application for live events",
   "homepage": "https://github.com/donwellsav/dwcue",
   "repository": {
@@ -20,6 +20,9 @@
     "test:one-shots": "nuxt prepare && vite-node tests/oneShots.test.mts",
     "test:youtube-import": "nuxt prepare && vite-node tests/youtubeImport.test.mts",
     "test:video-output": "node --test tests/videoOutputShortcuts.test.cjs",
+    "test:playback-safety": "nuxt prepare && vite-node tests/projectIdentity.test.mts && vite-node tests/acknowledgedAction.test.mts",
+    "test:local-auth": "nuxt prepare && vite-node tests/liveplayAuth.test.mts",
+    "test:file-formats": "node --check electron/project-file-formats.js && node --check electron/main.js && node --check electron/preload.js && vite-node tests/projectFileFormats.test.mts",
     "preview": "nuxt preview",
     "typecheck": "nuxi typecheck"
   },
@@ -77,16 +80,18 @@
     ],
     "fileAssociations": [
       {
-        "ext": "liveplay",
-        "name": "DW Cue Project",
-        "description": "DW Cue Project File",
+        "ext": "dwcue",
+        "name": "DonWells Cue Show",
+        "description": "DonWells Cue Show",
+        "mimeType": "application/vnd.donwells.cue.show+json",
         "role": "Editor",
         "icon": "assets/icons/4092w/liveplay-document@4092px.png"
       },
       {
-        "ext": "lpa",
-        "name": "DW Cue Archive",
-        "description": "DW Cue Project Archive",
+        "ext": "dwcuepack",
+        "name": "DonWells Cue Show Archive",
+        "description": "DonWells Cue Show Archive",
+        "mimeType": "application/vnd.donwells.cue.show-archive+zip",
         "role": "Editor",
         "icon": "assets/icons/4092w/liveplay-archive@4092.png"
       }

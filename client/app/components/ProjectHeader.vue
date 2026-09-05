@@ -42,6 +42,7 @@
       <Btn :text="t('controls.shortcutBtn')" @click="showShortcutsBar = !showShortcutsBar" />
       <Btn
         :text="t('settings.tabVideoOutput')"
+        symbol="video-output"
         :class="{ 'video-toggle--active': videoOutputOpen }"
         @click="toggleVideoOutput"
       />
@@ -93,16 +94,16 @@
            it's permanent header clutter that never does anything. -->
       <div class="clock-pair">
         <VideoConfidenceChip :open="videoOutputOpen" />
-        <div class="digital-clock clock--large" :class="primaryActiveCue ? 'clock--active' : 'clock--inactive'">
+        <div class="digital-clock clock--large clock--time-left" :class="primaryActiveCue ? 'clock--active' : 'clock--inactive'">
           <span class="clock-label">{{ t('project.timeLeft') }}</span>
           <span class="clock-value" :style="{ color: timeLeftColor ?? undefined }">{{ timeLeft }}</span>
         </div>
-        <div class="digital-clock clock--large clock--active">
+        <div class="digital-clock clock--large clock--wall clock--active">
           <span class="clock-label">{{ t('project.clock') }}</span>
           <span class="clock-value">{{ currentTime }}</span>
         </div>
-        <div v-if="hasLtcDevice" class="digital-clock" :class="ltcTimecode ? 'clock--active' : 'clock--inactive'">
-          <span class="clock-label">LTC</span>
+        <div v-if="hasLtcDevice" class="digital-clock clock--ltc" :class="ltcTimecode ? 'clock--active' : 'clock--inactive'">
+          <span class="clock-label"><CueSymbol name="ltc" /> LTC</span>
           <span class="clock-value">{{ ltcTimecode ?? '--:--:--:--' }}</span>
         </div>
       </div>
@@ -457,7 +458,6 @@ onMounted(() => {
   padding: var(--spacing-xs) var(--workspace-gutter);
   background-color: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
-  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--color-border) 35%, transparent);
 }
 
 .header-left {
@@ -513,7 +513,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   flex: 0 0 auto;
-  gap: var(--spacing-sm);
+  gap: 6px;
 }
 
 /* Settings and shortcuts are useful, but the live clocks and transport own
@@ -606,11 +606,12 @@ onMounted(() => {
   transform: translateX(14px);
 }
 
-/* Two clocks side-by-side, never re-arrange */
+/* Operational clocks stay side-by-side in one stable, tabular strip. */
 .clock-pair {
   display: flex;
-  gap: var(--spacing-xs);
+  gap: 0;
   align-items: stretch;
+  min-width: 0;
   padding-left: var(--spacing-sm);
   border-left: 1px solid var(--color-border);
 }
@@ -620,23 +621,24 @@ onMounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 4px var(--spacing-sm);
-  border: 1px solid var(--color-border);
-  border-radius: var(--control-radius);
-  background-color: var(--color-control);
-  transition: color var(--transition-base), border-color var(--transition-base);
-  min-width: 108px;
-  height: 44px;
-  box-shadow:
-    inset 0 1px 3px rgba(0, 0, 0, 0.18),
-    0 1px 0 color-mix(in srgb, var(--color-text-primary) 5%, transparent);
+  padding: 3px 10px;
+  border: 0;
+  border-left: 1px solid var(--color-border);
+  border-radius: 0;
+  background-color: transparent;
+  transition: color var(--transition-base);
+  min-width: 104px;
+  height: 40px;
 }
 
 .digital-clock.clock--large {
-  width: var(--output-strip-width);
-  min-width: var(--output-strip-width);
+  width: clamp(148px, 13vw, var(--output-strip-width));
+  min-width: clamp(148px, 13vw, var(--output-strip-width));
   box-sizing: border-box;
-  padding: 5px 10px;
+}
+
+.clock--ltc {
+  width: clamp(104px, 9vw, 120px);
 }
 
 .clock--active {
@@ -644,22 +646,29 @@ onMounted(() => {
 }
 
 .clock--active .clock-value {
-  color: var(--color-accent);
+  color: var(--color-text-primary);
+}
+
+.clock--time-left.clock--active .clock-value {
+  color: var(--state-playing);
 }
 
 .clock--inactive {
   color: var(--color-text-secondary);
-  opacity: 0.5;
+  opacity: 0.52;
 }
 
 .clock-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-family: var(--font-mono);
   font-size: 8px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   line-height: 1;
-  margin-bottom: 2px;
+  margin-bottom: 3px;
 }
 
 .clock-value {
@@ -669,10 +678,11 @@ onMounted(() => {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
   line-height: 1;
+  white-space: nowrap;
 }
 
 .clock--large .clock-label {
-  font-size: 10px;
+  font-size: 9px;
 }
 
 .clock--large .clock-value {
@@ -681,46 +691,93 @@ onMounted(() => {
 
 .silence-warning {
   position: absolute;
-  /* left + transform are set inline (adaptive placement, see script).
-     Vertical centring comes from the flex container's static position. */
   padding: var(--spacing-xs) var(--spacing-lg);
+  border: 2px solid var(--state-up-next);
   border-radius: var(--control-radius);
+  background-color: var(--color-surface-raised);
   font-weight: 700;
-  font-size: 16px;
-  color: #000;
+  font-size: 14px;
+  color: var(--color-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   z-index: 10;
 }
 
-/* Left-aligned fallback sits in the title's place — tighten the horizontal
-   padding so it reads like a header label rather than a centred banner. */
 .silence-warning--left {
   padding-left: var(--spacing-md);
   padding-right: var(--spacing-md);
 }
 
-/* In the left-aligned fallback the project title is hidden but keeps its
-   layout box, so placement geometry stays stable (no flip-flopping). */
 .project-name--hidden {
   visibility: hidden;
 }
 
-.silence-warning.warning-yellow  { background-color: #fbbf24; }
-.silence-warning.flash-slow      { background-color: #fbbf24; animation: flash-slow   2s   ease-in-out infinite; }
-.silence-warning.flash-medium    { background-color: #f56d1f; animation: flash-medium 1s   ease-in-out infinite; }
-.silence-warning.flash-fast      { background-color: #dc2626; color: #fff; animation: flash-fast 0.5s ease-in-out infinite; }
+.silence-warning.warning-yellow,
+.silence-warning.flash-slow {
+  border-color: var(--state-up-next);
+}
 
-@keyframes flash-slow   { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
-@keyframes flash-medium { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
-@keyframes flash-fast   { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
+.silence-warning.flash-medium {
+  border-color: rgb(245, 109, 31);
+}
 
-@media (prefers-reduced-motion: reduce) {
-  .silence-warning {
-    animation: none !important;
-    opacity: 1;
+.silence-warning.flash-fast {
+  border-color: var(--color-danger);
+  color: var(--color-text-primary);
+}
+
+@media (max-width: 1320px) {
+  .project-header {
+    padding-inline: 6px;
+  }
+
+  .header-right {
+    gap: var(--spacing-xs);
+  }
+
+  .header-right :deep(.btn),
+  .autosave-toggle {
+    padding-inline: 6px;
+  }
+
+  .digital-clock.clock--large {
+    width: 150px;
+    min-width: 150px;
+  }
+
+  .clock--large .clock-value {
+    font-size: 22px;
+  }
+}
+
+@media (max-width: 1220px) {
+  .header-logo {
+    width: 26px;
+    height: 26px;
+  }
+
+  .header-left,
+  .header-right {
+    gap: 3px;
+  }
+
+  .autosave-toggle {
+    gap: 4px;
+  }
+
+  .digital-clock.clock--large {
+    width: 140px;
+    min-width: 140px;
+  }
+
+  .digital-clock {
+    min-width: 100px;
+    padding-inline: 7px;
+  }
+
+  .clock--large .clock-value {
+    font-size: 20px;
   }
 }
 </style>

@@ -38,6 +38,7 @@
     "title": "DonWells Cue",
     "subtitle": "লাইভ ইভেন্টের জন্য অডিও প্লেব্যাক",
     "newProject": "নতুন প্রকল্প",
+    "newShow": "নতুন শো",
     "openProject": "প্রকল্প খুলুন",
     "modeTitle": "সার্ভার মোড বেছে নিন",
     "modeSubtitle": "DonWells Cue কোথায় অডিও ইঞ্জিন চালাবে?",
@@ -67,6 +68,11 @@
     "showNetworkUi": "Connect to a server on the network…"
   },
   "project": {
+    "newShow": "নতুন শো",
+    "showName": "শোর নাম",
+    "location": "অবস্থান",
+    "chooseLocation": "বেছে নিন…",
+    "createShow": "শো তৈরি করুন",
     "enterName": "প্রকল্পের নাম লিখুন",
     "placeholder": "আমার প্রকল্প",
     "cancel": "বাতিল করুন",
@@ -430,6 +436,7 @@
   },
   "status": {
     "playing": "চলছে",
+    "paused": "বিরতিতে",
     "upNext": "পরবর্তী",
     "previewing": "পূর্বশ্রবণ"
   },
@@ -587,6 +594,11 @@
   },
   "importAudio": {
     "title": "মিডিয়া আমদানি",
+    "localIntro": "এই কম্পিউটার থেকে অডিও বা ভিডিও ফাইল বেছে নিন।",
+    "advanced": "উন্নত বিকল্প",
+    "unsupportedFileType": "অসমর্থিত ফাইলের ধরন",
+    "verifyFileType": "ফাইলের ধরন যাচাই করা হবে",
+    "emptyServerFolder": "এই স্থানে কোনো মিডিয়া ফাইল বা সাবফোল্ডার নেই।",
     "tabServer": "সার্ভারে",
     "tabUpload": "এই কম্পিউটার থেকে আপলোড",
     "serverHint": "সার্ভারে ইতিমধ্যেই থাকা ফাইল। খুলতে একটি ফোল্ডারে ডবল-ক্লিক করুন; নির্বাচন করতে ফাইলে ক্লিক করুন (একাধিকের জন্য Shift বা Ctrl/Cmd-ক্লিক), তারপর \"নির্বাচিত আমদানি করুন\"।",
@@ -686,7 +698,7 @@
     "resumeHint": "‘সেশন চালিয়ে যান’ এই প্রকল্পটি সার্ভারে আবার খোলে যাতে আপনি কাজ চালিয়ে যেতে পারেন।",
     "startFreshHint": "‘নতুন করে শুরু করুন’ এটি বন্ধ করে স্বাগত স্ক্রিনে ফিরে যায়।",
     "projectChangedTitle": "Server project changed",
-    "projectChangedMessage": "While this client was offline, the server opened “{name}”. Your local project has unsaved changes, so nothing was replaced automatically.",
+    "projectChangedMessage": "সার্ভারের “{name}” প্রজেক্টটি পরিবর্তিত হয়েছে। আপনার লোকাল প্রজেক্টে সেভ না করা পরিবর্তন রয়েছে, তাই স্বয়ংক্রিয়ভাবে কিছুই প্রতিস্থাপন করা হয়নি।",
     "useServerProject": "Use server project",
     "keepLocalProject": "Restore local project",
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
@@ -773,7 +785,7 @@
     "chooseDestination": "Choose Folder",
     "changeDestination": "Change",
     "destinationFailed": "Could not choose the destination folder.",
-    "createsDescription": "Creates one child folder for the collection. Its media files are used directly by both the reusable .liveplay template and the current project — no second copy.",
+    "createsDescription": "Creates one child folder for the collection. Its media files are used directly by both the reusable .dwcue template and the current project — no second copy.",
     "cueSetup": "Cue setup",
     "settingOn": "On",
     "settingOff": "Off",

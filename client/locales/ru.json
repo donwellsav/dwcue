@@ -38,6 +38,7 @@
     "title": "DonWells Cue",
     "subtitle": "Воспроизведение аудио для живых мероприятий",
     "newProject": "Новый проект",
+    "newShow": "Новое шоу",
     "openProject": "Открыть проект",
     "modeTitle": "Выбор режима сервера",
     "modeSubtitle": "Где DonWells Cue должен запустить аудиодвижок?",
@@ -67,6 +68,11 @@
     "showNetworkUi": "Connect to a server on the network…"
   },
   "project": {
+    "newShow": "Новое шоу",
+    "showName": "Название шоу",
+    "location": "Расположение",
+    "chooseLocation": "Выбрать…",
+    "createShow": "Создать шоу",
     "enterName": "Введите название проекта",
     "placeholder": "Мой проект",
     "cancel": "Отмена",
@@ -430,6 +436,7 @@
   },
   "status": {
     "playing": "Воспроизводится",
+    "paused": "Приостановлено",
     "upNext": "Следующий",
     "previewing": "Предпросмотр"
   },
@@ -587,6 +594,11 @@
   },
   "importAudio": {
     "title": "Импорт медиа",
+    "localIntro": "Выберите аудио- или видеофайлы на этом компьютере.",
+    "advanced": "Дополнительные параметры",
+    "unsupportedFileType": "Неподдерживаемый тип файла",
+    "verifyFileType": "Тип файла будет проверен",
+    "emptyServerFolder": "В этом расположении нет медиафайлов или вложенных папок.",
     "tabServer": "На сервере",
     "tabUpload": "Загрузить с этого компьютера",
     "serverHint": "Файлы уже на сервере. Дважды щёлкните по папке, чтобы открыть её; щёлкайте по файлам, чтобы выбрать их (Shift или Ctrl/Cmd-щелчок для нескольких), затем «Импортировать выбранное».",
@@ -686,7 +698,7 @@
     "resumeHint": "«Продолжить сеанс» снова откроет этот проект на сервере, чтобы вы могли продолжить работу.",
     "startFreshHint": "«Начать заново» закроет его и вернёт к экрану приветствия.",
     "projectChangedTitle": "Server project changed",
-    "projectChangedMessage": "While this client was offline, the server opened “{name}”. Your local project has unsaved changes, so nothing was replaced automatically.",
+    "projectChangedMessage": "Проект «{name}» на сервере изменился. В локальном проекте есть несохранённые изменения, поэтому автоматическая замена не выполнялась.",
     "useServerProject": "Use server project",
     "keepLocalProject": "Restore local project",
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
@@ -773,7 +785,7 @@
     "chooseDestination": "Choose Folder",
     "changeDestination": "Change",
     "destinationFailed": "Could not choose the destination folder.",
-    "createsDescription": "Creates one child folder for the collection. Its media files are used directly by both the reusable .liveplay template and the current project — no second copy.",
+    "createsDescription": "Creates one child folder for the collection. Its media files are used directly by both the reusable .dwcue template and the current project — no second copy.",
     "cueSetup": "Cue setup",
     "settingOn": "On",
     "settingOff": "Off",

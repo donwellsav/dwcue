@@ -3,6 +3,7 @@
     <header class="one-shot-header workspace-panel-header">
       <div class="workspace-panel-header__leading">
         <slot name="header-leading" />
+        <CueSymbol name="one-shots" class="one-shot-header__symbol" aria-hidden="true" />
         <div class="one-shot-header__copy">
           <h2 id="one-shot-title" class="workspace-panel-header__title">{{ t('oneShots.title') }}</h2>
           <span v-if="!showMode" class="one-shot-header__hint">{{ t('oneShots.hint') }}</span>
@@ -150,9 +151,13 @@ const oneShotGridStyle = computed(() => {
   const layout = gridLayout.value;
   const rowPercent = 100 / layout.rows;
   const rowGapOffset = GRID_GAP_PX * (layout.rows - 1) / layout.rows;
+  // Reserve metadata, two scaled title lines, and the transport footer even
+  // when the configured minimum is smaller than the controls can contain.
+  const contentMinHeight = Math.ceil(104 + 35 * oneShotFontScale.value / 100);
+  const minHeight = Math.max(layout.minHeight, contentMinHeight);
   return {
     '--one-shot-columns': String(layout.columns),
-    '--one-shot-row-height': `max(${layout.minHeight}px, calc(${rowPercent}% - ${rowGapOffset}px))`,
+    '--one-shot-row-height': `max(${minHeight}px, calc(${rowPercent}% - ${rowGapOffset}px))`,
   };
 });
 
@@ -407,6 +412,13 @@ onUnmounted(() => {
   background: var(--color-background);
 }
 
+.one-shot-header__symbol {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  color: var(--color-text-primary);
+}
+
 .one-shot-header__copy {
   min-width: 0;
   display: flex;
@@ -432,12 +444,15 @@ onUnmounted(() => {
   min-height: 0;
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(var(--one-shot-columns, 2), minmax(0, 1fr));
+  grid-template-columns: repeat(var(--one-shot-columns, 2), minmax(128px, 1fr));
   grid-auto-rows: var(--one-shot-row-height, 106px);
   align-content: start;
   gap: var(--spacing-sm);
   padding: var(--spacing-sm);
+  overflow-x: auto;
   overflow-y: auto;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-background);
   scrollbar-gutter: stable;
 }
 
@@ -445,11 +460,17 @@ onUnmounted(() => {
   position: relative;
   min-width: 0;
   min-height: var(--one-shot-row-height, 106px);
-  border-radius: var(--radius-md, 8px);
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: var(--border-radius-sm);
+  container-type: inline-size;
 }
 
 .one-shot-slot > :deep(.one-shot-tile) {
+  width: 100%;
+  max-width: 100%;
   height: 100%;
+  min-height: 0;
   box-sizing: border-box;
 }
 .one-shot-slot.is-drag-over {

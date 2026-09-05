@@ -50,7 +50,7 @@
 
         <!-- Bottom bar: selection + filter + action buttons -->
         <footer class="footer">
-          <div class="filename-row">
+          <div v-if="mode === 'file'" class="filename-row">
             <label>File:&nbsp;</label>
             <input class="filename" v-model="filenameDraft" placeholder="(select a file above)" />
           </div>
@@ -69,7 +69,7 @@
             <button class="btn small" @click="cancelNewFolder">Cancel</button>
           </div>
           <div class="filter-row">
-            <select v-model="filter" @change="reload" class="filter">
+            <select v-if="mode === 'file'" v-model="filter" @change="reload" class="filter">
               <option v-if="filterOptions.includes('audio')" value="audio">Audio files</option>
               <option v-for="opt in filterOptions.filter(o => o !== 'audio' && o !== 'all')"
                       :key="opt" :value="opt">{{ filterDisplay(opt) }}</option>
@@ -110,7 +110,7 @@
     mode       : 'file' | 'directory'
                             — pick a file (with extension filter) or a folder
     filter     : string    — initial filter token, e.g. 'audio', 'all',
-                              '.liveplay,.lpa'
+                              '.dwcue,.liveplay', '.dwcuepack,.lpa'
     filterOptions: string[]— filters offered in the dropdown
     startPath  : string    — initial directory (empty = computer root)
     title      : string    — header text shown if you want one
@@ -233,8 +233,11 @@ function formatBytes(n: number): string {
 function filterDisplay(f: string): string {
   if (f === 'all')        return 'All files';
   if (f === 'audio')      return 'Audio files';
-  if (f === '.liveplay')  return 'DonWells Cue projects (.liveplay)';
-  if (f === '.liveplay,.lpa') return 'DonWells Cue projects';
+  if (f === '.dwcue') return 'DonWells Cue Shows (.dwcue)';
+  if (f === '.liveplay') return 'Legacy Shows (.liveplay)';
+  if (f === '.dwcue,.liveplay') return 'DonWells Cue Shows (.dwcue; legacy .liveplay)';
+  if (f === '.dwcuepack') return 'DonWells Cue Show Archives (.dwcuepack)';
+  if (f === '.dwcuepack,.lpa') return 'DonWells Cue Show Archives (.dwcuepack; legacy .lpa)';
   return f;
 }
 

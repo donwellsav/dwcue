@@ -95,7 +95,7 @@ if(NOT unofficial-taglib_FOUND)
 endif()
 # vcpkg's miniaudio is header-only; the implementation TU is compiled below.
 find_path(MINIAUDIO_INCLUDE_DIR miniaudio.h REQUIRED)
-# miniz — used for .lpa (zip) packaging of project exports/imports.
+# miniz — used for .dwcuepack/.lpa project archive import and export.
 find_package(miniz CONFIG REQUIRED)
 find_package(FFMPEG REQUIRED)
 find_package(FluidSynth CONFIG REQUIRED)
@@ -168,8 +168,10 @@ add_executable(liveplay-server
 
     # Milestone 3 — project state + control plane
     src/core/project_state.cpp
+    src/core/project_file.cpp
     src/core/backup_manager.cpp
     src/net/control_server.cpp
+    src/net/project_archive.cpp
     src/net/discovery.cpp
 
     # Milestone 4 — metadata + waveform
@@ -264,6 +266,23 @@ if(LIVEPLAY_BUILD_TESTS)
         PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
     add_test(NAME control-security COMMAND liveplay-control-security-tests)
+
+    add_executable(liveplay-project-format-tests
+        tests/project_format_test.cpp
+        src/core/project_file.cpp
+        src/net/project_archive.cpp
+        src/logger.cpp
+    )
+    target_include_directories(liveplay-project-format-tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(liveplay-project-format-tests
+        PRIVATE
+            nlohmann_json::nlohmann_json
+            Threads::Threads
+            miniz::miniz
+    )
+    add_test(NAME project-format COMMAND liveplay-project-format-tests)
 
     add_executable(liveplay-meter-tests
         tests/meter_test.cpp

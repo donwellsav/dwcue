@@ -159,23 +159,45 @@ watch(() => props.open, o => {
 });
 
 async function apply() {
-  server.setAccessToken(draftMode.value === 'remote' ? draftAccessToken.value : '');
-  if (electronApi) {
-    // Main process persists the choice and starts/stops the child as needed.
-    // The plugin's onStateChange listener will retarget the WebSocket.
-    await electronApi.setConfig({
-      mode:      draftMode.value,
-      remoteUrl: draftRemoteUrl.value.trim(),
-      localPort: draftLocalPort.value,
-    });
-  } else {
-    // Web fallback: just point the client at the typed URL.
-    server.setServerUrl(draftRemoteUrl.value.trim());
+  const remoteUrl = draftRemoteUrl.value.trim();
+  if (!electronApi) {
+    server.configureRemoteConnection(remoteUrl, draftAccessToken.value);
+    return;
   }
+
+  if (draftMode.value === 'remote') {
+    server.configureRemoteConnection(remoteUrl, draftAccessToken.value);
+    await electronApi.setConfig({ mode: 'remote', remoteUrl });
+    return;
+  }
+
+  const localUrl = `http://127.0.0.1:${draftLocalPort.value}`;
+  server.configureManagedConnection(localUrl, '');
+  const cfg = await electronApi.setConfig({
+    mode: 'local',
+    remoteUrl,
+    localPort: draftLocalPort.value,
+  });
+  const ready = await electronApi.ensureRunning();
+  if (!ready?.ok || !ready.accessToken) {
+    throw new Error(ready?.error || 'managed server did not provide an access credential');
+  }
+  server.configureManagedConnection(
+    `http://127.0.0.1:${ready.port ?? cfg.localPort ?? draftLocalPort.value}`,
+    ready.accessToken,
+  );
 }
 
 async function restartLocal() {
-  if (electronApi) await electronApi.restart();
+  if (!electronApi || !(await electronApi.restart())) return;
+  const ready = await electronApi.ensureRunning();
+  if (!ready?.ok || !ready.accessToken) {
+    throw new Error(ready?.error || 'managed server did not provide an access credential');
+  }
+  server.configureManagedConnection(
+    `http://127.0.0.1:${ready.port ?? draftLocalPort.value}`,
+    ready.accessToken,
+  );
 }
 
 function close() { emit('close'); }

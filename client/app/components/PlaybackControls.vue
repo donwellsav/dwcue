@@ -1,15 +1,17 @@
 <template>
   <div class="playback-controls" :class="{ 'show-mode': showMode }">
-    <button
-      type="button"
-      class="control-btn panic-btn"
-      @click="handlePanic"
-      :disabled="activeCues.size === 0"
-      :title="stopAllTooltip"
-    >
-      <span class="icon" aria-hidden="true">⚠</span>
-      <span>{{ t('playback.panic') }}</span>
-    </button>
+    <div class="panic-zone">
+      <button
+        type="button"
+        class="control-btn panic-btn"
+        @click="handlePanic"
+        :disabled="activeCues.size === 0"
+        :title="stopAllTooltip"
+      >
+        <span class="material-symbols-rounded" aria-hidden="true">stop_circle</span>
+        <span>{{ t('playback.panic') }}</span>
+      </button>
+    </div>
     
     <div class="active-cues">
       <div v-if="activeCues.size === 0" class="no-cues">
@@ -34,7 +36,14 @@
       :title="playNextTooltip"
     >
       <span class="material-symbols-rounded" aria-hidden="true">fast_forward</span>
-      <span>{{ t('controls.playNext') }}</span>
+      <span class="play-next-label">
+        <span class="play-next-target">{{ effectiveNextName }}</span>
+        <span class="play-next-meta">
+          <span>{{ t('controls.playNext') }}</span>
+          <span v-if="effectiveNextIndex" class="play-next-detail">{{ effectiveNextIndex }}</span>
+          <span v-if="effectiveNextDuration" class="play-next-detail">{{ effectiveNextDuration }}</span>
+        </span>
+      </span>
     </button>
 
     <!-- Preview is deliberately isolated in MainWorkspace's lower panel. -->
@@ -260,12 +269,19 @@
 //     server via useLiveplayServer().stopAll(). Removing the legacy call
 //     is safe once all play paths route through the server.
 import { formatKeyLabel } from '~/composables/useCartHotkeys';
-import type { AudioItem } from '~/types/project';
 import { useLiveplayServer } from '~/composables/useLiveplayServer';
 import { useCueMeters } from '~/composables/useLiveMeters';
 
-const { activeCues, panicStop, nextItemOverrideUuid, autoNextItemUuid, setNextItem, playCue, triggerGroup } = useAudioEngine();
-const { findItemByUuid, previewItemUuid, previewCueId, stopPreview, saveProject, openItemProperties } = useProject();
+const { activeCues, panicStop, nextItemOverrideUuid, autoNextItemUuid, setNextItem, playNext } = useAudioEngine();
+const {
+  findItemByUuid,
+  formatItemIndex,
+  previewItemUuid,
+  previewCueId,
+  stopPreview,
+  saveProject,
+  openItemProperties,
+} = useProject();
 const { playbackMappings } = useCartHotkeys();
 const { t } = useLocalization();
 const server = useLiveplayServer();
@@ -536,66 +552,79 @@ const stopAllTooltip = computed(() => {
   const shortcut = binding ? formatKeyLabel(binding) : '';
   return shortcut ? `${t('playback.panic')} (${shortcut})` : t('playback.panic');
 });
+const effectiveNextItem = computed(() => effectiveNextUuid.value
+  ? findItemByUuid(effectiveNextUuid.value)
+  : null);
+const effectiveNextName = computed(() => effectiveNextItem.value?.displayName || '-');
+const effectiveNextIndex = computed(() => formatItemIndex(effectiveNextItem.value?.index));
+const effectiveNextDuration = computed(() => {
+  const item = effectiveNextItem.value;
+  if (!item || item.type !== 'audio') return '';
+  const totalSeconds = Math.floor(Math.max(
+    0,
+    (item.outPoint || item.duration) - (item.inPoint || 0),
+  ));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return hours > 0
+    ? hours + ':' + String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0')
+    : minutes + ':' + String(seconds).padStart(2, '0');
+});
 
 const handlePanic = () => {
   // Stop everything, fading over the project-wide Stop All time
   // (settings.stopAllFadeMs, default 1 s; set to 0 for an instant panic).
   // panicStop() forwards to the server with no explicit fade so the server
   // applies that project setting.
-  panicStop();
+  return panicStop();
 };
 
-const handlePlayNext = () => {
-  const uuid = effectiveNextUuid.value;
-  if (!uuid) return;
-  const item = findItemByUuid(uuid);
-  if (!item) return;
-  if (nextItemOverrideUuid.value) setNextItem(null);
-  if (item.type === 'audio') playCue(item as AudioItem);
-  else if (item.type === 'group') triggerGroup(item);
+const handlePlayNext = async () => {
+  if (!effectiveNextUuid.value) return false;
+  return playNext();
 };
 </script>
 
 <style scoped>
 .playback-controls {
-  --transport-side-width: var(--output-strip-width);
+  --transport-stop-width: clamp(148px, 12vw, 176px);
+  --transport-next-width: clamp(264px, 23vw, 320px);
   flex: 0 0 var(--playback-controls-height);
   height: var(--playback-controls-height);
   box-sizing: border-box;
   border-bottom: 1px solid var(--color-border);
   display: grid;
-  grid-template-columns: var(--transport-side-width) minmax(0, 1fr) var(--transport-side-width);
+  grid-template-columns: var(--transport-stop-width) minmax(0, 1fr) var(--transport-next-width);
   grid-template-areas: 'panic live next';
   align-items: center;
   gap: var(--workspace-gutter);
   padding: var(--workspace-gutter);
   background-color: var(--color-surface);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-border) 45%, transparent);
 }
 
-/* Show Mode — bigger GO / Stop-All buttons. */
+/* Show Mode keeps every transport target comfortably touchable. */
 .playback-controls.show-mode {
   min-height: calc(var(--playback-controls-height) + var(--spacing-lg));
+}
 
-  .control-btn {
-    padding: var(--spacing-lg) var(--spacing-xl);
-    font-size: 17px;
+.playback-controls.show-mode .control-btn {
+  padding: var(--spacing-lg);
+  font-size: 17px;
+}
 
-    .material-symbols-rounded,
-    .icon {
-      font-size: 26px;
-    }
-  }
+.playback-controls.show-mode .control-btn .material-symbols-rounded {
+  font-size: 26px;
+}
 
-  .preview-cue-header {
-    font-size: 16px;
-  }
+.playback-controls.show-mode .preview-cue-header {
+  font-size: 16px;
+}
 
-  .preview-transport .preview-action-btn {
-    width: 44px;
-    height: 44px;
-    font-size: 28px;
-  }
+.playback-controls.show-mode .preview-transport .preview-action-btn {
+  width: 44px;
+  height: 44px;
+  font-size: 28px;
 }
 
 .playback-controls.show-mode :deep(.active-cue-item .action-btn) {
@@ -611,73 +640,125 @@ const handlePlayNext = () => {
   width: 100%;
   gap: var(--spacing-sm);
   min-width: 0;
+  min-height: 44px;
   justify-content: center;
   padding: var(--spacing-md) var(--spacing-lg);
   background-color: var(--color-control);
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--color-text-primary) 7%, transparent),
-    0 1px 2px rgba(0, 0, 0, 0.12);
+  color: var(--color-text-primary);
   font-size: 13px;
   font-weight: 650;
-  
-  &:hover:not(:disabled) {
-    background-color: var(--color-surface-hover);
-    border-color: var(--color-border-strong);
-  }
-  
+}
+
+.control-btn:hover:not(:disabled) {
+  background-color: var(--color-surface-hover);
+  border-color: var(--color-border-strong);
 }
 
 .play-next-btn {
   grid-area: next;
   color: var(--color-text-secondary);
+}
 
-  &.has-next {
-    background-color: var(--state-up-next);
-    border-color: var(--state-up-next);
-    color: #171b25;
+.play-next-btn.has-next {
+  background-color: color-mix(in srgb, var(--state-up-next) 18%, var(--color-control));
+  border-color: var(--state-up-next);
+  color: var(--color-text-primary);
+}
 
-    &:hover:not(:disabled) {
-      background-color: var(--state-up-next);
-      border-color: var(--state-up-next);
-      filter: brightness(1.06);
-    }
-  }
+.play-next-btn.has-next:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--state-up-next) 25%, var(--color-control));
+  border-color: var(--state-up-next);
+}
+
+.play-next-label {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-align: left;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  line-height: 1.05;
+}
+
+.play-next-target {
+  overflow: hidden;
+  width: 100%;
+  color: currentColor;
+  font-size: 17px;
+  font-weight: 720;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.play-next-meta {
+  display: flex;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+  gap: 7px;
+  overflow: hidden;
+  color: currentColor;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  opacity: 0.76;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.play-next-detail {
+  border-left: 1px solid currentColor;
+  padding-left: 7px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.playback-controls.show-mode .play-next-target {
+  font-size: 21px;
+}
+
+.playback-controls.show-mode .play-next-meta {
+  font-size: 11px;
+}
+
+.panic-zone {
+  grid-area: panic;
+  align-self: stretch;
+  display: flex;
+  min-width: 0;
+  padding-right: var(--workspace-gutter);
+  border-right: 1px solid var(--color-border);
 }
 
 .panic-btn {
-  grid-area: panic;
   background-color: var(--color-danger);
   border-color: var(--color-danger);
   color: white;
-  font-weight: 600;
-
-  &:hover:not(:disabled) {
-    background-color: var(--color-danger);
-    border-color: var(--color-danger);
-    filter: brightness(0.9);
-  }
-
-  &:disabled {
-    opacity: 1;
-    background-color: var(--color-control);
-    border-color: var(--color-border);
-    color: var(--color-text-disabled);
-  }
+  font-weight: 700;
 }
 
-.icon {
-  font-size: 20px;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.panic-btn:hover:not(:disabled) {
+  background-color: var(--color-danger);
+  border-color: var(--color-danger);
+  filter: brightness(0.9);
+}
+
+.panic-btn:disabled {
+  opacity: 1;
+  background-color: var(--color-control);
+  border-color: var(--color-border);
+  color: var(--color-text-disabled);
 }
 
 .active-cues {
   grid-area: live;
-  flex: 1;
   align-self: stretch;
   display: flex;
   align-items: stretch;
@@ -687,10 +768,7 @@ const handlePlayNext = () => {
   padding: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
-  background-color: var(--color-control);
-  box-shadow:
-    inset 0 1px 4px rgba(0, 0, 0, 0.18),
-    0 1px 0 color-mix(in srgb, var(--color-text-primary) 5%, transparent);
+  background-color: var(--color-border);
 }
 
 .no-cues {
@@ -699,40 +777,66 @@ const handlePlayNext = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--spacing-sm);
   color: var(--color-text-tertiary);
+  background-color: var(--color-control);
   font-family: var(--font-mono);
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   padding: var(--spacing-md);
-  border: 1px dashed var(--color-border);
-  border-radius: var(--border-radius-sm);
-}
-
-.no-cues::before {
-  content: '';
-  width: 7px;
-  height: 7px;
-  border: 1px solid currentColor;
-  border-radius: 50%;
-  opacity: 0.65;
 }
 
 .cue-list {
   display: flex;
   flex-direction: row;
   align-items: stretch;
-  gap: var(--spacing-sm);
+  gap: 1px;
   min-width: 0;
   width: 100%;
   height: 100%;
+  background-color: var(--color-border);
 }
 
 .cue-list > :deep(.active-cue-item) {
   flex: 1 1 0;
   min-width: min(280px, 100%);
   max-width: none;
+  border: 0;
+  border-radius: 0;
+}
+
+@media (max-width: 1320px) {
+  .playback-controls {
+    --transport-stop-width: 144px;
+    --transport-next-width: 240px;
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .panic-zone {
+    padding-right: 6px;
+  }
+
+  .control-btn {
+    padding-inline: var(--spacing-md);
+  }
+}
+
+@media (max-width: 1220px) {
+  .playback-controls {
+    --transport-stop-width: 132px;
+    --transport-next-width: 224px;
+    gap: var(--spacing-xs);
+  }
+
+  .panic-zone {
+    padding-right: var(--spacing-xs);
+  }
+
+  .playback-controls.show-mode .control-btn {
+    padding-inline: var(--spacing-sm);
+  }
 }
 
 /* Preview stays physically separate from the program transport lane. */

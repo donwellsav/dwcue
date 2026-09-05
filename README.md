@@ -4,9 +4,11 @@
 
 You build a **show** as a list of cues plus a grid of one-touch buttons, then trigger them with a click, a tap, a keyboard shortcut, or a MIDI controller. DonWells Cue handles the fades, the transitions between tracks, and keeps a close eye on your levels so nothing clips or distorts.
 
-This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. The current source version is **v2.6.12**. macOS packages are Developer ID signed, notarized, and package-validated.
+This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. Published macOS packages are Developer ID signed, notarized, and package-validated.
 
-> **Current source version:** v2.6.12. Check the [release page](https://github.com/donwellsav/dwcue/releases) for the latest published installers. Local builds are still useful when you need to validate a change before distributing it.
+> **Current source:** package metadata is **v2.6.13**. The release page is authoritative for published installers and release assets; verify the installed About version before relying on a behaviour. This source includes the playback-safety, project-save/reconnect, managed local-authentication, show-creation/import, and .dwcue naming work described below.
+
+> **Operating a show?** Use the [operator manual (PDF)](docs/operators-manual.pdf) or its [Markdown source](docs/operators-manual.md). Those instructions track the current source. The client and server READMEs linked later are developer references, not show-day instructions.
 
 ![DonWells Cue showing the playlist, One Shots grid, and output metering](client/public/screenshots/donwells_cue_main.jpg)
 
@@ -16,22 +18,26 @@ The screenshots in this README are representative captures and may lag the newes
 
 ## What you can do with it
 
-- **🎵 Build a cue list** — arrange audio into a playlist with nested groups. Set volume, In/Out points, fades, ducking, and what happens when a cue finishes: stop, play next, loop, or jump to another cue.
-- **⚡ Fire One Shots** — a permanent, configurable grid of one-touch cells for stings, SFX, announcements, walk-on music and beds. Drag a local file or a playlist cue into a cell to copy it without changing the source list; the panel can detach into its own window. Arm a cell to make it fire-ready (ARMED badge): armed cells fire from the tile, its hotkey, or MIDI, auto-disarm after firing by default, and leaving Show Mode disarms everything — Stop is never gated. A playing cell shows a live −m:ss countdown of time remaining.
+- **🎵 Build a cue list** — arrange audio into a playlist with nested groups. Set volume, In/Out points, fades, ducking, and what happens when a cue finishes: stop, **Play Next**, loop, or jump to another cue.
+- **⚡ Fire One Shots** — use a configurable grid of one-touch cells for stings, SFX, announcements, walk-on music and beds. An unused grid stays collapsed unless you explicitly show it. Drag a local file or a playlist cue into a cell to copy it without changing the source list; the panel can detach into its own window. Arm a cell to make it fire-ready (ARMED badge): armed cells fire from the tile, its hotkey, or MIDI, auto-disarm after an accepted play by default, and leaving Show Mode disarms everything — Stop is never gated. A playing cell shows a live −m:ss countdown of time remaining.
 - **🔎 Prepare cues precisely** — Properties provides a detailed peak/RMS waveform, separate program and Preview playheads, click-to-seek, editable In/Out and Start Next markers, transport controls, Trim Silence, and loudness or true-peak normalization.
 - **🎧 Preview safely** — assign a monitor output and audition a cue away from the program bus. The lower Preview panel supports transport, seeking, quick Set In/Out, saving trim, Start Next markers, and Set As Next.
 - **📺 Show Mode** — switch to a simplified, touch-friendly playback view for the actual performance. Preview remains available as the lighter-weight way to inspect and prepare a cue during a show.
-- **⏭ Smooth transitions** — automatic advance, crossfades, and radio-style "Start Next" segue markers with an on-screen countdown for seamless back-to-back playback.
+- **⏭ Smooth transitions** — automatic advance, crossfades, and radio-style "Start Next" segue markers with an on-screen countdown. **Cue to Continue** is a one-play runtime override: it never changes the saved end behaviour, and Stop or replay cancels it. GO consumes **Play Next** only after its target (or at least one selected group child) starts; rejected or not-yet-loaded targets remain ready for retry, and repeated identical inputs are coalesced.
 - **🔊 Sounds great, stays safe** — pick an **Output Target** for your show (Broadcast / EBU R128, Streaming, Radio, Netflix / OTT, or Live console), normalize cues to a chosen loudness or true-peak value, and use the adjustable true-peak limiter to control intersample peaks.
 - **📊 See your levels** — real-time metering at every stage (per-cue, per-channel and master), shown in LUFS, dBFS, true-peak or RMS.
-- **🎚 Route anywhere** — send audio to multiple outputs at once (front-of-house, monitors, comms, a record bus…) across one or more sound cards.
+- **🎚 Choose show outputs** — configure program and Preview devices in Settings, then choose an output device (and LTC routing when needed) per cue in Properties. The server exposes a richer multi-device routing API, but the current client does not mount its Routing Matrix component as an operator screen.
 - **🎬 Timecode** — send SMPTE LTC timecode from a cue to keep lighting, video or other systems in sync.
 - **🎞 Play video cues** — H.264/HEVC media shows a picture on a dedicated fullscreen output (projector, LED wall, confidence monitor) while the audio plays through the normal engine path and mixer.
-- **📥 Bring in audio easily** — drag and drop local files, import several at once, download from YouTube, or review and import selected Spotify tracks into a project folder.
+- **📥 Bring in audio easily** — drag and drop local files or open **Import Media**, where **Choose files** is the primary local action. Advanced/server browsing stays collapsed until needed, and unsupported non-media entries are disabled. You can also download from YouTube or review and import selected Spotify tracks into a project folder.
 - **🎹 Trigger it your way** — click, tap, keyboard hotkeys (with an on-screen shortcuts bar, shown by default), MIDI controllers, or automation over the network (HTTP / WebSocket).
 - **🔠 Read it your size** — scale the interface text and the One Shot cell text independently from Settings → User Interface; the video output window is never scaled.
 - **🌍 Speak your language** — choose any of the app's **21 languages** from Settings → User Interface, including full right-to-left support for Arabic, Persian and Urdu.
 - **🖥 Run it remotely** — operate a stage-side machine wired to your sound gear from a separate show laptop over the local network, with automatic discovery so you don't have to type in IP addresses. (v1 keeps the app same-machine only by default: the remote-server options are hidden until you enable **Show network/server options** in Server Settings or on the welcome screen.)
+
+> **Sequencing limitations (current source):** **Play First** and **Play All** work as Group Start Behaviors. Do not rely on a group's End Behavior to leave that group: the server does not consume it. An audio cue's **Play Next** advances only to its next sibling in the same group; on the final child, use **Go to Item** or **Go to Index** and target the cue or group outside it.
+>
+> Do not rely on the audio cue **Start Behavior** dropdown either: its `play-next`, `play-item`, and `play-index` choices are not interpreted by the server. Use natural-end **End Behavior**, or **Start Next at Marker** / **Start Next At** / **Fade Out at Marker** for timed overlaps.
 
 ---
 
@@ -43,8 +49,8 @@ Video cues are ordinary audio cues whose media file also carries a picture (H.26
 - **Identify the physical screens** before assigning one: click **Identify displays** to show a large number, OS display name and resolution on every connected screen for five seconds. You can choose the display while the output is closed. If no independent display is assigned, DonWells Cue opens a normal preview window rather than taking over the control screen with fullscreen black.
 - **Recover from the output itself** by right-clicking it. The context menu can enter or leave fullscreen, show the test card, or **Exit Video Output**. On Windows, **Alt+F4** also closes only the Video Output window; **Esc** leaves fullscreen. Closing it disarms the output for the rest of the session until you open it again.
 - **Keep using shortcuts** even if the Video Output window owns keyboard focus. DonWells Cue forwards application and One Shot shortcuts to the control window while preserving operating-system and native app shortcuts such as Windows Alt+F4 and the normal Ctrl/Cmd file commands.
-- **Idle layers** — when no video cue is playing the output shows, in priority order: the cue's own **image** (set in Properties for audio-only cues), otherwise the project's **standby image** (Project Settings), otherwise black.
-- **In sync with audio** — the picture chases the engine's playhead: cuts are frame-accurate to the audio, pauses freeze the frame, and drift is corrected inaudibly (tiny playback-rate nudges, re-anchoring only if drift ever exceeds ~80 ms).
+- **Idle layers** — when no video cue is playing the output shows, in priority order: the cue's own **image** (set in Properties for audio-only cues), otherwise the project's **standby image** (Project Settings), otherwise black. Black is a fallback layer, not a dedicated operator blackout: the current UI has no blackout or fade-to-black control.
+- **In sync with audio** — the picture chases the engine's playhead: pauses freeze the frame, while small playback-rate corrections and thresholded re-anchoring keep the two timelines aligned.
 - **Silent videos** — a video file with no audio track still plays: the engine runs a silent transport of the container's duration so the cue advances, auto-follows and reports progress exactly like an audible cue.
 
 ---
@@ -101,17 +107,23 @@ If your browser blocked the download instead, choose **Keep** to save the instal
 
 ## Getting started
 
+These steps describe the current v2.6.13 working tree. It writes native show documents as `.dwcue` files and portable exports as `.dwcuepack` archives.
+
 1. Install the [latest release](https://github.com/donwellsav/dwcue/releases/latest), or build DonWells Cue from source, and launch it.
-2. Choose **New Project** and pick a folder — DonWells Cue creates the project file and a `media/` sub-folder there.
+2. Choose **New Show**, enter its name, use **Choose…** to select the read-only Location, and create it — DonWells Cue writes `<show name>.dwcue` and a `media/` sub-folder there.
 3. In **Project Settings**, choose the program output, Output Target, and—if you need private auditioning—the Preview output.
-4. Drop audio or video files onto the playlist, use **Import Media**, or open the YouTube or Spotify importer.
-5. Open a cue's **Properties** to set markers, fades, normalization, volume, ducking, routing, and start/end behaviour.
+4. Drop audio or video files onto the playlist, or use **Import Media → Choose files**. Expand the advanced/server browser only when the media lives on the server; unsupported non-media entries cannot be selected.
+5. Open a cue's **Properties** to set markers, fades, normalization, volume, ducking, its output device, and working End Behavior. Do not build show logic on the audio Start Behavior dropdown in this source build.
 6. Drag frequently used playlist cues into One Shot cells for one-touch playback. The copy leaves the playlist cue unchanged.
-7. Audition on the Preview output, set the intended next cue, and verify the program and monitor meters.
+7. Audition on the Preview output, set the named **Play Next** cue, and verify the program and monitor meters.
 8. If the show uses video, open Project Settings → **Video Output**, click **Identify displays**, assign the projector/switcher display, then manually open the output and verify the test card.
 9. Switch on **Show Mode** for the live performance.
 
-**Running on a separate machine?** Start the stage-side server with `dwcue-server --bind 0.0.0.0`. It prints a one-time access token unless `LIVEPLAY_ACCESS_TOKEN` already supplies one. On the control laptop, open **Server Settings**, choose the discovered server or enter `http://<server-host>:4480`, and enter that token. See [Network ports](#network-ports) below for firewall details.
+Use **File → Import Project…** for an older `.liveplay` show or `.lpa` archive. Legacy import is one-way: a direct `.liveplay` import creates an available `.dwcue` sibling, while an `.lpa` import publishes one canonical `.dwcue` inside a fresh destination folder. The original legacy file or archive stays unchanged, and new saves remain on the canonical file. Native file associations are registered only for `.dwcue` and `.dwcuepack`; select legacy files from the import flow instead of treating them as current-format aliases.
+
+**Running on a separate machine?** Start the stage-side server with `dwcue-server --bind 0.0.0.0`. Set `LIVEPLAY_ACCESS_TOKEN` to at least 16 characters, or leave it unset/empty so the server generates a token and prints it once. A non-empty shorter value refuses startup. On the control laptop, open **Server Settings**, choose the discovered server or enter `http://<server-host>:4480`, and enter that token. See [Network ports](#network-ports) below for firewall details.
+
+Every local and remote control request requires a token; only `GET /api/health` is public. The desktop app provisions its managed local token automatically through trusted Electron IPC rather than browser storage. If a dirty local project meets a changed server project after reconnect, choose **Use server project** to discard the local edits and adopt the server copy, or **Restore local project** to replace the server copy and keep the local state dirty.
 
 ---
 
@@ -139,11 +151,11 @@ Made with some help from Claude Sonnet 4.5, Claude Sonnet 4.6 and Claude Opus 4.
 
 ```
 +--------------------------------+   WebSocket (ws://host:4480/ws)   +-----------------------------------+
-|  client/                       | <----- meters @ ~60 Hz ---------> |  server/  (dwcue-server)          |
+|  client/                       | <----- meters @ ~30 Hz ---------> |  server/  (dwcue-server)          |
 |  Electron + Nuxt 4 + Vue 3     | <----- transport / route cmds --- |  C++20, miniaudio, Crow, TagLib   |
 |                                |        REST  (http://host:4480)   |                                   |
-|  - Playlist / One Shots / routing UI| <----- list / load / waveform --> |  - AudioEngine (mixer + limiter)  |
-|  - WaveformCanvas              |                                   |  - ProjectState (.liveplay I/O)   |
+|  - Playlist / One Shots / output controls | <----- list / load / waveform --> |  - AudioEngine (mixer + limiter)  |
+|  - WaveformCanvas              |                                   |  - ProjectState (.dwcue I/O)      |
 |  - LiveMeterBar                |                                   |  - ControlServer (REST + WS)      |
 |                                |                                   |  - Metadata + waveform services   |
 |  No audio plays in the         |                                   |                                   |
@@ -152,7 +164,7 @@ Made with some help from Claude Sonnet 4.5, Claude Sonnet 4.6 and Claude Opus 4.
 +--------------------------------+                                   +-----------------------------------+
 ```
 
-Client and server can run on **the same machine** (the desktop installer bundles both, and the client spawns the server as a child process on `127.0.0.1:4480`) or on **different machines** on a LAN — e.g. the show laptop driving a stage-side mini-PC that's wired to the actual sound interfaces.
+Client and server can run on **the same machine** (the desktop installer bundles both, spawns the server on `127.0.0.1:4480`, and supplies a per-generation managed token) or on **different machines** on a LAN — e.g. the show laptop driving a stage-side mini-PC that's wired to the actual sound interfaces.
 
 For the deep architectural docs (mixer tiers, routing matrix, LTC, limiter, metering, network event lifecycle, project-file backwards compatibility), see [`server/README.md`](server/README.md).
 
@@ -167,6 +179,8 @@ A single-machine install talks to itself over `127.0.0.1` and needs nothing open
 
 DonWells Cue does not open firewall ports automatically. If you deliberately run a remote server, allow `dwcue-server` on your trusted LAN for the ports above. The default local server remains bound to `127.0.0.1` and does not need a firewall exception.
 
+Browser origins must match `LIVEPLAY_ALLOWED_ORIGINS` exactly. Source development allows `http://localhost:3000`; another loopback spelling is not implicitly trusted. The packaged Electron page's opaque `Origin: null` is accepted, but it still has to authenticate.
+
 ## Repository layout
 
 ```
@@ -174,6 +188,7 @@ dwcue/
 ├── client/         Electron + Nuxt 4 + Vue 3 desktop UI — see client/README.md
 ├── server/         C++20 audio engine + REST/WS control server — see server/README.md
 ├── scripts/        Cross-platform build orchestrator scripts — see scripts/README.md
+├── docs/           Operator manual (PDF + Markdown source)
 ├── build/          Collected installer artefacts after `npm run build`
 ├── .github/workflows/
 │   ├── build-release.yml   Cuts releases on version bumps to package.json
@@ -183,7 +198,7 @@ dwcue/
 └── README.md       This file
 ```
 
-Each sub-package has its own README with developer documentation tailored to that area.
+The root, client, server, and scripts READMEs are developer guides. For show preparation and operation, use the [operator manual](docs/operators-manual.pdf) ([source](docs/operators-manual.md)).
 
 ---
 
@@ -282,24 +297,23 @@ From the monorepo root:
 ```sh
 # One-time
 npm install                      # installs client deps via npm workspaces
-npm run server:configure         # CMake configure for the server (idempotent)
 
 # Iterating on the server only
-npm run server:build             # rebuild the C++ server
+npm run server:build             # host-aware configure + rebuild
 npm run server:run               # launch the compiled binary (forwards CLI args)
 
-# Iterating on the client only — ensures the server is built first, then runs
-# Nuxt + Electron in dev mode against it
+# Normal desktop loop — checks for a server binary, then runs Nuxt + Electron
 npm run dev
+
+# Client workspace loop — skips the server-existence check
+npm run dev:client               # use only when a server binary is already built
+
+# Windows-only explicit Visual Studio configure (normally unnecessary)
+npm run server:configure
 
 ```
 
-The default `npm run dev` calls [scripts/ensure-server.js](scripts/ensure-server.js), which is a no-op if the server binary already exists and otherwise configures + builds it. After that it launches `nuxt dev` + Electron in the `client/` workspace.
-
-Use `npm run dev` for the normal desktop loop. The legacy `npm run dev:all` starts a
-foreground server beside Electron and can make Electron's own PID-file/health-check
-lifecycle report that the local server failed to start; keep it only for low-level
-process debugging where you deliberately manage that conflict.
+The default `npm run dev` calls [scripts/ensure-server.js](scripts/ensure-server.js), which is a no-op if either expected server binary already exists and otherwise configures + builds it. It does **not** detect newer C++ sources, so run `npm run server:build` after server changes. `npm run dev:client` directly launches the client workspace's `nuxt dev` + Electron pair and skips `ensure-server.js` entirely.
 
 Bumping versions across the monorepo:
 
@@ -321,12 +335,12 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). The current source version is **v2.6.12**; the workflow remains the source of truth for future versioned artefacts.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.13**; the release page remains the source of truth for published artefacts and their checksums.
 
 ### Triggering a release
 
 1. Bump the version in the root `package.json` (use `npm run bump -- patch|minor|major`, which propagates to `client/package.json`).
-2. Commit and push to `main`.
+2. Push the release branch and open a pull request; after review, merge it to `main`.
 3. The `build-release` workflow detects the version change and runs the platform matrix:
    - **Windows x64** (MSVC, WASAPI)
    - **macOS Apple Silicon arm64** (Clang, CoreAudio, deployment target 13.3)
@@ -350,7 +364,7 @@ Manual runs are validation-only by default. They build the full matrix and smoke
 Contributions of all sizes are welcome — bug fixes, new features, translations, documentation, screenshots, you name it.
 
 1. **Fork** the repo and `git checkout -b feat/something` off `main`.
-2. **Build it locally** following the steps above. For server changes, run `npm run server:build && npm run server:run --verbose`. For client changes, `npm run dev`.
+2. **Build it locally** following the steps above. For server changes, run `npm run server:build && npm run server:run -- --verbose`. For client changes, `npm run dev`.
 3. **Test your change**. At minimum, run the client typecheck and live-safety assertions. Server changes should also build the server and run the decoder self-test. Opt-in C++ assertion binaries cover control security, metering, limiting, mixing, waveform generation, and audio read-ahead. Still verify the path you touched end-to-end in the running or packaged app.
 4. **Open a PR** to `main`. CI must pass (server matrix build on the relevant platforms).
 

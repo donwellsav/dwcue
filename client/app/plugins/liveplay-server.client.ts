@@ -28,34 +28,58 @@ export default defineNuxtPlugin(async () => {
   // even in windows that never mount the playlist (the detached cart player).
   useShowControl();
 
-  // Electron exposes window.electronAPI.liveplayServer via the preload
-  // bridge. In a non-Electron / pure-web context we just fall back to
-  // whatever URL the user persisted in localStorage (handled by the
-  // composable's defaultUrl logic).
   const ep: any = (globalThis as any).electronAPI?.liveplayServer;
 
   if (ep) {
+    let configRevision = 0;
+    const isManagedToken = (value: unknown): value is string =>
+      typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+
+    const applyElectronConfig = async (cfg: any, status?: any) => {
+      const revision = ++configRevision;
+      if (cfg.mode === 'remote') {
+        server.configureRemoteConnection(cfg.remoteUrl, String(server.accessToken || ''));
+        return;
+      }
+
+      const localUrl = `http://127.0.0.1:${cfg.localPort ?? 4480}`;
+      const currentToken = status?.running && isManagedToken(status.accessToken)
+        ? status.accessToken
+        : '';
+      // Select local mode before any asynchronous startup work so a saved
+      // remote credential can never be sent to a loopback endpoint.
+      server.configureManagedConnection(localUrl, currentToken);
+      if (currentToken) return;
+
+      const ready = await ep.ensureRunning();
+      if (revision !== configRevision) return;
+      if (!ready?.ok || !isManagedToken(ready.accessToken)) {
+        throw new Error(ready?.error || 'managed server did not provide an access credential');
+      }
+      server.configureManagedConnection(
+        `http://127.0.0.1:${ready.port ?? cfg.localPort ?? 4480}`,
+        ready.accessToken,
+      );
+    };
+
     try {
-      const cfg = await ep.getConfig();
-      if (cfg.mode !== 'remote') server.setAccessToken('');
-      const url = cfg.mode === 'remote'
-        ? cfg.remoteUrl
-        : `http://127.0.0.1:${cfg.localPort ?? 4480}`;
-      server.setServerUrl(url);   // also reconnects internally
+      const status = await ep.getStatus();
+      const cfg = status?.config ?? await ep.getConfig();
+      await applyElectronConfig(cfg, status);
     } catch (e) {
-      console.warn('[liveplay] failed to read Electron config:', e);
-      server.connect();
+      console.warn('[liveplay] failed to configure Electron server:', e);
+      server.disconnect();
     }
 
-    // Re-target whenever main process tells us the config changed.
+    // Re-target whenever main process tells us the config changed. Revision
+    // fencing prevents a slow local start from overriding a newer remote pick.
     ep.onStateChange?.((payload: any) => {
       const cfg = payload?.config;
       if (!cfg) return;
-      if (cfg.mode !== 'remote') server.setAccessToken('');
-      const url = cfg.mode === 'remote'
-        ? cfg.remoteUrl
-        : `http://127.0.0.1:${cfg.localPort ?? 4480}`;
-      if (url !== server.serverUrl) server.setServerUrl(url);
+      void applyElectronConfig(cfg, payload).catch((e) => {
+        console.warn('[liveplay] failed to apply Electron server state:', e);
+        server.disconnect();
+      });
     });
   } else {
     server.connect();

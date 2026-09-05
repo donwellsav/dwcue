@@ -22,7 +22,8 @@
             :class="['tab-btn', { active: activeTab === tab.id }]"
             @click="activeTab = tab.id"
           >
-            <span class="material-symbols-rounded" aria-hidden="true">{{ tab.icon }}</span>
+            <CueSymbol v-if="tab.symbol" :name="tab.symbol" />
+            <span v-else class="material-symbols-rounded" aria-hidden="true">{{ tab.icon }}</span>
             <span>{{ tab.label }}</span>
           </button>
         </div>
@@ -49,10 +50,10 @@
               <p class="settings-help">{{ t('settings.audioDeviceHelp') }}</p>
             </section>
 
-            <!-- Preview device (used by headphones button) -->
+            <!-- Preview device (used by the isolated Preview bus) -->
             <section class="settings-field">
               <label class="settings-label">
-                <span class="material-symbols-rounded" aria-hidden="true">headphones</span>
+                <CueSymbol name="preview" />
                 {{ t('settings.previewDevice') }}
               </label>
               <select
@@ -71,7 +72,7 @@
             <!-- LTC device (timecode output) -->
             <section class="settings-field">
               <label class="settings-label">
-                <span class="material-symbols-rounded" aria-hidden="true">schedule</span>
+                <CueSymbol name="ltc" />
                 {{ t('settings.ltcDevice') }}
               </label>
               <select
@@ -801,16 +802,24 @@ const devices = computed(() => server.devices ?? []);
 //  - ui       : metering + list behaviour
 // help/about are informational tabs, not project settings — nothing in
 // them patches the document.
-const activeTab = ref<'audio' | 'playback' | 'ui' | 'video' | 'help' | 'about'>('audio');
-const tabs = computed(() => [
-  { id: 'audio'    as const, icon: 'graphic_eq', label: t('settings.tabAudioRouting') },
-  { id: 'playback' as const, icon: 'play_circle', label: t('settings.tabPlaybackBehaviour') },
-  { id: 'ui'       as const, icon: 'desktop_windows', label: t('settings.tabUserInterface') },
-  { id: 'video'    as const, icon: 'monitor', label: t('settings.tabVideoOutput') },
+type SettingsTabId = 'audio' | 'playback' | 'ui' | 'video' | 'help' | 'about';
+interface SettingsTab {
+  id: SettingsTabId;
+  label: string;
+  icon?: string;
+  symbol?: 'video-output';
+}
+
+const activeTab = ref<SettingsTabId>('audio');
+const tabs = computed<SettingsTab[]>(() => [
+  { id: 'audio', icon: 'graphic_eq', label: t('settings.tabAudioRouting') },
+  { id: 'playback', icon: 'play_circle', label: t('settings.tabPlaybackBehaviour') },
+  { id: 'ui', icon: 'desktop_windows', label: t('settings.tabUserInterface') },
+  { id: 'video', symbol: 'video-output', label: t('settings.tabVideoOutput') },
   // menu_book, NOT help: a circled "?" reads as a tooltip affordance and
   // the operator has repeatedly rejected those.
-  { id: 'help'     as const, icon: 'menu_book', label: t('settings.tabHelp') },
-  { id: 'about'    as const, icon: 'info', label: t('settings.tabAbout') },
+  { id: 'help', icon: 'menu_book', label: t('settings.tabHelp') },
+  { id: 'about', icon: 'info', label: t('settings.tabAbout') },
 ]);
 
 // The settings live on the project document; we read them from there and
@@ -1241,7 +1250,8 @@ function close() {
   white-space: nowrap;
   transition: all 0.2s;
 }
-.tab-btn .material-symbols-rounded {
+.tab-btn .material-symbols-rounded,
+.tab-btn :deep(.cue-symbol) {
   font-size: 18px;
   color: inherit;
 }
@@ -1274,6 +1284,9 @@ function close() {
   font-size: 13px;
   color: var(--color-text-secondary);
   font-weight: 500;
+}
+.settings-label :deep(.cue-symbol) {
+  font-size: 20px;
 }
 .settings-select,
 .settings-input {
@@ -1331,7 +1344,7 @@ function close() {
   white-space: nowrap;
   font-size: 13px;
   color: var(--color-text-primary);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 .track-height-control {

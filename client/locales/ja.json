@@ -38,6 +38,7 @@
     "title": "DonWells Cue",
     "subtitle": "ライブイベント用オーディオ再生",
     "newProject": "新規プロジェクト",
+    "newShow": "新規公演",
     "openProject": "プロジェクトを開く",
     "modeTitle": "サーバーモードを選択",
     "modeSubtitle": "DonWells Cueはどこでオーディオエンジンを実行しますか？",
@@ -67,6 +68,11 @@
     "showNetworkUi": "Connect to a server on the network…"
   },
   "project": {
+    "newShow": "新規公演",
+    "showName": "公演名",
+    "location": "場所",
+    "chooseLocation": "選択…",
+    "createShow": "公演を作成",
     "enterName": "プロジェクト名を入力",
     "placeholder": "マイプロジェクト",
     "cancel": "キャンセル",
@@ -430,6 +436,7 @@
   },
   "status": {
     "playing": "再生中",
+    "paused": "一時停止中",
     "upNext": "次へ",
     "previewing": "プレビュー"
   },
@@ -587,6 +594,11 @@
   },
   "importAudio": {
     "title": "メディアをインポート",
+    "localIntro": "このコンピューターから音声または動画ファイルを選択してください。",
+    "advanced": "詳細オプション",
+    "unsupportedFileType": "サポートされていないファイル形式",
+    "verifyFileType": "ファイル形式を確認します",
+    "emptyServerFolder": "この場所にはメディアファイルもサブフォルダーもありません。",
     "tabServer": "サーバー上",
     "tabUpload": "このコンピューターからアップロード",
     "serverHint": "すでにサーバー上にあるファイルです。フォルダーをダブルクリックして開き、ファイルをクリックして選択し（複数選択は Shift または Ctrl/Cmd クリック）、「選択した項目をインポート」を押します。",
@@ -686,7 +698,7 @@
     "resumeHint": "「セッションを続行」はこのプロジェクトをサーバーで開き直し、作業を続けられるようにします。",
     "startFreshHint": "「新しく始める」はプロジェクトを閉じ、ようこそ画面に戻ります。",
     "projectChangedTitle": "Server project changed",
-    "projectChangedMessage": "While this client was offline, the server opened “{name}”. Your local project has unsaved changes, so nothing was replaced automatically.",
+    "projectChangedMessage": "サーバー上のプロジェクト「{name}」が変更されました。ローカルプロジェクトには未保存の変更があるため、自動的な置き換えは行われませんでした。",
     "useServerProject": "Use server project",
     "keepLocalProject": "Restore local project",
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
@@ -773,7 +785,7 @@
     "chooseDestination": "Choose Folder",
     "changeDestination": "Change",
     "destinationFailed": "Could not choose the destination folder.",
-    "createsDescription": "Creates one child folder for the collection. Its media files are used directly by both the reusable .liveplay template and the current project — no second copy.",
+    "createsDescription": "Creates one child folder for the collection. Its media files are used directly by both the reusable .dwcue template and the current project — no second copy.",
     "cueSetup": "Cue setup",
     "settingOn": "On",
     "settingOff": "Off",

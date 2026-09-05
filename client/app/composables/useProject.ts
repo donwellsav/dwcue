@@ -1,11 +1,10 @@
 // =====================================================================
 // useProject.ts
 // ---------------------------------------------------------------------
-// Project state hook. The *server* owns the canonical project document
-// (it's responsible for reading/writing .liveplay files and feeding
-// audio items into the engine). The client maintains a reactive mirror
-// of that document — components mutate it as before, and a debounced
-// watcher pushes changes back to the server.
+// Project state hook. The server owns the canonical project document: it
+// reads/writes .dwcue shows and feeds audio items into the engine. The client
+// maintains a reactive mirror; components mutate it and a debounced watcher
+// pushes changes back to the server.
 //
 // Migration intent (Milestone 1): all file I/O goes through
 // `useLiveplayServer`. The Electron `window.electronAPI` file methods
@@ -43,6 +42,16 @@ import {
   normalizeIndexDisplayStart,
   parseDisplayIndexPath,
 } from '~/utils/indexDisplay';
+import {
+  isCurrentSaveIdentity,
+  projectPathFromHeader,
+} from '~/utils/projectIdentity';
+import {
+  isLegacyProjectPath,
+  isNativeProjectPath,
+  projectPathInFolder,
+} from '~/utils/projectFileFormats';
+import { createLatestWriteQueue } from '~/utils/latestWriteQueue';
 
 // ---------------------------------------------------------------------------
 // MODULE-SCOPED state for cross-call coordination.
@@ -70,6 +79,14 @@ let _captureBaselinesFn: () => void = () => {};
 let _syncItemsDiffFn: () => Promise<void> = async () => {};
 let _installItemsWatcherFn:   null | (() => void) = null;
 let _uninstallItemsWatcherFn: null | (() => void) = null;
+interface ProjectSaveRequest {
+  revision: number;
+  project: Project;
+  path: string;
+  epoch: number;
+  write: () => Promise<boolean>;
+}
+const _projectSaveQueue = createLatestWriteQueue<ProjectSaveRequest>();
 
 // UUIDs of items that were just added in this session and are waiting for
 // their first waveform so the enabled import processing can run.
@@ -206,7 +223,7 @@ export const useProject = () => {
   // no new trust — it keeps the path-capability registry in sync for projects
   // no dialog ever picked (server auto-restore, recents after restart).
   const reportOpenProjectPath = (path: string) => {
-    if (import.meta.client && path) {
+    if (import.meta.client) {
       void (window as any).electronAPI?.setCurrentProject?.(path);
     }
   };
@@ -214,6 +231,9 @@ export const useProject = () => {
   // see a reload of the *same* project (both are unchanged), which is exactly
   // what session recovery does — this counter gives them the edge they need.
   const projectEpoch = useState<number>('useProject.projectEpoch', () => 0);
+  // Every post-mutation save intent advances this renderer-global revision,
+  // including intents that only mark dirty while autosave is disabled.
+  const saveRevision = useState<number>('useProject.saveRevision', () => 0);
 
   // Loading state — set true during open/create/save so the UI can render a
   // loading overlay. `loadingMessage` is the title shown in the overlay.
@@ -248,7 +268,7 @@ export const useProject = () => {
   // persists across reopens. When autosave is off, edit-triggered saves only
   // flag `hasUnsavedChanges` instead of writing the file — the server's
   // in-memory document is still kept current by the granular sync watchers, so
-  // only the .liveplay file on disk lags until an explicit save flushes it.
+  // only the canonical .dwcue file on disk lags until an explicit save flushes it.
   const hasUnsavedChanges = useState<boolean>('useProject.hasUnsavedChanges', () => false);
   // Autosave is on unless the project explicitly opted out (older projects
   // without the key default to on).
@@ -262,6 +282,13 @@ export const useProject = () => {
     formatDisplayIndexPath(index, indexDisplayStart.value);
   const parseItemIndexInput = (raw: string): number[] =>
     parseDisplayIndexPath(raw, indexDisplayStart.value);
+
+  // Shared with the reconnect guard/modal. Project pushes must never replace a
+  // dirty local mirror until the operator chooses which project wins.
+  const sessionLost = useState<boolean>('connectionGuard.sessionLost', () => false);
+  const projectChanged = useState<boolean>('connectionGuard.projectChanged', () => false);
+  const serverProjectName = useState<string>('connectionGuard.serverProjectName', () => '');
+  const recoveringProject = useState<boolean>('connectionGuard.recovering', () => false);
 
   // True for Windows drive paths (C:\…), POSIX roots (/…) and UNC (\\…).
   const isAbsolutePath = (p: string): boolean =>
@@ -552,7 +579,7 @@ export const useProject = () => {
   // client-only: no-op in the browser / cart window or if the bridge is
   // missing. `projectPath` is the server-filesystem path openProject loads.
   const recordRecentProject = (projectPath: string) => {
-    if (!import.meta.client || !projectPath) return;
+    if (!import.meta.client || !isNativeProjectPath(projectPath)) return;
     try {
       (window as any).electronAPI?.liveplayProjects?.recentAdd?.({
         path:       projectPath,
@@ -566,7 +593,7 @@ export const useProject = () => {
   // Server-backed project I/O.
   // ----------------------------------------------------------------------
   // Create a new empty project, push it to the server, and ask the server
-  // to write the .liveplay file.
+  // to write the canonical .dwcue file.
   const createNewProject = async (name: string, folderPath: string): Promise<boolean> => {
     isLoading.value = true;
     loadingMessage.value = 'Creating project…';
@@ -596,8 +623,12 @@ export const useProject = () => {
       // streaming is needed here).
       isHydrating.value = true;
       try {
-        const header = await server.replaceProjectDocument(newProject as any);
-        applyServerHeader(header);
+        await server.replaceProjectDocument(newProject as any);
+        const projectFilePath = projectPathInFolder(folderPath, name);
+        const saved = await server.saveProjectTo(projectFilePath, newProject);
+        if (!saved?.ok) throw new Error('Server did not save the new project');
+        const header = await server.fetchProjectHeader();
+        if (!applyServerHeader(header)) throw new Error('Server did not open the new project');
       } finally {
         // Wait for Vue to flush watchers (which see isHydrating=true and
         // bail) BEFORE clearing the flag. Setting it false synchronously
@@ -618,13 +649,7 @@ export const useProject = () => {
       refreshItemsBaselineAfterHydrate();
       installItemsWatcherFn();
 
-      // Ask the server to write the file. It joins folderPath/name.liveplay
-      // and the server has the document already, so we just say "save here".
-      const projectFilePath = `${folderPath}/${name}.liveplay`;
-      await server.saveProjectTo(projectFilePath);
-      projectFilePathRef.value = projectFilePath;
-      reportOpenProjectPath(projectFilePath);
-      recordRecentProject(projectFilePath);
+      recordRecentProject(projectFilePathRef.value);
       return true;
     } catch (error) {
       console.error('Error creating project:', error);
@@ -655,9 +680,6 @@ export const useProject = () => {
         await nextTick();
         isHydrating.value = false;
       }
-      if (header.server?.projectFilePath) {
-        projectFilePathRef.value = header.server.projectFilePath;
-      }
 
       const { clearCartOnlyItems, addCartOnlyItem } = useCartItems();
       clearCartOnlyItems();
@@ -673,20 +695,12 @@ export const useProject = () => {
     }
   };
 
-  // Open an existing project (path is on the server's filesystem).
-  // UX flow:
-  //   1. POST /api/project/load — server reads the file, kicks off async
-  //      engine mirror, and returns the *header* (theme/settings/cart/
-  //      itemCount). The full items array is NOT in this payload, so the
-  //      round-trip stays cheap regardless of project size.
-  //   2. Apply the header → hide the spinner so the workspace shell can
-  //      paint (cart slots, theme, project name).
-  //   3. Stream item pages from /api/project/items in batches of 100,
-  //      yielding to the renderer between pages so the playlist paints
-  //      incrementally instead of in one giant tick.
-  //   4. The corner AudioLoadProgress banner takes over for the
-  //      audio-mirror phase still running on the server.
-  const openProject = async (projectFilePath: string): Promise<boolean> => {
+  // Native opens and explicit legacy imports share hydration. The only
+  // difference is the server endpoint: legacy sources are converted to a new
+  // canonical sibling before their returned header is applied.
+  const hydrateProjectFrom = async (
+    loadHeader: (server: any) => Promise<any>,
+  ): Promise<boolean> => {
     isLoading.value = true;
     loadingMessage.value = 'Loading project…';
     try {
@@ -695,11 +709,7 @@ export const useProject = () => {
         try { server.connect(); } catch { /* noop */ }
       }
 
-      // (1) Ask the server to load the file. Returns the header.
-      const header = await server.loadProjectFromPath(projectFilePath);
-
-      // (1b) If the server detected and auto-repaired corruption, prompt the
-      //      user and offer to save the repaired version.
+      const header = await loadHeader(server);
       if (header?.needsRepair) {
         repairDialogIssues.value = Array.isArray(header.repairIssues) ? header.repairIssues : [];
         repairDialogVisible.value = true;
@@ -712,44 +722,51 @@ export const useProject = () => {
         }
       }
 
-      // (2) Hide the central spinner IMMEDIATELY — header is enough for
-      //     the shell to paint. The items array is empty at this point;
-      //     pages are pushed in below.
       isLoading.value = false;
-
       isHydrating.value = true;
       try {
-        applyServerHeader(header);
+        if (!applyServerHeader(header)) throw new Error('Server did not open the requested project');
       } finally {
         await nextTick();
         isHydrating.value = false;
       }
-      projectFilePathRef.value = projectFilePath;
-      reportOpenProjectPath(projectFilePath);
 
-      // Restore cart-only items to client-side memory store (used by CartSlot).
       const { clearCartOnlyItems, addCartOnlyItem } = useCartItems();
       clearCartOnlyItems();
       const cartOnly = currentProject.value?.cartOnlyItems ?? [];
       for (const item of cartOnly) addCartOnlyItem(item);
 
-      // (3) Stream pages in the background. Don't await — let the caller
-      //     return so the workspace can paint while pages trickle in.
       void streamItemPages(server, header?.itemCount ?? 0);
-
-      // (4) Surface the audio-loading progress as a corner indicator.
       void pollLoadingProgress(server);
-
-      // Record in the per-client recent-projects history (File > Open Recent).
-      recordRecentProject(projectFilePath);
+      recordRecentProject(projectFilePathRef.value);
       return true;
     } catch (error) {
       console.error('Error opening project:', error);
       return false;
     } finally {
-      // Defensive — should already be false at this point on success.
       isLoading.value = false;
     }
+  };
+
+  const openProject = async (projectFilePath: string): Promise<boolean> => {
+    if (!isNativeProjectPath(projectFilePath)) {
+      console.warn('[useProject] native open rejected non-.dwcue path:', projectFilePath);
+      return false;
+    }
+    return hydrateProjectFrom(server => server.loadProjectFromPath(projectFilePath));
+  };
+
+  const importLegacyProject = async (
+    sourcePath: string,
+    destinationPath?: string,
+  ): Promise<boolean> => {
+    if (!isLegacyProjectPath(sourcePath)) {
+      console.warn('[useProject] legacy import rejected non-.liveplay path:', sourcePath);
+      return false;
+    }
+    return hydrateProjectFrom(
+      server => server.importLegacyProjectFromPath(sourcePath, destinationPath),
+    );
   };
 
   // Stream paged items from the server into currentProject.items. Yields
@@ -856,17 +873,61 @@ export const useProject = () => {
 
   // Apply a header-only response to currentProject. Items array is left
   // empty for streamItemPages() to populate.
-  const applyServerHeader = (header: any) => {
-    if (!header || typeof header !== 'object') return;
-    if (header.server?.projectFilePath) {
-      projectFilePathRef.value = header.server.projectFilePath;
-      reportOpenProjectPath(header.server.projectFilePath);
+  const clearLocalProjectMirror = () => {
+    const hadIdentity = currentProject.value !== null || projectFilePathRef.value !== '';
+    _uninstallItemsWatcherFn?.();
+    currentProject.value = null;
+    selectedItem.value = null;
+    selectedItems.value.clear();
+    selectionAnchorUuid = null;
+    propertiesPanelOpen.value = false;
+    activeCues.value.clear();
+    projectFilePathRef.value = '';
+    reportOpenProjectPath('');
+    previewItemUuid.value = '';
+    previewCueId.value = '';
+    audioLoadingProgress.value = {
+      ready: true,
+      loading: false,
+      loaded: 0,
+      total: 0,
+      failedCount: 0,
+      failures: [],
+    };
+    _importProcessingPendingUuids.clear();
+    _waveformCache.clear();
+    useCartItems().clearCartOnlyItems();
+    hasUnsavedChanges.value = false;
+    if (hadIdentity) projectEpoch.value++;
+    try {
+      if (import.meta.client && (window as any).electronAPI?.syncProjectData) {
+        (window as any).electronAPI.syncProjectData(null);
+      }
+    } catch { /* noop */ }
+  };
+
+  const applyServerHeader = (header: any): boolean => {
+    if (!header || typeof header !== 'object') return false;
+    if (header.hasOpenProject !== true) {
+      clearLocalProjectMirror();
+      return false;
     }
+
+    // This is identity, not optional metadata. Assign even an empty path so a
+    // pathless remote project can never inherit the previous save destination.
+    const nextProjectPath = projectPathFromHeader(header);
+    if (nextProjectPath && !isNativeProjectPath(nextProjectPath)) {
+      console.warn('[useProject] server reported a non-canonical active project:', nextProjectPath);
+      return false;
+    }
+    projectFilePathRef.value = nextProjectPath;
+    reportOpenProjectPath(nextProjectPath);
+
     const project: Project = {
       name:           header.name ?? 'Untitled',
       version:        header.version ?? '2.0.0',
       folderPath:     header.folderPath ?? '',
-      items:          [], // populated by streamItemPages
+      items:          [],
       cartItems:      header.cartItems ?? [],
       cartSlotKeys:   header.cartSlotKeys ?? { ...DEFAULT_CART_SLOT_KEYS },
       playbackKeys:   header.playbackKeys,
@@ -878,12 +939,9 @@ export const useProject = () => {
     if (header.settings) (project as any).settings = header.settings;
     currentProject.value = project;
     updateIndices(project.items);
-    // Signal the reload to per-project memoisation elsewhere. Reopening the
-    // same project leaves name and folderPath identical, so this counter is
-    // the only edge those consumers can key off.
     projectEpoch.value++;
-    // A freshly loaded/created project matches its on-disk file.
     hasUnsavedChanges.value = false;
+    return true;
   };
 
   // Refer to the module-scoped install hooks so streamItemPages and
@@ -958,6 +1016,7 @@ export const useProject = () => {
     if (!currentProject.value) return false;
     const server = useLiveplayServer();
     const path = projectFilePathRef.value;
+    if (path && !isNativeProjectPath(path)) return false;
     try {
       // Mirror the cart-only store into the document first; it's the same
       // pre-serialisation step saveProject does, and skipping it would drop
@@ -990,7 +1049,6 @@ export const useProject = () => {
       // the reload, and stale ones would break waveform and meter lookups.
       const ok = await tryRejoinExistingProject();
       if (ok) {
-        if (path) projectFilePathRef.value = path;
         // The overlay went to the server's memory, not to disk — the file is
         // still behind, so the unsaved marker has to survive the rejoin.
         if (unsaved) hasUnsavedChanges.value = true;
@@ -1007,47 +1065,56 @@ export const useProject = () => {
   const saveProject = async (
     opts?: { force?: boolean; signal?: AbortSignal },
   ): Promise<boolean> => {
-    try {
-      if (!currentProject.value) return false;
+    const project = currentProject.value;
+    if (!project) return false;
 
-      // Mirror cart-only items from the client-side memory store back into the
-      // project doc. This MUST run even when autosave is off: the doc's
-      // cartOnlyItems array is what the items diff-watcher pushes to the server
-      // (the playback source of truth), so skipping it leaves a freshly
-      // dragged-in cart item unregistered — the engine has no cue for it and
-      // play logs "PLAY: ?" until the next manual save mirrors + syncs it.
-      const { cartOnlyItems } = useCartItems();
-      currentProject.value.cartOnlyItems = Array.from(cartOnlyItems.value.values());
+    const revision = ++saveRevision.value;
+    hasUnsavedChanges.value = true;
+    const { cartOnlyItems } = useCartItems();
+    project.cartOnlyItems = Array.from(cartOnlyItems.value.values());
+    if (!opts?.force && !autoSaveEnabled.value) return true;
 
-      // Autosave gating: when the user has turned autosave off, an ordinary
-      // edit-triggered save doesn't touch the disk file — we only flag that
-      // there are unsaved changes. Explicit saves (File > Save, or toggling
-      // autosave) pass { force: true } to bypass this and always persist.
-      // The in-memory server sync still happens via the diff-watcher above.
-      if (!opts?.force && !autoSaveEnabled.value) {
-        hasUnsavedChanges.value = true;
-        return true;
-      }
+    const server = useLiveplayServer();
+    const path = projectFilePathRef.value;
+    const epoch = projectEpoch.value;
+    if (!isNativeProjectPath(path) || !server.connected ||
+        sessionLost.value || recoveringProject.value) return false;
 
-      currentProject.value.lastModified = new Date().toISOString();
-
-      const server = useLiveplayServer();
-      // Build the authoritative document snapshot the server will persist.
-      // The granular per-property watchers SHOULD have kept the server's
-      // in-memory copy in sync — but we pass the document explicitly so a
-      // missed PATCH (race, debounce, hidden watcher gap) can never leave
-      // the file (or the engine) with stale property values.
-      const docSnapshot = buildDocumentSnapshot();
-      const path = projectFilePathRef.value ||
-                   `${currentProject.value.folderPath}/${currentProject.value.name}.liveplay`;
-      const res = await server.saveProjectTo(path, docSnapshot, opts?.signal);
-      hasUnsavedChanges.value = !res?.ok;
-      return !!res?.ok;
-    } catch (error) {
-      hasUnsavedChanges.value = true;
-      console.error('Error saving project:', error);
-      return false;
+    project.lastModified = new Date().toISOString();
+    const docSnapshot = buildDocumentSnapshot();
+    const request: ProjectSaveRequest = {
+      revision,
+      project,
+      path,
+      epoch,
+      write: async () => {
+        if (!isCurrentSaveIdentity(
+          project,
+          path,
+          epoch,
+          currentProject.value,
+          projectFilePathRef.value,
+          projectEpoch.value,
+        )) return false;
+        const response = await server.saveProjectTo(path, docSnapshot, opts?.signal);
+        return !!response?.ok;
+      },
+    };
+    const result = await _projectSaveQueue.enqueue(request, queued => queued.write());
+    const resultIsCurrent = isCurrentSaveIdentity(
+      result.request.project,
+      result.request.path,
+      result.request.epoch,
+      currentProject.value,
+      projectFilePathRef.value,
+      projectEpoch.value,
+    );
+    const savedLatestRevision = result.request.revision === saveRevision.value;
+    if (!opts?.signal?.aborted && resultIsCurrent && savedLatestRevision) {
+      hasUnsavedChanges.value = !result.ok;
     }
+    if (result.error) console.error('Error saving project:', result.error);
+    return !opts?.signal?.aborted && resultIsCurrent && savedLatestRevision && result.ok;
   };
 
   // Toggle autosave on/off. The preference lives in project settings (so it
@@ -1065,45 +1132,7 @@ export const useProject = () => {
   // unload its in-memory document so we land back on the welcome screen
   // (where the user can pick New or Open).
   const closeProject = async () => {
-    // Tear down the items deep-watcher before nulling the project so the
-    // null assignment doesn't trigger one last (now meaningless) sync.
-    // The watcher is re-installed by streamItemPages when the next
-    // project is opened.
-    uninstallItemsWatcherFn();
-
-    currentProject.value = null;
-    selectedItem.value = null;
-    selectedItems.value.clear();
-    selectionAnchorUuid = null;
-    propertiesPanelOpen.value = false;
-    activeCues.value.clear();
-    projectFilePathRef.value = '';
-    audioLoadingProgress.value = {
-      ready: true,
-      loading: false,
-      loaded: 0,
-      total: 0,
-      failedCount: 0,
-      failures: [],
-    };
-    _importProcessingPendingUuids.clear();
-    _waveformCache.clear();
-
-    // Clear cart-only items from memory
-    const { clearCartOnlyItems } = useCartItems();
-    clearCartOnlyItems();
-
-    // Let the Electron main process know the project closed so it can
-    // re-grey-out the "Export Project" menu item etc. The watch() in
-    // MainWorkspace only fires on project *changes* (and skips null), so
-    // without this nudge the menu would stay "open" forever once a
-    // project had been opened.
-    try {
-      if (import.meta.client && (window as any).electronAPI?.syncProjectData) {
-        (window as any).electronAPI.syncProjectData(null);
-      }
-    } catch { /* noop */ }
-
+    clearLocalProjectMirror();
     // Ask the server to drop its in-memory project too. If we don't do this,
     // tryRejoinExistingProject() on the welcome screen would immediately
     // pull the user right back into the project we just dismissed.
@@ -1749,28 +1778,34 @@ export const useProject = () => {
             break;
           }
           case 'project_changed': {
-            // New project → all cached waveforms are invalid.
-            server().invalidateWaveformCache();
-            // A new project was loaded server-side by some other client.
-            // Refetch header + restream items. isHydrating is reset to false
-            // by the outer finally before the async fetch resolves, so we must
-            // re-set it around applyServerHeader to prevent the fallback
-            // watcher from echoing the new header back as a PUT (which would
-            // create an infinite project_changed loop).
+            // Local open/create and recovery own their returned header; ignore
+            // their echo so one transition cannot hydrate twice.
+            if (isLoading.value || recoveringProject.value) break;
             void (async () => {
               try {
                 const header = await server().fetchProjectHeader();
                 if (!header) return;
+                if (currentProject.value && hasUnsavedChanges.value) {
+                  // A matching path is not a document revision. Any external
+                  // project replacement while dirty requires an explicit choice.
+                  projectChanged.value = header.hasOpenProject === true;
+                  serverProjectName.value = header.hasOpenProject === true
+                    ? (header.name || 'Untitled')
+                    : '';
+                  sessionLost.value = true;
+                  return;
+                }
+
+                server().invalidateWaveformCache();
                 isHydrating.value = true;
+                let opened = false;
                 try {
-                  applyServerHeader(header);
+                  opened = applyServerHeader(header);
                 } finally {
                   await nextTick();
                   isHydrating.value = false;
                 }
-                if (header.hasOpenProject) {
-                  void streamItemPages(server(), header.itemCount ?? 0);
-                }
+                if (opened) void streamItemPages(server(), header.itemCount ?? 0);
               } catch (e) {
                 console.warn('[useProject] project_changed refetch failed:', e);
               }
@@ -2091,6 +2126,7 @@ export const useProject = () => {
     resolveProjectPath,
     createNewProject,
     openProject,
+    importLegacyProject,
     tryRejoinExistingProject,
     resumeProjectOnServer,
     saveProject,

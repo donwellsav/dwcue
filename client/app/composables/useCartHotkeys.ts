@@ -1,6 +1,7 @@
 import type { CartSlotKeyBinding, PlaybackKeyAction, AudioItem } from '~/types/project';
 import { DEFAULT_PLAYBACK_KEYS } from '~/types/project';
 import { buildOneShotSlots } from '~/utils/oneShots';
+import { oneShotFireActionKey, runAcknowledgedAction } from '~/utils/acknowledgedAction';
 
 const RESERVED_COMBOS: CartSlotKeyBinding[] = [
   { key: 's', ctrlKey: true,  shiftKey: false, altKey: false },
@@ -64,7 +65,7 @@ export const useCartHotkeys = () => {
   const { currentProject, selectedItem, selectedItems, saveProject, getAllItemsFlat, toggleItemSelection, findItemByUuid } = useProject();
   const { cartOnlyItems } = useCartItems();
   const { fireBlocked, afterFire } = useOneShotArm();
-  const { playCue, pauseCue, resumeCue, stopAllCues, activeCues, nextItemOverrideUuid, autoNextItemUuid, setNextItem, triggerGroup, queueLoopContinuation, jumpCue } = useAudioEngine();
+  const { playCue, playNext, pauseCue, resumeCue, stopAllCues, activeCues, queueLoopContinuation, jumpCue } = useAudioEngine();
 
   const oneShotSlots = computed(() => buildOneShotSlots(
     currentProject.value?.items ?? [],
@@ -118,17 +119,17 @@ export const useCartHotkeys = () => {
     return null;
   };
 
-  const triggerSlot = (slotIndex: number) => {
+  const triggerSlot = async (slotIndex: number) => {
     const item = oneShotSlots.value[slotIndex];
     if (!item) return;
-    if (activeCues.value.has(item.uuid)) {
-      if (item.oneShot?.retrigger === 'ignore') return;
-    }
-    // Per-cell show-mode arm gate: a hotkey only fires while that cell is
-    // armed; with auto-disarm on (default), firing re-safes the cell.
-    if (fireBlocked(item)) return;
-    playCue(item);
-    afterFire(item);
+    if (activeCues.value.has(item.uuid) && item.oneShot?.retrigger === 'ignore') return;
+    // Re-safe only after the server confirms that this cell actually fired.
+    if (fireBlocked(item)) return false;
+    return runAcknowledgedAction(
+      oneShotFireActionKey(item.uuid),
+      () => playCue(item),
+      () => afterFire(item),
+    );
   };
 
   const findSlotForEvent = (e: KeyboardEvent): number => {
@@ -162,18 +163,15 @@ export const useCartHotkeys = () => {
     return null;
   };
 
-  const dispatchPlaybackAction = (action: PlaybackKeyAction) => {
+  const dispatchPlaybackAction = async (action: PlaybackKeyAction) => {
     if (action === 'pause-resume') {
       const item = getTargetItem();
       if (!item) return;
       if (activeCues.value.has(item.uuid)) {
         const cue = activeCues.value.get(item.uuid);
-        if (cue && cue.isPaused) resumeCue(item.uuid);
-        else pauseCue(item.uuid);
-      } else {
-        playCue(item);
+        return cue?.isPaused ? resumeCue(item.uuid) : pauseCue(item.uuid);
       }
-      return;
+      return playCue(item);
     }
 
     if (action === 'toggle-loop') {
@@ -191,21 +189,16 @@ export const useCartHotkeys = () => {
     if (action === 'cue-to-continue') {
       const item = getTargetItem();
       if (!item) return;
-      queueLoopContinuation(item, resolveLoopContinuationTarget(item));
-      return;
+      return queueLoopContinuation(item);
     }
 
     if (action === 'jump-cue') {
       const item = getTargetItem();
       if (!item) return;
-      jumpCue(item);
-      return;
+      return jumpCue(item);
     }
 
-    if (action === 'stop-all') {
-      stopAllCues();
-      return;
-    }
+    if (action === 'stop-all') return stopAllCues();
 
     if (action === 'select-up' || action === 'select-down') {
       const project = currentProject.value;
@@ -232,19 +225,11 @@ export const useCartHotkeys = () => {
       if (!uuid) return;
       const item = findItemByUuid(uuid);
       if (!item || item.type !== 'audio') return;
-      playCue(item as AudioItem);
-      return;
+      return playCue(item as AudioItem);
     }
 
     if (action === 'play-next') {
-      const effectiveUuid = nextItemOverrideUuid.value ?? autoNextItemUuid.value;
-      if (!effectiveUuid) return;
-      const item = findItemByUuid(effectiveUuid);
-      if (!item) return;
-      if (nextItemOverrideUuid.value) setNextItem(null);
-      if (item.type === 'audio') playCue(item as AudioItem);
-      else if (item.type === 'group') triggerGroup(item);
-      return;
+      return playNext();
     }
   };
 
@@ -257,7 +242,7 @@ export const useCartHotkeys = () => {
     if (playbackAction) {
       e.preventDefault();
       e.stopPropagation();
-      dispatchPlaybackAction(playbackAction);
+      void dispatchPlaybackAction(playbackAction);
       return;
     }
 
@@ -266,7 +251,7 @@ export const useCartHotkeys = () => {
     if (slotIndex >= 0) {
       e.preventDefault();
       e.stopPropagation();
-      triggerSlot(slotIndex);
+      void triggerSlot(slotIndex);
     }
   };
 
