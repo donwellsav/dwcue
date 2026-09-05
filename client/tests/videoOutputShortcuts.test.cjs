@@ -12,9 +12,19 @@ const {
 const { buildVideoOutputContextTemplate } = require('../electron/video-output-context-menu');
 const mainSource = readFileSync(require.resolve('../electron/main.js'), 'utf8');
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 function productionFunctionSource(name) {
-  const start = mainSource.indexOf(`function ${name}(`);
-  assert.notEqual(start, -1, `missing ${name} in Electron main process`);
+  const start = mainSource.indexOf('function '+name+'(');
+  assert.notEqual(start, -1, 'missing '+name+' in Electron main process');
   const bodyStart = mainSource.indexOf('{', start);
   let depth = 0;
   for (let index = bodyStart; index < mainSource.length; index++) {
@@ -23,7 +33,7 @@ function productionFunctionSource(name) {
     depth--;
     if (depth === 0) return mainSource.slice(start, index + 1);
   }
-  throw new Error(`unterminated ${name} in Electron main process`);
+  throw new Error('unterminated '+name+' in Electron main process');
 }
 
 function createVideoPlaybackErrorHarness(testCardPlayback = { session: null }) {
@@ -180,8 +190,8 @@ test('accepts playback errors only from the current output and propagates safe s
 
 
 test('an AV Sync decode error awaits its native tone cleanup before returning status', async () => {
-  const cleanup = Promise.withResolvers();
-  const entered = Promise.withResolvers();
+  const cleanup = deferred();
+  const entered = deferred();
   const failures = [];
   const harness = createVideoPlaybackErrorHarness({
     session: { cue: { id: 'diagnostic' } },
@@ -200,7 +210,7 @@ test('an AV Sync decode error awaits its native tone cleanup before returning st
 
 
 test('quit waits for native diagnostic cleanup before terminating', async () => {
-  const cleanup = Promise.withResolvers();
+  const cleanup = deferred();
   let handler;
   let vetoed = false;
   const exits = [];

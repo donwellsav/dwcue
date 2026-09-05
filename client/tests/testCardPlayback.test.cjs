@@ -6,6 +6,17 @@ const path = require('node:path');
 const { TestCardPlayback } = require('../electron/test-card-playback');
 
 const connection = { serverUrl: 'http://cue.test', accessToken: 'credential', local: true };
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 const desired = (rate = 60, overrides = {}) => ({ rate, deviceId: 'default', connection, ...overrides });
 const response = (body, status = 200) => new Response(JSON.stringify(body), { status });
 
@@ -52,8 +63,8 @@ test('one native cue survives irrelevant config/status updates and is unloaded o
 });
 
 test('identical updates during load do not cancel or restart the tone', async () => {
-  const entered = Promise.withResolvers();
-  const load = Promise.withResolvers();
+  const entered = deferred();
+  const load = deferred();
   const h = harness({ beforeRequest: async url => {
     if (url.endsWith('/api/diagnostics/av-sync')) { entered.resolve(); await load.promise; }
   } });
@@ -69,8 +80,8 @@ test('identical updates during load do not cancel or restart the tone', async ()
 });
 
 test('replacement during load discards the old cue before playing only the newest rate', async () => {
-  const entered = Promise.withResolvers();
-  const load = Promise.withResolvers();
+  const entered = deferred();
+  const load = deferred();
   let first = true;
   const h = harness({ beforeRequest: async url => {
     if (url.endsWith('/av-sync') && first) { first = false; entered.resolve(); await load.promise; }
@@ -88,8 +99,8 @@ test('replacement during load discards the old cue before playing only the newes
 });
 
 test('close during load releases the returned cue without ever playing it', async () => {
-  const entered = Promise.withResolvers();
-  const load = Promise.withResolvers();
+  const entered = deferred();
+  const load = deferred();
   const h = harness({ beforeRequest: async url => {
     if (url.endsWith('/av-sync')) { entered.resolve(); await load.promise; }
   } });
