@@ -67,6 +67,12 @@
     "forget": "삭제",
     "showNetworkUi": "Connect to a server on the network…"
   },
+  "audioHealth": {
+    "stalled": "{name}: 오디오 출력이 멈췄습니다 — 클록 콜백이 없습니다.",
+    "queued": "{name}: 출력이 계속 멈춰 있습니다. 복구가 대기열에 추가되었으며 클록 콜백을 기다리는 중입니다.",
+    "starting": "{name}: 오디오 출력 시작 중; 클록 콜백을 기다리는 중입니다.",
+    "recoveryFailed": "{name}: 오디오 출력 복구를 대기열에 추가하지 못했습니다."
+  },
   "project": {
     "newShow": "새 공연",
     "showName": "공연 이름",

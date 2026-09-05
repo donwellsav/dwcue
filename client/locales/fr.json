@@ -67,6 +67,12 @@
     "forget": "Oublier",
     "showNetworkUi": "Connect to a server on the network…"
   },
+  "audioHealth": {
+    "stalled": "{name} : sortie audio bloquée — aucun rappel d’horloge.",
+    "queued": "{name} : la sortie reste bloquée. Récupération mise en file d’attente ; attente des rappels d’horloge.",
+    "starting": "{name} : démarrage de la sortie audio ; attente des rappels d’horloge.",
+    "recoveryFailed": "{name} : impossible de mettre en file d’attente la récupération de la sortie audio."
+  },
   "project": {
     "newShow": "Nouveau spectacle",
     "showName": "Nom du spectacle",

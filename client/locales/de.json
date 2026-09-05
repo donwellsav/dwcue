@@ -67,6 +67,12 @@
     "forget": "Entfernen",
     "showNetworkUi": "Connect to a server on the network…"
   },
+  "audioHealth": {
+    "stalled": "{name}: Audioausgabe angehalten — keine Clock-Callbacks.",
+    "queued": "{name}: Ausgabe bleibt angehalten. Wiederherstellung eingereiht; Clock-Callbacks werden abgewartet.",
+    "starting": "{name}: Audioausgabe wird gestartet; Clock-Callbacks werden abgewartet.",
+    "recoveryFailed": "{name}: Wiederherstellung der Audioausgabe konnte nicht eingereiht werden."
+  },
   "project": {
     "newShow": "Neue Show",
     "showName": "Name der Show",

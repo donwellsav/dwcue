@@ -2122,10 +2122,44 @@ let videoOutputPowerSaveId = null;
 let videoOutputWatchdogInstalled = false;
 let videoOutputWatchdogTimer = null;
 let videoOutputTestCard = false;
+let videoOutputPlaybackError = null;
 let videoOutputFrameTimer = null;
 let displayIdentifierWindows = [];
 let displayIdentifierTimer = null;
 const videoOutputWindowsPreservingSession = new WeakSet();
+
+function requireVideoOutputIpc(event) {
+  if (!videoOutputWindow || videoOutputWindow.isDestroyed() ||
+      event.sender !== videoOutputWindow.webContents) {
+    throw new Error('IPC request rejected: sender is not the video output window');
+  }
+}
+
+function sanitizeVideoPlaybackErrorMessage(message) {
+  return message
+    .replace(/\/api\/media\?[^\s"'<>)]*/gi, '/api/media')
+    .replace(/\bhttps?:\/\/[^\s"'<>)]*/gi, (rawUrl) => {
+      try {
+        const parsed = new URL(rawUrl);
+        return `${parsed.origin}${parsed.pathname}`;
+      } catch {
+        return '[media URL]';
+      }
+    });
+}
+
+function normalizeVideoPlaybackError(payload) {
+  if (payload === null) return null;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new TypeError('playbackError must be an object or null');
+  }
+  const itemUuid = payload.itemUuid === null
+    ? null
+    : requireIpcString(payload.itemUuid, 'itemUuid', 256);
+  const message = sanitizeVideoPlaybackErrorMessage(
+    requireIpcString(payload.message, 'message', 2000));
+  return { itemUuid, message };
+}
 
 // Confidence monitor: 1 fps JPEG thumbnails of the output window for the
 // operator UI. capturePage renders exactly what the audience sees — video,
@@ -2243,6 +2277,7 @@ function videoOutputStatus() {
     targetLabel: target ? (target.label || `Display ${target.id}`) : null,
     displays,
     warning,
+    playbackError: videoOutputPlaybackError,
     testCard: videoOutputTestCard,
     fullscreen: videoOutputWindow !== null &&
                 !videoOutputWindow.isDestroyed() &&
@@ -2379,6 +2414,7 @@ function identifyVideoOutputDisplays() {
 
 function createVideoOutputWindow() {
   if (videoOutputWindow && !videoOutputWindow.isDestroyed()) return;
+  videoOutputPlaybackError = null;
 
   const cfg = readVideoOutputConfig();
   const target = resolveVideoOutputDisplay(cfg);
@@ -2484,6 +2520,7 @@ function createVideoOutputWindow() {
     const preserveSession = videoOutputWindowsPreservingSession.delete(outputWindow);
     if (!preserveSession) videoOutputSessionEnabled = false;
     if (videoOutputWindow === outputWindow) videoOutputWindow = null;
+    videoOutputPlaybackError = null;
     stopVideoOutputFrames();
     if (videoOutputPowerSaveId !== null) {
       try { powerSaveBlocker.stop(videoOutputPowerSaveId); } catch { /* already stopped */ }
@@ -2503,6 +2540,7 @@ function closeVideoOutputWindow({ preserveSession = false } = {}) {
   if (!preserveSession) videoOutputSessionEnabled = false;
   if (!outputWindow || outputWindow.isDestroyed()) {
     videoOutputWindow = null;
+    videoOutputPlaybackError = null;
     return;
   }
   if (preserveSession) videoOutputWindowsPreservingSession.add(outputWindow);
@@ -2576,6 +2614,11 @@ ipcMain.handle('video-output:close', (event) => {
 ipcMain.handle('video-output:status', (event) => {
   requireTrustedIpc(event);
   return videoOutputStatus();
+});
+ipcMain.handle('video-output:report-playback-error', (event, payload) => {
+  requireVideoOutputIpc(event);
+  videoOutputPlaybackError = normalizeVideoPlaybackError(payload);
+  return broadcastVideoOutputStatus();
 });
 
 ipcMain.handle('video-output:list-displays', (event) => {

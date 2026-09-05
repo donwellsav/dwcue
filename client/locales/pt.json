@@ -67,6 +67,12 @@
     "forget": "Esquecer",
     "showNetworkUi": "Connect to a server on the network…"
   },
+  "audioHealth": {
+    "stalled": "{name}: saída de áudio bloqueada — sem callbacks do relógio.",
+    "queued": "{name}: a saída continua bloqueada. Recuperação na fila; aguardando callbacks do relógio.",
+    "starting": "{name}: a saída de áudio está a iniciar; aguardando callbacks do relógio.",
+    "recoveryFailed": "{name}: não foi possível colocar a recuperação da saída de áudio na fila."
+  },
   "project": {
     "newShow": "Novo show",
     "showName": "Nome do show",

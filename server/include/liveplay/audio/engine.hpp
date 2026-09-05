@@ -150,6 +150,8 @@ struct DeviceInfo {
     bool         is_available = true;
     bool         is_clock_master = false;
     std::string  runtime_state = "available";
+    std::uint64_t recovery_request_id = 0;
+    std::string  recovery_status = "idle";
     std::uint64_t underrun_count = 0;
     std::uint64_t underrun_frames = 0;
     std::uint64_t overrun_count = 0;
@@ -247,9 +249,9 @@ public:
 
     void close_device(const DeviceId& id);
 
-    // Queue an in-place stop/start of an opened local stream. A true return
-    // confirms queue acceptance only; Running still requires a new callback.
-    bool request_device_recovery(const DeviceId& id);
+    // Queue an in-place stop/start of an opened local stream. A returned id
+    // confirms queue acceptance only; success still requires a new callback.
+    std::optional<std::uint64_t> request_device_recovery(const DeviceId& id);
 
     // ---- Items / cues ----------------------------------------------------
     // Create a fresh, independent PlaybackItem for `file_path`. Two carts
@@ -416,7 +418,10 @@ private:
         std::atomic<std::uint64_t>  liveness_epoch{0};
         std::uint64_t               observed_liveness_epoch = 0; // watchdog only
         std::atomic<bool>           native_recovery_pending{false};
-        std::atomic<bool>           stream_recovery_pending{false};
+        // Guarded by device_lifecycle_mutex_. The started id binds liveness
+        // completion to the request whose replacement stream was armed.
+        DeviceRecoveryRequest       recovery_request;
+        std::uint64_t               started_recovery_request_id = 0;
         DeviceClockController       clock_controller; // callback, or paused reset
         bool                        correction_was_limited = false;
         std::atomic<std::int32_t>   applied_rate_ppm{0};
@@ -449,8 +454,10 @@ private:
     // atomics let the render thread read without copying or taking mutex_.
     std::unique_ptr<std::atomic<float>[]>         output_channel_gains_;
     // miniaudio device init/uninit mutates backend-global state on some
-    // platforms and must not run concurrently.
+    // platforms and must not run concurrently. Recovery request state and its
+    // monotonically increasing id source are guarded by the same lock.
     mutable std::mutex                           device_lifecycle_mutex_;
+    std::uint64_t                                next_recovery_request_id_ = 1;
     mutable std::mutex                           mutex_;          // guards registries + topology rebuild
     std::unordered_map<std::string, std::shared_ptr<PlaybackItem>>  items_;
     std::unordered_map<std::string, std::shared_ptr<MixerChannel>>  mixers_;

@@ -48,6 +48,8 @@ class FakeWebSocket {
 const storage = new MemoryStorage();
 const sockets: FakeWebSocket[] = [];
 const fetchAuthorizations: string[] = [];
+const fetchRequests: Array<{ url: string; method: string }> = [];
+let nextRecoveryRequestId = 73;
 
 Object.defineProperty(globalThis, 'window', {
   configurable: true,
@@ -59,10 +61,16 @@ Object.defineProperty(globalThis, 'WebSocket', {
 });
 Object.defineProperty(globalThis, 'fetch', {
   configurable: true,
-  value: async (_input: RequestInfo | URL, init?: RequestInit) => {
+  value: async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
     fetchAuthorizations.push(new Headers(init?.headers).get('Authorization') ?? '');
-    return new Response('[]', {
-      status: 200,
+    fetchRequests.push({ url, method: init?.method ?? 'GET' });
+    const recovery = url.endsWith('/api/devices/device%2Fmain/recover');
+    const body = recovery
+      ? { accepted: true, request_id: nextRecoveryRequestId++ }
+      : [];
+    return new Response(JSON.stringify(body), {
+      status: recovery ? 202 : 200,
       headers: { 'Content-Type': 'application/json' },
     });
   },
@@ -77,9 +85,20 @@ test('deduplicates server state, rotates managed credentials, and fences stale s
   storage.setItem('liveplay.accessToken', remoteToken);
 
   const { useLiveplayServer } = await import('../app/composables/useLiveplayServer.ts');
+  const { recoveryResultForRequest } = await import('../app/types/server.ts');
   const server = useLiveplayServer();
   let recoveryHookCalls = 0;
   server.onReconnected(() => { recoveryHookCalls++; });
+  let cueStateItemUuid: string | undefined;
+  let cueStateTriggerSeq: number | undefined;
+  let snapshotTriggerSeq: number | undefined;
+  server.onCueState((state) => {
+    cueStateItemUuid = state.item_uuid;
+    cueStateTriggerSeq = state.trigger_seq;
+  });
+  server.onPlaybackSnapshot((snapshot) => {
+    snapshotTriggerSeq = snapshot.cues[0]?.trigger_seq;
+  });
 
   server.configureManagedConnection(localUrl, managedToken);
   assert.equal(sockets.length, 1);
@@ -109,6 +128,155 @@ test('deduplicates server state, rotates managed credentials, and fences stale s
   assert.equal(sockets.length, 1);
   assert.equal(firstSocket.readyState, FakeWebSocket.OPEN);
   assert.equal(server.connected, true);
+  const stalledDevice = {
+    id: 'device/main',
+    display_name: 'Main Output',
+    channel_count: 2,
+    sample_rate: 48_000,
+    is_default: true,
+    is_open: true,
+    is_available: true,
+    is_clock_master: true,
+    runtime_state: 'stalled',
+    recovery_request_id: 0,
+    recovery_status: 'idle',
+    callback_entry_count: 0,
+    stream_recovery_count: 0,
+    underrun_count: 0,
+    underrun_frames: 0,
+    overrun_count: 0,
+    hard_resync_count: 0,
+    device_loss_count: 0,
+    device_recovery_count: 0,
+    reroute_count: 0,
+    interruption_count: 0,
+    correction_limit_count: 0,
+    ring_occupancy_frames: 0,
+    clock_correction_ppm: 0,
+  } as const;
+  // Let the initial REST catalogue settle before exercising the live WS update.
+  await server.fetchDevices();
+  const socketCountBeforeDeviceState = sockets.length;
+  firstSocket.receive({ type: 'device_state', device: stalledDevice });
+  assert.equal(server.connected, true);
+  assert.equal(sockets.length, socketCountBeforeDeviceState);
+  assert.equal(server.devices[0]?.runtime_state, 'stalled');
+  assert.equal(server.devices[0]?.callback_entry_count, 0);
+
+  const recovery = await server.recoverDevice(stalledDevice.id);
+  assert.deepEqual(recovery, { accepted: true, request_id: 73 });
+  assert.deepEqual(fetchRequests.at(-1), {
+    url: localUrl + '/api/devices/device%2Fmain/recover',
+    method: 'POST',
+  });
+  assert.equal(fetchAuthorizations.at(-1), 'Bearer ' + managedToken);
+  assert.equal(server.devices[0]?.runtime_state, 'stalled');
+  assert.equal(sockets.length, socketCountBeforeDeviceState);
+
+  firstSocket.receive({
+    type: 'device_state',
+    device: {
+      ...stalledDevice,
+      runtime_state: 'starting',
+      recovery_request_id: recovery.request_id,
+      recovery_status: 'pending',
+    },
+  });
+  const pendingAttempt = server.devices[0];
+  assert.ok(pendingAttempt);
+  assert.equal(recoveryResultForRequest(pendingAttempt, recovery.request_id), null);
+
+  // A running callback correlated to another request cannot complete this one.
+  firstSocket.receive({
+    type: 'device_state',
+    device: {
+      ...stalledDevice,
+      runtime_state: 'running',
+      recovery_request_id: recovery.request_id - 1,
+      recovery_status: 'succeeded',
+      callback_entry_count: 1,
+    },
+  });
+  const staleSuccess = server.devices[0];
+  assert.ok(staleSuccess);
+  assert.equal(recoveryResultForRequest(staleSuccess, recovery.request_id), null);
+
+  firstSocket.receive({
+    type: 'device_state',
+    device: {
+      ...stalledDevice,
+      recovery_request_id: recovery.request_id,
+      recovery_status: 'failed',
+    },
+  });
+  const failedAttempt = server.devices[0];
+  assert.ok(failedAttempt);
+  assert.equal(recoveryResultForRequest(failedAttempt, recovery.request_id), 'failed');
+
+  const retry = await server.recoverDevice(stalledDevice.id);
+  assert.deepEqual(retry, { accepted: true, request_id: 74 });
+  firstSocket.receive({
+    type: 'device_state',
+    device: {
+      ...stalledDevice,
+      runtime_state: 'running',
+      recovery_request_id: recovery.request_id,
+      recovery_status: 'succeeded',
+      callback_entry_count: 2,
+    },
+  });
+  const priorAttemptSuccess = server.devices[0];
+  assert.ok(priorAttemptSuccess);
+  assert.equal(recoveryResultForRequest(priorAttemptSuccess, retry.request_id), null);
+
+  firstSocket.receive({
+    type: 'device_state',
+    device: {
+      ...stalledDevice,
+      runtime_state: 'running',
+      recovery_request_id: retry.request_id,
+      recovery_status: 'succeeded',
+      callback_entry_count: 3,
+      stream_recovery_count: 1,
+    },
+  });
+  const successfulRetry = server.devices[0];
+  assert.ok(successfulRetry);
+  assert.equal(recoveryResultForRequest(successfulRetry, retry.request_id), 'succeeded');
+  assert.equal(successfulRetry.runtime_state, 'running');
+  assert.equal(successfulRetry.callback_entry_count, 3);
+  assert.equal(recoveryResultForRequest(
+    { ...successfulRetry, runtime_state: 'starting' },
+    retry.request_id,
+  ), 'failed');
+  firstSocket.receive({
+    type: 'cue_state',
+    cue_id: 'cue-1',
+    item_uuid: 'item-1',
+    transport: 1,
+    playhead_seconds: 0.25,
+    trigger_seq: 41,
+  });
+  assert.equal(cueStateItemUuid, 'item-1');
+  assert.equal(cueStateTriggerSeq, 41);
+  firstSocket.receive({
+    type: 'playback_snapshot',
+    cues: [{
+      cue_id: 'cue-1',
+      item_uuid: 'item-1',
+      transport: 1,
+      playhead_seconds: 0.25,
+      trigger_seq: 42,
+    }],
+    next_item_uuid: '',
+    master_gain_db: 0,
+    output_channel_gains: [],
+    selected_item_uuid: '',
+    show_mode: false,
+    locale: 'en',
+    preview: { item_uuid: '', cue_id: '' },
+  });
+  assert.equal(snapshotTriggerSeq, 42);
 
   // A pre-handshake failure after an established connection is still counted;
   // an idempotent state broadcast must not have reset hasEverConnected.

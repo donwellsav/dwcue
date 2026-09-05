@@ -67,6 +67,12 @@
     "forget": "削除",
     "showNetworkUi": "Connect to a server on the network…"
   },
+  "audioHealth": {
+    "stalled": "{name}: オーディオ出力が停止しています — クロックコールバックがありません。",
+    "queued": "{name}: 出力は停止したままです。復旧をキューに追加し、クロックコールバックを待っています。",
+    "starting": "{name}: オーディオ出力を開始中です。クロックコールバックを待っています。",
+    "recoveryFailed": "{name}: オーディオ出力の復旧をキューに追加できませんでした。"
+  },
   "project": {
     "newShow": "新規公演",
     "showName": "公演名",

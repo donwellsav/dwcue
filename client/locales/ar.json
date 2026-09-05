@@ -67,6 +67,12 @@
     "forget": "نسيان",
     "showNetworkUi": "Connect to a server on the network…"
   },
+  "audioHealth": {
+    "stalled": "{name}: توقف خرج الصوت — لا توجد استدعاءات لساعة الجهاز.",
+    "queued": "{name}: ما زال الخرج متوقفًا. تمت جدولة الاسترداد؛ في انتظار استدعاءات الساعة.",
+    "starting": "{name}: جارٍ بدء خرج الصوت؛ في انتظار استدعاءات الساعة.",
+    "recoveryFailed": "{name}: تعذر جدولة استرداد خرج الصوت."
+  },
   "project": {
     "newShow": "عرض جديد",
     "showName": "اسم العرض",

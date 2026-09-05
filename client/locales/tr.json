@@ -67,6 +67,12 @@
     "forget": "Unut",
     "showNetworkUi": "Connect to a server on the network…"
   },
+  "audioHealth": {
+    "stalled": "{name}: ses çıkışı durdu — saat geri çağrısı yok.",
+    "queued": "{name}: çıkış hâlâ durdu. Kurtarma sıraya alındı; saat geri çağrıları bekleniyor.",
+    "starting": "{name}: ses çıkışı başlatılıyor; saat geri çağrıları bekleniyor.",
+    "recoveryFailed": "{name}: ses çıkışı kurtarma işlemi sıraya alınamadı."
+  },
   "project": {
     "newShow": "Yeni Gösteri",
     "showName": "Gösteri adı",

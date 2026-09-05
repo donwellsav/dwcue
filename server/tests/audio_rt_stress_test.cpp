@@ -495,6 +495,31 @@ void test_callback_liveness() {
           "liveness: first post-recovery callback restores Running");
 }
 
+void test_recovery_request_correlation() {
+    DeviceRecoveryRequest recovery;
+    check(recovery.request_id() == 0 &&
+              recovery.status() == DeviceRecoveryStatus::Idle,
+          "recovery request: starts idle without an id");
+
+    check(recovery.begin(1),
+          "recovery request: first attempt is accepted");
+    check(!recovery.begin(2),
+          "recovery request: pending attempt excludes another request");
+    check(recovery.fail(1) &&
+              recovery.status() == DeviceRecoveryStatus::Failed,
+          "recovery request: matching startup failure is terminal");
+
+    check(recovery.begin(2) && recovery.request_id() == 2 &&
+              recovery.status() == DeviceRecoveryStatus::Pending,
+          "recovery request: failed attempt releases inflight for retry");
+    check(!recovery.succeed(1) && recovery.request_id() == 2 &&
+              recovery.status() == DeviceRecoveryStatus::Pending,
+          "recovery request: stale completion cannot succeed the retry");
+    check(recovery.succeed(2) &&
+              recovery.status() == DeviceRecoveryStatus::Succeeded,
+          "recovery request: only matching completion succeeds");
+}
+
 struct ClockSimulation {
     double correction_ppm = 0.0;
     double min_occupancy = 0.0;
@@ -584,6 +609,7 @@ int main() {
         test_loop_and_concurrent_stress(item);
         test_loop_continue_stop_and_replay(item);
         test_callback_liveness();
+        test_recovery_request_correlation();
         test_continuous_clock_correction();
     }
 

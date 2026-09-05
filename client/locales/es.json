@@ -67,6 +67,12 @@
     "forget": "Olvidar",
     "showNetworkUi": "Connect to a server on the network…"
   },
+  "audioHealth": {
+    "stalled": "{name}: salida de audio bloqueada — no hay devoluciones de llamada del reloj.",
+    "queued": "{name}: la salida sigue bloqueada. Recuperación en cola; esperando devoluciones de llamada del reloj.",
+    "starting": "{name}: la salida de audio se está iniciando; esperando devoluciones de llamada del reloj.",
+    "recoveryFailed": "{name}: no se pudo poner en cola la recuperación de la salida de audio."
+  },
   "project": {
     "newShow": "Nuevo espectáculo",
     "showName": "Nombre del espectáculo",

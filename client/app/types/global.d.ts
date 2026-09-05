@@ -218,6 +218,7 @@ declare global {
         setTestCard: (show: boolean) => Promise<boolean>;
         setFullscreen: (on: boolean) => Promise<VideoOutputStatus>;
         toggleFullscreen: () => Promise<VideoOutputStatus>;
+        reportPlaybackError: (error: VideoPlaybackError | null) => Promise<VideoOutputStatus>;
         onStatus: (callback: (status: VideoOutputStatus) => void) => () => void;
         onTestCard: (callback: (show: boolean) => void) => () => void;
         onShortcut: (callback: (shortcut: VideoOutputShortcut) => void) => () => void;
@@ -242,6 +243,10 @@ declare global {
     height: number;
     primary: boolean;
   }
+  interface VideoPlaybackError {
+    itemUuid: string | null;
+    message: string;
+  }
 
   interface VideoOutputStatus {
     enabled: boolean;
@@ -251,6 +256,7 @@ declare global {
     targetLabel: string | null;
     displays: VideoOutputDisplay[];
     warning: 'single-display' | 'display-missing' | 'display-shared-with-control' | null;
+    playbackError: VideoPlaybackError | null;
     testCard: boolean;
     fullscreen: boolean;
   }

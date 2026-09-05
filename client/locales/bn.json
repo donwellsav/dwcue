@@ -67,6 +67,12 @@
     "forget": "ভুলে যান",
     "showNetworkUi": "Connect to a server on the network…"
   },
+  "audioHealth": {
+    "stalled": "{name}: অডিও আউটপুট থেমে গেছে — কোনো ক্লক কলব্যাক নেই।",
+    "queued": "{name}: আউটপুট এখনও থেমে আছে। পুনরুদ্ধার সারিতে আছে; ক্লক কলব্যাকের অপেক্ষা চলছে।",
+    "starting": "{name}: অডিও আউটপুট চালু হচ্ছে; ক্লক কলব্যাকের অপেক্ষা চলছে।",
+    "recoveryFailed": "{name}: অডিও আউটপুট পুনরুদ্ধার সারিতে যোগ করা যায়নি।"
+  },
   "project": {
     "newShow": "নতুন শো",
     "showName": "শোর নাম",

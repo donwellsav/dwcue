@@ -283,6 +283,11 @@ The authoritative endpoint list is the table of `CROW_ROUTE` registrations in [`
 | `GET /api/devices` | — | `[ { "id": "…", "display_name": "…", "channel_count": 8, "sample_rate": 48000, "is_default": true } ]` |
 | `POST /api/devices/open` | `{ "name": "…" (optional), "channels": 2 }` — empty `name` opens the default device | `{ "device_id": "…" }` · `400` if open fails |
 | `POST /api/devices/close` | `{ "id": "…" }` | `{ "ok": true }` |
+| `POST /api/devices/<id>/recover` | `{}` | `202` with `{ "accepted": true, "request_id": number }` when queued; `404` when the device cannot accept recovery |
+
+Open-device snapshots include `runtime_state`, `is_clock_master`, `callback_entry_count`, `stream_recovery_count`, `recovery_request_id`, and `recovery_status` (`idle`, `pending`, `succeeded`, or `failed`). A successful backend start remains `starting` until a real callback arrives; a missing callback clock becomes `stalled` and cannot be clock master. Recovery stops and starts the existing stream without replacing its ID or cue routing. Match the returned request ID against full `{ "type": "device_state", "device": { ... } }` WebSocket events; only `succeeded` with `runtime_state: "running"` establishes recovered output. Restart errors and callback-startup timeout publish `failed` and permit another request.
+
+Authenticated `GET`/`HEAD /api/media?item_uuid=<uuid>` resolves the exact project media path used by native audio, including valid fallback paths. Byte ranges and the legacy `path` query remain supported. Live `cue_state` and reconnect `playback_snapshot` cues carry authoritative `trigger_seq` firing order for video-source selection.
 
 #### Cues (engine-direct)
 

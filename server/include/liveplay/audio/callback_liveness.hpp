@@ -27,6 +27,72 @@ enum class CallbackLivenessState : std::uint8_t {
     Stalled,
 };
 
+enum class DeviceRecoveryStatus : std::uint8_t {
+    Idle,
+    Pending,
+    Succeeded,
+    Failed,
+};
+
+constexpr const char* device_recovery_status_name(
+    DeviceRecoveryStatus status) noexcept {
+    switch (status) {
+        case DeviceRecoveryStatus::Idle:      return "idle";
+        case DeviceRecoveryStatus::Pending:   return "pending";
+        case DeviceRecoveryStatus::Succeeded: return "succeeded";
+        case DeviceRecoveryStatus::Failed:    return "failed";
+    }
+    return "failed";
+}
+
+// Control-thread state for one explicitly requested stream restart. Callers
+// provide monotonically increasing non-zero ids. Terminal updates are matched
+// to the attempt that actually restarted, so a late callback from an older
+// attempt cannot complete a newer request.
+class DeviceRecoveryRequest {
+public:
+    [[nodiscard]] bool begin(std::uint64_t request_id) noexcept {
+        if (request_id == 0 || status_ == DeviceRecoveryStatus::Pending) {
+            return false;
+        }
+        // Publish Pending before replacing the id. A snapshot can therefore
+        // never pair a new id with the preceding attempt's terminal status.
+        status_ = DeviceRecoveryStatus::Pending;
+        request_id_ = request_id;
+        return true;
+    }
+
+    [[nodiscard]] bool succeed(std::uint64_t request_id) noexcept {
+        return complete(request_id, DeviceRecoveryStatus::Succeeded);
+    }
+
+    [[nodiscard]] bool fail(std::uint64_t request_id) noexcept {
+        return complete(request_id, DeviceRecoveryStatus::Failed);
+    }
+
+    [[nodiscard]] std::uint64_t request_id() const noexcept {
+        return request_id_;
+    }
+
+    [[nodiscard]] DeviceRecoveryStatus status() const noexcept {
+        return status_;
+    }
+
+private:
+    [[nodiscard]] bool complete(
+        std::uint64_t request_id, DeviceRecoveryStatus terminal) noexcept {
+        if (request_id == 0 || request_id != request_id_ ||
+            status_ != DeviceRecoveryStatus::Pending) {
+            return false;
+        }
+        status_ = terminal;
+        return true;
+    }
+
+    std::uint64_t request_id_ = 0;
+    DeviceRecoveryStatus status_ = DeviceRecoveryStatus::Idle;
+};
+
 [[nodiscard]] constexpr bool is_healthy_clock_source(
     CallbackLivenessState state) noexcept {
     return state == CallbackLivenessState::Running;

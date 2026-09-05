@@ -1,42 +1,21 @@
 // ============================================================================
 // useVideoOutput.ts — playback brain of the ?videoOutput=1 render surface.
 //
-// The Video Output window is a PASSIVE renderer (spec VIDEO_PLAYBACK_V1.md
-// §3/§6): the C++ engine is the single clock master, this composable never
-// makes transport decisions — it chases the engine's playhead. It consumes:
-//
-//   • cue_state edges (start/pause/stop, carry item_uuid) — start/stop/cut
-//   • meters broadcast (~60 Hz per-cue playhead_seconds) — the chase feed
-//   • playback_snapshot / doc_patch — reconnect catch-up + project mirror
-//   • GET /api/project — the document mirror (items + settings + folderPath)
-//
-// Layer resolution (bottom → top): black < standby image < per-cue image <
-// video. The view binds this composable's refs; only top layers toggle, so
-// lower layers show through automatically (an audio-only cue with no image
-// reveals the standby image, and so on).
-//
-// Hard rules carried over from the spec (Inkue/FreeShow war stories):
-//   - NEVER disturb the audio path; chase the video side only.
-//   - A decode failure degrades to the image layers, never to a stuck window.
-//   - Nothing here animates continuously; per-frame work is number math and
-//     at most a playbackRate assignment.
+// The output is a passive renderer. Audio remains the clock authority: video
+// follows cue_state edges and meter positions, and it stops advancing whenever
+// there is no healthy engine clock.
 // ============================================================================
 
 import type { MetersBroadcast } from '~/types/server';
 
-// Server's TransportState enum (mirrors C++, same values as useAudioEngine).
-// Playing/FadingIn/FadingOut need no constants here: every transport that is
-// not Stopped or Paused means "picture rolling".
 const TRANSPORT_STOPPED = 0;
-const TRANSPORT_PAUSED  = 4;
-
-// Chase tuning (spec §6): deadband below which playbackRate stays exactly 1,
-// a soft zone corrected with a 0.97–1.03 playbackRate nudge, hard seek beyond.
+const TRANSPORT_PAUSED = 4;
 const CHASE_DEADBAND_S = 0.015;
 const CHASE_HARD_SEEK_S = 0.08;
+const NATIVE_CLOCK_STALE_MS = 250;
+const PINNED_METER_LIMIT = 2;
+const NATIVE_PROGRESS_EPSILON_S = 0.001;
 
-// The only item fields the output surface consumes, normalised once from the
-// server document (which is untyped JSON) so everything downstream is typed.
 interface OutputItem {
   uuid: string;
   hasVideo: boolean;
@@ -44,12 +23,26 @@ interface OutputItem {
   mediaPath: string | null;
   mediaServerPath: string | null;
   inPoint: number;
+  outPoint: number | null;
 }
 
 interface DocMirror {
   folderPath: string | null;
   standbyImage: string | null;
   items: ReadonlyMap<string, OutputItem>;
+}
+
+interface ActiveCue {
+  itemUuid: string;
+  cueId: string | null;
+  transport: number;
+  playheadSeconds: number;
+  triggerSeq: number;
+}
+
+interface PlaybackErrorPayload {
+  itemUuid: string | null;
+  message: string;
 }
 
 function readString(value: unknown): string | null {
@@ -60,9 +53,13 @@ function readNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-// Validate-once extraction of the three document fields this window needs.
-// Anything malformed degrades to "no document" — the surface stays black
-// rather than throwing mid-show.
+function readTriggerSeq(value: unknown): number | null {
+  const sequence = readNumber(value);
+  return sequence !== null && Number.isSafeInteger(sequence) && sequence >= 0
+    ? sequence
+    : null;
+}
+
 function readDoc(value: unknown): DocMirror | null {
   if (!value || typeof value !== 'object') return null;
   const record = value as Record<string, unknown>;
@@ -81,312 +78,468 @@ function readDoc(value: unknown): DocMirror | null {
           mediaPath: readString(item.mediaPath),
           mediaServerPath: readString(item.mediaServerPath),
           inPoint: readNumber(item.inPoint) ?? 0,
+          outPoint: readNumber(item.outPoint),
         });
       }
-      walk(item.items);   // group children
+      walk(item.children);
     }
   };
   walk(record.items);
+  walk(record.cartOnlyItems);
   const settings = record.settings;
   return {
     folderPath: readString(record.folderPath),
     standbyImage: readString(
       settings && typeof settings === 'object'
         ? (settings as Record<string, unknown>).videoStandbyImage
-        : null),
+        : null,
+    ),
     items,
   };
 }
 
-// cue_state carries item_uuid (the payload type in useLiveplayServer predates
-// that field); the meters frames are typed in ~/types/server.
-interface CueStateEvent {
-  cueId: string | null;
-  itemUuid: string | null;
-  transport: number;
-  playheadSeconds: number;
-}
-
-function readCueState(value: unknown): CueStateEvent | null {
+function readActiveCue(value: unknown): ActiveCue | null {
   if (!value || typeof value !== 'object') return null;
-  const s = value as Record<string, unknown>;
-  const transport = readNumber(s.transport);
-  if (transport === null) return null;
+  const state = value as Record<string, unknown>;
+  const transport = readNumber(state.transport);
+  const itemUuid = readString(state.item_uuid);
+  const triggerSeq = readTriggerSeq(state.trigger_seq);
+  if (transport === null || !itemUuid || triggerSeq === null) return null;
   return {
-    cueId: readString(s.cue_id),
-    itemUuid: readString(s.item_uuid),
+    itemUuid,
+    cueId: readString(state.cue_id),
     transport,
-    playheadSeconds: readNumber(s.playhead_seconds) ?? 0,
+    playheadSeconds: readNumber(state.playhead_seconds) ?? 0,
+    triggerSeq,
   };
-}
-
-// One sounding cue as reported by playback_snapshot.cues[]. The snapshot is
-// the only way a (re)connecting output window learns about a cue that is
-// already playing — cue_state edges only fire on transitions, so without
-// restoring from it the screen would sit black until the next cue started.
-interface SnapshotActive {
-  itemUuid: string;
-  cueId: string | null;
-  transport: number;
-  playheadSeconds: number;
 }
 
 export function useVideoOutput() {
   const server = useLiveplayServer();
 
-  // ---- Element + layer state (bound by VideoOutputView) --------------------
   const videoEl = ref<HTMLVideoElement | null>(null);
   const videoSrc = ref<string | null>(null);
-  const videoReady = ref(false);    // canplay fired for the current src
-  const videoFailed = ref(false);   // decode error on the current src
+  const videoReady = ref(false);
+  const videoFailed = ref(false);
   const showVideo = ref(false);
   const cueImageSrc = ref<string | null>(null);
 
-  // ---- Document mirror ------------------------------------------------------
-  // The output window's useProject never hydrates (its sync block is gated
-  // off), so we keep our own read-only mirror: one full fetch on (re)connect,
-  // debounced refetches on any doc_patch. Show-time patches are rare (edits
-  // happen in rehearsal), and a local GET of a small document is cheap.
   const doc = shallowRef<DocMirror | null>(null);
-
-  // A snapshot-restore that arrived before the document finished fetching;
-  // applied by refetchDoc once the item map is available.
-  let pendingActive: SnapshotActive | null = null;
-
   let refetchTimer: number | undefined;
-  async function refetchDoc() {
-    try {
-      doc.value = readDoc(await server.fetchProject());
-      if (pendingActive) applySnapshotActive(pendingActive);
-    } catch { /* server mid-load; the next patch retries */ }
-  }
-  function scheduleRefetch() {
-    clearTimeout(refetchTimer);
-    refetchTimer = window.setTimeout(() => { void refetchDoc(); }, 300);
+  let fetchGeneration = 0;
+
+  const activeItemUuid = ref<string | null>(null);
+  const activeCueId = ref<string | null>(null);
+  const activeTransport = ref(TRANSPORT_STOPPED);
+  const previewItemUuid = ref<string | null>(null);
+  const nextItemUuid = ref<string | null>(null);
+  const activeCues = new Map<string, ActiveCue>();
+  let activeTriggerSeq = -1;
+  let highestTriggerSeqSeen = -1;
+  let acceptNextSnapshot = true;
+  let pendingSeekSeconds = 0;
+
+  let sourceItemUuid: string | null = null;
+  let sourceSignature: string | null = null;
+  let sourceVersion = 0;
+  let playAttemptFailed = false;
+  let reportedPlaybackError: PlaybackErrorPayload | null = null;
+  let noDecodableVideoTrack = false;
+
+  const hasHealthyClock = computed(() => server.connected && server.devices.some((device) =>
+    device.is_clock_master === true && device.runtime_state === 'running'));
+  let waitingForHealthyClockSample = !hasHealthyClock.value;
+  let waitingForNativeProgress = false;
+  let lastNativeCueId: string | null = null;
+  let lastNativePlayhead: number | null = null;
+  let pinnedMeterCount = 0;
+  let nativeProgressGeneration = 0;
+  let observedProgressGeneration = -1;
+  let progressFrameTimestamp: number | null = null;
+  let videoFrameCallbackId: number | null = null;
+  let videoFrameCallbackElement: HTMLVideoElement | null = null;
+
+  function reportPlaybackError(payload: PlaybackErrorPayload | null) {
+    if (payload === null && reportedPlaybackError === null) return;
+    if (payload && reportedPlaybackError?.itemUuid === payload.itemUuid
+      && reportedPlaybackError.message === payload.message) return;
+    reportedPlaybackError = payload;
+    const api = window.electronAPI?.videoOutput;
+    if (!api) return;
+    const report = Reflect.get(api, 'reportPlaybackError');
+    if (typeof report === 'function') {
+      void Promise.resolve(Reflect.apply(report, api, [payload])).catch(() => {});
+    }
   }
 
-  // ---- Media URL resolution --------------------------------------------------
-  // Mirrors the server's resolve_media_path: relative paths join the project
-  // folder; absolute paths pass through. The /api/media endpoint streams any
-  // local file with Range support (same trust model as /api/waveform_path).
-  // HTML media elements cannot attach Authorization, so this one route accepts
-  // the same access token in a query parameter as the browser WebSocket.
-  function mediaUrl(pathStr: string | null): string | null {
-    if (!pathStr) return null;
-    let abs = pathStr;
-    if (!/^([a-zA-Z]:[\\/]|\\\\|\/)/.test(pathStr)) {
+  function pathMediaUrl(path: string | null): string | null {
+    if (!path) return null;
+    let absolutePath = path;
+    if (!/^([a-zA-Z]:[\\/]|\\\\|\/)/.test(path)) {
       const folder = doc.value?.folderPath;
       if (!folder) return null;
-      abs = folder.replace(/[\\/]+$/, '') + '/' + pathStr;
+      absolutePath = `${folder.replace(/[\\/]+$/, '')}/${path}`;
     }
     const base = String(server.serverUrl || '').replace(/\/+$/, '');
-    const params = new URLSearchParams({ path: abs });
+    const params = new URLSearchParams({ path: absolutePath });
     const token = String(server.effectiveAccessToken || '');
     if (token) params.set('access_token', token);
     return `${base}/api/media?${params}`;
   }
 
-  // Standby image: project-level setting, same resolution rules as item media.
-  const standbySrc = computed(() => mediaUrl(doc.value?.standbyImage ?? null));
+  function itemMediaUrl(item: OutputItem): string {
+    const signature = `${item.mediaServerPath ?? ''}\u0000${item.mediaPath ?? ''}`;
+    if (sourceItemUuid !== item.uuid || sourceSignature !== signature) {
+      sourceVersion += 1;
+    }
+    sourceItemUuid = item.uuid;
+    sourceSignature = signature;
+    const base = String(server.serverUrl || '').replace(/\/+$/, '');
+    const params = new URLSearchParams({
+      item_uuid: item.uuid,
+      source_revision: String(sourceVersion),
+    });
+    const token = String(server.effectiveAccessToken || '');
+    if (token) params.set('access_token', token);
+    return `${base}/api/media?${params}`;
+  }
 
-  // ---- Transport state machine ------------------------------------------------
-  const activeItemUuid = ref<string | null>(null);
-  const activeCueId = ref<string | null>(null);
-  const activeTransport = ref(TRANSPORT_STOPPED);
-  // Preview (DJ pre-listen) cues play in the engine too; they must never
-  // reach the output surface.
-  const previewItemUuid = ref<string | null>(null);
+  const standbySrc = computed(() => pathMediaUrl(doc.value?.standbyImage ?? null));
 
-  // Latest position we should be at — written by cue edges and the chase
-  // loop, consumed by loadedmetadata when a fresh element finishes loading.
-  let pendingSeekSeconds = 0;
+  function cancelFrameClockCheck() {
+    if (videoFrameCallbackId !== null && videoFrameCallbackElement
+      && typeof videoFrameCallbackElement.cancelVideoFrameCallback === 'function') {
+      videoFrameCallbackElement.cancelVideoFrameCallback(videoFrameCallbackId);
+    }
+    videoFrameCallbackId = null;
+    videoFrameCallbackElement = null;
+  }
+
+  function scheduleFrameClockCheck() {
+    const element = videoEl.value;
+    if (!element || videoFrameCallbackId !== null
+      || typeof element.requestVideoFrameCallback !== 'function') return;
+    videoFrameCallbackElement = element;
+    videoFrameCallbackId = element.requestVideoFrameCallback(onVideoFrame);
+  }
+
+  function onVideoFrame(timestamp: DOMHighResTimeStamp) {
+    videoFrameCallbackId = null;
+    videoFrameCallbackElement = null;
+    if (activeTransport.value === TRANSPORT_STOPPED
+      || activeTransport.value === TRANSPORT_PAUSED || !showVideo.value
+      || !hasHealthyClock.value || waitingForHealthyClockSample
+      || waitingForNativeProgress) return;
+
+    if (observedProgressGeneration !== nativeProgressGeneration) {
+      observedProgressGeneration = nativeProgressGeneration;
+      progressFrameTimestamp = timestamp;
+    } else if (progressFrameTimestamp !== null
+      && timestamp - progressFrameTimestamp >= NATIVE_CLOCK_STALE_MS) {
+      waitingForNativeProgress = true;
+      pauseVideo();
+      return;
+    }
+    scheduleFrameClockCheck();
+  }
+
+  function beginNativeClockGrace(cueId: string | null, playheadSeconds: number) {
+    lastNativeCueId = cueId;
+    lastNativePlayhead = playheadSeconds;
+    pinnedMeterCount = 0;
+    waitingForNativeProgress = false;
+    nativeProgressGeneration += 1;
+    observedProgressGeneration = -1;
+    progressFrameTimestamp = null;
+    cancelFrameClockCheck();
+  }
+
+  function recordNativePosition(cueId: string, playheadSeconds: number, countPinned = true): boolean {
+    const advanced = lastNativeCueId !== cueId || lastNativePlayhead === null
+      || Math.abs(playheadSeconds - lastNativePlayhead) > NATIVE_PROGRESS_EPSILON_S;
+    if (advanced) {
+      lastNativeCueId = cueId;
+      lastNativePlayhead = playheadSeconds;
+      pinnedMeterCount = 0;
+      nativeProgressGeneration += 1;
+    } else if (countPinned) {
+      pinnedMeterCount += 1;
+    }
+    return advanced;
+  }
+  function pauseVideo() {
+    cancelFrameClockCheck();
+    const element = videoEl.value;
+    if (!element) return;
+    if (!element.paused) element.pause();
+    if (element.playbackRate !== 1) element.playbackRate = 1;
+  }
+
+  function markPlaybackFailure(itemUuid: string | null, message: string) {
+    playAttemptFailed = true;
+    videoFailed.value = true;
+    videoReady.value = false;
+    showVideo.value = false;
+    pauseVideo();
+    reportPlaybackError({ itemUuid, message });
+  }
+
+  function playVideo() {
+    const element = videoEl.value;
+    const source = videoSrc.value;
+    const itemUuid = sourceItemUuid;
+    if (!element || !source || playAttemptFailed || !hasHealthyClock.value
+      || waitingForHealthyClockSample || waitingForNativeProgress) return;
+    if (element.paused === false) {
+      scheduleFrameClockCheck();
+      return;
+    }
+    const playResult = element.play();
+    scheduleFrameClockCheck();
+    void playResult.catch(() => {
+      if (videoSrc.value !== source || sourceItemUuid !== itemUuid) return;
+      markPlaybackFailure(itemUuid, 'Video playback could not start.');
+    });
+  }
+
+  function isAtOutPoint(item: OutputItem, playheadSeconds: number): boolean {
+    return item.outPoint !== null && item.outPoint > item.inPoint
+      && playheadSeconds >= item.outPoint;
+  }
+
+  function applyItem(item: OutputItem, playheadSeconds: number, seekImmediately = true) {
+    cueImageSrc.value = pathMediaUrl(item.imagePath);
+    pendingSeekSeconds = playheadSeconds;
+
+    if (!item.hasVideo) {
+      showVideo.value = false;
+      pauseVideo();
+      return;
+    }
+
+    const url = itemMediaUrl(item);
+    if (url !== videoSrc.value) {
+      pauseVideo();
+      videoSrc.value = url;
+      videoReady.value = false;
+      videoFailed.value = false;
+      playAttemptFailed = false;
+      noDecodableVideoTrack = false;
+      reportPlaybackError(null);
+      beginNativeClockGrace(activeCueId.value, playheadSeconds);
+    }
+
+    const atOutPoint = isAtOutPoint(item, playheadSeconds);
+    showVideo.value = !atOutPoint && !videoFailed.value;
+    const element = videoEl.value;
+    if (element && videoReady.value && seekImmediately
+      && Math.abs(element.currentTime - playheadSeconds) > CHASE_DEADBAND_S) {
+      element.currentTime = playheadSeconds;
+    }
+    if (atOutPoint) pauseVideo();
+  }
+
+  function applyTransport(transport: number) {
+    activeTransport.value = transport;
+    if (transport === TRANSPORT_STOPPED || transport === TRANSPORT_PAUSED
+      || !showVideo.value || !hasHealthyClock.value || waitingForHealthyClockSample
+      || waitingForNativeProgress) {
+      pauseVideo();
+      return;
+    }
+    playVideo();
+  }
+
+  function activeCueKey(active: ActiveCue): string {
+    return active.cueId ? `cue:${active.cueId}` : `item:${active.itemUuid}`;
+  }
+
+  function newestActiveCue(): ActiveCue | null {
+    let newest: ActiveCue | null = null;
+    for (const active of activeCues.values()) {
+      if (!newest || active.triggerSeq > newest.triggerSeq) newest = active;
+    }
+    return newest;
+  }
 
   function clearActive() {
     activeItemUuid.value = null;
     activeCueId.value = null;
     activeTransport.value = TRANSPORT_STOPPED;
+    activeTriggerSeq = -1;
     showVideo.value = false;
     cueImageSrc.value = null;
-    const el = videoEl.value;
-    if (el) {
-      el.pause();
-      el.playbackRate = 1;
-    }
+    pauseVideo();
+    reportPlaybackError(null);
+    preloadNextItem();
   }
 
-  function applyItem(item: OutputItem, playheadSeconds: number) {
-    cueImageSrc.value = mediaUrl(item.imagePath);
-
-    if (item.hasVideo) {
-      const url = mediaUrl(item.mediaPath) ?? mediaUrl(item.mediaServerPath);
-      if (url && url !== videoSrc.value) {
-        videoSrc.value = url;
-        videoReady.value = false;
-        videoFailed.value = false;
-      }
-      // The engine position is authoritative (the in-point at this edge). If
-      // the element is still loading, loadedmetadata applies it instead.
-      pendingSeekSeconds = playheadSeconds;
-      const el = videoEl.value;
-      if (el && videoReady.value &&
-          Math.abs(el.currentTime - playheadSeconds) > CHASE_DEADBAND_S) {
-        el.currentTime = playheadSeconds;
-      }
-      showVideo.value = !videoFailed.value && url !== null;
-    } else {
-      // Audio-only cue: no video layer; the per-cue image (if any) shows.
-      showVideo.value = false;
+  function renderNewestActive(seekImmediately = true) {
+    const active = newestActiveCue();
+    if (!active) {
+      if (activeItemUuid.value) clearActive();
+      return;
     }
-  }
-
-  function applyTransport(transport: number) {
-    activeTransport.value = transport;
-    const el = videoEl.value;
-    if (!el || !showVideo.value) return;
-    if (transport === TRANSPORT_PAUSED) {
-      if (!el.paused) el.pause();
-    } else if (transport !== TRANSPORT_STOPPED && el.paused) {
-      void el.play().catch(() => { /* degraded; the chase loop retries */ });
-    }
-  }
-
-  // Adopt an already-sounding cue reported by a playback snapshot, following
-  // the same cut rules as a live edge. When the document fetch is still in
-  // flight the restore is deferred via pendingActive.
-  function applySnapshotActive(active: SnapshotActive) {
     const item = doc.value?.items.get(active.itemUuid);
-    if (!item) { pendingActive = active; return; }
-    pendingActive = null;
-    if (active.itemUuid !== activeItemUuid.value) {
-      const el = videoEl.value;
-      if (el) { el.pause(); el.playbackRate = 1; }
+    if (!item) return;
+
+    const sourceChanged = active.itemUuid !== activeItemUuid.value
+      || active.triggerSeq !== activeTriggerSeq;
+    if (sourceChanged) {
+      pauseVideo();
+      reportPlaybackError(null);
       activeItemUuid.value = active.itemUuid;
       activeCueId.value = active.cueId;
-      applyItem(item, active.playheadSeconds);
-    } else if (active.cueId && active.cueId !== activeCueId.value) {
+      activeTriggerSeq = active.triggerSeq;
+      beginNativeClockGrace(active.cueId, active.playheadSeconds);
+    } else if (active.cueId !== activeCueId.value) {
       activeCueId.value = active.cueId;
     }
+    applyItem(item, active.playheadSeconds, seekImmediately);
     applyTransport(active.transport);
   }
 
-  const offCueState = server.onCueState((raw: unknown) => {
-    const state = readCueState(raw);
-    if (!state) return;
-    // A live edge is fresher than any deferred snapshot restore.
-    pendingActive = null;
-    if (state.itemUuid && state.itemUuid === previewItemUuid.value) return;
-
-    if (state.transport === TRANSPORT_STOPPED) {
-      // Only the active cue's stop clears the surface — one-shots and other
-      // cues stop around us all the time.
-      if ((state.itemUuid && state.itemUuid === activeItemUuid.value) ||
-          (state.cueId && state.cueId === activeCueId.value)) {
-        clearActive();
+  function removeMatchingActive(active: ActiveCue) {
+    for (const [key, existing] of activeCues) {
+      if ((active.cueId && existing.cueId === active.cueId)
+        || existing.itemUuid === active.itemUuid) {
+        activeCues.delete(key);
       }
+    }
+  }
+
+  async function refetchDoc() {
+    const generation = ++fetchGeneration;
+    try {
+      const nextDoc = readDoc(await server.fetchProject());
+      if (generation !== fetchGeneration) return;
+      doc.value = nextDoc;
+      renderNewestActive();
+      preloadNextItem();
+    } catch {
+      // A reconnect or later document patch will retry.
+    }
+  }
+
+  function scheduleRefetch() {
+    clearTimeout(refetchTimer);
+    refetchTimer = window.setTimeout(() => { void refetchDoc(); }, 300);
+  }
+
+  const offCueState = server.onCueState((raw: unknown) => {
+    const state = readActiveCue(raw);
+    if (!state) return;
+    acceptNextSnapshot = false;
+    highestTriggerSeqSeen = Math.max(highestTriggerSeqSeen, state.triggerSeq);
+
+    if (state.itemUuid === previewItemUuid.value) return;
+    if (state.transport === TRANSPORT_STOPPED) {
+      removeMatchingActive(state);
+      renderNewestActive();
       return;
     }
 
-    const item = state.itemUuid ? doc.value?.items.get(state.itemUuid) : undefined;
-    if (!state.itemUuid || !item) return;   // engine-only cue, not in the document
-
-    if (state.itemUuid !== activeItemUuid.value) {
-      // Cut: a different item took over (v1 is one video at a time; the
-      // newest cue wins the screen).
-      const el = videoEl.value;
-      if (el) { el.pause(); el.playbackRate = 1; }
-      activeItemUuid.value = state.itemUuid;
-      activeCueId.value = state.cueId;
-      applyItem(item, state.playheadSeconds);
-    } else if (state.cueId && state.cueId !== activeCueId.value) {
-      activeCueId.value = state.cueId;
-    }
-    applyTransport(state.transport);
+    recordNativePosition(state.cueId ?? state.itemUuid, state.playheadSeconds, false);
+    removeMatchingActive(state);
+    activeCues.set(activeCueKey(state), state);
+    renderNewestActive();
+    if (!doc.value?.items.has(state.itemUuid)) void refetchDoc();
   });
 
-  // ---- Chase (the only per-frame work) -----------------------------------------
-  const offMeters = server.onMeters((m: MetersBroadcast) => {
-    const el = videoEl.value;
-    const cueId = activeCueId.value;
-    if (!el || !cueId || !showVideo.value || !videoReady.value) return;
-    const meter = m.items.find((i) => i.cue_id === cueId);
-    if (!meter) return;
+  const offMeters = server.onMeters((meters: MetersBroadcast) => {
+    const active = newestActiveCue();
+    if (!active?.cueId) return;
+    const meter = meters.items.find((item) => item.cue_id === active.cueId);
+    if (!meter || meter.transport === TRANSPORT_STOPPED) return;
+
+    if (meter.transport !== TRANSPORT_PAUSED && !hasHealthyClock.value) return;
+
+    const nativeAdvanced = recordNativePosition(active.cueId, meter.playhead_seconds);
+    if (!nativeAdvanced && meter.transport !== TRANSPORT_PAUSED
+      && pinnedMeterCount >= PINNED_METER_LIMIT) {
+      waitingForNativeProgress = true;
+    }
+    const canRecoverClock = nativeAdvanced && meter.transport !== TRANSPORT_PAUSED;
+    active.playheadSeconds = meter.playhead_seconds;
+    active.transport = meter.transport;
+    renderNewestActive(meter.transport === TRANSPORT_PAUSED);
 
     if (meter.transport === TRANSPORT_PAUSED) {
-      if (!el.paused) el.pause();
+      pauseVideo();
       return;
     }
-    if (meter.transport === TRANSPORT_STOPPED) return;   // the edge handles it
-    if (el.paused) {
-      void el.play().catch(() => {});
-      return;
-    }
+    if ((waitingForHealthyClockSample || waitingForNativeProgress) && !canRecoverClock) return;
 
-    pendingSeekSeconds = meter.playhead_seconds;
-    const drift = el.currentTime - meter.playhead_seconds;
-    const abs = Math.abs(drift);
-    if (abs > CHASE_HARD_SEEK_S) {
-      el.currentTime = meter.playhead_seconds;
-      el.playbackRate = 1;
-    } else if (abs <= CHASE_DEADBAND_S) {
-      if (el.playbackRate !== 1) el.playbackRate = 1;
-    } else {
-      // Video ahead (drift > 0) → slow down; behind → catch up.
-      el.playbackRate = Math.min(1.03, Math.max(0.97, 1 - drift));
+    const element = videoEl.value;
+    if (canRecoverClock) {
+      waitingForHealthyClockSample = false;
+      waitingForNativeProgress = false;
     }
+    if (!element || !showVideo.value || !videoReady.value) return;
+
+    const drift = element.currentTime - meter.playhead_seconds;
+    const absoluteDrift = Math.abs(drift);
+    if (absoluteDrift > CHASE_HARD_SEEK_S) {
+      element.currentTime = meter.playhead_seconds;
+      element.playbackRate = 1;
+    } else if (absoluteDrift <= CHASE_DEADBAND_S) {
+      if (element.playbackRate !== 1) element.playbackRate = 1;
+    } else {
+      element.playbackRate = Math.min(1.03, Math.max(0.97, 1 - drift));
+    }
+    applyTransport(meter.transport);
   });
 
-  // ---- Preload the armed ("Up Next") item ---------------------------------------
-  // Paused-load preload: the element buffers and seeks to the in-point ahead
-  // of the cut, so the play edge is a same-frame play() (spec §6 step 1).
-  // Never preload over a playing video — that would cut the current cue.
-  const nextItemUuid = ref<string | null>(null);
-  watch(nextItemUuid, (uuid) => {
+  function preloadNextItem() {
+    const uuid = nextItemUuid.value;
     if (!uuid || activeItemUuid.value) return;
     const item = doc.value?.items.get(uuid);
     if (!item?.hasVideo) return;
-    const url = mediaUrl(item.mediaPath) ?? mediaUrl(item.mediaServerPath);
-    if (!url || url === videoSrc.value) return;
+    const url = itemMediaUrl(item);
+    if (url === videoSrc.value) return;
+    pauseVideo();
     videoSrc.value = url;
     videoReady.value = false;
     videoFailed.value = false;
+    playAttemptFailed = false;
+    noDecodableVideoTrack = false;
     pendingSeekSeconds = item.inPoint;
-  });
+    reportPlaybackError(null);
+  }
+
+  const stopNextItemWatch = watch(nextItemUuid, preloadNextItem);
 
   const offSnapshot = server.onPlaybackSnapshot((raw: unknown) => {
     if (!raw || typeof raw !== 'object') return;
-    const snap = raw as Record<string, unknown>;
-    nextItemUuid.value = readString(snap.next_item_uuid);
-
-    // The snapshot carries the server's authoritative list of sounding cues —
-    // the only way this surface learns about playback that started before it
-    // connected. Prefer a video-bearing item; otherwise the first sounding
-    // cue wins (an audio-only activation just reveals the image layers).
-    const preview = snap.preview && typeof snap.preview === 'object'
-      ? snap.preview as Record<string, unknown>
+    const snapshot = raw as Record<string, unknown>;
+    nextItemUuid.value = readString(snapshot.next_item_uuid);
+    const preview = snapshot.preview && typeof snapshot.preview === 'object'
+      ? snapshot.preview as Record<string, unknown>
       : null;
-    if (preview) previewItemUuid.value = readString(preview.item_uuid);
+    previewItemUuid.value = preview ? readString(preview.item_uuid) : null;
 
-    const candidates: SnapshotActive[] = [];
-    for (const entry of Array.isArray(snap.cues) ? snap.cues : []) {
-      if (!entry || typeof entry !== 'object') continue;
-      const e = entry as Record<string, unknown>;
-      const itemUuid = readString(e.item_uuid);
-      if (!itemUuid || itemUuid === previewItemUuid.value) continue;
-      candidates.push({
-        itemUuid,
-        cueId: readString(e.cue_id),
-        transport: readNumber(e.transport) ?? TRANSPORT_STOPPED,
-        playheadSeconds: readNumber(e.playhead_seconds) ?? 0,
-      });
+    const candidates: ActiveCue[] = [];
+    for (const entry of Array.isArray(snapshot.cues) ? snapshot.cues : []) {
+      const active = readActiveCue(entry);
+      if (!active || active.transport === TRANSPORT_STOPPED
+        || active.itemUuid === previewItemUuid.value) continue;
+      candidates.push(active);
     }
-    const active = candidates.find((c) => doc.value?.items.get(c.itemUuid)?.hasVideo)
-      ?? candidates[0]
-      ?? null;
-    if (active) applySnapshotActive(active);
-    else if (activeItemUuid.value) clearActive();   // server: nothing playing
-    else pendingActive = null;
+    const newestSequence = candidates.reduce(
+      (sequence, active) => Math.max(sequence, active.triggerSeq),
+      -1,
+    );
 
-    void refetchDoc();   // reconnect catch-up: the doc may have changed offline
+    // A delayed reconnect snapshot must not restore an older picture over a
+    // cue_state edge already observed on this connection.
+    if (acceptNextSnapshot || newestSequence >= highestTriggerSeqSeen) {
+      activeCues.clear();
+      for (const active of candidates) activeCues.set(activeCueKey(active), active);
+      highestTriggerSeqSeen = Math.max(highestTriggerSeqSeen, newestSequence);
+      renderNewestActive();
+    }
+    acceptNextSnapshot = false;
+    void refetchDoc();
   });
 
   const offDocPatch = server.onDocPatch((raw: unknown) => {
@@ -396,9 +549,16 @@ export function useVideoOutput() {
         case 'next_item_set':
           nextItemUuid.value = readString(patch.itemUuid);
           break;
-        case 'preview_started':
+        case 'preview_started': {
           previewItemUuid.value = readString(patch.itemUuid);
+          if (previewItemUuid.value) {
+            for (const [key, active] of activeCues) {
+              if (active.itemUuid === previewItemUuid.value) activeCues.delete(key);
+            }
+            renderNewestActive();
+          }
           break;
+        }
         case 'preview_stopped':
           previewItemUuid.value = null;
           break;
@@ -409,54 +569,83 @@ export function useVideoOutput() {
     scheduleRefetch();
   });
 
-  // ---- Element event handlers (bound by the view) --------------------------------
+  function currentVideoEventElement(): HTMLVideoElement | null {
+    const element = videoEl.value;
+    const source = videoSrc.value;
+    if (!element || !source) return null;
+    if (element.currentSrc && element.currentSrc !== source) return null;
+    return element;
+  }
+
+  function rejectMissingDecodedVideo(element: HTMLVideoElement): boolean {
+    if (noDecodableVideoTrack) return true;
+    if (element.videoWidth > 0 && element.videoHeight > 0) return false;
+    noDecodableVideoTrack = true;
+    markPlaybackFailure(sourceItemUuid, 'Video playback could not be decoded.');
+    return true;
+  }
+
   function onVideoLoadedMetadata() {
-    const el = videoEl.value;
-    if (el && Math.abs(el.currentTime - pendingSeekSeconds) > CHASE_DEADBAND_S) {
-      el.currentTime = pendingSeekSeconds;
+    const element = currentVideoEventElement();
+    if (!element || rejectMissingDecodedVideo(element)) return;
+    if (Math.abs(element.currentTime - pendingSeekSeconds) > CHASE_DEADBAND_S) {
+      element.currentTime = pendingSeekSeconds;
     }
   }
 
   function onVideoCanPlay() {
+    const element = currentVideoEventElement();
+    if (!element || rejectMissingDecodedVideo(element)) return;
     videoReady.value = true;
-    // A play edge that arrived while the element was still loading.
-    if (showVideo.value && activeTransport.value !== TRANSPORT_PAUSED &&
-        activeTransport.value !== TRANSPORT_STOPPED) {
-      void videoEl.value?.play().catch(() => {});
-    }
+    videoFailed.value = false;
+    playAttemptFailed = false;
+    reportPlaybackError(null);
+    renderNewestActive();
   }
 
   function onVideoError() {
-    // Degrade, don't fail: drop to the per-cue image / standby layer. The
-    // control surface never shows a blocking error mid-show (spec §6).
-    videoFailed.value = true;
-    videoReady.value = false;
-    showVideo.value = false;
-    console.warn('[video-output] decode failed for', videoSrc.value);
+    if (!currentVideoEventElement()) return;
+    markPlaybackFailure(sourceItemUuid, 'Video playback could not be decoded.');
   }
 
-  // ---- Lifecycle -------------------------------------------------------------------
-  const stopConnectedWatch = watch(() => server.connected, (isConnected) => {
-    if (isConnected) void refetchDoc();
+  const stopClockWatch = watch(hasHealthyClock, (healthy, wasHealthy) => {
+    if (!healthy) {
+      waitingForHealthyClockSample = true;
+      pauseVideo();
+    } else if (wasHealthy === false) {
+      // Do not free-run from the frozen frame. The first fresh engine meter
+      // seeks us to the recovered clock before play resumes.
+      waitingForHealthyClockSample = true;
+    }
+  });
+
+  const stopConnectedWatch = watch(() => server.connected, (connected) => {
+    if (!connected) {
+      acceptNextSnapshot = true;
+    } else {
+      void refetchDoc();
+    }
   }, { immediate: true });
 
   onScopeDispose(() => {
     clearTimeout(refetchTimer);
+    cancelFrameClockCheck();
+    fetchGeneration += 1;
     offCueState();
     offMeters();
     offSnapshot();
     offDocPatch();
+    stopNextItemWatch();
+    stopClockWatch();
     stopConnectedWatch();
   });
 
   return {
-    // element binding
     videoEl,
     videoSrc,
     onVideoLoadedMetadata,
     onVideoCanPlay,
     onVideoError,
-    // layer state
     showVideo,
     cueImageSrc,
     standbySrc,

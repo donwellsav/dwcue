@@ -67,6 +67,12 @@
     "forget": "Glem",
     "showNetworkUi": "Connect to a server on the network…"
   },
+  "audioHealth": {
+    "stalled": "{name}: lydutgangen har stoppet — ingen klokkekall.",
+    "queued": "{name}: utgangen er fortsatt stoppet. Gjenoppretting er lagt i kø; venter på klokkekall.",
+    "starting": "{name}: lydutgangen starter; venter på klokkekall.",
+    "recoveryFailed": "{name}: kunne ikke legge gjenoppretting av lydutgangen i kø."
+  },
   "project": {
     "newShow": "Nytt show",
     "showName": "Shownavn",

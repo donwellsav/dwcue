@@ -67,6 +67,12 @@
     "forget": "بھول جائیں",
     "showNetworkUi": "Connect to a server on the network…"
   },
+  "audioHealth": {
+    "stalled": "{name}: آڈیو آؤٹ پٹ رک گیا ہے — کوئی کلاک کال بیک نہیں۔",
+    "queued": "{name}: آؤٹ پٹ اب بھی رکا ہوا ہے۔ بحالی قطار میں ہے؛ کلاک کال بیکس کا انتظار ہے۔",
+    "starting": "{name}: آڈیو آؤٹ پٹ شروع ہو رہا ہے؛ کلاک کال بیکس کا انتظار ہے۔",
+    "recoveryFailed": "{name}: آڈیو آؤٹ پٹ کی بحالی قطار میں شامل نہیں ہو سکی۔"
+  },
   "project": {
     "newShow": "نیا شو",
     "showName": "شو کا نام",

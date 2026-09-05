@@ -1,6 +1,6 @@
 # DonWells Cue
 
-**DonWells Cue is a free, open-source app for playing back audio in live shows.** If you run sound for theatre, conferences, houses of worship, AV installs, or any live event, DonWells Cue lets you line up your music, sound effects and stings ahead of time and fire them off reliably on the night — from a laptop, a touchscreen, or even a separate stage-side machine you control over the network.
+**DonWells Cue is a free, open-source app for playing back audio and video in live shows.** If you run sound for theatre, conferences, houses of worship, AV installs, or any live event, DonWells Cue lets you line up your music, sound effects and stings ahead of time and fire them off reliably on the night — from a laptop, a touchscreen, or even a separate stage-side machine you control over the network.
 
 You build a **show** as a list of cues plus a grid of one-touch buttons, then trigger them with a click, a tap, a keyboard shortcut, or a MIDI controller. DonWells Cue handles the fades, the transitions between tracks, and keeps a close eye on your levels so nothing clips or distorts.
 
@@ -50,8 +50,11 @@ Video cues are ordinary audio cues whose media file also carries a picture (H.26
 - **Recover from the output itself** by right-clicking it. The context menu can enter or leave fullscreen, show the test card, or **Exit Video Output**. On Windows, **Alt+F4** also closes only the Video Output window; **Esc** leaves fullscreen. Closing it disarms the output for the rest of the session until you open it again.
 - **Keep using shortcuts** even if the Video Output window owns keyboard focus. DonWells Cue forwards application and One Shot shortcuts to the control window while preserving operating-system and native app shortcuts such as Windows Alt+F4 and the normal Ctrl/Cmd file commands.
 - **Idle layers** — when no video cue is playing the output shows, in priority order: the cue's own **image** (set in Properties for audio-only cues), otherwise the project's **standby image** (Project Settings), otherwise black. Black is a fallback layer, not a dedicated operator blackout: the current UI has no blackout or fade-to-black control.
-- **In sync with audio** — the picture chases the engine's playhead: pauses freeze the frame, while small playback-rate corrections and thresholded re-anchoring keep the two timelines aligned.
+- **In sync with audio** — the picture follows the native engine clock, including file-absolute paused seeks, loops, and authored Out points. It freezes when native progress stops and resumes only with fresh progress; it does not free-run through an audio stall.
 - **Silent videos** — a video file with no audio track still plays: the engine runs a silent transport of the container's duration so the cue advances, auto-follows and reports progress exactly like an audible cue.
+- **Grouped cues and One Shots** — nested video/image cues and cart-only video are supported; video uses the same media resolution as native audio. Reopening the output restores the most recently fired program source, not arbitrary cue-list order.
+- **Visible failures** — unsupported or undecodable video tracks produce an error in the control window and do not leave a misleading picture on the audience output. A healthy replacement source clears the error.
+- **Audio output recovery** — a stalled callback clock produces an operator warning. **Retry now** restarts that device in place, preserving its identity, routes, and loaded cues. Request acceptance is not success: the warning clears only after the matching restart receives a real callback. A failed attempt remains retryable.
 
 ---
 

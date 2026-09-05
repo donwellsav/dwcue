@@ -28,11 +28,13 @@ import type {
   MasterChannelIndex,
   MetersBroadcast,
   MixerChannelId,
-  ServerCue,
   ServerAudioReadiness,
+  ServerCue,
+  ServerCueState,
   ServerDeviceInfo,
   ServerFsListing,
   ServerMixerChannel,
+  ServerPlaybackSnapshot,
   ServerWaveform,
   WaveformAnalysisRange,
 } from '~/types/server';
@@ -144,9 +146,7 @@ function createClient() {
   }
 
   // Subscribers for cue transport-state transitions emitted by the server.
-  // Payload: { cue_id, transport (0=Stopped,1=Playing,2=FadingIn,3=FadingOut), playhead_seconds }
-  type CueStatePayload = { cue_id: string; transport: number; playhead_seconds: number };
-  type CueStateSubscriber = (s: CueStatePayload) => void;
+  type CueStateSubscriber = (s: ServerCueState) => void;
   const cueStateSubscribers = new Set<CueStateSubscriber>();
   function onCueState(cb: CueStateSubscriber): () => void {
     cueStateSubscribers.add(cb);
@@ -157,17 +157,7 @@ function createClient() {
   // every (re)connect so the client can rebuild its idea of what's playing,
   // what's "Up Next", and any active preview without waiting for the next
   // transport edge to fire.
-  type PlaybackSnapshot = {
-    cues: Array<{ cue_id: string; transport: number; playhead_seconds: number }>;
-    next_item_uuid: string;
-    master_gain_db: number;
-    output_channel_gains: Array<{ channel: number; db: number }>;
-    selected_item_uuid: string;
-    show_mode: boolean;
-    locale: string;
-    preview: { item_uuid: string; cue_id: string };
-  };
-  type PlaybackSnapshotSubscriber = (s: PlaybackSnapshot) => void;
+  type PlaybackSnapshotSubscriber = (s: ServerPlaybackSnapshot) => void;
   const playbackSnapshotSubscribers = new Set<PlaybackSnapshotSubscriber>();
   function onPlaybackSnapshot(cb: PlaybackSnapshotSubscriber): () => void {
     playbackSnapshotSubscribers.add(cb);
@@ -372,7 +362,7 @@ function createClient() {
           // The snapshot is sparse: stopped cues and 0 dB channel gains are
           // omitted. Treat it as authoritative so state that changed while
           // this client was offline cannot survive the reconnect.
-          const snap = payload as PlaybackSnapshot;
+          const snap = payload as ServerPlaybackSnapshot;
           const active = new Map((snap.cues ?? []).map(c => [c.cue_id, c]));
           const notified = new Set<string>();
           for (const cue of cues.value) {
@@ -410,7 +400,15 @@ function createClient() {
             cues.value[idx].playhead_seconds = payload.playhead_seconds;
           }
           // Notify subscribers (e.g. useAudioEngine cleans up activeCues on stop).
-          for (const cb of cueStateSubscribers) cb(payload as CueStatePayload);
+          for (const cb of cueStateSubscribers) cb(payload as ServerCueState);
+          break;
+        }
+        case 'device_state': {
+          const device = payload.device as ServerDeviceInfo | undefined;
+          if (!device || typeof device.id !== 'string') break;
+          const idx = devices.value.findIndex(existing => existing.id === device.id);
+          if (idx >= 0) devices.value[idx] = device;
+          else devices.value.push(device);
           break;
         }
         case 'doc_patch': {
@@ -1031,6 +1029,12 @@ function createClient() {
     });
     fetchDevices().catch(() => {});
   }
+  async function recoverDevice(id: DeviceId) {
+    return rest<{ accepted: true; request_id: number }>(
+      `/api/devices/${encodeURIComponent(id)}/recover`,
+      { method: 'POST' },
+    );
+  }
 
   // ---- Filesystem ---------------------------------------------------
   // filter: 'audio' (default), 'all', or a comma-separated extension list.
@@ -1329,6 +1333,7 @@ function createClient() {
     // devices
     openDevice,
     closeDevice,
+    recoverDevice,
 
     // fs / uploads / waveform
     listServerPath,

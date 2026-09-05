@@ -67,6 +67,12 @@
     "forget": "Uită",
     "showNetworkUi": "Connect to a server on the network…"
   },
+  "audioHealth": {
+    "stalled": "{name}: ieșirea audio s-a blocat — nu există apeluri de ceas.",
+    "queued": "{name}: ieșirea este încă blocată. Recuperarea a fost pusă în coadă; se așteaptă apelurile de ceas.",
+    "starting": "{name}: ieșirea audio pornește; se așteaptă apelurile de ceas.",
+    "recoveryFailed": "{name}: recuperarea ieșirii audio nu a putut fi pusă în coadă."
+  },
   "project": {
     "newShow": "Spectacol nou",
     "showName": "Numele spectacolului",

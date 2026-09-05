@@ -1,9 +1,8 @@
 <!--
   VideoOutputView.vue
   ---------------------------------------------------------------------------
-  The ?videoOutput=1 render surface. Slice 1 scope: an opaque black base layer
-  plus the test card; per-cue images / standby image / muted <video> arrive in
-  slice 3 on top of this same component.
+  The ?videoOutput=1 audience surface: opaque black, standby and cue images,
+  native-clocked muted video, and an explicitly enabled diagnostic test card.
 
   Rules that matter here (learned the hard way by Inkue/FreeShow):
   - The window must paint OPAQUE BLACK when idle — never nothing (Wayland and

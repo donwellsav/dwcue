@@ -67,6 +67,12 @@
     "forget": "भूल जाएँ",
     "showNetworkUi": "Connect to a server on the network…"
   },
+  "audioHealth": {
+    "stalled": "{name}: ऑडियो आउटपुट रुक गया — कोई क्लॉक कॉलबैक नहीं।",
+    "queued": "{name}: आउटपुट अभी भी रुका है। रिकवरी कतार में है; क्लॉक कॉलबैक की प्रतीक्षा है।",
+    "starting": "{name}: ऑडियो आउटपुट शुरू हो रहा है; क्लॉक कॉलबैक की प्रतीक्षा है।",
+    "recoveryFailed": "{name}: ऑडियो आउटपुट रिकवरी को कतार में नहीं डाला जा सका।"
+  },
   "project": {
     "newShow": "नया शो",
     "showName": "शो का नाम",

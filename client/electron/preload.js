@@ -260,6 +260,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setTestCard:  (show)       => ipcRenderer.invoke('video-output:test-card', show),
     setFullscreen:    (on)     => ipcRenderer.invoke('video-output:set-fullscreen', on),
     toggleFullscreen: ()       => ipcRenderer.invoke('video-output:toggle-fullscreen'),
+    reportPlaybackError: (error) =>
+      ipcRenderer.invoke('video-output:report-playback-error', error),
     onShortcut: (callback) => {
       const listener = (_e, shortcut) => callback(shortcut);
       ipcRenderer.on('video-output:shortcut', listener);

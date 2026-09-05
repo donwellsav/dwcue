@@ -29,7 +29,11 @@ export interface ServerDeviceInfo {
   is_open: boolean;
   is_available: boolean;
   is_clock_master: boolean;
-  runtime_state: 'available' | 'starting' | 'running' | 'interrupted' | 'disconnected' | 'closing';
+  runtime_state: 'available' | 'starting' | 'running' | 'stalled' | 'interrupted' | 'disconnected' | 'closing';
+  recovery_request_id: number;
+  recovery_status: 'idle' | 'pending' | 'succeeded' | 'failed';
+  callback_entry_count: number;
+  stream_recovery_count: number;
   underrun_count: number;
   underrun_frames: number;
   overrun_count: number;
@@ -41,6 +45,16 @@ export interface ServerDeviceInfo {
   correction_limit_count: number;
   ring_occupancy_frames: number;
   clock_correction_ppm: number;
+}
+
+export function recoveryResultForRequest(
+  device: ServerDeviceInfo,
+  requestId: number,
+): 'succeeded' | 'failed' | null {
+  if (device.recovery_request_id !== requestId) return null;
+  if (device.recovery_status === 'failed') return 'failed';
+  if (device.recovery_status !== 'succeeded') return null;
+  return device.runtime_state === 'running' ? 'succeeded' : 'failed';
 }
 
 export interface ServerCueLTC {
@@ -66,6 +80,24 @@ export interface ServerCue {
   file_loaded?: boolean;
   decode_error?: boolean;
   decoder_result?: number;
+}
+export interface ServerCueState {
+  cue_id: string;
+  item_uuid?: string;
+  transport: number;
+  playhead_seconds: number;
+  trigger_seq?: number;
+}
+
+export interface ServerPlaybackSnapshot {
+  cues: ServerCueState[];
+  next_item_uuid: string;
+  master_gain_db: number;
+  output_channel_gains: Array<{ channel: number; db: number }>;
+  selected_item_uuid: string;
+  show_mode: boolean;
+  locale: string;
+  preview: { item_uuid: string; cue_id: string };
 }
 
 export interface ServerMixerChannel {

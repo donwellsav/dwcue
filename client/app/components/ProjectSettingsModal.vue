@@ -657,6 +657,14 @@
               <p class="settings-help video-output-status" :class="{ 'video-output-status--warn': !!voWarningText }">
                 {{ voWarningText || voStatusText }}
               </p>
+              <p
+                v-if="voStatus?.playbackError"
+                class="settings-help video-output-playback-error"
+                role="alert"
+              >
+                <strong>{{ t('common.error') }}:</strong>
+                {{ voStatus.playbackError.message }}
+              </p>
               <p class="settings-help">{{ t('settings.videoOutputMachineNote') }}</p>
             </section>
           </template>
@@ -1392,6 +1400,13 @@ function close() {
 .video-output-status--warn {
   color: var(--color-warning, #f1c21b);
   font-weight: 600;
+}
+.video-output-playback-error {
+  padding: 8px 10px;
+  color: var(--color-danger);
+  background: var(--color-surface);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--control-radius);
 }
 .video-output-display-row {
   display: grid;

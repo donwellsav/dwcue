@@ -292,6 +292,9 @@ std::vector<DeviceInfo> AudioEngine::enumerate_devices() const {
         // enumeration-only hardware-name id.
         info.id = dev.id;
         info.is_open = true;
+        info.recovery_request_id = dev.recovery_request.request_id();
+        info.recovery_status = device_recovery_status_name(
+            dev.recovery_request.status());
         const auto runtime_state =
             dev.runtime_state.load(std::memory_order_acquire);
         info.is_clock_master =
@@ -816,27 +819,28 @@ void AudioEngine::close_device(const DeviceId& id) {
     consumption_counter_.notify_all();
 }
 
-bool AudioEngine::request_device_recovery(const DeviceId& id) {
-    if (!running_.load(std::memory_order_acquire)) return false;
+std::optional<std::uint64_t> AudioEngine::request_device_recovery(
+    const DeviceId& id) {
+    if (!running_.load(std::memory_order_acquire)) return std::nullopt;
 
     std::lock_guard lifecycle_lock{device_lifecycle_mutex_};
+    std::uint64_t request_id = 0;
     {
         std::lock_guard lock{mutex_};
         auto* device = find_device_locked(id);
         if (!device || !device->ma_dev ||
             device->closing.load(std::memory_order_acquire) ||
-            device->recovery_in_progress.load(std::memory_order_acquire)) {
-            return false;
+            device->recovery_in_progress.load(std::memory_order_acquire) ||
+            device->recovery_requested.load(std::memory_order_acquire) ||
+            device->recovery_request.status() == DeviceRecoveryStatus::Pending) {
+            return std::nullopt;
         }
-        bool expected = false;
-        if (!device->recovery_requested.compare_exchange_strong(
-                expected, true,
-                std::memory_order_release, std::memory_order_relaxed)) {
-            return false;
-        }
+        request_id = next_recovery_request_id_++;
+        if (!device->recovery_request.begin(request_id)) return std::nullopt;
+        device->recovery_requested.store(true, std::memory_order_release);
     }
     device_watchdog_cv_.notify_one();
-    return true;
+    return request_id;
 }
 
 AudioEngine::Device* AudioEngine::find_device_locked(const DeviceId& id) const {
@@ -1311,9 +1315,11 @@ float AudioEngine::read_master_gain_reduction_db(MasterChannelIndex master) cons
 }
 
 void AudioEngine::recover_device(Device& device) noexcept {
+    const auto request_id = device.recovery_request.request_id();
     if (!running_.load(std::memory_order_acquire) ||
         !device.ma_dev || !device.ring ||
         device.closing.load(std::memory_order_acquire)) {
+        (void)device.recovery_request.fail(request_id);
         return;
     }
 
@@ -1352,7 +1358,7 @@ void AudioEngine::recover_device(Device& device) noexcept {
     device.ring_occupancy_frames.store(0, std::memory_order_relaxed);
     device.reset_applied = true;
     device.native_recovery_pending.store(false, std::memory_order_release);
-    device.stream_recovery_pending.store(reset_ok, std::memory_order_release);
+    device.started_recovery_request_id = reset_ok ? request_id : 0;
     device.callback_liveness.arm(
         device.callback_entries.value(), CallbackLivenessMonitor::Clock::now());
     device.observed_liveness_epoch =
@@ -1361,9 +1367,10 @@ void AudioEngine::recover_device(Device& device) noexcept {
     if (reset_ok && ma_device_start(device.ma_dev.get()) == MA_SUCCESS) {
         device.started.store(true, std::memory_order_release);
     } else {
-        device.stream_recovery_pending.store(false, std::memory_order_release);
+        device.started_recovery_request_id = 0;
         device.runtime_state.store(
             DeviceRuntimeState::Disconnected, std::memory_order_release);
+        (void)device.recovery_request.fail(request_id);
     }
     device.recovery_in_progress.store(false, std::memory_order_seq_cst);
     consumption_counter_.fetch_add(1, std::memory_order_release);
@@ -1414,6 +1421,13 @@ void AudioEngine::device_watchdog_loop() {
             if (runtime_state != DeviceRuntimeState::Starting &&
                 runtime_state != DeviceRuntimeState::Running &&
                 runtime_state != DeviceRuntimeState::Stalled) {
+                const auto recovery_request_id =
+                    device->started_recovery_request_id;
+                if (recovery_request_id != 0) {
+                    device->started_recovery_request_id = 0;
+                    (void)device->recovery_request.fail(
+                        recovery_request_id);
+                }
                 continue;
             }
 
@@ -1425,10 +1439,14 @@ void AudioEngine::device_watchdog_loop() {
                 if (device->runtime_state.compare_exchange_strong(
                         runtime_state, DeviceRuntimeState::Running,
                         std::memory_order_acq_rel, std::memory_order_acquire)) {
-                    if (device->stream_recovery_pending.exchange(
-                            false, std::memory_order_acq_rel)) {
+                    const auto recovery_request_id =
+                        device->started_recovery_request_id;
+                    if (recovery_request_id != 0) {
                         device->stream_recovery_count.fetch_add(
                             1, std::memory_order_relaxed);
+                        device->started_recovery_request_id = 0;
+                        (void)device->recovery_request.succeed(
+                            recovery_request_id);
                     }
                     const bool native_recovery =
                         device->native_recovery_pending.exchange(
@@ -1451,6 +1469,13 @@ void AudioEngine::device_watchdog_loop() {
                         1, std::memory_order_relaxed);
                     device->reset_requested.store(
                         true, std::memory_order_release);
+                    const auto recovery_request_id =
+                        device->started_recovery_request_id;
+                    if (recovery_request_id != 0) {
+                        device->started_recovery_request_id = 0;
+                        (void)device->recovery_request.fail(
+                            recovery_request_id);
+                    }
                     wake_render = true;
                 }
             }

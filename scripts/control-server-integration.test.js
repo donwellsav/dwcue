@@ -246,7 +246,7 @@ test('native server echoes mutation IDs only on matching WebSocket events', asyn
   }
 });
 
-test('native media UUID streaming preserves resolver fallback, ranges, and recovery errors', async t => {
+test('native media, recovery correlation, and authoritative trigger order stay coherent', async t => {
   const home = await mkdtemp(path.join(os.tmpdir(), 'dwcue-media-integration-'));
   const port = await unusedPort();
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -305,6 +305,74 @@ test('native media UUID streaming preserves resolver fallback, ranges, and recov
     assert.equal(missing.status, 404);
     assert.doesNotMatch(await missing.text(), /access_token|fallback-video/);
 
+    const recoveryStream = openEventStream(
+      'ws://127.0.0.1:' + port + '/ws?access_token=' + encodeURIComponent(accessToken),
+    );
+    t.after(() => recoveryStream.socket.close());
+    await recoveryStream.opened;
+
+    const devicesResponse = await request(baseUrl, '/api/devices');
+    assert.equal(devicesResponse.status, 200);
+    const devices = await devicesResponse.json();
+    assert.ok(Array.isArray(devices));
+    for (const device of devices) {
+      assert.equal(typeof device.recovery_request_id, 'number');
+      assert.match(device.recovery_status, /^(idle|pending|succeeded|failed)$/);
+    }
+
+    // Exercise the full 202 -> correlated terminal WebSocket contract when
+    // this host exposes an audio output. Headless CI legitimately cannot open
+    // a native device, but still verifies the serialized idle fields above.
+    const opened = await request(baseUrl, '/api/devices/open', {
+      method: 'POST',
+      body: JSON.stringify({ name: '', channels: 2 }),
+    });
+    if (opened.status === 200) {
+      const { device_id: deviceId } = await opened.json();
+      const accepted = await request(
+        baseUrl,
+        '/api/devices/' + encodeURIComponent(deviceId) + '/recover',
+        { method: 'POST' },
+      );
+      assert.equal(accepted.status, 202);
+      const acceptedBody = await accepted.json();
+      assert.equal(acceptedBody.accepted, true);
+      assert.ok(Number.isSafeInteger(acceptedBody.request_id));
+      assert.ok(acceptedBody.request_id > 0);
+
+      const terminal = await recoveryStream.next(message =>
+        message.type === 'device_state' &&
+        message.device?.id === deviceId &&
+        message.device?.recovery_request_id === acceptedBody.request_id &&
+        /^(succeeded|failed)$/.test(message.device?.recovery_status));
+      if (terminal.device.recovery_status === 'succeeded') {
+        assert.equal(terminal.device.runtime_state, 'running');
+      } else {
+        const retryResponse = await request(
+          baseUrl,
+          '/api/devices/' + encodeURIComponent(deviceId) + '/recover',
+          { method: 'POST' },
+        );
+        assert.equal(retryResponse.status, 202);
+        const retryBody = await retryResponse.json();
+        assert.ok(retryBody.request_id > acceptedBody.request_id);
+        await recoveryStream.next(message =>
+          message.type === 'device_state' &&
+          message.device?.id === deviceId &&
+          message.device?.recovery_request_id === retryBody.request_id &&
+          /^(succeeded|failed)$/.test(message.device?.recovery_status));
+      }
+
+      const closed = await request(baseUrl, '/api/devices/close', {
+        method: 'POST',
+        body: JSON.stringify({ id: deviceId }),
+      });
+      assert.equal(closed.status, 200);
+    } else {
+      assert.equal(opened.status, 400);
+    }
+    recoveryStream.socket.close();
+
     const recovery = await request(baseUrl, '/api/devices/not-a-device/recover', { method: 'POST' });
     assert.equal(recovery.status, 404);
     assert.deepEqual(await recovery.json(), { error: 'device not found or recovery unavailable' });
@@ -331,10 +399,15 @@ test('native media UUID streaming preserves resolver fallback, ranges, and recov
       const played = await request(baseUrl, `/api/project/items/${uuid}/play`, { method: 'POST' });
       assert.equal(played.status, 200, `play failed: ${await played.text()}`);
     }
-    const stream = openEventStream(`ws://127.0.0.1:${port}/ws?access_token=${encodeURIComponent(accessToken)}`);
+    const stream = openEventStream(
+      'ws://127.0.0.1:' + port + '/ws?access_token=' + encodeURIComponent(accessToken),
+    );
     t.after(() => stream.socket.close());
     await stream.opened;
-    const snapshot = await stream.next(message => message.type === 'playback_snapshot');
+    const snapshot = await stream.next(message =>
+      message.type === 'playback_snapshot' &&
+      message.cues?.some(cue => cue.item_uuid === 'older-trigger') &&
+      message.cues?.some(cue => cue.item_uuid === 'newer-trigger'));
     const older = snapshot.cues.find(cue => cue.item_uuid === 'older-trigger');
     const newer = snapshot.cues.find(cue => cue.item_uuid === 'newer-trigger');
     assert.ok(older && newer, 'snapshot omitted playing cues');

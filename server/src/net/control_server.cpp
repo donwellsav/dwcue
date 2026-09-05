@@ -56,6 +56,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -618,6 +619,8 @@ json device_info_to_json(const audio::DeviceInfo& d) {
         {"is_available",  d.is_available},
         {"is_clock_master", d.is_clock_master},
         {"runtime_state", d.runtime_state},
+        {"recovery_request_id", d.recovery_request_id},
+        {"recovery_status", d.recovery_status},
         {"underrun_count", d.underrun_count},
         {"underrun_frames", d.underrun_frames},
         {"overrun_count", d.overrun_count},
@@ -795,8 +798,12 @@ void ControlServer::broadcast_loop() {
     // rounds every sleep up); sleep_until against an advancing deadline
     // self-corrects, so the average rate converges on meter_broadcast_hz.
     auto next_tick = clock::now() + period;
-    // Edge-triggered runtime/clock-role state; payloads remain full snapshots.
-    std::unordered_map<std::string, std::pair<std::string, bool>> prev_device_states;
+    // Edge-triggered runtime, clock-role, and recovery state. Including the
+    // request id guarantees a fast terminal result still emits an event even
+    // when the runtime state is Running before and after the restart.
+    using DeviceStateSignature =
+        std::tuple<std::string, bool, std::uint64_t, std::string>;
+    std::unordered_map<std::string, DeviceStateSignature> prev_device_states;
     auto next_download_cleanup = clock::now() + std::chrono::minutes(1);
     auto next_upload_cleanup = clock::now() + std::chrono::minutes(1);
 
@@ -937,7 +944,12 @@ void ControlServer::broadcast_loop() {
         std::vector<std::string> device_state_events;
         try {
             for (const auto& device : engine_.enumerate_devices()) {
-                const auto signature = std::pair{device.runtime_state, device.is_clock_master};
+                const auto signature = DeviceStateSignature{
+                    device.runtime_state,
+                    device.is_clock_master,
+                    device.recovery_request_id,
+                    device.recovery_status,
+                };
                 const auto previous = prev_device_states.find(device.id.value);
                 if (previous == prev_device_states.end() || previous->second != signature) {
                     device_state_events.push_back(json{
@@ -1637,10 +1649,15 @@ void ControlServer::install_routes() {
 
     CROW_ROUTE(app, "/api/devices/<string>/recover").methods(crow::HTTPMethod::Post)
         ([this](std::string id) {
-            if (!engine_.request_device_recovery(audio::DeviceId{std::move(id)})) {
+            const auto request_id = engine_.request_device_recovery(
+                audio::DeviceId{std::move(id)});
+            if (!request_id) {
                 return json_err(404, "device not found or recovery unavailable");
             }
-            crow::response response{202, json({{"accepted", true}}).dump()};
+            crow::response response{202, json({
+                {"accepted", true},
+                {"request_id", *request_id},
+            }).dump()};
             response.set_header("Content-Type", "application/json");
             return response;
         });

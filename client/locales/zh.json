@@ -67,6 +67,12 @@
     "forget": "忘记",
     "showNetworkUi": "Connect to a server on the network…"
   },
+  "audioHealth": {
+    "stalled": "{name}：音频输出停滞 — 未收到时钟回调。",
+    "queued": "{name}：输出仍处于停滞状态。恢复已排队，正在等待时钟回调。",
+    "starting": "{name}：音频输出正在启动，正在等待时钟回调。",
+    "recoveryFailed": "{name}：无法将音频输出恢复加入队列。"
+  },
   "project": {
     "newShow": "新建演出",
     "showName": "演出名称",

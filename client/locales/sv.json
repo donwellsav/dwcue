@@ -67,6 +67,12 @@
     "forget": "Glöm",
     "showNetworkUi": "Connect to a server on the network…"
   },
+  "audioHealth": {
+    "stalled": "{name}: ljudutgången har stannat — inga klockåteranrop.",
+    "queued": "{name}: utgången är fortfarande stoppad. Återställning har köats; väntar på klockåteranrop.",
+    "starting": "{name}: ljudutgången startar; väntar på klockåteranrop.",
+    "recoveryFailed": "{name}: det gick inte att köa återställning av ljudutgången."
+  },
   "project": {
     "newShow": "Ny föreställning",
     "showName": "Föreställningens namn",

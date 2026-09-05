@@ -67,6 +67,12 @@
     "forget": "Dimentica",
     "showNetworkUi": "Connect to a server on the network…"
   },
+  "audioHealth": {
+    "stalled": "{name}: uscita audio bloccata — nessun callback del clock.",
+    "queued": "{name}: l’uscita è ancora bloccata. Ripristino in coda; in attesa dei callback del clock.",
+    "starting": "{name}: avvio dell’uscita audio; in attesa dei callback del clock.",
+    "recoveryFailed": "{name}: impossibile accodare il ripristino dell’uscita audio."
+  },
   "project": {
     "newShow": "Nuovo spettacolo",
     "showName": "Nome dello spettacolo",
