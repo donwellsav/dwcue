@@ -421,8 +421,8 @@ const drawWaveform = () => {
   // Clear canvas
   ctx.clearRect(0, 0, rect.width, rect.height);
 
-  // The waveform is information-bearing cue data, so it may carry the authored
-  // cue colour while the surrounding workspace surfaces remain neutral.
+  // Draw the real decoded peaks in the cue's authored colour. The canvas-level
+  // opacity keeps the controls and labels readable without desaturating the hue.
   ctx.fillStyle = getComputedStyle(canvas).color;
 
   const peaks = audioItem.waveform.peaks;
@@ -589,7 +589,7 @@ const itemStyle = computed(() => {
     marginLeft: showMode.value ? '0px' : `${depthOffset}px`,
     '--item-depth-offset': `${depthOffset}px`,
     '--folder-background': 'var(--color-surface-raised)',
-    '--waveform-color': `color-mix(in srgb, ${props.item.color} 40%, #687386)`,
+    '--waveform-color': props.item.color || 'var(--color-text-tertiary)',
   };
 });
 
