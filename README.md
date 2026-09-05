@@ -6,7 +6,7 @@ You build a **show** as a list of cues plus a grid of one-touch buttons, then tr
 
 This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. Published macOS packages are Developer ID signed, notarized, and package-validated.
 
-> **Current source:** package metadata is **v2.6.13**. The release page is authoritative for published installers and release assets; verify the installed About version before relying on a behaviour. This source includes the playback-safety, project-save/reconnect, managed local-authentication, show-creation/import, and .dwcue naming work described below.
+> **Current source:** package metadata is **v2.6.14**. The release page is authoritative for published installers and release assets; verify the installed About version before relying on a behaviour. This source includes the playback-safety, project-save/reconnect, managed local-authentication, show-creation/import, and .dwcue naming work described below.
 
 > **Operating a show?** Use the [operator manual (PDF)](docs/operators-manual.pdf) or its [Markdown source](docs/operators-manual.md). Those instructions track the current source. The client and server READMEs linked later are developer references, not show-day instructions.
 
@@ -112,7 +112,7 @@ If your browser blocked the download instead, choose **Keep** to save the instal
 
 ## Getting started
 
-These steps describe the current v2.6.13 working tree. It writes native show documents as `.dwcue` files and portable exports as `.dwcuepack` archives.
+These steps describe the current v2.6.14 working tree. It writes native show documents as `.dwcue` files and portable exports as `.dwcuepack` archives.
 
 1. Install the [latest release](https://github.com/donwellsav/dwcue/releases/latest), or build DonWells Cue from source, and launch it.
 2. Choose **New Show**, enter its name, use **Choose…** to select the read-only Location, and create it — DonWells Cue writes `<show name>.dwcue` and a `media/` sub-folder there.
@@ -340,7 +340,7 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.13**; the release page remains the source of truth for published artefacts and their checksums.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.14**; the release page remains the source of truth for published artefacts and their checksums.
 
 ### Triggering a release
 
