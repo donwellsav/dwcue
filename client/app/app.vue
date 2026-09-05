@@ -19,7 +19,7 @@
         </header>
         <OneShotPanel v-if="currentProject" :is-detached-window="true" />
         <div v-else class="cart-window-loading">
-          <span class="material-symbols-rounded">queue_music</span>
+          <CueSymbol name="one-shots" />
         </div>
       </div>
 
@@ -174,13 +174,13 @@
       @cancel="importChoiceVisible = false"
     />
 
-    <!-- Server file picker — used both to choose a .lpa on the server,
-         and to choose the extract destination. -->
+    <!-- Server file picker — used both to choose a canonical or legacy archive
+         on the server and to choose the extract destination. -->
     <ServerFilePickerModal
       :open="importServerPickerOpen"
       :mode="importServerPickerStage === 'destination' ? 'directory' : 'file'"
-      :filter="importServerPickerStage === 'destination' ? 'all' : '.lpa'"
-      :filter-options="importServerPickerStage === 'destination' ? ['all'] : ['.lpa', 'all']"
+      :filter="importServerPickerStage === 'destination' ? 'all' : '.dwcuepack,.lpa'"
+      :filter-options="importServerPickerStage === 'destination' ? ['all'] : ['.dwcuepack,.lpa', 'all']"
       start-path=""
       @pick="onImportServerPickerPick"
       @close="importServerPickerOpen = false"
@@ -191,8 +191,9 @@
 </template>
 
 <script setup lang="ts">
-import 'material-symbols';
+import 'material-symbols/rounded.css';
 import OneShotPanel from './components/OneShotPanel.vue';
+import type { ProjectFileKind } from '~/utils/projectFileFormats';
 
 const {
   currentProject, saveProject, openProject, closeProject, confirmUnsavedChanges,
@@ -204,15 +205,15 @@ const {
   deleteDialogConfirmAll, deleteDialogConfirmOnly, deleteDialogCancel,
 } = useProject();
 
-// Shared pending file-open state (set here when a .liveplay/.lpa is double-
-// clicked, consumed by WelcomeScreen which owns the server-connection flow).
-const pendingFileOpen = useState<{ path: string; kind: 'liveplay' | 'lpa' } | null>(
+// Shared queued file state consumed by WelcomeScreen, which owns server setup
+// and routes native opens separately from explicit legacy imports.
+const pendingFileOpen = useState<{ path: string; kind: ProjectFileKind } | null>(
   'liveplay:pendingFileOpen', () => null);
 
 // Route a double-clicked file to the welcome-screen flow. If a project is
 // already open we close it first (after the unsaved-changes prompt) so
 // WelcomeScreen re-mounts and picks up the pending file.
-async function routePendingFile(data: { filePath: string; kind: 'liveplay' | 'lpa' }) {
+async function routePendingFile(data: { filePath: string; kind: ProjectFileKind }) {
   if (!data?.filePath) return;
   pendingFileOpen.value = { path: data.filePath, kind: data.kind };
   if (currentProject.value) {
@@ -392,14 +393,10 @@ onMounted(() => {
       showAboutModal.value = true;
     });
     
-    // File > Import Project. When the server is on this same machine the
-    // .lpa already lives somewhere we can reach — show the server file
-    // picker. When the server is remote, ask the user whether they want
-    // to browse the server's filesystem OR pick a .lpa from this computer
-    // and upload it. The actual archive extraction always happens on the
-    // server now (no more Electron-side extract path), because the
-    // extracted project folder MUST live next to the server's audio
-    // engine — otherwise the audio files don't resolve at playback.
+    // File > Import Project. Local servers can browse a canonical .dwcuepack
+    // or legacy .lpa directly. Remote servers can browse their filesystem or
+    // upload an archive selected on this computer. Extraction always happens
+    // beside the server's audio engine so imported media paths resolve.
     window.electronAPI.onMenuImportProject(() => {
       startImportFlow();
     });
@@ -443,10 +440,9 @@ onMounted(() => {
       void window.electronAPI.checkForUpdates();
     });
     
-    // File association (.liveplay / .lpa double-click). Both the warm-start
-    // push and the cold-start pull funnel into routePendingFile, which hands
-    // off to WelcomeScreen for the server-connection + open/import flow.
-    window.electronAPI.onOpenFileAssociation((_event: any, data: { filePath: string; kind: 'liveplay' | 'lpa' }) => {
+    // Warm-start pushes and cold-start pulls share semantic file kinds, then
+    // WelcomeScreen chooses native open, legacy conversion, or archive import.
+    window.electronAPI.onOpenFileAssociation((_event: any, data: { filePath: string; kind: ProjectFileKind }) => {
       void routePendingFile(data);
     });
     window.electronAPI.getPendingOpenFile?.().then((pending) => {
@@ -598,19 +594,18 @@ const changeAccentColor = (color: string) => {
 const importChoiceVisible       = ref(false);
 const importServerPickerOpen    = ref(false);
 const importServerPickerStage   = ref<'archive' | 'destination'>('archive');
-const pendingArchiveOnServer    = ref<string>('');           // server-side .lpa path
-const pendingArchiveClientPath  = ref<string>('');           // client-side .lpa path
+const pendingArchiveOnServer    = ref<string>('');
+const pendingArchiveClientPath  = ref<string>('');
 const pendingArchiveName        = ref<string>('');
 
-// When a .lpa is double-clicked, WelcomeScreen handles the local/remote
-// connection then publishes the local .lpa path here. The archive stays on
-// disk until the destination is chosen (server owns the extraction).
-const pendingLpaImportReady = useState<string | null>('liveplay:pendingLpaImportReady', () => null);
-watch(pendingLpaImportReady, (lpaPath) => {
-  if (!lpaPath) return;
-  pendingLpaImportReady.value = null; // consume
-  pendingArchiveClientPath.value = lpaPath;
-  pendingArchiveName.value = lpaPath.split(/[\\/]/).pop() || 'import.lpa';
+// WelcomeScreen publishes a queued canonical or legacy archive here after the
+// server is connected. The source remains untouched until a destination exists.
+const pendingArchiveImportReady = useState<string | null>('liveplay:pendingLpaImportReady', () => null);
+watch(pendingArchiveImportReady, (archivePath) => {
+  if (!archivePath) return;
+  pendingArchiveImportReady.value = null;
+  pendingArchiveClientPath.value = archivePath;
+  pendingArchiveName.value = archivePath.split(/[\/]/).pop() || 'import.dwcuepack';
   importServerPickerStage.value = 'destination';
   importServerPickerOpen.value = true;
 });
@@ -632,13 +627,11 @@ async function onImportChoice(choice: 'server' | 'client') {
     importServerPickerOpen.value = true;
     return;
   }
-  // client → ask Electron for an .lpa from this computer, then move on to
-  // the server-destination picker so the user chooses WHERE on the server
-  // it should be extracted.
-  const lpaPath = await (window as any).electronAPI.showOpenArchiveDialog();
-  if (!lpaPath) return;
-  pendingArchiveClientPath.value = lpaPath;
-  pendingArchiveName.value = lpaPath.split(/[\\/]/).pop() || 'import.lpa';
+  // Select an archive on this computer, then choose its server destination.
+  const archivePath = await (window as any).electronAPI.showOpenArchiveDialog();
+  if (!archivePath) return;
+  pendingArchiveClientPath.value = archivePath;
+  pendingArchiveName.value = archivePath.split(/[\/]/).pop() || 'import.dwcuepack';
   importServerPickerStage.value = 'destination';
   importServerPickerOpen.value  = true;
 }
@@ -649,16 +642,14 @@ async function onImportServerPickerPick(serverPath: string) {
   const server = useLiveplayServer();
 
   if (importServerPickerStage.value === 'archive') {
-    // The user picked a .lpa that already lives on the server. Now ask
-    // WHERE to extract it (also on the server).
+    // The archive already lives on the server; choose its extraction target.
     pendingArchiveOnServer.value = serverPath;
     importServerPickerStage.value = 'destination';
     importServerPickerOpen.value  = true;
     return;
   }
 
-  // 'destination': we know the .lpa (either on server or buffered locally)
-  // AND now the extraction directory. Kick off the import.
+  // The archive and extraction directory are known; begin the server import.
   progressModal.value = {
     visible: true,
     title:   t('importProgress.title'),
@@ -680,8 +671,8 @@ async function onImportServerPickerPick(serverPath: string) {
     }
     progressModal.value.percentage = 100;
     if (result.projectFiles.length === 0) {
-      console.error('No .liveplay file in archive');
-      server.lastError = 'Import failed: archive contains no .liveplay project file.';
+      console.error('No .dwcue file in archive');
+      server.lastError = 'Import failed: archive contains no .dwcue project file.';
       return;
     }
     if (result.projectFiles.length > 1) {
@@ -898,7 +889,7 @@ onMounted(() => {
   background-color: var(--color-background);
   color: var(--color-text-secondary);
 
-  .material-symbols-rounded {
+  :deep(.cue-symbol) {
     font-size: 48px;
     opacity: 0.3;
   }

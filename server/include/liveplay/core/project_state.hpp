@@ -11,12 +11,10 @@
 // On load(), the ProjectState walks the document and instructs the
 // AudioEngine to mirror it (load cues, create mixer channels, wire routes).
 //
-// Legacy compatibility:
-//   * `.liveplay` JSON projects from the 1.x client are accepted by load().
-//     The translator maps the old "stereo file → mono speaker pair" routing
-//     to the new matrix:  L→(default-device, hwCh 0), R→(default-device, hwCh 1).
-//   * If the document already has a "v2" routing block (new schema), it's
-//     used as-is.
+// Native persistence uses .dwcue JSON. Legacy .liveplay files are converted
+// through the explicit one-way import path before ProjectState::load() sees
+// them. In-memory server routing documents remain supported for control-plane
+// compatibility.
 // ============================================================================
 #pragma once
 
@@ -153,7 +151,7 @@ public:
     explicit ProjectState(audio::AudioEngine& engine);
     ~ProjectState();
 
-    // Load a project file (.liveplay JSON). Returns true on success. On
+    // Load a canonical project file (.dwcue JSON). Returns true on success. On
     // failure, the previous state is preserved.
     bool load(const std::filesystem::path& path);
     bool save(const std::filesystem::path& path) const;
@@ -199,8 +197,8 @@ public:
     // are stored verbatim for the client to read back.
     bool replace_full_document(const json& doc);
 
-    // Path to the open project file (.liveplay), if any. Empty if the project
-    // is in-memory only.
+    // Path to the open canonical project file (.dwcue), if any. Empty if the
+    // project is in-memory only.
     std::filesystem::path project_file_path() const;
     void set_project_file_path(std::filesystem::path p);
 
@@ -690,9 +688,6 @@ private:
     json upgrade_legacy_document(const json& legacy) const;
     bool is_legacy_document(const json& doc) const;
 
-    // Recognise the *client*-flavoured project document (camelCase, has
-    // "items" with uuid/displayName, etc.) as written by the Electron client.
-    bool is_client_document(const json& doc) const;
 
     // Build an initial empty document with default theme + empty sections.
     static json default_empty_document();

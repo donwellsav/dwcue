@@ -68,12 +68,12 @@ for (const [name, source] of [
     `${name} must default to unity gain`);
 }
 
-let audioConstructors = 0;
+const audioConstructorFiles = new Set();
 for (const [file, source] of files) {
   for (const match of source.matchAll(
     /type:\s*['"]audio['"](?:\s+as\s+const)?\s*,/g,
   )) {
-    audioConstructors++;
+    audioConstructorFiles.add(file);
     const before = source.slice(Math.max(0, match.index - 1000), match.index);
     const spreadAt = Math.max(
       before.lastIndexOf('...DEFAULT_AUDIO_ITEM'),
@@ -95,17 +95,81 @@ for (const [file, source] of files) {
     );
   }
 }
-assert.ok(audioConstructors >= 4,
-  'expected playlist, Spotify, YouTube, and cart import constructors');
+for (const [file, pathName] of [
+  ['client/app/components/PlaylistView.vue', 'playlist/Spotify/YouTube'],
+  ['client/app/components/CartSlot.vue', 'cart slot'],
+  ['client/app/components/OneShotPanel.vue', 'one-shot cart'],
+]) {
+  assert.ok(
+    audioConstructorFiles.has(file),
+    `${file}: missing ${pathName} audio constructor`,
+  );
+}
 
 const useProject = byFile.get('client/app/composables/useProject.ts');
 assert.match(
   range(useProject, 'const createNewProject', 'const tryRejoinExistingProject').source,
   /settings:\s*\{\s*\.\.\.DEFAULT_PROJECT_SETTINGS\s*\}/,
-  'new .liveplay files must persist safe import defaults',
+  'new .dwcue shows must persist safe import defaults',
 );
 
 const playlistView = byFile.get('client/app/components/PlaylistView.vue');
+const sharedCueBuilder = range(
+  playlistView,
+  'const buildVerifiedAudioCue',
+  'const buildSpotifyCueSpecs',
+).source;
+assert.match(
+  sharedCueBuilder,
+  /\.\.\.DEFAULT_AUDIO_ITEM/,
+  'playlist, Spotify, and YouTube imports must share the unity-gain cue builder',
+);
+assert.doesNotMatch(
+  sharedCueBuilder,
+  /\bvolume\s*:/,
+  'the shared playlist/online cue builder must not override unity gain',
+);
+
+assert.match(
+  range(playlistView, 'const onImportPick', 'const cancelAudioImport').source,
+  /importFromServerPaths\(/,
+  'playlist imports must use the shared unity-gain import path',
+);
+for (const [component, pathName] of [
+  ['SpotifyImportModal', 'Spotify'],
+  ['YouTubeImportModal', 'YouTube'],
+]) {
+  assert.match(
+    playlistView,
+    new RegExp(`<${component}[^>]*:import-files="importFromServerPaths"`),
+    `${pathName} imports must use the shared unity-gain import path`,
+  );
+}
+
+assert.match(
+  range(
+    playlistView,
+    'const prepareImportFromServerPath',
+    'const importFromServerPaths',
+  ).source,
+  /buildVerifiedAudioCue\(/,
+  'the shared prepared-import path must use the unity-gain cue builder',
+);
+const sharedBatchImporter = range(
+  playlistView,
+  'const importFromServerPaths',
+  'const handleAddGroup',
+).source;
+assert.match(
+  sharedBatchImporter,
+  /prepareImportFromServerPath\(/,
+  'playlist and YouTube imports must use the verified cue path',
+);
+assert.match(
+  sharedBatchImporter,
+  /importSpotifyTemplate\(/,
+  'Spotify template imports must use the verified cue path',
+);
 const templateSettings = range(
   playlistView,
   'const settings: ProjectSettings =',
@@ -239,8 +303,19 @@ assert.match(
   'delayed import analysis must not overwrite an operator volume edit',
 );
 
+const explicitTrim = range(
+  properties,
+  'const handleTrimSilence',
+  'const handlePlayFadeUpdate',
+);
 let guardedTrimCalls = 0;
+let explicitTrimCalls = 0;
 for (const site of callSites(files, 'trimSilence')) {
+  if (site.file === 'client/app/components/PropertiesPanel.vue' &&
+      site.index >= explicitTrim.from && site.index < explicitTrim.to) {
+    explicitTrimCalls++;
+    continue;
+  }
   const before = site.source.slice(Math.max(0, site.index - 1000), site.index);
   assert.match(
     before,
@@ -249,6 +324,7 @@ for (const site of callSites(files, 'trimSilence')) {
   );
   guardedTrimCalls++;
 }
+assert.ok(explicitTrimCalls >= 1, 'expected an explicit operator trim call');
 assert.ok(guardedTrimCalls >= 1, 'expected an opt-in automatic trim call');
 
 for (const [file, source] of files) {

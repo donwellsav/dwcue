@@ -319,8 +319,10 @@ ref="localModeButton"
 
 <script setup lang="ts">
 import ServerFilePickerModal from './ServerFilePickerModal.vue';
+import type { ProjectFileKind } from '~/utils/projectFileFormats';
+import { projectFileAction } from '~/utils/projectFileFormats';
 
-const { createNewProject, openProject, tryRejoinExistingProject } = useProject();
+const { createNewProject, importLegacyProject, openProject, tryRejoinExistingProject } = useProject();
 const { t } = useLocalization();
 const server = useLiveplayServer();
 
@@ -334,17 +336,15 @@ const remoteAccessToken = ref(String(server.accessToken || ''));
 const connecting      = ref(false);
 const connectionError = ref<string>('');
 
-// File-association open. `pendingFileOpen` is set by app.vue when a .liveplay
-// or .lpa is double-clicked; this screen owns the server-connection flow.
-//  * .liveplay → force local, start the server, open directly (no UI).
-//  * .lpa      → ask local/remote, then (after connect) hand the path back to
-//                app.vue's import destination-picker via pendingLpaImportReady.
-const pendingFileOpen = useState<{ path: string; kind: 'liveplay' | 'lpa' } | null>(
+// File-association routing is extension-aware. Canonical .dwcue shows open;
+// legacy .liveplay shows convert through the explicit importer; .dwcuepack and
+// legacy .lpa archives continue through app.vue's archive destination flow.
+const pendingFileOpen = useState<{ path: string; kind: ProjectFileKind } | null>(
   'liveplay:pendingFileOpen', () => null);
-const pendingLpaImportReady = useState<string | null>(
+const pendingArchiveImportReady = useState<string | null>(
   'liveplay:pendingLpaImportReady', () => null);
 const importAfterConnect = ref(false);
-const pendingLpaPath     = ref('');
+const pendingArchivePath = ref('');
 
 // LAN-discovered servers (populated from the UDP beacon via Electron IPC).
 type DiscoveredServer = {
@@ -389,13 +389,13 @@ const serverUrlDisplay = computed(() => server.serverUrl ?? 'http://127.0.0.1:44
 // from the combined New Show form.
 const showPicker          = ref(false);
 const pickerMode          = ref<'file' | 'directory'>('directory');
-const pickerFilter        = ref<string>('.liveplay,.lpa');
-const pickerFilterOptions = ref<string[]>(['.liveplay,.lpa', 'all']);
+const pickerFilter        = ref<string>('.dwcue,.liveplay');
+const pickerFilterOptions = ref<string[]>(['.dwcue,.liveplay', 'all']);
 const pickerStart         = ref<string>('');
 const pickerIntent        = ref<'new-location' | 'open'>('open');
 
 // Get app version
-const appVersion = ref('2.6.12');
+const appVersion = ref('2.6.13');
 onMounted(async () => {
   if (import.meta.client && (window as any).electronAPI?.getAppVersion) {
     appVersion.value = await (window as any).electronAPI.getAppVersion();
@@ -420,8 +420,8 @@ onMounted(async () => {
 
   await loadRecentProjects();
 
-  // A double-clicked .liveplay/.lpa takes precedence over everything below:
-  // it drives its own server-connection + open/import flow.
+  // A queued native open or explicit legacy import takes precedence over the
+  // ordinary welcome flow.
   const pending = pendingFileOpen.value;
   if (pending) {
     await handlePendingFileOpen(pending);
@@ -437,12 +437,11 @@ onMounted(async () => {
     try { welcomeIntent = sessionStorage.getItem('liveplay:welcomeIntent'); } catch {}
     if (welcomeOpenPath) {
       // File > Open Recent closed the previous project to land us here with an
-      // exact path to load — open it directly, no picker. The server is still
-      // connected (close only dropped the project doc, not the connection).
+      // exact path to open or import. The server connection remains active.
       try { sessionStorage.removeItem('liveplay:welcomeOpenPath'); } catch {}
       stage.value = 'project';
       nextTick(async () => {
-        const ok = await openProject(welcomeOpenPath!);
+        const ok = await openSelectedProject(welcomeOpenPath!);
         if (!ok) alert('Failed to open project');
       });
     } else if (welcomeIntent === 'new' || welcomeIntent === 'open') {
@@ -492,37 +491,33 @@ watch(stage, (s) => {
   queueStageFocus(s);
 });
 
-// Drive a double-clicked file. For .liveplay: force local, start the server,
-// open directly. For .lpa: stash the path and show the mode picker so the
-// user chooses local/remote; the import resumes once connected.
-async function handlePendingFileOpen(p: { path: string; kind: 'liveplay' | 'lpa' }) {
-  pendingFileOpen.value = null; // consume so re-entry / the watcher no-ops
-  if (p.kind === 'liveplay') {
+// Drive a queued native open or legacy import. Show files use the local server;
+// archives hand off to app.vue after the local connection is ready.
+async function handlePendingFileOpen(p: { path: string; kind: ProjectFileKind }) {
+  pendingFileOpen.value = null;
+  if (p.kind === 'native-project' || p.kind === 'legacy-project') {
     mode.value = 'local';
     connectionError.value = '';
     connecting.value = true;
     try {
       if (!(await ensureLocalServer())) { stage.value = 'mode'; return; }
-      const ok = await openProject(p.path);
+      const ok = await openSelectedProject(p.path);
       if (!ok) {
         connectionError.value = t('welcome.connectionFailed');
         stage.value = 'mode';
       }
-      // On success openProject sets currentProject and this screen unmounts.
     } catch (e: any) {
       connectionError.value = e?.message ?? String(e);
       stage.value = 'mode';
     } finally {
       connecting.value = false;
     }
-  } else {
-    pendingLpaPath.value = p.path;
-    importAfterConnect.value = true;
-    // Local-only release: a double-clicked .lpa goes straight through the
-    // local server instead of asking which server to import into.
-    // chooseLocal sees importAfterConnect and resumes the import.
-    void chooseLocal();
+    return;
   }
+
+  pendingArchivePath.value = p.path;
+  importAfterConnect.value = true;
+  void chooseLocal();
 }
 
 // Late-arrival case: a file double-clicked while this screen is already
@@ -588,7 +583,7 @@ async function probeServerReachable(url: string): Promise<void> {
 // Configure local mode, set the server URL, and spawn (or reattach to) the
 // local server, waiting until /api/health answers so a follow-up WS connect
 // doesn't race the bind. Returns false (and sets connectionError) on failure.
-// Shared by the Local button and the .liveplay file-association path.
+// Shared by the Local button and file-association routes.
 async function ensureLocalServer(): Promise<boolean> {
   const api = (window as any).electronAPI?.liveplayServer;
   if (!import.meta.client || !api?.setConfig || !api?.ensureRunning) {
@@ -616,7 +611,7 @@ async function chooseLocal() {
   connecting.value = true;
   try {
     if (!(await ensureLocalServer())) return;
-    // .lpa double-click: skip the project picker, go straight to extraction.
+    // A queued archive skips the project picker and proceeds to extraction.
     if (importAfterConnect.value) { beginImportDestination(); return; }
     // If a project is already open server-side (e.g. the user kept the
     // detached server running between renderer reloads), drop straight
@@ -630,16 +625,14 @@ async function chooseLocal() {
   }
 }
 
-// Called once a server is connected (local or remote) while a .lpa import is
-// pending. Hands the local .lpa path to app.vue, which owns the destination
-// picker + upload + extract + open (with progress). We land on the project
-// stage so cancelling the import leaves the user in a usable state.
+// Hand a queued archive to app.vue, which owns destination selection, upload,
+// extraction, and canonical project open. Cancelling leaves this screen usable.
 function beginImportDestination() {
   importAfterConnect.value = false;
-  const lpa = pendingLpaPath.value;
-  pendingLpaPath.value = '';
+  const archivePath = pendingArchivePath.value;
+  pendingArchivePath.value = '';
   stage.value = 'project';
-  if (lpa) pendingLpaImportReady.value = lpa;
+  if (archivePath) pendingArchiveImportReady.value = archivePath;
 }
 
 const { showNetworkUi, setNetworkUiVisible } = useNetworkUiVisibility();
@@ -686,7 +679,7 @@ async function connectToRemote() {
       });
     }
     void rememberServer(url);
-    // .lpa double-click: skip the project picker, go straight to extraction.
+    // A queued archive skips the project picker and proceeds to extraction.
     if (importAfterConnect.value) { beginImportDestination(); return; }
     // Multi-client: if the remote server is already running a project,
     // join the live session directly instead of showing New/Open.
@@ -792,6 +785,12 @@ function projectBasename(path: string): string {
 function projectFolder(path: string): string {
   return path.replace(/[\\/][^\\/]*$/, '');
 }
+async function openSelectedProject(projectPath: string): Promise<boolean> {
+  const action = projectFileAction(projectPath);
+  if (action === 'open-project') return openProject(projectPath);
+  if (action === 'import-legacy-project') return importLegacyProject(projectPath);
+  return false;
+}
 
 function recentProjectStartPath(): string {
   const first = recentProjects.value[0];
@@ -801,7 +800,7 @@ function recentProjectStartPath(): string {
 async function openRecentProject(project: RecentProject) {
   if (!project.path) return;
 
-  const ok = await openProject(project.path);
+  const ok = await openSelectedProject(project.path);
 
   if (!ok) {
     console.warn('[welcome] failed to open recent project:', project.path);
@@ -874,8 +873,8 @@ function browseNewShowLocation() {
 const handleOpenProject = () => {
   pickerIntent.value        = 'open';
   pickerMode.value          = 'file';
-  pickerFilter.value        = '.liveplay';
-  pickerFilterOptions.value = ['.liveplay', 'all'];
+  pickerFilter.value        = '.dwcue,.liveplay';
+  pickerFilterOptions.value = ['.dwcue,.liveplay', 'all'];
   pickerStart.value         = recentProjectStartPath();
   showPicker.value          = true;
 };
@@ -889,7 +888,7 @@ const onPickerPick = async (fullPath: string) => {
     return;
   }
   if (!fullPath) return;
-  const ok = await openProject(fullPath);
+  const ok = await openSelectedProject(fullPath);
   if (!ok) alert('Failed to open project');
 };
 
@@ -945,7 +944,7 @@ if (import.meta.client && (window as any).electronAPI) {
   // stage, connected to a server) — open the chosen path directly.
   (window as any).electronAPI.onMenuOpenRecentProject(async (_e: any, projectPath: string) => {
     if (stage.value !== 'project' || !projectPath) return;
-    const ok = await openProject(projectPath);
+    const ok = await openSelectedProject(projectPath);
     if (!ok) alert('Failed to open project');
   });
 }

@@ -275,7 +275,7 @@
     "restartTitle": "Server neu starten"
   },
   "serverSettings": {
-    "title": "DW Cue Server",
+    "title": "DonWells Cue Server",
     "connected": "● Verbunden",
     "reconnecting": "● Verbinde neu…",
     "disconnected": "● Getrennt",
@@ -436,6 +436,7 @@
   },
   "status": {
     "playing": "Wird gespielt",
+    "paused": "Pausiert",
     "upNext": "Als Nächstes",
     "previewing": "Vorschau"
   },
@@ -784,7 +785,7 @@
     "chooseDestination": "Choose Folder",
     "changeDestination": "Change",
     "destinationFailed": "Could not choose the destination folder.",
-    "createsDescription": "Creates one child folder for the collection. Its media files are used directly by both the reusable .liveplay template and the current project — no second copy.",
+    "createsDescription": "Creates one child folder for the collection. Its media files are used directly by both the reusable .dwcue template and the current project — no second copy.",
     "cueSetup": "Cue setup",
     "settingOn": "On",
     "settingOff": "Off",

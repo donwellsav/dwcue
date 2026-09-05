@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Builds a macOS .app bundle for the DW Cue Server.
+ * Builds a macOS .app bundle for the DonWells Cue Server.
  * This creates the proper application structure that can be bundled in the DMG.
  * Only runs on macOS; no-ops silently on other platforms.
  */
@@ -21,12 +21,12 @@ const serverBinaryPath = path.join(projectRoot, 'server', 'build', 'dwcue-server
 const soundfontFiles = ['TimGM6mb.sf2', 'TimGM6mb.NOTICE.md', 'TimGM6mb.GPL-2.0.txt'];
 const serverAssetsPath = path.join(projectRoot, 'server', 'assets');
 const serverIconPath = path.join(projectRoot, 'client', 'assets', 'icons', '4092w', 'liveplay-server4092w.png');
-const appBundlePath = path.join(projectRoot, 'server', 'build', 'DW Cue Server.app');
+const appBundlePath = path.join(projectRoot, 'server', 'build', 'DonWells Cue Server.app');
 const contentsPath = path.join(appBundlePath, 'Contents');
 const macOsPath = path.join(contentsPath, 'MacOS');
 const resourcesPath = path.join(contentsPath, 'Resources');
 
-console.log('[build-server-app-mac] Building DW Cue Server.app bundle...');
+console.log('[build-server-app-mac] Building DonWells Cue Server.app bundle...');
 console.log('[build-server-app-mac] Source binary:', serverBinaryPath);
 console.log('[build-server-app-mac] Target bundle:', appBundlePath);
 
@@ -71,7 +71,7 @@ try {
   // and the Ctrl-C prompt — identical to the Electron-spawned experience.
   console.log('[build-server-app-mac] Creating launcher script...');
   const launcherScript = `#!/bin/bash
-# DW Cue Server launcher — opens a visible Terminal window running the server.
+# DonWells Cue Server launcher — opens a visible Terminal window running the server.
 BINARY_DIR="$(cd "$(dirname "$0")" && pwd)"
 BINARY="$BINARY_DIR/dwcue-server"
 # Shell-quote the path for AppleScript in case it contains spaces.
@@ -97,9 +97,9 @@ osascript \\
   <key>CFBundleIdentifier</key>
   <string>com.donwells.cue.server</string>
   <key>CFBundleName</key>
-  <string>DW Cue Server</string>
+  <string>DonWells Cue Server</string>
   <key>CFBundleDisplayName</key>
-  <string>DW Cue Server</string>
+  <string>DonWells Cue Server</string>
   <key>CFBundleExecutable</key>
   <string>launcher</string>
   <key>CFBundleIconFile</key>
@@ -161,7 +161,7 @@ osascript \\
   // Create PkgInfo file (optional but good practice)
   fs.writeFileSync(path.join(contentsPath, 'PkgInfo'), 'APPLDWCQ');
 
-  console.log('[build-server-app-mac] ✓ DW Cue Server.app bundle created successfully');
+  console.log('[build-server-app-mac] ✓ DonWells Cue Server.app bundle created successfully');
   console.log(`[build-server-app-mac] Bundle location: ${appBundlePath}`);
 } catch (error) {
   console.error('[build-server-app-mac] ERROR: Failed to build server app bundle');

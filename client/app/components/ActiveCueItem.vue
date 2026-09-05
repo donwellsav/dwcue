@@ -122,9 +122,8 @@
       />
     </div>
 
-    <!-- End-of-cue warning border. Inset overlay so the thick border stays
-         inside the item box and is never clipped by the active-cue strip's
-         overflow: hidden. -->
+    <!-- End-of-cue warning border stays inset so it is never clipped by the
+         active-cue strip's overflow. -->
     <div
       v-if="warningState"
       class="warning-border"
@@ -257,53 +256,47 @@ const formatTime = (seconds: number): string => {
   background-color: var(--color-surface-raised);
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
-  padding: var(--spacing-sm) var(--spacing-md);
-  transition:
-    background-color var(--transition-fast),
-    border-color var(--transition-fast);
+  padding: var(--spacing-sm) 10px;
   min-width: 400px;
   max-width: 400px;
   display: flex;
   gap: var(--spacing-sm);
   position: relative;
-  box-shadow: inset 3px 0 0 var(--state-playing);
 }
 
-.active-cue-item.is-paused {
-  box-shadow: inset 3px 0 0 var(--color-text-tertiary);
+.active-cue-item::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background-color: var(--state-playing);
+  pointer-events: none;
 }
 
-/* Solid 4px end-of-cue warning border. Inset overlay pinned inside the item
-   box so it cannot be clipped by the active-cue strip's overflow. */
+.active-cue-item.is-paused::before {
+  background-color: var(--color-text-tertiary);
+}
+
+/* Warning timing is unchanged; the signal stays present as a static inset line. */
 .warning-border {
   position: absolute;
   inset: 0;
   z-index: 10;
   pointer-events: none;
-  border: 4px solid transparent;
-  border-radius: var(--border-radius-md);
-
-  /* Blink rates mirror the ProjectHeader silence-warning banner so the border
-     and banner pulse in sync (yellow ≤30s, orange ≤10s, red ≤5s). */
-  &.warning-border--yellow {
-    border-color: var(--state-up-next);
-    animation: warning-border-flash 2s ease-in-out infinite;
-  }
-
-  &.warning-border--orange {
-    border-color: rgb(255, 152, 0);
-    animation: warning-border-flash 1s ease-in-out infinite;
-  }
-
-  &.warning-border--red {
-    border-color: var(--color-danger);
-    animation: warning-border-flash 0.5s ease-in-out infinite;
-  }
+  border: 2px solid transparent;
+  border-radius: inherit;
 }
 
-@keyframes warning-border-flash {
-  0%, 100% { opacity: 0; }
-  50% { opacity: 1; }
+.warning-border--yellow {
+  border-color: var(--state-up-next);
+}
+
+.warning-border--orange {
+  border-color: rgb(255, 152, 0);
+}
+
+.warning-border--red {
+  border-color: var(--color-danger);
 }
 
 .cue-content {
@@ -311,28 +304,34 @@ const formatTime = (seconds: number): string => {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  justify-content: center;
 }
 
 .cue-meter {
   display: flex;
   align-items: stretch;
-  flex: 0 0 26px;
+  flex: 0 0 30px;
+  padding-left: var(--spacing-xs);
+  border-left: 1px solid var(--color-border);
 }
 
 .cue-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--spacing-xs);
+  min-width: 0;
+  margin-bottom: 6px;
 }
 
 .cue-actions {
   display: flex;
+  flex: 0 0 auto;
   gap: 4px;
+  margin-left: var(--spacing-sm);
 }
 
 .cue-name {
-  font-weight: 500;
+  font-weight: 650;
   flex: 1;
   min-width: 0;
   color: var(--color-text-primary);
@@ -353,86 +352,103 @@ const formatTime = (seconds: number): string => {
   height: 7px;
   border-radius: 50%;
   background-color: var(--state-playing);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--state-playing) 18%, transparent);
   flex: 0 0 auto;
 }
 
 .is-paused .cue-state-indicator {
   background-color: var(--color-text-tertiary);
-  box-shadow: none;
 }
 
 .cue-color-swatch {
   width: 3px;
-  height: 12px;
+  height: 13px;
   border-radius: 1px;
   flex: 0 0 auto;
 }
 
 .action-btn {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--color-border);
   border-radius: var(--border-radius-sm);
-  color: white;
-  font-size: 20px;
+  background-color: var(--color-control);
+  color: var(--color-text-primary);
+  font-size: 19px;
   line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  
-  &.pause-btn, &.resume-btn {
-    background-color: var(--color-accent);
-  }
+}
 
-  &.continue-btn {
-    background-color: var(--state-playing); /* Green: let the loop finish, then advance */
-  }
+.action-btn.continue-btn {
+  border-color: color-mix(in srgb, var(--state-playing) 70%, var(--color-border));
+  background-color: color-mix(in srgb, var(--state-playing) 14%, var(--color-control));
+  color: var(--state-playing);
+}
 
-  &.jump-cue-btn {
-    background-color: var(--color-accent); /* Blue: cut now, advance now */
-  }
+.action-btn.stop-btn {
+  background-color: var(--color-danger);
+  border-color: var(--color-danger);
+  color: white;
+}
 
-  &.stop-btn {
-    background-color: var(--color-danger);
-  }
-  
-  &:hover {
-    opacity: 0.8;
-  }
+.action-btn:hover {
+  border-color: var(--color-border-strong);
+  filter: brightness(1.08);
+}
+
+.action-btn:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
 }
 
 .cue-progress {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xs);
+  gap: 6px;
 }
 
 .time-info {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
+  display: grid;
+  grid-template-columns: minmax(4.5em, 1fr) auto minmax(4.5em, 1fr);
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
   color: var(--color-text-secondary);
+}
+
+.time-info > :first-child {
+  grid-column: 1;
+}
+
+.time-info > :last-child {
+  grid-column: 3;
+  text-align: right;
+}
+
+.time-info > .segue-countdown {
+  grid-column: 2;
 }
 
 .segue-countdown {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  color: rgb(22, 163, 74);
+  padding: 1px 4px;
+  border: 1px solid color-mix(in srgb, var(--state-playing) 58%, transparent);
+  border-radius: var(--border-radius-sm);
+  color: var(--state-playing);
   font-weight: 600;
-
-  .material-symbols-rounded {
-    font-size: 14px;
-  }
-
-  &.segue-countdown--imminent {
-    animation: segue-pulse 1s ease-in-out infinite;
-  }
 }
 
-@keyframes segue-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+.segue-countdown .material-symbols-rounded {
+  font-size: 13px;
+}
+
+.segue-countdown--imminent {
+  border-color: var(--state-playing);
+  color: var(--color-text-primary);
 }
 
 .segue-tick {
@@ -440,23 +456,23 @@ const formatTime = (seconds: number): string => {
   top: -2px;
   bottom: -2px;
   width: 2px;
-  background: rgb(22, 163, 74);
+  background: var(--state-playing);
   pointer-events: none;
 }
 
 .progress-bar {
-  height: 12px;
+  height: 6px;
   background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: var(--border-radius-sm);
   position: relative;
-  /* Force LTR direction for progress bars in RTL languages */
   direction: ltr;
 }
 
 .progress-fill {
   height: 100%;
   background-color: var(--state-playing);
-  border-radius: var(--border-radius-sm);
+  border-radius: 1px;
   transition: width 100ms linear;
   pointer-events: none;
 }
@@ -465,53 +481,38 @@ const formatTime = (seconds: number): string => {
   appearance: none;
   -webkit-appearance: none;
   position: absolute;
-  inset: -6px 0;
+  inset: -9px 0;
   z-index: 2;
   width: 100%;
   height: 24px;
   margin: 0;
   background: transparent;
-  border-radius: var(--border-radius-sm);
   cursor: pointer;
   direction: ltr;
 }
 
 .progress-slider::-webkit-slider-runnable-track {
-  height: 12px;
+  height: 6px;
   background: transparent;
 }
 
 .progress-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
-  margin-top: -2px;
-  background-color: var(--color-surface-raised);
+  width: 12px;
+  height: 14px;
+  margin-top: -4px;
+  background-color: var(--color-text-primary);
   border: 2px solid var(--state-playing);
-  border-radius: 50%;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  border-radius: 2px;
 }
 
 .progress-slider:focus-visible {
   outline: 2px solid var(--color-focus-ring);
-  outline-offset: -2px;
+  outline-offset: 3px;
 }
 
 .progress-slider:focus-visible::-webkit-slider-thumb {
-  box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--state-playing) 32%, transparent),
-    0 1px 3px rgba(0, 0, 0, 0.4);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .warning-border,
-  .segue-countdown--imminent {
-    animation: none;
-  }
-
-  .warning-border {
-    opacity: 1;
-  }
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--state-playing) 32%, transparent);
 }
 </style>

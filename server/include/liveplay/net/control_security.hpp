@@ -124,6 +124,12 @@ inline std::string sanitize_upload_filename(
     return name;
 }
 
+inline std::string canonical_archive_download_filename(std::string_view raw) {
+    std::string stem = sanitize_upload_filename(raw, "project");
+    return sanitize_upload_filename(
+        stem + ".dwcuepack", "project.dwcuepack");
+}
+
 inline bool is_token_staging_name(std::string_view name,
                                   std::string_view prefix) {
     constexpr std::string_view suffix = ".part";
@@ -146,7 +152,7 @@ inline bool is_export_staging_name(std::string_view name) {
 }
 
 inline bool is_export_archive_name(std::string_view name) {
-    constexpr std::string_view suffix = ".lpa";
+    constexpr std::string_view suffix = ".dwcuepack";
     if (!name.ends_with(suffix) || name.size() != 64 + suffix.size())
         return false;
     const auto token = name.substr(0, 64);

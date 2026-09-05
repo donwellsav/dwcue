@@ -2,7 +2,7 @@
 
 The DonWells Cue client is a Vue 3 + Nuxt 4 application wrapped in Electron. It is a **remote control** for the DonWells Cue audio server: it owns no audio decoding, no playback, no Web Audio nodes. Every user action turns into a REST call or WebSocket frame sent to `dwcue-server`, and every meter / waveform / state update comes back the same way.
 
-This document tracks the current source and is the developer's guide to the client; post-v2.6.12 source behaviour may not exist in the latest downloaded installer. For show-day use, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For the audio engine, see [`server/README.md`](../server/README.md); for overall project and release context, see the [root README](../README.md).
+This document tracks the current v2.6.13 source and is the developer's guide to the client; use the release page to determine which behaviour is present in a downloaded installer. For show-day use, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For the audio engine, see [`server/README.md`](../server/README.md); for overall project and release context, see the [root README](../README.md).
 
 ---
 
@@ -13,7 +13,7 @@ This document tracks the current source and is the developer's guide to the clie
 - [Running](#running)
 - [Architecture](#architecture)
   - [The renderer ↔ Electron-main split](#the-renderer--electron-main-split)
-  - [The renderer ↔ DW Cue server link](#the-renderer--dw-cue-server-link)
+  - [The renderer ↔ DonWells Cue server link](#the-renderer--donwells-cue-server-link)
   - [Local server lifecycle](#local-server-lifecycle)
 - [Composables](#composables)
 - [Components](#components)
@@ -36,7 +36,7 @@ This document tracks the current source and is the developer's guide to the clie
 | Media tooling    | `@ffmpeg-installer/ffmpeg`, `@ffprobe-installer/ffprobe`        |
 | YouTube import   | `yt-dlp-wrap` + `youtube-search-api`                            |
 | Updates          | `electron-updater` (GitHub Releases feed: `donwellsav/dwcue`)      |
-| File transport   | Server-backed REST upload/download for `.lpa` project archives  |
+| File transport   | Server-backed REST upload/download for `.dwcuepack` project archives; one-way `.lpa` legacy import |
 
 Audio playback, waveform extraction, metering and routing all live in the C++ server. The renderer never decodes audio.
 
@@ -119,7 +119,7 @@ Key IPC channels (non-exhaustive):
 | `read-file` / `write-file` / `copy-file` | Authorized project filesystem helpers. |
 | `get-binary-file-info` / `read-binary-file-chunk` | Bounded local archive reads for remote imports. |
 | `download-archive-to-file` | Streams a server archive directly to an authorized local destination. |
-| `menu-export-project` / `menu-import-project` (main → renderer) | Menu-triggered `.lpa` archive round-trip; the renderer owns the export/import dialogs. |
+| `menu-export-project` / `menu-import-project` (main → renderer) | Menu-triggered `.dwcuepack` export/import plus explicit `.lpa` legacy import; the renderer owns the dialogs. |
 | `check-for-updates` / `download-update` / `install-update` / `get-update-install-supported` / `get-app-version` | `electron-updater` controls. |
 | `update-available` / `update-up-to-date` / `update-download-progress` / `update-downloaded` / `update-error` / `menu-check-for-updates` (main → renderer) | Update flow events; `menu-check-for-updates` is the Help-menu trigger. |
 | `update-menu-language` / `get-system-locale` / `get-available-locales` / `get-locale-data` | Dynamic menu localisation. |
@@ -132,7 +132,9 @@ Key IPC channels (non-exhaustive):
 
 The audio data path is **not** via IPC — it's directly between the renderer and `dwcue-server` over HTTP + WebSocket. IPC is used only for things Electron needs to do as a desktop application.
 
-### The renderer ↔ DW Cue server link
+New shows and normal saves use the native `.dwcue` JSON document. New portable exports are ZIP archives named `.dwcuepack`; no additional manifest is required. The import UI also reads legacy `.liveplay` documents and `.lpa` archives as a one-way conversion. A direct `.liveplay` import writes an available `.dwcue` sibling; an `.lpa` import writes one canonical `.dwcue` in a fresh extraction directory. Both preserve the original legacy bytes and continue saving the canonical result rather than the legacy source.
+
+### The renderer ↔ DonWells Cue server link
 
 `app/composables/useLiveplayServer.ts` is the single source of truth. It is a Vue singleton — every component that calls `useLiveplayServer()` receives the **same** WebSocket connection and the **same** reactive state. The contract:
 
@@ -155,6 +157,8 @@ When DonWells Cue is installed as a desktop app, [`electron/main.js`](electron/m
 4. Trusted `liveplay-server:*` IPC replies deliver that managed token to the renderer for the current session; config and browser storage never persist it.
 5. Closing the UI leaves the detached server running so a renderer restart cannot interrupt show state; the next launch reattaches through the lock.
 6. The app can explicitly stop or restart that process. Switching **Server Settings** to a remote server cleanly stops the local child first.
+
+For upgrade compatibility, Electron's managed backend intentionally keeps the existing platform `userData` profile named `LivePlay` (for example, `~/Library/Application Support/LivePlay` on macOS). Managed server configuration, PID/lock state, and logs remain there; startup does not copy, move, or rename the profile. This is a storage-compatibility boundary, not the product's visible name. Standalone server state uses the branded DonWells Cue location documented in the operator manual.
 
 `liveplay-discovery:*` IPC channels run a UDP listener that picks up announce broadcasts from `dwcue-server` instances on the LAN, so the connection UI can present a one-click list.
 
@@ -308,7 +312,7 @@ Theme mode + accent colour are persisted on the project, not per-user — every 
 ## Auto-updates
 
 Updates are **enabled** and pinned to this repository's GitHub Releases via `autoUpdater.setFeedURL` in [`electron/main.js`](electron/main.js) (`donwellsav/dwcue`) — the app never checks any other feed.
-The published v2.6.12 release is the first updater-enabled release. Existing v2.6.11 installs cannot discover it in-app and must install v2.6.12 or later manually; subsequent releases can use the in-app flow.
+The v2.6.12 release introduced updater support. v2.6.13 continues the same GitHub Releases feed; existing v2.6.11 installs must first install v2.6.12 or later manually.
 
 Behaviour:
 
@@ -330,7 +334,7 @@ The `build` block in [`package.json`](package.json) drives `electron-builder`:
 - `files`: includes `.output/`, `electron/`, `assets/`, `locales/`. Locales must be listed explicitly or they don't ship.
 - `extraResources`: copies the C++ server binary into `resources/server-bin/`.
 - `asarUnpack`: the ffmpeg/ffprobe installers can't run from inside an asar, so they're unpacked.
-- `fileAssociations`: registers the `.liveplay` extension.
+- `fileAssociations`: registers the native `.dwcue` document and `.dwcuepack` archive extensions. Legacy `.liveplay` and `.lpa` inputs remain available through **Import Project**, not as canonical OS associations.
 
 Run the unified package build from the monorepo root so the matching native server is configured and rebuilt before Electron packaging:
 

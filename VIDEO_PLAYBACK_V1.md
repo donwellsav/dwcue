@@ -3,10 +3,8 @@
 > **Audience:** fresh agent / developer with zero prior context. Read
 > [`IMPROVEMENTS_PLAN.md` §1](IMPROVEMENTS_PLAN.md#1-current-architecture-read-this-first) first for the
 > general architecture.
-> **Status:** Video Playback v1 shipped in the latest published release, v2.6.12. Section 7
-> also records session, recovery, and shortcut-focus hardening in the current source.
-> The working source still reports v2.6.12 but is one post-tag commit ahead; do not assume
-> every §7 safeguard is present in the downloaded v2.6.12 installers.
+> **Status:** Video Playback v1 shipped in v2.6.12 and remains supported in v2.6.13. Section 7 also records session, recovery, and shortcut-focus hardening in the current source.
+> The working source reports v2.6.13; verify the release page for the published artifact and do not infer platform certification from source support alone.
 > This is an implementation/design record and retains some proposal tense, not an operator guide.
 > For show operation, use the [operator manual (PDF)](docs/operators-manual.pdf) or its
 > [Markdown source](docs/operators-manual.md).
@@ -111,7 +109,7 @@ applies unchanged. Video-ness is **derived**, not declared:
 > travels between laptops with different displays. Inkue's machine-config split
 > (per-OS config dir vs. show file) and FreeShow's per-output `screen` setting both
 > keep it out of the project document; we do the same (Electron local config, e.g.
-> alongside `readLiveplayConfig()`), so a `.liveplay` opened on another machine never
+> alongside `readLiveplayConfig()`), so a native `.dwcue` opened on another machine never
 > drags the previous operator's display choice with it.
 
 ### 5.3 Silent-video transport (the only engine work)

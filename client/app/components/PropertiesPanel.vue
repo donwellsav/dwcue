@@ -213,6 +213,7 @@
         <!-- LTC Output Section -->
         <div class="property-field" :class="{ 'field-disabled': !ltcDeviceConfigured }">
           <label class="ltc-checkbox-label">
+            <CueSymbol name="ltc" />
             <input
               type="checkbox"
               :checked="(audioItem.ltcEnabled ?? false) && ltcDeviceConfigured"
@@ -1584,6 +1585,10 @@ const formatTime = (seconds: number): string => {
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
+
+  :deep(.cue-symbol) {
+    font-size: 18px;
+  }
 
   input[type="checkbox"] {
     width: 16px;

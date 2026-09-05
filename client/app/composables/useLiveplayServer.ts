@@ -597,11 +597,17 @@ function createClient() {
       body: JSON.stringify({ path }),
     }).then(p => { fetchCues(); fetchMixerChannels(); return p; });
   }
-  async function loadProjectFromDocument(document: any) {
-    return rest<any>('/api/project/load', {
+  async function importLegacyProjectFromPath(path: string, destinationPath?: string) {
+    const body: { path: string; destinationPath?: string } = { path };
+    if (destinationPath) body.destinationPath = destinationPath;
+    return rest<any>('/api/project/import-legacy', {
       method: 'POST',
-      body: JSON.stringify({ document }),
-    }).then(p => { fetchCues(); fetchMixerChannels(); return p; });
+      body: JSON.stringify(body),
+    }).then(project => {
+      fetchCues();
+      fetchMixerChannels();
+      return project;
+    });
   }
   async function saveProjectTo(path?: string, document?: any, signal?: AbortSignal) {
     // Authoritative-save: when the caller provides the latest document, send
@@ -663,7 +669,7 @@ function createClient() {
     }
   }
 
-  // Package a project folder server-side into a .lpa archive.
+  // Package a project folder server-side into a canonical .dwcuepack archive.
   //  * outputPath set → archive written there on the server; no download token.
   //  * outputPath empty → archive staged in server temp dir; response carries
   //    a one-shot download token streamed directly to a local file.
@@ -700,8 +706,8 @@ function createClient() {
     if (!result.success) throw new Error(result.error || 'download failed');
   }
 
-  // Upload a .lpa archive from the client and have the server extract it
-  // into `extractPath` (server-side absolute path).
+  // Upload a .dwcuepack or legacy .lpa archive and have the server extract it
+  // into the server-side absolute extractPath.
   async function importProjectArchiveUpload(file: File | Blob,
                                             extractPath: string,
                                             filename?: string) {
@@ -709,7 +715,7 @@ function createClient() {
       extractPath: string;
       projectFiles: string[];
     }>(file.size, {
-      filename: filename ?? (file as File).name ?? 'import.lpa',
+      filename: filename ?? (file as File).name ?? 'import.dwcuepack',
       purpose: 'project_import',
       extract_path: extractPath,
     }, (offset, length) => file.slice(offset, offset + length),
@@ -733,7 +739,7 @@ function createClient() {
       extractPath: string;
       projectFiles: string[];
     }>(info.size, {
-      filename: filename ?? info.name ?? 'import.lpa',
+      filename: filename ?? info.name ?? 'import.dwcuepack',
       purpose: 'project_import',
       extract_path: extractPath,
     }, async (offset, length) => {
@@ -745,8 +751,8 @@ function createClient() {
     }, 60 * 60 * 1000);
   }
 
-  // Have the server extract a .lpa archive that already exists on its
-  // filesystem (chosen via the server file browser).
+  // Have the server extract a canonical or legacy archive that already exists
+  // on its filesystem (chosen via the server file browser).
   async function importProjectArchiveFromServer(archivePath: string,
                                                 extractPath: string) {
     return rest<{ extractPath: string; projectFiles: string[] }>(
@@ -997,8 +1003,8 @@ function createClient() {
   }
 
   // ---- Filesystem ---------------------------------------------------
-  // filter:  'audio' (default), 'all', or a comma list of extensions like
-  //          '.liveplay,.lpa'. Server side enforces; client just passes through.
+  // filter: 'audio' (default), 'all', or a comma-separated extension list.
+  // The server enforces it; the client only passes it through.
   async function listServerPath(path: string, filter: string = 'audio') {
     const url = '/api/fs/list?path=' + encodeURIComponent(path) +
                 '&filter=' + encodeURIComponent(filter);
@@ -1313,7 +1319,7 @@ function createClient() {
     fetchProjectItemsPage,
     fetchProjectProgress,
     loadProjectFromPath,
-    loadProjectFromDocument,
+    importLegacyProjectFromPath,
     replaceProjectDocument,
     saveProjectTo,
     repairProject,

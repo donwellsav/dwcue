@@ -11,7 +11,7 @@ import { createLatestWriteQueue } from '../app/utils/latestWriteQueue.ts';
 test('closed and pathless headers clear any previous project path', () => {
   assert.equal(projectPathFromHeader({
     hasOpenProject: false,
-    server: { projectFilePath: '/shows/old.liveplay' },
+    server: { projectFilePath: '/shows/old.dwcue' },
   }), '');
   assert.equal(projectPathFromHeader({
     hasOpenProject: true,
@@ -26,20 +26,20 @@ test('project identity uses the authoritative path when either side has one', ()
     name: 'Renamed remotely',
     folderPath: '/other-metadata',
     createdAt: 'other-created',
-    server: { projectFilePath: '/shows/show.liveplay' },
-  }, current, '/shows/show.liveplay'), true);
+    server: { projectFilePath: '/shows/show.dwcue' },
+  }, current, '/shows/show.dwcue'), true);
   assert.equal(isSameProjectIdentity({
     hasOpenProject: true,
     ...current,
-    server: { projectFilePath: '/shows/new.liveplay' },
-  }, current, '/shows/show.liveplay'), false);
+    server: { projectFilePath: '/shows/new.dwcue' },
+  }, current, '/shows/show.dwcue'), false);
   assert.equal(isSameProjectIdentity({
     hasOpenProject: true,
     name: 'Show',
     folderPath: '/shows',
     createdAt: 'created',
     server: { projectFilePath: '' },
-  }, current, '/shows/show.liveplay'), false);
+  }, current, '/shows/show.dwcue'), false);
   assert.equal(isSameProjectIdentity({
     hasOpenProject: false,
     name: 'Show',
@@ -59,10 +59,10 @@ test('pathless open projects fall back to stable document identity', () => {
 
 test('late save completion cannot update a replacement project', () => {
   const captured = { name: 'A' };
-  assert.equal(isCurrentSaveIdentity(captured, '/a.liveplay', 4, captured, '/a.liveplay', 4), true);
-  assert.equal(isCurrentSaveIdentity(captured, '/a.liveplay', 4, { name: 'A' }, '/a.liveplay', 4), false);
-  assert.equal(isCurrentSaveIdentity(captured, '/a.liveplay', 4, captured, '/b.liveplay', 4), false);
-  assert.equal(isCurrentSaveIdentity(captured, '/a.liveplay', 4, captured, '/a.liveplay', 5), false);
+  assert.equal(isCurrentSaveIdentity(captured, '/a.dwcue', 4, captured, '/a.dwcue', 4), true);
+  assert.equal(isCurrentSaveIdentity(captured, '/a.dwcue', 4, { name: 'A' }, '/a.dwcue', 4), false);
+  assert.equal(isCurrentSaveIdentity(captured, '/a.dwcue', 4, captured, '/b.dwcue', 4), false);
+  assert.equal(isCurrentSaveIdentity(captured, '/a.dwcue', 4, captured, '/a.dwcue', 5), false);
 });
 
 

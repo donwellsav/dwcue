@@ -101,9 +101,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown, { capture: tr
   display: flex;
   align-items: center;
   gap: var(--spacing-md);
-  padding: var(--spacing-xs) var(--workspace-gutter);
-  background-color: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface));
-  border-bottom: 1px solid var(--color-accent);
+  min-height: 38px;
+  padding: 4px var(--workspace-gutter);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border-strong);
+  box-shadow: inset 3px 0 0 var(--color-accent);
   flex: 0 0 auto;
 }
 
@@ -116,21 +118,27 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown, { capture: tr
 
 .level-check-bar__icon {
   color: var(--color-accent);
-  font-size: 20px;
+  font-size: 18px;
 }
 
 .level-check-bar__title {
-  font-weight: 700;
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .level-check-bar__progress {
+  padding: 2px 5px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  background: var(--color-control);
+  color: var(--color-text-secondary);
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
 
 .level-check-bar__cue {
@@ -138,24 +146,35 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown, { capture: tr
   align-items: baseline;
   gap: var(--spacing-sm);
   min-width: 0;
+  min-height: 28px;
+  padding: 3px var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  background: var(--color-control);
+  box-shadow: inset 2px 0 0 var(--color-border-strong);
   flex: 1 1 auto;
 }
 
+.level-check-bar__cue--live {
+  border-color: color-mix(in srgb, var(--color-success) 56%, var(--color-border));
+  box-shadow: inset 2px 0 0 var(--color-success);
+}
+
 .level-check-bar__cue-name {
-  font-weight: 600;
-  color: var(--color-text-primary);
   overflow: hidden;
+  color: var(--color-text-primary);
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .level-check-bar__cue--live .level-check-bar__cue-name {
-  color: var(--color-accent);
+  color: var(--color-success);
 }
 
 .level-check-bar__peak {
-  font-size: 11px;
   color: var(--color-text-secondary);
+  font-size: 11px;
   flex: 0 0 auto;
 }
 
@@ -177,16 +196,25 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown, { capture: tr
   width: 32px;
   height: 28px;
   border: 1px solid var(--color-border);
-  border-radius: var(--control-radius);
-  background-color: var(--color-control);
+  border-radius: var(--border-radius-sm);
+  background: var(--color-control);
   color: var(--color-text-secondary);
   cursor: pointer;
-  transition: color var(--transition-base), border-color var(--transition-base);
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast),
+    border-color var(--transition-fast);
 }
 
 .lc-btn:hover:not(:disabled) {
-  color: var(--color-text-primary);
   border-color: var(--color-border-strong);
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+
+.lc-btn:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
 }
 
 .lc-btn:disabled {
@@ -195,10 +223,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown, { capture: tr
 }
 
 .lc-btn--primary {
-  color: var(--color-accent);
+  border-color: var(--color-border-strong);
+  color: var(--color-text-primary);
 }
 
 .lc-btn--exit:hover {
-  color: var(--color-text-primary);
+  color: var(--color-danger);
 }
 </style>

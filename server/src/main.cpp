@@ -227,7 +227,7 @@ void print_banner(const std::string& bind_iface, int port) {
     Logger::raw(std::string{C_RESET} + "  ▶" + std::string{C_BLUE} + "⬤" + std::string{C_RESET});
     Logger::raw("");
 
-    Logger::raw(std::string{C_BOLD} + "  DW Cue Server " + std::string{C_RESET} +
+    Logger::raw(std::string{C_BOLD} + "  DonWells Cue Server " + std::string{C_RESET} +
                 std::string{C_DIM} + "v" + LIVEPLAY_SERVER_VERSION + std::string{C_RESET} +
                 std::string{C_DIM} + "  (" + platform_tag() + ")" + std::string{C_RESET});
     Logger::raw(std::string{C_DIM} +
@@ -518,7 +518,7 @@ int main(int argc, char** argv) {
     namespace net   = liveplay::net;
 
 #if defined(_WIN32)
-    SetConsoleTitle(L"DW Cue Server");
+    SetConsoleTitle(L"DonWells Cue Server");
     // Set the taskbar icon to the embedded IDI_APPICON resource. Console
     // windows use conhost.exe's icon by default; we must push ours explicitly.
     {
@@ -823,7 +823,7 @@ int main(int argc, char** argv) {
     if (is_port_in_use(opts.bind_addr, static_cast<uint16_t>(opts.port))) {
         Logger::error("Port {} is already in use.", opts.port);
         Logger::error(
-            "No process was stopped. Reattach to the existing DW Cue server "
+            "No process was stopped. Reattach to the existing DonWells Cue server "
             "or choose another port with --port.");
         remove_owned_pidfile();
         return 1;

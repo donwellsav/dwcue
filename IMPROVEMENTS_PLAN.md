@@ -1,8 +1,7 @@
 # DonWells Cue — Improvements & Feature Plan
 
 > **Audience:** This document is written for a fresh agent (or developer) with **zero prior context**.
-> Section 1 tracks the current source, whose package metadata remains v2.6.12 but which includes
-> post-v2.6.12 changes not present in the latest published installers.
+> Section 1 tracks the current source, whose package metadata is v2.6.13.
 > Sections 3–7 are proposed workstreams, not delivered features, even where they name concrete files.
 > Only **Stage 1 — Touch-Friendly Playback Mode** is marked complete here.
 > For show operation, use the [operator manual (PDF)](docs/operators-manual.pdf) or its
@@ -87,7 +86,7 @@ WebSocket `/ws`: server→client `meters`, `cue_state` transitions, and `doc_pat
 - **Current sequencing gaps**: group **Play First** / **Play All** start actions work, but group End Behavior is not consumed and `Play Next` never climbs out of the current sibling list. The audio Start Behavior dropdown's `play-next`, `play-item`, and `play-index` values are not interpreted by `ProjectState::play_item`; use audio End Behavior or timed Start Next marker controls instead. One Shot **Duck Level** works, but its visible **Duck Time** and **Release Time** do not have a server consumer.
 - **Project lifetime and save ordering**: a close-side `project_changed` clears the renderer document and path. A dirty reconnect requires **Use server project** (discard local/adopt server) or **Restore local project** (replace server/keep local dirty). Client saves run through one latest-write queue and a revision/identity fence, so stale completion cannot mark newer edits clean.
 - **Managed authentication**: standalone servers use a ≥16-character `LIVEPLAY_ACCESS_TOKEN`; when it is unset/empty they generate and print a 32-hex token once, while a non-empty shorter value refuses startup. Electron creates a fresh 64-hex token per backend generation, passes it in the environment, persists it only in the owner-private server lock, and exposes it to the renderer through trusted IPC for that session—not `localStorage`.
-- **Current creation/import UX**: **New Show** combines a name field with a read-only Location selected through **Choose…**. **Import Media** leads with local **Choose files**; advanced/server browsing is collapsed and unsupported non-media entries are disabled. The target is named **Play Next**. Unused One Shots stay collapsed unless the user explicitly asks to see them.
+- **Current creation/import UX**: **New Show** combines a name field with a read-only Location selected through **Choose…** and creates a native `.dwcue` document. Portable exports are ZIP-based `.dwcuepack` archives. **Import Project** reads legacy `.liveplay` / `.lpa` inputs only as a one-way conversion: a direct legacy document produces an available `.dwcue` sibling and a legacy archive produces one canonical `.dwcue` in a fresh destination folder, while the original bytes stay untouched. **Import Media** leads with local **Choose files**; advanced/server browsing is collapsed and unsupported non-media entries are disabled. The target is named **Play Next**. Unused One Shots stay collapsed unless the user explicitly asks to see them.
 - **Automated tests now exist**: client One Shot and Electron path tests, Spotify import reliability checks, and C++ tests under `server/tests`. Coverage is still incomplete, so the test gaps below remain useful.
 
 ### 1.4 Build & run

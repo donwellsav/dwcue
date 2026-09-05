@@ -122,8 +122,8 @@ const VIDEO_EXTENSIONS = new Set([
 ]);
 const OBVIOUS_NON_MEDIA_EXTENSIONS = new Set([
   '.txt', '.md', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
-  '.json', '.xml', '.csv', '.html', '.css', '.js', '.ts', '.vue', '.liveplay',
-  '.lpa', '.zip', '.rar', '.7z', '.tar', '.gz', '.dmg', '.exe', '.app',
+  '.json', '.xml', '.csv', '.html', '.css', '.js', '.ts', '.vue', '.dwcue',
+  '.dwcuepack', '.liveplay', '.lpa', '.zip', '.rar', '.7z', '.tar', '.gz', '.dmg', '.exe', '.app',
   '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg',
 ]);
 

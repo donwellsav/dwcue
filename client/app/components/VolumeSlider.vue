@@ -18,7 +18,10 @@
         class="volume-slider__label"
         :title="t('actions.clickToEdit')"
         @click="startEdit"
-      >{{ formatLabel(db) }}</span>
+      >
+        <span class="volume-slider__value">{{ formatLabel(db) }}</span>
+        <span class="volume-slider__unit" aria-hidden="true">dB</span>
+      </span>
       <input
         v-else
         ref="inputRef"
@@ -96,8 +99,8 @@ function cancelEdit() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  width: 48px;
+  gap: 4px;
+  width: 64px;
   padding: 2px 0;
 }
 
@@ -120,14 +123,12 @@ function cancelEdit() {
   z-index: 1;
   justify-self: end;
   height: 20px;
-  width: 42px;
+  width: 64px;
 }
 
 .volume-slider--inline .volume-slider__label {
-  width: 42px;
-  padding-right: 10px;
-  padding-left: 4px;
-  text-align: right;
+  width: 64px;
+  padding: 2px 4px;
 }
 
 .volume-slider--inline .volume-slider__input {
@@ -135,9 +136,9 @@ function cancelEdit() {
   left: auto;
   transform: none;
   box-sizing: border-box;
-  width: 42px;
+  width: 64px;
   height: 20px;
-  padding: 0 10px 0 4px;
+  padding: 0 4px;
   text-align: right;
 }
 
@@ -151,21 +152,39 @@ function cancelEdit() {
 }
 
 .volume-slider__label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 3px;
+  min-width: 64px;
+  padding: 3px 4px;
+  box-sizing: border-box;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  background: var(--color-control);
+  color: var(--color-text-primary);
   font-family: var(--font-mono, monospace);
   font-size: 12px;
-  font-weight: 700;
-  color: var(--color-text-primary);
-  text-align: center;
+  font-weight: 600;
   line-height: 1;
-  cursor: text;
-  padding: 3px 6px;
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--control-radius);
   white-space: nowrap;
-  min-width: 42px;
-  box-sizing: border-box;
+  cursor: text;
   user-select: none;
+}
+
+.volume-slider__value {
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.volume-slider__unit {
+  color: var(--color-text-secondary);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
 }
 
 .volume-slider__input {
@@ -176,19 +195,21 @@ function cancelEdit() {
   z-index: var(--z-index-dropdown, 1000);
   width: 56px;
   height: 24px;
-  font-family: var(--font-mono, monospace);
-  font-size: 13px;
-  text-align: center;
+  padding: 0;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--border-radius-sm);
+  outline: none;
   background: var(--color-control);
   color: var(--color-text-primary);
-  border: 1px solid var(--color-accent);
-  border-radius: var(--control-radius);
-  outline: none;
-  padding: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
+
 .volume-slider__input::-webkit-inner-spin-button,
 .volume-slider__input::-webkit-outer-spin-button {
-  -webkit-appearance: none;
+  appearance: none;
   margin: 0;
 }
 </style>

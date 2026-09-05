@@ -29,9 +29,9 @@
   font-display: swap;
 }
 
-// Material Symbols (rounded) for consistent UI icons
-@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap');
 
+// The rounded Material font is bundled locally from the declared package.
+// app.vue imports only rounded.css; no runtime network fetch is required.
 .material-symbols-rounded {
   font-family: 'Material Symbols Rounded';
   font-weight: normal;
@@ -61,13 +61,13 @@ button > .material-symbols-rounded {
 
   // Operational typography. Component-local exceptions should be limited to
   // meters and user-adjustable Show Mode density.
-  --type-project-size: 16px;
-  --type-panel-title-size: 14px;
+  --type-project-size: 17px;
+  --type-panel-title-size: 12px;
   --type-track-size: 15px;
-  --type-track-show-size: 19px;
+  --type-track-show-size: 20px;
   --type-metadata-size: 13px;
   --type-status-size: 11px;
-  --type-clock-size: 22px;
+  --type-clock-size: 24px;
 
   // Spacing
   --spacing-xs: 4px;
@@ -78,16 +78,16 @@ button > .material-symbols-rounded {
   --spacing-xxl: 32px;
 
   // Border radius
-  --border-radius-sm: 4px;
-  --border-radius-md: 6px;
-  --border-radius-lg: 10px;
+  --border-radius-sm: 3px;
+  --border-radius-md: 4px;
+  --border-radius-lg: 6px;
   --control-radius: var(--border-radius-md);
   --pill-radius: var(--border-radius-sm);
 
   // Transitions
-  --transition-fast: 120ms cubic-bezier(0.23, 1, 0.32, 1);
-  --transition-base: 180ms cubic-bezier(0.23, 1, 0.32, 1);
-  --transition-slow: 240ms cubic-bezier(0.23, 1, 0.32, 1);
+  --transition-fast: 100ms ease-out;
+  --transition-base: 150ms ease-out;
+  --transition-slow: 200ms ease-out;
 
   // Z-index
   --z-dropdown: 1000;
@@ -113,73 +113,72 @@ button > .material-symbols-rounded {
   --modal-max-height: 90vh;
 
   // Shared dialog chrome. Content can vary without changing the visual plane.
-  --dialog-backdrop: rgba(6, 7, 11, 0.72);
+  --dialog-backdrop: rgba(6, 9, 11, 0.76);
   --dialog-surface: var(--color-surface);
   --dialog-radius: var(--border-radius-lg);
-  --dialog-shadow: 0 24px 64px rgba(0, 0, 0, 0.46);
+  --dialog-shadow: 0 16px 48px rgba(0, 0, 0, 0.32);
   --dialog-padding: var(--spacing-xl);
   --dialog-header-padding: var(--spacing-lg) var(--spacing-xl);
   --dialog-body-padding: var(--spacing-lg) var(--spacing-xl);
   --dialog-footer-padding: var(--spacing-md) var(--spacing-xl);
 
-  // Rack-console primitives. Existing component aliases below keep this a
-  // visual overhaul rather than a risky component rewrite.
-  --rack-eigengrau: #16161d;
-  --signal-blue: #315fcf;
-  --signal-blue-hover: #3c6fe0;
-  --signal-blue-soft: rgba(49, 95, 207, 0.18);
+  // Broadcast-console foundation: neutral work surfaces, independent cue
+  // colours, and a shared operational state language. Custom accents remain
+  // user-controlled; amber is reserved for the next/armed state.
+  --signal-blue: #416c86;
+  --signal-blue-hover: #507f99;
+  --signal-blue-soft: rgba(65, 108, 134, 0.16);
   --color-accent: var(--color-accent-custom, var(--signal-blue));
   --color-accent-hover: var(--signal-blue-hover);
   --color-accent-soft: var(--signal-blue-soft);
   --color-accent-bg: var(--signal-blue-soft);
-  --color-text-on-accent: #f7f8fb;
+  --color-text-on-accent: #ffffff;
   --color-text: var(--color-text-primary);
-  --color-focus-ring: rgba(111, 145, 239, 0.55);
+  --color-focus-ring: #91bdd5;
 
-  // One status language across the playlist, cart, and transport surfaces.
   --state-playing: var(--color-success);
   --state-up-next: var(--color-warning);
   --state-preview: var(--color-accent);
 }
 
-// Light theme
+// Light console: the same hierarchy without forcing a dark work surface.
 [data-theme='light'] {
-  --color-background: #edf0f5;
-  --color-surface: #f7f8fb;
+  --color-background: #e6ecef;
+  --color-surface: #f5f8f9;
   --color-surface-raised: #ffffff;
-  --color-surface-hover: #e5e9f1;
-  --color-control: #e7ebf2;
-  --color-border: rgba(22, 29, 46, 0.16);
-  --color-border-strong: rgba(22, 29, 46, 0.28);
-  --color-text-primary: #171b25;
-  --color-text-secondary: #586274;
-  --color-text-tertiary: #788191;
-  --color-text-disabled: #969daa;
+  --color-surface-hover: #e5edf1;
+  --color-control: #edf2f4;
+  --color-border: #cad4da;
+  --color-border-strong: #9daeb8;
+  --color-text-primary: #17252d;
+  --color-text-secondary: #485f6c;
+  --color-text-tertiary: #5c707c;
+  --color-text-disabled: #84939b;
   --color-accent: var(--color-accent-custom, var(--signal-blue));
   --color-accent-hover: var(--signal-blue-hover);
-  --color-danger: #c93642;
-  --color-success: #1f8f55;
-  --color-warning: #d4a21b;
+  --color-focus-ring: #345d76;
+  --color-danger: #b62f3e;
+  --color-success: #186d4c;
+  --color-warning: #8c6416;
 }
 
-// Dark theme
 [data-theme='dark'] {
-  --color-background: var(--rack-eigengrau);
-  --color-surface: #1d1e26;
-  --color-surface-raised: #242630;
-  --color-surface-hover: #2a2d38;
-  --color-control: #121319;
-  --color-border: rgba(255, 255, 255, 0.10);
-  --color-border-strong: rgba(255, 255, 255, 0.18);
-  --color-text-primary: #f2f4f8;
-  --color-text-secondary: #aab1bf;
-  --color-text-tertiary: #7f8796;
-  --color-text-disabled: #616875;
+  --color-background: #16161d;
+  --color-surface: #191f24;
+  --color-surface-raised: #232b31;
+  --color-surface-hover: #2a343c;
+  --color-control: #131a1e;
+  --color-border: #303b43;
+  --color-border-strong: #51616c;
+  --color-text-primary: #edf2f4;
+  --color-text-secondary: #b1bfc7;
+  --color-text-tertiary: #8d9da7;
+  --color-text-disabled: #637580;
   --color-accent: var(--color-accent-custom, var(--signal-blue));
   --color-accent-hover: var(--signal-blue-hover);
-  --color-danger: #e54855;
-  --color-success: #35a96b;
-  --color-warning: #d8ad35;
+  --color-danger: #ed6c78;
+  --color-success: #64c49b;
+  --color-warning: #e2b65e;
 }
 
 // Base styles
@@ -318,12 +317,10 @@ button {
     color var(--transition-fast),
     background-color var(--transition-fast),
     border-color var(--transition-fast),
-    opacity var(--transition-fast),
-    transform var(--transition-fast),
-    box-shadow var(--transition-fast);
+    opacity var(--transition-fast);
 
   &:active:not(:disabled) {
-    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+    background-color: var(--color-surface-hover);
   }
 
   &:disabled {
@@ -380,8 +377,7 @@ input.app-range::-webkit-slider-runnable-track {
   height: 4px;
   background: var(--color-control);
   border: 1px solid var(--color-border-strong);
-  border-radius: 999px;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  border-radius: 2px;
 }
 
 input.app-range::-webkit-slider-thumb {
@@ -392,16 +388,14 @@ input.app-range::-webkit-slider-thumb {
   margin-top: -5px;
   background: var(--color-accent);
   border: 1px solid var(--color-border-strong);
-  border-radius: 50%;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  border-radius: 3px;
 }
 
 input.app-range::-moz-range-track {
   height: 4px;
   background: var(--color-control);
   border: 1px solid var(--color-border-strong);
-  border-radius: 999px;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  border-radius: 2px;
 }
 
 input.app-range::-moz-range-thumb {
@@ -409,8 +403,7 @@ input.app-range::-moz-range-thumb {
   height: 14px;
   background: var(--color-accent);
   border: 1px solid var(--color-border-strong);
-  border-radius: 50%;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  border-radius: 3px;
 }
 
 @media (prefers-reduced-motion: reduce) {

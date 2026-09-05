@@ -1,11 +1,10 @@
 // =====================================================================
 // useProject.ts
 // ---------------------------------------------------------------------
-// Project state hook. The *server* owns the canonical project document
-// (it's responsible for reading/writing .liveplay files and feeding
-// audio items into the engine). The client maintains a reactive mirror
-// of that document — components mutate it as before, and a debounced
-// watcher pushes changes back to the server.
+// Project state hook. The server owns the canonical project document: it
+// reads/writes .dwcue shows and feeds audio items into the engine. The client
+// maintains a reactive mirror; components mutate it and a debounced watcher
+// pushes changes back to the server.
 //
 // Migration intent (Milestone 1): all file I/O goes through
 // `useLiveplayServer`. The Electron `window.electronAPI` file methods
@@ -47,6 +46,11 @@ import {
   isCurrentSaveIdentity,
   projectPathFromHeader,
 } from '~/utils/projectIdentity';
+import {
+  isLegacyProjectPath,
+  isNativeProjectPath,
+  projectPathInFolder,
+} from '~/utils/projectFileFormats';
 import { createLatestWriteQueue } from '~/utils/latestWriteQueue';
 
 // ---------------------------------------------------------------------------
@@ -264,7 +268,7 @@ export const useProject = () => {
   // persists across reopens. When autosave is off, edit-triggered saves only
   // flag `hasUnsavedChanges` instead of writing the file — the server's
   // in-memory document is still kept current by the granular sync watchers, so
-  // only the .liveplay file on disk lags until an explicit save flushes it.
+  // only the canonical .dwcue file on disk lags until an explicit save flushes it.
   const hasUnsavedChanges = useState<boolean>('useProject.hasUnsavedChanges', () => false);
   // Autosave is on unless the project explicitly opted out (older projects
   // without the key default to on).
@@ -575,7 +579,7 @@ export const useProject = () => {
   // client-only: no-op in the browser / cart window or if the bridge is
   // missing. `projectPath` is the server-filesystem path openProject loads.
   const recordRecentProject = (projectPath: string) => {
-    if (!import.meta.client || !projectPath) return;
+    if (!import.meta.client || !isNativeProjectPath(projectPath)) return;
     try {
       (window as any).electronAPI?.liveplayProjects?.recentAdd?.({
         path:       projectPath,
@@ -589,7 +593,7 @@ export const useProject = () => {
   // Server-backed project I/O.
   // ----------------------------------------------------------------------
   // Create a new empty project, push it to the server, and ask the server
-  // to write the .liveplay file.
+  // to write the canonical .dwcue file.
   const createNewProject = async (name: string, folderPath: string): Promise<boolean> => {
     isLoading.value = true;
     loadingMessage.value = 'Creating project…';
@@ -620,7 +624,7 @@ export const useProject = () => {
       isHydrating.value = true;
       try {
         await server.replaceProjectDocument(newProject as any);
-        const projectFilePath = `${folderPath}/${name}.liveplay`;
+        const projectFilePath = projectPathInFolder(folderPath, name);
         const saved = await server.saveProjectTo(projectFilePath, newProject);
         if (!saved?.ok) throw new Error('Server did not save the new project');
         const header = await server.fetchProjectHeader();
@@ -691,20 +695,12 @@ export const useProject = () => {
     }
   };
 
-  // Open an existing project (path is on the server's filesystem).
-  // UX flow:
-  //   1. POST /api/project/load — server reads the file, kicks off async
-  //      engine mirror, and returns the *header* (theme/settings/cart/
-  //      itemCount). The full items array is NOT in this payload, so the
-  //      round-trip stays cheap regardless of project size.
-  //   2. Apply the header → hide the spinner so the workspace shell can
-  //      paint (cart slots, theme, project name).
-  //   3. Stream item pages from /api/project/items in batches of 100,
-  //      yielding to the renderer between pages so the playlist paints
-  //      incrementally instead of in one giant tick.
-  //   4. The corner AudioLoadProgress banner takes over for the
-  //      audio-mirror phase still running on the server.
-  const openProject = async (projectFilePath: string): Promise<boolean> => {
+  // Native opens and explicit legacy imports share hydration. The only
+  // difference is the server endpoint: legacy sources are converted to a new
+  // canonical sibling before their returned header is applied.
+  const hydrateProjectFrom = async (
+    loadHeader: (server: any) => Promise<any>,
+  ): Promise<boolean> => {
     isLoading.value = true;
     loadingMessage.value = 'Loading project…';
     try {
@@ -713,11 +709,7 @@ export const useProject = () => {
         try { server.connect(); } catch { /* noop */ }
       }
 
-      // (1) Ask the server to load the file. Returns the header.
-      const header = await server.loadProjectFromPath(projectFilePath);
-
-      // (1b) If the server detected and auto-repaired corruption, prompt the
-      //      user and offer to save the repaired version.
+      const header = await loadHeader(server);
       if (header?.needsRepair) {
         repairDialogIssues.value = Array.isArray(header.repairIssues) ? header.repairIssues : [];
         repairDialogVisible.value = true;
@@ -730,11 +722,7 @@ export const useProject = () => {
         }
       }
 
-      // (2) Hide the central spinner IMMEDIATELY — header is enough for
-      //     the shell to paint. The items array is empty at this point;
-      //     pages are pushed in below.
       isLoading.value = false;
-
       isHydrating.value = true;
       try {
         if (!applyServerHeader(header)) throw new Error('Server did not open the requested project');
@@ -742,29 +730,43 @@ export const useProject = () => {
         await nextTick();
         isHydrating.value = false;
       }
-      // Restore cart-only items to client-side memory store (used by CartSlot).
+
       const { clearCartOnlyItems, addCartOnlyItem } = useCartItems();
       clearCartOnlyItems();
       const cartOnly = currentProject.value?.cartOnlyItems ?? [];
       for (const item of cartOnly) addCartOnlyItem(item);
 
-      // (3) Stream pages in the background. Don't await — let the caller
-      //     return so the workspace can paint while pages trickle in.
       void streamItemPages(server, header?.itemCount ?? 0);
-
-      // (4) Surface the audio-loading progress as a corner indicator.
       void pollLoadingProgress(server);
-
-      // Record in the per-client recent-projects history (File > Open Recent).
-      recordRecentProject(projectFilePath);
+      recordRecentProject(projectFilePathRef.value);
       return true;
     } catch (error) {
       console.error('Error opening project:', error);
       return false;
     } finally {
-      // Defensive — should already be false at this point on success.
       isLoading.value = false;
     }
+  };
+
+  const openProject = async (projectFilePath: string): Promise<boolean> => {
+    if (!isNativeProjectPath(projectFilePath)) {
+      console.warn('[useProject] native open rejected non-.dwcue path:', projectFilePath);
+      return false;
+    }
+    return hydrateProjectFrom(server => server.loadProjectFromPath(projectFilePath));
+  };
+
+  const importLegacyProject = async (
+    sourcePath: string,
+    destinationPath?: string,
+  ): Promise<boolean> => {
+    if (!isLegacyProjectPath(sourcePath)) {
+      console.warn('[useProject] legacy import rejected non-.liveplay path:', sourcePath);
+      return false;
+    }
+    return hydrateProjectFrom(
+      server => server.importLegacyProjectFromPath(sourcePath, destinationPath),
+    );
   };
 
   // Stream paged items from the server into currentProject.items. Yields
@@ -914,6 +916,10 @@ export const useProject = () => {
     // This is identity, not optional metadata. Assign even an empty path so a
     // pathless remote project can never inherit the previous save destination.
     const nextProjectPath = projectPathFromHeader(header);
+    if (nextProjectPath && !isNativeProjectPath(nextProjectPath)) {
+      console.warn('[useProject] server reported a non-canonical active project:', nextProjectPath);
+      return false;
+    }
     projectFilePathRef.value = nextProjectPath;
     reportOpenProjectPath(nextProjectPath);
 
@@ -1010,6 +1016,7 @@ export const useProject = () => {
     if (!currentProject.value) return false;
     const server = useLiveplayServer();
     const path = projectFilePathRef.value;
+    if (path && !isNativeProjectPath(path)) return false;
     try {
       // Mirror the cart-only store into the document first; it's the same
       // pre-serialisation step saveProject does, and skipping it would drop
@@ -1070,7 +1077,8 @@ export const useProject = () => {
     const server = useLiveplayServer();
     const path = projectFilePathRef.value;
     const epoch = projectEpoch.value;
-    if (!path || !server.connected || sessionLost.value || recoveringProject.value) return false;
+    if (!isNativeProjectPath(path) || !server.connected ||
+        sessionLost.value || recoveringProject.value) return false;
 
     project.lastModified = new Date().toISOString();
     const docSnapshot = buildDocumentSnapshot();
@@ -2118,6 +2126,7 @@ export const useProject = () => {
     resolveProjectPath,
     createNewProject,
     openProject,
+    importLegacyProject,
     tryRejoinExistingProject,
     resumeProjectOnServer,
     saveProject,

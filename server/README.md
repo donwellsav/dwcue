@@ -1,8 +1,8 @@
-# DW Cue Server — developer guide
+# DonWells Cue Server — developer guide
 
 `dwcue-server` is the headless C++20 audio engine and control surface that backs the DonWells Cue client. It owns the audio graph, the routing matrix, the loaded project file, and exposes a REST + WebSocket API. It runs as either a child process spawned by the desktop client (single-machine installs) or as a standalone daemon on a stage-side machine that the client connects to over the LAN.
 
-This document tracks the current source and is the developer's guide to the server; post-v2.6.12 source behaviour may not exist in the latest downloaded installer. For show preparation and operation, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For client internals, see [`client/README.md`](../client/README.md); for overall project and release context, see the [root README](../README.md).
+This document tracks the current v2.6.13 source and is the developer's guide to the server; use the release page to determine which behaviour is present in a downloaded installer. For show preparation and operation, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For client internals, see [`client/README.md`](../client/README.md); for overall project and release context, see the [root README](../README.md).
 
 ---
 
@@ -431,10 +431,10 @@ Plays an item on `settings.previewDevice` without routing through the live mixer
 | `GET /api/project/header`       | — | lightweight header `{ name, itemCount, theme, settings, cart, hasOpenProject, … }` | Hit this first so the workspace shell can paint before the items array arrives. |
 | `GET /api/project/items?offset=0&limit=100` | — | `{ "offset": int, "limit": int, "total": int, "items": [...] }` | `limit` clamps to [1,1000]. Top-level items only (groups carry their children inline). |
 | `GET /api/project/progress`     | — | `{ "ready": bool, "loading": bool, "loaded": int, "total": int, "failedCount": int, "failures": [...] }` | Cheap poll for playback readiness and missing/unreadable media. |
-| `POST /api/project/load`        | `{ "path": "/abs/file.liveplay" }` *or* `{ "document": { … } }` | header object, augmented with `needsRepair`/`repairIssues` if the document was auto-repaired on load | broadcasts `project_changed`. `400` if neither field is present or load fails. |
+| `POST /api/project/load`        | `{ "path": "/abs/file.dwcue" }` *or* `{ "document": { … } }` | header object, augmented with `needsRepair`/`repairIssues` if the document was auto-repaired on load | broadcasts `project_changed`. `400` if neither field is present or load fails. |
 | `POST /api/project/close`       | — | `{ "closed": true }` | broadcasts `project_changed`; clients clear both their project document and remembered path |
 | `PUT /api/project/document`     | full project JSON document | header object | Replaces the entire in-memory document. Broadcasts `project_changed`. |
-| `POST /api/project/save`        | `{ "path": "/abs/file.liveplay" (optional) }` | `{ "ok": true, "path": "…" }` | Saves to the supplied path or the currently-loaded one. `400` if neither is set. |
+| `POST /api/project/save`        | `{ "path": "/abs/file.dwcue" (optional) }` | `{ "ok": true, "path": "…" }` | Saves to the supplied canonical path or the currently-loaded one. `400` if neither is set. |
 | `POST /api/project/repair`      | — | `{ "repaired": bool, "issues": [string], "saved": bool }` | Forces a re-save of the (already auto-repaired on load) in-memory document. |
 
 #### Project items
@@ -473,18 +473,19 @@ event names retain `cart` for compatibility with saved projects and external cli
 | `PATCH /api/project/theme`    | partial `theme` object | the resulting `theme` object | `theme_patched` |
 | `PATCH /api/project/settings` | partial `settings` object | the resulting `settings` object | `settings_patched` |
 
-#### Project export / import (`.lpa` archives)
+#### Project export / import (`.dwcuepack` archives)
 
-`.lpa` is a zip of a project folder. Used for transporting projects between machines or between client and server.
+A `.dwcuepack` is a raw ZIP of the active `.dwcue` project's folder; it does not add a second manifest or wrapper schema.
 
 | Method · Path | Body | Response |
 |---------------|------|----------|
-| `POST /api/project/export` | `{ "folderPath": "/abs/project", "outputPath": "/abs/out.lpa" (optional), "projectName": "MyShow" (optional) }` | `{ "archivePath": "/abs/out.lpa", "size": uint64, "downloadToken": "…" (only when outputPath omitted), "downloadFilename": "MyShow.lpa" (only when outputPath omitted) }` |
-| `POST /api/project/import` | **multipart** with a `file` part (the `.lpa`) and an `extractPath` text field, *or* **JSON** `{ "archivePath": "/abs/src.lpa", "extractPath": "/abs/dest" }` | `{ "extractPath": "…", "projectFiles": ["one.liveplay", …] }` |
+| `POST /api/project/export` | `{ "folderPath": "/abs/project", "outputPath": "/abs/out.dwcuepack" (optional), "projectName": "MyShow" (optional) }` | `{ "archivePath": "/abs/out.dwcuepack", "size": uint64, "downloadToken": "…" (only when outputPath omitted), "downloadFilename": "MyShow.dwcuepack" (only when outputPath omitted) }` |
+| `POST /api/project/import` | **multipart** with a `file` part (the `.dwcuepack` or `.lpa`) and an `extractPath` text field, *or* **JSON** `{ "archivePath": "/abs/src.dwcuepack", "extractPath": "/abs/dest" }` | `{ "extractPath": "…", "projectFiles": ["one.dwcue"] }` |
+| `POST /api/project/import-legacy` | `{ "path": "/abs/old.liveplay", "destinationPath": "/abs/new.dwcue" (optional) }` | project header, as returned by `POST /api/project/load` |
 
-If `outputPath` is omitted on export, the archive is staged in `<tempdir>/liveplay-exports/` and surfaced through a one-shot 10-minute `downloadToken` that's redeemed via `GET /api/file/download`. The temp file is deleted after the download completes.
+If `outputPath` is omitted on export, the archive is staged privately in the server's temporary export area and surfaced through a one-shot 10-minute `downloadToken` that's redeemed via `GET /api/file/download`. The temp file is deleted after the download completes.
 
-`.lpa` extraction is sanitised: absolute or `..`-containing entries are rejected.
+Archive import infers native versus legacy handling from the supplied filename: `.dwcuepack` imports its canonical `.dwcue`, while `.lpa` converts its legacy `.liveplay` document and returns a `projectFiles` array containing the one canonical `.dwcue` result. Extraction uses a fresh destination directory and rejects absolute paths, `..` traversal, links and special entries, unsafe expansion, and collisions. Legacy conversion never changes the original archive and does not publish the staged `.liveplay` file.
 
 ---
 
@@ -605,13 +606,15 @@ End-to-end transport latency depends on the configured render-block size and the
 
 ### File format
 
-A `.liveplay` project is a folder containing a JSON document plus a `media/` sub-folder. The schema is **v2** of the format, but legacy 1.x files are auto-upgraded on load by `ProjectState::upgrade_legacy_document` ([`src/core/project_state.cpp`](src/core/project_state.cpp)):
+A native `.dwcue` project is a JSON document beside its `media/` sub-folder. All new project creation and normal saves use `.dwcue`. A legacy `.liveplay` document is import-only: `POST /api/project/import-legacy` preserves its bytes and loads a new canonical `.dwcue`. With no `destinationPath`, the server chooses an available `.dwcue` sibling; an explicit destination must be an absent `.dwcue` filename in the same parent directory.
+
+The document schema is **v2**. Legacy 1.x content is auto-upgraded when loaded, including during one-way legacy import, by `ProjectState::upgrade_legacy_document` ([`src/core/project_state.cpp`](src/core/project_state.cpp)):
 
 - Walks legacy `carts` / `playlist` arrays and reconstructs the v2 `cues` list with the same names, file paths, gains, and fade durations.
 - Synthesises stereo master assignments: master channel 0 → default device hw ch 0, master channel 1 → default device hw ch 1.
 - Auto-creates one per-cue mixer channel so each cue still has independent gain/fade.
 
-The upgrade reconstructs legacy cues and baseline routes so old projects remain loadable. Verify an upgraded show before live use. The server exposes the full routing API, but the current client does not mount `RoutingMatrixPanel.vue` as an operator screen; the available UI is Settings → **Audio Routing** for devices and Properties → **Output device** / **LTC** for a cue.
+The upgrade reconstructs legacy cues and baseline routes so old projects remain importable without making their source files writable aliases. Verify a converted show before live use. The server exposes the full routing API, but the current client does not mount `RoutingMatrixPanel.vue` as an operator screen; the available UI is Settings → **Audio Routing** for devices and Properties → **Output device** / **LTC** for a cue.
 
 ### Backups
 

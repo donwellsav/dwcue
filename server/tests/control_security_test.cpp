@@ -129,6 +129,15 @@ int main(int argc, char** argv) {
     assert(unicode_upload_name.size() <= 200);
     assert(unicode_upload_name.ends_with(".lpa"));
     assert(unicode_upload_name.find("\xc3\xa9") == std::string::npos);
+    const std::string long_archive_name =
+        canonical_archive_download_filename(std::string(255, 'a'));
+    assert(long_archive_name.size() <= 200);
+    assert(long_archive_name.ends_with(".dwcuepack"));
+    const std::string unicode_archive_name =
+        canonical_archive_download_filename(
+            std::string(197, 'a') + "\xc3\xa9");
+    assert(unicode_archive_name.size() <= 200);
+    assert(unicode_archive_name.ends_with(".dwcuepack"));
     assert(is_chunked_upload_staging_name(
         ".dwcue-upload-0123456789abcdef0123456789abcdef"
         "0123456789abcdef0123456789abcdef.part"));
@@ -142,11 +151,11 @@ int main(int argc, char** argv) {
     assert(!is_export_staging_name(".dwcue-export-short.part"));
     assert(is_export_archive_name(
         "0123456789abcdef0123456789abcdef"
-        "0123456789abcdef0123456789abcdef.lpa"));
+        "0123456789abcdef0123456789abcdef.dwcuepack"));
     assert(!is_export_archive_name(
         "0123456789ABCDEF0123456789abcdef"
-        "0123456789abcdef0123456789abcdef.lpa"));
-    assert(!is_export_archive_name("short.lpa"));
+        "0123456789abcdef0123456789abcdef.dwcuepack"));
+    assert(!is_export_archive_name("short.dwcuepack"));
     assert(valid_chunked_upload_purpose(""));
     assert(valid_chunked_upload_purpose("media"));
     assert(valid_chunked_upload_purpose("project_import"));

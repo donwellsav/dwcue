@@ -66,7 +66,8 @@ const ariaValueText = computed(() =>
     : `${props.db > 0 ? 'plus ' : ''}${props.db} decibels`,
 );
 
-// Shared with StereoMeter so live level and fader travel follow one scale.
+// Use the shared console taper while preserving this control's caller-supplied
+// gain range; StereoMeter keeps signal level on its distinct -60..0 range.
 const dbToNorm = (db: number) =>
   dbToConsolePosition(db, props.minDb, props.maxDb);
 const normToDb = (n: number) =>
@@ -112,14 +113,16 @@ function draw() {
   const surfaceRaised = readCssVar('--color-surface-raised', '#2b2f36');
   const control = readCssVar('--color-control', '#121319');
   const background = readCssVar('--color-background', '#0d0f13');
+  const textPrimary = readCssVar('--color-text-primary', '#f4f4f4');
 
-  // Flat rail and cap reuse the same surface vocabulary as the app controls.
+  // Purpose-built console rail: matte control well, precise centre line, and
+  // no decorative bevel or glow. Geometry remains shared with pointer math.
   ctx.fillStyle = control;
   ctx.beginPath();
   if (typeof (ctx as any).roundRect === 'function') {
-    (ctx as any).roundRect(trackX - 4, trackTop, trackW + 8, trackH, 5);
+    (ctx as any).roundRect(trackX - 3, trackTop, trackW + 6, trackH, 2);
   } else {
-    ctx.rect(trackX - 4, trackTop, trackW + 8, trackH);
+    ctx.rect(trackX - 3, trackTop, trackW + 6, trackH);
   }
   ctx.fill();
   ctx.strokeStyle = border;
@@ -131,37 +134,33 @@ function draw() {
   const zeroY = trackTop + (1 - dbToNorm(0)) * trackH;
   const valY  = trackTop + (1 - dbToNorm(props.db)) * trackH;
 
-  // Unity reference follows the same quiet divider treatment as app panels.
-  ctx.strokeStyle = borderStrong;
+  // Unity is the one emphasized reference. Its y-coordinate uses the same
+  // nonlinear console transform as the cap and the external gain scale.
+  ctx.strokeStyle = textPrimary;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(trackCenterX - 10, zeroY);
-  ctx.lineTo(trackCenterX + 10, zeroY);
+  ctx.moveTo(trackCenterX - 9, zeroY);
+  ctx.lineTo(trackCenterX + 9, zeroY);
   ctx.stroke();
 
-  // The full canvas remains the hit target; only the cap chrome is flattened.
-  const capW = Math.min(38, w - 6);
-  const capH = 22;
+  // The full canvas remains the hit target. Only the hardware paint changes.
+  const capW = Math.min(34, w - 8);
+  const capH = 18;
   const capX = trackCenterX - capW / 2;
   const capY = valY - capH / 2;
-  ctx.save();
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.24)';
-  ctx.shadowBlur = 2;
-  ctx.shadowOffsetY = 1;
   ctx.fillStyle = surfaceRaised;
   ctx.beginPath();
   if (typeof (ctx as any).roundRect === 'function') {
-    (ctx as any).roundRect(capX, capY, capW, capH, 6);
+    (ctx as any).roundRect(capX, capY, capW, capH, 2);
   } else {
     ctx.rect(capX, capY, capW, capH);
   }
   ctx.fill();
-  ctx.restore();
   ctx.strokeStyle = borderStrong;
   ctx.lineWidth = 1;
   ctx.stroke();
   ctx.strokeStyle = accent;
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(capX + 5, valY);
   ctx.lineTo(capX + capW - 5, valY);
@@ -288,7 +287,7 @@ function clampToStep(db: number, fine: boolean): number {
 .canvas-fader:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: -2px;
-  border-radius: 4px;
+  border-radius: var(--border-radius-sm);
 }
 .canvas-fader__canvas {
   display: block;

@@ -230,7 +230,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 1.2vh;
   color: rgba(255, 255, 255, 0.85);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   text-align: center;
   letter-spacing: 0.35em;
   text-indent: 0.35em; /* optically re-centre the tracked text */

@@ -49,8 +49,11 @@
 //   POST   /api/upload/{id}/finish           — finalize staged upload
 //   DELETE /api/upload/{id}                  — abort staged upload
 //   GET    /api/project                      — current project JSON
-//   POST   /api/project/load                 — { "path": "..." }
-//   POST   /api/project/save                 — { "path": "..." }
+//   POST   /api/project/load                 — open native .dwcue
+//   POST   /api/project/save                 — save native .dwcue
+//   POST   /api/project/import-legacy        — copy .liveplay to sibling .dwcue
+//   POST   /api/project/export               — export native .dwcuepack
+//   POST   /api/project/import               — import .dwcuepack or legacy .lpa
 //
 // WebSocket: /ws — bidirectional JSON message stream.
 //   Server → Client: { "type": "meters", ... } @ ~60Hz, plus

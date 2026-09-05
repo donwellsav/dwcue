@@ -1,12 +1,12 @@
 # DonWells Cue — Operator's Manual
 
-**Version:** 2.6.12
-**Source revision:** bfec86b
-**Edition:** 4 September 2026 · English · Current-source edition
+**Version:** 2.6.13
+**Source revision:** b1fa448
+**Edition:** 5 September 2026 · English · Current-source naming edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition describes the source at the revision above, including fixes that may not yet be present in a downloaded installer bearing the same version number. Check the release notes and rehearse on the actual machine and build you will use. Screenshots show an isolated example show in the Electron application using locally built production renderer assets; the practice media is silent.
+This edition describes the current source, including the `.dwcue` / `.dwcuepack` naming changes. It is not a claim that every downloaded installer or platform combination has been individually certified; check the release notes and rehearse on the actual machine and build you will use. Screenshots remain from an earlier isolated example show in the Electron application using locally built production renderer assets; the practice media is silent.
 
 ## 1. Read this before the show
 
@@ -35,13 +35,15 @@ This manual uses the English labels. Change language through **Settings → User
 
 | Term | Meaning in this manual |
 | --- | --- |
-| Show / project | The cue document saved as a `.liveplay` file, together with its media and related assets. |
+| Show / project | The cue document saved natively as a `.dwcue` file, together with its media and related assets. |
 | Cue | An audio item, including an item whose media also contains video. |
 | Selected | The item you are inspecting or editing; selection alone is not a play command. |
 | Up Next | The displayed target for the next GO, chosen automatically or by an explicit Set As Next override. |
 | GO | The **Play Next** action; Space is its default shortcut. |
 | One Shot | An independent quick-play copy in the One Shots bank. |
 | Engine / server | The process that owns audio playback and the active project. |
+| Portable archive | A ZIP-based `.dwcuepack` export containing one active show and the files in its dedicated project folder. |
+| Legacy import | A `.liveplay` show or `.lpa` archive converted one way into a new canonical `.dwcue` without changing the original source bytes. |
 
 ## 2. First setup and a safe first cue
 
@@ -61,18 +63,18 @@ On launch, the desktop normally starts its managed local server automatically. T
 4. In the folder picker, navigate to the destination. You may type an absolute path in its path bar and press Enter. Choose **Select folder**.
 5. Back in the combined name/location form, check both values and choose **Create Show**.
 
-The file is created in the selected folder as `<show name>.liveplay`. Copied imports are placed in that folder's `media/` subfolder. Use a dedicated folder for each show. When connected remotely, this picker refers to the engine computer's filesystem, not the controller's.
+DonWells Cue creates `<show name>.dwcue` and `media/` in the selected folder; portable exports use `.dwcuepack`. Keep that folder dedicated to the show. A remote picker uses the engine computer. See chapter 11 for legacy import and non-overwrite safeguards.
 
 ### Make the first cue deliberately manual
 
 1. Choose **Import Media**, then **Choose files…**, and select a short, familiar audio file.
-2. Wait for import and audio readiness to finish. A file listed in the playlist is not sufficient evidence that its decoder is ready.
+2. Wait for import and audio readiness; a listed file may not yet be decoder-ready.
 3. Open the cue's **Edit** control. In **Basic Info**, set **End Behavior** to **Nothing** for this first exercise. Review **Ducking** before playing other cues alongside it.
 4. Open **Settings** and select the intended **Audio Device**. Check the device name at the main output strip. Use the cue's **Output** tab only if it needs a specific output override.
 5. Close the properties panel. Check the name beside **Play Next**. If it is not the intended cue, use that row's **Set As Next** control and confirm the displayed target.
 6. With the sound system at a safe level, choose **Play Next** once. Confirm the correct active cue, moving time, meters, and actual sound at the intended output.
 7. Choose **Stop All Cues**. Observe its fade and verify that all active cues stop.
-8. Save the project through the File menu. Reopen it during rehearsal and check the media and device selection again.
+8. Save through **File**. Reopen during rehearsal and recheck media and device selection.
 
 > **CHECK — Meters are not the whole signal path.** A moving playhead proves transport; a meter proves a signal at that meter. Neither proves the console input, amplifier, loudspeaker, or headphone destination is correct. Listen at the actual destination.
 
@@ -126,7 +128,7 @@ The import dialog starts with **Copy into project media** and **Reuse existing c
 | Skip it | Omit an import whose content matches an existing project-media file. |
 | Keep another copy | Import another copy using a unique filename rather than overwriting the existing file. |
 
-For a travelling show, prefer copying media and test the export on the destination machine. A `.liveplay` file alone is not an audio package. Do not assume an archive has collected every externally linked file; verify the imported result with the original sources unavailable.
+For a travelling show, prefer copying media and test the export on the destination machine. A `.dwcue` file alone is not an audio package. Do not assume an archive has collected every externally linked file; verify the imported result with the original sources unavailable.
 
 ### Import processing and readiness
 
@@ -409,11 +411,11 @@ A remote server is shared state, not a private copy per controller. Another oper
 
 ### Know what is saved
 
-**Autosave** is on by default. Turning it off is not an audio safety lock: edits can still affect the active engine document, while the disk file remains unchanged until an explicit save. Watch **Unsaved Changes** and use **File → Save Project** when you want a durable checkpoint.
+**Autosave** is on by default. Turning it off is not an audio safety lock: edits can still affect the active engine document, while the disk file remains unchanged until an explicit save. Watch **Unsaved Changes** and use **File → Save Project** when you want a durable checkpoint. New and converted shows save to their canonical `.dwcue` path.
 
 Toggling Autosave either on or off force-saves immediately. If your intention is to experiment without writing a change, decide that before changing the toggle and work on a separate copy. A failed save must be resolved; do not assume the absence of a modal means the disk file was updated.
 
-Saving is serialized and the newest pending edits remain dirty until their save succeeds. A late response from an older project or older edit cannot legitimately clear the current unsaved state. Closing a project clears its identity and destination path; a blank welcome screen is not an invitation to overwrite the previous show.
+Saving is serialized and the newest pending edits remain dirty until their save succeeds. A late response from an older project or older edit cannot legitimately clear the current unsaved state. Closing a project clears its identity and destination path; a blank welcome screen is not an invitation to overwrite the previous show. A converted legacy show never uses the selected `.liveplay` source as its save target.
 
 The server makes background copies of the existing disk project every 10 minutes into a **backups** folder beside it, retaining at most 20. Those are project-file backups, not full media packages, and they cannot capture unsaved edits that never reached disk. Keep a separate known-good full-show copy as well.
 
@@ -422,20 +424,22 @@ The server makes background copies of the existing disk project every 10 minutes
 1. Stop the rehearsal at a known point and save the intended project changes.
 2. Use **File → Export Project…**. Export performs a forced save before packaging; resolve any save failure rather than continuing with an assumed current archive.
 3. Choose the destination. With a remote server, **Save on Server** writes there and **Download Here** brings the archive to the controller.
-4. Keep the resulting **.lpa** archive with its version/date clearly identified.
+4. Keep the resulting **.dwcuepack** archive with its version/date clearly identified.
 5. Import it into a separate rehearsal location and verify cues, media readiness, images, and playback with the original source paths unavailable.
 
 > **CAUTION — Export packages the project folder.** Keep the show in a dedicated folder. Do not choose a folder containing credentials, unrelated documents, personal media, or application data and assume export will include only the files shown in the playlist. Externally linked media also needs a deliberate portability check.
 
 Device assignments, physical patching, local MIDI mappings, and video display identity need checking on the destination machine. A successful archive extraction is not a substitute for that check.
 
-### Import an archive and inspect repairs
+### Import a show or archive and inspect repairs
 
-Use **File → Import Project…**. In remote operation, choose **Browse Server** for a server-resident archive or **From This Computer** to upload it. Select the extraction destination on the audio-server computer. If an archive contains several project files, choose the intended project when prompted. An archive without a project file is not a usable show archive.
+Use **File → Import Project…** for a portable `.dwcuepack`, an older `.liveplay` show, or an older `.lpa` archive. A direct `.liveplay` import creates an available `.dwcue` sibling beside the source and loads that canonical result. It does not overwrite the legacy document.
 
-Extraction refuses unsafe entries and destination collisions rather than silently overwriting an existing show. If import reports a collision, choose a clean destination; do not delete the working show just to force an import. Wait for extraction and audio readiness, then listen to representative cues and inspect the important transitions.
+For an archive, the app infers native or legacy handling from the `.dwcuepack` or `.lpa` filename. In remote operation, choose **Browse Server** for a server-resident archive or **From This Computer** to upload it, then select a fresh extraction directory on the audio-server computer. A successful import returns and opens one canonical `.dwcue`. A legacy archive's original bytes remain unchanged and its staged `.liveplay` is not published in the destination.
 
-On loading a document that needs supported structural repairs, **Corrupt Project Detected** can appear. **Repair & Save** writes the repaired document. **Open Without Saving** opens the already repaired in-memory document but leaves the disk original unchanged until a later save. It does not recover missing media or guarantee that every damaged project is repairable. Preserve the original before accepting a repair, then inspect the cue count, groups, One Shots, and jump targets.
+Extraction refuses unsafe entries and destination collisions rather than silently overwriting an existing show. If import reports a collision, choose a clean destination; do not delete the working show just to force an import. Wait for import and audio readiness, then listen to representative cues and inspect the important transitions.
+
+On loading a document that needs supported structural repairs, **Corrupt Project Detected** can appear. **Repair & Save** writes the repaired canonical document. **Open Without Saving** opens the already repaired in-memory document but leaves its canonical disk file unchanged until a later save. It does not recover missing media or guarantee that every damaged project is repairable. Legacy source bytes remain untouched by either choice. Preserve the source, then inspect the cue count, groups, One Shots, and jump targets.
 
 ### Connection loss is not proof that sound stopped
 
@@ -507,7 +511,7 @@ Record the exact app build/source edition, operating system, engine computer, lo
 
 There is no general packaged Diagnostics window in this source. Use connection status, Server Settings, device selection, and the persistent server logs. **Restart engine** affects actual playback; obtain the show operator's agreement before using it.
 
-The managed desktop engine uses the application's **LivePlay** data directory. On macOS, its engine log is normally **~/Library/Application Support/LivePlay/logs/dwcue-server.log**. Fatal reports are under its **crash-logs** folder. The normal log rotates to **dwcue-server.log.1** at about 10 MiB. Standalone-server state is separate: on macOS it defaults to **~/Library/Application Support/DonWells Cue/server**, on Windows to **%LOCALAPPDATA%\DonWells Cue\server**, and on Linux to **$XDG_STATE_HOME/dwcue** or **~/.local/state/dwcue**.
+For upgrade compatibility, the managed desktop engine intentionally continues to use the legacy-named **LivePlay** data directory; the app does not copy, move, or rename that profile at startup. On macOS, its engine log is normally **~/Library/Application Support/LivePlay/logs/dwcue-server.log**. Fatal reports are under its **crash-logs** folder. The normal log rotates to **dwcue-server.log.1** at about 10 MiB. Standalone-server state is separate: on macOS it defaults to **~/Library/Application Support/DonWells Cue/server**, on Windows to **%LOCALAPPDATA%\DonWells Cue\server**, and on Linux to **$XDG_STATE_HOME/dwcue** or **~/.local/state/dwcue**.
 
 Provide a minimal reproducible show or media sample only if you have permission to share it. Remove tokens, personal paths, private media, and unrelated application data from reports. A device's logged negotiated sample rate is better evidence than assuming the API's reported requested/default rate is the physical driver's actual rate.
 
@@ -608,9 +612,9 @@ With Video Output focused, Escape also exits its fullscreen mode. In Level Check
 
 ### About this edition
 
-This manual was checked against source revision **bfec86b** with package version **2.6.12**. It is a current-source edition, not a claim that every described fix has shipped in an installer. The screenshots use generated practice media and an isolated example show; no audience audio, private project data, or credentials are represented.
+This manual documents the current source with package version **2.6.13**. The screenshots retain their own earlier capture provenance and use generated practice media in an isolated example show; no audience audio, private project data, or credentials are represented.
 
-The preparation and recovery instructions were checked against the current Vue/Electron interface and C++ control engine. The core create/import/play/stop/show-mode paths were exercised in the actual Electron app. Source verification does not replace rehearsal of acoustic levels, physical routing, external LTC lock, network performance, Windows focus behavior, or projector/display hot-plug handling.
+The preparation and recovery instructions were checked against the Vue/Electron interface and C++ control engine. The screenshots show previously exercised create/import/play/stop/show-mode paths; they are not evidence that a released installer implements this working-tree naming contract. Source verification does not replace rehearsal of conversion, acoustic levels, physical routing, external LTC lock, network performance, Windows focus behavior, or projector/display hot-plug handling.
 
 For technical maintainers, the principal source areas are **client/app/components**, **client/app/composables/useProject.ts**, **useAudioEngine.ts**, **useLiveplayServer.ts**, **useConnectionGuard.ts**, **useLevelCheck.ts**, **client/electron/main.js**, **server/src/core/project_state.cpp**, and **server/src/net/control_server.cpp**. The repository's root, client, and server READMEs are developer references; historical design documents are not operator promises.
 

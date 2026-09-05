@@ -157,7 +157,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Project data sync between the main and detached cart windows.
   syncProjectData: (data) => ipcRenderer.send('sync-project-data', data),
   
-  // File association - opening project files (.liveplay / .lpa).
+  // File association routing for canonical shows/archives and explicit legacy imports.
   // Push: main → renderer for warm-start / macOS open-file events.
   onOpenFileAssociation: (callback) => ipcRenderer.on('open-file-association', callback),
   // Pull: renderer asks on mount for any file queued before it was ready
@@ -239,7 +239,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     recentRemove: (url) => ipcRenderer.invoke('liveplay-discovery:recent-remove', url),
   },
 
-  // Recent-projects history (persisted) — last 10 .liveplay files opened on
+  // Recent-projects history (persisted) — last 10 canonical shows opened on
   // this client. Surfaced in the File > Open Recent menu.
   liveplayProjects: {
     recentList:   ()     => ipcRenderer.invoke('liveplay-projects:recent-list'),

@@ -1,6 +1,6 @@
 {
   "name": "donwells-cue-monorepo",
-  "version": "2.6.12",
+  "version": "2.6.13",
   "private": true,
   "description": "DonWells Cue — open-source audio playback for live sound operators. Monorepo root: client (Vue/Electron) + server (C++ audio engine).",
   "license": "AGPL-3.0-only",
@@ -30,7 +30,7 @@
     "server:run": "node scripts/run-server.js",
     "check:audio-formats:mac": "node scripts/check-common-audio-mac.js",
     "check:packaged:mac": "node scripts/smoke-packaged-app-mac.js",
-    "check:client": "node scripts/check-live-safety.js && node client/electron/path-capabilities.test.js && node scripts/spotify-import-reliability.test.js && npm run test:video-output --workspace=client && npm run test:one-shots --workspace=client && npm run test:youtube-import --workspace=client && npm run test:playback-safety --workspace=client && npm run test:local-auth --workspace=client",
+    "check:client": "node scripts/check-live-safety.js && node client/electron/path-capabilities.test.js && npm run test:file-formats --workspace=client && node scripts/spotify-import-reliability.test.js && npm run test:video-output --workspace=client && npm run test:one-shots --workspace=client && npm run test:youtube-import --workspace=client && npm run test:playback-safety --workspace=client && npm run test:local-auth --workspace=client",
     "version": "node scripts/version.js",
     "bump": "node scripts/version.js"
   },

@@ -402,7 +402,7 @@ def _metadata_from_lines(lines: Sequence[str]) -> tuple[Metadata, set[int]]:
     )
     if not version:
         raise ManualError(
-            "source metadata is missing Version (use '**Version:** 2.6.12' before the first chapter)"
+            "source metadata is missing Version (use '**Version:** X.Y.Z' before the first chapter)"
         )
     if not revision:
         raise ManualError(

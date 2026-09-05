@@ -64,7 +64,7 @@
                 aria-controls="cart-player-panel"
                 @click="toggleCart"
               >
-                <span class="material-symbols-rounded" aria-hidden="true">view_sidebar</span>
+                <CueSymbol name="one-shots" />
               </button>
             </template>
           </OneShotPanel>
@@ -90,7 +90,7 @@
                   :aria-expanded="false"
                   @click="toggleCart"
                 >
-                  <span class="material-symbols-rounded" aria-hidden="true">view_sidebar</span>
+                  <CueSymbol name="one-shots" />
                   <span class="cart-toggle__label">{{ t('oneShots.show') }}</span>
                 </button>
               </template>
@@ -661,16 +661,16 @@ async function onExportServerPath(serverDir: string) {
   exportServerPickerOpen.value = false;
   if (!serverDir || !currentProject.value) return;
   const project = currentProject.value;
-  const outPath = `${serverDir.replace(/[\\/]+$/, '')}/${project.name}.lpa`;
+  const outPath = serverDir.replace(/[\/]+$/, '') + '/' + project.name + '.dwcuepack';
   await runExport({ outputPath: outPath });
 }
 
 async function exportToClientDownload() {
   if (!currentProject.value) return;
   const project = currentProject.value;
-  const defaultName = `${project.name}.lpa`;
+  const defaultName = project.name + '.dwcuepack';
   // Pick the local destination FIRST so a cancelled save dialog doesn't
-  // leave a stray .lpa sitting in the server's temp dir.
+  // leave a stray archive sitting in the server's temp directory.
   const localDest = await window.electronAPI.showSaveArchiveDialog(defaultName);
   if (!localDest) return;
   await runExport({ outputPath: '', downloadTo: localDest });
@@ -682,7 +682,7 @@ async function runExport(opts: { outputPath: string; downloadTo?: string }) {
   progressModal.value = {
     visible: true,
     title: t('exportProgress.title'),
-    message: `${t('exportProgress.message')} ${project.name}.lpa…`,
+    message: t('exportProgress.message') + ' ' + project.name + '.dwcuepack…',
     percentage: 30,
   };
   try {
@@ -695,7 +695,7 @@ async function runExport(opts: { outputPath: string; downloadTo?: string }) {
 
     if (opts.downloadTo && result.downloadToken) {
       progressModal.value.message =
-        `${t('exportProgress.downloading')} ${project.name}.lpa…`;
+        t('exportProgress.downloading') + ' ' + project.name + '.dwcuepack…';
       await server.downloadArchiveToFile(result.downloadToken, opts.downloadTo);
     }
     progressModal.value.percentage = 100;
@@ -856,7 +856,6 @@ onUnmounted(() => {
   overflow: hidden;
   background: var(--color-surface);
   border-top: 1px solid var(--color-border);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-text-primary) 4%, transparent);
 }
 
 .preview-lower-panel:empty {
@@ -873,6 +872,8 @@ onUnmounted(() => {
 }
 
 .playlist-section {
+  /* Keep sticky group headers below the narrow One Shots drawer. */
+  isolation: isolate;
   flex: 1 1 0;
   width: auto;
   min-width: var(--playlist-split-min-width);
@@ -895,12 +896,12 @@ onUnmounted(() => {
   min-height: 0;
   overflow: hidden;
   background: var(--color-surface);
-  border-left: 1px solid var(--color-border);
+  border-inline-start: 1px solid var(--color-border);
 }
 
 .monitor-console {
-  border-left: 0;
-  border-right: 1px solid var(--color-border);
+  border-inline-start: 0;
+  border-inline-end: 1px solid var(--color-border);
 }
 
 .output-console__strips {
@@ -939,7 +940,7 @@ onUnmounted(() => {
   overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
-  background: var(--color-surface-raised);
+  background: var(--color-control);
   transition:
     background-color var(--transition-fast),
     border-color var(--transition-fast);
@@ -971,8 +972,8 @@ onUnmounted(() => {
   background: transparent;
   color: var(--color-text-primary);
   font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
   text-align: center;
   font-variant-numeric: tabular-nums;
   cursor: ns-resize;
@@ -1037,21 +1038,19 @@ onUnmounted(() => {
   padding: 0 8px;
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
-  background: var(--color-surface-raised);
+  background: var(--color-control);
   color: var(--color-text-secondary);
   line-height: 1;
   cursor: pointer;
   transition:
     background-color var(--transition-fast),
     border-color var(--transition-fast),
-    box-shadow var(--transition-fast),
     color var(--transition-fast);
 
   &.is-enabled {
-    background: color-mix(in srgb, var(--color-success) 12%, var(--color-surface-raised));
+    background: var(--color-control);
     border-color: color-mix(in srgb, var(--color-success) 55%, var(--color-border));
     color: var(--color-text-primary);
-    box-shadow: 0 0 10px color-mix(in srgb, var(--color-success) 25%, transparent);
   }
 
   &:hover {
@@ -1061,7 +1060,7 @@ onUnmounted(() => {
   }
 
   &.is-enabled:hover {
-    background: color-mix(in srgb, var(--color-success) 16%, var(--color-surface-raised));
+    background: color-mix(in srgb, var(--color-success) 8%, var(--color-control));
     border-color: color-mix(in srgb, var(--color-success) 65%, var(--color-border));
   }
 
@@ -1079,8 +1078,8 @@ onUnmounted(() => {
 .limiter-toggle__gr {
   color: var(--color-text-secondary);
   font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 650;
+  font-size: 11px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1231,10 +1230,9 @@ onUnmounted(() => {
   border-radius: var(--control-radius);
   background: var(--color-surface-raised);
   color: var(--color-text-primary);
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
   cursor: pointer;
 
-  .material-symbols-rounded {
+  :deep(.cue-symbol) {
     font-size: 20px;
   }
 
@@ -1248,8 +1246,8 @@ onUnmounted(() => {
   }
 
   .cart-toggle__label {
-    font-size: 11px;
-    font-weight: 700;
+    font-size: 12px;
+    font-weight: 600;
     white-space: nowrap;
   }
   &.cart-toggle--open {

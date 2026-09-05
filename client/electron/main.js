@@ -14,6 +14,14 @@ const https = require('https');
 const { fileURLToPath } = require('url');
 const { PathCapabilityRegistry } = require('./path-capabilities');
 const {
+  ProjectFileKind,
+  canonicalArchivePath,
+  fileKindFor,
+  getOpenableFileFromArgv,
+  shouldRegisterProtocolClient,
+  shouldScanInitialOpenFileArgv,
+} = require('./project-file-formats');
+const {
   shouldForwardVideoOutputShortcut,
   toRendererShortcut,
 } = require('./video-output-shortcuts');
@@ -582,7 +590,7 @@ function removeRecentServer(url) {
 }
 
 // ---------------------------------------------------------------------------
-// Recent-projects history — the last N .liveplay files this client opened.
+// Recent-projects history — the last N canonical show files this client opened.
 // Stored newest-first, capped, keyed by the project file path. Per-client
 // (lives in userData), so it follows the machine rather than the project.
 // Surfaced as a File > Open Recent submenu and rebuilt whenever the list
@@ -669,11 +677,14 @@ function clearRecentProjects() {
 function authorizeOpenableFilePath(filePath) {
   const checked = requireAbsoluteIpcPath(filePath, 'filePath');
   if (!fs.existsSync(checked) || !fs.statSync(checked).isFile()) {
-    throw new Error('Selected project/archive file does not exist');
+    throw new Error('Selected show/archive file does not exist');
   }
-  if (/\.liveplay$/i.test(checked)) return pathCapabilities.authorizeProjectFile(checked);
-  if (/\.lpa$/i.test(checked)) return pathCapabilities.authorizeFile(checked);
-  throw new Error('Selected file is not a project or archive');
+  const kind = fileKindFor(checked);
+  if (kind === ProjectFileKind.NativeProject) {
+    return pathCapabilities.authorizeProjectFile(checked);
+  }
+  if (kind !== null) return pathCapabilities.authorizeFile(checked);
+  throw new Error('Selected file is not a supported show or archive');
 }
 
 function tryAuthorizeOpenableFilePath(filePath) {
@@ -1338,7 +1349,7 @@ ipcMain.handle('liveplay-discovery:recent-remove', (event, url) => {
   return removeRecentServer(url);
 });
 
-// Recent-projects history — last N .liveplay files opened on this client.
+// Recent-projects history — last N canonical shows opened on this client.
 // Every mutation rebuilds the menu so the File > Open Recent submenu stays
 // in sync without the renderer having to poke the menu directly.
 ipcMain.handle('liveplay-projects:recent-list', (event) => {
@@ -1354,7 +1365,8 @@ ipcMain.handle('liveplay-projects:recent-add', (event, entry) => {
   }
   let localTrusted = false;
   let storedEntry = entry;
-  if (path.isAbsolute(entry.path) && /\.liveplay$/i.test(entry.path) &&
+  if (path.isAbsolute(entry.path) &&
+      fileKindFor(entry.path) === ProjectFileKind.NativeProject &&
       fs.existsSync(entry.path) && pathCapabilities.allows(entry.path)) {
     const trustedProjectPath = pathCapabilities.authorizeProjectFile(
       pathCapabilities.require(entry.path, { label: 'projectPath' }),
@@ -3202,13 +3214,18 @@ ipcMain.handle('select-project-file', async (event) => {
   requireTrustedIpc(event);
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openFile'],
-    filters: [{ name: 'DW Cue Project', extensions: ['liveplay'] }]
+    filters: [
+      { name: 'DonWells Cue Show', extensions: ['dwcue'] },
+      { name: 'Legacy Show (Import)', extensions: ['liveplay'] },
+    ],
   });
 
-  if (!result.canceled && result.filePaths.length > 0) {
-    return pathCapabilities.authorizeProjectFile(result.filePaths[0]);
-  }
-  return null;
+  if (result.canceled || result.filePaths.length === 0) return null;
+  const selectedPath = result.filePaths[0];
+  const kind = fileKindFor(selectedPath);
+  if (kind !== ProjectFileKind.NativeProject &&
+      kind !== ProjectFileKind.LegacyProject) return null;
+  return authorizeOpenableFilePath(selectedPath);
 });
 
 ipcMain.handle('select-audio-files', async (event) => {
@@ -3320,7 +3337,7 @@ ipcMain.on('authorize-dropped-file', (event, filePath) => {
     requireTrustedIpc(event);
     const checkedPath = requireAbsoluteIpcPath(filePath, 'filePath');
     if (!fs.existsSync(checkedPath) || !fs.statSync(checkedPath).isFile()) return;
-    if (/\.liveplay$/i.test(checkedPath)) {
+    if (fileKindFor(checkedPath) === ProjectFileKind.NativeProject) {
       pathCapabilities.authorizeProjectFile(checkedPath);
     } else {
       pathCapabilities.authorizeFile(checkedPath);
@@ -3406,34 +3423,40 @@ ipcMain.handle('write-file', async (event, filePath, data) => {
   }
 });
 
-// Save dialog for the .lpa download flow. Returns the chosen absolute path
-// or null on cancel. `defaultName` is the suggested filename (e.g. "MyShow.lpa").
+// Save dialog for the canonical archive download flow. Returns the chosen
+// absolute .dwcuepack path or null on cancel.
 ipcMain.handle('show-save-archive-dialog', async (event, defaultName) => {
   requireTrustedIpc(event);
-  const suggestedName = typeof defaultName === 'string' && defaultName.length <= 255
+  const requestedName = typeof defaultName === 'string' && defaultName.length <= 255
     ? path.basename(defaultName)
-    : 'project.lpa';
+    : 'project.dwcuepack';
   const result = await dialog.showSaveDialog(mainWindow, {
-    title: 'Save Project Archive',
-    defaultPath: suggestedName,
-    filters: [{ name: 'DW Cue Archive', extensions: ['lpa'] }],
+    title: 'Save DonWells Cue Show Archive',
+    defaultPath: canonicalArchivePath(requestedName),
+    filters: [{ name: 'DonWells Cue Show Archive', extensions: ['dwcuepack'] }],
   });
   if (result.canceled || !result.filePath) return null;
-  return pathCapabilities.authorizeFile(result.filePath, { allowMissing: true });
+  return pathCapabilities.authorizeFile(
+    canonicalArchivePath(result.filePath), { allowMissing: true });
 });
 
-// Open dialog for the .lpa upload flow (client picks a .lpa from local disk
-// to upload to a remote server for extraction). Returns the absolute path or
-// null on cancel.
+// Choose either a canonical archive or an explicitly imported legacy archive.
 ipcMain.handle('show-open-archive-dialog', async (event) => {
   requireTrustedIpc(event);
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Choose Project Archive',
+    title: 'Choose DonWells Cue Show Archive',
     properties: ['openFile'],
-    filters: [{ name: 'DW Cue Archive', extensions: ['lpa'] }],
+    filters: [
+      { name: 'DonWells Cue Show Archive', extensions: ['dwcuepack'] },
+      { name: 'Legacy Show Archive (Import)', extensions: ['lpa'] },
+    ],
   });
   if (result.canceled || result.filePaths.length === 0) return null;
-  return pathCapabilities.authorizeFile(result.filePaths[0]);
+  const selectedPath = result.filePaths[0];
+  const kind = fileKindFor(selectedPath);
+  if (kind !== ProjectFileKind.NativeArchive &&
+      kind !== ProjectFileKind.LegacyArchive) return null;
+  return pathCapabilities.authorizeFile(selectedPath);
 });
 
 // Stream a one-shot server archive directly to an authorized local path.
@@ -3673,16 +3696,15 @@ ipcMain.handle('set-current-project', async (event, projectPath) => {
     currentProject = null;
   } else {
     const checked = requireIpcString(projectPath, 'projectPath', MAX_IPC_PATH_LENGTH);
-    // A live local .liveplay file is authorized on report, even if no dialog
-    // ever picked it (server auto-restore, recent list after restart). The
-    // renderer can already drive reads/writes of the server's open project
-    // through the REST API, so gating the same folder in the renderer's file
-    // IPC (imports, copy-file) adds no real boundary — it only broke imports
-    // into restored projects.
-    const isLiveProjectFile = path.isAbsolute(checked) &&
-      /\.liveplay$/i.test(checked) && fs.existsSync(checked);
-    if (isLiveProjectFile || (path.isAbsolute(checked) && pathCapabilities.allows(checked))) {
-      currentProject = isLiveProjectFile
+    // A live local canonical show is authorized on report, even if no dialog
+    // picked it (for example after server auto-restore). Legacy .liveplay files
+    // are import sources only and must never become writable project roots.
+    const isNativeProjectFile = path.isAbsolute(checked) &&
+      fileKindFor(checked) === ProjectFileKind.NativeProject &&
+      fs.existsSync(checked);
+    if (isNativeProjectFile ||
+        (path.isAbsolute(checked) && pathCapabilities.allows(checked))) {
+      currentProject = isNativeProjectFile
         ? pathCapabilities.authorizeProjectFile(checked)
         : pathCapabilities.require(checked, { label: 'projectPath' });
     } else {
@@ -5422,13 +5444,15 @@ ipcMain.handle('download-youtube-audio', async (event, jobId, videoId, title, pr
   return task.finally(() => releaseYouTubeJob(jobId, job));
 });
 
-// Register custom protocol for app
-if (process.defaultApp) {
-  if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient('dwcue', process.execPath, [path.resolve(process.argv[1])]);
+// Isolated preview instances must not mutate machine-wide protocol defaults.
+if (shouldRegisterProtocolClient(process.env.DWCUE_USERDATA)) {
+  if (process.defaultApp) {
+    if (process.argv.length >= 2) {
+      app.setAsDefaultProtocolClient('dwcue', process.execPath, [path.resolve(process.argv[1])]);
+    }
+  } else {
+    app.setAsDefaultProtocolClient('dwcue');
   }
-} else {
-  app.setAsDefaultProtocolClient('dwcue');
 }
 
 // For Windows, we need to handle the protocol differently
@@ -5443,9 +5467,8 @@ if (!gotTheLock) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
     }
-    // On Windows/Linux a double-clicked file while we're already running
-    // arrives as an argument on the second instance's command line. Pick it
-    // up and open it (or stash it if the window isn't ready yet).
+    // Warm file opens arrive on the second instance command line on Windows
+    // and Linux (and may do so in development on macOS).
     const f = tryAuthorizeOpenableFilePath(getOpenableFileFromArgv(commandLine));
     if (f) {
       if (mainWindow && mainWindow.webContents) {
@@ -5520,27 +5543,11 @@ app.on('open-file', (event, filePath) => {
   }
 });
 
-// Find the first openable project file (.liveplay / .lpa) in a command-line
-// argument vector. Used for cold start (process.argv) and Windows/Linux
-// warm start (second-instance commandLine).
-function getOpenableFileFromArgv(argv) {
-  if (!Array.isArray(argv)) return null;
-  return argv.find(arg => typeof arg === 'string' &&
-    (/\.liveplay$/i.test(arg) || /\.lpa$/i.test(arg))) || null;
-}
-
-// Classify a path by extension into the kind the renderer expects.
-function fileKindFor(filePath) {
-  return /\.lpa$/i.test(filePath) ? 'lpa' : 'liveplay';
-}
-
-// Handle command line arguments (Windows/Linux)
-if (process.platform === 'win32' || process.platform === 'linux') {
-  // Check if a file was passed as argument
+// Packaged macOS uses open-file; development launches can pass a positional
+// show/archive path just like Windows and Linux.
+if (shouldScanInitialOpenFileArgv(process.platform, process.defaultApp)) {
   const fileArg = tryAuthorizeOpenableFilePath(getOpenableFileFromArgv(process.argv));
-  if (fileArg) {
-    fileToOpen = fileArg;
-  }
+  if (fileArg) fileToOpen = fileArg;
 }
 
 // Pull path for cold start: the renderer asks for any file that was queued

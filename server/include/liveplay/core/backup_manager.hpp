@@ -4,8 +4,8 @@
 // Periodic backup of the open project file.
 //
 // Every 10 minutes, while a project file is open, BackupManager copies the
-// .liveplay file into a "backups" subfolder next to the project. At most
-// MAX_BACKUPS files are retained; the oldest is removed when the cap is
+// canonical .dwcue file into a "backups" subfolder next to the project. At
+// most MAX_BACKUPS files are retained; the oldest is removed when the cap is
 // exceeded. All I/O runs on a background thread so playback is never blocked.
 // ============================================================================
 #pragma once

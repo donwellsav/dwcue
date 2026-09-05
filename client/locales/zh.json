@@ -436,6 +436,7 @@
   },
   "status": {
     "playing": "正在播放",
+    "paused": "已暂停",
     "upNext": "下一个",
     "previewing": "预听中"
   },
@@ -784,7 +785,7 @@
     "chooseDestination": "Choose Folder",
     "changeDestination": "Change",
     "destinationFailed": "Could not choose the destination folder.",
-    "createsDescription": "Creates one child folder for the collection. Its media files are used directly by both the reusable .liveplay template and the current project — no second copy.",
+    "createsDescription": "Creates one child folder for the collection. Its media files are used directly by both the reusable .dwcue template and the current project — no second copy.",
     "cueSetup": "Cue setup",
     "settingOn": "On",
     "settingOff": "Off",

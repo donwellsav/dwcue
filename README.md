@@ -6,7 +6,7 @@ You build a **show** as a list of cues plus a grid of one-touch buttons, then tr
 
 This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. Published macOS packages are Developer ID signed, notarized, and package-validated.
 
-> **Source vs. published release:** package metadata remains at **v2.6.12**, and **v2.6.12** is the latest published installer, but the current source is ahead of that release tag. The post-tag playback-safety, project-save/reconnect, managed local-authentication, and streamlined show-creation/import behaviour described below is not in the downloaded v2.6.12 installers. Check the [release page](https://github.com/donwellsav/dwcue/releases) before assuming a source behaviour is published.
+> **Current source:** package metadata is **v2.6.13**. The release page is authoritative for published installers and release assets; verify the installed About version before relying on a behaviour. This source includes the playback-safety, project-save/reconnect, managed local-authentication, show-creation/import, and .dwcue naming work described below.
 
 > **Operating a show?** Use the [operator manual (PDF)](docs/operators-manual.pdf) or its [Markdown source](docs/operators-manual.md). Those instructions track the current source. The client and server READMEs linked later are developer references, not show-day instructions.
 
@@ -107,10 +107,10 @@ If your browser blocked the download instead, choose **Keep** to save the instal
 
 ## Getting started
 
-These steps describe the current source. The published v2.6.12 installers use the earlier project-creation/import wording and predate the post-tag local-authentication and reconnect safeguards called out above.
+These steps describe the current v2.6.13 working tree. It writes native show documents as `.dwcue` files and portable exports as `.dwcuepack` archives.
 
 1. Install the [latest release](https://github.com/donwellsav/dwcue/releases/latest), or build DonWells Cue from source, and launch it.
-2. Choose **New Show**, enter its name, use **Choose…** to select the read-only Location, and create it — DonWells Cue writes the project file and a `media/` sub-folder there.
+2. Choose **New Show**, enter its name, use **Choose…** to select the read-only Location, and create it — DonWells Cue writes `<show name>.dwcue` and a `media/` sub-folder there.
 3. In **Project Settings**, choose the program output, Output Target, and—if you need private auditioning—the Preview output.
 4. Drop audio or video files onto the playlist, or use **Import Media → Choose files**. Expand the advanced/server browser only when the media lives on the server; unsupported non-media entries cannot be selected.
 5. Open a cue's **Properties** to set markers, fades, normalization, volume, ducking, its output device, and working End Behavior. Do not build show logic on the audio Start Behavior dropdown in this source build.
@@ -118,6 +118,8 @@ These steps describe the current source. The published v2.6.12 installers use th
 7. Audition on the Preview output, set the named **Play Next** cue, and verify the program and monitor meters.
 8. If the show uses video, open Project Settings → **Video Output**, click **Identify displays**, assign the projector/switcher display, then manually open the output and verify the test card.
 9. Switch on **Show Mode** for the live performance.
+
+Use **File → Import Project…** for an older `.liveplay` show or `.lpa` archive. Legacy import is one-way: a direct `.liveplay` import creates an available `.dwcue` sibling, while an `.lpa` import publishes one canonical `.dwcue` inside a fresh destination folder. The original legacy file or archive stays unchanged, and new saves remain on the canonical file. Native file associations are registered only for `.dwcue` and `.dwcuepack`; select legacy files from the import flow instead of treating them as current-format aliases.
 
 **Running on a separate machine?** Start the stage-side server with `dwcue-server --bind 0.0.0.0`. Set `LIVEPLAY_ACCESS_TOKEN` to at least 16 characters, or leave it unset/empty so the server generates a token and prints it once. A non-empty shorter value refuses startup. On the control laptop, open **Server Settings**, choose the discovered server or enter `http://<server-host>:4480`, and enter that token. See [Network ports](#network-ports) below for firewall details.
 
@@ -153,7 +155,7 @@ Made with some help from Claude Sonnet 4.5, Claude Sonnet 4.6 and Claude Opus 4.
 |  Electron + Nuxt 4 + Vue 3     | <----- transport / route cmds --- |  C++20, miniaudio, Crow, TagLib   |
 |                                |        REST  (http://host:4480)   |                                   |
 |  - Playlist / One Shots / output controls | <----- list / load / waveform --> |  - AudioEngine (mixer + limiter)  |
-|  - WaveformCanvas              |                                   |  - ProjectState (.liveplay I/O)   |
+|  - WaveformCanvas              |                                   |  - ProjectState (.dwcue I/O)      |
 |  - LiveMeterBar                |                                   |  - ControlServer (REST + WS)      |
 |                                |                                   |  - Metadata + waveform services   |
 |  No audio plays in the         |                                   |                                   |
@@ -333,12 +335,12 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata and the latest published release are **v2.6.12**, while the current source contains additional post-tag changes; the workflow and [release page](https://github.com/donwellsav/dwcue/releases) remain the source of truth for versioned artefacts.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.13**; the release page remains the source of truth for published artefacts and their checksums.
 
 ### Triggering a release
 
 1. Bump the version in the root `package.json` (use `npm run bump -- patch|minor|major`, which propagates to `client/package.json`).
-2. Commit and push to `main`.
+2. Push the release branch and open a pull request; after review, merge it to `main`.
 3. The `build-release` workflow detects the version change and runs the platform matrix:
    - **Windows x64** (MSVC, WASAPI)
    - **macOS Apple Silicon arm64** (Clang, CoreAudio, deployment target 13.3)

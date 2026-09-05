@@ -9,13 +9,15 @@
     v-bind="$attrs"
     :aria-label="getAccessibleLabel()"
   >
-    <span class="material-symbols-rounded" aria-hidden="true">{{ icon }}</span>
+    <CueSymbol v-if="symbol" :name="symbol" />
+    <span v-else-if="icon" class="material-symbols-rounded" aria-hidden="true">{{ icon }}</span>
   </button>
 </template>
 
 <script setup lang="ts">
 const props = withDefaults(defineProps<{
-  icon: string;
+  icon?: string;
+  symbol?: 'preview' | 'one-shots' | 'ltc' | 'video-output';
   highlightColor?: string;
   activeTextColor?: string;
   context?: 'Playlist' | 'Cart';
@@ -68,7 +70,8 @@ const computedStyle = computed(() => {
   width: 32px;
   height: 32px;
 
-  .material-symbols-rounded {
+  .material-symbols-rounded,
+  :deep(.cue-symbol) {
     font-size: 18px;
   }
 }
@@ -77,7 +80,8 @@ const computedStyle = computed(() => {
   width: 28px;
   height: 28px;
 
-  .material-symbols-rounded {
+  .material-symbols-rounded,
+  :deep(.cue-symbol) {
     font-size: 16px;
   }
 }

@@ -3,6 +3,7 @@
 // ============================================================================
 #include "liveplay/core/project_state.hpp"
 #include "liveplay/core/one_shot_migration.hpp"
+#include "liveplay/core/project_file.hpp"
 #include "liveplay/logger.hpp"
 #include "liveplay/meta/metadata.hpp"
 #include "liveplay/util/atomic_file.hpp"
@@ -82,7 +83,7 @@ inline std::string read_last_modified(const json& doc) {
 // An audio item can carry two file references:
 //   • mediaPath       — RELATIVE to the project folder, e.g. "media/foo.mp3".
 //                       Portable: it stays valid even after the whole project
-//                       (the .liveplay file plus its media/ folder) is moved,
+//                       (the .dwcue file plus its media/ folder) is moved,
 //                       because folderPath is rewritten to the file's real
 //                       location on load.
 //   • mediaServerPath — an ABSOLUTE path captured at import time. Handy while
@@ -199,93 +200,6 @@ inline void relativize_media_paths(json& doc) {
         for (auto& it : doc["cartOnlyItems"]) visit(it);
 }
 
-// ---------------------------------------------------------------------------
-// Project document validation + repair
-// ---------------------------------------------------------------------------
-
-// Walk an items array recursively, counting every UUID occurrence.
-void count_uuids_in_items(const json& items,
-                          std::unordered_map<std::string, int>& counts) {
-    if (!items.is_array()) return;
-    for (const auto& it : items) {
-        if (!it.is_object()) continue;
-        const std::string uuid = it.value("uuid", std::string{});
-        if (!uuid.empty()) ++counts[uuid];
-        if (it.value("type", std::string{}) == "group" && it.contains("children"))
-            count_uuids_in_items(it["children"], counts);
-    }
-}
-
-// Remove duplicate-UUID entries from `items` (keep first occurrence).
-// `seen` is the set of already-accepted UUIDs (pre-populated from other arrays
-// if needed). Returns the number of items removed.
-int remove_duplicate_items(json& items, std::unordered_set<std::string>& seen) {
-    if (!items.is_array()) return 0;
-    int removed = 0;
-    for (int i = static_cast<int>(items.size()) - 1; i >= 0; --i) {
-        auto& it = items[i];
-        if (!it.is_object()) continue;
-        const std::string uuid = it.value("uuid", std::string{});
-        if (!uuid.empty()) {
-            if (seen.count(uuid)) {
-                items.erase(items.begin() + i);
-                ++removed;
-                continue;
-            }
-            seen.insert(uuid);
-        }
-        // Recurse into groups for duplicates within children.
-        if (it.value("type", std::string{}) == "group" && it.contains("children"))
-            removed += remove_duplicate_items(it["children"], seen);
-    }
-    return removed;
-}
-
-// Inspect `doc` for known corruption patterns. Repairs in place and returns
-// a RepairInfo describing what was fixed (empty if nothing needed repair).
-RepairInfo detect_and_repair(json& doc) {
-    RepairInfo info;
-
-    // ---- 1. lastModified stored as Unix integer instead of ISO string ----
-    if (doc.contains("lastModified") && !doc["lastModified"].is_string()) {
-        doc["lastModified"] = read_last_modified(doc);
-        info.repaired = true;
-        info.issues.push_back(
-            "lastModified was stored as a number; converted to ISO 8601 string");
-    }
-
-    // ---- 2. Duplicate UUIDs in the items array ----
-    if (doc.contains("items") && doc["items"].is_array()) {
-        std::unordered_set<std::string> seen;
-        const int removed = remove_duplicate_items(doc["items"], seen);
-        if (removed > 0) {
-            info.repaired = true;
-            info.issues.push_back(
-                "Removed " + std::to_string(removed) +
-                " duplicate item(s) from the playlist");
-        }
-    }
-
-    // ---- 3. Duplicate UUIDs in cartOnlyItems ----
-    if (doc.contains("cartOnlyItems") && doc["cartOnlyItems"].is_array()) {
-        // Build the already-seen set from items so cross-array dupes are caught.
-        std::unordered_set<std::string> seen;
-        if (doc.contains("items")) {
-            std::unordered_map<std::string, int> counts;
-            count_uuids_in_items(doc["items"], counts);
-            for (auto& [u, _] : counts) seen.insert(u);
-        }
-        const int removed = remove_duplicate_items(doc["cartOnlyItems"], seen);
-        if (removed > 0) {
-            info.repaired = true;
-            info.issues.push_back(
-                "Removed " + std::to_string(removed) +
-                " duplicate item(s) from the cart");
-        }
-    }
-
-    return info;
-}
 
 // ---------------------------------------------------------------------------
 // Output Target loudness standards.
@@ -1157,26 +1071,6 @@ json ProjectState::default_empty_document() {
     };
 }
 
-bool ProjectState::is_client_document(const json& doc) const {
-    // Client-format heuristics: camelCase top-level fields that are unique
-    // to the Electron client's `Project` interface and not present in the
-    // server's snake_case schema_version 2 format.
-    if (!doc.is_object()) return false;
-    if (doc.contains("items") && doc["items"].is_array()) {
-        // Confirm one item has uuid/type/displayName (camelCase) — that
-        // distinguishes from any other "items" field we might add later.
-        for (const auto& it : doc["items"]) {
-            if (it.is_object() && it.contains("uuid") && it.contains("type")) {
-                return true;
-            }
-        }
-    }
-    if (doc.contains("cartItems") || doc.contains("cartSlotKeys") ||
-        doc.contains("cartOnlyItems")) {
-        return true;
-    }
-    return false;
-}
 
 // ---------------------------------------------------------------------------
 // Document walker — visits every item (audio + group) in the document, depth
@@ -1751,6 +1645,11 @@ json ProjectState::to_json() const {
 }
 
 bool ProjectState::save(const std::filesystem::path& path) const {
+    if (!project_file::is_native_project(path)) {
+        Logger::error("ProjectState::save: project path must use .dwcue: '{}'",
+                      util::path_to_utf8(path));
+        return false;
+    }
     // Persist the full client-shaped document — this is what the Electron
     // client expects to read back. Server-only tables (mixer routing,
     // engine state) live on the side and don't get written to disk here;
@@ -4246,6 +4145,18 @@ json ProjectState::upgrade_legacy_document(const json& legacy) const {
 }
 
 bool ProjectState::load_from_json(const json& doc_in) {
+    std::optional<project_file::PreparedDocument> client_document;
+    if (project_file::is_client_document(doc_in)) {
+        project_file::PreparedDocument prepared;
+        std::string preparation_error;
+        if (!project_file::prepare_client_document(
+                doc_in, std::nullopt, prepared, preparation_error)) {
+            Logger::error("ProjectState::load_from_json: {}", preparation_error);
+            return false;
+        }
+        client_document = std::move(prepared);
+    }
+
     std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
     {
         std::lock_guard slock{sequencer_mutex_};
@@ -4259,18 +4170,15 @@ bool ProjectState::load_from_json(const json& doc_in) {
         if (load_thread_.joinable()) load_thread_.join();
     }
     release_device_routings();
-    // The .liveplay format the Electron client writes today is camelCase and
-    // hierarchical (items → groups → audio items). Detect that flavour and
-    // store the full document for the client to read back via /api/project.
-    // The engine-facing tables (cues_/mixers_/routes_) get populated by
-    // mirror_items_to_engine_locked() so audio playback works as before.
-    if (is_client_document(doc_in)) {
-        // Run repair before taking the lock — it's pure document transformation.
-        json doc_repaired = doc_in;
-        const bool cart_migrated = core::migrate_legacy_cart_to_one_shots(doc_repaired);
-        if (cart_migrated)
+    // Canonical .dwcue documents use the camelCase desktop schema. Keep the
+    // full document for clients while mirroring its engine-facing state.
+    if (client_document) {
+        if (client_document->cart_migrated)
             Logger::info("ProjectState: migrated legacy Cart data to One Shots.");
-        RepairInfo repair = detect_and_repair(doc_repaired);
+        RepairInfo repair{
+            client_document->repair.repaired,
+            client_document->repair.issues,
+        };
         if (repair.repaired) {
             Logger::warn("ProjectState::load_from_json: project repaired ({} issue(s)).",
                          repair.issues.size());
@@ -4290,22 +4198,7 @@ bool ProjectState::load_from_json(const json& doc_in) {
             master_assignments_.clear();
 
             ++document_generation_;
-            document_ = std::move(doc_repaired);
-            // Ensure required top-level keys exist (migrate older client saves).
-            if (!document_.contains("settings") || !document_["settings"].is_object()) {
-                document_["settings"] = json{
-                    {"defaultOutputDevice", nullptr},
-                    {"previewDevice",       nullptr},
-                    {"ltcDevice",           nullptr},
-                };
-            }
-            if (!document_.contains("cartOnlyItems") ||
-                !document_["cartOnlyItems"].is_array()) {
-                document_["cartOnlyItems"] = json::array();
-            }
-            if (!document_.contains("theme") || !document_["theme"].is_object()) {
-                document_["theme"] = json{{"mode", "dark"}, {"accentColor", "#315FCF"}};
-            }
+            document_ = std::move(client_document->document);
             project_name_ = document_.value("name", std::string{"Untitled"});
             update_media_root_from_folder_locked();
             pending_repair_info_ = std::move(repair);
@@ -4350,7 +4243,7 @@ bool ProjectState::load_from_json(const json& doc_in) {
     }
     // The project folder always wins: media must live inside it so the project
     // stays portable and we never read media from outside the folder. load()
-    // injects the authoritative folderPath (the directory the .liveplay sits
+    // injects the authoritative folderPath (the directory the .dwcue sits
     // in) before calling us, so this overrides any stale stored media_root.
     if (doc.contains("folderPath") && doc["folderPath"].is_string()) {
         const std::string folder = doc["folderPath"].get<std::string>();
@@ -4421,6 +4314,11 @@ bool ProjectState::load_from_json(const json& doc_in) {
 }
 
 bool ProjectState::load(const std::filesystem::path& path) {
+    if (!project_file::is_native_project(path)) {
+        Logger::error("ProjectState::load: native project path must use .dwcue: '{}'",
+                      util::path_to_utf8(path));
+        return false;
+    }
     try {
         std::ifstream f{path};
         if (!f) {
@@ -4429,7 +4327,7 @@ bool ProjectState::load(const std::filesystem::path& path) {
         }
         json doc;
         f >> doc;
-        // The media/ folder always lives next to the .liveplay file, so the
+        // The media/ folder always lives next to the .dwcue file, so the
         // project folder is authoritatively the directory the file sits in —
         // regardless of any (possibly stale) folderPath baked into the document
         // the last time it was saved somewhere else. We rewrite it BEFORE
@@ -4474,7 +4372,8 @@ RepairInfo ProjectState::repair_project() {
         std::lock_guard lock{mutex_};
         doc = document_;
     }
-    RepairInfo info = detect_and_repair(doc);
+    auto repaired = project_file::repair_client_document(doc);
+    RepairInfo info{repaired.repaired, std::move(repaired.issues)};
     if (info.repaired) {
         std::lock_guard lock{mutex_};
         document_ = std::move(doc);
