@@ -418,3 +418,144 @@ test('native media, recovery correlation, and authoritative trigger order stay c
     throw error;
   }
 });
+
+test('AV-sync diagnostics allocate transient looping cues and release owned uploads', async t => {
+  const home = await mkdtemp(path.join(os.tmpdir(), 'dwcue-av-sync-integration-'));
+  const port = await unusedPort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const child = spawn(serverBinary, ['--bind', '127.0.0.1', '--port', String(port)], {
+    cwd: home,
+    env: { ...process.env, HOME: home, LIVEPLAY_ACCESS_TOKEN: accessToken, LIVEPLAY_ALLOWED_ORIGINS: baseUrl },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let diagnostics = '';
+  child.stdout.on('data', chunk => { diagnostics += chunk; });
+  child.stderr.on('data', chunk => { diagnostics += chunk; });
+  t.after(async () => {
+    await stopServer(child);
+    await rm(home, { recursive: true, force: true });
+  });
+
+  async function createFromPath(filePath, outputDeviceId) {
+    const body = { file_path: filePath };
+    if (outputDeviceId !== undefined) body.output_device_id = outputDeviceId;
+    return request(baseUrl, '/api/diagnostics/av-sync', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async function uploadWebm(bytes) {
+    const form = new FormData();
+    form.append('file', new Blob([bytes], { type: 'video/webm' }), '24.webm');
+    return fetch(`${baseUrl}/api/diagnostics/av-sync`, {
+      method: 'POST',
+      body: form,
+      signal: AbortSignal.timeout(5000),
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+  }
+
+  try {
+    await waitForServer(baseUrl, child);
+    const audioPath = path.join(home, 'diagnostic-loop.wav');
+    const audioBytes = silentWav();
+    await writeFile(audioPath, audioBytes);
+
+    const firstResponse = await createFromPath(audioPath);
+    const firstText = await firstResponse.text();
+    assert.equal(firstResponse.status, 200, firstText);
+    const first = JSON.parse(firstText);
+    assert.equal(first.transport, 0);
+    assert.equal(first.file_loaded, true);
+    assert.equal(first.file_path, audioPath);
+
+    const secondResponse = await createFromPath(audioPath, 'default');
+    const secondText = await secondResponse.text();
+    assert.equal(secondResponse.status, 200, secondText);
+    const second = JSON.parse(secondText);
+    assert.notEqual(second.id, first.id, 'diagnostic cue creation de-duplicated by file path');
+
+    const project = await (await request(baseUrl, '/api/project')).text();
+    assert.ok(!project.includes(first.id), 'first diagnostic leaked into the project document');
+    assert.ok(!project.includes(second.id), 'second diagnostic leaked into the project document');
+
+    const cuesBeforeFailure = await (await request(baseUrl, '/api/cues')).json();
+    const invalidDevice = await createFromPath(audioPath, 'not-an-exact-device');
+    assert.equal(invalidDevice.status, 400);
+    assert.match((await invalidDevice.json()).error, /exactly match/);
+    const invalidFile = await createFromPath(path.join(home, 'missing.wav'));
+    assert.equal(invalidFile.status, 400);
+    const cuesAfterFailure = await (await request(baseUrl, '/api/cues')).json();
+    assert.equal(cuesAfterFailure.length, cuesBeforeFailure.length, 'failed diagnostics leaked a cue');
+
+    const devices = await (await request(baseUrl, '/api/devices')).json();
+    const selectors = new Set();
+    const openedDevice = devices.find(device => device.is_open && device.id);
+    if (openedDevice) selectors.add(openedDevice.id);
+    const namedDevice = devices.find(device => device.is_available && device.display_name);
+    if (namedDevice) selectors.add(namedDevice.display_name);
+    for (const selector of selectors) {
+      const routedResponse = await createFromPath(audioPath, selector);
+      const routedText = await routedResponse.text();
+      assert.equal(routedResponse.status, 200, `exact selector ${selector} failed: ${routedText}`);
+      const routed = JSON.parse(routedText);
+      const removed = await request(baseUrl, `/api/cues/${encodeURIComponent(routed.id)}`, {
+        method: 'DELETE',
+      });
+      assert.equal(removed.status, 200);
+    }
+
+    const stream = openEventStream(
+      'ws://127.0.0.1:' + port + '/ws?access_token=' + encodeURIComponent(accessToken),
+    );
+    t.after(() => stream.socket.close());
+    await stream.opened;
+    const played = await request(baseUrl, `/api/cues/${encodeURIComponent(first.id)}/play`, {
+      method: 'POST',
+    });
+    assert.equal(played.status, 200);
+    const meterFrame = await stream.next(message =>
+      message.type === 'meters' && message.items?.some(item => item.cue_id === first.id));
+    assert.ok(meterFrame.items.some(item => item.cue_id === first.id), 'WebSocket meters omitted diagnostic cue');
+
+    await new Promise(resolve => setTimeout(resolve, 1250));
+    const loopedResponse = await request(baseUrl, `/api/cues/${encodeURIComponent(first.id)}`);
+    const looped = await loopedResponse.json();
+    assert.equal(loopedResponse.status, 200);
+    assert.notEqual(looped.transport, 0, 'one-second diagnostic stopped instead of looping');
+    assert.ok(looped.playhead_seconds < 1, 'diagnostic playhead did not wrap at full-media EOF');
+    await request(baseUrl, `/api/cues/${encodeURIComponent(first.id)}/stop`, { method: 'POST' });
+
+    const deleted = await request(baseUrl, `/api/cues/${encodeURIComponent(first.id)}`, {
+      method: 'DELETE',
+    });
+    assert.equal(deleted.status, 200);
+    assert.equal((await request(baseUrl, `/api/cues/${encodeURIComponent(first.id)}`)).status, 404);
+
+    const webmBytes = await readFile(path.join(root, 'client', 'public', 'assets', 'testcards', 'audiosync', '24.webm'));
+    const uploadResponse = await uploadWebm(webmBytes);
+    const uploadText = await uploadResponse.text();
+    assert.equal(uploadResponse.status, 200, uploadText);
+    const uploaded = JSON.parse(uploadText);
+    assert.deepEqual(await readFile(uploaded.file_path), webmBytes, 'multipart staging changed WebM bytes');
+    assert.equal((await request(baseUrl, `/api/cues/${encodeURIComponent(uploaded.id)}`, {
+      method: 'DELETE',
+    })).status, 200);
+    await assert.rejects(readFile(uploaded.file_path), { code: 'ENOENT' });
+
+    const resetUploadResponse = await uploadWebm(webmBytes);
+    const resetUploadText = await resetUploadResponse.text();
+    assert.equal(resetUploadResponse.status, 200, resetUploadText);
+    const resetUpload = JSON.parse(resetUploadText);
+    assert.equal((await request(baseUrl, '/api/project/close', { method: 'POST' })).status, 200);
+    assert.equal((await request(baseUrl, `/api/cues/${encodeURIComponent(resetUpload.id)}`)).status, 404);
+    assert.equal((await request(baseUrl, `/api/cues/${encodeURIComponent(second.id)}`)).status, 404);
+    await assert.rejects(readFile(resetUpload.file_path), { code: 'ENOENT' });
+    assert.deepEqual(await readFile(audioPath), audioBytes, 'server deleted caller-owned JSON media');
+    stream.socket.close();
+  } catch (error) {
+    error.message += `\nserver output:\n${diagnostics}`;
+    throw error;
+  }
+});

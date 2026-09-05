@@ -977,6 +977,15 @@ void AudioEngine::stop_all(std::chrono::milliseconds fade, bool force_fade) {
 // + route + assign master explicitly. Idempotent.
 // ---------------------------------------------------------------------------
 void AudioEngine::ensure_default_routing() {
+    ensure_default_routing_impl(std::nullopt);
+}
+
+void AudioEngine::ensure_default_routing_for_cue(const CueId& cue) {
+    ensure_default_routing_impl(cue);
+}
+
+void AudioEngine::ensure_default_routing_impl(
+    const std::optional<CueId>& cue_filter) {
     // Step 1: open a device if none open. open_device_by_name takes its own
     // lock; we must therefore call it OUTSIDE the engine mutex.
     DeviceId chosen_device{};
@@ -1053,6 +1062,7 @@ void AudioEngine::ensure_default_routing() {
         // LTC-enabled cues) is deliberately excluded — it has its own
         // dedicated device routing managed by apply_ltc_device_routing().
         for (auto& [cue_id, item] : items_) {
+            if (cue_filter && cue_id != cue_filter->value) continue;
             auto& srcs = pending_.item_sources[cue_id].by_source_channel;
             const auto src_count = item->source_channel_count();
             if (srcs.size() < src_count) srcs.resize(src_count);

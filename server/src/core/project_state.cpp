@@ -425,6 +425,7 @@ ProjectState::~ProjectState() {
         std::lock_guard lock{mirror_mutex_};
         if (load_thread_.joinable()) load_thread_.join();
     }
+    clear_diagnostic_cues();
 
     // Tear down preview infrastructure on shutdown so the audio device gets
     // released cleanly.
@@ -998,6 +999,7 @@ void ProjectState::reset() {
         playback_generations_.cancel_all();
     }
     next_item_override_.clear(); next_item_override_manual_ = false;
+    clear_diagnostic_cues();
 
     // Project reset is the lifetime boundary for override routing. Preview and
     // Main keep their independent references when they share the device.
@@ -1397,30 +1399,172 @@ audio::CueId ProjectState::add_cue_from_file(const std::filesystem::path& file,
     return cue_id;
 }
 
+DiagnosticCueResult ProjectState::add_av_sync_diagnostic_cue(
+    const std::filesystem::path& file,
+    const std::string& output_device_id,
+    std::filesystem::path owned_file) {
+    std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
+
+    const std::string requested_device =
+        output_device_id.empty() ? "default" : output_device_id;
+    std::string route_device_name;
+    std::string route_key;
+    std::optional<audio::DeviceId> required_open_device;
+    bool use_os_default = false;
+
+    if (requested_device == "default") {
+        {
+            std::lock_guard lock{mutex_};
+            if (document_.contains("settings")) {
+                const auto& settings = document_["settings"];
+                if (settings.contains("defaultOutputDevice") &&
+                    settings["defaultOutputDevice"].is_string()) {
+                    route_device_name = settings["defaultOutputDevice"].get<std::string>();
+                }
+            }
+        }
+        use_os_default = route_device_name.empty();
+        if (!use_os_default) {
+            for (const auto& device : engine_.enumerate_devices()) {
+                if (device.is_open && device.id.value == route_device_name) {
+                    required_open_device = device.id;
+                    route_device_name = device.display_name;
+                    route_key = "opened:" + device.id.value;
+                    break;
+                }
+            }
+            if (route_key.empty()) route_key = route_device_name;
+        }
+    } else {
+        const auto devices = engine_.enumerate_devices();
+        for (const auto& device : devices) {
+            if (device.is_open && device.id.value == requested_device) {
+                required_open_device = device.id;
+                route_device_name = device.display_name;
+                route_key = "opened:" + device.id.value;
+                break;
+            }
+        }
+        if (!required_open_device) {
+            for (const auto& device : devices) {
+                if (device.display_name != requested_device) continue;
+                route_device_name = device.display_name;
+                route_key = device.display_name;
+                if (device.is_open) {
+                    required_open_device = device.id;
+                    route_key = "opened:" + device.id.value;
+                    break;
+                }
+            }
+        }
+        if (route_device_name.empty()) {
+            return {{},
+                    "output_device_id must exactly match a known device name or opened device id"};
+        }
+    }
+
+    audio::CueId cue_id;
+    try {
+        cue_id = engine_.load_cue_no_route(file);
+        if (cue_id.empty()) return {{}, "file could not be decoded"};
+
+        const auto cue = engine_.find_cue(cue_id);
+        if (!cue) {
+            engine_.unload_cue(cue_id);
+            return {{}, "file could not be decoded"};
+        }
+        cue->set_out_point_seconds(0.0);
+        cue->set_loop(true, 0.0);
+        if (!cue->prime(2.0, 0.0)) {
+            engine_.unload_cue(cue_id);
+            return {{}, "file could not be primed"};
+        }
+
+        if (use_os_default) {
+            engine_.ensure_default_routing_for_cue(cue_id);
+        } else {
+            const auto mixer = ensure_device_routing_impl(
+                route_key, route_device_name, required_open_device);
+            if (mixer.empty()) {
+                engine_.unload_cue(cue_id);
+                return {{}, "output device could not be routed"};
+            }
+            route_cue_to_mixer(cue_id, mixer);
+        }
+
+        const auto md = meta::read_metadata(file);
+        CueMeta cue_meta;
+        cue_meta.id = cue_id;
+        cue_meta.display_name = "AV Sync Diagnostic";
+        cue_meta.file_path = file;
+        cue_meta.artist = md.artist;
+        cue_meta.title = md.title;
+        cue_meta.duration_seconds = static_cast<double>(md.duration.count()) / 1000.0;
+
+        {
+            std::lock_guard lock{mutex_};
+            cues_.emplace(cue_id.value, std::move(cue_meta));
+            diagnostic_cues_.emplace(cue_id.value, std::move(owned_file));
+        }
+        return {cue_id, {}};
+    } catch (const std::exception& e) {
+        if (!cue_id.empty()) engine_.unload_cue(cue_id);
+        return {{}, e.what()};
+    } catch (...) {
+        if (!cue_id.empty()) engine_.unload_cue(cue_id);
+        return {{}, "diagnostic cue setup failed"};
+    }
+}
+
 void ProjectState::remove_cue(const audio::CueId& id) {
-    // Don't unload a cue that belongs to a project item — multiple
-    // ServerHowl instances on the client may share it (add_cue_from_file
-    // dedupes by path), and removing it would yank audio out from under
-    // a sibling that's still using it.
+    std::filesystem::path owned_file;
     {
         std::lock_guard lock{mutex_};
+        // Project item cues remain shared and cannot be removed through the
+        // legacy cue endpoint.
         for (const auto& [_, cue_id] : item_uuid_to_cue_) {
             if (cue_id.value == id.value) return;
         }
+        const auto diagnostic = diagnostic_cues_.find(id.value);
+        if (diagnostic != diagnostic_cues_.end()) {
+            owned_file = std::move(diagnostic->second);
+            diagnostic_cues_.erase(diagnostic);
+        }
     }
+
     engine_.unload_cue(id);
-    std::lock_guard lock{mutex_};
-    cues_.erase(id.value);
-    item_routes_.erase(std::remove_if(item_routes_.begin(), item_routes_.end(),
-                                       [&](const RouteSendV2& /*r*/){
-                                           // can't easily tell which cue this belonged to without
-                                           // tagging — for now we just drop nothing here. The engine
-                                           // already dropped the cue's routes when unload_cue ran.
-                                           return false;
-                                       }),
-                       item_routes_.end());
+    {
+        std::lock_guard lock{mutex_};
+        cues_.erase(id.value);
+    }
+    if (!owned_file.empty()) {
+        std::error_code ec;
+        std::filesystem::remove(owned_file, ec);
+    }
 }
 
+void ProjectState::clear_diagnostic_cues() noexcept {
+    decltype(diagnostic_cues_) diagnostics;
+    {
+        std::lock_guard lock{mutex_};
+        diagnostic_cues_.swap(diagnostics);
+        for (const auto& [id, _] : diagnostics) cues_.erase(id);
+    }
+
+    for (const auto& [id, owned_file] : diagnostics) {
+        try {
+            const audio::CueId cue_id{id};
+            engine_.stop(cue_id);
+            engine_.unload_cue(cue_id);
+        } catch (...) {
+            Logger::warn("Failed to unload diagnostic cue '{}' during cleanup", id);
+        }
+        if (!owned_file.empty()) {
+            std::error_code ec;
+            std::filesystem::remove(owned_file, ec);
+        }
+    }
+}
 void ProjectState::rename_cue(const audio::CueId& id, std::string new_name) {
     std::lock_guard lock{mutex_};
     auto it = cues_.find(id.value);
@@ -3669,20 +3813,58 @@ void ProjectState::release_device_routings() {
 
 audio::MixerChannelId
 ProjectState::ensure_device_routing(const std::string& device_name) {
+    return ensure_device_routing_impl(device_name, device_name, std::nullopt);
+}
+
+audio::MixerChannelId ProjectState::ensure_device_routing_impl(
+    const std::string& routing_key,
+    const std::string& device_name,
+    std::optional<audio::DeviceId> required_open_device) {
     std::lock_guard routing_lock{device_routing_mutex_};
-    if (device_name.empty()) return {};
+    if (routing_key.empty() || device_name.empty()) return {};
     {
         std::lock_guard lock{mutex_};
-        auto it = device_routings_.find(device_name);
-        if (it != device_routings_.end()) return it->second.mixer;
+        if (required_open_device) {
+            for (const auto& [_, routing] : device_routings_) {
+                if (routing.device.value == required_open_device->value) {
+                    return routing.mixer;
+                }
+            }
+        } else {
+            const auto it = device_routings_.find(routing_key);
+            if (it != device_routings_.end()) return it->second.mixer;
+        }
     }
 
-    // Open device + allocate masters + create mixer (all engine APIs are
-    // independently locked, so we don't hold our own mutex during them).
+    // Device-name matching is intentionally delegated to the engine only
+    // after callers that require exact matching have resolved a catalog entry.
     const auto dev = engine_.open_device_by_name(device_name, 2);
     if (dev.empty()) {
         Logger::warn("ensure_device_routing: could not open '{}'", device_name);
         return {};
+    }
+    if (required_open_device && dev.value != required_open_device->value) {
+        engine_.close_device(dev);
+        Logger::warn("ensure_device_routing: '{}' did not resolve to required id '{}'",
+                     device_name, required_open_device->value);
+        return {};
+    }
+
+    // Re-use an existing strip for the same native device even when one caller
+    // selected it by stable catalog name and another by its ephemeral open id.
+    audio::MixerChannelId existing_mixer;
+    {
+        std::lock_guard lock{mutex_};
+        for (const auto& [_, routing] : device_routings_) {
+            if (routing.device.value == dev.value) {
+                existing_mixer = routing.mixer;
+                break;
+            }
+        }
+    }
+    if (!existing_mixer.empty()) {
+        engine_.close_device(dev);  // release the reference just acquired
+        return existing_mixer;
     }
 
     audio::MasterChannelIndex master_l{};
@@ -3693,11 +3875,9 @@ ProjectState::ensure_device_routing(const std::string& device_name) {
         // Bound-check master allocation. Each distinct device override consumes
         // a pair of master channels growing upward from next_override_master_,
         // while the top two channels of the bus are reserved for preview.
-        const audio::MasterChannelIndex bus_width =
-            engine_.config().master_channels;
+        const audio::MasterChannelIndex bus_width = engine_.config().master_channels;
         const audio::MasterChannelIndex reserved_base =
-            (bus_width >= 2) ? static_cast<audio::MasterChannelIndex>(bus_width - 2)
-                             : 0;
+            (bus_width >= 2) ? static_cast<audio::MasterChannelIndex>(bus_width - 2) : 0;
         masters_available = next_override_master_ + 1 < reserved_base;
         if (masters_available) {
             master_l = next_override_master_;
@@ -3716,24 +3896,20 @@ ProjectState::ensure_device_routing(const std::string& device_name) {
         return {};
     }
 
-    const auto mixer = engine_.create_mixer_channel(
-        "Output: " + device_name);
+    const auto mixer = engine_.create_mixer_channel("Output: " + device_name);
     engine_.assign_master_to_device(master_l, dev, 0);
     engine_.assign_master_to_device(master_r, dev, 1);
-    engine_.route_mixer_to_master(mixer, master_l, 0.0f, 0);   // strip L lane
-    engine_.route_mixer_to_master(mixer, master_r, 0.0f, 1);   // strip R lane
+    engine_.route_mixer_to_master(mixer, master_l, 0.0f, 0);
+    engine_.route_mixer_to_master(mixer, master_r, 0.0f, 1);
 
     {
         std::lock_guard lock{mutex_};
-        device_routings_[device_name] = DeviceRouting{
-            dev, mixer, master_l, master_r,
-        };
+        device_routings_[routing_key] = DeviceRouting{dev, mixer, master_l, master_r};
     }
     Logger::info("ensure_device_routing: '{}' → mixer '{}' (masters {}/{})",
                  device_name, mixer.value, master_l, master_r);
     return mixer;
 }
-
 void ProjectState::route_cue_to_mixer(const audio::CueId& cue,
                                       const audio::MixerChannelId& mixer) {
     auto pi = engine_.find_cue(cue);

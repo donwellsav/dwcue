@@ -107,6 +107,10 @@ struct CueMeta {
     std::chrono::nanoseconds ltc_offset_ns{0};
     std::string              ltc_start_timecode{"00:00:00:00"};
 };
+struct DiagnosticCueResult {
+    audio::CueId cue_id;
+    std::string  error;
+};
 
 struct MixerChannelMeta {
     audio::MixerChannelId id;
@@ -210,6 +214,14 @@ public:
     // single method.
     audio::CueId add_cue_from_file(const std::filesystem::path& file,
                                    std::string display_name = "");
+    // Load a fresh, runtime-only AV-sync cue. Unlike add_cue_from_file(), this
+    // never de-duplicates against project items and never mutates document_.
+    // A non-empty owned_file is deleted when the cue is removed, the project
+    // resets, or ProjectState is destroyed.
+    DiagnosticCueResult add_av_sync_diagnostic_cue(
+        const std::filesystem::path& file,
+        const std::string& output_device_id,
+        std::filesystem::path owned_file = {});
     void remove_cue(const audio::CueId& id);
     void rename_cue(const audio::CueId& id, std::string new_name);
     void set_cue_gain_db(const audio::CueId& id, float db);
@@ -504,6 +516,9 @@ private:
 
     // uuid → engine cue id, for audio items currently loaded.
     std::unordered_map<std::string, audio::CueId> item_uuid_to_cue_;
+    // Runtime-only diagnostic cue id -> uploaded temp file. An empty path
+    // identifies a server-local file that this state does not own.
+    std::unordered_map<std::string, std::filesystem::path> diagnostic_cues_;
 
     // Pending "Up Next" override set by the user mid-playback. Consumed and
     // cleared when the currently-playing item's end-behavior fires "next".
@@ -562,6 +577,11 @@ private:
     // Default device occupies 0/1; preview occupies 30/31; overrides start
     // at 2 and increment by 2.
     audio::MasterChannelIndex next_override_master_ = 2;
+    audio::MixerChannelId ensure_device_routing_impl(
+        const std::string& routing_key,
+        const std::string& device_name,
+        std::optional<audio::DeviceId> required_open_device);
+    void clear_diagnostic_cues() noexcept;
 
     // Preview state. The preview infrastructure is opened lazily on first
     // preview request, then re-used (cheaper than reopening the audio

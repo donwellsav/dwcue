@@ -38,6 +38,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cctype>
 #include <charconv>
 #include <chrono>
 #include <cmath>
@@ -144,7 +145,8 @@ struct ControlSecurityMiddleware {
             return;
         }
 
-        if (req.url == "/api/upload" || req.url == "/api/project/import") {
+        if (req.url == "/api/upload" || req.url == "/api/project/import" ||
+            req.url == "/api/diagnostics/av-sync") {
             // Crow invokes middleware after buffering the HTTP body. This
             // prevents multipart parsing/staging above the limit, but Crow
             // itself needs an upstream parser cap to bound receive memory.
@@ -1660,6 +1662,103 @@ void ControlServer::install_routes() {
             }).dump()};
             response.set_header("Content-Type", "application/json");
             return response;
+        });
+
+    CROW_ROUTE(app, "/api/diagnostics/av-sync").methods(crow::HTTPMethod::Post)
+        ([this](const crow::request& req) {
+            try {
+                if (req.body.size() > cfg_.max_upload_bytes)
+                    return json_err(413, "payload too large");
+
+                fs::path file_path;
+                std::string output_device_id = "default";
+                ScopedFileRemoval staged_upload;
+                const std::string content_type = req.get_header_value("Content-Type");
+
+                if (content_type.find("multipart/") != std::string::npos) {
+                    crow::multipart::message_view multipart{req};
+                    const crow::multipart::part_view* file_part = nullptr;
+                    std::string upload_filename;
+                    bool output_device_seen = false;
+
+                    for (const auto& part : multipart.parts) {
+                        const auto disposition = part.headers.find("Content-Disposition");
+                        if (disposition == part.headers.end()) continue;
+                        const auto name = disposition->second.params.find("name");
+                        if (name == disposition->second.params.end()) continue;
+                        if (name->second == "file") {
+                            if (file_part) return json_err(400, "duplicate 'file' parts");
+                            file_part = &part;
+                            const auto filename = disposition->second.params.find("filename");
+                            if (filename == disposition->second.params.end() || filename->second.empty())
+                                return json_err(400, "file part must include a non-empty filename");
+                            upload_filename = security::sanitize_upload_filename(filename->second);
+                        } else if (name->second == "output_device_id") {
+                            if (output_device_seen)
+                                return json_err(400, "duplicate 'output_device_id' parts");
+                            output_device_seen = true;
+                            output_device_id = std::string{part.body};
+                        }
+                    }
+
+                    if (!file_part) return json_err(400, "missing 'file' part");
+                    if (file_part->body.empty()) return json_err(400, "uploaded file is empty");
+                    if (file_part->body.size() > cfg_.max_upload_bytes)
+                        return json_err(413, "uploaded file too large");
+                    if (output_device_id.empty())
+                        return json_err(400, "output_device_id must not be empty");
+
+                    std::string extension = liveplay::util::path_to_utf8(
+                        liveplay::util::utf8_to_path(upload_filename).extension());
+                    std::transform(extension.begin(), extension.end(), extension.begin(),
+                                           [](unsigned char c) {
+                                               return static_cast<char>(std::tolower(c));
+                                           });
+                    if (extension != ".webm")
+                        return json_err(400, "diagnostic upload must be a WebM file");
+
+                    const fs::path temp_root =
+                        fs::temp_directory_path() / "liveplay-diagnostics";
+                    fs::create_directories(temp_root);
+                    file_path = temp_root / (make_download_token() + ".webm");
+                    staged_upload.path = file_path;
+                    std::ofstream stream{file_path, std::ios::binary};
+                    if (!stream) return json_err(500, "failed to stage diagnostic upload");
+                    stream.write(file_part->body.data(),
+                                 static_cast<std::streamsize>(file_part->body.size()));
+                    stream.close();
+                    if (!stream) return json_err(500, "failed to stage diagnostic upload");
+                } else {
+                    const auto body = json::parse(req.body);
+                    if (!body.contains("file_path") || !body["file_path"].is_string() ||
+                        body["file_path"].get_ref<const std::string&>().empty()) {
+                        return json_err(400, "expected non-empty 'file_path'");
+                    }
+                    file_path = liveplay::util::utf8_to_path(
+                        body["file_path"].get<std::string>());
+                    if (body.contains("output_device_id")) {
+                        if (!body["output_device_id"].is_string() ||
+                            body["output_device_id"].get_ref<const std::string&>().empty()) {
+                            return json_err(400, "output_device_id must be a non-empty string");
+                        }
+                        output_device_id = body["output_device_id"].get<std::string>();
+                    }
+                }
+
+                const auto result = state_.add_av_sync_diagnostic_cue(
+                    file_path, output_device_id, staged_upload.path);
+                if (result.cue_id.empty()) return json_err(400, result.error);
+
+                const auto cue = state_.find_cue(result.cue_id);
+                if (!cue) {
+                    state_.remove_cue(result.cue_id);
+                    return json_err(500, "diagnostic cue registration failed");
+                }
+                staged_upload.path.clear();
+                return json_ok(cue_to_json(*cue, engine_));
+            } catch (const std::exception& e) {
+                return json_err(400, e.what());
+            }
         });
 
     // ---- Cues ----

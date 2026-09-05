@@ -295,6 +295,9 @@ public:
     // source channels through Main (stereo → lanes L/R, mono → both lanes).
     // Idempotent — safe to call any number of times.
     void ensure_default_routing();
+    // Establish the same Main -> OS-default path, but attach only one cue.
+    // Existing cue routes are left untouched.
+    void ensure_default_routing_for_cue(const CueId& cue);
 
     // ---- Mixer channels --------------------------------------------------
     MixerChannelId create_mixer_channel(std::string display_name);
@@ -531,6 +534,7 @@ private:
 
     // -- Helpers ---------------------------------------------------------
     void rebuild_topology_locked();
+    void ensure_default_routing_impl(const std::optional<CueId>& cue_filter);
     void publish_topology(std::shared_ptr<const Topology> snap);
     std::shared_ptr<const Topology> snapshot_topology() const noexcept;
     void publish_device_snapshot_locked();

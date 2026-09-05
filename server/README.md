@@ -275,6 +275,9 @@ The authoritative endpoint list is the table of `CROW_ROUTE` registrations in [`
 |--------------------|------|----------|-------|
 | `GET /api/health`  | —    | `{ "ok": true, "name": "dwcue-server", "pid": number, "instanceToken": string }` | Sole unauthenticated route; liveness and launcher-generation identity probe. `instanceToken` is not the control bearer. |
 | `GET /api/whoami`  | —    | `{ "clientIp": "192.168.1.10", "isLocal": false }` | Bearer required; `isLocal` reports whether the caller is loopback, not whether authentication is required. |
+| `POST /api/diagnostics/av-sync` | JSON `{ "file_path": "/abs/60.webm", "output_device_id": "default" }`, or multipart `file` + `output_device_id` | Full cue object, stopped and primed for native looping | Fresh runtime-only diagnostic; never adds a show item or reuses a project cue. |
+
+AV Sync uses the existing native decoder, loop and mixer. `default` follows the project's Program output; an explicit selector must exactly match a catalog device name or an opened-device ID. Start with `POST /api/cues/<id>/play` and stop/unload with `DELETE /api/cues/<id>`. Uploaded media is staged outside the show and deleted on unload, project reset or server shutdown; a caller-supplied local file is never deleted. The same cue appears in native meter/state broadcasts without a project item UUID. Media streams through the authenticated `/api/media?path=...` endpoint. The output owner must unload its diagnostic when hidden, replaced or closed; global Stop All also stops the test signal.
 
 #### Devices
 
