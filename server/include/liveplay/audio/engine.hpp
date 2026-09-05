@@ -28,6 +28,7 @@
 // ============================================================================
 #pragma once
 
+#include "liveplay/audio/callback_liveness.hpp"
 #include "liveplay/audio/limiter.hpp"
 #include "liveplay/audio/meter.hpp"
 #include "liveplay/audio/mixer_channel.hpp"
@@ -133,6 +134,7 @@ enum class DeviceRuntimeState : std::uint8_t {
     Available,
     Starting,
     Running,
+    Stalled,
     Interrupted,
     Disconnected,
     Closing,
@@ -154,6 +156,8 @@ struct DeviceInfo {
     std::uint64_t hard_resync_count = 0;
     std::uint64_t device_loss_count = 0;
     std::uint64_t device_recovery_count = 0;
+    std::uint64_t callback_entry_count = 0;
+    std::uint64_t stream_recovery_count = 0;
     std::uint64_t reroute_count = 0;
     std::uint64_t interruption_count = 0;
     std::uint64_t correction_limit_count = 0;
@@ -242,6 +246,10 @@ public:
                                  ChannelCount output_channels = 2);
 
     void close_device(const DeviceId& id);
+
+    // Queue an in-place stop/start of an opened local stream. A true return
+    // confirms queue acceptance only; Running still requires a new callback.
+    bool request_device_recovery(const DeviceId& id);
 
     // ---- Items / cues ----------------------------------------------------
     // Create a fresh, independent PlaybackItem for `file_path`. Two carts
@@ -394,6 +402,8 @@ private:
         detail::DeviceReferenceCount open_references;
         std::atomic<bool>           started{false};
         std::atomic<bool>           closing{false};
+        std::atomic<bool>           recovery_in_progress{false};
+        std::atomic<bool>           recovery_requested{false};
         std::atomic<bool>           render_active{false};
         std::atomic<bool>           callback_active{false};
         std::atomic<bool>           reset_requested{true};
@@ -401,6 +411,12 @@ private:
         std::atomic<bool>           clock_master{false};
         std::atomic<DeviceRuntimeState> runtime_state{
             DeviceRuntimeState::Starting};
+        CallbackEntryCounter        callback_entries;
+        CallbackLivenessMonitor     callback_liveness; // watchdog thread only
+        std::atomic<std::uint64_t>  liveness_epoch{0};
+        std::uint64_t               observed_liveness_epoch = 0; // watchdog only
+        std::atomic<bool>           native_recovery_pending{false};
+        std::atomic<bool>           stream_recovery_pending{false};
         DeviceClockController       clock_controller; // callback, or paused reset
         bool                        correction_was_limited = false;
         std::atomic<std::int32_t>   applied_rate_ppm{0};
@@ -412,6 +428,7 @@ private:
         std::atomic<std::uint64_t>  hard_resync_count{0};
         std::atomic<std::uint64_t>  device_loss_count{0};
         std::atomic<std::uint64_t>  device_recovery_count{0};
+        std::atomic<std::uint64_t>  stream_recovery_count{0};
         std::atomic<std::uint64_t>  reroute_count{0};
         std::atomic<std::uint64_t>  interruption_count{0};
         std::atomic<std::uint64_t>  correction_limit_count{0};
@@ -493,8 +510,11 @@ private:
     std::atomic<bool>                running_{false};
     std::thread                      render_thread_;
     std::thread                      decode_thread_;
+    std::thread                      device_watchdog_thread_;
     std::condition_variable          decode_cv_;
     std::mutex                       decode_wait_mutex_;
+    std::condition_variable          device_watchdog_cv_;
+    std::mutex                       device_watchdog_wait_mutex_;
     std::atomic<std::uint64_t>       render_error_count_{0};
 
     // Device-callback-driven render trigger. Each device callback bumps
@@ -512,6 +532,8 @@ private:
     void render_loop();
     void render_one_block(const Topology& topo);
     void decode_loop();
+    void device_watchdog_loop();
+    void recover_device(Device& device) noexcept;
     bool reset_device_if_requested(Device& device) noexcept;
 
     Device* find_device_locked(const DeviceId& id) const;

@@ -2413,6 +2413,13 @@ ProjectState::resolve_item_path(const std::string& uuid) const {
         });
     return out;
 }
+std::optional<long long>
+ProjectState::item_trigger_seq(const std::string& uuid) const {
+    std::lock_guard lock{mutex_};
+    const auto it = item_trigger_seq_.find(uuid);
+    if (it == item_trigger_seq_.end()) return std::nullopt;
+    return it->second;
+}
 
 std::optional<audio::CueId>
 ProjectState::item_to_cue_id(const std::string& uuid) const {

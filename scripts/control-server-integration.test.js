@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
-const { mkdtemp, readFile, rm } = require('node:fs/promises');
+const { mkdtemp, readFile, rm, writeFile } = require('node:fs/promises');
 const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
@@ -20,6 +20,17 @@ async function unusedPort() {
   assert.ok(address && typeof address !== 'string');
   await new Promise((resolve, reject) => socket.close(error => error ? reject(error) : resolve()));
   return address.port;
+}
+
+function silentWav() {
+  const dataBytes = 48_000 * 2;
+  const wav = Buffer.alloc(44 + dataBytes);
+  wav.write('RIFF', 0); wav.writeUInt32LE(36 + dataBytes, 4); wav.write('WAVEfmt ', 8);
+  wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(48_000, 24); wav.writeUInt32LE(96_000, 28);
+  wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36);
+  wav.writeUInt32LE(dataBytes, 40);
+  return wav;
 }
 
 async function waitForServer(baseUrl, child) {
@@ -229,6 +240,106 @@ test('native server echoes mutation IDs only on matching WebSocket events', asyn
     assert.doesNotMatch(savedProject, /clientMutationId|mutation-first|mutation-second/);
 
     stream.socket.close();
+  } catch (error) {
+    error.message += `\nserver output:\n${diagnostics}`;
+    throw error;
+  }
+});
+
+test('native media UUID streaming preserves resolver fallback, ranges, and recovery errors', async t => {
+  const home = await mkdtemp(path.join(os.tmpdir(), 'dwcue-media-integration-'));
+  const port = await unusedPort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const child = spawn(serverBinary, ['--bind', '127.0.0.1', '--port', String(port)], {
+    cwd: home,
+    env: { ...process.env, HOME: home, LIVEPLAY_ACCESS_TOKEN: accessToken, LIVEPLAY_ALLOWED_ORIGINS: baseUrl },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let diagnostics = '';
+  child.stdout.on('data', chunk => { diagnostics += chunk; });
+  child.stderr.on('data', chunk => { diagnostics += chunk; });
+  t.after(async () => {
+    await stopServer(child);
+    await rm(home, { recursive: true, force: true });
+  });
+
+  try {
+    await waitForServer(baseUrl, child);
+    const fallbackPath = path.join(home, 'fallback-video.mp4');
+    const bytes = Buffer.from('0123456789abcdef');
+    await writeFile(fallbackPath, bytes);
+    const itemUuid = 'video-fallback-contract';
+    const create = await request(baseUrl, '/api/project/items', {
+      method: 'POST',
+      body: JSON.stringify({
+        item: {
+          uuid: itemUuid,
+          type: 'video',
+          displayName: 'Fallback video',
+          mediaPath: 'missing-relative.mp4',
+          mediaServerPath: fallbackPath,
+        },
+        parentUuid: '',
+        index: 0,
+      }),
+    });
+    assert.equal(create.status, 200, `item creation failed: ${await create.text()}`);
+
+    const range = await request(baseUrl, `/api/media?item_uuid=${itemUuid}`, {
+      headers: { Range: 'bytes=3-7' },
+    });
+    assert.equal(range.status, 206);
+    assert.equal(range.headers.get('content-range'), 'bytes 3-7/16');
+    assert.equal(Buffer.from(await range.arrayBuffer()).toString(), '34567');
+
+    const head = await request(baseUrl, `/api/media?item_uuid=${itemUuid}`, { method: 'HEAD' });
+    assert.equal(head.status, 200);
+    assert.equal((await head.arrayBuffer()).byteLength, 0);
+    assert.equal(head.headers.get('accept-ranges'), 'bytes');
+
+    const direct = await request(baseUrl, `/api/media?path=${encodeURIComponent(fallbackPath)}`);
+    assert.equal(direct.status, 200);
+    assert.deepEqual(Buffer.from(await direct.arrayBuffer()), bytes);
+
+    const missing = await request(baseUrl, '/api/media?item_uuid=unknown-item');
+    assert.equal(missing.status, 404);
+    assert.doesNotMatch(await missing.text(), /access_token|fallback-video/);
+
+    const recovery = await request(baseUrl, '/api/devices/not-a-device/recover', { method: 'POST' });
+    assert.equal(recovery.status, 404);
+    assert.deepEqual(await recovery.json(), { error: 'device not found or recovery unavailable' });
+
+    const audioPath = path.join(home, 'trigger-order.wav');
+    await writeFile(audioPath, silentWav());
+    for (const uuid of ['older-trigger', 'newer-trigger']) {
+      const created = await request(baseUrl, '/api/project/items', {
+        method: 'POST',
+        body: JSON.stringify({
+          item: { uuid, type: 'audio', displayName: uuid, mediaServerPath: audioPath },
+          parentUuid: '',
+          index: 0,
+        }),
+      });
+      assert.equal(created.status, 200, `audio item creation failed: ${await created.text()}`);
+    }
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const project = await (await request(baseUrl, '/api/project')).json();
+      if (!project.server.audioLoading) break;
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    for (const uuid of ['older-trigger', 'newer-trigger']) {
+      const played = await request(baseUrl, `/api/project/items/${uuid}/play`, { method: 'POST' });
+      assert.equal(played.status, 200, `play failed: ${await played.text()}`);
+    }
+    const stream = openEventStream(`ws://127.0.0.1:${port}/ws?access_token=${encodeURIComponent(accessToken)}`);
+    t.after(() => stream.socket.close());
+    await stream.opened;
+    const snapshot = await stream.next(message => message.type === 'playback_snapshot');
+    const older = snapshot.cues.find(cue => cue.item_uuid === 'older-trigger');
+    const newer = snapshot.cues.find(cue => cue.item_uuid === 'newer-trigger');
+    assert.ok(older && newer, 'snapshot omitted playing cues');
+    assert.ok(Number.isInteger(older.trigger_seq));
+    assert.ok(newer.trigger_seq > older.trigger_seq, 'snapshot did not preserve authoritative firing order');
   } catch (error) {
     error.message += `\nserver output:\n${diagnostics}`;
     throw error;

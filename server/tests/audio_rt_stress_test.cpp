@@ -1,4 +1,5 @@
 // Bounded read-ahead and render-thread stress checks. No test framework.
+#include "liveplay/audio/callback_liveness.hpp"
 #include "liveplay/audio/device_clock_controller.hpp"
 #include "liveplay/audio/engine.hpp"
 #include "liveplay/core/project_state.hpp"
@@ -441,6 +442,59 @@ void test_loop_continue_stop_and_replay(PlaybackItem& item) {
           "continue replay: restored loop does not auto-advance");
 }
 
+void test_callback_liveness() {
+    using namespace std::chrono_literals;
+    using Monitor = CallbackLivenessMonitor;
+
+    CallbackEntryCounter counter;
+    static_assert(noexcept(counter.record_entry()));
+    Monitor monitor{100ms};
+    const Monitor::TimePoint origin{};
+    monitor.arm(counter.value(), origin);
+
+    check(monitor.state() == CallbackLivenessState::Starting,
+          "liveness: armed stream starts as Starting");
+    check(!is_healthy_clock_source(monitor.state()),
+          "liveness: Starting stream is excluded from clock election");
+    check(monitor.tick(counter.value(), origin + 99ms) ==
+              CallbackLivenessState::Starting,
+          "liveness: unchanged counter remains Starting before timeout");
+
+    counter.record_entry();
+    check(monitor.tick(counter.value(), origin + 100ms) ==
+              CallbackLivenessState::Running,
+          "liveness: first post-start callback establishes Running");
+    check(is_healthy_clock_source(monitor.state()),
+          "liveness: only Running is eligible for clock election");
+    check(monitor.tick(counter.value(), origin + 199ms) ==
+              CallbackLivenessState::Running,
+          "liveness: callback remains live before stall timeout");
+    check(monitor.tick(counter.value(), origin + 200ms) ==
+              CallbackLivenessState::Stalled,
+          "liveness: unchanged Running counter becomes Stalled");
+    check(!is_healthy_clock_source(monitor.state()),
+          "liveness: Stalled stream is excluded from clock election");
+
+    counter.record_entry();
+    check(monitor.tick(counter.value(), origin + 201ms) ==
+              CallbackLivenessState::Running,
+          "liveness: resumed callback recovers a stalled stream");
+
+    // A restart must capture the current counter as its baseline. Entries from
+    // the old stream cannot make the replacement appear alive.
+    monitor.arm(counter.value(), origin + 300ms);
+    check(monitor.tick(counter.value(), origin + 300ms) ==
+              CallbackLivenessState::Starting,
+          "liveness: stale pre-recovery count does not restore Running");
+    check(monitor.tick(counter.value(), origin + 400ms) ==
+              CallbackLivenessState::Stalled,
+          "liveness: recovered stream without callbacks becomes Stalled");
+    counter.record_entry();
+    check(monitor.tick(counter.value(), origin + 401ms) ==
+              CallbackLivenessState::Running,
+          "liveness: first post-recovery callback restores Running");
+}
+
 struct ClockSimulation {
     double correction_ppm = 0.0;
     double min_occupancy = 0.0;
@@ -529,6 +583,7 @@ int main() {
         test_soft_out_point_fade(item);
         test_loop_and_concurrent_stress(item);
         test_loop_continue_stop_and_replay(item);
+        test_callback_liveness();
         test_continuous_clock_correction();
     }
 

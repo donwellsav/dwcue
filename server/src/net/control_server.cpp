@@ -624,6 +624,8 @@ json device_info_to_json(const audio::DeviceInfo& d) {
         {"hard_resync_count", d.hard_resync_count},
         {"device_loss_count", d.device_loss_count},
         {"device_recovery_count", d.device_recovery_count},
+        {"callback_entry_count", d.callback_entry_count},
+        {"stream_recovery_count", d.stream_recovery_count},
         {"reroute_count", d.reroute_count},
         {"interruption_count", d.interruption_count},
         {"correction_limit_count", d.correction_limit_count},
@@ -793,6 +795,8 @@ void ControlServer::broadcast_loop() {
     // rounds every sleep up); sleep_until against an advancing deadline
     // self-corrects, so the average rate converges on meter_broadcast_hz.
     auto next_tick = clock::now() + period;
+    // Edge-triggered runtime/clock-role state; payloads remain full snapshots.
+    std::unordered_map<std::string, std::pair<std::string, bool>> prev_device_states;
     auto next_download_cleanup = clock::now() + std::chrono::minutes(1);
     auto next_upload_cleanup = clock::now() + std::chrono::minutes(1);
 
@@ -910,20 +914,41 @@ void ControlServer::broadcast_loop() {
                 const auto current = item
                     ? item->stats().transport
                     : audio::TransportState::Stopped;
-                auto& prev = prev_transports[cue.id.value]; // default → Stopped (0)
+                auto& prev = prev_transports[cue.id.value];
                 if (current != prev) {
                     prev = current;
-                    json evt;
-                    evt["type"]             = "cue_state";
-                    evt["cue_id"]           = cue.id.value;
-                    evt["transport"]        = static_cast<int>(current);
-                    evt["playhead_seconds"] = item ? item->stats().playhead_seconds : 0.0;
-                    if (auto uuid = state_.cue_to_item_uuid(cue.id)) evt["item_uuid"] = *uuid;
+                    json evt{
+                        {"type", "cue_state"},
+                        {"cue_id", cue.id.value},
+                        {"transport", static_cast<int>(current)},
+                        {"playhead_seconds", item ? item->stats().playhead_seconds : 0.0},
+                    };
+                    if (auto uuid = state_.cue_to_item_uuid(cue.id)) {
+                        evt["item_uuid"] = *uuid;
+                        if (auto seq = state_.item_trigger_seq(*uuid)) evt["trigger_seq"] = *seq;
+                    }
                     cue_state_events.push_back(evt.dump());
                 }
             }
         } catch (const std::exception& e) {
             Logger::error("broadcast_loop: failed to build cue_state events: {}", e.what());
+        }
+
+        std::vector<std::string> device_state_events;
+        try {
+            for (const auto& device : engine_.enumerate_devices()) {
+                const auto signature = std::pair{device.runtime_state, device.is_clock_master};
+                const auto previous = prev_device_states.find(device.id.value);
+                if (previous == prev_device_states.end() || previous->second != signature) {
+                    device_state_events.push_back(json{
+                        {"type", "device_state"},
+                        {"device", device_info_to_json(device)},
+                    }.dump());
+                }
+                prev_device_states[device.id.value] = signature;
+            }
+        } catch (const std::exception& e) {
+            Logger::error("broadcast_loop: failed to build device_state events: {}", e.what());
         }
 
         // Build any pending playback_snapshot payload WITHOUT holding ws_mutex.
@@ -957,8 +982,8 @@ void ControlServer::broadcast_loop() {
                 }
                 c->send_text(serialized);
                 for (const auto& e : cue_state_events) c->send_text(e);
-            }
-            catch (...) { /* connection will be cleaned up by onclose */ }
+                for (const auto& e : device_state_events) c->send_text(e);
+            } catch (...) { /* connection will be cleaned up by onclose */ }
         }
 
         // Sleep to maintain the broadcast cadence (absolute deadline; see
@@ -1118,7 +1143,12 @@ static json build_playback_snapshot(audio::AudioEngine& engine,
             {"transport",        static_cast<int>(s.transport)},
             {"playhead_seconds", s.playhead_seconds},
         };
-        if (auto uuid = state.cue_to_item_uuid(cue.id)) entry["item_uuid"] = *uuid;
+        if (auto uuid = state.cue_to_item_uuid(cue.id)) {
+            entry["item_uuid"] = *uuid;
+            if (auto seq = state.item_trigger_seq(*uuid)) {
+                entry["trigger_seq"] = *seq;
+            }
+        }
         cues_arr.push_back(std::move(entry));
     }
     json out_gains = json::array();
@@ -1603,6 +1633,16 @@ void ControlServer::install_routes() {
                 engine_.close_device(audio::DeviceId{j.at("id").get<std::string>()});
                 return json_ok(json({{"ok", true}}));
             } catch (const std::exception& e) { return json_err(400, e.what()); }
+        });
+
+    CROW_ROUTE(app, "/api/devices/<string>/recover").methods(crow::HTTPMethod::Post)
+        ([this](std::string id) {
+            if (!engine_.request_device_recovery(audio::DeviceId{std::move(id)})) {
+                return json_err(404, "device not found or recovery unavailable");
+            }
+            crow::response response{202, json({{"accepted", true}}).dump()};
+            response.set_header("Content-Type", "application/json");
+            return response;
         });
 
     // ---- Cues ----
@@ -2863,7 +2903,7 @@ void ControlServer::install_routes() {
     // Same trust model as /api/waveform_path — the server is a same-machine
     // tool and the caller may read any local path.
     CROW_ROUTE(app, "/api/media").methods(crow::HTTPMethod::Get, crow::HTTPMethod::Head)
-        ([](const crow::request& req) {
+        ([this](const crow::request& req) {
             static const std::unordered_map<std::string, std::string> kMime = {
                 {".mp4",  "video/mp4"},        {".m4v",  "video/mp4"},
                 {".mov",  "video/quicktime"},  {".mkv",  "video/x-matroska"},
@@ -2874,10 +2914,18 @@ void ControlServer::install_routes() {
                 {".webp", "image/webp"},       {".svg",  "image/svg+xml"},
             };
             try {
+                const char* item_uuid = req.url_params.get("item_uuid");
                 const char* path_param = req.url_params.get("path");
-                if (!path_param || !*path_param) return json_err(400, "missing ?path=");
-                const fs::path file_path =
-                    liveplay::util::utf8_to_path(std::string{path_param});
+                fs::path file_path;
+                if (item_uuid && *item_uuid) {
+                    const auto resolved = state_.resolve_item_path(item_uuid);
+                    if (!resolved) return json_err(404, "media item not found");
+                    file_path = *resolved;
+                } else if (path_param && *path_param) {
+                    file_path = liveplay::util::utf8_to_path(std::string{path_param});
+                } else {
+                    return json_err(400, "missing ?item_uuid= or ?path=");
+                }
 
                 std::error_code ec;
                 const std::uint64_t size =

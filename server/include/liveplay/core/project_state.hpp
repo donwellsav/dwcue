@@ -244,6 +244,9 @@ public:
 
     // Find an audio item's file path by uuid (for engine play hookups etc.).
     std::optional<std::filesystem::path> resolve_item_path(const std::string& uuid) const;
+    // Runtime firing order for an item, assigned by play_item(). Missing until
+    // the item has been triggered during this project session.
+    std::optional<long long> item_trigger_seq(const std::string& uuid) const;
     // Find the engine cue id associated with an item uuid.
     std::optional<audio::CueId> item_to_cue_id(const std::string& uuid) const;
     // Reverse lookup: which project item (if any) owns this engine cue?
