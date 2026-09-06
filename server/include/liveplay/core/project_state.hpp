@@ -158,7 +158,11 @@ public:
     // Load a canonical project file (.dwcue JSON). Returns true on success. On
     // failure, the previous state is preserved.
     bool load(const std::filesystem::path& path);
-    bool save(const std::filesystem::path& path) const;
+    // Serialize saves and optional document replacement as one operation. An
+    // empty path resolves to the current project path while holding save_mutex_;
+    // identity/folder metadata commit only after atomic publication succeeds.
+    bool save(const std::filesystem::path& path, const json* replacement = nullptr,
+              std::filesystem::path* published_path = nullptr);
 
     // Replace state from an in-memory JSON document. Same semantics as load.
     bool load_from_json(const json& doc);
@@ -309,7 +313,8 @@ public:
     // forwarded to play_item (and to recursive group triggers).
     bool trigger_item(const std::string& uuid,
                       double fade_in_override_sec = -1.0,
-                      const audio::CueId& exclude_from_ducking = audio::CueId{});
+                      const audio::CueId& exclude_from_ducking = audio::CueId{},
+                      bool consume_armed_override = true);
 
     // Resolve an index path (array of child indices) to an item uuid,
     // descending into group `children` at each level. Mirrors the client's
@@ -333,7 +338,8 @@ public:
     // earlier stop blocked ALL subsequent auto-arming — e.g. jumping into a
     // group left "Up Next" stuck on the old item and never armed the group's
     // 2nd child when its 1st finished.
-    void set_next_item_override(const std::string& uuid, bool manual = true);
+    [[nodiscard]] bool set_next_item_override(const std::string& uuid,
+                                              bool manual = true);
     // Current "Up Next" override, or empty if none. Used by the control
     // server to seed newly-connected clients with the live override state.
     std::string next_item_override() const;
@@ -595,8 +601,14 @@ private:
     // ---- Sequencer: server-side auto-advance, crossfade, ducking restore ----
     struct DuckedEntry {
         audio::CueId cue_id;
-        float        original_gain_db;
     };
+    struct DuckOwner {
+        float target_linear = 1.0f;
+        double release_seconds = 1.0;
+    };
+    std::unordered_map<std::string,
+        std::unordered_map<detail::PlaybackGenerationFence::Generation, DuckOwner>>
+        duck_owners_;
     // A scheduled custom action: at `time_point` seconds (absolute time
     // within the audio file, before in_point trimming), do `action`. Driven
     // by the sequencer alongside crossfade / stop-fade.
@@ -637,13 +649,30 @@ private:
         bool                     continue_armed       = false;
         std::string              continue_target_uuid;
         std::vector<DuckedEntry> ducked;
+        double                   duck_release_sec = 1.0;
         std::vector<ScheduledCustomAction> custom_actions;
     };
+    struct GroupRun {
+        std::string group_uuid;
+        std::vector<std::string> descendants;
+        std::string end_action;
+        std::string target_uuid;
+        std::vector<int> target_index;
+        std::uint64_t generation = 0;
+    };
+    std::vector<GroupRun> group_runs_;
+    std::uint64_t next_group_generation_ = 0;
     std::vector<SequencedItem> sequenced_items_;
     std::mutex                 sequencer_mutex_;
     // Serializes control-plane playback lifetime changes with unlocked
     // sequencer dispatch. Recursive because a follow action can trigger play.
+    // Serializes project lifetime boundaries while allowing transport controls
+    // (especially Stop All) to acquire playback_lifecycle_mutex_ during waits.
+    std::mutex                   project_operation_mutex_;
     std::recursive_mutex         playback_lifecycle_mutex_;
+    // Serializes snapshot through atomic replace. mutex_ remains brief and is
+    // never held during filesystem I/O.
+    mutable std::mutex           save_mutex_;
     detail::PlaybackGenerationFence playback_generations_;
     std::thread                sequencer_thread_;
     std::atomic<bool>          sequencer_running_{false};
@@ -660,6 +689,25 @@ private:
     // override exactly once, mirroring handle_item_ended. Takes its own locks —
     // call with no lock held. Used by the sequencer's seamless-advance pre-roll.
     std::string resolve_advance_target(const SequencedItem& item);
+    void apply_duck_owner(detail::PlaybackGenerationFence::Generation owner,
+                          const audio::CueId& target, float target_linear,
+                          double attack_seconds, double release_seconds);
+    void release_duck_owners(const SequencedItem& item);
+    void cancel_group_runs_for_item(
+        const std::string& uuid,
+        const std::vector<std::uint64_t>& preserved_generations = {});
+    std::vector<std::uint64_t> prepare_group_sequence_transition(
+        const std::string& source_uuid, const std::string& target_uuid);
+    bool trigger_sequence_item(const std::string& source_uuid,
+                               const std::string& target_uuid,
+                               double fade_in_override_sec = -1.0,
+                               const audio::CueId& exclude_from_ducking = audio::CueId{});
+    void complete_group_runs_for_item(const std::string& uuid);
+    bool trigger_item_impl(const std::string& uuid,
+                           double fade_in_override_sec,
+                           const audio::CueId& exclude_from_ducking,
+                           bool consume_armed_override,
+                           const std::vector<std::uint64_t>& preserved_generations);
 
     // Resolve Cue to Continue's target without consulting endBehavior.action:
     // targetUuid, then targetIndex, then the next sibling. Caller holds mutex_.
@@ -752,11 +800,9 @@ private:
     // paths can't drift apart.
     void apply_item_properties_locked(const json& item, const audio::CueId& cue);
 
-    // Block until `uuid`'s queued decode has finished (or `timeout` elapses).
-    // Call with NO lock held. Returns true if the item is no longer pending.
-    // Only ever waits on that one item — unrelated requests are untouched.
-    bool wait_for_item_load(const std::string& uuid,
-                            std::chrono::milliseconds timeout);
+    // Playback commands only inspect the pending set and published engine cue;
+    // decoder completion is never awaited by a transport request.
+    bool item_ready_to_play(const std::string& uuid) const;
 
     struct LoadRequest {
         std::string           uuid;

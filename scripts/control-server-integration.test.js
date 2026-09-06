@@ -201,6 +201,61 @@ test('native server echoes mutation IDs only on matching WebSocket events', asyn
       }
     });
     await stream.opened;
+    const sendCommand = async payload => {
+      const ack = stream.next(message =>
+        message.type === 'command_ack' && message.command_id === payload.command_id);
+      stream.socket.send(JSON.stringify(payload));
+      return ack;
+    };
+    for (const [commandId, payload] of [
+      ['set-next-missing', { type: 'set_next_item' }],
+      ['set-next-wrong-type', { type: 'set_next_item', item_uuid: 42 }],
+      ['set-next-unknown', { type: 'set_next_item', item_uuid: 'not-a-project-item' }],
+    ]) {
+      const ack = await sendCommand({ ...payload, command_id: commandId });
+      assert.equal(ack.ok, false, commandId);
+      assert.match(ack.error, /set_next_item/);
+    }
+    const acceptedNext = await sendCommand({
+      type: 'set_next_item', command_id: 'set-next-valid', item_uuid: itemUuid,
+    });
+    assert.equal(acceptedNext.ok, true);
+
+    const duplicateAcks = [
+      stream.next(message => message.type === 'command_ack' && message.command_id === 'dedup-stop-all'),
+      stream.next(message => message.type === 'command_ack' && message.command_id === 'dedup-stop-all'),
+    ];
+    const duplicatedCommand = JSON.stringify({
+      type: 'stop_all', command_id: 'dedup-stop-all', fade_ms: 0,
+    });
+    stream.socket.send(duplicatedCommand);
+    stream.socket.send(duplicatedCommand);
+    const [firstDuplicate, secondDuplicate] = await Promise.all(duplicateAcks);
+    assert.deepEqual(secondDuplicate, firstDuplicate);
+    const firstPong = stream.next(message => message.type === 'pong');
+    stream.socket.send(JSON.stringify({ type: 'ping', command_id: 'dedup-ping' }));
+    const pongA = await firstPong;
+    const duplicatePong = stream.next(message => message.type === 'pong');
+    stream.socket.send(JSON.stringify({ type: 'ping', command_id: 'dedup-ping' }));
+    const pongB = await duplicatePong;
+    assert.deepEqual(pongB, pongA, 'duplicate ping must resolve from the bounded result cache');
+    for (let index = 0; index < 260; index += 1) {
+      const earlyError = await sendCommand({
+        type: 'unsupported-integration-command',
+        command_id: `dedup-early-error-${index}`,
+      });
+      assert.equal(earlyError.ok, false);
+      assert.equal(earlyError.error, 'unknown type');
+    }
+    const pongAfterEviction = stream.next(message => message.type === 'pong');
+    stream.socket.send(JSON.stringify({ type: 'ping', command_id: 'dedup-ping' }));
+    assert.deepEqual(await pongAfterEviction, pongA,
+      'ping must execute again after bounded result-cache eviction');
+
+    const clearNext = await sendCommand({
+      type: 'set_next_item', command_id: 'set-next-clear', item_uuid: '',
+    });
+    assert.equal(clearNext.ok, true);
 
     const patch = { notes: 'identical payload' };
     for (const mutationId of ['mutation-first', 'mutation-second']) {
@@ -236,8 +291,66 @@ test('native server echoes mutation IDs only on matching WebSocket events', asyn
       body: JSON.stringify({ path: projectPath }),
     });
     assert.equal(save.status, 200, `project save failed: ${await save.text()}`);
+    const concurrentSaves = await Promise.all(Array.from({ length: 12 }, () =>
+      request(baseUrl, '/api/project/save', {
+        method: 'POST', body: JSON.stringify({ path: projectPath }),
+      })));
+    assert.deepEqual(concurrentSaves.map(response => response.status),
+      Array(12).fill(200), 'same-path saves must serialize without temp-file collisions');
     const savedProject = await readFile(projectPath, 'utf8');
+    assert.doesNotThrow(() => JSON.parse(savedProject));
     assert.doesNotMatch(savedProject, /clientMutationId|mutation-first|mutation-second/);
+    const bytesBeforeFailedSaveAs = await readFile(projectPath, 'utf8');
+    const failedPath = path.join(home, 'missing-parent', 'failed.dwcue');
+    const failedSaveAs = await request(baseUrl, '/api/project/save', {
+      method: 'POST', body: JSON.stringify({ path: failedPath }),
+    });
+    assert.equal(failedSaveAs.status, 500);
+    assert.equal(await readFile(projectPath, 'utf8'), bytesBeforeFailedSaveAs,
+      'failed Save As must preserve prior project bytes');
+    const afterFailure = await (await request(baseUrl, '/api/project')).json();
+    assert.equal(afterFailure.server.projectFilePath, projectPath,
+      'failed Save As must preserve current project identity');
+
+    const pathlessAfterFailure = await request(baseUrl, '/api/project/save', {
+      method: 'POST', body: JSON.stringify({}),
+    });
+    assert.equal(pathlessAfterFailure.status, 200);
+    assert.equal((await pathlessAfterFailure.json()).path, projectPath,
+      'pathless save after failure must publish to the prior identity');
+
+    const documentA = structuredClone(afterFailure);
+    const documentB = structuredClone(afterFailure);
+    documentA.items.find(item => item.uuid === itemUuid).notes = 'snapshot-a';
+    documentB.items.find(item => item.uuid === itemUuid).notes = 'snapshot-b';
+    const pathA = path.join(home, 'snapshot-a.dwcue');
+    const pathB = path.join(home, 'snapshot-b.dwcue');
+    const [saveA, saveB] = await Promise.all([
+      request(baseUrl, '/api/project/save', {
+        method: 'POST', body: JSON.stringify({ path: pathA, document: documentA }),
+      }),
+      request(baseUrl, '/api/project/save', {
+        method: 'POST', body: JSON.stringify({ path: pathB, document: documentB }),
+      }),
+    ]);
+    assert.equal(saveA.status, 200);
+    assert.equal(saveB.status, 200);
+    assert.equal((await saveA.json()).path, pathA);
+    assert.equal((await saveB.json()).path, pathB);
+    const diskA = JSON.parse(await readFile(pathA, 'utf8'));
+    const diskB = JSON.parse(await readFile(pathB, 'utf8'));
+    assert.equal(diskA.items.find(item => item.uuid === itemUuid).notes, 'snapshot-a');
+    assert.equal(diskB.items.find(item => item.uuid === itemUuid).notes, 'snapshot-b');
+
+    const afterConcurrent = await (await request(baseUrl, '/api/project')).json();
+    assert.ok([pathA, pathB].includes(afterConcurrent.server.projectFilePath));
+    const pathlessConcurrent = await request(baseUrl, '/api/project/save', {
+      method: 'POST', body: JSON.stringify({}),
+    });
+    assert.equal(pathlessConcurrent.status, 200);
+    assert.equal((await pathlessConcurrent.json()).path,
+      afterConcurrent.server.projectFilePath,
+      'pathless save must use the identity committed with the last atomic snapshot');
 
     stream.socket.close();
   } catch (error) {
@@ -248,17 +361,24 @@ test('native server echoes mutation IDs only on matching WebSocket events', asyn
 
 test('native media, recovery correlation, and authoritative trigger order stay coherent', async t => {
   const home = await mkdtemp(path.join(os.tmpdir(), 'dwcue-media-integration-'));
+  const loaderGate = path.join(home, 'loader.gate');
+  const loaderEntered = loaderGate + '.entered';
+  await writeFile(loaderGate, 'closed');
   const port = await unusedPort();
   const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(serverBinary, ['--bind', '127.0.0.1', '--port', String(port)], {
     cwd: home,
-    env: { ...process.env, HOME: home, LIVEPLAY_ACCESS_TOKEN: accessToken, LIVEPLAY_ALLOWED_ORIGINS: baseUrl },
+    env: {
+      ...process.env, HOME: home, LIVEPLAY_ACCESS_TOKEN: accessToken,
+      LIVEPLAY_ALLOWED_ORIGINS: baseUrl, DWCUE_TEST_LOADER_GATE: loaderGate,
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let diagnostics = '';
   child.stdout.on('data', chunk => { diagnostics += chunk; });
   child.stderr.on('data', chunk => { diagnostics += chunk; });
   t.after(async () => {
+    await rm(loaderGate, { force: true });
     await stopServer(child);
     await rm(home, { recursive: true, force: true });
   });
@@ -383,27 +503,98 @@ test('native media, recovery correlation, and authoritative trigger order stay c
       const created = await request(baseUrl, '/api/project/items', {
         method: 'POST',
         body: JSON.stringify({
-          item: { uuid, type: 'audio', displayName: uuid, mediaServerPath: audioPath },
+          item: {
+            uuid, type: 'audio', displayName: uuid, mediaServerPath: audioPath,
+            duckingBehavior: { mode: 'none' },
+          },
           parentUuid: '',
           index: 0,
         }),
       });
       assert.equal(created.status, 200, `audio item creation failed: ${await created.text()}`);
     }
+    let loaderReachedGate = false;
     for (let attempt = 0; attempt < 100; attempt += 1) {
-      const project = await (await request(baseUrl, '/api/project')).json();
-      if (!project.server.audioLoading) break;
+      try {
+        await readFile(loaderEntered);
+        loaderReachedGate = true;
+        break;
+      } catch {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+    }
+    assert.equal(loaderReachedGate, true, 'real decoder worker did not reach test latch');
+    const latchStream = openEventStream(
+      'ws://127.0.0.1:' + port + '/ws?access_token=' + encodeURIComponent(accessToken),
+    );
+    t.after(() => latchStream.socket.close());
+    await latchStream.opened;
+    const pendingPlayAck = latchStream.next(message =>
+      message.type === 'command_ack' && message.command_id === 'pending-play');
+    const causalStopAck = latchStream.next(message =>
+      message.type === 'command_ack' && message.command_id === 'causal-stop-all');
+    const commandStart = performance.now();
+    latchStream.socket.send(JSON.stringify({
+      type: 'play', item_uuid: 'older-trigger', command_id: 'pending-play',
+    }));
+    latchStream.socket.send(JSON.stringify({
+      type: 'stop_all', command_id: 'causal-stop-all', fade_ms: 0,
+    }));
+    assert.equal((await pendingPlayAck).ok, false, 'pending cue play must reject');
+    assert.equal((await causalStopAck).ok, true, 'Stop All must dispatch while decode is latched');
+    assert.ok(performance.now() - commandStart < 500,
+      'latched decoder delayed command dispatch');
+    assert.equal(await readFile(loaderGate, 'utf8'), 'closed',
+      'Stop All incorrectly waited for or released decoder latch');
+    await rm(loaderGate, { force: true });
+    latchStream.socket.close();
+    let readiness;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      readiness = await (await request(baseUrl, '/api/project/progress')).json();
+      if (!readiness.loading) break;
       await new Promise(resolve => setTimeout(resolve, 20));
     }
-    for (const uuid of ['older-trigger', 'newer-trigger']) {
-      const played = await request(baseUrl, `/api/project/items/${uuid}/play`, { method: 'POST' });
-      assert.equal(played.status, 200, `play failed: ${await played.text()}`);
-    }
+    assert.equal(readiness?.ready, true, JSON.stringify(readiness));
     const stream = openEventStream(
       'ws://127.0.0.1:' + port + '/ws?access_token=' + encodeURIComponent(accessToken),
     );
     t.after(() => stream.socket.close());
     await stream.opened;
+
+    const invalidStartPatch = await request(baseUrl, '/api/project/items/older-trigger', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        startBehavior: { action: 'play-item', targetUuid: 'missing-start-target' },
+      }),
+    });
+    assert.equal(invalidStartPatch.status, 200);
+    const warning = stream.next(message =>
+      message.type === 'playback_error' && message.code === 'sequence_target_invalid');
+    const primaryAck = stream.next(message =>
+      message.type === 'command_ack' && message.command_id === 'invalid-secondary-primary');
+    stream.socket.send(JSON.stringify({
+      type: 'play', item_uuid: 'older-trigger', command_id: 'invalid-secondary-primary',
+    }));
+    assert.equal((await primaryAck).ok, true, 'primary play must succeed');
+    assert.deepEqual(await warning, {
+      type: 'playback_error',
+      code: 'sequence_target_invalid',
+      message: 'Start action target was unavailable or cyclic',
+      item_uuid: 'older-trigger',
+      target_uuid: 'missing-start-target',
+    });
+    stream.socket.send(JSON.stringify({ type: 'stop_all', command_id: 'clear-primary' }));
+    assert.equal((await stream.next(message =>
+      message.type === 'command_ack' && message.command_id === 'clear-primary')).ok, true);
+    const clearStartPatch = await request(baseUrl, '/api/project/items/older-trigger', {
+      method: 'PATCH', body: JSON.stringify({ startBehavior: { action: 'nothing' } }),
+    });
+    assert.equal(clearStartPatch.status, 200);
+
+    for (const uuid of ['older-trigger', 'newer-trigger']) {
+      const played = await request(baseUrl, `/api/project/items/${uuid}/play`, { method: 'POST' });
+      assert.equal(played.status, 200, `play failed: ${await played.text()}`);
+    }
     const snapshot = await stream.next(message =>
       message.type === 'playback_snapshot' &&
       message.cues?.some(cue => cue.item_uuid === 'older-trigger') &&

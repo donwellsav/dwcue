@@ -386,6 +386,18 @@ void PlaybackItem::set_gain_db(float db) noexcept {
         gain_current_linear_.store(lin, std::memory_order_release);
     }
 }
+void PlaybackItem::set_duck_gain_linear(
+    float linear, std::chrono::milliseconds duration) noexcept {
+    linear = std::clamp(linear, 0.0f, 1.0f);
+    const long long samples = std::max<long long>(
+        0, duration.count() * static_cast<long long>(desc_.mix_sample_rate) / 1000);
+    while (duck_command_write_lock_.test_and_set(std::memory_order_acquire)) {}
+    duck_command_revision_.fetch_add(1, std::memory_order_acq_rel); // odd: writing
+    duck_command_target_linear_.store(linear, std::memory_order_relaxed);
+    duck_command_duration_samples_.store(samples, std::memory_order_relaxed);
+    duck_command_revision_.fetch_add(1, std::memory_order_release); // even: published
+    duck_command_write_lock_.clear(std::memory_order_release);
+}
 
 void PlaybackItem::set_ltc_enabled(bool enabled) {
     if (enabled == ltc_enabled_atomic_.load()) return;
@@ -886,6 +898,46 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
             gain_current_linear_.store(gain_end, std::memory_order_release);
         }
     }
+    // Duck automation is a separate absolute ceiling. Render performs one
+    // nonblocking seqlock attempt, so target and duration are never mixed.
+    float duck_now = duck_current_linear_.load(std::memory_order_acquire);
+    const auto revision_before = duck_command_revision_.load(std::memory_order_acquire);
+    if ((revision_before & 1U) == 0 && revision_before != duck_applied_revision_) {
+        const float command_target =
+            duck_command_target_linear_.load(std::memory_order_relaxed);
+        const long long command_duration =
+            duck_command_duration_samples_.load(std::memory_order_relaxed);
+        const auto revision_after = duck_command_revision_.load(std::memory_order_acquire);
+        if (revision_before == revision_after) {
+            duck_start_linear_ = duck_now;
+            duck_target_linear_ = command_target;
+            duck_duration_samples_ = command_duration;
+            duck_elapsed_samples_ = 0;
+            duck_applied_revision_ = revision_after;
+            if (command_duration == 0) {
+                duck_now = command_target;
+                duck_current_linear_.store(duck_now, std::memory_order_release);
+            }
+        }
+    }
+    float duck_end = duck_now;
+    if (duck_duration_samples_ > 0 &&
+        duck_elapsed_samples_ < duck_duration_samples_) {
+        const long long next = std::min<long long>(
+            duck_elapsed_samples_ + static_cast<long long>(frame_count),
+            duck_duration_samples_);
+        duck_now = duck_start_linear_ + (duck_target_linear_ - duck_start_linear_) *
+            (static_cast<float>(duck_elapsed_samples_) /
+             static_cast<float>(duck_duration_samples_));
+        duck_end = duck_start_linear_ + (duck_target_linear_ - duck_start_linear_) *
+            (static_cast<float>(next) / static_cast<float>(duck_duration_samples_));
+        duck_current_linear_.store(duck_end, std::memory_order_release);
+        duck_elapsed_samples_ = next;
+    }
+    // Duck Level is an absolute ceiling, not a ratio derived from the saved
+    // fader. This remains safe while the base fader itself is still slewing.
+    const float output_gain_now = std::min(gain_now, duck_now);
+    const float output_gain_end = std::min(gain_end, duck_end);
 
     // Apply linear gain ramp across the block. Per-sample cosine would be
     // smoother but per-block linear is inaudible at the fade durations we use
@@ -897,8 +949,9 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
             Sample* buf = out_channel_buffers[c];
             const std::size_t n = static_cast<std::size_t>(frames_read);
             if (n == 0) continue;
-            const float dg = (gain_end - gain_now) / static_cast<float>(std::max<std::size_t>(n, 1));
-            float g = gain_now;
+            const float dg = (output_gain_end - output_gain_now) /
+                static_cast<float>(std::max<std::size_t>(n, 1));
+            float g = output_gain_now;
             for (std::size_t i = 0; i < n; ++i) {
                 buf[i] *= g;
                 g += dg;
@@ -909,8 +962,9 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
     if (ltc_on && out_channel_count > file_channels) {
         Sample* buf = out_channel_buffers[file_channels];
         const std::size_t n = frame_count;
-        const float dg = (gain_end - gain_now) / static_cast<float>(std::max<std::size_t>(n, 1));
-        float g = gain_now;
+        const float dg = (output_gain_end - output_gain_now) /
+            static_cast<float>(std::max<std::size_t>(n, 1));
+        float g = output_gain_now;
         for (std::size_t i = 0; i < n; ++i) {
             buf[i] *= g;
             g += dg;

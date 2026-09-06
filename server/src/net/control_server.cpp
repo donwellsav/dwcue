@@ -48,6 +48,7 @@
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iomanip>
 #include <mutex>
 #include <nlohmann/json.hpp>
@@ -215,6 +216,7 @@ struct ControlServer::Impl {
     // after losing an ack without executing GO/PLAY twice.
     std::mutex                                  ws_command_mutex;
     std::unordered_map<std::string, std::string> ws_command_results;
+    std::unordered_map<std::string, std::shared_future<std::string>> ws_commands_inflight;
     std::deque<std::string>                     ws_command_order;
 
     // Async waveform-generation queue. REST handler enqueues a task and
@@ -1219,6 +1221,7 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
                                      const std::string& server_addr,
                                      std::mutex& command_mutex,
                                      std::unordered_map<std::string, std::string>& command_results,
+                                     std::unordered_map<std::string, std::shared_future<std::string>>& commands_inflight,
                                      std::deque<std::string>& command_order) {
     Logger::api_request("Client ({}) -> Server ({}) : {}", conn.get_remote_ip(), server_addr, msg);
 
@@ -1246,23 +1249,34 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
             {"message", "command_id exceeds 128 characters"},
         }.dump();
     }
-    std::unique_lock<std::mutex> command_lock;
+    std::shared_ptr<std::promise<std::string>> command_promise;
     if (!command_id.empty()) {
-        command_lock = std::unique_lock{command_mutex};
+        std::unique_lock command_lock{command_mutex};
         if (const auto it = command_results.find(command_id);
-            it != command_results.end()) {
-            return it->second;
+            it != command_results.end()) return it->second;
+        if (const auto it = commands_inflight.find(command_id);
+            it != commands_inflight.end()) {
+            auto result = it->second;
+            command_lock.unlock();
+            return result.get();
         }
+        command_promise = std::make_shared<std::promise<std::string>>();
+        commands_inflight.emplace(command_id, command_promise->get_future().share());
     }
     const auto remember_result = [&](std::string result) {
         if (command_id.empty()) return result;
-        constexpr std::size_t max_results = 256;
-        if (command_results.size() >= max_results) {
-            command_results.erase(command_order.front());
-            command_order.pop_front();
+        {
+            std::lock_guard command_lock{command_mutex};
+            constexpr std::size_t max_results = 256;
+            if (command_results.size() >= max_results) {
+                command_results.erase(command_order.front());
+                command_order.pop_front();
+            }
+            command_order.push_back(command_id);
+            command_results.emplace(command_id, result);
+            commands_inflight.erase(command_id);
         }
-        command_order.push_back(command_id);
-        command_results.emplace(command_id, result);
+        command_promise->set_value(result);
         return result;
     };
     const auto command_error = [&](std::string_view message) {
@@ -1480,18 +1494,15 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
             }
         }
         else if (type == "set_next_item") {
-            // User-set "Up Next" override. Empty/null item_uuid clears it.
-            std::string uuid;
-            if (j.contains("item_uuid") && j["item_uuid"].is_string()) {
-                uuid = j["item_uuid"].get<std::string>();
-            }
+            if (!j.contains("item_uuid") || !j["item_uuid"].is_string())
+                return command_error("set_next_item: item_uuid must be a string");
+            const std::string uuid = j["item_uuid"].get<std::string>();
+            if (!state.set_next_item_override(uuid))
+                return command_error("set_next_item: target does not exist");
             if (uuid.empty())
                 Logger::playback("SET NEXT: <clear>");
             else
                 Logger::playback("SET NEXT: {}", item_playback_info(uuid, state));
-            state.set_next_item_override(uuid);
-            // Fan-out to every client happens in the .onmessage wrapper
-            // (which has access to the ControlServer for broadcast).
         }
         else if (type == "set_selection") {
             // Shared playlist selection. Empty/absent item_uuid clears it.
@@ -1529,7 +1540,7 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
             state.set_ui_locale(j["locale"].get<std::string>());
         }
         else if (type == "ping") {
-            return json({{"type", "pong"}}).dump();
+            return remember_result(json({{"type", "pong"}}).dump());
         }
         else {
             Logger::warn("WS unknown message type: {}", type);
@@ -1961,7 +1972,8 @@ void ControlServer::install_routes() {
         ([this]{
             const auto uuid = state_.selected_item_uuid();
             if (uuid.empty()) return json_err(404, "nothing is selected");
-            state_.set_next_item_override(uuid);
+            if (!state_.set_next_item_override(uuid))
+                return json_err(404, "selected item no longer exists");
             Logger::playback("ARM SELECTED: {}", item_playback_info(uuid, state_));
             return json_ok(json({{"ok", true}, {"itemUuid", uuid}}));
         });
@@ -3654,45 +3666,37 @@ void ControlServer::install_routes() {
         ([this](const crow::request& req){
             try {
                 auto j = json::parse(req.body);
-                fs::path p;
+                fs::path requested_path;
                 const bool path_provided =
                     j.contains("path") && j["path"].is_string();
                 if (path_provided) {
-                    p = liveplay::util::utf8_to_path(j["path"].get<std::string>());
-                } else {
-                    p = state_.project_file_path();
-                    if (p.empty()) {
-                        Logger::warn("POST /api/project/save — no path set");
-                        return json_err(400, "no project file path set");
-                    }
+                    requested_path = liveplay::util::utf8_to_path(
+                        j["path"].get<std::string>());
+                    if (!core::project_file::is_native_project(requested_path))
+                        return json_err(400, "project path must use .dwcue");
+                } else if (state_.project_file_path().empty()) {
+                    Logger::warn("POST /api/project/save — no path set");
+                    return json_err(400, "no project file path set");
                 }
-                if (!core::project_file::is_native_project(p))
-                    return json_err(400, "project path must use .dwcue");
-                if (path_provided) state_.set_project_file_path(p);
-                // Authoritative-save path: if the client included the latest
-                // document in the body, replace the in-memory document AND
-                // re-mirror it to the audio engine before writing to disk.
-                // This guarantees per-cue property edits (fade-in / stop-fade
-                // / cross-fade / volume / ducking) take effect immediately even
-                // when the granular item-diff watcher on the client missed a
-                // change. Without this fallback the user can edit a slider and
-                // see the save call land while the engine still uses stale
-                // values from the previous play.
+
+                const json* replacement = nullptr;
                 if (j.contains("document") && j["document"].is_object()) {
-                    if (!state_.replace_full_document(j["document"])) {
-                        Logger::warn("POST /api/project/save — embedded document "
-                                     "rejected, continuing with existing state");
-                    }
+                    replacement = &j["document"];
                 }
                 Logger::api_request("Client ({}) -> Server ({}) : POST /api/project/save path='{}'",
                                     req.remote_ip_address, impl_->server_addr,
-                                    liveplay::util::path_to_utf8(p));
-                if (!state_.save(p)) {
+                                    path_provided
+                                        ? liveplay::util::path_to_utf8(requested_path)
+                                        : std::string{"<current>"});
+                fs::path published_path;
+                if (!state_.save(requested_path, replacement, &published_path)) {
                     Logger::error("POST /api/project/save FAILED for '{}'",
-                                  liveplay::util::path_to_utf8(p));
+                                  path_provided
+                                      ? liveplay::util::path_to_utf8(requested_path)
+                                      : std::string{"<current>"});
                     return json_err(500, "save failed");
                 }
-                const auto path_str = liveplay::util::path_to_utf8(p);
+                const auto path_str = liveplay::util::path_to_utf8(published_path);
                 Logger::api_response("Client ({}) <- Server ({}) : POST /api/project/save OK → '{}'",
                                      req.remote_ip_address, impl_->server_addr, path_str);
                 return json_ok(json({{"ok", true}, {"path", path_str}}));
@@ -4187,7 +4191,7 @@ void ControlServer::install_routes() {
               direct_reply = handle_ws_message(
                   conn, data, engine_, state_, impl_->server_addr,
                   impl_->ws_command_mutex, impl_->ws_command_results,
-                  impl_->ws_command_order);
+                  impl_->ws_commands_inflight, impl_->ws_command_order);
           } catch (const std::exception& e) {
               Logger::error("WS onmessage threw past handler: {}", e.what());
           } catch (...) {
