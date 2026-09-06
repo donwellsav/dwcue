@@ -40,7 +40,7 @@
 
 <script setup lang="ts">
 import KardsTestCard from './testcards/KardsTestCard.vue';
-import { createTestCardConfig } from '../../electron/test-card-config';
+import { createTestCardConfig } from '../../electron/test-card-config.mjs';
 
 const server = useLiveplayServer();
 const status = shallowRef<VideoOutputStatus | null>(null);

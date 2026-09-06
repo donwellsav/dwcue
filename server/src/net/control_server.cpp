@@ -3098,9 +3098,27 @@ void ControlServer::install_routes() {
                     partial = begin != 0 || end != size - 1;
                 }
 
+                // Never answer a range request with the file's whole
+                // remainder: Chromium aborts the stream once its buffer is
+                // full, and a 200+ MB single-shot body blocked this
+                // connection's io_context thread long enough to starve the
+                // WebSocket control channels sharing it (observed as EPIPE
+                // write errors coinciding with WS disconnects). A shortened
+                // 206 is legal — the client re-requests the next window.
+                constexpr std::uint64_t kMaxRangeWindow = 16ull * 1024 * 1024;
+                const bool hasRange = range.rfind("bytes=", 0) == 0 && size > 0;
+                if (hasRange && end - begin + 1 > kMaxRangeWindow) {
+                    end = begin + kMaxRangeWindow - 1;
+                }
+                partial = hasRange;
+
                 crow::response r;
                 r.code = partial ? 206 : 200;
-                r.add_header("Content-Type", mime);
+                // Not on the full-file path: set_static_file_info_unsafe sets
+                // Content-Type/Content-Length itself — never duplicate them.
+                if (partial || req.method == crow::HTTPMethod::Head || size == 0) {
+                    r.add_header("Content-Type", mime);
+                }
                 r.add_header("Accept-Ranges", "bytes");
                 r.add_header("Cache-Control", "no-store");
                 if (partial) {
@@ -3109,11 +3127,18 @@ void ControlServer::install_routes() {
                                      std::to_string(end) + "/" + std::to_string(size));
                 }
 
-                // Content-Length is derived from r.body by Crow — never set
-                // it manually (a duplicate header would corrupt framing).
                 const std::uint64_t length = size == 0 ? 0 : end - begin + 1;
                 if (req.method == crow::HTTPMethod::Head || length == 0) return r;
 
+                if (!partial) {
+                    // Whole file: stream from disk in fixed chunks (bounded
+                    // memory, early abort) rather than one giant string.
+                    r.set_static_file_info_unsafe(file_path.string(), mime);
+                    return r;
+                }
+
+                // Content-Length is derived from r.body by Crow — never set
+                // it manually (a duplicate header would corrupt framing).
                 std::ifstream in(file_path, std::ios::binary);
                 if (!in) return json_err(404, "not found");
                 in.seekg(static_cast<std::streamoff>(begin), std::ios::beg);

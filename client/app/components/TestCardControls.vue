@@ -302,12 +302,12 @@ import type {
   TestCardConfig,
   TestCardRampDirection,
   TestCardRotation,
-} from '../../electron/test-card-config';
+} from '../../electron/test-card-config.mjs';
 import {
   AUDIO_SYNC_RATES,
   TEST_CARD_PRESETS,
   createTestCardConfig,
-} from '../../electron/test-card-config';
+} from '../../electron/test-card-config.mjs';
 import { defineComponent, h } from 'vue';
 
 const CheckControl = defineComponent({
