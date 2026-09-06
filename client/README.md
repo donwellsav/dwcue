@@ -2,7 +2,7 @@
 
 The DonWells Cue client is a Vue 3 + Nuxt 4 application wrapped in Electron. It is a **remote control** for the DonWells Cue audio server: it owns no audio decoding, no playback, no Web Audio nodes. Every user action turns into a REST call or WebSocket frame sent to `dwcue-server`, and every meter / waveform / state update comes back the same way.
 
-This document tracks the current v2.6.14 source at `7a0eee2` and is the developer's guide to the client; this is not a claim about a published installer, so use the release page and installed About version to determine available behaviour. For show-day use, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For the audio engine, see [`server/README.md`](../server/README.md); for overall project and release context, see the [root README](../README.md).
+This document tracks the current v2.6.15 source at `1438685` and is the developer's guide to the client; this is not a claim about a published installer, so use the release page and installed About version to determine available behaviour. For show-day use, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For the audio engine, see [`server/README.md`](../server/README.md); for overall project and release context, see the [root README](../README.md).
 
 ---
 
