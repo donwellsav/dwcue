@@ -175,6 +175,7 @@ declare global {
       onMenuChangeLanguage: (callback: (event: any, locale: string) => void) => void;
       onMenuShowAbout: (callback: () => void) => void;
       openExternal: (url: string) => Promise<void>;
+      openOperatorManual: () => Promise<boolean>;
       updateMenuLanguage: (locale: string) => Promise<{ success: boolean }>;
       getSystemLocale: () => Promise<string>;
       getAvailableLocales: () => Promise<Array<{ code: string; name: string; direction: string }>>;

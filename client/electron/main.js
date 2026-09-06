@@ -32,6 +32,7 @@ const { cleanupConnectionFor, TestCardPlayback } = require('./test-card-playback
 const { managedWebSocketHeaders } = require('./managed-websocket-origin');
 const { createOneShotMutationBroker, validateIdentity } = require('./one-shot-mutation-broker');
 const { createAppLifecycleActions, createWillQuitHandler } = require('./terminal-action');
+const { createOperatorManual } = require('./operator-manual');
 const {
   SPOTIFY_AUDIO_PROVIDERS,
   normalizeSpotifyBitrate,
@@ -160,6 +161,7 @@ async function safeOpenExternal(rawUrl) {
 app.on('web-contents-created', (_event, contents) => {
   contents.on('will-attach-webview', (event) => event.preventDefault());
   contents.on('will-navigate', (event, targetUrl) => {
+    if (operatorManual.owns(contents)) return;
     if (isTrustedRendererUrl(targetUrl)) return;
     event.preventDefault();
     if (isAllowedExternalUrl(targetUrl)) {
@@ -1891,6 +1893,14 @@ const oneShotMutationBroker = createOneShotMutationBroker({
 // Check if --dev flag is present in command line arguments
 const isDevMode = process.argv.includes('--dev') || !app.isPackaged;
 
+const operatorManual = createOperatorManual({
+  onFocus: () => createMenu(currentLocale, isDevMode),
+  onClosed: () => createMenu(currentLocale, isDevMode),
+});
+app.on('browser-window-focus', (_event, window) => {
+  if (!operatorManual.owns(window.webContents)) createMenu(currentLocale, isDevMode);
+});
+
 // Configure auto-updater
 autoUpdater.autoDownload = false; // Don't auto-download, ask user first
 // Installation is always explicit: Install Now calls quitAndInstall, while
@@ -2103,6 +2113,7 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
 
   createMenu('en', isDevMode);
 }
@@ -3204,6 +3215,7 @@ const menuTranslations = Object.entries(localeFiles).reduce((acc, [code, data]) 
     fullscreen: data.menu.fullscreen,
     language: data.menu.language,
     help: data.menu.help,
+    operatorManual: data.menu.operatorManual,
     checkForUpdates: data.menu.checkForUpdates,
     about: data.menu.about,
     videoOutputEnterFullscreen: data.menu.videoOutputEnterFullscreen,
@@ -3247,6 +3259,15 @@ function createMenu(locale = 'en', isDev = false) {
   currentLocale = locale;
   const t = menuTranslations[locale] || menuTranslations.en;
   
+
+  if (operatorManual.owns(BrowserWindow.getFocusedWindow()?.webContents)) {
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      { label: t.file, submenu: [{ role: 'close' }] },
+      { role: 'editMenu' },
+      { label: t.help, submenu: [{ label: t.operatorManual, click: () => void operatorManual.open(mainWindow, t.operatorManual) }] },
+    ]));
+    return;
+  }
   const template = [
     {
       label: t.file,
@@ -3383,6 +3404,11 @@ function createMenu(locale = 'en', isDev = false) {
     {
       label: t.help,
       submenu: [
+        {
+          label: t.operatorManual,
+          click: () => void operatorManual.open(mainWindow, t.operatorManual),
+        },
+        { type: 'separator' },
         ...(!isDev ? [
           {
             label: t.checkForUpdates,
@@ -3407,6 +3433,12 @@ function createMenu(locale = 'en', isDev = false) {
 }
 
 // IPC Handlers
+ipcMain.handle('help:open-operator-manual', (event) => {
+  requireTrustedIpc(event);
+  const t = menuTranslations[currentLocale] || menuTranslations.en;
+  return operatorManual.open(mainWindow, t.operatorManual);
+});
+
 ipcMain.handle('select-project-folder', async (event) => {
   requireTrustedIpc(event);
   const result = await dialog.showOpenDialog(mainWindow, {

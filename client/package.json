@@ -23,6 +23,7 @@
     "test:playback-safety": "nuxt prepare && vite-node tests/projectIdentity.test.mts && vite-node tests/acknowledgedAction.test.mts && vite-node tests/projectSettingsPersistence.test.mts && vite-node tests/propertiesTrimPersistence.test.mts && vite-node tests/panicStop.test.mts && vite-node tests/projectHydration.test.mts && vite-node tests/projectOpenGuard.test.mts",
     "test:local-auth": "nuxt prepare && vite-node tests/liveplayAuth.test.mts && node --test tests/managedWebSocketOrigin.test.cjs",
     "test:file-formats": "node --check electron/project-file-formats.js && node --check electron/main.js && node --check electron/preload.js && vite-node tests/projectFileFormats.test.mts && vite-node tests/filePickerLocations.test.mts",
+    "test:operator-manual": "node --test tests/operatorManual.test.cjs",
     "preview": "nuxt preview",
     "typecheck": "nuxi typecheck"
   },
@@ -73,6 +74,12 @@
       "electron/**/*",
       "assets/**/*",
       "locales/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../docs/operators-manual.pdf",
+        "to": "help/operators-manual.pdf"
+      }
     ],
     "asarUnpack": [
       "node_modules/@ffmpeg-installer/**/*",

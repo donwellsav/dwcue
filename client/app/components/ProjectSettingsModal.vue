@@ -690,6 +690,15 @@
             <section class="settings-field">
               <p class="settings-help settings-help-intro">{{ t('settings.helpIntro') }}</p>
               <div class="help-links">
+                <button
+                  v-if="canOpenOperatorManual"
+                  type="button"
+                  class="help-link help-link--button"
+                  @click="openOperatorManual"
+                >
+                  <span class="material-symbols-rounded" aria-hidden="true">menu_book</span>
+                  <span>{{ t('menu.operatorManual') }}</span>
+                </button>
                 <a
                   href="https://dwcue.com"
                   class="help-link"
@@ -784,6 +793,9 @@ const server = useLiveplayServer();
 const openExternal = (url: string) => {
   if (import.meta.client && window.electronAPI?.openExternal) window.electronAPI.openExternal(url);
 };
+
+const canOpenOperatorManual = import.meta.client && typeof window.electronAPI?.openOperatorManual === 'function';
+const openOperatorManual = () => { void window.electronAPI.openOperatorManual(); };
 
 const onLocaleChange = (event: Event) => {
   const locale = (event.target as HTMLSelectElement).value;

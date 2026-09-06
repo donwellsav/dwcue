@@ -262,6 +262,12 @@ ref="localModeButton"
         </div>
         <p v-else class="discovered-empty recent-projects-empty">{{ t('menu.noRecentProjects') }}</p>
       </div>
+      <button
+        v-if="canOpenOperatorManual"
+        type="button"
+        class="link-button"
+        @click="openOperatorManual"
+      >{{ t('menu.operatorManual') }}</button>
     </div>
 
     <!-- The New Show form owns both values. Browsing for a location temporarily
@@ -383,6 +389,9 @@ const newShowNameInput = ref<HTMLInputElement | null>(null);
 const newShowBrowseButton = ref<HTMLButtonElement | null>(null);
 const newShowDialogReturnFocus = ref<HTMLElement | null>(null);
 const newShowDialogTitleId = 'welcome-new-show-title';
+
+const canOpenOperatorManual = import.meta.client && typeof window.electronAPI?.openOperatorManual === 'function';
+const openOperatorManual = () => { void window.electronAPI.openOperatorManual(); };
 
 // Computed reflection of the currently-configured server URL.
 const serverUrlDisplay = computed(() => server.serverUrl ?? 'http://127.0.0.1:4480');

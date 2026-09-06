@@ -130,6 +130,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // External links
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  openOperatorManual: () => ipcRenderer.invoke('help:open-operator-manual'),
   
   // Update menu language
   updateMenuLanguage: (locale) => ipcRenderer.invoke('update-menu-language', locale),

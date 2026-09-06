@@ -10,6 +10,8 @@ This is the active DonWells Cue repository. Build targets are configured for **W
 
 > **Operating a show?** Use the [operator manual (PDF)](docs/operators-manual.pdf) or its [Markdown source](docs/operators-manual.md). Those instructions track the current source. The client and server READMEs linked later are developer references, not show-day instructions.
 
+Current-source desktop builds also bundle the English manual offline: open **Help → Operator Manual (English)**, the welcome-screen manual button, or **Settings → Help**. The separate reader has document search, clickable contents and chapter bookmarks, page thumbnails, zoom, and native PDF print/download controls.
+
 ![DonWells Cue showing the playlist, One Shots grid, and output metering](client/public/screenshots/donwells_cue_main.jpg)
 
 The screenshots in this README are representative captures and may lag the newest UI; treat the running app as the source of truth. The standalone website keeps its own copied screenshot set.

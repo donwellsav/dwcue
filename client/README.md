@@ -123,6 +123,7 @@ Key IPC channels (non-exhaustive):
 | `check-for-updates` / `download-update` / `install-update` / `get-update-install-supported` / `get-app-version` | `electron-updater` controls. |
 | `update-available` / `update-up-to-date` / `update-download-progress` / `update-downloaded` / `update-error` / `menu-check-for-updates` (main → renderer) | Update flow events; `menu-check-for-updates` is the Help-menu trigger. |
 | `update-menu-language` / `get-system-locale` / `get-available-locales` / `get-locale-data` | Dynamic menu localisation. |
+| `help:open-operator-manual` | Opens or focuses the bundled offline operator manual from a trusted app renderer. |
 | `open-folder` / `open-external` / `app:relaunch` / `app:exit` | OS integration. |
 | `open-cart-player-window` / `cart-player-window-attach` / `sync-project-data` | Second-window One Shots surface; the cart-player channel names remain for compatibility. |
 | `one-shot-mutation:*` | Identity-fenced detached-window mutation broker; only the primary renderer validates, applies and persists requests. |
@@ -132,6 +133,10 @@ Key IPC channels (non-exhaustive):
 | `video-output:shortcut` (main → renderer) | Forward application shortcuts when the Video Output window owns keyboard focus. |
 
 The audio data path is **not** via IPC — it's directly between the renderer and `dwcue-server` over HTTP + WebSocket. IPC is used only for things Electron needs to do as a desktop application.
+
+**Interactive operator help (added after the source baseline above):** the native Help menu, welcome screen, and Settings → Help open one independent, movable reader window. `electron/operator-manual.js` hosts the sandboxed reader controls and a separate native PDF `WebContentsView`; search targets only the document, not the search field. The reader offers previous/next matches and a Contents shortcut, while the PDF viewer supplies chapter bookmarks, thumbnails, page selection, zoom, print, and download. Cmd/Ctrl+F finds, Escape clears the search, and Cmd/Ctrl+W closes only Help; transport shortcuts are not forwarded to the show. The entry label is translated in all 21 locales and explicitly identifies the English manual.
+
+Electron Builder copies `../docs/operators-manual.pdf` unchanged to `resources/help/operators-manual.pdf` using `extraResources`; development reads that same repository PDF. No network or audio-server connection is needed to read it. The reader has its own minimal preload and exact-owner IPC checks; the PDF view has no application preload. Neither receives the main renderer's filesystem or transport API. Run `npm run test:operator-manual` in `client` for the navigation, search, IPC, keyboard, and bounds contracts; it is also part of the root `check:client` gate.
 
 New shows and normal saves use the native `.dwcue` JSON document. New portable exports are ZIP archives named `.dwcuepack`; no additional manifest is required. Native `.dwcuepack` and legacy `.lpa` imports each require exactly one project document at the archive root. The multiple-result selection branch remains for compatibility with older servers, not as a native multi-root format. A direct `.liveplay` import writes an available `.dwcue` sibling; an `.lpa` import writes one canonical `.dwcue` in a fresh extraction directory. Both preserve the original legacy bytes and continue saving the canonical result rather than the legacy source.
 

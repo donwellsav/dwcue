@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-src 'none'; object-src 'none'; connect-src 'none'; font-src 'none'; media-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Operator Manual</title>
+  <link rel="stylesheet" href="./reader.css">
+  <script src="./reader.js" defer></script>
+</head>
+<body>
+  <header class="reader-header">
+    <div class="manual-identity" aria-label="English operator manual">
+      <span class="language-marker">English manual</span>
+      <strong>Operator Manual</strong>
+    </div>
+
+    <form id="search-form" class="search" role="search">
+      <label for="search-input">Find in manual</label>
+      <input id="search-input" name="query" type="search" maxlength="256" autocomplete="off" spellcheck="false" placeholder="Search every page">
+      <button id="previous-match" type="button" aria-label="Previous search match" disabled>Previous</button>
+      <button id="next-match" type="submit" aria-label="Next search match" disabled>Next</button>
+      <output id="search-result" aria-live="polite" aria-atomic="true">No search</output>
+    </form>
+  </header>
+
+  <main class="reader-layout">
+    <section class="reader-guide" aria-label="Reader guide">
+      <button id="contents-page" class="contents-button" type="button">Open Contents · page 2</button>
+      <p><strong>Navigate:</strong> use the open PDF sidebar for the document outline or page thumbnails.</p>
+      <div class="shortcuts" aria-label="Keyboard shortcuts">
+        <span>Search <kbd>⌘/Ctrl</kbd> + <kbd>F</kbd></span>
+        <span>Clear <kbd>Esc</kbd></span>
+        <span>Close <kbd>⌘/Ctrl</kbd> + <kbd>W</kbd></span>
+      </div>
+    </section>
+
+    <section id="manual-surface" class="manual-document" aria-label="DonWells Cue Operator Manual PDF"></section>
+  </main>
+</body>
+</html>
