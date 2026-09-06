@@ -1031,8 +1031,7 @@
     "ceilingInputLabel": "True-peak limiter ceiling in dBTP",
     "limiterBypass": "True-peak limiter bypass",
     "bypassLimiter": "Bypass true-peak limiter",
-    "enableLimiter": "Enable true-peak limiter",
-    "globalMaster": "Master globale"
+    "enableLimiter": "Enable true-peak limiter"
   },
   "videoConfidence": {
     "title": "Audience output",

@@ -197,7 +197,7 @@ All composables are Vue `setup()`-time helpers, typed in TypeScript.
 | `useAudioEngine`       | Transport facade. **Cue to Continue** is runtime-only for one playback instance: it never rewrites `endBehavior`, and Stop, remove, replay, Stop All, media replacement, or project switch cancels it. |
 | `useCartItems`         | The One Shots grid model (slot → cue mapping, per-cell arm state). An arm is consumed only after accepted play; repeated identical arming is coalesced. Storage keeps the legacy cart shape for compatibility. |
 | `useCartHotkeys`       | Configurable keyboard shortcuts → One Shot triggers. See `ControlConfigModal.vue` for the current UI. |
-| `useMidiController`    | Web MIDI bindings → One Shot triggers and transport. Master Volume targets the server's Global Master—not output channel 0—and the console readout mirrors the authoritative acknowledgement. See `ControlConfigModal.vue`. |
+| `useMidiController`    | Web MIDI bindings → One Shot triggers and transport. Master Volume targets the server's Global Master—not output channel 0. See `ControlConfigModal.vue`. |
 | `useStateViewer`       | Feeds the live diagnostics popup window (project doc + connection + server status). |
 | `useLocalization`      | i18n (21 languages, RTL). See [Localisation](#localisation-21-languages-rtl). |
 | `useUiMode`            | UI preferences singleton: theme, waveform opacity, playlist track heights, UI font scale (80–110 %, CSS `zoom` on `#app`, excluded in the video output window) and One Shot text scale (70–130 %). |

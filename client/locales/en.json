@@ -628,7 +628,6 @@
     "cueImageHelp": "Shown on the Video Output while this cue plays if it has no video."
   },
   "outputConsole": {
-    "globalMaster": "Global Master",
     "limiter": "TP Limiter",
     "enabled": "Enabled",
     "bypassed": "Bypassed",

@@ -1036,7 +1036,6 @@
     "autoDisarm": "চালুর পর স্বয়ংক্রিয়ভাবে অপ্রস্তুত"
   },
   "outputConsole": {
-    "globalMaster": "গ্লোবাল মাস্টার",
     "limiter": "TP Limiter",
     "enabled": "Enabled",
     "bypassed": "Bypassed",

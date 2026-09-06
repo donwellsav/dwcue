@@ -102,14 +102,7 @@
       <aside class="output-console" :aria-label="t('properties.output')">
         <div class="output-console__header workspace-panel-header">
           <div class="output-console__header-controls">
-            <output
-              class="global-master-readout"
-              :aria-label="`${t('outputConsole.globalMaster')}: ${masterGainLabel}`"
-              :title="`${t('outputConsole.globalMaster')}: ${masterGainLabel}`"
-            >
-              <span class="global-master-readout__label">{{ t('outputConsole.globalMaster') }}</span>
-              <span class="global-master-readout__value">{{ masterGainLabel }}</span>
-            </output>
+
             <button
               type="button"
               class="limiter-toggle"
@@ -272,7 +265,7 @@ const { t } = useLocalization();
 const server = useLiveplayServer();
 const { uiMode } = useUiMode();
 const { levels: outputTargetLevels } = useOutputTarget();
-const { masterGainDb } = useAudioEngine();
+
 
 // Progress modal state
 const progressModal = ref({
@@ -328,10 +321,7 @@ const limiterCeilingLabel = computed(() => {
   const db = limiterCeilingDb.value;
   return `${db > 0 ? '+' : db < 0 ? '−' : ''}${Math.abs(db).toFixed(1)} dBTP`;
 });
-const masterGainLabel = computed(() => {
-  const db = masterGainDb.value;
-  return `${db > 0 ? '+' : db < 0 ? '−' : ''}${Math.abs(db).toFixed(1)} dB`;
-});
+
 const limiterToggleLabel = computed(() =>
   t(limiterEnabled.value ? 'outputConsole.bypassLimiter' : 'outputConsole.enableLimiter'),
 );
@@ -961,30 +951,6 @@ onUnmounted(() => {
   gap: var(--spacing-sm);
   width: 100%;
   min-width: 0;
-}
-.global-master-readout {
-  display: grid;
-  flex: 0 0 auto;
-  gap: 0;
-  min-width: 70px;
-  font-family: var(--font-mono);
-  line-height: 1;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.global-master-readout__label {
-  color: var(--color-text-secondary);
-  font-size: 8px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.global-master-readout__value {
-  color: var(--color-text-primary);
-  font-size: 12px;
-  font-weight: 600;
 }
 
 .limiter-ceiling-control {

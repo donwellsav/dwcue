@@ -1036,7 +1036,6 @@
     "autoDisarm": "फायर के बाद स्वतः अनार्म"
   },
   "outputConsole": {
-    "globalMaster": "ग्लोबल मास्टर",
     "limiter": "TP Limiter",
     "enabled": "Enabled",
     "bypassed": "Bypassed",

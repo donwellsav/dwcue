@@ -1036,7 +1036,6 @@
     "autoDisarm": "Αυτόματος αφοπλισμός μετά την ενεργοποίηση"
   },
   "outputConsole": {
-    "globalMaster": "Γενική ένταση",
     "limiter": "TP Limiter",
     "enabled": "Enabled",
     "bypassed": "Bypassed",

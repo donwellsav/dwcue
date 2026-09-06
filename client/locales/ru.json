@@ -1036,7 +1036,6 @@
     "autoDisarm": "Автоматически снимать с взвода после срабатывания"
   },
   "outputConsole": {
-    "globalMaster": "Глобальный мастер",
     "limiter": "TP Limiter",
     "enabled": "Enabled",
     "bypassed": "Bypassed",

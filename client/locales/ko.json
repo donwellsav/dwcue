@@ -1036,7 +1036,6 @@
     "autoDisarm": "발사 후 자동 준비 해제"
   },
   "outputConsole": {
-    "globalMaster": "전체 마스터",
     "limiter": "TP Limiter",
     "enabled": "Enabled",
     "bypassed": "Bypassed",
