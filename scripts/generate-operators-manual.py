@@ -72,7 +72,14 @@ FONT_REGULAR = "DWVera"
 FONT_BOLD = "DWVera-Bold"
 FONT_ITALIC = "DWVera-Italic"
 FONT_BOLD_ITALIC = "DWVera-BoldItalic"
-SUPPORTED_DIAGRAMS = {"signal-flow", "recovery"}
+SUPPORTED_DIAGRAMS = {
+    "signal-flow",
+    "recovery",
+    "gain-stages",
+    "duck-envelope",
+    "cue-lifecycle",
+    "save-recovery",
+}
 _VERA_COMMON_GLYPHS: frozenset[int] | None = None
 _GLYPH_REPLACEMENTS = {
     "→": "->",
@@ -269,14 +276,70 @@ def _clean_metadata_value(value: str) -> str:
     return value.strip()
 
 
+_LINK_START = re.compile(r"\[([^]\n]+)\]\(")
+_PLAIN_LINK_START = re.compile(r"!?\[([^]\n]*)\]\(")
+_MARKDOWN_ESCAPE = re.compile(r"\\([\\`*_[\]{}()#+.!|-])")
+
+
+def _scan_link_destination(markdown: str, start: int) -> tuple[str, int]:
+    """Return an unescaped destination and the index after its closing parenthesis."""
+
+    if start < len(markdown) and markdown[start] == "<":
+        index = start + 1
+        while index < len(markdown):
+            character = markdown[index]
+            if character == "\n":
+                break
+            if character == "\\" and index + 1 < len(markdown):
+                index += 2
+                continue
+            if character == ">":
+                if index + 1 >= len(markdown) or markdown[index + 1] != ")":
+                    break
+                destination = markdown[start : index + 1]
+                return _MARKDOWN_ESCAPE.sub(r"\1", destination), index + 2
+            index += 1
+        raise ManualError("malformed unclosed angle-bracket link target")
+
+    depth = 0
+    index = start
+    while index < len(markdown):
+        character = markdown[index]
+        if character == "\n":
+            break
+        if character == "\\" and index + 1 < len(markdown):
+            index += 2
+            continue
+        if character == "(":
+            depth += 1
+        elif character == ")":
+            if depth == 0:
+                destination = markdown[start:index]
+                return _MARKDOWN_ESCAPE.sub(r"\1", destination), index + 1
+            depth -= 1
+        index += 1
+    raise ManualError("malformed unclosed link target")
+
+
+def _strip_markdown_links(markdown: str) -> str:
+    output: list[str] = []
+    position = 0
+    while match := _PLAIN_LINK_START.search(markdown, position):
+        output.append(markdown[position : match.start()])
+        _, end = _scan_link_destination(markdown, match.end())
+        output.append(match.group(1))
+        position = end
+    output.append(markdown[position:])
+    return "".join(output)
+
+
 def _plain_text(markdown: str) -> str:
-    value = re.sub(r"!\[([^]]*)\]\([^)]*\)", r"\1", markdown)
-    value = re.sub(r"\[([^]]+)\]\([^)]*\)", r"\1", value)
+    value = _strip_markdown_links(markdown)
     value = re.sub(r"`([^`]*)`", r"\1", value)
     value = re.sub(r"(\*\*|__)(.*?)\1", r"\2", value)
     value = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"\1", value)
     value = re.sub(r"(?<!_)_([^_]+)_(?!_)", r"\1", value)
-    value = re.sub(r"\\([\\`*_[\]{}()#+.!|-])", r"\1", value)
+    value = _MARKDOWN_ESCAPE.sub(r"\1", value)
     return " ".join(html.unescape(value).split())
 
 
@@ -678,7 +741,7 @@ class InlineRenderer:
     """Convert safe inline Markdown to ReportLab paragraph markup."""
 
     TOKEN = re.compile(
-        r"(`[^`]+`|\[([^]\n]+)\]\(([^)\n]+)\)|\*\*.+?\*\*|__.+?__|(?<!\*)\*[^*\n]+\*(?!\*)|(?<!_)_[^_\n]+_(?!_))"
+        r"(`[^`]+`|\*\*.+?\*\*|__.+?__|(?<!\*)\*[^*\n]+\*(?!\*)|(?<!_)_[^_\n]+_(?!_))"
     )
 
     def __init__(
@@ -753,7 +816,30 @@ class InlineRenderer:
         output: list[str] = []
         position = 0
         context = f"line {line} visible text"
-        for match in self.TOKEN.finditer(markdown):
+        while position < len(markdown):
+            token_match = self.TOKEN.search(markdown, position)
+            link_match = _LINK_START.search(markdown, position)
+            if link_match is not None and (
+                token_match is None or link_match.start() < token_match.start()
+            ):
+                match = link_match
+                destination, end = _scan_link_destination(markdown, match.end())
+                plain = _pdf_text(markdown[position : match.start()], context)
+                output.append(html.escape(plain).replace("\n", "<br/>"))
+                label = match.group(1)
+                if not allow_links:
+                    output.append(html.escape(_pdf_text(_plain_text(label), context)))
+                else:
+                    href = self._link_href(destination, line)
+                    output.append(
+                        f'<link href="{html.escape(href, quote=True)}" color="#8A5700" '
+                        f'underline="1">{self.render(label, line, allow_links=False)}</link>'
+                    )
+                position = end
+                continue
+            if token_match is None:
+                break
+            match = token_match
             plain = _pdf_text(markdown[position : match.start()], context)
             output.append(html.escape(plain).replace("\n", "<br/>"))
             token = match.group(0)
@@ -763,16 +849,6 @@ class InlineRenderer:
                     f'<font name="{FONT_REGULAR}" color="#4B4D50" backColor="#EEEEEB">'
                     f"&#160;{code}&#160;</font>"
                 )
-            elif token.startswith("["):
-                label = match.group(2) or ""
-                if not allow_links:
-                    output.append(html.escape(_pdf_text(_plain_text(label), context)))
-                else:
-                    href = self._link_href(match.group(3) or "", line)
-                    output.append(
-                        f'<link href="{html.escape(href, quote=True)}" color="#8A5700" '
-                        f'underline="1">{self.render(label, line, allow_links=False)}</link>'
-                    )
             elif token.startswith("**") or token.startswith("__"):
                 output.append(f"<b>{self.render(token[2:-2], line, allow_links=allow_links)}</b>")
             else:
@@ -1215,6 +1291,152 @@ class RecoveryDiagram(Flowable):
         canvas.restoreState()
 
 
+def _diagram_box(canvas, x, y, width, height, title, detail="", *, accent=False):
+    canvas.setStrokeColor(AMBER if accent else MID_GRAY)
+    canvas.setLineWidth(1.1 if accent else 0.8)
+    canvas.rect(x, y, width, height, fill=0, stroke=1)
+    _diagram_text(canvas, title, x + 5, y + height - 23, width - 10, 17, bold=True, size=7.0)
+    if detail:
+        _diagram_text(canvas, detail, x + 6, y + 5, width - 12, height - 28, size=6.5)
+
+
+class _ManualDiagram(Flowable):
+    title = ""
+    diagram_height = 220
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.height = self.diagram_height
+        self.spaceBefore = 6
+        self.spaceAfter = 12
+
+    def wrap(self, available_width: float, available_height: float) -> tuple[float, float]:
+        self.width = available_width
+        return self.width, self.height
+
+    def _begin(self):
+        canvas = self.canv
+        canvas.saveState()
+        canvas.setStrokeColor(LIGHT_GRAY)
+        canvas.setFillColor(WHITE)
+        canvas.rect(0, 0, self.width, self.height, fill=1, stroke=1)
+        canvas.setFont(FONT_BOLD, 7)
+        canvas.setFillColor(MID_GRAY)
+        canvas.drawString(10, self.height - 14, _pdf_text(self.title, "diagram title"))
+        return canvas
+
+
+class GainStagesDiagram(_ManualDiagram):
+    title = "PROGRAM GAIN STAGES AND PREVIEW PATH"
+    diagram_height = 205
+
+    def draw(self) -> None:
+        canvas = self._begin()
+        margin, gap, y, h = 14, 11, 104, 54
+        width = (self.width - 2 * margin - 4 * gap) / 5
+        stages = [
+            ("CUE LEVEL", "Authored cue gain"),
+            ("DUCKING", "Active generations; strongest ceiling"),
+            ("INTERNAL GLOBAL GAIN", "Engine / MIDI stage; no separate UI control"),
+            ("OUTPUT FADER / TRIMS", "Existing operator output controls"),
+            ("DEVICE", "Audio device / stream"),
+        ]
+        xs = [margin + i * (width + gap) for i in range(5)]
+        for i, (title, detail) in enumerate(stages):
+            _diagram_box(canvas, xs[i], y, width, h, title, detail, accent=i in {0, 2})
+            if i < 4:
+                _arrow(canvas, xs[i] + width, y + h / 2, xs[i + 1], y + h / 2)
+        py, ph = 29, 40
+        _diagram_box(canvas, margin, py, width * 2 + gap, ph, "PREVIEW", "Separate monitor route; internal global gain still applies", accent=True)
+        _arrow(canvas, xs[0] + width / 2, y, margin + width, py + ph)
+        canvas.setFont(FONT_ITALIC, 6.5)
+        canvas.setFillColor(MID_GRAY)
+        canvas.drawString(margin + width * 2 + gap + 12, py + 15, _pdf_text("Internal global gain and operator output controls remain distinct.", "gain diagram note"))
+        canvas.restoreState()
+
+
+class DuckEnvelopeDiagram(_ManualDiagram):
+    title = "DUCK ENVELOPE — SCHEMATIC, NOT MEASURED"
+    diagram_height = 225
+
+    def draw(self) -> None:
+        canvas = self._begin()
+        left, right, bottom, top = 42, self.width - 22, 52, 177
+        canvas.setStrokeColor(MID_GRAY)
+        canvas.setLineWidth(0.7)
+        canvas.line(left, bottom, right, bottom)
+        canvas.line(left, bottom, left, top)
+        canvas.setFont(FONT_REGULAR, 6.5)
+        canvas.setFillColor(MID_GRAY)
+        canvas.drawString(8, top - 3, _pdf_text("full level", "duck axis"))
+        canvas.drawString(8, bottom - 3, _pdf_text("ducked", "duck axis"))
+        points = [(left, top - 14), (left + 74, top - 14), (left + 126, 91), (right - 100, 91), (right - 42, top - 14), (right, top - 14)]
+        canvas.setStrokeColor(AMBER)
+        canvas.setLineWidth(2)
+        path = canvas.beginPath(); path.moveTo(*points[0])
+        for point in points[1:]: path.lineTo(*point)
+        canvas.drawPath(path, fill=0, stroke=1)
+        labels = [(left + 99, 113, "AUTHORED ATTACK"), ((left + right) / 2, 78, "HOLD / ACTIVE"), (right - 70, 113, "AUTHORED RELEASE")]
+        canvas.setFont(FONT_BOLD, 6.3); canvas.setFillColor(CHARCOAL)
+        for x, y, label in labels: canvas.drawCentredString(x, y, _pdf_text(label, "duck phase"))
+        canvas.setStrokeColor(MID_GRAY); canvas.setDash(3, 2); canvas.setLineWidth(1.0)
+        canvas.line(left + 170, 110, right - 115, 110); canvas.setDash()
+        canvas.setFillColor(MID_GRAY); canvas.setFont(FONT_REGULAR, 6.4)
+        canvas.drawCentredString((left + right) / 2, 119, _pdf_text("overlap: strongest active generation sets the ceiling", "duck overlap note"))
+        canvas.setFont(FONT_ITALIC, 6.5)
+        canvas.drawCentredString(self.width / 2, 23, _pdf_text("Shape and timing are explanatory only; they are not a native measurement.", "duck disclaimer"))
+        canvas.restoreState()
+
+
+class CueLifecycleDiagram(_ManualDiagram):
+    title = "GROUP CUE LIFECYCLE"
+    diagram_height = 230
+
+    def draw(self) -> None:
+        canvas = self._begin()
+        margin, gap = 18, 16
+        width = (self.width - 2 * margin - 3 * gap) / 4
+        xs = [margin + i * (width + gap) for i in range(4)]
+        y, h = 141, 48
+        nodes = [("START ACTION", "Audio Start actions run"), ("SELECTED GROUP", "Activate the chosen group"), ("DESCENDANTS", "Eligible descendant cues run"), ("NATURAL END", "Audio End actions run")]
+        for i, (title, detail) in enumerate(nodes):
+            _diagram_box(canvas, xs[i], y, width, h, title, detail, accent=i in {0, 3})
+            if i < 3: _arrow(canvas, xs[i] + width, y + h / 2, xs[i + 1], y + h / 2)
+        by, bh = 45, 53
+        _diagram_box(canvas, self.width / 2 - 102, by, 204, bh, "MANUAL STOP", "Cancels the natural-end path; Stop is not a natural completion", accent=True)
+        _arrow(canvas, xs[2] + width / 2, y, self.width / 2, by + bh)
+        canvas.setFont(FONT_ITALIC, 6.5); canvas.setFillColor(MID_GRAY)
+        canvas.drawCentredString(self.width / 2, 22, _pdf_text("Group default action remains Nothing; Audio Start Next is structural.", "lifecycle note"))
+        canvas.restoreState()
+
+
+class SaveRecoveryDiagram(_ManualDiagram):
+    title = "SAVE, DIRTY STATE, AND HYDRATION RECOVERY"
+    diagram_height = 245
+
+    def draw(self) -> None:
+        canvas = self._begin()
+        margin, gap = 18, 14
+        width = (self.width - 2 * margin - 2 * gap) / 3
+        xs = [margin + i * (width + gap) for i in range(3)]
+        y, h = 160, 50
+        top = [("AUTOSAVE TOGGLE", "Either direction"), ("FORCED SAVE", "Current document + preference"), ("LATER EDITS", "Off mode: dirty only") ]
+        for i, (title, detail) in enumerate(top):
+            _diagram_box(canvas, xs[i], y, width, h, title, detail, accent=i < 2)
+            if i < 2: _arrow(canvas, xs[i] + width, y + h / 2, xs[i + 1], y + h / 2)
+        canvas.setFont(FONT_BOLD, 6.5); canvas.setFillColor(AMBER)
+        canvas.drawString(margin, 140, _pdf_text("BOTH DIRECTIONS FORCE-SAVE BEFORE THE NEW PREFERENCE TAKES EFFECT", "save note"))
+        fy, fh = 52, 55
+        _diagram_box(canvas, margin, fy, width, fh, "HYDRATION FAILED", "Stop All and Escape remain available", accent=True)
+        _diagram_box(canvas, xs[1], fy, width, fh, "RETRY ACCEPTED LOAD", "Request current native header / pages", accent=True)
+        _diagram_box(canvas, xs[2], fy, width, fh, "CURRENT SERVER STATE", "Not a replay of the old file load", accent=False)
+        _arrow(canvas, margin + width, fy + fh / 2, xs[1], fy + fh / 2)
+        _arrow(canvas, xs[1] + width, fy + fh / 2, xs[2], fy + fh / 2)
+        canvas.setFont(FONT_ITALIC, 6.3); canvas.setFillColor(MID_GRAY)
+        canvas.drawCentredString(self.width / 2, 25, _pdf_text("A failed save can retain dirty state even when the header badge is hidden.", "save disclaimer"))
+        canvas.restoreState()
+
+
 class ManualDocTemplate(BaseDocTemplate):
     def __init__(self, filename: str, metadata: Metadata) -> None:
         super().__init__(
@@ -1570,7 +1792,7 @@ def _make_image(
     styles: dict[str, ParagraphStyle],
 ) -> KeepTogether:
     max_width = FRAME_WIDTH
-    max_height = 105 * mm
+    max_height = (165 if node.pixel_height > node.pixel_width else 105) * mm
     scale = min(
         max_width / node.pixel_width,
         max_height / node.pixel_height,
@@ -1582,7 +1804,7 @@ def _make_image(
     image.hAlign = "CENTER"
     image._restrictSize(max_width, max_height)
     caption = Paragraph(inline.render(node.caption, node.line), styles["caption"])
-    return KeepTogether([image, caption], maxHeight=max_height + 30)
+    return KeepTogether([image, caption])
 
 
 def _heading_flowable(
@@ -1762,7 +1984,15 @@ def _make_story(parsed: ParsedManual, source: Path, output: Path) -> list[Flowab
             if not last_was_page_break:
                 story.append(PageBreak())
         elif isinstance(node, DiagramNode):
-            story.append(SignalFlowDiagram() if node.name == "signal-flow" else RecoveryDiagram())
+            diagram_types = {
+                "signal-flow": SignalFlowDiagram,
+                "recovery": RecoveryDiagram,
+                "gain-stages": GainStagesDiagram,
+                "duck-envelope": DuckEnvelopeDiagram,
+                "cue-lifecycle": CueLifecycleDiagram,
+                "save-recovery": SaveRecoveryDiagram,
+            }
+            story.append(diagram_types[node.name]())
         elif isinstance(node, RuleNode):
             story.append(
                 HRFlowable(
