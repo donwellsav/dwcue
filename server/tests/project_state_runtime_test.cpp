@@ -112,6 +112,7 @@ void render_to_end(liveplay::core::ProjectState& state,
     if (!cue) return;
     const auto item = engine.find_cue(*cue);
     if (!item) return;
+    if (!wait_for_on_air(state, engine, uuid)) return;
     std::array<float, 256> left{}, right{};
     float* channels[]{left.data(), right.data()};
     for (int i = 0; i < limit && on_air(state, engine, uuid); ++i) {
@@ -181,7 +182,7 @@ void test_nested_group_end(const std::filesystem::path& wav) {
     close_devices(engine);
     check(state.trigger_item("outer"), "group nested: outer accepts first-child dispatch");
     render_to_end(state, engine, "nested-a");
-    check(on_air(state, engine, "target"),
+    check(wait_for_on_air(state, engine, "target"),
           "group nested: child then inner completion fires outer end exactly once");
     state.stop_all_cues(0);
 }
@@ -212,7 +213,7 @@ void test_group_cancellation(const std::filesystem::path& wav) {
         check(wait_ready(state), "group loop: audio ready"); close_devices(engine);
         check(state.trigger_item("cancel-group"), "group loop: run starts");
         render_to_end(state, engine, "loop-child", 80);
-        check(on_air(state, engine, "loop-child") && !on_air(state, engine, "target"),
+        check(wait_for_on_air(state, engine, "loop-child") && !on_air(state, engine, "target"),
               "group loop: looping descendant keeps group incomplete");
         state.stop_all_cues(0);
     }
@@ -244,7 +245,7 @@ void test_group_internal_continuations(const std::filesystem::path& wav) {
         check(wait_ready(state), "group continuation: audio ready"); close_devices(engine);
         check(state.trigger_item("chain-group"), "group continuation: run starts");
         render_to_end(state, engine, "chain-a");
-        check(on_air(state, engine, "chain-b"), label);
+        check(wait_for_on_air(state, engine, "chain-b"), label);
         render_to_end(state, engine, "chain-b");
         check(wait_for_on_air(state, engine, "chain-end"),
               "group continuation: authored group end survives child transition");
@@ -298,7 +299,8 @@ void test_nested_play_first_readiness(const std::filesystem::path& wav) {
     close_devices(engine);
     check(state.trigger_item("ready-outer"),
           "group readiness: unselected nested play-first leaf does not reject");
-    check(on_air(state, engine, "ready-selected") && !on_air(state, engine, "ready-unselected"),
+    check(wait_for_on_air(state, engine, "ready-selected") &&
+              !on_air(state, engine, "ready-unselected"),
           "group readiness: only selected nested leaf starts");
     state.stop_all_cues(0);
 }
@@ -318,9 +320,9 @@ void test_start_actions(const std::filesystem::path& wav) {
     state.replace_full_document(document(json::array({a, b})));
     check(wait_ready(state), "start action: audio ready"); close_devices(engine);
     check(state.trigger_item("start-a"), "start action: primary remains successful");
-    check(on_air(state, engine, "start-a"),
+    check(wait_for_on_air(state, engine, "start-a"),
           "start action: primary remains on Program after cycle rejection");
-    check(on_air(state, engine, "start-b"),
+    check(wait_for_on_air(state, engine, "start-b"),
           "start action: configured secondary starts on Program");
     bool cycle_warning = false;
     {
