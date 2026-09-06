@@ -782,7 +782,7 @@ import AboutContent from './AboutContent.vue';
 import { PLAYBACK_ACTIONS, formatKeyLabel, useCartHotkeys } from '~/composables/useCartHotkeys';
 import type { PlaybackKeyAction } from '~/types/project';
 import TestCardControls from './TestCardControls.vue';
-import { createTestCardConfig, type TestCardConfig } from '../../electron/test-card-config';
+import { createTestCardConfig, type TestCardConfig } from '../../electron/test-card-config.mjs';
 
 const props = defineProps<{ open: boolean }>();
 const emit  = defineEmits<{ (e: 'close'): void; (e: 'open-shortcuts'): void }>();
