@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <future>
@@ -23,6 +24,22 @@ void check(bool ok, const char* label) {
     std::printf("%-68s %s\n", label, ok ? "PASS" : "FAIL");
     if (!ok) ++failures;
 }
+void set_loader_gate(const std::filesystem::path& gate) {
+    const auto value = gate.string();
+#ifdef _WIN32
+    _putenv_s("DWCUE_TEST_LOADER_GATE", value.c_str());
+#else
+    setenv("DWCUE_TEST_LOADER_GATE", value.c_str(), 1);
+#endif
+}
+void clear_loader_gate() {
+#ifdef _WIN32
+    _putenv_s("DWCUE_TEST_LOADER_GATE", "");
+#else
+    unsetenv("DWCUE_TEST_LOADER_GATE");
+#endif
+}
+
 void u16(std::ofstream& out, std::uint16_t v) {
     const char b[]{static_cast<char>(v), static_cast<char>(v >> 8)};
     out.write(b, 2);
@@ -117,7 +134,7 @@ void test_stop_all_during_project_boundaries(const std::filesystem::path& wav) {
                           (std::string{"dwcue-loader-gate-"} + label);
         std::ofstream{gate};
         std::filesystem::remove(gate.string() + ".entered");
-        setenv("DWCUE_TEST_LOADER_GATE", gate.c_str(), 1);
+        set_loader_gate(gate);
         state.replace_full_document(document(json::array({audio("latched", wav)})));
         check(wait_gate_entered(gate), "project boundary: decoder reached deterministic gate");
         auto boundary = std::async(std::launch::async, [&] { operation(state); });
@@ -126,7 +143,7 @@ void test_stop_all_during_project_boundaries(const std::filesystem::path& wav) {
         std::filesystem::remove(gate);
         boundary.get();
         stop.get();
-        unsetenv("DWCUE_TEST_LOADER_GATE");
+        clear_loader_gate();
         std::filesystem::remove(gate.string() + ".entered");
     };
     run_case("project boundary: Stop All is not blocked by reset",
