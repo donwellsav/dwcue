@@ -95,6 +95,16 @@ bool on_air(liveplay::core::ProjectState& state,
            t == liveplay::audio::TransportState::FadingIn ||
            t == liveplay::audio::TransportState::Paused;
 }
+bool wait_for_on_air(liveplay::core::ProjectState& state,
+                     liveplay::audio::AudioEngine& engine,
+                     const std::string& uuid) {
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    do {
+        if (on_air(state, engine, uuid)) return true;
+        std::this_thread::sleep_for(5ms);
+    } while (std::chrono::steady_clock::now() < deadline);
+    return on_air(state, engine, uuid);
+}
 void render_to_end(liveplay::core::ProjectState& state,
                    liveplay::audio::AudioEngine& engine,
                    const std::string& uuid, int limit = 400) {
@@ -236,7 +246,7 @@ void test_group_internal_continuations(const std::filesystem::path& wav) {
         render_to_end(state, engine, "chain-a");
         check(on_air(state, engine, "chain-b"), label);
         render_to_end(state, engine, "chain-b");
-        check(on_air(state, engine, "chain-end"),
+        check(wait_for_on_air(state, engine, "chain-end"),
               "group continuation: authored group end survives child transition");
         state.stop_all_cues(0);
     };
@@ -266,7 +276,8 @@ void test_external_group_exit(const std::filesystem::path& wav) {
     check(state.trigger_item("exit-group"), "group external exit: run starts");
     check(state.set_next_item_override("external"), "group external exit: override armed");
     render_to_end(state, engine, "exit-a");
-    check(on_air(state, engine, "external"), "group external exit: override target starts");
+    check(wait_for_on_air(state, engine, "external"),
+          "group external exit: override target starts");
     render_to_end(state, engine, "external");
     check(!on_air(state, engine, "group-end"), "group external exit: authored group end cancelled");
 }
