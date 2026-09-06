@@ -379,7 +379,8 @@
   },
   "importProgress": {
     "title": "Importation du Projet",
-    "message": "Extraction"
+    "message": "Extraction",
+    "openFailed": "Le projet importé n’a pas pu être ouvert."
   },
   "selectProject": {
     "title": "Sélectionner un Projet",
@@ -414,7 +415,7 @@
     "selectUp": "Sélectionner vers le haut",
     "selectDown": "Sélectionner vers le bas",
     "playSelected": "Lire la sélection",
-    "masterVolume": "Volume principal",
+    "masterVolume": "Volume du master global",
     "midiDevice": "Périphérique MIDI",
     "allDevices": "Tous les périphériques",
     "conflictSlot": "Already assigned to One Shot {n}",
@@ -433,7 +434,7 @@
     "conflictMessage": "Ce contrôle MIDI est déjà assigné à \"{action}\". Réassigner?",
     "playNext": "Lire le suivant",
     "volumeMultiplier": "Multiplicateur de volume",
-    "volumeMultiplierHint": "dB modifiés par pas MIDI. Augmentez pour les molettes lentes.",
+    "volumeMultiplierHint": "Variation en dB du master global à chaque pas MIDI. S’applique à toutes les sorties, y compris Preview.",
     "sectionOneShots": "One Shots",
     "oneShot": "One Shot {n}",
     "cueToContinue": "Cue to Continue",
@@ -1015,7 +1016,11 @@
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
     "armCell": "Armer {name}",
     "disarmCell": "Désarmer {name}",
-    "autoDisarm": "Désarmement automatique après déclenchement"
+    "autoDisarm": "Désarmement automatique après déclenchement",
+    "detachedNoPrimary": "La fenêtre principale du projet est indisponible.",
+    "detachedStale": "Cette fenêtre One Shots n’est plus à jour. Rouvrez-la depuis la fenêtre principale.",
+    "detachedRejected": "La modification n’a pas été acceptée par la fenêtre principale.",
+    "detachedSaveFailed": "La modification a été appliquée, mais n’a pas pu être enregistrée."
   },
   "outputConsole": {
     "limiter": "TP Limiter",
@@ -1026,7 +1031,8 @@
     "ceilingInputLabel": "True-peak limiter ceiling in dBTP",
     "limiterBypass": "True-peak limiter bypass",
     "bypassLimiter": "Bypass true-peak limiter",
-    "enableLimiter": "Enable true-peak limiter"
+    "enableLimiter": "Enable true-peak limiter",
+    "globalMaster": "Master global"
   },
   "videoConfidence": {
     "title": "Audience output",
@@ -1042,5 +1048,18 @@
     "prev": "Previous cue ([)",
     "exit": "Exit (Q)",
     "progress": "Cue {index} of {total}"
+  },
+  "projectHydration": {
+    "loading": "Chargement du projet…",
+    "failed": "Le chargement du projet a échoué. Ce projet partiel est en lecture seule.",
+    "retry": "Réessayer"
+  },
+  "filePicker": {
+    "unavailableFolder": "Le dossier utilisé précédemment est indisponible : {path}. Un emplacement de départ disponible est affiché.",
+    "favorites": "Dossiers favoris",
+    "addCurrentFolder": "Ajouter le dossier actuel aux favoris",
+    "currentFolderFavorite": "Le dossier actuel est déjà un favori",
+    "removeFavorite": "Retirer {name} des favoris",
+    "emptyFavorites": "Ajoutez les dossiers que vous utilisez souvent."
   }
 }

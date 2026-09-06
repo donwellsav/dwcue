@@ -12,7 +12,7 @@
       </button>
     </div>
     
-    <div class="active-cues">
+    <div class="active-cues" :inert="!projectControlsReady" :aria-busy="!projectControlsReady">
       <div v-if="activeCues.size === 0" class="no-cues">
         {{ t('playback.noActiveCues') }}
       </div>
@@ -31,7 +31,7 @@
       class="control-btn play-next-btn"
       :class="{ 'has-next': !!effectiveNextUuid }"
       @click="handlePlayNext"
-      :disabled="!effectiveNextUuid"
+      :disabled="!projectControlsReady || !effectiveNextUuid"
       :title="playNextTooltip"
     >
       <span class="material-symbols-rounded" aria-hidden="true">fast_forward</span>
@@ -47,7 +47,7 @@
 
     <!-- Preview is deliberately isolated in MainWorkspace's lower panel. -->
     <Teleport v-if="previewingItem" defer to="#preview-lower-panel">
-      <div class="preview-cue-card">
+      <div class="preview-cue-card" :inert="!projectControlsReady" :aria-busy="!projectControlsReady">
       <div class="preview-cue-content">
         <div class="preview-cue-header">
           <div class="preview-cue-name" :title="previewingItem.displayName">
@@ -56,6 +56,7 @@
               type="button"
               class="preview-action-btn preview-set-next-btn"
               :class="{ active: previewIsNext }"
+              :disabled="setNextItemPending"
               @click="handleSetPreviewNext"
               :title="t('actions.setAsNext')"
             >
@@ -269,12 +270,13 @@ import { formatKeyLabel } from '~/composables/useCartHotkeys';
 import { useLiveplayServer } from '~/composables/useLiveplayServer';
 import { useCueMeters } from '~/composables/useLiveMeters';
 
-const { activeCues, panicStop, nextItemOverrideUuid, autoNextItemUuid, setNextItem, playNext } = useAudioEngine();
+const { activeCues, panicStop, nextItemOverrideUuid, autoNextItemUuid, setNextItemPending, setNextItem, playNext } = useAudioEngine();
 const {
   findItemByUuid,
   formatItemIndex,
   previewItemUuid,
   previewCueId,
+  projectHydrationStatus,
   stopPreview,
   saveProject,
   openItemProperties,
@@ -285,6 +287,7 @@ const server = useLiveplayServer();
 const { uiMode } = useUiMode();
 // Show Mode enlarges the GO / Stop-All buttons for touch.
 const showMode = computed(() => uiMode.value === 'playback');
+const projectControlsReady = computed(() => projectHydrationStatus.value === 'ready');
 
 // Preview is an isolated audition workspace. Its In/Out edits stay temporary
 // until the operator explicitly chooses Save Trim.
@@ -511,8 +514,8 @@ async function savePreviewTrim() {
   previewTrimSaveFailed.value = !await saveProject({ force: true });
 }
 
-function handleSetPreviewNext() {
-  if (previewItemUuid.value) setNextItem(previewItemUuid.value);
+function handleSetPreviewNext(): Promise<boolean> {
+  return previewItemUuid.value ? setNextItem(previewItemUuid.value) : Promise.resolve(false);
 }
 
 function handleOpenPreviewProperties() {

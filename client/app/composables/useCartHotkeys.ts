@@ -62,7 +62,7 @@ export const PLAYBACK_ACTIONS: { id: PlaybackKeyAction; labelKey: string }[] = [
 ];
 
 export const useCartHotkeys = () => {
-  const { currentProject, selectedItem, selectedItems, saveProject, getAllItemsFlat, toggleItemSelection, findItemByUuid } = useProject();
+  const { currentProject, projectHydrationStatus, selectedItem, selectedItems, saveProject, getAllItemsFlat, toggleItemSelection, findItemByUuid } = useProject();
   const { cartOnlyItems } = useCartItems();
   const { fireBlocked, afterFire } = useOneShotArm();
   const { playCue, playNext, pauseCue, resumeCue, stopAllCues, activeCues, queueLoopContinuation, jumpCue } = useAudioEngine();
@@ -164,6 +164,7 @@ export const useCartHotkeys = () => {
   };
 
   const dispatchPlaybackAction = async (action: PlaybackKeyAction) => {
+    if (action !== 'stop-all' && projectHydrationStatus.value !== 'ready') return false;
     if (action === 'pause-resume') {
       const item = getTargetItem();
       if (!item) return;
@@ -239,14 +240,17 @@ export const useCartHotkeys = () => {
     // Stop All is a server-global panic action: native diagnostics and orphaned
     // cues can remain active without a project document or local activeCue.
     const playbackAction = findPlaybackActionForEvent(e);
-    if (playbackAction && (currentProject.value || playbackAction === 'stop-all')) {
+    if (playbackAction && (
+      playbackAction === 'stop-all'
+      || (currentProject.value && projectHydrationStatus.value === 'ready')
+    )) {
       e.preventDefault();
       e.stopPropagation();
       void dispatchPlaybackAction(playbackAction);
       return;
     }
 
-    if (!currentProject.value) return;
+    if (!currentProject.value || projectHydrationStatus.value !== 'ready') return;
 
     // Cart slot hotkeys
     const slotIndex = findSlotForEvent(e);

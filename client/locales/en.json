@@ -465,6 +465,10 @@
     "hide": "Hide One Shots"
   },
   "oneShots": {
+    "detachedNoPrimary": "The main project window is unavailable.",
+    "detachedStale": "This One Shots window is out of date. Reopen it from the main window.",
+    "detachedRejected": "The change was not accepted by the main window.",
+    "detachedSaveFailed": "The change was applied but could not be saved.",
     "title": "One Shots",
     "hint": "Drop audio or playlist cues into any cell",
     "detach": "Detach",
@@ -624,6 +628,7 @@
     "cueImageHelp": "Shown on the Video Output while this cue plays if it has no video."
   },
   "outputConsole": {
+    "globalMaster": "Global Master",
     "limiter": "TP Limiter",
     "enabled": "Enabled",
     "bypassed": "Bypassed",
@@ -850,7 +855,13 @@
   },
   "importProgress": {
     "title": "Importing Project",
-    "message": "Extracting"
+    "message": "Extracting",
+    "openFailed": "The imported project could not be opened."
+  },
+  "projectHydration": {
+    "loading": "Loading project…",
+    "failed": "Project loading failed. This partial project is read-only.",
+    "retry": "Retry"
   },
   "midi": {
     "configTitle": "MIDI Controller Configuration",
@@ -883,7 +894,7 @@
     "selectUp": "Select Up",
     "selectDown": "Select Down",
     "playSelected": "Play Selected",
-    "masterVolume": "Master Volume",
+    "masterVolume": "Global Master Volume",
     "midiDevice": "MIDI Device",
     "allDevices": "All Devices",
     "conflictOneShot": "Already assigned to One Shot {n}",
@@ -903,7 +914,7 @@
     "conflictMessage": "This MIDI control is already assigned to \"{action}\". Reassign it?",
     "playNext": "Play Next",
     "volumeMultiplier": "Volume Multiplier",
-    "volumeMultiplierHint": "dB changed per MIDI step. Increase for wheels that move slowly."
+    "volumeMultiplierHint": "dB changed on the Global Master per MIDI step. Applies to all outputs, including Preview."
   },
   "selectProject": {
     "title": "Select Project",
@@ -950,6 +961,14 @@
     "chooseSourceMessage": "Where is the project archive? You can pick one already on the server, or upload one from this computer.",
     "fromServer": "Browse Server",
     "fromThisComputer": "From This Computer"
+  },
+  "filePicker": {
+    "unavailableFolder": "Previously used folder is unavailable: {path}. Showing an available starting location.",
+    "favorites": "Favorite folders",
+    "addCurrentFolder": "Add current folder to favorites",
+    "currentFolderFavorite": "Current folder is already a favorite",
+    "removeFavorite": "Remove {name} from favorites",
+    "emptyFavorites": "Add folders you use often."
   },
   "importAudio": {
     "title": "Import Media",

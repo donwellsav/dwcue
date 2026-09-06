@@ -17,9 +17,13 @@
           <span class="cart-brand-wordmark">DONWELLS CUE</span>
           <span class="cart-brand-url">dwcue.com</span>
         </header>
-        <OneShotPanel v-if="currentProject" :is-detached-window="true" />
+        <template v-if="currentProject && detachedProjectIdentity">
+          <p v-if="detachedProjectError" class="cart-window-error" role="alert">{{ detachedProjectError }}</p>
+          <OneShotPanel :is-detached-window="true" />
+        </template>
         <div v-else class="cart-window-loading">
           <CueSymbol name="one-shots" />
+          <p v-if="detachedProjectError">{{ detachedProjectError }}</p>
         </div>
       </div>
 
@@ -43,8 +47,15 @@
     <!-- Normal mode -->
     <template v-else>
       <WelcomeScreen v-if="!currentProject" />
+      <div v-else-if="projectHydrationStatus === 'failed'" class="project-hydration-error" role="alert">
+        <strong>{{ t('projectHydration.failed') }}</strong>
+        <span v-if="projectHydrationError">{{ projectHydrationError }}</span>
+        <button type="button" data-testid="project-hydration-stop-all" @click="stopAllCues()">
+          {{ t('controls.stopAll') }}
+        </button>
+        <button type="button" @click="retryProjectHydration">{{ t('projectHydration.retry') }}</button>
+      </div>
       <MainWorkspace v-else />
-    
     <!-- Accent Color Picker Modal -->
     <div v-if="showColorPicker" class="color-picker-overlay" @click="showColorPicker = false">
       <div class="color-picker-dialog" @click.stop>
@@ -181,7 +192,7 @@
       :mode="importServerPickerStage === 'destination' ? 'directory' : 'file'"
       :filter="importServerPickerStage === 'destination' ? 'all' : '.dwcuepack,.lpa'"
       :filter-options="importServerPickerStage === 'destination' ? ['all'] : ['.dwcuepack,.lpa', 'all']"
-      start-path=""
+      :location-context="importServerPickerStage === 'destination' ? 'archive-import-destination' : 'archive-import'"
       @pick="onImportServerPickerPick"
       @close="importServerPickerOpen = false"
     />
@@ -194,40 +205,70 @@
 import 'material-symbols/rounded.css';
 import OneShotPanel from './components/OneShotPanel.vue';
 import type { ProjectFileKind } from '~/utils/projectFileFormats';
+import type { OneShotMutationIdentity, OneShotMutationRequest, OneShotMutationResult, OneShotProjectEnvelope } from '~/types/oneShotMutation';
+import { sameOneShotMutationIdentity } from '~/types/oneShotMutation';
+import { createProjectOpenGuard } from '~/utils/projectOpenGuard';
+import { applyOneShotMutation, enforceOneShotDisarmFences } from '~/utils/oneShotMutation';
 
 const {
   currentProject, saveProject, openProject, closeProject, confirmUnsavedChanges,
-  hasUnsavedChanges,
+  hasUnsavedChanges, autoSaveEnabled, projectSyncIdentity,
+  projectHydrationStatus, projectHydrationError, retryProjectHydration,
   isLoading, loadingMessage,
   repairDialogVisible, repairDialogIssues, confirmRepair, cancelRepair,
   unsavedDialogVisible, unsavedSave, unsavedDiscard, unsavedCancel,
   deleteDialogVisible, deleteDialogCount, deleteDialogName, deleteDialogAllowOnly,
   deleteDialogConfirmAll, deleteDialogConfirmOnly, deleteDialogCancel,
 } = useProject();
-
-// Shared queued file state consumed by WelcomeScreen, which owns server setup
-// and routes native opens separately from explicit legacy imports.
+const { stopAllCues } = useAudioEngine();
 const pendingFileOpen = useState<{ path: string; kind: ProjectFileKind } | null>(
-  'liveplay:pendingFileOpen', () => null);
-
-// Route a double-clicked file to the welcome-screen flow. If a project is
-// already open we close it first (after the unsaved-changes prompt) so
-// WelcomeScreen re-mounts and picks up the pending file.
-async function routePendingFile(data: { filePath: string; kind: ProjectFileKind }) {
-  if (!data?.filePath) return;
-  pendingFileOpen.value = { path: data.filePath, kind: data.kind };
-  if (currentProject.value) {
-    const ok = await confirmUnsavedChanges();
-    if (!ok) { pendingFileOpen.value = null; return; }
-    await closeProject();
-  }
-}
+  'liveplay:pendingFileOpen', () => null,
+);
 const { cartOnlyItems, clearCartOnlyItems, addCartOnlyItem } = useCartItems();
 import LoadingOverlay from './components/LoadingOverlay.vue';
 import AudioLoadProgress from './components/AudioLoadProgress.vue';
 import LocationChoiceModal from './components/LocationChoiceModal.vue';
 import ServerFilePickerModal from './components/ServerFilePickerModal.vue';
 const { currentLocale, setLocale, getDirection, t } = useLocalization();
+
+const guardedOpenProject = createProjectOpenGuard({
+  confirmUnsavedChanges,
+  openProject,
+  onOpenFailed() {
+    useLiveplayServer().lastError = t('importProgress.openFailed');
+  },
+});
+
+let activeFileRoute = '';
+async function routePendingFile(data: { filePath: string; kind: ProjectFileKind }) {
+  if (!data?.filePath || activeFileRoute) return;
+  activeFileRoute = data.filePath;
+  try {
+    if (data.kind === 'native-project') {
+      await guardedOpenProject(data.filePath);
+      return;
+    }
+    if (data.kind === 'native-archive' || data.kind === 'legacy-archive') {
+      if (!(await confirmUnsavedChanges())) return;
+      pendingArchiveClientPath.value = data.filePath;
+      pendingArchiveName.value = data.filePath.split(/[\/]/).pop() || 'import.dwcuepack';
+      importServerPickerStage.value = 'destination';
+      importServerPickerOpen.value = true;
+      return;
+    }
+    pendingFileOpen.value = { path: data.filePath, kind: data.kind };
+    if (currentProject.value) {
+      if (!(await confirmUnsavedChanges())) {
+        pendingFileOpen.value = null;
+        return;
+      }
+      await closeProject();
+    }
+  } finally {
+    activeFileRoute = '';
+  }
+}
+
 const theme = useState('theme', () => 'dark');
 // Global interface text scale (Settings → Interface font size). The app's
 // styles are px-based, so the lever is `zoom` on the root — it scales text
@@ -246,6 +287,13 @@ const isCartWindow = import.meta.client
 const isVideoOutputWindow = import.meta.client
   ? new URLSearchParams(window.location.search).get('videoOutput') === '1'
   : false;
+const { mount: mountFailedHydrationHotkeys, unmount: unmountFailedHydrationHotkeys } = useCartHotkeys();
+watch(() => !isCartWindow && !isVideoOutputWindow && projectHydrationStatus.value === 'failed', (failed) => {
+  if (!import.meta.client) return;
+  if (failed) mountFailedHydrationHotkeys();
+  else unmountFailedHydrationHotkeys();
+}, { immediate: true });
+onBeforeUnmount(unmountFailedHydrationHotkeys);
 
 // Initialize state viewer for dev mode
 useStateViewer();
@@ -279,7 +327,7 @@ const updateInfo = ref({
   currentVersion: '',
   newVersion: '',
   releaseNotes: '',
-  releaseDate: ''
+  releaseDate: '',
 });
 // Transient "you're up to date" confirmation for the manual Help-menu check.
 const upToDateToast = ref('');
@@ -296,30 +344,87 @@ const accentColors = [
   '#ff7eb6', '#ee5396', '#d02670', // Pinks
 ];
 
-// Cart window: fetch project data from main process and keep in sync
-function applyCartWindowProjectData(projectData: any) {
-  if (!projectData || !isCartWindow) return;
+const detachedProjectIdentity = useState<OneShotMutationIdentity | null>(
+  'oneShots.detachedProjectIdentity', () => null,
+);
+const detachedProjectError = useState<string>('oneShots.detachedMutationError', () => '');
+const detachedDisarmFences = useState<Set<string>>('oneShots.detachedDisarmFences', () => new Set());
+let rejectedDetachedIdentity: OneShotMutationIdentity | null = null;
+
+function applyCartWindowProjectData(envelope: OneShotProjectEnvelope | null) {
+  if (!isCartWindow) return;
+  const projectData = envelope?.project ?? null;
+  const identity = envelope?.identity ?? null;
+  if (!projectData || !identity) {
+    rejectedDetachedIdentity = detachedProjectIdentity.value;
+    detachedProjectIdentity.value = null;
+    currentProject.value = null;
+    clearCartOnlyItems();
+    detachedProjectError.value = t('oneShots.detachedNoPrimary');
+    return;
+  }
+  if (rejectedDetachedIdentity && sameOneShotMutationIdentity(identity, rejectedDetachedIdentity)) return;
+  const currentIdentity = detachedProjectIdentity.value;
+  if (currentIdentity?.ownerSessionId === identity.ownerSessionId
+    && currentIdentity.projectPath === identity.projectPath
+    && identity.projectEpoch < currentIdentity.projectEpoch) return;
+  enforceOneShotDisarmFences(
+    projectData,
+    projectData.cartOnlyItems ?? [],
+    detachedDisarmFences.value,
+  );
+  detachedProjectIdentity.value = identity;
+  detachedProjectError.value = '';
   clearCartOnlyItems();
   if (Array.isArray(projectData.cartOnlyItems)) {
-    for (const item of projectData.cartOnlyItems) {
-      addCartOnlyItem(item);
-    }
+    for (const item of projectData.cartOnlyItems) addCartOnlyItem(item);
   }
-  // In cart window mode, only set currentProject without triggering watchers
-  // Use Object.assign to preserve reactivity while avoiding deep-watch triggers
-  if (currentProject.value) {
-    Object.assign(currentProject.value, projectData);
-  } else {
-    currentProject.value = projectData;
-  }
-  // Apply theme from project
-  if (projectData.theme?.mode) {
-    theme.value = projectData.theme.mode;
-  }
+  currentProject.value = projectData;
+  if (projectData.theme?.mode) theme.value = projectData.theme.mode;
   if (projectData.theme?.accentColor) {
     document.documentElement.style.setProperty('--color-accent-custom', displayAccent(projectData.theme.accentColor));
   }
 }
+
+let oneShotMutationTail = Promise.resolve();
+const handleOneShotMutationRequest = (request: OneShotMutationRequest): void => {
+  const api = window.electronAPI;
+  const run = async () => {
+    const identity = projectSyncIdentity.value;
+    let result: OneShotMutationResult = {
+      requestId: request.requestId,
+      identity: request.identity,
+      accepted: false,
+      persisted: false,
+      error: t('oneShots.detachedStale'),
+    };
+    if (!identity || !sameOneShotMutationIdentity(identity, request.identity) || !currentProject.value) {
+      api.completeOneShotMutation(result);
+      return;
+    }
+    const applied = applyOneShotMutation({ project: currentProject.value, cartOnlyItems: cartOnlyItems.value }, request);
+    if (!applied.accepted) {
+      result = { ...result, error: applied.error ?? t('oneShots.detachedRejected') };
+      api.completeOneShotMutation(result);
+      return;
+    }
+    const shouldPersist = autoSaveEnabled.value;
+    const saved = await saveProject();
+    if (!sameOneShotMutationIdentity(projectSyncIdentity.value, identity)) {
+      api.completeOneShotMutation(result);
+      return;
+    }
+    result = {
+      requestId: request.requestId,
+      identity,
+      accepted: true,
+      persisted: shouldPersist && saved,
+      ...shouldPersist && !saved ? { error: t('oneShots.detachedSaveFailed') } : {},
+    };
+    api.completeOneShotMutation(result);
+  };
+  oneShotMutationTail = oneShotMutationTail.then(run, run);
+};
 
 // Listen to menu events
 onMounted(() => {
@@ -343,12 +448,13 @@ onMounted(() => {
       window.electronAPI.getCartWindowProjectData().then((projectData: any) => {
         applyCartWindowProjectData(projectData);
       });
-      window.electronAPI.onCartWindowProjectUpdate((_event: any, projectData: any) => {
+      window.electronAPI.onCartWindowProjectUpdate((projectData) => {
         applyCartWindowProjectData(projectData);
       });
       // Apply locale from localStorage (already handled by useLocalization)
       return; // skip main-window-only event listeners below
     }
+    window.electronAPI.onOneShotMutationRequest?.(handleOneShotMutationRequest);
 
     // When the frameless Video Output owns keyboard focus (most visibly on
     // Windows), main forwards app shortcuts here. Re-dispatching one marked
@@ -588,18 +694,15 @@ const changeAccentColor = (color: string) => {
 
 // ---------------------------------------------------------------------------
 // Import project flow (dual-dialog when client and server are on different
-// machines). The extraction ALWAYS happens server-side because the
-// extracted project folder needs to live next to the audio engine.
+// machines). Extraction happens server-side beside the audio engine.
 // ---------------------------------------------------------------------------
 const importChoiceVisible       = ref(false);
 const importServerPickerOpen    = ref(false);
 const importServerPickerStage   = ref<'archive' | 'destination'>('archive');
-const pendingArchiveOnServer    = ref<string>('');
-const pendingArchiveClientPath  = ref<string>('');
-const pendingArchiveName        = ref<string>('');
+const pendingArchiveOnServer    = ref('');
+const pendingArchiveClientPath  = ref('');
+const pendingArchiveName        = ref('');
 
-// WelcomeScreen publishes a queued canonical or legacy archive here after the
-// server is connected. The source remains untouched until a destination exists.
 const pendingArchiveImportReady = useState<string | null>('liveplay:pendingLpaImportReady', () => null);
 watch(pendingArchiveImportReady, (archivePath) => {
   if (!archivePath) return;
@@ -610,13 +713,18 @@ watch(pendingArchiveImportReady, (archivePath) => {
   importServerPickerOpen.value = true;
 });
 
-function startImportFlow() {
-  const server = useLiveplayServer();
-  importServerPickerStage.value = 'archive';
-  if (server.isLocalServer) {
-    importServerPickerOpen.value = true;
-  } else {
-    importChoiceVisible.value = true;
+let importFlowActive = false;
+async function startImportFlow() {
+  if (importFlowActive) return;
+  importFlowActive = true;
+  try {
+    if (!(await confirmUnsavedChanges())) return;
+    const server = useLiveplayServer();
+    importServerPickerStage.value = 'archive';
+    if (server.isLocalServer) importServerPickerOpen.value = true;
+    else importChoiceVisible.value = true;
+  } finally {
+    importFlowActive = false;
   }
 }
 
@@ -627,52 +735,42 @@ async function onImportChoice(choice: 'server' | 'client') {
     importServerPickerOpen.value = true;
     return;
   }
-  // Select an archive on this computer, then choose its server destination.
-  const archivePath = await (window as any).electronAPI.showOpenArchiveDialog();
+  const archivePath = await window.electronAPI.showOpenArchiveDialog();
   if (!archivePath) return;
   pendingArchiveClientPath.value = archivePath;
   pendingArchiveName.value = archivePath.split(/[\/]/).pop() || 'import.dwcuepack';
   importServerPickerStage.value = 'destination';
-  importServerPickerOpen.value  = true;
+  importServerPickerOpen.value = true;
 }
 
 async function onImportServerPickerPick(serverPath: string) {
   importServerPickerOpen.value = false;
   if (!serverPath) return;
   const server = useLiveplayServer();
-
   if (importServerPickerStage.value === 'archive') {
-    // The archive already lives on the server; choose its extraction target.
     pendingArchiveOnServer.value = serverPath;
     importServerPickerStage.value = 'destination';
-    importServerPickerOpen.value  = true;
+    importServerPickerOpen.value = true;
     return;
   }
 
-  // The archive and extraction directory are known; begin the server import.
   progressModal.value = {
     visible: true,
-    title:   t('importProgress.title'),
-    message: `${t('importProgress.message')} ${pendingArchiveName.value ||
-              pendingArchiveOnServer.value.split(/[\\/]/).pop() || ''}…`,
+    title: t('importProgress.title'),
+    message: t('importProgress.message') + ' ' + (pendingArchiveName.value
+      || pendingArchiveOnServer.value.split(/[\/]/).pop() || '') + '…',
     percentage: 40,
   };
   try {
-    let result;
-    if (pendingArchiveClientPath.value) {
-      result = server.isLocalServer
-        ? await server.importProjectArchiveFromServer(
-            pendingArchiveClientPath.value, serverPath)
+    const result = pendingArchiveClientPath.value
+      ? server.isLocalServer
+        ? await server.importProjectArchiveFromServer(pendingArchiveClientPath.value, serverPath)
         : await server.importProjectArchiveFromClientPath(
-            pendingArchiveClientPath.value, serverPath, pendingArchiveName.value);
-    } else {
-      result = await server.importProjectArchiveFromServer(
-        pendingArchiveOnServer.value, serverPath);
-    }
+            pendingArchiveClientPath.value, serverPath, pendingArchiveName.value)
+      : await server.importProjectArchiveFromServer(pendingArchiveOnServer.value, serverPath);
     progressModal.value.percentage = 100;
     if (result.projectFiles.length === 0) {
-      console.error('No .dwcue file in archive');
-      server.lastError = 'Import failed: archive contains no .dwcue project file.';
+      server.lastError = t('importProgress.openFailed');
       return;
     }
     if (result.projectFiles.length > 1) {
@@ -680,24 +778,23 @@ async function onImportServerPickerPick(serverPath: string) {
       pendingImportPath.value = result.extractPath;
       showProjectSelection.value = true;
     } else {
-      await openProject(`${result.extractPath}/${result.projectFiles[0]}`);
+      await guardedOpenProject(result.extractPath + '/' + result.projectFiles[0]);
     }
-  } catch (e) {
-    console.error('Import failed:', e);
-    server.lastError = `Import failed: ${e instanceof Error ? e.message : String(e)}`;
+  } catch (error) {
+    console.error('Import failed:', error);
+    server.lastError = t('importProgress.openFailed');
   } finally {
-    setTimeout(() => { progressModal.value.visible = false; }, 300);
+    window.setTimeout(() => { progressModal.value.visible = false; }, 300);
     pendingArchiveOnServer.value = '';
     pendingArchiveClientPath.value = '';
     pendingArchiveName.value = '';
   }
 }
 
-// Handle project selection from multiple projects
 const handleProjectSelection = async (projectName: string) => {
+  const projectPath = pendingImportPath.value + '/' + projectName;
+  if (!await guardedOpenProject(projectPath)) return;
   showProjectSelection.value = false;
-  const projectPath = `${pendingImportPath.value}/${projectName}`;
-  await openProject(projectPath);
   pendingImportPath.value = '';
   availableProjects.value = [];
 };
@@ -838,6 +935,31 @@ onMounted(() => {
   background: var(--color-surface-hover);
 }
 
+
+.project-hydration-error {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-lg);
+  color: var(--color-text-primary);
+  text-align: center;
+}
+
+.project-hydration-error span {
+  max-width: 48rem;
+  color: var(--color-text-secondary);
+}
+
+.project-hydration-error button {
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+}
 .cart-window-root {
   width: 100%;
   height: 100%;
@@ -878,6 +1000,16 @@ onMounted(() => {
   font-size: 10px;
   color: var(--color-text-secondary);
   opacity: 0.7;
+}
+
+.cart-window-error {
+  flex: none;
+  margin: 0;
+  padding: 6px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-danger) 45%, var(--color-border));
+  background: color-mix(in srgb, var(--color-danger) 10%, var(--color-background));
+  color: var(--color-danger);
+  font-size: 12px;
 }
 
 .cart-window-loading {

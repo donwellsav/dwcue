@@ -98,7 +98,7 @@
           <span class="clock-label">{{ t('project.timeLeft') }}</span>
           <span class="clock-value" :style="{ color: timeLeftColor ?? undefined }">{{ timeLeft }}</span>
         </div>
-        <div class="digital-clock clock--large clock--wall clock--active">
+        <div class="digital-clock clock--large clock--wall">
           <span class="clock-label">{{ t('project.clock') }}</span>
           <span class="clock-value">{{ currentTime }}</span>
         </div>
@@ -639,6 +639,10 @@ onMounted(() => {
 
 .clock--ltc {
   width: clamp(104px, 9vw, 120px);
+}
+
+.clock--wall {
+  color: var(--color-text-primary);
 }
 
 .clock--active {

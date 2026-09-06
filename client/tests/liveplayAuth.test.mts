@@ -87,6 +87,8 @@ test('deduplicates server state, rotates managed credentials, and fences stale s
   const { useLiveplayServer } = await import('../app/composables/useLiveplayServer.ts');
   const { recoveryResultForRequest } = await import('../app/types/server.ts');
   const server = useLiveplayServer();
+  const docPatches: Array<Record<string, unknown>> = [];
+  server.onDocPatch((patch) => { docPatches.push(patch); });
   let recoveryHookCalls = 0;
   server.onReconnected(() => { recoveryHookCalls++; });
   let cueStateItemUuid: string | undefined;
@@ -341,6 +343,24 @@ test('deduplicates server state, rotates managed credentials, and fences stale s
   assert.equal(typeof goFrame.command_id, 'string');
   rotatedSocket.receive({ type: 'command_ack', command_id: goFrame.command_id, ok: true });
   assert.equal(await goResult, true);
+  const nextResult = server.setNextItem('item-8');
+  const nextFrame = JSON.parse(rotatedSocket.sent.at(-1) ?? '{}');
+  assert.equal(nextFrame.type, 'set_next_item');
+  assert.equal(nextFrame.item_uuid, 'item-8');
+  assert.equal(typeof nextFrame.command_id, 'string');
+  rotatedSocket.receive({ type: 'command_ack', command_id: nextFrame.command_id, ok: true });
+  assert.equal(await nextResult, true);
+
+  const invalidNextResult = server.setNextItem('missing-item');
+  const invalidNextFrame = JSON.parse(rotatedSocket.sent.at(-1) ?? '{}');
+  rotatedSocket.receive({
+    type: 'command_ack',
+    command_id: invalidNextFrame.command_id,
+    ok: false,
+    error: 'unknown set-next target',
+  });
+  assert.equal(await invalidNextResult, false);
+  assert.equal(server.lastError, 'unknown set-next target');
 
   const continueResult = server.cueToContinue('item-7');
   const continueFrame = JSON.parse(rotatedSocket.sent.at(-1) ?? '{}');
@@ -353,6 +373,34 @@ test('deduplicates server state, rotates managed credentials, and fences stale s
     error: 'item cannot be cued',
   });
   assert.equal(await continueResult, false);
+  const primaryPlay = server.playItem('source-item');
+  const primaryPlayFrame = JSON.parse(rotatedSocket.sent.at(-1) ?? '{}');
+  rotatedSocket.receive({
+    type: 'playback_error',
+    code: 'sequence_target_invalid',
+    message: 'Start action target was unavailable or cyclic',
+    item_uuid: 'source-item',
+    target_uuid: 'missing-secondary',
+  });
+  const sequenceWarning = 'Start action target was unavailable or cyclic (target missing-secondary). The source cue is still playing.';
+  assert.equal(server.lastError, sequenceWarning);
+  rotatedSocket.receive({ type: 'command_ack', command_id: primaryPlayFrame.command_id, ok: true });
+  assert.equal(await primaryPlay, true);
+  assert.equal(server.lastError, sequenceWarning, 'successful primary acknowledgement cleared the secondary-action warning');
+
+  const lostAckResult = server.setNextItem('item-9');
+  rotatedSocket.receive({ type: 'doc_patch', op: 'next_item_set', itemUuid: 'item-9' });
+  assert.deepEqual(docPatches.at(-1), {
+    type: 'doc_patch',
+    op: 'next_item_set',
+    itemUuid: 'item-9',
+  });
+  rotatedSocket.onclose?.({});
+  assert.equal(await lostAckResult, false);
+  assert.equal(rotatedSocket.sent.filter((frame) => {
+    const parsed = JSON.parse(frame);
+    return parsed.type === 'set_next_item' && parsed.item_uuid === 'item-9';
+  }).length, 1, 'unconfirmed Set As Next command was retried automatically');
 
   const nextRemoteToken = 'next-remote-token-5678';
   server.configureRemoteConnection('https://next.example', nextRemoteToken);

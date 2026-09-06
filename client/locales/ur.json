@@ -379,7 +379,8 @@
   },
   "importProgress": {
     "title": "پروجیکٹ درآمد کیا جا رہا ہے",
-    "message": "نکالا جا رہا ہے"
+    "message": "نکالا جا رہا ہے",
+    "openFailed": "درآمد شدہ پروجیکٹ نہیں کھولا جا سکا۔"
   },
   "selectProject": {
     "title": "پروجیکٹ منتخب کریں",
@@ -414,7 +415,7 @@
     "selectUp": "اوپر منتخب کریں",
     "selectDown": "نیچے منتخب کریں",
     "playSelected": "منتخب کو چلائیں",
-    "masterVolume": "ماسٹر آواز",
+    "masterVolume": "مجموعی ماسٹر والیوم",
     "midiDevice": "MIDI آلہ",
     "allDevices": "تمام آلات",
     "conflictSlot": "Already assigned to One Shot {n}",
@@ -433,7 +434,7 @@
     "conflictMessage": "یہ MIDI کنٹرول پہلے سے \"{action}\" کو تفویض ہے۔ دوبارہ تفویض کریں؟",
     "playNext": "اگلا چلائیں",
     "volumeMultiplier": "والیوم ضرب",
-    "volumeMultiplierHint": "ہر MIDI قدم پر تبدیل ہونے والے dB۔ آہستہ چلنے والے وہیل کے لیے بڑھائیں۔",
+    "volumeMultiplierHint": "ہر MIDI قدم پر مجموعی ماسٹر والیوم میں ہونے والی dB تبدیلی۔ یہ Preview سمیت تمام آؤٹ پٹس پر لاگو ہوتی ہے۔",
     "sectionOneShots": "One Shots",
     "oneShot": "One Shot {n}",
     "cueToContinue": "Cue to Continue",
@@ -1015,7 +1016,11 @@
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
     "armCell": "{name} تیار کریں",
     "disarmCell": "{name} غیر تیار کریں",
-    "autoDisarm": "چلنے کے بعد خودکار غیر تیار"
+    "autoDisarm": "چلنے کے بعد خودکار غیر تیار",
+    "detachedNoPrimary": "پروجیکٹ کی مرکزی ونڈو دستیاب نہیں ہے۔",
+    "detachedStale": "One Shots کی یہ ونڈو اب پرانی ہو چکی ہے۔ اسے مرکزی ونڈو سے دوبارہ کھولیں۔",
+    "detachedRejected": "مرکزی ونڈو نے یہ تبدیلی قبول نہیں کی۔",
+    "detachedSaveFailed": "تبدیلی لاگو ہو گئی، لیکن اسے محفوظ نہیں کیا جا سکا۔"
   },
   "outputConsole": {
     "limiter": "TP Limiter",
@@ -1026,7 +1031,8 @@
     "ceilingInputLabel": "True-peak limiter ceiling in dBTP",
     "limiterBypass": "True-peak limiter bypass",
     "bypassLimiter": "Bypass true-peak limiter",
-    "enableLimiter": "Enable true-peak limiter"
+    "enableLimiter": "Enable true-peak limiter",
+    "globalMaster": "مجموعی ماسٹر"
   },
   "videoConfidence": {
     "title": "Audience output",
@@ -1042,5 +1048,18 @@
     "prev": "Previous cue ([)",
     "exit": "Exit (Q)",
     "progress": "Cue {index} of {total}"
+  },
+  "projectHydration": {
+    "loading": "پروجیکٹ لوڈ ہو رہا ہے…",
+    "failed": "پروجیکٹ لوڈ نہیں ہو سکا۔ جزوی طور پر لوڈ ہوا یہ پروجیکٹ صرف پڑھنے کے لیے ہے۔",
+    "retry": "دوبارہ کوشش کریں"
+  },
+  "filePicker": {
+    "unavailableFolder": "پہلے استعمال کیا گیا فولڈر دستیاب نہیں ہے: {path}۔ ایک دستیاب ابتدائی مقام دکھایا جا رہا ہے۔",
+    "favorites": "پسندیدہ فولڈرز",
+    "addCurrentFolder": "موجودہ فولڈر کو پسندیدہ فولڈرز میں شامل کریں",
+    "currentFolderFavorite": "موجودہ فولڈر پہلے ہی پسندیدہ فولڈرز میں شامل ہے",
+    "removeFavorite": "پسندیدہ فولڈرز سے {name} ہٹائیں",
+    "emptyFavorites": "وہ فولڈرز شامل کریں جنہیں آپ اکثر استعمال کرتے ہیں۔"
   }
 }

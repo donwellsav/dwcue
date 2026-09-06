@@ -379,7 +379,13 @@
   },
   "importProgress": {
     "title": "프로젝트 가져오는 중",
-    "message": "추출 중"
+    "message": "추출 중",
+    "openFailed": "가져온 프로젝트를 열 수 없습니다."
+  },
+  "projectHydration": {
+    "loading": "프로젝트 불러오는 중…",
+    "failed": "프로젝트를 불러오지 못했습니다. 일부만 불러온 이 프로젝트는 읽기 전용입니다.",
+    "retry": "다시 시도"
   },
   "selectProject": {
     "title": "프로젝트 선택",
@@ -414,7 +420,7 @@
     "selectUp": "위로 선택",
     "selectDown": "아래로 선택",
     "playSelected": "선택 항목 재생",
-    "masterVolume": "마스터 볼륨",
+    "masterVolume": "전체 마스터 볼륨",
     "midiDevice": "MIDI 장치",
     "allDevices": "모든 장치",
     "conflictSlot": "Already assigned to One Shot {n}",
@@ -433,7 +439,7 @@
     "conflictMessage": "이 MIDI 컨트롤은 이미 \"{action}\"에 할당되어 있습니다. 재할당하시겠습니까?",
     "playNext": "다음 재생",
     "volumeMultiplier": "볼륨 배율",
-    "volumeMultiplierHint": "MIDI 단계당 변경되는 dB. 느리게 움직이는 휠은 값을 높이세요.",
+    "volumeMultiplierHint": "MIDI 한 단계당 전체 마스터 볼륨의 변화량(dB)입니다. Preview를 포함한 모든 출력에 적용됩니다.",
     "sectionOneShots": "One Shots",
     "oneShot": "One Shot {n}",
     "cueToContinue": "Cue to Continue",
@@ -716,6 +722,14 @@
     "fromServer": "서버 찾아보기",
     "fromThisComputer": "이 컴퓨터에서"
   },
+  "filePicker": {
+    "unavailableFolder": "이전에 사용한 폴더를 사용할 수 없습니다: {path}. 대신 사용 가능한 시작 위치를 표시합니다.",
+    "favorites": "즐겨찾기 폴더",
+    "addCurrentFolder": "현재 폴더를 즐겨찾기에 추가",
+    "currentFolderFavorite": "현재 폴더는 이미 즐겨찾기에 있습니다",
+    "removeFavorite": "즐겨찾기에서 {name} 제거",
+    "emptyFavorites": "자주 사용하는 폴더를 추가하세요."
+  },
   "importAudio": {
     "title": "미디어 가져오기",
     "localIntro": "이 컴퓨터에서 오디오 또는 비디오 파일을 선택하세요.",
@@ -956,6 +970,10 @@
     }
   },
   "oneShots": {
+    "detachedNoPrimary": "메인 프로젝트 창을 사용할 수 없습니다.",
+    "detachedStale": "이 One Shots 창은 최신 상태가 아닙니다. 메인 창에서 다시 여세요.",
+    "detachedRejected": "메인 창에서 변경 사항을 수락하지 않았습니다.",
+    "detachedSaveFailed": "변경 사항이 적용되었지만 저장하지 못했습니다.",
     "title": "One Shots",
     "hint": "Drop audio or playlist cues into any cell",
     "detach": "Detach",
@@ -1018,6 +1036,7 @@
     "autoDisarm": "발사 후 자동 준비 해제"
   },
   "outputConsole": {
+    "globalMaster": "전체 마스터",
     "limiter": "TP Limiter",
     "enabled": "Enabled",
     "bypassed": "Bypassed",

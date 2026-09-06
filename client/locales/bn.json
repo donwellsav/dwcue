@@ -379,7 +379,13 @@
   },
   "importProgress": {
     "title": "প্রকল্প আমদানি করা হচ্ছে",
-    "message": "নিষ্কাশন করা হচ্ছে"
+    "message": "নিষ্কাশন করা হচ্ছে",
+    "openFailed": "আমদানি করা প্রকল্পটি খোলা যায়নি।"
+  },
+  "projectHydration": {
+    "loading": "প্রকল্প লোড হচ্ছে…",
+    "failed": "প্রকল্পটি লোড করা যায়নি। আংশিকভাবে লোড হওয়া এই প্রকল্পটি শুধু পড়ার জন্য।",
+    "retry": "আবার চেষ্টা করুন"
   },
   "selectProject": {
     "title": "প্রকল্প নির্বাচন করুন",
@@ -414,7 +420,7 @@
     "selectUp": "উপরে নির্বাচন করুন",
     "selectDown": "নিচে নির্বাচন করুন",
     "playSelected": "নির্বাচিত চালান",
-    "masterVolume": "মাস্টার ভলিউম",
+    "masterVolume": "গ্লোবাল মাস্টার ভলিউম",
     "midiDevice": "MIDI ডিভাইস",
     "allDevices": "সব ডিভাইস",
     "conflictSlot": "Already assigned to One Shot {n}",
@@ -433,7 +439,7 @@
     "conflictMessage": "এই MIDI নিয়ন্ত্রণ ইতিমধ্যে \"{action}\" এ নির্ধারিত। পুনরায় নির্ধারণ করুন?",
     "playNext": "পরবর্তী চালান",
     "volumeMultiplier": "ভলিউম গুণক",
-    "volumeMultiplierHint": "প্রতি MIDI ধাপে পরিবর্তিত dB। ধীরে চলা হুইলের জন্য বাড়ান।",
+    "volumeMultiplierHint": "প্রতি MIDI ধাপে গ্লোবাল মাস্টার ভলিউম কত dB বদলাবে। Preview-সহ সব আউটপুটে এটি প্রযোজ্য।",
     "sectionOneShots": "One Shots",
     "oneShot": "One Shot {n}",
     "cueToContinue": "Cue to Continue",
@@ -716,6 +722,14 @@
     "fromServer": "সার্ভার ব্রাউজ করুন",
     "fromThisComputer": "এই কম্পিউটার থেকে"
   },
+  "filePicker": {
+    "unavailableFolder": "আগে ব্যবহার করা ফোল্ডারটি পাওয়া যাচ্ছে না: {path}। এর বদলে শুরু করার জন্য উপলভ্য একটি অবস্থান দেখানো হচ্ছে।",
+    "favorites": "পছন্দের ফোল্ডার",
+    "addCurrentFolder": "বর্তমান ফোল্ডারটি পছন্দের তালিকায় যোগ করুন",
+    "currentFolderFavorite": "বর্তমান ফোল্ডারটি ইতিমধ্যেই পছন্দের তালিকায় আছে",
+    "removeFavorite": "পছন্দের তালিকা থেকে {name} সরান",
+    "emptyFavorites": "প্রায়ই ব্যবহার করেন এমন ফোল্ডার যোগ করুন।"
+  },
   "importAudio": {
     "title": "মিডিয়া আমদানি",
     "localIntro": "এই কম্পিউটার থেকে অডিও বা ভিডিও ফাইল বেছে নিন।",
@@ -956,6 +970,10 @@
     }
   },
   "oneShots": {
+    "detachedNoPrimary": "মূল প্রকল্প উইন্ডোটি পাওয়া যাচ্ছে না।",
+    "detachedStale": "এই One Shots উইন্ডোটি আর হালনাগাদ নেই। মূল উইন্ডো থেকে এটি আবার খুলুন।",
+    "detachedRejected": "মূল উইন্ডোটি পরিবর্তনটি গ্রহণ করেনি।",
+    "detachedSaveFailed": "পরিবর্তনটি প্রয়োগ করা হয়েছে, কিন্তু সংরক্ষণ করা যায়নি।",
     "title": "One Shots",
     "hint": "Drop audio or playlist cues into any cell",
     "detach": "Detach",
@@ -1018,6 +1036,7 @@
     "autoDisarm": "চালুর পর স্বয়ংক্রিয়ভাবে অপ্রস্তুত"
   },
   "outputConsole": {
+    "globalMaster": "গ্লোবাল মাস্টার",
     "limiter": "TP Limiter",
     "enabled": "Enabled",
     "bypassed": "Bypassed",

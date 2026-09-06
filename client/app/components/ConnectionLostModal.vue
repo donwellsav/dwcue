@@ -22,6 +22,7 @@
         </p>
         <p class="clm-locked">{{ t('connectionLost.locked') }}</p>
         <p v-if="server.lastError" class="clm-error">{{ server.lastError }}</p>
+        <p v-if="actionError" class="clm-error">{{ actionError }}</p>
 
         <div class="clm-actions">
           <button class="clm-btn primary" @click="onReconnect">
@@ -52,6 +53,7 @@ const { t } = useLocalization();
 const server = useLiveplayServer();
 const visible = computed(() => !!server.connectionLost);
 const attempts = computed(() => Number(server.failedReconnectAttempts) || 0);
+const actionError = ref('');
 
 function onReconnect() {
   try {
@@ -62,21 +64,34 @@ function onReconnect() {
 }
 
 async function onRestart() {
+  actionError.value = '';
+  const relaunch = window.electronAPI?.app?.relaunch;
+  if (!relaunch) {
+    window.location.reload();
+    return;
+  }
   try {
-    await (window as any).electronAPI?.app?.relaunch?.();
+    await relaunch();
   } catch (e) {
+    // An Electron cleanup failure is recoverable in this window. Falling
+    // through to reload would destroy the only surface able to retry it.
     console.warn('[ConnectionLostModal] relaunch failed:', e);
-    // Browser fallback: hard reload.
-    if (typeof window !== 'undefined') window.location.reload();
+    actionError.value = e instanceof Error ? e.message : String(e);
   }
 }
 
 async function onExit() {
+  actionError.value = '';
+  const exit = window.electronAPI?.app?.exit;
+  if (!exit) {
+    window.close();
+    return;
+  }
   try {
-    await (window as any).electronAPI?.app?.exit?.();
+    await exit();
   } catch (e) {
     console.warn('[ConnectionLostModal] exit failed:', e);
-    if (typeof window !== 'undefined') window.close();
+    actionError.value = e instanceof Error ? e.message : String(e);
   }
 }
 </script>

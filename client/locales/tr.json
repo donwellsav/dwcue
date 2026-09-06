@@ -379,7 +379,8 @@
   },
   "importProgress": {
     "title": "Proje İçe Aktarılıyor",
-    "message": "Çıkartılıyor"
+    "message": "Çıkartılıyor",
+    "openFailed": "İçe aktarılan proje açılamadı."
   },
   "selectProject": {
     "title": "Proje Seç",
@@ -414,7 +415,7 @@
     "selectUp": "Yukarı seç",
     "selectDown": "Aşağı seç",
     "playSelected": "Seçileni oynat",
-    "masterVolume": "Ana ses",
+    "masterVolume": "Global master ses düzeyi",
     "midiDevice": "MIDI Cihazı",
     "allDevices": "Tüm cihazlar",
     "conflictSlot": "Already assigned to One Shot {n}",
@@ -433,7 +434,7 @@
     "conflictMessage": "Bu MIDI kontrolü zaten \"{action}\" için atanmış. Yeniden ata?",
     "playNext": "Sonrakini oynat",
     "volumeMultiplier": "Ses çarpanı",
-    "volumeMultiplierHint": "Her MIDI adımında değişen dB. Yavaş hareket eden tekerlekler için artırın.",
+    "volumeMultiplierHint": "MIDI adımı başına global master üzerinde değiştirilen dB. Preview dahil tüm çıkışlara uygulanır.",
     "sectionOneShots": "One Shots",
     "oneShot": "One Shot {n}",
     "cueToContinue": "Cue to Continue",
@@ -1015,7 +1016,11 @@
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
     "armCell": "{name} Kur",
     "disarmCell": "{name} Emniyete Al",
-    "autoDisarm": "Tetiklemeden sonra otomatik emniyete al"
+    "autoDisarm": "Tetiklemeden sonra otomatik emniyete al",
+    "detachedNoPrimary": "Ana proje penceresi kullanılamıyor.",
+    "detachedStale": "Bu One Shots penceresi güncel değil. Ana pencereden yeniden açın.",
+    "detachedRejected": "Değişiklik ana pencere tarafından kabul edilmedi.",
+    "detachedSaveFailed": "Değişiklik uygulandı ancak kaydedilemedi."
   },
   "outputConsole": {
     "limiter": "TP Limiter",
@@ -1026,7 +1031,8 @@
     "ceilingInputLabel": "True-peak limiter ceiling in dBTP",
     "limiterBypass": "True-peak limiter bypass",
     "bypassLimiter": "Bypass true-peak limiter",
-    "enableLimiter": "Enable true-peak limiter"
+    "enableLimiter": "Enable true-peak limiter",
+    "globalMaster": "Global master"
   },
   "videoConfidence": {
     "title": "Audience output",
@@ -1042,5 +1048,18 @@
     "prev": "Previous cue ([)",
     "exit": "Exit (Q)",
     "progress": "Cue {index} of {total}"
+  },
+  "projectHydration": {
+    "loading": "Proje yükleniyor…",
+    "failed": "Proje yüklenemedi. Bu kısmi proje salt okunurdur.",
+    "retry": "Yeniden dene"
+  },
+  "filePicker": {
+    "unavailableFolder": "Daha önce kullanılan klasör kullanılamıyor: {path}. Kullanılabilir bir başlangıç konumu gösteriliyor.",
+    "favorites": "Favori klasörler",
+    "addCurrentFolder": "Geçerli klasörü favorilere ekle",
+    "currentFolderFavorite": "Geçerli klasör zaten favorilerde",
+    "removeFavorite": "{name} öğesini favorilerden kaldır",
+    "emptyFavorites": "Sık kullandığınız klasörleri ekleyin."
   }
 }

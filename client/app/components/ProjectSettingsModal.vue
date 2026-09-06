@@ -742,7 +742,8 @@
       :open="voStandbyPickerOpen"
       mode="file"
       filter=".png,.jpg,.jpeg,.webp,.gif,.svg"
-      :start-path="voStandbyPickerStart"
+      :fallback-start-path="voStandbyPickerStart"
+      location-context="standby-image"
       @pick="onVideoOutputStandbyPicked"
       @close="voStandbyPickerOpen = false"
     />

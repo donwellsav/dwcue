@@ -102,6 +102,10 @@
             <span class="material-symbols-rounded" aria-hidden="true">close</span>
           </button>
         </div>
+        <small
+          v-if="isDetached && detachedMutationError"
+          class="popover-error detached-mutation-error"
+        >{{ detachedMutationError }}</small>
 
         <button v-if="!showMode" type="button" class="popover-command" @click="requestImport">
           <span class="material-symbols-rounded" aria-hidden="true">upload_file</span>
@@ -143,7 +147,7 @@
 
         <label class="popover-field popover-field--range">
           <span>{{ t('oneShots.gain') }} <output>{{ volumeDb.toFixed(1) }} dB</output></span>
-          <input class="app-range" type="range" min="-60" max="12" step="0.5" :value="volumeDb" @input="onVolumeInput" @change="persist" />
+          <input class="app-range" type="range" min="-60" max="12" step="0.5" :value="volumeDb" @input="onVolumeInput" @change="persist({ volume: item.volume })" />
         </label>
 
         <div class="popover-pair">
@@ -160,7 +164,7 @@
         <template v-if="playbackMode === 'duck'">
           <label class="popover-field popover-field--range">
             <span>{{ t('oneShots.duckLevel') }} <output>{{ duckDb.toFixed(1) }} dB</output></span>
-            <input class="app-range" type="range" min="-60" max="0" step="0.5" :value="duckDb" @input="onDuckInput" @change="persist" />
+            <input class="app-range" type="range" min="-60" max="0" step="0.5" :value="duckDb" @input="onDuckInput" @change="persist({ duckLevel: item.duckingBehavior.duckLevel ?? 0.1 })" />
           </label>
           <div class="popover-pair">
             <label class="popover-field">
@@ -222,7 +226,9 @@
 </template>
 
 <script setup lang="ts">
+import { useDetachedOneShotMutation } from '~/composables/useDetachedOneShotMutation';
 import type { AudioItem } from '~/types/project';
+import type { OneShotMutableFields } from '~/types/oneShotMutation';
 import {
   getOneShotEndMode,
   getOneShotPlaybackMode,
@@ -257,12 +263,24 @@ const { saveProject, openItemProperties } = useProject();
 const { activeCues, playCue, stopCue } = useAudioEngine();
 const { updateBinding } = useCartHotkeys();
 const server = useLiveplayServer();
+const { isDetached, error: detachedMutationError, mutate, releaseDisarmFence } = useDetachedOneShotMutation();
 
 const showMode = computed(() => uiMode.value === 'playback');
 const { isArmed, setArmed, fireBlocked, afterFire } = useOneShotArm();
 const armed = computed(() => isArmed(props.item));
-const toggleArmed = () => {
-  if (setArmed(props.item, !armed.value)) persist();
+const toggleArmed = async () => {
+  const nextArmed = !armed.value;
+  if (isDetached) {
+    const result = await mutate({
+      kind: 'set-armed', itemUuid: props.item.uuid, payload: { armed: nextArmed },
+    });
+    if (result?.accepted) {
+      if (nextArmed) releaseDisarmFence(props.item.uuid);
+      setArmed(props.item, nextArmed);
+    }
+    return;
+  }
+  if (setArmed(props.item, nextArmed)) void saveProject();
 };
 const activeCue = computed(() => activeCues.value.get(props.item.uuid));
 // Map membership remains the active/stop contract; pause is a visual sub-state.
@@ -299,12 +317,16 @@ function formatDuration(seconds: number): string {
   return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, '0')}`;
 }
 
-const persist = () => { void saveProject(); };
+const persist = (fields: OneShotMutableFields) => {
+  if (isDetached) void mutate({ kind: 'set-fields', itemUuid: props.item.uuid, payload: { fields } });
+  else void saveProject();
+};
 const onAutoDisarmChange = (event: Event) => {
   if (!props.item.oneShot) return;
-  if ((event.target as HTMLInputElement).checked) delete props.item.oneShot.autoDisarm;
+  const enabled = (event.target as HTMLInputElement).checked;
+  if (enabled) delete props.item.oneShot.autoDisarm;
   else props.item.oneShot.autoDisarm = false;
-  persist();
+  persist({ autoDisarm: enabled });
 };
 
 const requestImport = () => {
@@ -383,19 +405,22 @@ const toggleRemove = (event: MouseEvent) => {
 };
 
 const onPlaybackModeChange = (event: Event) => {
-  setOneShotPlaybackMode(props.item, (event.target as HTMLSelectElement).value as OneShotPlaybackMode);
-  persist();
+  const mode = (event.target as HTMLSelectElement).value as OneShotPlaybackMode;
+  setOneShotPlaybackMode(props.item, mode);
+  persist({ playbackMode: mode });
 };
 
 const onEndModeChange = (event: Event) => {
-  setOneShotEndMode(props.item, (event.target as HTMLSelectElement).value as OneShotEndMode);
-  persist();
+  const mode = (event.target as HTMLSelectElement).value as OneShotEndMode;
+  setOneShotEndMode(props.item, mode);
+  persist({ endMode: mode });
 };
 
 const onRetriggerChange = (event: Event) => {
   if (!props.item.oneShot) return;
-  props.item.oneShot.retrigger = (event.target as HTMLSelectElement).value as 'restart' | 'ignore';
-  persist();
+  const retrigger = (event.target as HTMLSelectElement).value as 'restart' | 'ignore';
+  props.item.oneShot.retrigger = retrigger;
+  persist({ retrigger });
 };
 
 const onVolumeInput = (event: Event) => {
@@ -416,20 +441,23 @@ const clampNumber = (event: Event, min: number, max: number): number => {
 };
 
 const onFadeChange = (field: 'playFade' | 'stopFade', event: Event) => {
-  props.item[field] = clampNumber(event, 0, 30);
-  persist();
+  const value = clampNumber(event, 0, 30);
+  props.item[field] = value;
+  persist({ [field]: value });
 };
 
 const onDuckFadeChange = (field: 'duckFadeIn' | 'duckFadeOut', event: Event) => {
-  props.item.duckingBehavior[field] = clampNumber(event, 0, 10);
-  persist();
+  const value = clampNumber(event, 0, 10);
+  props.item.duckingBehavior[field] = value;
+  persist({ [field]: value });
 };
 
 const onOutputChange = (event: Event) => {
   const value = (event.target as HTMLSelectElement).value;
-  if (value) (props.item as any).deviceOverride = value;
-  else delete (props.item as any).deviceOverride;
-  persist();
+  const routedItem = props.item as AudioItem & { deviceOverride?: string };
+  if (value) routedItem.deviceOverride = value;
+  else delete routedItem.deviceOverride;
+  persist({ deviceOverride: value || null });
 };
 
 const startHotkeyCapture = () => {
@@ -440,7 +468,7 @@ const startHotkeyCapture = () => {
 const clearHotkey = () => {
   if (props.item.oneShot) delete props.item.oneShot.hotkey;
   capturingHotkey.value = false;
-  persist();
+  persist({ hotkey: null });
 };
 
 const handleDocumentKeydown = (event: KeyboardEvent) => {
@@ -470,7 +498,7 @@ const handleDocumentKeydown = (event: KeyboardEvent) => {
   }
   capturingHotkey.value = false;
   hotkeyError.value = '';
-  persist();
+  persist({ hotkey: binding });
 };
 
 const handleDocumentPointerdown = (event: PointerEvent) => {
@@ -945,6 +973,7 @@ onUnmounted(() => {
 }
 .shortcut-capture.is-capturing { border-color: var(--color-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 25%, transparent); }
 .popover-error { color: var(--color-danger); }
+.detached-mutation-error { display: block; margin-bottom: 8px; }
 .open-properties {
   width: 100%;
   min-height: 34px;

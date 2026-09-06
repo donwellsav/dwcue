@@ -2,6 +2,8 @@
   <div 
     class="cart-slot"
     ref="slotRef"
+    :inert="!projectControlsReady"
+    :aria-busy="!projectControlsReady"
     :class="{
       'has-item': hasItem,
       'is-playing': isPlaying,
@@ -130,6 +132,7 @@
             highlight-color="var(--state-up-next)"
             active-text-color="black"
             :is-active="isManuallyQueued"
+            :disabled="setNextItemPending"
             context="Cart"
             @click.stop="handleSetAsNext"
             :title="t('actions.setAsNext')"
@@ -227,9 +230,9 @@ const props = defineProps<{
 const slotRef = ref<HTMLElement | null>(null);
 const showImportModal = ref(false);
 
-const { currentProject, selectedItem, selectedItems, selectionContext, requestDeleteFromButton, findItemByUuid, triggerWaveformUpdate, markPendingImportProcessing, resolveProjectPath } = useProject();
+const { currentProject, projectHydrationStatus, selectedItem, selectedItems, selectionContext, requestDeleteFromButton, findItemByUuid, triggerWaveformUpdate, markPendingImportProcessing, resolveProjectPath } = useProject();
 const { levels: outputTargetLevels } = useOutputTarget();
-const { playCue, stopCue, activeCues, nextItemOverrideUuid, autoNextItemUuid, setNextItem } = useAudioEngine();
+const { playCue, stopCue, activeCues, nextItemOverrideUuid, autoNextItemUuid, setNextItemPending, setNextItem } = useAudioEngine();
 const { t } = useLocalization();
 const { addCartOnlyItem, updateCartOnlyItem, removeCartOnlyItem } = useCartItems();
 const { uiMode } = useUiMode();
@@ -237,6 +240,7 @@ const { uiMode } = useUiMode();
 // Show Mode: hide edit affordances (import/preview/edit/delete + drag) and
 // enlarge the slot for touch. Waveform, colour, flags and warnings unchanged.
 const showMode = computed(() => uiMode.value === 'playback');
+const projectControlsReady = computed(() => projectHydrationStatus.value === 'ready');
 
 const waveformCanvas = ref<HTMLCanvasElement | null>(null);
 const currentTime = ref(0);
@@ -478,13 +482,9 @@ const handleStop = () => {
   return stopCue(props.item.uuid);
 };
 
-const handleSetAsNext = () => {
-  if (!props.item) return;
-  if (isManuallyQueued.value) {
-    setNextItem(null);
-  } else {
-    setNextItem(props.item.uuid);
-  }
+const handleSetAsNext = (): Promise<boolean> => {
+  if (!props.item) return Promise.resolve(false);
+  return setNextItem(isManuallyQueued.value ? null : props.item.uuid);
 };
 
 const handleDelete = () => {

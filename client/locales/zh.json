@@ -379,7 +379,8 @@
   },
   "importProgress": {
     "title": "正在导入项目",
-    "message": "正在提取"
+    "message": "正在提取",
+    "openFailed": "无法打开导入的项目。"
   },
   "selectProject": {
     "title": "选择项目",
@@ -414,7 +415,7 @@
     "selectUp": "向上选择",
     "selectDown": "向下选择",
     "playSelected": "播放所选",
-    "masterVolume": "主音量",
+    "masterVolume": "全局主控音量",
     "midiDevice": "MIDI设备",
     "allDevices": "所有设备",
     "conflictSlot": "Already assigned to One Shot {n}",
@@ -433,7 +434,7 @@
     "conflictMessage": "此MIDI控制器已分配给\"{action}\"。重新分配？",
     "playNext": "播放下一首",
     "volumeMultiplier": "音量倍数",
-    "volumeMultiplierHint": "每个MIDI步进改变的dB。对于移动缓慢的滚轮请调高。",
+    "volumeMultiplierHint": "每个 MIDI 步进对全局主控音量的 dB 调整量。适用于包括 Preview 在内的所有输出。",
     "sectionOneShots": "One Shots",
     "oneShot": "One Shot {n}",
     "cueToContinue": "Cue to Continue",
@@ -1015,7 +1016,11 @@
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
     "armCell": "预备 {name}",
     "disarmCell": "解除预备 {name}",
-    "autoDisarm": "触发后自动解除预备"
+    "autoDisarm": "触发后自动解除预备",
+    "detachedNoPrimary": "项目主窗口不可用。",
+    "detachedStale": "此 One Shots 窗口已不是最新状态。请从主窗口重新打开。",
+    "detachedRejected": "主窗口未接受此更改。",
+    "detachedSaveFailed": "更改已应用，但无法保存。"
   },
   "outputConsole": {
     "limiter": "TP Limiter",
@@ -1026,7 +1031,8 @@
     "ceilingInputLabel": "True-peak limiter ceiling in dBTP",
     "limiterBypass": "True-peak limiter bypass",
     "bypassLimiter": "Bypass true-peak limiter",
-    "enableLimiter": "Enable true-peak limiter"
+    "enableLimiter": "Enable true-peak limiter",
+    "globalMaster": "全局主控"
   },
   "videoConfidence": {
     "title": "Audience output",
@@ -1042,5 +1048,18 @@
     "prev": "Previous cue ([)",
     "exit": "Exit (Q)",
     "progress": "Cue {index} of {total}"
+  },
+  "projectHydration": {
+    "loading": "正在加载项目…",
+    "failed": "项目加载失败。当前项目只加载了部分内容，因此为只读状态。",
+    "retry": "重试"
+  },
+  "filePicker": {
+    "unavailableFolder": "之前使用的文件夹不可用：{path}。正在改为显示一个可用的起始位置。",
+    "favorites": "收藏的文件夹",
+    "addCurrentFolder": "将当前文件夹添加到收藏夹",
+    "currentFolderFavorite": "当前文件夹已在收藏夹中",
+    "removeFavorite": "从收藏夹中移除 {name}",
+    "emptyFavorites": "添加常用文件夹。"
   }
 }

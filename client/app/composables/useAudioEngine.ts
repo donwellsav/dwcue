@@ -29,7 +29,7 @@
 // composable so existing components don't need changes.
 // =====================================================================
 import type { AudioItem, GroupItem } from '~/types/project';
-import { runPendingAction } from '~/utils/acknowledgedAction';
+import { runExclusivePendingAction, runPendingAction } from '~/utils/acknowledgedAction';
 
 // ---------------------------------------------------------------------
 // Shapes consumed by Vue components.
@@ -56,8 +56,6 @@ export interface ActiveGroupView {
 
 // Server's TransportState enum (mirrors C++).
 const TRANSPORT_STOPPED   = 0;
-const TRANSPORT_PLAYING   = 1;
-const TRANSPORT_FADING_IN = 2;
 const TRANSPORT_PAUSED    = 4;
 
 // Renderer-scoped guard for the WebSocket subscriptions below. Module scope,
@@ -105,6 +103,7 @@ export const useAudioEngine = () => {
   // arm_first_item_on_open) so every connected client mirrors one decision
   // instead of each computing its own. The client only reflects this value.
   const nextItemOverrideUuid = useState<string | null>('nextItemOverrideUuid', () => null);
+  const setNextItemPending = useState<boolean>('setNextItemPending', () => false);
 
   // ---- Helpers -------------------------------------------------------
   const findItemByServerCueId = (cueId: string): AudioItem | null => {
@@ -363,18 +362,8 @@ export const useAudioEngine = () => {
     if (!item || item.type !== 'audio') return;
     upsertActiveCue(item as AudioItem, transport, playhead_seconds, cue_id);
     recomputeActiveGroups();
-    // Consume the "Up Next" arming the moment the armed item actually starts —
-    // via ANY path (GO button, the item's own play button, MIDI, cart, or the
-    // server's own auto-advance), not only the GO button. Otherwise a manual
-    // override still pointing at the now-playing item shadows the derived
-    // autoNextItemUuid, and "Up Next" sticks on the item that's already
-    // playing instead of advancing (the #28 open-a-project regression). Also
-    // pushes the clear to the server so a later reconnect snapshot can't
-    // restore the stale arming.
-    if ((transport === TRANSPORT_PLAYING || transport === TRANSPORT_FADING_IN) &&
-        nextItemOverrideUuid.value && nextItemOverrideUuid.value === item.uuid) {
-      setNextItem(null);
-    }
+    // Up Next consumption is atomic in the server's accepted playback path.
+    // Its next_item_set patch is the only authority that clears the display.
   });
 
   // On (re)connect the server pushes a snapshot of what's already
@@ -534,16 +523,39 @@ export const useAudioEngine = () => {
     server.seekItem(uuid, Math.max(0, absoluteTime));
   };
 
-  const setMasterGain = (db: number) => {
+  let pendingMasterGainRequests = 0;
+  let requestedMasterGainDb: number | null = null;
+
+  const setMasterGain = async (db: number): Promise<boolean> => {
     const clamped = Math.max(-120, Math.min(12, db));
-    masterGainDb.value = clamped;  // optimistic; server echoes back via doc_patch
-    void server.setMasterGainDb(clamped);
+    requestedMasterGainDb = clamped;
+    pendingMasterGainRequests++;
+    try {
+      await server.setMasterGainDb(clamped);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      pendingMasterGainRequests--;
+      if (pendingMasterGainRequests === 0) requestedMasterGainDb = null;
+    }
   };
 
-  const setNextItem = (uuid: string | null) => {
-    nextItemOverrideUuid.value = uuid;
-    server.setNextItem(uuid);
-  };
+  // Relative controls must accumulate rapid steps without making the displayed
+  // master gain optimistic. The private request base is never rendered; only a
+  // server patch/snapshot updates masterGainDb.
+  const adjustMasterGain = (deltaDb: number): Promise<boolean> =>
+    setMasterGain((requestedMasterGainDb ?? masterGainDb.value) + deltaDb);
+
+  const setNextItem = (uuid: string | null): Promise<boolean> =>
+    runExclusivePendingAction('set-next-item', uuid ?? '', async () => {
+      setNextItemPending.value = true;
+      try {
+        return await server.setNextItem(uuid);
+      } finally {
+        setNextItemPending.value = false;
+      }
+    });
 
   // ---- Custom action: http-request (client-side handler) ------------
   // The server's sequencer schedules custom actions and executes the
@@ -579,8 +591,10 @@ export const useAudioEngine = () => {
     masterPeakLevel,
     masterGainDb,
     nextItemOverrideUuid,
+    setNextItemPending,
     autoNextItemUuid,
     setMasterGain,
+    adjustMasterGain,
     setNextItem,
     playCue,
     playNext,

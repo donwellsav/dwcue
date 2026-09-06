@@ -46,12 +46,12 @@
             </div>
             <details class="source-browser">
               <summary>{{ t('importProject.fromServer') }}</summary>
-              <ServerFileBrowser :start-path="projectStartPath" @select="onServerPick" />
+              <ServerFileBrowser :fallback-start-path="projectStartPath" @select="onServerPick" />
               <p class="hint">{{ t('importAudio.serverHint') }}</p>
             </details>
           </template>
           <template v-else>
-            <ServerFileBrowser :start-path="projectStartPath" @select="onServerPick" />
+            <ServerFileBrowser :fallback-start-path="projectStartPath" @select="onServerPick" />
             <p class="hint">{{ t('importAudio.serverHint') }}</p>
           </template>
         </section>

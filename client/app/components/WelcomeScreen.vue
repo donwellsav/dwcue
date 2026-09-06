@@ -272,6 +272,8 @@ ref="localModeButton"
       :filter="pickerFilter"
       :filter-options="pickerFilterOptions"
       :start-path="pickerStart"
+      :fallback-start-path="pickerFallbackStart"
+      :location-context="pickerIntent === 'new-location' ? 'project-create' : 'project-open'"
       @pick="onPickerPick"
       @close="onPickerClose"
     />
@@ -391,7 +393,8 @@ const showPicker          = ref(false);
 const pickerMode          = ref<'file' | 'directory'>('directory');
 const pickerFilter        = ref<string>('.dwcue,.liveplay');
 const pickerFilterOptions = ref<string[]>(['.dwcue,.liveplay', 'all']);
-const pickerStart         = ref<string>('');
+const pickerStart         = ref<string | undefined>(undefined);
+const pickerFallbackStart = ref<string>('');
 const pickerIntent        = ref<'new-location' | 'open'>('open');
 
 // Get app version
@@ -847,12 +850,13 @@ function queueStageFocus(targetStage = stage.value) {
 const showNewShowDialog = ref(false);
 const newShowName = ref('');
 const newShowLocation = ref('');
+const newShowLocations = useFilePickerLocations(() => String(server.serverUrl), 'project-create');
 const creatingNewShow = ref(false);
 const canCreateNewShow = computed(() => !!newShowName.value.trim() && !!newShowLocation.value.trim());
 
 const handleNewProject = () => {
   newShowName.value = '';
-  newShowLocation.value = recentProjectStartPath();
+  newShowLocation.value = newShowLocations.lastFolder.value ?? recentProjectStartPath();
   newShowDialogReturnFocus.value = document.activeElement instanceof HTMLElement
     ? document.activeElement
     : null;
@@ -865,7 +869,8 @@ function browseNewShowLocation() {
   pickerMode.value          = 'directory';
   pickerFilter.value        = 'all';
   pickerFilterOptions.value = ['all'];
-  pickerStart.value         = newShowLocation.value || recentProjectStartPath();
+  pickerStart.value         = undefined;
+  pickerFallbackStart.value = recentProjectStartPath();
   showNewShowDialog.value   = false;
   showPicker.value          = true;
 }
@@ -875,7 +880,8 @@ const handleOpenProject = () => {
   pickerMode.value          = 'file';
   pickerFilter.value        = '.dwcue,.liveplay';
   pickerFilterOptions.value = ['.dwcue,.liveplay', 'all'];
-  pickerStart.value         = recentProjectStartPath();
+  pickerStart.value         = undefined;
+  pickerFallbackStart.value = recentProjectStartPath();
   showPicker.value          = true;
 };
 

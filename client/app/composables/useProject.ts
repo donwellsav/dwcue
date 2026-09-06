@@ -1,3 +1,4 @@
+import { createProjectHydration, createProjectHydrationRetry } from '~/utils/projectHydration';
 // =====================================================================
 // useProject.ts
 // ---------------------------------------------------------------------
@@ -52,6 +53,7 @@ import {
   projectPathInFolder,
 } from '~/utils/projectFileFormats';
 import { createLatestWriteQueue } from '~/utils/latestWriteQueue';
+import type { OneShotMutationIdentity } from '~/types/oneShotMutation';
 
 // ---------------------------------------------------------------------------
 // MODULE-SCOPED state for cross-call coordination.
@@ -85,6 +87,17 @@ interface ProjectSaveRequest {
   write: () => Promise<boolean>;
 }
 const _projectSaveQueue = createLatestWriteQueue<ProjectSaveRequest>();
+const _hydrationStatus = ref<'loading' | 'ready' | 'failed'>('failed');
+const _hydrationError = ref<string | null>(null);
+const _projectHydration = createProjectHydration<Project>((snapshot) => {
+  _hydrationStatus.value = snapshot?.status ?? 'failed';
+  _hydrationError.value = snapshot?.error ?? null;
+});
+type ProjectHydrationLoad = ReturnType<typeof _projectHydration.begin>;
+const _ownerSessionId = globalThis.crypto?.randomUUID?.()
+  ?? 'dwcue-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+let _hydrationRequestRevision = 0;
+const _hydrationRetry = createProjectHydrationRetry();
 
 const createItemPatchMutationIdentity = (clientId: string) => {
   const prefix = `${clientId}:`;
@@ -227,6 +240,8 @@ export const useProject = () => {
   // createNewProject. Persisted in the document under `server.projectFilePath`
   // by the server itself, so we can read it back on subsequent fetches.
   const projectFilePathRef = useState<string>('useProject.projectFilePath', () => '');
+  const projectHydrationStatus = _hydrationStatus;
+  const projectHydrationError = _hydrationError;
 
   // Bumped every time the client re-hydrates its project from the server.
   // Tell the main process which project file is live so it can authorize the
@@ -243,6 +258,18 @@ export const useProject = () => {
   // see a reload of the *same* project (both are unchanged), which is exactly
   // what session recovery does — this counter gives them the edge they need.
   const projectEpoch = useState<number>('useProject.projectEpoch', () => 0);
+  const projectSyncIdentity = computed<OneShotMutationIdentity | null>(() =>
+    projectHydrationStatus.value === 'ready'
+      && currentProject.value
+      && isNativeProjectPath(projectFilePathRef.value)
+      ? {
+          projectPath: projectFilePathRef.value,
+          projectEpoch: projectEpoch.value,
+          ownerSessionId: _ownerSessionId,
+        }
+      : null,
+  );
+  const retryProjectHydration = (): Promise<boolean> => _hydrationRetry.run();
   // Every post-mutation save intent advances this renderer-global revision,
   // including intents that only mark dirty while autosave is disabled.
   const saveRevision = useState<number>('useProject.saveRevision', () => 0);
@@ -640,7 +667,9 @@ export const useProject = () => {
         const saved = await server.saveProjectTo(projectFilePath, newProject);
         if (!saved?.ok) throw new Error('Server did not save the new project');
         const header = await server.fetchProjectHeader();
-        if (!applyServerHeader(header)) throw new Error('Server did not open the new project');
+        const hydration = applyServerHeader(header);
+        if (!hydration) throw new Error('Server did not open the new project');
+        hydration.finish(true);
       } finally {
         // Wait for Vue to flush watchers (which see isHydrating=true and
         // bail) BEFORE clearing the flag. Setting it false synchronously
@@ -677,17 +706,21 @@ export const useProject = () => {
   // project, we drop straight into MainWorkspace instead of showing
   // New/Open. Returns true if a project was rejoined.
   const tryRejoinExistingProject = async (existingHeader?: any): Promise<boolean> => {
+    const requestRevision = ++_hydrationRequestRevision;
+    _hydrationRetry.set(() => tryRejoinExistingProject());
     try {
       const server = useLiveplayServer();
       if (!server.connected) {
         try { server.connect(); } catch { /* noop */ }
       }
       const header = existingHeader ?? await server.fetchProjectHeader();
+      if (requestRevision !== _hydrationRequestRevision) return false;
       if (!header || !header.hasOpenProject) return false;
 
       isHydrating.value = true;
+      let hydration: ProjectHydrationLoad | false = false;
       try {
-        applyServerHeader(header);
+        hydration = applyServerHeader(header);
       } finally {
         await nextTick();
         isHydrating.value = false;
@@ -698,11 +731,12 @@ export const useProject = () => {
       const cartOnly = currentProject.value?.cartOnlyItems ?? [];
       for (const item of cartOnly) addCartOnlyItem(item);
 
-      void streamItemPages(server, header.itemCount ?? 0);
+      if (!hydration || !await streamItemPages(server, header.itemCount ?? 0, hydration)) return false;
       void pollLoadingProgress(server);
       return true;
-    } catch (e) {
-      console.warn('[useProject] tryRejoinExistingProject failed:', e);
+    } catch (error) {
+      if (requestRevision === _hydrationRequestRevision) _projectHydration.current()?.finish(false, error);
+      console.warn('[useProject] tryRejoinExistingProject failed:', error);
       return false;
     }
   };
@@ -713,6 +747,8 @@ export const useProject = () => {
   const hydrateProjectFrom = async (
     loadHeader: (server: any) => Promise<any>,
   ): Promise<boolean> => {
+    const requestRevision = ++_hydrationRequestRevision;
+    _hydrationRetry.set(() => hydrateProjectFrom(loadHeader));
     isLoading.value = true;
     loadingMessage.value = 'Loading project…';
     try {
@@ -722,6 +758,11 @@ export const useProject = () => {
       }
 
       const header = await loadHeader(server);
+      if (requestRevision !== _hydrationRequestRevision) return false;
+      // Once the server accepts an open/import, it owns the active document.
+      // A page-stream retry must rejoin that live document rather than reload
+      // the originally requested file over newer server-side state.
+      _hydrationRetry.set(() => tryRejoinExistingProject());
       if (header?.needsRepair) {
         repairDialogIssues.value = Array.isArray(header.repairIssues) ? header.repairIssues : [];
         repairDialogVisible.value = true;
@@ -729,15 +770,17 @@ export const useProject = () => {
           _repairPromiseResolve = resolve;
         });
         repairDialogVisible.value = false;
+        if (requestRevision !== _hydrationRequestRevision) return false;
         if (confirmed) {
           try { await server.repairProject(); } catch { /* save failure is non-fatal */ }
         }
       }
 
-      isLoading.value = false;
       isHydrating.value = true;
+      let hydration: ProjectHydrationLoad | false = false;
       try {
-        if (!applyServerHeader(header)) throw new Error('Server did not open the requested project');
+        hydration = applyServerHeader(header);
+        if (!hydration) throw new Error('Server did not open the requested project');
       } finally {
         await nextTick();
         isHydrating.value = false;
@@ -748,15 +791,16 @@ export const useProject = () => {
       const cartOnly = currentProject.value?.cartOnlyItems ?? [];
       for (const item of cartOnly) addCartOnlyItem(item);
 
-      void streamItemPages(server, header?.itemCount ?? 0);
+      if (!hydration || !await streamItemPages(server, header?.itemCount ?? 0, hydration)) return false;
       void pollLoadingProgress(server);
       recordRecentProject(projectFilePathRef.value);
       return true;
     } catch (error) {
+      if (requestRevision === _hydrationRequestRevision) _projectHydration.current()?.finish(false, error);
       console.error('Error opening project:', error);
       return false;
     } finally {
-      isLoading.value = false;
+      if (requestRevision === _hydrationRequestRevision) isLoading.value = false;
     }
   };
 
@@ -785,22 +829,36 @@ export const useProject = () => {
   // to the renderer between pages via requestAnimationFrame so the
   // playlist paints incrementally rather than blocking on one giant tick.
   // Safe to call multiple times — bails if currentProject becomes null.
-  let itemStreamSeq = 0;
-  async function streamItemPages(server: any, totalHint: number) {
-    const mySeq = ++itemStreamSeq;
+  async function streamItemPages(server: any, totalHint: number, hydration: ProjectHydrationLoad): Promise<boolean> {
+    const project = hydration.project;
+    const isCurrent = () => _projectHydration.current() === hydration && currentProject.value === project;
+    let complete = false;
+    let failure: unknown = null;
     const PAGE = 100;
     let offset = 0;
     try {
       while (true) {
         // Abort if another openProject started, or the project was closed.
-        if (mySeq !== itemStreamSeq) return;
-        if (!currentProject.value) return;
+        if (!isCurrent()) return false;
         let page: { offset: number; limit: number; total: number; items: any[] };
         try { page = await server.fetchProjectItemsPage(offset, PAGE); }
-        catch (e) { console.warn('[useProject] item page fetch failed:', e); return; }
-
-        if (!Array.isArray(page.items) || page.items.length === 0) break;
-        if (mySeq !== itemStreamSeq || !currentProject.value) return;
+        catch (error) {
+          failure = error;
+          console.warn('[useProject] item page fetch failed:', error);
+          return false;
+        }
+        if (!isCurrent()) return false;
+        if (!Array.isArray(page.items)) {
+          failure = new Error('Server returned an invalid project page');
+          return false;
+        }
+        if (page.items.length === 0) {
+          if (offset < Math.max(totalHint, page.total)) {
+            failure = new Error('Project item stream ended before all items arrived');
+            return false;
+          }
+          break;
+        }
 
         // Push under the hydrating flag so the diff-watcher doesn't echo
         // these items right back to the server as "client adds".
@@ -816,15 +874,15 @@ export const useProject = () => {
             if (it?.waveform) it.waveform = markRaw(it.waveform);
             restoreWaveform(it);
           }
-          currentProject.value.items.push(...page.items);
-          updateIndices(currentProject.value.items);
+          project.items.push(...page.items);
+          updateIndices(project.items);
         } finally {
           // Defer clearing the flag until after Vue flushes its watcher
           // queue — otherwise the items/cartOnly deep watchers run with
           // isHydrating=false and echo the just-pushed page back as a
           // diff (PUT /api/project/document storm).
           await nextTick();
-          isHydrating.value = false;
+          if (isCurrent()) isHydrating.value = false;
         }
 
         offset += page.items.length;
@@ -840,6 +898,7 @@ export const useProject = () => {
           }
         });
       }
+      if (!isCurrent()) return false;
       // One-time repair for projects corrupted by an earlier bug where a
       // cart-only item leaked into the playlist tree (the same uuid ended up
       // in BOTH `cartOnlyItems` and the root `items`, so it rendered twice —
@@ -851,15 +910,16 @@ export const useProject = () => {
       // unaffected — a cart-only uuid never appears in `items` anymore.
       try {
         const { cartOnlyItems } = useCartItems();
-        if (cartOnlyItems.value.size && currentProject.value) {
-          const cleaned = currentProject.value.items.filter(
+        if (cartOnlyItems.value.size) {
+          const cleaned = project.items.filter(
             (it: any) => !cartOnlyItems.value.has(it.uuid),
           );
-          if (cleaned.length !== currentProject.value.items.length) {
+          if (cleaned.length !== project.items.length) {
             isHydrating.value = true;
-            currentProject.value.items = cleaned;
-            updateIndices(currentProject.value.items);
+            project.items = cleaned;
+            updateIndices(project.items);
             await nextTick();
+            if (!isCurrent()) return false;
             isHydrating.value = false;
           }
         }
@@ -876,16 +936,24 @@ export const useProject = () => {
       // push (O(n²)) and is what made large projects feel like they
       // hung for several seconds after opening.
       refreshItemsBaselineAfterHydrate();
+      if (!isCurrent()) return false;
       installItemsWatcherFn();
-      void totalHint; // currently informational only
-    } catch (e) {
-      console.warn('[useProject] streamItemPages crashed:', e);
+      complete = true;
+      return true;
+    } catch (error) {
+      failure = error;
+      console.warn('[useProject] streamItemPages crashed:', error);
+      return false;
+    } finally {
+      hydration.finish(complete && isCurrent(), failure ?? new Error('Project hydration did not complete'));
     }
   }
 
   // Apply a header-only response to currentProject. Items array is left
   // empty for streamItemPages() to populate.
   const clearLocalProjectMirror = () => {
+    ++_hydrationRequestRevision;
+    _projectHydration.invalidate();
     const hadIdentity = currentProject.value !== null || projectFilePathRef.value !== '';
     _uninstallItemsWatcherFn?.();
     currentProject.value = null;
@@ -912,13 +980,13 @@ export const useProject = () => {
     hasUnsavedChanges.value = false;
     if (hadIdentity) projectEpoch.value++;
     try {
-      if (import.meta.client && (window as any).electronAPI?.syncProjectData) {
-        (window as any).electronAPI.syncProjectData(null);
+      if (import.meta.client && window.electronAPI?.syncProjectData) {
+        window.electronAPI.syncProjectData(null, null);
       }
     } catch { /* noop */ }
   };
 
-  const applyServerHeader = (header: any): boolean => {
+  const applyServerHeader = (header: any): ProjectHydrationLoad | false => {
     if (!header || typeof header !== 'object') return false;
     if (header.hasOpenProject !== true) {
       clearLocalProjectMirror();
@@ -949,11 +1017,12 @@ export const useProject = () => {
       lastModified:   header.lastModified ?? new Date().toISOString(),
     };
     if (header.settings) (project as any).settings = header.settings;
+    _uninstallItemsWatcherFn?.();
     currentProject.value = project;
     updateIndices(project.items);
     projectEpoch.value++;
     hasUnsavedChanges.value = false;
-    return true;
+    return _projectHydration.begin(currentProject.value);
   };
 
   // Refer to the module-scoped install hooks so streamItemPages and
@@ -1025,7 +1094,8 @@ export const useProject = () => {
   // and re-applied afterwards as a document replace — which the server performs
   // without disturbing the project path established by the load.
   const resumeProjectOnServer = async (): Promise<boolean> => {
-    if (!currentProject.value) return false;
+    const project = currentProject.value;
+    if (!project || !await _projectHydration.wait(project) || currentProject.value !== project) return false;
     const server = useLiveplayServer();
     const path = projectFilePathRef.value;
     if (path && !isNativeProjectPath(path)) return false;
@@ -1091,6 +1161,7 @@ export const useProject = () => {
     const epoch = projectEpoch.value;
     if (!isNativeProjectPath(path) || !server.connected ||
         sessionLost.value || recoveringProject.value) return false;
+    if (!await _projectHydration.wait(project) || opts?.signal?.aborted) return false;
 
     // The full-document POST is authoritative. Drain every queued item PATCH
     // first so no older granular write can land after this snapshot.
@@ -1116,6 +1187,7 @@ export const useProject = () => {
       path,
       epoch,
       write: async () => {
+        if (!await _projectHydration.wait(project)) return false;
         if (!isCurrentSaveIdentity(
           project,
           path,
@@ -1816,6 +1888,7 @@ export const useProject = () => {
             break;
           }
           case 'project_changed': {
+            _hydrationRetry.set(() => tryRejoinExistingProject());
             // Local open/create and recovery own their returned header; ignore
             // their echo so one transition cannot hydrate twice.
             if (isLoading.value || recoveringProject.value) break;
@@ -1836,14 +1909,14 @@ export const useProject = () => {
 
                 server().invalidateWaveformCache();
                 isHydrating.value = true;
-                let opened = false;
+                let opened: ProjectHydrationLoad | false = false;
                 try {
                   opened = applyServerHeader(header);
                 } finally {
                   await nextTick();
                   isHydrating.value = false;
                 }
-                if (opened) void streamItemPages(server(), header.itemCount ?? 0);
+                if (opened) await streamItemPages(server(), header.itemCount ?? 0, opened);
               } catch (e) {
                 console.warn('[useProject] project_changed refetch failed:', e);
               }
@@ -2098,13 +2171,15 @@ export const useProject = () => {
       () => currentProject.value?.name,
     ], () => {
       if (isHydrating.value || !currentProject.value) return;
+      const project = currentProject.value;
+      const path = projectFilePathRef.value;
+      const epoch = projectEpoch.value;
       if (fallbackTimer) clearTimeout(fallbackTimer);
       fallbackTimer = setTimeout(async () => {
-        const p = currentProject.value;
-        if (!p) return;
-        // Only push the whole document for these rare fields. The cost is
-        // acceptable here precisely because the trigger fires rarely.
-        try { await server().replaceProjectDocument(toJSON(p)); }
+        if (!await _projectHydration.wait(project) || !isCurrentSaveIdentity(
+          project, path, epoch, currentProject.value, projectFilePathRef.value, projectEpoch.value,
+        )) return;
+        try { await server().replaceProjectDocument(toJSON(project)); }
         catch (e) { console.warn('[useProject] fallback PUT failed:', e); }
       }, 800);
     }, { deep: true });
@@ -2178,6 +2253,10 @@ export const useProject = () => {
     tryRejoinExistingProject,
     resumeProjectOnServer,
     saveProject,
+    projectHydrationStatus,
+    projectHydrationError,
+    retryProjectHydration,
+    projectSyncIdentity,
     hasUnsavedChanges,
     autoSaveEnabled,
     indexDisplayStart,

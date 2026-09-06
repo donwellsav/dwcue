@@ -379,7 +379,13 @@
   },
   "importProgress": {
     "title": "प्रोजेक्ट आयात किया जा रहा है",
-    "message": "निष्कर्षण किया जा रहा है"
+    "message": "निष्कर्षण किया जा रहा है",
+    "openFailed": "आयात किए गए प्रोजेक्ट को खोला नहीं जा सका।"
+  },
+  "projectHydration": {
+    "loading": "प्रोजेक्ट लोड हो रहा है…",
+    "failed": "प्रोजेक्ट लोड नहीं हो सका। आंशिक रूप से लोड हुआ यह प्रोजेक्ट केवल पढ़ने के लिए है।",
+    "retry": "फिर से कोशिश करें"
   },
   "selectProject": {
     "title": "प्रोजेक्ट चुनें",
@@ -414,7 +420,7 @@
     "selectUp": "ऊपर चुनें",
     "selectDown": "नीचे चुनें",
     "playSelected": "चयनित चलाएं",
-    "masterVolume": "मास्टर वॉल्यूम",
+    "masterVolume": "ग्लोबल मास्टर वॉल्यूम",
     "midiDevice": "MIDI डिवाइस",
     "allDevices": "सभी डिवाइस",
     "conflictSlot": "Already assigned to One Shot {n}",
@@ -433,7 +439,7 @@
     "conflictMessage": "यह MIDI नियंत्रण पहले से \"{action}\" को असाइन किया गया है। पुनः असाइन करें?",
     "playNext": "अगला चलाएं",
     "volumeMultiplier": "वॉल्यूम गुणक",
-    "volumeMultiplierHint": "प्रत्येक MIDI चरण पर बदलने वाले dB। धीरे चलने वाले व्हील के लिए बढ़ाएं।",
+    "volumeMultiplierHint": "हर MIDI चरण पर ग्लोबल मास्टर वॉल्यूम में होने वाला dB बदलाव। यह Preview सहित सभी आउटपुट पर लागू होता है।",
     "sectionOneShots": "One Shots",
     "oneShot": "One Shot {n}",
     "cueToContinue": "Cue to Continue",
@@ -716,6 +722,14 @@
     "fromServer": "सर्वर ब्राउज़ करें",
     "fromThisComputer": "इस कंप्यूटर से"
   },
+  "filePicker": {
+    "unavailableFolder": "पहले इस्तेमाल किया गया फ़ोल्डर उपलब्ध नहीं है: {path}। इसके बजाय, उपलब्ध शुरुआती स्थान दिखाया जा रहा है।",
+    "favorites": "पसंदीदा फ़ोल्डर",
+    "addCurrentFolder": "मौजूदा फ़ोल्डर को पसंदीदा में जोड़ें",
+    "currentFolderFavorite": "मौजूदा फ़ोल्डर पहले से पसंदीदा में है",
+    "removeFavorite": "पसंदीदा से {name} हटाएँ",
+    "emptyFavorites": "अक्सर इस्तेमाल होने वाले फ़ोल्डर जोड़ें।"
+  },
   "importAudio": {
     "title": "मीडिया आयात करें",
     "localIntro": "इस कंप्यूटर से ऑडियो या वीडियो फ़ाइलें चुनें।",
@@ -956,6 +970,10 @@
     }
   },
   "oneShots": {
+    "detachedNoPrimary": "मुख्य प्रोजेक्ट विंडो उपलब्ध नहीं है।",
+    "detachedStale": "यह One Shots विंडो अब अद्यतित नहीं है। इसे मुख्य विंडो से दोबारा खोलें।",
+    "detachedRejected": "बदलाव को मुख्य विंडो ने स्वीकार नहीं किया।",
+    "detachedSaveFailed": "बदलाव लागू हो गया, लेकिन उसे सहेजा नहीं जा सका।",
     "title": "One Shots",
     "hint": "Drop audio or playlist cues into any cell",
     "detach": "Detach",
@@ -1018,6 +1036,7 @@
     "autoDisarm": "फायर के बाद स्वतः अनार्म"
   },
   "outputConsole": {
+    "globalMaster": "ग्लोबल मास्टर",
     "limiter": "TP Limiter",
     "enabled": "Enabled",
     "bypassed": "Bypassed",

@@ -379,7 +379,13 @@
   },
   "importProgress": {
     "title": "Εισαγωγή Εκδήλωσης",
-    "message": "Εξαγωγή"
+    "message": "Εξαγωγή",
+    "openFailed": "Δεν ήταν δυνατό να ανοίξει το έργο που εισήχθη."
+  },
+  "projectHydration": {
+    "loading": "Φόρτωση έργου…",
+    "failed": "Η φόρτωση του έργου απέτυχε. Αυτό το μερικώς φορτωμένο έργο είναι μόνο για ανάγνωση.",
+    "retry": "Επανάληψη"
   },
   "selectProject": {
     "title": "Επιλογή Εκδήλωσης",
@@ -414,7 +420,7 @@
     "selectUp": "Επιλογή πάνω",
     "selectDown": "Επιλογή κάτω",
     "playSelected": "Αναπαραγωγή επιλεγμένου",
-    "masterVolume": "Κύρια ένταση",
+    "masterVolume": "Γενική ένταση",
     "midiDevice": "Συσκευή MIDI",
     "allDevices": "Όλες οι συσκευές",
     "conflictSlot": "Already assigned to One Shot {n}",
@@ -433,7 +439,7 @@
     "conflictMessage": "Αυτός ο ελεγκτής MIDI είναι ήδη αντιστοιχισμένος στο \"{action}\". Νέα αντιστοίχιση;",
     "playNext": "Αναπαραγωγή επόμενου",
     "volumeMultiplier": "Πολλαπλασιαστής έντασης",
-    "volumeMultiplierHint": "dB που αλλάζουν ανά βήμα MIDI. Αυξήστε το για τροχούς που κινούνται αργά.",
+    "volumeMultiplierHint": "Μεταβολή της γενικής έντασης σε dB ανά βήμα MIDI. Ισχύει για όλες τις εξόδους, συμπεριλαμβανομένης της εξόδου Preview.",
     "sectionOneShots": "One Shots",
     "oneShot": "One Shot {n}",
     "cueToContinue": "Cue to Continue",
@@ -716,6 +722,14 @@
     "fromServer": "Περιήγηση διακομιστή",
     "fromThisComputer": "Από αυτόν τον υπολογιστή"
   },
+  "filePicker": {
+    "unavailableFolder": "Ο φάκελος που χρησιμοποιήθηκε προηγουμένως δεν είναι διαθέσιμος: {path}. Εμφανίζεται μια άλλη διαθέσιμη τοποθεσία εκκίνησης.",
+    "favorites": "Αγαπημένοι φάκελοι",
+    "addCurrentFolder": "Προσθήκη τρέχοντος φακέλου στα αγαπημένα",
+    "currentFolderFavorite": "Ο τρέχων φάκελος είναι ήδη στα αγαπημένα",
+    "removeFavorite": "Αφαίρεση του {name} από τα αγαπημένα",
+    "emptyFavorites": "Προσθέστε φακέλους που χρησιμοποιείτε συχνά."
+  },
   "importAudio": {
     "title": "Εισαγωγή πολυμέσων",
     "localIntro": "Επιλέξτε αρχεία ήχου ή βίντεο από αυτόν τον υπολογιστή.",
@@ -956,6 +970,10 @@
     }
   },
   "oneShots": {
+    "detachedNoPrimary": "Το κύριο παράθυρο του έργου δεν είναι διαθέσιμο.",
+    "detachedStale": "Αυτό το παράθυρο One Shots δεν είναι πλέον ενημερωμένο. Ανοίξτε το ξανά από το κύριο παράθυρο.",
+    "detachedRejected": "Η αλλαγή δεν έγινε αποδεκτή από το κύριο παράθυρο.",
+    "detachedSaveFailed": "Η αλλαγή εφαρμόστηκε, αλλά δεν ήταν δυνατό να αποθηκευτεί.",
     "title": "One Shots",
     "hint": "Drop audio or playlist cues into any cell",
     "detach": "Detach",
@@ -1018,6 +1036,7 @@
     "autoDisarm": "Αυτόματος αφοπλισμός μετά την ενεργοποίηση"
   },
   "outputConsole": {
+    "globalMaster": "Γενική ένταση",
     "limiter": "TP Limiter",
     "enabled": "Enabled",
     "bypassed": "Bypassed",

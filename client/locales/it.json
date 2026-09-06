@@ -379,7 +379,8 @@
   },
   "importProgress": {
     "title": "Importazione Progetto",
-    "message": "Estrazione"
+    "message": "Estrazione",
+    "openFailed": "Impossibile aprire il progetto importato."
   },
   "selectProject": {
     "title": "Seleziona Progetto",
@@ -414,7 +415,7 @@
     "selectUp": "Seleziona su",
     "selectDown": "Seleziona giù",
     "playSelected": "Riproduci selezionato",
-    "masterVolume": "Volume principale",
+    "masterVolume": "Volume master globale",
     "midiDevice": "Dispositivo MIDI",
     "allDevices": "Tutti i dispositivi",
     "conflictSlot": "Already assigned to One Shot {n}",
@@ -433,7 +434,7 @@
     "conflictMessage": "Questo controllo MIDI è già assegnato a \"{action}\". Riassegnare?",
     "playNext": "Riproduci successivo",
     "volumeMultiplier": "Moltiplicatore volume",
-    "volumeMultiplierHint": "dB modificati per passo MIDI. Aumenta per le rotelle lente.",
+    "volumeMultiplierHint": "Variazione in dB del master globale per ogni passo MIDI. Si applica a tutte le uscite, inclusa Preview.",
     "sectionOneShots": "One Shots",
     "oneShot": "One Shot {n}",
     "cueToContinue": "Cue to Continue",
@@ -1015,7 +1016,11 @@
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
     "armCell": "Arma {name}",
     "disarmCell": "Disarma {name}",
-    "autoDisarm": "Disarma automaticamente dopo l'esecuzione"
+    "autoDisarm": "Disarma automaticamente dopo l'esecuzione",
+    "detachedNoPrimary": "La finestra principale del progetto non è disponibile.",
+    "detachedStale": "Questa finestra One Shots non è aggiornata. Riaprila dalla finestra principale.",
+    "detachedRejected": "La modifica non è stata accettata dalla finestra principale.",
+    "detachedSaveFailed": "La modifica è stata applicata ma non è stato possibile salvarla."
   },
   "outputConsole": {
     "limiter": "TP Limiter",
@@ -1026,7 +1031,8 @@
     "ceilingInputLabel": "True-peak limiter ceiling in dBTP",
     "limiterBypass": "True-peak limiter bypass",
     "bypassLimiter": "Bypass true-peak limiter",
-    "enableLimiter": "Enable true-peak limiter"
+    "enableLimiter": "Enable true-peak limiter",
+    "globalMaster": "Master globale"
   },
   "videoConfidence": {
     "title": "Audience output",
@@ -1042,5 +1048,18 @@
     "prev": "Previous cue ([)",
     "exit": "Exit (Q)",
     "progress": "Cue {index} of {total}"
+  },
+  "projectHydration": {
+    "loading": "Caricamento del progetto…",
+    "failed": "Caricamento del progetto non riuscito. Questo progetto parziale è in sola lettura.",
+    "retry": "Riprova"
+  },
+  "filePicker": {
+    "unavailableFolder": "La cartella usata in precedenza non è disponibile: {path}. Viene mostrata una posizione iniziale disponibile.",
+    "favorites": "Cartelle preferite",
+    "addCurrentFolder": "Aggiungi la cartella corrente ai preferiti",
+    "currentFolderFavorite": "La cartella corrente è già tra i preferiti",
+    "removeFavorite": "Rimuovi {name} dai preferiti",
+    "emptyFavorites": "Aggiungi le cartelle che usi spesso."
   }
 }

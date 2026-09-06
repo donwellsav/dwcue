@@ -3,7 +3,7 @@ const test = require('node:test');
 const { mkdtemp, writeFile, rm } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
-const { TestCardPlayback } = require('../electron/test-card-playback');
+const { cleanupConnectionFor, TestCardPlayback } = require('../electron/test-card-playback');
 
 const connection = { serverUrl: 'http://cue.test', accessToken: 'credential', local: true };
 
@@ -39,7 +39,7 @@ function harness({ beforeRequest, assetPath = rate => `/bundled/${rate}.webm` } 
       }
       const id = route.split('/')[3];
       const cue = cues.get(id);
-      if (!cue) return response({ error: 'missing cue' }, 404);
+      if (!cue) return response({ error: 'not found' }, 404);
       if (options.method === 'DELETE') cues.delete(id);
       else if (route.endsWith('/play')) cue.playing = true;
       return response({ ok: true });
@@ -131,6 +131,50 @@ test('failed cleanup retains ownership and prevents a second tone', async () => 
   assert.equal(h.player.error, null);
 });
 
+test('network, auth, and non-canonical 404 cleanup failures retain the exact cue', async () => {
+  for (const failure of [
+    () => { throw new TypeError('network down'); },
+    () => response({ error: 'unauthorized' }, 401),
+    () => response({ error: 'proxy route missing' }, 404),
+  ]) {
+    let failDelete = false;
+    const h = harness({ beforeRequest: async (_url, options) => {
+      if (failDelete && options.method === 'DELETE') return failure();
+    } });
+    await h.player.update(desired());
+    const cueId = h.player.playback.cueId;
+    failDelete = true;
+    await h.player.update(null);
+    assert.equal(h.player.playback.cueId, cueId);
+    assert.equal(h.cues.size, 1);
+  }
+});
+
+test('cleanup retry preserves ownership and never creates a second tone', async () => {
+  let failDelete = true;
+  const h = harness({ beforeRequest: async (_url, options) => {
+    if (failDelete && options.method === 'DELETE') throw new TypeError('network down');
+  } });
+  await h.player.update(desired());
+  const cueId = h.player.playback.cueId;
+  await h.player.update(null);
+  assert.equal(h.player.playback.cueId, cueId);
+  failDelete = false;
+  await h.player.update(null);
+  assert.equal(h.player.playback, null);
+  assert.equal(h.cues.size, 0);
+  assert.equal(h.requests.filter(request => request.url.endsWith('/api/diagnostics/av-sync')).length, 1);
+});
+
+test('canonical 404 for the exact owned cue confirms cleanup', async () => {
+  const h = harness();
+  await h.player.update(desired());
+  h.cues.clear();
+  await h.player.update(null);
+  assert.equal(h.player.playback, null);
+  assert.equal(h.player.error, null);
+});
+
 test('play failure releases the loaded cue and reports the real failure', async () => {
   const h = harness({ beforeRequest: async url => {
     if (url.endsWith('/play')) return response({ error: 'device unavailable' }, 409);
@@ -172,6 +216,21 @@ test('video failure stops its tone and stays visible until an explicit restart',
   assert.equal(h.cues.size, 1);
   assert.equal(h.player.error, null);
   await h.player.update(null);
+});
+
+test('managed credential rotation preserves the exact owned cue endpoint', () => {
+  const sessionConnection = { serverUrl: 'http://127.0.0.1:4480', accessToken: 'old', local: true };
+  assert.deepEqual(cleanupConnectionFor(sessionConnection, null, { port: 4480, accessToken: 'new' }), {
+    serverUrl: sessionConnection.serverUrl,
+    accessToken: 'new',
+    local: true,
+  });
+  assert.equal(cleanupConnectionFor(sessionConnection, null, { port: 4481, accessToken: 'new' }), null);
+  assert.equal(cleanupConnectionFor(
+    { serverUrl: 'https://remote.example:4480', accessToken: 'old', local: false },
+    null,
+    { port: 4480, accessToken: 'new' },
+  ), null);
 });
 
 test('shutdown can confirm absence using a restarted server credential on the same endpoint', async () => {

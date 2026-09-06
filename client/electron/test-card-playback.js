@@ -2,6 +2,29 @@
 
 const fs = require('node:fs/promises');
 
+
+function cleanupConnectionFor(sessionConnection, rendererConnection, managedIdentity) {
+  if (!sessionConnection) return rendererConnection ?? null;
+  if (rendererConnection?.serverUrl === sessionConnection.serverUrl
+      && rendererConnection.accessToken !== sessionConnection.accessToken) {
+    return rendererConnection;
+  }
+  if (!sessionConnection.local || !managedIdentity?.accessToken || !Number.isInteger(managedIdentity.port)) {
+    return null;
+  }
+  try {
+    const endpoint = new URL(sessionConnection.serverUrl);
+    const loopback = endpoint.hostname === '127.0.0.1' || endpoint.hostname === 'localhost' || endpoint.hostname === '[::1]';
+    const port = Number(endpoint.port || (endpoint.protocol === 'https:' ? 443 : 80));
+    if (!loopback || port !== managedIdentity.port || managedIdentity.accessToken === sessionConnection.accessToken) return null;
+    // Preserve the exact endpoint that owns the cue; only rotate its verified
+    // managed-server credential.
+    return { ...sessionConnection, accessToken: managedIdentity.accessToken };
+  } catch {
+    return null;
+  }
+}
+
 // Owns one transient cue on the already selected Cue server. This is resource
 // lifetime management only; decoding, looping, routing and timing stay native.
 class TestCardPlayback {
@@ -31,10 +54,12 @@ class TestCardPlayback {
     const response = await this.request(`${connection.serverUrl}${route}`, {
       method, headers, body, redirect: 'error', signal: AbortSignal.timeout(10000),
     });
-    if (allowMissing && response.status === 404) return null;
     if (!response.ok) {
       let detail = '';
       try { detail = (await response.json()).error || ''; } catch { /* non-JSON server error */ }
+      // Only this exact cue route's canonical absence response proves that our
+      // owned diagnostic is gone. Proxy/auth/other 404s retain ownership.
+      if (allowMissing && response.status === 404 && detail === 'not found') return null;
       throw new Error(detail || `Native AV Sync request failed (${response.status}).`);
     }
     return response.json();
@@ -134,4 +159,4 @@ class TestCardPlayback {
   }
 }
 
-module.exports = { TestCardPlayback };
+module.exports = { cleanupConnectionFor, TestCardPlayback };

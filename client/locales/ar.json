@@ -379,7 +379,8 @@
   },
   "importProgress": {
     "title": "استيراد المشروع",
-    "message": "الاستخراج"
+    "message": "الاستخراج",
+    "openFailed": "تعذّر فتح المشروع المستورد."
   },
   "selectProject": {
     "title": "اختر المشروع",
@@ -414,7 +415,7 @@
     "selectUp": "اختيار للأعلى",
     "selectDown": "اختيار للأسفل",
     "playSelected": "تشغيل المحدد",
-    "masterVolume": "الصوت الرئيسي",
+    "masterVolume": "مستوى الصوت الرئيسي العام",
     "midiDevice": "جهاز MIDI",
     "allDevices": "جميع الأجهزة",
     "conflictSlot": "Already assigned to One Shot {n}",
@@ -433,7 +434,7 @@
     "conflictMessage": "عنصر تحكم MIDI هذا معين بالفعل لـ \"{action}\". إعادة التعيين؟",
     "playNext": "تشغيل التالي",
     "volumeMultiplier": "مضاعف الصوت",
-    "volumeMultiplierHint": "تغيّر dB لكل خطوة MIDI. زِد القيمة لعجلات التحكم البطيئة.",
+    "volumeMultiplierHint": "مقدار تغيّر مستوى الصوت الرئيسي العام بوحدة dB مع كل خطوة MIDI. ينطبق على جميع المخارج، بما فيها Preview.",
     "sectionOneShots": "One Shots",
     "oneShot": "One Shot {n}",
     "cueToContinue": "Cue to Continue",
@@ -1015,7 +1016,11 @@
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
     "armCell": "جهّز {name}",
     "disarmCell": "ألغِ تجهيز {name}",
-    "autoDisarm": "إلغاء التجهيز تلقائيًا بعد التشغيل"
+    "autoDisarm": "إلغاء التجهيز تلقائيًا بعد التشغيل",
+    "detachedNoPrimary": "نافذة المشروع الرئيسية غير متاحة.",
+    "detachedStale": "لم تعد نافذة One Shots هذه محدّثة. أعد فتحها من النافذة الرئيسية.",
+    "detachedRejected": "لم تقبل النافذة الرئيسية هذا التغيير.",
+    "detachedSaveFailed": "طُبّق التغيير، لكن تعذّر حفظه."
   },
   "outputConsole": {
     "limiter": "TP Limiter",
@@ -1026,7 +1031,8 @@
     "ceilingInputLabel": "True-peak limiter ceiling in dBTP",
     "limiterBypass": "True-peak limiter bypass",
     "bypassLimiter": "Bypass true-peak limiter",
-    "enableLimiter": "Enable true-peak limiter"
+    "enableLimiter": "Enable true-peak limiter",
+    "globalMaster": "المستوى الرئيسي العام"
   },
   "videoConfidence": {
     "title": "Audience output",
@@ -1042,5 +1048,18 @@
     "prev": "Previous cue ([)",
     "exit": "Exit (Q)",
     "progress": "Cue {index} of {total}"
+  },
+  "projectHydration": {
+    "loading": "جارٍ تحميل المشروع…",
+    "failed": "فشل تحميل المشروع. هذا المشروع المحمّل جزئيًا متاح للقراءة فقط.",
+    "retry": "إعادة المحاولة"
+  },
+  "filePicker": {
+    "unavailableFolder": "المجلد المستخدم سابقًا غير متاح: {path}. بدلاً من ذلك، سيظهر موقع بدء متاح.",
+    "favorites": "المجلدات المفضلة",
+    "addCurrentFolder": "إضافة المجلد الحالي إلى المفضلة",
+    "currentFolderFavorite": "المجلد الحالي مضاف إلى المفضلة بالفعل",
+    "removeFavorite": "إزالة {name} من المفضلة",
+    "emptyFavorites": "أضف المجلدات التي تستخدمها كثيرًا."
   }
 }

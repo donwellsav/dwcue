@@ -25,27 +25,37 @@
           </span>
         </div>
 
-        <!-- Main listing -->
-        <div class="listing" :class="{ loading }">
-          <div v-if="error" class="status error">{{ error }}</div>
-          <div v-else-if="loading" class="status">Loading…</div>
-          <ul v-else class="entries">
-            <li v-for="entry in sortedEntries"
-                :key="entry.full_path"
-                class="entry"
-                :class="[entry.kind, { selected: selected === entry.full_path }]"
-                @click="onEntryClick(entry)"
-                @dblclick="onEntryActivate(entry)">
-              <span class="icon material-symbols-rounded">{{ iconNameFor(entry) }}</span>
-              <span class="name">{{ entry.name }}</span>
-              <span v-if="entry.kind === 'file' && entry.size != null" class="size">
-                {{ formatBytes(entry.size) }}
-              </span>
-            </li>
-            <li v-if="sortedEntries.length === 0" class="empty">
-              <em>{{ filterLabel }} — no matching items in this folder.</em>
-            </li>
-          </ul>
+        <div v-if="notice" class="status" role="status">{{ notice }}</div>
+        <!-- Favorite shortcuts and main listing share the same server scope. -->
+        <div class="browser-body">
+          <FavoriteFoldersSidebar
+            :favorites="pickerLocations.favorites.value"
+            :current-path="currentPath"
+            @navigate="navigate"
+            @add="pickerLocations.addFavorite"
+            @remove="pickerLocations.removeFavorite"
+          />
+          <div class="listing" :class="{ loading }">
+            <div v-if="error" class="status error">{{ error }}</div>
+            <div v-else-if="loading" class="status">Loading…</div>
+            <ul v-else class="entries">
+              <li v-for="entry in sortedEntries"
+                  :key="entry.full_path"
+                  class="entry"
+                  :class="[entry.kind, { selected: selected === entry.full_path }]"
+                  @click="onEntryClick(entry)"
+                  @dblclick="onEntryActivate(entry)">
+                <span class="icon material-symbols-rounded">{{ iconNameFor(entry) }}</span>
+                <span class="name">{{ entry.name }}</span>
+                <span v-if="entry.kind === 'file' && entry.size != null" class="size">
+                  {{ formatBytes(entry.size) }}
+                </span>
+              </li>
+              <li v-if="sortedEntries.length === 0" class="empty">
+                <em>{{ filterLabel }} — no matching items in this folder.</em>
+              </li>
+            </ul>
+          </div>
         </div>
 
         <!-- Bottom bar: selection + filter + action buttons -->
@@ -78,7 +88,7 @@
             <button
               v-if="!isRoot"
               class="btn"
-              :disabled="newFolderMode"
+              :disabled="newFolderMode || loading || !!error || !listing"
               @click="startNewFolder"
               title="New folder"
             >
@@ -120,21 +130,28 @@
     close                  — user cancelled
 -->
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onScopeDispose, ref, watch } from 'vue';
+import FavoriteFoldersSidebar from './FavoriteFoldersSidebar.vue';
+import {
+  pickerLocationContext,
+  resolvePickerStartPath,
+  useFilePickerLocations,
+} from '~/composables/useFilePickerLocations';
 import { useLiveplayServer } from '~/composables/useLiveplayServer';
 import type { ServerFsEntry, ServerFsListing } from '~/types/server';
 
 const props = withDefaults(defineProps<{
-  open:           boolean;
-  mode?:          'file' | 'directory';
-  filter?:        string;
-  filterOptions?: string[];
-  startPath?:     string;
+  open:               boolean;
+  mode?:              'file' | 'directory';
+  filter?:            string;
+  filterOptions?:     string[];
+  startPath?:         string;
+  fallbackStartPath?: string;
+  locationContext?:   string;
 }>(), {
   mode:          'file',
   filter:        'audio',
   filterOptions: () => ['audio', 'all'],
-  startPath:     '',
 });
 
 const emit = defineEmits<{
@@ -143,6 +160,11 @@ const emit = defineEmits<{
 }>();
 
 const server = useLiveplayServer();
+const pickerContext = computed(() => props.locationContext ?? pickerLocationContext(props.mode, props.filter));
+const pickerLocations = useFilePickerLocations(
+  () => String(server.serverUrl),
+  pickerContext,
+);
 
 // ---------------------------------------------------------------------------
 // Local state — current listing, selection, breadcrumbs, history
@@ -150,6 +172,8 @@ const server = useLiveplayServer();
 const listing       = ref<ServerFsListing | null>(null);
 const loading       = ref(false);
 const error         = ref<string | null>(null);
+const notice        = ref<string | null>(null);
+const { t } = useLocalization();
 const selected      = ref<string>('');
 const filenameDraft = ref<string>('');
 const pathDraft     = ref<string>('');
@@ -157,7 +181,8 @@ const filter        = ref<string>(props.filter);
 
 // Simple back-history (no forward stack; native dialogs work fine without).
 const historyBack = ref<string[]>([]);
-let suppressHistory = false;
+let navigationRevision = 0;
+onScopeDispose(() => { navigationRevision++; });
 
 const currentPath = computed(() => listing.value?.path ?? '');
 const isRoot      = computed(() => !!listing.value?.is_root);
@@ -201,6 +226,7 @@ const sortedEntries = computed(() => {
 });
 
 const canConfirm = computed(() => {
+  if (loading.value || error.value || !listing.value) return false;
   if (props.mode === 'directory') {
     // In directory mode the user confirms the current folder, or an
     // explicitly-selected one. Disallow at the computer root.
@@ -248,27 +274,43 @@ function fileFor(fullPath: string): ServerFsEntry | undefined {
 // ---------------------------------------------------------------------------
 // Navigation
 // ---------------------------------------------------------------------------
-async function navigate(path: string) {
+async function navigate(path: string, recordHistory = true, fallbackPath?: string): Promise<boolean> {
+  const revision = ++navigationRevision;
+  const endpoint = String(server.serverUrl);
+  const previousPath = listing.value?.path;
+  const isCurrent = () => revision === navigationRevision && props.open && endpoint === String(server.serverUrl);
   loading.value = true;
-  error.value   = null;
+  error.value = null;
+  notice.value = null;
+  selected.value = '';
+  filenameDraft.value = '';
+  pathDraft.value = path;
   try {
-    const prev = listing.value?.path ?? '';
-    if (!suppressHistory && prev !== path) {
-      historyBack.value.push(prev);
+    const next = await server.listServerPath(path, filter.value);
+    if (!isCurrent()) return false;
+    if (recordHistory && previousPath !== undefined && previousPath !== next.path) {
+      historyBack.value.push(previousPath);
     }
-    suppressHistory = false;
-    listing.value   = await server.listServerPath(path, filter.value);
-    pathDraft.value = listing.value.path;
-    selected.value  = '';
-    filenameDraft.value = '';
-  } catch (e: any) {
-    error.value = String(e.message || e);
+    listing.value = next;
+    pathDraft.value = next.path;
+    pickerLocations.rememberFolder(next.path);
+    return true;
+  } catch (cause) {
+    if (!isCurrent()) return false;
+    const message = cause instanceof Error ? cause.message : String(cause);
+    if (fallbackPath !== undefined && /^404(?:\s|$)/.test(message)) {
+      const recovered = await navigate(fallbackPath, false);
+      if (recovered) notice.value = t('filePicker.unavailableFolder', { path });
+      return recovered;
+    }
+    error.value = message;
+    return false;
   } finally {
-    loading.value = false;
+    if (isCurrent()) loading.value = false;
   }
 }
 
-function reload() { navigate(currentPath.value); }
+function reload() { void navigate(currentPath.value, false); }
 
 function goUp() {
   if (!listing.value) return;
@@ -276,21 +318,20 @@ function goUp() {
   else if (!listing.value.is_root) navigate('');   // back to drive root
 }
 
-function goBack() {
-  const prev = historyBack.value.pop();
-  if (prev !== undefined) {
-    suppressHistory = true;
-    navigate(prev);
-  }
+async function goBack() {
+  const previous = historyBack.value.at(-1);
+  if (previous !== undefined && await navigate(previous, false)) historyBack.value.pop();
 }
 
 function onEntryClick(entry: ServerFsEntry) {
+  if (loading.value || error.value) return;
   selected.value = entry.full_path;
   if (entry.kind === 'file') filenameDraft.value = entry.name;
   else filenameDraft.value = '';
 }
 
 function onEntryActivate(entry: ServerFsEntry) {
+  if (loading.value || error.value) return;
   if (entry.kind === 'dir' || entry.kind === 'drive' || entry.kind === 'home') {
     navigate(entry.full_path);
   } else if (entry.kind === 'file') {
@@ -306,6 +347,7 @@ function confirm() {
     const chosen = (selected.value && fileFor(selected.value)?.kind === 'dir')
       ? selected.value
       : currentPath.value;
+    pickerLocations.rememberFolder(chosen);
     emit('pick', chosen);
   } else {
     emit('pick', selected.value);
@@ -357,13 +399,25 @@ function cancelNewFolder() {
 // ---------------------------------------------------------------------------
 // Open / close lifecycle
 // ---------------------------------------------------------------------------
-watch(() => props.open, (o) => {
-  if (o) {
-    filter.value      = props.filter;
-    historyBack.value = [];
-    navigate(props.startPath);
-  }
-});
+watch([() => props.open, () => String(server.serverUrl), () => props.mode, () => props.filter,
+  () => props.startPath, () => props.fallbackStartPath, () => props.locationContext], () => {
+  navigationRevision++;
+  loading.value = false;
+  error.value = null;
+  notice.value = null;
+  selected.value = '';
+  filenameDraft.value = '';
+  listing.value = null;
+  historyBack.value = [];
+  newFolderMode.value = false;
+  if (!props.open) return;
+  filter.value = props.filter;
+  const remembered = pickerLocations.lastFolder.value;
+  const start = resolvePickerStartPath(props.startPath, remembered, props.fallbackStartPath);
+  const fallback = props.startPath === undefined && remembered !== undefined && start
+    ? (props.fallbackStartPath !== start ? props.fallbackStartPath ?? '' : '') : undefined;
+  void navigate(start, false, fallback);
+}, { immediate: true });
 </script>
 
 <style lang="scss" scoped>
@@ -413,6 +467,11 @@ watch(() => props.open, (o) => {
     &:hover { text-decoration: underline; }
   }
   .crumb-sep { color: var(--color-text-tertiary); padding: 0 2px; }
+}
+.browser-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
 }
 .listing {
   flex: 1; min-height: 0; overflow: auto;

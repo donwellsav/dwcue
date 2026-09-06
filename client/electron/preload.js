@@ -154,8 +154,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onUpdateError: (callback) => ipcRenderer.on('update-error', callback),
   onMenuCheckForUpdates: (callback) => ipcRenderer.on('menu-check-for-updates', callback),
 
-  // Project data sync between the main and detached cart windows.
-  syncProjectData: (data) => ipcRenderer.send('sync-project-data', data),
+  // Project data sync between the primary and detached One Shots windows.
+  syncProjectData: (data, identity) => ipcRenderer.send('sync-project-data', data, identity),
   
   // File association routing for canonical shows/archives and explicit legacy imports.
   // Push: main → renderer for warm-start / macOS open-file events.
@@ -170,7 +170,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getCartWindowProjectData: () => ipcRenderer.invoke('get-cart-window-project-data'),
   onCartPlayerWindowOpened: (callback) => replaceIpcListener('cart-player-window-opened', callback),
   onCartPlayerWindowClosed: (callback) => replaceIpcListener('cart-player-window-closed', callback),
-  onCartWindowProjectUpdate: (callback) => ipcRenderer.on('cart-window-project-update', callback),
+  onCartWindowProjectUpdate: (callback) => {
+    const listener = (_event, snapshot) => callback(snapshot);
+    ipcRenderer.on('cart-window-project-update', listener);
+    return () => ipcRenderer.removeListener('cart-window-project-update', listener);
+  },
+  requestOneShotMutation: (request) => ipcRenderer.invoke('one-shot-mutation:request', request),
+  onOneShotMutationRequest: (callback) => {
+    const listener = (_event, request) => callback(request);
+    ipcRenderer.on('one-shot-mutation-request', listener);
+    return () => ipcRenderer.removeListener('one-shot-mutation-request', listener);
+  },
+  completeOneShotMutation: (result) => ipcRenderer.send('one-shot-mutation:complete', result),
 
   // UI mode ("show mode") sync across windows
   broadcastUiMode: (mode) => ipcRenderer.send('ui-mode-changed', mode),

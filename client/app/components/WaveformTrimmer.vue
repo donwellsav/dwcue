@@ -1,5 +1,5 @@
 <template>
-  <div class="waveform-trimmer">
+  <div class="waveform-trimmer" :inert="!projectControlsReady" :aria-busy="!projectControlsReady">
     <!-- Volume Control with dB Display -->
     <div class="volume-control-section">
       <div class="volume-label">
@@ -37,7 +37,7 @@
       <!-- Waveform Tools -->
       <div class="waveform-controls">
         <Teleport v-if="!multiSelect" defer to="#properties-transport-host">
-          <div class="audition-transport" role="group" :aria-label="t('properties.playback')">
+          <div class="audition-transport" role="group" :aria-label="t('properties.playback')" :inert="!projectControlsReady">
             <button type="button" class="audition-btn" @click="jumpAudition(-1)" :title="t('actions.jumpPreviewBack')">
               <span class="material-symbols-rounded" aria-hidden="true">fast_rewind</span>
             </button>
@@ -60,6 +60,7 @@
               class="audition-set-next"
               :class="{ active: auditionIsNext }"
               :aria-pressed="auditionIsNext"
+              :disabled="setNextItemPending"
               @click="setAuditionAsNext"
             >
               {{ t('actions.setAsNext') }}
@@ -540,14 +541,16 @@ const handleNormalizeFocusOut = (event: FocusEvent) => {
   if (!next || !normalizeMenu.value?.contains(next)) closeNormalizeMenu();
 };
 
-const { activeCues, nextItemOverrideUuid, setNextItem } = useAudioEngine();
+const { activeCues, nextItemOverrideUuid, setNextItemPending, setNextItem } = useAudioEngine();
 const {
   currentProject,
   previewItemUuid,
   previewCueId,
   startPreview,
+  projectHydrationStatus,
 } = useProject();
 const server = useLiveplayServer();
+const projectControlsReady = computed(() => projectHydrationStatus.value === 'ready');
 const previewCueIsCurrent = computed(() => previewItemUuid.value === props.audioItem.uuid && !!previewCueId.value);
 const previewMeter = useCueMeters(() => previewCueIsCurrent.value ? previewCueId.value || null : null);
 
@@ -976,7 +979,7 @@ const jumpAudition = (direction: -1 | 1) => {
   seekToPosition(playbackPosition.value + direction * auditionJumpSeconds.value);
 };
 
-const setAuditionAsNext = () => setNextItem(props.audioItem.uuid);
+const setAuditionAsNext = (): Promise<boolean> => setNextItem(props.audioItem.uuid);
 const setInPointAtPlayhead = () => {
   emit('update:inPoint', Math.max(0, Math.min(playbackPosition.value, outPoint.value - 0.01)));
   emit('change');

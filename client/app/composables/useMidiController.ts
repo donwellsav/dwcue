@@ -111,8 +111,8 @@ let lastMasterVolumeRaw: number | null = null;
 const preferredDevice = computed(() => config.value.preferredDevice ?? null);
 
 export const useMidiController = () => {
-  const { playCue, playNext, pauseCue, resumeCue, stopAllCues, activeCues, setMasterGain, masterGainDb, queueLoopContinuation, jumpCue } = useAudioEngine();
-  const { selectedItem, selectedItems, saveProject, currentProject, getAllItemsFlat, toggleItemSelection, findItemByUuid: findProjectItem } = useProject();
+  const { playCue, playNext, pauseCue, resumeCue, stopAllCues, activeCues, adjustMasterGain, queueLoopContinuation, jumpCue } = useAudioEngine();
+  const { selectedItem, selectedItems, saveProject, currentProject, projectHydrationStatus, getAllItemsFlat, toggleItemSelection, findItemByUuid: findProjectItem } = useProject();
   const { cartOnlyItems } = useCartItems();
   const { fireBlocked, afterFire } = useOneShotArm();
   const oneShotSlots = computed(() => buildOneShotSlots(
@@ -144,6 +144,7 @@ export const useMidiController = () => {
    * Dispatch a discrete action.
    */
   const dispatchDiscrete = async (actionId: MidiActionId) => {
+    if (actionId !== 'stop-all' && projectHydrationStatus.value !== 'ready') return false;
     if (actionId.startsWith('trigger-slot-')) {
       const slot = parseInt(actionId.replace('trigger-slot-', ''), 10);
       const item = oneShotSlots.value[slot];
@@ -262,13 +263,12 @@ export const useMidiController = () => {
    * Dispatch a continuous action (CC value 0-127).
    */
   const dispatchContinuous = (actionId: MidiActionId, value: number) => {
+    if (projectHydrationStatus.value !== 'ready') return;
     if (actionId === 'master-volume') {
-      // Incremental master volume: each MIDI message nudges the gain up or down
-      // by `multiplier` dB, derived from the direction of movement vs the last
-      // value. This works for both endless wheels (slow ticks) and absolute
-      // faders, and lets slow wheels move faster via a larger multiplier.
+      // Incremental Global Master volume: the first sample establishes the
+      // controller reference, then each movement applies one configured dB step
+      // to the server-owned global stage shared by every output.
       if (lastMasterVolumeRaw === null) {
-        // First message only establishes a reference point — don't jump.
         lastMasterVolumeRaw = value;
         return;
       }
@@ -277,7 +277,7 @@ export const useMidiController = () => {
       if (delta === 0) return;
       const multiplier = config.value.masterVolumeMultiplier ?? DEFAULT_MASTER_VOLUME_MULTIPLIER;
       const stepDb = delta > 0 ? multiplier : -multiplier;
-      setMasterGain(masterGainDb.value + stepDb);
+      void adjustMasterGain(stepDb);
     }
   };
 

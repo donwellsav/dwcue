@@ -379,7 +379,8 @@
   },
   "importProgress": {
     "title": "Importerer Prosjekt",
-    "message": "Pakker Ut"
+    "message": "Pakker Ut",
+    "openFailed": "Det importerte prosjektet kunne ikke åpnes."
   },
   "selectProject": {
     "title": "Velg Prosjekt",
@@ -414,7 +415,7 @@
     "selectUp": "Velg opp",
     "selectDown": "Velg ned",
     "playSelected": "Spill av valgt",
-    "masterVolume": "Hovedvolum",
+    "masterVolume": "Globalt mastervolum",
     "midiDevice": "MIDI-enhet",
     "allDevices": "Alle enheter",
     "conflictSlot": "Already assigned to One Shot {n}",
@@ -433,7 +434,7 @@
     "conflictMessage": "Denne MIDI-kontrollen er allerede tilordnet \"{action}\". Tilordne på nytt?",
     "playNext": "Spill neste",
     "volumeMultiplier": "Volummultiplikator",
-    "volumeMultiplierHint": "dB endret per MIDI-trinn. Øk for hjul som beveger seg sakte.",
+    "volumeMultiplierHint": "dB-endring på global master per MIDI-trinn. Gjelder alle utganger, inkludert Preview.",
     "sectionOneShots": "One Shots",
     "oneShot": "One Shot {n}",
     "cueToContinue": "Cue to Continue",
@@ -1015,7 +1016,11 @@
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
     "armCell": "Klargjør {name}",
     "disarmCell": "Gjør {name} trygg",
-    "autoDisarm": "Gjør automatisk trygg etter avfyring"
+    "autoDisarm": "Gjør automatisk trygg etter avfyring",
+    "detachedNoPrimary": "Hovedprosjektvinduet er ikke tilgjengelig.",
+    "detachedStale": "Dette One Shots-vinduet er utdatert. Åpne det på nytt fra hovedvinduet.",
+    "detachedRejected": "Endringen ble ikke godtatt av hovedvinduet.",
+    "detachedSaveFailed": "Endringen ble utført, men kunne ikke lagres."
   },
   "outputConsole": {
     "limiter": "TP Limiter",
@@ -1026,7 +1031,8 @@
     "ceilingInputLabel": "True-peak limiter ceiling in dBTP",
     "limiterBypass": "True-peak limiter bypass",
     "bypassLimiter": "Bypass true-peak limiter",
-    "enableLimiter": "Enable true-peak limiter"
+    "enableLimiter": "Enable true-peak limiter",
+    "globalMaster": "Global master"
   },
   "videoConfidence": {
     "title": "Audience output",
@@ -1042,5 +1048,18 @@
     "prev": "Previous cue ([)",
     "exit": "Exit (Q)",
     "progress": "Cue {index} of {total}"
+  },
+  "projectHydration": {
+    "loading": "Laster prosjekt…",
+    "failed": "Prosjektet kunne ikke lastes inn. Dette delvise prosjektet er skrivebeskyttet.",
+    "retry": "Prøv igjen"
+  },
+  "filePicker": {
+    "unavailableFolder": "Den tidligere brukte mappen er ikke tilgjengelig: {path}. Viser en tilgjengelig startplassering.",
+    "favorites": "Favorittmapper",
+    "addCurrentFolder": "Legg gjeldende mappe til i favoritter",
+    "currentFolderFavorite": "Gjeldende mappe er allerede en favoritt",
+    "removeFavorite": "Fjern {name} fra favoritter",
+    "emptyFavorites": "Legg til mapper du bruker ofte."
   }
 }

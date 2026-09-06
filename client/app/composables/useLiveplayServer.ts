@@ -442,6 +442,13 @@ function createClient() {
           break;
         }
         case 'playback_error': {
+          if (payload.code === 'sequence_target_invalid' && typeof payload.message === 'string') {
+            const target = typeof payload.target_uuid === 'string' && payload.target_uuid
+              ? ` (target ${payload.target_uuid})`
+              : '';
+            lastError.value = `${payload.message}${target}. The source cue is still playing.`;
+            break;
+          }
           const cueId = typeof payload.cue_id === 'string' ? payload.cue_id : '';
           const cueName = cues.value.find(c => c.id === cueId)?.display_name || cueId || 'audio cue';
           const at = typeof payload.playhead_seconds === 'number'
@@ -846,8 +853,8 @@ function createClient() {
   function resumeCueId(cueId: string){ return wsSend({ type: 'resume', cue_id: cueId }, true); }
   // Tell the server which item to play when the currently-playing item's
   // end-behavior fires "next". Pass null to clear.
-  function setNextItem(uuid: string | null) {
-    wsSend({ type: 'set_next_item', item_uuid: uuid ?? '' });
+  function setNextItem(uuid: string | null): Promise<boolean> {
+    return wsSend({ type: 'set_next_item', item_uuid: uuid ?? '' }, true);
   }
 
   // ---- Shared operator UI state --------------------------------------

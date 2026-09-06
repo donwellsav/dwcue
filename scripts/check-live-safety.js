@@ -235,10 +235,12 @@ assert.match(
   /v-if="isPlaying && item\.type === 'audio'"[\s\S]{0,500}icon="restart_alt"[\s\S]{0,500}@click\.stop="handlePlay"[\s\S]{0,500}:aria-label="t\('actions\.restartCue', \{ name: item\.displayName \}\)"/,
   'the active-track restart control must reuse the normal Play path',
 );
-assert.match(
-  playlistItem,
-  /class="set-next-action"[\s\S]{0,400}:aria-pressed="isManuallyQueued"/,
-  'the armed-next control must expose its queued state',
+assert.equal(
+  (playlistItem.match(
+    /<ActionButton\b(?=[^>]*class="set-next-action")(?=[^>]*:aria-pressed="isManuallyQueued")[^>]*\/>/g,
+  ) ?? []).length,
+  2,
+  'both armed-next controls must expose their queued state',
 );
 assert.match(
   playlistItem,
@@ -1325,10 +1327,27 @@ assert.match(
   /ipcMain\.handle\('install-update', async \(event\) =>[\s\S]*requireTrustedIpc\(event\);[\s\S]*return installDownloadedUpdate\(\);/,
   'installing an update must use the guarded install helper',
 );
+const electronSourceFile = ts.createSourceFile(
+  'electron-main.js', electron, ts.ScriptTarget.Latest, false, ts.ScriptKind.JS,
+);
+const electronFunctionSource = (name) => {
+  const declaration = electronSourceFile.statements.find(
+    statement => ts.isFunctionDeclaration(statement) && statement.name?.text === name,
+  );
+  assert.ok(declaration, `Electron main must define ${name}`);
+  return electron.slice(declaration.getStart(electronSourceFile), declaration.end);
+};
+const updateInstallation = electronFunctionSource('installDownloadedUpdate');
+const terminalPreparation = electronFunctionSource('prepareForTerminalAction');
 assert.match(
-  electron,
-  /async function installDownloadedUpdate\([\s\S]{0,700}await cancelAllSpotifyDownloads\(true\)[\s\S]{0,200}await cancelAllYouTubeDownloads\(\)/,
-  'installing an update must await active media import cleanup before relaunch',
+  updateInstallation,
+  /await prepareForTerminalAction\(\)[\s\S]*autoUpdater\.quitAndInstall/,
+  'installing an update must run shared terminal preparation before relaunch',
+);
+assert.match(
+  terminalPreparation,
+  /await cancelAllSpotifyDownloads\(true\);[\s\S]*await cancelAllYouTubeDownloads\(\);/,
+  'terminal preparation must await active media import cleanup',
 );
 assert.match(
   electron,
@@ -2193,10 +2212,17 @@ assert.match(
   /pendingArchiveClientPath[\s\S]*importProjectArchiveFromClientPath/,
   'remote archive imports must preserve a file path until chunked upload',
 );
-assert.match(
-  appVue,
-  /projectFiles\.length === 0[\s\S]*server\.lastError = 'Import failed:[\s\S]*catch \(e\)[\s\S]*server\.lastError = `Import failed:/,
-  'archive import failures must be visible to the operator',
+const archiveImportStart = appVue.indexOf('async function onImportServerPickerPick');
+const archiveImportEnd = appVue.indexOf(
+  '\n}\n\nconst handleProjectSelection', archiveImportStart,
+);
+assert.ok(archiveImportStart >= 0 && archiveImportEnd > archiveImportStart,
+  'app must define the archive import handler');
+const archiveImport = appVue.slice(archiveImportStart, archiveImportEnd);
+assert.equal(
+  (archiveImport.match(/server\.lastError = t\('importProgress\.openFailed'\);/g) ?? []).length,
+  2,
+  'empty and failed archive imports must both show the localized operator error',
 );
 assert.match(
   appVue,
@@ -2468,8 +2494,20 @@ assert.match(
 );
 assert.match(
   oneShotPanel,
-  /const handleDragOver[\s\S]{0,220}if \(showMode\.value \|\| !currentProject\.value \|\| busySlot\.value !== null\) return[\s\S]{0,260}dropEffect = event\.dataTransfer\.types\.includes\('one-shot-uuid'\) \? 'move' : 'copy'/,
-  'One Shot drag feedback must clearly distinguish move and copy while editing',
+  /const canMutate = computed\(\(\) => isDetached \? !!detachedIdentity\.value : projectHydrationStatus\.value === 'ready'\)/,
+  'attached One Shot edits must wait for project hydration while detached edits require identity',
+);
+const oneShotDragOverStart = oneShotPanel.indexOf('const handleDragOver');
+const oneShotDragOverEnd = oneShotPanel.indexOf(
+  '\n};\n\nconst handleDragLeave', oneShotDragOverStart,
+);
+assert.ok(oneShotDragOverStart >= 0 && oneShotDragOverEnd > oneShotDragOverStart,
+  'One Shots must define drag-over behavior');
+const oneShotDragOver = oneShotPanel.slice(oneShotDragOverStart, oneShotDragOverEnd);
+assert.match(
+  oneShotDragOver,
+  /if \(!canMutate\.value \|\| showMode\.value \|\| !currentProject\.value \|\| busySlot\.value !== null\) return;[\s\S]*dropEffect = event\.dataTransfer\.types\.includes\('one-shot-uuid'\) \? 'move' : 'copy'/,
+  'One Shot drag feedback must be hydration-guarded and clearly distinguish move from copy',
 );
 assert.match(
   playlistItem,
