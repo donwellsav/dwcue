@@ -2,7 +2,7 @@
 
 The DonWells Cue client is a Vue 3 + Nuxt 4 application wrapped in Electron. It is a **remote control** for the DonWells Cue audio server: it owns no audio decoding, no playback, no Web Audio nodes. Every user action turns into a REST call or WebSocket frame sent to `dwcue-server`, and every meter / waveform / state update comes back the same way.
 
-This document tracks the current v2.6.13 source and is the developer's guide to the client; use the release page to determine which behaviour is present in a downloaded installer. For show-day use, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For the audio engine, see [`server/README.md`](../server/README.md); for overall project and release context, see the [root README](../README.md).
+This document tracks the current v2.6.14 source at `7a0eee2` and is the developer's guide to the client; this is not a claim about a published installer, so use the release page and installed About version to determine available behaviour. For show-day use, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For the audio engine, see [`server/README.md`](../server/README.md); for overall project and release context, see the [root README](../README.md).
 
 ---
 
@@ -125,6 +125,7 @@ Key IPC channels (non-exhaustive):
 | `update-menu-language` / `get-system-locale` / `get-available-locales` / `get-locale-data` | Dynamic menu localisation. |
 | `open-folder` / `open-external` / `app:relaunch` / `app:exit` | OS integration. |
 | `open-cart-player-window` / `cart-player-window-attach` / `sync-project-data` | Second-window One Shots surface; the cart-player channel names remain for compatibility. |
+| `one-shot-mutation:*` | Identity-fenced detached-window mutation broker; only the primary renderer validates, applies and persists requests. |
 | `video-output:open` / `close` / `status` | Session-only Video Output lifecycle and status. |
 | `video-output:list-displays` / `identify-displays` / `set-display` | Enumerate, identify and persist the machine's assigned physical output. |
 | `video-output:set-fullscreen` / `toggle-fullscreen` / `test-card` | Operator controls for the passive output surface. |
@@ -132,7 +133,7 @@ Key IPC channels (non-exhaustive):
 
 The audio data path is **not** via IPC — it's directly between the renderer and `dwcue-server` over HTTP + WebSocket. IPC is used only for things Electron needs to do as a desktop application.
 
-New shows and normal saves use the native `.dwcue` JSON document. New portable exports are ZIP archives named `.dwcuepack`; no additional manifest is required. The import UI also reads legacy `.liveplay` documents and `.lpa` archives as a one-way conversion. A direct `.liveplay` import writes an available `.dwcue` sibling; an `.lpa` import writes one canonical `.dwcue` in a fresh extraction directory. Both preserve the original legacy bytes and continue saving the canonical result rather than the legacy source.
+New shows and normal saves use the native `.dwcue` JSON document. New portable exports are ZIP archives named `.dwcuepack`; no additional manifest is required. Native `.dwcuepack` and legacy `.lpa` imports each require exactly one project document at the archive root. The multiple-result selection branch remains for compatibility with older servers, not as a native multi-root format. A direct `.liveplay` import writes an available `.dwcue` sibling; an `.lpa` import writes one canonical `.dwcue` in a fresh extraction directory. Both preserve the original legacy bytes and continue saving the canonical result rather than the legacy source.
 
 ### The renderer ↔ DonWells Cue server link
 
@@ -141,8 +142,9 @@ New shows and normal saves use the native `.dwcue` JSON document. New portable e
 - The server URL and a remote user's token are stored in `localStorage` under `liveplay.serverUrl` and `liveplay.accessToken`; change them via **Server Settings**. A managed local token is session-only in the renderer and is never written there.
 - Every local and remote control call is authenticated except `GET /api/health`. REST uses `Authorization: Bearer <token>`; bearer-in-query is restricted to browser WebSocket `/ws` and media-element `/api/media` requests.
 - Browser origins must exactly match `LIVEPLAY_ALLOWED_ORIGINS`. Source development uses `http://localhost:3000`, not an arbitrary loopback origin. Packaged Electron's opaque `Origin: null` is accepted, but it still requires the token.
-- On boot, the [`app/plugins/liveplay-server.client.ts`](app/plugins/liveplay-server.client.ts) plugin connects. The connection is lazy-retried if it drops (showing `ConnectionLostModal` in the meantime). If a changed server project meets dirty local edits, the modal requires **Use server project** (discard local/adopt server) or **Restore local project** (replace server/keep local dirty) instead of overwriting either side silently.
-- A close-side `project_changed` clears both the renderer's project document and its remembered path. Saves are serialized and revision-fenced: completion only marks the exact saved revision clean, so an older response cannot erase a newer dirty edit.
+- On boot, the [`app/plugins/liveplay-server.client.ts`](app/plugins/liveplay-server.client.ts) plugin connects. Project hydration streams the current server header and pages. A failed page leaves an explicit read-only workspace with **Retry** and Stop All; Retry rejoins the server's current document rather than reopening the prior file path. If a changed server project meets dirty local edits, `ConnectionLostModal` requires **Use server project** (discard local/adopt server) or **Restore local project** (replace server/keep local dirty) instead of overwriting either side silently.
+- A close-side `project_changed` clears both the renderer's project document and its remembered path. Saves wait for complete hydration and are serialized, revision-fenced and identity-fenced. Toggling Autosave in either direction force-saves the current document plus preference; subsequent edits save while enabled and only mark dirty while disabled. The unsaved badge is conditional on Autosave being off, so enabling hides it even when that forced save fails, while `hasUnsavedChanges` remains true. Save As changes the path only after the server publishes successfully.
+- The detached One Shots window receives plain DTO copies of project data, identity and mutations. Each request carries `projectPath`, `projectEpoch` and `ownerSessionId`; Electron serializes it, and the primary renderer alone validates the current identity, applies the mutation and returns separate `accepted` / `persisted` status. A stale project or owner cannot mutate the newly opened show. Detached mutation failures are surfaced in that window's loaded panel and item popover.
 - REST calls return promises; WebSocket frames update reactive refs. Outbound frames are mostly transport commands (`play`, `stop`, `seek`) that take a fast WS path; project mutations use `PATCH /api/project/...` so the server can echo a `doc_patch` to all connected clients.
 
 For the full REST and WebSocket surface, see [`server/README.md`](../server/README.md#control-surface).
@@ -155,8 +157,8 @@ When DonWells Cue is installed as a desktop app, [`electron/main.js`](electron/m
 2. Each newly spawned backend generation receives a fresh random 64-character lowercase-hex token through `LIVEPLAY_ACCESS_TOKEN` while remaining bound to `127.0.0.1:<port>`.
 3. The lock records PID, port, generation identity, and token so a later launch can reattach. It is owner-only (`0600` on POSIX), read without following symlinks, and the token is never logged.
 4. Trusted `liveplay-server:*` IPC replies deliver that managed token to the renderer for the current session; config and browser storage never persist it.
-5. Closing the UI leaves the detached server running so a renderer restart cannot interrupt show state; the next launch reattaches through the lock.
-6. The app can explicitly stop or restart that process. Switching **Server Settings** to a remote server cleanly stops the local child first.
+5. Closing the UI leaves the detached server running so a renderer restart cannot interrupt show state; the next launch reattaches through the lock. **Close Client Only** first removes any diagnostic owned by that client but preserves Program playback and the server PID.
+6. The app can explicitly stop or restart that process. Switching **Server Settings** to a remote server cleanly stops the local child first. Exit/relaunch/update preparation is fail-closed: if a client-owned native diagnostic cannot be removed, the app stays open, preserves the diagnostic error, and allows retry instead of abandoning a live tone.
 
 For upgrade compatibility, Electron's managed backend intentionally keeps the existing platform `userData` profile named `LivePlay` (for example, `~/Library/Application Support/LivePlay` on macOS). Managed server configuration, PID/lock state, and logs remain there; startup does not copy, move, or rename the profile. This is a storage-compatibility boundary, not the product's visible name. Standalone server state uses the branded DonWells Cue location documented in the operator manual.
 
@@ -191,11 +193,11 @@ All composables are Vue `setup()`-time helpers, typed in TypeScript.
 |------------------------|----------------|
 | `useLiveplayServer`    | REST + WS singleton. Holds connection state, project document, server config. Every other composable builds on this. |
 | `useLiveMeters`        | Subscribes to the `meters` WS frame and exposes per-cue / per-mixer / per-master reactive refs at the server's default 30 Hz cadence. Drives `LiveMeterBar` and `StereoMeter`. |
-| `useProject`           | Project CRUD and sync as exposed by the server. It clears document/path on remote close and serializes revision-fenced saves so only the latest persisted revision becomes clean. |
+| `useProject`           | Paged hydration, Retry/rejoin, project CRUD and sync. It enforces the no-partial-save barrier and clears document/path on remote close; serialized revision/identity fences ensure only the latest persisted revision becomes clean. |
 | `useAudioEngine`       | Transport facade. **Cue to Continue** is runtime-only for one playback instance: it never rewrites `endBehavior`, and Stop, remove, replay, Stop All, media replacement, or project switch cancels it. |
 | `useCartItems`         | The One Shots grid model (slot → cue mapping, per-cell arm state). An arm is consumed only after accepted play; repeated identical arming is coalesced. Storage keeps the legacy cart shape for compatibility. |
 | `useCartHotkeys`       | Configurable keyboard shortcuts → One Shot triggers. See `ControlConfigModal.vue` for the current UI. |
-| `useMidiController`    | Web MIDI bindings → One Shot triggers. See `ControlConfigModal.vue`. |
+| `useMidiController`    | Web MIDI bindings → One Shot triggers and transport. Master Volume targets the server's Global Master—not output channel 0—and the console readout mirrors the authoritative acknowledgement. See `ControlConfigModal.vue`. |
 | `useStateViewer`       | Feeds the live diagnostics popup window (project doc + connection + server status). |
 | `useLocalization`      | i18n (21 languages, RTL). See [Localisation](#localisation-21-languages-rtl). |
 | `useUiMode`            | UI preferences singleton: theme, waveform opacity, playlist track heights, UI font scale (80–110 %, CSS `zoom` on `#app`, excluded in the video output window) and One Shot text scale (70–130 %). |
@@ -210,10 +212,10 @@ The component tree is intentionally flat — every SFC lives directly in [`app/c
 
 - `WelcomeScreen.vue` — project picker and **New Show** entry; creation combines a name field with a read-only Location chosen through **Choose…**.
 - `MainWorkspace.vue` — top-level layout once a project is loaded.
-- `PlaybackControls.vue`, `ActiveCueItem.vue` — top-of-screen GO transport and named **Play Next** target. GO clears the target only after accepted play; a failed or not-yet-loaded target remains ready for retry, and duplicate inputs are coalesced.
+- `PlaybackControls.vue`, `ActiveCueItem.vue` — top-of-screen GO transport and named **Play Next** target. **Set As Next** waits for the authoritative `next_item_set` echo (including empty-string clear), and GO clears it only after accepted play; failures remain ready for retry.
 - `PlaylistView.vue`, `PlaylistItem.vue` — recursive playlist tree.
-- `OneShotPanel.vue`, `OneShotTile.vue` — 1–64 cell quick-play grid with per-cell ARMED/UNARMED gating. An unused panel starts collapsed unless the user explicitly makes it visible; the detached window retains legacy cart-player IPC names. **Duck Level** is consumed by the server, but the visible **Duck Time** and **Release Time** values are not; playback gain uses fixed smoothing.
-- `PropertiesPanel.vue` — properties for the selected item (gain, fades, behaviours, ducking, output device and LTC). It currently exposes the unsupported audio Start Behavior and group End Behavior controls described below.
+- `OneShotPanel.vue`, `OneShotTile.vue` — 1–64 cell quick-play grid with per-cell ARMED/UNARMED gating. An unused panel starts collapsed unless the user explicitly makes it visible; the detached window retains legacy cart-player IPC names while routing edits through the primary-owned mutation broker. Duck Level, Attack and Release are server-consumed, generation-fenced settings.
+- `PropertiesPanel.vue` — properties for the selected item (gain, fades, working Start/End Behaviors, ducking, output device and LTC).
 - `WaveformCanvas.vue` — canvas-rendered waveform fetched from `GET /api/waveform/<cueId>`.
 - `WaveformTrimmer.vue` — interactive in/out trimming + normalise.
 - `RoutingMatrixPanel.vue` — an unmounted 3-tier routing-matrix component; there is no import/callsite that exposes it in the current app. The operator-facing controls are Settings → **Audio Routing** for devices and Properties → **Output device** / **LTC** per cue; the full matrix remains available through the server API.
@@ -227,9 +229,7 @@ The component tree is intentionally flat — every SFC lives directly in [`app/c
 - `ShortcutsBar.vue` — on-screen hotkey reference strip, visible by default.
 - `VideoOutputView.vue`, `VideoConfidenceChip.vue` — the `?videoOutput=1` render surface and its 1 fps confidence thumbnail in the header. Black is only the idle base layer; there is no dedicated blackout or fade-to-black command.
 
-**Current sequencing contract:** **Play First** triggers a group's first immediate child and **Play All** triggers all immediate children. Although Properties currently renders End Behavior controls for a group, the server does not consume a group-level End Behavior. An audio cue's **Play Next** resolves only its next sibling in the same group; the final child must use **Go to Item** or **Go to Index** to leave the group.
-
-The audio cue Start Behavior dropdown values `play-next`, `play-item`, and `play-index` are also not interpreted by the current server. Use natural-end **End Behavior**, or **Start Next at Marker** / **Start Next At** / **Fade Out at Marker** for timed overlaps.
+**Current sequencing contract:** **Play First** dispatches its selected first-child path. **Play All** preflights its selected subtree and starts none unless every selected descendant is ready. A native group run owns those descendants, including nested groups, and fires its authored End Behavior exactly once after natural completion; manual stop/retrigger cancels it. The default group End Behavior remains **Nothing**. Audio Start Behaviors execute `play-next` (structural next sibling), `play-item`, and `play-index`; they do not consume the global operator override. Natural-end Audio End Behavior **Play Next** may honor that override.
 
 Style: Composition API + `<script setup lang="ts">`, scoped SCSS, CSS variables for theming (see [Theming](#theming)).
 

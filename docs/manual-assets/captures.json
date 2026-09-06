@@ -1,13 +1,50 @@
 {
   "application": "DonWells Cue",
-  "version": "2.6.12",
-  "sourceRevision": "bfec86b",
-  "capturedOn": "2026-09-04",
-  "surface": "Electron desktop application using locally built production renderer assets",
-  "fixture": "Isolated Evening Show with generated silent practice media; no user projects or credentials",
   "images": [
-    { "file": "import-media.png", "view": "Local-first Import Media dialog" },
-    { "file": "edit-workspace.png", "view": "Edit workspace with a prepared practice cue list" },
-    { "file": "show-mode.png", "view": "Show Mode with an active cue and named Play Next target" }
+    {
+      "file": "import-media.png",
+      "view": "Local-first Import Media dialog",
+      "version": "2.6.12",
+      "sourceRevision": "bfec86b",
+      "capturedOn": "2026-09-04",
+      "surface": "Electron desktop application using locally built production renderer assets",
+      "fixture": "Isolated Evening Show with generated silent practice media; no user projects or credentials"
+    },
+    {
+      "file": "edit-workspace.png",
+      "view": "Edit workspace with a prepared practice cue list",
+      "version": "2.6.12",
+      "sourceRevision": "bfec86b",
+      "capturedOn": "2026-09-04",
+      "surface": "Electron desktop application using locally built production renderer assets",
+      "fixture": "Isolated Evening Show with generated silent practice media; no user projects or credentials"
+    },
+    {
+      "file": "show-mode.png",
+      "view": "Show Mode with an active cue and named Play Next target",
+      "version": "2.6.12",
+      "sourceRevision": "bfec86b",
+      "capturedOn": "2026-09-04",
+      "surface": "Electron desktop application using locally built production renderer assets",
+      "fixture": "Isolated Evening Show with generated silent practice media; no user projects or credentials"
+    },
+    {
+      "file": "main-console-2.6.14.png",
+      "view": "Main console during real local playback, with GO accepted, Time Left advancing, Global Master at -6 dB, and output fader at 0 dB",
+      "version": "2.6.14",
+      "sourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Isolated Electron desktop application using locally built production renderer assets and native local audio engine",
+      "fixture": "Disposable generated QA show/media; no user projects, credentials, or external MIDI hardware"
+    },
+    {
+      "file": "detached-save-error-2.6.14.png",
+      "view": "Detached One Shots window and primary-owned save-failure reporting, showing the full read-only filesystem error in the popover and a single alert banner",
+      "version": "2.6.14",
+      "sourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Isolated Electron desktop application using locally built production renderer assets and native local audio engine",
+      "fixture": "Disposable generated QA show targeted at a read-only filesystem location; no user projects or credentials"
+    }
   ]
 }

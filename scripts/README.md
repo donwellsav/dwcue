@@ -32,7 +32,7 @@ Bumping the version on `main` is what triggers the [release workflow](../.github
 
 ### Show-document maintenance
 
-[`repair-generated-auto-gain.js`](repair-generated-auto-gain.js) repairs the generated auto-gain defaults in canonical `.dwcue` documents. Run it on a copy and inspect the resulting show before live use. A `.liveplay` document is an immutable legacy input, not an alternate save extension; import it into a fresh `.dwcue` destination before running maintenance. `.dwcuepack` and `.lpa` files are ZIP archives and are never direct document inputs.
+The [`repair-generated-auto-gain.js`](repair-generated-auto-gain.js) helper repairs the generated auto-gain defaults in canonical `.dwcue` documents. Run it on a copy and inspect the resulting show before live use. A `.liveplay` document is an immutable legacy input, not an alternate save extension; import it into a fresh `.dwcue` destination before running maintenance. `.dwcuepack` and `.lpa` files are ZIP archives and are never direct document inputs; current native import requires exactly one root `.dwcue`, and legacy import exactly one root `.liveplay`.
 
 ## Operator manual PDF
 

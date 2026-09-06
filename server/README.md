@@ -2,7 +2,7 @@
 
 `dwcue-server` is the headless C++20 audio engine and control surface that backs the DonWells Cue client. It owns the audio graph, the routing matrix, the loaded project file, and exposes a REST + WebSocket API. It runs as either a child process spawned by the desktop client (single-machine installs) or as a standalone daemon on a stage-side machine that the client connects to over the LAN.
 
-This document tracks the current v2.6.13 source and is the developer's guide to the server; use the release page to determine which behaviour is present in a downloaded installer. For show preparation and operation, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For client internals, see [`client/README.md`](../client/README.md); for overall project and release context, see the [root README](../README.md).
+This document tracks the current v2.6.14 source included at `7a0eee2` (native repair commit `0394928`) and is the developer's guide to the server; this is not a published-installer claim, so use the release page and installed About version to determine available behaviour. For show preparation and operation, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For client internals, see [`client/README.md`](../client/README.md); for overall project and release context, see the [root README](../README.md).
 
 ---
 
@@ -244,11 +244,12 @@ All three stop paths funnel through the same fade-out envelope:
 ### Sequencer trigger invariants
 
 - **Cue to Continue** arms a one-pass, runtime-only continuation for the cue's current playback instance. It temporarily supersedes saved Loop, Start Next, crossfade/stop-fade, and end-behaviour advance; at natural end it starts the resolved target. Stop, remove, replay, Stop All, media replacement, or project switch cancels the arm, so replay falls back to the saved behaviour. `cue_to_continue` is never serialized.
-- A manual **Play Next** override is consumed only when GO successfully starts its target. Failed or not-yet-loaded targets remain armed for retry. For a group, play-first succeeds only when its selected child starts; play-all succeeds when at least one child starts. One Shot arming follows the same accepted-play rule.
+- A manual **Play Next** override changes only when the server accepts a valid UUID or an explicit empty clear. GO consumes it only when playback is accepted; failed or not-yet-loaded targets remain armed. One Shot arming follows the same accepted-play rule.
 - Repeated identical arming is coalesced without another state broadcast. Successful GO clears its override; failed GO leaves it intact.
 - Each play receives a server-side generation fence. Replay, stop, removal, media replacement, and project changes invalidate older generations so a copied terminal action from an earlier playback instance cannot advance or otherwise affect the new one.
-- Group Start Behavior is implemented for **Play First** and **Play All**, but the server does not currently consume a group's End Behavior. `Play Next` resolves only the next sibling in the current immediate container; the final child needs an explicit **Go to Item** or **Go to Index** target to leave the group.
-- The audio-cue Start Behavior values rendered by the current Properties UI (`play-next`, `play-item`, `play-index`) are not interpreted by `ProjectState::play_item`, which only recognizes the legacy `stop` and `play` actions. Do not build show logic on those controls. Natural-end **End Behavior** and timed **Start Next at Marker** / **Start Next At** / **Fade Out at Marker** remain the working sequencing paths.
+- Group **Play First** selects its first-child path. **Play All** preflights the exact selected subtree and starts nothing unless all selected descendants are ready. A `GroupRun` owns the descendants it started, including nested runs, and executes the group's authored End Behavior exactly once after natural completion. Manual stop, external retrigger, looping descendants and cancellation prevent premature group-end dispatch. The default group End Behavior remains **Nothing**.
+- Audio Start Behaviors `play-next`, `play-item`, and `play-index` execute before the audio item itself; cycle detection prevents recursive chains. Start `play-next` is structural and never consumes the global operator override. Natural-end Audio End Behavior `next` may honor that override. Timed **Start Next at Marker** / **Start Next At** / **Fade Out at Marker** preserve the active group generation through internal transitions.
+- Ducking is owner- and playback-generation-fenced. Each sounding owner contributes its authored absolute ceiling plus attack/release times; the strongest active ceiling wins, base gains are recomputed when parameters change, and the original gain is restored only after the last owner releases. Attack/release ramps run without audio-thread allocation.
 
 ---
 
@@ -338,7 +339,7 @@ This is the low-level cue surface — for normal use, prefer the project-item su
 | `POST /api/transport/stop_all` | `{ "fade_ms": 0 }` (optional; empty body permitted) | `{ "ok": true }` |
 | `POST /api/master/ceiling` | `{ "db": -0.1 }` (dBTP) | `{ "ok": true, "db": -0.1 }` · updates and broadcasts the open project's override |
 | `GET /api/master/gain` | — | `{ "db": float }` |
-| `POST /api/master/gain` | `{ "db": float }` | `{ "ok": true, "db": float }` · also broadcasts `master_gain_changed` |
+| `POST /api/master/gain` | `{ "db": float }` | `{ "ok": true, "db": float }` · sets Global Master and broadcasts `master_gain_changed`; it never aliases output channel 0 |
 | `GET /api/master/channels/<int>/gain` | — | `{ "channel": int, "db": float }` |
 | `POST /api/master/channels/<int>/gain` | `{ "db": float }` | `{ "ok": true, "channel": int, "db": float }` · also broadcasts `output_channel_gain_changed` |
 
@@ -442,8 +443,9 @@ Plays an item on `settings.previewDevice` without routing through the live mixer
 | `POST /api/project/load`        | `{ "path": "/abs/file.dwcue" }` *or* `{ "document": { … } }` | header object, augmented with `needsRepair`/`repairIssues` if the document was auto-repaired on load | broadcasts `project_changed`. `400` if neither field is present or load fails. |
 | `POST /api/project/close`       | — | `{ "closed": true }` | broadcasts `project_changed`; clients clear both their project document and remembered path |
 | `PUT /api/project/document`     | full project JSON document | header object | Replaces the entire in-memory document. Broadcasts `project_changed`. |
-| `POST /api/project/save`        | `{ "path": "/abs/file.dwcue" (optional) }` | `{ "ok": true, "path": "…" }` | Saves to the supplied canonical path or the currently-loaded one. `400` if neither is set. |
+| `POST /api/project/save`        | `{ "path": "/abs/file.dwcue" (optional), "document": { … } (optional) }` | `{ "ok": true, "path": "…" }` | Serialized snapshot + atomic sibling-temp publication to the supplied canonical path or current path. `400` if neither is set; failure leaves the previous file and project identity unchanged. |
 | `POST /api/project/repair`      | — | `{ "repaired": bool, "issues": [string], "saved": bool }` | Forces a re-save of the (already auto-repaired on load) in-memory document. |
+Project load returns its header while media readiness continues asynchronously; callers use `/api/project/progress` and per-item errors rather than blocking all transport. Play/GO reject an unready selected target without consuming the operator override. Group Play All performs its all-or-nothing readiness preflight, while Stop All/Panic stay callable regardless of loader failures.
 
 #### Project items
 
@@ -493,7 +495,7 @@ A `.dwcuepack` is a raw ZIP of the active `.dwcue` project's folder; it does not
 
 If `outputPath` is omitted on export, the archive is staged privately in the server's temporary export area and surfaced through a one-shot 10-minute `downloadToken` that's redeemed via `GET /api/file/download`. The temp file is deleted after the download completes.
 
-Archive import infers native versus legacy handling from the supplied filename: `.dwcuepack` imports its canonical `.dwcue`, while `.lpa` converts its legacy `.liveplay` document and returns a `projectFiles` array containing the one canonical `.dwcue` result. Extraction uses a fresh destination directory and rejects absolute paths, `..` traversal, links and special entries, unsafe expansion, and collisions. Legacy conversion never changes the original archive and does not publish the staged `.liveplay` file.
+Archive import infers native versus legacy handling from the supplied filename. A native `.dwcuepack` must contain exactly one root `.dwcue`; a legacy `.lpa` must contain exactly one root `.liveplay`, which is converted into the single canonical `.dwcue` result. Multi-root archives are rejected, even though clients retain a multiple-result compatibility branch for controlled older-server responses. Extraction uses a fresh destination directory and rejects absolute paths, `..` traversal, links and special entries, unsafe expansion, compression-ratio abuse, and collisions. Legacy conversion never changes the original archive and does not publish the staged `.liveplay` file.
 
 ---
 
@@ -581,7 +583,7 @@ Mostly mirror the REST surface so transport commands can skip the HTTP request/r
 | `gain`           | `{ "item_uuid"\|"cue_id": "…", "db": float }` | Sets the per-cue gain. |
 | `fade`           | `{ "item_uuid"\|"cue_id": "…", "in_ms": int, "out_ms": int }` | Sets fade durations. |
 | `stop_all`       | `{ "fade_ms": 0 }` | Stops every active cue. |
-| `set_next_item`  | `{ "item_uuid": "…" }` (empty/missing clears) | Sets the user-overridden **Play Next** target. Echoed to all clients as `next_item_set`. |
+| `set_next_item`  | `{ "item_uuid": "…" }` (empty string clears; missing/non-string rejects) | Validates server-side, then echoes the accepted UUID/clear to all clients as `next_item_set`; clients must not assign optimistically. |
 | `ping`           | `{}` | Server replies with `{ "type": "pong" }`. |
 
 Unknown `type` values get a `{ "type": "error", "message": "unknown type" }` reply.
@@ -627,6 +629,8 @@ The upgrade reconstructs legacy cues and baseline routes so old projects remain 
 ### Backups
 
 `BackupManager` ([`core/backup_manager.hpp`](include/liveplay/core/backup_manager.hpp)) keeps rotating timestamped copies of the project file on every save, so a corrupt write or bad mutation can be recovered.
+
+Native saves are serialized under the project save mutex. The target path and complete document snapshot are resolved under that serialization boundary, written to a sibling temporary file and atomically published. A failed Save As does not adopt the requested path; a pathless save resolves the current canonical path while holding the same lock.
 
 ### Repair
 

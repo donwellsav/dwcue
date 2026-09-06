@@ -3,8 +3,8 @@
 > **Audience:** fresh agent / developer with zero prior context. Read
 > [`IMPROVEMENTS_PLAN.md` §1](IMPROVEMENTS_PLAN.md#1-current-architecture-read-this-first) first for the
 > general architecture.
-> **Status:** Video Playback v1 shipped in v2.6.12 and remains supported in v2.6.13. Section 7 also records session, recovery, and shortcut-focus hardening in the current source.
-> The working source reports v2.6.13; verify the release page for the published artifact and do not infer platform certification from source support alone.
+> **Status:** Video Playback v1 shipped in v2.6.12 and remains supported in current v2.6.14 source `7a0eee2`. Section 7 also records session, recovery, shortcut-focus and fail-closed diagnostic cleanup hardening.
+> This source provenance is not a published-installer claim; verify the release page and installed About version, and do not infer platform certification from source support alone.
 > This is an implementation/design record and retains some proposal tense, not an operator guide.
 > For show operation, use the [operator manual (PDF)](docs/operators-manual.pdf) or its
 > [Markdown source](docs/operators-manual.md).
@@ -200,10 +200,16 @@ Mirrors the `cartPlayerWindow` pattern in `client/electron/main.js`:
   non-negotiable: the window paints the show while the operator works in the control
   window. Without it, Chromium clamps timers/rAF on unfocused windows and macOS stops
   committing frames entirely under occlusion — the output freezes mid-show.
-- **Test card and recovery menu:** the test card shows output name, native resolution
-  and safe-frame guides with no tone. Right-clicking the output opens native actions for
+- **Test card and recovery menu:** visual test cards show output name, native resolution
+  and safe-frame guides without adding a project cue. AV Sync is the exception: it owns a
+  transient native looping diagnostic on the selected PA output. Right-clicking the output opens native actions for
   enter/exit fullscreen, test-card visibility and **Exit Video Output**. Windows
   Alt+F4 closes only the output and disarms it; Escape leaves fullscreen.
+- **Fail-closed native cleanup:** switching away, closing, relaunching or exiting removes
+  the window-owned AV Sync diagnostic before the action continues. If removal fails, the
+  app retains ownership and the diagnostic error, rejects exit/relaunch, restores the
+  control window and allows retry. **Close Client Only** removes that diagnostic while
+  deliberately preserving the detached Program server and show playback.
 - **Keyboard focus:** the output's `before-input-event` handler forwards app-level keys
   to the control renderer so playback, One Shot and configurable shortcuts continue to
   work while the passive output owns focus. OS/native accelerators remain local,
