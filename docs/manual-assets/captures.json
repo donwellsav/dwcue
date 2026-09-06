@@ -1,13 +1,502 @@
 {
   "application": "DonWells Cue",
-  "version": "2.6.12",
-  "sourceRevision": "bfec86b",
-  "capturedOn": "2026-09-04",
-  "surface": "Electron desktop application using locally built production renderer assets",
-  "fixture": "Isolated Evening Show with generated silent practice media; no user projects or credentials",
+  "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+  "packageVersion": "2.6.14",
+  "edition": "Current-source visual operator manual; no installer update or physical-system certification",
   "images": [
-    { "file": "import-media.png", "view": "Local-first Import Media dialog" },
-    { "file": "edit-workspace.png", "view": "Edit workspace with a prepared practice cue list" },
-    { "file": "show-mode.png", "view": "Show Mode with an active cue and named Play Next target" }
-  ]
+    {
+      "file": "welcome-current.png",
+      "view": "Current welcome screen after the managed local engine has connected. Look for the local-server status before creating or opening a show. This does not prove that an audio device is patched or audible.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        2912,
+        1771
+      ],
+      "sha256": "9822949094c5dfeb2a92c02c39f6573b5c915f5d47807322d1b0f3b5ef4aa810",
+      "fixture": "Isolated Evening Show - rehearsal; generated tones, owned native server 4610, internal master gain held at -120 dB during playback. No private media or physical show system.",
+      "captureMethod": "Current Electron compositor screenshot via bounded CDP after native screenshot capture returned stale pixels.",
+      "presentation": "Context-preserving crop around the actual visible dialog to remove empty desktop area; no controls or values redrawn."
+    },
+    {
+      "file": "new-show-current.png",
+      "view": "New Show dialog with the show name and destination choices visible. Check both fields before creating; this does not prove that the destination is writable or backed up.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        1920,
+        1092
+      ],
+      "sha256": "b71e481828f4324551c3e8c29b978fe372b2e4fbda1b7b6a4e3349094546f09b",
+      "fixture": "Isolated Evening Show - rehearsal; generated tones, owned native server 4610, internal master gain held at -120 dB during playback. No private media or physical show system.",
+      "captureMethod": "Current Electron compositor screenshot via bounded CDP after native screenshot capture returned stale pixels."
+    },
+    {
+      "file": "edit-workspace.png",
+      "view": "Annotated current Edit Mode orientation: **1** transport, **2** playlist, **3** Properties, and **4** output console. The numbered markers sit outside the live UI to guide reading; the capture shows an armed Up Next cue and Basic Info open but does not prove decoder readiness or audible routing.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        6120,
+        3472
+      ],
+      "sha256": "c97a7134cd428dc318984ff5d646f5bac40fa2c152d0b4bce3f3c6da72b57c7e",
+      "fixture": "Isolated Evening Show - rehearsal; generated tones, owned native server 4610, internal master gain held at -120 dB during playback. No private media or physical show system.",
+      "captureMethod": "Current Electron compositor screenshot via bounded CDP after native screenshot capture returned stale pixels.",
+      "presentation": "Numbered margin callouts added outside the unchanged screenshot: transport, playlist, Properties, output console."
+    },
+    {
+      "file": "cue-basic-current.png",
+      "view": "Cue Basic Info detail showing identity, end behavior, and trigger information. Read the displayed values for the selected cue; this does not prove that the selected cue is the armed or playing cue.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        5600,
+        1152
+      ],
+      "sha256": "ebe81b2017dfa1bfda3027fc01b076eb7ce4466639033bd621171a7fe2251bd5",
+      "fixture": "Isolated Evening Show - rehearsal; generated tones, owned native server 4610, internal master gain held at -120 dB during playback. No private media or physical show system.",
+      "captureMethod": "Current Electron compositor screenshot via bounded CDP after native screenshot capture returned stale pixels."
+    },
+    {
+      "file": "show-mode.png",
+      "view": "Current Show Mode with **House-open** RUNNING, **Walk-on sequence** named as Play Next, and the **Opening-sting** One Shot ARMED. These are three different states; the image does not prove decoder readiness, audible output, or that firing the One Shot is safe for the house.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        5600,
+        3472
+      ],
+      "sha256": "3bf5a170cfe17844a24cee013af1e7d4efb947c23a91c935261499a0c80971aa",
+      "fixture": "Isolated Evening Show - rehearsal; generated tones, owned native server 4610, internal master gain held at -120 dB during playback. No private media or physical show system.",
+      "captureMethod": "Current Electron compositor screenshot via bounded CDP after native screenshot capture returned stale pixels."
+    },
+    {
+      "file": "import-media.png",
+      "view": "Current Import Media dialog with local file selection primary. Confirm whether the source is this computer or the server; the dialog does not prove that a selected file is supported, copied, or decoder-ready.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        2880,
+        1044
+      ],
+      "sha256": "fc780118e3e751a318303127063c9b96e4b5fb5c7afe1c88f7ea959bc9e33627",
+      "fixture": "Isolated Evening Show - rehearsal; generated tones, owned native server 4610, internal master gain held at -120 dB during playback. No private media or physical show system.",
+      "captureMethod": "Current Electron compositor screenshot via bounded CDP after native screenshot capture returned stale pixels."
+    },
+    {
+      "file": "server-picker-current.png",
+      "view": "Current Browse Server file picker with three practice WAV files selected and **Import selected (3)** ready. Confirm the folder, file count, and selection before importing; this does not prove that the files are decoder-ready or copied into the show.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        2880,
+        2508
+      ],
+      "sha256": "fff19957395e2bd613bc31ddaa3f1a8ef09a174a4c3e9f6253c44af0dc5c993d",
+      "fixture": "Isolated Evening Show - rehearsal; generated tones, owned native server 4610, internal master gain held at -120 dB during playback. No private media or physical show system.",
+      "captureMethod": "Current Electron compositor screenshot via bounded CDP after native screenshot capture returned stale pixels."
+    },
+    {
+      "file": "import-options-current.png",
+      "view": "Current Advanced options detail with copy/link and duplicate handling visible. Verify these choices before importing; this does not prove that externally linked media will travel with an export.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        2880,
+        1920
+      ],
+      "sha256": "838eddf31e8eedb666f447310fa0a47a633dd09bf39810810fa123eaa6d3aed7",
+      "fixture": "Isolated Evening Show - rehearsal; generated tones, owned native server 4610, internal master gain held at -120 dB during playback. No private media or physical show system.",
+      "captureMethod": "Current Electron compositor screenshot via bounded CDP after native screenshot capture returned stale pixels."
+    },
+    {
+      "file": "cue-playback-current.png",
+      "view": "Cue Playback detail with waveform, In/Out, fade, and transition controls visible at readable scale. Inspect the saved values and marker positions; the waveform does not prove a clean edit or an audible destination.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        5600,
+        1152
+      ],
+      "sha256": "3cbb4fa91ee8753503d666aa0105d98b9254a4e1e3d224523da4ef927e25479f",
+      "fixture": "Isolated Evening Show - rehearsal; generated tones, owned native server 4610, internal master gain held at -120 dB during playback. No private media or physical show system.",
+      "captureMethod": "Current Electron compositor screenshot via bounded CDP after native screenshot capture returned stale pixels."
+    },
+    {
+      "file": "cue-end-detail-current.png",
+      "view": "Current End Behavior detail with **Nothing** selected for the practice cue. Use it to confirm a stop-and-wait authored ending; this does not prove that Audio Start actions, markers, or the acknowledged Up Next target are inactive.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        1808,
+        140
+      ],
+      "sha256": "2d6a02da6ce8ccedd22a11262597695d3129b3acb666dc28c6c4a814b452017b",
+      "fixture": "Isolated Evening Show - rehearsal; generated tones, owned native server 4610, internal master gain held at -120 dB during playback. No private media or physical show system.",
+      "captureMethod": "Current Electron compositor screenshot via bounded CDP after native screenshot capture returned stale pixels."
+    },
+    {
+      "file": "group-current.png",
+      "view": "Current Group Properties view with **Start Behavior → Play All** selected for the Walk-on sequence. The adjacent Basic Info and End Behavior tabs hold the other group policies; this capture does not display their values or prove that every descendant is decoder-ready.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        5600,
+        3472
+      ],
+      "sha256": "f29e67dbfe1e6c7d63b4e3e8933a36fd8128a3895c580fcbd015239353d717cc",
+      "fixture": "Isolated Evening Show - rehearsal; generated tones, owned native server 4610, internal master gain held at -120 dB during playback. No private media or physical show system.",
+      "captureMethod": "Current Electron compositor screenshot via bounded CDP after native screenshot capture returned stale pixels."
+    },
+    {
+      "file": "audio-settings-current.png",
+      "view": "Current Audio Routing settings with Audio, Preview, and LTC device selectors visible. Read every selected device on this machine; the screen does not prove the physical console patch.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        1448,
+        1120
+      ],
+      "sha256": "9aa763bfaa99e161030bcca8984b66c503c204876fe37fb16f8e3530cca4928d",
+      "fixture": "Isolated Aurora Tech Rehearsal; generated practice media, owned native server 4612; all 32 output gains set to -120 dB before AV diagnostics.",
+      "captureMethod": "Actual Electron UI; CDP or Electron capturePage after state inspection.",
+      "intervention": "Actual Settings button in Aurora Tech Rehearsal; no device selection changed",
+      "presentation": "Context-preserving crop around the actual visible dialog to remove empty desktop area; no controls or values redrawn."
+    },
+    {
+      "file": "output-routing-current.png",
+      "view": "Current **House-open** cue Output detail with Output device, Output LTC Timecode, Starting Timecode, and Frame Rate controls fully visible. Confirm whether the cue follows **Use project default** or a deliberate device override; this does not show an advanced routing matrix or prove hardware output.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        4800,
+        1152
+      ],
+      "sha256": "b598c350867fb705c45ef5807b86f572805e9473c52c3ac180b3e46cec82ae03",
+      "fixture": "Isolated Evening Show - rehearsal; generated tones, owned native server 4610, internal master gain held at -120 dB during playback. No private media or physical show system.",
+      "captureMethod": "Current Electron compositor screenshot via bounded CDP after native screenshot capture returned stale pixels.",
+      "intervention": "Main captured the full House-open Properties > Output panel at the real window minimum of 1200 CSS pixels; all four fields visible, LTC disabled until configured."
+    },
+    {
+      "file": "output-console-current.png",
+      "view": "Current Output Console detail with one existing output fader, meters, and TP Limiter at readable scale. The crop does not print a main-Master route label or prove the selected hardware destination or acoustic silence.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        424,
+        1498
+      ],
+      "sha256": "fe3051651eaa48ef1aa3cfe1c68b7689367d0fce5edc34d57089f33a456d5291",
+      "fixture": "Isolated Aurora Tech Rehearsal; generated practice media, owned native server 4612; all 32 output gains set to -120 dB before AV diagnostics.",
+      "captureMethod": "Actual Electron UI; CDP or Electron capturePage after state inspection.",
+      "intervention": "Actual workspace output console; rebuild removal verified by DOM and pixels"
+    },
+    {
+      "file": "transport-detail-current.png",
+      "view": "Annotated close-ups from one current playback state, arranged vertically for manual-size legibility rather than as a literal whole-window layout: **1** Stop All, **2** active **House-open** at 0:42 elapsed / −0:47 remaining with Pause and Stop, and **3** Play Next **Walk-on sequence**. This does not prove audible output or the next cue's readiness.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        3890,
+        1590
+      ],
+      "sha256": "890e5bb8dfa55fb8f31549a044c0a42127cb6b22fc4f9985a3689720a7825d51",
+      "fixture": "Isolated Evening Show - rehearsal; generated tones, owned native server 4610, internal master gain held at -120 dB during playback. No private media or physical show system.",
+      "captureMethod": "Current Electron compositor screenshot via bounded CDP after native screenshot capture returned stale pixels.",
+      "presentation": "Three unaltered regions from one live transport screenshot arranged vertically with external labels for print legibility; not a literal full-window layout."
+    },
+    {
+      "file": "one-shot-settings-current.png",
+      "view": "Current One Shot Settings for the practice sting: **Duck Program**, retrigger **Restart**, Auto-disarm enabled, ending **Stop**, Program Level **−20.0 dB**, Duck Time **0.25 s**, Release Time **1 s**, and project-default output. These authored values do not prove that the tile is armed or acoustically safe.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        1240,
+        3020
+      ],
+      "sha256": "8e7669e45d37efa131ebd354aa75e42ac04739f241fb11fac2f3e4f38a2e43b2",
+      "fixture": "Isolated Evening Show - rehearsal; generated tones, owned native server 4610, internal master gain held at -120 dB during playback. No private media or physical show system.",
+      "captureMethod": "Current Electron compositor screenshot via bounded CDP after native screenshot capture returned stale pixels."
+    },
+    {
+      "file": "one-shot-armed-current.png",
+      "view": "Cropped current Show Mode One Shots heading and first row, with **Opening-sting** visibly ARMED. Confirm the exact tile and label before triggering; ARMED does not mean playing, decoder-ready, or safe in the house.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        1080,
+        740
+      ],
+      "sha256": "806a2c399be42c7b281fed9e14dfd79c758113f4b3ecf1b19cba54eefc435c7d",
+      "fixture": "Isolated Evening Show - rehearsal; generated tones, owned native server 4610, internal master gain held at -120 dB during playback. No private media or physical show system.",
+      "captureMethod": "Current Electron compositor screenshot via bounded CDP after native screenshot capture returned stale pixels.",
+      "presentation": "Cropped to the One Shots heading and first row; no UI values modified."
+    },
+    {
+      "file": "shortcuts-current.png",
+      "view": "Current Keyboard shortcuts detail with playback actions and assignments visible. Compare the actual project to the printed default table; this does not prove focus, external-keyboard layout, or that a One Shot is armed.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        2016,
+        2140
+      ],
+      "sha256": "1b34104ed63ff283b4d3f3a82ff890261d8013e2150c10efd8a32f29894462b5",
+      "fixture": "Isolated Evening Show - rehearsal; generated tones, owned native server 4610, internal master gain held at -120 dB during playback. No private media or physical show system.",
+      "captureMethod": "Current Electron compositor screenshot via bounded CDP after native screenshot capture returned stale pixels."
+    },
+    {
+      "file": "midi-current.png",
+      "view": "Current MIDI configuration with **All Devices** selected, no detected MIDI hardware, Learn controls, and currently unassigned mapping fields. Verify the chosen device and mapping on this computer; the capture is not certification of physical MIDI hardware.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        1008,
+        1388
+      ],
+      "sha256": "73b5bd0cf3516fa112159d9210e82384813fd108453e17074a9f439f3e8087b1",
+      "fixture": "Isolated Aurora Tech Rehearsal; generated practice media, owned native server 4612; all 32 output gains set to -120 dB before AV diagnostics.",
+      "captureMethod": "Actual Electron UI; CDP or Electron capturePage after state inspection.",
+      "intervention": "Actual Customize Shortcuts and MIDI tab; configuration only, no permission or device request"
+    },
+    {
+      "file": "video-settings-current.png",
+      "view": "Current Video Output settings with session enablement, display assignment, Identify displays, standby image, and test-card controls. Read Output status after each change; this does not prove that the projector or switcher is showing the same picture.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        1440,
+        1408
+      ],
+      "sha256": "ed8464431b7de336f6cfd2e346d30218ef4bfe1df244b4c942366aded06c0b69",
+      "fixture": "Isolated Aurora Tech Rehearsal; generated practice media, owned native server 4612; all 32 output gains set to -120 dB before AV diagnostics.",
+      "captureMethod": "Actual Electron UI; CDP or Electron capturePage after state inspection.",
+      "intervention": "Actual Video Output tab; no physical display assignment changed"
+    },
+    {
+      "file": "video-test-card-current.png",
+      "view": "Current Video Output test card showing output identity, resolution, and framing guides. Use it to align the physical chain; a correct card does not prove cue-video decoding, soundtrack routing, color calibration, or later hot-plug recovery.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        1920,
+        1016
+      ],
+      "sha256": "31bce65914c3e469b0ea0158d2a08d95e3e3d8cddf72aee54b74919c64602901",
+      "fixture": "Isolated Aurora Tech Rehearsal; generated practice media, owned native server 4612; all 32 output gains set to -120 dB before AV diagnostics.",
+      "captureMethod": "Actual Electron UI; CDP or Electron capturePage after state inspection.",
+      "intervention": "Before opening the card, all 32 native output channels accepted -120 dB; AV route set to Pro Tools Audio Bridge 2-A; output then closed"
+    },
+    {
+      "file": "server-connection-current.png",
+      "view": "Current remote-server connection screen with network discovery, a practice loopback address, and a blank Access token field. Confirm the engine computer and address before connecting; this image contains no real credential and does not prove authenticated control or an external-network path.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        1484,
+        1094
+      ],
+      "sha256": "84a703b04ef88456fcd4a3be1b4dec532eef2df92631161ae350ecf04e82fcc6",
+      "fixture": "Isolated Aurora Tech Rehearsal; generated practice media, owned native server 4612; all 32 output gains set to -120 dB before AV diagnostics.",
+      "captureMethod": "Actual Electron UI; CDP or Electron capturePage after state inspection.",
+      "intervention": "Actual Welcome connection chooser; no discovery result selected, no token entered and no external connection attempted",
+      "presentation": "Context-preserving crop around the actual visible dialog to remove empty desktop area; no controls or values redrawn."
+    },
+    {
+      "file": "save-error-current.png",
+      "view": "Current detached One Shot save-error state: the loaded panel remains visible and its error popover reports that the change was applied but could not be saved. This presentation is specific to the detached mutation path, not the general primary-window save path, and it does not prove that disk data or backups are current.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        1078,
+        1336
+      ],
+      "sha256": "c63a2735593b31bc463c895e3b0104b142ad6421e2e8dd3a39e43ade540a95de",
+      "fixture": "Isolated Aurora Tech Rehearsal; generated practice media, owned native server 4612; all 32 output gains set to -120 dB before AV diagnostics.",
+      "captureMethod": "Actual Electron UI; CDP or Electron capturePage after state inspection.",
+      "intervention": "Owned fixture directory temporarily chmod 0555; actual detached quiet-intro Auto-disarm change triggered governed save failure; permissions restored to 0755 and setting restored"
+    },
+    {
+      "file": "hydration-failed-current.png",
+      "view": "Current project-hydration failure view with the partial project blocked read-only and Retry visible. Stop All remains available; the screen does not prove that the previously requested file is still the server's active project.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        1360,
+        620
+      ],
+      "sha256": "33ab2ffd371c69036f4cfa158e410b86e35b2b37dafec49725ad4e4eb0fa7aae",
+      "fixture": "Isolated Aurora Tech Rehearsal; generated practice media, owned native server 4612; all 32 output gains set to -120 dB before AV diagnostics.",
+      "captureMethod": "Actual Electron UI; CDP or Electron capturePage after state inspection.",
+      "intervention": "One controlled HTTP 503 applied only to the owned fixture items-page request; Retry then rehydrated from current native header/pages"
+    },
+    {
+      "file": "connection-recovery-current.png",
+      "view": "Current **Server restarted** recovery prompt naming the practice project, with **Continue session** and **Start fresh**. Confirm project authority before choosing; the prompt proves neither Program silence nor equivalence between local edits and the server's saved document.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        984,
+        748
+      ],
+      "sha256": "8f62b4e5214bdd002880ed6b4846d0e417d92bed3e0e4af5fe2ac84012f34322",
+      "fixture": "Isolated Aurora Tech Rehearsal; generated practice media, owned native server 4612; all 32 output gains set to -120 dB before AV diagnostics.",
+      "captureMethod": "Actual Electron UI; CDP or Electron capturePage after state inspection.",
+      "intervention": "Owned native server only was stopped and restarted; actual recovery handler produced the modal; Continue session was exercised"
+    },
+    {
+      "file": "quit-current.png",
+      "view": "Current first-stage quit guard for unsaved changes, with **Return to Project**, **Close and disregard changes**, and **Save project, then close**. A server shutdown choice can follow this guard; the image does not prove that Program has stopped.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        1240,
+        582
+      ],
+      "sha256": "ac8e8efefc1d1b2af386325e52bdf7cde7108751f8f27acb5feb4c66cd323f8f",
+      "fixture": "Isolated Aurora Tech Rehearsal; generated practice media, owned native server 4612; all 32 output gains set to -120 dB before AV diagnostics.",
+      "captureMethod": "Actual Electron UI; CDP or Electron capturePage after state inspection.",
+      "intervention": "Autosave disabled and one owned practice group added through actual UI; native app:request-quit IPC invoked; Return to Project selected afterward"
+    },
+    {
+      "file": "quit-server-choice-current.png",
+      "view": "Current managed-server quit choice distinguishing **Return to Project**, **Close Client Only**, and **Close Server**. Read the consequence before choosing; the image does not prove Program silence or authorize closing a shared engine.",
+      "version": "2.6.14",
+      "sourceRevision": "8ea1e9c6ee02414301947f210b35b4952aa5d254",
+      "nativeSourceRevision": "7a0eee21688e378e99a78b50c0c4ec414435bb65",
+      "capturedOn": "2026-09-06",
+      "surface": "Current locally packaged Electron desktop application with the native engine; not a published-installer certification",
+      "dimensions": [
+        1240,
+        532
+      ],
+      "sha256": "670772852176445d8c8d8f9c369d575bec3f2b12fe79986096ff46169568167b",
+      "fixture": "Isolated Aurora Tech Rehearsal; generated practice media, owned native server 4612; all 32 output gains set to -120 dB before AV diagnostics.",
+      "captureMethod": "Actual Electron UI; CDP or Electron capturePage after state inspection.",
+      "intervention": "Project saved with Autosave on, then native app:request-quit IPC invoked; no terminal choice selected during capture"
+    }
+  ],
+  "photos": [
+    {
+      "asset": "docs/manual-assets/audio-connector-photo.jpg",
+      "title": "Professional sound card fireface uc back side with connectors",
+      "author": "Musicproducer",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Professional_sound_card_fireface_uc_back_side_with_connectors.jpg",
+      "originalUrl": "https://upload.wikimedia.org/wikipedia/commons/d/d0/Professional_sound_card_fireface_uc_back_side_with_connectors.jpg",
+      "commonsOriginalSha1": "915088dedc937f4d1bc8e3459ab74297b5b53865",
+      "originalDimensions": "1064x430",
+      "originalSha256": "979b0c8ea5df2809b1f885bed6948091d02e4dbb1b39409947a5601d9891216a",
+      "derivativeDimensions": "1064x430 (unaltered download)",
+      "derivativeSha256": "979b0c8ea5df2809b1f885bed6948091d02e4dbb1b39409947a5601d9891216a",
+      "attribution": "Photo: Musicproducer, “Professional sound card fireface uc back side with connectors,” Wikimedia Commons, CC BY-SA 4.0."
+    },
+    {
+      "asset": "docs/manual-assets/stage-operator-photo.jpg",
+      "title": "Behringer X32 Digital Mixer in operation - angled",
+      "author": "Unknown author (Pxhere source)",
+      "license": "CC0 1.0 Public Domain Dedication",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Behringer_X32_Digital_Mixer_in_operation_-_angled_(2017-07-21_17.23.52_@pxhere_174508).jpg",
+      "originalUrl": "https://upload.wikimedia.org/wikipedia/commons/0/0e/Behringer_X32_Digital_Mixer_in_operation_-_angled_%282017-07-21_17.23.52_%40pxhere_174508%29.jpg",
+      "commonsOriginalSha1": "c47c0453b893b2bedaec972f01339f10299a8367",
+      "originalDimensions": "5760x3840",
+      "originalSha256": "26e7b33f8ffa75464e9e16769365adad6f817219a7581430c4b2b0e4f85fa158",
+      "derivativeDimensions": "1800x1200 (aspect ratio preserved)",
+      "derivativeSha256": "6fd772e754e05c75acad468f6726e155903a2813faff4d6b5f352e508c02b677",
+      "attribution": "Photo: unknown author via Pxhere, “Behringer X32 Digital Mixer in operation - angled,” Wikimedia Commons, CC0 1.0."
+    }
+  ],
+  "diagrams": {
+    "format": "Searchable vector diagrams generated from the manual source",
+    "names": [
+      "signal-flow",
+      "recovery",
+      "gain-stages",
+      "duck-envelope",
+      "cue-lifecycle",
+      "save-recovery"
+    ],
+    "duckEnvelope": "Schematic explanation, not a measured response plot"
+  }
 }

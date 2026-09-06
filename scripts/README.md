@@ -32,7 +32,7 @@ Bumping the version on `main` is what triggers the [release workflow](../.github
 
 ### Show-document maintenance
 
-[`repair-generated-auto-gain.js`](repair-generated-auto-gain.js) repairs the generated auto-gain defaults in canonical `.dwcue` documents. Run it on a copy and inspect the resulting show before live use. A `.liveplay` document is an immutable legacy input, not an alternate save extension; import it into a fresh `.dwcue` destination before running maintenance. `.dwcuepack` and `.lpa` files are ZIP archives and are never direct document inputs.
+The [`repair-generated-auto-gain.js`](repair-generated-auto-gain.js) helper repairs the generated auto-gain defaults in canonical `.dwcue` documents. Run it on a copy and inspect the resulting show before live use. A `.liveplay` document is an immutable legacy input, not an alternate save extension; import it into a fresh `.dwcue` destination before running maintenance. `.dwcuepack` and `.lpa` files are ZIP archives and are never direct document inputs; current native import requires exactly one root `.dwcue`, and legacy import exactly one root `.liveplay`.
 
 ## Operator manual PDF
 
@@ -45,11 +45,13 @@ python3 -m pip install -r scripts/manual-requirements.txt
 python3 scripts/generate-operators-manual.py
 ```
 
+Run the focused link-parser regressions with `python3 scripts/test_generate_operators_manual.py` in the same environment. These cover balanced and escaped URL parentheses, angle-bracket destinations, malformed targets, and preserved inline formatting; they do not replace the PDF checks below.
+
 On Windows, use the virtual environment's Python or `py -3` in place of `python3`. The script resolves its default paths from its own location and also supports `--source PATH --output PATH`; it does not fetch network resources while rendering. It embeds ReportLab's bundled Vera fonts rather than depending on operating-system fonts. Unsupported presentation symbols use explicit readable equivalents (`→` becomes `->`); characters without a supported glyph or known safe equivalent fail the build rather than rendering empty boxes.
 
-The source supports H1/H2/H3 headings, paragraphs, bold/italic/inline code, linked images with captions, lists/checklists, pipe tables, fenced code, blockquote safety notes, internal/external links, `<!-- pagebreak -->`, and the `signal-flow` / `recovery` diagram directives. Unknown directives, broken internal/local links, missing images, and malformed blocks fail the build without replacing the previous PDF.
+The source supports H1/H2/H3 headings, paragraphs, bold/italic/inline code, linked images with captions, lists/checklists, pipe tables, fenced code, blockquote safety notes, internal/external links, `<!-- pagebreak -->`, and six diagram directives: `signal-flow`, `recovery`, `gain-stages`, `duck-envelope`, `cue-lifecycle`, and `save-recovery`. Unknown directives, broken internal/local links, missing images, and malformed blocks fail the build without replacing the previous PDF. Landscape images fit within 105 mm height; portrait control panels may use up to 165 mm so their labels remain readable.
 
-Screenshots live in [`docs/manual-assets/`](../docs/manual-assets/); [`captures.json`](../docs/manual-assets/captures.json) records their source edition and isolated practice-data provenance. Refresh those screenshots against the actual app when their controls change. Do not include user projects, credentials, or private paths in published illustrations.
+Screenshots and attributed equipment photographs live in [`docs/manual-assets/`](../docs/manual-assets/). [`captures.json`](../docs/manual-assets/captures.json) records the current source revision, capture conditions, dimensions and SHA-256 of every interface image, plus photo authors, licences and source links. A refreshed current-source edition must use current-build screenshots throughout, not retain old captures with provenance disclaimers. Prefer a useful overview plus readable detail views, identify any added callouts or rearranged close-ups, and distinguish schematic charts from measured results. Photographs illustrate physical setup; they do not certify pictured hardware. Do not include user projects, credentials, or private paths in published illustrations.
 
 After regeneration, inspect the cover, contents, diagrams, screenshots, tables, and checklist pages visually. Also check searchable text, actual font glyph coverage, embedded fonts, outline destinations, and every link annotation. Extractable Unicode can still render as an empty box when a font lacks its glyph; successful compilation or text extraction alone does not prove a readable manual. Source revision and package version are separate: a current-source manual must not imply that unshipped fixes exist in downloaded installers.
 

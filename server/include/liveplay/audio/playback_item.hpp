@@ -113,6 +113,10 @@ public:
 
     // ---- Mutators --------------------------------------------------------
     void set_gain_db(float db) noexcept;
+    // Multiplicative automation independent of the saved fader and transport
+    // fade. The audio callback advances this envelope lock-free.
+    void set_duck_gain_linear(float linear,
+                              std::chrono::milliseconds duration) noexcept;
     // Fade durations are mirrored into atomics so the audio thread can read the
     // fade-out length without racing these control-thread writes (desc_ keeps a
     // copy for serialization and control-thread reads).
@@ -263,6 +267,19 @@ private:
     std::atomic<TransportState> transport_{TransportState::Stopped};
     std::atomic<float>          gain_target_linear_{1.0f};
     std::atomic<float>          gain_current_linear_{1.0f};     // smoothed
+    std::atomic<float>          duck_current_linear_{1.0f};
+    // Control writers serialize briefly; render takes one revision-validated
+    // snapshot and never waits or spins. Target and duration are therefore
+    // observed as one coherent command.
+    std::atomic_flag            duck_command_write_lock_ = ATOMIC_FLAG_INIT;
+    std::atomic<std::uint64_t>  duck_command_revision_{0};
+    std::atomic<float>          duck_command_target_linear_{1.0f};
+    std::atomic<long long>      duck_command_duration_samples_{0};
+    std::uint64_t               duck_applied_revision_ = 0; // render thread
+    float                       duck_start_linear_ = 1.0f; // render thread
+    float                       duck_target_linear_ = 1.0f; // render thread
+    long long                   duck_duration_samples_ = 0; // render thread
+    long long                   duck_elapsed_samples_ = 0; // render thread
 
     // Per-block fade state (active when transport_ == FadingIn or FadingOut).
     std::atomic<float>          fade_start_linear_{0.0f};

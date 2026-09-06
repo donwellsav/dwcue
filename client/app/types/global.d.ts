@@ -1,5 +1,11 @@
 export {};
 import type { TestCardConfig } from '../../electron/test-card-config';
+import type {
+  OneShotMutationIdentity,
+  OneShotMutationRequest,
+  OneShotMutationResult,
+  OneShotProjectEnvelope,
+} from './oneShotMutation';
 type ProjectFileKind =
   | 'native-project'
   | 'native-archive'
@@ -169,6 +175,7 @@ declare global {
       onMenuChangeLanguage: (callback: (event: any, locale: string) => void) => void;
       onMenuShowAbout: (callback: () => void) => void;
       openExternal: (url: string) => Promise<void>;
+      openOperatorManual: () => Promise<boolean>;
       updateMenuLanguage: (locale: string) => Promise<{ success: boolean }>;
       getSystemLocale: () => Promise<string>;
       getAvailableLocales: () => Promise<Array<{ code: string; name: string; direction: string }>>;
@@ -184,7 +191,17 @@ declare global {
       onUpdateDownloaded: (callback: (event: any, info: { version: string }) => void) => void;
       onUpdateError: (callback: (event: any, error: string) => void) => void;
       onMenuCheckForUpdates: (callback: () => void) => void;
-      syncProjectData: (data: any) => void;
+      syncProjectData: (data: any, identity: OneShotMutationIdentity | null) => void;
+      app?: {
+        relaunch: () => Promise<boolean>;
+        exit: () => Promise<boolean>;
+        confirmQuit: (options: {
+          stopServer?: boolean;
+          installUpdate?: boolean;
+          runAfterInstall?: boolean;
+        }) => Promise<boolean>;
+        onRequestQuit: (callback: () => void) => () => void;
+      };
       onOpenFileAssociation: (callback: (event: any, data: { filePath: string; kind: ProjectFileKind }) => void) => void;
       getPendingOpenFile: () => Promise<{ filePath: string; kind: ProjectFileKind } | null>;
       readMidiConfig: () => Promise<Record<string, any>>;
@@ -192,10 +209,13 @@ declare global {
       // Cart player window
       openCartPlayerWindow: (projectFolderPath: string) => Promise<void>;
       attachCartPlayerWindow: () => void;
-      getCartWindowProjectData: () => Promise<any>;
+      getCartWindowProjectData: () => Promise<OneShotProjectEnvelope>;
       onCartPlayerWindowOpened: (callback: () => void) => void;
       onCartPlayerWindowClosed: (callback: () => void) => void;
-      onCartWindowProjectUpdate: (callback: (event: any, projectData: any) => void) => void;
+      onCartWindowProjectUpdate: (callback: (snapshot: OneShotProjectEnvelope) => void) => () => void;
+      requestOneShotMutation: (request: OneShotMutationRequest) => Promise<OneShotMutationResult>;
+      onOneShotMutationRequest: (callback: (request: OneShotMutationRequest) => void) => () => void;
+      completeOneShotMutation: (result: OneShotMutationResult) => void;
       // UI mode ("show mode") sync across windows
       broadcastUiMode: (mode: 'edit' | 'playback') => void;
       onUiModeSet: (callback: (event: any, mode: 'edit' | 'playback') => void) => void;

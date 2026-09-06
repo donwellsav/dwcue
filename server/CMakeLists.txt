@@ -247,6 +247,7 @@ endforeach()
 # ---------------------------------------------------------------------------
 option(LIVEPLAY_BUILD_TESTS "Build the liveplay test binaries" OFF)
 if(LIVEPLAY_BUILD_TESTS)
+    target_compile_definitions(liveplay-server PRIVATE LIVEPLAY_TEST_HOOKS=1)
     enable_testing()
     add_executable(liveplay-one-shot-migration-tests
         tests/one_shot_migration_test.cpp
@@ -371,6 +372,49 @@ if(LIVEPLAY_BUILD_TESTS)
     target_compile_definitions(liveplay-audio-rt-tests PRIVATE
         LIVEPLAY_DEFAULT_SOUNDFONT="${CMAKE_CURRENT_SOURCE_DIR}/assets/TimGM6mb.sf2")
     add_test(NAME audio-rt COMMAND liveplay-audio-rt-tests)
+    add_executable(liveplay-project-state-runtime-tests
+        tests/project_state_runtime_test.cpp
+        src/logger.cpp
+        src/audio/meter.cpp
+        src/audio/decoder.cpp
+        src/audio/limiter.cpp
+        src/audio/ltc_generator.cpp
+        src/audio/mixer_channel.cpp
+        src/audio/playback_item.cpp
+        src/audio/engine.cpp
+        src/core/project_state.cpp
+        src/core/project_file.cpp
+        src/meta/metadata.cpp
+        src/meta/waveform.cpp
+    )
+    target_include_directories(liveplay-project-state-runtime-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${FFMPEG_INCLUDE_DIRS}
+        ${GME_INCLUDE_DIR}
+        ${VGMSTREAM_INCLUDE_DIR}
+    )
+    target_link_directories(liveplay-project-state-runtime-tests PRIVATE ${FFMPEG_LIBRARY_DIRS})
+    target_link_libraries(liveplay-project-state-runtime-tests PRIVATE
+        Threads::Threads
+        nlohmann_json::nlohmann_json
+        liveplay_miniaudio
+        ${FFMPEG_LIBRARIES}
+        FluidSynth::libfluidsynth
+        ${GME_LIBRARY}
+        ${VGMSTREAM_LIBRARY}
+    )
+    if(TARGET TagLib::tag)
+        target_link_libraries(liveplay-project-state-runtime-tests PRIVATE TagLib::tag)
+    elseif(TARGET TagLib::TagLib)
+        target_link_libraries(liveplay-project-state-runtime-tests PRIVATE TagLib::TagLib)
+    elseif(TARGET unofficial::taglib::tag)
+        target_link_libraries(liveplay-project-state-runtime-tests PRIVATE unofficial::taglib::tag)
+    endif()
+    target_compile_definitions(liveplay-project-state-runtime-tests PRIVATE
+        LIVEPLAY_TEST_NO_DEVICE_ROUTING=1
+        LIVEPLAY_TEST_HOOKS=1
+        LIVEPLAY_DEFAULT_SOUNDFONT="${CMAKE_CURRENT_SOURCE_DIR}/assets/TimGM6mb.sf2")
+    add_test(NAME project-state-runtime COMMAND liveplay-project-state-runtime-tests)
 endif()
 
 # ---------------------------------------------------------------------------

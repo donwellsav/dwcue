@@ -15,8 +15,26 @@
 #include <fstream>
 #include <thread>
 #include <vector>
+#include <cstdlib>
+#include <new>
 
 using namespace liveplay::audio;
+std::atomic<std::uint64_t> g_allocation_count{0};
+
+void* operator new(std::size_t size) {
+    g_allocation_count.fetch_add(1, std::memory_order_relaxed);
+    if (void* p = std::malloc(size)) return p;
+    throw std::bad_alloc{};
+}
+void* operator new[](std::size_t size) {
+    g_allocation_count.fetch_add(1, std::memory_order_relaxed);
+    if (void* p = std::malloc(size)) return p;
+    throw std::bad_alloc{};
+}
+void operator delete(void* p) noexcept { std::free(p); }
+void operator delete[](void* p) noexcept { std::free(p); }
+void operator delete(void* p, std::size_t) noexcept { std::free(p); }
+void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
 
 namespace {
 
@@ -173,6 +191,113 @@ void test_item_gain_path(PlaybackItem& item) {
           "gain: -6 dB is exactly the cue-stage 0.501187 ratio");
     item.stop_now();
     item.set_gain_db(0.0f);
+}
+void test_duck_automation(PlaybackItem& item) {
+    item.stop_now();
+    item.set_loop(false);
+    item.set_out_point_seconds(0.0);
+    item.set_fade_in(std::chrono::milliseconds{0});
+    item.set_fade_out(std::chrono::milliseconds{0});
+    item.set_gain_db(0.0f);
+    item.set_duck_gain_linear(1.0f, std::chrono::milliseconds{0});
+    check(item.prime(2.0, 0.0), "duck: fixture primes");
+    item.play();
+
+    Output output;
+    auto render_mean = [&] {
+        item.service_read_ahead(1);
+        const auto before = g_allocation_count.load(std::memory_order_relaxed);
+        const auto frames = item.render_block(output.channels, 2, kBlock);
+        const auto after = g_allocation_count.load(std::memory_order_relaxed);
+        check(after == before, "duck: render block performs zero allocations");
+        if (frames == 0) return 0.0;
+        double sum = 0.0;
+        for (std::size_t i = 0; i < frames; ++i) sum += std::fabs(output.left[i]);
+        return sum / static_cast<double>(frames);
+    };
+
+    item.set_duck_gain_linear(0.2f, std::chrono::milliseconds{20});
+    const double attack_first = render_mean();
+    double attack_last = attack_first;
+    for (int i = 0; i < 4; ++i) attack_last = render_mean();
+    check(attack_last < attack_first * 0.55,
+          "duck: attack envelope ramps toward absolute linear target");
+
+    bool absolute_ceiling_held = true;
+    item.set_gain_db(6.0f);
+    for (int block = 0; block < 6; ++block) {
+        render_mean();
+        for (float sample : output.left)
+            absolute_ceiling_held = absolute_ceiling_held &&
+                std::isfinite(sample) && std::fabs(sample) <= 0.123f;
+    }
+    check(absolute_ceiling_held,
+          "duck: upward fader slew never exceeds absolute Duck Level");
+
+    item.set_gain_db(-120.0f);
+    double muted_mean = 1.0;
+    for (int block = 0; block < 100; ++block) muted_mean = render_mean();
+    std::printf("MEASURE duck_muted_mean=%.9f\n", muted_mean);
+    check(std::isfinite(muted_mean) && muted_mean < 0.0001,
+          "duck: muted base remains finite and silent");
+
+    item.set_gain_db(0.0f);
+    absolute_ceiling_held = true;
+    for (int block = 0; block < 6; ++block) {
+        render_mean();
+        for (float sample : output.left)
+            absolute_ceiling_held = absolute_ceiling_held &&
+                std::isfinite(sample) && std::fabs(sample) <= 0.123f;
+    }
+    check(absolute_ceiling_held,
+          "duck: recovery from mute remains below absolute Duck Level");
+
+    item.set_duck_gain_linear(1.0f, std::chrono::milliseconds{20});
+    const double release_first = render_mean();
+    double release_last = release_first;
+    for (int i = 0; i < 4; ++i) release_last = render_mean();
+    check(release_last > release_first * 1.8,
+          "duck: release envelope restores the independent base fader");
+
+    item.stop_now();
+    item.set_loop(true);
+    item.set_gain_db(0.0f);
+    item.set_duck_gain_linear(1.0f, std::chrono::milliseconds{0});
+    check(item.prime(2.0, 0.0), "duck race: fixture primes");
+    item.play();
+    std::atomic<bool> writer_done{false};
+    std::thread writer([&] {
+        for (int i = 0; i < 20000; ++i) {
+            item.set_duck_gain_linear((i & 1) ? 0.125f : 0.875f,
+                                      std::chrono::milliseconds{(i & 1) ? 7 : 43});
+        }
+        writer_done.store(true, std::memory_order_release);
+    });
+    bool samples_bounded = true;
+    int blocks = 0;
+    while (!writer_done.load(std::memory_order_acquire) || blocks < 256) {
+        item.service_read_ahead(1);
+        const auto before = g_allocation_count.load(std::memory_order_relaxed);
+        item.render_block(output.channels, 2, kBlock);
+        const auto after = g_allocation_count.load(std::memory_order_relaxed);
+        if (after != before) {
+            check(false, "duck race: render block performs zero allocations");
+            break;
+        }
+        for (float sample : output.left) {
+            samples_bounded = samples_bounded && std::isfinite(sample) &&
+                              std::fabs(sample) <= 1.0001f;
+        }
+        ++blocks;
+    }
+    writer.join();
+    check(samples_bounded,
+          "duck race: rapid target-duration commands remain coherent and bounded");
+
+    item.stop_now();
+    item.set_loop(false);
+    item.set_gain_db(0.0f);
+    item.set_duck_gain_linear(1.0f, std::chrono::milliseconds{0});
 }
 
 void test_active_mirror_prime_is_noop(PlaybackItem& item) {
@@ -601,6 +726,7 @@ int main() {
     check(item.load(), "fixture: WAV loads");
     if (failures == 0) {
         test_item_gain_path(item);
+        test_duck_automation(item);
         test_active_mirror_prime_is_noop(item);
         test_device_reference_churn();
         test_project_runtime_fences();

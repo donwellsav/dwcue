@@ -262,6 +262,12 @@ ref="localModeButton"
         </div>
         <p v-else class="discovered-empty recent-projects-empty">{{ t('menu.noRecentProjects') }}</p>
       </div>
+      <button
+        v-if="canOpenOperatorManual"
+        type="button"
+        class="link-button"
+        @click="openOperatorManual"
+      >{{ t('menu.operatorManual') }}</button>
     </div>
 
     <!-- The New Show form owns both values. Browsing for a location temporarily
@@ -272,6 +278,8 @@ ref="localModeButton"
       :filter="pickerFilter"
       :filter-options="pickerFilterOptions"
       :start-path="pickerStart"
+      :fallback-start-path="pickerFallbackStart"
+      :location-context="pickerIntent === 'new-location' ? 'project-create' : 'project-open'"
       @pick="onPickerPick"
       @close="onPickerClose"
     />
@@ -382,6 +390,9 @@ const newShowBrowseButton = ref<HTMLButtonElement | null>(null);
 const newShowDialogReturnFocus = ref<HTMLElement | null>(null);
 const newShowDialogTitleId = 'welcome-new-show-title';
 
+const canOpenOperatorManual = import.meta.client && typeof window.electronAPI?.openOperatorManual === 'function';
+const openOperatorManual = () => { void window.electronAPI.openOperatorManual(); };
+
 // Computed reflection of the currently-configured server URL.
 const serverUrlDisplay = computed(() => server.serverUrl ?? 'http://127.0.0.1:4480');
 
@@ -391,11 +402,12 @@ const showPicker          = ref(false);
 const pickerMode          = ref<'file' | 'directory'>('directory');
 const pickerFilter        = ref<string>('.dwcue,.liveplay');
 const pickerFilterOptions = ref<string[]>(['.dwcue,.liveplay', 'all']);
-const pickerStart         = ref<string>('');
+const pickerStart         = ref<string | undefined>(undefined);
+const pickerFallbackStart = ref<string>('');
 const pickerIntent        = ref<'new-location' | 'open'>('open');
 
 // Get app version
-const appVersion = ref('2.6.14');
+const appVersion = ref('2.6.15');
 onMounted(async () => {
   if (import.meta.client && (window as any).electronAPI?.getAppVersion) {
     appVersion.value = await (window as any).electronAPI.getAppVersion();
@@ -847,12 +859,13 @@ function queueStageFocus(targetStage = stage.value) {
 const showNewShowDialog = ref(false);
 const newShowName = ref('');
 const newShowLocation = ref('');
+const newShowLocations = useFilePickerLocations(() => String(server.serverUrl), 'project-create');
 const creatingNewShow = ref(false);
 const canCreateNewShow = computed(() => !!newShowName.value.trim() && !!newShowLocation.value.trim());
 
 const handleNewProject = () => {
   newShowName.value = '';
-  newShowLocation.value = recentProjectStartPath();
+  newShowLocation.value = newShowLocations.lastFolder.value ?? recentProjectStartPath();
   newShowDialogReturnFocus.value = document.activeElement instanceof HTMLElement
     ? document.activeElement
     : null;
@@ -865,7 +878,8 @@ function browseNewShowLocation() {
   pickerMode.value          = 'directory';
   pickerFilter.value        = 'all';
   pickerFilterOptions.value = ['all'];
-  pickerStart.value         = newShowLocation.value || recentProjectStartPath();
+  pickerStart.value         = undefined;
+  pickerFallbackStart.value = recentProjectStartPath();
   showNewShowDialog.value   = false;
   showPicker.value          = true;
 }
@@ -875,7 +889,8 @@ const handleOpenProject = () => {
   pickerMode.value          = 'file';
   pickerFilter.value        = '.dwcue,.liveplay';
   pickerFilterOptions.value = ['.dwcue,.liveplay', 'all'];
-  pickerStart.value         = recentProjectStartPath();
+  pickerStart.value         = undefined;
+  pickerFallbackStart.value = recentProjectStartPath();
   showPicker.value          = true;
 };
 

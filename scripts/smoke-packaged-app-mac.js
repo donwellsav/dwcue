@@ -1,8 +1,15 @@
 #!/usr/bin/env node
 const fs = require('node:fs');
 const path = require('node:path');
+const { createServer } = require('node:net');
+const os = require('node:os');
 const { spawnSync } = require('node:child_process');
 const { setTimeout: delay } = require('node:timers/promises');
+
+if (typeof WebSocket === 'undefined') {
+  const child = spawnSync(process.execPath, ['--experimental-websocket', __filename, ...process.argv.slice(2)], { stdio: 'inherit' });
+  process.exit(child.status ?? 1);
+}
 
 const STARTUP_TIMEOUT_MS = 20_000;
 const QUIT_TIMEOUT_MS = 10_000;
@@ -77,7 +84,7 @@ function isRunning(pid) {
 async function waitUntil(check, timeout) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
-    const result = check();
+    const result = await check();
     if (result) return result;
     await delay(POLL_MS);
   }
@@ -102,6 +109,60 @@ function windowInfo(pid) {
   return { visible: match[1] === 'true', count: Number(match[2]) };
 }
 
+async function verifyManagedWebSocket(debugPort) {
+  const lockPath = path.join(
+    process.env.DWCUE_USERDATA || path.join(os.homedir(), 'Library', 'Application Support', 'LivePlay'),
+    'liveplay-server.lock',
+  );
+  const identity = await waitUntil(() => {
+    try {
+      const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+      return Number.isInteger(lock.port) && /^[0-9a-f]{64}$/.test(lock.accessToken || '') ? lock : null;
+    } catch { return null; }
+  }, STARTUP_TIMEOUT_MS);
+  if (!identity) throw new Error('Managed server did not provide a connection credential.');
+  const target = await waitUntil(async () => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`, { signal: AbortSignal.timeout(2000) });
+      const targets = await response.json();
+      return targets.find(page => page.type === 'page' && page.url.startsWith('file://'));
+    } catch { return null; }
+  }, STARTUP_TIMEOUT_MS);
+  if (!target) throw new Error('Packaged renderer did not expose its debugging target.');
+  const expectedUrl = `ws://127.0.0.1:${identity.port}/ws?access_token=${identity.accessToken}`;
+  await new Promise((resolve, reject) => {
+    const socket = new WebSocket(target.webSocketDebuggerUrl);
+    const requests = new Set();
+    let settled = false;
+    const finish = error => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.close();
+      if (error) reject(error); else resolve();
+    };
+    const timer = setTimeout(() => finish(new Error('Actual renderer WebSocket did not connect.')), STARTUP_TIMEOUT_MS);
+    socket.addEventListener('open', () => socket.send(JSON.stringify({ id: 1, method: 'Network.enable' })));
+    socket.addEventListener('error', () => finish(new Error('Renderer debugging connection failed.')));
+    socket.addEventListener('close', () => finish(new Error('Renderer exited before its WebSocket connected.')));
+    socket.addEventListener('message', event => {
+      const message = JSON.parse(String(event.data));
+      if (message.id === 1 && !message.error) {
+        socket.send(JSON.stringify({ id: 2, method: 'Page.reload', params: { ignoreCache: true } }));
+      } else if (message.error) finish(new Error('Renderer debugging command failed.'));
+      const params = message.params;
+      if (message.method === 'Network.webSocketCreated' && params.url === expectedUrl) requests.add(params.requestId);
+      if (!params || !requests.has(params.requestId)) return;
+      if (message.method === 'Network.webSocketHandshakeResponseReceived') {
+        finish(params.response.status === 101 ? null : new Error(`Renderer WebSocket rejected with HTTP ${params.response.status}.`));
+      } else if (message.method === 'Network.webSocketFrameError') {
+        finish(new Error('Actual renderer WebSocket handshake failed.'));
+      }
+    });
+  });
+  console.log(`${prefix} connection: actual packaged renderer WebSocket accepted`);
+}
+
 async function main() {
   if (process.platform !== 'darwin') throw new Error('This check only runs on macOS.');
   if (!fs.statSync(appPath, { throwIfNoEntry: false })?.isDirectory()) {
@@ -122,13 +183,21 @@ async function main() {
   console.log(`${prefix} architecture: ${requestedArch}`);
 
   if (runningPid()) throw new Error(`${productName} is already running; quit it and retry.`);
+  const debugPort = await new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const port = probe.address().port;
+      probe.close(error => error ? reject(error) : resolve(port));
+    });
+  });
 
   let appPid;
   try {
     // --smoke-quit: main.js skips the interactive quit-confirmation veto for
     // this launch, since the app's quit flow shows renderer dialogs that need
     // a human (local-server prompt appears whenever a local server runs).
-    const launch = run('/usr/bin/open', ['-n', appPath, '--args', '--smoke-quit']);
+    const launch = run('/usr/bin/open', ['-n', appPath, '--args', '--smoke-quit', `--remote-debugging-port=${debugPort}`]);
     if (launch.status !== 0) {
       throw new Error(`Launch Services failed: ${(launch.stderr || launch.error?.message || '').trim()}`);
     }
@@ -158,6 +227,7 @@ async function main() {
     await delay(1_000);
     if (!isRunning(appPid)) throw new Error('App exited during startup.');
     console.log(`${prefix} launch: running; startup lock did not force an early exit`);
+    await verifyManagedWebSocket(debugPort);
 
     const quit = run('/usr/bin/osascript', ['-e', `tell application id "${bundleId}" to quit`]);
     if (quit.status !== 0) process.kill(appPid, 'SIGTERM');

@@ -383,7 +383,8 @@
       :open="cueImagePickerOpen"
       mode="file"
       filter=".png,.jpg,.jpeg,.webp,.gif,.svg"
-      :start-path="cueImagePickerStart"
+      :fallback-start-path="cueImagePickerStart"
+      location-context="cue-image"
       @pick="handleCueImagePicked"
       @close="cueImagePickerOpen = false"
     />

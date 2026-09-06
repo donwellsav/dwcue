@@ -27,6 +27,7 @@
     "fullscreen": "Ecran întreg",
     "language": "Limba",
     "help": "Ajutor",
+    "operatorManual": "Manualul operatorului (în engleză)",
     "about": "Despre DonWells Cue",
     "videoOutputEnterFullscreen": "Enter Full Screen",
     "videoOutputExitFullscreen": "Exit Full Screen",
@@ -379,7 +380,8 @@
   },
   "importProgress": {
     "title": "Importare Proiect",
-    "message": "Extragere"
+    "message": "Extragere",
+    "openFailed": "Proiectul importat nu a putut fi deschis."
   },
   "selectProject": {
     "title": "Selectați Proiectul",
@@ -414,7 +416,7 @@
     "selectUp": "Selectare sus",
     "selectDown": "Selectare jos",
     "playSelected": "Redare selectat",
-    "masterVolume": "Volum principal",
+    "masterVolume": "Volum master global",
     "midiDevice": "Dispozitiv MIDI",
     "allDevices": "Toate dispozitivele",
     "conflictSlot": "Already assigned to One Shot {n}",
@@ -433,7 +435,7 @@
     "conflictMessage": "Acest control MIDI este deja atribuit la \"{action}\". Reatribuiți?",
     "playNext": "Redare următorul",
     "volumeMultiplier": "Multiplicator volum",
-    "volumeMultiplierHint": "dB modificați per pas MIDI. Măriți pentru rotițe care se mișcă lent.",
+    "volumeMultiplierHint": "Modificarea în dB a masterului global pentru fiecare pas MIDI. Se aplică tuturor ieșirilor, inclusiv Preview.",
     "sectionOneShots": "One Shots",
     "oneShot": "One Shot {n}",
     "cueToContinue": "Cue to Continue",
@@ -1015,7 +1017,11 @@
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
     "armCell": "Armează {name}",
     "disarmCell": "Dezarmează {name}",
-    "autoDisarm": "Dezarmare automată după declanșare"
+    "autoDisarm": "Dezarmare automată după declanșare",
+    "detachedNoPrimary": "Fereastra principală a proiectului nu este disponibilă.",
+    "detachedStale": "Această fereastră One Shots este neactualizată. Redeschideți-o din fereastra principală.",
+    "detachedRejected": "Modificarea nu a fost acceptată de fereastra principală.",
+    "detachedSaveFailed": "Modificarea a fost aplicată, dar nu a putut fi salvată."
   },
   "outputConsole": {
     "limiter": "TP Limiter",
@@ -1042,5 +1048,18 @@
     "prev": "Previous cue ([)",
     "exit": "Exit (Q)",
     "progress": "Cue {index} of {total}"
+  },
+  "projectHydration": {
+    "loading": "Se încarcă proiectul…",
+    "failed": "Încărcarea proiectului a eșuat. Acest proiect parțial este doar pentru citire.",
+    "retry": "Reîncercați"
+  },
+  "filePicker": {
+    "unavailableFolder": "Folderul utilizat anterior nu este disponibil: {path}. Se afișează o locație de pornire disponibilă.",
+    "favorites": "Foldere favorite",
+    "addCurrentFolder": "Adăugați folderul curent la favorite",
+    "currentFolderFavorite": "Folderul curent este deja favorit",
+    "removeFavorite": "Eliminați {name} din favorite",
+    "emptyFavorites": "Adăugați folderele pe care le utilizați frecvent."
   }
 }

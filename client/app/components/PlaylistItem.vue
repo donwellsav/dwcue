@@ -2,6 +2,8 @@
   <div
     class="playlist-item"
     :data-item-uuid="item.uuid"
+    :inert="!projectControlsReady"
+    :aria-busy="!projectControlsReady"
     :class="{
       'is-selected': isSelected,
       'is-group': item.type === 'group',
@@ -88,6 +90,7 @@
             :highlight-color="item.type === 'group' ? 'var(--folder-next-action)' : 'var(--state-up-next)'"
             active-text-color="black"
             :is-active="isManuallyQueued"
+            :disabled="setNextItemPending"
             context="Playlist"
             @click.stop="handleSetAsNext"
             :title="t('actions.setAsNext')"
@@ -223,6 +226,7 @@
             :highlight-color="item.type === 'group' ? 'var(--folder-next-action)' : 'var(--state-up-next)'"
             active-text-color="black"
             :is-active="isManuallyQueued"
+            :disabled="setNextItemPending"
             context="Playlist"
             @click.stop="handleSetAsNext"
             :title="t('actions.setAsNext')"
@@ -295,6 +299,7 @@ const {
   requestDeleteFromButton,
   findItemByUuid,
   currentProject,
+  projectHydrationStatus,
   saveProject,
   updateIndices,
   waveformUpdateKey,
@@ -309,7 +314,7 @@ const formatMarkerTime = (seconds: number): string => {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 const { levels: outputTargetLevels } = useOutputTarget();
-const { playCue, stopCue, activeCues, activeGroups, triggerGroup, nextItemOverrideUuid, autoNextItemUuid, setNextItem } = useAudioEngine();
+const { playCue, stopCue, activeCues, activeGroups, triggerGroup, nextItemOverrideUuid, autoNextItemUuid, setNextItemPending, setNextItem } = useAudioEngine();
 const { t } = useLocalization();
 const { uiMode } = useUiMode();
 
@@ -317,6 +322,7 @@ const { uiMode } = useUiMode();
 // row up for touch, while keeping waveform, colour, duration, behaviour flags
 // and warnings identical to edit mode.
 const showMode = computed(() => uiMode.value === 'playback');
+const projectControlsReady = computed(() => projectHydrationStatus.value === 'ready');
 
 const { isRevealed, forgetReveal } = usePlaylistReveal();
 
@@ -644,13 +650,8 @@ const handleStopPreview = () => {
   stopPreview();
 };
 
-const handleSetAsNext = () => {
-  if (isManuallyQueued.value) {
-    setNextItem(null);
-  } else {
-    setNextItem(props.item.uuid);
-  }
-};
+const handleSetAsNext = (): Promise<boolean> =>
+  setNextItem(isManuallyQueued.value ? null : props.item.uuid);
 
 const handleDelete = () => {
   // When this item is part of a multi-selection, defer to the confirm dialog

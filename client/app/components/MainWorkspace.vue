@@ -102,6 +102,7 @@
       <aside class="output-console" :aria-label="t('properties.output')">
         <div class="output-console__header workspace-panel-header">
           <div class="output-console__header-controls">
+
             <button
               type="button"
               class="limiter-toggle"
@@ -226,7 +227,8 @@
       mode="directory"
       filter="all"
       :filter-options="['all']"
-      :start-path="currentProject?.folderPath ?? ''"
+      :fallback-start-path="currentProject?.folderPath ?? ''"
+      location-context="archive-export"
       @pick="onExportServerPath"
       @close="exportServerPickerOpen = false"
     />
@@ -250,6 +252,8 @@ const {
   closeProject,
   confirmUnsavedChanges,
   currentProject,
+  projectHydrationStatus,
+  projectSyncIdentity,
   selectAllItems,
   duplicateItems,
   copyItemsToClipboard,
@@ -261,6 +265,7 @@ const { t } = useLocalization();
 const server = useLiveplayServer();
 const { uiMode } = useUiMode();
 const { levels: outputTargetLevels } = useOutputTarget();
+
 
 // Progress modal state
 const progressModal = ref({
@@ -316,6 +321,7 @@ const limiterCeilingLabel = computed(() => {
   const db = limiterCeilingDb.value;
   return `${db > 0 ? '+' : db < 0 ? '−' : ''}${Math.abs(db).toFixed(1)} dBTP`;
 });
+
 const limiterToggleLabel = computed(() =>
   t(limiterEnabled.value ? 'outputConsole.bypassLimiter' : 'outputConsole.enableLimiter'),
 );
@@ -735,22 +741,30 @@ const isCartWindowMode = import.meta.client
   ? new URLSearchParams(window.location.search).get('cartWindow') === '1'
   : false;
 
-watch(currentProject, (project) => {
-  // Only sync from main window, not from detached cart window
-  if (!import.meta.client || !window.electronAPI || !project || isCartWindowMode) return;
-  const cartReferenced = new Set<string>([
-    ...flattenOneShots(project.items || []).map(item => item.uuid),
-    ...(project.cartItems || []).map((ci: any) => ci.itemUuid).filter(Boolean),
-  ]);
-  const data = {
-    ...project,
-    items: stripWaveformsKeeping(project.items || [], cartReferenced),
-    // Cart-only items always keep their waveform — the detached cart window
-    // needs them and the cart is bounded to 64 slots.
-    cartOnlyItems: Array.from(cartOnlyItems.value.values()).map(i => ({ ...i }))
-  };
-  window.electronAPI.syncProjectData(JSON.parse(JSON.stringify(data)));
-}, { deep: true, immediate: true });
+watch(
+  [currentProject, projectSyncIdentity, projectHydrationStatus],
+  ([project, identity, hydrationStatus]) => {
+    // Only sync from the main window, not from the detached cart window.
+    if (!import.meta.client || !window.electronAPI || isCartWindowMode) return;
+    if (!project || !identity || hydrationStatus !== 'ready') {
+      window.electronAPI.syncProjectData(null, null);
+      return;
+    }
+    const cartReferenced = new Set<string>([
+      ...flattenOneShots(project.items || []).map(item => item.uuid),
+      ...(project.cartItems || []).map((ci: any) => ci.itemUuid).filter(Boolean),
+    ]);
+    const data = {
+      ...project,
+      items: stripWaveformsKeeping(project.items || [], cartReferenced),
+      // Cart-only items always keep their waveform — the detached cart window
+      // needs them and the cart is bounded to 64 slots.
+      cartOnlyItems: Array.from(cartOnlyItems.value.values()).map(i => ({ ...i })),
+    };
+    window.electronAPI.syncProjectData(JSON.parse(JSON.stringify(data)), identity);
+  },
+  { deep: true, immediate: true },
+);
 
 // True when the user is typing in a text field — selection/clipboard
 // shortcuts must defer to native editing behaviour there.
@@ -766,6 +780,7 @@ const isForwardedFromVideoOutput = (e: KeyboardEvent): boolean =>
     .dwcueForwardedFromVideoOutput === true;
 
 const handleKeydown = (e: KeyboardEvent) => {
+  if (projectHydrationStatus.value !== 'ready') return;
   // Save on F1 key (alternative to big play button)
   if (e.key === 'F1') {
     e.preventDefault();

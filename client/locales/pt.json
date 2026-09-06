@@ -27,6 +27,7 @@
     "language": "Idioma",
     "exit": "Sair",
     "help": "Ajuda",
+    "operatorManual": "Manual do operador (inglês)",
     "about": "Sobre o DonWells Cue",
     "videoOutputEnterFullscreen": "Enter Full Screen",
     "videoOutputExitFullscreen": "Exit Full Screen",
@@ -379,7 +380,8 @@
   },
   "importProgress": {
     "title": "Importando Projeto",
-    "message": "Extraindo"
+    "message": "Extraindo",
+    "openFailed": "Não foi possível abrir o projeto importado."
   },
   "selectProject": {
     "title": "Selecionar Projeto",
@@ -414,7 +416,7 @@
     "selectUp": "Selecionar acima",
     "selectDown": "Selecionar abaixo",
     "playSelected": "Reproduzir selecionado",
-    "masterVolume": "Volume principal",
+    "masterVolume": "Volume do master global",
     "midiDevice": "Dispositivo MIDI",
     "allDevices": "Todos os dispositivos",
     "conflictSlot": "Already assigned to One Shot {n}",
@@ -433,7 +435,7 @@
     "conflictMessage": "Este controle MIDI já está atribuído a \"{action}\". Reatribuir?",
     "playNext": "Reproduzir próximo",
     "volumeMultiplier": "Multiplicador de volume",
-    "volumeMultiplierHint": "dB alterados por passo MIDI. Aumente para rodas lentas.",
+    "volumeMultiplierHint": "Alteração em dB no master global por passo MIDI. Aplica-se a todas as saídas, incluindo Preview.",
     "sectionOneShots": "One Shots",
     "oneShot": "One Shot {n}",
     "cueToContinue": "Cue to Continue",
@@ -1015,7 +1017,11 @@
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
     "armCell": "Armar {name}",
     "disarmCell": "Desarmar {name}",
-    "autoDisarm": "Desarmar automaticamente após disparo"
+    "autoDisarm": "Desarmar automaticamente após disparo",
+    "detachedNoPrimary": "A janela principal do projeto não está disponível.",
+    "detachedStale": "Esta janela One Shots está desatualizada. Volte a abri-la a partir da janela principal.",
+    "detachedRejected": "A alteração não foi aceite pela janela principal.",
+    "detachedSaveFailed": "A alteração foi aplicada, mas não foi possível guardá-la."
   },
   "outputConsole": {
     "limiter": "TP Limiter",
@@ -1042,5 +1048,18 @@
     "prev": "Previous cue ([)",
     "exit": "Exit (Q)",
     "progress": "Cue {index} of {total}"
+  },
+  "projectHydration": {
+    "loading": "A carregar o projeto…",
+    "failed": "O carregamento do projeto falhou. Este projeto parcial é só de leitura.",
+    "retry": "Tentar novamente"
+  },
+  "filePicker": {
+    "unavailableFolder": "A pasta utilizada anteriormente não está disponível: {path}. A mostrar uma localização inicial disponível.",
+    "favorites": "Pastas favoritas",
+    "addCurrentFolder": "Adicionar a pasta atual aos favoritos",
+    "currentFolderFavorite": "A pasta atual já é uma favorita",
+    "removeFavorite": "Remover {name} dos favoritos",
+    "emptyFavorites": "Adicione as pastas que utiliza com frequência."
   }
 }

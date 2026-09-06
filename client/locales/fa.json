@@ -27,6 +27,7 @@
     "language": "زبان",
     "exit": "خروج",
     "help": "راهنما",
+    "operatorManual": "راهنمای اپراتور (انگلیسی)",
     "about": "درباره DonWells Cue",
     "videoOutputEnterFullscreen": "Enter Full Screen",
     "videoOutputExitFullscreen": "Exit Full Screen",
@@ -379,7 +380,8 @@
   },
   "importProgress": {
     "title": "در حال وارد کردن پروژه",
-    "message": "استخراج"
+    "message": "استخراج",
+    "openFailed": "باز کردن پروژهٔ واردشده ممکن نبود."
   },
   "selectProject": {
     "title": "انتخاب پروژه",
@@ -414,7 +416,7 @@
     "selectUp": "انتخاب بالا",
     "selectDown": "انتخاب پایین",
     "playSelected": "پخش انتخاب‌شده",
-    "masterVolume": "صدای اصلی",
+    "masterVolume": "صدای اصلی سراسری",
     "midiDevice": "دستگاه MIDI",
     "allDevices": "همه دستگاه‌ها",
     "conflictSlot": "Already assigned to One Shot {n}",
@@ -433,7 +435,7 @@
     "conflictMessage": "این کنترل MIDI قبلاً به \"{action}\" اختصاص داده شده است. تخصیص مجدد؟",
     "playNext": "پخش بعدی",
     "volumeMultiplier": "ضریب صدا",
-    "volumeMultiplierHint": "تغییر dB در هر گام MIDI. برای چرخ‌هایی که آهسته حرکت می‌کنند افزایش دهید.",
+    "volumeMultiplierHint": "میزان تغییر صدای اصلی سراسری بر حسب dB در هر گام MIDI. روی همهٔ خروجی‌ها، از جمله Preview، اعمال می‌شود.",
     "sectionOneShots": "One Shots",
     "oneShot": "One Shot {n}",
     "cueToContinue": "Cue to Continue",
@@ -1015,7 +1017,11 @@
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
     "armCell": "آماده‌سازی {name}",
     "disarmCell": "غیرفعال‌سازی {name}",
-    "autoDisarm": "غیرفعال‌سازی خودکار پس از پخش"
+    "autoDisarm": "غیرفعال‌سازی خودکار پس از پخش",
+    "detachedNoPrimary": "پنجرهٔ اصلی پروژه در دسترس نیست.",
+    "detachedStale": "این پنجرهٔ One Shots دیگر به‌روز نیست. آن را از پنجرهٔ اصلی دوباره باز کنید.",
+    "detachedRejected": "پنجرهٔ اصلی این تغییر را نپذیرفت.",
+    "detachedSaveFailed": "تغییر اعمال شد، اما ذخیره کردن آن ممکن نبود."
   },
   "outputConsole": {
     "limiter": "TP Limiter",
@@ -1042,5 +1048,18 @@
     "prev": "Previous cue ([)",
     "exit": "Exit (Q)",
     "progress": "Cue {index} of {total}"
+  },
+  "projectHydration": {
+    "loading": "در حال بارگذاری پروژه…",
+    "failed": "بارگذاری پروژه ناموفق بود. این نسخهٔ ناقص پروژه فقط‌خواندنی است.",
+    "retry": "تلاش مجدد"
+  },
+  "filePicker": {
+    "unavailableFolder": "پوشه‌ای که قبلاً استفاده می‌شد در دسترس نیست: {path}. یک محل شروعِ در دسترس نمایش داده می‌شود.",
+    "favorites": "پوشه‌های برگزیده",
+    "addCurrentFolder": "افزودن پوشهٔ فعلی به برگزیده‌ها",
+    "currentFolderFavorite": "پوشهٔ فعلی از قبل در برگزیده‌هاست",
+    "removeFavorite": "حذف {name} از برگزیده‌ها",
+    "emptyFavorites": "پوشه‌هایی را که زیاد استفاده می‌کنید اضافه کنید."
   }
 }

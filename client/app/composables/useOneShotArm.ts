@@ -1,5 +1,6 @@
 import { computed, watch } from 'vue';
 import type { AudioItem } from '~/types/project';
+import { useDetachedOneShotMutation } from './useDetachedOneShotMutation';
 
 /** Minimal structural shape this composable needs from a one-shot item. */
 type OneShotArmable = Pick<AudioItem, 'oneShot'> | null | undefined;
@@ -41,13 +42,21 @@ export const useOneShotArm = () => {
   const { uiMode } = useUiMode();
   const { getAllItemsFlat, saveProject } = useProject();
   const { cartOnlyItems } = useCartItems();
+  const { isDetached, mutate, fenceDisarmed } = useDetachedOneShotMutation();
   const showMode = computed(() => uiMode.value === 'playback');
 
   const armPolicy = createOneShotArmPolicy(() => showMode.value);
 
-  /** Call after a cell actually fires: re-safe it unless auto-disarm is off. */
+  /** Call after a cell actually fires: the local fence closes immediately. */
   const afterFire = (item: OneShotArmable) => {
-    if (armPolicy.afterFire(item)) void saveProject();
+    if (!armPolicy.afterFire(item)) return;
+    if (isDetached && item?.oneShot) {
+      const uuid = (item as AudioItem).uuid;
+      fenceDisarmed(uuid);
+      void mutate({ kind: 'set-armed', itemUuid: uuid, payload: { armed: false } });
+    } else {
+      void saveProject();
+    }
   };
 
   const disarmAll = () => {
@@ -59,7 +68,9 @@ export const useOneShotArm = () => {
         changed = true;
       }
     }
-    if (changed) void saveProject();
+    if (!changed) return;
+    if (isDetached) void mutate({ kind: 'disarm-all', payload: {} });
+    else void saveProject();
   };
 
   watch(showMode, (on) => { if (!on) disarmAll(); });

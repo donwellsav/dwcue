@@ -94,6 +94,7 @@
 </template>
 
 <script setup lang="ts">
+import { useDetachedOneShotMutation } from '~/composables/useDetachedOneShotMutation';
 import type { CartGridProfile } from '~/composables/useUiMode';
 import type { AudioItem } from '~/types/project';
 import { DEFAULT_CART_AUDIO_ITEM, colorForNewAudioItem } from '~/types/project';
@@ -113,6 +114,7 @@ const {
   currentProject,
   findItemByUuid,
   markPendingImportProcessing,
+  projectHydrationStatus,
   propertiesPanelOpen,
   saveProject,
   selectedItem,
@@ -124,6 +126,8 @@ const { t } = useLocalization();
 const { mount: mountHotkeys, unmount: unmountHotkeys } = useCartHotkeys();
 const { mount: mountMidi, unmount: unmountMidi } = useMidiController();
 const server = useLiveplayServer();
+const { isDetached, identity: detachedIdentity, mutate } = useDetachedOneShotMutation();
+const canMutate = computed(() => isDetached ? !!detachedIdentity.value : projectHydrationStatus.value === 'ready');
 
 const showMode = computed(() => uiMode.value === 'playback');
 const GRID_GAP_PX = 8;
@@ -173,7 +177,7 @@ const slotErrors = reactive<Record<number, string>>({});
 const clearSlotError = (slot: number) => delete slotErrors[slot];
 
 const openImport = (slot: number) => {
-  if (showMode.value || !currentProject.value || busySlot.value !== null) return;
+  if (!canMutate.value || showMode.value || !currentProject.value || busySlot.value !== null) return;
   clearSlotError(slot);
   importSlot.value = slot;
 };
@@ -199,10 +203,19 @@ const replaceSlotItem = async (slot: number, replacement: AudioItem): Promise<vo
   const previousWasStandalone = !!previous && cartOnlyItems.value.has(previous.uuid);
   const previousOneShot = previous?.oneShot ? structuredClone(previous.oneShot) : undefined;
 
+  if (isDetached) {
+    const result = await mutate({ kind: 'replace-slot', payload: { slot, item: replacement } });
+    if (!result?.accepted) throw new Error(result?.error ?? t('oneShots.saveFailed'));
+    if (previousWasStandalone && previous) removeCartOnlyItem(previous.uuid);
+    else if (previous) removeOneShotDesignation(previous);
+    addCartOnlyItem(replacement);
+    if (previousWasStandalone && previous) rollbackSelectionForRemovedItem(previous.uuid);
+    return;
+  }
+
   if (previousWasStandalone && previous) removeCartOnlyItem(previous.uuid);
   else if (previous) removeOneShotDesignation(previous);
   addCartOnlyItem(replacement);
-
   if (await saveProject()) {
     if (previousWasStandalone && previous) rollbackSelectionForRemovedItem(previous.uuid);
     return;
@@ -220,7 +233,7 @@ const importFromServerPath = async (
   slot: number,
   options: ImportOptions,
 ): Promise<boolean> => {
-  if (!currentProject.value || busySlot.value !== null) return false;
+  if (!canMutate.value || !currentProject.value || busySlot.value !== null) return false;
   busySlot.value = slot;
   clearSlotError(slot);
   try {
@@ -307,6 +320,16 @@ const moveOneShotToSlot = async (uuid: string, sourceSlot: number, targetSlot: n
   const source = findItemByUuid(uuid);
   if (!source || source.type !== 'audio' || !source.oneShot) return;
   const target = oneShotSlots.value[targetSlot];
+  if (isDetached) {
+    const result = await mutate({ kind: 'move-slot', itemUuid: uuid, payload: { sourceSlot, targetSlot } });
+    if (!result?.accepted) {
+      slotErrors[targetSlot] = result?.error ?? t('oneShots.moveFailed');
+      return;
+    }
+    source.oneShot.order = targetSlot;
+    if (target?.oneShot) target.oneShot.order = sourceSlot;
+    return;
+  }
   const sourceOrder = source.oneShot.order;
   const targetOrder = target?.oneShot?.order;
   source.oneShot.order = targetSlot;
@@ -318,7 +341,7 @@ const moveOneShotToSlot = async (uuid: string, sourceSlot: number, targetSlot: n
 };
 
 const handleDragOver = (event: DragEvent, slot: number) => {
-  if (showMode.value || !currentProject.value || busySlot.value !== null) return;
+  if (!canMutate.value || showMode.value || !currentProject.value || busySlot.value !== null) return;
   event.preventDefault();
   if (event.dataTransfer) {
     event.dataTransfer.dropEffect = event.dataTransfer.types.includes('one-shot-uuid') ? 'move' : 'copy';
@@ -333,7 +356,7 @@ const handleDragLeave = (event: DragEvent, slot: number) => {
 };
 
 const handleDrop = async (event: DragEvent, slot: number) => {
-  if (showMode.value || !currentProject.value || busySlot.value !== null) return;
+  if (!canMutate.value || showMode.value || !currentProject.value || busySlot.value !== null) return;
   event.preventDefault();
   event.stopPropagation();
   dragOverSlot.value = null;
@@ -370,6 +393,18 @@ const handleDrop = async (event: DragEvent, slot: number) => {
 const removeOneShot = async (item: AudioItem, slot: number) => {
   const standalone = cartOnlyItems.value.has(item.uuid);
   const previousOneShot = item.oneShot ? structuredClone(item.oneShot) : undefined;
+  if (isDetached) {
+    const result = await mutate({ kind: 'remove-slot', itemUuid: item.uuid, payload: {} });
+    if (!result?.accepted) {
+      slotErrors[slot] = result?.error ?? t('oneShots.removeFailed');
+      return;
+    }
+    if (standalone) {
+      removeCartOnlyItem(item.uuid);
+      rollbackSelectionForRemovedItem(item.uuid);
+    } else removeOneShotDesignation(item);
+    return;
+  }
   if (standalone) removeCartOnlyItem(item.uuid);
   else removeOneShotDesignation(item);
   if (await saveProject()) {

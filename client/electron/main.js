@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, session, screen, powerSaveBlocker } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, session, screen, powerSaveBlocker, webContents } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -28,7 +28,11 @@ const {
 const { buildVideoOutputContextTemplate } = require('./video-output-context-menu');
 const os = require('node:os');
 const { createTestCardConfig, AUDIO_SYNC_RATES } = require('./test-card-config');
-const { TestCardPlayback } = require('./test-card-playback');
+const { cleanupConnectionFor, TestCardPlayback } = require('./test-card-playback');
+const { managedWebSocketHeaders } = require('./managed-websocket-origin');
+const { createOneShotMutationBroker, validateIdentity } = require('./one-shot-mutation-broker');
+const { createAppLifecycleActions, createWillQuitHandler } = require('./terminal-action');
+const { createOperatorManual } = require('./operator-manual');
 const {
   SPOTIFY_AUDIO_PROVIDERS,
   normalizeSpotifyBitrate,
@@ -157,6 +161,7 @@ async function safeOpenExternal(rawUrl) {
 app.on('web-contents-created', (_event, contents) => {
   contents.on('will-attach-webview', (event) => event.preventDefault());
   contents.on('will-navigate', (event, targetUrl) => {
+    if (operatorManual.owns(contents)) return;
     if (isTrustedRendererUrl(targetUrl)) return;
     event.preventDefault();
     if (isAllowedExternalUrl(targetUrl)) {
@@ -197,6 +202,14 @@ function configureSessionSecurity() {
     callback(permissionAllowed(webContents, permission)));
 
   if (!app.isPackaged) return;
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: ['ws://127.0.0.1/*'] },
+    (details, callback) => {
+      const sender = webContents.fromId(details.webContentsId);
+      const trusted = !!sender && !sender.isDestroyed() && isTrustedRendererUrl(sender.getURL());
+      callback({ requestHeaders: managedWebSocketHeaders(details, liveplayServerIdentity, trusted) });
+    },
+  );
   const rendererHtml = fs.readFileSync(
     path.join(__dirname, '../.output/public/index.html'), 'utf8');
   const inlineScriptHashes = cspHashesForInlineScripts(rendererHtml).join(' ');
@@ -517,15 +530,35 @@ function importPreferencesPath() {
 function readImportPreferences() {
   try {
     const value = JSON.parse(fs.readFileSync(importPreferencesPath(), 'utf8'));
+    const pickerFolders = value.pickerFolders && typeof value.pickerFolders === 'object' && !Array.isArray(value.pickerFolders)
+      ? value.pickerFolders : {};
+    if (typeof pickerFolders.media !== 'string' && typeof value.mediaPickerFolder === 'string') {
+      pickerFolders.media = value.mediaPickerFolder;
+    }
     return {
       spotifyDestination: typeof value.spotifyDestination === 'string' ? value.spotifyDestination : '',
       spotifyRecovery: normalizeSpotifyRecovery(value.spotifyRecovery),
+      pickerFolders,
     };
-  } catch { return { spotifyDestination: '', spotifyRecovery: null }; }
+  } catch { return { spotifyDestination: '', spotifyRecovery: null, pickerFolders: {} }; }
 }
 
 function writeImportPreferences(value) {
   fs.writeFileSync(importPreferencesPath(), JSON.stringify(value, null, 2));
+}
+
+function nativePickerFolder(purpose) {
+  const folder = readImportPreferences().pickerFolders[purpose];
+  if (typeof folder !== 'string' || !path.isAbsolute(folder)) return undefined;
+  try { return fs.statSync(folder).isDirectory() ? folder : undefined; }
+  catch { return undefined; }
+}
+
+function rememberNativePickerFolder(purpose, folder) {
+  const preferences = readImportPreferences();
+  writeImportPreferences({
+    ...preferences, pickerFolders: { ...preferences.pickerFolders, [purpose]: folder },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1095,45 +1128,60 @@ ipcMain.handle('liveplay-server:get-status', async (event) => {
 });
 
 // Generic app lifecycle controls used by the connection-lost modal.
-// `relaunch` re-spawns the renderer in a clean state (the detached
-// liveplay-server keeps running and is reattached on the next launch).
-// `exit` just quits without touching the server.
+// The detached liveplay-server survives ordinary relaunch/exit. Only an explicit
+// confirmed stop or the existing updater install path stops it.
+const appLifecycleActions = createAppLifecycleActions({
+  prepare: prepareForTerminalAction,
+  relaunch: () => app.relaunch(),
+  exit: (code) => app.exit(code),
+  quit: () => app.quit(),
+  stopServer: stopLiveplayServer,
+  installUpdate: installDownloadedUpdate,
+  confirmQuit: () => { quitConfirmed = true; },
+});
+
+function showTerminalActionFailure(error) {
+  const rawDetail = error instanceof Error ? error.message : String(error);
+  const detail = rawDetail.slice(0, 2000);
+  dialog.showErrorBox(
+    'DonWells Cue could not close safely',
+    'The requested action was cancelled because shutdown cleanup did not finish. '
+      + 'DonWells Cue remains open so you can resolve the connection or server issue and try again.\n\n'
+      + detail,
+  );
+}
+
 ipcMain.handle('app:relaunch', async (event) => {
   requireTrustedIpc(event);
-  await stopTestCardForQuit();
-  await cancelAllSpotifyDownloads(true);
-  await cancelAllYouTubeDownloads();
-  app.relaunch();
-  app.exit(0);
-  return true;
+  try {
+    return await appLifecycleActions.relaunch();
+  } catch (error) {
+    showTerminalActionFailure(error);
+    throw error;
+  }
 });
 ipcMain.handle('app:exit', async (event) => {
   requireTrustedIpc(event);
-  await stopTestCardForQuit();
-  await cancelAllSpotifyDownloads(true);
-  await cancelAllYouTubeDownloads();
-  app.exit(0);
-  return true;
+  try {
+    return await appLifecycleActions.exit();
+  } catch (error) {
+    showTerminalActionFailure(error);
+    throw error;
+  }
 });
 
 // Two-step quit confirmation. The renderer drives the dialogs (unsaved
 // changes → optionally shut the local audio server down); once the user
-// has decided it calls `app:confirm-quit`. Update-on-exit uses the same
+// has decided it calls app:confirm-quit. Update-on-exit uses the same
 // IPC boundary so the managed server is stopped before replacing binaries.
 ipcMain.handle('app:confirm-quit', async (event, opts) => {
   requireTrustedIpc(event);
-  await stopTestCardForQuit();
-  if (opts?.installUpdate === true) {
-    return installDownloadedUpdate({
-      runAfterInstall: opts.runAfterInstall !== false,
-    });
+  try {
+    return await appLifecycleActions.confirm(opts);
+  } catch (error) {
+    showTerminalActionFailure(error);
+    throw error;
   }
-  if (opts && opts.stopServer) await stopLiveplayServer();
-  await cancelAllSpotifyDownloads(true);
-  await cancelAllYouTubeDownloads();
-  quitConfirmed = true;
-  app.quit();
-  return true;
 });
 
 ipcMain.handle('liveplay-server:restart', async (event) => {
@@ -1832,12 +1880,26 @@ let mainWindow = null;
 let quitConfirmed = false;
 let currentProject = null;
 let currentProjectData = null; // Full project data synced between Electron windows
+let currentProjectIdentity = null; // Separate ownership fence; never merged into project documents
 let fileToOpen = null; // Store file path if app is opened with a file
 let stateViewerWindow = null; // Debug state viewer window
 let cartPlayerWindow = null;  // Detached cart player window
+const oneShotMutationBroker = createOneShotMutationBroker({
+  getCartWebContents: () => cartPlayerWindow?.webContents ?? null,
+  getPrimaryWebContents: () => mainWindow?.webContents ?? null,
+  getCurrentIdentity: () => currentProjectIdentity,
+});
 
 // Check if --dev flag is present in command line arguments
 const isDevMode = process.argv.includes('--dev') || !app.isPackaged;
+
+const operatorManual = createOperatorManual({
+  onFocus: () => createMenu(currentLocale, isDevMode),
+  onClosed: () => createMenu(currentLocale, isDevMode),
+});
+app.on('browser-window-focus', (_event, window) => {
+  if (!operatorManual.owns(window.webContents)) createMenu(currentLocale, isDevMode);
+});
 
 // Configure auto-updater
 autoUpdater.autoDownload = false; // Don't auto-download, ask user first
@@ -1898,13 +1960,12 @@ let updateInstallAttemptActive = false;
 async function installDownloadedUpdate({ runAfterInstall = true } = {}) {
   if (!DWCUE_UPDATES_CONFIGURED || !updatesInstallSupported) return false;
   try {
+    await prepareForTerminalAction();
     const serverStopped = await stopLiveplayServer();
     if (!serverStopped) {
       console.error('[update] refusing install while the managed server is running');
       return false;
     }
-    await cancelAllSpotifyDownloads(true);
-    await cancelAllYouTubeDownloads();
     const shouldRunAfterInstall = runAfterInstall !== false;
     // BaseUpdater uses autoRunAppAfterInstall for non-silent installs. The
     // exit path is silent on Windows and must also set this property because
@@ -2053,6 +2114,7 @@ function createWindow() {
     mainWindow = null;
   });
 
+
   createMenu('en', isDevMode);
 }
 
@@ -2166,10 +2228,26 @@ async function setVideoOutputTestCard(show) {
 
 async function stopTestCardForQuit() {
   videoOutputTestCard = false;
-  const connection = videoOutputTestCardConnection;
-  videoOutputTestCardConnection = null;
+  const sessionConnection = testCardPlayback.session?.connection ?? null;
+  let managedIdentity = null;
+  if (sessionConnection?.local) {
+    try { managedIdentity = await reconcileLiveplayServerIdentity(); }
+    catch { /* cleanup still tries the session's exact original connection */ }
+  }
+  const connection = cleanupConnectionFor(
+    sessionConnection,
+    videoOutputTestCardConnection,
+    managedIdentity,
+  );
   await testCardPlayback.update(null, connection);
   if (testCardPlayback.session) throw new Error(testCardPlayback.error || 'Could not stop AV Sync.');
+  videoOutputTestCardConnection = null;
+}
+
+async function prepareForTerminalAction() {
+  await stopTestCardForQuit();
+  await cancelAllSpotifyDownloads(true);
+  await cancelAllYouTubeDownloads();
 }
 
 
@@ -3137,6 +3215,7 @@ const menuTranslations = Object.entries(localeFiles).reduce((acc, [code, data]) 
     fullscreen: data.menu.fullscreen,
     language: data.menu.language,
     help: data.menu.help,
+    operatorManual: data.menu.operatorManual,
     checkForUpdates: data.menu.checkForUpdates,
     about: data.menu.about,
     videoOutputEnterFullscreen: data.menu.videoOutputEnterFullscreen,
@@ -3180,6 +3259,15 @@ function createMenu(locale = 'en', isDev = false) {
   currentLocale = locale;
   const t = menuTranslations[locale] || menuTranslations.en;
   
+
+  if (operatorManual.owns(BrowserWindow.getFocusedWindow()?.webContents)) {
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      { label: t.file, submenu: [{ role: 'close' }] },
+      { role: 'editMenu' },
+      { label: t.help, submenu: [{ label: t.operatorManual, click: () => void operatorManual.open(mainWindow, t.operatorManual) }] },
+    ]));
+    return;
+  }
   const template = [
     {
       label: t.file,
@@ -3316,6 +3404,11 @@ function createMenu(locale = 'en', isDev = false) {
     {
       label: t.help,
       submenu: [
+        {
+          label: t.operatorManual,
+          click: () => void operatorManual.open(mainWindow, t.operatorManual),
+        },
+        { type: 'separator' },
         ...(!isDev ? [
           {
             label: t.checkForUpdates,
@@ -3340,13 +3433,21 @@ function createMenu(locale = 'en', isDev = false) {
 }
 
 // IPC Handlers
+ipcMain.handle('help:open-operator-manual', (event) => {
+  requireTrustedIpc(event);
+  const t = menuTranslations[currentLocale] || menuTranslations.en;
+  return operatorManual.open(mainWindow, t.operatorManual);
+});
+
 ipcMain.handle('select-project-folder', async (event) => {
   requireTrustedIpc(event);
   const result = await dialog.showOpenDialog(mainWindow, {
+    defaultPath: nativePickerFolder('project-folder'),
     properties: ['openDirectory', 'createDirectory']
   });
 
   if (!result.canceled && result.filePaths.length > 0) {
+    rememberNativePickerFolder('project-folder', result.filePaths[0]);
     return pathCapabilities.authorizeRoot(result.filePaths[0]);
   }
   return null;
@@ -3355,6 +3456,7 @@ ipcMain.handle('select-project-folder', async (event) => {
 ipcMain.handle('select-project-file', async (event) => {
   requireTrustedIpc(event);
   const result = await dialog.showOpenDialog(mainWindow, {
+    defaultPath: nativePickerFolder('project-open'),
     properties: ['openFile'],
     filters: [
       { name: 'DonWells Cue Show', extensions: ['dwcue'] },
@@ -3367,12 +3469,14 @@ ipcMain.handle('select-project-file', async (event) => {
   const kind = fileKindFor(selectedPath);
   if (kind !== ProjectFileKind.NativeProject &&
       kind !== ProjectFileKind.LegacyProject) return null;
+  rememberNativePickerFolder('project-open', path.dirname(selectedPath));
   return authorizeOpenableFilePath(selectedPath);
 });
 
 ipcMain.handle('select-audio-files', async (event) => {
   requireTrustedIpc(event);
   const result = await dialog.showOpenDialog(mainWindow, {
+    defaultPath: nativePickerFolder('media'),
     properties: ['openFile', 'multiSelections'],
     // Audio plus the video containers the engine decodes (H.264/HEVC tracks);
     // imported video cues play their audio through the engine and drive the
@@ -3388,10 +3492,9 @@ ipcMain.handle('select-audio-files', async (event) => {
     }],
   });
 
-  if (!result.canceled && result.filePaths.length > 0) {
-    return result.filePaths.map(filePath => pathCapabilities.authorizeFile(filePath));
-  }
-  return null;
+  if (result.canceled || result.filePaths.length === 0) return null;
+  rememberNativePickerFolder('media', path.dirname(result.filePaths[0]));
+  return result.filePaths.map(filePath => pathCapabilities.authorizeFile(filePath));
 });
 
 ipcMain.handle('get-import-preferences', (event) => {
@@ -3574,10 +3677,11 @@ ipcMain.handle('show-save-archive-dialog', async (event, defaultName) => {
     : 'project.dwcuepack';
   const result = await dialog.showSaveDialog(mainWindow, {
     title: 'Save DonWells Cue Show Archive',
-    defaultPath: canonicalArchivePath(requestedName),
+    defaultPath: path.join(nativePickerFolder('archive-export') || '', canonicalArchivePath(requestedName)),
     filters: [{ name: 'DonWells Cue Show Archive', extensions: ['dwcuepack'] }],
   });
   if (result.canceled || !result.filePath) return null;
+  rememberNativePickerFolder('archive-export', path.dirname(result.filePath));
   return pathCapabilities.authorizeFile(
     canonicalArchivePath(result.filePath), { allowMissing: true });
 });
@@ -3586,6 +3690,7 @@ ipcMain.handle('show-save-archive-dialog', async (event, defaultName) => {
 ipcMain.handle('show-open-archive-dialog', async (event) => {
   requireTrustedIpc(event);
   const result = await dialog.showOpenDialog(mainWindow, {
+    defaultPath: nativePickerFolder('archive-import'),
     title: 'Choose DonWells Cue Show Archive',
     properties: ['openFile'],
     filters: [
@@ -3598,6 +3703,7 @@ ipcMain.handle('show-open-archive-dialog', async (event) => {
   const kind = fileKindFor(selectedPath);
   if (kind !== ProjectFileKind.NativeArchive &&
       kind !== ProjectFileKind.LegacyArchive) return null;
+  rememberNativePickerFolder('archive-import', path.dirname(selectedPath));
   return pathCapabilities.authorizeFile(selectedPath);
 });
 
@@ -3859,45 +3965,53 @@ ipcMain.handle('set-current-project', async (event, projectPath) => {
   return { success: true };
 });
 
-// Receive full project data from renderer to power HTTP API GET/PATCH endpoints
-// Only sync from the main window, not from the detached cart window (to avoid feedback loops)
-ipcMain.on('sync-project-data', (event, projectData) => {
+// Receive full project data from the primary renderer. Ownership identity stays
+// separate from the document so existing API consumers continue to see plain project data.
+ipcMain.on('sync-project-data', (event, projectData, identity) => {
   try {
     requireTrustedIpc(event);
+    if (event.sender !== mainWindow?.webContents) {
+      throw new Error('sender is not the primary project owner');
+    }
     requireBoundedIpcObject(projectData, 'projectData', 10 * 1024 * 1024);
+    if (projectData === null) {
+      if (identity !== null) throw new TypeError('identity must be null when clearing project data');
+    } else {
+      validateIdentity(identity);
+    }
   } catch (error) {
     console.warn('[sync-project-data] rejected payload:', error.message);
     return;
   }
-  // Check if this sync is coming from the main window (not the cart window)
-  const isFromMainWindow = event.sender === mainWindow?.webContents;
 
-  if (isFromMainWindow) {
-    currentProjectData = projectData;
-    // Keep the menu's "Export Project" / similar items in sync with whether
-    // a project is actually open in the renderer. The server-backed flow
-    // never calls set-current-project explicitly, so without this the menu
-    // gate (enabled: currentProject !== null) would stay stuck off forever
-    // and File > Export Project would appear greyed out even with a project
-    // loaded. Rebuild the menu only when the open/closed transition flips,
-    // since createMenu() is not free.
-    const nextOpen = projectData
-      ? (projectData.folderPath || projectData.name || 'open')
-      : null;
-    const wasOpen = currentProject !== null;
-    const isOpen  = nextOpen   !== null;
-    if (wasOpen !== isOpen) {
-      currentProject = nextOpen;
-      createMenu(currentLocale, isDevMode);
-    } else {
-      currentProject = nextOpen;
-    }
-    // Forward project updates to the detached cart window if open
-    if (cartPlayerWindow && projectData) {
-      cartPlayerWindow.webContents.send('cart-window-project-update', projectData);
-    }
+  currentProjectData = projectData;
+  currentProjectIdentity = identity;
+  // Keep the menu's "Export Project" / similar items in sync with whether
+  // a project is actually open in the renderer. The server-backed flow
+  // never calls set-current-project explicitly, so without this the menu
+  // gate (enabled: currentProject !== null) would stay stuck off forever
+  // and File > Export Project would appear greyed out even with a project
+  // loaded. Rebuild the menu only when the open/closed transition flips,
+  // since createMenu() is not free.
+  const nextOpen = projectData
+    ? (projectData.folderPath || projectData.name || 'open')
+    : null;
+  const wasOpen = currentProject !== null;
+  const isOpen = nextOpen !== null;
+  if (wasOpen !== isOpen) {
+    currentProject = nextOpen;
+    createMenu(currentLocale, isDevMode);
+  } else {
+    currentProject = nextOpen;
   }
-  // Silently ignore syncs from the cart window to prevent feedback loops
+  // Forward every snapshot, including project closure, to the detached window.
+  if (cartPlayerWindow && !cartPlayerWindow.isDestroyed()
+      && !cartPlayerWindow.webContents.isDestroyed()) {
+    cartPlayerWindow.webContents.send('cart-window-project-update', {
+      project: currentProjectData,
+      identity: currentProjectIdentity,
+    });
+  }
 });
 
 // Cart player window IPC handlers
@@ -3960,7 +4074,21 @@ ipcMain.on('cart-grid-layouts-changed', (event, layouts) => {
 
 ipcMain.handle('get-cart-window-project-data', (event) => {
   requireTrustedIpc(event);
-  return currentProjectData || null;
+  return { project: currentProjectData, identity: currentProjectIdentity };
+});
+
+ipcMain.handle('one-shot-mutation:request', (event, request) => {
+  requireTrustedIpc(event);
+  return oneShotMutationBroker.request(event.sender, request);
+});
+
+ipcMain.on('one-shot-mutation:complete', (event, result) => {
+  try {
+    requireTrustedIpc(event);
+    oneShotMutationBroker.complete(event.sender, result);
+  } catch (error) {
+    console.warn('[one-shot-mutation:complete] rejected result:', error.message);
+  }
 });
 
 // State viewer: Receive state updates from renderer and forward to state viewer window
@@ -5767,13 +5895,21 @@ app.on('window-all-closed', () => {
 
 // The audio server is deliberately detached. Even quit paths without a live
 // control renderer must settle this window-owned diagnostic before exiting.
-app.on('will-quit', (event) => {
-  event.preventDefault();
-  void stopTestCardForQuit().catch((error) => {
-    console.error('[video-output] AV Sync cleanup on exit failed:', error.message);
-  }).finally(() => {
-    // All windows have already accepted closing. Complete this quit after
-    // cleanup rather than reentering Electron's in-progress app.quit().
-    app.exit(0);
-  });
-});
+// On failure, restore the control window so cleanup can be retried rather than
+// leaving the still-owned native tone behind while Electron exits headless.
+app.on('will-quit', createWillQuitHandler({
+  prepare: prepareForTerminalAction,
+  exit: () => app.exit(0),
+  onFailure: (error) => {
+    console.error('[lifecycle] cleanup on exit failed:', error.message);
+    showTerminalActionFailure(error);
+  },
+  recover: () => {
+    quitConfirmed = false;
+    if (!mainWindow || mainWindow.isDestroyed()) createWindow();
+    else {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  },
+}));

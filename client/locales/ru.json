@@ -27,6 +27,7 @@
     "fullscreen": "Полноэкранный режим",
     "language": "Язык",
     "help": "Справка",
+    "operatorManual": "Руководство оператора (на английском)",
     "about": "О DonWells Cue",
     "videoOutputEnterFullscreen": "Enter Full Screen",
     "videoOutputExitFullscreen": "Exit Full Screen",
@@ -379,7 +380,13 @@
   },
   "importProgress": {
     "title": "Импорт проекта",
-    "message": "Извлечение"
+    "message": "Извлечение",
+    "openFailed": "Не удалось открыть импортированный проект."
+  },
+  "projectHydration": {
+    "loading": "Загрузка проекта…",
+    "failed": "Не удалось загрузить проект. Этот частично загруженный проект доступен только для чтения.",
+    "retry": "Повторить"
   },
   "selectProject": {
     "title": "Выбрать проект",
@@ -414,7 +421,7 @@
     "selectUp": "Выбрать выше",
     "selectDown": "Выбрать ниже",
     "playSelected": "Воспроизвести выбранное",
-    "masterVolume": "Основная громкость",
+    "masterVolume": "Громкость глобального мастера",
     "midiDevice": "MIDI-устройство",
     "allDevices": "Все устройства",
     "conflictSlot": "Already assigned to One Shot {n}",
@@ -433,7 +440,7 @@
     "conflictMessage": "Этот MIDI-контроллер уже назначен \"{action}\". Переназначить?",
     "playNext": "Следующий трек",
     "volumeMultiplier": "Множитель громкости",
-    "volumeMultiplierHint": "Изменение дБ на шаг MIDI. Увеличьте для медленных регуляторов.",
+    "volumeMultiplierHint": "Изменение громкости глобального мастера в dB на каждом шаге MIDI. Применяется ко всем выходам, включая Preview.",
     "sectionOneShots": "One Shots",
     "oneShot": "One Shot {n}",
     "cueToContinue": "Cue to Continue",
@@ -716,6 +723,14 @@
     "fromServer": "Обзор сервера",
     "fromThisComputer": "С этого компьютера"
   },
+  "filePicker": {
+    "unavailableFolder": "Ранее использованная папка недоступна: {path}. Вместо неё отображается доступная начальная папка.",
+    "favorites": "Избранные папки",
+    "addCurrentFolder": "Добавить текущую папку в избранное",
+    "currentFolderFavorite": "Текущая папка уже добавлена в избранное",
+    "removeFavorite": "Удалить {name} из избранного",
+    "emptyFavorites": "Добавьте папки, которыми часто пользуетесь."
+  },
   "importAudio": {
     "title": "Импорт медиа",
     "localIntro": "Выберите аудио- или видеофайлы на этом компьютере.",
@@ -956,6 +971,10 @@
     }
   },
   "oneShots": {
+    "detachedNoPrimary": "Главное окно проекта недоступно.",
+    "detachedStale": "Данные в этом окне One Shots устарели. Откройте его заново из главного окна.",
+    "detachedRejected": "Главное окно отклонило изменение.",
+    "detachedSaveFailed": "Изменение применено, но сохранить его не удалось.",
     "title": "One Shots",
     "hint": "Drop audio or playlist cues into any cell",
     "detach": "Detach",

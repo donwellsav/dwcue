@@ -27,6 +27,7 @@
     "fullscreen": "フルスクリーン",
     "language": "言語",
     "help": "ヘルプ",
+    "operatorManual": "オペレーターマニュアル（英語）",
     "about": "DonWells Cueについて",
     "videoOutputEnterFullscreen": "Enter Full Screen",
     "videoOutputExitFullscreen": "Exit Full Screen",
@@ -379,7 +380,8 @@
   },
   "importProgress": {
     "title": "プロジェクトをインポート中",
-    "message": "展開中"
+    "message": "展開中",
+    "openFailed": "インポートしたプロジェクトを開けませんでした。"
   },
   "selectProject": {
     "title": "プロジェクトを選択",
@@ -414,7 +416,7 @@
     "selectUp": "上に選択",
     "selectDown": "下に選択",
     "playSelected": "選択を再生",
-    "masterVolume": "マスターボリューム",
+    "masterVolume": "グローバルマスターボリューム",
     "midiDevice": "MIDIデバイス",
     "allDevices": "すべてのデバイス",
     "conflictSlot": "Already assigned to One Shot {n}",
@@ -433,7 +435,7 @@
     "conflictMessage": "このMIDIコントロールは既に「{action}」に割り当てられています。再割り当てしますか？",
     "playNext": "次を再生",
     "volumeMultiplier": "音量倍率",
-    "volumeMultiplierHint": "MIDIステップごとに変化するdB。ゆっくり動くホイールでは値を上げてください。",
+    "volumeMultiplierHint": "MIDI の1ステップあたりのグローバルマスターの変化量（dB）です。Preview を含むすべての出力に適用されます。",
     "sectionOneShots": "One Shots",
     "oneShot": "One Shot {n}",
     "cueToContinue": "Cue to Continue",
@@ -1015,7 +1017,11 @@
     "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
     "armCell": "{name} をアーム",
     "disarmCell": "{name} のアーム解除",
-    "autoDisarm": "発火後に自動でアーム解除"
+    "autoDisarm": "発火後に自動でアーム解除",
+    "detachedNoPrimary": "メインのプロジェクトウィンドウを利用できません。",
+    "detachedStale": "この One Shots ウィンドウは最新の状態ではありません。メインウィンドウから開き直してください。",
+    "detachedRejected": "メインウィンドウが変更を受け付けませんでした。",
+    "detachedSaveFailed": "変更は適用されましたが、保存できませんでした。"
   },
   "outputConsole": {
     "limiter": "TP Limiter",
@@ -1042,5 +1048,18 @@
     "prev": "Previous cue ([)",
     "exit": "Exit (Q)",
     "progress": "Cue {index} of {total}"
+  },
+  "projectHydration": {
+    "loading": "プロジェクトを読み込んでいます…",
+    "failed": "プロジェクトの読み込みに失敗しました。このプロジェクトは一部しか読み込まれていないため、読み取り専用です。",
+    "retry": "再試行"
+  },
+  "filePicker": {
+    "unavailableFolder": "以前使用したフォルダを利用できません：{path}。代わりに、利用可能な初期位置を表示しています。",
+    "favorites": "お気に入りのフォルダ",
+    "addCurrentFolder": "現在のフォルダをお気に入りに追加",
+    "currentFolderFavorite": "現在のフォルダはすでにお気に入りに登録されています",
+    "removeFavorite": "{name}をお気に入りから削除",
+    "emptyFavorites": "よく使うフォルダを追加してください。"
   }
 }
