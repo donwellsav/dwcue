@@ -6,7 +6,7 @@ You build a **show** as a list of cues plus a grid of one-touch buttons, then tr
 
 This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. Published macOS packages are Developer ID signed, notarized, and package-validated.
 
-> **Current source:** package metadata is **v2.6.15** and this guide describes source commit **1438685**. This is source provenance, not a published-installer claim: the release page is authoritative for release assets, and you must verify the installed About version before relying on a behaviour.
+> **Current source:** package metadata is **v2.6.16** and this guide describes source commit **39c3129**. This is source provenance, not a published-installer claim: the release page is authoritative for release assets, and you must verify the installed About version before relying on a behaviour.
 
 > **Operating a show?** Use the [operator manual (PDF)](docs/operators-manual.pdf) or its [Markdown source](docs/operators-manual.md). Those instructions track the current source. The client and server READMEs linked later are developer references, not show-day instructions.
 
@@ -114,7 +114,7 @@ If your browser blocked the download instead, choose **Keep** to save the instal
 
 ## Getting started
 
-These steps describe the current v2.6.15 working tree. It writes native show documents as `.dwcue` files and portable exports as `.dwcuepack` archives.
+These steps describe the current v2.6.16 working tree. It writes native show documents as `.dwcue` files and portable exports as `.dwcuepack` archives.
 
 1. Install the [latest release](https://github.com/donwellsav/dwcue/releases/latest), or build DonWells Cue from source, and launch it.
 2. Choose **New Show**, enter its name, use **Choose…** to select the read-only Location, and create it — DonWells Cue writes `<show name>.dwcue` and a `media/` sub-folder there.
@@ -346,7 +346,7 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.15**; the release page remains the source of truth for published artefacts and their checksums.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.16**; the release page remains the source of truth for published artefacts and their checksums.
 
 ### Triggering a release
 

@@ -407,7 +407,7 @@ const pickerFallbackStart = ref<string>('');
 const pickerIntent        = ref<'new-location' | 'open'>('open');
 
 // Get app version
-const appVersion = ref('2.6.15');
+const appVersion = ref('2.6.16');
 onMounted(async () => {
   if (import.meta.client && (window as any).electronAPI?.getAppVersion) {
     appVersion.value = await (window as any).electronAPI.getAppVersion();
