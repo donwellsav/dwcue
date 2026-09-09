@@ -5359,15 +5359,20 @@ ipcMain.handle('get-youtube-info', async (event, videoId) => {
   await waitForYtDlp();
   const args = [
     `https://www.youtube.com/watch?v=${videoId}`,
-    '--dump-single-json', '--skip-download', '--no-playlist', '--no-warnings',
+    '--skip-download', '--no-playlist', '--no-warnings',
+    '--print', '%(.{id,title,thumbnail,channel,uploader,duration,is_live,live_status})j',
   ];
   if (denoReady && denoPath) args.push('--js-runtimes', `deno:${denoPath}`);
   const { stdout } = await execFilePromise(ytDlpPath, args, {
     windowsHide: true,
     timeout: 45000,
-    maxBuffer: 2 * 1024 * 1024,
+    // The compact --print payload contains only the fields used below.
+    // Keep a finite guard, but do not buffer yt-dlp's full format/subtitle
+    // metadata dump just to read title and duration.
+    maxBuffer: 256 * 1024,
   });
-  const info = JSON.parse(stdout);
+
+  const info = JSON.parse(stdout.trim().split(/\r?\n/).filter(Boolean).at(-1) || '{}');
   if (info.id !== videoId || typeof info.title !== 'string') {
     throw new Error('YouTube did not return usable video information');
   }

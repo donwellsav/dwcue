@@ -1,5 +1,6 @@
 <template>
-  <div v-if="isOpen" class="modal-overlay" @click.self="closeModal">
+  <Teleport to="body">
+    <div v-if="isOpen" class="modal-overlay" @click.self="closeModal">
     <div class="modal-content youtube-import-modal" role="dialog" aria-modal="true" :aria-labelledby="titleId">
       <div class="modal-header">
         <h2 :id="titleId">{{ t('youtube.importFromYouTube') }}</h2>
@@ -200,7 +201,8 @@
         </div>
       </div>
     </div>
-  </div>
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
@@ -609,7 +611,7 @@ const closeModal = async () => {
   border: 1px solid var(--color-border);
   border-radius: var(--dialog-radius);
   width: 90%;
-  max-width: 1200px;
+  max-width: 820px;
   height: 80vh;
   display: flex;
   flex-direction: column;
