@@ -1125,6 +1125,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   min-height: var(--current-playlist-row-height);
   position: relative;
   z-index: 5;
+  background: color-mix(in srgb, var(--color-surface) 82%, transparent);
   cursor: pointer;
 }
 
@@ -1171,7 +1172,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   border: 1px solid transparent;
   border-radius: var(--control-radius);
   background: transparent;
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
   cursor: pointer;
 
   .material-symbols-rounded {
@@ -1215,7 +1216,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   font-size: 12px;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
 }
 
 .item-icon {
@@ -1224,7 +1225,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
   
   .material-symbols-rounded {
     font-size: 20px;
@@ -1316,7 +1317,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   font-family: var(--font-mono);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
   margin: 0;
   white-space: nowrap;
   /* Fixed-width, right-aligned column so the leading "-" shown during the
@@ -1336,7 +1337,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
   .behavior-icon {
     font-size: 14px;
-    color: var(--color-text-secondary);
+    color: var(--color-text-primary);
     opacity: 1;
   }
 
