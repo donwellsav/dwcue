@@ -1337,12 +1337,12 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   .behavior-icon {
     font-size: 14px;
     color: var(--color-text-secondary);
-    opacity: 0.7;
+    opacity: 1;
   }
 
   .behavior-icon-segue {
     color: var(--state-up-next);
-    opacity: 0.9;
+    opacity: 1;
   }
 }
 
@@ -1398,7 +1398,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .playlist-item:not(.show-mode) .item-actions,
 .playlist-item:not(.show-mode) .item-arm {
-  opacity: 0.72;
+  opacity: 1;
   transition: opacity var(--transition-fast);
 }
 
