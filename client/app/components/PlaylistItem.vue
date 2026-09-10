@@ -77,7 +77,8 @@
             v-if="showMode"
             class="play-action"
             :icon="isPlaying ? 'stop' : 'play_arrow'"
-            :highlight-color="isPlaying ? 'var(--color-danger)' : (item.type === 'group' ? 'var(--folder-play-action)' : 'var(--state-playing)')"
+            :highlight-color="isPlaying ? (durationColor ?? 'var(--state-playing)') : (item.type === 'group' ? 'var(--folder-play-action)' : 'var(--state-playing)')"
+            active-text-color="black"
             :is-active="isPlaying"
             context="Playlist"
             @click.stop="isPlaying ? handleStop() : handlePlay()"
@@ -119,7 +120,7 @@
             <span class="material-symbols-rounded" aria-hidden="true">folder</span>
           </span>
 
-          <span class="item-name" :title="item.displayName">{{ item.displayName }}</span>
+          <span class="item-name" :title="item.displayName" :style="{ color: durationColor ?? undefined }">{{ item.displayName }}</span>
           <span
             v-if="isPeaking"
             class="material-symbols-rounded peak-warning-icon"
@@ -133,12 +134,12 @@
 
         <div class="item-state">
           <span v-if="isPaused" class="status-pill paused">{{ t('status.paused') }}</span>
-          <span v-else-if="isPlaying" class="status-pill playing">{{ t('status.playing') }}</span>
+          <span v-else-if="isPlaying" class="status-pill playing" :style="{ backgroundColor: durationColor ?? undefined }">{{ t('status.playing') }}</span>
           <ActionButton
             v-if="isPlaying && item.type === 'audio'"
             class="restart-action"
             icon="restart_alt"
-            highlight-color="var(--state-playing)"
+            :highlight-color="durationColor ?? 'var(--state-playing)'"
             context="Playlist"
             type="button"
             @click.stop="handlePlay"
@@ -235,7 +236,8 @@
             v-else
             class="play-action"
             :icon="isPlaying ? 'stop' : 'play_arrow'"
-            :highlight-color="isPlaying ? 'var(--color-danger)' : (item.type === 'group' ? 'var(--folder-play-action)' : 'var(--state-playing)')"
+            :highlight-color="isPlaying ? (durationColor ?? 'var(--state-playing)') : (item.type === 'group' ? 'var(--folder-play-action)' : 'var(--state-playing)')"
+            active-text-color="black"
             :is-active="isPlaying"
             context="Playlist"
             @click.stop="isPlaying ? handleStop() : handlePlay()"
@@ -1221,17 +1223,17 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .item-identity {
   grid-area: identity;
   display: grid;
-  grid-template-columns: var(--cue-number-width, 36px) minmax(0, max-content) auto;
+  grid-template-columns: var(--cue-number-width, 36px) minmax(0, 1fr) max-content;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  width: fit-content;
+  width: 100%;
   justify-self: start;
   max-width: 100%;
 }
 
 .playlist-item.is-audio .item-identity {
-  grid-template-columns: var(--cue-number-width, 36px) minmax(0, max-content) auto;
+  grid-template-columns: var(--cue-number-width, 36px) minmax(0, 1fr) max-content;
 }
 
 .item-index {
@@ -1309,7 +1311,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   justify-content: flex-start;
   min-height: 26px;
   height: var(--cue-cell-height);
-  width: max-content;
+  width: 100%;
   max-width: 100%;
   padding: 2px 6px;
 }
@@ -1617,12 +1619,12 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .item-identity {
-    grid-template-columns: var(--cue-number-width, 40px) minmax(0, max-content) auto;
+    grid-template-columns: var(--cue-number-width, 40px) minmax(0, 1fr) max-content;
     gap: var(--spacing-sm);
   }
 
   &.is-audio .item-identity {
-    grid-template-columns: var(--cue-number-width, 40px) minmax(0, max-content) auto;
+    grid-template-columns: var(--cue-number-width, 40px) minmax(0, 1fr) max-content;
   }
 
   .item-index {
