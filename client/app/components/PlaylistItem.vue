@@ -74,18 +74,6 @@
 
         <div class="item-arm">
           <ActionButton
-            v-if="showMode"
-            class="play-action"
-            :icon="isPlaying ? 'stop' : 'play_arrow'"
-            :highlight-color="isPlaying ? (durationColor ?? 'var(--state-playing)') : (item.type === 'group' ? 'var(--folder-play-action)' : 'var(--state-playing)')"
-            active-text-color="black"
-            :is-active="isPlaying"
-            context="Playlist"
-            @click.stop="isPlaying ? handleStop() : handlePlay()"
-            :title="isPlaying ? t('actions.stop') : t('actions.play')"
-          />
-          <ActionButton
-            v-else
             class="set-next-action"
             icon="fast_forward"
             :highlight-color="item.type === 'group' ? 'var(--folder-next-action)' : 'var(--state-up-next)'"
@@ -135,17 +123,6 @@
         <div class="item-state">
           <span v-if="isPaused" class="status-pill paused">{{ t('status.paused') }}</span>
           <span v-else-if="isPlaying" class="status-pill playing" :style="{ backgroundColor: durationColor ?? undefined }">{{ t('status.playing') }}</span>
-          <ActionButton
-            v-if="isPlaying && item.type === 'audio'"
-            class="restart-action"
-            icon="restart_alt"
-            :highlight-color="durationColor ?? 'var(--state-playing)'"
-            context="Playlist"
-            type="button"
-            @click.stop="handlePlay"
-            :title="t('actions.restartCue', { name: item.displayName })"
-            :aria-label="t('actions.restartCue', { name: item.displayName })"
-          />
           <span v-if="isPreviewing" class="status-pill preview">{{ t('status.previewing') }}</span>
 
           <!-- Behavior indicators (for audio items) -->
@@ -211,29 +188,19 @@
           @click.stop
         >VIDEO</span>
 
-        <!-- In Show Mode the live-playback actions (play/stop, set-as-next)
-             remain on the right; preview stays beside the cue number for
-             quick pre-show listening. Edit and delete remain hidden so the
-             row is a big, safe touch target. -->
-        <div class="item-actions">
+        <div class="item-transport">
           <ActionButton
-            v-if="showMode"
-            class="set-next-action"
-            icon="fast_forward"
-            :highlight-color="item.type === 'group' ? 'var(--folder-next-action)' : 'var(--state-up-next)'"
-            active-text-color="black"
-            :is-active="isManuallyQueued"
-            :disabled="setNextItemPending"
+            v-if="isPlaying && item.type === 'audio'"
+            class="restart-action"
+            icon="restart_alt"
+            :highlight-color="durationColor ?? 'var(--state-playing)'"
             context="Playlist"
-            @click.stop="handleSetAsNext"
-            :label="t('status.upNext')"
-            :hover-label="isManuallyQueued ? t('status.upNext') : t('controls.playNext')"
-            :title="isManuallyQueued ? t('status.upNext') : t('controls.playNext')"
-            :aria-label="isManuallyQueued ? t('status.upNext') : t('controls.playNext')"
-            :aria-pressed="isManuallyQueued"
+            type="button"
+            @click.stop="handlePlay"
+            :title="t('actions.restartCue', { name: item.displayName })"
+            :aria-label="t('actions.restartCue', { name: item.displayName })"
           />
           <ActionButton
-            v-else
             class="play-action"
             :icon="isPlaying ? 'stop' : 'play_arrow'"
             :highlight-color="isPlaying ? (durationColor ?? 'var(--state-playing)') : (item.type === 'group' ? 'var(--folder-play-action)' : 'var(--state-playing)')"
@@ -243,6 +210,12 @@
             @click.stop="isPlaying ? handleStop() : handlePlay()"
             :title="isPlaying ? t('actions.stop') : t('actions.play')"
           />
+        </div>
+
+        <!-- Keep transport beside the clock, with Play Next in the far-right
+             arm lane; preview remains beside the cue number and edit/delete
+             stay hidden in Show Mode. -->
+        <div class="item-actions">
           <ActionButton
             v-if="!showMode"
             class="edit-action"
@@ -262,11 +235,9 @@
             :title="t('actions.delete')"
           />
         </div>
-      </div>
-      
-      
     </div>
     
+      </div>
     <div v-if="item.type === 'group' && isExpanded && item.children.length > 0" class="group-children">
       <PlaylistItem
         v-for="child in item.children"
@@ -1174,8 +1145,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .item-left {
   display: grid;
-  grid-template-columns: 34px fit-content(620px) minmax(0, 1fr) var(--cue-time-width, 96px) max-content 140px var(--playlist-set-next-width, 92px);
-  grid-template-areas: 'expand identity state duration video actions arm';
+  grid-template-columns: 34px fit-content(620px) minmax(0, 1fr) max-content var(--cue-time-width, 96px) max-content 140px var(--playlist-set-next-width, 92px);
+  grid-template-areas: 'expand identity state video duration transport actions arm';
   align-items: center;
   gap: var(--spacing-sm);
   flex: 1;
@@ -1500,7 +1471,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .item-actions {
   grid-area: actions;
   display: grid;
-  grid-template-columns: repeat(3, 32px);
+  grid-template-columns: repeat(2, 32px);
   gap: var(--spacing-xs);
   justify-self: end;
   z-index: 5;
@@ -1526,9 +1497,19 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .preview-action { grid-area: expand; }
-.play-action { grid-column: 1; }
-.edit-action { grid-column: 2; }
-.delete-action { grid-column: 3; }
+
+.item-transport {
+  grid-area: transport;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+
+.play-action { flex-shrink: 0; }
+.edit-action { grid-column: 1; }
+.delete-action { grid-column: 2; }
 
 .playlist-item:not(.show-mode) .item-actions,
 .playlist-item:not(.show-mode) .item-arm {
@@ -1567,10 +1548,10 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
    lanes remain fixed, but state and transport move to a second console row. */
 @container (max-width: 560px) {
   .item-left {
-    grid-template-columns: 34px minmax(0, 1fr) 140px max-content var(--playlist-set-next-width, 92px);
+    grid-template-columns: 34px minmax(0, 1fr) max-content var(--cue-time-width, 96px) max-content 140px var(--playlist-set-next-width, 92px);
     grid-template-areas:
-      'expand identity duration video arm'
-      'state state actions actions actions';
+      'expand identity video duration transport actions arm'
+      'state state state state transport actions arm';
     row-gap: var(--spacing-xs);
   }
 
@@ -1600,8 +1581,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
     --current-playlist-row-height: var(--folder-playlist-row-height, 60px);
   }
   .item-left {
-    grid-template-columns: 44px fit-content(620px) minmax(0, 1fr) var(--cue-time-width, 96px) max-content max-content var(--playlist-set-next-width, 92px);
-    grid-template-areas: 'expand identity state duration video actions arm';
+    grid-template-columns: 44px fit-content(620px) minmax(0, 1fr) max-content var(--cue-time-width, 96px) max-content max-content var(--playlist-set-next-width, 92px);
+    grid-template-areas: 'expand identity state video duration transport actions arm';
     gap: var(--spacing-sm);
   }
 
@@ -1698,15 +1679,6 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
     }
   }
 
-  .item-actions {
-    grid-template-columns: var(--playlist-set-next-width, 92px);
-    gap: var(--spacing-sm);
-    justify-self: end;
-
-    .set-next-action {
-      grid-column: 1;
-    }
-  }
 
   /* Not selectable — row is a playback surface, not a list to click into. */
   .item-content {
@@ -1716,10 +1688,10 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 @container (max-width: 620px) {
   .playlist-item.show-mode .item-left {
-    grid-template-columns: 44px minmax(0, 1fr) var(--cue-time-width, 96px) max-content;
+    grid-template-columns: 44px minmax(0, 1fr) max-content var(--cue-time-width, 96px) max-content max-content var(--playlist-set-next-width, 92px);
     grid-template-areas:
-      'expand identity duration arm'
-      'state state actions actions';
+      'expand identity video duration transport actions arm'
+      'state state state state transport actions arm';
     row-gap: var(--spacing-sm);
   }
   }

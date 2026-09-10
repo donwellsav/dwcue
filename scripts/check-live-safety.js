@@ -239,33 +239,33 @@ assert.equal(
   (playlistItem.match(
     /<ActionButton\b(?=[^>]*class="set-next-action")(?=[^>]*:aria-pressed="isManuallyQueued")[^>]*\/>/g,
   ) ?? []).length,
-  2,
-  'both armed-next controls must expose their queued state',
+  1,
+  'the shared armed-next control must expose its queued state',
 );
 assert.match(
   playlistItem,
-  /class="item-arm"[\s\S]{0,800}v-if="showMode"[\s\S]{0,100}class="play-action"[\s\S]{0,600}v-else[\s\S]{0,100}class="set-next-action"/,
-  'Show Mode must put immediate Play in the left arm slot while Normal Mode keeps Set As Next there',
+  /class="item-arm"[\s\S]*class="set-next-action"[\s\S]*:aria-pressed="isManuallyQueued"/,
+  'Play Next must stay in the far-right arm lane in both modes',
 );
 assert.match(
   playlistItem,
-  /class="item-actions"[\s\S]{0,2200}v-if="showMode"[\s\S]{0,100}class="set-next-action"[\s\S]{0,1200}:label="t\('status\.upNext'\)"[\s\S]{0,1200}v-else[\s\S]{0,100}class="play-action"/,
-  'Show Mode must keep the combined Up Next control in the far-right play slot while Normal Mode keeps Play there',
+  /class="item-transport"[\s\S]*class="restart-action"[\s\S]*class="play-action"/,
+  'restart and stop/play controls must share one adjacent transport group',
 );
 assert.match(
   playlistItem,
-  /grid-template-areas:\s*'expand identity state duration video actions arm'/,
-  'Normal Mode must keep the armed-next control at the far right',
+  /grid-template-areas:\s*'expand identity state video duration transport actions arm'/,
+  'Normal Mode must place video before the clock and transport before Play Next',
 );
 assert.match(
   playlistItem,
-  /\.playlist-item\.show-mode[\s\S]{0,900}grid-template-areas:\s*'expand identity state duration video actions arm'[\s\S]*\.item-actions\s*\{[\s\S]*\.set-next-action\s*\{[\s\S]*grid-column:\s*1;/,
-  'Show Mode must keep its time and playback controls on the right side of the row',
+  /\.playlist-item\.show-mode[\s\S]{0,900}grid-template-areas:\s*'expand identity state video duration transport actions arm'/,
+  'Show Mode must keep video, clock, transport, and Play Next in the same right-side order',
 );
 assert.match(
   playlistItem,
-  /\.item-left\s*\{[\s\S]{0,220}grid-template-columns:\s*34px fit-content\(620px\) minmax\(0, 1fr\) var\(--cue-time-width, 96px\) max-content 140px var\(--playlist-set-next-width, 92px\)/,
-  'Normal Mode must leave flexible space after the left identity cells for right-aligned time and controls',
+  /\.item-left\s*\{[\s\S]{0,220}grid-template-columns:\s*34px fit-content\(620px\) minmax\(0, 1fr\) max-content var\(--cue-time-width, 96px\) max-content 140px var\(--playlist-set-next-width, 92px\)/,
+  'Normal Mode must reserve separate video, clock, transport, action, and arm lanes',
 );
 assert.match(
   playlistItem,
@@ -345,7 +345,7 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.item-left\s*\{[\s\S]*grid-template-columns:\s*34px fit-content\(620px\) minmax\(0, 1fr\) var\(--cue-time-width, 96px\) max-content 140px var\(--playlist-set-next-width, 92px\)[\s\S]*\.item-identity\s*\{[\s\S]*grid-template-columns:\s*var\(--cue-number-width, 36px\) minmax\(0, 1fr\) max-content;[\s\S]*width:\s*100%;[\s\S]*\.item-name\s*\{[\s\S]*width:\s*100%;[\s\S]*\.item-duration\s*\{/ ,
+  /\.item-left\s*\{[\s\S]*grid-template-columns:\s*34px fit-content\(620px\) minmax\(0, 1fr\) max-content var\(--cue-time-width, 96px\) max-content 140px var\(--playlist-set-next-width, 92px\)[\s\S]*\.item-identity\s*\{[\s\S]*grid-template-columns:\s*var\(--cue-number-width, 36px\) minmax\(0, 1fr\) max-content;[\s\S]*width:\s*100%;[\s\S]*\.item-name\s*\{[\s\S]*width:\s*100%;[\s\S]*\.item-duration\s*\{/ ,
   'playlist title cells must size to content while preserving number and time lanes',
 );
 assert.match(
@@ -390,18 +390,18 @@ assert.doesNotMatch(
 );
 assert.equal(
   (playlistItem.match(/:is-active="isPlaying"/g) ?? []).length,
-  2,
-  'both playlist stop buttons must use the active danger fill',
+  1,
+  'the shared transport stop button must expose its active state',
 );
 assert.equal(
   (playlistItem.match(/item\.type === 'group' \? 'var\(--folder-play-action\)'/g) ?? []).length,
-  2,
-  'folder Play must use its distinct semantic tint in both modes',
+  1,
+  'folder Play must use its distinct semantic tint',
 );
 assert.equal(
   (playlistItem.match(/item\.type === 'group' \? 'var\(--folder-next-action\)'/g) ?? []).length,
-  2,
-  'folder Next must use its distinct semantic tint in both modes',
+  1,
+  'folder Next must use its distinct semantic tint',
 );
 assert.match(
   playlistItem,
