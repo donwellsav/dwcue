@@ -199,7 +199,7 @@
           </div>
         </div>
 
-        <span v-if="item.type === 'audio'" class="item-duration">{{ durationDisplay }}</span>
+        <span v-if="item.type === 'audio'" class="item-duration" :style="{ color: durationColor ?? undefined }">{{ durationDisplay }}</span>
         <span
           v-if="item.type === 'audio' && item.hasVideo"
           class="video-badge-icon"
@@ -277,7 +277,7 @@
 </template>
 
 <script setup lang="ts">
-import type { AudioItem, GroupItem, BaseItem } from '~/types/project';
+import { countdownColorForSeconds, type AudioItem, type GroupItem, type BaseItem } from '~/types/project';
 import ActionButton from './ActionButton.vue';
 import { useOutputTarget, METER_COLORS } from '~/composables/useOutputTarget';
 import { exceedsTruePeakCeiling } from '~/utils/audio';
@@ -568,6 +568,16 @@ const playbackDuration = computed(() => {
     return g ? g.totalDuration : 0;
   }
   return 0;
+});
+const durationColor = computed(() => {
+  if (!isPlaying.value || props.item.type !== 'audio') return null;
+  const duration = playbackDuration.value;
+  const current = currentPlaybackTime.value;
+  if (!Number.isFinite(duration) || !Number.isFinite(current) || duration <= 0) return null;
+  return countdownColorForSeconds(
+    Math.max(0, Math.ceil(duration - current)),
+    (currentProject.value as any)?.settings?.countdownColorBands,
+  );
 });
 const playbackProgress = computed(() => {
   const d = playbackDuration.value;
@@ -1419,7 +1429,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   grid-area: duration;
   justify-self: end;
   font-family: var(--font-sans);
-  font-size: var(--cue-text-size);
+  font-size: calc(var(--cue-cell-height) - 4px);
+  line-height: 1;
   font-variant-numeric: tabular-nums;
   color: var(--color-text-primary);
   margin: 0;
@@ -1636,7 +1647,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .item-duration {
-    font-size: var(--cue-text-size);
+    font-size: calc(var(--cue-cell-height) - 4px);
+    line-height: 1;
   }
 
   .status-pill {

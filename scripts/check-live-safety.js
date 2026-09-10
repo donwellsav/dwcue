@@ -345,6 +345,11 @@ assert.match(
 );
 assert.match(
   playlistItem,
+  /class="item-duration"[^>]*durationColor[\s\S]*const durationColor = computed[\s\S]*countdownColorForSeconds[\s\S]*\.item-duration\s*\{[\s\S]*font-size:\s*calc\(var\(--cue-cell-height\) - 4px\);[\s\S]*line-height:\s*1;/,
+  'playlist countdown cells must use countdown colors and fill the available cell height',
+);
+assert.match(
+  playlistItem,
   /const itemStyle = computed[\s\S]{0,320}'--folder-background': 'var\(--color-surface-raised\)'/,
   'playlist structural surfaces must remain neutral independently of cue data colours',
 );
