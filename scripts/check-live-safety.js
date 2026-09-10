@@ -284,8 +284,8 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.playlist-item\.is-playing > \.waveform-canvas\s*\{\s*opacity:\s*max\(var\(--playlist-waveform-opacity, 0\.1\), 0\.65\)/,
-  'the playing cue waveform must stay visually prominent',
+  /\.playlist-item\.is-playing > \.waveform-canvas\s*\{\s*opacity:\s*var\(--playlist-waveform-opacity, 0\.1\)/,
+  'the playing cue waveform must honor the exact configured opacity',
 );
 assert.match(
   playlistItem,

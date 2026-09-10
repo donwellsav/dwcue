@@ -1099,7 +1099,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .playlist-item.is-playing > .waveform-canvas {
-  opacity: max(var(--playlist-waveform-opacity, 0.1), 0.65);
+  opacity: var(--playlist-waveform-opacity, 0.1);
 }
 
 .item-progress {
@@ -1133,7 +1133,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   position: absolute;
   inset: 3px 4px;
   border-radius: var(--border-radius-sm);
-  background: color-mix(in srgb, var(--color-background) 76%, transparent);
+  background: rgba(0, 0, 0, 0.24);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
   pointer-events: none;
   z-index: 0;
