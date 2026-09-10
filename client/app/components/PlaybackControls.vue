@@ -737,15 +737,15 @@ const handlePlayNext = async () => {
 }
 
 .panic-btn {
-  background-color: var(--color-danger);
-  border-color: var(--color-danger);
+  background-color: #d71920;
+  border-color: #d71920;
   color: white;
   font-weight: 700;
 }
 
 .panic-btn:hover:not(:disabled) {
-  background-color: var(--color-danger);
-  border-color: var(--color-danger);
+  background-color: #b51219;
+  border-color: #b51219;
   filter: brightness(0.9);
 }
 

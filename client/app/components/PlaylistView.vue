@@ -1198,9 +1198,9 @@ const handleDrop = async (e: DragEvent) => {
 
 <style scoped>
 .playlist-view {
-  --cue-number-width: 48px;
+  --cue-number-width: 36px;
   --cue-state-width: 108px;
-  --cue-time-width: 72px;
+  --cue-time-width: 96px;
   width: 100%;
   height: 100%;
   display: flex;
@@ -1209,7 +1209,7 @@ const handleDrop = async (e: DragEvent) => {
 }
 
 .playlist-view.show-mode {
-  --cue-number-width: 52px;
+  --cue-number-width: 40px;
 }
 
 .playlist-actions {

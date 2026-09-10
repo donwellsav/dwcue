@@ -74,17 +74,6 @@
 
         <div class="item-arm">
           <ActionButton
-            v-if="showMode"
-            class="play-action"
-            :icon="isPlaying ? 'stop' : 'play_arrow'"
-            :highlight-color="isPlaying ? 'var(--color-danger)' : (item.type === 'group' ? 'var(--folder-play-action)' : 'var(--state-playing)')"
-            :is-active="isPlaying"
-            context="Playlist"
-            @click.stop="isPlaying ? handleStop() : handlePlay()"
-            :title="isPlaying ? t('actions.stop') : t('actions.play')"
-          />
-          <ActionButton
-            v-else
             class="set-next-action"
             icon="fast_forward"
             :highlight-color="item.type === 'group' ? 'var(--folder-next-action)' : 'var(--state-up-next)'"
@@ -93,11 +82,24 @@
             :disabled="setNextItemPending"
             context="Playlist"
             @click.stop="handleSetAsNext"
-            :title="t('actions.setAsNext')"
-            :aria-label="t('actions.setAsNext')"
+            :label="t('status.upNext')"
+            :hover-label="isManuallyQueued ? t('status.upNext') : t('controls.playNext')"
+            :title="isManuallyQueued ? t('status.upNext') : t('controls.playNext')"
+            :aria-label="isManuallyQueued ? t('status.upNext') : t('controls.playNext')"
             :aria-pressed="isManuallyQueued"
           />
         </div>
+        <ActionButton
+          v-if="item.type === 'audio'"
+          class="preview-action"
+          symbol="preview"
+          highlight-color="var(--state-preview)"
+          :is-active="isPreviewing"
+          :class="{ 'no-device': !hasPreviewDevice }"
+          context="Playlist"
+          @click.stop="isPreviewing ? handleStopPreview() : handleStartPreview()"
+          :title="isPreviewing ? t('actions.stopPreview') : (hasPreviewDevice ? t('actions.preview') : t('actions.previewNoDevice'))"
+        />
 
         <div class="item-identity">
           <span class="item-index">{{ indexDisplay }}</span>
@@ -106,7 +108,7 @@
             <span class="material-symbols-rounded" aria-hidden="true">folder</span>
           </span>
 
-          <span class="item-name" :title="item.displayName">{{ item.displayName }}</span>
+          <span class="item-name" :title="item.displayName" :style="{ color: durationColor ?? undefined }">{{ item.displayName }}</span>
           <span
             v-if="isPeaking"
             class="material-symbols-rounded peak-warning-icon"
@@ -116,32 +118,11 @@
             draggable="false"
             @click.stop
           >bomb</span>
-          <span
-            v-if="item.type === 'audio' && item.hasVideo"
-            class="material-symbols-rounded video-badge-icon"
-            :title="t('playlist.videoCue')"
-            role="img"
-            :aria-label="t('playlist.videoCue')"
-            draggable="false"
-            @click.stop
-          >movie</span>
         </div>
 
         <div class="item-state">
           <span v-if="isPaused" class="status-pill paused">{{ t('status.paused') }}</span>
-          <span v-else-if="isPlaying" class="status-pill playing">{{ t('status.playing') }}</span>
-          <span v-else-if="isQueuedNext" class="status-pill up-next">{{ t('status.upNext') }}</span>
-          <ActionButton
-            v-if="isPlaying && item.type === 'audio'"
-            class="restart-action"
-            icon="restart_alt"
-            highlight-color="var(--state-playing)"
-            context="Playlist"
-            type="button"
-            @click.stop="handlePlay"
-            :title="t('actions.restartCue', { name: item.displayName })"
-            :aria-label="t('actions.restartCue', { name: item.displayName })"
-          />
+          <span v-else-if="isPlaying" class="status-pill playing" :style="{ backgroundColor: durationColor ?? undefined }">{{ t('status.playing') }}</span>
           <span v-if="isPreviewing" class="status-pill preview">{{ t('status.previewing') }}</span>
 
           <!-- Behavior indicators (for audio items) -->
@@ -179,12 +160,7 @@
 
             <!-- End behavior -->
             <span
-              v-if="item.endBehavior?.action === 'next'"
-              class="material-symbols-rounded behavior-icon"
-              :title="t('behaviors.endPlayNext')"
-            >skip_next</span>
-            <span
-              v-else-if="item.endBehavior?.action === 'goto-item'"
+              v-if="item.endBehavior?.action === 'goto-item'"
               class="material-symbols-rounded behavior-icon"
               :title="t('behaviors.endGotoItem')"
             >arrow_forward</span>
@@ -201,48 +177,43 @@
           </div>
         </div>
 
-        <span v-if="item.type === 'audio'" class="item-duration">{{ durationDisplay }}</span>
+        <span v-if="item.type === 'audio'" class="item-duration" :style="{ color: durationColor ?? undefined }">{{ durationDisplay }}</span>
+        <span
+          v-if="item.type === 'audio' && item.hasVideo"
+          class="video-badge-icon"
+          :title="t('playlist.videoCue')"
+          role="img"
+          :aria-label="t('playlist.videoCue')"
+          draggable="false"
+          @click.stop
+        >VIDEO</span>
 
-        <!-- In Show Mode the live-playback actions (play/stop, set-as-next)
-             and preview remain — preview is useful pre-show too; edit and
-             delete are edit affordances and stay hidden so the row is a big,
-             safe touch target. -->
-        <div class="item-actions">
+        <div class="item-transport">
           <ActionButton
-            v-if="item.type === 'audio'"
-            class="preview-action"
-            symbol="preview"
-            highlight-color="var(--state-preview)"
-            :is-active="isPreviewing"
-            :class="{ 'no-device': !hasPreviewDevice }"
+            v-if="isPlaying && item.type === 'audio'"
+            class="restart-action"
+            icon="restart_alt"
+            :highlight-color="durationColor ?? 'var(--state-playing)'"
             context="Playlist"
-            @click.stop="isPreviewing ? handleStopPreview() : handleStartPreview()"
-            :title="isPreviewing ? t('actions.stopPreview') : (hasPreviewDevice ? t('actions.preview') : t('actions.previewNoDevice'))"
+            type="button"
+            @click.stop="handleRestart"
+            :title="t('actions.restartCue', { name: item.displayName })"
+            :aria-label="t('actions.restartCue', { name: item.displayName })"
           />
           <ActionButton
-            v-if="showMode"
-            class="set-next-action"
-            icon="fast_forward"
-            :highlight-color="item.type === 'group' ? 'var(--folder-next-action)' : 'var(--state-up-next)'"
-            active-text-color="black"
-            :is-active="isManuallyQueued"
-            :disabled="setNextItemPending"
-            context="Playlist"
-            @click.stop="handleSetAsNext"
-            :title="t('actions.setAsNext')"
-            :aria-label="t('actions.setAsNext')"
-            :aria-pressed="isManuallyQueued"
-          />
-          <ActionButton
-            v-else
             class="play-action"
             :icon="isPlaying ? 'stop' : 'play_arrow'"
             :highlight-color="isPlaying ? 'var(--color-danger)' : (item.type === 'group' ? 'var(--folder-play-action)' : 'var(--state-playing)')"
-            :is-active="isPlaying"
             context="Playlist"
             @click.stop="isPlaying ? handleStop() : handlePlay()"
             :title="isPlaying ? t('actions.stop') : t('actions.play')"
           />
+        </div>
+
+        <!-- Keep transport beside the clock, with Play Next in the far-right
+             arm lane; preview remains beside the cue number and edit/delete
+             stay hidden in Show Mode. -->
+        <div class="item-actions">
           <ActionButton
             v-if="!showMode"
             class="edit-action"
@@ -262,11 +233,9 @@
             :title="t('actions.delete')"
           />
         </div>
-      </div>
-      
-      
     </div>
     
+      </div>
     <div v-if="item.type === 'group' && isExpanded && item.children.length > 0" class="group-children">
       <PlaylistItem
         v-for="child in item.children"
@@ -279,7 +248,7 @@
 </template>
 
 <script setup lang="ts">
-import type { AudioItem, GroupItem, BaseItem } from '~/types/project';
+import { countdownColorForSeconds, type AudioItem, type GroupItem, type BaseItem } from '~/types/project';
 import ActionButton from './ActionButton.vue';
 import { useOutputTarget, METER_COLORS } from '~/composables/useOutputTarget';
 import { exceedsTruePeakCeiling } from '~/utils/audio';
@@ -314,7 +283,7 @@ const formatMarkerTime = (seconds: number): string => {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 const { levels: outputTargetLevels } = useOutputTarget();
-const { playCue, stopCue, activeCues, activeGroups, triggerGroup, nextItemOverrideUuid, autoNextItemUuid, setNextItemPending, setNextItem } = useAudioEngine();
+const { playCue, stopCue, seekCue, activeCues, activeGroups, triggerGroup, nextItemOverrideUuid, autoNextItemUuid, setNextItemPending, setNextItem } = useAudioEngine();
 const { t } = useLocalization();
 const { uiMode } = useUiMode();
 
@@ -571,6 +540,16 @@ const playbackDuration = computed(() => {
   }
   return 0;
 });
+const durationColor = computed(() => {
+  if (!isPlaying.value || props.item.type !== 'audio') return null;
+  const duration = playbackDuration.value;
+  const current = currentPlaybackTime.value;
+  if (!Number.isFinite(duration) || !Number.isFinite(current) || duration <= 0) return null;
+  return countdownColorForSeconds(
+    Math.max(0, Math.ceil(duration - current)),
+    (currentProject.value as any)?.settings?.countdownColorBands,
+  );
+});
 const playbackProgress = computed(() => {
   const d = playbackDuration.value;
   if (d <= 0) return 0;
@@ -609,6 +588,11 @@ const handleSelect = (event: MouseEvent) => {
   // panel, delete) that are already hidden here.
   if (showMode.value) return;
   toggleItemSelection(props.item.uuid, event.ctrlKey || event.metaKey, event.shiftKey);
+};
+
+const handleRestart = () => {
+  if (props.item.type !== 'audio') return;
+  seekCue(props.item.uuid, props.item.inPoint ?? 0);
 };
 
 const handlePlay = () => {
@@ -955,6 +939,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   --current-playlist-row-height: var(--playlist-row-height, 44px);
   --folder-play-action: color-mix(in srgb, var(--state-playing) 82%, var(--color-accent));
   --folder-next-action: color-mix(in srgb, var(--state-up-next) 84%, var(--color-accent));
+  --cue-cell-height: 28px;
+  --cue-text-size: 16px;
   position: relative;
   overflow: hidden;
   margin-bottom: 0;
@@ -1099,7 +1085,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .playlist-item.is-playing > .waveform-canvas {
-  opacity: max(var(--playlist-waveform-opacity, 0.1), 0.65);
+  opacity: var(--playlist-waveform-opacity, 0.1);
 }
 
 .item-progress {
@@ -1128,6 +1114,17 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   cursor: pointer;
 }
 
+.item-content::before {
+  content: '';
+  position: absolute;
+  inset: 3px 4px;
+  border-radius: var(--border-radius-sm);
+  background: rgba(0, 0, 0, 0.24);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  z-index: 0;
+}
+
 .playlist-item:not(.show-mode) > .item-content {
   cursor: grab;
 }
@@ -1151,8 +1148,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .item-left {
   display: grid;
-  grid-template-columns: 34px minmax(112px, 1fr) var(--cue-state-width, 108px) var(--cue-time-width, 72px) 140px 32px;
-  grid-template-areas: 'expand identity state duration actions arm';
+  grid-template-columns: 34px minmax(0, 1fr) max-content max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
+  grid-template-areas: 'expand identity state video actions transport duration arm';
   align-items: center;
   gap: var(--spacing-sm);
   flex: 1;
@@ -1168,10 +1165,11 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid transparent;
+  border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
-  background: transparent;
-  color: var(--color-text-secondary);
+  background: var(--color-control);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
+  color: var(--color-text-primary);
   cursor: pointer;
 
   .material-symbols-rounded {
@@ -1199,32 +1197,35 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .item-identity {
   grid-area: identity;
   display: grid;
-  grid-template-columns: var(--cue-number-width, 48px) minmax(0, 1fr) auto;
+  grid-template-columns: var(--cue-number-width, 36px) minmax(0, 1fr) max-content;
   align-items: center;
   gap: 6px;
   min-width: 0;
+  width: 100%;
+  justify-self: start;
+  max-width: 100%;
 }
 
 .playlist-item.is-audio .item-identity {
-  grid-template-columns: var(--cue-number-width, 48px) minmax(0, 1fr) auto;
+  grid-template-columns: var(--cue-number-width, 36px) minmax(0, 1fr) max-content;
 }
 
 .item-index {
   grid-column: 1;
-  justify-self: start;
-  font-size: 12px;
-  font-family: var(--font-mono);
+  justify-content: center;
+  font-size: var(--cue-text-size);
+  font-family: var(--font-sans);
   font-variant-numeric: tabular-nums;
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
 }
 
 .item-icon {
   grid-column: 1;
-  justify-self: end;
+  justify-self: start;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
   
   .material-symbols-rounded {
     font-size: 20px;
@@ -1234,13 +1235,95 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .item-name {
   grid-column: 2;
   font-weight: 700;
-  font-size: var(--type-track-size);
+  font-size: var(--cue-text-size);
   line-height: 1.2;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--color-text-primary);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 1), 0 0 5px rgba(0, 0, 0, 0.95), 0 2px 8px rgba(0, 0, 0, 0.75);
+}
+
+/* Give the playlist's identity, timing, and indicator content real control
+   cells. These opaque cells provide the contrast; text shadows are only a
+   secondary detail when a waveform is visible underneath. */
+.item-index,
+.item-icon,
+.item-name,
+.item-duration,
+.peak-warning-icon,
+.video-badge-icon,
+.behavior-icon {
+  box-sizing: border-box;
+  background-color: color-mix(in srgb, var(--color-control) 92%, var(--color-background));
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
+}
+
+.item-index {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 26px;
+  height: var(--cue-cell-height);
+  padding: 2px 4px;
+}
+
+.item-icon {
+  min-width: 32px;
+  min-height: 26px;
+  height: var(--cue-cell-height);
+  padding: 2px;
+}
+
+.item-name {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 26px;
+  height: var(--cue-cell-height);
+  width: fit-content;
+  max-width: 100%;
+  justify-self: start;
+  padding: 2px 6px;
+}
+
+.item-duration {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 26px;
+  height: var(--cue-cell-height);
+  padding: 2px 6px;
+}
+
+.peak-warning-icon,
+.video-badge-icon,
+.behavior-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  min-height: 26px;
+  height: var(--cue-cell-height);
+  padding: 3px;
+}
+
+.item-index,
+.item-icon .material-symbols-rounded,
+.peak-warning-icon,
+.video-badge-icon,
+.behavior-icon,
+.expand-btn .material-symbols-rounded {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 1), 0 0 4px rgba(0, 0, 0, 0.9), 0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+.item-content :deep(.action-btn--playlist .material-symbols-rounded),
+.item-content :deep(.action-btn--playlist .cue-symbol) {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.95)) drop-shadow(0 0 4px rgba(0, 0, 0, 0.65));
 }
 
 
@@ -1252,7 +1335,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .playlist-item.is-group .item-name {
-  font-size: calc(var(--type-track-size) + 1px);
+  font-size: var(--cue-text-size);
   font-weight: 800;
 }
 
@@ -1262,7 +1345,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .playlist-item.is-audio > .item-content :deep(.action-btn--playlist) {
   background-color: var(--color-control);
-  box-shadow: none;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.035), 0 1px 3px rgba(0, 0, 0, 0.55);
 }
 
 .playlist-item.is-audio .peak-warning-icon {
@@ -1289,13 +1372,21 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   line-height: 1;
 }
 
-/* Video cue badge: column 4 in the identity grid. When the peak warning is
-   absent its auto column collapses to zero width, so the badge still sits
-   flush after the cue name. */
+/* Video cue badge: a compact text cell that stays legible at a glance. */
 .video-badge-icon {
-  grid-column: 4;
-  font-size: 18px;
-  color: var(--color-accent);
+  grid-area: video;
+  justify-self: start;
+  justify-content: center;
+  min-width: 38px;
+  min-height: 26px;
+  height: var(--cue-cell-height);
+  padding: 2px 4px;
+  font-family: var(--font-sans);
+  font-size: var(--cue-text-size);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--color-danger);
+  border-color: color-mix(in srgb, var(--color-danger) 70%, var(--color-border));
   flex-shrink: 0;
   cursor: default;
   line-height: 1;
@@ -1304,8 +1395,9 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .item-state {
   grid-area: state;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--spacing-xs);
   min-width: 0;
 }
@@ -1313,12 +1405,14 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .item-duration {
   grid-area: duration;
   justify-self: end;
-  font-family: var(--font-mono);
-  font-size: 13px;
+  font-family: var(--font-sans);
+  font-size: calc(var(--cue-cell-height) - 4px);
+  line-height: 1;
   font-variant-numeric: tabular-nums;
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
   margin: 0;
   white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 1), 0 0 5px rgba(0, 0, 0, 0.95), 0 2px 8px rgba(0, 0, 0, 0.75);
   /* Fixed-width, right-aligned column so the leading "-" shown during the
      playing countdown widens the text without shoving the flags around, and
      so the duration lines up vertically from row to row. */
@@ -1329,20 +1423,20 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .behavior-indicators {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 2px;
   align-items: center;
   flex-shrink: 0;
 
   .behavior-icon {
     font-size: 14px;
-    color: var(--color-text-secondary);
-    opacity: 0.7;
+    color: var(--color-text-primary);
+    opacity: 1;
   }
 
   .behavior-icon-segue {
     color: var(--state-up-next);
-    opacity: 0.9;
+    opacity: 1;
   }
 }
 
@@ -1351,7 +1445,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   align-items: center;
   padding: 2px 8px;
   border-radius: var(--pill-radius);
-  font-size: 11px;
+  font-size: var(--cue-text-size);
   font-weight: 600;
   white-space: nowrap;
   flex-shrink: 0;
@@ -1362,10 +1456,6 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
     color: black;
   }
 
-  &.up-next {
-    background-color: var(--state-up-next);
-    color: black;
-  }
 
   &.paused {
     border: 1px solid var(--color-text-tertiary);
@@ -1385,20 +1475,49 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .item-actions {
   grid-area: actions;
   display: grid;
-  grid-template-columns: repeat(4, 32px);
+  grid-template-columns: repeat(2, 32px);
   gap: var(--spacing-xs);
+  justify-self: end;
   z-index: 5;
   flex-shrink: 0;
 }
 
-.preview-action { grid-column: 1; }
-.play-action { grid-column: 2; }
-.edit-action { grid-column: 3; }
-.delete-action { grid-column: 4; }
+.item-left :deep(.action-btn--playlist) {
+  height: var(--cue-cell-height);
+  min-height: 26px;
+}
+
+.item-left :deep(.set-next-action.action-btn--playlist) {
+  width: var(--playlist-set-next-width, 92px);
+  min-width: var(--playlist-set-next-width, 92px);
+  gap: 5px;
+  font-family: var(--font-sans);
+  font-size: var(--cue-text-size);
+}
+
+
+.item-left :deep(.set-next-action.action-btn--active .material-symbols-rounded) {
+  display: none;
+}
+
+.preview-action { grid-area: expand; }
+
+.item-transport {
+  grid-area: transport;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+
+.play-action { flex-shrink: 0; }
+.edit-action { grid-column: 1; }
+.delete-action { grid-column: 2; }
 
 .playlist-item:not(.show-mode) .item-actions,
 .playlist-item:not(.show-mode) .item-arm {
-  opacity: 0.72;
+  opacity: 1;
   transition: opacity var(--transition-fast);
 }
 
@@ -1430,13 +1549,14 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 /* Keep every control available when the resizable playlist is narrow. The
-   lanes remain fixed, but state and transport move to a second console row. */
+   identity lane absorbs remaining width while transient state and transport
+   controls stay content-sized on the second console row. */
 @container (max-width: 560px) {
   .item-left {
-    grid-template-columns: 34px minmax(0, 1fr) 140px 32px;
+    grid-template-columns: 34px minmax(0, 1fr) max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
     grid-template-areas:
-      'expand identity duration arm'
-      'state state actions actions';
+      'expand identity video actions transport duration arm'
+      'state state state state transport duration arm';
     row-gap: var(--spacing-xs);
   }
 
@@ -1465,10 +1585,9 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   &.is-group {
     --current-playlist-row-height: var(--folder-playlist-row-height, 60px);
   }
-
   .item-left {
-    grid-template-columns: 44px 88px minmax(0, 1fr) var(--cue-state-width, 108px) var(--cue-time-width, 72px) 184px;
-    grid-template-areas: 'expand arm identity state duration actions';
+    grid-template-columns: 44px minmax(0, 1fr) max-content max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
+    grid-template-areas: 'expand identity state video actions transport duration arm';
     gap: var(--spacing-sm);
   }
 
@@ -1486,28 +1605,25 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .item-identity {
-    grid-template-columns: var(--cue-number-width, 52px) minmax(0, 1fr) auto;
+    grid-template-columns: var(--cue-number-width, 40px) minmax(0, 1fr) max-content;
     gap: var(--spacing-sm);
   }
 
   &.is-audio .item-identity {
-    grid-template-columns: var(--cue-number-width, 52px) minmax(0, 1fr) auto;
+    grid-template-columns: var(--cue-number-width, 40px) minmax(0, 1fr) max-content;
   }
 
   .item-index {
-    font-size: 14px;
+    font-size: 18px;
   }
 
   .item-icon .material-symbols-rounded {
     font-size: 22px;
   }
 
-  .item-name {
-    font-size: var(--type-track-show-size);
-  }
-
+  .item-name,
   &.is-group .item-name {
-    font-size: calc(var(--type-track-show-size) + 1px);
+    font-size: 18px;
   }
 
   &.is-audio .item-name {
@@ -1519,11 +1635,12 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .item-duration {
-    font-size: 18px;
+    font-size: calc(var(--cue-cell-height) - 4px);
+    line-height: 1;
   }
 
   .status-pill {
-    font-size: 13px;
+    font-size: var(--cue-text-size);
     height: 28px;
     padding: 2px 10px;
   }
@@ -1532,17 +1649,29 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
     font-size: 18px;
   }
 
-  /* Enlarge the remaining action buttons (preview, play/stop, set-next) for
-     touch — double width vs. height so they're easier to hit without
-     misjudging horizontal position. :deep() reaches into the ActionButton
-     child component's root. */
+  /* Enlarge the playback action buttons (play/stop, set-next) for touch —
+     double width vs. height so they're easier to hit without misjudging
+     horizontal position. :deep() reaches into the ActionButton child. */
   :deep(.action-btn--playlist) {
-    width: 88px;
-    height: 48px;
+    width: var(--playlist-set-next-width, 92px);
+    height: var(--cue-cell-height);
+    min-height: 44px;
     flex-shrink: 0;
 
     .material-symbols-rounded {
-      font-size: 24px;
+      font-size: clamp(18px, calc(var(--current-playlist-row-height, 44px) * 0.42), 36px);
+    }
+  }
+  :deep(.preview-action.action-btn--playlist) {
+    --current-playlist-row-height: var(--playlist-row-height, 44px);
+    width: 32px;
+    min-width: 32px;
+    height: var(--cue-cell-height);
+    min-height: 26px;
+    flex-shrink: 0;
+
+    .material-symbols-rounded {
+      font-size: clamp(18px, calc(var(--current-playlist-row-height, 44px) * 0.42), 36px);
     }
   }
 
@@ -1555,14 +1684,6 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
     }
   }
 
-  .item-actions {
-    grid-template-columns: repeat(2, 88px);
-    gap: var(--spacing-sm);
-
-    .set-next-action {
-      grid-column: 2;
-    }
-  }
 
   /* Not selectable — row is a playback surface, not a list to click into. */
   .item-content {
@@ -1572,10 +1693,10 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 @container (max-width: 620px) {
   .playlist-item.show-mode .item-left {
-    grid-template-columns: 44px 88px minmax(0, 1fr) 184px;
+    grid-template-columns: 44px minmax(0, 1fr) max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
     grid-template-areas:
-      'expand arm identity duration'
-      'state state state actions';
+      'expand identity video actions transport duration arm'
+      'state state state state transport duration arm';
     row-gap: var(--spacing-sm);
   }
 }

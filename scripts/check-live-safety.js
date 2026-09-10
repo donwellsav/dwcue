@@ -232,36 +232,76 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /v-if="isPlaying && item\.type === 'audio'"[\s\S]{0,500}icon="restart_alt"[\s\S]{0,500}@click\.stop="handlePlay"[\s\S]{0,500}:aria-label="t\('actions\.restartCue', \{ name: item\.displayName \}\)"/,
-  'the active-track restart control must reuse the normal Play path',
+  /v-if="isPlaying && item\.type === 'audio'"[\s\S]{0,500}icon="restart_alt"[\s\S]{0,500}@click\.stop="handleRestart"[\s\S]{0,500}:aria-label="t\('actions\.restartCue', \{ name: item\.displayName \}\)"[\s\S]*const handleRestart = \(\) => \{[\s\S]{0,140}seekCue\(props\.item\.uuid, props\.item\.inPoint \?\? 0\)/,
+  'the active-track restart control must seek to the cue In point without toggling playback',
 );
 assert.equal(
   (playlistItem.match(
     /<ActionButton\b(?=[^>]*class="set-next-action")(?=[^>]*:aria-pressed="isManuallyQueued")[^>]*\/>/g,
   ) ?? []).length,
-  2,
-  'both armed-next controls must expose their queued state',
+  1,
+  'the shared armed-next control must expose its queued state',
 );
 assert.match(
   playlistItem,
-  /class="item-arm"[\s\S]{0,800}v-if="showMode"[\s\S]{0,100}class="play-action"[\s\S]{0,600}v-else[\s\S]{0,100}class="set-next-action"/,
-  'Show Mode must put immediate Play in the left arm slot while Normal Mode keeps Set As Next there',
+  /class="item-arm"[\s\S]*class="set-next-action"[\s\S]*:aria-pressed="isManuallyQueued"/,
+  'Play Next must stay in the far-right arm lane in both modes',
 );
 assert.match(
   playlistItem,
-  /class="item-actions"[\s\S]{0,1400}v-if="showMode"[\s\S]{0,100}class="set-next-action"[\s\S]{0,700}v-else[\s\S]{0,100}class="play-action"/,
-  'Show Mode must put Set As Next in the far-right play slot while Normal Mode keeps Play there',
+  /class="item-transport"[\s\S]*class="restart-action"[\s\S]*class="play-action"/,
+  'restart and stop/play controls must share one adjacent transport group',
 );
 assert.match(
   playlistItem,
-  /grid-template-areas:\s*'expand identity state duration actions arm'/,
-  'Normal Mode must keep the armed-next control at the far right',
+  /grid-template-areas:\s*'expand identity state video actions transport duration arm'/,
+  'Normal Mode must place video, edit controls, transport, clock, and Play Next in order',
 );
 assert.match(
   playlistItem,
-  /\.playlist-item\.show-mode[\s\S]{0,900}grid-template-areas:\s*'expand arm identity state duration actions'[\s\S]*\.item-actions\s*\{[\s\S]*\.set-next-action\s*\{[\s\S]*grid-column:\s*2;/,
-  'Show Mode must swap Play left and Set As Next into the original far-right Play column',
+  /\.playlist-item\.show-mode[\s\S]{0,900}grid-template-areas:\s*'expand identity state video actions transport duration arm'/,
+  'Show Mode must keep video, edit controls, transport, clock, and Play Next in order',
 );
+assert.equal(
+  playlistItem.includes('grid-template-columns: 34px minmax(0, 1fr) max-content max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px)'),
+  true,
+  'Normal Mode must let the title lane absorb space before the dynamic control lanes',
+);
+assert.match(
+  playlistItem,
+  /\.item-actions\s*\{[\s\S]{0,180}grid-template-columns:\s*repeat\(2, 32px\)/,
+  'gear and trash must share a compact action lane before transport',
+);
+assert.match(
+  playlistItem,
+  /<ActionButton[\s\S]{0,180}class="preview-action"[\s\S]{0,700}<div class="item-identity">[\s\S]*\.preview-action\s*\{\s*grid-area:\s*expand;/,
+  'playlist preview must sit in the left expand lane beside the cue number',
+);
+assert.match(
+  playlistItem,
+  /\.playlist-item\.show-mode[\s\S]*:deep\(\.preview-action\.action-btn--playlist\)\s*\{[\s\S]*width:\s*32px;[\s\S]*min-width:\s*32px;[\s\S]*min-height:\s*26px;/,
+  'Show Mode must keep the secondary preview button at normal size',
+);
+assert.match(
+  playlistItem,
+  /\.playlist-item\.show-mode[\s\S]{0,1400}\.item-index\s*\{\s*font-size:\s*18px;[\s\S]*\.item-name,\s*&\.is-group \.item-name\s*\{\s*font-size:\s*18px;/,
+  'Show Mode must use larger readable cue numbers and titles',
+);
+assert.match(
+  playlistItem,
+  /\.item-index\s*\{[\s\S]*justify-content:\s*center;[\s\S]*font-size:\s*var\(--cue-text-size\);[\s\S]*font-family:\s*var\(--font-sans\);[\s\S]*\.item-name\s*\{[\s\S]*font-size:\s*var\(--cue-text-size\);[\s\S]*\.video-badge-icon\s*\{[\s\S]*height:\s*var\(--cue-cell-height\);[\s\S]*font-size:\s*var\(--cue-text-size\);/,
+  'playlist number, title, and video cells must share the readable playlist font and sizing',
+);
+assert.match(
+  playlistItem,
+  /\.item-state\s*\{[\s\S]{0,100}flex-wrap:\s*nowrap;[\s\S]*\.behavior-indicators\s*\{[\s\S]{0,100}flex-wrap:\s*nowrap;/,
+  'playing status and repeat behavior must stay on one horizontal line',
+);
+assert.equal((playlistItem.match(/class="status-pill up-next"/g) ?? []).length, 0, 'the separate Up Next status pill must be removed');
+assert.equal((playlistItem.match(/v-if="item\.endBehavior\?\.action === 'next'"/g) ?? []).length, 0, 'the obsolete end-next icon must be removed');
+assert.match(playlistItem, /class="video-badge-icon"[\s\S]{0,240}>VIDEO<\/span>/, 'video cues must use a readable VIDEO text badge');
+assert.doesNotMatch(playlistItem, /class="material-symbols-rounded video-badge-icon"|>movie<\/span>/, 'video cues must not use the old movie glyph');
+assert.match(playlistItem, /class="set-next-action"[\s\S]{0,700}:label="t\('status\.upNext'\)"[\s\S]{0,700}:hover-label="[^"]+"/, 'the next control must combine its fixed Up Next label with the Play Next hover label');
 assert.match(
   uiMode,
   /normalizeBoundedInteger[\s\S]*Math\.min\(max, Math\.max\(min, Math\.round\(number\)\)\)[\s\S]*regular:\s*\{ min: 44, max: 72, default: 44 \}[\s\S]*show:\s*\{ min: 60, max: 96, default: 68 \}[\s\S]*folder:\s*\{ min: 60, max: 96, default: 60 \}[\s\S]*normalizePlaylistRowHeight[\s\S]*REGULAR_ROW_HEIGHT_KEY[\s\S]*SHOW_ROW_HEIGHT_KEY[\s\S]*FOLDER_ROW_HEIGHT_KEY/,
@@ -278,20 +318,26 @@ assert.match(
   'playlist density and waveform opacity must be inherited once by top-level and nested rows',
 );
 assert.match(
+  playlistView,
+  /--cue-time-width:\s*96px;/,
+  'the playlist time lane must reserve the enlarged playback clock beside Play Next',
+);
+assert.match(
   playlistItem,
   /\.waveform-canvas\s*\{[\s\S]*opacity:\s*var\(--playlist-waveform-opacity, 0\.1\)/,
   'playlist waveform opacity must use the inherited display preference',
 );
 assert.match(
   playlistItem,
-  /\.playlist-item\.is-playing > \.waveform-canvas\s*\{\s*opacity:\s*max\(var\(--playlist-waveform-opacity, 0\.1\), 0\.65\)/,
-  'the playing cue waveform must stay visually prominent',
+  /\.playlist-item\.is-playing > \.waveform-canvas\s*\{\s*opacity:\s*var\(--playlist-waveform-opacity, 0\.1\)/,
+  'the playing cue waveform must honor the exact configured opacity',
 );
 assert.match(
   playlistItem,
-  /<span class="item-color-rail" :style="\{ backgroundColor: item\.color \}" aria-hidden="true"><\/span>[\s\S]*<span class="item-name"[^>]*>\{\{ item\.displayName \}\}<\/span>[\s\S]*v-if="isPaused" class="status-pill paused"[\s\S]*v-else-if="isPlaying" class="status-pill playing"[\s\S]*v-else-if="isQueuedNext" class="status-pill up-next"/,
-  'cue colour must remain an independent rail while paused, playing, and next states have explicit priority',
+  /<span class="item-color-rail" :style="\{ backgroundColor: item\.color \}" aria-hidden="true"><\/span>[\s\S]*<span class="item-name"[^>]*>\{\{ item\.displayName \}\}<\/span>[\s\S]*v-if="isPaused" class="status-pill paused"[\s\S]*v-else-if="isPlaying" class="status-pill playing"/,
+  'cue colour must remain an independent rail while paused and playing states retain explicit priority',
 );
+assert.match(playlistItem, /'is-up-next': isQueuedNext/, 'queued-next state must remain on the playlist row');
 assert.match(
   playlistItem,
   /\.item-name\s*\{[\s\S]{0,260}color:\s*var\(--color-text-primary\);[\s\S]*\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]{0,180}color:\s*var\(--state-playing\);[\s\S]*\.playlist-item\.is-paused > \.item-content \.item-name\s*\{[\s\S]{0,120}color:\s*var\(--color-text-primary\);/,
@@ -299,13 +345,20 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.playlist-item\.is-up-next:not\(\.is-playing\)\s*\{[\s\S]{0,140}var\(--state-up-next\)[\s\S]*\.playlist-item\.is-playing\s*\{[\s\S]{0,140}var\(--state-playing\)[\s\S]*\.playlist-item\.is-playing\.is-paused\s*\{[\s\S]{0,120}var\(--color-text-tertiary\)[\s\S]*\.item-progress\s*\{[\s\S]{0,260}background:\s*var\(--state-playing\);[\s\S]*\.playlist-item\.is-paused \.item-progress\s*\{[\s\S]{0,100}var\(--color-text-tertiary\)[\s\S]*&\.playing\s*\{[\s\S]{0,120}background-color:\s*var\(--state-playing\)[\s\S]*&\.up-next\s*\{[\s\S]{0,120}background-color:\s*var\(--state-up-next\)[\s\S]*&\.paused\s*\{[\s\S]{0,180}background-color:\s*var\(--color-control\);[\s\S]{0,100}color:\s*var\(--color-text-primary\);/,
+  /\.playlist-item\.is-up-next:not\(\.is-playing\)\s*\{[\s\S]{0,140}var\(--state-up-next\)[\s\S]*\.playlist-item\.is-playing\s*\{[\s\S]{0,140}var\(--state-playing\)[\s\S]*\.playlist-item\.is-playing\.is-paused\s*\{[\s\S]{0,120}var\(--color-text-tertiary\)[\s\S]*\.item-progress\s*\{[\s\S]{0,260}background:\s*var\(--state-playing\);[\s\S]*\.playlist-item\.is-paused \.item-progress\s*\{[\s\S]{0,100}var\(--color-text-tertiary\)[\s\S]*&\.playing\s*\{[\s\S]{0,120}background-color:\s*var\(--state-playing\)[\s\S]*&\.paused\s*\{[\s\S]{0,180}background-color:\s*var\(--color-control\);[\s\S]{0,100}color:\s*var\(--color-text-primary\);/,
   'playlist rows must use green playing, amber next, and an explicit neutral paused treatment',
+);
+assert.equal(
+  playlistItem.includes('grid-template-columns: 34px minmax(0, 1fr) max-content max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px)') &&
+    playlistItem.includes('width: fit-content;') &&
+    playlistItem.includes('.item-duration {'),
+  true,
+  'playlist title and clock cells must size dynamically while preserving the control lanes',
 );
 assert.match(
   playlistItem,
-  /\.item-identity\s*\{[\s\S]*grid-template-columns:\s*var\(--cue-number-width, 48px\) minmax\(0, 1fr\) auto;[\s\S]*\.playlist-item\.is-audio \.item-identity\s*\{[\s\S]{0,120}grid-template-columns:\s*var\(--cue-number-width, 48px\) minmax\(0, 1fr\) auto;[\s\S]*\.item-name\s*\{[\s\S]{0,260}font-size:\s*var\(--type-track-size\);[\s\S]{0,180}color:\s*var\(--color-text-primary\);[\s\S]*\.playlist-item\.show-mode\s*\{[\s\S]*\.item-identity\s*\{[\s\S]{0,160}var\(--cue-number-width, 52px\)[\s\S]*&\.is-audio \.item-identity\s*\{[\s\S]{0,160}var\(--cue-number-width, 52px\)[\s\S]*&\.is-audio \.item-name\s*\{[\s\S]{0,180}-webkit-line-clamp:\s*2;[\s\S]{0,100}white-space:\s*normal;/,
-  'audio and folder titles must share a stable number lane and remain readable over two neutral Show Mode lines',
+  /class="item-duration"[^>]*durationColor[\s\S]*const durationColor = computed[\s\S]*countdownColorForSeconds[\s\S]*\.item-duration\s*\{[\s\S]*font-size:\s*calc\(var\(--cue-cell-height\) - 4px\);[\s\S]*line-height:\s*1;/,
+  'playlist countdown cells must use countdown colors and fill the available cell height',
 );
 assert.match(
   playlistItem,
@@ -322,10 +375,10 @@ assert.match(
   /getComputedStyle\(canvas\)\.color[\s\S]*color:\s*var\(--waveform-color, var\(--color-text-primary\)\)/,
   'playlist waveforms must draw with the resolved CSS colour so cue data tint stays theme-aware',
 );
-assert.match(
-  playlistItem,
-  /\.item-left\s*\{[\s\S]{0,220}grid-template-columns:\s*34px minmax\(112px, 1fr\) var\(--cue-state-width, 108px\) var\(--cue-time-width, 72px\) 140px 32px;[\s\S]*\.item-identity\s*\{[\s\S]{0,220}grid-template-columns:\s*var\(--cue-number-width, 48px\) minmax\(0, 1fr\) auto;[\s\S]*\.item-icon\s*\{[\s\S]{0,160}grid-column:\s*1;[\s\S]{0,100}justify-self:\s*end;/,
-  'folder and audio titles must share one origin beside aligned state, time, action, and arm lanes',
+assert.equal(
+  playlistItem.includes('grid-template-columns: 34px minmax(0, 1fr) max-content max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px)'),
+  true,
+  'folder and audio titles must share the dynamic title lane beside aligned control lanes',
 );
 assert.match(
   playlistItem,
@@ -343,19 +396,29 @@ assert.doesNotMatch(
   'a true-peak warning must not turn an idle cue title red',
 );
 assert.equal(
-  (playlistItem.match(/:is-active="isPlaying"/g) ?? []).length,
-  2,
-  'both playlist stop buttons must use the active danger fill',
+  playlistItem.includes(':is-active="isPlaying"'),
+  false,
+  'the playlist stop button must keep the standard unfilled control appearance',
+);
+assert.equal(
+  playlistItem.includes(":highlight-color=\"isPlaying ? 'var(--color-danger)' :"),
+  true,
+  'the active playlist stop button must use the danger red control tint',
+);
+assert.equal(
+  playlistItem.includes('width: fit-content;') && playlistItem.includes('justify-self: start;'),
+  true,
+  'playlist title cells must size dynamically to their text',
 );
 assert.equal(
   (playlistItem.match(/item\.type === 'group' \? 'var\(--folder-play-action\)'/g) ?? []).length,
-  2,
-  'folder Play must use its distinct semantic tint in both modes',
+  1,
+  'folder Play must use its distinct semantic tint',
 );
 assert.equal(
   (playlistItem.match(/item\.type === 'group' \? 'var\(--folder-next-action\)'/g) ?? []).length,
-  2,
-  'folder Next must use its distinct semantic tint in both modes',
+  1,
+  'folder Next must use its distinct semantic tint',
 );
 assert.match(
   playlistItem,
@@ -441,7 +504,12 @@ assert.match(
 assert.match(
   projectSettingsModal,
   /:value="outputTarget"[\s\S]{0,120}@change="onOutputTargetChange"[\s\S]*function onOutputTargetChange[\s\S]{0,160}applyPatch\(\{ outputTarget: v \}\)/,
-  'output target edits must remain available through persistent Project Settings',
+);
+assert.equal(
+  projectSettingsModal.includes('Preview stores the stable hardware name') &&
+    projectSettingsModal.includes(':value="d.display_name"'),
+  true,
+  'preview device settings must persist stable hardware names instead of opened-device ids',
 );
 assert.match(
   mainWorkspace,
@@ -1878,8 +1946,8 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.item-left\s*\{[\s\S]{0,100}grid-template-columns:\s*34px minmax\(112px, 1fr\)[\s\S]*@container \(max-width: 560px\)\s*\{[\s\S]{0,100}\.item-left\s*\{[\s\S]{0,100}grid-template-columns:\s*34px minmax\(0, 1fr\)/,
-  'Regular Mode disclosure hitboxes must end before the identity lane at every width',
+  /\.item-left\s*\{[\s\S]{0,100}grid-template-columns:\s*34px minmax\(0, 1fr\)[\s\S]*@container \(max-width: 560px\)\s*\{[\s\S]{0,100}\.item-left\s*\{[\s\S]{0,100}grid-template-columns:\s*34px minmax\(0, 1fr\)/,
+  'Regular Mode disclosure hitboxes must end before the dynamic identity lane at every width',
 );
 assert.match(
   playlistItem,
@@ -1954,6 +2022,16 @@ assert.match(
   actionButton,
   /if \(props\.isActive\)[\s\S]*backgroundColor: props\.highlightColor[\s\S]*borderColor: props\.highlightColor/,
   'active icon actions must render their requested solid highlight fill',
+);
+assert.match(
+  actionButton,
+  /\.action-btn--playlist:not\(\.action-btn--active\):not\(\.set-next-action\)\s*\{[\s\S]*background-color:\s*var\(--color-surface-hover\)[\s\S]*border-color:\s*var\(--action-highlight, var\(--color-accent\)\)[\s\S]*color:\s*var\(--action-highlight, var\(--color-accent\)\)[\s\S]*font-size:\s*clamp\(18px,/,
+  'playlist buttons must keep their hover color while their icon size follows the enlarged row',
+);
+assert.match(
+  actionButton,
+  /\.action-btn--playlist\.set-next-action:not\(\.action-btn--active\)\s*\{[\s\S]*border-color:\s*rgba\(255, 255, 255, 0\.9\)[\s\S]*\.action-label-default\s*\{[\s\S]*display:\s*none;[\s\S]*:hover \.action-label-hover\s*\{[\s\S]*display:\s*inline;[\s\S]*:hover \.material-symbols-rounded\s*\{[\s\S]*display:\s*none;/,
+  'inactive Up Next must keep its white border, icon-only idle state, and text-only Play Next hover state',
 );
 assert.match(
   playlistItem,
