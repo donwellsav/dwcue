@@ -313,6 +313,11 @@ assert.match(
   'playlist density and waveform opacity must be inherited once by top-level and nested rows',
 );
 assert.match(
+  playlistView,
+  /--cue-time-width:\s*96px;/,
+  'the playlist time lane must reserve the enlarged playback clock before state indicators',
+);
+assert.match(
   playlistItem,
   /\.waveform-canvas\s*\{[\s\S]*opacity:\s*var\(--playlist-waveform-opacity, 0\.1\)/,
   'playlist waveform opacity must use the inherited display preference',

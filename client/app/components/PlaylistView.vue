@@ -1200,7 +1200,7 @@ const handleDrop = async (e: DragEvent) => {
 .playlist-view {
   --cue-number-width: 36px;
   --cue-state-width: 108px;
-  --cue-time-width: 72px;
+  --cue-time-width: 96px;
   width: 100%;
   height: 100%;
   display: flex;
