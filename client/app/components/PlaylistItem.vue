@@ -100,6 +100,17 @@
             :aria-pressed="isManuallyQueued"
           />
         </div>
+        <ActionButton
+          v-if="item.type === 'audio'"
+          class="preview-action"
+          symbol="preview"
+          highlight-color="var(--state-preview)"
+          :is-active="isPreviewing"
+          :class="{ 'no-device': !hasPreviewDevice }"
+          context="Playlist"
+          @click.stop="isPreviewing ? handleStopPreview() : handleStartPreview()"
+          :title="isPreviewing ? t('actions.stopPreview') : (hasPreviewDevice ? t('actions.preview') : t('actions.previewNoDevice'))"
+        />
 
         <div class="item-identity">
           <span class="item-index">{{ indexDisplay }}</span>
@@ -200,21 +211,10 @@
         >VIDEO</span>
 
         <!-- In Show Mode the live-playback actions (play/stop, set-as-next)
-             and preview remain — preview is useful pre-show too; edit and
-             delete are edit affordances and stay hidden so the row is a big,
-             safe touch target. -->
+             remain on the right; preview stays beside the cue number for
+             quick pre-show listening. Edit and delete remain hidden so the
+             row is a big, safe touch target. -->
         <div class="item-actions">
-          <ActionButton
-            v-if="item.type === 'audio'"
-            class="preview-action"
-            symbol="preview"
-            highlight-color="var(--state-preview)"
-            :is-active="isPreviewing"
-            :class="{ 'no-device': !hasPreviewDevice }"
-            context="Playlist"
-            @click.stop="isPreviewing ? handleStopPreview() : handleStartPreview()"
-            :title="isPreviewing ? t('actions.stopPreview') : (hasPreviewDevice ? t('actions.preview') : t('actions.previewNoDevice'))"
-          />
           <ActionButton
             v-if="showMode"
             class="set-next-action"
@@ -1487,7 +1487,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .item-actions {
   grid-area: actions;
   display: grid;
-  grid-template-columns: repeat(4, 32px);
+  grid-template-columns: repeat(3, 32px);
   gap: var(--spacing-xs);
   justify-self: end;
   z-index: 5;
@@ -1512,10 +1512,10 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   display: none;
 }
 
-.preview-action { grid-column: 1; }
-.play-action { grid-column: 2; }
-.edit-action { grid-column: 3; }
-.delete-action { grid-column: 4; }
+.preview-action { grid-area: expand; }
+.play-action { grid-column: 1; }
+.edit-action { grid-column: 2; }
+.delete-action { grid-column: 3; }
 
 .playlist-item:not(.show-mode) .item-actions,
 .playlist-item:not(.show-mode) .item-arm {
@@ -1677,12 +1677,12 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .item-actions {
-    grid-template-columns: repeat(2, var(--playlist-set-next-width, 92px));
+    grid-template-columns: var(--playlist-set-next-width, 92px);
     gap: var(--spacing-sm);
     justify-self: end;
 
     .set-next-action {
-      grid-column: 2;
+      grid-column: 1;
     }
   }
 

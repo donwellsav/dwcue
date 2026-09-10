@@ -259,13 +259,18 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.playlist-item\.show-mode[\s\S]{0,900}grid-template-areas:\s*'expand identity state duration video actions arm'[\s\S]*\.item-actions\s*\{[\s\S]*\.set-next-action\s*\{[\s\S]*grid-column:\s*2;/,
+  /\.playlist-item\.show-mode[\s\S]{0,900}grid-template-areas:\s*'expand identity state duration video actions arm'[\s\S]*\.item-actions\s*\{[\s\S]*\.set-next-action\s*\{[\s\S]*grid-column:\s*1;/,
   'Show Mode must keep its time and playback controls on the right side of the row',
 );
 assert.match(
   playlistItem,
   /\.item-left\s*\{[\s\S]{0,220}grid-template-columns:\s*34px fit-content\(620px\) minmax\(0, 1fr\) var\(--cue-time-width, 72px\) max-content 140px var\(--playlist-set-next-width, 92px\)/,
   'Normal Mode must leave flexible space after the left identity cells for right-aligned time and controls',
+);
+assert.match(
+  playlistItem,
+  /<ActionButton[\s\S]{0,180}class="preview-action"[\s\S]{0,700}<div class="item-identity">[\s\S]*\.preview-action\s*\{\s*grid-area:\s*expand;/,
+  'playlist preview must sit in the left expand lane beside the cue number',
 );
 assert.match(
   playlistItem,
