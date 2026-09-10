@@ -274,6 +274,11 @@ assert.match(
 );
 assert.match(
   playlistItem,
+  /\.playlist-item\.show-mode[\s\S]*:deep\(\.preview-action\.action-btn--playlist\)\s*\{[\s\S]*width:\s*32px;[\s\S]*min-width:\s*32px;[\s\S]*min-height:\s*26px;/,
+  'Show Mode must keep the secondary preview button at normal size',
+);
+assert.match(
+  playlistItem,
   /\.item-index\s*\{[\s\S]*justify-content:\s*center;[\s\S]*font-size:\s*var\(--cue-text-size\);[\s\S]*font-family:\s*var\(--font-sans\);[\s\S]*\.item-name\s*\{[\s\S]*font-size:\s*var\(--cue-text-size\);[\s\S]*\.video-badge-icon\s*\{[\s\S]*height:\s*var\(--cue-cell-height\);[\s\S]*font-size:\s*var\(--cue-text-size\);/,
   'playlist number, title, and video cells must share the readable playlist font and sizing',
 );

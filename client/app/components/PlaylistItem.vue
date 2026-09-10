@@ -1652,14 +1652,25 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
     font-size: 18px;
   }
 
-  /* Enlarge the remaining action buttons (preview, play/stop, set-next) for
-     touch — double width vs. height so they're easier to hit without
-     misjudging horizontal position. :deep() reaches into the ActionButton
-     child component's root. */
+  /* Enlarge the playback action buttons (play/stop, set-next) for touch —
+     double width vs. height so they're easier to hit without misjudging
+     horizontal position. :deep() reaches into the ActionButton child. */
   :deep(.action-btn--playlist) {
     width: var(--playlist-set-next-width, 92px);
     height: var(--cue-cell-height);
     min-height: 44px;
+    flex-shrink: 0;
+
+    .material-symbols-rounded {
+      font-size: clamp(18px, calc(var(--current-playlist-row-height, 44px) * 0.42), 36px);
+    }
+  }
+  :deep(.preview-action.action-btn--playlist) {
+    --current-playlist-row-height: var(--playlist-row-height, 44px);
+    width: 32px;
+    min-width: 32px;
+    height: var(--cue-cell-height);
+    min-height: 26px;
     flex-shrink: 0;
 
     .material-symbols-rounded {
