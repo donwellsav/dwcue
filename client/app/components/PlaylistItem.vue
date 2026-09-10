@@ -1209,7 +1209,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .item-identity {
   grid-area: identity;
   display: grid;
-  grid-template-columns: var(--cue-number-width, 48px) minmax(0, max-content) auto;
+  grid-template-columns: var(--cue-number-width, 40px) minmax(0, max-content) auto;
   align-items: center;
   gap: 6px;
   min-width: 0;
@@ -1218,13 +1218,13 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .playlist-item.is-audio .item-identity {
-  grid-template-columns: var(--cue-number-width, 48px) minmax(0, max-content) auto;
+  grid-template-columns: var(--cue-number-width, 40px) minmax(0, max-content) auto;
 }
 
 .item-index {
   grid-column: 1;
   justify-content: flex-start;
-  font-size: 12px;
+  font-size: 14px;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--color-text-primary);
@@ -1602,16 +1602,16 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .item-identity {
-    grid-template-columns: var(--cue-number-width, 52px) minmax(0, max-content) auto;
+    grid-template-columns: var(--cue-number-width, 44px) minmax(0, max-content) auto;
     gap: var(--spacing-sm);
   }
 
   &.is-audio .item-identity {
-    grid-template-columns: var(--cue-number-width, 52px) minmax(0, max-content) auto;
+    grid-template-columns: var(--cue-number-width, 44px) minmax(0, max-content) auto;
   }
 
   .item-index {
-    font-size: 14px;
+    font-size: 16px;
   }
 
   .item-icon .material-symbols-rounded {
