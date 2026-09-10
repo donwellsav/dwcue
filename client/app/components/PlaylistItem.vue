@@ -1145,8 +1145,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .item-left {
   display: grid;
-  grid-template-columns: 34px fit-content(620px) minmax(0, 1fr) max-content var(--cue-time-width, 96px) max-content 140px var(--playlist-set-next-width, 92px);
-  grid-template-areas: 'expand identity state video duration transport actions arm';
+  grid-template-columns: 34px minmax(0, 1fr) max-content max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
+  grid-template-areas: 'expand identity state video actions transport duration arm';
   align-items: center;
   gap: var(--spacing-sm);
   flex: 1;
@@ -1545,13 +1545,14 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 /* Keep every control available when the resizable playlist is narrow. The
-   lanes remain fixed, but state and transport move to a second console row. */
+   identity lane absorbs remaining width while transient state and transport
+   controls stay content-sized on the second console row. */
 @container (max-width: 560px) {
   .item-left {
-    grid-template-columns: 34px minmax(0, 1fr) max-content var(--cue-time-width, 96px) max-content 140px var(--playlist-set-next-width, 92px);
+    grid-template-columns: 34px minmax(0, 1fr) max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
     grid-template-areas:
-      'expand identity video duration transport actions arm'
-      'state state state state transport actions arm';
+      'expand identity video actions transport duration arm'
+      'state state state state transport duration arm';
     row-gap: var(--spacing-xs);
   }
 
@@ -1581,8 +1582,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
     --current-playlist-row-height: var(--folder-playlist-row-height, 60px);
   }
   .item-left {
-    grid-template-columns: 44px fit-content(620px) minmax(0, 1fr) max-content var(--cue-time-width, 96px) max-content max-content var(--playlist-set-next-width, 92px);
-    grid-template-areas: 'expand identity state video duration transport actions arm';
+    grid-template-columns: 44px minmax(0, 1fr) max-content max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
+    grid-template-areas: 'expand identity state video actions transport duration arm';
     gap: var(--spacing-sm);
   }
 
@@ -1688,11 +1689,11 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 @container (max-width: 620px) {
   .playlist-item.show-mode .item-left {
-    grid-template-columns: 44px minmax(0, 1fr) max-content var(--cue-time-width, 96px) max-content max-content var(--playlist-set-next-width, 92px);
+    grid-template-columns: 44px minmax(0, 1fr) max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
     grid-template-areas:
-      'expand identity video duration transport actions arm'
-      'state state state state transport actions arm';
+      'expand identity video actions transport duration arm'
+      'state state state state transport duration arm';
     row-gap: var(--spacing-sm);
   }
-  }
+}
 </style>

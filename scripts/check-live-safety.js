@@ -254,18 +254,23 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /grid-template-areas:\s*'expand identity state video duration transport actions arm'/,
-  'Normal Mode must place video before the clock and transport before Play Next',
+  /grid-template-areas:\s*'expand identity state video actions transport duration arm'/,
+  'Normal Mode must place video, edit controls, transport, clock, and Play Next in order',
 );
 assert.match(
   playlistItem,
-  /\.playlist-item\.show-mode[\s\S]{0,900}grid-template-areas:\s*'expand identity state video duration transport actions arm'/,
-  'Show Mode must keep video, clock, transport, and Play Next in the same right-side order',
+  /\.playlist-item\.show-mode[\s\S]{0,900}grid-template-areas:\s*'expand identity state video actions transport duration arm'/,
+  'Show Mode must keep video, edit controls, transport, clock, and Play Next in order',
 );
 assert.match(
   playlistItem,
-  /\.item-left\s*\{[\s\S]{0,220}grid-template-columns:\s*34px fit-content\(620px\) minmax\(0, 1fr\) max-content var\(--cue-time-width, 96px\) max-content 140px var\(--playlist-set-next-width, 92px\)/,
-  'Normal Mode must reserve separate video, clock, transport, action, and arm lanes',
+  /\.item-left\s*\{[\s\S]{0,220}grid-template-columns:\s*34px minmax\(0, 1fr\) max-content max-content max-content max-content var\(--cue-time-width, 96px\) var\(--playlist-set-next-width, 92px\)/,
+  'Normal Mode must let the title lane absorb space before the dynamic control lanes',
+);
+assert.match(
+  playlistItem,
+  /\.item-actions\s*\{[\s\S]{0,180}grid-template-columns:\s*repeat\(2, 32px\)/,
+  'gear and trash must share a compact action lane before transport',
 );
 assert.match(
   playlistItem,
@@ -315,7 +320,7 @@ assert.match(
 assert.match(
   playlistView,
   /--cue-time-width:\s*96px;/,
-  'the playlist time lane must reserve the enlarged playback clock before state indicators',
+  'the playlist time lane must reserve the enlarged playback clock beside Play Next',
 );
 assert.match(
   playlistItem,
@@ -345,8 +350,8 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.item-left\s*\{[\s\S]*grid-template-columns:\s*34px fit-content\(620px\) minmax\(0, 1fr\) max-content var\(--cue-time-width, 96px\) max-content 140px var\(--playlist-set-next-width, 92px\)[\s\S]*\.item-identity\s*\{[\s\S]*grid-template-columns:\s*var\(--cue-number-width, 36px\) minmax\(0, 1fr\) max-content;[\s\S]*width:\s*100%;[\s\S]*\.item-name\s*\{[\s\S]*width:\s*100%;[\s\S]*\.item-duration\s*\{/ ,
-  'playlist title cells must size to content while preserving number and time lanes',
+  /\.item-left\s*\{[\s\S]*grid-template-columns:\s*34px minmax\(0, 1fr\) max-content max-content max-content max-content var\(--cue-time-width, 96px\) var\(--playlist-set-next-width, 92px\)[\s\S]*\.item-identity\s*\{[\s\S]*grid-template-columns:\s*var\(--cue-number-width, 36px\) minmax\(0, 1fr\) max-content;[\s\S]*width:\s*100%;[\s\S]*\.item-name\s*\{[\s\S]*width:\s*100%;[\s\S]*\.item-duration\s*\{/,
+  'playlist title cells must absorb remaining width while preserving number and time lanes',
 );
 assert.match(
   playlistItem,
@@ -370,8 +375,8 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.item-left\s*\{[\s\S]{0,220}grid-template-columns:\s*34px fit-content\(620px\)[\s\S]*\.item-identity\s*\{[\s\S]{0,220}grid-template-columns:\s*var\(--cue-number-width, 36px\) minmax\(0, 1fr\) max-content;[\s\S]*\.item-icon\s*\{[\s\S]{0,160}grid-column:\s*1;[\s\S]{0,100}justify-self:\s*start;/,
-  'folder and audio titles must share one origin beside aligned state, time, action, and arm lanes',
+  /\.item-left\s*\{[\s\S]{0,220}grid-template-columns:\s*34px minmax\(0, 1fr\) max-content max-content max-content max-content var\(--cue-time-width, 96px\) var\(--playlist-set-next-width, 92px\)/,
+  'folder and audio titles must share the dynamic title lane beside aligned control lanes',
 );
 assert.match(
   playlistItem,
@@ -1924,8 +1929,8 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.item-left\s*\{[\s\S]{0,100}grid-template-columns:\s*34px fit-content\(620px\)[\s\S]*@container \(max-width: 560px\)\s*\{[\s\S]{0,100}\.item-left\s*\{[\s\S]{0,100}grid-template-columns:\s*34px minmax\(0, 1fr\)/,
-  'Regular Mode disclosure hitboxes must end before the identity lane at every width',
+  /\.item-left\s*\{[\s\S]{0,100}grid-template-columns:\s*34px minmax\(0, 1fr\)[\s\S]*@container \(max-width: 560px\)\s*\{[\s\S]{0,100}\.item-left\s*\{[\s\S]{0,100}grid-template-columns:\s*34px minmax\(0, 1fr\)/,
+  'Regular Mode disclosure hitboxes must end before the dynamic identity lane at every width',
 );
 assert.match(
   playlistItem,
