@@ -4141,11 +4141,22 @@ bool ProjectState::start_preview(const std::string& item_uuid) {
                 loop = it.contains("endBehavior") && it["endBehavior"].is_object()
                     && it["endBehavior"].value("action", std::string{}) == "loop";
             });
-        // settings.previewDevice
+        // settings.previewDevice stores the device id returned by /api/devices.
+        // Opened devices expose an instance id, while open_device_by_name()
+        // accepts the hardware display name. Resolve ids before opening the
+        // dedicated preview device, while preserving display-name projects.
         if (document_.contains("settings") && document_["settings"].is_object()) {
             const auto& s = document_["settings"];
             if (s.contains("previewDevice") && s["previewDevice"].is_string()) {
                 preview_device_name = s["previewDevice"].get<std::string>();
+            }
+        }
+    }
+    if (!preview_device_name.empty()) {
+        for (const auto& device : engine_.enumerate_devices()) {
+            if (device.id.value == preview_device_name) {
+                preview_device_name = device.display_name;
+                break;
             }
         }
     }

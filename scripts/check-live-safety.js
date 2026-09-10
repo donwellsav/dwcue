@@ -504,7 +504,12 @@ assert.match(
 assert.match(
   projectSettingsModal,
   /:value="outputTarget"[\s\S]{0,120}@change="onOutputTargetChange"[\s\S]*function onOutputTargetChange[\s\S]{0,160}applyPatch\(\{ outputTarget: v \}\)/,
-  'output target edits must remain available through persistent Project Settings',
+);
+assert.equal(
+  projectSettingsModal.includes('Preview stores the stable hardware name') &&
+    projectSettingsModal.includes(':value="d.display_name"'),
+  true,
+  'preview device settings must persist stable hardware names instead of opened-device ids',
 );
 assert.match(
   mainWorkspace,

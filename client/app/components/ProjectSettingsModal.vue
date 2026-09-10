@@ -53,7 +53,7 @@
               <p class="settings-help">{{ t('settings.audioDeviceHelp') }}</p>
             </section>
 
-            <!-- Preview device (used by the isolated Preview bus) -->
+            <!-- Preview stores the stable hardware name; opened-device ids are session-scoped. -->
             <section class="settings-field">
               <label class="settings-label">
                 <CueSymbol name="preview" />
@@ -65,7 +65,7 @@
                 @change="onPreviewDeviceChange"
               >
                 <option :value="''">{{ t('settings.noneSelected') }}</option>
-                <option v-for="d in devices" :key="d.id" :value="d.id">
+                <option v-for="d in devices" :key="d.id" :value="d.display_name">
                   {{ d.display_name }}{{ d.is_default ? ' (' + t('common.default') + ')' : '' }}
                 </option>
               </select>
