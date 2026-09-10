@@ -83,6 +83,26 @@ const computedStyle = computed(() => {
   white-space: nowrap;
 }
 
+.action-btn--playlist.set-next-action:not(.action-btn--active) {
+  border-color: rgba(255, 255, 255, 0.9);
+}
+
+.action-btn--playlist.set-next-action:not(.action-btn--active) .action-label-default {
+  display: none;
+}
+
+.action-btn--playlist.set-next-action:not(.action-btn--active) .action-label-hover {
+  display: none;
+}
+
+.action-btn--playlist.set-next-action:not(.action-btn--active):hover .action-label-hover {
+  display: inline;
+}
+
+.action-btn--playlist.set-next-action:not(.action-btn--active):hover .material-symbols-rounded {
+  display: none;
+}
+
 .action-label-hover {
   display: none;
 }

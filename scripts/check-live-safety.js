@@ -1977,6 +1977,11 @@ assert.match(
   'playlist buttons must keep their hover color while their icon size follows the enlarged row',
 );
 assert.match(
+  actionButton,
+  /\.action-btn--playlist\.set-next-action:not\(\.action-btn--active\)\s*\{[\s\S]*border-color:\s*rgba\(255, 255, 255, 0\.9\)[\s\S]*\.action-label-default\s*\{[\s\S]*display:\s*none;[\s\S]*:hover \.action-label-hover\s*\{[\s\S]*display:\s*inline;[\s\S]*:hover \.material-symbols-rounded\s*\{[\s\S]*display:\s*none;/,
+  'inactive Up Next must keep its white border, icon-only idle state, and text-only Play Next hover state',
+);
+assert.match(
   playlistItem,
   /class="item-color-rail" :style="\{ backgroundColor: item\.color \}" aria-hidden="true"[\s\S]*\.item-color-rail\s*\{[\s\S]{0,180}width:\s*4px;[\s\S]{0,100}z-index:\s*6;/,
   'every cue must keep its authored colour on a solid independent identity rail',

@@ -1507,6 +1507,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   font-size: var(--cue-text-size);
 }
 
+
 .item-left :deep(.set-next-action.action-btn--active .material-symbols-rounded) {
   display: none;
 }
