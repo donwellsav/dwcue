@@ -1408,7 +1408,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .item-state {
   grid-area: state;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: flex-end;
   gap: var(--spacing-xs);
@@ -1435,7 +1435,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .behavior-indicators {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 2px;
   align-items: center;
   flex-shrink: 0;
