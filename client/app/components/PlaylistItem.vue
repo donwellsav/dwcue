@@ -1134,7 +1134,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   inset: 3px 4px;
   border-radius: var(--border-radius-sm);
   background: rgba(0, 0, 0, 0.24);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.42);
   pointer-events: none;
   z-index: 0;
 }
@@ -1252,6 +1252,21 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--color-text-primary);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95), 0 0 5px rgba(0, 0, 0, 0.72);
+}
+
+.item-index,
+.item-icon .material-symbols-rounded,
+.peak-warning-icon,
+.video-badge-icon,
+.behavior-icon,
+.expand-btn .material-symbols-rounded {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 4px rgba(0, 0, 0, 0.68);
+}
+
+.item-content :deep(.action-btn--playlist .material-symbols-rounded),
+.item-content :deep(.action-btn--playlist .cue-symbol) {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.75));
 }
 
 
@@ -1330,6 +1345,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   color: var(--color-text-primary);
   margin: 0;
   white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95), 0 0 5px rgba(0, 0, 0, 0.72);
   /* Fixed-width, right-aligned column so the leading "-" shown during the
      playing countdown widens the text without shoving the flags around, and
      so the duration lines up vertically from row to row. */
