@@ -118,15 +118,6 @@
             draggable="false"
             @click.stop
           >bomb</span>
-          <span
-            v-if="item.type === 'audio' && item.hasVideo"
-            class="video-badge-icon"
-            :title="t('playlist.videoCue')"
-            role="img"
-            :aria-label="t('playlist.videoCue')"
-            draggable="false"
-            @click.stop
-          >VIDEO</span>
         </div>
 
         <div class="item-state">
@@ -198,6 +189,15 @@
         </div>
 
         <span v-if="item.type === 'audio'" class="item-duration">{{ durationDisplay }}</span>
+        <span
+          v-if="item.type === 'audio' && item.hasVideo"
+          class="video-badge-icon"
+          :title="t('playlist.videoCue')"
+          role="img"
+          :aria-label="t('playlist.videoCue')"
+          draggable="false"
+          @click.stop
+        >VIDEO</span>
 
         <!-- In Show Mode the live-playback actions (play/stop, set-as-next)
              and preview remain — preview is useful pre-show too; edit and
@@ -953,7 +953,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   --current-playlist-row-height: var(--playlist-row-height, 44px);
   --folder-play-action: color-mix(in srgb, var(--state-playing) 82%, var(--color-accent));
   --folder-next-action: color-mix(in srgb, var(--state-up-next) 84%, var(--color-accent));
-  --cue-cell-height: calc(var(--current-playlist-row-height) - 18px);
+  --cue-cell-height: 28px;
   --cue-text-size: 16px;
   position: relative;
   overflow: hidden;
@@ -1162,8 +1162,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .item-left {
   display: grid;
-  grid-template-columns: 34px fit-content(620px) minmax(0, 1fr) var(--cue-time-width, 72px) 140px var(--playlist-set-next-width, 92px);
-  grid-template-areas: 'expand identity state duration actions arm';
+  grid-template-columns: 34px fit-content(620px) minmax(0, 1fr) var(--cue-time-width, 72px) max-content 140px var(--playlist-set-next-width, 92px);
+  grid-template-areas: 'expand identity state duration video actions arm';
   align-items: center;
   gap: var(--spacing-sm);
   flex: 1;
@@ -1216,6 +1216,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   gap: 6px;
   min-width: 0;
   width: fit-content;
+  justify-self: start;
   max-width: 100%;
 }
 
@@ -1282,7 +1283,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   min-width: 32px;
   min-height: 26px;
   height: var(--cue-cell-height);
-  padding: 4px 3px;
+  padding: 2px 4px;
 }
 
 .item-icon {
@@ -1300,7 +1301,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   height: var(--cue-cell-height);
   width: max-content;
   max-width: 100%;
-  padding: 4px 8px;
+  padding: 2px 6px;
 }
 
 .item-duration {
@@ -1309,7 +1310,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   justify-content: flex-end;
   min-height: 26px;
   height: var(--cue-cell-height);
-  padding: 4px 8px;
+  padding: 2px 6px;
 }
 
 .peak-warning-icon,
@@ -1386,13 +1387,13 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 /* Video cue badge: a compact text cell that stays legible at a glance. */
 .video-badge-icon {
-  grid-column: 4;
+  grid-area: video;
   justify-self: start;
   justify-content: center;
   min-width: 38px;
   min-height: 26px;
   height: var(--cue-cell-height);
-  padding: 3px 5px;
+  padding: 2px 4px;
   font-family: var(--font-sans);
   font-size: var(--cue-text-size);
   font-weight: 700;
@@ -1552,10 +1553,10 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
    lanes remain fixed, but state and transport move to a second console row. */
 @container (max-width: 560px) {
   .item-left {
-    grid-template-columns: 34px minmax(0, 1fr) 140px var(--playlist-set-next-width, 92px);
+    grid-template-columns: 34px minmax(0, 1fr) 140px max-content var(--playlist-set-next-width, 92px);
     grid-template-areas:
-      'expand identity duration arm'
-      'state state actions actions';
+      'expand identity duration video arm'
+      'state state actions actions actions';
     row-gap: var(--spacing-xs);
   }
 
@@ -1584,10 +1585,9 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   &.is-group {
     --current-playlist-row-height: var(--folder-playlist-row-height, 60px);
   }
-
   .item-left {
-    grid-template-columns: 44px fit-content(620px) minmax(0, 1fr) var(--cue-time-width, 72px) max-content var(--playlist-set-next-width, 92px);
-    grid-template-areas: 'expand identity state duration actions arm';
+    grid-template-columns: 44px fit-content(620px) minmax(0, 1fr) var(--cue-time-width, 72px) max-content max-content var(--playlist-set-next-width, 92px);
+    grid-template-areas: 'expand identity state duration video actions arm';
     gap: var(--spacing-sm);
   }
 
