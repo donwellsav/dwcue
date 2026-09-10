@@ -1500,6 +1500,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   width: var(--playlist-set-next-width, 92px);
   min-width: var(--playlist-set-next-width, 92px);
   gap: 5px;
+  font-size: clamp(14px, calc(var(--current-playlist-row-height, 44px) * 0.3), 24px);
 }
 
 .item-left :deep(.set-next-action.action-btn--active .material-symbols-rounded) {
@@ -1658,7 +1659,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
     flex-shrink: 0;
 
     .material-symbols-rounded {
-      font-size: 24px;
+      font-size: clamp(18px, calc(var(--current-playlist-row-height, 44px) * 0.42), 36px);
     }
   }
 

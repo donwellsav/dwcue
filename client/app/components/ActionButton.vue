@@ -71,6 +71,11 @@ const computedStyle = computed(() => {
     color: var(--action-highlight, var(--color-accent));
   }
 }
+.action-btn--playlist:not(.action-btn--active):not(.set-next-action) {
+  background-color: var(--color-surface-hover);
+  border-color: var(--action-highlight, var(--color-accent));
+  color: var(--action-highlight, var(--color-accent));
+}
 
 .action-label {
   display: inline-flex;
@@ -96,7 +101,7 @@ const computedStyle = computed(() => {
 
   .material-symbols-rounded,
   :deep(.cue-symbol) {
-    font-size: 18px;
+    font-size: clamp(18px, calc(var(--current-playlist-row-height, 44px) * 0.42), 36px);
   }
 }
 

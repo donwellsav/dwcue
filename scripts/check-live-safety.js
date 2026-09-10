@@ -1972,6 +1972,11 @@ assert.match(
   'active icon actions must render their requested solid highlight fill',
 );
 assert.match(
+  actionButton,
+  /\.action-btn--playlist:not\(\.action-btn--active\):not\(\.set-next-action\)\s*\{[\s\S]*background-color:\s*var\(--color-surface-hover\)[\s\S]*border-color:\s*var\(--action-highlight, var\(--color-accent\)\)[\s\S]*color:\s*var\(--action-highlight, var\(--color-accent\)\)[\s\S]*font-size:\s*clamp\(18px,/,
+  'playlist buttons must keep their hover color while their icon size follows the enlarged row',
+);
+assert.match(
   playlistItem,
   /class="item-color-rail" :style="\{ backgroundColor: item\.color \}" aria-hidden="true"[\s\S]*\.item-color-rail\s*\{[\s\S]{0,180}width:\s*4px;[\s\S]{0,100}z-index:\s*6;/,
   'every cue must keep its authored colour on a solid independent identity rail',
