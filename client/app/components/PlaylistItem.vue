@@ -1615,19 +1615,16 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .item-index {
-    font-size: var(--cue-text-size);
+    font-size: 18px;
   }
 
   .item-icon .material-symbols-rounded {
     font-size: 22px;
   }
 
-  .item-name {
-    font-size: var(--cue-text-size);
-  }
-
+  .item-name,
   &.is-group .item-name {
-    font-size: var(--cue-text-size);
+    font-size: 18px;
   }
 
   &.is-audio .item-name {

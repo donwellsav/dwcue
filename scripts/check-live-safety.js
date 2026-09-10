@@ -279,6 +279,11 @@ assert.match(
 );
 assert.match(
   playlistItem,
+  /\.playlist-item\.show-mode[\s\S]{0,1400}\.item-index\s*\{\s*font-size:\s*18px;[\s\S]*\.item-name,\s*&\.is-group \.item-name\s*\{\s*font-size:\s*18px;/,
+  'Show Mode must use larger readable cue numbers and titles',
+);
+assert.match(
+  playlistItem,
   /\.item-index\s*\{[\s\S]*justify-content:\s*center;[\s\S]*font-size:\s*var\(--cue-text-size\);[\s\S]*font-family:\s*var\(--font-sans\);[\s\S]*\.item-name\s*\{[\s\S]*font-size:\s*var\(--cue-text-size\);[\s\S]*\.video-badge-icon\s*\{[\s\S]*height:\s*var\(--cue-cell-height\);[\s\S]*font-size:\s*var\(--cue-text-size\);/,
   'playlist number, title, and video cells must share the readable playlist font and sizing',
 );
