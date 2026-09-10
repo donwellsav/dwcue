@@ -1179,9 +1179,10 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid transparent;
+  border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
-  background: transparent;
+  background: var(--color-control);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
   color: var(--color-text-primary);
   cursor: pointer;
 
@@ -1255,6 +1256,64 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 1), 0 0 5px rgba(0, 0, 0, 0.95), 0 2px 8px rgba(0, 0, 0, 0.75);
 }
 
+/* Give the playlist's identity, timing, and indicator content real control
+   cells. These opaque cells provide the contrast; text shadows are only a
+   secondary detail when a waveform is visible underneath. */
+.item-index,
+.item-icon,
+.item-name,
+.item-duration,
+.peak-warning-icon,
+.video-badge-icon,
+.behavior-icon {
+  box-sizing: border-box;
+  background-color: color-mix(in srgb, var(--color-control) 92%, var(--color-background));
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
+}
+
+.item-index {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 26px;
+  padding: 4px 6px;
+}
+
+.item-icon {
+  min-width: 32px;
+  min-height: 26px;
+  padding: 2px;
+}
+
+.item-name {
+  display: flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 8px;
+}
+
+.item-duration {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 26px;
+  padding: 4px 8px;
+}
+
+.peak-warning-icon,
+.video-badge-icon,
+.behavior-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  min-height: 26px;
+  padding: 3px;
+}
+
 .item-index,
 .item-icon .material-symbols-rounded,
 .peak-warning-icon,
@@ -1288,7 +1347,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .playlist-item.is-audio > .item-content :deep(.action-btn--playlist) {
   background-color: var(--color-control);
-  box-shadow: none;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.035), 0 1px 3px rgba(0, 0, 0, 0.55);
 }
 
 .playlist-item.is-audio .peak-warning-icon {
