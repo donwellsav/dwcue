@@ -1125,8 +1125,18 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   min-height: var(--current-playlist-row-height);
   position: relative;
   z-index: 5;
-  background: color-mix(in srgb, var(--color-surface) 82%, transparent);
   cursor: pointer;
+}
+
+.item-content::before {
+  content: '';
+  position: absolute;
+  inset: 3px 4px;
+  border-radius: var(--border-radius-sm);
+  background: color-mix(in srgb, var(--color-background) 76%, transparent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+  pointer-events: none;
+  z-index: 0;
 }
 
 .playlist-item:not(.show-mode) > .item-content {
