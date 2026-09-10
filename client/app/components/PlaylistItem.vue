@@ -93,8 +93,10 @@
             :disabled="setNextItemPending"
             context="Playlist"
             @click.stop="handleSetAsNext"
-            :title="t('actions.setAsNext')"
-            :aria-label="t('actions.setAsNext')"
+            :label="t('status.upNext')"
+            :hover-label="isManuallyQueued ? t('status.upNext') : t('controls.playNext')"
+            :title="isManuallyQueued ? t('status.upNext') : t('controls.playNext')"
+            :aria-label="isManuallyQueued ? t('status.upNext') : t('controls.playNext')"
             :aria-pressed="isManuallyQueued"
           />
         </div>
@@ -118,19 +120,18 @@
           >bomb</span>
           <span
             v-if="item.type === 'audio' && item.hasVideo"
-            class="material-symbols-rounded video-badge-icon"
+            class="video-badge-icon"
             :title="t('playlist.videoCue')"
             role="img"
             :aria-label="t('playlist.videoCue')"
             draggable="false"
             @click.stop
-          >movie</span>
+          >VIDEO</span>
         </div>
 
         <div class="item-state">
           <span v-if="isPaused" class="status-pill paused">{{ t('status.paused') }}</span>
           <span v-else-if="isPlaying" class="status-pill playing">{{ t('status.playing') }}</span>
-          <span v-else-if="isQueuedNext" class="status-pill up-next">{{ t('status.upNext') }}</span>
           <ActionButton
             v-if="isPlaying && item.type === 'audio'"
             class="restart-action"
@@ -179,12 +180,7 @@
 
             <!-- End behavior -->
             <span
-              v-if="item.endBehavior?.action === 'next'"
-              class="material-symbols-rounded behavior-icon"
-              :title="t('behaviors.endPlayNext')"
-            >skip_next</span>
-            <span
-              v-else-if="item.endBehavior?.action === 'goto-item'"
+              v-if="item.endBehavior?.action === 'goto-item'"
               class="material-symbols-rounded behavior-icon"
               :title="t('behaviors.endGotoItem')"
             >arrow_forward</span>
@@ -229,8 +225,10 @@
             :disabled="setNextItemPending"
             context="Playlist"
             @click.stop="handleSetAsNext"
-            :title="t('actions.setAsNext')"
-            :aria-label="t('actions.setAsNext')"
+            :label="t('status.upNext')"
+            :hover-label="isManuallyQueued ? t('status.upNext') : t('controls.playNext')"
+            :title="isManuallyQueued ? t('status.upNext') : t('controls.playNext')"
+            :aria-label="isManuallyQueued ? t('status.upNext') : t('controls.playNext')"
             :aria-pressed="isManuallyQueued"
           />
           <ActionButton
@@ -1162,7 +1160,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .item-left {
   display: grid;
-  grid-template-columns: 34px minmax(112px, 1fr) var(--cue-state-width, 108px) var(--cue-time-width, 72px) 140px 32px;
+  grid-template-columns: 34px fit-content(620px) var(--cue-state-width, 108px) var(--cue-time-width, 72px) 140px var(--playlist-set-next-width, 92px);
   grid-template-areas: 'expand identity state duration actions arm';
   align-items: center;
   gap: var(--spacing-sm);
@@ -1211,14 +1209,16 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .item-identity {
   grid-area: identity;
   display: grid;
-  grid-template-columns: var(--cue-number-width, 48px) minmax(0, 1fr) auto;
+  grid-template-columns: var(--cue-number-width, 48px) minmax(0, max-content) auto;
   align-items: center;
   gap: 6px;
   min-width: 0;
+  width: fit-content;
+  max-width: 100%;
 }
 
 .playlist-item.is-audio .item-identity {
-  grid-template-columns: var(--cue-number-width, 48px) minmax(0, 1fr) auto;
+  grid-template-columns: var(--cue-number-width, 48px) minmax(0, max-content) auto;
 }
 
 .item-index {
@@ -1292,6 +1292,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   display: flex;
   align-items: center;
   min-height: 26px;
+  width: max-content;
+  max-width: 100%;
   padding: 4px 8px;
 }
 
@@ -1374,12 +1376,16 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   line-height: 1;
 }
 
-/* Video cue badge: column 4 in the identity grid. When the peak warning is
-   absent its auto column collapses to zero width, so the badge still sits
-   flush after the cue name. */
+/* Video cue badge: a compact text cell that stays legible at a glance. */
 .video-badge-icon {
   grid-column: 4;
-  font-size: 18px;
+  min-width: 38px;
+  min-height: 26px;
+  padding: 3px 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   color: var(--color-accent);
   flex-shrink: 0;
   cursor: default;
@@ -1448,10 +1454,6 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
     color: black;
   }
 
-  &.up-next {
-    background-color: var(--state-up-next);
-    color: black;
-  }
 
   &.paused {
     border: 1px solid var(--color-text-tertiary);
@@ -1475,6 +1477,16 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   gap: var(--spacing-xs);
   z-index: 5;
   flex-shrink: 0;
+}
+
+.item-left :deep(.set-next-action.action-btn--playlist) {
+  width: var(--playlist-set-next-width, 92px);
+  min-width: var(--playlist-set-next-width, 92px);
+  gap: 5px;
+}
+
+.item-left :deep(.set-next-action.action-btn--active .material-symbols-rounded) {
+  display: none;
 }
 
 .preview-action { grid-column: 1; }
@@ -1519,7 +1531,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
    lanes remain fixed, but state and transport move to a second console row. */
 @container (max-width: 560px) {
   .item-left {
-    grid-template-columns: 34px minmax(0, 1fr) 140px 32px;
+    grid-template-columns: 34px minmax(0, 1fr) 140px var(--playlist-set-next-width, 92px);
     grid-template-areas:
       'expand identity duration arm'
       'state state actions actions';
@@ -1553,7 +1565,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .item-left {
-    grid-template-columns: 44px 88px minmax(0, 1fr) var(--cue-state-width, 108px) var(--cue-time-width, 72px) 184px;
+    grid-template-columns: 44px 88px fit-content(620px) var(--cue-state-width, 108px) var(--cue-time-width, 72px) 184px;
     grid-template-areas: 'expand arm identity state duration actions';
     gap: var(--spacing-sm);
   }
@@ -1572,12 +1584,12 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .item-identity {
-    grid-template-columns: var(--cue-number-width, 52px) minmax(0, 1fr) auto;
+    grid-template-columns: var(--cue-number-width, 52px) minmax(0, max-content) auto;
     gap: var(--spacing-sm);
   }
 
   &.is-audio .item-identity {
-    grid-template-columns: var(--cue-number-width, 52px) minmax(0, 1fr) auto;
+    grid-template-columns: var(--cue-number-width, 52px) minmax(0, max-content) auto;
   }
 
   .item-index {
@@ -1642,7 +1654,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .item-actions {
-    grid-template-columns: repeat(2, 88px);
+    grid-template-columns: repeat(2, var(--playlist-set-next-width, 92px));
     gap: var(--spacing-sm);
 
     .set-next-action {
@@ -1658,7 +1670,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 @container (max-width: 620px) {
   .playlist-item.show-mode .item-left {
-    grid-template-columns: 44px 88px minmax(0, 1fr) 184px;
+    grid-template-columns: 44px 88px fit-content(620px) 184px;
     grid-template-areas:
       'expand arm identity duration'
       'state state state actions';

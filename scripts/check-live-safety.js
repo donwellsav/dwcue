@@ -249,8 +249,8 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /class="item-actions"[\s\S]{0,1400}v-if="showMode"[\s\S]{0,100}class="set-next-action"[\s\S]{0,700}v-else[\s\S]{0,100}class="play-action"/,
-  'Show Mode must put Set As Next in the far-right play slot while Normal Mode keeps Play there',
+  /class="item-actions"[\s\S]{0,2200}v-if="showMode"[\s\S]{0,100}class="set-next-action"[\s\S]{0,1200}:label="t\('status\.upNext'\)"[\s\S]{0,1200}v-else[\s\S]{0,100}class="play-action"/,
+  'Show Mode must keep the combined Up Next control in the far-right play slot while Normal Mode keeps Play there',
 );
 assert.match(
   playlistItem,
@@ -262,6 +262,11 @@ assert.match(
   /\.playlist-item\.show-mode[\s\S]{0,900}grid-template-areas:\s*'expand arm identity state duration actions'[\s\S]*\.item-actions\s*\{[\s\S]*\.set-next-action\s*\{[\s\S]*grid-column:\s*2;/,
   'Show Mode must swap Play left and Set As Next into the original far-right Play column',
 );
+assert.equal((playlistItem.match(/class="status-pill up-next"/g) ?? []).length, 0, 'the separate Up Next status pill must be removed');
+assert.equal((playlistItem.match(/v-if="item\.endBehavior\?\.action === 'next'"/g) ?? []).length, 0, 'the obsolete end-next icon must be removed');
+assert.match(playlistItem, /class="video-badge-icon"[\s\S]{0,240}>VIDEO<\/span>/, 'video cues must use a readable VIDEO text badge');
+assert.doesNotMatch(playlistItem, /class="material-symbols-rounded video-badge-icon"|>movie<\/span>/, 'video cues must not use the old movie glyph');
+assert.match(playlistItem, /class="set-next-action"[\s\S]{0,700}:label="t\('status\.upNext'\)"[\s\S]{0,700}:hover-label="[^"]+"/, 'the next control must combine its fixed Up Next label with the Play Next hover label');
 assert.match(
   uiMode,
   /normalizeBoundedInteger[\s\S]*Math\.min\(max, Math\.max\(min, Math\.round\(number\)\)\)[\s\S]*regular:\s*\{ min: 44, max: 72, default: 44 \}[\s\S]*show:\s*\{ min: 60, max: 96, default: 68 \}[\s\S]*folder:\s*\{ min: 60, max: 96, default: 60 \}[\s\S]*normalizePlaylistRowHeight[\s\S]*REGULAR_ROW_HEIGHT_KEY[\s\S]*SHOW_ROW_HEIGHT_KEY[\s\S]*FOLDER_ROW_HEIGHT_KEY/,
@@ -289,9 +294,10 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /<span class="item-color-rail" :style="\{ backgroundColor: item\.color \}" aria-hidden="true"><\/span>[\s\S]*<span class="item-name"[^>]*>\{\{ item\.displayName \}\}<\/span>[\s\S]*v-if="isPaused" class="status-pill paused"[\s\S]*v-else-if="isPlaying" class="status-pill playing"[\s\S]*v-else-if="isQueuedNext" class="status-pill up-next"/,
-  'cue colour must remain an independent rail while paused, playing, and next states have explicit priority',
+  /<span class="item-color-rail" :style="\{ backgroundColor: item\.color \}" aria-hidden="true"><\/span>[\s\S]*<span class="item-name"[^>]*>\{\{ item\.displayName \}\}<\/span>[\s\S]*v-if="isPaused" class="status-pill paused"[\s\S]*v-else-if="isPlaying" class="status-pill playing"/,
+  'cue colour must remain an independent rail while paused and playing states retain explicit priority',
 );
+assert.match(playlistItem, /'is-up-next': isQueuedNext/, 'queued-next state must remain on the playlist row');
 assert.match(
   playlistItem,
   /\.item-name\s*\{[\s\S]{0,260}color:\s*var\(--color-text-primary\);[\s\S]*\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]{0,180}color:\s*var\(--state-playing\);[\s\S]*\.playlist-item\.is-paused > \.item-content \.item-name\s*\{[\s\S]{0,120}color:\s*var\(--color-text-primary\);/,
@@ -299,13 +305,13 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.playlist-item\.is-up-next:not\(\.is-playing\)\s*\{[\s\S]{0,140}var\(--state-up-next\)[\s\S]*\.playlist-item\.is-playing\s*\{[\s\S]{0,140}var\(--state-playing\)[\s\S]*\.playlist-item\.is-playing\.is-paused\s*\{[\s\S]{0,120}var\(--color-text-tertiary\)[\s\S]*\.item-progress\s*\{[\s\S]{0,260}background:\s*var\(--state-playing\);[\s\S]*\.playlist-item\.is-paused \.item-progress\s*\{[\s\S]{0,100}var\(--color-text-tertiary\)[\s\S]*&\.playing\s*\{[\s\S]{0,120}background-color:\s*var\(--state-playing\)[\s\S]*&\.up-next\s*\{[\s\S]{0,120}background-color:\s*var\(--state-up-next\)[\s\S]*&\.paused\s*\{[\s\S]{0,180}background-color:\s*var\(--color-control\);[\s\S]{0,100}color:\s*var\(--color-text-primary\);/,
+  /\.playlist-item\.is-up-next:not\(\.is-playing\)\s*\{[\s\S]{0,140}var\(--state-up-next\)[\s\S]*\.playlist-item\.is-playing\s*\{[\s\S]{0,140}var\(--state-playing\)[\s\S]*\.playlist-item\.is-playing\.is-paused\s*\{[\s\S]{0,120}var\(--color-text-tertiary\)[\s\S]*\.item-progress\s*\{[\s\S]{0,260}background:\s*var\(--state-playing\);[\s\S]*\.playlist-item\.is-paused \.item-progress\s*\{[\s\S]{0,100}var\(--color-text-tertiary\)[\s\S]*&\.playing\s*\{[\s\S]{0,120}background-color:\s*var\(--state-playing\)[\s\S]*&\.paused\s*\{[\s\S]{0,180}background-color:\s*var\(--color-control\);[\s\S]{0,100}color:\s*var\(--color-text-primary\);/,
   'playlist rows must use green playing, amber next, and an explicit neutral paused treatment',
 );
 assert.match(
   playlistItem,
-  /\.item-identity\s*\{[\s\S]*grid-template-columns:\s*var\(--cue-number-width, 48px\) minmax\(0, 1fr\) auto;[\s\S]*\.playlist-item\.is-audio \.item-identity\s*\{[\s\S]{0,120}grid-template-columns:\s*var\(--cue-number-width, 48px\) minmax\(0, 1fr\) auto;[\s\S]*\.item-name\s*\{[\s\S]{0,260}font-size:\s*var\(--type-track-size\);[\s\S]{0,180}color:\s*var\(--color-text-primary\);[\s\S]*\.playlist-item\.show-mode\s*\{[\s\S]*\.item-identity\s*\{[\s\S]{0,160}var\(--cue-number-width, 52px\)[\s\S]*&\.is-audio \.item-identity\s*\{[\s\S]{0,160}var\(--cue-number-width, 52px\)[\s\S]*&\.is-audio \.item-name\s*\{[\s\S]{0,180}-webkit-line-clamp:\s*2;[\s\S]{0,100}white-space:\s*normal;/,
-  'audio and folder titles must share a stable number lane and remain readable over two neutral Show Mode lines',
+  /\.item-left\s*\{[\s\S]*grid-template-columns:\s*34px fit-content\(620px\)[\s\S]*\.item-identity\s*\{[\s\S]*grid-template-columns:\s*var\(--cue-number-width, 48px\) minmax\(0, max-content\) auto;[\s\S]*width:\s*fit-content;[\s\S]*\.item-name\s*\{[\s\S]*width:\s*max-content;[\s\S]*\.item-duration\s*\{/,
+  'playlist title cells must size to content while preserving number and time lanes',
 );
 assert.match(
   playlistItem,
@@ -324,7 +330,7 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.item-left\s*\{[\s\S]{0,220}grid-template-columns:\s*34px minmax\(112px, 1fr\) var\(--cue-state-width, 108px\) var\(--cue-time-width, 72px\) 140px 32px;[\s\S]*\.item-identity\s*\{[\s\S]{0,220}grid-template-columns:\s*var\(--cue-number-width, 48px\) minmax\(0, 1fr\) auto;[\s\S]*\.item-icon\s*\{[\s\S]{0,160}grid-column:\s*1;[\s\S]{0,100}justify-self:\s*end;/,
+  /\.item-left\s*\{[\s\S]{0,220}grid-template-columns:\s*34px fit-content\(620px\)[\s\S]*\.item-identity\s*\{[\s\S]{0,220}grid-template-columns:\s*var\(--cue-number-width, 48px\) minmax\(0, max-content\) auto;[\s\S]*\.item-icon\s*\{[\s\S]{0,160}grid-column:\s*1;[\s\S]{0,100}justify-self:\s*end;/,
   'folder and audio titles must share one origin beside aligned state, time, action, and arm lanes',
 );
 assert.match(
@@ -1878,7 +1884,7 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.item-left\s*\{[\s\S]{0,100}grid-template-columns:\s*34px minmax\(112px, 1fr\)[\s\S]*@container \(max-width: 560px\)\s*\{[\s\S]{0,100}\.item-left\s*\{[\s\S]{0,100}grid-template-columns:\s*34px minmax\(0, 1fr\)/,
+  /\.item-left\s*\{[\s\S]{0,100}grid-template-columns:\s*34px fit-content\(620px\)[\s\S]*@container \(max-width: 560px\)\s*\{[\s\S]{0,100}\.item-left\s*\{[\s\S]{0,100}grid-template-columns:\s*34px minmax\(0, 1fr\)/,
   'Regular Mode disclosure hitboxes must end before the identity lane at every width',
 );
 assert.match(

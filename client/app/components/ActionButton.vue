@@ -11,6 +11,10 @@
   >
     <CueSymbol v-if="symbol" :name="symbol" />
     <span v-else-if="icon" class="material-symbols-rounded" aria-hidden="true">{{ icon }}</span>
+    <span v-if="label" class="action-label" :class="{ 'has-hover-label': hoverLabel }">
+      <span class="action-label-default">{{ label }}</span>
+      <span v-if="hoverLabel" class="action-label-hover">{{ hoverLabel }}</span>
+    </span>
   </button>
 </template>
 
@@ -22,6 +26,8 @@ const props = withDefaults(defineProps<{
   activeTextColor?: string;
   context?: 'Playlist' | 'Cart';
   isActive?: boolean;
+  label?: string;
+  hoverLabel?: string;
 }>(), {
   highlightColor: 'var(--color-accent)',
   activeTextColor: 'white',
@@ -64,6 +70,24 @@ const computedStyle = computed(() => {
     border-color: var(--action-highlight, var(--color-accent));
     color: var(--action-highlight, var(--color-accent));
   }
+}
+
+.action-label {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.action-label-hover {
+  display: none;
+}
+
+.action-btn:hover:not(:disabled) .action-label.has-hover-label .action-label-default {
+  display: none;
+}
+
+.action-btn:hover:not(:disabled) .action-label.has-hover-label .action-label-hover {
+  display: inline;
 }
 
 .action-btn--playlist {
