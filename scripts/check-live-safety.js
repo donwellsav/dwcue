@@ -264,7 +264,7 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.item-left\s*\{[\s\S]{0,220}grid-template-columns:\s*34px fit-content\(620px\) minmax\(0, 1fr\) var\(--cue-time-width, 72px\) max-content 140px var\(--playlist-set-next-width, 92px\)/,
+  /\.item-left\s*\{[\s\S]{0,220}grid-template-columns:\s*34px fit-content\(620px\) minmax\(0, 1fr\) var\(--cue-time-width, 96px\) max-content 140px var\(--playlist-set-next-width, 92px\)/,
   'Normal Mode must leave flexible space after the left identity cells for right-aligned time and controls',
 );
 assert.match(
@@ -340,7 +340,7 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.item-left\s*\{[\s\S]*grid-template-columns:\s*34px fit-content\(620px\) minmax\(0, 1fr\) var\(--cue-time-width, 72px\) max-content 140px var\(--playlist-set-next-width, 92px\)[\s\S]*\.item-identity\s*\{[\s\S]*grid-template-columns:\s*var\(--cue-number-width, 36px\) minmax\(0, max-content\) auto;[\s\S]*width:\s*fit-content;[\s\S]*\.item-name\s*\{[\s\S]*width:\s*max-content;[\s\S]*\.item-duration\s*\{/ ,
+  /\.item-left\s*\{[\s\S]*grid-template-columns:\s*34px fit-content\(620px\) minmax\(0, 1fr\) var\(--cue-time-width, 96px\) max-content 140px var\(--playlist-set-next-width, 92px\)[\s\S]*\.item-identity\s*\{[\s\S]*grid-template-columns:\s*var\(--cue-number-width, 36px\) minmax\(0, max-content\) auto;[\s\S]*width:\s*fit-content;[\s\S]*\.item-name\s*\{[\s\S]*width:\s*max-content;[\s\S]*\.item-duration\s*\{/ ,
   'playlist title cells must size to content while preserving number and time lanes',
 );
 assert.match(

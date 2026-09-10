@@ -1172,7 +1172,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .item-left {
   display: grid;
-  grid-template-columns: 34px fit-content(620px) minmax(0, 1fr) var(--cue-time-width, 72px) max-content 140px var(--playlist-set-next-width, 92px);
+  grid-template-columns: 34px fit-content(620px) minmax(0, 1fr) var(--cue-time-width, 96px) max-content 140px var(--playlist-set-next-width, 92px);
   grid-template-areas: 'expand identity state duration video actions arm';
   align-items: center;
   gap: var(--spacing-sm);
@@ -1598,7 +1598,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
     --current-playlist-row-height: var(--folder-playlist-row-height, 60px);
   }
   .item-left {
-    grid-template-columns: 44px fit-content(620px) minmax(0, 1fr) var(--cue-time-width, 72px) max-content max-content var(--playlist-set-next-width, 92px);
+    grid-template-columns: 44px fit-content(620px) minmax(0, 1fr) var(--cue-time-width, 96px) max-content max-content var(--playlist-set-next-width, 92px);
     grid-template-areas: 'expand identity state duration video actions arm';
     gap: var(--spacing-sm);
   }
@@ -1714,7 +1714,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 @container (max-width: 620px) {
   .playlist-item.show-mode .item-left {
-    grid-template-columns: 44px minmax(0, 1fr) var(--cue-time-width, 72px) max-content;
+    grid-template-columns: 44px minmax(0, 1fr) var(--cue-time-width, 96px) max-content;
     grid-template-areas:
       'expand identity duration arm'
       'state state actions actions';
