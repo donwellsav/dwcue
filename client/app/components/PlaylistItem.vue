@@ -1456,7 +1456,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   align-items: center;
   padding: 2px 8px;
   border-radius: var(--pill-radius);
-  font-size: 11px;
+  font-size: var(--cue-text-size);
   font-weight: 600;
   white-space: nowrap;
   flex-shrink: 0;
@@ -1502,7 +1502,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   width: var(--playlist-set-next-width, 92px);
   min-width: var(--playlist-set-next-width, 92px);
   gap: 5px;
-  font-size: clamp(14px, calc(var(--current-playlist-row-height, 44px) * 0.3), 24px);
+  font-family: var(--font-sans);
+  font-size: var(--cue-text-size);
 }
 
 .item-left :deep(.set-next-action.action-btn--active .material-symbols-rounded) {
@@ -1641,7 +1642,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .status-pill {
-    font-size: 13px;
+    font-size: var(--cue-text-size);
     height: 28px;
     padding: 2px 10px;
   }
