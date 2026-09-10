@@ -259,8 +259,18 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.playlist-item\.show-mode[\s\S]{0,900}grid-template-areas:\s*'expand arm identity state duration actions'[\s\S]*\.item-actions\s*\{[\s\S]*\.set-next-action\s*\{[\s\S]*grid-column:\s*2;/,
-  'Show Mode must swap Play left and Set As Next into the original far-right Play column',
+  /\.playlist-item\.show-mode[\s\S]{0,900}grid-template-areas:\s*'expand identity state duration actions arm'[\s\S]*\.item-actions\s*\{[\s\S]*\.set-next-action\s*\{[\s\S]*grid-column:\s*2;/,
+  'Show Mode must keep its time and playback controls on the right side of the row',
+);
+assert.match(
+  playlistItem,
+  /\.item-left\s*\{[\s\S]{0,220}grid-template-columns:\s*34px fit-content\(620px\) minmax\(0, 1fr\) var\(--cue-time-width, 72px\) 140px var\(--playlist-set-next-width, 92px\)/,
+  'Normal Mode must leave flexible space after the left identity cells for right-aligned time and controls',
+);
+assert.match(
+  playlistItem,
+  /\.item-index\s*\{[\s\S]{0,420}justify-content:\s*flex-start;[\s\S]{0,280}height:\s*calc\(var\(--current-playlist-row-height\) - 12px\);[\s\S]*\.item-name\s*\{[\s\S]{0,420}justify-content:\s*flex-start;[\s\S]{0,280}height:\s*calc\(var\(--current-playlist-row-height\) - 12px\);[\s\S]*\.video-badge-icon\s*\{[\s\S]{0,300}color:\s*var\(--color-danger\)/,
+  'playlist number title and video cells must be left-aligned, tall, and visibly red for video',
 );
 assert.equal((playlistItem.match(/class="status-pill up-next"/g) ?? []).length, 0, 'the separate Up Next status pill must be removed');
 assert.equal((playlistItem.match(/v-if="item\.endBehavior\?\.action === 'next'"/g) ?? []).length, 0, 'the obsolete end-next icon must be removed');
@@ -330,7 +340,7 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.item-left\s*\{[\s\S]{0,220}grid-template-columns:\s*34px fit-content\(620px\)[\s\S]*\.item-identity\s*\{[\s\S]{0,220}grid-template-columns:\s*var\(--cue-number-width, 48px\) minmax\(0, max-content\) auto;[\s\S]*\.item-icon\s*\{[\s\S]{0,160}grid-column:\s*1;[\s\S]{0,100}justify-self:\s*end;/,
+  /\.item-left\s*\{[\s\S]{0,220}grid-template-columns:\s*34px fit-content\(620px\)[\s\S]*\.item-identity\s*\{[\s\S]{0,220}grid-template-columns:\s*var\(--cue-number-width, 48px\) minmax\(0, max-content\) auto;[\s\S]*\.item-icon\s*\{[\s\S]{0,160}grid-column:\s*1;[\s\S]{0,100}justify-self:\s*start;/,
   'folder and audio titles must share one origin beside aligned state, time, action, and arm lanes',
 );
 assert.match(

@@ -1160,7 +1160,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .item-left {
   display: grid;
-  grid-template-columns: 34px fit-content(620px) var(--cue-state-width, 108px) var(--cue-time-width, 72px) 140px var(--playlist-set-next-width, 92px);
+  grid-template-columns: 34px fit-content(620px) minmax(0, 1fr) var(--cue-time-width, 72px) 140px var(--playlist-set-next-width, 92px);
   grid-template-areas: 'expand identity state duration actions arm';
   align-items: center;
   gap: var(--spacing-sm);
@@ -1223,7 +1223,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .item-index {
   grid-column: 1;
-  justify-self: start;
+  justify-content: flex-start;
   font-size: 12px;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -1232,7 +1232,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .item-icon {
   grid-column: 1;
-  justify-self: end;
+  justify-self: start;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1276,22 +1276,26 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .item-index {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   min-width: 32px;
   min-height: 26px;
+  height: calc(var(--current-playlist-row-height) - 12px);
   padding: 4px 6px;
 }
 
 .item-icon {
   min-width: 32px;
   min-height: 26px;
+  height: calc(var(--current-playlist-row-height) - 12px);
   padding: 2px;
 }
 
 .item-name {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   min-height: 26px;
+  height: calc(var(--current-playlist-row-height) - 12px);
   width: max-content;
   max-width: 100%;
   padding: 4px 8px;
@@ -1302,6 +1306,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   align-items: center;
   justify-content: flex-end;
   min-height: 26px;
+  height: calc(var(--current-playlist-row-height) - 12px);
   padding: 4px 8px;
 }
 
@@ -1313,6 +1318,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   justify-content: center;
   min-width: 26px;
   min-height: 26px;
+  height: calc(var(--current-playlist-row-height) - 12px);
   padding: 3px;
 }
 
@@ -1379,14 +1385,18 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 /* Video cue badge: a compact text cell that stays legible at a glance. */
 .video-badge-icon {
   grid-column: 4;
+  justify-self: start;
+  justify-content: flex-start;
   min-width: 38px;
   min-height: 26px;
+  height: calc(var(--current-playlist-row-height) - 12px);
   padding: 3px 5px;
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  color: var(--color-accent);
+  color: var(--color-danger);
+  border-color: color-mix(in srgb, var(--color-danger) 70%, var(--color-border));
   flex-shrink: 0;
   cursor: default;
   line-height: 1;
@@ -1397,6 +1407,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--spacing-xs);
   min-width: 0;
 }
@@ -1475,8 +1486,14 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   display: grid;
   grid-template-columns: repeat(4, 32px);
   gap: var(--spacing-xs);
+  justify-self: end;
   z-index: 5;
   flex-shrink: 0;
+}
+
+.item-left :deep(.action-btn--playlist) {
+  height: calc(var(--current-playlist-row-height) - 12px);
+  min-height: 26px;
 }
 
 .item-left :deep(.set-next-action.action-btn--playlist) {
@@ -1565,8 +1582,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .item-left {
-    grid-template-columns: 44px 88px fit-content(620px) var(--cue-state-width, 108px) var(--cue-time-width, 72px) 184px;
-    grid-template-areas: 'expand arm identity state duration actions';
+    grid-template-columns: 44px fit-content(620px) minmax(0, 1fr) var(--cue-time-width, 72px) max-content var(--playlist-set-next-width, 92px);
+    grid-template-areas: 'expand identity state duration actions arm';
     gap: var(--spacing-sm);
   }
 
@@ -1635,8 +1652,9 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
      misjudging horizontal position. :deep() reaches into the ActionButton
      child component's root. */
   :deep(.action-btn--playlist) {
-    width: 88px;
-    height: 48px;
+    width: var(--playlist-set-next-width, 92px);
+    height: calc(var(--current-playlist-row-height) - 12px);
+    min-height: 44px;
     flex-shrink: 0;
 
     .material-symbols-rounded {
@@ -1656,6 +1674,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   .item-actions {
     grid-template-columns: repeat(2, var(--playlist-set-next-width, 92px));
     gap: var(--spacing-sm);
+    justify-self: end;
 
     .set-next-action {
       grid-column: 2;
@@ -1670,11 +1689,11 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 @container (max-width: 620px) {
   .playlist-item.show-mode .item-left {
-    grid-template-columns: 44px 88px fit-content(620px) 184px;
+    grid-template-columns: 44px minmax(0, 1fr) var(--cue-time-width, 72px) max-content;
     grid-template-areas:
-      'expand arm identity duration'
-      'state state state actions';
+      'expand identity duration arm'
+      'state state actions actions';
     row-gap: var(--spacing-sm);
   }
-}
+  }
 </style>
