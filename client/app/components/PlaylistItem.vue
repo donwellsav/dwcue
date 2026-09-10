@@ -204,8 +204,6 @@
             class="play-action"
             :icon="isPlaying ? 'stop' : 'play_arrow'"
             :highlight-color="isPlaying ? 'var(--color-danger)' : (item.type === 'group' ? 'var(--folder-play-action)' : 'var(--state-playing)')"
-            active-text-color="black"
-            :is-active="isPlaying"
             context="Playlist"
             @click.stop="isPlaying ? handleStop() : handlePlay()"
             :title="isPlaying ? t('actions.stop') : t('actions.play')"
@@ -1287,8 +1285,9 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   justify-content: flex-start;
   min-height: 26px;
   height: var(--cue-cell-height);
-  width: 100%;
+  width: fit-content;
   max-width: 100%;
+  justify-self: start;
   padding: 2px 6px;
 }
 

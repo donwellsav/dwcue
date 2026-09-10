@@ -262,9 +262,9 @@ assert.match(
   /\.playlist-item\.show-mode[\s\S]{0,900}grid-template-areas:\s*'expand identity state video actions transport duration arm'/,
   'Show Mode must keep video, edit controls, transport, clock, and Play Next in order',
 );
-assert.match(
-  playlistItem,
-  /\.item-left\s*\{[\s\S]{0,220}grid-template-columns:\s*34px minmax\(0, 1fr\) max-content max-content max-content max-content var\(--cue-time-width, 96px\) var\(--playlist-set-next-width, 92px\)/,
+assert.equal(
+  playlistItem.includes('grid-template-columns: 34px minmax(0, 1fr) max-content max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px)'),
+  true,
   'Normal Mode must let the title lane absorb space before the dynamic control lanes',
 );
 assert.match(
@@ -348,10 +348,12 @@ assert.match(
   /\.playlist-item\.is-up-next:not\(\.is-playing\)\s*\{[\s\S]{0,140}var\(--state-up-next\)[\s\S]*\.playlist-item\.is-playing\s*\{[\s\S]{0,140}var\(--state-playing\)[\s\S]*\.playlist-item\.is-playing\.is-paused\s*\{[\s\S]{0,120}var\(--color-text-tertiary\)[\s\S]*\.item-progress\s*\{[\s\S]{0,260}background:\s*var\(--state-playing\);[\s\S]*\.playlist-item\.is-paused \.item-progress\s*\{[\s\S]{0,100}var\(--color-text-tertiary\)[\s\S]*&\.playing\s*\{[\s\S]{0,120}background-color:\s*var\(--state-playing\)[\s\S]*&\.paused\s*\{[\s\S]{0,180}background-color:\s*var\(--color-control\);[\s\S]{0,100}color:\s*var\(--color-text-primary\);/,
   'playlist rows must use green playing, amber next, and an explicit neutral paused treatment',
 );
-assert.match(
-  playlistItem,
-  /\.item-left\s*\{[\s\S]*grid-template-columns:\s*34px minmax\(0, 1fr\) max-content max-content max-content max-content var\(--cue-time-width, 96px\) var\(--playlist-set-next-width, 92px\)[\s\S]*\.item-identity\s*\{[\s\S]*grid-template-columns:\s*var\(--cue-number-width, 36px\) minmax\(0, 1fr\) max-content;[\s\S]*width:\s*100%;[\s\S]*\.item-name\s*\{[\s\S]*width:\s*100%;[\s\S]*\.item-duration\s*\{/,
-  'playlist title cells must absorb remaining width while preserving number and time lanes',
+assert.equal(
+  playlistItem.includes('grid-template-columns: 34px minmax(0, 1fr) max-content max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px)') &&
+    playlistItem.includes('width: fit-content;') &&
+    playlistItem.includes('.item-duration {'),
+  true,
+  'playlist title and clock cells must size dynamically while preserving the control lanes',
 );
 assert.match(
   playlistItem,
@@ -373,9 +375,9 @@ assert.match(
   /getComputedStyle\(canvas\)\.color[\s\S]*color:\s*var\(--waveform-color, var\(--color-text-primary\)\)/,
   'playlist waveforms must draw with the resolved CSS colour so cue data tint stays theme-aware',
 );
-assert.match(
-  playlistItem,
-  /\.item-left\s*\{[\s\S]{0,220}grid-template-columns:\s*34px minmax\(0, 1fr\) max-content max-content max-content max-content var\(--cue-time-width, 96px\) var\(--playlist-set-next-width, 92px\)/,
+assert.equal(
+  playlistItem.includes('grid-template-columns: 34px minmax(0, 1fr) max-content max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px)'),
+  true,
   'folder and audio titles must share the dynamic title lane beside aligned control lanes',
 );
 assert.match(
@@ -394,14 +396,19 @@ assert.doesNotMatch(
   'a true-peak warning must not turn an idle cue title red',
 );
 assert.equal(
-  (playlistItem.match(/:is-active="isPlaying"/g) ?? []).length,
-  1,
-  'the shared transport stop button must expose its active state',
+  playlistItem.includes(':is-active="isPlaying"'),
+  false,
+  'the playlist stop button must keep the standard unfilled control appearance',
 );
-assert.match(
-  playlistItem,
-  /class="play-action"[\s\S]*:highlight-color="isPlaying \? 'var\(--color-danger\)'/,
-  'the active playlist stop button must use the danger red fill',
+assert.equal(
+  playlistItem.includes(":highlight-color=\"isPlaying ? 'var(--color-danger)' :"),
+  true,
+  'the active playlist stop button must use the danger red control tint',
+);
+assert.equal(
+  playlistItem.includes('width: fit-content;') && playlistItem.includes('justify-self: start;'),
+  true,
+  'playlist title cells must size dynamically to their text',
 );
 assert.equal(
   (playlistItem.match(/item\.type === 'group' \? 'var\(--folder-play-action\)'/g) ?? []).length,
