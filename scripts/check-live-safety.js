@@ -232,8 +232,8 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /v-if="isPlaying && item\.type === 'audio'"[\s\S]{0,500}icon="restart_alt"[\s\S]{0,500}@click\.stop="handlePlay"[\s\S]{0,500}:aria-label="t\('actions\.restartCue', \{ name: item\.displayName \}\)"/,
-  'the active-track restart control must reuse the normal Play path',
+  /v-if="isPlaying && item\.type === 'audio'"[\s\S]{0,500}icon="restart_alt"[\s\S]{0,500}@click\.stop="handleRestart"[\s\S]{0,500}:aria-label="t\('actions\.restartCue', \{ name: item\.displayName \}\)"[\s\S]*const handleRestart = \(\) => \{[\s\S]{0,140}seekCue\(props\.item\.uuid, props\.item\.inPoint \?\? 0\)/,
+  'the active-track restart control must seek to the cue In point without toggling playback',
 );
 assert.equal(
   (playlistItem.match(
@@ -397,6 +397,11 @@ assert.equal(
   (playlistItem.match(/:is-active="isPlaying"/g) ?? []).length,
   1,
   'the shared transport stop button must expose its active state',
+);
+assert.match(
+  playlistItem,
+  /class="play-action"[\s\S]*:highlight-color="isPlaying \? 'var\(--color-danger\)'/,
+  'the active playlist stop button must use the danger red fill',
 );
 assert.equal(
   (playlistItem.match(/item\.type === 'group' \? 'var\(--folder-play-action\)'/g) ?? []).length,

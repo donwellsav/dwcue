@@ -196,14 +196,14 @@
             :highlight-color="durationColor ?? 'var(--state-playing)'"
             context="Playlist"
             type="button"
-            @click.stop="handlePlay"
+            @click.stop="handleRestart"
             :title="t('actions.restartCue', { name: item.displayName })"
             :aria-label="t('actions.restartCue', { name: item.displayName })"
           />
           <ActionButton
             class="play-action"
             :icon="isPlaying ? 'stop' : 'play_arrow'"
-            :highlight-color="isPlaying ? (durationColor ?? 'var(--state-playing)') : (item.type === 'group' ? 'var(--folder-play-action)' : 'var(--state-playing)')"
+            :highlight-color="isPlaying ? 'var(--color-danger)' : (item.type === 'group' ? 'var(--folder-play-action)' : 'var(--state-playing)')"
             active-text-color="black"
             :is-active="isPlaying"
             context="Playlist"
@@ -285,7 +285,7 @@ const formatMarkerTime = (seconds: number): string => {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 const { levels: outputTargetLevels } = useOutputTarget();
-const { playCue, stopCue, activeCues, activeGroups, triggerGroup, nextItemOverrideUuid, autoNextItemUuid, setNextItemPending, setNextItem } = useAudioEngine();
+const { playCue, stopCue, seekCue, activeCues, activeGroups, triggerGroup, nextItemOverrideUuid, autoNextItemUuid, setNextItemPending, setNextItem } = useAudioEngine();
 const { t } = useLocalization();
 const { uiMode } = useUiMode();
 
@@ -590,6 +590,11 @@ const handleSelect = (event: MouseEvent) => {
   // panel, delete) that are already hidden here.
   if (showMode.value) return;
   toggleItemSelection(props.item.uuid, event.ctrlKey || event.metaKey, event.shiftKey);
+};
+
+const handleRestart = () => {
+  if (props.item.type !== 'audio') return;
+  seekCue(props.item.uuid, props.item.inPoint ?? 0);
 };
 
 const handlePlay = () => {
