@@ -85,6 +85,7 @@ const computedStyle = computed(() => {
 
 .action-btn--playlist.set-next-action:not(.action-btn--active) {
   border-color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .action-btn--playlist.set-next-action:not(.action-btn--active) .action-label-default {
@@ -97,6 +98,11 @@ const computedStyle = computed(() => {
 
 .action-btn--playlist.set-next-action:not(.action-btn--active):hover .action-label-hover {
   display: inline;
+}
+
+.action-btn--playlist.set-next-action:not(.action-btn--active):hover {
+  border-color: var(--action-highlight, var(--color-accent));
+  color: var(--action-highlight, var(--color-accent));
 }
 
 .action-btn--playlist.set-next-action:not(.action-btn--active):hover .material-symbols-rounded {
