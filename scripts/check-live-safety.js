@@ -269,8 +269,8 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.item-index\s*\{[\s\S]*justify-content:\s*center;[\s\S]*font-size:\s*16px;/,
-  'playlist number title and video cells must be left-aligned, tall, and visibly red for video',
+  /\.item-index\s*\{[\s\S]*justify-content:\s*center;[\s\S]*font-size:\s*var\(--cue-text-size\);[\s\S]*font-family:\s*var\(--font-sans\);[\s\S]*\.item-name\s*\{[\s\S]*font-size:\s*var\(--cue-text-size\);[\s\S]*\.video-badge-icon\s*\{[\s\S]*height:\s*var\(--cue-cell-height\);[\s\S]*font-size:\s*var\(--cue-text-size\);/,
+  'playlist number, title, and video cells must share the readable playlist font and sizing',
 );
 assert.equal((playlistItem.match(/class="status-pill up-next"/g) ?? []).length, 0, 'the separate Up Next status pill must be removed');
 assert.equal((playlistItem.match(/v-if="item\.endBehavior\?\.action === 'next'"/g) ?? []).length, 0, 'the obsolete end-next icon must be removed');

@@ -953,6 +953,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   --current-playlist-row-height: var(--playlist-row-height, 44px);
   --folder-play-action: color-mix(in srgb, var(--state-playing) 82%, var(--color-accent));
   --folder-next-action: color-mix(in srgb, var(--state-up-next) 84%, var(--color-accent));
+  --cue-cell-height: calc(var(--current-playlist-row-height) - 18px);
+  --cue-text-size: 16px;
   position: relative;
   overflow: hidden;
   margin-bottom: 0;
@@ -1224,8 +1226,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .item-index {
   grid-column: 1;
   justify-content: center;
-  font-size: 16px;
-  font-family: var(--font-mono);
+  font-size: var(--cue-text-size);
+  font-family: var(--font-sans);
   font-variant-numeric: tabular-nums;
   color: var(--color-text-primary);
 }
@@ -1246,7 +1248,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .item-name {
   grid-column: 2;
   font-weight: 700;
-  font-size: var(--type-track-size);
+  font-size: var(--cue-text-size);
   line-height: 1.2;
   min-width: 0;
   overflow: hidden;
@@ -1279,14 +1281,14 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   justify-content: center;
   min-width: 32px;
   min-height: 26px;
-  height: calc(var(--current-playlist-row-height) - 12px);
+  height: var(--cue-cell-height);
   padding: 4px 3px;
 }
 
 .item-icon {
   min-width: 32px;
   min-height: 26px;
-  height: calc(var(--current-playlist-row-height) - 12px);
+  height: var(--cue-cell-height);
   padding: 2px;
 }
 
@@ -1295,7 +1297,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   align-items: center;
   justify-content: flex-start;
   min-height: 26px;
-  height: calc(var(--current-playlist-row-height) - 12px);
+  height: var(--cue-cell-height);
   width: max-content;
   max-width: 100%;
   padding: 4px 8px;
@@ -1306,7 +1308,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   align-items: center;
   justify-content: flex-end;
   min-height: 26px;
-  height: calc(var(--current-playlist-row-height) - 12px);
+  height: var(--cue-cell-height);
   padding: 4px 8px;
 }
 
@@ -1318,7 +1320,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   justify-content: center;
   min-width: 26px;
   min-height: 26px;
-  height: calc(var(--current-playlist-row-height) - 12px);
+  height: var(--cue-cell-height);
   padding: 3px;
 }
 
@@ -1345,7 +1347,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .playlist-item.is-group .item-name {
-  font-size: calc(var(--type-track-size) + 1px);
+  font-size: var(--cue-text-size);
   font-weight: 800;
 }
 
@@ -1386,13 +1388,13 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .video-badge-icon {
   grid-column: 4;
   justify-self: start;
-  justify-content: flex-start;
+  justify-content: center;
   min-width: 38px;
   min-height: 26px;
-  height: calc(var(--current-playlist-row-height) - 12px);
+  height: var(--cue-cell-height);
   padding: 3px 5px;
-  font-family: var(--font-mono);
-  font-size: 10px;
+  font-family: var(--font-sans);
+  font-size: var(--cue-text-size);
   font-weight: 700;
   letter-spacing: 0.04em;
   color: var(--color-danger);
@@ -1415,8 +1417,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .item-duration {
   grid-area: duration;
   justify-self: end;
-  font-family: var(--font-mono);
-  font-size: 13px;
+  font-family: var(--font-sans);
+  font-size: var(--cue-text-size);
   font-variant-numeric: tabular-nums;
   color: var(--color-text-primary);
   margin: 0;
@@ -1492,7 +1494,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .item-left :deep(.action-btn--playlist) {
-  height: calc(var(--current-playlist-row-height) - 12px);
+  height: var(--cue-cell-height);
   min-height: 26px;
 }
 
@@ -1611,7 +1613,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .item-index {
-    font-size: 18px;
+    font-size: var(--cue-text-size);
   }
 
   .item-icon .material-symbols-rounded {
@@ -1619,11 +1621,11 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .item-name {
-    font-size: var(--type-track-show-size);
+    font-size: var(--cue-text-size);
   }
 
   &.is-group .item-name {
-    font-size: calc(var(--type-track-show-size) + 1px);
+    font-size: var(--cue-text-size);
   }
 
   &.is-audio .item-name {
@@ -1635,7 +1637,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .item-duration {
-    font-size: 18px;
+    font-size: var(--cue-text-size);
   }
 
   .status-pill {
@@ -1654,7 +1656,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
      child component's root. */
   :deep(.action-btn--playlist) {
     width: var(--playlist-set-next-width, 92px);
-    height: calc(var(--current-playlist-row-height) - 12px);
+    height: var(--cue-cell-height);
     min-height: 44px;
     flex-shrink: 0;
 
