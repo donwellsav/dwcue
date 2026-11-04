@@ -96,8 +96,8 @@ assert.match(
 );
 assert.match(renderLoop, /ma_device_get_state/,
   'render loop must reconcile backends that omit stop notifications');
-assert.match(renderLoop, /clock_master->clock_controller\.target_frames\(\)/,
-  'clock-master occupancy must gate production without filling the ring');
+assert.match(renderLoop, /const auto target = cfg_\.render_block \* 3;/,
+  'clock-master production must keep its three-block target independent of drift correction');
 assert.match(engine, /void AudioEngine::decode_loop\(\)[\s\S]*service_read_ahead\(1\)/,
   'one shared decode worker must service cue read-ahead');
 assert.match(

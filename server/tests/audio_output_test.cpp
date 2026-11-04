@@ -247,6 +247,109 @@ void test_live_ceiling(const std::filesystem::path& tone) {
           "explicit bypass passes the physical sum and reports zero GR");
 }
 
+void test_clock_zero_crossing(const std::filesystem::path& ramp) {
+    for (const int direction : {-1, 1}) {
+        Fixture f(ramp, false, true);
+        f.render(8);
+        f.device->clock_controller.configure(block * 16,
+            block * (8 + direction * 4));
+        auto out = f.drain();
+        f.device->clock_controller.configure(block * 16,
+            ma_pcm_rb_available_read(f.device->ring.get()));
+        const auto next = f.drain();
+        out.insert(out.end(), next.begin(), next.end());
+        float min_step = 2.0f, max_step = 0.0f;
+        int audible = 0;
+        for (std::size_t i = 2; i < out.size(); i += 2) {
+            if (out[i] == 0.0f || out[i - 2] == 0.0f) continue;
+            if (++audible < 3) continue; // Ignore initial resampler cache priming.
+            const float step = (out[i] - out[i - 2]) * 131'072.0f;
+            min_step = std::min(min_step, step);
+            max_step = std::max(max_step, step);
+        }
+        std::printf("clock returns to unity from %d: step %.6f..%.6f\n",
+                    direction, min_step, max_step);
+        check(audible > static_cast<int>(block / 2) &&
+                  min_step >= 0.98f && max_step <= 1.02f,
+              "clock returning to nominal speed preserves fractional PCM position");
+    }
+}
+
+void test_clock_resync(const std::filesystem::path& ramp) {
+    constexpr double seconds = 90.0;
+    constexpr float slope = 1.0f / 131'072.0f;
+    for (const double drift_ppm : {-3'000.0, 0.0, 3'000.0}) {
+      for (const double phase : {0.1, 0.9}) {
+        Fixture f(ramp, false, true);
+        // Keep equal headroom around a callback's one-block consumption.
+        ma_pcm_rb_uninit(f.device->ring.get());
+        if (ma_pcm_rb_init(ma_format_f32, 2, block * 4, nullptr, nullptr,
+                          f.device->ring.get()) != MA_SUCCESS) std::abort();
+        f.device->clock_controller.configure(block * 4, block * 5 / 2);
+        f.render(3);
+        const double period = 1.0 / (1.0 + drift_ppm / 1'000'000.0);
+        double render_at = 1.0, callback_at = phase;
+        std::uint64_t callbacks = 0;
+        std::size_t measured = 0;
+        double correction_sum = 0.0;
+        std::size_t corrections = 0;
+        float max_correction = 0.0f;
+        float previous = 0.0f, min_step = 2.0f, max_step = 0.0f;
+        std::uint32_t minimum = block * 4, maximum = 0;
+        while (callback_at < seconds * 48'000 / block) {
+            if (render_at <= callback_at) {
+                f.render();
+                render_at += 1.0;
+                continue;
+            }
+            const auto out = f.drain();
+            const float correction = f.device->clock_correction_ppm.load();
+            max_correction = std::max(max_correction, std::fabs(correction));
+            if (callback_at > seconds * 48'000 / block / 2) {
+                correction_sum += correction;
+                ++corrections;
+            }
+            const auto occupancy = ma_pcm_rb_available_read(f.device->ring.get());
+            minimum = std::min(minimum, occupancy);
+            maximum = std::max(maximum, occupancy);
+            // The exact binary ramp stays below the ceiling; ignore initial
+            // lookahead silence and stop measuring before the one-second EOF.
+            if (callback_at < 0.7 * 48'000 / block) {
+                for (std::size_t i = 0; i < block; ++i) {
+                    const float sample = out[i * 2];
+                    if (previous > 0.0f && sample > 0.0f) {
+                        ++measured;
+                        const float step = (sample - previous) / slope;
+                        min_step = std::min(min_step, step);
+                        max_step = std::max(max_step, step);
+                    }
+                    previous = sample;
+                }
+            }
+            // Alternate callback delivery by about 1 ms across master ticks.
+            ++callbacks;
+            callback_at = phase + callbacks * period + (callbacks % 2 ? 0.2 : -0.2);
+        }
+        std::printf("clock drift %.0f ppm phase %.1f: step %.6f..%.6f, "
+                    "mean correction %.2f ppm, ring %u..%u, "
+                    "underruns %llu, overruns %llu, resyncs %llu\n",
+                    drift_ppm, phase, min_step, max_step,
+                    correction_sum / corrections, minimum, maximum,
+                    static_cast<unsigned long long>(f.device->underrun_count.load()),
+                    static_cast<unsigned long long>(f.device->overrun_count.load()),
+                    static_cast<unsigned long long>(f.device->hard_resync_count.load()));
+        check(measured > block && min_step >= 0.98f && max_step <= 1.02f,
+              "clock rate changes preserve callback PCM continuity");
+        check(max_correction <= DeviceClockController::max_correction_ppm(),
+              "realized clock correction stays within its safety bound");
+        check(f.device->underrun_count.load() == 0 &&
+                  f.device->overrun_count.load() == 0 &&
+                  f.device->hard_resync_count.load() == 0,
+              "real resampler avoids resync at production ring size for 90 seconds");
+      }
+    }
+}
+
 void test_exact_follow(const std::filesystem::path& quiet,
                        const std::filesystem::path& next, bool target_first) {
     Fixture f(quiet);
@@ -520,10 +623,13 @@ int main() {
     const auto next = wav(dir, "next.wav", 0.2f, true, 0.00001f);
     const auto center = wav(dir, "center.wav", 0.7f, true, 0.0f, 6, 2);
     const auto left = wav(dir, "left.wav", 0.3f, true, 0.0f, 2, 0);
+    const auto ramp = wav(dir, "ramp.wav", 0.125f, true, 1.0f / 131'072.0f);
     test_shared_output(tone, false);
     test_shared_output(tone, true);
     test_delay_and_bypass(quiet);
     test_live_ceiling(tone);
+    test_clock_zero_crossing(ramp);
+    test_clock_resync(ramp);
     test_exact_follow(quiet, next, false);
     test_exact_follow(quiet, next, true);
     test_main_channel_map(quiet, center, 0.7f * 0.70710678f, 0.7f * 0.70710678f);

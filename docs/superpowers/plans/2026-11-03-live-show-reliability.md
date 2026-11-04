@@ -30,7 +30,7 @@
 
 ---
 
-**Current checkpoint:** T1–T23 and T25–T29 software repairs are complete locally with recorded regressions and passing gates. The latest coding batch preserves video continuity across unrelated document/cue events and keeps native-clock recovery tied to the displayed cue. T24 hardware acceptance is deferred at the user’s request. See the execution record for evidence and retained limits.
+**Current checkpoint:** T1–T23 and T25–T30 software repairs are complete locally with recorded regressions and passing gates. T30 corrects fractional resampler discontinuities and secondary-ring scheduling headroom, preserving master pacing and the show workflow. T24 hardware acceptance remains deferred at the user’s request; the earlier physical resync observation is not conclusively closed. See the execution record for evidence and retained limits.
 
 ## Priority and delivery boundaries
 
@@ -257,6 +257,6 @@ Do not mark this gate complete from the synthetic Chromium/PCM fixtures. The loc
 - [x] T29: isolate displayed-video position and native-clock progress from older cue and unrelated preview events; retain immediate true handoff/fallback alignment. Four behavioral RED → GREEN checks; controller 31/31, full client/typecheck/build, hidden Chromium and fresh review pass.
 - [ ] T24: complete actual-system acceptance. Current evidence covers copied real MP3/H.264/AAC media, 161-command mixed playback repeats and exact source-integrity checks. Unmuted line-level output, the actual 1080p HDMI/adapter connection, independent audience display and full-show soak remain open.
 - [ ] Compare long-run frame drops after T26 with controlled output visibility; do not equate ready with presented.
-- [ ] T30: trace/reproduce the secondary-device overrun/resync in the existing headless ring/resampler fixtures before changing clock or buffer settings; the final live command repeat was clean. No hardware playback is required to investigate the code path.
+- [x] T30: actual callback PCM discontinuities and jitter-driven secondary overruns reproduced; bounded phase-preserving rates and centered secondary-ring target corrected. Master pacing/priming, ring size, PI gains/limit and show workflow preserved. 13/13 native tests, static checks, six 30-minute clock simulations with zero faults, and fresh review pass. Software-only limits and extreme-drift stress results remain explicit; T24 physical recurrence/latency calibration is deferred.
 
 Evidence and final restoration: `/Users/muzikfirst/Documents/donwellscue/audio-import-audit/evidence/real-media-preview-2026-11-03/REAL-MEDIA-REPORT.md`.

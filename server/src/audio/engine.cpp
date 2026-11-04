@@ -548,8 +548,14 @@ void AudioEngine::ma_data_callback(ma_device* dev,
         device->ring_occupancy_frames.store(
             occupancy, std::memory_order_relaxed);
         const double ratio = device->clock_controller.update(occupancy);
+        // Bound miniaudio's 32-bit phase product; odd numerators retain the
+        // fractional clock across GCD reduction and unity (31 ppm steps).
+        constexpr ma_uint32 kRatioScale = 65'536;
+        const auto input_rate = static_cast<ma_uint32>(
+            2 * std::lround(ratio * (kRatioScale / 2) - 0.5) + 1);
         const auto correction_ppm = static_cast<std::int32_t>(
-            std::lround((ratio - 1.0) * 1'000'000.0));
+            std::lround((static_cast<double>(input_rate) / kRatioScale - 1.0) *
+                        1'000'000.0));
         device->clock_correction_ppm.store(
             static_cast<float>(correction_ppm), std::memory_order_relaxed);
         const bool limited = device->clock_controller.limited();
@@ -562,9 +568,6 @@ void AudioEngine::ma_data_callback(ma_device* dev,
         const auto applied = device->applied_rate_ppm.load(
             std::memory_order_relaxed);
         if (std::abs(correction_ppm - applied) >= 10) {
-            constexpr ma_uint32 kRatioScale = 1'000'000;
-            const auto input_rate = static_cast<ma_uint32>(
-                static_cast<std::int64_t>(kRatioScale) + correction_ppm);
             if (ma_resampler_set_rate(
                     device->clock_resampler.get(), input_rate,
                     kRatioScale) == MA_SUCCESS) {
@@ -707,9 +710,11 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
         return {};
     }
     dev->clock_resampler_initialized = true;
+    // Center pre-callback occupancy above the half-ring by half a block,
+    // leaving equal room for independently scheduled writes and drains.
     dev->clock_controller.configure(
         ring_frames,
-        ring_frames - static_cast<ma_uint32>(cfg_.render_block));
+        (ring_frames + static_cast<ma_uint32>(cfg_.render_block)) / 2);
 
     ma_device_config cfg = ma_device_config_init(ma_device_type_playback);
     cfg.playback.format    = ma_format_f32;
@@ -1882,8 +1887,8 @@ void AudioEngine::render_loop() {
                 master_ready =
                     reset_device_if_requested(*clock_master);
                 if (master_ready) {
-                    const auto target =
-                        clock_master->clock_controller.target_frames();
+                    // Master latency is independent of secondary clock headroom.
+                    const auto target = cfg_.render_block * 3;
                     can_render =
                         ma_pcm_rb_available_read(
                             clock_master->ring.get()) +
@@ -2153,7 +2158,7 @@ void AudioEngine::render_one_block(const Topology& topo) {
         }
 
         if (dev->reset_applied &&
-            occupancy >= dev->clock_controller.target_frames()) {
+            occupancy >= cfg_.render_block * 3) {
             dev->reset_applied = false;
             dev->reset_requested.store(
                 false, std::memory_order_release);
