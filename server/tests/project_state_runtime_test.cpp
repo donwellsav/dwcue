@@ -348,6 +348,59 @@ void test_rejected_document_preserves_show(const std::filesystem::path& wav) {
     std::filesystem::remove_all(folder);
 }
 
+void test_rejected_nested_document_preserves_show(const std::filesystem::path& wav) {
+    const auto path = wav.parent_path() / "dwcue-nested-validation.dwcue";
+    const std::vector<std::pair<std::string, json>> mutations{
+        {"/items/0/uuid", 17}, {"/items/0/children", 17},
+        {"/items/0/children/0/type", 17},
+        {"/items/0/children/0/ltcEnabled", "bad"},
+        {"/items/0/children/0/ltcFrameRate", "bad"},
+        {"/items/0/children/0/ltcFrameRate", 1e100},
+        {"/items/0/children/0", nullptr},
+        {"/items/0/children/0/ltcStartTimecode", 17},
+        {"/items/0/children/0/startBehavior/action", 17},
+        {"/items/0/children/0/endBehavior/action", 17},
+        {"/settings/outputTarget", 17}, {"/settings/disableLimiter", "bad"},
+        {"/settings/meterBallistics", 17},
+        {"/settings/meterBallisticsCustom/attackMs", "bad"}, {"/items", 17},
+    };
+    for (const auto& [pointer, bad_value] : mutations) {
+      for (int method = 0; method < 5; ++method) {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        state.load_from_json(document(json::array({audio("nested-preserved", wav)})));
+        check(wait_ready(state) && state.trigger_item("nested-preserved"), "nested refusal: current cue plays");
+        const auto before = state.full_document();
+        const auto intent = state.playback_intent_revision();
+        json group{{"uuid", "invalid-group"}, {"type", "group"},
+                   {"children", json::array({audio("invalid-child", wav)})}};
+        auto invalid = document(json::array({group}));
+        invalid["settings"]["meterBallistics"] = "custom";
+        invalid[json::json_pointer{pointer}] = bad_value;
+        const auto disk_before = method == 0 ? invalid.dump() : before.dump();
+        std::ofstream{path} << disk_before;
+        bool accepted = false, threw = false;
+        try {
+            if (method == 0) accepted = state.load(path);
+            else if (method == 1) accepted = state.load_from_json(invalid);
+            else if (method < 4) accepted = state.replace_full_document(invalid, method == 2);
+            else accepted = state.save(path, &invalid);
+        } catch (const std::exception&) { threw = true; }
+        std::printf("nested refusal: field=%s method=%d\n", pointer.c_str(), method);
+        check(!accepted && !threw, "nested refusal: invalid tree/settings returns false without throwing");
+        bool unchanged = false;
+        try { unchanged = state.full_document() == before; } catch (...) {}
+        std::ifstream file{path};
+        const std::string disk_after{std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}};
+        check(unchanged && state.playback_intent_revision() == intent &&
+                  on_air(state, engine, "nested-preserved") && disk_before == disk_after,
+              "nested refusal: show/session/playback/intent and existing disk bytes survive");
+        state.stop_all_cues(0);
+      }
+    }
+    std::filesystem::remove(path);
+}
+
 void test_load_resets_project_runtime(const std::filesystem::path& wav) {
     for (const bool same_file : {false, true}) {
         liveplay::audio::AudioEngine engine;
@@ -1652,6 +1705,7 @@ int main() {
     test_stop_all_during_decoder_read(wav);
     test_stop_all_during_cold_go(wav);
     test_rejected_document_preserves_show(wav);
+    test_rejected_nested_document_preserves_show(wav);
     test_load_resets_project_runtime(wav);
     test_rejected_server_document_preserves_show(wav);
     test_nested_group_end(wav);

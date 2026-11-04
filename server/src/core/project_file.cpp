@@ -6,10 +6,13 @@
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <ctime>
 #include <fstream>
+#include <functional>
 #include <limits>
+#include <stdexcept>
 #include <cctype>
 #include <unordered_map>
 #include <unordered_set>
@@ -228,9 +231,46 @@ bool prepare_client_document(
             return false;
         }
     }
-    prepared.cart_migrated =
-        migrate_legacy_cart_to_one_shots(prepared.document);
-    prepared.repair = repair_client_document(prepared.document);
+    try {
+        std::function<void(const json&)> validate_items = [&](const json& items) {
+            for (const auto& item : items.get_ref<const json::array_t&>()) {
+                (void)item.value("uuid", std::string{});
+                const auto type = item.value("type", std::string{});
+                if (type == "audio") {
+                    (void)item.value("ltcEnabled", false);
+                    (void)item.value("ltcStartTimecode", std::string{});
+                    const auto fps = item.value("ltcFrameRate", 4.0);
+                    if (!std::isfinite(fps) || fps < std::numeric_limits<int>::lowest() ||
+                        fps > std::numeric_limits<int>::max())
+                        throw std::invalid_argument("ltcFrameRate exceeds its integer range");
+                }
+                for (const char* behavior : {"startBehavior", "endBehavior"}) {
+                    if (item.contains(behavior) && item[behavior].is_object())
+                        (void)item[behavior].value("action", std::string{});
+                }
+                if (type == "group" && item.contains("children")) validate_items(item["children"]);
+            }
+        };
+        if (prepared.document.contains("items")) validate_items(prepared.document["items"]);
+        if (prepared.document.contains("cartOnlyItems") && prepared.document["cartOnlyItems"].is_array())
+            validate_items(prepared.document["cartOnlyItems"]);
+        if (prepared.document.contains("settings") && prepared.document["settings"].is_object()) {
+            const auto& settings = prepared.document["settings"];
+            (void)settings.value("outputTarget", std::string{"ebu-r128"});
+            (void)settings.value("disableLimiter", false);
+            const auto preset = settings.value("meterBallistics", std::string{"digital-ppm"});
+            if (preset == "custom" && settings.contains("meterBallisticsCustom") &&
+                settings["meterBallisticsCustom"].is_object()) {
+                for (const char* key : {"attackMs", "releaseMs", "rmsWindowMs"})
+                    (void)settings["meterBallisticsCustom"].value(key, 1.0);
+            }
+        }
+        prepared.cart_migrated = migrate_legacy_cart_to_one_shots(prepared.document);
+        prepared.repair = repair_client_document(prepared.document);
+    } catch (const std::exception& ex) {
+        error = ex.what();
+        return false;
+    }
 
     if (!prepared.document.contains("settings") ||
         !prepared.document["settings"].is_object()) {

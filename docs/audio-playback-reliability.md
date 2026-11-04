@@ -107,3 +107,8 @@ A transient source/target render-gate collision no longer cancels otherwise vali
 ## Continuous decoded-source coverage (T40)
 
 The current callback fixture replaces its earlier post-EOF silence with a deliberately looped generated binary ramp. Six cases now run ten simulated minutes each at zero/±3,000ppm, two phases and existing callback jitter, validating finite nonzero source PCM in every measured block as well as short-ramp slope continuity. Each delivers about28.7–28.8 million measured frames with zero underruns, overruns or resyncs. This is accelerated software decoding/resampling evidence; intentional ramp loop boundaries are not a click-free content test, and physical clocks/output remain outside it. The older T30 evidence above retains its original post-EOF limits.
+
+
+## Nested project admission (T41)
+
+Focused nested cue/group/settings type validation now runs in the existing shared document preparation before a load, replacement or save can change the current show. Seventy-five negative API cases preserve current playback/session/intent and existing disk bytes, while supported legacy/default/duplicate repairs remain covered by the format and migration suites. This does not claim complete validation of every possible authored field or malformed number.

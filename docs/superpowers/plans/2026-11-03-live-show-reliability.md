@@ -306,7 +306,7 @@ User authorized these in order from clean8e96e39. Preserve controls, cue order, 
 - [ ] **T40 / High — continuous media proof.** Extend existing fixtures to consume actual decoded PCM throughout their stated duration and exercise sustained mixed-media presentation/control. Record duration, decoded frames, memory, dropped/presented frames and limits; do not describe post-EOF silence or accelerated simulation as a real-time show soak.
   - [x] T40 audio: six ten-minute drift/jitter cases now decode looped PCM continuously and check every measured callback, with zero device faults.
   - [ ] T40 video: complete the isolated600-second mixed SD/1080p Chromium soak and reconcile presentation/control/memory metrics.
-- [ ] **T41 / Medium — malformed nested documents.** Test representative bad nested cue/group/settings values and post-load normalization. Refusals preserve the current show/playback and disk file. Repair only proven shared validation/commit boundaries; no broad schema framework.
+- [x] **T41 / Medium — malformed nested documents.** Test representative bad nested cue/group/settings values and post-load normalization. Refusals preserve the current show/playback and disk file. Repair only proven shared validation/commit boundaries; no broad schema framework.
 - [ ] **T42 / Lower — long-position LTC.** Test frame→nanosecond arithmetic and actual generator behavior around the signed multiplication limit (~53.4-hour cue position at48kHz), then correct the conversion without changing ordinary timing or introducing callback allocation.
 - [ ] Full affected software gates, one fresh final bounded review, current documentation/manual and clean committed checkout. T24 physical/deployment acceptance stays deferred.
 
