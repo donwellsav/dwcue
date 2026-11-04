@@ -4,7 +4,7 @@
 
 Initial investigation: 2026-11-03 against the working tree based on `82505580ccb6ae86ccb71e28264b6d4436641419`. The reported pattern was that a standalone video usually worked, while playing video before or after audio/another video caused freezing, loss of control, and apparent crashes. Existing audio/import/Spotify changes were retained.
 
-The 3 November source was checkpointed in `2ea5984` and `a9a86a3` (package metadata 2.6.17). Later T20/T21/T26–T29 repairs supersede the initial recovery and monitoring decisions below: failure retains the existing native audience window under a black cover, **Restart Output** is operator-controlled, picture health uses decoded presentation/native-clock progress, and unrelated metadata/cue/preview events cannot re-seek the current picture. No new package has been installed or published; physical HDMI and the earlier long-run frame-drop observation remain unclosed.
+The 3 November source was checkpointed in `2ea5984` and `a9a86a3` (package metadata 2.6.17). Later T20/T21/T26–T29 repairs supersede the initial recovery and monitoring decisions below: failure retains the existing native audience window under a black cover, **Restart Output** is operator-controlled, picture health uses decoded presentation/native-clock progress, and unrelated metadata/cue/preview events cannot re-seek the current picture. No new package has been installed or published. The bounded visibility comparison is now recorded below; physical HDMI and causal resolution of the earlier full-app frame-drop observation remain unclosed.
 
 ## Confirmed failure paths
 
@@ -85,3 +85,20 @@ DWCUE_VIDEO_SOAK_SECONDS=600 node --test scripts/video-transition-playback.test.
 The 4 November run passed 600.932 wall-time seconds: 481 audio-to-video rounds alternating generated 320×180 and 1920×1080 H.264 clips, plus 161 video-to-video handoffs. It observed 17,349 presentation callbacks, a continuing renderer/control clock, recent picture presentation and no unexpected terminal playback error. The deliberate corrupt-file refusal also passed afterward. Videos have no audio track, the element is muted, and cue/native-clock messages are synthetic; this uses its own sandboxed Electron window and temporary files, not a saved show or native audio server.
 
 Primary per-load counters recorded 381 dropped / 18,713 total frames; additional handoff clips recorded 16 / 1,176. Ready picture plus five observed frames took median 110ms, p95 136ms, maximum 164ms; this is not first-frame GO latency. Renderer working set ranged 130,176–141,200KB and GPU working set 75,552–81,872KB. Per-resolution first/last 30-sample renderer medians rose by about 1.2MB (SD) and 1.0MB (HD). These measured drops and memory samples remain explicit limits: ten minutes of generated clips does not prove long-show stability, arbitrary codec support, native A/V synchronization or physical display behavior. No production video code changed for this coverage extension.
+
+## Visibility-controlled sample comparison
+
+The remaining software workplan check completed on 4 November against unchanged application source `153a1a7`: four serial five-minute cells compare the current controller with a plain Chromium video element, both visible and behind an owned opaque test window. This reuses the existing rehearsal copy of the downloaded 1080p H.264 sample, remuxed without re-encoding into a disposable video-only file. Cue/native-clock messages are synthetic and monotonic. The element is muted; no native audio server, live user app/show, original download or physical endpoint is operated. Electron 42.8.0 / Chromium 148.0.7778.280 and a 1 Hz screenshot cadence are used throughout.
+
+| Playback | Window | Frame callbacks | Dropped / total frames | Additional seeks | Renderer working set (KB) |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Controller | Visible | 9,004 | 0 / 9,005 | 0 | 129,280 |
+| Controller | Covered | 9,010 | 0 / 9,009 | 0 | 136,816 |
+| Plain element | Visible | 9,010 | 0 / 9,010 | 0 | 138,960 |
+| Plain element | Covered | 9,005 | 0 / 9,005 | 0 | 138,080 |
+
+All four cells last at least 300 s, advance the media/control clocks and record 300 screenshot samples each. Total fixture wall time is 1,205.71 s, with 36,029 presentation callbacks. Callback delivery and playback-quality counters are separate samples; neither is a physical scanout measurement. Source/controller/fixture hashes and all four complete result records are verified. The rehearsal copy remains byte-identical; owned processes and temporary remux files are removed.
+
+Cover plus capture keeps DOM visibility **visible**, so this does not test hidden/minimized throttling. Fixed ordering uses different clip segments for visible and covered cells; memory endpoints are cumulative within one renderer. These results establish bounded covered-window cadence evidence, not causal visibility/T26 attribution, leak freedom, native soundtrack synchronization, physical HDMI behavior or a full-show pass. The earlier actual-app frame-drop cause remains unresolved. No production playback change is justified by this comparison.
+
+The local evidence folder `audio-import-audit/evidence/workplan-finish-2026-11-04/` contains the report, runnable reused fixture/wrapper, full logs/results and integrity manifests. One fresh read-only review found no Important/Critical fixture issue; the parent verified the complete final result after review. All software workplan checkboxes are complete; T24 actual-system acceptance stays deferred.
