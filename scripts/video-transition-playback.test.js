@@ -5,6 +5,8 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { spawn, execFile } = require('node:child_process');
 const { promisify } = require('node:util');
+const soakSeconds = Number(process.env.DWCUE_VIDEO_SOAK_SECONDS || 0);
+if (!Number.isFinite(soakSeconds) || soakSeconds < 0) throw new Error('DWCUE_VIDEO_SOAK_SECONDS must be nonnegative');
 
 async function electronCheck() {
   const { app, BrowserWindow } = require('electron');
@@ -39,12 +41,12 @@ async function electronCheck() {
       ${compiled}
       const handlers = Object.fromEntries(['cue', 'meter', 'snapshot', 'patch'].map(key => [key, new Set()]));
       const reports = [];
-      const uuids = ['a', 'audio', 'c', 'bad', 'bench-0', 'bench-1', 'bench-2'];
+      const uuids = ['a', 'audio', 'c', 'bad', 'bench-0', 'bench-1', 'bench-2', 'soak-hd'];
       const doc = { folderPath: '/isolated', settings: {},
         server: { projectSessionId: 'fixture', audioReadiness: { fileRevisions: Object.fromEntries(uuids.map(id => [id, 'v1'])) } },
         items: uuids.map(uuid => ({
         uuid, type: 'audio', hasVideo: uuid !== 'audio', mediaPath: uuid + '.mp4',
-        inPoint: uuid.startsWith('bench-') ? 1.25 : 0, outPoint: 5,
+        inPoint: uuid.startsWith('bench-') ? 1.25 : 0, outPoint: uuid === 'soak-hd' ? 3 : 5,
       })) };
       globalThis.electronAPI = { videoOutput: { reportPlaybackError: value => { reports.push(value); } } };
       const server = reactive({
@@ -144,9 +146,12 @@ async function electronCheck() {
         },
         state() {
           const el = controller.videoEl.value;
+          const quality = el.getVideoPlaybackQuality();
           return { show: controller.showVideo.value, failed: reports.at(-1) != null,
             paused: el.paused, currentTime: el.currentTime, width: el.videoWidth,
-            source: el.currentSrc, reports, ticks, presentedFrames, pictureHealth: controller.getPictureHealth() };
+            source: el.currentSrc, reports, ticks, presentedFrames,
+            quality: { totalVideoFrames: quality.totalVideoFrames, droppedVideoFrames: quality.droppedVideoFrames },
+            pictureHealth: controller.getPictureHealth() };
         },
         stop() { clearInterval(timer); },
       };
@@ -212,7 +217,58 @@ async function electronCheck() {
     const measurements = { preparedDuringAudio: preparation, goLatencyMs: await run('check.latencies'), standby };
     if (!process.env.DWCUE_VIDEO_TEST_CONTROLLER) assert.equal(preparation.every(Boolean), true, 'eligible next videos must decode/seek while audio remains on air');
     process.stdout.write('Preparation experiment: ' + JSON.stringify(measurements) + '\n');
-    await run('check.cue("bad", 200)');
+    let refusalSequence = 200;
+    if (soakSeconds > 0) {
+      const start = Date.now();
+      const initialFrames = await run('check.state().presentedFrames');
+      let round = 0, sequence = 1_000, nextReport = start + 30_000;
+      const samples = [];
+      while (Date.now() - start < soakSeconds * 1_000) {
+        const before = await run('check.state()');
+        await run(`check.reset(); check.cue("audio", ${sequence++})`);
+        await new Promise(resolve => setTimeout(resolve, 100));
+        const uuid = round % 2 ? 'soak-hd' : 'a';
+        const goAt = Date.now();
+        await run(`check.cue("${uuid}", ${sequence++})`);
+        await waitFor(`check.state().source.includes("item_uuid=${uuid}") && !check.state().paused && check.state().width > 0`,
+          'soak cue did not start');
+        await waitFor(`check.state().presentedFrames >= ${before.presentedFrames + 5}`, 'soak video stopped presenting');
+        const goMs = Date.now() - goAt; // Ready picture plus five observed frames, not first-frame latency.
+        await new Promise(resolve => setTimeout(resolve, 1_000));
+        const primary = await run('check.state()');
+        assert.equal(primary.width, uuid === 'soak-hd' ? 1920 : 320, 'soak did not decode the intended resolution');
+        if (round % 3 === 0) {
+          await run(`check.cue("c", ${sequence++})`);
+          const frame = await run('check.state().presentedFrames');
+          await waitFor(`check.state().presentedFrames >= ${frame + 3}`, 'soak video-to-video transition froze');
+        }
+        const current = await run('check.state()');
+        assert.ok(current.ticks > before.ticks, 'soak renderer/control clock froze');
+        assert.ok(current.pictureHealth.presentedAgeMs < 1_000, 'soak picture became stale');
+        assert.equal(current.failed, false, JSON.stringify(current.reports));
+        const metrics = app.getAppMetrics();
+        const renderer = metrics.find(metric => metric.pid === window.webContents.getOSProcessId());
+        assert.ok(Number.isFinite(renderer?.memory.workingSetSize), 'soak renderer memory sample unavailable');
+        assert.ok(Number.isFinite(primary.quality.totalVideoFrames) &&
+          Number.isFinite(primary.quality.droppedVideoFrames), 'soak frame-quality sample unavailable');
+        samples.push({ elapsedMs: Date.now() - start, round, uuid, goMs,
+          presentedFrames: current.presentedFrames - initialFrames,
+          totalFrames: current.quality.totalVideoFrames, droppedFrames: current.quality.droppedVideoFrames,
+          primaryFrames: primary.quality.totalVideoFrames, primaryDroppedFrames: primary.quality.droppedVideoFrames,
+          rendererWorkingSetKB: renderer?.memory.workingSetSize ?? null,
+          gpuWorkingSetKB: metrics.filter(metric => metric.type === 'GPU').map(metric => metric.memory.workingSetSize) });
+        ++round;
+        if (Date.now() >= nextReport) {
+          process.stdout.write('Video soak progress: ' + JSON.stringify(samples.at(-1)) + '\n');
+          nextReport = Date.now() + 30_000;
+        }
+      }
+      assert.ok(samples.length >= 2, 'soak needs repeated transitions');
+      refusalSequence = sequence;
+      process.stdout.write('Video soak result: ' + JSON.stringify({ durationMs: Date.now() - start,
+        rounds: round, presentedFrames: samples.at(-1).presentedFrames, samples }) + '\n');
+    }
+    await run(`check.cue("bad", ${refusalSequence})`);
     await waitFor('check.state().failed', 'unplayable exact file must report player failure');
     assert.equal((await run('check.state().pictureHealth')).preparedSeconds, null);
     await run('check.stop()');
@@ -232,7 +288,7 @@ if (process.versions.electron) {
   const test = require('node:test');
   const http = require('node:http');
   const os = require('node:os');
-  test('real Chromium transitions, exact-file decode failure and bounded preparation experiment', { timeout: 60000 }, async t => {
+  test('real Chromium transitions, decode refusal, preparation and optional mixed-media soak', { timeout: 60000 + soakSeconds * 1000 }, async t => {
     const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'dwcue-video-transitions-'));
     const media = path.join(folder, 'moving-test.mp4');
     await promisify(execFile)(require('@ffmpeg-installer/ffmpeg').path, [
@@ -259,7 +315,8 @@ if (process.versions.electron) {
         return response.end('released');
       }
       const uuid = new URL(request.url, 'http://fixture').searchParams.get('item_uuid');
-      const content = uuid === 'bad' ? Buffer.from('Not a decodable video') : uuid === 'standby-hd' ? hdBytes : bytes;
+      const content = uuid === 'bad' ? Buffer.from('Not a decodable video')
+        : uuid === 'standby-hd' || uuid === 'soak-hd' ? hdBytes : bytes;
       if ((uuid?.startsWith('bench-') || uuid === 'standby-hd') && !mediaDelays.has(uuid)) mediaDelays.set(uuid, Date.now() + 250);
       const send = () => {
         if (response.destroyed) return;
@@ -287,13 +344,12 @@ if (process.versions.electron) {
       DWCUE_VIDEO_TEST_URL: `http://127.0.0.1:${server.address().port}/` },
       stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
-    child.stdout.on('data', chunk => { output += chunk; });
+    child.stdout.on('data', chunk => { output += chunk; process.stdout.write(chunk); });
     child.stderr.on('data', chunk => { output += chunk; });
     const code = await new Promise((resolve, reject) => {
       child.once('error', reject);
       child.once('close', resolve);
     });
     assert.equal(code, 0, output);
-    process.stdout.write(output);
   });
 }

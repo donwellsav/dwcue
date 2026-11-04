@@ -73,3 +73,15 @@ The native reconnect-snapshot assertion now opens its snapshot connection after 
 The controller failures and network-control stall were reproduced. An OS/GPU/codec process crash from the user's actual show was not reproduced: no matching current Electron crash report was found, and older server EPIPE/connection-reset messages alone do not establish a crash. The later T20 check also exercises an actual disposable Electron renderer crash and busy loop, verifying the retained cover and explicit restart; this is software evidence rather than a physical audience-display test. No speculative GPU switch, hardware acceleration disable, codec substitution, or unresponsive timeout was introduced.
 
 Physical HDMI/display hotplug, HEVC/hardware decoding, sustained large-show playback, Windows/Linux execution and a newly packaged installer still require deployment testing. Filesystem reads remain synchronous, so a stalled disk or network-mounted file can still delay its I/O worker; the transport fix addresses socket backpressure. These changes remain local and have not been installed or published.
+
+## Mixed-media software soak (T40)
+
+The existing isolated Chromium fixture now supports an optional sustained run:
+
+```sh
+DWCUE_VIDEO_SOAK_SECONDS=600 node --test scripts/video-transition-playback.test.js
+```
+
+The 4 November run passed 600.932 wall-time seconds: 481 audio-to-video rounds alternating generated 320×180 and 1920×1080 H.264 clips, plus 161 video-to-video handoffs. It observed 17,349 presentation callbacks, a continuing renderer/control clock, recent picture presentation and no unexpected terminal playback error. The deliberate corrupt-file refusal also passed afterward. Videos have no audio track, the element is muted, and cue/native-clock messages are synthetic; this uses its own sandboxed Electron window and temporary files, not a saved show or native audio server.
+
+Primary per-load counters recorded 381 dropped / 18,713 total frames; additional handoff clips recorded 16 / 1,176. Ready picture plus five observed frames took median 110ms, p95 136ms, maximum 164ms; this is not first-frame GO latency. Renderer working set ranged 130,176–141,200KB and GPU working set 75,552–81,872KB. Per-resolution first/last 30-sample renderer medians rose by about 1.2MB (SD) and 1.0MB (HD). These measured drops and memory samples remain explicit limits: ten minutes of generated clips does not prove long-show stability, arbitrary codec support, native A/V synchronization or physical display behavior. No production video code changed for this coverage extension.
