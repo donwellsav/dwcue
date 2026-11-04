@@ -437,6 +437,8 @@ void PlaybackItem::resume() {
 }
 
 void PlaybackItem::seek_seconds(double seconds) {
+    if (!std::isfinite(seconds) ||
+        seconds >= static_cast<double>(UINT64_MAX) / desc_.mix_sample_rate) return;
     if (seconds < 0) seconds = 0;
     ma_uint64 frame = static_cast<ma_uint64>(seconds * desc_.mix_sample_rate);
     {
@@ -537,6 +539,8 @@ void PlaybackItem::set_ltc_offset(std::chrono::nanoseconds offset) noexcept {
 }
 
 void PlaybackItem::set_out_point_seconds(double seconds) noexcept {
+    if (!std::isfinite(seconds) ||
+        seconds >= static_cast<double>(UINT64_MAX) / desc_.mix_sample_rate) return;
     std::lock_guard lock{decoder_mutex_};
     const auto frames = seconds <= 0.0 ? std::uint64_t{0}
         : static_cast<std::uint64_t>(seconds * static_cast<double>(desc_.mix_sample_rate));
@@ -560,6 +564,9 @@ void PlaybackItem::set_out_point_seconds(double seconds) noexcept {
 }
 
 void PlaybackItem::set_loop(bool enabled, double in_seconds) noexcept {
+    if (!enabled) in_seconds = 0.0;
+    if (!std::isfinite(in_seconds) ||
+        in_seconds >= static_cast<double>(UINT64_MAX) / desc_.mix_sample_rate) return;
     std::lock_guard lock{decoder_mutex_};
     const auto rate = static_cast<double>(desc_.mix_sample_rate);
     auto in_frames = (in_seconds <= 0.0)

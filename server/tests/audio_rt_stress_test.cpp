@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <limits>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -482,6 +483,49 @@ void test_unchanged_boundaries_preserve_audio(PlaybackItem& item) {
           "changed boundary: loop disable still invalidates old metadata");
     item.stop_now();
     item.set_out_point_seconds(0.0);
+}
+
+void test_invalid_time_inputs_preserve_audio(PlaybackItem& item) {
+    for (const int operation : {0, 1, 2}) {
+        for (const double invalid : {std::numeric_limits<double>::quiet_NaN(),
+                 std::numeric_limits<double>::infinity(),
+                 -std::numeric_limits<double>::infinity(), 1e308,
+                 static_cast<double>(UINT64_MAX) / kRate}) {
+            item.stop_now();
+            item.set_out_point_seconds(0.5);
+            item.set_loop(true, 0.125);
+            check(item.prime(2.0, 0.0), "invalid time: fixture primes");
+            item.play();
+            Output output;
+            item.render_block(output.channels, 2, kBlock);
+            const auto before = item.stats();
+            const auto revision = item.playback_revision();
+            if (operation == 0) item.seek_seconds(invalid);
+            if (operation == 1) item.set_out_point_seconds(invalid);
+            if (operation == 2) item.set_loop(true, invalid);
+            check(item.playback_revision() == revision &&
+                      item.stats().transport == before.transport &&
+                      item.stats().playhead_frame == before.playhead_frame &&
+                      item.stats().read_ahead_blocks == before.read_ahead_blocks &&
+                      item.out_point_frames_.load() == kRate / 2 &&
+                      item.loop_enabled_.load() && item.loop_in_frames_.load() == kRate / 8,
+                  "invalid time: seek/trim/loop leave live state and queued PCM untouched");
+            const auto count = item.render_block(output.channels, 2, kBlock);
+            bool continuous = count == kBlock && item.stats().playhead_frame == 2 * kBlock;
+            for (std::uint32_t i = 0; i < count; ++i) {
+                const auto expected = static_cast<std::int16_t>(std::sin(
+                    2.0 * 3.14159265358979323846 * 997.0 * (kBlock + i) / kRate) * 20'000.0);
+                continuous &= std::fabs(output.left[i] - expected / 32768.0f) < 1e-6f;
+            }
+            check(continuous, "invalid time: next actual PCM block remains contiguous");
+        }
+    }
+    item.set_loop(false, std::numeric_limits<double>::quiet_NaN());
+    check(!item.loop_enabled_.load(), "invalid time: disabling a loop ignores its unused position");
+    item.stop_now();
+    item.set_out_point_seconds(0.0);
+    item.seek_seconds(-1.0);
+    check(item.stats().playhead_frame == 0, "valid negative seek still clamps to zero");
 }
 
 void test_pause_preserves_envelope(PlaybackItem& item) {
@@ -1185,6 +1229,7 @@ int main() {
         test_duck_automation(item);
         test_active_mirror_prime_is_noop(item);
         test_unchanged_boundaries_preserve_audio(item);
+        test_invalid_time_inputs_preserve_audio(item);
         test_pause_preserves_envelope(item);
         test_device_reference_churn();
         test_project_runtime_fences();
