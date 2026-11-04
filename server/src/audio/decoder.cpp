@@ -3,6 +3,7 @@
 
 extern "C" {
 #include <libavcodec/avcodec.h>
+#include <libavcodec/codec_desc.h>
 #include <libavformat/avformat.h>
 #include <libavutil/channel_layout.h>
 #include <libavutil/error.h>
@@ -994,7 +995,10 @@ std::vector<std::filesystem::path> parse_playlist(const std::filesystem::path& p
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         if (resolved_extension == ".m3u" || resolved_extension == ".m3u8" ||
             resolved_extension == ".pls" || resolved_extension == ".ram" ||
-            resolved_extension == ".cue") return;
+            resolved_extension == ".cue" || resolved_extension == ".xspf" ||
+            resolved_extension == ".asx" || resolved_extension == ".wax" ||
+            resolved_extension == ".wvx" || resolved_extension == ".smil" ||
+            resolved_extension == ".smi") return;
         if (!resolved.empty() &&
             (files.empty() || files.back() != resolved)) files.push_back(resolved);
     };
@@ -1116,12 +1120,13 @@ ma_result playlist_on_read(ma_data_source* data_source, void* output,
             &source.decoder, pcm + total * 2, frame_count - total, &rendered);
         total += rendered;
         source.cursor += rendered;
+        if (result != MA_SUCCESS && result != MA_AT_END) {
+            if (frames_read) *frames_read = total;
+            return result;
+        }
         if (result == MA_AT_END || rendered == 0) {
             ++source.index;
             open_playlist_entry(source);
-        } else if (result != MA_SUCCESS) {
-            if (frames_read) *frames_read = total;
-            return result;
         }
     }
     if (frames_read) *frames_read = total;
@@ -1261,12 +1266,14 @@ struct FfmpegDataSource {
     ma_uint32 sample_rate = 0;
     ma_uint64 cursor = 0;
     ma_uint64 length = 0;
+    bool exact_length = false;
     ma_uint64 seek_target = 0;
     ma_uint64 discard_frames = 0;
     bool seeking = false;
     bool demux_eof = false;
     bool drain_sent = false;
     std::vector<float> pcm;
+    std::vector<ma_channel> channel_map;
     ma_uint64 pcm_offset = 0;
 };
 
@@ -1425,7 +1432,16 @@ ma_result on_read(ma_data_source* data_source, void* output, ma_uint64 frame_cou
             : static_cast<ma_uint64>(source.pcm.size() / source.channels) - source.pcm_offset;
         if (buffered == 0) {
             const int decoded = decode_next(source);
-            if (decoded == 0) break;
+            if (decoded == 0) {
+                // Container duration estimates include lossy padding; only trust
+                // sample-accurate lossless stream lengths for truncation checks.
+                if (source.exact_length && source.cursor < source.length &&
+                    source.length - source.cursor > 1) {
+                    if (frames_read) *frames_read = total;
+                    return MA_INVALID_FILE;
+                }
+                break;
+            }
             if (decoded < 0) {
                 if (frames_read) *frames_read = total;
                 return from_av_error(decoded);
@@ -1452,20 +1468,41 @@ ma_result on_read(ma_data_source* data_source, void* output, ma_uint64 frame_cou
 ma_result on_seek(ma_data_source* data_source, ma_uint64 frame_index) {
     auto& source = *reinterpret_cast<FfmpegDataSource*>(data_source);
     const AVStream* stream = source.format->streams[source.stream_index];
+    const auto* descriptor = avcodec_descriptor_get(source.codec->codec_id);
+    const bool pcm = source.codec->codec_id >= AV_CODEC_ID_PCM_S16LE &&
+                     source.codec->codec_id < AV_CODEC_ID_ADPCM_IMA_QT;
+    const bool needs_preroll = !pcm &&
+        (!descriptor || !(descriptor->props & AV_CODEC_PROP_LOSSLESS));
+    // Warm up codec history before the requested PCM frame (MP3 bit reservoir,
+    // AAC overlap, and codecs with an explicit seek-preroll requirement).
+    const ma_uint64 preroll = needs_preroll ? std::max<ma_uint64>(
+        source.sample_rate, std::max(source.codec->seek_preroll, 0)) : 0;
+    const bool near_start = needs_preroll && frame_index <= preroll;
     int64_t timestamp = av_rescale_q(static_cast<int64_t>(std::min<ma_uint64>(
-                                         frame_index, std::numeric_limits<int64_t>::max())),
+                                         near_start ? 0 : frame_index - preroll,
+                                         std::numeric_limits<int64_t>::max())),
                                      AVRational{1, static_cast<int>(source.sample_rate)},
                                      stream->time_base);
     if (stream->start_time != AV_NOPTS_VALUE) timestamp += stream->start_time;
-    const int result = avformat_seek_file(source.format, source.stream_index,
+    const int result = near_start ? 0 : avformat_seek_file(source.format, source.stream_index,
                                           std::numeric_limits<int64_t>::min(), timestamp,
                                           timestamp, AVSEEK_FLAG_BACKWARD);
-    const bool decode_from_start = result < 0;
-    if (decode_from_start &&
-        (!source.format->pb || avio_seek(source.format->pb, 0, SEEK_SET) < 0)) {
-        return from_av_error(result);
+    const bool decode_from_start = near_start || result < 0;
+    // shortcut: unsupported timestamp seeks decode from zero; add a format index if too slow.
+    if (decode_from_start) {
+        // Reopening restores demuxer priming/skip metadata; a raw byte rewind
+        // loses it and can feed container headers to the audio decoder.
+        AVFormatContext* fresh = nullptr;
+        int reopened = avformat_open_input(&fresh, source.format->url,
+                                           source.format->iformat, nullptr);
+        if (reopened >= 0) reopened = avformat_find_stream_info(fresh, nullptr);
+        if (reopened < 0) {
+            avformat_close_input(&fresh);
+            return from_av_error(reopened);
+        }
+        avformat_close_input(&source.format);
+        source.format = fresh;
     }
-    if (decode_from_start) avformat_flush(source.format);
 
     avcodec_flush_buffers(source.codec);
     swr_close(source.resampler);
@@ -1489,9 +1526,8 @@ ma_result on_get_format(ma_data_source* data_source, ma_format* format,
     if (channels) *channels = source.channels;
     if (sample_rate) *sample_rate = source.sample_rate;
     if (channel_map && channel_map_capacity > 0) {
-        ma_channel_map_init_standard(ma_standard_channel_map_default, channel_map,
-                                     std::min<std::size_t>(source.channels, channel_map_capacity),
-                                     source.channels);
+        std::copy_n(source.channel_map.begin(),
+                    std::min(source.channel_map.size(), channel_map_capacity), channel_map);
     }
     return MA_SUCCESS;
 }
@@ -1654,6 +1690,20 @@ ma_result open_ffmpeg(const char* path, ma_data_source** backend) {
         }
     }
     if (result >= 0) {
+        constexpr std::array positions{
+            MA_CHANNEL_FRONT_LEFT, MA_CHANNEL_FRONT_RIGHT, MA_CHANNEL_FRONT_CENTER,
+            MA_CHANNEL_LFE, MA_CHANNEL_BACK_LEFT, MA_CHANNEL_BACK_RIGHT,
+            MA_CHANNEL_FRONT_LEFT_CENTER, MA_CHANNEL_FRONT_RIGHT_CENTER,
+            MA_CHANNEL_BACK_CENTER, MA_CHANNEL_SIDE_LEFT, MA_CHANNEL_SIDE_RIGHT,
+            MA_CHANNEL_TOP_CENTER, MA_CHANNEL_TOP_FRONT_LEFT, MA_CHANNEL_TOP_FRONT_CENTER,
+            MA_CHANNEL_TOP_FRONT_RIGHT, MA_CHANNEL_TOP_BACK_LEFT,
+            MA_CHANNEL_TOP_BACK_CENTER, MA_CHANNEL_TOP_BACK_RIGHT};
+        source->channel_map.resize(source->channels, MA_CHANNEL_NONE);
+        for (ma_uint32 c = 0; c < source->channels; ++c) {
+            const auto position = av_channel_layout_channel_from_index(&layout, c);
+            if (position >= AV_CHAN_FRONT_LEFT && position <= AV_CHAN_TOP_BACK_RIGHT)
+                source->channel_map[c] = static_cast<ma_channel>(positions[position]);
+        }
         result = swr_alloc_set_opts2(&source->resampler,
                                      &layout, AV_SAMPLE_FMT_FLT, source->sample_rate,
                                      &layout, source->codec->sample_fmt, source->sample_rate,
@@ -1674,6 +1724,10 @@ ma_result open_ffmpeg(const char* path, ma_data_source** backend) {
             source->length = static_cast<ma_uint64>(av_rescale_q(
                 stream->duration, stream->time_base,
                 AVRational{1, static_cast<int>(source->sample_rate)}));
+            const auto* descriptor = avcodec_descriptor_get(source->codec->codec_id);
+            source->exact_length = descriptor && (descriptor->props & AV_CODEC_PROP_LOSSLESS) &&
+                av_rescale_q(1, stream->time_base,
+                             AVRational{1, static_cast<int>(source->sample_rate)}) <= 1;
         } else if (source->format->duration != AV_NOPTS_VALUE && source->format->duration > 0) {
             source->length = static_cast<ma_uint64>(av_rescale_q(
                 source->format->duration, AV_TIME_BASE_Q,
@@ -1772,16 +1826,56 @@ ma_decoder_config decoder_config(ma_format format, ma_uint32 channels, ma_uint32
     return config;
 }
 
+bool file_has_truncated_riff(const std::filesystem::path& path, std::uintmax_t size) {
+    std::array<std::uint8_t, 48> header{};
+    std::ifstream input{path, std::ios::binary};
+    input.read(reinterpret_cast<char*>(header.data()), header.size());
+    if (input.gcount() < 12 || std::memcmp(header.data() + 8, "WAVE", 4) != 0) return false;
+    if (std::memcmp(header.data(), "RIFF", 4) == 0 || std::memcmp(header.data(), "RIFX", 4) == 0) {
+        const auto declared = header[3] == 'X' ? read_be32(header.data() + 4) : read_le32(header.data() + 4);
+        return declared != UINT32_MAX && declared != 0 && std::uint64_t{declared} + 8 > size;
+    }
+    if (std::memcmp(header.data(), "RF64", 4) == 0 && input.gcount() >= 28 &&
+        std::memcmp(header.data() + 12, "ds64", 4) == 0) {
+        const std::uint64_t declared = read_le32(header.data() + 20) |
+            (std::uint64_t{read_le32(header.data() + 24)} << 32);
+        if (declared == UINT64_MAX) return false;
+        return size < 8 || declared > size - 8;
+    }
+    return false;
+}
+
 ma_result decoder_init_file(const std::filesystem::path& path,
                             const ma_decoder_config& config,
                             ma_decoder& decoder) {
+    std::error_code size_error;
+    const auto size = std::filesystem::file_size(path, size_error);
+    if (!size_error && file_has_truncated_riff(path, size)) return MA_INVALID_FILE;
 #if defined(_WIN32)
     const std::wstring native = path.wstring();
-    return ma_decoder_init_file_w(native.c_str(), &config, &decoder);
+    ma_result result = ma_decoder_init_file_w(native.c_str(), &config, &decoder);
 #else
     const std::string native = path.string();
-    return ma_decoder_init_file(native.c_str(), &config, &decoder);
+    ma_result result = ma_decoder_init_file(native.c_str(), &config, &decoder);
 #endif
+    if (result == MA_SUCCESS && config.channels == 0 && !config.pChannelMap &&
+        decoder.converter.hasChannelConverter) {
+        // Native channels preserve PCM order too; a default output map remixes or drops them.
+        auto& converter = decoder.converter.channelConverter;
+        const auto native_config = ma_channel_converter_config_init(
+            converter.format, converter.channelsIn, converter.pChannelMapIn,
+            converter.channelsOut, converter.pChannelMapIn, config.channelMixMode);
+        ma_channel_converter native_converter{};
+        result = ma_channel_converter_init(
+            &native_config, &decoder.allocationCallbacks, &native_converter);
+        if (result != MA_SUCCESS) {
+            ma_decoder_uninit(&decoder);
+            return result;
+        }
+        ma_channel_converter_uninit(&converter, &decoder.allocationCallbacks);
+        converter = native_converter;
+    }
+    return result;
 }
 
 } // namespace liveplay::audio

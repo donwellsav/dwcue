@@ -176,6 +176,12 @@ Waveform compute_waveform(const std::filesystem::path& path,
         ma_uint64 frames_read = 0;
         const ma_result rc =
             ma_decoder_read_pcm_frames(&decoder, buf.data(), kChunk, &frames_read);
+        if (rc != MA_SUCCESS && rc != MA_AT_END) {
+            Logger::warn("compute_waveform: decode failed for '{}': {}", p,
+                         ma_result_description(rc));
+            ma_decoder_uninit(&decoder);
+            return out;
+        }
 
         const std::uint64_t chunk_start = total_frames;
         const std::uint64_t chunk_end = chunk_start + frames_read;

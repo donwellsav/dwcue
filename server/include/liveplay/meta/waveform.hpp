@@ -35,7 +35,7 @@ struct WaveformChannel {
 };
 
 struct Waveform {
-    static constexpr std::uint32_t kAnalysisVersion = 1;
+    static constexpr std::uint32_t kAnalysisVersion = 2;
 
     std::vector<WaveformChannel> channels;   // size = audio channel count
     std::uint32_t                bucket_count = 0;

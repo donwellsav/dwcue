@@ -81,8 +81,11 @@ endif()
 # Dependencies (resolved via vcpkg manifest — see vcpkg.json)
 # ---------------------------------------------------------------------------
 find_package(Threads REQUIRED)
+# macOS supplies libcurl and its native certificate trust store in the SDK.
+find_package(CURL 7.85 REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(Crow CONFIG REQUIRED)
+include(cmake/CrowAsyncHttp.cmake)
 # TagLib's exported targets reference ZLIB::ZLIB in their link interface.
 # We must resolve it here so the target exists when TagLib is consumed —
 # otherwise CMake errors out on macOS / Linux with:
@@ -191,6 +194,7 @@ if(MSVC AND CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS)
 endif()
 
 target_include_directories(liveplay-server
+    BEFORE PRIVATE ${DWCUE_CROW_ASYNC_INCLUDE_DIR}
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${FFMPEG_INCLUDE_DIRS}
@@ -205,6 +209,7 @@ target_link_libraries(liveplay-server
         Threads::Threads
         nlohmann_json::nlohmann_json
         Crow::Crow
+        CURL::libcurl
         liveplay_miniaudio
         miniz::miniz
         ${FFMPEG_LIBRARIES}
@@ -267,6 +272,12 @@ if(LIVEPLAY_BUILD_TESTS)
         PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
     add_test(NAME control-security COMMAND liveplay-control-security-tests)
+
+    add_executable(liveplay-storage-io-tests tests/storage_io_test.cpp)
+    target_include_directories(liveplay-storage-io-tests BEFORE PRIVATE ${DWCUE_CROW_ASYNC_INCLUDE_DIR})
+    target_link_libraries(liveplay-storage-io-tests PRIVATE Crow::Crow)
+    add_test(NAME storage-io COMMAND liveplay-storage-io-tests)
+    set_tests_properties(storage-io PROPERTIES TIMEOUT 10)
 
     add_executable(liveplay-project-format-tests
         tests/project_format_test.cpp
@@ -344,6 +355,36 @@ if(LIVEPLAY_BUILD_TESTS)
     )
     add_test(NAME waveform COMMAND liveplay-waveform-tests)
 
+    add_executable(liveplay-audio-import-tests
+        tests/audio_import_test.cpp
+        src/meta/waveform.cpp
+        src/audio/meter.cpp
+        src/audio/decoder.cpp
+        src/logger.cpp
+    )
+    target_include_directories(liveplay-audio-import-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include ${FFMPEG_INCLUDE_DIRS}
+        ${GME_INCLUDE_DIR} ${VGMSTREAM_INCLUDE_DIR}
+    )
+    target_link_directories(liveplay-audio-import-tests PRIVATE ${FFMPEG_LIBRARY_DIRS})
+    target_link_libraries(liveplay-audio-import-tests PRIVATE
+        liveplay_miniaudio Threads::Threads ${FFMPEG_LIBRARIES}
+        FluidSynth::libfluidsynth ${GME_LIBRARY} ${VGMSTREAM_LIBRARY}
+    )
+    target_compile_definitions(liveplay-audio-import-tests PRIVATE
+        LIVEPLAY_DEFAULT_SOUNDFONT="${CMAKE_CURRENT_SOURCE_DIR}/assets/TimGM6mb.sf2"
+    )
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    find_program(FFMPEG_TEST_EXECUTABLE ffmpeg)
+    find_program(FFPROBE_TEST_EXECUTABLE ffprobe)
+    if(Python3_Interpreter_FOUND AND FFMPEG_TEST_EXECUTABLE AND FFPROBE_TEST_EXECUTABLE)
+        add_test(NAME audio-import COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_audio_import.py
+            $<TARGET_FILE:liveplay-audio-import-tests>
+            --ffmpeg ${FFMPEG_TEST_EXECUTABLE} --ffprobe ${FFPROBE_TEST_EXECUTABLE}
+        )
+    endif()
+
     # Shared decoded-audio read-ahead: bounded queue, forced underrun recovery,
     # seamless loop markers, and concurrent producer/consumer/seek stress.
     add_executable(liveplay-audio-rt-tests
@@ -372,8 +413,34 @@ if(LIVEPLAY_BUILD_TESTS)
     target_compile_definitions(liveplay-audio-rt-tests PRIVATE
         LIVEPLAY_DEFAULT_SOUNDFONT="${CMAKE_CURRENT_SOURCE_DIR}/assets/TimGM6mb.sf2")
     add_test(NAME audio-rt COMMAND liveplay-audio-rt-tests)
+    add_executable(liveplay-audio-output-tests
+        tests/audio_output_test.cpp
+        src/audio/engine.cpp
+        src/audio/playback_item.cpp
+        src/audio/decoder.cpp
+        src/audio/meter.cpp
+        src/audio/limiter.cpp
+        src/audio/ltc_generator.cpp
+        src/audio/mixer_channel.cpp
+        src/logger.cpp
+    )
+    target_include_directories(liveplay-audio-output-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${FFMPEG_INCLUDE_DIRS}
+        ${GME_INCLUDE_DIR}
+        ${VGMSTREAM_INCLUDE_DIR}
+    )
+    target_link_directories(liveplay-audio-output-tests PRIVATE ${FFMPEG_LIBRARY_DIRS})
+    target_link_libraries(liveplay-audio-output-tests PRIVATE
+        liveplay_miniaudio Threads::Threads ${FFMPEG_LIBRARIES}
+        FluidSynth::libfluidsynth ${GME_LIBRARY} ${VGMSTREAM_LIBRARY}
+    )
+    target_compile_definitions(liveplay-audio-output-tests PRIVATE
+        LIVEPLAY_DEFAULT_SOUNDFONT="${CMAKE_CURRENT_SOURCE_DIR}/assets/TimGM6mb.sf2")
+    add_test(NAME audio-output COMMAND liveplay-audio-output-tests)
     add_executable(liveplay-project-state-runtime-tests
         tests/project_state_runtime_test.cpp
+        tests/crash_resume_test.cpp
         src/logger.cpp
         src/audio/meter.cpp
         src/audio/decoder.cpp
@@ -383,6 +450,7 @@ if(LIVEPLAY_BUILD_TESTS)
         src/audio/playback_item.cpp
         src/audio/engine.cpp
         src/core/project_state.cpp
+        src/core/backup_manager.cpp
         src/core/project_file.cpp
         src/meta/metadata.cpp
         src/meta/waveform.cpp
@@ -403,6 +471,9 @@ if(LIVEPLAY_BUILD_TESTS)
         ${GME_LIBRARY}
         ${VGMSTREAM_LIBRARY}
     )
+    if(WIN32)
+        target_link_libraries(liveplay-project-state-runtime-tests PRIVATE dbghelp)
+    endif()
     if(TARGET TagLib::tag)
         target_link_libraries(liveplay-project-state-runtime-tests PRIVATE TagLib::tag)
     elseif(TARGET TagLib::TagLib)

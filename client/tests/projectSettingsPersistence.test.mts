@@ -3,7 +3,44 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import { parse } from '@vue/compiler-sfc';
+import { compile, NodeTypes, parse as parseTemplate } from '@vue/compiler-dom';
+import * as Vue from 'vue';
 import ts from 'typescript';
+
+test('project and cue output choices persist hardware names instead of opened-session IDs', () => {
+  const device = { id: 'ephemeral-opened-device-id', display_name: 'Stage USB output' };
+  for (const [component, handler] of [['ProjectSettingsModal', 'onAudioDeviceChange'], ['ProjectSettingsModal', 'onLtcDeviceChange'], ['PropertiesPanel', 'onDeviceOverrideChange']]) {
+    const filename = new URL(`../app/components/${component}.vue`, import.meta.url);
+    const template = parse(readFileSync(filename, 'utf8')).descriptor.template!;
+    const ast = parseTemplate(template.content);
+    const find = (node: any): any => {
+      if (node.type === NodeTypes.ELEMENT && node.tag === 'select' && node.loc.source.includes(`@change="${handler}"`)) return node;
+      for (const child of node.children ?? []) {
+        const found = find(child);
+        if (found) return found;
+      }
+    };
+    const select = find(ast);
+    assert.ok(select, `${component} output selector must exist`);
+    const code = ts.transpileModule(compile(select.loc.source, { mode: 'function', isTS: true }).code, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+    }).outputText;
+    const render = Function('Vue', `${code}; return render;`)(Vue);
+    const node = render({
+      devices: [device], devicesList: [device], audioDeviceId: device.display_name,
+      ltcDeviceId: device.display_name,
+      audioItem: { deviceOverride: device.display_name }, audioDeviceOverride: device.display_name,
+      t: (key: string) => key, [handler]() {},
+    }, []);
+    const options: any[] = [];
+    const walk = (value: any) => {
+      if (value?.type === 'option') options.push(value);
+      if (Array.isArray(value?.children)) value.children.forEach(walk);
+    };
+    walk(node);
+    assert.equal(options.find(option => option.key === device.id)?.props.value, device.display_name);
+  }
+});
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -83,14 +120,14 @@ function settingsHarness(initialSettings: Record<string, unknown>) {
 }
 
 test('serializes same-key edits so two rejected patches restore the acknowledged value', async () => {
-  const harness = settingsHarness({ autoTrimSilenceOnImport: false });
+  const harness = settingsHarness({ cycleTrackColors: false });
 
-  const first = harness.applyPatch({ autoTrimSilenceOnImport: true });
+  const first = harness.applyPatch({ cycleTrackColors: true });
   await Promise.resolve();
-  assert.equal(harness.project.settings.autoTrimSilenceOnImport, true);
+  assert.equal(harness.project.settings.cycleTrackColors, true);
   assert.equal(harness.patchRequests.length, 1);
 
-  const second = harness.applyPatch({ autoTrimSilenceOnImport: false });
+  const second = harness.applyPatch({ cycleTrackColors: false });
   await Promise.resolve();
   assert.equal(harness.patchRequests.length, 1, 'second edit must wait for the first acknowledgement');
 
@@ -98,11 +135,11 @@ test('serializes same-key edits so two rejected patches restore the acknowledged
   assert.equal(await first, 'failed');
   await Promise.resolve();
   assert.equal(harness.patchRequests.length, 2);
-  assert.equal(harness.project.settings.autoTrimSilenceOnImport, false);
+  assert.equal(harness.project.settings.cycleTrackColors, false);
 
   harness.patchRequests[1]!.pending.reject(new Error('second rejected'));
   assert.equal(await second, 'failed');
-  assert.equal(harness.project.settings.autoTrimSilenceOnImport, false);
+  assert.equal(harness.project.settings.cycleTrackColors, false);
   assert.equal(harness.settingsError.value, 'second rejected');
 });
 test('does not start a save after the current project changes during PATCH', async () => {

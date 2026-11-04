@@ -96,7 +96,8 @@ const validOneShotSettings = (value: unknown, slot: number): boolean => plainObj
 const validAudioReplacement = (value: unknown, slot: number): value is AudioItem => {
   if (!plainObject(value) || value.type !== 'audio') return false;
   return typeof value.uuid === 'string' && value.uuid.trim().length > 0
-    && validIndex(value.index)
+    && (validIndex(value.index) || (Array.isArray(value.index)
+      && value.index.length === 2 && value.index[0] === -1 && value.index[1] === slot))
     && typeof value.mediaFileName === 'string'
     && typeof value.mediaPath === 'string'
     && (value.mediaServerPath === undefined || typeof value.mediaServerPath === 'string')

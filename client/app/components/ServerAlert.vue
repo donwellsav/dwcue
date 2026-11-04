@@ -21,6 +21,13 @@
         <strong>{{ t('settings.tabVideoOutput') }} · {{ t('common.error') }}</strong>
         — {{ videoPlaybackError.message }}
       </span>
+      <button
+        v-if="videoStatus?.recoveryRequired"
+        type="button"
+        class="server-alert__action"
+        :disabled="videoStatus.restarting"
+        @click="restartVideoOutput"
+      >{{ t('settings.videoOutputRestart') }}</button>
     </div>
 
     <div v-if="server.connected && server.lastError" class="server-alert" role="alert">
@@ -115,6 +122,13 @@ async function retryAudioOutput() {
   } finally {
     recoveryRequesting.value = false;
   }
+}
+
+async function restartVideoOutput() {
+  try {
+    const status = await window.electronAPI?.videoOutput?.restart();
+    if (status) videoStatus.value = status;
+  } catch { /* Main retains the black surface and its actionable error. */ }
 }
 
 onMounted(() => {

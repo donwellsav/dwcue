@@ -1,6 +1,7 @@
 #include "liveplay/core/backup_manager.hpp"
 #include "liveplay/core/project_file.hpp"
 #include "liveplay/logger.hpp"
+#include "liveplay/util/atomic_file.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -103,31 +104,47 @@ void BackupManager::do_backup() {
     fs::path dst = backup_dir / src.stem();
     dst += "_backup_" + timestamp + ".dwcue";
 
-    // Prune oldest backups if we're at the cap.
+    fs::path temporary = dst;
+    temporary += ".tmp";
+    fs::copy_file(src, temporary, fs::copy_options::overwrite_existing, ec);
+    if (!ec) fs::last_write_time(temporary, fs::file_time_type::clock::now(), ec);
+    if (!ec) util::replace_file_atomically(temporary, dst, ec);
+    if (ec) {
+        Logger::warn("Backup: failed to write '{}': {}", path_to_utf8(dst), ec.message());
+        std::error_code cleanup_error;
+        fs::remove(temporary, cleanup_error);
+        return;
+    }
+    Logger::info("Backup saved: {}", path_to_utf8(dst.filename()));
+
+    // Only retire history after a complete replacement has been published.
     {
-        std::vector<fs::path> existing;
+        std::vector<std::pair<fs::file_time_type, fs::path>> existing;
         for (const auto& entry : fs::directory_iterator(backup_dir, ec)) {
-            if (!ec && entry.is_regular_file()) {
+            if (!ec && entry.is_regular_file(ec)) {
                 const auto& p = entry.path();
-                if (project_file::is_native_project(p)) existing.push_back(p);
+                if (project_file::is_native_project(p)) {
+                    const auto modified = entry.last_write_time(ec);
+                    if (ec) break;
+                    existing.emplace_back(modified, p);
+                }
             }
+            if (ec) break;
         }
-        std::sort(existing.begin(), existing.end());  // lexicographic = chronological
-        while (existing.size() >= MAX_BACKUPS) {
-            fs::remove(existing.front(), ec);
+        if (ec) {
+            Logger::warn("Backup: could not inspect history '{}': {}", path_to_utf8(backup_dir), ec.message());
+            return;
+        }
+        std::sort(existing.begin(), existing.end());
+        while (existing.size() > MAX_BACKUPS) {
+            fs::remove(existing.front().second, ec);
             if (ec) {
                 Logger::warn("Backup: could not remove old backup '{}': {}",
-                             path_to_utf8(existing.front()), ec.message());
+                             path_to_utf8(existing.front().second), ec.message());
+                break;
             }
             existing.erase(existing.begin());
         }
-    }
-
-    fs::copy_file(src, dst, fs::copy_options::overwrite_existing, ec);
-    if (ec) {
-        Logger::warn("Backup: failed to write '{}': {}", path_to_utf8(dst), ec.message());
-    } else {
-        Logger::info("Backup saved: {}", path_to_utf8(dst.filename()));
     }
 }
 

@@ -7,6 +7,12 @@
   "license": "AGPL-3.0-only",
   "dependencies": [
     {
+      "name": "curl",
+      "default-features": false,
+      "features": ["ssl"],
+      "platform": "!osx"
+    },
+    {
       "name": "nlohmann-json",
       "version>=": "3.11.3"
     },

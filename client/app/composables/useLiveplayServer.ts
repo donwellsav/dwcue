@@ -22,6 +22,7 @@
 //   watch(server.connected, ...);        // react to connection state
 // =====================================================================
 import { reactive, ref, shallowRef, computed } from 'vue';
+import { sameOneShotMutationIdentity, type OneShotMutationIdentity } from '../types/oneShotMutation';
 import type {
   CueId,
   DeviceId,
@@ -50,6 +51,10 @@ export function useLiveplayServer() {
 }
 
 function createClient() {
+  const currentProjectForImport = useState<{ folderPath: string } | null>('currentProject', () => null);
+  const projectPathForImport = useState<string>('useProject.projectFilePath', () => '');
+  const projectSessionId = useState<string>('useProject.serverSessionId', () => '');
+  const detachedProjectForImport = useState<OneShotMutationIdentity | null>('oneShots.detachedProjectIdentity', () => null);
   // ---- Server URL config (persisted via localStorage) ---------------
   const defaultUrl = (typeof window !== 'undefined' &&
                       window.localStorage?.getItem('liveplay.serverUrl')) ||
@@ -540,6 +545,17 @@ function createClient() {
     let res: Response;
     try {
       const headers = new Headers(init?.headers);
+      const resource = path.split('?')[0];
+      const projectScoped = resource.startsWith('/api/project/items') || resource.startsWith('/api/project/cart')
+        || ['/api/project/save', '/api/project/document', '/api/project/theme', '/api/project/settings',
+          '/api/project/repair', '/api/project/close', '/api/project/load', '/api/project/import-legacy',
+          '/api/waveform_generate'].includes(resource);
+      if (projectScoped) {
+        const session = headers.get('X-DWCUE-Project-Session') ?? projectSessionId.value;
+        if (!session && (currentProjectForImport.value || headers.has('X-DWCUE-Project-Session')))
+          throw new Error('Project session is unavailable; reconnect before editing this show');
+        if (session) headers.set('X-DWCUE-Project-Session', session);
+      }
       if (init?.body != null && !headers.has('Content-Type')) {
         headers.set('Content-Type', 'application/json');
       }
@@ -610,7 +626,7 @@ function createClient() {
       cartOnlyItems: any[];
       itemCount: number;
       hasOpenProject: boolean;
-      server: { projectFilePath: string; mediaRoot: string;
+      server: { projectFilePath: string; projectSessionId: string; mediaRoot: string;
                 audioLoading: boolean; audioLoaded: number; audioTotal: number;
                 audioReadiness?: ServerAudioReadiness };
     }>('/api/project/header');
@@ -625,11 +641,18 @@ function createClient() {
   async function fetchProjectProgress() {
     return rest<ServerAudioReadiness>('/api/project/progress');
   }
-  async function loadProjectFromPath(path: string) {
+  async function loadProjectFromPath(path: string, expectedSessionId?: string) {
     return rest<any>('/api/project/load', {
       method: 'POST',
+      headers: expectedSessionId === undefined ? undefined : { 'X-DWCUE-Project-Session': expectedSessionId },
       body: JSON.stringify({ path }),
     }).then(p => { fetchCues(); fetchMixerChannels(); return p; });
+  }
+  async function loadProjectDocument(document: any) {
+    return rest<any>('/api/project/load', {
+      method: 'POST',
+      body: JSON.stringify({ document }),
+    });
   }
   async function importLegacyProjectFromPath(path: string, destinationPath?: string) {
     const body: { path: string; destinationPath?: string } = { path };
@@ -643,7 +666,7 @@ function createClient() {
       return project;
     });
   }
-  async function saveProjectTo(path?: string, document?: any, signal?: AbortSignal) {
+  async function saveProjectTo(path?: string, document?: any, signal?: AbortSignal, expectedSessionId?: string) {
     // Authoritative-save: when the caller provides the latest document, send
     // it along so the server replaces its in-memory copy (and re-mirrors per-
     // cue properties to the audio engine) before writing to disk. Belt-and-
@@ -654,6 +677,7 @@ function createClient() {
     if (document) body.document = document;
     return rest<any>('/api/project/save', {
       method: 'POST',
+      headers: expectedSessionId === undefined ? undefined : { 'X-DWCUE-Project-Session': expectedSessionId },
       body: JSON.stringify(body),
       signal: signal
         ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
@@ -666,8 +690,9 @@ function createClient() {
   // Close the project on the server (reset to no-project state). Mirrors the
   // local closeProject() in useProject so the server doesn't keep playing /
   // holding a project we've dismissed.
-  async function closeProjectOnServer(): Promise<{ closed: boolean }> {
-    return rest<any>('/api/project/close', { method: 'POST', body: '{}' });
+  async function closeProjectOnServer(expectedSession: string): Promise<{ closed: boolean }> {
+    return rest<any>('/api/project/close', { method: 'POST', body: '{}',
+      headers: { 'X-DWCUE-Project-Session': expectedSession } });
   }
 
   // True when the configured server is running on this same machine. Used
@@ -799,9 +824,10 @@ function createClient() {
   }
   // PUT the full project document. Server replaces in-memory state and
   // re-mirrors audio items into the engine.
-  async function replaceProjectDocument(document: any) {
+  async function replaceProjectDocument(document: any, expectedSessionId?: string) {
     return rest<any>('/api/project/document', {
       method: 'PUT',
+      headers: expectedSessionId === undefined ? undefined : { 'X-DWCUE-Project-Session': expectedSessionId },
       body: JSON.stringify(document),
     }).then(p => { fetchCues(); fetchMixerChannels(); return p; });
   }
@@ -1199,10 +1225,13 @@ function createClient() {
     filePath: string,
     buckets = 1000,
     range?: WaveformAnalysisRange,
+    signal?: AbortSignal,
   ): Promise<ServerWaveform> {
     const params = new URLSearchParams({ path: filePath, buckets: String(buckets) });
     appendAnalysisRange(params, range);
-    return rest<ServerWaveform>(`/api/waveform_path?${params}`);
+    return rest<ServerWaveform>(`/api/waveform_path?${params}`, {
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : undefined,
+    });
   }
 
   // Copy a server-side file into the project's media root. Returns the
@@ -1217,6 +1246,8 @@ function createClient() {
     duplicatePolicy: 'reuse' | 'skip' | 'keep',
     signal?: AbortSignal,
   ): Promise<{ destPath: string; duplicate: boolean; reused: boolean; skipped: boolean }> {
+    const folder = currentProjectForImport.value?.folderPath.replace(/[\\/]+$/, '');
+    if (!folder) throw new Error('Open a project before importing media.');
     const result = await rest<{
       dest_path: string;
       duplicate?: boolean;
@@ -1224,7 +1255,12 @@ function createClient() {
       skipped?: boolean;
     }>('/api/copy_to_media', {
       method: 'POST',
-      body: JSON.stringify({ source_path: sourcePath, duplicate_policy: duplicatePolicy }),
+      body: JSON.stringify({
+        source_path: sourcePath,
+        duplicate_policy: duplicatePolicy,
+        expected_project_file_path: detachedProjectForImport.value?.projectPath ?? projectPathForImport.value,
+        expected_media_root: `${folder}/media`,
+      }),
       signal: signal
         ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
         : undefined,
@@ -1249,13 +1285,27 @@ function createClient() {
   // copyToMedia failing (e.g. a remote server that can't see the path) falls
   // back to upload, so a misdetected "local" server still works.
   async function resolveDroppedFileToMedia(file: File): Promise<string | null> {
+    const project = currentProjectForImport.value;
+    const projectPath = projectPathForImport.value;
+    const detached = detachedProjectForImport.value ? { ...detachedProjectForImport.value } : null;
+    const isCurrent = () => detached
+      ? sameOneShotMutationIdentity(detachedProjectForImport.value, detached)
+      : currentProjectForImport.value === project && projectPathForImport.value === projectPath;
     const osPath = (import.meta.client && (window as any).electronAPI?.getFilePath)
       ? (window as any).electronAPI.getFilePath(file)
       : null;
     if (osPath && isLocalServer.value) {
-      try { return await copyToMedia(osPath); }
-      catch (e) { console.warn('[import] copyToMedia failed, uploading bytes instead:', e); }
+      try {
+        const path = await copyToMedia(osPath);
+        if (!isCurrent()) throw new DOMException('Project changed during import', 'AbortError');
+        return path;
+      } catch (e) {
+        if (!isCurrent()) throw new DOMException('Project changed during import', 'AbortError');
+        if (e instanceof Error && /^4\d\d\b/.test(e.message) && !/^404\b/.test(e.message)) throw e;
+        console.warn('[import] copyToMedia failed, uploading bytes instead:', e);
+      }
     }
+    if (!isCurrent()) throw new DOMException('Project changed during import', 'AbortError');
     try {
       const res = await uploadFile(file, file.name);
       return res?.saved?.[0] ?? null;
@@ -1269,10 +1319,10 @@ function createClient() {
   // the result arrives as a { op: 'waveform_ready', item_uuid, channels, ... }
   // doc_patch over WebSocket once computation finishes.
   // Pass force=true to delete any cached waveform file and recompute from scratch.
-  async function requestWaveformGeneration(path: string, itemUuid: string, force = false): Promise<void> {
+  async function requestWaveformGeneration(path: string, itemUuid: string, force = false, fileRevision?: string): Promise<void> {
     await rest('/api/waveform_generate', {
       method: 'POST',
-      body: JSON.stringify({ path, item_uuid: itemUuid, force }),
+      body: JSON.stringify({ path, item_uuid: itemUuid, force, file_revision: fileRevision }),
     });
   }
 
@@ -1284,6 +1334,7 @@ function createClient() {
   return reactive({
     // state
     serverUrl,
+    projectSessionId,
     accessToken,
     effectiveAccessToken,
     connected,
@@ -1361,6 +1412,7 @@ function createClient() {
     fetchProjectItemsPage,
     fetchProjectProgress,
     loadProjectFromPath,
+    loadProjectDocument,
     importLegacyProjectFromPath,
     replaceProjectDocument,
     saveProjectTo,

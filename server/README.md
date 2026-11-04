@@ -35,9 +35,10 @@ This document tracks the current v2.6.14 source included at `7a0eee2` (native re
 |--------------|--------------------------------------------------------------------------------|
 | Audio I/O    | [miniaudio](https://miniaud.io/) (header-only, vendored as `miniaudio_impl.c`) |
 | HTTP / WS    | [Crow](https://crowcpp.org/)                                                   |
+| Outbound HTTP | [libcurl](https://curl.se/libcurl/) (macOS SDK; vcpkg with TLS on other platforms) |
 | Metadata     | [TagLib](https://taglib.org/)                                                  |
 | JSON         | [nlohmann/json](https://github.com/nlohmann/json)                              |
-| Build        | CMake (≥ 3.21) + vcpkg manifest mode (`vcpkg.json`)                            |
+| Build        | CMake (≥ 3.21), Git, and vcpkg manifest mode (`vcpkg.json`)                    |
 
 Native backends per platform:
 
@@ -70,7 +71,7 @@ server/
 │   │   └── engine.hpp         Tier 3: master bus + device fan-out
 │   ├── core/
 │   │   ├── project_state.hpp  v2 project model + legacy 1.x upgrade
-│   │   └── backup_manager.hpp on-save rotating backups
+│   │   └── backup_manager.hpp periodic rotating backups
 │   ├── meta/
 │   │   ├── metadata.hpp       TagLib wrapper
 │   │   └── waveform.hpp       offline downsample → peak JSON
@@ -184,22 +185,19 @@ In LAN mode, the boot banner shows the reachable URL:
 
 ### Three-tier mixer
 
-Every cue's audio goes through three explicit tiers, in order, on the engine's render thread:
+Every cue's audio goes through three explicit mixer tiers on the engine's render thread, followed by protection in the device callback:
 
 ```
-   Tier 1                Tier 2                  Tier 3
-   ──────                ──────                  ──────
- PlaybackItem  ─send─►  MixerChannel  ─send─►  Master Output Bus  ─hw─►  Device:HwCh
-   (one per                (group bus,            (per-channel
-   live cue,               gain/mute/             true-peak
-   own decoder)            solo/fade)             limiter)
+ PlaybackItem → MixerChannel → Logical master → Device channel sum
+                                                    ↓
+                                  Clock adaptation → Limiter + meter → Hardware
 ```
 
 - **Tier 1 — [`PlaybackItem`](include/liveplay/audio/playback_item.hpp)**: one instance per active cue, with its own `ma_decoder`, gain/fade state machine, optional LTC generator, and a per-source-channel meter. Loading the same `.wav` into two One Shot cells yields **two independent instances**; attenuating one never affects the other.
 - **Tier 2 — [`MixerChannel`](include/liveplay/audio/mixer_channel.hpp)**: a virtual strip with gain, mute, solo, and a smooth-fade ramp. Many items can route into one channel; one item's source channels can fan out to multiple channels.
-- **Tier 3 — Master output bus** ([`engine.hpp`](include/liveplay/audio/engine.hpp)): the current executable exposes 32 logical master channels. Each carries a limiter + meter and is assigned to exactly one `(Device, HardwareChannelIndex)` tuple.
+- **Tier 3 — Master output bus** ([`engine.hpp`](include/liveplay/audio/engine.hpp)): the current executable exposes 32 logical master channels. A master can be assigned to a `(Device, HardwareChannelIndex)` tuple; several masters can share that destination. The device callback limits their combined signal after clock adaptation. Assigned master meters and gain reduction report that final physical channel; unassigned buses retain their logical meters.
 
-All three tiers run at a 256-frame block (~5.3 ms at 48 kHz). Meters and limiter envelopes update once per block.
+The mixer renders 256-frame blocks (~5.3 ms at 48 kHz). Device callbacks can request different frame counts; final limiting uses preallocated scratch buffers and handles those counts without allocation or locks.
 
 Control-plane registries and immutable topology snapshots share ownership of playback items, mixer channels, and output devices, so removing an object cannot destroy storage still visible to the render thread. Native devices are deduplicated and reference-counted: Main and Preview can share one physical device, and releasing Preview cannot close Main's device. Device initialisation and shutdown are serialized; retired device storage stays off the real-time destruction path until engine shutdown.
 
@@ -219,7 +217,9 @@ Mutators: `POST /api/routing/item_to_mixer`, `/mixer_to_master`, `/master_to_dev
 
 ### True-peak master limiter
 
-[`limiter.hpp`](include/liveplay/audio/limiter.hpp). Defaults: −0.1 dBTP ceiling for the Live output target, 5 ms lookahead (~240 samples at 48 kHz), 50 ms release. `settings.limiterCeilingDb` optionally overrides the selected target in the range −60..0 dBTP. The limiter reuses the meter's ITU-R BS.1770 4× intersample detector; its sliding maximum drives the lookahead gain envelope with a 0.25 dB internal guard against envelope-created peaks. Bypass keeps both detector and delay moving so live toggles do not shift timing.
+[`limiter.hpp`](include/liveplay/audio/limiter.hpp). Defaults: −0.1 dBTP ceiling for the Live output target, 5 ms lookahead (~240 samples at 48 kHz), 50 ms release. `settings.limiterCeilingDb` optionally overrides the selected target in the range −60..0 dBTP. This is an attenuation-only safety ceiling: audio below it keeps unity gain after the lookahead delay. The limiter reuses the meter's ITU-R BS.1770 4× intersample detector; its sliding maximum drives the lookahead gain envelope, with a 0.25 dB internal guard applied only when reducing an over. Each physical device channel has one limiter after summation and clock adaptation. Bypass keeps both detector and delay moving so live toggles do not shift timing.
+
+Import preserves source level and timing, including when opening legacy automatic-processing preferences. Explicit LUFS normalization matches a loudness target; **Reduce peaks** only attenuates an over-ceiling cue. See [research, fixes, and verification](../docs/audio-playback-reliability.md).
 
 ### Per-cue LTC generator
 
@@ -241,12 +241,16 @@ All three stop paths funnel through the same fade-out envelope:
 
 `stop()` calls `start_fade()` which feeds the same state machine the natural-end branch uses. The contract is documented inline in [`src/audio/playback_item.cpp`](src/audio/playback_item.cpp) (search for `// Manual-stop fade contract:`).
 
+Stopping a Paused cue clears it immediately while remaining silent. Pause also freezes a fade already in progress; Resume continues that fade from the held position.
+
 ### Sequencer trigger invariants
 
 - **Cue to Continue** arms a one-pass, runtime-only continuation for the cue's current playback instance. It temporarily supersedes saved Loop, Start Next, crossfade/stop-fade, and end-behaviour advance; at natural end it starts the resolved target. Stop, remove, replay, Stop All, media replacement, or project switch cancels the arm, so replay falls back to the saved behaviour. `cue_to_continue` is never serialized.
 - A manual **Play Next** override changes only when the server accepts a valid UUID or an explicit empty clear. GO consumes it only when playback is accepted; failed or not-yet-loaded targets remain armed. One Shot arming follows the same accepted-play rule.
 - Repeated identical arming is coalesced without another state broadcast. Successful GO clears its override; failed GO leaves it intact.
 - Each play receives a server-side generation fence. Replay, stop, removal, media replacement, and project changes invalidate older generations so a copied terminal action from an earlier playback instance cannot advance or otherwise affect the new one.
+- Pause holds timed actions and auto-follow until Resume. Crossfade and Start Next resolve all supported destinations before committing the source fade; failed destinations leave the follow retryable until EOF and report an error if they still cannot start.
+- Zero-crossfade follow has no implicit early overlap. A prepared, distinct audio successor starts at the exact source sample boundary. Groups, actions, self-targets, unready cues and chains too short to prepare use the EOF control path, which can add one 50 ms polling interval. Start actions and duck ownership bookkeeping also use that control cadence.
 - Group **Play First** selects its first-child path. **Play All** preflights the exact selected subtree and starts nothing unless all selected descendants are ready. A `GroupRun` owns the descendants it started, including nested runs, and executes the group's authored End Behavior exactly once after natural completion. Manual stop, external retrigger, looping descendants and cancellation prevent premature group-end dispatch. The default group End Behavior remains **Nothing**.
 - Audio Start Behaviors `play-next`, `play-item`, and `play-index` execute before the audio item itself; cycle detection prevents recursive chains. Start `play-next` is structural and never consumes the global operator override. Natural-end Audio End Behavior `next` may honor that override. Timed **Start Next at Marker** / **Start Next At** / **Fade Out at Marker** preserve the active group generation through internal transitions.
 - Ducking is owner- and playback-generation-fenced. Each sounding owner contributes its authored absolute ceiling plus attack/release times; the strongest active ceiling wins, base gains are recomputed when parameters change, and the original gain is restored only after the last owner releases. Attack/release ramps run without audio-thread allocation.
@@ -292,6 +296,8 @@ AV Sync uses the existing native decoder, loop and mixer. `default` follows the 
 Open-device snapshots include `runtime_state`, `is_clock_master`, `callback_entry_count`, `stream_recovery_count`, `recovery_request_id`, and `recovery_status` (`idle`, `pending`, `succeeded`, or `failed`). A successful backend start remains `starting` until a real callback arrives; a missing callback clock becomes `stalled` and cannot be clock master. Recovery stops and starts the existing stream without replacing its ID or cue routing. Match the returned request ID against full `{ "type": "device_state", "device": { ... } }` WebSocket events; only `succeeded` with `runtime_state: "running"` establishes recovered output. Restart errors and callback-startup timeout publish `failed` and permit another request.
 
 Authenticated `GET`/`HEAD /api/media?item_uuid=<uuid>` resolves the exact project media path used by native audio, including valid fallback paths. Byte ranges and the legacy `path` query remain supported. Live `cue_state` and reconnect `playback_snapshot` cues carry authoritative `trigger_seq` firing order for video-source selection.
+
+Media responses use asynchronous socket writes so a slow or paused reader cannot block the control worker. General responses retain their body/header storage until completion; static files use one owned 16 KiB chunk buffer. Pipelined requests wait before reusing response storage. CMake applies the hash-checked Crow 1.3.2 transport patch to build-local headers and retains the original dependency files; review the patch when upgrading Crow. HEAD returns the selected representation length without a body. Disk reads remain synchronous. See [video reliability research, regressions and limits](../docs/video-playback-reliability.md).
 
 #### Cues (engine-direct)
 
@@ -565,9 +571,13 @@ Stopped cues are omitted from `items`. Silent master channels (`peak_db <= -119 
 | `next_item_set`                 | `itemUuid` (empty string clears)                           | WS `set_next_item` |
 | `waveform_ready`                | `item_uuid`, `bucket_count`, `duration_ms`, `sample_rate`, `source_channels`, `channels` | waveform worker, after `/api/waveform_generate` finishes |
 | `waveform_failed`               | `item_uuid`                                                | waveform worker on decode failure |
-| `custom_action_http`            | `action` (project-defined HTTP action descriptor)          | `ProjectState` external-action handler — server has no HTTP client, so clients perform the fetch |
+| `custom_action_result`          | `actionId`, `ok`, `httpStatus`, `message`                   | Native HTTP action worker; feedback only, clients never execute the request |
 
 Clients apply doc_patch ops as idempotent state updates; the originating client also receives the echo (its local state already matches, so the apply is a no-op).
+
+Authored HTTP requests execute once per accepted cue action on the server host, including with no connected clients. One bounded worker preserves order, expires work after five seconds, verifies TLS certificates, and never automatically retries or follows redirects. Project changes discard queued work and cancel transfers where possible. `localhost` in these URLs now identifies the engine host. An unsuccessful request may already have reached its destination; operators must check the receiving system before manually retrying a side effect. See [HTTP behavior and limits](../docs/audio-playback-reliability.md#operator-visible-changes-and-limits).
+
+`project_changed` also fences cached meter/transport/snapshot batches, so an old Playing edge cannot arrive after the new-project boundary. Audience output clears immediately and rejects stale asynchronous fetches.
 
 #### Client → server frames
 
@@ -596,12 +606,12 @@ Unknown `type` values get a `{ "type": "error", "message": "unknown type" }` rep
 3. WebSocket frame { "type": "play", "cue_id": "…" } sent to server.
 4. ControlServer::handle_ws_message → engine_.play(cueId) — O(1) atomic state flip.
 5. AudioEngine render thread, next block:
-     PlaybackItem.render_block() decodes + applies fade-in envelope.
+     PlaybackItem.render_block() consumes read-ahead PCM and applies envelopes.
      Mixer summing through the matrix.
-     Master limiter + meter on per-device output buffers.
      Buffers pushed into each device's miniaudio ring buffer.
-6. Per-device miniaudio callback drains the ring → hardware DAC.
-7. Render thread also pushes amplitude into the 3-tier meters.
+6. Per-device miniaudio callback drains the ring, adapts its clock, then limits
+   and meters each final hardware-channel sum → hardware DAC.
+7. Render thread also updates source and mixer meters.
 8. Broadcast thread, ~33 ms later at the default cadence: snapshot all meters → JSON → fan out to every WS client.
 9. Client's LiveMeterBar.vue reflects the new levels in the next frame paint.
 ```
@@ -628,7 +638,7 @@ The upgrade reconstructs legacy cues and baseline routes so old projects remain 
 
 ### Backups
 
-`BackupManager` ([`core/backup_manager.hpp`](include/liveplay/core/backup_manager.hpp)) keeps rotating timestamped copies of the project file on every save, so a corrupt write or bad mutation can be recovered.
+`BackupManager` ([`core/backup_manager.hpp`](include/liveplay/core/backup_manager.hpp)) copies the saved project file every ten minutes. It publishes a complete copy before pruning the oldest backups to the existing cap of 20 in the adjacent `backups` folder; a failed copy retains the previous history. Unsaved edits are not included in these periodic copies.
 
 Native saves are serialized under the project save mutex. The target path and complete document snapshot are resolved under that serialization boundary, written to a sibling temporary file and atomically published. A failed Save As does not adopt the requested path; a pathless save resolves the current canonical path while holding the same lock.
 

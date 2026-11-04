@@ -246,6 +246,7 @@ export const useCartHotkeys = () => {
     )) {
       e.preventDefault();
       e.stopPropagation();
+      if (e.repeat && playbackAction !== 'select-up' && playbackAction !== 'select-down') return;
       void dispatchPlaybackAction(playbackAction);
       return;
     }
@@ -257,7 +258,7 @@ export const useCartHotkeys = () => {
     if (slotIndex >= 0) {
       e.preventDefault();
       e.stopPropagation();
-      void triggerSlot(slotIndex);
+      if (!e.repeat) void triggerSlot(slotIndex);
     }
   };
 

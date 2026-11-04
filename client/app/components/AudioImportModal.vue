@@ -97,6 +97,8 @@
           </div>
         </section>
 
+        <p class="hint">{{ t('importAudio.preserveAudio') }}</p>
+
         <details class="import-advanced">
           <summary>{{ t('importAudio.advanced') }}</summary>
           <section v-if="tab === 'server'" class="import-options" :aria-label="t('importAudio.fileHandling')">
@@ -271,18 +273,6 @@ const transitionLabel = computed(() => projectSettings.value?.defaultTransitionM
   ? t('settings.transitionModeStartNext')
   : t('settings.transitionModeCrossfade'));
 const importSettings = computed(() => [
-  {
-    label: t('settings.autoTrimSilenceOnImport'),
-    enabled: projectSettings.value?.autoTrimSilenceOnImport === true,
-  },
-  {
-    label: t('settings.autoMatchLoudnessOnImport'),
-    enabled: projectSettings.value?.autoMatchLoudnessOnImport === true,
-  },
-  {
-    label: t('settings.autoReduceTruePeaksOnImport'),
-    enabled: projectSettings.value?.autoReduceTruePeaksOnImport !== false,
-  },
   {
     label: t('settings.cycleTrackColors'),
     enabled: projectSettings.value?.cycleTrackColors !== false,

@@ -118,6 +118,120 @@ function transpileFactory(source: string, factoryName: string): (...args: any[])
   return Function(`${compiled}; return ${factoryName};`)();
 }
 
+function midiRecoveryHarness() {
+  const source = readFileSync(new URL('../app/composables/useMidiController.ts', import.meta.url), 'utf8');
+  const slice = (start: string, end: string) => {
+    const from = source.indexOf(start), to = source.indexOf(end, from);
+    assert.ok(from >= 0 && to > from);
+    return source.slice(from, to);
+  };
+  const sessionLost = { value: true };
+  const projectHydrationStatus = { value: 'ready' };
+  const learning = { value: null as string | null };
+  const server = { connectionLost: false };
+  const calls: string[] = [], learned: unknown[] = [];
+  const build = transpileFactory(`
+    function buildMidi(deps: Record<string, any>) {
+      const { sessionLost, projectHydrationStatus, learning, server, calls, learned } = deps;
+      const useLiveplayServer = () => server;
+      const config = { value: { bindings: {
+        'play-next': { channel: 0, type: 'note', number: 60 },
+        'stop-all': { channel: 0, type: 'note', number: 61 },
+        'master-volume': { channel: 0, type: 'cc', number: 7 },
+      }, masterVolumeMultiplier: 1 } };
+      const MIDI_ACTIONS = [
+        { id: 'play-next', continuous: false }, { id: 'stop-all', continuous: false },
+        { id: 'master-volume', continuous: true },
+      ];
+      const DEFAULT_MASTER_VOLUME_MULTIPLIER = 1;
+      const lastMidiMessage = { value: null };
+      let lastMasterVolumeRaw = null;
+      const onLearnCapture = binding => learned.push(binding);
+      const playNext = async () => { calls.push('go'); return true; };
+      const stopAllCues = async () => { calls.push('stop'); return true; };
+      const adjustMasterGain = async db => { calls.push('gain:' + db); return true; };
+      ${slice('const bindingsMatch =', '// Shared singleton state')}
+      ${slice('  const dispatchDiscrete =', '  /**\n   * Update connected device list')}
+      return handleMidiMessage;
+    }
+  `, 'buildMidi');
+  const handle = build({ sessionLost, projectHydrationStatus, learning, server, calls, learned });
+  return { sessionLost, projectHydrationStatus, learning, server, calls, learned,
+    send: (status: number, number: number, value: number) => handle({
+      data: new Uint8Array([status, number, value]), target: { name: 'synthetic-controller' },
+    }),
+  };
+}
+
+test('MIDI cannot fire GO or change master level while session recovery is unresolved', () => {
+  const midi = midiRecoveryHarness();
+  midi.send(0x90, 60, 127);
+  midi.send(0xb0, 7, 64);
+  midi.send(0xb0, 7, 65);
+  assert.deepEqual(midi.calls, []);
+  midi.sessionLost.value = false;
+  midi.send(0x90, 60, 127);
+  midi.send(0xb0, 7, 66);
+  midi.send(0xb0, 7, 67);
+  assert.deepEqual(midi.calls, ['go', 'gain:1']);
+});
+
+test('MIDI Stop and Learn remain available during recovery', () => {
+  const midi = midiRecoveryHarness();
+  midi.projectHydrationStatus.value = 'loading';
+  midi.send(0x90, 61, 127);
+  assert.deepEqual(midi.calls, ['stop']);
+  midi.server.connectionLost = true;
+  midi.learning.value = 'play-next';
+  midi.send(0x90, 60, 127);
+  assert.deepEqual(midi.learned, [{ channel: 0, type: 'note', number: 60 }]);
+  assert.deepEqual(midi.calls, ['stop']);
+});
+
+test('held keys fire discrete actions once while selection arrows can repeat', () => {
+  const actions: string[] = [];
+  let slots = 0;
+  const handle = loadHandleKeydown({
+    currentProject: { value: {} }, projectHydrationStatus: { value: 'ready' },
+    dispatchPlaybackAction: (action: string) => { actions.push(action); },
+    findPlaybackActionForEvent: (event: any) => ({
+      ' ': 'play-next', Enter: 'play-selected', p: 'pause-resume',
+      Escape: 'stop-all', ArrowDown: 'select-down',
+    }[event.key] ?? null),
+    findSlotForEvent: (event: any) => event.key === '1' ? 0 : -1,
+    isForwardedFromVideoOutput: () => false, isTextInputFocused: () => false,
+    triggerSlot: () => { slots++; },
+  });
+  for (const key of [' ', 'Enter', 'p', 'Escape', 'ArrowDown', '1']) {
+    for (const repeat of [false, true, true]) {
+      handle({ key, repeat, preventDefault() {}, stopPropagation() {} });
+    }
+  }
+  assert.deepEqual(actions, [
+    'play-next', 'play-selected', 'pause-resume', 'stop-all',
+    'select-down', 'select-down', 'select-down',
+  ]);
+  assert.equal(slots, 1);
+});
+
+test('broadcast HTTP actions cannot execute side effects in client windows', () => {
+  const source = readFileSync(new URL('../app/composables/useAudioEngine.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('  server.onDocPatch((patch: any) => {');
+  const end = source.indexOf('  // Meter broadcast:', start);
+  assert.ok(start >= 0 && end > start);
+  let callback: (patch: unknown) => void = () => {};
+  let requests = 0;
+  const code = ts.transpileModule(source.slice(start, end), {
+    compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  Function('server', 'nextItemOverrideUuid', 'masterGainDb', 'executeHttpRequest', code)(
+    { onDocPatch: (handler: typeof callback) => { callback = handler; } },
+    { value: null }, { value: 0 }, () => { requests++; },
+  );
+  callback({ op: 'custom_action_http', action: { request: { url: 'http://stage.invalid/cue' } } });
+  assert.equal(requests, 0);
+});
+
 function loadSetNextCaller(
   component: 'PlaylistItem' | 'CartSlot' | 'PlaybackControls' | 'WaveformTrimmer',
   dependencies: Record<string, unknown>,
@@ -189,7 +303,7 @@ function loadSetNextCommand(dependencies: Record<string, unknown>) {
   const filename = new URL('../app/composables/useAudioEngine.ts', import.meta.url);
   const source = readFileSync(filename, 'utf8');
   const start = source.indexOf('  const setNextItem =');
-  const end = source.indexOf('  // ---- Custom action:', start);
+  const end = source.indexOf('  return {', start);
   assert.ok(start >= 0 && end > start, 'engine Set As Next command must be present');
   const factory = transpileFactory(`
     function buildSetNextCommand(dependencies: Record<string, any>) {
@@ -330,7 +444,7 @@ function loadMidiContinuous(dependencies: Record<string, unknown>): (action: str
   assert.ok(start >= 0 && end > start, 'MIDI continuous dispatcher must be present');
   const factory = transpileFactory(`
     function buildMidiContinuous(dependencies: Record<string, any>) {
-      const { adjustMasterGain, config, DEFAULT_MASTER_VOLUME_MULTIPLIER, projectHydrationStatus } = dependencies;
+      const { adjustMasterGain, config, DEFAULT_MASTER_VOLUME_MULTIPLIER, projectHydrationStatus, sessionLost } = dependencies;
       let lastMasterVolumeRaw: number | null = null;
       ${source.slice(start, end)}
       return dispatchContinuous;
@@ -338,6 +452,37 @@ function loadMidiContinuous(dependencies: Record<string, unknown>): (action: str
   `, 'buildMidiContinuous');
   return factory(dependencies);
 }
+
+test('Up Next follows playlist order when active cues arrived in reverse order', () => {
+  const source = readFileSync(new URL('../app/composables/useAudioEngine.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('  const autoNextItemUuid =');
+  const end = source.indexOf('  // ---- WS / REST plumbing', start);
+  assert.ok(start >= 0 && end > start);
+  const build = transpileFactory(`
+    function buildNext(deps: Record<string, any>) {
+      const { computed, currentProject, activeCues, findItemByUuid, findItemByIndex, getAllItemsFlat } = deps;
+      ${source.slice(start, end)}
+      return autoNextItemUuid;
+    }
+  `, 'buildNext');
+  const items = ['a', 'b', 'c', 'd'].map((uuid, i) => ({ uuid, type: 'audio', index: [i], endBehavior: { action: 'next' } }));
+  const cart = { uuid: 'cart', type: 'audio', index: [-1, 0], endBehavior: { action: 'loop' } };
+  const currentProject = Vue.ref({ items, settings: { autoCueNextWithoutEndBehavior: true } });
+  const activeCues = Vue.ref(new Map(['cart', 'c', 'a'].map(uuid => [uuid, {}])));
+  const next = build({ computed: Vue.computed, currentProject, activeCues,
+    getAllItemsFlat: () => currentProject.value.items,
+    findItemByUuid: (uuid: string) => [...currentProject.value.items, cart].find(item => item.uuid === uuid),
+    findItemByIndex: ([index]: number[]) => currentProject.value.items[index],
+  });
+  assert.equal(next.value, 'b');
+  currentProject.value.items[0].endBehavior.action = 'loop';
+  assert.equal(next.value, 'a');
+  activeCues.value = new Map([['a', {}]]);
+  currentProject.value.items[0].endBehavior.action = 'nothing';
+  assert.equal(next.value, 'b');
+  currentProject.value.settings.autoCueNextWithoutEndBehavior = false;
+  assert.equal(next.value, null);
+});
 
 test('MIDI Master Volume changes only the Global Master after its first reference sample', () => {
   const globalSteps: number[] = [];
@@ -348,6 +493,7 @@ test('MIDI Master Volume changes only the Global Master after its first referenc
     adjustMasterGain: (deltaDb: number) => { globalSteps.push(deltaDb); return Promise.resolve(true); },
     config: { value: { masterVolumeMultiplier: 2.5 } },
     projectHydrationStatus,
+    sessionLost: { value: false },
     setOutputChannelGainDb: (db: number) => { pairWrites.push(db); },
   });
 

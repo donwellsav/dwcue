@@ -4,7 +4,8 @@ import test from 'node:test';
 
 import { parse } from '@vue/compiler-sfc';
 import ts from 'typescript';
-import { computed, reactive, ref } from 'vue';
+import { computed, markRaw, nextTick, reactive, ref, toRaw, watch } from 'vue';
+import { isCurrentSaveIdentity } from '../app/utils/projectIdentity';
 
 const propertiesScript = (): string => {
   const filename = new URL('../app/components/PropertiesPanel.vue', import.meta.url);
@@ -150,7 +151,7 @@ function loadCreateItemPatchMutationIdentity(): (clientId: string) => ItemPatchM
   const filename = new URL('../app/composables/useProject.ts', import.meta.url);
   const source = readFileSync(filename, 'utf8');
   const start = source.indexOf('const createItemPatchMutationIdentity =');
-  const end = source.indexOf('// UUIDs of items that were just added', start);
+  const end = source.indexOf('// Client-side waveform cache', start);
   assert.ok(start >= 0 && end > start, 'item-patch mutation identity must be present');
   const factorySource = `
     function loadIdentity() {
@@ -172,7 +173,7 @@ function loadApplyDocPatch(dependencies: Record<string, unknown>) {
   assert.ok(start >= 0 && end > start, 'document patch handler must be present');
   const factorySource =
     'function buildApplyDocPatch(dependencies: Record<string, any>) {\n' +
-    '  const { currentProject, itemPatchIdentity, isHydrating, findItemAndParent, restoreWaveform } = dependencies;\n' +
+    '  const { currentProject, itemPatchIdentity, isHydrating, findItemAndParent, restoreWaveform, previewItemUuid, previewCueId } = dependencies;\n' +
     source.slice(start, end) +
     '  return applyDocPatch;\n' +
     '}';
@@ -182,6 +183,245 @@ function loadApplyDocPatch(dependencies: Record<string, unknown>) {
   const buildApplyDocPatch = Function(compiled + '; return buildApplyDocPatch;')();
   return buildApplyDocPatch(dependencies) as (patch: unknown) => void;
 }
+
+function loadItemsSync(dependencies: Record<string, unknown>) {
+  const source = readFileSync(new URL('../app/composables/useProject.ts', import.meta.url), 'utf8');
+  const slice = (start: string, end: string) => {
+    const from = source.indexOf(start);
+    const to = source.indexOf(end, from);
+    assert.ok(from >= 0 && to > from, `project sync source contains ${start}`);
+    return source.slice(from, to);
+  };
+  const compiled = ts.transpileModule(`
+    function build(dependencies: Record<string, any>) {
+      const { currentProject, server, itemPatchIdentity, isCurrentSaveIdentity,
+        ref, toRaw, watch, markRaw,
+        projectFilePathRef = { value: '/show.dwcue' }, projectEpoch = { value: 1 },
+        sessionLost = { value: false }, recoveringProject = { value: false },
+        projectHydrationStatus = { value: 'ready' }, isHydrating = ref(false),
+        previewItemUuid = ref(''), previewCueId = ref('') } = dependencies;
+      const _waveformCache = new Map();
+      const cacheWaveform = (uuid: string, waveform: any) => _waveformCache.set(uuid, waveform);
+      const restoreWaveform = () => {};
+      const triggerWaveformUpdate = () => {};
+      const buildWaveformFromChannels = () => ({ peaks: [0.1] });
+      const useCartItems = () => ({
+        getCartOnlyItem: (uuid: string) => currentProject.value?.cartOnlyItems?.find((i: any) => i.uuid === uuid),
+        addCartOnlyItem() {}, removeCartOnlyItem() {},
+      });
+      const findItemByUuid = (uuid: string) => findItemAndParent(uuid)?.item
+        ?? currentProject.value?.cartOnlyItems?.find((i: any) => i.uuid === uuid);
+      ${slice('  const toJSON =', '  const isCartWindowMode =')}
+      ${slice('  const updateIndices =', '  // Add an item to the project')}
+      ${slice('    let lastItems:', '    // Expose a refresh hook')}
+      ${slice('    const findItemAndParent =', '    server().onDocPatch(applyDocPatch);')}
+      ${slice('    const flatten =', '    _syncItemsDiffFn = queueItemsDiff;')}
+      return { captureBaselines, syncItemsDiff, applyDocPatch, baseline: () => lastItems,
+        baselines: () => ({ items: lastItems, cartOnly: lastCartOnly, cart: lastCart, theme: lastTheme, settings: lastSettings }) };
+    }
+  `, { compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 } }).outputText;
+  return Function(`${compiled}; return build;`)()({ ...dependencies, isCurrentSaveIdentity, ref, toRaw, watch, markRaw });
+}
+
+test('an in-flight item diff stops dispatching after its project or connection identity changes', async () => {
+  for (const change of ['project', 'close', 'reopen', 'endpoint', 'token', 'recovery']) {
+    for (const phase of ['move', 'remove', 'add', 'update', 'reorder']) {
+      const audio = (uuid: string) => ({ type: 'audio', uuid, inPoint: 0 });
+      const group = (uuid: string, children: unknown[]) => ({ type: 'group', uuid, children });
+      const initial = phase === 'move' ? [group('g1', [audio('a')]), group('g2', [])]
+        : phase === 'reorder' ? [group('g1', [audio('a'), audio('b')]), group('g2', [audio('c'), audio('d')])]
+          : phase === 'add' ? [] : [audio('a'), audio('b')];
+      const currentProject = ref<any>({ items: initial, cartOnlyItems: [] });
+      const projectFilePathRef = ref('/p.dwcue');
+      const projectEpoch = ref(1);
+      const sessionLost = ref(false);
+      const calls: string[] = [];
+      let release!: () => void;
+      const firstResponse = new Promise<void>(resolve => { release = resolve; });
+      const srv = { connected: true, serverUrl: 'http://p', effectiveAccessToken: 'p-token',
+        removeProjectItem: async () => { calls.push('remove'); await firstResponse; },
+        addProjectItem: async () => { calls.push('add'); await firstResponse; },
+        updateProjectItem: async () => { calls.push('update'); await firstResponse; },
+        reorderProjectItems: async () => { calls.push('reorder'); await firstResponse; },
+      };
+      const sync = loadItemsSync({ currentProject, projectFilePathRef, projectEpoch, sessionLost,
+        server: () => srv, itemPatchIdentity: loadCreateItemPatchMutationIdentity()('local'),
+      });
+      sync.captureBaselines();
+      if (phase === 'move') currentProject.value.items[1].children.push(currentProject.value.items[0].children.pop());
+      if (phase === 'remove') currentProject.value.items = [];
+      if (phase === 'add') currentProject.value.items = [audio('a'), audio('b')];
+      if (phase === 'update') currentProject.value.items.forEach((item: any) => { item.inPoint = 1; });
+      if (phase === 'reorder') currentProject.value.items.forEach((item: any) => item.children.reverse());
+      const pending = sync.syncItemsDiff();
+      assert.equal(calls.length, 1, `${phase} must wait for its first mutation`);
+      if (change === 'project') { currentProject.value = { items: [audio('q')], cartOnlyItems: [] }; projectFilePathRef.value = '/q.dwcue'; }
+      if (change === 'close') currentProject.value = null;
+      if (change === 'reopen') projectEpoch.value++;
+      if (change === 'endpoint') srv.serverUrl = 'http://q';
+      if (change === 'token') srv.effectiveAccessToken = 'q-token';
+      if (change === 'recovery') sessionLost.value = true;
+      sync.captureBaselines();
+      const replacementBaseline = sync.baseline();
+      release();
+      await pending;
+      assert.equal(calls.length, 1, `${change} during ${phase} must stop subsequent old mutations`);
+      assert.equal(sync.baseline(), replacementBaseline, 'a stale completion must not replace the new baseline');
+    }
+  }
+});
+
+test('current-project item mutations retain remove/add/update/reorder ordering', async () => {
+  const currentProject = ref<any>({ items: [
+    { uuid: 'g', type: 'group', children: [{ uuid: 'm', type: 'audio' }] },
+    { uuid: 'a', type: 'audio', inPoint: 0 }, { uuid: 'b', type: 'audio' }, { uuid: 'r', type: 'audio' },
+  ], cartOnlyItems: [] });
+  const calls: string[] = [];
+  const sync = loadItemsSync({ currentProject, itemPatchIdentity: loadCreateItemPatchMutationIdentity()('local'),
+    server: () => ({ connected: true,
+      removeProjectItem: async (uuid: string) => { calls.push(`remove:${uuid}`); },
+      addProjectItem: async (item: any) => { calls.push(`add:${item.uuid}`); },
+      updateProjectItem: async (uuid: string) => { calls.push(`update:${uuid}`); },
+      reorderProjectItems: async () => { calls.push('reorder'); },
+    }),
+  });
+  sync.captureBaselines();
+  const [g, a, b] = currentProject.value.items;
+  a.inPoint = 1;
+  currentProject.value.items = [g, b, a, g.children.pop(), { uuid: 'n', type: 'audio' }];
+  await sync.syncItemsDiff();
+  assert.deepEqual(calls, ['remove:m', 'add:m', 'remove:r', 'add:n', 'update:a', 'reorder']);
+  await sync.syncItemsDiff();
+  assert.equal(calls.length, 6, 'an unchanged project must not resend mutations');
+});
+
+test('runtime patches preserve pending authored edits while document patches hydrate without echo', async () => {
+  for (const op of ['next_item_set', 'master_gain_changed', 'custom_action_result',
+    'preview_started', 'preview_stopped', 'waveform_failed', 'unknown_runtime_op']) {
+    const item = { type: 'audio', uuid: 'pending-trim', inPoint: 0, outPoint: 12 };
+    const requests: unknown[] = [];
+    const currentProject = ref({ items: [item], cartOnlyItems: [] });
+    const itemPatchIdentity = loadCreateItemPatchMutationIdentity()('local-client');
+    const previewItemUuid = ref('old-preview');
+    const previewCueId = ref('old-cue');
+    const sync = loadItemsSync({ currentProject, itemPatchIdentity, previewItemUuid, previewCueId,
+      server: () => ({ connected: true, updateProjectItem: async (...args: unknown[]) => { requests.push(args); } }),
+    });
+    sync.captureBaselines();
+    const apply = sync.applyDocPatch;
+    currentProject.value.items[0].inPoint = 1;
+    apply({ op, itemUuid: 'new-preview', cueId: 'new-cue' });
+    await nextTick();
+    await nextTick();
+    await sync.syncItemsDiff();
+    assert.equal(requests.length, 1, `${op} must leave the authored edit pending`);
+    assert.equal((requests[0] as any[])[1].inPoint, 1);
+    assert.equal(previewItemUuid.value, op === 'preview_started' ? 'new-preview' : op === 'preview_stopped' ? '' : 'old-preview');
+    assert.equal(previewCueId.value, op === 'preview_started' ? 'new-cue' : op === 'preview_stopped' ? '' : 'old-cue');
+
+    requests.length = 0;
+    apply({ op: 'item_updated', uuid: item.uuid, patch: { inPoint: 2 } });
+    await nextTick();
+    await nextTick();
+    await sync.syncItemsDiff();
+    assert.equal(currentProject.value.items[0].inPoint, 2);
+    assert.deepEqual(requests, [], 'a remote document edit must not echo back');
+  }
+});
+
+test('granular document patches acknowledge only their portion and preserve unrelated unsent edits', async () => {
+  const patches = [
+    { op: 'item_updated', uuid: 'b', patch: { inPoint: 2 } },
+    { op: 'item_updated', uuid: 'a', patch: { volume: 0.5 } },
+    { op: 'item_updated', uuid: 'b', patch: {} },
+    { op: 'item_added', uuid: 'c', item: { uuid: 'c', type: 'audio', index: [2], inPoint: 0 } },
+    { op: 'item_added', uuid: 'cart-new', cartOnly: true, item: { uuid: 'cart-new', type: 'audio', index: [-1, 1], inPoint: 0 } },
+    { op: 'item_removed', uuid: 'b' },
+    { op: 'items_reordered', uuids: ['b', 'a'] },
+    { op: 'cart_slot_set', slot: 0, itemUuid: 'b' },
+    { op: 'cart_slot_set', slot: 0, itemUuid: '' },
+    { op: 'cart_slot_cleared', slot: 0 },
+    { op: 'theme_patched', theme: { accent: 'blue' } },
+    { op: 'settings_patched', settings: { autoSave: false } },
+    { op: 'waveform_ready', item_uuid: 'b', duration_ms: 12000, channels: [[0.1]] },
+  ];
+  for (const patch of patches) {
+    const currentProject = ref({ items: ['a', 'b'].map((uuid, i) => ({
+      uuid, type: 'audio', index: [i], inPoint: 0, volume: 1, duration: 0, outPoint: 0,
+    })), cartOnlyItems: [], cartItems: [{ slot: 0, itemUuid: 'a', index: [-1, 0] }], theme: {}, settings: {} });
+    const requests: any[][] = [];
+    const sync = loadItemsSync({ currentProject,
+      itemPatchIdentity: loadCreateItemPatchMutationIdentity()('local-client'),
+      server: () => ({ connected: true, invalidateWaveformCache() {},
+        updateProjectItem: async (...args: any[]) => { requests.push(args); },
+        addProjectItem: async (...args: any[]) => { requests.push(['add', ...args]); },
+        removeProjectItem: async (...args: any[]) => { requests.push(['remove', ...args]); },
+        reorderProjectItems: async (...args: any[]) => { requests.push(['reorder', ...args]); },
+      }),
+    });
+    sync.captureBaselines();
+    currentProject.value.items[0].inPoint = 1;
+    sync.applyDocPatch(patch);
+    await nextTick();
+    await nextTick();
+    await sync.syncItemsDiff();
+    assert.equal(requests.length, 1, `${patch.op} must retain the unsent local trim`);
+    assert.equal(requests[0][0], 'a');
+    assert.equal(requests[0][1].inPoint, 1);
+    if (patch.op === 'item_updated' && patch.uuid === 'b' && 'inPoint' in patch.patch)
+      assert.equal(currentProject.value.items.find(i => i.uuid === 'b')?.inPoint, 2);
+  }
+});
+
+test('full server snapshots preserve local fields the server has not changed', async () => {
+  const currentProject = ref<any>({ items: [], cartOnlyItems: [
+    { uuid: 'cart', type: 'audio', index: [-1, 0], inPoint: 0, volume: 1 },
+  ], cartItems: [{ slot: 9, itemUuid: 'original', index: [-1, 9] }],
+  theme: { background: 'black' }, settings: { autoSave: false, defaultOutputDevice: 'old' } });
+  const requests: any[][] = [];
+  const sync = loadItemsSync({ currentProject,
+    itemPatchIdentity: loadCreateItemPatchMutationIdentity()('local-client'),
+    server: () => ({ connected: true, updateProjectItem: async (...args: any[]) => { requests.push(args); } }),
+  });
+  sync.captureBaselines();
+  currentProject.value.cartOnlyItems[0].inPoint = 1;
+  currentProject.value.cartItems[0].itemUuid = 'pending';
+  currentProject.value.theme.background = 'pending';
+  currentProject.value.settings.defaultOutputDevice = 'pending';
+  sync.applyDocPatch({ op: 'item_updated', uuid: 'cart', patch: {
+    uuid: 'cart', type: 'audio', index: [-1, 0], inPoint: 0, volume: 0.5,
+  } });
+  sync.applyDocPatch({ op: 'cart_slot_set', slot: 0, itemUuid: 'remote' });
+  sync.applyDocPatch({ op: 'theme_patched', theme: { background: 'black', accent: 'blue' } });
+  sync.applyDocPatch({ op: 'settings_patched', settings: {
+    autoSave: false, defaultOutputDevice: 'old', autoCueNextWithoutEndBehavior: false,
+  } });
+  await nextTick();
+  await nextTick();
+  await sync.syncItemsDiff();
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0][1].inPoint, 1);
+  assert.equal(requests[0][1].volume, 0.5);
+  assert.equal(currentProject.value.cartOnlyItems[0].volume, 0.5, 'remote cart-only update reaches its current store item');
+  assert.equal(currentProject.value.theme.background, 'pending');
+  assert.equal(currentProject.value.settings.defaultOutputDevice, 'pending');
+  assert.deepEqual(sync.baselines().cart, [
+    { slot: 9, itemUuid: 'original', index: [-1, 9] }, { slot: 0, itemUuid: 'remote', index: [-1, 0] },
+  ]);
+  assert.deepEqual(sync.baselines().theme, { background: 'black', accent: 'blue' });
+  assert.deepEqual(sync.baselines().settings, { autoSave: false, defaultOutputDevice: 'old', autoCueNextWithoutEndBehavior: false });
+  requests.length = 0;
+  currentProject.value.cartOnlyItems[0].inPoint = 3;
+  sync.applyDocPatch({ op: 'item_updated', uuid: 'cart', patch: { inPoint: 2 } });
+  sync.applyDocPatch({ op: 'theme_patched', theme: { background: 'remote-change' } });
+  sync.applyDocPatch({ op: 'settings_patched', settings: { defaultOutputDevice: 'remote-change' } });
+  await nextTick();
+  await sync.syncItemsDiff();
+  assert.equal(currentProject.value.cartOnlyItems[0].inPoint, 2, 'a changed server value still resolves an actual field conflict');
+  assert.equal(currentProject.value.theme.background, 'remote-change');
+  assert.equal(currentProject.value.settings.defaultOutputDevice, 'remote-change');
+  assert.deepEqual(requests, [], 'accepted server changes must not echo back');
+});
 
 function loadEndItemBatch(dependencies: Record<string, unknown>) {
   const filename = new URL('../app/composables/useProject.ts', import.meta.url);

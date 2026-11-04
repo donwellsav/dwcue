@@ -113,6 +113,7 @@ const preferredDevice = computed(() => config.value.preferredDevice ?? null);
 export const useMidiController = () => {
   const { playCue, playNext, pauseCue, resumeCue, stopAllCues, activeCues, adjustMasterGain, queueLoopContinuation, jumpCue } = useAudioEngine();
   const { selectedItem, selectedItems, saveProject, currentProject, projectHydrationStatus, getAllItemsFlat, toggleItemSelection, findItemByUuid: findProjectItem } = useProject();
+  const { sessionLost } = useConnectionGuard();
   const { cartOnlyItems } = useCartItems();
   const { fireBlocked, afterFire } = useOneShotArm();
   const oneShotSlots = computed(() => buildOneShotSlots(
@@ -144,7 +145,7 @@ export const useMidiController = () => {
    * Dispatch a discrete action.
    */
   const dispatchDiscrete = async (actionId: MidiActionId) => {
-    if (actionId !== 'stop-all' && projectHydrationStatus.value !== 'ready') return false;
+    if (actionId !== 'stop-all' && (sessionLost.value || projectHydrationStatus.value !== 'ready')) return false;
     if (actionId.startsWith('trigger-slot-')) {
       const slot = parseInt(actionId.replace('trigger-slot-', ''), 10);
       const item = oneShotSlots.value[slot];
@@ -263,7 +264,7 @@ export const useMidiController = () => {
    * Dispatch a continuous action (CC value 0-127).
    */
   const dispatchContinuous = (actionId: MidiActionId, value: number) => {
-    if (projectHydrationStatus.value !== 'ready') return;
+    if (sessionLost.value || projectHydrationStatus.value !== 'ready') return;
     if (actionId === 'master-volume') {
       // Incremental Global Master volume: the first sample establishes the
       // controller reference, then each movement applies one configured dB step

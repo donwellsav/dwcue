@@ -82,9 +82,9 @@
           <span
             v-if="isPeaking"
             class="material-symbols-rounded peak-warning-icon"
-            :title="t('properties.peakWarning')"
+            :title="t('properties.peakCeilingWarning')"
             role="img"
-            :aria-label="t('properties.peakWarning')"
+            :aria-label="t('properties.peakCeilingWarning')"
             draggable="false"
             @click.stop="showMode ? handleSlotClick() : undefined"
           >bomb</span>
@@ -230,7 +230,7 @@ const props = defineProps<{
 const slotRef = ref<HTMLElement | null>(null);
 const showImportModal = ref(false);
 
-const { currentProject, projectHydrationStatus, selectedItem, selectedItems, selectionContext, requestDeleteFromButton, findItemByUuid, triggerWaveformUpdate, markPendingImportProcessing, resolveProjectPath } = useProject();
+const { currentProject, projectHydrationStatus, selectedItem, selectedItems, selectionContext, requestDeleteFromButton, findItemByUuid, triggerWaveformUpdate, resolveProjectPath } = useProject();
 const { levels: outputTargetLevels } = useOutputTarget();
 const { playCue, stopCue, activeCues, nextItemOverrideUuid, autoNextItemUuid, setNextItemPending, setNextItem } = useAudioEngine();
 const { t } = useLocalization();
@@ -388,7 +388,6 @@ const importFromServerPath = async (serverPath: string) => {
 
     addCartOnlyItem(newItem);
     // Mark for one-shot opt-in import processing when the waveform arrives.
-    markPendingImportProcessing(uuid);
 
     const existingIndex = currentProject.value.cartItems.findIndex((ci: any) => ci.slot === props.slot);
     if (existingIndex !== -1) {

@@ -7,6 +7,9 @@ const { EventEmitter } = require('node:events');
 const test = require('node:test');
 
 const root = path.resolve(__dirname, '..');
+const electronSource = ts.createSourceFile('main.js',
+  fs.readFileSync(path.join(root, 'client/electron/main.js'), 'utf8'),
+  ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 
 function loadTypeScriptModule(relativePath) {
   const source = fs.readFileSync(path.join(root, relativePath), 'utf8');
@@ -126,9 +129,7 @@ assert.equal(
 // Exercise the production tracked-process implementation without network access
 // or real timers. Parsing the initializer avoids matching a particular wrapper.
 function trackedProcessHarness() {
-  const source = ts.createSourceFile('main.js',
-    fs.readFileSync(path.join(root, 'client/electron/main.js'), 'utf8'),
-    ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const source = electronSource;
   const initializers = [];
   const visit = (node) => {
     if (ts.isVariableDeclaration(node) && node.name.getText(source) === 'runTracked') {
@@ -154,6 +155,179 @@ function trackedProcessHarness() {
   });
   return { run, child, job, calls, timers, terminated };
 }
+
+function spotifyHandler(channel, context) {
+  const helpers = new Set([
+    'validatedSpotifyUrl', 'spotifyTrackId', 'spotifyContentParts',
+    'spotifyEmbedCoverUrl', 'spotifyEmbedArtists', 'spotifyEmbedDate',
+    'fetchSpotifyEmbedTracks', 'sanitizeSpotifyFolderName', 'summarizeSpotDlError',
+    'requireBoundedIpcObject',
+  ]);
+  let handler;
+  const visit = (node) => {
+    if (ts.isCallExpression(node) && node.expression.getText(electronSource) === 'ipcMain.handle' &&
+        node.arguments[0]?.text === channel) handler = node.arguments[1].getText(electronSource);
+    ts.forEachChild(node, visit);
+  };
+  visit(electronSource);
+  assert.ok(handler, `${channel} must use the production IPC handler`);
+  const declarations = electronSource.statements.filter(node =>
+    ts.isFunctionDeclaration(node) && helpers.has(node.name?.text));
+  return vm.runInNewContext(
+    declarations.map(node => node.getText(electronSource)).join('\n') + `\n(${handler})`,
+    { URL, AbortSignal, Buffer, path, process, crypto: require('node:crypto'),
+      renewSpotifyReview, spotifyReviewIsValid, normalizeSpotifyBitrate,
+      requireTrustedIpc() {},
+      requireIpcString(value) { assert.equal(typeof value, 'string'); return value; },
+      requireAuthorizedIpcPath(value) { return value; },
+      ...context },
+  );
+}
+
+function spotifyReviewHarness(count, { kind = 'playlist', exitCode = 0 } = {}) {
+  const rawTracks = Array.from({ length: count }, (_, index) => ({
+    song_id: String(index).padStart(22, '0'), name: `Track ${index + 1}`,
+    artists: ['Artist'], duration: 60, list_name: 'Entire playlist',
+    url: `https://open.spotify.com/track/${String(index).padStart(22, '0')}`,
+  }));
+  const canonicalUrl = `https://open.spotify.com/${kind}/0123456789ABCDEFGHIJKL`;
+  const fetches = [], commands = [];
+  const activeSpotifyPreflightJobs = new Map(), spotifyPreflights = new Map();
+  const sender = new EventEmitter();
+  sender.id = 7;
+  const run = spotifyHandler('spotify-preflight', {
+    activeSpotifyPreflightJobs, spotifyPreflights, spotDlPath: '/tools/spotdl',
+    console: { warn() {} }, setupSpotDl: async () => true, terminateSpotifyChild() {},
+    setTimeout: () => ({ unref() {} }), clearTimeout() {},
+    async fetch(url) {
+      fetches.push(String(url));
+      if (new URL(url).hostname !== 'open.spotify.com') return {
+        headers: { get: () => canonicalUrl }, body: { cancel: async () => {} },
+      };
+      const embedTracks = rawTracks.slice(0, 100).map(track => ({
+        uri: `spotify:track:${track.song_id}`, title: track.name,
+        artists: track.artists, duration: track.duration * 1000,
+      }));
+      const entity = kind === 'track'
+        ? { ...embedTracks[0], type: kind }
+        : { type: kind, title: 'Preview only', trackList: embedTracks };
+      return { ok: true, text: async () => '<script id="__NEXT_DATA__">' + JSON.stringify({
+        props: { pageProps: { state: { data: { entity } } } },
+      }) + '</script>' };
+    },
+    spawn(binary, args) {
+      commands.push([binary, [...args]]);
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
+      queueMicrotask(() => {
+        child.stdout.emit('data', Buffer.from(JSON.stringify(rawTracks)));
+        child.stderr.emit('data', Buffer.from(exitCode ? 'Error: playlist metadata unavailable' : ''));
+        child.emit('close', exitCode);
+      });
+      return child;
+    },
+  });
+  return { run: url => run({ sender }, 'review-job-12345', url || canonicalUrl), rawTracks,
+    canonicalUrl, commands, fetches, activeSpotifyPreflightJobs, spotifyPreflights };
+}
+
+for (const count of [100, 235, 10001]) {
+  test(`Spotify review returns all ${count} playlist tracks instead of its 100-track embed`, async () => {
+    const harness = spotifyReviewHarness(count);
+    const review = await harness.run();
+    assert.equal(review.tracks.length, count);
+    assert.deepEqual([...review.tracks.map(track => track.id)], harness.rawTracks.map(track => track.song_id));
+    assert.equal(review.totalDuration, count * 60);
+    assert.equal(review.playlistName, 'Entire playlist');
+    assert.deepEqual(harness.commands, [['/tools/spotdl', ['save', harness.canonicalUrl, '--save-file', '-']]]);
+    assert.equal(harness.fetches.length, 0, 'playlist embeds cannot prove that their track list is complete');
+    assert.equal(harness.spotifyPreflights.get(review.preflightId).rawTracks.length, count);
+    assert.equal(harness.activeSpotifyPreflightJobs.size, 0);
+  });
+}
+
+test('Spotify playlist share links resolve to the full metadata query', async () => {
+  for (const host of ['spotify.link', 'spotify.app.link']) {
+    const harness = spotifyReviewHarness(235);
+    const review = await harness.run(`https://${host}/Share12345`);
+    assert.equal(review.tracks.length, 235);
+    assert.equal(harness.commands[0][1][1], harness.canonicalUrl);
+    assert.equal(harness.fetches.length, 1, 'only the validated share redirect is fetched');
+  }
+});
+
+test('a failed full Spotify playlist review never returns a successful truncated preview', async () => {
+  const harness = spotifyReviewHarness(235, { exitCode: 1 });
+  await assert.rejects(harness.run(), /playlist metadata unavailable/);
+  assert.equal(harness.spotifyPreflights.size, 0);
+  assert.equal(harness.activeSpotifyPreflightJobs.size, 0);
+});
+
+test('individual Spotify track review keeps its complete embed fast path', async () => {
+  const harness = spotifyReviewHarness(1, { kind: 'track' });
+  const review = await harness.run();
+  assert.equal(review.tracks.length, 1);
+  assert.equal(review.tracks[0].id, harness.rawTracks[0].song_id);
+  assert.equal(harness.commands.length, 0);
+});
+
+test('large Spotify reviews remain selectable for download and recoverable', async () => {
+  const tracks = spotifyReviewHarness(10001).rawTracks;
+  const selectedTrackIds = tracks.map(track => track.song_id);
+  const url = 'https://open.spotify.com/playlist/0123456789ABCDEFGHIJKL';
+  const sender = { id: 7 };
+  const run = spotifyHandler('download-spotify-audio', {
+    fs: { statSync: () => ({ isDirectory: () => true }) },
+    spotifyPreflights: new Map([['review-id', renewSpotifyReview({ senderId: sender.id, url, rawTracks: tracks })]]),
+    activeSpotifyDownloads: { has: () => true },
+  });
+  // The existing-job boundary follows selection validation, before any I/O.
+  await assert.rejects(run({ sender }, 'download-job-12345', url, '/Music', {
+    activeProjectFolderPath: '/Projects/Show', preflightId: 'review-id', selectedTrackIds,
+  }), /Spotify job already exists/);
+  const largeRecovery = normalizeSpotifyRecovery({
+    ...recovery, selectedTrackIds, completedTrackIds: [], failedTrackIds: selectedTrackIds,
+    pendingTrackIds: [], pendingFiles: [], total: tracks.length, completed: 0,
+  });
+  assert.equal(largeRecovery?.selectedTrackIds.length, tracks.length);
+});
+
+test('large Spotify downloads match every selected track in bounded batches with at most four processes', async () => {
+  const source = electronSource.text;
+  const start = source.indexOf('      let lastMatchActivity = Date.now();');
+  const end = source.indexOf('\n      if (!job.cancelled) {', start);
+  let pool;
+  const visit = (node) => {
+    if (ts.isVariableDeclaration(node) && node.name.getText(electronSource) === 'runPool') {
+      pool = node.initializer.getText(electronSource);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(electronSource);
+  assert.ok(start >= 0 && end > start && pool);
+  const selectedRawTracks = spotifyReviewHarness(10001).rawTracks;
+  const batches = [];
+  let active = 0, peakActive = 0;
+  const run = vm.runInNewContext(`(async () => {
+    const runPool = ${pool};
+    ${source.slice(start, end)}
+  })`, {
+    total: selectedRawTracks.length, selectedRawTracks, job: { cancelled: false },
+    path, stagingDir: '/isolated-staging', spotDlPath: '/tools/spotdl', SPOTIFY_AUDIO_PROVIDERS,
+    matchedUrls: [], onMatchLine() {}, progress() {},
+    setInterval: () => 1, clearInterval() {}, terminateSpotifyChild() {}, console,
+    async runTracked(_command, args) {
+      batches.push([...args.slice(1, args.indexOf('--audio'))]);
+      peakActive = Math.max(peakActive, ++active);
+      await new Promise(resolve => setImmediate(resolve));
+      --active;
+    },
+  });
+  await run();
+  assert.ok(batches.every(batch => batch.length <= 100), 'batch argv must fit Windows command-line limits');
+  assert.equal(peakActive, 4, 'batch count must not create unbounded helper processes');
+  assert.deepEqual(batches.flat(), selectedRawTracks.map(track => track.url));
+});
 
 test('Spotify tools receive literal argv and release tracked children on completion', async () => {
   const harness = trackedProcessHarness();

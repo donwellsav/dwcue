@@ -89,11 +89,9 @@ AudioEngine::AudioEngine(EngineConfig cfg) : cfg_(cfg) {
     if (cfg_.mix_sample_rate == 0) cfg_.mix_sample_rate = kDefaultMixSampleRate;
 
     master_state_.resize(cfg_.master_channels);
-    for (auto& ms : master_state_) {
-        ms.limiter = std::make_unique<Limiter>();
-        ms.meter   = std::make_unique<Meter>();
-        ms.limiter->configure(cfg_.mix_sample_rate, cfg_.master_ceiling_db);
-        ms.meter->configure(cfg_.mix_sample_rate);
+    for (auto& state : master_state_) {
+        state.meter = std::make_unique<Meter>();
+        state.meter->configure(cfg_.mix_sample_rate);
     }
     pending_.master_destinations.resize(cfg_.master_channels);
     output_channel_gains_ =
@@ -179,17 +177,37 @@ AudioEngine::snapshot_devices() const noexcept {
 }
 
 void AudioEngine::publish_device_snapshot_locked() {
+    if (auto old = device_snapshot_.load()) retired_device_snapshots_.push_back(std::move(old));
     device_snapshot_.store(std::make_shared<const DeviceList>(devices_));
+    reclaim_snapshots_locked();
 }
 
 void AudioEngine::publish_topology(std::shared_ptr<const Topology> snap) {
+    if (auto old = topology_.load()) retired_topologies_.push_back(std::move(old));
     topology_.store(std::move(snap));
+    reclaim_snapshots_locked();
     decode_cv_.notify_one();
+}
+
+void AudioEngine::reclaim_snapshots_locked() {
+    const auto unreferenced = [](const auto& value) { return value.use_count() == 1; };
+    std::erase_if(retired_topologies_, unreferenced);
+    std::erase_if(retired_device_snapshots_, unreferenced);
+    std::erase_if(retired_devices_, unreferenced);
+    std::erase_if(prepared_follows_, [](const auto& follow) {
+        const auto status = follow->status.load(std::memory_order_acquire);
+        return (status == PreparedFollow::State::Fired ||
+                status == PreparedFollow::State::Cancelled) && follow.use_count() == 1;
+    });
 }
 
 void AudioEngine::rebuild_topology_locked() {
     auto snap = std::make_shared<Topology>();
     const auto block = static_cast<std::size_t>(cfg_.render_block);
+    for (const auto& follow : prepared_follows_) {
+        if (follow->status.load(std::memory_order_acquire) ==
+            PreparedFollow::State::Armed) snap->follows.push_back(follow);
+    }
 
     // Mixer ownership and mixer-id lookup are frozen into the snapshot. The
     // hash table exists only here on the control thread; render sends carry a
@@ -613,6 +631,29 @@ void AudioEngine::ma_data_callback(ma_device* dev,
                 1, std::memory_order_relaxed);
         }
     }
+
+    // Protect the physical sum after clock resampling. Moving the existing
+    // lookahead stage here keeps one delay, including when explicitly bypassed.
+    const bool limiter_enabled = !device->engine ||
+        device->engine->limiter_enabled_.load(std::memory_order_acquire);
+    auto* output = static_cast<Sample*>(out);
+    for (std::size_t offset = 0; offset < frames;) {
+        const auto count = std::min<std::size_t>(
+            frames - offset, device->output_mono.size());
+        for (ChannelIndex ch = 0; ch < device->channels; ++ch) {
+            for (std::size_t s = 0; s < count; ++s)
+                device->output_mono[s] =
+                    output[(offset + s) * device->channels + ch];
+            auto& state = device->outputs[ch];
+            state.limiter->process(device->output_mono.data(), count,
+                                   limiter_enabled);
+            state.meter->push_block(device->output_mono.data(), count);
+            for (std::size_t s = 0; s < count; ++s)
+                output[(offset + s) * device->channels + ch] =
+                    device->output_mono[s];
+        }
+        offset += count;
+    }
     wake_render();
 }
 
@@ -623,6 +664,14 @@ DeviceId AudioEngine::open_default_device(ChannelCount output_channels) {
 DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
                                           ChannelCount output_channels) {
     std::lock_guard lifecycle_lock{device_lifecycle_mutex_};
+    {
+        std::lock_guard lock{mutex_};
+        if (auto* existing = find_device_locked(DeviceId{name_substring});
+            existing && !existing->closing.load(std::memory_order_acquire)) {
+            existing->open_references.acquire();
+            return existing->id;
+        }
+    }
     auto dev = std::make_shared<Device>();
     dev->id           = DeviceId{gen_uuid_like()};
     dev->channels     = output_channels;
@@ -671,9 +720,9 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
     cfg.pUserData          = dev.get();
     cfg.periodSizeInFrames = static_cast<ma_uint32>(cfg_.render_block);
 
-    // For name-substring matching we walk enumerated devices and pick the
-    // first whose name contains the substring (case-insensitive). Empty
-    // substring → leave pDeviceID null = default device.
+    // A saved display name wins over a prefix sibling (USB 1 vs USB 10).
+    // Legacy callers retain the case-insensitive substring fallback. Empty
+    // string leaves pDeviceID null for the system default.
     ma_context ctx;
     ma_device_id matched_id;
     bool         have_match = false;
@@ -682,20 +731,25 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
             ma_device_info* infos = nullptr;
             ma_uint32       count = 0;
             if (ma_context_get_devices(&ctx, &infos, &count, nullptr, nullptr) == MA_SUCCESS) {
-                std::string needle = name_substring;
-                std::transform(needle.begin(), needle.end(), needle.begin(),
-                               [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
-                for (ma_uint32 i = 0; i < count; ++i) {
-                    std::string haystack = infos[i].name;
-                    std::transform(haystack.begin(), haystack.end(), haystack.begin(),
+                ma_uint32 selected = 0;
+                for (; selected < count; ++selected)
+                    if (name_substring == infos[selected].name) break;
+                if (selected == count) {
+                    std::string needle = name_substring;
+                    std::transform(needle.begin(), needle.end(), needle.begin(),
                                    [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
-                    if (haystack.find(needle) != std::string::npos) {
-                        matched_id     = infos[i].id;
-                        cfg.playback.pDeviceID = &matched_id;
-                        dev->display_name = infos[i].name;
-                        have_match = true;
-                        break;
+                    for (selected = 0; selected < count; ++selected) {
+                        std::string haystack = infos[selected].name;
+                        std::transform(haystack.begin(), haystack.end(), haystack.begin(),
+                                       [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+                        if (haystack.find(needle) != std::string::npos) break;
                     }
+                }
+                if (selected < count) {
+                    matched_id = infos[selected].id;
+                    cfg.playback.pDeviceID = &matched_id;
+                    dev->display_name = infos[selected].name;
+                    have_match = true;
                 }
             }
             ma_context_uninit(&ctx);
@@ -740,20 +794,29 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
     }
 
     dev->scratch.assign(cfg_.render_block * output_channels, 0.0f);
-    dev->callback_liveness.arm(
-        dev->callback_entries.value(), CallbackLivenessMonitor::Clock::now());
-    if (ma_device_start(dev->ma_dev.get()) != MA_SUCCESS) {
-        Logger::error("ma_device_start failed for '{}'", dev->display_name);
-        ma_device_uninit(dev->ma_dev.get());
-        ma_pcm_rb_uninit(dev->ring.get());
-        return {};
-    }
-
-    dev->started.store(true, std::memory_order_release);
+    dev->output_mono.assign(cfg_.render_block, 0.0f);
+    dev->outputs.resize(output_channels);
     DeviceId id = dev->id;
     const std::string display_name = dev->display_name;
     {
         std::lock_guard lock{mutex_};
+        for (auto& state : dev->outputs) {
+            state.limiter = std::make_unique<Limiter>();
+            state.limiter->configure(cfg_.mix_sample_rate, cfg_.master_ceiling_db);
+            state.meter = std::make_unique<Meter>();
+            state.meter->configure(cfg_.mix_sample_rate, meter_ballistics_);
+            state.meter->set_true_peak_enabled(meter_true_peak_);
+            state.meter->set_loudness_enabled(meter_loudness_);
+        }
+        dev->callback_liveness.arm(
+            dev->callback_entries.value(), CallbackLivenessMonitor::Clock::now());
+        if (ma_device_start(dev->ma_dev.get()) != MA_SUCCESS) {
+            Logger::error("ma_device_start failed for '{}'", dev->display_name);
+            ma_device_uninit(dev->ma_dev.get());
+            ma_pcm_rb_uninit(dev->ring.get());
+            return {};
+        }
+        dev->started.store(true, std::memory_order_release);
         devices_.emplace_back(dev);
         publish_device_snapshot_locked();
     }
@@ -848,6 +911,16 @@ AudioEngine::Device* AudioEngine::find_device_locked(const DeviceId& id) const {
     return nullptr;
 }
 
+const AudioEngine::OutputChannelState* AudioEngine::output_state_locked(
+    MasterChannelIndex master) const {
+    if (master >= pending_.master_destinations.size()) return nullptr;
+    const auto& dest = pending_.master_destinations[master];
+    if (!dest) return nullptr;
+    const auto* device = find_device_locked(dest->device);
+    if (!device || dest->hw_channel >= device->outputs.size()) return nullptr;
+    return &device->outputs[dest->hw_channel];
+}
+
 // ---------------------------------------------------------------------------
 // Items
 // ---------------------------------------------------------------------------
@@ -912,6 +985,12 @@ void AudioEngine::unload_cue(const CueId& id) {
     std::lock_guard lock{mutex_};
     auto it = items_.find(id.value);
     if (it == items_.end()) return;
+    for (const auto& follow : prepared_follows_) {
+        if (follow->source != it->second && follow->target != it->second) continue;
+        auto expected = PreparedFollow::State::Armed;
+        follow->status.compare_exchange_strong(
+            expected, PreparedFollow::State::Cancelled, std::memory_order_acq_rel);
+    }
     it->second->unload();
     items_.erase(it);
     pending_.item_sources.erase(id.value);
@@ -942,6 +1021,11 @@ void AudioEngine::stop(const CueId& id) {
 
 void AudioEngine::stop_all(std::chrono::milliseconds fade, bool force_fade) {
     std::lock_guard lock{mutex_};
+    for (const auto& follow : prepared_follows_) {
+        auto expected = PreparedFollow::State::Armed;
+        follow->status.compare_exchange_strong(
+            expected, PreparedFollow::State::Cancelled, std::memory_order_acq_rel);
+    }
     for (auto& [_, item] : items_) {
         if (force_fade) {
             // Global fade wins: apply `fade` to EVERY item, ignoring its own
@@ -969,6 +1053,38 @@ void AudioEngine::stop_all(std::chrono::milliseconds fade, bool force_fade) {
             item->stop();
         }
     }
+}
+
+std::shared_ptr<PreparedFollow> AudioEngine::schedule_follow(
+    const CueId& source, const CueId& target, std::uint64_t end_frame) {
+    std::lock_guard lock{mutex_};
+    const auto a = items_.find(source.value);
+    const auto b = items_.find(target.value);
+    if (a == items_.end() || b == items_.end() || a == b) return nullptr;
+    if (b->second->stats().transport != TransportState::Stopped) return nullptr;
+    const auto stats = a->second->stats();
+    if ((stats.transport != TransportState::Playing &&
+         stats.transport != TransportState::FadingIn) ||
+        end_frame <= stats.playhead_frame) return nullptr;
+    const auto source_revision = a->second->playback_revision();
+    const auto target_revision = b->second->prepare_start();
+    if (target_revision == 0 ||
+        a->second->playback_revision() != source_revision) return nullptr;
+    for (const auto& previous : prepared_follows_) {
+        if (previous->source != a->second) continue;
+        auto expected = PreparedFollow::State::Armed;
+        previous->status.compare_exchange_strong(
+            expected, PreparedFollow::State::Cancelled, std::memory_order_acq_rel);
+    }
+    auto follow = std::make_shared<PreparedFollow>();
+    follow->source = a->second;
+    follow->target = b->second;
+    follow->source_revision = source_revision;
+    follow->target_revision = target_revision;
+    follow->end_frame = end_frame;
+    prepared_follows_.push_back(follow);
+    rebuild_topology_locked();
+    return follow;
 }
 
 // ---------------------------------------------------------------------------
@@ -1012,20 +1128,15 @@ void AudioEngine::ensure_default_routing_impl(
         }
     }
 
-    // Step 2: ensure a "Main" mixer exists. create_mixer_channel locks too.
+    // Keep the automatic Main identity independent of other strips and names.
     MixerChannelId main_mixer{};
-    {
-        std::lock_guard lock{mutex_};
-        if (!mixers_.empty()) main_mixer = mixers_.begin()->second->id();
-    }
-    if (main_mixer.empty()) {
-        main_mixer = create_mixer_channel("Main");
-        Logger::info("ensure_default_routing: created Main mixer '{}'", main_mixer.value);
-    }
 
     // Step 3: wire master 0/1 → device 0/1 if not already.
     {
         std::lock_guard lock{mutex_};
+        if (main_mixer_.empty() || !mixers_.contains(main_mixer_.value))
+            main_mixer_ = create_mixer_channel_locked("Main");
+        main_mixer = main_mixer_;
         if (pending_.master_destinations.size() < 2) {
             pending_.master_destinations.resize(2);
         }
@@ -1076,12 +1187,13 @@ void AudioEngine::ensure_default_routing_impl(
             }
             if (has_any_existing_route) continue;
             for (ChannelIndex ch = 0; ch < audio_count; ++ch) {
-                // Mono cues fan out to every lane (centre image); multi-channel
-                // cues map even channels → lane 0 (L), odd → lane 1 (R).
-                const ChannelIndex lane = (audio_count == 1)
-                    ? kAllMixerLanes
-                    : static_cast<ChannelIndex>(ch % kMixerLanes);
-                srcs[ch].push_back({main_mixer, lane, 1.0f});
+                const auto gains = item->stereo_mix_gains(ch);
+                if (gains[0] > 0.0f && gains[0] == gains[1])
+                    srcs[ch].push_back({main_mixer, kAllMixerLanes, gains[0]});
+                else
+                    for (ChannelIndex lane = 0; lane < kMixerLanes; ++lane)
+                        if (gains[lane] > 0.0f)
+                            srcs[ch].push_back({main_mixer, lane, gains[lane]});
             }
         }
 
@@ -1095,20 +1207,26 @@ void AudioEngine::ensure_default_routing_impl(
 // Mixer channels
 // ---------------------------------------------------------------------------
 MixerChannelId AudioEngine::create_mixer_channel(std::string display_name) {
+    std::lock_guard lock{mutex_};
+    const auto id = create_mixer_channel_locked(std::move(display_name));
+    rebuild_topology_locked();
+    return id;
+}
+
+MixerChannelId AudioEngine::create_mixer_channel_locked(std::string display_name) {
     auto id = MixerChannelId{gen_uuid_like()};
     auto ch = std::make_shared<MixerChannel>(id, std::move(display_name));
     ch->configure(cfg_.mix_sample_rate, cfg_.render_block);
-    std::lock_guard lock{mutex_};
     ch->configure_meters(meter_ballistics_);        // inherit project settings
     ch->set_true_peak_enabled(meter_true_peak_);
     ch->set_loudness_enabled(meter_loudness_);
     mixers_[id.value] = ch;
-    rebuild_topology_locked();
     return id;
 }
 
 void AudioEngine::remove_mixer_channel(const MixerChannelId& id) {
     std::lock_guard lock{mutex_};
+    if (id == main_mixer_) main_mixer_ = {};
     mixers_.erase(id.value);
     pending_.mixer_to_master.erase(id.value);
     for (auto& [_, item_routes] : pending_.item_sources) {
@@ -1147,12 +1265,25 @@ void AudioEngine::route_item_source_to_mixer(const CueId& cue,
     // One send per (source_channel, mixer) pair — re-routing replaces the
     // existing send's gain and lane rather than stacking a second feed.
     auto& sends = routes[source_channel];
-    auto sit = std::find_if(sends.begin(), sends.end(),
-                            [&](auto& s){ return s.mixer == mixer; });
     const float gl = db_to_lin(gain_db);
-    if (sit != sends.end()) { sit->gain_lin = gl; sit->lane = lane; }
-    else sends.push_back({mixer, lane, gl});
+    std::erase_if(sends, [&](const auto& send) { return send.mixer == mixer; });
+    sends.push_back({mixer, lane, gl});
 
+    rebuild_topology_locked();
+}
+
+void AudioEngine::set_item_source_mixer(const CueId& cue, ChannelIndex source_channel,
+                                       const MixerChannelId& mixer) {
+    std::lock_guard lock{mutex_};
+    if (!items_.contains(cue.value) || (!mixer.empty() && !mixers_.contains(mixer.value))) return;
+    auto& routes = pending_.item_sources[cue.value].by_source_channel;
+    if (source_channel >= routes.size()) {
+        if (mixer.empty()) return;
+        routes.resize(source_channel + 1);
+    }
+    auto& sends = routes[source_channel];
+    if (mixer.empty()) sends.clear();
+    else sends = {{mixer, kAllMixerLanes, 1.0f}};
     rebuild_topology_locked();
 }
 
@@ -1236,9 +1367,8 @@ void AudioEngine::set_master_ceiling_db(float db) {
     db = std::clamp(db, -60.0f, 0.0f);
     std::lock_guard lock{mutex_};
     cfg_.master_ceiling_db = db;
-    for (auto& ms : master_state_) {
-        ms.limiter->set_ceiling_db(db);
-    }
+    for (auto& device : devices_)
+        for (auto& state : device->outputs) state.limiter->set_ceiling_db(db);
 }
 
 void AudioEngine::set_limiter_enabled(bool enabled) noexcept {
@@ -1280,9 +1410,10 @@ float AudioEngine::output_channel_gain_db(MasterChannelIndex ch) const noexcept 
 void AudioEngine::set_meter_ballistics(const MeterBallistics& b) {
     std::lock_guard lock{mutex_};
     meter_ballistics_ = b;
-    for (auto& ms : master_state_) {
-        if (ms.meter) ms.meter->configure(cfg_.mix_sample_rate, b);
-    }
+    for (auto& state : master_state_) state.meter->configure(cfg_.mix_sample_rate, b);
+    for (auto& device : devices_)
+        for (auto& state : device->outputs)
+            state.meter->configure(cfg_.mix_sample_rate, b);
     for (auto& [_, m] : mixers_) m->configure_meters(b);
     for (auto& [_, item] : items_) item->set_meter_ballistics(b);
 }
@@ -1290,9 +1421,10 @@ void AudioEngine::set_meter_ballistics(const MeterBallistics& b) {
 void AudioEngine::set_true_peak_metering(bool enabled) {
     std::lock_guard lock{mutex_};
     meter_true_peak_ = enabled;
-    for (auto& ms : master_state_) {
-        if (ms.meter) ms.meter->set_true_peak_enabled(enabled);
-    }
+    for (auto& state : master_state_) state.meter->set_true_peak_enabled(enabled);
+    for (auto& device : devices_)
+        for (auto& state : device->outputs)
+            state.meter->set_true_peak_enabled(enabled);
     for (auto& [_, m] : mixers_) m->set_true_peak_enabled(enabled);
     for (auto& [_, item] : items_) item->set_true_peak_metering(enabled);
 }
@@ -1300,28 +1432,68 @@ void AudioEngine::set_true_peak_metering(bool enabled) {
 void AudioEngine::set_loudness_metering(bool enabled) {
     std::lock_guard lock{mutex_};
     meter_loudness_ = enabled;
-    for (auto& ms : master_state_) {
-        if (ms.meter) ms.meter->set_loudness_enabled(enabled);
-    }
+    for (auto& state : master_state_) state.meter->set_loudness_enabled(enabled);
+    for (auto& device : devices_)
+        for (auto& state : device->outputs)
+            state.meter->set_loudness_enabled(enabled);
     for (auto& [_, m] : mixers_) m->set_loudness_enabled(enabled);
     for (auto& [_, item] : items_) item->set_loudness_metering(enabled);
 }
 
 MeterSnapshot AudioEngine::read_master_meter(MasterChannelIndex master) const {
+    std::lock_guard lock{mutex_};
     if (master >= master_state_.size()) return {};
-    return master_state_[master].meter->snapshot();
+    const auto& state = master_state_[master];
+    if (const auto* output = output_state_locked(master)) {
+        auto snapshot = output->meter->snapshot();
+        if (state.output_max_source == output) {
+            snapshot.peak_max_db = std::max(snapshot.peak_max_db,
+                                            state.output_peak_max_db);
+            snapshot.true_peak_max_db = std::max(snapshot.true_peak_max_db,
+                                                 state.output_true_peak_max_db);
+        }
+        return snapshot;
+    }
+    return state.meter->snapshot();
 }
 
 MeterSnapshot AudioEngine::read_master_meter_consume(MasterChannelIndex master) {
+    std::lock_guard lock{mutex_};
     if (master >= master_state_.size()) return {};
+    if (const auto* output = output_state_locked(master)) {
+        auto snapshot = output->meter->snapshot_consume_max();
+        // One physical meter can feed several logical output strips. Preserve
+        // its consumed maxima for every alias until that strip reads them.
+        for (MasterChannelIndex i = 0; i < master_state_.size(); ++i) {
+            if (output_state_locked(i) != output) continue;
+            auto& state = master_state_[i];
+            if (state.output_max_source != output) {
+                state.output_max_source = output;
+                state.output_peak_max_db = -120.0f;
+                state.output_true_peak_max_db = -120.0f;
+            }
+            state.output_peak_max_db = std::max(state.output_peak_max_db,
+                                                snapshot.peak_max_db);
+            state.output_true_peak_max_db = std::max(state.output_true_peak_max_db,
+                                                     snapshot.true_peak_max_db);
+        }
+        auto& state = master_state_[master];
+        snapshot.peak_max_db = state.output_peak_max_db;
+        snapshot.true_peak_max_db = state.output_true_peak_max_db;
+        state.output_peak_max_db = -120.0f;
+        state.output_true_peak_max_db = -120.0f;
+        return snapshot;
+    }
     return master_state_[master].meter->snapshot_consume_max();
 }
 
 float AudioEngine::read_master_gain_reduction_db(MasterChannelIndex master) const {
-    if (master >= master_state_.size()) return 0.0f;
+    std::lock_guard lock{mutex_};
     // No gain reduction is happening while the limiter is bypassed.
     if (!limiter_enabled_.load(std::memory_order_acquire)) return 0.0f;
-    return master_state_[master].limiter->gain_reduction_db();
+    if (const auto* output = output_state_locked(master))
+        return output->limiter->gain_reduction_db();
+    return 0.0f;
 }
 
 void AudioEngine::recover_device(Device& device) noexcept {
@@ -1353,6 +1525,7 @@ void AudioEngine::recover_device(Device& device) noexcept {
     }
 
     ma_pcm_rb_reset(device.ring.get());
+    for (auto& state : device.outputs) state.limiter->reset();
     bool reset_ok = true;
     if (device.clock_resampler_initialized && device.clock_resampler) {
         reset_ok =
@@ -1397,6 +1570,10 @@ void AudioEngine::device_watchdog_loop() {
         }
         if (!running_.load(std::memory_order_acquire)) break;
 
+        {
+            std::lock_guard lock{mutex_};
+            reclaim_snapshots_locked();
+        }
         bool wake_render = false;
         std::lock_guard lifecycle_lock{device_lifecycle_mutex_};
         const auto devices = snapshot_devices();
@@ -1518,6 +1695,7 @@ bool AudioEngine::reset_device_if_requested(Device& device) noexcept {
     }
 
     ma_pcm_rb_reset(device.ring.get());
+    for (auto& state : device.outputs) state.limiter->reset();
     if (device.clock_resampler_initialized &&
         device.clock_resampler) {
         if (ma_resampler_reset(device.clock_resampler.get()) !=
@@ -1791,23 +1969,59 @@ void AudioEngine::render_one_block(const Topology& topo) {
         std::fill_n(buffer.data(), block, 0.0f);
     }
 
-    // ---- Per-item render + Tier-1 → Tier-2 mix ----
-    for (const auto& entry : topo.items) {
-        const ChannelCount n_src = std::min<ChannelCount>(
-            entry.item->source_channel_count(),
-            static_cast<ChannelCount>(entry.channel_ptrs.size()));
-        entry.item->render_block(entry.channel_ptrs.data(), n_src, block);
-
-        // Route each source channel to its destination mixer lanes.
-        for (ChannelCount c = 0; c < n_src && c < entry.per_source_channel.size(); ++c) {
-            for (const auto& send : entry.per_source_channel[c].sends) {
-                Sample* acc =
-                    topo.mixer_accumulators[
-                        send.mixer_index * kMixerLanes + send.lane].data();
-                const Sample* src = entry.channel_buffers[c].data();
-                for (std::size_t s = 0; s < block; ++s) acc[s] += src[s] * send.gain;
+    // Split every item at the same follow boundary. Rendering just a target
+    // early/late in this list must not change its first audible sample.
+    for (std::size_t offset = 0;;) {
+        std::size_t count = block - offset;
+        for (const auto& follow : topo.follows) {
+            if (follow->status.load(std::memory_order_acquire) !=
+                PreparedFollow::State::Armed) continue;
+            if (follow->source->playback_revision() != follow->source_revision ||
+                !follow->target->prepared_start_ready(follow->target_revision)) {
+                follow->status.store(PreparedFollow::State::Cancelled,
+                                      std::memory_order_release);
+                continue;
+            }
+            const auto stats = follow->source->stats();
+            if (stats.transport == TransportState::Paused) continue;
+            if (stats.playhead_frame >= follow->end_frame) {
+                auto expected = PreparedFollow::State::Armed;
+                if (!follow->status.compare_exchange_strong(
+                        expected, PreparedFollow::State::Firing,
+                        std::memory_order_acq_rel)) continue;
+                const bool fired =
+                    follow->source->finish_follow_rt(follow->source_revision) &&
+                    follow->target->start_prepared_rt(follow->target_revision);
+                follow->status.store(fired ? PreparedFollow::State::Fired
+                                          : PreparedFollow::State::Cancelled,
+                                      std::memory_order_release);
+            } else if (stats.transport == TransportState::Stopped) {
+                follow->status.store(PreparedFollow::State::Cancelled,
+                                      std::memory_order_release);
+            } else {
+                count = std::min<std::size_t>(
+                    count, follow->end_frame - stats.playhead_frame);
             }
         }
+        if (offset == block) break;
+        for (const auto& entry : topo.items) {
+            const ChannelCount n_src = std::min<ChannelCount>(
+                entry.item->source_channel_count(),
+                static_cast<ChannelCount>(entry.channel_ptrs.size()));
+            entry.item->render_block(entry.channel_ptrs.data(), n_src, count);
+
+            for (ChannelCount c = 0; c < n_src && c < entry.per_source_channel.size(); ++c) {
+                for (const auto& send : entry.per_source_channel[c].sends) {
+                    Sample* acc =
+                        topo.mixer_accumulators[
+                            send.mixer_index * kMixerLanes + send.lane].data();
+                    const Sample* src = entry.channel_buffers[c].data();
+                    for (std::size_t s = 0; s < count; ++s)
+                        acc[offset + s] += src[s] * send.gain;
+                }
+            }
+        }
+        offset += count;
     }
 
     // ---- Tier-2 strip processing (gain/mute/solo/fade) + meter ----
@@ -1835,7 +2049,6 @@ void AudioEngine::render_one_block(const Topology& topo) {
     }
 
     // ---- Tier-2 → Tier-3 mix into master accumulators ----
-    const bool limiter_enabled = limiter_enabled_.load(std::memory_order_acquire);
     for (MasterChannelIndex mc = 0; mc < cfg_.master_channels; ++mc) {
         Sample* acc = topo.master_accumulators[mc].data();
         for (const auto& send : topo.masters[mc].sends) {
@@ -1846,7 +2059,7 @@ void AudioEngine::render_one_block(const Topology& topo) {
         }
     }
 
-    // ---- Tier-3: master gain → per-channel output gain → limiter + meter ----
+    // ---- Tier-3: master gain → per-channel output gain → logical meter ----
     const float mg = master_gain_linear_.load(std::memory_order_acquire);
     for (MasterChannelIndex mc = 0; mc < cfg_.master_channels; ++mc) {
         Sample* buf = topo.master_accumulators[mc].data();
@@ -1860,8 +2073,6 @@ void AudioEngine::render_one_block(const Topology& topo) {
         if (og != 1.0f) {
             for (std::size_t s = 0; s < block; ++s) buf[s] *= og;
         }
-        // Always advance limiter state so bypass never changes output latency.
-        master_state_[mc].limiter->process(buf, block, limiter_enabled);
         master_state_[mc].meter->push_block(buf, block);
     }
 

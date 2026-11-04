@@ -178,6 +178,7 @@ The Video Output window is deliberately **session-only** even though its display
 - The display selector works while the output is closed. `video-output:identify-displays` creates click-through, always-on-top number cards on every connected screen for five seconds.
 - A valid independently addressable display gets a frameless fullscreen window. An unassigned or single-display setup gets a normal 960×540 preview window instead of a fullscreen takeover.
 - The output's native context menu exposes fullscreen, test-card and **Exit Video Output** actions. On Windows the real output remains `closable` so Alt+F4 is always an escape hatch. Black is the idle base layer, not a dedicated operator blackout; no blackout/fade-to-black IPC command exists.
+- Confidence capture allows one readback in flight per output generation and ignores late completions. Renderer loss preserves its reason/exit code in status, disarms/closes the failed output and restores the control window. Reopening remains explicit; ordinary cue changes do not take focus. Retired window events cannot release a replacement's resources.
 
 The passive output can own keyboard focus, especially on Windows. Its Electron
 `before-input-event` handler therefore forwards application-level keys to the control
@@ -187,6 +188,8 @@ forwarding: Windows Alt+F4, Windows-key combinations, F11, the standard Ctrl/Cmd
 N/O/S/W/Q commands, and development shortcuts. Keep this policy in
 [`electron/video-output-shortcuts.js`](electron/video-output-shortcuts.js); do not create a
 second shortcut implementation in the output renderer.
+
+`useVideoOutput` owns pending play attempts by generation: pause, source replacement and disposal invalidate earlier promises. It waits for current-media readiness, retains the native positions of background program cues, excludes stopped cues before fallback selection, and clears the old picture while a new cue's document is unresolved. The separate `node --test scripts/video-transition-playback.test.js` check runs from the repository root on a desktop host with synthetic H.264 media and a real Chromium renderer. See [video reliability evidence and limits](../docs/video-playback-reliability.md).
 
 ---
 

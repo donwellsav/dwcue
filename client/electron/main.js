@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, session, screen, powerSaveBlocker, webContents } = require('electron');
+const { app, BrowserWindow, View, ipcMain, dialog, shell, Menu, session, screen, powerSaveBlocker, webContents } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -2102,7 +2102,7 @@ function createWindow() {
   // renderer is gone (crash / already destroyed) we let the close proceed.
   mainWindow.on('close', (e) => {
     if (quitConfirmed) return;
-    if (!mainWindow || mainWindow.webContents.isDestroyed()) return;
+    if (!mainWindow || mainWindow.webContents.isDestroyed() || mainWindow.webContents.isCrashed()) return;
     // Packaged-app smoke test launches with --smoke-quit: no human is
     // present to answer the quit-confirmation dialogs, so skip the veto.
     if (process.argv.includes('--smoke-quit')) return;
@@ -2191,6 +2191,12 @@ let videoOutputWatchdogInstalled = false;
 let videoOutputWatchdogTimer = null;
 let videoOutputTestCard = false;
 let videoOutputPlaybackError = null;
+let videoOutputRendererReady = false;
+let videoOutputRendererResponsive = true;
+let videoOutputRecoveryRequired = false;
+let videoOutputRestarting = false;
+let videoOutputPictureHealth = null;
+const videoOutputDiagnostics = [];
 let videoOutputFrameTimer = null;
 let displayIdentifierWindows = [];
 let displayIdentifierTimer = null;
@@ -2290,19 +2296,31 @@ function normalizeVideoPlaybackError(payload) {
 // Runs only while the output window exists.
 function startVideoOutputFrames() {
   if (videoOutputFrameTimer !== null) return;
-  videoOutputFrameTimer = setInterval(async () => {
-    if (!videoOutputWindow || videoOutputWindow.isDestroyed()) return;
+  const outputWindow = videoOutputWindow;
+  if (!outputWindow || outputWindow.isDestroyed()) return;
+  let capturePending = false;
+  const timer = setInterval(async () => {
+    if (capturePending || videoOutputFrameTimer !== timer ||
+        videoOutputWindow !== outputWindow || outputWindow.isDestroyed() ||
+        outputWindow.webContents.isDestroyed()) return;
     if (!mainWindow || mainWindow.isDestroyed()) return;
+    capturePending = true;
     try {
-      const img = await videoOutputWindow.webContents.capturePage();
+      const img = await outputWindow.webContents.capturePage();
+      // A native readback can finish after close/recreate or a timer restart.
+      if (videoOutputFrameTimer !== timer || videoOutputWindow !== outputWindow ||
+          outputWindow.isDestroyed() || !mainWindow || mainWindow.isDestroyed() ||
+          mainWindow.webContents.isDestroyed()) return;
       if (!img || img.isEmpty()) return;
       const thumb = img.resize({ width: 320, quality: 'good' });
       mainWindow.webContents.send('video-output:frame', {
         jpeg: thumb.toJPEG(60).toString('base64'),
         at: Date.now(),
       });
-    } catch { /* window mid-teardown; the closed handler stops the timer */ }
+    } catch { /* capture can race native teardown */ }
+    finally { capturePending = false; }
   }, 1000);
+  videoOutputFrameTimer = timer;
 }
 
 function stopVideoOutputFrames() {
@@ -2402,6 +2420,11 @@ function videoOutputStatus() {
     displays,
     warning,
     playbackError: videoOutputPlaybackError,
+    rendererReady: videoOutputRendererReady,
+    rendererResponsive: videoOutputRendererResponsive,
+    recoveryRequired: videoOutputRecoveryRequired,
+    restarting: videoOutputRestarting,
+    pictureHealth: videoOutputPictureHealth,
     testCard: videoOutputTestCard,
     testCardConfig: cfg.testCardConfig,
     testCardPlayback: testCardPlayback.playback,
@@ -2540,9 +2563,106 @@ function identifyVideoOutputDisplays() {
   return videoOutputDisplays();
 }
 
+function loadVideoOutputWindow(outputWindow) {
+  return isDevMode
+    ? outputWindow.loadURL('http://localhost:3000/?videoOutput=1')
+    : outputWindow.loadFile(path.join(__dirname, '../.output/public/index.html'), { query: { videoOutput: '1' } });
+}
+
+function failVideoOutputRenderer(outputWindow, message) {
+  if (videoOutputWindow !== outputWindow || outputWindow.isDestroyed()) return;
+  videoOutputRendererReady = false;
+  videoOutputRecoveryRequired = true;
+  videoOutputPictureHealth = null;
+  outputWindow.videoOutputCover.setVisible(true);
+  videoOutputPlaybackError = { itemUuid: null, message };
+  videoOutputDiagnostics.push({ at: Date.now(), error: sanitizeVideoPlaybackErrorMessage(message) });
+  if (videoOutputDiagnostics.length > 32) videoOutputDiagnostics.shift();
+  stopVideoOutputFrames();
+  const connection = videoOutputTestCardConnection;
+  videoOutputTestCardConnection = null;
+  void testCardPlayback.update(null, connection);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    mainWindow.focus();
+  }
+  broadcastVideoOutputStatus();
+}
+
+function markVideoOutputReady(event) {
+  requireVideoOutputIpc(event);
+  if (event.senderFrame !== event.sender.mainFrame) throw new Error('Expected output main frame');
+  if (!videoOutputRecoveryRequired) {
+    videoOutputRendererReady = true;
+    videoOutputRendererResponsive = true;
+    videoOutputWindow.videoOutputCover.setVisible(false);
+    startVideoOutputFrames();
+  }
+  return broadcastVideoOutputStatus();
+}
+
+function reportVideoPictureHealth(event, payload) {
+  requireVideoOutputIpc(event);
+  if (event.senderFrame !== event.sender.mainFrame) throw new Error('Expected output main frame');
+  if (videoOutputRecoveryRequired) return;
+  if (!payload || !['idle', 'still', 'paused', 'loading', 'seeking', 'playing', 'clock-wait', 'error'].includes(payload.state)
+    || !(payload.itemUuid === null || (typeof payload.itemUuid === 'string' && payload.itemUuid.length <= 128))
+    || !(payload.sourceItemUuid === null || (typeof payload.sourceItemUuid === 'string' && payload.sourceItemUuid.length <= 128))
+    || !(payload.fileRevision === null || (typeof payload.fileRevision === 'string' && payload.fileRevision.length <= 1024))
+    || !Number.isInteger(payload.readyState) || payload.readyState < 0 || payload.readyState > 4) {
+    throw new Error('Invalid picture health');
+  }
+  for (const key of ['mediaTime', 'presentedFrames', 'presentedAgeMs', 'droppedFrames', 'totalFrames', 'preparedSeconds']) {
+    if (payload[key] !== null && (!Number.isFinite(payload[key]) || payload[key] < 0)) throw new Error('Invalid picture health');
+  }
+  const { itemUuid, sourceItemUuid, fileRevision, preparedSeconds, state, mediaTime, presentedFrames, presentedAgeMs, droppedFrames, totalFrames, readyState } = payload;
+  videoOutputPictureHealth = { itemUuid, sourceItemUuid, fileRevision, preparedSeconds, state, mediaTime, presentedFrames, presentedAgeMs,
+    droppedFrames, totalFrames, readyState, receivedAt: Date.now() };
+  videoOutputDiagnostics.push(videoOutputPictureHealth);
+  if (videoOutputDiagnostics.length > 32) videoOutputDiagnostics.shift();
+  broadcastVideoOutputStatus();
+}
+
+async function restartVideoOutputWindow() {
+  const outputWindow = videoOutputWindow;
+  if (!outputWindow || outputWindow.isDestroyed() || videoOutputRestarting) return videoOutputStatus();
+  videoOutputRestarting = true;
+  failVideoOutputRenderer(outputWindow, 'Restarting Video Output; audience output is held black.');
+  try {
+    if (!outputWindow.webContents.isCrashed()) {
+      await new Promise((resolve, reject) => {
+        const done = () => { clearTimeout(timer); resolve(); };
+        const timer = setTimeout(() => {
+          outputWindow.webContents.removeListener('render-process-gone', done);
+          reject(new Error('Video Output renderer did not stop. Retry Restart Output.'));
+        }, 3000);
+        outputWindow.webContents.once('render-process-gone', done);
+        outputWindow.webContents.forcefullyCrashRenderer();
+      });
+    }
+    if (videoOutputWindow !== outputWindow || outputWindow.isDestroyed()) return videoOutputStatus();
+    videoOutputRecoveryRequired = false;
+    videoOutputPlaybackError = null;
+    await loadVideoOutputWindow(outputWindow);
+  } catch (error) {
+    failVideoOutputRenderer(outputWindow, `Video Output restart failed: ${error.message}`);
+  } finally {
+    if (videoOutputWindow === outputWindow) {
+      videoOutputRestarting = false;
+      broadcastVideoOutputStatus();
+    }
+  }
+  return videoOutputStatus();
+}
+
 function createVideoOutputWindow() {
   if (videoOutputWindow && !videoOutputWindow.isDestroyed()) return;
   videoOutputPlaybackError = null;
+  videoOutputRendererReady = false;
+  videoOutputRendererResponsive = true;
+  videoOutputRecoveryRequired = false;
+  videoOutputRestarting = false;
+  videoOutputPictureHealth = null;
 
   const cfg = readVideoOutputConfig();
   const target = resolveVideoOutputDisplay(cfg);
@@ -2598,37 +2718,51 @@ function createVideoOutputWindow() {
 
   const outputWindow = new BrowserWindow(options);
   videoOutputWindow = outputWindow;
+  // Native coverage survives renderer loss and hides the control page during hydration.
+  const cover = new View();
+  cover.setBackgroundColor('#000000');
+  outputWindow.videoOutputCover = cover;
+  outputWindow.contentView.addChildView(cover);
+  const resizeCover = () => {
+    const [width, height] = outputWindow.getContentSize();
+    cover.setBounds({ x: 0, y: 0, width, height });
+  };
+  resizeCover();
+  cover.setVisible(true);
+  outputWindow.on('resize', resizeCover);
   if (realOutput) outputWindow.setAlwaysOnTop(true, 'screen-saver');
   startVideoOutputFrames();
 
-  outputWindow.once('ready-to-show', () => {
-    if (!outputWindow.isDestroyed()) outputWindow.show();
-  });
-
-  if (isDevMode) {
-    outputWindow.loadURL('http://localhost:3000/?videoOutput=1');
-  } else {
-    const indexPath = path.join(__dirname, '../.output/public/index.html');
-    outputWindow.loadFile(indexPath, { query: { videoOutput: '1' } });
-  }
-
   outputWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _url, isMainFrame) => {
+    if (videoOutputWindow !== outputWindow) return;
     console.error('[video-output] Failed to load:', errorCode, errorDescription);
     if (isMainFrame && errorCode !== -3) {
-      const connection = videoOutputTestCardConnection;
-      videoOutputTestCardConnection = null;
-      void testCardPlayback.update(null, connection);
+      failVideoOutputRenderer(outputWindow, `Video Output could not load (${errorCode}). Restart Output to retry.`);
     }
   });
 
   outputWindow.webContents.on('did-finish-load', () => {
+    if (videoOutputWindow !== outputWindow) return;
     broadcastVideoOutputStatus();
     void reconcileTestCardPlayback();
   });
-  outputWindow.webContents.on('render-process-gone', () => {
-    const connection = videoOutputTestCardConnection;
-    videoOutputTestCardConnection = null;
-    void testCardPlayback.update(null, connection);
+  outputWindow.webContents.on('render-process-gone', (_event, details) => {
+    if (videoOutputWindow !== outputWindow) return;
+    const reason = details?.reason || 'unknown';
+    const exitCode = details?.exitCode ?? 'unknown';
+    console.error('[video-output] Renderer stopped:', reason, exitCode);
+    videoOutputRendererResponsive = false;
+    failVideoOutputRenderer(outputWindow, `Video Output renderer stopped (${reason}, exit code ${exitCode}). Audience output is held black. Restart Output to retry.`);
+  });
+  outputWindow.webContents.on('unresponsive', () => {
+    if (videoOutputWindow !== outputWindow) return;
+    videoOutputRendererResponsive = false;
+    failVideoOutputRenderer(outputWindow, 'Video Output is unresponsive. Audience output is held black. Restart Output to retry.');
+  });
+  outputWindow.webContents.on('responsive', () => {
+    if (videoOutputWindow !== outputWindow) return;
+    videoOutputRendererResponsive = true;
+    broadcastVideoOutputStatus();
   });
 
   // The passive output renderer otherwise owns keyboard focus on Windows.
@@ -2655,17 +2789,8 @@ function createVideoOutputWindow() {
 
   outputWindow.on('closed', () => {
     const preserveSession = videoOutputWindowsPreservingSession.delete(outputWindow);
-    if (!preserveSession) videoOutputSessionEnabled = false;
-    if (videoOutputWindow === outputWindow) videoOutputWindow = null;
-    videoOutputPlaybackError = null;
-    const connection = videoOutputTestCardConnection;
-    videoOutputTestCardConnection = null;
-    void testCardPlayback.update(null, connection);
-    stopVideoOutputFrames();
-    if (videoOutputPowerSaveId !== null) {
-      try { powerSaveBlocker.stop(videoOutputPowerSaveId); } catch { /* already stopped */ }
-      videoOutputPowerSaveId = null;
-    }
+    if (videoOutputWindow !== outputWindow) return;
+    closeVideoOutputWindow({ preserveSession });
     broadcastVideoOutputStatus();
   });
 
@@ -2673,22 +2798,34 @@ function createVideoOutputWindow() {
   if (videoOutputPowerSaveId === null || !powerSaveBlocker.isStarted(videoOutputPowerSaveId)) {
     videoOutputPowerSaveId = powerSaveBlocker.start('prevent-display-sleep');
   }
+  outputWindow.show();
+  void loadVideoOutputWindow(outputWindow).catch(error => {
+    failVideoOutputRenderer(outputWindow, `Video Output could not load: ${error.message}`);
+  });
 }
 
-function closeVideoOutputWindow({ preserveSession = false } = {}) {
+function closeVideoOutputWindow({ preserveSession = false, playbackError = null } = {}) {
   const outputWindow = videoOutputWindow;
   if (!preserveSession) videoOutputSessionEnabled = false;
-  if (!outputWindow || outputWindow.isDestroyed()) {
-    videoOutputWindow = null;
-    videoOutputPlaybackError = null;
-    const connection = videoOutputTestCardConnection;
-    videoOutputTestCardConnection = null;
-    void testCardPlayback.update(null, connection);
-    return;
+  // Release this generation before destroy can emit a late closed event.
+  videoOutputWindow = null;
+  videoOutputPlaybackError = playbackError;
+  videoOutputRendererReady = false;
+  videoOutputRendererResponsive = true;
+  videoOutputRecoveryRequired = false;
+  videoOutputRestarting = false;
+  videoOutputPictureHealth = null;
+  const connection = videoOutputTestCardConnection;
+  videoOutputTestCardConnection = null;
+  void testCardPlayback.update(null, connection);
+  stopVideoOutputFrames();
+  if (videoOutputPowerSaveId !== null) {
+    try { powerSaveBlocker.stop(videoOutputPowerSaveId); } catch { /* already stopped */ }
+    videoOutputPowerSaveId = null;
   }
+  if (!outputWindow || outputWindow.isDestroyed()) return;
   if (preserveSession) videoOutputWindowsPreservingSession.add(outputWindow);
   outputWindow.destroy();
-  if (videoOutputWindow === outputWindow) videoOutputWindow = null;
 }
 
 // Watchdog: when the display topology changes (switcher EDID renegotiation,
@@ -2758,9 +2895,25 @@ ipcMain.handle('video-output:status', (event) => {
   requireTrustedIpc(event);
   return videoOutputStatus();
 });
+ipcMain.handle('video-output:restart', (event) => {
+  requireTrustedIpc(event);
+  return restartVideoOutputWindow();
+});
+ipcMain.handle('video-output:renderer-ready', markVideoOutputReady);
+ipcMain.handle('video-output:picture-health', reportVideoPictureHealth);
+ipcMain.handle('video-output:diagnostics', (event) => {
+  requireTrustedIpc(event);
+  return { runtime: { electron: process.versions.electron, chromium: process.versions.chrome,
+    platform: process.platform, arch: process.arch }, status: videoOutputStatus(), recent: [...videoOutputDiagnostics] };
+});
 ipcMain.handle('video-output:report-playback-error', async (event, payload) => {
   requireVideoOutputIpc(event);
+  if (videoOutputRecoveryRequired) return broadcastVideoOutputStatus();
   videoOutputPlaybackError = normalizeVideoPlaybackError(payload);
+  if (videoOutputPlaybackError) {
+    videoOutputDiagnostics.push({ at: Date.now(), ...videoOutputPlaybackError });
+    if (videoOutputDiagnostics.length > 32) videoOutputDiagnostics.shift();
+  }
   if (videoOutputPlaybackError?.itemUuid === testCardPlayback.session?.cue.id
     && videoOutputPlaybackError) {
     await testCardPlayback.fail(videoOutputPlaybackError.message, videoOutputTestCardConnection);
@@ -4354,6 +4507,11 @@ async function fetchSpotifyEmbedTracks(rawUrl) {
   }
   if (!content) throw new Error('Spotify share URL did not resolve to a supported item');
 
+  // Playlist embeds are previews; the existing spotDL metadata path paginates.
+  if (content.type === 'playlist') {
+    return { playlistUrl: `https://open.spotify.com/playlist/${content.id}` };
+  }
+
   const response = await fetch(
     `https://open.spotify.com/embed/${content.type}/${content.id}`,
     {
@@ -4373,7 +4531,7 @@ async function fetchSpotifyEmbedTracks(rawUrl) {
   const sourceTracks = entity?.type === 'track'
     ? [entity]
     : (Array.isArray(entity?.trackList) ? entity.trackList : []);
-  if (sourceTracks.length === 0 || sourceTracks.length > 10000) {
+  if (sourceTracks.length === 0) {
     throw new Error('Spotify embed returned no usable tracks');
   }
 
@@ -4478,7 +4636,7 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
       console.warn('[spotify] embed preflight unavailable; falling back to spotDL:', error.message);
     }
 
-    if (!embedReview) {
+    if (!embedReview?.rawTracks) {
       const setupResult = await Promise.race([
         setupSpotDl().then((ready) => ({ ready }), (error) => ({ error })),
         job.cancelledSignal.then(() => ({ cancelled: true })),
@@ -4486,8 +4644,9 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
       if (setupResult.cancelled || job.cancelled) throw new Error('Spotify review cancelled');
       if (setupResult.error) throw setupResult.error;
       if (!setupResult.ready || !spotDlPath) throw new Error('Spotify downloader is unavailable');
+      const metadataUrl = embedReview?.playlistUrl || url;
       stdout = await new Promise((resolve, reject) => {
-        const child = spawn(spotDlPath, ['save', url, '--save-file', '-'], {
+        const child = spawn(spotDlPath, ['save', metadataUrl, '--save-file', '-'], {
           windowsHide: true,
           detached: process.platform !== 'win32',
           stdio: ['ignore', 'pipe', 'pipe'],
@@ -4545,7 +4704,7 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
     if (start < 0 || end <= start) throw new Error('Spotify returned no track list');
     return JSON.parse(clean.slice(start, end + 1));
   })();
-  if (!Array.isArray(rawTracks) || rawTracks.length === 0 || rawTracks.length > 10000) {
+  if (!Array.isArray(rawTracks) || rawTracks.length === 0) {
     throw new Error('Spotify returned an invalid track list');
   }
   const tracks = rawTracks.map((track, index) => {
@@ -4830,8 +4989,7 @@ ipcMain.handle(
       }
     }
     const preflightId = requireIpcString(selection?.preflightId, 'preflightId', 64);
-    if (!Array.isArray(selection?.selectedTrackIds) || selection.selectedTrackIds.length === 0 ||
-        selection.selectedTrackIds.length > 10000) {
+    if (!Array.isArray(selection?.selectedTrackIds) || selection.selectedTrackIds.length === 0) {
       throw new TypeError('selectedTrackIds must be a non-empty array');
     }
     const preflight = spotifyPreflights.get(preflightId);
@@ -4927,7 +5085,7 @@ ipcMain.handle(
       // spotDL's bundled yt-dlp is frozen at its build date and can no longer
       // download from YouTube (HTTP 403 since the 2026-08 PO-token rollout).
       // spotDL remains the best metadata matcher, so run it in match-only
-      // mode (`spotdl url`) for the whole playlist in one process, then
+      // mode (`spotdl url`) in batches, then
       // download and convert with our own maintained yt-dlp.
       const total = selectedTrackIds.length;
       let playlistName = preflight.playlistName;
@@ -5087,13 +5245,7 @@ ipcMain.handle(
         () => downloadWorker(),
       );
 
-      // Match every selected track in one spotDL process — one interpreter
-      // start and one Spotify session for the whole playlist, with spotDL's
-      // own thread pool running the provider searches. Measured on this
-      // playlist: one process per track at concurrency 4 took 42-73s per
-      // track and left the progress counter at 0 for over a minute; the
-      // threaded batch lands a match about every 11s. Per-track results are
-      // parsed from MATCH-level log lines, which carry the Spotify track id.
+      // MATCH-level lines carry the Spotify ID, so titles cannot conflate tracks.
       const onMatchLine = (line) => {
         const resultMatch = line.match(
           /^\[([A-Za-z0-9]{10,64})\]\s+Returning (?:verified )?best result\s+(\S+)/);
@@ -5105,18 +5257,12 @@ ipcMain.handle(
         progress('resolving', { total, completed: matched, message: trackLabel(index) });
         enqueueDownload(index);
       };
-      // Split the playlist into a few chunks matched by concurrent spotDL
-      // processes. spotDL fetches each track's Spotify metadata serially
-      // inside a process (~5s per track — the phase that used to leave the
-      // counter at 0 for many minutes on long playlists), so chunking
-      // parallelizes exactly the part that dominates. --threads 2 per chunk
-      // keeps ~8 provider searches in flight overall, the highest measured
-      // rate that does not trigger throttling.
+      // Bound argv for Windows while retaining at most four parallel matchers;
+      // 100 is a batch size, not a playlist limit. Each matcher uses two threads.
       let lastMatchActivity = Date.now();
       const batchChildren = new Set();
-      const chunkCount = Math.min(4, Math.max(1, Math.ceil(total / 10)));
-      const chunkSize = Math.ceil(total / chunkCount);
-      const chunkRuns = [];
+      const matchConcurrency = Math.min(4, Math.max(1, Math.ceil(total / 10)));
+      const chunkSize = Math.min(100, Math.ceil(total / matchConcurrency));
       let metadataSeen = 0;
       const onChunkLine = (line) => {
         lastMatchActivity = Date.now();
@@ -5133,10 +5279,10 @@ ipcMain.handle(
         }
         onMatchLine(line);
       };
-      for (let c = 0; c < total; c += chunkSize) {
+      const matchChunk = async (chunkIndex) => {
+        const c = chunkIndex * chunkSize;
         const chunkTracks = selectedRawTracks.slice(c, c + chunkSize);
-        const chunkIndex = chunkRuns.length;
-        chunkRuns.push(runTracked(spotDlPath, [
+        await runTracked(spotDlPath, [
           'url', ...chunkTracks.map((track) => track.url),
           '--audio', ...SPOTIFY_AUDIO_PROVIDERS,
           '--max-retries', '1',
@@ -5145,8 +5291,11 @@ ipcMain.handle(
           '--log-level', 'MATCH',
           '--log-format', '%(message)s',
         ], Math.max(300000, chunkTracks.length * 60000), onChunkLine,
-        (tracked) => batchChildren.add(tracked)));
-      }
+        (tracked) => {
+          batchChildren.add(tracked);
+          tracked.once('close', () => batchChildren.delete(tracked));
+        });
+      };
       // A hung track can stall a batch matcher; cut it loose and let the
       // per-track fallback below take the stragglers.
       const watchdog = setInterval(() => {
@@ -5156,7 +5305,7 @@ ipcMain.handle(
         }
       }, 30000);
       try {
-        await Promise.all(chunkRuns);
+        await runPool(matchConcurrency, Math.ceil(total / chunkSize), matchChunk);
       } finally {
         clearInterval(watchdog);
       }

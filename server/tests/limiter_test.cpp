@@ -20,6 +20,49 @@ void check(bool ok, const char* name) {
     if (!ok) ++failures;
 }
 
+void test_below_ceiling_audio_keeps_unity_gain() {
+    constexpr std::size_t frames = 4'800;
+    constexpr std::size_t delay = 288; // 6 ms at 48 kHz
+    bool unity_gain = true;
+
+    for (const float amplitude : {0.01f, 0.4f, 0.495f}) {
+        std::vector<Sample> input(frames + delay, 0.0f);
+        TruePeakDetector detector;
+        float input_peak = 0.0f;
+        for (std::size_t i = 0; i < frames; ++i) {
+            input[i] = amplitude *
+                std::sin(2.0f * 3.14159265358979323846f *
+                         static_cast<float>(i) / 48.0f);
+        }
+        for (const auto sample : input) {
+            input_peak = std::max(input_peak, detector.process(sample));
+        }
+        check(input_peak < std::pow(10.0f, -6.0f / 20.0f),
+              "unity-gain fixture true peak is below the ceiling");
+        auto output = input;
+        Limiter limiter;
+        limiter.configure(48'000, -6.0f, 6.0f, 50.0f);
+        for (std::size_t offset = 0; offset < output.size(); offset += 137) {
+            limiter.set_ceiling_db(offset < frames / 2 ? -6.0f : -1.0f);
+            limiter.process(output.data() + offset,
+                            std::min<std::size_t>(137, output.size() - offset));
+            unity_gain = unity_gain && limiter.gain_reduction_db() == 0.0f;
+        }
+
+        bool unchanged = true;
+        for (std::size_t i = 0; i < output.size(); ++i) {
+            const Sample expected = i < delay ? 0.0f : input[i - delay];
+            unchanged = unchanged && output[i] == expected;
+        }
+        check(unchanged, amplitude == 0.01f
+            ? "quiet audio stays unchanged after the lookahead delay"
+            : amplitude == 0.4f
+                ? "below-ceiling waveform stays unchanged across blocks"
+                : "peaks just below the ceiling do not engage the limiter");
+    }
+    check(unity_gain, "above-peak ceiling changes keep gain at unity");
+}
+
 void test_live_ceiling_preserves_delay() {
     Limiter limiter;
     limiter.configure(1'000, 0.0f, 5.0f, 50.0f);
@@ -130,6 +173,7 @@ void test_gain_envelope_cannot_create_true_peak_overs() {
 } // namespace
 
 int main() {
+    test_below_ceiling_audio_keeps_unity_gain();
     test_live_ceiling_preserves_delay();
     test_bypass_preserves_latency_and_detector();
     test_limits_intersample_true_peak();

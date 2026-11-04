@@ -1,0 +1,495 @@
+--- a/crow/http_connection.h
++++ b/crow/http_connection.h
+@@ -112,13 +112,7 @@
+         void handle_url()
+         {
+             routing_handle_result_ = handler_->handle_initial(req_, res);
+-            // if no route is found for the request method, return the response without parsing or processing anything further.
+-            if (!routing_handle_result_->rule_index && !routing_handle_result_->catch_all && (req_.method != HTTPMethod::Options || routing_handle_result_->method == HTTPMethod::InternalMethodCount))
+-            {
+-                parser_.done();
+-                need_to_call_after_handlers_ = true;
+-                complete_request();
+-            }
++            // Dispatch early HEAD/OPTIONS/errors only after the request is parsed.
+         }
+ 
+         void handle_header()
+@@ -131,16 +125,12 @@
+                 static const std::string expect_100_continue = "HTTP/1.1 100 Continue\r\n\r\n";
+                 buffers_.emplace_back(expect_100_continue.data(), expect_100_continue.size());
+                 error_code ec = do_write_sync(buffers_);
++                buffers_.clear();
++                continue_requested = false;
+                 if (ec)
+                 {
+                     CROW_LOG_ERROR << ec << " buffer write error happened while handling sending continuation buffer header";
+                 }
+-            }
+-            if (!routing_handle_result_->rule_index && !routing_handle_result_->catch_all && req_.method == HTTPMethod::Options)
+-            {
+-                parser_.done();
+-                need_to_call_after_handlers_ = true;
+-                complete_request();
+             }
+         }
+ 
+@@ -204,13 +194,32 @@
+ 
+                 if (!res.completed_)
+                 {
+-                    res.complete_request_handler_ = [self] {
+-                        self->complete_request();
+-                    };
+                     need_to_call_after_handlers_ = true;
+-                    handler_->handle(req_, res, routing_handle_result_);
+-                    if (add_keep_alive_)
+-                        res.set_header("connection", "Keep-Alive");
++                    storage_io_ = res.storage_io;
++                    if (res.offload_storage && storage_io_)
++                    {
++                        // Only the worker owns request/response state until its posted completion.
++                        res.is_alive_helper_ = nullptr;
++                        res.complete_request_handler_ = [] {};
++                        if (!storage_io_->submit([self] {
++                            try { self->handler_->handle(self->req_, self->res, self->routing_handle_result_); }
++                            catch (...) { self->res = response(500, "Storage request failed"); self->res.end(); }
++                            asio::post(self->adaptor_.get_io_context(), [self] {
++                                self->complete_request();
++                            });
++                        }, res.offload_stream))
++                        {
++                            res = response(503, "Storage is busy; retry when preparation completes");
++                            res.set_header("Retry-After", "1");
++                            res.end();
++                            complete_request();
++                        }
++                    }
++                    else
++                    {
++                        res.complete_request_handler_ = [self] { self->complete_request(); };
++                        handler_->handle(req_, res, routing_handle_result_);
++                    }
+                 }
+                 else
+                 {
+@@ -270,6 +279,7 @@
+ #endif
+ 
+             prepare_buffers();
++            response_write_pending_ = true;
+ 
+             if (res.is_static_type())
+             {
+@@ -298,170 +308,142 @@
+ 
+         void do_write_static()
+         {
+-            asio::write(adaptor_.socket(), buffers_);
+-
+-            if (res.file_info.statResult == 0)
+-            {
+-                std::ifstream is(res.file_info.path.c_str(), std::ios::in | std::ios::binary);
+-                std::vector<asio::const_buffer> buffers{1};
+-                char buf[16384];
+-                is.read(buf, sizeof(buf));
+-                while (is.gcount() > 0)
+-                {
+-                    buffers[0] = asio::buffer(buf, is.gcount());
+-                    error_code ec = do_write_sync(buffers);
+-                    if (ec) {
+-                        CROW_LOG_ERROR << ec << " - buffer write error happened while sending content of file "
+-                                       << res.file_info.path << ". Writing stopped premature.";
+-                        break;
+-                    }
+-                    is.read(buf, sizeof(buf));
+-                }
+-            }
+-            if (close_connection_)
+-            {
++            response_file_remaining_ = req_.method == HTTPMethod::Head ? 0 :
++                static_cast<std::uint64_t>(res.file_info.statbuf.st_size);
++            auto self = this->shared_from_this();
++            if (!storage_io_ || !storage_io_->submit([self] {
++                bool opened = true;
++                try {
++                    if (self->response_file_remaining_ != 0)
++                    {
++                        self->response_file_ = std::make_unique<std::ifstream>(
++                            self->res.file_info.path.c_str(), std::ios::in | std::ios::binary);
++                        opened = static_cast<bool>(*self->response_file_);
++                    }
++                } catch (...) { opened = false; }
++                asio::post(self->adaptor_.get_io_context(), [self, opened] {
++                    if (!opened) { self->finish_write(asio::error::operation_aborted); return; }
++                    asio::async_write(self->adaptor_.socket(), self->buffers_,
++                        [self](const error_code& ec, std::size_t) {
++                            if (ec) self->finish_write(ec);
++                            else self->write_file_chunk();
++                        });
++                });
++            }, true)) finish_write(asio::error::operation_aborted);
++        }
++
++        void write_file_chunk()
++        {
++            if (response_file_remaining_ == 0)
++            {
++                finish_write(error_code{});
++                return;
++            }
++            auto self = this->shared_from_this();
++            if (!storage_io_ || !storage_io_->submit([self] {
++                std::streamsize got = -1;
++                try {
++                    const auto count = std::min<std::uint64_t>(
++                        self->response_file_remaining_, self->response_file_buffer_.size());
++                    self->response_file_->read(self->response_file_buffer_.data(),
++                                               static_cast<std::streamsize>(count));
++                    got = self->response_file_->gcount();
++                } catch (...) {}
++                asio::post(self->adaptor_.get_io_context(), [self, got] {
++                    if (got <= 0) { self->finish_write(asio::error::operation_aborted); return; }
++                    self->response_file_remaining_ -= static_cast<std::uint64_t>(got);
++                    asio::async_write(self->adaptor_.socket(),
++                        asio::buffer(self->response_file_buffer_.data(), static_cast<std::size_t>(got)),
++                        [self](const error_code& ec, std::size_t) {
++                            if (ec) self->finish_write(ec);
++                            else self->write_file_chunk();
++                        });
++                });
++            }, true)) finish_write(asio::error::operation_aborted);
++        }
++
++        void do_write_general()
++        {
++            if (req_.method == HTTPMethod::Head) res.body.clear();
++            res_body_copy_.swap(res.body);
++            buffers_.emplace_back(res_body_copy_.data(), res_body_copy_.size());
++            do_write();
++        }
++
++        void consume_read_buffer()
++        {
++            if (read_buffer_offset_ < read_buffer_size_)
++            {
++                const bool parsed = parser_.feed(buffer_.data() + read_buffer_offset_,
++                    static_cast<int>(read_buffer_size_ - read_buffer_offset_));
++                read_buffer_offset_ += parser_.parsed_bytes;
++                // A WebSocket upgrade moved the adaptor to its new owner.
++                if (!adaptor_.is_open()) return;
++                if (!parsed)
++                {
++                    cancel_deadline_timer();
++                    adaptor_.shutdown_readwrite();
++                    adaptor_.close();
++                    return;
++                }
++            }
++            if (response_write_pending_ || need_to_call_after_handlers_)
++            {
++                need_to_start_read_after_complete_ = true;
++                return;
++            }
++            read_buffer_size_ = read_buffer_offset_ = 0;
++            start_deadline();
++            do_read();
++        }
++
++        void do_read()
++        {
++            auto self = this->shared_from_this();
++            adaptor_.socket().async_read_some(asio::buffer(buffer_),
++                [self](const error_code& ec, std::size_t count) {
++                    if (ec)
++                    {
++                        self->cancel_deadline_timer();
++                        self->adaptor_.shutdown_readwrite();
++                        self->adaptor_.close();
++                        return;
++                    }
++                    self->read_buffer_offset_ = 0;
++                    self->read_buffer_size_ = count;
++                    self->consume_read_buffer();
++                });
++        }
++
++        void do_write()
++        {
++            auto self = this->shared_from_this();
++            asio::async_write(adaptor_.socket(), buffers_,
++                [self](const error_code& ec, std::size_t) { self->finish_write(ec); });
++        }
++
++        void finish_write(const error_code& ec)
++        {
++            response_write_pending_ = false;
++            response_file_.reset();
++            res.clear();
++            storage_io_.reset();
++            res_body_copy_.clear();
++            buffers_.clear();
++            parser_.clear();
++            continue_requested = false;
++            if (ec || close_connection_)
++            {
++                cancel_deadline_timer();
+                 adaptor_.shutdown_readwrite();
+                 adaptor_.close();
+-                CROW_LOG_DEBUG << this << " from write (static)";
+-            }
+-
+-            res.end();
+-            res.clear();
+-            buffers_.clear();
+-            parser_.clear();
+-        }
+-
+-        void do_write_general()
+-        {
+-            error_code ec;
+-            if (res.body.length() < res_stream_threshold_)
+-            {
+-                res_body_copy_.swap(res.body);
+-                buffers_.emplace_back(res_body_copy_.data(), res_body_copy_.size());
+-
+-                ec = do_write_sync(buffers_);
+-                if (ec) {
+-                    CROW_LOG_ERROR << ec << " - buffer write error happened while sending response. Writing stopped premature.";
+-                }
+-                if (need_to_start_read_after_complete_)
+-                {
+-                    need_to_start_read_after_complete_ = false;
+-                    start_deadline();
+-                    do_read();
+-                }
+-            }
+-            else
+-            {
+-                asio::write(adaptor_.socket(), buffers_,ec); // Write the response start / headers
+-                if (ec) {
+-                    CROW_LOG_ERROR << ec << "- buffer write error happened while sending response start / headers. Writing stopped premature.";
+-                }
+-                cancel_deadline_timer();
+-                if (res.body.length() > 0)
+-                {
+-                    std::vector<asio::const_buffer> buffers{1};
+-                    const uint8_t* data = reinterpret_cast<const uint8_t*>(res.body.data());
+-                    size_t length = res.body.length();
+-                    for (size_t transferred = 0; transferred < length;)
+-                    {
+-                        size_t to_transfer = CROW_MIN(16384UL, length - transferred);
+-                        buffers[0] = asio::const_buffer(data + transferred, to_transfer);
+-                        ec = do_write_sync(buffers);
+-                        if (ec) {
+-                            CROW_LOG_ERROR << ec << " - " << transferred << " - buffer write error happened while sending response. Writing stopped premature.";
+-                            break;
+-                        }
+-                        transferred += to_transfer;
+-                    }
+-                }
+-                if (close_connection_)
+-                {
+-                    adaptor_.shutdown_readwrite();
+-                    adaptor_.close();
+-                    CROW_LOG_DEBUG << this << " from write (res_stream)";
+-                }
+-
+-                res.end();
+-                res.clear();
+-                buffers_.clear();
+-                parser_.clear();
+-            }
+-        }
+-
+-        void do_read()
+-        {
+-            auto self = this->shared_from_this();
+-            adaptor_.socket().async_read_some(
+-              asio::buffer(buffer_),
+-              [self](const error_code& ec, std::size_t bytes_transferred) {
+-                  bool error_while_reading = true;
+-                  if (!ec)
+-                  {
+-                      bool ret = self->parser_.feed(self->buffer_.data(), bytes_transferred);
+-                      if (ret && self->adaptor_.is_open())
+-                      {
+-                          error_while_reading = false;
+-                      }
+-                  }
+-
+-                  if (error_while_reading)
+-                  {
+-                      self->cancel_deadline_timer();
+-                      self->parser_.done();
+-                      self->adaptor_.shutdown_read();
+-                      self->adaptor_.close();
+-                      CROW_LOG_DEBUG << self << " from read(1) with description: \"" << http_errno_description(static_cast<http_errno>(self->parser_.http_errno)) << '\"';
+-                  }
+-                  else if (self->close_connection_)
+-                  {
+-                      self->cancel_deadline_timer();
+-                      self->parser_.done();
+-                      // adaptor will close after write
+-                  }
+-                  else if (!self->need_to_call_after_handlers_)
+-                  {
+-                      self->start_deadline();
+-                      self->do_read();
+-                  }
+-                  else
+-                  {
+-                      // res will be completed later by user
+-                      self->need_to_start_read_after_complete_ = true;
+-                  }
+-              });
+-        }
+-
+-        void do_write()
+-        {
+-            auto self = this->shared_from_this();
+-            asio::async_write(
+-              adaptor_.socket(), buffers_,
+-              [self](const error_code& ec, std::size_t /*bytes_transferred*/) {
+-                  self->res.clear();
+-                  self->res_body_copy_.clear();
+-                  if (!self->continue_requested)
+-                  {
+-                      self->parser_.clear();
+-                  }
+-                  else
+-                  {
+-                      self->continue_requested = false;
+-                  }
+-
+-                  if (!ec)
+-                  {
+-                      if (self->close_connection_)
+-                      {
+-                          self->adaptor_.shutdown_write();
+-                          self->adaptor_.close();
+-                          CROW_LOG_DEBUG << self << " from write(1)";
+-                      }
+-                  }
+-                  else
+-                  {
+-                      CROW_LOG_DEBUG << self << " from write(2)";
+-                  }
+-              });
++                return;
++            }
++            if (need_to_start_read_after_complete_)
++            {
++                need_to_start_read_after_complete_ = false;
++                consume_read_buffer();
++            }
+         }
+ 
+         inline error_code do_write_sync(std::vector<asio::const_buffer>& buffers)
+@@ -472,17 +454,6 @@
+             {
+                 // CROW_LOG_ERROR << ec << " - happened while sending buffers";
+                 CROW_LOG_DEBUG << this << " from write (sync)(2)";
+-            }
+-
+-            this->res.clear();
+-            this->res_body_copy_.clear();
+-            if (this->continue_requested)
+-            {
+-                this->continue_requested = false;
+-            }
+-            else
+-            {
+-                this->parser_.clear();
+             }
+ 
+             return ec;
+@@ -511,6 +482,13 @@
+         }
+ 
+     private:
++        std::shared_ptr<detail::StorageIo> storage_io_;
++        bool response_write_pending_ = false;
++        std::size_t read_buffer_size_ = 0;
++        std::size_t read_buffer_offset_ = 0;
++        std::unique_ptr<std::ifstream> response_file_;
++        std::array<char, 16384> response_file_buffer_{};
++        std::uint64_t response_file_remaining_ = 0;
+         Adaptor adaptor_;
+         Handler* handler_;
+ 
+--- a/crow/parser.h
++++ b/crow/parser.h
+@@ -97,7 +97,7 @@
+ 
+             self->message_complete = true;
+             self->process_message();
+-            return 0;
++            return 1; // Pause exactly at this request; the connection retains any pipelined tail.
+         }
+         HTTPParser(Handler* handler):
+           http_parser(),
+@@ -108,8 +108,10 @@
+ 
+         // return false on error
+         /// Parse a buffer into the different sections of an HTTP request.
++        std::size_t parsed_bytes = 0;
+         bool feed(const char* buffer, int length)
+         {
++            parsed_bytes = 0;
+             if (message_complete)
+                 return true;
+ 
+@@ -125,6 +127,12 @@
+             };
+ 
+             int nparsed = http_parser_execute(this, &settings_, buffer, length);
++            parsed_bytes = static_cast<std::size_t>(nparsed);
++            if (http_errno == CHPE_CB_message_complete && message_complete)
++            {
++                http_errno = CHPE_OK;
++                return true;
++            }
+             if (http_errno != CHPE_OK)
+             {
+                 return false;
+--- a/crow/http_response.h
++++ b/crow/http_response.h
+@@ -15,6 +15,7 @@
+ #endif
+ 
+ #include "crow/http_request.h"
++#include "crow/storage_io.h"
+ #include "crow/ci_map.h"
+ #include "crow/socket_adaptors.h"
+ #include "crow/logging.h"
+@@ -53,6 +54,9 @@
+ #ifdef CROW_ENABLE_COMPRESSION
+         bool compressed = true; ///< If compression is enabled and this is false, the individual response will not be compressed.
+ #endif
++        std::shared_ptr<detail::StorageIo> storage_io;
++        bool offload_storage = false;
++        bool offload_stream = false;
+         bool skip_body = false;            ///< Whether this is a response to a HEAD request.
+         bool manual_length_header = false; ///< Whether Crow should automatically add a "Content-Length" header.
+ 
+@@ -199,6 +203,9 @@
+             headers.clear();
+             completed_ = false;
+             file_info = static_file_info{};
++            storage_io.reset();
++            offload_storage = false;
++            offload_stream = false;
+         }
+ 
+         /// Return a "Temporary Redirect" response.
+@@ -254,7 +261,8 @@
+                 completed_ = true;
+                 if (skip_body)
+                 {
+-                    set_header("Content-Length", std::to_string(body.size()));
++                    if (!headers.count("Content-Length"))
++                        set_header("Content-Length", std::to_string(body.size()));
+                     body = "";
+                     manual_length_header = true;
+                 }

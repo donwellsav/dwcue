@@ -1,14 +1,144 @@
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
-const { mkdtemp, readFile, rm, writeFile } = require('node:fs/promises');
+const { mkdir, mkdtemp, readFile, rename, rm, utimes, writeFile } = require('node:fs/promises');
+const http = require('node:http');
 const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
 const root = path.resolve(__dirname, '..');
-const serverBinary = path.join(root, 'server', 'build', process.platform === 'win32' ? 'dwcue-server.exe' : 'dwcue-server');
+const serverBinary = process.env.DWCUE_TEST_SERVER_BINARY || path.join(root, 'server', 'build', process.platform === 'win32' ? 'dwcue-server.exe' : 'dwcue-server');
 const accessToken = 'integration-test-token-1234';
+
+test('project session preconditions reject delayed edits after switching or reopening a show', { timeout: 30000 }, async t => {
+  const folder = await mkdtemp(path.join(os.tmpdir(), 'dwcue-project-session-'));
+  const port = await unusedPort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const child = spawn(serverBinary, ['--bind', '127.0.0.1', '--port', String(port)], {
+    cwd: folder,
+    env: { ...process.env, LIVEPLAY_STATE_DIR: path.join(folder, 'state'),
+      LIVEPLAY_ACCESS_TOKEN: accessToken, LIVEPLAY_ALLOWED_ORIGINS: baseUrl },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let diagnostics = '';
+  child.stdout.on('data', chunk => { diagnostics += chunk; });
+  child.stderr.on('data', chunk => { diagnostics += chunk; });
+  t.after(async () => { await stopServer(child); await rm(folder, { recursive: true, force: true }); });
+  const project = name => ({ name, version: '2.0.0', folderPath: folder,
+    items: ['shared', 'sibling'].map(uuid => ({ uuid, type: 'group', children: [], displayName: `${name}-${uuid}` })),
+    cartOnlyItems: [], cartItems: [{ slot: 0, itemUuid: 'shared' }],
+    settings: { autoSave: true }, theme: { accentColor: '#123456' },
+  });
+  const p = path.join(folder, 'P.dwcue'), q = path.join(folder, 'Q.dwcue');
+  const load = async file => {
+    const response = await request(baseUrl, '/api/project/load', { method: 'POST', body: JSON.stringify({ path: file }) });
+    assert.equal(response.status, 200, await response.clone().text());
+    return response.json();
+  };
+  const current = async () => {
+    for (let i = 0; i < 100; i++) {
+      const progress = await (await request(baseUrl, '/api/project/progress')).json();
+      if (!progress.loading) break;
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    const doc = await (await request(baseUrl, '/api/project')).json();
+    return { name: doc.name, items: doc.items, cartItems: doc.cartItems, theme: doc.theme, settings: doc.settings,
+      path: doc.server.projectFilePath, session: doc.server.projectSessionId };
+  };
+  const actions = [
+    ['PATCH', '/api/project/items/shared', { displayName: 'late-edit' }],
+    ['POST', '/api/project/items', { item: { uuid: 'late-add', type: 'group', children: [] } }],
+    ['DELETE', '/api/project/items/shared', {}],
+    ['POST', '/api/project/items/reorder', { uuids: ['sibling', 'shared'] }],
+    ['POST', '/api/project/cart', { slot: 0, itemUuid: 'sibling' }],
+    ['DELETE', '/api/project/cart/0', {}],
+    ['PATCH', '/api/project/theme', { accentColor: '#abcdef' }],
+    ['PATCH', '/api/project/settings', { autoSave: false }],
+    ['PUT', '/api/project/document', project('late-replacement')],
+    ['POST', '/api/project/save', { path: p, document: project('late-save') }],
+    ['POST', '/api/project/close', {}],
+    ['POST', '/api/project/repair', {}],
+    ['POST', '/api/project/load', { path: p }],
+  ];
+  try {
+    await waitForServer(baseUrl, child);
+    for (const reopen of [false, true]) {
+      for (const [method, pathname, body] of actions) {
+        await t.test(`${reopen ? 'same-file reopen' : 'P to Q'}: ${method} ${pathname}`, async () => {
+          await writeFile(p, JSON.stringify(project('P')));
+          await writeFile(q, JSON.stringify(project('Q')));
+          const header = await load(p);
+          const oldSession = header.server.projectSessionId ?? 'before-session-support';
+          const bytes = Buffer.from(JSON.stringify(body));
+          let response;
+          const completed = new Promise((resolve, reject) => {
+            response = http.request(`${baseUrl}${pathname}`, { method,
+              headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json',
+                'Content-Length': bytes.length, 'X-DWCUE-Project-Session': oldSession },
+            }, res => { res.resume(); res.on('end', () => resolve(res.statusCode)); });
+            response.on('error', reject);
+            response.setTimeout(3000, () => response.destroy(new Error('delayed project request timed out')));
+          });
+          await new Promise((resolve, reject) => response.write(bytes.subarray(0, bytes.length - 1), error => error ? reject(error) : resolve()));
+          try {
+            await load(reopen ? p : q);
+            const before = await current();
+            response.end(bytes.subarray(bytes.length - 1));
+            assert.equal(await completed, 409, 'an already-sent old-session request must be rejected');
+            assert.deepEqual(await current(), before, 'the active show must remain untouched');
+            if (method === 'DELETE' && pathname === '/api/project/cart/0') {
+              const bound = await request(baseUrl, '/api/project/cart', { method: 'POST', body: JSON.stringify({ slot: 0, itemUuid: 'shared' }),
+                headers: { 'X-DWCUE-Project-Session': before.session } });
+              assert.equal(bound.status, 200, await bound.text());
+            }
+            const valid = await request(baseUrl, pathname, { method, body: JSON.stringify(body),
+              headers: { 'X-DWCUE-Project-Session': before.session } });
+            assert.equal(valid.status, 200, await valid.text());
+          } finally { response.destroy(); }
+        });
+      }
+    }
+    await t.test('normal saves preserve the session; Save As, close and same-file open replace it', async () => {
+      await writeFile(p, JSON.stringify(project('P')));
+      const first = await load(p);
+      const session = first.server.projectSessionId;
+      assert.equal(typeof session, 'string');
+      assert.ok(session.length > 0);
+      const save = await request(baseUrl, '/api/project/save', { method: 'POST', body: JSON.stringify({ path: p, document: project('P') }),
+        headers: { 'X-DWCUE-Project-Session': session } });
+      assert.equal(save.status, 200, await save.text());
+      assert.equal((await current()).session, session);
+      const updated = await request(baseUrl, '/api/project/document', { method: 'PUT', body: JSON.stringify({ ...project('P'), playbackKeys: { go: null } }),
+        headers: { 'X-DWCUE-Project-Session': session } });
+      assert.equal(updated.status, 200, await updated.text());
+      assert.equal((await current()).session, session, 'in-place full-document updates must not invalidate other editors');
+      const saveAs = await request(baseUrl, '/api/project/save', { method: 'POST', body: JSON.stringify({ path: q }),
+        headers: { 'X-DWCUE-Project-Session': session } });
+      assert.equal(saveAs.status, 200, await saveAs.text());
+      const savedSession = (await current()).session;
+      assert.notEqual(savedSession, session);
+      const reopened = await load(q);
+      assert.notEqual(reopened.server.projectSessionId, savedSession);
+      const stalePage = await request(baseUrl, '/api/project/items?offset=0&limit=100', {
+        headers: { 'X-DWCUE-Project-Session': savedSession } });
+      assert.equal(stalePage.status, 409, 'paged hydration cannot mix two show sessions');
+    });
+    await t.test('new document loads publish an empty path and a new session before the first save', async () => {
+      const before = await current();
+      const loaded = await request(baseUrl, '/api/project/load', { method: 'POST', body: JSON.stringify({ document: project('New') }),
+        headers: { 'X-DWCUE-Project-Session': before.session } });
+      assert.equal(loaded.status, 200, await loaded.clone().text());
+      const header = await loaded.json();
+      assert.equal(header.server.projectFilePath, '');
+      assert.notEqual(header.server.projectSessionId, before.session);
+      const saved = await request(baseUrl, '/api/project/save', { method: 'POST', body: JSON.stringify({ path: q, document: project('New') }),
+        headers: { 'X-DWCUE-Project-Session': header.server.projectSessionId } });
+      assert.equal(saved.status, 200, await saved.text());
+      assert.equal((await current()).path, q);
+    });
+  } catch (error) { error.message += `\nNative server diagnostics:\n${diagnostics}`; throw error; }
+});
 
 async function unusedPort() {
   const socket = net.createServer();
@@ -22,8 +152,8 @@ async function unusedPort() {
   return address.port;
 }
 
-function silentWav() {
-  const dataBytes = 48_000 * 2;
+function silentWav(seconds = 1) {
+  const dataBytes = 48_000 * 2 * seconds;
   const wav = Buffer.alloc(44 + dataBytes);
   wav.write('RIFF', 0); wav.writeUInt32LE(36 + dataBytes, 4); wav.write('WAVEfmt ', 8);
   wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
@@ -33,13 +163,158 @@ function silentWav() {
   return wav;
 }
 
-async function waitForServer(baseUrl, child) {
+test('waveform caches and analysis identify the current file revision', { timeout: 15000 }, async t => {
+  const folder = await mkdtemp(path.join(os.tmpdir(), 'dwcue-waveform-revision-'));
+  const media = path.join(folder, 'media.wav'), show = path.join(folder, 'show.dwcue');
+  const date = new Date('2020-01-01T00:00:00Z');
+  const samples = value => {
+    const bytes = silentWav();
+    for (let i = 44; i < bytes.length; i += 2) bytes.writeInt16LE(value, i);
+    return bytes;
+  };
+  await writeFile(media, samples(8192)); await utimes(media, date, date);
+  await writeFile(show, JSON.stringify({ name: 'waveform-revision', folderPath: folder,
+    items: [{ uuid: 'media', type: 'audio', displayName: 'media', mediaServerPath: media }],
+    cartOnlyItems: [], cartItems: [], settings: {} }));
+  const port = await unusedPort(), baseUrl = `http://127.0.0.1:${port}`;
+  const child = spawn(serverBinary, ['--bind', '127.0.0.1', '--port', String(port)], {
+    cwd: folder, env: { ...process.env, LIVEPLAY_STATE_DIR: path.join(folder, 'state'),
+      LIVEPLAY_ACCESS_TOKEN: accessToken, LIVEPLAY_ALLOWED_ORIGINS: baseUrl }, stdio: 'ignore',
+  });
+  t.after(async () => { await stopServer(child); await rm(folder, { recursive: true, force: true }); });
+  await waitForServer(baseUrl, child);
+  const loaded = await request(baseUrl, '/api/project/load', { method: 'POST', body: JSON.stringify({ path: show }) });
+  assert.equal(loaded.status, 200, await loaded.text());
+  for (let i = 0; i < 100; i++) {
+    if (!(await (await request(baseUrl, '/api/project/progress')).json()).loading) break;
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+  const original = await (await request(baseUrl, '/api/project')).json();
+  const ws = openEventStream(baseUrl.replace('http', 'ws') + `/ws?access_token=${accessToken}`); await ws.opened;
+  t.after(() => ws.socket.close());
+  const generate = async () => {
+    const ready = ws.next(message => message.op === 'waveform_ready' && message.item_uuid === 'media');
+    const response = await request(baseUrl, '/api/waveform_generate', {
+      method: 'POST', body: JSON.stringify({ path: media, item_uuid: 'media' }),
+    });
+    assert.equal(response.status, 200, await response.text());
+    return ready;
+  };
+  const first = await generate();
+  assert.ok(Math.abs(Math.max(...first.channels[0].peak) - 0.25) < 1e-5);
+  const metadata = await (await request(baseUrl, `/api/metadata?path=${encodeURIComponent(media)}`)).json();
+  await t.test('analysis and cache carry the probed revision', async () => {
+    assert.equal(first.file_revision, metadata.file_revision);
+    const cached = JSON.parse(await readFile(path.join(folder, 'waveforms', 'media.json')));
+    assert.equal(cached.file_revision, metadata.file_revision);
+  });
+  await t.test('player media is scoped to the loaded file revision and project session', async () => {
+    assert.equal(original.server.audioReadiness.fileRevisions?.media, metadata.file_revision);
+    const good = await request(baseUrl, `/api/media?item_uuid=media&file_revision=${encodeURIComponent(metadata.file_revision)}&project_session_id=${original.server.projectSessionId}`, { method: 'HEAD' });
+    assert.equal(good.status, 200);
+    assert.equal(good.headers.get('X-DWCUE-Media-Revision'), metadata.file_revision);
+    const stale = await request(baseUrl, '/api/media?item_uuid=media&file_revision=outdated', { method: 'HEAD' });
+    assert.equal(stale.status, 409);
+    const wrongShow = await request(baseUrl, '/api/media?item_uuid=media&project_session_id=outdated', { method: 'HEAD' });
+    assert.equal(wrongShow.status, 409);
+  });
+  const replacement = `${media}.replacement`;
+  await writeFile(replacement, samples(16384)); await utimes(replacement, date, date);
+  await rename(replacement, media);
+  let reloaded = false;
+  for (let i = 0; i < 400; i++) {
+    const document = await (await request(baseUrl, '/api/project')).json();
+    const progress = await (await request(baseUrl, '/api/project/progress')).json();
+    if (document.items[0].cueId !== original.items[0].cueId && progress.ready) { reloaded = true; break; }
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+  assert.ok(reloaded, 'the stopped decoder must reload the replacement');
+  const second = await generate();
+  await t.test('same UUID/path/size/date never reuses peaks from the replaced file', () => {
+    assert.ok(Math.abs(Math.max(...second.channels[0].peak) - 0.5) < 1e-5);
+    assert.notEqual(second.file_revision, first.file_revision);
+  });
+  await t.test('synchronous path analysis carries the current revision too', async () => {
+    const waveform = await (await request(baseUrl, `/api/waveform_path?path=${encodeURIComponent(media)}`)).json();
+    const current = await (await request(baseUrl, `/api/metadata?path=${encodeURIComponent(media)}`)).json();
+    assert.equal(waveform.file_revision, current.file_revision);
+  });
+  await t.test('old-session analysis requests are rejected before writing a cache', async () => {
+    const stale = await request(baseUrl, '/api/waveform_generate', { method: 'POST',
+      headers: { 'X-DWCUE-Project-Session': 'superseded-session' },
+      body: JSON.stringify({ path: media, item_uuid: 'late-old-show' }) });
+    assert.equal(stale.status, 409, await stale.text());
+  });
+});
+
+test('crash recovery respects newer intent and resumes without repeating crossed actions', { timeout: 45000 }, async t => {
+  for (const action of ['none', 'stop', 'panic', 'play', 'close', 'replace', 'load', 'automation']) {
+    await t.test(action, async t => {
+      const folder = await mkdtemp(path.join(os.tmpdir(), 'dwcue-crash-recovery-'));
+      const stateDir = path.join(folder, 'state');
+      const media = path.join(folder, 'silence.wav');
+      const show = path.join(folder, 'show.dwcue');
+      await mkdir(stateDir);
+      await writeFile(media, silentWav(10));
+      const cue = uuid => ({ uuid, type: 'audio', displayName: uuid, mediaServerPath: media,
+        duration: 10, playFade: 0, fadeOutDuration: 0, duckingBehavior: { mode: 'no-ducking' },
+        endBehavior: { action: 'loop' } });
+      const recovering = cue('recovering');
+      if (action === 'automation') {
+        recovering.startBehavior = { action: 'play-item', targetUuid: 'newer' };
+        recovering.customActions = [{ timePoint: 0.2, action: { type: 'stop-all' } }];
+      }
+      const document = { name: 'recovery', folderPath: folder, items: [recovering, cue('newer')],
+        cartOnlyItems: [], cartItems: [], settings: {} };
+      await writeFile(show, JSON.stringify(document));
+      await writeFile(path.join(stateDir, '.crash-resume.json'), JSON.stringify({
+        projectFile: show, itemUuid: 'recovering', positionSec: 0.6,
+      }));
+      const port = await unusedPort(), baseUrl = `http://127.0.0.1:${port}`;
+      const child = spawn(serverBinary, ['--bind', '127.0.0.1', '--port', String(port)], {
+        cwd: folder, env: { ...process.env, LIVEPLAY_STATE_DIR: stateDir,
+          LIVEPLAY_ACCESS_TOKEN: accessToken, LIVEPLAY_ALLOWED_ORIGINS: baseUrl },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let diagnostics = '';
+      child.stdout.on('data', chunk => { diagnostics += chunk; });
+      child.stderr.on('data', chunk => { diagnostics += chunk; });
+      t.after(async () => { await stopServer(child); await rm(folder, { recursive: true, force: true }); });
+      await waitForServer(baseUrl, child);
+      for (let i = 0; i < 100; i++) {
+        const doc = await (await request(baseUrl, '/api/project/header')).json();
+        const progress = await (await request(baseUrl, '/api/project/progress')).json();
+        if (doc.name === 'recovery' && !progress.loading) break;
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      const send = async (route, body = {}, method = 'POST') => {
+        const response = await request(baseUrl, route, { method, body: JSON.stringify(body) });
+        assert.equal(response.status, 200, await response.text());
+      };
+      if (action === 'stop') await send('/api/project/items/recovering/stop');
+      if (action === 'panic') await send('/api/transport/stop_all', { fade_ms: 0 });
+      if (action === 'play') await send('/api/project/items/newer/play');
+      if (action === 'close') await send('/api/project/close');
+      if (action === 'replace') await send('/api/project/load', { document: { ...document, name: 'replacement' } });
+      if (action === 'load') await send('/api/project/load', { path: show });
+      await new Promise(resolve => setTimeout(resolve, 3500));
+      const summary = await (await request(baseUrl, '/api/state/summary')).json();
+      assert.equal(child.exitCode ?? child.signalCode, null, diagnostics);
+      const expected = action === 'play' ? ['newer'] : ['none', 'automation'].includes(action) ? ['recovering'] : [];
+      assert.deepEqual(summary.playing.map(item => item.itemUuid).sort(), expected, diagnostics);
+      if (action === 'none' || action === 'automation')
+        assert.ok(summary.playing[0].playheadSec >= 0.6, 'recovery must apply sub-second position before play');
+    });
+  }
+});
+
+async function waitForServer(baseUrl, child, closeConnection = false) {
   let lastError;
   for (let attempt = 0; attempt < 100; attempt += 1) {
     assert.equal(child.exitCode ?? child.signalCode, null, `server exited before becoming ready (exit ${child.exitCode}, signal ${child.signalCode})`);
     try {
       const response = await fetch(`${baseUrl}/api/health`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
+        headers: { Authorization: `Bearer ${accessToken}`, ...(closeConnection ? { Connection: 'close' } : {}) },
         signal: AbortSignal.timeout(250),
       });
       if (response.ok) return;
@@ -142,6 +417,183 @@ async function request(baseUrl, pathname, options = {}) {
     },
   });
 }
+
+test('media readers cannot block WebSocket control, HTTP framing, or cancellation', async t => {
+  const home = await mkdtemp(path.join(os.tmpdir(), 'dwcue-media-backpressure-'));
+  const port = await unusedPort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const mediaPath = path.join(home, 'range-contract.mp4');
+  const bytes = Buffer.alloc(20 * 1024 * 1024);
+  for (let i = 0; i < bytes.length; i += 1) bytes[i] = i % 251;
+  await writeFile(mediaPath, bytes);
+  await mkdir(path.join(home, 'static'));
+  await writeFile(path.join(home, 'static', 'head.bin'), bytes.subarray(0, 4096));
+  const child = spawn(serverBinary, ['--bind', '127.0.0.1', '--port', String(port)], {
+    cwd: home,
+    env: { ...process.env, HOME: home, LIVEPLAY_ACCESS_TOKEN: accessToken,
+      LIVEPLAY_ALLOWED_ORIGINS: baseUrl },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let diagnostics = '';
+  child.stdout.on('data', chunk => { diagnostics += chunk; });
+  child.stderr.on('data', chunk => { diagnostics += chunk; });
+  t.after(async () => {
+    await stopServer(child);
+    await rm(home, { recursive: true, force: true });
+  });
+  try {
+    // With no retained HTTP health connection, the first WebSocket and media
+    // connection share Crow's least-used I/O worker deterministically.
+    await waitForServer(baseUrl, child, true);
+    const stream = openEventStream(`ws://127.0.0.1:${port}/ws?access_token=${accessToken}`);
+    t.after(() => stream.socket.close());
+    await stream.opened;
+    const stop = async commandId => {
+      const ack = stream.next(message => message.type === 'command_ack' && message.command_id === commandId);
+      stream.socket.send(JSON.stringify({ type: 'stop_all', fade_ms: 0, command_id: commandId }));
+      assert.equal((await ack).ok, true);
+    };
+    await stop('media-before');
+    const mediaUrl = `/api/media?path=${encodeURIComponent(mediaPath)}&access_token=${accessToken}`;
+    const exchange = payload => new Promise((resolve, reject) => {
+      const socket = net.createConnection({ host: '127.0.0.1', port });
+      const chunks = [];
+      socket.on('data', chunk => chunks.push(chunk));
+      socket.once('connect', () => socket.write(payload));
+      socket.once('error', reject);
+      socket.once('end', () => resolve(Buffer.concat(chunks)));
+      socket.setTimeout(3000, () => socket.destroy(new Error('HTTP exchange timed out')));
+    });
+    for (const range of [true, false]) {
+      await t.test(range ? 'paused range reader' : 'paused whole-file reader', async () => {
+        const socket = net.createConnection({ host: '127.0.0.1', port });
+        socket.on('error', () => {});
+        socket.pause();
+        try {
+          await new Promise((resolve, reject) => {
+            socket.once('connect', resolve);
+            socket.once('error', reject);
+          });
+          socket.write(`GET ${mediaUrl} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\n` +
+            (range ? 'Range: bytes=0-\r\n' : '') + 'Connection: close\r\n\r\n');
+          await new Promise(resolve => setTimeout(resolve, 200));
+          const started = performance.now();
+          await stop(`media-during-${range}`);
+          assert.ok(performance.now() - started < 1000, 'media backpressure delayed transport acknowledgement');
+        } finally {
+          socket.destroy();
+        }
+        await stop(`media-after-abort-${range}`);
+      });
+    }
+    await t.test('exact range bytes and HEAD length', async () => {
+      const headers = { Range: 'bytes=70001-74096' };
+      const response = await request(baseUrl, mediaUrl, { headers });
+      assert.equal(response.status, 206);
+      assert.equal(response.headers.get('content-range'), `bytes 70001-74096/${bytes.length}`);
+      assert.equal(response.headers.get('content-type'), 'video/mp4');
+      assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes.subarray(70001, 74097));
+      const head = await request(baseUrl, mediaUrl, { method: 'HEAD' });
+      assert.equal(head.status, 200);
+      assert.equal(head.headers.get('content-length'), String(bytes.length));
+      assert.equal((await head.arrayBuffer()).byteLength, 0);
+      const rangeHead = await request(baseUrl, mediaUrl, { method: 'HEAD', headers });
+      assert.equal(rangeHead.status, 206);
+      assert.equal(rangeHead.headers.get('content-length'), '4096');
+      assert.equal((await rangeHead.arrayBuffer()).byteLength, 0);
+    });
+    await t.test('early errors, OPTIONS, malformed requests, and HEAD finish cleanly', async () => {
+      const unknown = await request(baseUrl, '/api/no-such-route');
+      assert.equal(unknown.status, 404);
+      await unknown.arrayBuffer();
+      const wrongMethod = await request(baseUrl, '/api/health', { method: 'POST' });
+      assert.equal(wrongMethod.status, 405);
+      await wrongMethod.arrayBuffer();
+      const denied = await fetch(`${baseUrl}/api/media?path=${encodeURIComponent(mediaPath)}`, { signal: AbortSignal.timeout(2000) });
+      assert.equal(denied.status, 401);
+      await denied.arrayBuffer();
+      const options = await fetch(`${baseUrl}/api/project/items/cors-probe`, {
+        method: 'OPTIONS', signal: AbortSignal.timeout(2000), headers: {
+          Origin: baseUrl, 'Access-Control-Request-Method': 'PATCH',
+          'Access-Control-Request-Headers': 'Authorization, Content-Type',
+        },
+      });
+      assert.equal(options.status, 204);
+      assert.equal(options.headers.get('access-control-allow-origin'), baseUrl);
+      const head = await exchange(`HEAD /api/no-such-route HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nAuthorization: Bearer ${accessToken}\r\nConnection: close\r\n\r\n`);
+      assert.match(head.toString(), /^HTTP\/1\.1 404/);
+      assert.equal(head.length, head.indexOf('\r\n\r\n') + 4, 'HEAD error response leaked a body');
+      const staticHead = await exchange(`HEAD /static/head.bin HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nAuthorization: Bearer ${accessToken}\r\nConnection: close\r\n\r\n`);
+      assert.match(staticHead.toString(), /^HTTP\/1\.1 200/);
+      assert.match(staticHead.toString(), /content-length: 4096(?:\r\n|$)/i);
+      assert.equal(staticHead.length, staticHead.indexOf('\r\n\r\n') + 4, 'implicit static HEAD sent file bytes');
+      await exchange(`GET /api/health HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nMalformed Header\r\n\r\n`).catch(error => assert.equal(error.code, 'ECONNRESET'));
+      await stop('media-after-malformed');
+    });
+    await t.test('Expect 100-continue retains one parser and one final response', async () => {
+      const body = JSON.stringify({ showMode: true });
+      let continuations = 0;
+      const response = await new Promise((resolve, reject) => {
+        const req = http.request(`${baseUrl}/api/project/settings`, {
+          method: 'PATCH', headers: {
+            Authorization: `Bearer ${accessToken}`, Expect: '100-continue',
+            'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body),
+          },
+        }, res => {
+          const chunks = [];
+          res.on('data', chunk => chunks.push(chunk));
+          res.once('error', reject);
+          res.once('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString() }));
+        });
+        req.on('continue', () => { continuations += 1; req.end(body); });
+        req.once('error', reject);
+        req.setTimeout(2000, () => req.destroy(new Error('100-continue request timed out')));
+        req.flushHeaders();
+      });
+      assert.equal(continuations, 1);
+      assert.equal(response.status, 200);
+      assert.equal(JSON.parse(response.body).showMode, true);
+    });
+    await t.test('pipelined responses keep their own bytes until writes finish', async () => {
+      const socket = net.createConnection({ host: '127.0.0.1', port });
+      const received = [];
+      socket.on('data', chunk => received.push(chunk));
+      const completed = new Promise((resolve, reject) => {
+        socket.once('error', reject);
+        socket.once('end', resolve);
+        socket.setTimeout(3000, () => { socket.destroy(); reject(new Error('pipelined media response timed out')); });
+      });
+      await new Promise((resolve, reject) => { socket.once('connect', resolve); socket.once('error', reject); });
+      socket.pause();
+      socket.write(`GET ${mediaUrl} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nAuthorization: Bearer ${accessToken}\r\nRange: bytes=0-1048575\r\n\r\n` +
+        `HEAD ${mediaUrl} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nAuthorization: Bearer ${accessToken}\r\n\r\n` +
+        `GET ${mediaUrl} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nAuthorization: Bearer ${accessToken}\r\nRange: bytes=70001-74096\r\nConnection: close\r\n\r\n`);
+      setTimeout(() => socket.resume(), 200);
+      await completed;
+      const data = Buffer.concat(received);
+      let offset = 0;
+      for (const [status, length, expected] of [
+        [206, 1048576, bytes.subarray(0, 1048576)],
+        [200, bytes.length, Buffer.alloc(0)],
+        [206, 4096, bytes.subarray(70001, 74097)],
+      ]) {
+        const end = data.indexOf('\r\n\r\n', offset);
+        assert.ok(end >= offset, 'missing pipelined response headers');
+        const header = data.subarray(offset, end).toString();
+        assert.match(header, new RegExp(`^HTTP/1.1 ${status}`));
+        assert.match(header, new RegExp(`content-length: ${length}(?:\\r\\n|$)`, 'i'));
+        offset = end + 4;
+        assert.deepEqual(data.subarray(offset, offset + expected.length), expected);
+        offset += expected.length;
+      }
+      assert.equal(offset, data.length, 'extra bytes corrupted HTTP response boundaries');
+    });
+    assert.equal(child.exitCode ?? child.signalCode, null, 'server exited during media cancellation');
+  } catch (error) {
+    error.message += `\n\nServer diagnostics:\n${diagnostics}`;
+    throw error;
+  }
+});
 
 test('native server echoes mutation IDs only on matching WebSocket events', async t => {
   const home = await mkdtemp(path.join(os.tmpdir(), 'dwcue-server-integration-'));
@@ -595,7 +1047,14 @@ test('native media, recovery correlation, and authoritative trigger order stay c
       const played = await request(baseUrl, `/api/project/items/${uuid}/play`, { method: 'POST' });
       assert.equal(played.status, 200, `play failed: ${await played.text()}`);
     }
-    const snapshot = await stream.next(message =>
+    // Snapshots are sent on connect; subscribe after both accepted plays so
+    // the assertion cannot race an earlier empty connection snapshot.
+    const snapshotStream = openEventStream(
+      'ws://127.0.0.1:' + port + '/ws?access_token=' + encodeURIComponent(accessToken),
+    );
+    t.after(() => snapshotStream.socket.close());
+    await snapshotStream.opened;
+    const snapshot = await snapshotStream.next(message =>
       message.type === 'playback_snapshot' &&
       message.cues?.some(cue => cue.item_uuid === 'older-trigger') &&
       message.cues?.some(cue => cue.item_uuid === 'newer-trigger'));

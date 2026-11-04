@@ -13,15 +13,15 @@
 //   * The render thread, which drives all PlaybackItems through the matrix
 //     into per-device PCM ring buffers. Each device's audio callback drains
 //     its own ring buffer.
-//   * Per-master-channel Limiter and Meter (so multi-device routing all
-//     enjoys true-peak protection + 3rd-tier metering).
+//   * Per-device-channel Limiter and Meter after routing and clock adaptation,
+//     so masters sharing a physical output share its protection and meter.
 //
 // Thread model:
 //   * Control thread (REST/WS handlers in M3, or test driver here in M2) —
 //     calls every public method except those marked "audio thread".
 //   * Render thread — internal to the engine; runs render_loop_.
-//   * Per-device callback threads — drain ring buffers; never touch engine
-//     state directly.
+//   * Per-device callback threads — drain ring buffers and process only their
+//     own output limiters and meters.
 //
 // All public methods are control-thread safe. Internal mutations to the
 // topology rebuild a new snapshot and atomic-store it.
@@ -214,10 +214,21 @@ struct MasterRouteEntry {
     std::optional<MasterDestination> destination;
 };
 
+struct PreparedFollow {
+    enum class State : std::uint8_t { Armed, Firing, Fired, Cancelled };
+    std::shared_ptr<PlaybackItem> source;
+    std::shared_ptr<PlaybackItem> target;
+    std::uint64_t source_revision = 0;
+    std::uint64_t target_revision = 0;
+    std::uint64_t end_frame = 0;
+    std::atomic<State> status{State::Armed};
+};
+
 struct Topology {
     std::vector<ItemRouteEntry>   items;     // all known items (active list filtered at render time)
     std::vector<MasterRouteEntry> masters;   // size == master_channels
     std::vector<std::shared_ptr<MixerChannel>> mixers;
+    std::vector<std::shared_ptr<PreparedFollow>> follows;
     mutable std::vector<std::vector<Sample>> mixer_accumulators;
     mutable std::vector<std::vector<Sample>> master_accumulators;
 };
@@ -234,6 +245,9 @@ public:
     // ---- Lifecycle -------------------------------------------------------
     bool start();
     void stop();
+    bool is_running() const noexcept {
+        return running_.load(std::memory_order_acquire);
+    }
 
     // ---- Device management ----------------------------------------------
     std::vector<DeviceInfo> enumerate_devices() const;
@@ -242,8 +256,8 @@ public:
     // channels at the engine's mix rate.
     DeviceId open_default_device(ChannelCount output_channels = 2);
 
-    // Open a device by name (substring match against display_name). Returns
-    // an empty DeviceId on failure.
+    // Acquire an already-open runtime id, or open an exact display name with
+    // a legacy substring fallback. Returns an empty DeviceId on failure.
     DeviceId open_device_by_name(const std::string& name_substring,
                                  ChannelCount output_channels = 2);
 
@@ -287,10 +301,15 @@ public:
     void stop_all(std::chrono::milliseconds fade = std::chrono::milliseconds{0},
                   bool force_fade = false);
 
+    // Prepare a direct audio follow for the source's exact mix-frame endpoint.
+    // Null means the caller must follow normally at EOF; never start early.
+    std::shared_ptr<PreparedFollow> schedule_follow(
+        const CueId& source, const CueId& target, std::uint64_t end_frame);
+
     // ---- Sensible-default routing ---------------------------------------
     // Brings the engine into a usable state without explicit routing
     // calls: opens the default device if no device is open, creates a
-    // "Main" mixer if no mixer exists, wires Main lane 0/1 → master 0/1 →
+    // dedicated "Main" mixer, wires Main lane 0/1 → master 0/1 →
     // default device hardware channels 0/1, and routes every loaded cue's
     // source channels through Main (stereo → lanes L/R, mono → both lanes).
     // Idempotent — safe to call any number of times.
@@ -321,6 +340,10 @@ public:
                                         ChannelIndex source_channel,
                                         const MixerChannelId& mixer);
 
+    // Atomically replace one source's sends; an empty mixer clears that source.
+    void set_item_source_mixer(const CueId& cue, ChannelIndex source_channel,
+                               const MixerChannelId& mixer);
+
     // Remove every source-channel route this cue has to any mixer, including
     // the engine's auto-created "Main" mixer (which the ProjectState routing
     // layer doesn't track by id). Used when re-pinning a cue exclusively to a
@@ -349,7 +372,7 @@ public:
 
     // ---- Master ----------------------------------------------------------
     void set_master_ceiling_db(float db);
-    // Enable/disable the per-master true-peak limiter. Bypass preserves the
+    // Enable/disable the physical-output true-peak limiter. Bypass preserves the
     // lookahead delay and detector state, so live transitions do not shift
     // audio in time. Audio-thread safe via an atomic flag.
     void set_limiter_enabled(bool enabled) noexcept;
@@ -391,6 +414,11 @@ public:
     const EngineConfig& config() const noexcept { return cfg_; }
 
 private:
+    struct OutputChannelState {
+        std::unique_ptr<Limiter> limiter;
+        std::unique_ptr<Meter>   meter;
+    };
+
     // ---- Internal device wrapper ----------------------------------------
     struct Device {
         DeviceId                    id;
@@ -402,6 +430,8 @@ private:
         std::unique_ptr<ma_resampler> clock_resampler;
         bool                        clock_resampler_initialized = false;
         std::vector<Sample>         scratch;          // interleaved staging buffer
+        std::vector<Sample>         output_mono;      // callback-only, preallocated
+        std::vector<OutputChannelState> outputs;      // one final stage per hw channel
         // Number of control-plane owners that acquired this native device.
         // Guarded by AudioEngine::mutex_; never read by a real-time thread.
         detail::DeviceReferenceCount open_references;
@@ -450,8 +480,8 @@ private:
     // Master gain in linear amplitude. Audio thread reads via load-acquire;
     // set_master_gain_db is the only writer. 1.0 = unity (0 dB).
     std::atomic<float>                           master_gain_linear_{1.0f};
-    // When false, the master limiter is bypassed (peaks pass through). Read by
-    // the render thread each block; only set_limiter_enabled writes it.
+    // When false, the output limiter is bypassed (peaks pass through). Read by
+    // device callbacks; only set_limiter_enabled writes it.
     std::atomic<bool>                            limiter_enabled_{true};
     // Per-output-channel gains (index matches master channel index). Fixed-size
     // atomics let the render thread read without copying or taking mutex_.
@@ -464,11 +494,12 @@ private:
     mutable std::mutex                           mutex_;          // guards registries + topology rebuild
     std::unordered_map<std::string, std::shared_ptr<PlaybackItem>>  items_;
     std::unordered_map<std::string, std::shared_ptr<MixerChannel>>  mixers_;
+    MixerChannelId                               main_mixer_;
+    // Control ownership prevents snapshot retirement from destroying a follow
+    // on RT; rebuilds reclaim completed records after all readers let go.
+    std::vector<std::shared_ptr<PreparedFollow>> prepared_follows_;
     DeviceList                                   devices_;
-    // ponytail: closed devices stay owned until engine shutdown so the last
-    // shared_ptr cannot free their scratch storage on the render thread.
-    // If repeated device churn becomes a real workflow, reclaim these on a
-    // non-RT maintenance thread after old snapshots have drained.
+    // Closed devices remain owned until all snapshot readers have drained.
     DeviceList                                   retired_devices_;
     detail::AtomicSharedPtr<const DeviceList>     device_snapshot_{};
 
@@ -501,14 +532,19 @@ private:
 
     // Atomic topology snapshot for the render thread.
     detail::AtomicSharedPtr<const Topology> topology_{};
+    std::vector<std::shared_ptr<const Topology>> retired_topologies_;
+    std::vector<std::shared_ptr<const DeviceList>> retired_device_snapshots_;
 
-    // Per master-channel state (lives outside the topology because limiter +
-    // meter are persistent across topology rebuilds).
+    // Logical bus meters remain available for unassigned masters. Assigned
+    // masters read the persistent physical output's post-limiter meter.
     struct MasterChannelState {
-        std::unique_ptr<Limiter> limiter;
-        std::unique_ptr<Meter>   meter;
+        std::unique_ptr<Meter> meter;
+        // Control-thread caches keep aliases from consuming each other's peaks.
+        const OutputChannelState* output_max_source = nullptr;
+        float output_peak_max_db = -120.0f;
+        float output_true_peak_max_db = -120.0f;
     };
-    std::vector<MasterChannelState>  master_state_;
+    std::vector<MasterChannelState> master_state_;
 
     // Current meter ballistics + feature flags (project settings). Guarded by
     // mutex_; applied to meters created after the corresponding setter ran.
@@ -534,7 +570,9 @@ private:
 
     // -- Helpers ---------------------------------------------------------
     void rebuild_topology_locked();
+    void reclaim_snapshots_locked();
     void ensure_default_routing_impl(const std::optional<CueId>& cue_filter);
+    MixerChannelId create_mixer_channel_locked(std::string display_name);
     void publish_topology(std::shared_ptr<const Topology> snap);
     std::shared_ptr<const Topology> snapshot_topology() const noexcept;
     void publish_device_snapshot_locked();
@@ -548,6 +586,7 @@ private:
     bool reset_device_if_requested(Device& device) noexcept;
 
     Device* find_device_locked(const DeviceId& id) const;
+    const OutputChannelState* output_state_locked(MasterChannelIndex master) const;
     DeviceId next_device_id();
 
     static void ma_data_callback(ma_device* dev, void* out, const void* in, std::uint32_t frames);

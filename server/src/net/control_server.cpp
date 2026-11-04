@@ -23,6 +23,8 @@
 #include "liveplay/meta/metadata.hpp"
 #include "liveplay/meta/waveform.hpp"
 #include "liveplay/util/atomic_file.hpp"
+#include "liveplay/util/file_revision.hpp"
+#include "liveplay/audio/decoder.hpp"
 #include "liveplay/util/unicode_path.hpp"
 
 #if defined(_WIN32)
@@ -34,6 +36,7 @@
 
 #include <crow.h>
 #include <crow/middlewares/cors.h>
+#include <curl/curl.h>
 
 #include <algorithm>
 #include <array>
@@ -87,6 +90,7 @@ struct ControlSecurityMiddleware {
     std::string access_token;
     std::vector<std::string> allowed_origins;
     std::size_t max_upload_bytes{256ull * 1024 * 1024};
+    std::shared_ptr<crow::detail::StorageIo> storage_io;
 
     bool authorized(const crow::request& req) const {
         std::string_view query_access_token;
@@ -133,7 +137,7 @@ struct ControlSecurityMiddleware {
             res.set_header("Access-Control-Allow-Methods",
                            "GET, POST, PUT, PATCH, DELETE, OPTIONS");
             res.set_header("Access-Control-Allow-Headers",
-                           "Authorization, Content-Type, X-DWCUE-Mutation-ID");
+                           "Authorization, Content-Type, X-DWCUE-Mutation-ID, X-DWCUE-Project-Session");
             res.set_header("Access-Control-Max-Age", "600");
             res.end();
             return;
@@ -171,6 +175,15 @@ struct ControlSecurityMiddleware {
             }
         }
 
+        res.storage_io = storage_io;
+        res.offload_stream = req.url == "/api/media";
+        res.offload_storage = req.url == "/api/media" || req.url == "/api/copy_to_media" ||
+            req.url == "/api/metadata" || req.url.starts_with("/api/waveform") ||
+            req.url.starts_with("/api/fs/") || req.url.starts_with("/api/upload") ||
+            req.url == "/api/file/download" || req.url == "/api/project/load" ||
+            req.url == "/api/project/save" || req.url == "/api/project/import" ||
+            req.url == "/api/project/import-legacy" || req.url == "/api/project/export" ||
+            (req.url != "/ws" && !req.url.starts_with("/api/"));
     }
 
     void after_handle(crow::request& req, crow::response& res, context&) {
@@ -184,7 +197,7 @@ struct ControlSecurityMiddleware {
             res.set_header("Access-Control-Allow-Methods",
                            "GET, POST, PUT, PATCH, DELETE, OPTIONS");
             res.set_header("Access-Control-Allow-Headers",
-                           "Authorization, Content-Type, X-DWCUE-Mutation-ID");
+                           "Authorization, Content-Type, X-DWCUE-Mutation-ID, X-DWCUE-Project-Session");
             res.set_header("Access-Control-Max-Age", "600");
         }
     }
@@ -199,6 +212,7 @@ static nlohmann::json build_playback_snapshot(audio::AudioEngine& engine,
 // Pimpl: all Crow + WebSocket state lives here so crow.h stays out of the
 // public header.
 struct ControlServer::Impl {
+    std::shared_ptr<crow::detail::StorageIo> storage_io = std::make_shared<crow::detail::StorageIo>();
     crow::App<ControlSecurityMiddleware> app;
     std::thread     app_thread;
     std::thread     broadcast_thread;
@@ -227,12 +241,28 @@ struct ControlServer::Impl {
         std::string           item_uuid;
         std::filesystem::path waveforms_dir; // empty = no disk cache
         bool                  force{false};  // delete cache and recompute
+        std::string           project_session;
+        std::string           file_revision;
     };
     std::mutex              waveform_q_mutex;
     std::condition_variable waveform_q_cv;
     std::deque<WaveformTask> waveform_q;
     std::thread             waveform_thread;
     bool                    waveform_stop{false};
+
+    struct HttpAction {
+        json request;
+        std::uint64_t id;
+        std::uint64_t generation;
+        std::chrono::steady_clock::time_point queued_at;
+    };
+    std::mutex http_mutex;
+    std::condition_variable http_cv;
+    std::deque<HttpAction> http_actions;
+    std::thread http_thread;
+    // Shared project epoch fences queued actions and cached playback broadcasts.
+    std::atomic<std::uint64_t> http_generation{0};
+    std::uint64_t next_http_id{0};
 };
 
 namespace {
@@ -265,12 +295,13 @@ crow::response json_err(int status, std::string_view message) {
     return r;
 }
 
-json waveform_data_json(const meta::Waveform& wf) {
+json waveform_data_json(const meta::Waveform& wf, const std::string& revision) {
     json channels = json::array();
     for (const auto& ch : wf.channels) {
         channels.push_back(json{{"peak", ch.peak}, {"rms", ch.rms}});
     }
     return json{
+        {"file_revision", revision},
         {"analysis_version", wf.analysis_version},
         {"integrated_lufs",  wf.integrated_lufs
                                  ? json(*wf.integrated_lufs) : json(nullptr)},
@@ -284,13 +315,14 @@ json waveform_data_json(const meta::Waveform& wf) {
     };
 }
 
-bool current_waveform_cache(const json& cached) {
+bool current_waveform_cache(const json& cached, const std::string& revision) {
     const auto analysis_value = [&](std::string_view key) {
         const auto it = cached.find(key);
         return it != cached.end() && (it->is_number() || it->is_null());
     };
     return cached.value("analysis_version", 0u) ==
                meta::Waveform::kAnalysisVersion &&
+           cached.value("file_revision", std::string{}) == revision &&
            analysis_value("integrated_lufs") &&
            analysis_value("true_peak_dbtp");
 }
@@ -686,6 +718,13 @@ ControlServer::~ControlServer() { stop(); }
 
 bool ControlServer::start() {
     if (running_.exchange(true)) return true;
+    // Global curl state lives for the process; easy handles stay worker-local.
+    static const auto curl_ready = curl_global_init(CURL_GLOBAL_DEFAULT);
+    if (curl_ready != CURLE_OK) {
+        running_.store(false);
+        Logger::error("ControlServer: HTTP action initialization failed.");
+        return false;
+    }
     if (cfg_.access_token.size() < 16) {
         running_.store(false);
         Logger::error(
@@ -696,16 +735,24 @@ bool ControlServer::start() {
     purge_orphan_export_files();
     install_routes();
 
-    // Hand custom http-request actions off to clients. The server has no
-    // HTTP client of its own; broadcasting as a doc_patch lets any
-    // connected client execute the fetch. This is a best-effort fan-out;
-    // if no client is connected the action is silently dropped.
+    // One server executor owns each side effect, regardless of client count.
     state_.set_external_action_handler([this](const json& action) {
-        broadcast_doc_patch(json{
-            {"type", "doc_patch"},
-            {"op",   "custom_action_http"},
-            {"action", action},
-        });
+        bool full = false;
+        std::uint64_t id{};
+        {
+            std::lock_guard lock{impl_->http_mutex};
+            if (!running_.load()) return;
+            id = ++impl_->next_http_id;
+            full = impl_->http_actions.size() >= 64;
+            if (!full) impl_->http_actions.push_back({
+                action.value("request", json::object()), id,
+                impl_->http_generation.load(), std::chrono::steady_clock::now()});
+        }
+        if (full) {
+            Logger::error("HTTP cue action {} rejected: queue full.", id);
+            broadcast_doc_patch({{"type", "doc_patch"}, {"op", "custom_action_result"},
+                {"actionId", id}, {"ok", false}, {"message", "HTTP action queue is full."}});
+        } else impl_->http_cv.notify_one();
     });
 
     // Fan out every "Up Next" change — whether requested by a client or armed
@@ -759,6 +806,7 @@ bool ControlServer::start() {
         impl_->waveform_stop = false;
     }
     impl_->waveform_thread  = std::thread([this] { waveform_worker(); });
+    impl_->http_thread = std::thread([this] { http_action_worker(); });
     Logger::success("Control server listening on {}:{}", cfg_.bind_address, cfg_.port);
     return true;
 }
@@ -768,6 +816,7 @@ void ControlServer::stop() {
     state_.set_external_action_handler({});
     state_.set_next_item_broadcaster({});
     state_.set_ui_state_broadcaster({});
+    impl_->storage_io->shutdown();
     impl_->app.stop();
     {
         std::lock_guard lock{impl_->waveform_q_mutex};
@@ -775,8 +824,15 @@ void ControlServer::stop() {
         impl_->waveform_q.clear();
     }
     impl_->waveform_q_cv.notify_one();
+    {
+        std::lock_guard lock{impl_->http_mutex};
+        impl_->http_actions.clear();
+        impl_->http_generation.fetch_add(1);
+    }
+    impl_->http_cv.notify_one();
     if (impl_->broadcast_thread.joinable()) impl_->broadcast_thread.join();
     if (impl_->waveform_thread.joinable())  impl_->waveform_thread.join();
+    if (impl_->http_thread.joinable()) impl_->http_thread.join();
     if (impl_->app_thread.joinable())       impl_->app_thread.join();
     purge_chunked_uploads(true);
     purge_download_tokens(true);
@@ -817,6 +873,7 @@ void ControlServer::broadcast_loop() {
         // Log-and-continue instead so a transient fault (e.g. a flaky media
         // share throwing out of a filesystem call) just drops one meter frame.
         try {
+        const auto batch_epoch = impl_->http_generation.load(std::memory_order_acquire);
         if (clock::now() >= next_download_cleanup) {
             purge_download_tokens();
             purge_orphan_export_files();
@@ -989,17 +1046,23 @@ void ControlServer::broadcast_loop() {
 
         // Fan out meters + cue_state events to all subscribed clients,
         // plus snapshots for any client still flagged as pending.
-        std::lock_guard lock{impl_->ws_mutex};
-        for (auto* c : impl_->ws_clients) {
-            try {
-                if (!snapshot_serialized.empty() &&
-                    impl_->ws_clients_pending_snapshot.erase(c)) {
-                    c->send_text(snapshot_serialized);
-                }
-                c->send_text(serialized);
-                for (const auto& e : cue_state_events) c->send_text(e);
-                for (const auto& e : device_state_events) c->send_text(e);
-            } catch (...) { /* connection will be cleaned up by onclose */ }
+        {
+            std::lock_guard lock{impl_->ws_mutex};
+            if (batch_epoch != impl_->http_generation.load(std::memory_order_acquire)) {
+                // Rebuild fresh edges next tick; reconnect snapshots stay pending.
+                prev_transports.clear();
+                prev_device_states.clear();
+            } else for (auto* c : impl_->ws_clients) {
+                try {
+                    if (!snapshot_serialized.empty() &&
+                        impl_->ws_clients_pending_snapshot.erase(c)) {
+                        c->send_text(snapshot_serialized);
+                    }
+                    c->send_text(serialized);
+                    for (const auto& e : cue_state_events) c->send_text(e);
+                    for (const auto& e : device_state_events) c->send_text(e);
+                } catch (...) { /* connection will be cleaned up by onclose */ }
+            }
         }
 
         // Sleep to maintain the broadcast cadence (absolute deadline; see
@@ -1035,9 +1098,106 @@ void ControlServer::broadcast_doc_patch(const json& payload) {
         return;
     }
     std::lock_guard lock{impl_->ws_mutex};
+    if (payload.value("op", std::string{}) == "project_changed") {
+        std::lock_guard http_lock{impl_->http_mutex};
+        impl_->http_generation.fetch_add(1);
+        impl_->http_actions.clear();
+    }
     for (auto* c : impl_->ws_clients) {
         try { c->send_text(serialized); }
         catch (...) { /* onclose will clean up dead connections */ }
+    }
+}
+
+void ControlServer::http_action_worker() {
+    // shortcut: one bounded FIFO preserves action order; use per-destination
+    // workers only if independent simultaneous requests become necessary.
+    for (;;) {
+        Impl::HttpAction job;
+        {
+            std::unique_lock lock{impl_->http_mutex};
+            impl_->http_cv.wait(lock, [&] {
+                return !running_.load() || !impl_->http_actions.empty();
+            });
+            if (!running_.load()) return;
+            job = std::move(impl_->http_actions.front());
+            impl_->http_actions.pop_front();
+        }
+        if (job.generation != impl_->http_generation.load()) continue;
+        bool ok = false;
+        long status = 0;
+        std::string error;
+        try {
+            const auto remaining = 5000 - std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - job.queued_at).count();
+            if (remaining <= 0) throw std::runtime_error("HTTP action expired in queue.");
+            const auto& request = job.request;
+            const auto url = request.value("url", std::string{});
+            const auto method = request.value("method", std::string{"GET"});
+            if (url.empty() || url.size() > 8192 || url.find('\0') != std::string::npos ||
+                (method != "GET" && method != "POST" && method != "PUT" && method != "DELETE"))
+                throw std::runtime_error("Invalid HTTP action URL or method.");
+            std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> curl(curl_easy_init(), curl_easy_cleanup);
+            if (!curl) throw std::bad_alloc{};
+            std::string body;
+            const bool has_body = request.contains("body") && !request["body"].is_null();
+            const bool json_body = request.value("contentType", std::string{"form"}) == "json";
+            if (has_body) {
+                if (method == "GET") throw std::runtime_error("GET actions cannot have a body.");
+                if (json_body) body = request["body"].dump();
+                else {
+                    if (!request["body"].is_object()) throw std::runtime_error("Form body must be an object.");
+                    const auto escape = [&](const std::string& value) {
+                        std::unique_ptr<char, decltype(&curl_free)> encoded(
+                            curl_easy_escape(curl.get(), value.data(), static_cast<int>(value.size())), curl_free);
+                        if (!encoded) throw std::bad_alloc{};
+                        return std::string{encoded.get()};
+                    };
+                    for (const auto& [key, value] : request["body"].items()) {
+                        if (!body.empty()) body += '&';
+                        body += escape(key) + '=' + escape(value.is_string() ? value.get<std::string>() : value.dump());
+                    }
+                }
+                if (body.size() > 1024 * 1024) throw std::runtime_error("HTTP action body is too large.");
+                curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, body.data());
+                curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
+            }
+            std::unique_ptr<curl_slist, decltype(&curl_slist_free_all)> headers(
+                has_body ? curl_slist_append(nullptr, json_body ? "Content-Type: application/json" :
+                    "Content-Type: application/x-www-form-urlencoded") : nullptr, curl_slist_free_all);
+            if (has_body && !headers) throw std::bad_alloc{};
+            curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, headers.get());
+            curl_easy_setopt(curl.get(), CURLOPT_URL, url.c_str());
+            curl_easy_setopt(curl.get(), CURLOPT_PROTOCOLS_STR, "http,https");
+            curl_easy_setopt(curl.get(), CURLOPT_CUSTOMREQUEST, method.c_str());
+            curl_easy_setopt(curl.get(), CURLOPT_FOLLOWLOCATION, 0L);
+            curl_easy_setopt(curl.get(), CURLOPT_NOSIGNAL, 1L);
+            curl_easy_setopt(curl.get(), CURLOPT_CONNECTTIMEOUT_MS, std::min<long>(2000, remaining));
+            curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT_MS, static_cast<long>(remaining));
+            curl_easy_setopt(curl.get(), CURLOPT_SSL_VERIFYPEER, 1L);
+            curl_easy_setopt(curl.get(), CURLOPT_SSL_VERIFYHOST, 2L);
+            curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION,
+                +[](char*, std::size_t size, std::size_t count, void*) { return size * count; });
+            struct Cancel {
+                const std::atomic<bool>& running;
+                const std::atomic<std::uint64_t>& generation;
+                std::uint64_t expected;
+            } cancel{running_, impl_->http_generation, job.generation};
+            curl_easy_setopt(curl.get(), CURLOPT_NOPROGRESS, 0L);
+            curl_easy_setopt(curl.get(), CURLOPT_XFERINFODATA, &cancel);
+            curl_easy_setopt(curl.get(), CURLOPT_XFERINFOFUNCTION,
+                +[](void* data, curl_off_t, curl_off_t, curl_off_t, curl_off_t) {
+                    const auto& value = *static_cast<Cancel*>(data);
+                    return !value.running.load() || value.generation.load() != value.expected ? 1 : 0;
+                });
+            const auto result = curl_easy_perform(curl.get());
+            curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status);
+            ok = result == CURLE_OK && status >= 200 && status < 300;
+            if (!ok) error = result == CURLE_OK ? "HTTP " + std::to_string(status) : curl_easy_strerror(result);
+        } catch (const std::exception& exception) { error = exception.what(); }
+        if (!ok) Logger::warn("HTTP cue action {} failed: {}", job.id, error);
+        broadcast_doc_patch({{"type", "doc_patch"}, {"op", "custom_action_result"},
+            {"actionId", job.id}, {"ok", ok}, {"httpStatus", status}, {"message", error}});
     }
 }
 
@@ -1062,6 +1222,19 @@ void ControlServer::waveform_worker() {
         // throwing) would escape this thread and std::terminate() the process.
         try {
 
+        const auto owned = [&] {
+            if (state_.project_session_id() != task.project_session) return false;
+            const auto id = state_.item_to_cue_id(task.item_uuid);
+            const auto cue = id ? state_.find_cue(*id) : std::nullopt;
+            return !cue || core::detail::same_media_identity(cue->file_path, task.path);
+        };
+        const auto failed = [&] {
+            if (owned()) broadcast_doc_patch(json{{"type", "doc_patch"}, {"op", "waveform_failed"},
+                {"item_uuid", task.item_uuid}, {"project_session_id", task.project_session}});
+        };
+        if (!owned()) continue;
+        const auto revision = util::file_revision(task.path);
+        if (!revision || revision->token != task.file_revision) { failed(); continue; }
         std::error_code fs_ec;
         const fs::path json_file = task.waveforms_dir.empty()
             ? fs::path{}
@@ -1077,9 +1250,12 @@ void ControlServer::waveform_worker() {
             try {
                 std::ifstream cache_f(json_file);
                 const auto cached = json::parse(cache_f);
-                if (!current_waveform_cache(cached))
+                if (!current_waveform_cache(cached, task.file_revision))
                     throw std::runtime_error("stale analysis schema");
+                if (!owned() || util::file_revision(task.path) != revision) { failed(); continue; }
                 broadcast_doc_patch(json{
+                    {"file_revision", task.file_revision},
+                    {"project_session_id", task.project_session},
                     {"type",            "doc_patch"},
                     {"op",              "waveform_ready"},
                     {"item_uuid",       task.item_uuid},
@@ -1103,27 +1279,31 @@ void ControlServer::waveform_worker() {
         const auto wf = liveplay::meta::compute_waveform(task.path);
         if (!wf.ok) {
             Logger::warn("waveform_worker: compute_waveform failed for '{}'", liveplay::util::path_to_utf8(task.path));
-            broadcast_doc_patch(json{
-                {"type",      "doc_patch"},
-                {"op",        "waveform_failed"},
-                {"item_uuid", task.item_uuid},
-            });
+            failed();
             continue;
         }
 
-        const json waveform_data = waveform_data_json(wf);
+        if (!owned() || util::file_revision(task.path) != revision) { failed(); continue; }
+        const json waveform_data = waveform_data_json(wf, task.file_revision);
         json patch = waveform_data;
         patch["type"]      = "doc_patch";
         patch["op"]        = "waveform_ready";
         patch["item_uuid"] = task.item_uuid;
+        patch["project_session_id"] = task.project_session;
 
         // Persist waveform so future project opens skip recomputation.
         if (!json_file.empty()) {
             try {
                 fs::create_directories(task.waveforms_dir);
-                std::ofstream out(json_file);
+                const auto staged = task.waveforms_dir / (".dwcue-waveform-" + make_download_token() + ".part");
+                ScopedFileRemoval incomplete{staged};
+                std::ofstream out(staged);
                 // Write only the waveform data fields (not WS envelope fields).
                 out << waveform_data.dump();
+                out.close();
+                std::error_code ec;
+                if (!out || !util::replace_file_atomically(staged, json_file, ec))
+                    throw std::runtime_error("waveform cache publication failed");
             } catch (const std::exception& e) {
                 Logger::warn("waveform_worker: failed to save waveform cache for '{}': {}", task.item_uuid, e.what());
             }
@@ -1396,8 +1576,12 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
                     Logger::playback("{} cue_id={}",
                                      type == "pause" ? "PAUSE" : "RESUME",
                                      cue->value);
-                    if (type == "pause") pi->pause();
-                    else                 pi->resume();
+                    const auto uuid = state.cue_to_item_uuid(*cue);
+                    if (uuid) {
+                        if (!state.set_item_paused(*uuid, type == "pause"))
+                            return command_error(type + ": cue not available");
+                    } else if (type == "pause") pi->pause();
+                    else                        pi->resume();
                 } else {
                     Logger::warn("WS {}: cue_id={} not live in engine", type, cue->value);
                     return command_error(type + ": cue not loaded into engine");
@@ -1567,6 +1751,7 @@ void ControlServer::install_routes() {
     security_middleware.access_token = cfg_.access_token;
     security_middleware.allowed_origins = cfg_.allowed_origins;
     security_middleware.max_upload_bytes = cfg_.max_upload_bytes;
+    security_middleware.storage_io = impl_->storage_io;
 
     // Route Crow's internal logs through our Logger and silence the noisy
     // per-request INFO lines (we log those ourselves via api_request/api_response).
@@ -2011,7 +2196,7 @@ void ControlServer::install_routes() {
             for (const auto& uuid : resuming ? paused : sounding) {
                 if (auto cue = state_.item_to_cue_id(uuid)) {
                     if (auto pi = engine_.find_cue(*cue)) {
-                        if (resuming) pi->resume(); else pi->pause();
+                        (void)state_.set_item_paused(uuid, !resuming);
                     }
                 }
             }
@@ -2546,13 +2731,19 @@ void ControlServer::install_routes() {
                         security::sanitize_upload_filename(filename));
                     std::lock_guard import_lock{g_media_import_mutex};
                     const fs::path dest = unused_media_path(media, safe_name);
-                    ScopedFileRemoval incomplete{dest};
+                    const auto staged = media / (".dwcue-upload-" + make_download_token() + ".part");
+                    ScopedFileRemoval incomplete{staged};
                     std::ofstream f{
-                        dest, std::ios::binary | std::ios::trunc};
+                        staged, std::ios::binary | std::ios::trunc};
                     if (!f) return json_err(500, "failed to write file");
                     f.write(part.body.data(), static_cast<std::streamsize>(part.body.size()));
                     f.close();
                     if (!f) return json_err(500, "failed to write file");
+                    if (audio::file_has_truncated_riff(staged, part.body.size()))
+                        return json_err(409, "media is incomplete; finish the source copy before importing");
+                    std::error_code publication_error;
+                    if (!util::rename_no_replace(staged, dest, publication_error))
+                        return json_err(409, "media destination changed; import the file again");
                     incomplete.path.clear();
                     saved.push_back(liveplay::util::path_to_utf8(dest));
                 }
@@ -2790,8 +2981,12 @@ void ControlServer::install_routes() {
                     std::error_code ec;
                     std::lock_guard import_lock{g_media_import_mutex};
                     dest = unused_media_path(staging_root, filename);
-                    fs::rename(temp_path, dest, ec);
-                    if (ec) {
+                    const auto size = fs::file_size(temp_path, ec);
+                    if (ec || audio::file_has_truncated_riff(temp_path, size)) {
+                        reset_finalizing();
+                        return json_err(409, "media is incomplete; finish the source copy before importing");
+                    }
+                    if (!util::rename_no_replace(temp_path, dest, ec)) {
                         reset_finalizing();
                         return json_err(500, "failed to finalize upload");
                     }
@@ -2839,7 +3034,9 @@ void ControlServer::install_routes() {
     // Used by the client when the user picks a file from the server file
     // browser — the file lives somewhere on disk but needs to land in the
     // project media folder before the engine can own it.
-    // Body: { "source_path": "/absolute/path/to/file.ext" }
+    // Body: { "source_path": "/absolute/path/to/file.ext",
+    //         "expected_project_file_path": "/path/to/show.dwcue",
+    //         "expected_media_root": "/path/to/media" }
     // Response: { "dest_path": "/absolute/path/to/media/file.ext" }
     CROW_ROUTE(app, "/api/copy_to_media").methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req) {
@@ -2853,29 +3050,64 @@ void ControlServer::install_routes() {
                     duplicate_policy != "keep") {
                     return json_err(400, "invalid duplicate_policy");
                 }
+                const auto expected_project = body.find("expected_project_file_path");
+                const auto expected_media = body.find("expected_media_root");
+                if (expected_project == body.end() || !expected_project->is_string() ||
+                    expected_media == body.end() || !expected_media->is_string()) {
+                    return json_err(400, "missing expected project identity or media root");
+                }
+                const fs::path project = liveplay::util::utf8_to_path(
+                    expected_project->get<std::string>());
+                const fs::path media = liveplay::util::utf8_to_path(
+                    expected_media->get<std::string>());
+                if (media.empty() || !media.is_absolute())
+                    return json_err(400, "expected_media_root must be absolute");
 
                 const fs::path src  = liveplay::util::utf8_to_path(src_str);
                 if (!fs::exists(src)) return json_err(404, "source file not found");
+                const auto source_revision = util::file_revision(src);
+                if (!source_revision) return json_err(404, "source file not available");
+                if (audio::file_has_truncated_riff(src, source_revision->size))
+                    return json_err(409, "media is incomplete; finish the source copy before importing");
 
-                const fs::path media = state_.media_root();
-                if (media.empty()) return json_err(500, "media root not configured");
-
-                fs::create_directories(media);
                 std::lock_guard import_lock{g_media_import_mutex};
+                if (state_.project_file_path() != project || state_.media_root() != media)
+                    return json_err(409, "project changed during import; select the file again");
+                // Pin the destination even if a project opens after this check.
                 fs::path dest = media / src.filename();
 
+                std::string extension = liveplay::util::path_to_utf8(src.extension());
+                std::transform(extension.begin(), extension.end(), extension.begin(),
+                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                const bool reference_descriptor =
+                    extension == ".m3u" || extension == ".m3u8" || extension == ".pls" ||
+                    extension == ".ram" || extension == ".cue" || extension == ".xspf" ||
+                    extension == ".asx" || extension == ".wax" || extension == ".wvx" ||
+                    extension == ".smil" || extension == ".smi";
                 std::error_code ec;
                 if (fs::exists(dest, ec) && !ec &&
-                    fs::equivalent(src, dest, ec) && !ec) {
+                    fs::equivalent(src, dest, ec) && !ec &&
+                    (!reference_descriptor ||
+                     (fs::equivalent(src.parent_path(), media, ec) && !ec))) {
+                    if (util::file_revision(src) != source_revision)
+                        return json_err(409, "source changed during import; finish copying and try again");
                     return json_ok(json{{
                         "dest_path", liveplay::util::path_to_utf8(dest)},
                         {"duplicate", true},
                         {"reused", duplicate_policy != "skip"},
                         {"skipped", duplicate_policy == "skip"}});
                 }
+                if (reference_descriptor) {
+                    return json_err(400,
+                        "Cannot copy a reference playlist without its media dependencies. "
+                        "Choose Link or select the referenced audio file instead.");
+                }
+                fs::create_directories(media);
                 if (duplicate_policy != "keep") {
                     const fs::path existing = matching_media_file(media, src);
                     if (!existing.empty()) {
+                        if (util::file_revision(src) != source_revision)
+                            return json_err(409, "source changed during import; finish copying and try again");
                         return json_ok(json{
                             {"dest_path", liveplay::util::path_to_utf8(existing)},
                             {"duplicate", true},
@@ -2885,7 +3117,25 @@ void ControlServer::install_routes() {
                     }
                 }
                 dest = unused_media_path(media, src.filename());
-                fs::copy_file(src, dest, fs::copy_options::none);
+                const auto staged = media / (".dwcue-copy-" + make_download_token() + ".part");
+                ScopedFileRemoval incomplete{staged};
+                fs::copy_file(src, staged, fs::copy_options::none);
+#ifdef LIVEPLAY_TEST_HOOKS
+                if (const char* gate = std::getenv("DWCUE_TEST_COPY_GATE");
+                    gate && fs::exists(gate)) {
+                    std::ofstream entered{std::string{gate} + ".entered"};
+                    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{3};
+                    while (fs::exists(gate) && std::chrono::steady_clock::now() < deadline)
+                        std::this_thread::sleep_for(std::chrono::milliseconds{5});
+                }
+#endif
+
+                if (util::file_revision(src) != source_revision ||
+                    fs::file_size(staged, ec) != source_revision->size || ec)
+                    return json_err(409, "source changed during import; finish copying and try again");
+                if (!util::rename_no_replace(staged, dest, ec))
+                    return json_err(409, "media destination changed; import the file again");
+                incomplete.path.clear();
 
                 return json_ok(json{
                     {"dest_path", liveplay::util::path_to_utf8(dest)},
@@ -2902,6 +3152,8 @@ void ControlServer::install_routes() {
     // Body: { "path": "/abs/path/to/file.ext", "item_uuid": "<uuid>" }
     CROW_ROUTE(app, "/api/waveform_generate").methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req) {
+            auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
+            if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before analysis");
             try {
                 const auto body = json::parse(req.body);
                 const std::string path_str  = body.value("path", std::string{});
@@ -2917,10 +3169,21 @@ void ControlServer::install_routes() {
                 const auto waveform_path =
                     liveplay::util::utf8_to_path(path_str);
 
+                const auto revision = util::file_revision(waveform_path);
+                if (!revision) return json_err(404, "media file not found");
+                const auto expected = body.value("file_revision", std::string{});
+                if (!expected.empty() && expected != revision->token)
+                    return json_err(409, "media revision changed before analysis");
+                const auto session = state_.project_session_id();
                 {
                     std::lock_guard lock{impl_->waveform_q_mutex};
                     if (impl_->waveform_stop)
                         return json_err(503, "server is stopping");
+                    std::erase_if(impl_->waveform_q, [&](const Impl::WaveformTask& task) {
+                        return task.item_uuid == item_uuid &&
+                            (task.project_session != session || task.file_revision != revision->token ||
+                             task.path != waveform_path);
+                    });
                     const auto queued = std::find_if(
                         impl_->waveform_q.begin(), impl_->waveform_q.end(),
                         [&](const Impl::WaveformTask& task) {
@@ -2931,7 +3194,7 @@ void ControlServer::install_routes() {
                         queued->force = queued->force || force;
                     } else {
                         impl_->waveform_q.push_back({
-                            waveform_path, item_uuid, wdir, force
+                            waveform_path, item_uuid, wdir, force, session, revision->token
                         });
                     }
                 }
@@ -2945,8 +3208,16 @@ void ControlServer::install_routes() {
         ([](const crow::request& req) {
             const char* path = req.url_params.get("path");
             if (!path) return json_err(400, "missing ?path=");
-            const auto md = liveplay::meta::read_metadata(liveplay::util::utf8_to_path(path));
+            const auto file = util::utf8_to_path(path);
+            const auto revision = util::file_revision(file);
+            if (!revision) return json_err(404, "media file not found");
+            if (audio::file_has_truncated_riff(file, revision->size))
+                return json_err(409, "media is incomplete; finish the source copy before importing");
+            const auto md = liveplay::meta::read_metadata(file);
+            if (util::file_revision(file) != revision)
+                return json_err(409, "media changed during analysis; analyze the completed file again");
             return json_ok(json{
+                {"file_revision", revision->token},
                 {"valid",        md.valid},
                 {"artist",       md.artist},
                 {"title",        md.title},
@@ -2978,11 +3249,15 @@ void ControlServer::install_routes() {
                     query_milliseconds(req, "analysis_start_ms");
                 const auto analysis_end =
                     query_milliseconds(req, "analysis_end_ms");
+                const auto revision = util::file_revision(meta->file_path);
+                if (!revision) return json_err(404, "media file not found");
                 const auto wf = liveplay::meta::compute_waveform(
                     meta->file_path, buckets, analysis_start, analysis_end);
                 if (!wf.ok) return json_err(500, "waveform decode failed");
 
-                auto data = waveform_data_json(wf);
+                if (util::file_revision(meta->file_path) != revision)
+                    return json_err(409, "media changed during analysis");
+                auto data = waveform_data_json(wf, revision->token);
                 data["cue_id"] = cue_id;
                 return json_ok(data);
             } catch (const std::invalid_argument& e) {
@@ -3013,11 +3288,15 @@ void ControlServer::install_routes() {
                     query_milliseconds(req, "analysis_start_ms");
                 const auto analysis_end =
                     query_milliseconds(req, "analysis_end_ms");
+                const auto revision = util::file_revision(file_path);
+                if (!revision) return json_err(404, "media file not found");
                 const auto wf = liveplay::meta::compute_waveform(
                     file_path, buckets, analysis_start, analysis_end);
                 if (!wf.ok) return json_err(500, "waveform decode failed");
 
-                return json_ok(waveform_data_json(wf));
+                if (util::file_revision(file_path) != revision)
+                    return json_err(409, "media changed during analysis");
+                return json_ok(waveform_data_json(wf, revision->token));
             } catch (const std::invalid_argument& e) {
                 return json_err(400, e.what());
             } catch (const std::exception& e) { return json_err(500, e.what()); }
@@ -3045,14 +3324,24 @@ void ControlServer::install_routes() {
                 const char* item_uuid = req.url_params.get("item_uuid");
                 const char* path_param = req.url_params.get("path");
                 fs::path file_path;
-                if (item_uuid && *item_uuid) {
-                    const auto resolved = state_.resolve_item_path(item_uuid);
-                    if (!resolved) return json_err(404, "media item not found");
-                    file_path = *resolved;
-                } else if (path_param && *path_param) {
-                    file_path = liveplay::util::utf8_to_path(std::string{path_param});
-                } else {
-                    return json_err(400, "missing ?item_uuid= or ?path=");
+                {
+                    const auto* expected_session = req.url_params.get("project_session_id");
+                    auto project_lock = state_.lock_project_session(expected_session ? expected_session : "");
+                    if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload media");
+                    if (item_uuid && *item_uuid) {
+                        const auto resolved = state_.resolve_item_path(item_uuid);
+                        if (!resolved) return json_err(404, "media item not found");
+                        file_path = *resolved;
+                    } else if (path_param && *path_param) {
+                        file_path = liveplay::util::utf8_to_path(std::string{path_param});
+                    } else {
+                        return json_err(400, "missing ?item_uuid= or ?path=");
+                    }
+                }
+
+                const auto revision = util::file_revision(file_path);
+                if (const auto* expected = req.url_params.get("file_revision")) {
+                    if (!revision || revision->token != expected) return json_err(409, "media revision changed; prepare the replacement");
                 }
 
                 std::error_code ec;
@@ -3120,6 +3409,7 @@ void ControlServer::install_routes() {
                     r.add_header("Content-Type", mime);
                 }
                 r.add_header("Accept-Ranges", "bytes");
+                if (revision) r.add_header("X-DWCUE-Media-Revision", revision->token);
                 r.add_header("Cache-Control", "no-store");
                 if (partial) {
                     r.add_header("Content-Range",
@@ -3128,7 +3418,11 @@ void ControlServer::install_routes() {
                 }
 
                 const std::uint64_t length = size == 0 ? 0 : end - begin + 1;
-                if (req.method == crow::HTTPMethod::Head || length == 0) return r;
+                if (req.method == crow::HTTPMethod::Head) {
+                    r.set_header("Content-Length", std::to_string(length));
+                    return r;
+                }
+                if (length == 0) return r;
 
                 if (!partial) {
                     // Whole file: stream from disk in fixed chunks (bounded
@@ -3179,6 +3473,8 @@ void ControlServer::install_routes() {
     // in well under a frame). Returns { offset, limit, total, items: [...] }.
     CROW_ROUTE(app, "/api/project/items").methods(crow::HTTPMethod::Get)
         ([this](const crow::request& req){
+            auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
+            if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
             std::size_t offset = 0, limit = 100;
             if (const char* p = req.url_params.get("offset")) {
                 try { offset = static_cast<std::size_t>(std::max(0, std::stoi(p))); }
@@ -3206,6 +3502,8 @@ void ControlServer::install_routes() {
 
     CROW_ROUTE(app, "/api/project/load").methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req){
+            auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
+            if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
             try {
                 auto j = json::parse(req.body);
                 if (j.contains("path")) {
@@ -3260,6 +3558,8 @@ void ControlServer::install_routes() {
 
     CROW_ROUTE(app, "/api/project/import-legacy").methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req) {
+            auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
+            if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
             try {
                 const auto body = json::parse(req.body);
                 const auto source_value = body.find("path");
@@ -3372,6 +3672,8 @@ void ControlServer::install_routes() {
     // also drop their local mirror.
     CROW_ROUTE(app, "/api/project/close").methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req){
+            auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
+            if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
             try {
                 Logger::api_request("Client ({}) -> Server ({}) : POST /api/project/close",
                                     req.remote_ip_address, impl_->server_addr);
@@ -3654,6 +3956,8 @@ void ControlServer::install_routes() {
     // client after the user confirms the repair prompt.
     CROW_ROUTE(app, "/api/project/repair").methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req){
+            auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
+            if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
             try {
                 Logger::api_request("Client ({}) -> Server ({}) : POST /api/project/repair",
                                     req.remote_ip_address, impl_->server_addr);
@@ -3689,6 +3993,8 @@ void ControlServer::install_routes() {
 
     CROW_ROUTE(app, "/api/project/save").methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req){
+            auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
+            if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
             try {
                 auto j = json::parse(req.body);
                 fs::path requested_path;
@@ -3737,12 +4043,14 @@ void ControlServer::install_routes() {
     // document so the round-trip stays cheap for large projects.
     CROW_ROUTE(app, "/api/project/document").methods(crow::HTTPMethod::Put)
         ([this](const crow::request& req){
+            auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
+            if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
             try {
                 auto doc = json::parse(req.body);
                 const std::string proj_name = doc.value("name", "?");
                 Logger::api_request("Client ({}) -> Server ({}) : PUT /api/project/document name='{}'",
                                     req.remote_ip_address, impl_->server_addr, proj_name);
-                if (!state_.replace_full_document(doc)) {
+                if (!state_.replace_full_document(doc, /*new_session=*/false)) {
                     Logger::error("PUT /api/project/document — document not accepted");
                     return json_err(400, "document not accepted");
                 }
@@ -3768,6 +4076,8 @@ void ControlServer::install_routes() {
     // and causing WebSocket buffer write errors on slow clients.
     CROW_ROUTE(app, "/api/project/items").methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req){
+            auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
+            if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
             try {
                 auto j = json::parse(req.body);
                 if (!j.contains("item") || !j["item"].is_object()) {
@@ -3807,6 +4117,8 @@ void ControlServer::install_routes() {
 
     CROW_ROUTE(app, "/api/project/items/<string>").methods(crow::HTTPMethod::Patch)
         ([this](const crow::request& req, std::string uuid){
+            auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
+            if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
             try {
                 auto patch = json::parse(req.body);
                 const std::string client_mutation_id =
@@ -3836,6 +4148,8 @@ void ControlServer::install_routes() {
 
     CROW_ROUTE(app, "/api/project/items/<string>").methods(crow::HTTPMethod::Delete)
         ([this](const crow::request& req, std::string uuid){
+            auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
+            if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
             Logger::api_request("Client ({}) -> Server ({}) : DELETE /api/project/items/{}",
                                 req.remote_ip_address, impl_->server_addr, uuid);
             if (!state_.remove_item(uuid)) {
@@ -3852,6 +4166,8 @@ void ControlServer::install_routes() {
 
     CROW_ROUTE(app, "/api/project/items/reorder").methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req){
+            auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
+            if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
             try {
                 auto j = json::parse(req.body);
                 const std::string parent_uuid = j.value("parentUuid", std::string{});
@@ -3972,7 +4288,8 @@ void ControlServer::install_routes() {
             if (!cue) return json_err(404, "item not loaded into engine");
             if (auto pi = engine_.find_cue(*cue)) {
                 Logger::playback("PAUSE: {}", item_playback_info(uuid, state_));
-                pi->pause();
+                if (!state_.set_item_paused(uuid, true))
+                    return json_err(404, "item not loaded into engine");
                 return json_ok(json({{"ok", true}}));
             }
             return json_err(404, "item not loaded into engine");
@@ -3985,7 +4302,8 @@ void ControlServer::install_routes() {
             if (!cue) return json_err(404, "item not loaded into engine");
             if (auto pi = engine_.find_cue(*cue)) {
                 Logger::playback("RESUME: {}", item_playback_info(uuid, state_));
-                pi->resume();
+                if (!state_.set_item_paused(uuid, false))
+                    return json_err(404, "item not loaded into engine");
                 return json_ok(json({{"ok", true}}));
             }
             return json_err(404, "item not loaded into engine");
@@ -4016,6 +4334,8 @@ void ControlServer::install_routes() {
     // ---- Cart slot bindings ----
     CROW_ROUTE(app, "/api/project/cart").methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req){
+            auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
+            if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
             try {
                 auto j = json::parse(req.body);
                 const int slot = j.value("slot", -1);
@@ -4044,6 +4364,8 @@ void ControlServer::install_routes() {
         });
     CROW_ROUTE(app, "/api/project/cart/<int>").methods(crow::HTTPMethod::Delete)
         ([this](const crow::request& req, int slot){
+            auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
+            if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
             Logger::api_request("Client ({}) -> Server ({}) : DELETE /api/project/cart/{}",
                                 req.remote_ip_address, impl_->server_addr, slot);
             // clear_cart_slot() returns false when the slot held no binding.
@@ -4126,6 +4448,8 @@ void ControlServer::install_routes() {
     // ---- Theme + settings patches ----
     CROW_ROUTE(app, "/api/project/theme").methods(crow::HTTPMethod::Patch)
         ([this](const crow::request& req){
+            auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
+            if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
             try {
                 auto patch = json::parse(req.body);
                 Logger::api_request("Client ({}) -> Server ({}) : PATCH /api/project/theme",
@@ -4145,6 +4469,8 @@ void ControlServer::install_routes() {
         });
     CROW_ROUTE(app, "/api/project/settings").methods(crow::HTTPMethod::Patch)
         ([this](const crow::request& req){
+            auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
+            if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
             try {
                 auto patch = json::parse(req.body);
                 Logger::api_request("Client ({}) -> Server ({}) : PATCH /api/project/settings",

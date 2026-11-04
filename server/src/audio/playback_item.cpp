@@ -2,6 +2,7 @@
 // playback_item.cpp — see playback_item.hpp.
 // ============================================================================
 #include "liveplay/audio/playback_item.hpp"
+#include "liveplay/util/file_revision.hpp"
 #include "liveplay/audio/decoder.hpp"
 #include "liveplay/logger.hpp"
 #include "liveplay/util/unicode_path.hpp"
@@ -30,9 +31,10 @@ inline void deinterleave_to(const Sample* src,
                             std::size_t   frame_count,
                             ChannelCount  file_ch,
                             Sample* const* dst,
-                            ChannelCount  dst_ch) noexcept {
+                            ChannelCount  dst_ch,
+                            std::size_t   dst_offset) noexcept {
     for (ChannelCount c = 0; c < dst_ch; ++c) {
-        Sample* d = dst[c];
+        Sample* d = dst[c] + dst_offset;
         if (c < file_ch) {
             for (std::size_t i = 0; i < frame_count; ++i) {
                 d[i] = src[i * file_ch + c];
@@ -113,6 +115,7 @@ bool PlaybackItem::load() {
         return false;
     }
 
+    const auto revision = util::file_revision(desc_.file_path);
     const ma_result rv = decoder_init_file(desc_.file_path, cfg, *decoder_);
     if (rv != MA_SUCCESS) {
         Logger::error("PlaybackItem[{}] decoder init failed for '{}': {}",
@@ -122,6 +125,10 @@ bool PlaybackItem::load() {
     }
 
     ma_uint32 ch = 0;
+    ma_uint64 frames = 0;
+    if (ma_decoder_get_length_in_pcm_frames(decoder_.get(), &frames) != MA_SUCCESS || frames == UINT64_MAX)
+        frames = 0;
+    duration_frames_.store(frames, std::memory_order_release);
     ma_decoder_get_data_format(decoder_.get(), nullptr, &ch, nullptr, nullptr, 0);
     if (ch == 0) ch = desc_.fallback_channels;
     const ChannelCount new_file_channels = static_cast<ChannelCount>(ch);
@@ -148,11 +155,34 @@ bool PlaybackItem::load() {
     }
     end_render_exclusion();
 
+    if (util::file_revision(desc_.file_path) != revision) {
+        ma_decoder_uninit(decoder_.get());
+        decoder_.reset();
+        Logger::warn("PlaybackItem[{}] media changed while loading", desc_.id.value);
+        return false;
+    }
+    std::atomic_store_explicit(&loaded_source_revision_, std::make_shared<const std::string>(revision ? revision->token : std::string{}), std::memory_order_release);
+    source_changed_.store(false, std::memory_order_release);
     decoder_ready_ = true;
     Logger::info("PlaybackItem[{}] loaded '{}' ({} ch, {} Hz mix-rate, LTC={})",
                  desc_.id.value, path_utf8, new_file_channels,
                  desc_.mix_sample_rate, desc_.ltc_enabled ? "on" : "off");
     return true;
+}
+
+std::string PlaybackItem::source_revision() const {
+    const auto revision = std::atomic_load_explicit(&loaded_source_revision_, std::memory_order_acquire);
+    return revision ? *revision : std::string{};
+}
+
+bool PlaybackItem::refresh_source_revision() {
+    const auto expected = source_revision();
+    // Special/live sources have no regular-file revision to compare.
+    if (expected.empty()) return false;
+    const auto current = util::file_revision(desc_.file_path);
+    if (source_revision() != expected) return false;
+    const bool changed = !current || current->token != expected;
+    return changed || source_changed();
 }
 
 void PlaybackItem::unload() {
@@ -176,9 +206,41 @@ ChannelCount PlaybackItem::source_channel_count() const noexcept {
            (ltc_enabled_atomic_.load(std::memory_order_acquire) ? 1u : 0u);
 }
 
+std::array<float, 2> PlaybackItem::stereo_mix_gains(ChannelIndex channel) const {
+    std::lock_guard lock{decoder_mutex_};
+    ma_uint32 channels = 0;
+    std::array<ma_channel, MA_MAX_CHANNELS> map{};
+    if (!decoder_ || ma_decoder_get_data_format(decoder_.get(), nullptr,
+            &channels, nullptr, map.data(), map.size()) != MA_SUCCESS ||
+        channel >= channels || channel >= map.size()) return {0.0f, 0.0f};
+    if (channels == 1) return {1.0f, 1.0f};
+    constexpr float surround = 0.70710678f;
+    switch (map[channel]) {
+        case MA_CHANNEL_FRONT_LEFT: return {1.0f, 0.0f};
+        case MA_CHANNEL_FRONT_RIGHT: return {0.0f, 1.0f};
+        case MA_CHANNEL_BACK_LEFT:
+        case MA_CHANNEL_SIDE_LEFT:
+        case MA_CHANNEL_FRONT_LEFT_CENTER:
+        case MA_CHANNEL_TOP_FRONT_LEFT:
+        case MA_CHANNEL_TOP_BACK_LEFT: return {surround, 0.0f};
+        case MA_CHANNEL_BACK_RIGHT:
+        case MA_CHANNEL_SIDE_RIGHT:
+        case MA_CHANNEL_FRONT_RIGHT_CENTER:
+        case MA_CHANNEL_TOP_FRONT_RIGHT:
+        case MA_CHANNEL_TOP_BACK_RIGHT: return {0.0f, surround};
+        case MA_CHANNEL_MONO:
+        case MA_CHANNEL_FRONT_CENTER:
+        case MA_CHANNEL_BACK_CENTER:
+        case MA_CHANNEL_TOP_CENTER:
+        case MA_CHANNEL_TOP_FRONT_CENTER:
+        case MA_CHANNEL_TOP_BACK_CENTER: return {surround, surround};
+        default: return {0.5f, 0.5f}; // Retain LFE and unlabelled content.
+    }
+}
+
 PlaybackItemStats PlaybackItem::stats() const noexcept {
     PlaybackItemStats s;
-    s.transport       = transport_.load(std::memory_order_relaxed);
+    s.transport       = transport_.load(std::memory_order_acquire);
     s.playhead_frame  = playhead_frames_.load(std::memory_order_relaxed);
     s.playhead_seconds =
         static_cast<double>(s.playhead_frame) / static_cast<double>(desc_.mix_sample_rate);
@@ -212,6 +274,7 @@ MeterSnapshot PlaybackItem::source_meter_consume(ChannelIndex ch) noexcept {
 }
 
 void PlaybackItem::play() {
+    if (source_changed()) return;
     if (!decoder_ready_) {
         Logger::warn("PlaybackItem[{}] play() ignored — decoder not ready", desc_.id.value);
         return;
@@ -229,9 +292,17 @@ void PlaybackItem::play() {
         std::lock_guard lock{decoder_mutex_};
         const bool retry_error =
             decode_error_.load(std::memory_order_acquire);
+        const auto out_point = out_point_frames_.load(std::memory_order_acquire);
+        const bool consumed =
+            read_ahead_read_.load(std::memory_order_acquire) ==
+                read_ahead_write_.load(std::memory_order_acquire) ||
+            (decode_terminal_.load(std::memory_order_acquire) &&
+             playhead_frames_.load(std::memory_order_acquire) >= decode_cursor_frame_) ||
+            (out_point > 0 &&
+             playhead_frames_.load(std::memory_order_acquire) >= out_point);
         if (retry_error ||
-            decode_terminal_.load(std::memory_order_acquire) ||
-            decode_out_point_passed_) {
+            (consumed && (decode_terminal_.load(std::memory_order_acquire) ||
+                          decode_out_point_passed_))) {
             begin_render_exclusion();
             const auto frame = retry_error
                 ? playhead_frames_.load(std::memory_order_acquire)
@@ -248,10 +319,13 @@ void PlaybackItem::play() {
             }
             playhead_frames_.store(frame, std::memory_order_release);
             reset_read_ahead_locked(frame);
+            fill_read_ahead_block_locked();
             end_render_exclusion();
         }
     }
 
+    begin_render_exclusion();
+    playback_revision_.fetch_add(1, std::memory_order_acq_rel);
     // A deliberate replay is a fresh attempt. Drop any error notification from
     // the prior attempt so the sequencer cannot attach it to this new play.
     clear_decode_error();
@@ -281,15 +355,22 @@ void PlaybackItem::play() {
         gain_current_linear_.store(gain_target_linear_.load(), std::memory_order_release);
         transport_.store(TransportState::Playing, std::memory_order_release);
     }
+    end_render_exclusion();
 }
 
 void PlaybackItem::stop() {
+    begin_render_exclusion();
+    playback_revision_.fetch_add(1, std::memory_order_acq_rel);
     const TransportState st = transport_.load(std::memory_order_acquire);
-    if (st == TransportState::Stopped) return;
-    if (st == TransportState::FadingOut) {
+    if (st == TransportState::Stopped) {
+        end_render_exclusion();
+        return;
+    }
+    if (st == TransportState::FadingOut || st == TransportState::Paused) {
         // Honour an explicit stop even when the item is already fading naturally
         // (e.g. reached its out-point). Cutting it immediately prevents audible
         // overlap with the next item that is about to start.
+        end_render_exclusion();
         stop_now();
         return;
     }
@@ -306,11 +387,16 @@ void PlaybackItem::stop() {
                    TransportState::FadingOut,
                    TransportState::Stopped);
     } else {
+        end_render_exclusion();
         stop_now();
+        return;
     }
+    end_render_exclusion();
 }
 
 void PlaybackItem::stop_now() {
+    begin_render_exclusion();
+    playback_revision_.fetch_add(1, std::memory_order_acq_rel);
     stopped_naturally_.store(false, std::memory_order_release);
     fading_out_naturally_.store(false, std::memory_order_release);
     transport_.store(TransportState::Stopped, std::memory_order_release);
@@ -318,9 +404,13 @@ void PlaybackItem::stop_now() {
     fade_duration_samples_.store(0, std::memory_order_relaxed);
     fade_elapsed_samples_.store(0, std::memory_order_relaxed);
     playhead_frames_.store(0, std::memory_order_relaxed);
+    end_render_exclusion();
 
     std::lock_guard lock{decoder_mutex_};
     begin_render_exclusion();
+    // Invalidate preparations made while stop was waiting for decoder I/O.
+    playback_revision_.fetch_add(1, std::memory_order_acq_rel);
+    transport_.store(TransportState::Stopped, std::memory_order_release);
     if (decoder_) ma_decoder_seek_to_pcm_frame(decoder_.get(), 0);
     reset_read_ahead_locked(0);
     if (ltc_) ltc_->reset(std::chrono::nanoseconds{ltc_offset_ns_.load()});
@@ -328,16 +418,22 @@ void PlaybackItem::stop_now() {
 }
 
 void PlaybackItem::pause() {
+    begin_render_exclusion();
     const TransportState st = transport_.load(std::memory_order_acquire);
-    if (st == TransportState::Playing || st == TransportState::FadingIn) {
+    if (st == TransportState::Playing || st == TransportState::FadingIn ||
+        st == TransportState::FadingOut) {
+        paused_transport_ = st;
         transport_.store(TransportState::Paused, std::memory_order_release);
     }
+    end_render_exclusion();
 }
 
 void PlaybackItem::resume() {
+    begin_render_exclusion();
     if (transport_.load(std::memory_order_acquire) == TransportState::Paused) {
-        transport_.store(TransportState::Playing, std::memory_order_release);
+        transport_.store(paused_transport_, std::memory_order_release);
     }
+    end_render_exclusion();
 }
 
 void PlaybackItem::seek_seconds(double seconds) {
@@ -346,6 +442,7 @@ void PlaybackItem::seek_seconds(double seconds) {
     {
         std::lock_guard lock{decoder_mutex_};
         begin_render_exclusion();
+        playback_revision_.fetch_add(1, std::memory_order_acq_rel);
         if (decoder_) {
             const ma_result r = ma_decoder_seek_to_pcm_frame(decoder_.get(), frame);
             if (r != MA_SUCCESS) {
@@ -387,7 +484,7 @@ void PlaybackItem::set_gain_db(float db) noexcept {
     }
 }
 void PlaybackItem::set_duck_gain_linear(
-    float linear, std::chrono::milliseconds duration) noexcept {
+    float linear, std::chrono::milliseconds duration, bool active) noexcept {
     linear = std::clamp(linear, 0.0f, 1.0f);
     const long long samples = std::max<long long>(
         0, duration.count() * static_cast<long long>(desc_.mix_sample_rate) / 1000);
@@ -395,6 +492,7 @@ void PlaybackItem::set_duck_gain_linear(
     duck_command_revision_.fetch_add(1, std::memory_order_acq_rel); // odd: writing
     duck_command_target_linear_.store(linear, std::memory_order_relaxed);
     duck_command_duration_samples_.store(samples, std::memory_order_relaxed);
+    duck_command_active_.store(active, std::memory_order_relaxed);
     duck_command_revision_.fetch_add(1, std::memory_order_release); // even: published
     duck_command_write_lock_.clear(std::memory_order_release);
 }
@@ -439,18 +537,16 @@ void PlaybackItem::set_ltc_offset(std::chrono::nanoseconds offset) noexcept {
 }
 
 void PlaybackItem::set_out_point_seconds(double seconds) noexcept {
-    if (seconds <= 0.0) {
-        out_point_frames_.store(0, std::memory_order_release);
-    } else {
-        const auto f = static_cast<std::uint64_t>(
-            seconds * static_cast<double>(desc_.mix_sample_rate));
-        out_point_frames_.store(f, std::memory_order_release);
-    }
+    std::lock_guard lock{decoder_mutex_};
+    const auto frames = seconds <= 0.0 ? std::uint64_t{0}
+        : static_cast<std::uint64_t>(seconds * static_cast<double>(desc_.mix_sample_rate));
+    if (out_point_frames_.load(std::memory_order_acquire) == frames) return;
+    begin_render_exclusion();
+    playback_revision_.fetch_add(1, std::memory_order_acq_rel);
+    out_point_frames_.store(frames, std::memory_order_release);
 
     // Already-decoded blocks reflect the old boundary. Refill from the audible
     // playhead so the new out-point takes effect on the next rendered block.
-    std::lock_guard lock{decoder_mutex_};
-    begin_render_exclusion();
     auto frame = playhead_frames_.load(std::memory_order_acquire);
     if (decoder_) {
         ma_decoder_seek_to_pcm_frame(decoder_.get(), static_cast<ma_uint64>(frame));
@@ -464,6 +560,7 @@ void PlaybackItem::set_out_point_seconds(double seconds) noexcept {
 }
 
 void PlaybackItem::set_loop(bool enabled, double in_seconds) noexcept {
+    std::lock_guard lock{decoder_mutex_};
     const auto rate = static_cast<double>(desc_.mix_sample_rate);
     auto in_frames = (in_seconds <= 0.0)
         ? std::uint64_t{0}
@@ -473,13 +570,15 @@ void PlaybackItem::set_loop(bool enabled, double in_seconds) noexcept {
     // and high seek churn. Fall back to looping from the start in that case.
     const auto out_pt = out_point_frames_.load(std::memory_order_acquire);
     if (out_pt > 0 && in_frames >= out_pt) in_frames = 0;
+    if (loop_enabled_.load(std::memory_order_acquire) == enabled &&
+        loop_in_frames_.load(std::memory_order_acquire) == in_frames) return;
+    begin_render_exclusion();
+    playback_revision_.fetch_add(1, std::memory_order_acq_rel);
     loop_in_frames_.store(in_frames, std::memory_order_release);
     loop_enabled_.store(enabled, std::memory_order_release);
 
     // Drop blocks carrying the previous loop/end metadata and refill them from
     // the currently audible position.
-    std::lock_guard lock{decoder_mutex_};
-    begin_render_exclusion();
     auto frame = playhead_frames_.load(std::memory_order_acquire);
     if (decoder_) {
         ma_decoder_seek_to_pcm_frame(decoder_.get(), static_cast<ma_uint64>(frame));
@@ -493,40 +592,115 @@ void PlaybackItem::set_loop(bool enabled, double in_seconds) noexcept {
 }
 
 bool PlaybackItem::prime(double seconds, double start_seconds) noexcept {
-    // Priming is a stopped-cue preparation step. Project mirroring may revisit
-    // one-shot cues while they are live; seeking an active decoder here would
-    // reset its playhead and discard its queued audio. Check again under the
-    // decoder lock so a state change observed while waiting also wins.
-    if (transport_.load(std::memory_order_acquire) != TransportState::Stopped)
-        return true;
-    ma_uint64 start_frame = (start_seconds <= 0.0)
-        ? ma_uint64{0}
-        : static_cast<ma_uint64>(start_seconds *
-                                 static_cast<double>(desc_.mix_sample_rate));
+    if (source_changed() || !std::isfinite(seconds) || !std::isfinite(start_seconds) ||
+        start_seconds >= static_cast<double>(UINT64_MAX) / desc_.mix_sample_rate) return false;
+    auto start_frame = start_seconds <= 0.0 ? std::uint64_t{0} :
+        static_cast<std::uint64_t>(start_seconds * desc_.mix_sample_rate);
+    const auto end = end_frame();
+    if (end > 0 && start_frame >= end) return false;
+    const auto requested_frames = static_cast<std::uint64_t>(std::min(std::max(0.0, seconds),
+        static_cast<double>(kReadAheadBlockCount * desc_.render_block) / desc_.mix_sample_rate) * desc_.mix_sample_rate);
+    const auto blocks = std::max<std::size_t>(1,
+        (requested_frames + desc_.render_block - 1) / desc_.render_block);
+    if (transport_.load(std::memory_order_acquire) != TransportState::Stopped) return true;
     {
         std::lock_guard lock{decoder_mutex_};
-        if (transport_.load(std::memory_order_acquire) != TransportState::Stopped)
-            return true;
         if (!decoder_ || !decoder_ready_) return false;
         begin_render_exclusion();
-        ma_decoder_seek_to_pcm_frame(decoder_.get(), start_frame);
+        RenderActiveGuard guard{render_exclusion_};
+        if (transport_.load(std::memory_order_acquire) != TransportState::Stopped) return true;
+        const auto read = read_ahead_read_.load(std::memory_order_acquire);
+        const bool cached = !decode_error_.load(std::memory_order_acquire) &&
+            playhead_frames_.load(std::memory_order_acquire) == start_frame && read_ahead_offset_ == 0 &&
+            read < read_ahead_write_.load(std::memory_order_acquire) && !read_ahead_.empty() &&
+            read_ahead_[read % read_ahead_.size()].frames > 0;
+        if (cached && (seconds <= 0.0 || decode_terminal_.load(std::memory_order_acquire) ||
+            read_ahead_write_.load(std::memory_order_acquire) - read >= blocks)) {
+            if (prepared_revision_.exchange(0, std::memory_order_acq_rel) != 0)
+                playback_revision_.fetch_add(1, std::memory_order_acq_rel);
+            return true;
+        }
+        if (ma_decoder_seek_to_pcm_frame(decoder_.get(), start_frame) != MA_SUCCESS) return false;
+        playback_revision_.fetch_add(1, std::memory_order_acq_rel);
         ma_uint64 cursor = start_frame;
         if (ma_decoder_get_cursor_in_pcm_frames(decoder_.get(), &cursor) == MA_SUCCESS)
             start_frame = cursor;
+        if (end > 0 && start_frame >= end) return false;
         playhead_frames_.store(start_frame, std::memory_order_release);
         stopped_naturally_.store(false, std::memory_order_release);
         fading_out_naturally_.store(false, std::memory_order_release);
         reset_read_ahead_locked(start_frame);
-        end_render_exclusion();
     }
-
     if (seconds <= 0.0) return true;
-    const auto requested_frames = static_cast<std::uint64_t>(
-        seconds * static_cast<double>(desc_.mix_sample_rate));
-    const auto requested_blocks = std::max<std::size_t>(
-        1, static_cast<std::size_t>(
-               (requested_frames + desc_.render_block - 1) / desc_.render_block));
-    service_read_ahead(std::min(requested_blocks, kReadAheadBlockCount));
+    service_read_ahead(std::min(blocks, kReadAheadBlockCount));
+    std::lock_guard lock{decoder_mutex_};
+    begin_render_exclusion();
+    RenderActiveGuard guard{render_exclusion_};
+    if (transport_.load(std::memory_order_acquire) != TransportState::Stopped) return true;
+    const auto read = read_ahead_read_.load(std::memory_order_acquire);
+    return !decode_error_.load(std::memory_order_acquire) && !read_ahead_.empty() &&
+        read < read_ahead_write_.load(std::memory_order_acquire) &&
+        read_ahead_[read % read_ahead_.size()].frames > 0;
+}
+
+std::uint64_t PlaybackItem::prepare_start() {
+    if (source_changed()) return 0;
+    std::lock_guard lock{decoder_mutex_};
+    begin_render_exclusion();
+    RenderActiveGuard guard{render_exclusion_};
+    const auto revision = playback_revision_.fetch_add(1, std::memory_order_acq_rel) + 1;
+    prepared_revision_.store(0, std::memory_order_release);
+    const auto read = read_ahead_read_.load(std::memory_order_acquire);
+    if (transport_.load(std::memory_order_acquire) != TransportState::Stopped ||
+        !decoder_ready_.load(std::memory_order_acquire) || read_ahead_.empty() ||
+        read == read_ahead_write_.load(std::memory_order_acquire)) return 0;
+    const auto& slot = read_ahead_[read % read_ahead_.size()];
+    if (slot.frames == 0 || slot.decoder_result != 0) return 0;
+    prepared_revision_.store(revision, std::memory_order_release);
+    return revision;
+}
+
+bool PlaybackItem::prepared_start_ready(std::uint64_t expected) const noexcept {
+    return expected != 0 &&
+        prepared_revision_.load(std::memory_order_acquire) == expected &&
+        playback_revision() == expected &&
+        transport_.load(std::memory_order_acquire) == TransportState::Stopped &&
+        decoder_ready_.load(std::memory_order_acquire) &&
+        read_ahead_read_.load(std::memory_order_acquire) <
+            read_ahead_write_.load(std::memory_order_acquire);
+}
+
+bool PlaybackItem::start_prepared_rt(std::uint64_t expected) noexcept {
+    if (render_exclusion_.test_and_set(std::memory_order_acquire)) return false;
+    RenderActiveGuard guard{render_exclusion_};
+    if (!prepared_start_ready(expected)) return false;
+    prepared_revision_.store(0, std::memory_order_release);
+    clear_decode_error();
+    stopped_naturally_.store(false, std::memory_order_release);
+    fading_out_naturally_.store(false, std::memory_order_release);
+    const auto fade = std::chrono::milliseconds{fade_in_ms_.load(std::memory_order_acquire)};
+    const float gain = gain_target_linear_.load(std::memory_order_acquire);
+    if (fade.count() > 0) {
+        start_fade(0.0f, gain, fade, TransportState::FadingIn, TransportState::Playing);
+    } else {
+        gain_current_linear_.store(gain, std::memory_order_release);
+        transport_.store(TransportState::Playing, std::memory_order_release);
+    }
+    return true;
+}
+
+bool PlaybackItem::finish_follow_rt(std::uint64_t expected) noexcept {
+    if (render_exclusion_.test_and_set(std::memory_order_acquire)) return false;
+    RenderActiveGuard guard{render_exclusion_};
+    const auto state = transport_.load(std::memory_order_acquire);
+    if (playback_revision() != expected || state == TransportState::Paused ||
+        (state == TransportState::Stopped &&
+         !stopped_naturally_.load(std::memory_order_acquire))) return false;
+    fade_duration_samples_.store(0, std::memory_order_relaxed);
+    fade_elapsed_samples_.store(0, std::memory_order_relaxed);
+    fading_out_naturally_.store(false, std::memory_order_release);
+    stopped_naturally_.store(true, std::memory_order_release);
+    transport_.store(TransportState::Stopped, std::memory_order_release);
     return true;
 }
 
@@ -545,6 +719,7 @@ void PlaybackItem::end_render_exclusion() noexcept {
 void PlaybackItem::reset_read_ahead_locked(std::uint64_t frame) noexcept {
     read_ahead_read_.store(0, std::memory_order_relaxed);
     read_ahead_write_.store(0, std::memory_order_release);
+    read_ahead_offset_ = 0;
     decode_cursor_frame_ = frame;
     decode_out_point_passed_ = false;
     decode_terminal_.store(false, std::memory_order_release);
@@ -563,7 +738,9 @@ bool PlaybackItem::fill_read_ahead_block_locked() noexcept {
 
     auto& slot = read_ahead_[write % read_ahead_.size()];
     slot.frames = 0;
+    slot.playhead_before = decode_cursor_frame_;
     slot.playhead_after = decode_cursor_frame_;
+    slot.loop_end_frame = 0;
     slot.natural_end = false;
     slot.decoder_result = 0;
 
@@ -626,6 +803,7 @@ bool PlaybackItem::fill_read_ahead_block_locked() noexcept {
             break;
         }
 
+        slot.loop_end_frame = decode_cursor_frame_;
         auto in_frame = loop_in_frames_.load(std::memory_order_acquire);
         if (out_point > 0 && in_frame >= out_point) in_frame = 0;
         const ma_result seek_r = ma_decoder_seek_to_pcm_frame(
@@ -770,37 +948,26 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
         std::memset(out_channel_buffers[c], 0, frame_count * sizeof(Sample));
     }
 
-    const TransportState st = transport_.load(std::memory_order_acquire);
-    if (st == TransportState::Stopped || st == TransportState::Paused) return 0;
-    if (!decoder_ready_) return 0;
-
     // A control operation may be replacing queue/meter/LTC storage. The
     // real-time side only tries the gate once and emits silence rather than
     // waiting; the control side owns the only spin loop.
     if (render_exclusion_.test_and_set(std::memory_order_acquire)) return 0;
     RenderActiveGuard render_guard{render_exclusion_};
+    const TransportState st = transport_.load(std::memory_order_acquire);
+    if (st == TransportState::Stopped || st == TransportState::Paused) return 0;
+    if (!decoder_ready_) return 0;
     const auto file_channels =
         file_channels_.load(std::memory_order_acquire);
 
-    const auto read  = read_ahead_read_.load(std::memory_order_relaxed);
+    auto read  = read_ahead_read_.load(std::memory_order_relaxed);
     const auto write = read_ahead_write_.load(std::memory_order_acquire);
     std::size_t frames_read = 0;
     bool natural_end = false;
     std::uint64_t playhead_after =
         playhead_frames_.load(std::memory_order_relaxed);
-    if (read == write || read_ahead_.empty()) {
-        if (!decode_terminal_.load(std::memory_order_acquire)) {
-            read_ahead_underruns_.fetch_add(1, std::memory_order_relaxed);
-        }
-        // A fade-out must continue across silence so EOF/out-point fades settle
-        // to Stopped instead of remaining FadingOut forever.
-        if (st != TransportState::FadingOut) return 0;
-    } else {
+    while (frames_read < frame_count && read != write && !read_ahead_.empty()) {
         const auto& slot = read_ahead_[read % read_ahead_.size()];
         const int decoder_result = slot.decoder_result;
-        natural_end = slot.natural_end;
-        playhead_after = slot.playhead_after;
-        frames_read = std::min<std::size_t>(slot.frames, frame_count);
 
         // A decoder failure is not EOF. Stop this cue immediately and return
         // before natural-end/follow logic; the sequencer broadcasts the pending
@@ -808,18 +975,41 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
         if (decoder_result != 0) {
             read_ahead_read_.store(read + 1, std::memory_order_release);
             stop_for_decode_error(decoder_result);
+            for (ChannelCount c = 0; c < out_channel_count; ++c)
+                std::memset(out_channel_buffers[c], 0, frame_count * sizeof(Sample));
             return 0;
         }
 
-        deinterleave_to(slot.samples.data(),
-                        frames_read,
+        const auto take = std::min<std::size_t>(
+            slot.frames - read_ahead_offset_, frame_count - frames_read);
+        deinterleave_to(slot.samples.data() + read_ahead_offset_ * file_channels,
+                        take,
                         file_channels,
                         out_channel_buffers,
-                        std::min<ChannelCount>(out_channel_count, file_channels));
-        // The slot is no longer referenced after deinterleaving; release it so
-        // the shared worker can refill while gain/meter processing continues.
-        read_ahead_read_.store(read + 1, std::memory_order_release);
+                        std::min<ChannelCount>(out_channel_count, file_channels),
+                        frames_read);
+        frames_read += take;
+        read_ahead_offset_ += take;
+        if (read_ahead_offset_ == slot.frames) {
+            playhead_after = slot.playhead_after;
+            natural_end = slot.natural_end;
+            read_ahead_offset_ = 0;
+            read_ahead_read_.store(++read, std::memory_order_release);
+            if (natural_end) break;
+        } else {
+            playhead_after = slot.playhead_before + read_ahead_offset_;
+            const auto loop_in = loop_in_frames_.load(std::memory_order_acquire);
+            if (slot.loop_end_frame > loop_in && playhead_after >= slot.loop_end_frame)
+                playhead_after = loop_in + (playhead_after - slot.loop_end_frame) %
+                    (slot.loop_end_frame - loop_in);
+        }
     }
+    if (frames_read < frame_count && !natural_end &&
+        !decode_terminal_.load(std::memory_order_acquire)) {
+        read_ahead_underruns_.fetch_add(1, std::memory_order_relaxed);
+    }
+    // EOF fade-outs advance across silence so they always settle to Stopped.
+    if (frames_read == 0 && !natural_end && st != TransportState::FadingOut) return 0;
 
     // ---- LTC virtual channel ----
     const bool ltc_on = ltc_enabled_atomic_.load(std::memory_order_acquire);
@@ -907,12 +1097,16 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
             duck_command_target_linear_.load(std::memory_order_relaxed);
         const long long command_duration =
             duck_command_duration_samples_.load(std::memory_order_relaxed);
+        const bool command_active =
+            duck_command_active_.load(std::memory_order_relaxed);
         const auto revision_after = duck_command_revision_.load(std::memory_order_acquire);
         if (revision_before == revision_after) {
-            duck_start_linear_ = duck_now;
+            if (!duck_active_ && duck_elapsed_samples_ >= duck_duration_samples_)
+                duck_now = gain_now;
             duck_target_linear_ = command_target;
             duck_duration_samples_ = command_duration;
             duck_elapsed_samples_ = 0;
+            duck_active_ = command_active;
             duck_applied_revision_ = revision_after;
             if (command_duration == 0) {
                 duck_now = command_target;
@@ -920,24 +1114,27 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
             }
         }
     }
+    const bool duck_limited = duck_active_ ||
+        duck_elapsed_samples_ < duck_duration_samples_;
     float duck_end = duck_now;
     if (duck_duration_samples_ > 0 &&
         duck_elapsed_samples_ < duck_duration_samples_) {
-        const long long next = std::min<long long>(
-            duck_elapsed_samples_ + static_cast<long long>(frame_count),
-            duck_duration_samples_);
-        duck_now = duck_start_linear_ + (duck_target_linear_ - duck_start_linear_) *
-            (static_cast<float>(duck_elapsed_samples_) /
-             static_cast<float>(duck_duration_samples_));
-        duck_end = duck_start_linear_ + (duck_target_linear_ - duck_start_linear_) *
-            (static_cast<float>(next) / static_cast<float>(duck_duration_samples_));
+        const auto remaining = duck_duration_samples_ - duck_elapsed_samples_;
+        const auto advance = std::min<long long>(frame_count, remaining);
+        // A released ceiling follows the base fader, including gain above 0 dB.
+        const float target = duck_active_ ? duck_target_linear_ :
+            std::max(1.0f, gain_end);
+        duck_end = duck_now + (target - duck_now) *
+            (static_cast<float>(advance) / static_cast<float>(remaining));
         duck_current_linear_.store(duck_end, std::memory_order_release);
-        duck_elapsed_samples_ = next;
+        duck_elapsed_samples_ += advance;
     }
     // Duck Level is an absolute ceiling, not a ratio derived from the saved
     // fader. This remains safe while the base fader itself is still slewing.
-    const float output_gain_now = std::min(gain_now, duck_now);
-    const float output_gain_end = std::min(gain_end, duck_end);
+    const float output_gain_now = duck_limited ? std::min(gain_now, duck_now) : gain_now;
+    const float output_gain_end = duck_active_ ||
+        duck_elapsed_samples_ < duck_duration_samples_
+            ? std::min(gain_end, duck_end) : gain_end;
 
     // Apply linear gain ramp across the block. Per-sample cosine would be
     // smoother but per-block linear is inaudible at the fade durations we use
@@ -998,16 +1195,22 @@ float PlaybackItem::gain_db() const noexcept {
 }
 
 void PlaybackItem::stop_with_fade(std::chrono::milliseconds dur) {
+    begin_render_exclusion();
     const TransportState st = transport_.load(std::memory_order_acquire);
-    if (st == TransportState::Stopped || st == TransportState::FadingOut) return;
+    if (st == TransportState::Stopped || st == TransportState::FadingOut ||
+        st == TransportState::Paused) {
+        end_render_exclusion();
+        return;
+    }
+    playback_revision_.fetch_add(1, std::memory_order_acq_rel);
     // Not a natural end — don't set fading_out_naturally_ so the sequencer
     // won't auto-advance on this particular fade completion.
     if (dur.count() > 0) {
         start_fade(gain_current_linear_.load(), 0.0f, dur,
                    TransportState::FadingOut, TransportState::Stopped);
-    } else {
-        stop_now();
     }
+    end_render_exclusion();
+    if (dur.count() <= 0) stop_now();
 }
 
 } // namespace liveplay::audio

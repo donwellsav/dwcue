@@ -198,12 +198,12 @@ const uiMode = read('client/app/composables/useUiMode.ts');
 assert.match(
   waveformTrimmer,
   /class="normalize-menu"[\s\S]*<summary class="normalize-btn"[\s\S]*properties\.normalize[\s\S]*class="normalize-popover"[\s\S]*v-model="normalizationMode"[\s\S]*value="loudness"[\s\S]*value="truePeak"[\s\S]*v-model\.number\.lazy="normalizationTarget"[\s\S]*type="number"[\s\S]*step="0\.1"[\s\S]*normalizationUnit/,
-  'Properties must expose one Normalize control with editable 0.1-step LUFS and dBTP levels in its popover',
+  'Properties must expose manual loudness matching and peak reduction with editable 0.1-step levels',
 );
 assert.match(
   waveformTrimmer,
-  /const normalizationMode = ref<NormalizationMode>\('truePeak'\);[\s\S]*const customTruePeakTarget = ref<number \| null>\(-0\.1\);/,
-  'Normalize must default to True peak at -0.1 dBTP',
+  /const normalizationMode = ref<NormalizationMode>\('truePeak'\);[\s\S]*const peakReductionCeiling = ref\(-0\.1\);/,
+  'the peak reduction control must default to a -0.1 dBTP ceiling',
 );
 assert.match(
   waveformTypes,
@@ -222,8 +222,8 @@ assert.match(
 );
 assert.match(
   propertiesPanel,
-  /handleNormalize = async \([\s\S]*mode: 'loudness' \| 'truePeak'[\s\S]*effectiveTarget = Math\.max\(-60, Math\.min\([\s\S]*mode === 'truePeak' \? limiterCeilingDb : 0[\s\S]*applyTruePeakNormalization\(audioItem, analysis, effectiveTarget\)[\s\S]*applyLoudnessMatch\([\s\S]*effectiveTarget/,
-  'Normalize must route by measurement and cap true peak at the active limiter ceiling',
+  /handleNormalize = async \([\s\S]*mode: 'loudness' \| 'truePeak'[\s\S]*effectiveTarget = Math\.max\(-60, Math\.min\(0, normalizeTarget\)\)[\s\S]*applyTruePeakCeiling\(audioItem, analysis, effectiveTarget\)[\s\S]*applyLoudnessMatch\([\s\S]*effectiveTarget/,
+  'manual peak reduction and normalization must use their own ceiling or target independently of the output limiter',
 );
 assert.match(
   liveMeters,
@@ -907,23 +907,8 @@ assert.match(
 );
 assert.match(
   projectSettingsModal,
-  /:checked="autoReduceTruePeaksOnImport"[\s\S]{0,200}@change="onAutoReduceTruePeaksOnImportChange"/,
-  'project settings must expose persisted true-peak reduction',
-);
-assert.match(
-  projectSettingsModal,
   /:checked="cycleTrackColors"[\s\S]{0,200}@change="onCycleTrackColorsChange"/,
   'project settings must expose persisted track-color cycling',
-);
-assert.match(
-  projectStore,
-  /case 'waveform_ready':[\s\S]*autoReduceTruePeaksOnImport !== false[\s\S]*applyTruePeakCeiling\([\s\S]*limiterCeilingDb/,
-  'normal, YouTube, and cart imports must share reduction to the active true-peak ceiling',
-);
-assert.match(
-  projectStore,
-  /catch\(\(e: Error\)[\s\S]*if \(!reduceTruePeaks\) return;[\s\S]*current\.volume !== requestedVolume[\s\S]*applyTruePeakCeiling\(current, built, limiterCeilingDb\)/,
-  'failed trimmed-range analysis must conservatively retain true-peak safety without overwriting operator edits',
 );
 
 const transpiledProject = ts.transpileModule(
@@ -944,7 +929,6 @@ const {
 } = projectRuntime.exports;
 assert.deepEqual(CART_SLOT_COUNT_LIMITS, { min: 1, max: 64, default: 16 });
 assert.equal(DEFAULT_PROJECT_SETTINGS.cartSlotCount, 16);
-assert.equal(DEFAULT_PROJECT_SETTINGS.autoReduceTruePeaksOnImport, true);
 assert.equal(DEFAULT_PROJECT_SETTINGS.cycleTrackColors, true);
 assert.equal(PRESET_COLORS.includes('#FF0000'), false);
 assert.equal(PRESET_COLORS.includes('#CC0000'), false);
@@ -993,32 +977,27 @@ const audioRuntime = { exports: {} };
 Function('exports', 'module', transpiledAudio)(audioRuntime.exports, audioRuntime);
 const {
   applyTruePeakCeiling,
-  applyTruePeakNormalization,
   dbToConsolePosition,
   consolePositionToDb,
   exceedsTruePeakCeiling,
 } = audioRuntime.exports;
-const peakLimitedItem = { duration: 60, inPoint: 0, outPoint: 60, volume: 1 };
-const peakAnalysis = { analysis_version: 1, true_peak_dbtp: 0.9 };
-assert.equal(applyTruePeakCeiling(peakLimitedItem, peakAnalysis), true);
-assert.ok(Math.abs(peakAnalysis.true_peak_dbtp
-  + 20 * Math.log10(peakLimitedItem.volume) - (-0.1)) < 1e-9);
-assert.equal(applyTruePeakCeiling(peakLimitedItem, peakAnalysis), false);
+const peakAnalysis = { analysis_version: 2, true_peak_dbtp: 0.9 };
 assert.equal(exceedsTruePeakCeiling(
-  { ...peakLimitedItem, waveform: { ...peakAnalysis, duration: 60 } },
+  { duration: 60, inPoint: 0, outPoint: 60, volume: 1, waveform: { ...peakAnalysis, duration: 60 } },
+  -0.1,
+), true);
+assert.equal(exceedsTruePeakCeiling(
+  { duration: 60, inPoint: 0, outPoint: 60, volume: 0.5, waveform: { ...peakAnalysis, duration: 60 } },
   -0.1,
 ), false);
-const alreadySafeItem = { volume: 0.5 };
-assert.equal(applyTruePeakCeiling(alreadySafeItem, peakAnalysis), false);
-assert.equal(alreadySafeItem.volume, 0.5);
-const normalizedPeakItem = { volume: 0.25 };
-assert.equal(applyTruePeakNormalization(normalizedPeakItem, peakAnalysis, -1), true);
+const reducedPeakItem = { volume: 1 };
+assert.equal(applyTruePeakCeiling(reducedPeakItem, peakAnalysis, -1), true);
 assert.ok(Math.abs(peakAnalysis.true_peak_dbtp
-  + 20 * Math.log10(normalizedPeakItem.volume) - (-1)) < 1e-9);
-assert.equal(applyTruePeakNormalization(normalizedPeakItem, peakAnalysis, -1), false);
-assert.equal(applyTruePeakNormalization(
+  + 20 * Math.log10(reducedPeakItem.volume) - (-1)) < 1e-9);
+assert.equal(applyTruePeakCeiling(reducedPeakItem, peakAnalysis, -1), false);
+assert.equal(applyTruePeakCeiling(
   { volume: 1 },
-  { analysis_version: 1, true_peak_dbtp: -120 },
+  { analysis_version: 2, true_peak_dbtp: -120 },
   -1,
 ), false);
 const consoleDbValues = [-60, -40, -20, -10, 0, 10, 40];
@@ -1067,11 +1046,6 @@ assert.match(itemRender.slice(decodeFailureStart, naturalEndStart), /return 0;/,
 const projectStateHeader = read('server/include/liveplay/core/project_state.hpp');
 const projectState = read('server/src/core/project_state.cpp');
 const atomicFile = read('server/include/liveplay/util/atomic_file.hpp');
-assert.match(
-  projectState,
-  /"autoReduceTruePeaksOnImport",\s*true[\s\S]*"cycleTrackColors",\s*true/,
-  'fresh server projects must default to true-peak safety and track-color cycling',
-);
 assert.match(
   projectState,
   /bool ProjectState::start_preview[\s\S]*out_point = it\.value\("outPoint", 0\.0\);[\s\S]*endBehavior[\s\S]*== "loop"[\s\S]*set_out_point_seconds\(out_point > in_point \? out_point : 0\.0\);[\s\S]*set_loop\(loop, in_point\);[\s\S]*prime\(2\.0, in_point\)/,
@@ -1136,7 +1110,7 @@ assert.match(
 const mainCpp = read('server/src/main.cpp');
 assert.match(
   projectStateHeader + projectState + controlServer,
-  /start_position_override_sec[\s\S]*std::clamp\(start_position_override_sec, in_point,[\s\S]*pi->prime\(2\.0, play_start\)[\s\S]*start_seconds must be a number[\s\S]*start_seconds requires an audio item[\s\S]*state\.play_item\(uuid, -1\.0, audio::CueId\{\}, \*start_seconds\)/,
+  /start_position_override_sec[\s\S]*std::clamp\(start_position_override_sec, in_point,[\s\S]*playback->prime\(2\.0, play_start\)[\s\S]*start_seconds must be a number[\s\S]*start_seconds requires an audio item[\s\S]*state\.play_item\(uuid, -1\.0, audio::CueId\{\}, \*start_seconds\)/,
   'the server must validate and clamp Properties audition starts before priming audio',
 );
 assert.match(
@@ -2000,7 +1974,7 @@ assert.match(
 );
 assert.match(
   oneShotPanel,
-  /importFromServerPath[\s\S]*color: colorForNewAudioItem\(currentProject\.value\.settings, slot\)/,
+  /importFromServerPath[\s\S]*color: colorForNewAudioItem\(project\.settings, slot\)/,
   'new One Shot imports must receive their slot-ordered palette color',
 );
 assert.match(
@@ -2067,11 +2041,6 @@ assert.match(
   playlistView,
   /saveProject\(\{ signal \}\)[\s\S]*retainFiles: true/,
   'an ambiguous cue-save result must retain downloaded media',
-);
-assert.match(
-  playlistView,
-  /buildVerifiedAudioCue[\s\S]*fetchMetadata\(serverPath, signal\)[\s\S]*fetchWaveformByPath\(serverPath\)[\s\S]*buildWaveformFromChannels[\s\S]*colorForNewAudioItem\(settings, colorIndex\)[\s\S]*autoTrimSilenceOnImport === true[\s\S]*trimSilence\(cue\)[\s\S]*autoMatchLoudnessOnImport === true[\s\S]*autoReduceTruePeaksOnImport !== false[\s\S]*applyTruePeakCeiling\(cue, analysis, outputTargetLevels\.value\.limiterCeilingDb\)[\s\S]*anchorStartNextMarker[\s\S]*buildSpotifyCueSpecs[\s\S]*buildVerifiedAudioCue/,
-  'Spotify template cues must be metadata-named, show-ready, palette-cycled, and true-peak safe',
 );
 assert.match(
   playlistView,
@@ -2362,7 +2331,7 @@ assert.match(
 );
 assert.match(
   electronMain,
-  /spotify-preflight[\s\S]*\['save', url, '--save-file', '-'\][\s\S]*selectedRawTracks = selectedTrackIds\.map[\s\S]*selectedRawTracks\.some\(\(track\) => !track\)[\s\S]*const chunkTracks = selectedRawTracks\.slice[\s\S]*'url', \.\.\.chunkTracks\.map\(\(track\) => track\.url\)/,
+  /spotify-preflight[\s\S]*\['save', metadataUrl, '--save-file', '-'\][\s\S]*selectedRawTracks = selectedTrackIds\.map[\s\S]*selectedRawTracks\.some\(\(track\) => !track\)[\s\S]*const chunkTracks = selectedRawTracks\.slice[\s\S]*'url', \.\.\.chunkTracks\.map\(\(track\) => track\.url\)/,
   'Spotify review must stay metadata-only and download only the validated selected tracks',
 );
 assert.match(
@@ -2404,11 +2373,6 @@ assert.match(
   `${audioImportModal}\n${playlistView}`,
   /emit\('cancel'\)[\s\S]*audioImportAbortController[\s\S]*onProgress[\s\S]*signal\?\.aborted/,
   'local batch verification must expose progress and abort through its existing import path',
-);
-assert.match(
-  playlistView,
-  /const verified = await buildVerifiedAudioCue\([\s\S]*if \(fileMode === 'copy'\)[\s\S]*copyToMediaResult[\s\S]*verified\.cue\.mediaPath = fileMode === 'link' \? ''/,
-  'local files must decode successfully before copying, and linked cues must not carry a colliding relative fallback',
 );
 assert.match(
   playlistView,

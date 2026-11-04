@@ -104,36 +104,36 @@
             @focusout="handleNormalizeFocusOut"
             @keydown.esc.prevent.stop="closeNormalizeMenu"
           >
-            <summary class="normalize-btn" :title="t('properties.normalizeHelp')">
+            <summary class="normalize-btn" :title="t(normalizationMode === 'truePeak' ? 'properties.peakReductionHelp' : 'properties.normalizationTargetHelp')">
               <span class="material-symbols-rounded">tune</span>
-              <span>{{ t('properties.normalize') }}</span>
+              <span>{{ t(normalizationMode === 'truePeak' ? 'properties.reducePeaks' : 'properties.normalize') }}</span>
               <span class="material-symbols-rounded normalize-chevron">expand_more</span>
             </summary>
             <div class="normalize-popover">
               <label class="normalize-field">
-                <span>{{ t('properties.normalizeMode') }}</span>
+                <span>{{ t('properties.action') }}</span>
                 <select v-model="normalizationMode" class="normalize-mode">
                   <option value="loudness">{{ t('properties.loudnessTargets') }}</option>
-                  <option value="truePeak">{{ t('properties.truePeakTargets') }}</option>
+                  <option value="truePeak">{{ t('properties.reducePeaks') }} (dBTP)</option>
                 </select>
               </label>
               <label class="normalize-field">
-                <span>{{ t('properties.normalizeTarget') }}</span>
+                <span>{{ t(normalizationMode === 'truePeak' ? 'properties.peakCeiling' : 'properties.normalizeTarget') }}</span>
                 <span class="normalize-level">
                   <input
                     v-model.number.lazy="normalizationTarget"
                     class="normalize-target"
                     type="number"
                     min="-60"
-                    :max="normalizationTargetMax"
+                    max="0"
                     step="0.1"
-                    :title="t('properties.normalizeHelp')"
+                    :title="t(normalizationMode === 'truePeak' ? 'properties.peakReductionHelp' : 'properties.normalizationTargetHelp')"
                   />
                   <span class="normalize-unit">{{ normalizationUnit }}</span>
                 </span>
               </label>
               <button class="normalize-apply" type="button" @click="normalizeAudio">
-                {{ t('properties.normalize') }}
+                {{ t(normalizationMode === 'truePeak' ? 'properties.reducePeaks' : 'properties.normalize') }}
               </button>
             </div>
           </details>
@@ -504,33 +504,25 @@ type NormalizationMode = 'loudness' | 'truePeak';
 const normalizationMode = ref<NormalizationMode>('truePeak');
 const normalizeMenu = ref<HTMLDetailsElement | null>(null);
 const customLoudnessTarget = ref<number | null>(null);
-const customTruePeakTarget = ref<number | null>(-0.1);
+const peakReductionCeiling = ref(-0.1);
 const projectLoudnessTarget = computed(() =>
   Number.isFinite(outputTargetLevels.value.loudnessTargetLufs)
     ? outputTargetLevels.value.loudnessTargetLufs
     : -23,
-);
-const projectTruePeakTarget = computed(() =>
-  Number.isFinite(outputTargetLevels.value.limiterCeilingDb)
-    ? Math.max(-60, Math.min(0, outputTargetLevels.value.limiterCeilingDb))
-    : -1,
-);
-const normalizationTargetMax = computed(() =>
-  normalizationMode.value === 'truePeak' ? projectTruePeakTarget.value : 0,
 );
 const normalizationUnit = computed(() =>
   normalizationMode.value === 'truePeak' ? 'dBTP' : 'LUFS',
 );
 const normalizationTarget = computed<number>({
   get: () => normalizationMode.value === 'truePeak'
-    ? customTruePeakTarget.value ?? projectTruePeakTarget.value
+    ? peakReductionCeiling.value
     : customLoudnessTarget.value ?? projectLoudnessTarget.value,
   set: (value) => {
     if (!Number.isFinite(value)) return;
     const target = Math.round(
-      Math.max(-60, Math.min(normalizationTargetMax.value, value)) * 10,
+      Math.max(-60, Math.min(0, value)) * 10,
     ) / 10;
-    if (normalizationMode.value === 'truePeak') customTruePeakTarget.value = target;
+    if (normalizationMode.value === 'truePeak') peakReductionCeiling.value = target;
     else customLoudnessTarget.value = target;
   },
 });
@@ -1301,7 +1293,7 @@ const trimSilence = () => {
   emit('trimSilence');
 };
 
-// Normalize audio to the selected loudness or true-peak level.
+// Apply explicit loudness matching or attenuation-only peak reduction.
 const normalizeAudio = () => {
   if (!waveformData.value || waveformData.value.length === 0) {
     console.warn('No waveform data available for normalization');
@@ -1312,8 +1304,7 @@ const normalizeAudio = () => {
   const target = normalizationTarget.value;
   if (!Number.isFinite(target)) return;
 
-  // Emit normalize event to trigger batch normalization in parent.
-  // The parent (handleNormalize) normalizes every selected item INDIVIDUALLY
+  // The parent (handleNormalize) processes every selected item individually
   // from its own measured loudness or true peak, and
   // persists itself. We deliberately do NOT emit 'change' here: that would run
   // the multi-select snapshot-diff in handleSave and overwrite each item's

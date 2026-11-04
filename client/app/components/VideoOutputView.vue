@@ -51,12 +51,14 @@ const diagnosticSource = computed(() => showAudioSyncCard.value ? status.value?.
 const {
   videoEl, videoSrc, showVideo, cueImageSrc, standbySrc,
   onVideoLoadedMetadata, onVideoCanPlay, onVideoError,
+  getPictureHealth,
 } = useVideoOutput(diagnosticSource);
 
 useHead({ title: 'DonWells Cue — Video Output' });
 let offStatus: (() => void) | null = null;
 let statusRevision = 0;
 let infoTimer: ReturnType<typeof setInterval> | undefined;
+let healthTimer: ReturnType<typeof setInterval> | undefined;
 
 async function refreshStatus() {
   const api = window.electronAPI?.videoOutput;
@@ -94,7 +96,7 @@ function onDblClick() {
   void window.electronAPI?.videoOutput?.toggleFullscreen();
 }
 
-onMounted(() => {
+onMounted(async () => {
   const api = window.electronAPI?.videoOutput;
   if (!api) return;
   offStatus = api.onStatus((next) => { statusRevision += 1; status.value = next; });
@@ -102,9 +104,14 @@ onMounted(() => {
   syncConnection();
   window.addEventListener('keydown', onKeydown);
   window.addEventListener('dblclick', onDblClick);
+  await nextTick();
+  // A minimized renderer can withhold animation callbacks behind the native cover.
+  void api.rendererReady().catch(() => {});
+  healthTimer = setInterval(() => { void api.reportPictureHealth(getPictureHealth()).catch(() => {}); }, 1000);
 });
 onBeforeUnmount(() => {
   clearInterval(infoTimer);
+  clearInterval(healthTimer);
   offStatus?.();
   window.removeEventListener('keydown', onKeydown);
   window.removeEventListener('dblclick', onDblClick);

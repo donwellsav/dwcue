@@ -115,6 +115,7 @@ private:
     void install_routes();
     void broadcast_loop();
     void waveform_worker();   // drains the async waveform-generation queue
+    void http_action_worker();
 
     // Fan-out helper for multi-client mutation sync. Mutating REST routes
     // call this with a doc_patch payload so every connected client mirrors

@@ -1,5 +1,144 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import ts from 'typescript';
+
+function projectFunction(name: string, dependencies: Record<string, unknown>) {
+  const source = readFileSync(new URL('../app/composables/useProject.ts', import.meta.url), 'utf8');
+  const ast = ts.createSourceFile('useProject.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  let declaration: ts.VariableDeclaration | undefined;
+  const find = (node: ts.Node) => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === name) declaration = node;
+    ts.forEachChild(node, find);
+  };
+  find(ast);
+  assert.ok(declaration, `${name} must exist`);
+  const compiled = ts.transpileModule(`const ${declaration.getText(ast)};`, {
+    compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  return Function(...Object.keys(dependencies), `${compiled}; return ${name};`)(...Object.values(dependencies));
+}
+
+test('media reload invalidates only its waveform and ignores an old show session', async () => {
+  const item: any = { uuid: 'media', type: 'audio', waveform: { peaks: [0.1] } };
+  const project = { items: [item] }, currentProject = { value: project as any };
+  const session = { value: 'current' }, progress = { value: null as any };
+  const cache = new Map([['media', item.waveform], ['other', { peaks: [0.3] }]]);
+  const generated: unknown[][] = [], invalidated: unknown[][] = [];
+  const server = {
+    fetchProjectProgress: async () => ({ ready: true }),
+    invalidateWaveformCache: (...args: unknown[]) => invalidated.push(args),
+    requestWaveformGeneration: async (...args: unknown[]) => { generated.push(args); },
+  };
+  const apply = projectFunction('applyDocPatch', {
+    currentProject, serverProjectSessionId: session, audioLoadingProgress: progress,
+    server: () => server, _waveformCache: cache, findItemByUuid: () => item,
+    triggerWaveformUpdate() {}, acknowledgeDocPatchBaseline() {}, console,
+    itemPatchIdentity: { owns: () => false },
+  });
+  const patch = { op: 'media_changed', project_session_id: 'current', item_uuid: 'media',
+    path: '/media.wav', file_revision: 'new-file', reloaded: true };
+  apply({ ...patch, project_session_id: 'old' });
+  assert.equal(cache.has('media'), true);
+  assert.equal(generated.length, 0);
+  apply({ ...patch, reloaded: false });
+  assert.ok(item.waveform, 'the current pinned playback keeps its analysis');
+  assert.equal(generated.length, 0);
+  apply(patch);
+  await Promise.resolve();
+  assert.equal(item.waveform, undefined);
+  assert.equal(cache.has('media'), false);
+  assert.equal(cache.has('other'), true);
+  assert.deepEqual(generated, [['/media.wav', 'media', true, 'new-file']]);
+  assert.equal(invalidated.length, 1);
+  assert.deepEqual(progress.value, { ready: true });
+});
+
+test('waveform delivery preserves the full-file timing sentinel and explicit trims', () => {
+  for (const outPoint of [0, 0.8]) {
+    const item: any = { uuid: 'media', type: 'audio', volume: 0.3, inPoint: 0, outPoint, duration: 0 };
+    const baseline = { ...item }, cache = new Map();
+    const apply = projectFunction('applyDocPatch', {
+      currentProject: { value: { items: [item] } }, itemPatchIdentity: { owns: () => false },
+      serverProjectSessionId: { value: 'current' }, findItemByUuid: () => item,
+      findItemAndParent: () => ({ item: baseline }), _waveformCache: cache, markRaw: (x: any) => x,
+      lastItems: [baseline], lastCartOnly: [],
+      cacheWaveform: (uuid: string, waveform: any) => cache.set(uuid, waveform), triggerWaveformUpdate() {},
+      buildWaveformFromChannels: () => ({ peaks: [0.1], duration: 1.001 }),
+      acknowledgeDocPatchBaseline() {},
+    });
+    apply({ op: 'waveform_ready', item_uuid: 'media', duration_ms: 1001, channels: [] });
+    assert.equal(item.outPoint, outPoint, 'analysis must not turn rounded duration into an authored trim');
+    assert.equal(baseline.outPoint, outPoint);
+    assert.equal(item.volume, 0.3);
+    assert.equal(item.inPoint, 0);
+  }
+});
+
+test('an owned project header commits its server session together with the local identity', () => {
+  const session = { value: 'old-session' };
+  const currentProject = { value: null as any };
+  const path = { value: '' };
+  const apply = projectFunction('applyServerHeader', {
+    currentProject, projectFilePathRef: path, serverProjectSessionId: session,
+    projectEpoch: { value: 0 }, hasUnsavedChanges: { value: false },
+    projectPathFromHeader: (h: any) => h.server.projectFilePath,
+    isNativeProjectPath: (p: string) => p.endsWith('.dwcue'),
+    reportOpenProjectPath() {}, updateIndices() {}, _uninstallItemsWatcherFn() {},
+    DEFAULT_CART_SLOT_KEYS: {}, DEFAULT_THEME: {},
+    _projectHydration: { begin: () => ({ finish() {} }) },
+    clearLocalProjectMirror: () => { currentProject.value = null; path.value = ''; session.value = ''; },
+  });
+  apply({ hasOpenProject: true, name: 'New', server: { projectFilePath: '/new.dwcue', projectSessionId: 'new-session' } });
+  assert.equal(currentProject.value.name, 'New');
+  assert.equal(path.value, '/new.dwcue');
+  assert.equal(session.value, 'new-session');
+  apply({ hasOpenProject: false, server: { projectFilePath: '', projectSessionId: 'closed-session' } });
+  assert.equal(currentProject.value, null);
+  assert.equal(session.value, 'closed-session');
+});
+
+test('new-project save uses the session returned by loading its new document', async () => {
+  const calls: any[][] = [];
+  const server = { connected: true,
+    replaceProjectDocument: async (...args: any[]) => { calls.push(['replace', ...args]); return { server: { projectSessionId: 'existing-session' } }; },
+    loadProjectDocument: async (...args: any[]) => { calls.push(['load-document', ...args]); return { server: { projectSessionId: 'created-session' } }; },
+    saveProjectTo: async (...args: any[]) => { calls.push(['save', ...args]); return { ok: true }; },
+    fetchProjectHeader: async () => ({ server: { projectSessionId: 'saved-session' } }),
+  };
+  const create = projectFunction('createNewProject', {
+    isLoading: { value: false }, loadingMessage: { value: '' }, isHydrating: { value: false },
+    useLiveplayServer: () => server, DEFAULT_CART_SLOT_KEYS: {}, DEFAULT_THEME: {}, DEFAULT_PROJECT_SETTINGS: {},
+    projectPathInFolder: (folder: string, name: string) => `${folder}/${name}.dwcue`,
+    applyServerHeader: () => ({ finish() {} }), nextTick: async () => {},
+    refreshItemsBaselineAfterHydrate() {}, installItemsWatcherFn() {}, recordRecentProject() {},
+    projectFilePathRef: { value: '/show/New.dwcue' },
+  });
+  assert.equal(await create('New', '/show'), true);
+  assert.equal(calls[0][0], 'load-document');
+  assert.equal(calls[1][0], 'save');
+  assert.equal(calls[1][4], 'created-session');
+});
+
+test('explicit session recovery uses fresh server and load identities for its chained writes', async () => {
+  const calls: any[][] = [];
+  const project = { name: 'Local', items: [], cartOnlyItems: [] };
+  const server = {
+    fetchProjectHeader: async () => ({ server: { projectSessionId: 'fresh-server-session' } }),
+    loadProjectFromPath: async (...args: any[]) => { calls.push(['load', ...args]); return { server: { projectSessionId: 'loaded-session' } }; },
+    replaceProjectDocument: async (...args: any[]) => { calls.push(['replace', ...args]); return { server: { projectSessionId: 'overlay-session' } }; },
+  };
+  const resume = projectFunction('resumeProjectOnServer', {
+    currentProject: { value: project }, _projectHydration: { wait: async () => true },
+    useLiveplayServer: () => server, projectFilePathRef: { value: '/show/Local.dwcue' },
+    isNativeProjectPath: () => true, useCartItems: () => ({ cartOnlyItems: { value: new Map() } }),
+    hasUnsavedChanges: { value: true }, buildDocumentSnapshot: () => ({ ...project }),
+    uninstallItemsWatcherFn() {}, tryRejoinExistingProject: async () => true,
+  });
+  assert.equal(await resume(), true);
+  assert.equal(calls[0][2], 'fresh-server-session');
+  assert.equal(calls[1][2], 'loaded-session');
+});
 
 import {
   isCurrentSaveIdentity,
@@ -118,4 +257,25 @@ test('an edit revision created while a save is pending stays dirty', async () =>
   const result = await pending;
   if (result.request.revision === revision) dirty = !result.ok;
   assert.equal(dirty, true);
+});
+
+test('closing keeps the old server session after clearing the local mirror and cannot clear a replacement', async () => {
+  const currentProject = { value: { name: 'old' } as any };
+  const session = { value: 'old-session' };
+  let finish!: () => void;
+  const response = new Promise<void>(resolve => { finish = resolve; });
+  const requests: unknown[] = [];
+  const close = projectFunction('closeProject', {
+    serverProjectSessionId: session,
+    clearLocalProjectMirror: () => { currentProject.value = null; session.value = ''; },
+    useLiveplayServer: () => ({ connected: true, closeProjectOnServer: (expected: string) => { requests.push(expected); return response; } }),
+    console,
+  });
+  const pending = close();
+  assert.equal(currentProject.value, null);
+  assert.deepEqual(requests, ['old-session'], 'close request must carry the session that the operator closed');
+  currentProject.value = { name: 'new' }; session.value = 'new-session';
+  finish(); await pending;
+  assert.equal(currentProject.value.name, 'new');
+  assert.equal(session.value, 'new-session');
 });

@@ -25,12 +25,14 @@ interface OutputItem {
   mediaServerPath: string | null;
   inPoint: number;
   outPoint: number | null;
+  fileRevision: string | null;
 }
 
 interface DocMirror {
   folderPath: string | null;
   standbyImage: string | null;
   items: ReadonlyMap<string, OutputItem>;
+  sessionId: string | null;
 }
 
 interface ActiveCue {
@@ -64,6 +66,8 @@ function readTriggerSeq(value: unknown): number | null {
 function readDoc(value: unknown): DocMirror | null {
   if (!value || typeof value !== 'object') return null;
   const record = value as Record<string, unknown>;
+  const serverInfo = record.server as Record<string, any> | undefined;
+  const fileRevisions = serverInfo?.audioReadiness?.fileRevisions ?? {};
   const items = new Map<string, OutputItem>();
   const walk = (list: unknown): void => {
     if (!Array.isArray(list)) return;
@@ -80,6 +84,7 @@ function readDoc(value: unknown): DocMirror | null {
           mediaServerPath: readString(item.mediaServerPath),
           inPoint: readNumber(item.inPoint) ?? 0,
           outPoint: readNumber(item.outPoint),
+          fileRevision: readString(fileRevisions[uuid]),
         });
       }
       walk(item.children);
@@ -96,6 +101,7 @@ function readDoc(value: unknown): DocMirror | null {
         : null,
     ),
     items,
+    sessionId: readString(serverInfo?.projectSessionId),
   };
 }
 
@@ -144,8 +150,10 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
 
   let sourceItemUuid: string | null = null;
   let sourceSignature: string | null = null;
+  let sourceFileRevision: string | null = null;
   let sourceVersion = 0;
   let playAttemptFailed = false;
+  let playAttemptGeneration = 0;
   let reportedPlaybackError: PlaybackErrorPayload | null = null;
   let noDecodableVideoTrack = false;
 
@@ -161,6 +169,41 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   let progressFrameTimestamp: number | null = null;
   let videoFrameCallbackId: number | null = null;
   let videoFrameCallbackElement: HTMLVideoElement | null = null;
+  let presentedAt: number | null = null;
+  let presentedMediaTime: number | null = null;
+  let presentedFrames: number | null = null;
+
+  watch(videoSrc, () => {
+    cancelFrameClockCheck();
+    presentedAt = presentedMediaTime = presentedFrames = null;
+  }, { flush: 'sync' });
+
+  function getPictureHealth(): VideoPictureHealth {
+    const element = videoEl.value;
+    const quality = element?.getVideoPlaybackQuality?.();
+    const state = videoFailed.value ? 'error'
+      : !showVideo.value ? (cueImageSrc.value || standbySrc.value ? 'still' : 'idle')
+      : activeTransport.value === TRANSPORT_PAUSED ? 'paused'
+      : !hasHealthyClock.value || waitingForHealthyClockSample || waitingForNativeProgress ? 'clock-wait'
+      : element?.seeking ? 'seeking' : !videoReady.value ? 'loading' : 'playing';
+    return {
+      itemUuid: activeItemUuid.value, state,
+      sourceItemUuid,
+      fileRevision: sourceFileRevision,
+      preparedSeconds: sourceFileRevision && sourceItemUuid
+        && sourceFileRevision === doc.value?.items.get(sourceItemUuid)?.fileRevision
+        && (showVideo.value || nextItemUuid.value === sourceItemUuid)
+        && videoReady.value && !videoFailed.value
+        && currentVideoEventElement() && (element?.readyState ?? 0) >= 2 && !element?.seeking
+        && Math.abs(element!.currentTime - pendingSeekSeconds) <= CHASE_DEADBAND_S
+        ? pendingSeekSeconds : null,
+      mediaTime: presentedMediaTime, presentedFrames,
+      presentedAgeMs: presentedAt === null ? null : Math.max(0, performance.now() - presentedAt),
+      droppedFrames: quality?.droppedVideoFrames ?? null,
+      totalFrames: quality?.totalVideoFrames ?? null,
+      readyState: element?.readyState ?? 0,
+    };
+  }
 
   function reportPlaybackError(payload: PlaybackErrorPayload | null) {
     if (payload === null && reportedPlaybackError === null) return;
@@ -191,17 +234,20 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   }
 
   function itemMediaUrl(item: OutputItem): string {
-    const signature = `${item.mediaServerPath ?? ''}\u0000${item.mediaPath ?? ''}`;
+    const signature = `${doc.value?.sessionId ?? ''}\u0000${item.fileRevision ?? ''}\u0000${item.mediaServerPath ?? ''}\u0000${item.mediaPath ?? ''}`;
     if (sourceItemUuid !== item.uuid || sourceSignature !== signature) {
       sourceVersion += 1;
     }
     sourceItemUuid = item.uuid;
     sourceSignature = signature;
+    sourceFileRevision = item.fileRevision;
     const base = String(server.serverUrl || '').replace(/\/+$/, '');
     const params = new URLSearchParams(diagnosticItem === item
       ? { path: item.mediaServerPath ?? '' }
       : { item_uuid: item.uuid });
     params.set('source_revision', String(sourceVersion));
+    if (item.fileRevision) params.set('file_revision', item.fileRevision);
+    if (doc.value?.sessionId) params.set('project_session_id', doc.value.sessionId);
     const token = String(server.effectiveAccessToken || '');
     if (token) params.set('access_token', token);
     return `${base}/api/media?${params}`;
@@ -219,16 +265,25 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   }
 
   function scheduleFrameClockCheck() {
-    const element = videoEl.value;
+    const element = currentVideoEventElement();
     if (!element || videoFrameCallbackId !== null
       || typeof element.requestVideoFrameCallback !== 'function') return;
     videoFrameCallbackElement = element;
-    videoFrameCallbackId = element.requestVideoFrameCallback(onVideoFrame);
+    const source = videoSrc.value;
+    videoFrameCallbackId = element.requestVideoFrameCallback((timestamp, metadata) => {
+      if (videoSrc.value !== source || videoEl.value !== element) return;
+      onVideoFrame(timestamp, metadata);
+    });
   }
 
-  function onVideoFrame(timestamp: DOMHighResTimeStamp) {
+  function onVideoFrame(timestamp: DOMHighResTimeStamp, metadata: VideoFrameCallbackMetadata) {
     videoFrameCallbackId = null;
     videoFrameCallbackElement = null;
+    if (metadata && Number.isFinite(metadata.mediaTime)) {
+      presentedAt = timestamp;
+      presentedMediaTime = metadata.mediaTime;
+      presentedFrames = metadata.presentedFrames;
+    }
     if (activeTransport.value === TRANSPORT_STOPPED
       || activeTransport.value === TRANSPORT_PAUSED || !showVideo.value
       || !hasHealthyClock.value || waitingForHealthyClockSample
@@ -271,6 +326,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     return advanced;
   }
   function pauseVideo() {
+    playAttemptGeneration += 1;
     cancelFrameClockCheck();
     const element = videoEl.value;
     if (!element) return;
@@ -291,16 +347,18 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     const element = videoEl.value;
     const source = videoSrc.value;
     const itemUuid = sourceItemUuid;
-    if (!element || !source || playAttemptFailed || !hasHealthyClock.value
+    if (!element || !source || !videoReady.value || playAttemptFailed || !hasHealthyClock.value
       || waitingForHealthyClockSample || waitingForNativeProgress) return;
     if (element.paused === false) {
       scheduleFrameClockCheck();
       return;
     }
+    const generation = ++playAttemptGeneration;
     const playResult = element.play();
     scheduleFrameClockCheck();
     void playResult.catch(() => {
-      if (videoSrc.value !== source || sourceItemUuid !== itemUuid) return;
+      if (generation !== playAttemptGeneration
+        || videoSrc.value !== source || sourceItemUuid !== itemUuid) return;
       markPlaybackFailure(itemUuid, 'Video playback could not start.');
     });
   }
@@ -312,14 +370,15 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
 
   function applyItem(item: OutputItem, playheadSeconds: number, seekImmediately = true) {
     cueImageSrc.value = pathMediaUrl(item.imagePath);
-    pendingSeekSeconds = playheadSeconds;
 
     if (!item.hasVideo) {
       showVideo.value = false;
       pauseVideo();
+      preloadNextItem();
       return;
     }
 
+    pendingSeekSeconds = playheadSeconds;
     const url = itemMediaUrl(item);
     if (url !== videoSrc.value) {
       pauseVideo();
@@ -385,7 +444,10 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
       return;
     }
     const item = active === diagnosticCue ? diagnosticItem : doc.value?.items.get(active.itemUuid);
-    if (!item) return;
+    if (!item) {
+      clearActive();
+      return;
+    }
 
     const sourceChanged = active.itemUuid !== activeItemUuid.value
       || active.triggerSeq !== activeTriggerSeq;
@@ -399,7 +461,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     } else if (active.cueId !== activeCueId.value) {
       activeCueId.value = active.cueId;
     }
-    applyItem(item, active.playheadSeconds, seekImmediately);
+    applyItem(item, active.playheadSeconds, seekImmediately || sourceChanged);
     applyTransport(active.transport);
   }
 
@@ -418,7 +480,8 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
       const nextDoc = readDoc(await server.fetchProject());
       if (generation !== fetchGeneration) return;
       doc.value = nextDoc;
-      renderNewestActive();
+      // Document refreshes are not transport seeks; preserve on-air rate correction.
+      renderNewestActive(activeTransport.value === TRANSPORT_PAUSED);
       preloadNextItem();
     } catch {
       // A reconnect or later document patch will retry.
@@ -453,28 +516,36 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     if (state.itemUuid === previewItemUuid.value) return;
     if (state.transport === TRANSPORT_STOPPED) {
       removeMatchingActive(state);
-      renderNewestActive();
+      renderNewestActive(false);
       return;
     }
 
-    recordNativePosition(state.cueId ?? state.itemUuid, state.playheadSeconds, false);
     removeMatchingActive(state);
     activeCues.set(activeCueKey(state), state);
-    renderNewestActive();
+    const ownsPicture = newestActiveCue()?.itemUuid === state.itemUuid;
+    if (ownsPicture) recordNativePosition(state.cueId ?? state.itemUuid, state.playheadSeconds, false);
+    renderNewestActive(ownsPicture);
     if (!doc.value?.items.has(state.itemUuid)) void refetchDoc();
   });
 
   const offMeters = server.onMeters((meters: MetersBroadcast) => {
-    if (diagnosticCue) {
-      // Keep Program positions current while the card owns the picture.
-      for (const cue of activeCues.values()) {
-        const background = meters.items.find(item => item.cue_id === cue.cueId);
-        if (background && (hasHealthyClock.value || background.transport === TRANSPORT_PAUSED)) {
-          cue.playheadSeconds = background.playhead_seconds;
-          cue.transport = background.transport;
-        }
+    // Background cues keep advancing before they become the picture again.
+    const displayed = newestActiveCue();
+    let removedDisplayed = false;
+    for (const meter of meters.items) {
+      const key = `cue:${meter.cue_id}`;
+      const cue = activeCues.get(key);
+      if (meter.transport === TRANSPORT_STOPPED) {
+        activeCues.delete(key);
+        if (cue && cue === displayed) removedDisplayed = true;
+        continue;
+      }
+      if (cue && (hasHealthyClock.value || meter.transport === TRANSPORT_PAUSED)) {
+        cue.playheadSeconds = meter.playhead_seconds;
+        cue.transport = meter.transport;
       }
     }
+    if (removedDisplayed) renderNewestActive();
     const active = newestActiveCue();
     if (!active?.cueId) return;
     const meter = meters.items.find((item) => item.cue_id === active.cueId);
@@ -525,20 +596,31 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     applyTransport(meter.transport);
   });
 
+  // shortcut: one decoder; measure show-media contention before adding a standby slot.
   function preloadNextItem() {
     const uuid = nextItemUuid.value;
-    if (!uuid || activeItemUuid.value) return;
+    if (!uuid || (activeItemUuid.value && doc.value?.items.get(activeItemUuid.value)?.hasVideo !== false)) return;
+    for (const active of activeCues.values()) {
+      // A retained video still owns this element for immediate fallback.
+      if (doc.value?.items.get(active.itemUuid)?.hasVideo !== false) return;
+    }
     const item = doc.value?.items.get(uuid);
     if (!item?.hasVideo) return;
     const url = itemMediaUrl(item);
-    if (url === videoSrc.value) return;
+    const sourceChanged = url !== videoSrc.value;
+    if (!sourceChanged && pendingSeekSeconds === item.inPoint) return;
     pauseVideo();
+    pendingSeekSeconds = item.inPoint;
+    if (!sourceChanged) {
+      const element = currentVideoEventElement();
+      if (element && videoReady.value) element.currentTime = item.inPoint;
+      return;
+    }
     videoSrc.value = url;
     videoReady.value = false;
     videoFailed.value = false;
     playAttemptFailed = false;
     noDecodableVideoTrack = false;
-    pendingSeekSeconds = item.inPoint;
     reportPlaybackError(null);
   }
 
@@ -582,6 +664,30 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     if (raw && typeof raw === 'object') {
       const patch = raw as Record<string, unknown>;
       switch (patch.op) {
+        case 'media_changed':
+          if (patch.project_session_id !== doc.value?.sessionId) return;
+          if (patch.reloaded === true) void refetchDoc();
+          return;
+        case 'project_changed':
+          fetchGeneration += 1;
+          doc.value = null;
+          activeCues.clear();
+          nextItemUuid.value = null;
+          previewItemUuid.value = null;
+          highestTriggerSeqSeen = -1;
+          acceptNextSnapshot = true;
+          if (!diagnosticCue) {
+            clearActive();
+            videoSrc.value = null;
+            videoReady.value = false;
+            videoFailed.value = false;
+            sourceItemUuid = null;
+            sourceSignature = null;
+            sourceFileRevision = null;
+            playAttemptFailed = false;
+            noDecodableVideoTrack = false;
+          }
+          break;
         case 'next_item_set':
           nextItemUuid.value = readString(patch.itemUuid);
           break;
@@ -591,7 +697,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
             for (const [key, active] of activeCues) {
               if (active.itemUuid === previewItemUuid.value) activeCues.delete(key);
             }
-            renderNewestActive();
+            renderNewestActive(false);
           }
           break;
         }
@@ -632,11 +738,14 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   function onVideoCanPlay() {
     const element = currentVideoEventElement();
     if (!element || rejectMissingDecodedVideo(element)) return;
+    const firstReady = !videoReady.value;
     videoReady.value = true;
     videoFailed.value = false;
     playAttemptFailed = false;
     reportPlaybackError(null);
-    renderNewestActive();
+    // Rebuffer/seek can fire canplay again; keep later drift on the meter chase.
+    renderNewestActive(firstReady);
+    scheduleFrameClockCheck();
   }
 
   function onVideoError() {
@@ -662,6 +771,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
       mediaServerPath: source.path,
       inPoint: 0,
       outPoint: source.duration,
+      fileRevision: null,
     } : null;
     renderNewestActive();
   }, { immediate: true });
@@ -687,7 +797,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
 
   onScopeDispose(() => {
     clearTimeout(refetchTimer);
-    cancelFrameClockCheck();
+    pauseVideo();
     fetchGeneration += 1;
     offCueState();
     offMeters();
@@ -701,6 +811,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
 
   return {
     videoEl,
+    getPictureHealth,
     videoSrc,
     onVideoLoadedMetadata,
     onVideoCanPlay,

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { ref } from 'vue';
 
 class MemoryStorage {
   private readonly values = new Map<string, string>();
@@ -46,6 +47,14 @@ class FakeWebSocket {
 }
 
 const storage = new MemoryStorage();
+const nuxtState = new Map<string, ReturnType<typeof ref>>();
+Object.defineProperty(globalThis, 'useState', {
+  configurable: true,
+  value: (key: string, initialize: () => unknown) => {
+    if (!nuxtState.has(key)) nuxtState.set(key, ref(initialize()));
+    return nuxtState.get(key);
+  },
+});
 const sockets: FakeWebSocket[] = [];
 const fetchAuthorizations: string[] = [];
 const fetchRequests: Array<{ url: string; method: string }> = [];
@@ -425,4 +434,61 @@ test('deduplicates server state, rotates managed credentials, and fences stale s
   );
 
   server.destroy();
+});
+
+test('project REST calls carry the bound session while chained creation uses its returned session', async () => {
+  const { useLiveplayServer } = await import('../app/composables/useLiveplayServer.ts');
+  const server = useLiveplayServer() as any;
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ path: string; session: string | null; mutation: string | null }> = [];
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const headers = new Headers(init?.headers);
+    calls.push({ path: url.pathname, session: headers.get('X-DWCUE-Project-Session'), mutation: headers.get('X-DWCUE-Mutation-ID') });
+    return new Response(JSON.stringify(url.pathname === '/api/cues' || url.pathname === '/api/mixers' ? [] : {
+      ok: true, hasOpenProject: true, name: 'Other', items: [], cartItems: [], cartOnlyItems: [], settings: {}, theme: {},
+      server: { projectFilePath: '/other.dwcue', projectSessionId: 'other-response-session', mediaRoot: '/other/media', audioLoading: false, audioLoaded: 0, audioTotal: 0 },
+    }), { status: 200 });
+  };
+  try {
+    server.projectSessionId = 'bound-show-session';
+    await server.updateProjectItem('same', { volume: 0.5 }, 'owner:7');
+    await server.addProjectItem({ uuid: 'new', type: 'group', children: [] });
+    await server.removeProjectItem('same');
+    await server.reorderProjectItems(['new']);
+    await server.setCartSlot(0, 'new');
+    await server.clearCartSlot(0);
+    await server.patchTheme({ accentColor: '#abcdef' });
+    await server.patchSettings({ autoSave: false });
+    await server.fetchProjectItemsPage();
+    await server.loadProjectFromPath('/next.dwcue');
+    await server.closeProjectOnServer('bound-show-session');
+    await server.repairProject();
+    await server.fetchProjectHeader();
+    assert.equal(server.projectSessionId, 'bound-show-session', 'unowned/late headers cannot replace the local show binding');
+    await server.replaceProjectDocument({ name: 'New', items: [] }, 'creation-session');
+    await server.saveProjectTo('/new.dwcue', { name: 'New', items: [] }, undefined, 'creation-session');
+    const scoped = calls.filter(call => call.path.startsWith('/api/project/') && call.path !== '/api/project/header');
+    assert.equal(scoped.length, 14);
+    assert.deepEqual(scoped.map(call => call.session), Array(12).fill('bound-show-session').concat(['creation-session', 'creation-session']));
+    assert.equal(scoped[0].mutation, 'owner:7', 'session tagging preserves the item mutation echo identity');
+    server.projectSessionId = 'newer-show-session';
+    await server.closeProjectOnServer('captured-closing-session');
+    assert.equal(calls.at(-1)!.session, 'captured-closing-session', 'late close cannot adopt the newer current session');
+    const sent = calls.length;
+    await assert.rejects(server.closeProjectOnServer(''), /project session/i);
+    assert.equal(calls.length, sent, 'an explicitly unbound close sends no request');
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('an open local project cannot send unbound REST edits', async () => {
+  const { useLiveplayServer } = await import('../app/composables/useLiveplayServer.ts');
+  const server = useLiveplayServer() as any;
+  const project = nuxtState.get('currentProject')!;
+  const before = project.value;
+  try {
+    project.value = { name: 'Local', folderPath: '/show', items: [], cartItems: [], cartOnlyItems: [] };
+    server.projectSessionId = '';
+    await assert.rejects(server.patchSettings({ autoSave: false }), /project session/i);
+  } finally { project.value = before; }
 });

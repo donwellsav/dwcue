@@ -69,7 +69,7 @@
               <span class="plan-label">{{ t('youtube.projectProcessing') }}</span>
               <div class="processing-list">
                 <span v-for="setting in processingSettings" :key="setting.label">
-                  {{ setting.label }}: {{ setting.value }}
+                  {{ setting.label }}<template v-if="setting.value">: {{ setting.value }}</template>
                 </span>
               </div>
               <span v-if="!addDownloadedAudio" class="plan-detail">{{ t('youtube.processingSkipped') }}</span>
@@ -182,6 +182,7 @@
                 v-if="download.status === 'error' && download.savedPath"
                 type="button"
                 class="action-btn download-btn"
+                :disabled="!canUseDownload(download)"
                 @click="retryImport(download)"
               >
                 <span class="material-symbols-rounded" aria-hidden="true">playlist_add</span>
@@ -191,6 +192,7 @@
                 v-else-if="download.status === 'error' || download.status === 'cancelled'"
                 type="button"
                 class="action-btn download-btn"
+                :disabled="!canUseDownload(download)"
                 @click="retryDownload(download)"
               >
                 <span class="material-symbols-rounded" aria-hidden="true">refresh</span>
@@ -206,7 +208,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onBeforeUnmount } from 'vue';
 import { waitForDownloadedMediaReady } from '../utils/youtubeImport';
 
 const { t } = useLocalization();
@@ -240,6 +242,8 @@ interface DownloadProgress {
   progress: number;
   status: 'downloading' | 'converting' | 'importing' | 'completed' | 'cancelled' | 'error';
   outputMode: 'source' | 'mp3' | 'video';
+  projectFolderPath: string;
+  projectEpoch: number;
   savedPath?: string;
   folderPath?: string;
   error?: string;
@@ -269,6 +273,9 @@ const hasSearched = ref(false);
 const searchError = ref('');
 const selectedVideo = ref<YouTubeVideo | null>(null);
 const downloadQueue = ref<DownloadProgress[]>([]);
+const jobControllers = new Map<string, AbortController>();
+let closing = false;
+let unmounted = false;
 const storedOptions = (() => {
   try { return JSON.parse(localStorage.getItem('liveplay-youtube-import-options') || '{}'); }
   catch { return {}; }
@@ -301,9 +308,7 @@ const processingSettings = computed(() => {
         ? t('settings.transitionModeStartNext')
         : t('settings.transitionModeCrossfade'),
     },
-    { label: t('youtube.trimSilence'), value: settingState(settings?.autoTrimSilenceOnImport === true) },
-    { label: t('youtube.matchLoudness'), value: settingState(settings?.autoMatchLoudnessOnImport === true) },
-    { label: t('youtube.truePeakProtection'), value: settingState(settings?.autoReduceTruePeaksOnImport !== false) },
+    { label: t('importAudio.preserveAudio'), value: '' },
     { label: t('youtube.cycleTrackColors'), value: settingState(settings?.cycleTrackColors !== false) },
   ];
 });
@@ -344,7 +349,7 @@ const previewVideo = (video: YouTubeVideo) => {
 };
 
 const downloadVideo = async (video: YouTubeVideo) => {
-  if (video.isLive || isDownloading(video.id)) return;
+  if (!props.isOpen || closing || unmounted || video.isLive || isDownloading(video.id)) return;
 
   const projectFolderPath = props.projectFolderPath;
   const projectEpoch = props.projectEpoch;
@@ -367,8 +372,12 @@ const downloadVideo = async (video: YouTubeVideo) => {
     progress: 0,
     status: 'downloading',
     outputMode: selectedOutputMode,
+    projectFolderPath,
+    projectEpoch,
   };
   downloadQueue.value.push(downloadItem);
+  const controller = new AbortController();
+  jobControllers.set(downloadItem.jobId, controller);
 
   try {
     // Start download
@@ -380,7 +389,8 @@ const downloadVideo = async (video: YouTubeVideo) => {
       selectedOutputMode,
       (progress: any) => {
         const item = downloadQueue.value.find(d => d.jobId === downloadItem.jobId);
-        if (item) {
+        if (item && canUseDownload(item) && !controller.signal.aborted &&
+            (item.status === 'downloading' || item.status === 'converting')) {
           const percentage = Number(progress.percentage);
           if (Number.isFinite(percentage)) {
             item.progress = Math.max(item.progress, Math.min(100, Math.max(0, percentage)));
@@ -391,27 +401,21 @@ const downloadVideo = async (video: YouTubeVideo) => {
     );
 
     const item = downloadQueue.value.find(d => d.jobId === downloadItem.jobId);
-    if (item) {
+    if (item && canUseDownload(item) && !controller.signal.aborted) {
       item.progress = 100;
       item.savedPath = result.file;
       item.folderPath = parentDirectory(result.file) || appendPath(projectFolderPath, 'media');
 
-      if (shouldImport &&
-          (props.projectFolderPath !== projectFolderPath || props.projectEpoch !== projectEpoch)) {
-        throw new Error(t('youtube.projectChanged'));
-      }
-
       if (shouldImport) {
         item.status = 'importing';
-        await preflightDownloadedMedia(result.file, projectFolderPath, projectEpoch);
+        await preflightDownloadedMedia(result.file, projectFolderPath, projectEpoch, controller.signal);
+        if (!canUseDownload(item) || controller.signal.aborted) return;
         const imported = await props.importFiles(
           [result.file],
-          undefined,
+          controller.signal,
           { displayNames: [result.title] },
         );
-        if (props.projectFolderPath !== projectFolderPath || props.projectEpoch !== projectEpoch) {
-          throw new Error(t('youtube.projectChanged'));
-        }
+        if (!canUseDownload(item) || controller.signal.aborted) return;
         if (!imported.success || imported.imported !== 1) {
           throw new Error(imported.error || t('youtube.importError'));
         }
@@ -429,7 +433,7 @@ const downloadVideo = async (video: YouTubeVideo) => {
     }
   } catch (error: any) {
     const item = downloadQueue.value.find(d => d.jobId === downloadItem.jobId);
-    if (item && item.status !== 'cancelled') {
+    if (item && canUseDownload(item) && !controller.signal.aborted && item.status !== 'cancelled') {
       // savedPath/folderPath were set as soon as the download landed, so a
       // failed import still shows the file on disk for retry/reveal.
       const stage = item.status === 'importing' ? 'import' : 'download';
@@ -440,6 +444,8 @@ const downloadVideo = async (video: YouTubeVideo) => {
         : (error.message || t('youtube.downloadError'));
     }
     console.error('YouTube download error:', error);
+  } finally {
+    if (jobControllers.get(downloadItem.jobId) === controller) jobControllers.delete(downloadItem.jobId);
   }
 };
 
@@ -450,14 +456,24 @@ const isDownloading = (videoId: string) => {
 const isActiveDownload = (download: DownloadProgress) =>
   !['completed', 'cancelled', 'error'].includes(download.status);
 
+const canUseDownload = (download: DownloadProgress) =>
+  props.isOpen && !closing && !unmounted &&
+  props.projectFolderPath === download.projectFolderPath && props.projectEpoch === download.projectEpoch;
+
 const cancelDownload = async (download: DownloadProgress) => {
   if (!isActiveDownload(download)) return;
-  await window.electronAPI.cancelYouTubeDownload(download.jobId);
+  jobControllers.get(download.jobId)?.abort();
   download.status = 'cancelled';
   download.error = t('youtube.statusCancelled');
+  try {
+    await window.electronAPI.cancelYouTubeDownload(download.jobId);
+  } catch (error) {
+    console.error('YouTube cancellation error:', error);
+  }
 };
 
 const retryDownload = (download: DownloadProgress) => {
+  if (!canUseDownload(download)) return;
   void downloadVideo({
     id: download.videoId,
     title: download.title,
@@ -472,51 +488,51 @@ const preflightDownloadedMedia = async (
   filePath: string,
   projectFolderPath: string,
   projectEpoch: number,
+  signal: AbortSignal,
 ) => {
   const canContinue = () =>
+    props.isOpen && !closing && !unmounted &&
     props.projectFolderPath === projectFolderPath && props.projectEpoch === projectEpoch;
   await waitForDownloadedMediaReady(async () => {
-    const [metadata, waveform] = await Promise.all([
-      server.fetchMetadata(filePath),
-      server.fetchWaveformByPath(filePath),
-    ]);
+    const metadata = await server.fetchMetadata(filePath, signal);
     const metadataDuration = Number((metadata as any)?.duration_ms);
-    const waveformDuration = Number((waveform as any)?.duration_ms);
-    if ((metadata as any)?.valid !== true ||
-        !(metadataDuration > 0 || waveformDuration > 0) ||
-        !Array.isArray((waveform as any)?.channels)) {
+    if ((metadata as any)?.valid !== true || !(metadataDuration > 0)) {
       throw new Error(t('importAudio.decodeFailed'));
     }
-  }, canContinue);
+  }, canContinue, { signal });
 };
 
 // Re-run only the playlist import for a file that already downloaded.
 const retryImport = async (download: DownloadProgress) => {
-  if (!download.savedPath) return;
+  if (!download.savedPath || download.status !== 'error' || !canUseDownload(download)) return;
   const projectFolderPath = props.projectFolderPath;
   const projectEpoch = props.projectEpoch;
+  const controller = new AbortController();
+  jobControllers.set(download.jobId, controller);
   download.actionError = '';
   download.importError = '';
   download.status = 'importing';
   try {
-    await preflightDownloadedMedia(download.savedPath, projectFolderPath, projectEpoch);
+    await preflightDownloadedMedia(download.savedPath, projectFolderPath, projectEpoch, controller.signal);
+    if (!canUseDownload(download) || controller.signal.aborted) return;
     const imported = await props.importFiles(
       [download.savedPath],
-      undefined,
+      controller.signal,
       { displayNames: [download.title] },
     );
-    if (props.projectFolderPath !== projectFolderPath || props.projectEpoch !== projectEpoch) {
-      throw new Error(t('youtube.projectChanged'));
-    }
+    if (!canUseDownload(download) || controller.signal.aborted) return;
     if (!imported.success || imported.imported !== 1) {
       throw new Error(imported.error || t('youtube.importError'));
     }
     download.status = 'completed';
   } catch (error: any) {
+    if (!canUseDownload(download) || controller.signal.aborted) return;
     download.status = 'error';
     download.importError = error.message || t('youtube.importError');
     download.error = t('youtube.importFailed', { error: download.importError });
     console.error('YouTube retry-import error:', error);
+  } finally {
+    if (jobControllers.get(download.jobId) === controller) jobControllers.delete(download.jobId);
   }
 };
 
@@ -580,9 +596,8 @@ function extractYouTubeVideoId(value: string): string {
 }
 
 const closeModal = async () => {
-  await Promise.allSettled(downloadQueue.value
-    .filter(isActiveDownload)
-    .map(download => window.electronAPI.cancelYouTubeDownload(download.jobId)));
+  closing = true;
+  await cancelActiveDownloads();
   emit('close');
   // Reset state
   searchQuery.value = '';
@@ -590,6 +605,22 @@ const closeModal = async () => {
   hasSearched.value = false;
   selectedVideo.value = null;
 };
+
+const cancelActiveDownloads = () => Promise.allSettled(
+  downloadQueue.value.filter(isActiveDownload).map(cancelDownload),
+);
+
+watch(() => props.isOpen, isOpen => {
+  closing = !isOpen;
+  if (!isOpen) void cancelActiveDownloads();
+}, { flush: 'sync' });
+watch(() => [props.projectFolderPath, props.projectEpoch], () => {
+  void cancelActiveDownloads();
+}, { flush: 'sync' });
+onBeforeUnmount(() => {
+  unmounted = true;
+  void cancelActiveDownloads();
+});
 </script>
 
 <style scoped>

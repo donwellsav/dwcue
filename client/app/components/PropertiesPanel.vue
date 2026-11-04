@@ -214,14 +214,14 @@
         <div class="property-field">
           <label>{{ t('properties.deviceOverride') }}</label>
           <select
-            :value="(audioItem as any).deviceOverride ?? ''"
+            :value="audioDeviceOverride"
             @change="onDeviceOverrideChange"
           >
             <option value="">{{ t('settings.useProjectDefault') }}</option>
             <option
               v-for="d in devicesList"
               :key="d.id"
-              :value="d.id"
+              :value="d.display_name"
             >
               {{ d.display_name }}{{ d.is_default ? ' (' + t('common.default') + ')' : '' }}
             </option>
@@ -396,7 +396,7 @@ import type { AudioItem, GroupItem } from '~/types/project';
 import { PRESET_COLORS } from '~/types/project';
 import {
   applyLoudnessMatch,
-  applyTruePeakNormalization,
+  applyTruePeakCeiling,
   buildWaveformFromChannels,
   trimSilence,
   type MeasuredLoudness,
@@ -407,7 +407,6 @@ import {
   nextAvailableOneShotOrder,
   removeOneShotDesignation,
 } from '~/utils/oneShots';
-import { useOutputTarget } from '~/composables/useOutputTarget';
 
 const {
   selectedItem,
@@ -424,7 +423,6 @@ const {
 const { t } = useLocalization();
 const { uiMode } = useUiMode();
 const { cartOnlyItems, addCartOnlyItem, removeCartOnlyItem } = useCartItems();
-const { levels: outputTargetLevels } = useOutputTarget();
 const panelHeight = useState<number>('PropertiesPanel.height', () => 320);
 const propertySaveFailed = ref(false);
 const propertySavePending = ref(false);
@@ -554,6 +552,10 @@ const ltcDeviceConfigured = computed(() => {
 // shared server state — populated once on connect.
 const _server = useLiveplayServer();
 const devicesList = computed(() => _server.devices ?? []);
+const audioDeviceOverride = computed(() => {
+  const selected = (audioItem.value as any)?.deviceOverride || '';
+  return devicesList.value.find(device => device.id === selected)?.display_name ?? selected;
+});
 
 // API endpoint that triggers playback of the selected item. Points at the
 // audio server's transport route (routed through ProjectState so ducking,
@@ -936,7 +938,7 @@ const handleCycleSelectedColors = async () => {
   await saveProject();
 };
 
-// Handle normalize: normalize ALL selected audio items individually
+// Apply manual loudness matching or peak reduction to each selected cue.
 const handleNormalize = async (
   mode: 'loudness' | 'truePeak',
   normalizeTarget: number,
@@ -948,11 +950,7 @@ const handleNormalize = async (
     items = [selectedItem.value];
   }
   
-  const limiterCeilingDb = outputTargetLevels.value.limiterCeilingDb;
-  const effectiveTarget = Math.max(-60, Math.min(
-    mode === 'truePeak' ? limiterCeilingDb : 0,
-    normalizeTarget,
-  ));
+  const effectiveTarget = Math.max(-60, Math.min(0, normalizeTarget));
   if (!Number.isFinite(effectiveTarget)) return;
   
   let normalizedCount = 0;
@@ -969,7 +967,7 @@ const handleNormalize = async (
       (duration <= 0 || outPoint >= duration - 0.001);
     let analysis: MeasuredLoudness | undefined = audioItem.waveform;
 
-    if (!isFullFile || analysis?.analysis_version !== 1) {
+    if (!isFullFile || analysis?.analysis_version !== 2) {
       const folder = currentProject.value?.folderPath || '';
       const relativePath = audioItem.mediaPath?.replace(/^[\\/]+/, '') || '';
       const mediaPath = audioItem.mediaServerPath ||
@@ -996,12 +994,11 @@ const handleNormalize = async (
     }
 
     const changed = mode === 'truePeak'
-      ? applyTruePeakNormalization(audioItem, analysis, effectiveTarget)
+      ? applyTruePeakCeiling(audioItem, analysis, effectiveTarget)
       : applyLoudnessMatch(
           audioItem,
           analysis,
           effectiveTarget,
-          limiterCeilingDb,
         );
     if (changed) {
       normalizedCount++;
@@ -1010,9 +1007,9 @@ const handleNormalize = async (
   
   if (normalizedCount > 0) {
     await saveProject();
-    console.log(`Normalized ${normalizedCount} item(s) to ${
-      effectiveTarget.toFixed(1)
-    } ${mode === 'truePeak' ? 'dBTP' : 'LUFS'}`);
+    console.log(mode === 'truePeak'
+      ? `Reduced peaks above ${effectiveTarget.toFixed(1)} dBTP for ${normalizedCount} item(s)`
+      : `Normalized ${normalizedCount} item(s) to ${effectiveTarget.toFixed(1)} LUFS`);
   }
 };
 

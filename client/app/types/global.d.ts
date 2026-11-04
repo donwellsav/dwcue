@@ -233,6 +233,11 @@ declare global {
         open: () => Promise<VideoOutputStatus>;
         close: () => Promise<VideoOutputStatus>;
         status: () => Promise<VideoOutputStatus>;
+        restart: () => Promise<VideoOutputStatus>;
+        rendererReady: () => Promise<VideoOutputStatus>;
+        reportPictureHealth: (health: VideoPictureHealth) => Promise<void>;
+        diagnostics: () => Promise<unknown>;
+        onFrame: (callback: (frame: { jpeg: string; at: number }) => void) => () => void;
         listDisplays: () => Promise<VideoOutputDisplay[]>;
         identifyDisplays: () => Promise<VideoOutputDisplay[]>;
         setDisplay: (displayId: string | null) => Promise<VideoOutputStatus>;
@@ -286,12 +291,31 @@ declare global {
     displays: VideoOutputDisplay[];
     warning: 'single-display' | 'display-missing' | 'display-shared-with-control' | null;
     playbackError: VideoPlaybackError | null;
+    rendererReady: boolean;
+    rendererResponsive: boolean;
+    recoveryRequired: boolean;
+    restarting: boolean;
+    pictureHealth: (VideoPictureHealth & { receivedAt: number }) | null;
     testCard: boolean;
     testCardConfig: TestCardConfig;
     testCardPlayback: VideoTestCardPlayback | null;
     testCardError: string | null;
     testCardInfo: { displayFrequency: number; network: string[] };
     fullscreen: boolean;
+  }
+
+  interface VideoPictureHealth {
+    itemUuid: string | null;
+    sourceItemUuid: string | null;
+    fileRevision: string | null;
+    preparedSeconds: number | null;
+    state: 'idle' | 'still' | 'paused' | 'loading' | 'seeking' | 'playing' | 'clock-wait' | 'error';
+    mediaTime: number | null;
+    presentedFrames: number | null;
+    presentedAgeMs: number | null;
+    droppedFrames: number | null;
+    totalFrames: number | null;
+    readyState: number;
   }
 
   interface ImportMeta {

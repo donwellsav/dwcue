@@ -102,7 +102,7 @@ export function estimateCurrentLevel(volume: number, waveformValue: number): num
 export interface ServerChannelPeaks { peak?: number[]; rms?: number[] }
 
 export interface MeasuredLoudness {
-  analysis_version?: 1;
+  analysis_version?: 2;
   integrated_lufs?: number | null;
   true_peak_dbtp?: number | null;
 }
@@ -114,7 +114,7 @@ export interface BuiltWaveform {
   duration: number;
   channelPeaks?: number[][];
   channelRms?: number[][];
-  analysis_version?: 1;
+  analysis_version?: 2;
   integrated_lufs?: number | null;
   true_peak_dbtp?: number | null;
 }
@@ -173,8 +173,8 @@ export function buildWaveformFromChannels(
     // Only worth carrying when there's more than one channel to show.
     ...(lanes.length > 1 ? { channelPeaks: lanes } : {}),
     ...(hasRms && lanes.length > 1 ? { channelRms: rmsLanes as number[][] } : {}),
-    ...(analysis?.analysis_version === 1 ? {
-      analysis_version: 1 as const,
+    ...(analysis?.analysis_version === 2 ? {
+      analysis_version: 2 as const,
       integrated_lufs: Number.isFinite(analysis.integrated_lufs)
         ? analysis.integrated_lufs as number
         : null,
@@ -220,8 +220,8 @@ export function parseWaveformFileData(data: any): BuiltWaveform | null {
       ...(Array.isArray(data.channelRms) && data.channelRms.length > 1
         ? { channelRms: data.channelRms }
         : {}),
-      ...(data.analysis_version === 1 ? {
-        analysis_version: 1 as const,
+      ...(data.analysis_version === 2 ? {
+        analysis_version: 2 as const,
         integrated_lufs: Number.isFinite(data.integrated_lufs)
           ? data.integrated_lufs
           : null,
@@ -236,8 +236,7 @@ export function parseWaveformFileData(data: any): BuiltWaveform | null {
 }
 
 // ---------------------------------------------------------------------------
-// Import processing. Trimming and loudness matching are independent opt-ins:
-// callers decide which operation to run and which measured range to use.
+// Explicit Properties actions. Import never changes gain or trim points.
 // ---------------------------------------------------------------------------
 
 interface ProcessableItem {
@@ -249,7 +248,7 @@ interface ProcessableItem {
 }
 
 /**
- * Trim leading/trailing silence in-place. This never changes item volume.
+ * Trim digital silence in-place, preserving quiet content and item volume.
  */
 export function trimSilence(item: ProcessableItem): boolean {
   if (!item.waveform || !item.waveform.peaks || item.waveform.peaks.length === 0) return false;
@@ -258,15 +257,11 @@ export function trimSilence(item: ProcessableItem): boolean {
   const duration = item.duration || item.waveform.duration || 0;
   if (duration <= 0) return false;
 
-  const maxPeak = peaks.reduce((m, v) => (v > m ? v : m), 0);
-  if (maxPeak <= 0) return false;
-
-  const threshold = maxPeak * 0.05;
   const padding = 0.1;
-  let startIdx = peaks.findIndex(peak => peak > threshold);
+  const startIdx = peaks.findIndex(peak => peak > 0);
   if (startIdx < 0) return false;
   let endIdx = peaks.length - 1;
-  while (endIdx > startIdx && peaks[endIdx] <= threshold) endIdx--;
+  while (endIdx > startIdx && !(peaks[endIdx]! > 0)) endIdx--;
 
   const newInPoint = Math.max(0, (startIdx / peaks.length) * duration - padding);
   const newOutPoint = Math.min(duration, ((endIdx + 1) / peaks.length) * duration + padding);
@@ -287,20 +282,16 @@ export function trimSilence(item: ProcessableItem): boolean {
 export function loudnessMatchedVolume(
   analysis: MeasuredLoudness | null | undefined,
   loudnessTargetLufs: number,
-  limiterCeilingDb: number,
 ): number | null {
-  if (analysis?.analysis_version !== 1 ||
+  if (analysis?.analysis_version !== 2 ||
       !Number.isFinite(analysis.integrated_lufs) ||
-      !Number.isFinite(analysis.true_peak_dbtp) ||
-      !Number.isFinite(loudnessTargetLufs) ||
-      !Number.isFinite(limiterCeilingDb)) {
+      !Number.isFinite(loudnessTargetLufs)) {
     return null;
   }
 
   const gainDb = Math.max(-60, Math.min(
     10,
     loudnessTargetLufs - (analysis.integrated_lufs as number),
-    limiterCeilingDb - (analysis.true_peak_dbtp as number),
   ));
   return Math.pow(10, gainDb / 20);
 }
@@ -312,54 +303,29 @@ export function applyLoudnessMatch(
   item: Pick<ProcessableItem, 'volume'>,
   analysis: MeasuredLoudness | null | undefined,
   loudnessTargetLufs: number,
-  limiterCeilingDb: number,
 ): boolean {
-  const volume = loudnessMatchedVolume(analysis, loudnessTargetLufs, limiterCeilingDb);
+  const volume = loudnessMatchedVolume(analysis, loudnessTargetLufs);
   if (volume === null || Math.abs(volume - item.volume) <= 0.000001) return false;
   item.volume = volume;
   return true;
 }
 
-/** Set an analysed cue to an absolute true-peak target. */
-export function applyTruePeakNormalization(
-  item: Pick<ProcessableItem, 'volume'>,
-  analysis: MeasuredLoudness | null | undefined,
-  targetDbtp: number,
-): boolean {
-  if (analysis?.analysis_version !== 1 ||
-      !Number.isFinite(analysis.true_peak_dbtp) ||
-      (analysis.true_peak_dbtp as number) <= -120 ||
-      !Number.isFinite(targetDbtp)) {
-    return false;
-  }
-  const gainDb = Math.max(-60, Math.min(
-    10,
-    targetDbtp - (analysis.true_peak_dbtp as number),
-  ));
-  const volume = Math.pow(10, gainDb / 20);
-  if (Math.abs(volume - item.volume) <= 0.000001) return false;
-  item.volume = volume;
-  return true;
-}
-
-/** Turn an analysed cue down only as far as needed to meet a true-peak ceiling. */
+/** Reduce an analysed cue only when its current gain exceeds the peak ceiling. */
 export function applyTruePeakCeiling(
   item: Pick<ProcessableItem, 'volume'>,
   analysis: MeasuredLoudness | null | undefined,
-  ceilingDbtp = -0.1,
+  ceilingDbtp: number,
 ): boolean {
-  if (analysis?.analysis_version !== 1 ||
+  if (analysis?.analysis_version !== 2 ||
       !Number.isFinite(analysis.true_peak_dbtp) ||
+      (analysis.true_peak_dbtp as number) <= -120 ||
       !Number.isFinite(ceilingDbtp) ||
       !Number.isFinite(item.volume) || item.volume <= 0) {
     return false;
   }
-  const maxVolume = Math.pow(
-    10,
-    (ceilingDbtp - (analysis.true_peak_dbtp as number)) / 20,
-  );
-  if (item.volume <= maxVolume) return false;
-  item.volume = maxVolume;
+  const volume = Math.pow(10, (ceilingDbtp - (analysis.true_peak_dbtp as number)) / 20);
+  if (item.volume <= volume) return false;
+  item.volume = volume;
   return true;
 }
 
@@ -378,7 +344,7 @@ export function exceedsTruePeakCeiling(
     return false;
   }
 
-  const truePeak = item.waveform?.analysis_version === 1
+  const truePeak = item.waveform?.analysis_version === 2
     ? item.waveform.true_peak_dbtp
     : null;
   if (!Number.isFinite(truePeak) || !Number.isFinite(item.volume) ||

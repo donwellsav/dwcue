@@ -24,6 +24,7 @@ Object.assign(globalThis, {
 interface Deferred<T> {
   promise: Promise<T>;
   resolve: (value: T) => void;
+  reject: (reason?: unknown) => void;
 }
 
 interface MockVideo {
@@ -36,19 +37,20 @@ interface MockVideo {
   pauseCount: number;
   playCount: number;
   playError: Error | null;
-  frameCallbacks: Map<number, (timestamp: number) => void>;
+  frameCallbacks: Map<number, (timestamp: number, metadata?: any) => void>;
   nextFrameId: number;
   pause: () => void;
   play: () => Promise<void>;
-  requestVideoFrameCallback: (callback: (timestamp: number) => void) => number;
+  requestVideoFrameCallback: (callback: (timestamp: number, metadata?: any) => void) => number;
   cancelVideoFrameCallback: (id: number) => void;
-  fireVideoFrame: (timestamp: number) => void;
+  fireVideoFrame: (timestamp: number, metadata?: any) => void;
 }
 
 function deferred<T>(): Deferred<T> {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => { resolve = done; });
-  return { promise, resolve };
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
 }
 
 function audioItem(
@@ -116,10 +118,10 @@ function videoElement(): MockVideo {
     cancelVideoFrameCallback(id) {
       this.frameCallbacks.delete(id);
     },
-    fireVideoFrame(timestamp) {
+    fireVideoFrame(timestamp, metadata) {
       const callbacks = Array.from(this.frameCallbacks.values());
       this.frameCallbacks.clear();
-      for (const callback of callbacks) callback(timestamp);
+      for (const callback of callbacks) callback(timestamp, metadata);
     },
   };
 }
@@ -232,6 +234,252 @@ function snapshotCue(
   };
 }
 
+test('an intentional video-to-audio pause cannot poison a later play of the same video', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true }), audioItem('audio')]));
+  await flush();
+  const pendingPlay = deferred<void>();
+  h.element.play = function () {
+    this.playCount += 1;
+    this.paused = false;
+    return pendingPlay.promise;
+  };
+  h.emitCue(snapshotCue('video', 'video-cue', 1));
+  h.controller.onVideoCanPlay();
+  h.emitCue(snapshotCue('audio', 'audio-cue', 2));
+  pendingPlay.reject(new DOMException('Playback was intentionally paused.', 'AbortError'));
+  await flush();
+  assert.equal(h.reports.some(report => report !== null), false, 'cancellation is not a decoder failure');
+
+  h.element.play = videoElement().play;
+  const attempts = h.element.playCount;
+  h.emitCue(snapshotCue('video', 'video-cue', 3));
+  assert.equal(h.controller.showVideo.value, true);
+  assert.equal(h.element.paused, false);
+  assert.equal(h.element.playCount, attempts + 1, 'the unchanged media URL can play again');
+  h.stop();
+});
+
+test('a video switch waits for its source and ignores the old play promise and media events', async () => {
+  const h = createHarness(project([
+    audioItem('first', { hasVideo: true }), audioItem('second', { hasVideo: true }),
+  ]));
+  await flush();
+  const firstPlay = deferred<void>();
+  h.element.play = function () {
+    this.playCount += 1;
+    this.paused = false;
+    return firstPlay.promise;
+  };
+  h.emitCue(snapshotCue('first', 'first-cue', 1));
+  const firstSource = h.controller.videoSrc.value!;
+  h.element.currentSrc = firstSource;
+  h.controller.onVideoCanPlay();
+  assert.equal(h.element.playCount, 1);
+
+  h.emitCue(snapshotCue('second', 'second-cue', 2));
+  assert.equal(h.element.paused, true);
+  assert.equal(h.element.playCount, 1, 'the old DOM resource is not played for the new cue');
+  h.element.videoWidth = 0;
+  h.element.videoHeight = 0;
+  h.controller.onVideoLoadedMetadata();
+  h.controller.onVideoCanPlay();
+  h.controller.onVideoError();
+  firstPlay.reject(new DOMException('The resource was replaced.', 'AbortError'));
+  await flush();
+  assert.equal(h.reports.some(report => report !== null), false);
+
+  h.element.currentSrc = h.controller.videoSrc.value!;
+  h.element.videoWidth = 640;
+  h.element.videoHeight = 360;
+  h.element.play = videoElement().play;
+  h.controller.onVideoLoadedMetadata();
+  h.controller.onVideoCanPlay();
+  assert.equal(h.controller.showVideo.value, true);
+  assert.equal(h.element.paused, false);
+  assert.equal(h.element.playCount, 2);
+  h.stop();
+});
+
+test('a late play rejection cannot stop a newer trigger of the same media URL', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]));
+  await flush();
+  const oldPlay = deferred<void>();
+  h.element.play = function () {
+    this.playCount += 1;
+    this.paused = false;
+    return this.playCount === 1 ? oldPlay.promise : Promise.resolve();
+  };
+  h.emitCue(snapshotCue('video', 'video-cue', 1));
+  h.controller.onVideoCanPlay();
+  h.emitCue(snapshotCue('video', 'video-cue', 2));
+  oldPlay.reject(new Error('A superseded attempt failed.'));
+  await flush();
+  assert.equal(h.element.playCount, 2);
+  assert.equal(h.controller.showVideo.value, true);
+  assert.equal(h.element.paused, false);
+  assert.equal(h.reports.some(report => report !== null), false);
+  h.stop();
+});
+
+test('fallback to an on-air video uses the native position received while an audio cue owned the picture', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true }), audioItem('audio'), audioItem('upcoming', { hasVideo: true })]));
+  await flush();
+  h.emitCue(snapshotCue('video', 'video-cue', 1, 2));
+  h.controller.onVideoCanPlay();
+  h.emitCue(snapshotCue('audio', 'audio-cue', 2));
+  const retainedSource = h.controller.videoSrc.value;
+  h.emitPatch({ op: 'next_item_set', itemUuid: 'upcoming' });
+  await flush();
+  const sourceDuringOverlay = h.controller.videoSrc.value;
+  h.emitMeters({ items: [
+    { cue_id: 'video-cue', transport: 1, playhead_seconds: 9 },
+    { cue_id: 'audio-cue', transport: 1, playhead_seconds: 1 },
+  ] });
+  h.emitCue(snapshotCue('audio', 'audio-cue', 2, 1, 0));
+  assert.equal(h.controller.showVideo.value, true);
+  assert.equal(h.element.currentTime, 9);
+  assert.equal(h.element.paused, false, 'fallback must resume its retained decoded source immediately');
+  assert.equal(sourceDuringOverlay, retainedSource, 'upcoming preparation cannot evict a retained video fallback');
+  h.stop();
+});
+
+test('a stopped background meter cannot revive that video when the foreground stops', async () => {
+  for (const healthy of [true, false]) {
+    const h = createHarness(project([
+      audioItem('older-image', { imagePath: 'images/older.png' }),
+      audioItem('video', { hasVideo: true }), audioItem('foreground'),
+    ]));
+    await flush();
+    h.emitCue(snapshotCue('older-image', 'image-cue', 1));
+    h.emitCue(snapshotCue('video', 'video-cue', 2));
+    h.controller.onVideoCanPlay();
+    h.emitCue(snapshotCue('foreground', 'foreground-cue', 3));
+    if (!healthy) {
+      h.server.devices[0]!.runtime_state = 'stalled';
+      await nextTick();
+    }
+    h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 0, playhead_seconds: 5 }] });
+    h.emitCue(snapshotCue('foreground', 'foreground-cue', 3, 1, 0));
+    assert.equal(h.controller.showVideo.value, false);
+    assert.match(h.controller.cueImageSrc.value!, /images%2Folder\.png/);
+    h.stop();
+  }
+});
+
+test('a stopped current meter selects the fallback even without its meter in the batch', async () => {
+  for (const includeFallbackMeter of [false, true]) {
+    const h = createHarness(project([
+      audioItem('background', { hasVideo: true }), audioItem('foreground', { hasVideo: true }),
+    ]));
+    await flush();
+    h.emitCue(snapshotCue('background', 'background-cue', 1, 2));
+    h.controller.onVideoCanPlay();
+    h.emitCue(snapshotCue('foreground', 'foreground-cue', 2));
+    h.controller.onVideoCanPlay();
+    h.emitMeters({ items: [
+      { cue_id: 'foreground-cue', transport: 0, playhead_seconds: 5 },
+      ...(includeFallbackMeter ? [{ cue_id: 'background-cue', transport: 1, playhead_seconds: 9 }] : []),
+    ] });
+    assert.equal(new URL(h.controller.videoSrc.value!).searchParams.get('item_uuid'), 'background');
+    h.controller.onVideoCanPlay();
+    assert.equal(h.element.currentTime, includeFallbackMeter ? 9 : 2);
+    assert.equal(h.controller.showVideo.value, true);
+    assert.equal(h.element.paused, false);
+    h.stop();
+  }
+});
+
+test('stopped meters for every normal cue return the audience output to black', async () => {
+  const doc = project([
+    audioItem('image', { imagePath: 'images/still.png' }), audioItem('video', { hasVideo: true }),
+  ]);
+  doc.settings.videoStandbyImage = '';
+  const h = createHarness(doc);
+  await flush();
+  h.emitCue(snapshotCue('image', 'image-cue', 1));
+  h.emitCue(snapshotCue('video', 'video-cue', 2));
+  h.controller.onVideoCanPlay();
+  h.server.devices[0]!.runtime_state = 'stalled';
+  await nextTick();
+  h.emitMeters({ items: [
+    { cue_id: 'video-cue', transport: 0, playhead_seconds: 5 },
+    { cue_id: 'image-cue', transport: 0, playhead_seconds: 5 },
+  ] });
+  assert.equal(h.controller.showVideo.value, false);
+  assert.equal(h.controller.cueImageSrc.value, null);
+  assert.equal(h.controller.standbySrc.value, null);
+  assert.equal(h.element.paused, true);
+  h.stop();
+});
+
+test('a diagnostic stopped meter retains its separate paused-picture behavior', async () => {
+  const h = createHarness(project([audioItem('program', { imagePath: 'images/program.png' })]));
+  await flush();
+  h.emitCue(snapshotCue('program', 'program-cue', 1));
+  h.diagnostic.value = { cueId: 'diagnostic', path: '/bundled/card.webm', duration: 4, description: 'Program output' };
+  await flush();
+  h.emitCue({ cue_id: 'diagnostic', transport: 1, playhead_seconds: 2 });
+  h.controller.onVideoCanPlay();
+  h.emitMeters({ items: [{ cue_id: 'diagnostic', transport: 0, playhead_seconds: 2 }] });
+  assert.equal(new URL(h.controller.videoSrc.value!).searchParams.get('path'), '/bundled/card.webm');
+  assert.equal(h.controller.showVideo.value, true);
+  assert.equal(h.element.paused, true);
+  h.stop();
+});
+
+test('an unknown newest cue blanks old media until its document arrives', async () => {
+  const video = audioItem('video', { hasVideo: true, imagePath: 'images/video.png' });
+  const h = createHarness(project([video]));
+  await flush();
+  h.emitCue(snapshotCue('video', 'video-cue', 1, 6));
+  h.controller.onVideoCanPlay();
+  const pendingDoc = deferred<unknown>();
+  h.setFetchProject(() => pendingDoc.promise);
+  h.emitCue(snapshotCue('new-audio', 'new-cue', 2));
+  h.emitMeters({ items: [{ cue_id: 'new-cue', transport: 1, playhead_seconds: 0.5 }] });
+  assert.equal(h.controller.showVideo.value, false);
+  assert.equal(h.controller.cueImageSrc.value, null);
+  assert.equal(h.element.paused, true);
+  assert.equal(h.element.currentTime, 6, 'the new cue clock never seeks the old video');
+  pendingDoc.resolve(project([video, audioItem('new-audio')]));
+  await flush();
+  assert.equal(h.controller.showVideo.value, false);
+  assert.equal(h.element.paused, true);
+  h.stop();
+});
+
+test('project lifecycle changes clear audience media before the new document arrives', async () => {
+  const h = createHarness(project([audioItem('old', { hasVideo: true, imagePath: 'images/old.png' })]));
+  await flush();
+  h.emitCue(snapshotCue('old', 'old-cue', 5, 1));
+  h.controller.onVideoCanPlay();
+  assert.ok(h.controller.cueImageSrc.value);
+  assert.ok(h.controller.videoSrc.value);
+  h.setFetchProject(async () => project([]));
+  h.emitPatch({ op: 'project_changed' });
+  assert.equal(h.controller.cueImageSrc.value, null);
+  assert.equal(h.controller.videoSrc.value, null);
+  assert.equal(h.controller.standbySrc.value, null);
+  assert.equal(h.controller.showVideo.value, false);
+  assert.equal(h.element.paused, true);
+  h.stop();
+});
+
+test('an old document fetch cannot restore projection after project close', async () => {
+  const h = createHarness(project([audioItem('old', { imagePath: 'images/old.png' })]));
+  await flush();
+  h.emitCue(snapshotCue('old', 'old-cue', 5, 1));
+  const oldFetch = deferred<unknown>();
+  h.setFetchProject(() => oldFetch.promise);
+  h.emitSnapshot({ cues: [snapshotCue('old', 'old-cue', 5, 1)] });
+  h.emitPatch({ op: 'project_changed' });
+  oldFetch.resolve(project([audioItem('old', { imagePath: 'images/old.png' })]));
+  await flush();
+  assert.equal(h.controller.cueImageSrc.value, null);
+  assert.equal(h.controller.standbySrc.value, null);
+  h.stop();
+});
+
 test('resolves canonical group children and cart-only video through item_uuid', async () => {
   const groupChild = audioItem('group-child', { hasVideo: true, mediaPath: 'media/group.mp4' });
   const cartOnly = audioItem('cart-only', {
@@ -297,6 +545,132 @@ test('paused native seeks show the requested absolute frame and out-point loopin
   assert.ok(harness.element.currentTime > 5.25, 'soft drift remains rate-corrected instead of seeking every meter');
   assert.ok(harness.element.playbackRate < 1);
   harness.stop();
+});
+
+test('repeated canplay keeps soft drift rate-corrected instead of starting another seek', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]));
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    for (const clock of [1, 1.033, 1.066]) {
+      h.element.currentTime = clock + .035;
+      h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: clock }] });
+      const before = h.element.currentTime;
+      h.controller.onVideoCanPlay();
+      assert.equal(h.element.currentTime, before, 'readiness restoration must not bypass soft drift correction');
+      assert.ok(h.element.playbackRate < 1);
+      assert.equal(h.element.paused, false);
+    }
+    h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: 2 }] });
+    assert.equal(h.element.currentTime, 2, 'large drift still uses the existing hard seek');
+  } finally { h.stop(); }
+});
+
+test('a selection refresh preserves a playing video and its soft drift correction', async () => {
+  const doc = project([audioItem('video', { hasVideo: true }), audioItem('audio')]);
+  const h = createHarness(doc);
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    h.element.currentTime = 1.035;
+    h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: 1 }] });
+    const source = h.controller.videoSrc.value;
+    const pauses = h.element.pauseCount;
+    const rate = h.element.playbackRate;
+    const fetched = deferred<void>();
+    h.setFetchProject(async () => { fetched.resolve(); return doc; });
+    h.emitPatch({ op: 'selection_changed', itemUuid: 'audio' });
+    await fetched.promise;
+    await flush();
+    assert.equal(h.element.currentTime, 1.035, 'selection cannot seek the on-air picture');
+    assert.equal(h.element.playbackRate, rate);
+    assert.equal(h.element.pauseCount, pauses);
+    assert.equal(h.element.paused, false);
+    assert.equal(h.controller.videoSrc.value, source);
+    assert.equal(h.controller.showVideo.value, true);
+  } finally { h.stop(); }
+});
+
+test('a document refresh still aligns the authoritative paused video frame', async () => {
+  const doc = project([audioItem('video', { hasVideo: true })]);
+  const h = createHarness(doc);
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 2, 4));
+    h.controller.onVideoCanPlay();
+    h.element.currentTime = 1.965;
+    const fetched = deferred<void>();
+    h.setFetchProject(async () => { fetched.resolve(); return doc; });
+    h.emitPatch({ op: 'selection_changed', itemUuid: 'video' });
+    await fetched.promise;
+    await flush();
+    assert.equal(h.element.currentTime, 2);
+    assert.equal(h.element.paused, true);
+  } finally { h.stop(); }
+});
+
+for (const event of ['older pause', 'older stop', 'unrelated preview']) {
+  test(`${event} preserves the newer video position and playback`, async () => {
+    const h = createHarness(project([
+      audioItem('bed'), audioItem('video', { hasVideo: true }), audioItem('preview'),
+    ]));
+    try {
+      await flush();
+      h.emitCue(snapshotCue('bed', 'bed-cue', 1));
+      h.emitCue(snapshotCue('video', 'video-cue', 2, 1));
+      h.controller.onVideoCanPlay();
+      h.element.currentTime = 1.035;
+      const source = h.controller.videoSrc.value;
+      const pauses = h.element.pauseCount;
+      if (event === 'unrelated preview') {
+        h.emitPatch({ op: 'preview_started', itemUuid: 'preview' });
+      } else {
+        h.emitCue(snapshotCue('bed', 'bed-cue', 1, .5, event === 'older pause' ? 4 : 0));
+      }
+      assert.equal(h.element.currentTime, 1.035, 'unrelated transport cannot seek the current picture');
+      assert.equal(h.element.paused, false);
+      assert.equal(h.element.pauseCount, pauses);
+      assert.equal(h.controller.videoSrc.value, source);
+      assert.equal(h.controller.showVideo.value, true);
+    } finally { h.stop(); }
+  });
+}
+
+test('an older cue event cannot manufacture displayed-video clock recovery', async () => {
+  const h = createHarness(project([audioItem('bed'), audioItem('video', { hasVideo: true })]));
+  try {
+    await flush();
+    h.emitCue(snapshotCue('bed', 'bed-cue', 1));
+    h.emitCue(snapshotCue('video', 'video-cue', 2, 1));
+    h.controller.onVideoCanPlay();
+    const pinned = { items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: 1 }] };
+    h.emitMeters(pinned);
+    h.emitMeters(pinned);
+    assert.equal(h.element.paused, true);
+    h.emitCue(snapshotCue('bed', 'bed-cue', 1, 3, 4));
+    h.emitMeters(pinned);
+    assert.equal(h.element.paused, true, 'only displayed-cue progress can recover its clock');
+    assert.equal(h.controller.getPictureHealth().state, 'clock-wait');
+    h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: 1.1 }] });
+    assert.equal(h.element.paused, false, 'genuine displayed-cue progress still recovers');
+  } finally { h.stop(); }
+});
+
+test('first canplay still aligns to the latest native position after delayed decoding', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]));
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1));
+    h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: .25 }] });
+    assert.equal(h.element.currentTime, 0);
+    h.controller.onVideoCanPlay();
+    await flush();
+    assert.equal(h.element.currentTime, .25);
+    assert.equal(h.element.paused, false);
+  } finally { h.stop(); }
 });
 
 test('trigger_seq chooses newest-fired program cue while stop and preview preserve program picture', async () => {
@@ -539,5 +913,99 @@ test('AV Sync accepts orphan reconnect snapshots and freezes on the same clock-l
   assert.equal(h.element.paused, false, 'native loop-wrap is fresh progress');
   h.emitCue({ cue_id: 'diagnostic', transport: 0, playhead_seconds: 0.1 });
   assert.equal(h.element.paused, true, 'Stop All does not silently restart the diagnostic');
+  h.stop();
+});
+
+test('picture health records presented media time separately from renderer/capture and respects paused/still/seek/loop states', async () => {
+  const h = createHarness(project([audioItem('picture', { hasVideo: true }), audioItem('still', { imagePath: 'logo.png' })]));
+  await flush();
+  h.emitCue(snapshotCue('picture', 'picture-cue', 1, 2));
+  h.controller.onVideoCanPlay();
+  assert.equal(h.controller.getPictureHealth().mediaTime, null, 'canplay alone is not a presented frame');
+  h.element.fireVideoFrame(performance.now(), { mediaTime: 2.04, presentedFrames: 3 });
+  let health = h.controller.getPictureHealth();
+  assert.equal(health.state, 'playing');
+  assert.equal(health.mediaTime, 2.04);
+  assert.equal(health.presentedFrames, 3);
+  assert.ok(health.presentedAgeMs! >= 0);
+  const capturedTime = health.mediaTime;
+  assert.equal(h.controller.getPictureHealth().mediaTime, capturedTime, 'fresh polling cannot invent frame progress');
+  h.emitCue(snapshotCue('picture', 'picture-cue', 1, 2.04, 4));
+  assert.equal(h.controller.getPictureHealth().state, 'paused');
+  h.element.currentTime = 1;
+  h.emitCue(snapshotCue('picture', 'picture-cue', 1, 1));
+  h.element.fireVideoFrame(performance.now(), { mediaTime: 1.04, presentedFrames: 4 });
+  health = h.controller.getPictureHealth();
+  assert.equal(health.mediaTime, 1.04, 'backward loop/seek is valid presentation progress');
+  assert.equal(health.presentedFrames, 4);
+  h.emitCue(snapshotCue('still', 'still-cue', 2));
+  assert.equal(h.controller.getPictureHealth().state, 'still');
+  h.stop();
+  assert.equal(h.element.frameCallbacks.size, 0, 'observers retire with output');
+});
+
+test('exact-file prepared status requires player decode and settled seek, and same-path replacement invalidates it', async () => {
+  let doc = { ...project([audioItem('replace', { hasVideo: true, inPoint: 2 })]),
+    server: { projectSessionId: 'show-1', audioReadiness: { fileRevisions: { replace: 'revision-1' } } } };
+  const h = createHarness(doc);
+  h.setFetchProject(async () => doc);
+  await flush();
+  h.emitSnapshot({ cues: [], next_item_uuid: 'replace' });
+  await flush();
+  let url = new URL(h.controller.videoSrc.value!);
+  assert.equal(url.searchParams.get('file_revision'), 'revision-1');
+  assert.equal(url.searchParams.get('project_session_id'), 'show-1');
+  assert.equal(h.controller.getPictureHealth().preparedSeconds, null);
+  h.element.currentSrc = h.controller.videoSrc.value!;
+  Object.assign(h.element, { readyState: 3, seeking: false });
+  h.controller.onVideoLoadedMetadata();
+  h.controller.onVideoCanPlay();
+  assert.equal(h.controller.getPictureHealth().preparedSeconds, 2);
+  Object.assign(h.element, { seeking: true });
+  assert.equal(h.controller.getPictureHealth().preparedSeconds, null);
+  Object.assign(h.element, { seeking: false });
+  const firstSource = h.controller.videoSrc.value;
+  doc = { ...doc, server: { ...doc.server, audioReadiness: { fileRevisions: { replace: 'revision-2' } } } };
+  h.emitPatch({ op: 'media_changed', item_uuid: 'replace', reloaded: true, file_revision: 'revision-2', project_session_id: 'show-1' });
+  await flush();
+  assert.notEqual(h.controller.videoSrc.value, firstSource);
+  assert.equal(h.controller.getPictureHealth().preparedSeconds, null, 'previous revision decode is not readiness for replacement');
+  url = new URL(h.controller.videoSrc.value!);
+  assert.equal(url.searchParams.get('file_revision'), 'revision-2');
+  const replacementSource = h.controller.videoSrc.value;
+  h.emitPatch({ op: 'media_changed', item_uuid: 'replace', reloaded: true, project_session_id: 'old-show' });
+  await flush();
+  assert.equal(h.controller.videoSrc.value, replacementSource);
+  h.stop();
+});
+
+test('next video uses the free element during audio, follows authored trim, and cannot disturb an on-air video', async () => {
+  let doc = { ...project([audioItem('bed'), audioItem('next', { hasVideo: true, inPoint: 2 }), audioItem('other', { hasVideo: true })]),
+    server: { projectSessionId: 'show', audioReadiness: { fileRevisions: { next: 'v1', other: 'v2' } } } };
+  const h = createHarness(doc);
+  h.setFetchProject(async () => doc);
+  await flush();
+  h.emitCue(snapshotCue('bed', 'bed-cue', 1));
+  h.emitPatch({ op: 'next_item_set', itemUuid: 'next' });
+  await flush();
+  assert.ok(h.controller.videoSrc.value, 'eligible audio bed must prepare upcoming video');
+  assert.equal(new URL(h.controller.videoSrc.value!).searchParams.get('item_uuid'), 'next');
+  assert.equal(h.controller.showVideo.value, false, 'preparation must not put video over the audio bed');
+  Object.assign(h.element, { readyState: 3, seeking: false });
+  h.controller.onVideoLoadedMetadata();
+  h.controller.onVideoCanPlay();
+  assert.equal(h.element.currentTime, 2);
+  assert.equal(h.element.paused, true);
+  assert.equal(h.controller.getPictureHealth().preparedSeconds, 2);
+  const source = h.controller.videoSrc.value;
+  doc.items[1]!.inPoint = 3;
+  h.emitSnapshot({ cues: [snapshotCue('bed', 'bed-cue', 1)], next_item_uuid: 'next' });
+  await flush();
+  assert.equal(h.element.currentTime, 3, 'same-file trim edits re-seek the prepared element');
+  assert.equal(h.controller.videoSrc.value, source, 'no second decoder/source generation needed for trim-only change');
+  h.emitCue(snapshotCue('next', 'video-cue', 2, 3));
+  h.emitPatch({ op: 'next_item_set', itemUuid: 'other' });
+  await flush();
+  assert.equal(h.controller.videoSrc.value, source, 'upcoming video cannot replace the on-air element');
   h.stop();
 });

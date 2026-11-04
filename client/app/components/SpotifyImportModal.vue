@@ -30,6 +30,7 @@
           </label>
 
           <p class="hint selectable">{{ t('spotifyImport.hint') }}</p>
+          <p class="hint selectable">{{ t('importAudio.preserveAudio') }}</p>
 
           <section class="import-plan selectable" :aria-labelledby="planId">
             <button
@@ -108,33 +109,6 @@
                   <option value="crossfade">{{ t('settings.transitionModeCrossfade') }}</option>
                   <option value="start-next">{{ t('settings.transitionModeStartNext') }}</option>
                 </select>
-              </label>
-              <label class="processing-control">
-                <input
-                  type="checkbox"
-                  :checked="cueProcessingSettings.trimSilence"
-                  :disabled="isBusy || isSavingSettings"
-                  @change="updateBooleanSetting('autoTrimSilenceOnImport', $event)"
-                >
-                <span>{{ t('settings.autoTrimSilenceOnImport') }}</span>
-              </label>
-              <label class="processing-control">
-                <input
-                  type="checkbox"
-                  :checked="cueProcessingSettings.matchLoudness"
-                  :disabled="isBusy || isSavingSettings"
-                  @change="updateBooleanSetting('autoMatchLoudnessOnImport', $event)"
-                >
-                <span>{{ t('settings.autoMatchLoudnessOnImport') }}</span>
-              </label>
-              <label class="processing-control">
-                <input
-                  type="checkbox"
-                  :checked="cueProcessingSettings.reduceTruePeaks"
-                  :disabled="isBusy || isSavingSettings"
-                  @change="updateBooleanSetting('autoReduceTruePeaksOnImport', $event)"
-                >
-                <span>{{ t('settings.autoReduceTruePeaksOnImport') }}</span>
               </label>
               <label class="processing-control">
                 <input
@@ -546,9 +520,6 @@ const cueProcessingSettings = computed(() => {
   const settings = currentProject.value?.settings;
   return {
     transitionMode: settings?.defaultTransitionMode === 'start-next' ? 'start-next' : 'crossfade',
-    trimSilence: settings?.autoTrimSilenceOnImport === true,
-    matchLoudness: settings?.autoMatchLoudnessOnImport === true,
-    reduceTruePeaks: settings?.autoReduceTruePeaksOnImport !== false,
     cycleColors: settings?.cycleTrackColors !== false,
   };
 });
