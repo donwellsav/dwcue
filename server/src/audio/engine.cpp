@@ -119,10 +119,8 @@ AudioEngine::~AudioEngine() {
     }
     decode_state_->cues.store({});
     decode_state_->wake.notify_all();
-    // A native read cannot be force-cancelled safely. Its shared state/cue
-    // outlive this engine, and the fixed worker exits when that call returns.
-    for (auto& worker : decode_threads_)
-        if (worker.joinable()) worker.detach();
+    // Only the dispatcher is joined; in-flight cue workers own their state.
+    if (decode_thread_.joinable()) decode_thread_.join();
     std::lock_guard lock{mutex_};
     device_snapshot_.store(std::make_shared<const DeviceList>());
     for (auto& dev : devices_) {
@@ -144,9 +142,8 @@ bool AudioEngine::start() {
                      cfg_.mix_sample_rate, cfg_.render_block, cfg_.master_channels,
                      cfg_.master_ceiling_db);
 
-        for (auto& worker : decode_threads_)
-            if (!worker.joinable())
-                worker = std::thread([state = decode_state_] { decode_loop(state); });
+        if (!decode_thread_.joinable())
+            decode_thread_ = std::thread([state = decode_state_] { decode_loop(state); });
         render_thread_ = std::thread([this] { render_loop(); });
         device_watchdog_thread_ = std::thread([this] { device_watchdog_loop(); });
 
@@ -1977,13 +1974,8 @@ void AudioEngine::decode_loop(const std::shared_ptr<DecodeState>& state) {
             });
             continue;
         }
-        bool produced = false;
         const auto cues = state->cues.load();
         if (cues) {
-            // One block per cue per pass keeps a large project fair while the
-            // loop quickly circles until every active queue is full. Stopped
-            // cues are primed synchronously, and paused cues keep their existing
-            // queue; reading either idle source here can starve a live cue.
             for (const auto& weak : *cues) {
                 if (!state->active.load(std::memory_order_acquire) ||
                     state->shutdown.load(std::memory_order_acquire)) break;
@@ -1994,17 +1986,41 @@ void AudioEngine::decode_loop(const std::shared_ptr<DecodeState>& state) {
                     transport == TransportState::Paused) {
                     continue;
                 }
-                produced = item->service_read_ahead(1, /*wait_for_decoder=*/false) || produced;
+                try {
+                    std::lock_guard lock{state->wait_mutex};
+                    if (!state->active.load(std::memory_order_acquire) ||
+                        state->shutdown.load(std::memory_order_acquire)) break;
+                    if (!state->workers.insert(item.get()).second) continue;
+                    std::thread([state, item] {
+                        while (state->active.load(std::memory_order_acquire) &&
+                               !state->shutdown.load(std::memory_order_acquire)) {
+                            const auto transport = item->stats().transport;
+                            if (transport == TransportState::Stopped || transport == TransportState::Paused) break;
+                            if (!item->service_read_ahead(1, /*wait_for_decoder=*/false)) {
+                                std::unique_lock wait_lock{state->wait_mutex};
+                                state->wake.wait_for(wait_lock, std::chrono::milliseconds{2}, [&] {
+                                    return !state->active.load(std::memory_order_acquire) ||
+                                        state->shutdown.load(std::memory_order_acquire);
+                                });
+                            }
+                        }
+                        { std::lock_guard lock{state->wait_mutex}; state->workers.erase(item.get()); }
+                        state->wake.notify_all();
+                    }).detach();
+                } catch (...) {
+                    { std::lock_guard lock{state->wait_mutex}; state->workers.erase(item.get()); }
+                    item->begin_render_exclusion();
+                    item->stop_for_decode_error(MA_UNAVAILABLE);
+                    item->end_render_exclusion();
+                }
             }
         }
 
-        if (!produced) {
-            std::unique_lock wait_lock{state->wait_mutex};
-            state->wake.wait_for(
-                wait_lock, std::chrono::milliseconds(2),
-                [&] { return !state->active.load(std::memory_order_acquire) ||
-                    state->shutdown.load(std::memory_order_acquire); });
-        }
+        std::unique_lock wait_lock{state->wait_mutex};
+        state->wake.wait_for(wait_lock, std::chrono::milliseconds{2}, [&] {
+            return !state->active.load(std::memory_order_acquire) ||
+                state->shutdown.load(std::memory_order_acquire);
+        });
     }
 }
 

@@ -89,6 +89,7 @@ struct PlaybackItemStats {
 };
 
 class PlaybackItem {
+    friend class AudioEngine;
 public:
     explicit PlaybackItem(PlaybackItemDesc desc);
     ~PlaybackItem();

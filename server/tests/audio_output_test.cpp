@@ -25,6 +25,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 // Expose only playback/engine state for deterministic headless render gates.
@@ -158,8 +159,8 @@ struct Fixture {
 };
 
 void test_blocked_decoder_reads(const std::filesystem::path& source) {
-    for (const int scenario : {0, 1, 2, 3, 4, 5}) {
-        const int blocked_count = scenario == 1 ? 3 : scenario == 4 ? 4 : 1;
+    for (const int scenario : {0, 1, 2, 3, 4, 5, 6}) {
+        const int blocked_count = scenario == 1 ? 3 : scenario == 4 ? 4 : scenario == 6 ? 12 : 1;
         auto fixture = std::make_unique<Fixture>(source);
         auto& f = *fixture;
         std::vector<std::shared_ptr<PlaybackItem>> blocked;
@@ -266,12 +267,11 @@ void test_blocked_decoder_reads(const std::filesystem::path& source) {
             std::this_thread::sleep_for(std::chrono::milliseconds{1});
         }
         std::printf("MEASURE blocked_read_sources=%d healthy_pcm_blocks=%d/64\n", blocked_count, audible_blocks);
-        if (scenario == 4 && stopped_before_release) {
-            check(audible_blocks < 48 && entered.load() == 4,
-                  "blocked read: restart never spawns replacement workers beyond the fixed capacity");
-        } else if (stopped_before_release) {
+        if (stopped_before_release) {
             check(audible_blocks >= 48 && f.item->stats().playhead_frame > 8'192,
                   "blocked read: healthy PCM continues beyond all resident queue/ring capacity");
+            check(entered.load() == blocked_count,
+                  "blocked read: restart retains the existing blocked calls without retrying them");
         }
         auto stop = std::async(std::launch::async, [&] {
             f.engine.stop_all(std::chrono::milliseconds{0}, true);

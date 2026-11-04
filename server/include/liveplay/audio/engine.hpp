@@ -47,6 +47,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 // miniaudio types (header-only; implementation compiled once in miniaudio_impl.c).
@@ -561,14 +562,15 @@ private:
         std::atomic<bool> shutdown{false};
         std::condition_variable wake;
         std::mutex wait_mutex;
+        std::unordered_set<const PlaybackItem*> workers; // Guarded by wait_mutex.
     };
     std::shared_ptr<DecodeState>      decode_state_ = std::make_shared<DecodeState>();
 
-    // Engine threads; decoder capacity persists across stop/start.
+    // The dispatcher never reads media; each live cue owns its unfinished work.
     std::atomic<bool>                running_{false};
     std::thread                      render_thread_;
-    // shortcut: four blocked reads exhaust refills; use process isolation for a larger fault budget.
-    std::array<std::thread, 4>        decode_threads_;
+    // shortcut: a stuck read retains one worker per cue; process isolation is needed to reclaim it.
+    std::thread                      decode_thread_;
     std::thread                      device_watchdog_thread_;
     std::condition_variable          device_watchdog_cv_;
     std::mutex                       device_watchdog_wait_mutex_;
