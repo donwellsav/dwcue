@@ -283,7 +283,7 @@ Baseline: clean `6d99a46`; all13 native tests pass with audio-service access den
 | P2 | T36 Unsafe time inputs cannot disturb live PCM | Reject nonfinite/unrepresentable seek, out-point and loop inputs in shared setters; preserve negative/zero semantics and normal valid edits. |
 
 - [x] T31 behavioral RED/GREEN and affected native tests; commit.
-- [ ] T32 child/nested follow failure RED/GREEN; commit.
+- [x] T32 child/nested follow failure RED/GREEN; commit.
 - [ ] T33 project-load state reset RED/GREEN; commit.
 - [ ] T34 settings identity and save-error RED/GREEN; commit.
 - [ ] T35 initialization failure/cancellation RED/GREEN; commit.

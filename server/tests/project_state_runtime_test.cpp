@@ -1010,6 +1010,42 @@ void test_failed_follow_requires_go(const std::filesystem::path& wav) {
     state.stop_all_cues(0);
 }
 
+void test_failed_group_follow_requires_go(const std::filesystem::path& wav) {
+    for (const bool nested_failure : {false, true}) {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        const json invalid_end{{"action", "goto-index"}, {"targetIndex", {99}}};
+        auto child = audio("held-child", wav, {{"outPoint", 0.02},
+            {"endBehavior", nested_failure ? json{{"action", "nothing"}} : invalid_end}});
+        json inner{{"uuid", "held-inner"}, {"type", "group"},
+                   {"startBehavior", {{"action", "play-first"}}},
+                   {"endBehavior", invalid_end}, {"children", json::array({child})}};
+        json outer{{"uuid", "held-outer"}, {"type", "group"},
+                   {"startBehavior", {{"action", "play-first"}}},
+                   {"endBehavior", {{"action", "goto-item"}, {"targetUuid", "held-target"}}},
+                   {"children", json::array({nested_failure ? inner : child})}};
+        state.replace_full_document(document(json::array({outer, audio("held-target", wav)})));
+        check(wait_ready(state), "failed group follow: media ready"); close_devices(engine);
+        std::atomic<bool> visible_error{false};
+        state.set_ui_state_broadcaster([&](const json& event) {
+            if (event.value("code", std::string{}) == "sequence_target_invalid")
+                visible_error.store(true);
+        });
+        check(state.trigger_item("held-outer"), "failed group follow: source starts");
+        render_to_end(state, engine, "held-child");
+        std::this_thread::sleep_for(160ms);
+        check(visible_error.load(), "failed group follow: unavailable destination is visible");
+        check(!on_air(state, engine, "held-target"), nested_failure
+            ? "failed nested group follow cannot fire outer group ending on later ticks"
+            : "failed child follow cannot fire group ending on later ticks");
+        check(state.set_next_item_override("held-target") && state.go() == "held-target" &&
+                  on_air(state, engine, "held-target"),
+              "failed group follow: explicit GO still starts corrected target");
+        state.stop_all_cues(0);
+        state.set_ui_state_broadcaster({});
+    }
+}
+
 void test_manual_go_parity(const std::filesystem::path& wav) {
     liveplay::audio::AudioEngine engine;
     liveplay::core::ProjectState state(engine);
@@ -1431,6 +1467,7 @@ int main() {
     test_priming_admission(wav);
     test_output_identity_catalog();
     test_failed_follow_requires_go(wav);
+    test_failed_group_follow_requires_go(wav);
     test_manual_go_parity(wav);
     test_replacement_cancels_ownership();
     test_group_waits_for_fading_child(wav);

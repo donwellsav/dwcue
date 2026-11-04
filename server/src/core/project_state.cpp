@@ -5607,6 +5607,7 @@ void ProjectState::complete_group_runs_for_item(const std::string& completed_uui
             target == candidate->group_uuid ||
             (!target.empty() && !trigger_item(target));
         if (target_failed) {
+            cancel_group_runs_for_item(candidate->group_uuid);
             Logger::warn("GROUP END: target '{}' was not ready; group '{}' completed",
                          target, candidate->group_uuid);
             std::function<void(const json&)> cb;
@@ -5619,6 +5620,7 @@ void ProjectState::complete_group_runs_for_item(const std::string& completed_uui
                             {"message", "Group end target was unavailable"},
                             {"item_uuid", candidate->group_uuid},
                             {"target_uuid", target}});
+            return;
         }
         completed = candidate->group_uuid;
     }
@@ -5849,6 +5851,7 @@ void ProjectState::handle_item_ended(const SequencedItem& item) {
 
     const auto trigger_follow = [&](const std::string& target) {
         if (!target.empty() && (item_on_air(target) || trigger_sequence_item(item.uuid, target))) return;
+        cancel_group_runs_for_item(item.uuid);
         // Do not retry automatically after EOF: a repaired cue could otherwise
         // fire long after its scheduled time. Keep a valid target for explicit GO.
         if (!target.empty() && next_item_override().empty())
