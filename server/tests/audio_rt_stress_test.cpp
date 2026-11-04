@@ -1052,6 +1052,45 @@ void test_live_edit_storage_waits(const std::filesystem::path& wav) {
     }
 }
 
+void test_queued_seek_intents(const std::filesystem::path& wav) {
+    for (const bool cancel : {false, true}) {
+        PlaybackItemDesc desc;
+        desc.id = CueId{"queued-seeks"}; desc.file_path = wav;
+        desc.mix_sample_rate = kRate; desc.render_block = kBlock;
+        PlaybackItem item{std::move(desc)};
+        check(item.load() && item.prime(2.0), "queued seek: real PCM primes");
+        item.play(); Output output; item.render_block(output.channels, 2, kBlock);
+        std::unique_lock storage{item.decoder_mutex_};
+        auto previous = item.playback_revision();
+        auto first = std::async(std::launch::async, [&] { item.seek_seconds(0.5); });
+        for (int i = 0; i < 150 && item.playback_revision() == previous; ++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        const auto first_revision = item.playback_revision();
+        auto second = std::async(std::launch::async, [&] { item.seek_seconds(0.75); });
+        for (int i = 0; i < 150 && item.playback_revision() == first_revision; ++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        check(first_revision != previous && item.playback_revision() != first_revision,
+              "queued seek: each pending destination invalidates older playback intent before I/O");
+        if (cancel) item.stop_now();
+        storage.unlock(); first.get(); second.get();
+        if (cancel) {
+            check(item.stats().transport == TransportState::Stopped &&
+                      item.stats().playhead_frame == 0 &&
+                      item.render_block(output.channels, 2, kBlock) == 0,
+                  "queued seek: a later Stop cancels both pending destinations");
+        } else {
+            item.service_read_ahead(1);
+            const float expected = static_cast<std::int16_t>(
+                std::sin(2.0 * 3.14159265358979323846 * 997.0 * 36'000 / kRate) * 20'000.0) / 32768.0f;
+            check(item.stats().playhead_frame == 36'000 &&
+                      item.render_block(output.channels, 2, kBlock) == kBlock &&
+                      std::abs(output.left[0] - expected) < 0.00001f,
+                  "queued seek: the last requested destination supplies the resumed PCM");
+        }
+        item.stop_now();
+    }
+}
+
 void test_exact_eof_direct_replay() {
     const auto wav = make_wav(2, 1'024);
     PlaybackItemDesc desc;
@@ -1427,6 +1466,7 @@ int main() {
         test_prime_against_rt_start(item);
         test_cancelled_prime_cache(wav);
         test_live_edit_storage_waits(wav);
+        test_queued_seek_intents(wav);
         test_exact_eof_direct_replay();
         test_soft_out_point_fade(item);
         test_loop_and_concurrent_stress(item);

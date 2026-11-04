@@ -464,17 +464,17 @@ void PlaybackItem::seek_seconds(double seconds) {
         seconds >= static_cast<double>(UINT64_MAX) / desc_.mix_sample_rate) return;
     if (seconds < 0) seconds = 0;
     ma_uint64 frame = static_cast<ma_uint64>(seconds * desc_.mix_sample_rate);
-    const auto expected_revision = playback_revision();
+    begin_render_exclusion();
+    const auto revision = playback_revision_.fetch_add(1, std::memory_order_acq_rel) + 1;
+    end_render_exclusion();
     {
         std::lock_guard lock{decoder_mutex_};
-        std::uint64_t revision;
         bool was_stopped;
         {
             begin_render_exclusion();
             RenderActiveGuard guard{render_exclusion_};
-            if (playback_revision() != expected_revision) return;
+            if (playback_revision() != revision) return;
             was_stopped = transport_.load(std::memory_order_acquire) == TransportState::Stopped;
-            revision = playback_revision_.fetch_add(1, std::memory_order_acq_rel) + 1;
             reset_read_ahead_locked(playhead_frames_.load(std::memory_order_acquire));
             rewind_on_play_.store(true, std::memory_order_release);
         }
