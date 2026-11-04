@@ -425,10 +425,10 @@
     "gainStages": "Schematic: final physical sum and secondary-clock adaptation precede the attenuation-only limiter and device output."
   },
   "uiBuildRevision": "4105c02dee64e7abe466fff4a0046a9c34cbf774",
-  "manualSourceRevision": "2adf45210cc45254fbc21e6afb7a6d81b5a3db27",
+  "manualSourceRevision": "153a1a73ec189d96af3e78d7add5b67d87ea92ba",
   "visualCompatibility": {
     "checkedOn": "2026-11-04",
-    "revision": "2adf45210cc45254fbc21e6afb7a6d81b5a3db27",
-    "basis": "Only SpotifyImportModal async settings persistence changed in client/app since the capture checkpoint. Its template/styles are identical; other UI source and image assets are unchanged. Original per-image capture revisions, dates and hashes are retained."
+    "revision": "153a1a73ec189d96af3e78d7add5b67d87ea92ba",
+    "basis": "No client/app or client/electron production source changed in the ordered playback batch since 8e96e39. The earlier Spotify persistence repair retains identical template/styles to the capture checkpoint. Original per-image capture revisions, dates, dimensions and hashes are retained."
   }
 }

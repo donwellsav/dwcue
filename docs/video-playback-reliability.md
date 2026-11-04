@@ -1,6 +1,6 @@
 # Video cue handoffs and control reliability
 
-**4 November software audit:** repairs through `2adf452` preserve the show workflow and add project-load refusal/state isolation, failed-group-follow holds, identity-bound Spotify settings, settled/cancellable YouTube setup and safe numeric audio edits. Full native13/13, client checks and typecheck pass; see the [current workplan](superpowers/plans/2026-11-03-live-show-reliability.md). No installed release or new physical acceptance is claimed.
+**4 November software audit:** application source `153a1a7` includes the ordered storage/Stop All, prepared-follow, project-admission and LTC repairs. The isolated ten-minute mixed-video soak passes 481 SD/1080p rounds and records presentation, drops and memory without changing production video code. Native 13/13, isolated integration 61/61 and client checks/typecheck pass; see the [current workplan](superpowers/plans/2026-11-03-live-show-reliability.md). No installed release or new physical acceptance is claimed.
 
 Initial investigation: 2026-11-03 against the working tree based on `82505580ccb6ae86ccb71e28264b6d4436641419`. The reported pattern was that a standalone video usually worked, while playing video before or after audio/another video caused freezing, loss of control, and apparent crashes. Existing audio/import/Spotify changes were retained.
 

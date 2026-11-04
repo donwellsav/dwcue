@@ -1,6 +1,6 @@
 # Audio import and live playback reliability
 
-**4 November software audit:** repairs through `2adf452` preserve the show workflow and add project-load refusal/state isolation, failed-group-follow holds, identity-bound Spotify settings, settled/cancellable YouTube setup and safe numeric audio edits. Full native13/13, client checks and typecheck pass; see the [current workplan](superpowers/plans/2026-11-03-live-show-reliability.md). No installed release or new physical acceptance is claimed.
+**4 November software audit:** repairs through `153a1a7` preserve the show workflow and add responsive storage/Stop All cancellation, coherent replay after interrupted seeks, valid prepared-follow retry, nested project admission and long-position LTC safety. Earlier project/import/level safeguards remain covered. Native 13/13, isolated integration 61/61, client checks/typecheck and continuous decoded-media checks pass; see the [current workplan](superpowers/plans/2026-11-03-live-show-reliability.md). No installed release or new physical acceptance is claimed.
 
 Research and implementation began 2026-11-03 at `8250558`. The initial repairs were committed locally as `2ea5984` and `a9a86a3`; package metadata is 2.6.17. No new installer, installation or publication was performed. The current workplan distinguishes software verification from deferred physical acceptance.
 
@@ -89,7 +89,7 @@ The installed miniaudio rate-change path retimes fractional position with a 32-b
 
 The former secondary target also left unequal scheduling headroom. With the final phase-safe callback and the old three-block target, each slow-clock case produced 50 overruns/resyncs in 90 simulated seconds. Centering pre-callback occupancy at 2.5 blocks eliminated them without enlarging the four-block ring. Master pacing and recovery priming retain three blocks. The secondary nominal queue level changes by half a block; physical inter-device delay still needs later calibration.
 
-The hardware-free output fixture covers both nominal-speed crossings and six clock/phase cases at zero/±3,000 ppm with ±0.2-block callback delivery variation. All pass; extended copies run 30 simulated minutes each with zero underruns, overruns or resyncs. PCM continuity is checked on a sub-second ramp; the remainder runs through post-EOF silence. This is three hours of simulated queue evolution, not three hours of real-time decoded or audible playback. Full native CTest13/13, RT/live-safety/gain checks and fresh independent review pass.
+The original T30 evidence covered both nominal-speed crossings and six clock/phase cases at zero/±3,000 ppm with ±0.2-block callback delivery variation. Extended copies ran 30 simulated minutes each with zero underruns, overruns or resyncs, but checked PCM continuity only on a sub-second ramp before post-EOF silence. That was three hours of queue evolution, not decoded/audible playback. T40 below supersedes this coverage limit with continuous decoded-source checks; the T30 controller and timing bounds are unchanged.
 
 Exploratory ±4,000 ppm cases with the same delivery variation can still exhaust headroom. The original real-media secondary-output burst is not uniquely attributed or physically confirmed resolved. Hardware acceptance remains deferred. No controller redesign or widened safety limit is implied by this bounded repair.
 

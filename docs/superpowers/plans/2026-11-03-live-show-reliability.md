@@ -32,11 +32,11 @@
 
 **Commit policy:** the user authorized local commits and ongoing checkpoints. `2ea5984` contains the earlier audit repairs; `a9a86a3` contains T30. Package metadata remains 2.6.17, with no new installer or publication.
 
-**Current checkpoint:** T1–T23 and T25–T30 software repairs are complete locally with recorded regressions and passing gates. T30 corrects fractional resampler discontinuities and secondary-ring scheduling headroom, preserving master pacing and the show workflow. T24 hardware acceptance remains deferred at the user’s request; the earlier physical resync observation is not conclusively closed. See the execution record for evidence and retained limits.
+**Current checkpoint:** application source `153a1a7` includes T1–T23 and T25–T42 software repairs/coverage. The ordered batch fixes storage/Stop All cancellation, prepared-follow contention, nested project admission and long-position LTC, and strengthens continuous-media tests. All 13 native suites, 61 isolated integration tests, client checks/typecheck and the ten-minute video soak pass. One fresh final review found two T38 edges; one correction pass and native regressions close both. Developer documents, workplan and the rendered 50-page operator manual are reconciled to this source. T24 hardware acceptance and the original physical resync observation remain deferred.
 
 ## Priority and delivery boundaries
 
-This ordered plan preserves the original delivery sequence. T1–T23 and T25–T30 are complete; resume only the unchecked work and acceptance boundaries. A completed software task does not close a finding whose physical or extended validation remains open.
+This ordered plan preserves the original delivery sequence. T1–T23 and T25–T42 are complete; resume only the unchecked work and acceptance boundaries. A completed software task does not close a finding whose physical or extended validation remains open.
 
 | Order | Task / finding | Reason and completion boundary |
 | --- | --- | --- |
@@ -292,12 +292,12 @@ Baseline: clean `6d99a46`; all13 native tests pass with audio-service access den
 - [x] T37 server-schema typed-load refusal RED/GREEN; commit.
 - [x] Final affected gates, fresh review and current evidence/documents.
 
-Additional source leads remain separate from repairs: transient prepared-follow gate contention may cause a partial commit/gap; LTC frame-to-nanosecond multiplication can overflow at long positions. T37 closes the separately reproduced server-schema typed-load refusal path. Establish ordinary caller impact and deterministic proof before expanding a repair or claiming these closed. T24 physical acceptance remains deferred.
+The deep-hunt leads were subsequently reproduced and repaired as T39 (prepared-follow contention) and T42 (long-position LTC) in the ordered batch below. T37 closes the separately reproduced server-schema typed-load refusal path. T24 physical acceptance remains deferred.
 
 
 ## Ordered follow-ups — 4 November 2026
 
-User authorized these in order from clean8e96e39. Preserve controls, cue order, authored levels/trims/fades and single-GO behavior; no automatic late replay/retry. Software fixtures only: generated/disposable media, native audio-service-denial sandbox, no user app/show/storage or physical endpoints. Reuse existing preparation, intent revisions and worker paths; commit each proven repair with its ledger result.
+User authorized these in order from clean `8e96e39`. Preserve controls, cue order, authored levels/trims/fades and single-GO behavior; cancelled preparation cannot play later. Software fixtures only: generated/disposable media, native audio-service-denial sandbox, no user app/show/storage or physical endpoints. Reuse existing preparation, intent revisions and worker paths; commit each proven repair with its ledger result.
 
 - [x] **T38 / High — storage stalls and Stop All.** Gate decoder work and prove Stop All(0) completes before release; current sound stops, pending start is cancelled and cannot fire afterward. Trace cold GO/direct trigger/group/recovery and shared stop/prepare callers. Fix the shared blocking boundary without adding a general job system or altering show actions. Cover normal replay, exact EOF and authored fades.
   - [x] T38a: immediate stop no longer waits for decoder rewind; replay and native audio/runtime regressions pass.
@@ -308,6 +308,6 @@ User authorized these in order from clean8e96e39. Preserve controls, cue order, 
   - [x] T40 video: isolated 600.932-second mixed SD/1080p Chromium soak passes 481 rounds, including 161 video-to-video handoffs and 17,349 presentation callbacks. Record measured frame drops and memory; physical/actual-show acceptance remains T24.
 - [x] **T41 / Medium — malformed nested documents.** Test representative bad nested cue/group/settings values and post-load normalization. Refusals preserve the current show/playback and disk file. Repair only proven shared validation/commit boundaries; no broad schema framework.
 - [x] **T42 / Lower — long-position LTC.** Test frame→nanosecond arithmetic and actual generator behavior around the signed multiplication limit (~53.4-hour cue position at48kHz), then correct the conversion without changing ordinary timing or introducing callback allocation.
-- [ ] Full affected software gates, one fresh final bounded review, current documentation/manual and clean committed checkout. T24 physical/deployment acceptance stays deferred.
+- [x] Full affected software gates, one fresh final bounded review, current documentation/manual and clean committed checkout. T24 physical/deployment acceptance stays deferred.
 
 Pre-flight: T38 changes preparation/stop lifetime semantics consumed by T39; preserve revision and queued-PCM ownership before touching the handoff. T40 measures those paths. T41 changes document admission only; keep session and cancellation fences from T38. T42 uses the existing LTC render path and must retain its real-time contract.

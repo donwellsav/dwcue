@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.17
-**Source revision:** 2adf45210cc45254fbc21e6afb7a6d81b5a3db27
-**Native engine baseline:** 2adf45210cc45254fbc21e6afb7a6d81b5a3db27
+**Source revision:** 153a1a73ec189d96af3e78d7add5b67d87ea92ba
+**Native engine baseline:** 153a1a73ec189d96af3e78d7add5b67d87ea92ba
 **Edition:** 4 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition describes the application source checkpoint **2adf452**, including the live-show audit, secondary audio repair and further project/import/sequence safeguards. Package metadata remains **2.6.17**; these fixes have not been packaged, installed or published as a new release. Compare the installer you intend to use with its release notes before rehearsal.
+This edition describes application source **153a1a7**, including responsive Stop All during cold media preparation, cancellation-safe replay, prepared-follow retries, project admission and long-position timecode repairs. It retains the earlier live-show audit and audio/import safeguards. Package metadata remains **2.6.17**; these fixes have not been packaged, installed or published as a new release. Compare the installer you intend to use with its release notes before rehearsal.
 
 Interface images were captured on 3 November from the same controls and layout, which remain unchanged in this repair batch. Their templates, styles and assets were checked against this source; original capture revisions and hashes are retained. Generated tones run through the native engine's virtual NULL output with physical audio-service access blocked; the desktop bridge supplies fixture locale, display and MIDI information. The images illustrate controls and visible states, rather than physical audio, HDMI or device compatibility. The capture method, source revisions and image hashes are recorded in **docs/manual-assets/captures.json**. Equipment photographs remain illustrative.
 
@@ -133,7 +133,9 @@ Selection and arming are independent: arrow keys and Properties can refer to a d
 
 Automatic Up Next defaults on. Opening prepares the first playable item; stopping a cue with **End Behavior: Nothing** prepares its next sibling. A natural end at the top-level list’s end can wrap to the first item. Preparation waits for a deliberate GO unless an authored automatic action applies. An explicit override takes precedence.
 
-Accepted GO consumes an override; refused GO retains it. Read readiness/error and connection state before one retry. **Stop All Cues** and Panic remain available during start refusal or preparation. Repeated input is suppressed while the same request awaits acknowledgment; a press after completion is a new command.
+Accepted GO consumes an override; refused GO retains it. Check readiness, errors and connection before retrying. **Stop All Cues** and Panic remain available during preparation. Repeated input is suppressed until acknowledgment; a later press is a new command.
+
+**Stop All Cues** cancels a GO still preparing media; it cannot fire later when storage recovers. Correct the cause, confirm **Play Next** and press GO deliberately. Playing cues keep the configured Stop All fade; 0 is immediate.
 
 
 ## 4. Import and protect the media
@@ -643,6 +645,8 @@ On loading a document that needs supported structural repairs, **Corrupt Project
 
 A refused project open is not a Stop All command: verify which show is still loaded and sounding. A successful load, including reopening the same file, clears the previous selection and armed override. The first playable cue is armed when the project’s automatic-cue option allows it; always confirm Play Next before GO.
 
+Recognized malformed cue, group and audio-settings values are refused before replacing the current show or overwriting its saved file. Keep the known-good copy and correct the rejected document separately. Supported legacy/default repairs still apply; a refusal does not promise that every damaged file can be repaired.
+
 When a project path is accepted but the page/header load cannot finish, the app enters an explicit read-only load-error state rather than exposing a partly hydrated editable document. **Stop All Cues** and its configured Escape shortcut remain available. Choose **Retry** after correcting the connection or storage fault. After native acceptance, Retry fetches the engine's current project header and pages; it never silently reopens the old file path. If the initial open itself was never accepted, Retry can retry that originally requested path. Confirm the loaded show name and cue readiness before editing or pressing GO.
 
 
@@ -865,11 +869,13 @@ With Video Output focused, Escape also exits its fullscreen mode. In Level Check
 
 ### About this edition
 
-This manual describes application source **2adf452**, including the original audit checkpoint **2ea5984**, with package metadata **2.6.17**. The fixes are committed locally; a new installer has not been built, installed or published. The 22 interface captures retain their 3 November provenance; unchanged templates, styles and assets were verified for this repair edition. They use generated practice media, an isolated native NULL software output, and fixture Electron display/MIDI/locale methods. Physical audio-service access was blocked. No user show, credentials or private media appear in the illustrations. The complete capture provenance is in **docs/manual-assets/captures.json**.
+This manual describes application source **153a1a7**, package metadata **2.6.17**. Fixes are committed locally; a new installer has not been built, installed or published. The 22 captures retain their 3 November provenance and unchanged interface source. They use generated media, an isolated NULL output with physical audio blocked, and fixture display/MIDI/locale methods. No user show, credentials or private media appear. Capture details are in **docs/manual-assets/captures.json**.
 
-The native test suite passed 13/13. Six accelerated 30-minute secondary-clock simulations produced no underruns, overruns or resyncs within the tested timing envelope. PCM continuity is checked on a short ramp; the remaining clock simulation runs through post-EOF silence. These results establish bounded software repairs, not real-time performance or resolution of the earlier physical intermittency. More extreme drift with timing jitter can still trigger recovery.
+The native test suite passed 13/13, isolated server integration 61/61, and client checks/typecheck passed. Six accelerated ten-minute secondary-clock cases continuously decoded generated looped audio, checking every measured block with no underruns, overruns or resyncs within the tested envelope. These are software simulations, not an hour of listening or resolution of the earlier physical intermittency. More extreme drift with timing jitter can still trigger recovery.
 
-The preparation and recovery instructions were checked against the Vue/Electron interface and C++ control engine. Fresh overview images establish orientation; fresh detail images keep the named controls readable at manual size. They are documentation evidence, not certification of a published installer or every platform. Source verification does not replace rehearsal of conversion, acoustic levels, physical routing, external LTC lock, physical MIDI hardware, network performance, focus behavior, or projector/display hot-plug handling.
+A separate ten-minute muted Chromium check passed 481 mixed SD/1080p rounds with continuing picture presentation and control-clock progress. Frame drops were recorded. Generated clips and synthetic clock messages do not establish actual-show stability, native soundtrack synchronization or physical HDMI performance. Long-position LTC arithmetic also has software waveform checks; external receiver lock still requires rehearsal.
+
+Instructions were checked against the Vue/Electron interface and C++ engine. Overview and detail images illustrate controls at manual size. Source verification does not replace rehearsal of media conversion, acoustic levels, physical routing, external LTC/MIDI, network/focus behavior, or display hot-plug handling.
 
 **Photo credits**
 
