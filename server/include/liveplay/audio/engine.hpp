@@ -553,13 +553,23 @@ private:
     bool            meter_true_peak_ = false;
     bool            meter_loudness_  = false;
 
-    // Render thread plumbing.
+    // Decoder calls may outlive engine shutdown; retain only their own cue.
+    struct DecodeState {
+        using Cues = std::vector<std::weak_ptr<PlaybackItem>>;
+        detail::AtomicSharedPtr<const Cues> cues;
+        std::atomic<bool> active{false};
+        std::atomic<bool> shutdown{false};
+        std::condition_variable wake;
+        std::mutex wait_mutex;
+    };
+    std::shared_ptr<DecodeState>      decode_state_ = std::make_shared<DecodeState>();
+
+    // Engine threads; decoder capacity persists across stop/start.
     std::atomic<bool>                running_{false};
     std::thread                      render_thread_;
+    // shortcut: four blocked reads exhaust refills; use process isolation for a larger fault budget.
     std::array<std::thread, 4>        decode_threads_;
     std::thread                      device_watchdog_thread_;
-    std::condition_variable          decode_cv_;
-    std::mutex                       decode_wait_mutex_;
     std::condition_variable          device_watchdog_cv_;
     std::mutex                       device_watchdog_wait_mutex_;
     std::atomic<std::uint64_t>       render_error_count_{0};
@@ -581,7 +591,7 @@ private:
 
     void render_loop();
     void render_one_block(const Topology& topo);
-    void decode_loop();
+    static void decode_loop(const std::shared_ptr<DecodeState>& state);
     void device_watchdog_loop();
     void recover_device(Device& device) noexcept;
     bool reset_device_if_requested(Device& device) noexcept;

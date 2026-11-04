@@ -258,7 +258,7 @@ private:
     PlaybackItemDesc desc_;
 
     // Owned decoder. Pointer because miniaudio types stay out of this header.
-    // Only control operations and AudioEngine's shared decode worker touch it;
+    // Only control operations and AudioEngine's shared decode workers touch it;
     // render_block() consumes predecoded blocks and never locks or reads files.
     std::unique_ptr<ma_decoder> decoder_;
     mutable std::mutex          decoder_mutex_;
@@ -267,9 +267,8 @@ private:
     std::shared_ptr<const std::string> loaded_source_revision_;
     std::atomic<ChannelCount>   file_channels_{0};
 
-    // Fixed-capacity SPSC read-ahead. Slots and their sample storage are
-    // allocated in load(); the producer is the shared decode worker and the
-    // sole consumer is render_block().
+    // Fixed-capacity read-ahead allocated in load(). decoder_mutex_ serializes
+    // worker/control producers; the sole consumer is render_block().
     static constexpr std::size_t kReadAheadBlockCount = 16;
     struct ReadAheadBlock {
         std::vector<Sample> samples;

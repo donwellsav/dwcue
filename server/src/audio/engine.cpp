@@ -113,6 +113,16 @@ AudioEngine::AudioEngine(EngineConfig cfg) : cfg_(cfg) {
 
 AudioEngine::~AudioEngine() {
     stop();
+    {
+        std::lock_guard lock{decode_state_->wait_mutex};
+        decode_state_->shutdown.store(true, std::memory_order_release);
+    }
+    decode_state_->cues.store({});
+    decode_state_->wake.notify_all();
+    // A native read cannot be force-cancelled safely. Its shared state/cue
+    // outlive this engine, and the fixed worker exits when that call returns.
+    for (auto& worker : decode_threads_)
+        if (worker.joinable()) worker.detach();
     std::lock_guard lock{mutex_};
     device_snapshot_.store(std::make_shared<const DeviceList>());
     for (auto& dev : devices_) {
@@ -129,39 +139,52 @@ AudioEngine::~AudioEngine() {
 
 bool AudioEngine::start() {
     if (running_.exchange(true)) return true;
-    Logger::info("AudioEngine: starting (mix {} Hz, block {} frames, {} master ch, ceiling {:.1f} dB)",
-                 cfg_.mix_sample_rate, cfg_.render_block, cfg_.master_channels,
-                 cfg_.master_ceiling_db);
+    try {
+        Logger::info("AudioEngine: starting (mix {} Hz, block {} frames, {} master ch, ceiling {:.1f} dB)",
+                     cfg_.mix_sample_rate, cfg_.render_block, cfg_.master_channels,
+                     cfg_.master_ceiling_db);
 
-    render_thread_ = std::thread([this] { render_loop(); });
-    for (auto& worker : decode_threads_)
-        worker = std::thread([this] { decode_loop(); });
-    device_watchdog_thread_ = std::thread([this] { device_watchdog_loop(); });
+        for (auto& worker : decode_threads_)
+            if (!worker.joinable())
+                worker = std::thread([state = decode_state_] { decode_loop(state); });
+        render_thread_ = std::thread([this] { render_loop(); });
+        device_watchdog_thread_ = std::thread([this] { device_watchdog_loop(); });
 
 #if defined(_WIN32)
-    // Lift the render thread above generic worker threads so consumption_counter_
-    // notifications wake us promptly even when the system is under load. The
-    // device callback already runs at MMCSS / RT priority — staying near it
-    // limits scheduling jitter that would otherwise underrun the ring.
-    SetThreadPriority(render_thread_.native_handle(), THREAD_PRIORITY_HIGHEST);
+        // Lift the render thread above generic worker threads so consumption_counter_
+        // notifications wake us promptly even when the system is under load. The
+        // device callback already runs at MMCSS / RT priority — staying near it
+        // limits scheduling jitter that would otherwise underrun the ring.
+        SetThreadPriority(render_thread_.native_handle(), THREAD_PRIORITY_HIGHEST);
 #endif
 
-    // Bring up the default routing so a freshly-loaded cue can be heard
-    // without any explicit routing API calls from the client.
-    ensure_default_routing();
-    return true;
+        // Bring up the default routing so a freshly-loaded cue can be heard
+        // without any explicit routing API calls from the client.
+        ensure_default_routing();
+        {
+            std::lock_guard lock{decode_state_->wait_mutex};
+            decode_state_->active.store(true, std::memory_order_release);
+        }
+        decode_state_->wake.notify_all();
+        return true;
+    } catch (...) {
+        stop();
+        throw;
+    }
 }
 
 void AudioEngine::stop() {
     if (!running_.exchange(false)) return;
-    decode_cv_.notify_all();
+    {
+        std::lock_guard lock{decode_state_->wait_mutex};
+        decode_state_->active.store(false, std::memory_order_release);
+    }
+    decode_state_->wake.notify_all();
     device_watchdog_cv_.notify_all();
     // Kick the render thread out of any consumption_counter_.wait().
     consumption_counter_.fetch_add(1, std::memory_order_release);
     consumption_counter_.notify_all();
     if (render_thread_.joinable()) render_thread_.join();
-    for (auto& worker : decode_threads_)
-        if (worker.joinable()) worker.join();
     if (device_watchdog_thread_.joinable()) device_watchdog_thread_.join();
     Logger::info("AudioEngine: stopped.");
 }
@@ -185,10 +208,14 @@ void AudioEngine::publish_device_snapshot_locked() {
 }
 
 void AudioEngine::publish_topology(std::shared_ptr<const Topology> snap) {
+    auto decode_cues = std::make_shared<DecodeState::Cues>();
+    decode_cues->reserve(snap->items.size());
+    for (const auto& entry : snap->items) decode_cues->emplace_back(entry.item);
     if (auto old = topology_.load()) retired_topologies_.push_back(std::move(old));
     topology_.store(std::move(snap));
     reclaim_snapshots_locked();
-    decode_cv_.notify_one();
+    decode_state_->cues.store(std::move(decode_cues));
+    decode_state_->wake.notify_all();
 }
 
 void AudioEngine::reclaim_snapshots_locked() {
@@ -1940,31 +1967,43 @@ void AudioEngine::render_loop() {
     }
 }
 
-void AudioEngine::decode_loop() {
-    while (running_.load(std::memory_order_acquire)) {
+void AudioEngine::decode_loop(const std::shared_ptr<DecodeState>& state) {
+    while (!state->shutdown.load(std::memory_order_acquire)) {
+        if (!state->active.load(std::memory_order_acquire)) {
+            std::unique_lock wait_lock{state->wait_mutex};
+            state->wake.wait(wait_lock, [&] {
+                return state->active.load(std::memory_order_acquire) ||
+                    state->shutdown.load(std::memory_order_acquire);
+            });
+            continue;
+        }
         bool produced = false;
-        const auto snap = snapshot_topology();
-        if (snap) {
+        const auto cues = state->cues.load();
+        if (cues) {
             // One block per cue per pass keeps a large project fair while the
             // loop quickly circles until every active queue is full. Stopped
             // cues are primed synchronously, and paused cues keep their existing
             // queue; reading either idle source here can starve a live cue.
-            for (const auto& entry : snap->items) {
-                if (!running_.load(std::memory_order_acquire)) break;
-                const auto transport = entry.item->stats().transport;
+            for (const auto& weak : *cues) {
+                if (!state->active.load(std::memory_order_acquire) ||
+                    state->shutdown.load(std::memory_order_acquire)) break;
+                const auto item = weak.lock();
+                if (!item) continue;
+                const auto transport = item->stats().transport;
                 if (transport == TransportState::Stopped ||
                     transport == TransportState::Paused) {
                     continue;
                 }
-                produced = entry.item->service_read_ahead(1, /*wait_for_decoder=*/false) || produced;
+                produced = item->service_read_ahead(1, /*wait_for_decoder=*/false) || produced;
             }
         }
 
         if (!produced) {
-            std::unique_lock wait_lock{decode_wait_mutex_};
-            decode_cv_.wait_for(
+            std::unique_lock wait_lock{state->wait_mutex};
+            state->wake.wait_for(
                 wait_lock, std::chrono::milliseconds(2),
-                [this] { return !running_.load(std::memory_order_acquire); });
+                [&] { return !state->active.load(std::memory_order_acquire) ||
+                    state->shutdown.load(std::memory_order_acquire); });
         }
     }
 }

@@ -158,8 +158,10 @@ struct Fixture {
 };
 
 void test_blocked_decoder_reads(const std::filesystem::path& source) {
-    for (const int blocked_count : {1, 3}) {
-        Fixture f(source);
+    for (const int scenario : {0, 1, 2, 3, 4}) {
+        const int blocked_count = scenario == 1 ? 3 : scenario == 4 ? 4 : 1;
+        auto fixture = std::make_unique<Fixture>(source);
+        auto& f = *fixture;
         std::vector<std::shared_ptr<PlaybackItem>> blocked;
         const auto silent = f.engine.create_mixer_channel("Held decoder fixture");
         for (int i = 0; i < blocked_count; ++i) {
@@ -189,6 +191,41 @@ void test_blocked_decoder_reads(const std::filesystem::path& source) {
         for (int i = 0; i < 250 && entered.load(std::memory_order_acquire) < blocked_count; ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds{2});
         check(entered.load() == blocked_count, "blocked read: each requested backend is held inside actual read");
+        if (scenario == 3) {
+            f.engine.stop_all(std::chrono::milliseconds{0}, true);
+            std::weak_ptr<PlaybackItem> retained = blocked.front();
+            std::weak_ptr<PlaybackItem> unrelated = f.item;
+            blocked.clear();
+            auto destroy = std::async(std::launch::async, [owner = std::move(fixture)]() mutable { owner.reset(); });
+            const bool retired = destroy.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready;
+            check(retired, "blocked read: engine destruction does not wait for storage");
+            if (retired) {
+                for (int i = 0; i < 250 && !unrelated.expired(); ++i)
+                    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+                check(unrelated.expired() && !retained.expired(),
+                    "blocked read: only the in-flight decoder stays owned after engine destruction");
+            }
+            release.set_value(); destroy.get();
+            for (int i = 0; i < 1000 && !retained.expired(); ++i)
+                std::this_thread::sleep_for(std::chrono::milliseconds{2});
+            check(retained.expired(), "blocked read: delayed return releases retained decoder ownership");
+            read = {}; continue;
+        }
+        bool stopped_before_release = true;
+        if (scenario >= 2) {
+            auto pause = std::async(std::launch::async, [&] { f.engine.stop(); });
+            stopped_before_release = pause.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready;
+            check(stopped_before_release, "blocked read: engine stop completes before storage release");
+            if (stopped_before_release) {
+                pause.get();
+                for (int i = 0; i < 5; ++i) {
+                    check(f.engine.start(), "blocked read: deliberate engine restart remains available");
+                    if (i < 4) f.engine.stop();
+                }
+            } else {
+                release.set_value(); pause.get();
+            }
+        }
         int audible_blocks = 0;
         for (int i = 0; i < 64; ++i) {
             for (int wait = 0; wait < 50 && ma_pcm_rb_available_read(f.device->ring.get()) < block; ++wait)
@@ -199,19 +236,36 @@ void test_blocked_decoder_reads(const std::filesystem::path& source) {
             std::this_thread::sleep_for(std::chrono::milliseconds{1});
         }
         std::printf("MEASURE blocked_read_sources=%d healthy_pcm_blocks=%d/64\n", blocked_count, audible_blocks);
-        check(audible_blocks >= 48 && f.item->stats().playhead_frame > 8'192,
-              "blocked read: healthy PCM continues beyond all resident queue/ring capacity");
+        if (scenario == 4 && stopped_before_release) {
+            check(audible_blocks < 48 && entered.load() == 4,
+                  "blocked read: restart never spawns replacement workers beyond the fixed capacity");
+        } else if (stopped_before_release) {
+            check(audible_blocks >= 48 && f.item->stats().playhead_frame > 8'192,
+                  "blocked read: healthy PCM continues beyond all resident queue/ring capacity");
+        }
         auto stop = std::async(std::launch::async, [&] {
             f.engine.stop_all(std::chrono::milliseconds{0}, true);
         });
         check(stop.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready &&
                   f.item->stats().transport == TransportState::Stopped,
               "blocked read: Stop All remains independent of held reads");
-        release.set_value(); stop.get(); f.engine.stop();
+        if (stopped_before_release) release.set_value();
+        stop.get(); f.engine.stop();
         for (const auto& item : blocked) {
+            std::lock_guard io_complete{item->decoder_mutex_};
             static_cast<ma_data_source_base*>(item->decoder_->pBackend)->vtable = original;
             check(item->stats().transport == TransportState::Stopped && item->stats().playhead_frame == 0,
                   "blocked read: delayed decoder return cannot revive stopped transport");
+        }
+        if (scenario >= 2) {
+            const auto& retry = blocked.front();
+            check(retry->prime(2.0, 0.25), "blocked read: deliberate retry primes the requested In point");
+            retry->play();
+            std::array<float, block> left{}, right{}; float* channels[]{left.data(), right.data()};
+            check(retry->stats().playhead_frame == 12'000 &&
+                      retry->render_block(channels, 2, block) == block && std::abs(left[0] - 0.1f) < 1e-6f,
+                  "blocked read: deliberate retry renders fresh PCM at the requested position");
+            retry->stop_now();
         }
         read = {};
     }

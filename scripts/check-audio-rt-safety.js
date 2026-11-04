@@ -20,11 +20,11 @@ const callback = section(
 const renderLoop = section(
   engine,
   'void AudioEngine::render_loop()',
-  'void AudioEngine::decode_loop()',
+  'void AudioEngine::decode_loop(',
 );
 const decodeLoop = section(
   engine,
-  'void AudioEngine::decode_loop()',
+  'void AudioEngine::decode_loop(',
   'void AudioEngine::render_one_block',
 );
 const renderBlock = section(

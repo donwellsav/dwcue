@@ -383,14 +383,16 @@ void test_busy_decoder_preserves_sibling_progress() {
     const auto blocked = topology->items.front().item;
     const auto sibling = topology->items.back().item;
     std::unique_lock io_stall{blocked->decoder_mutex_};
-    engine.running_.store(true);
-    std::thread worker([&] { engine.decode_loop(); });
+    const auto decoding = engine.decode_state_;
+    decoding->active.store(true);
+    std::thread worker([&] { liveplay::audio::AudioEngine::decode_loop(decoding); });
     for (int i = 0; i < 250 && sibling->stats().read_ahead_blocks == 0; ++i)
         std::this_thread::sleep_for(2ms);
     std::array<float, 256> left{}, right{}; float* channels[]{left.data(), right.data()};
     check(sibling->render_block(channels, 2, 256) == 256 && left[0] > 0.2f,
           "busy decoder: shared worker delivers sibling PCM before another decoder lock releases");
-    engine.running_.store(false); engine.decode_cv_.notify_all();
+    { std::lock_guard lock{decoding->wait_mutex}; decoding->shutdown.store(true); }
+    decoding->wake.notify_all();
     io_stall.unlock(); worker.join();
     state.stop_all_cues(0);
     std::filesystem::remove(wav);
