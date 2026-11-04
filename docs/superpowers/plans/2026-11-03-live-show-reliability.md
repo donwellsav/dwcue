@@ -293,3 +293,17 @@ Baseline: clean `6d99a46`; all13 native tests pass with audio-service access den
 - [x] Final affected gates, fresh review and current evidence/documents.
 
 Additional source leads remain separate from repairs: transient prepared-follow gate contention may cause a partial commit/gap; LTC frame-to-nanosecond multiplication can overflow at long positions. T37 closes the separately reproduced server-schema typed-load refusal path. Establish ordinary caller impact and deterministic proof before expanding a repair or claiming these closed. T24 physical acceptance remains deferred.
+
+
+## Ordered follow-ups — 4 November 2026
+
+User authorized these in order from clean8e96e39. Preserve controls, cue order, authored levels/trims/fades and single-GO behavior; no automatic late replay/retry. Software fixtures only: generated/disposable media, native audio-service-denial sandbox, no user app/show/storage or physical endpoints. Reuse existing preparation, intent revisions and worker paths; commit each proven repair with its ledger result.
+
+- [ ] **T38 / High — storage stalls and Stop All.** Gate decoder work and prove Stop All(0) completes before release; current sound stops, pending start is cancelled and cannot fire afterward. Trace cold GO/direct trigger/group/recovery and shared stop/prepare callers. Fix the shared blocking boundary without adding a general job system or altering show actions. Cover normal replay, exact EOF and authored fades.
+- [ ] **T39 / High — prepared-follow contention.** Force the target render gate busy at the exact source endpoint; verify an unsuccessful admission cannot permanently strand the handoff or create a polling-sized gap. Preserve source endpoint, target revision, cancellation and RT no-allocation/no-wait rules.
+- [ ] **T40 / High — continuous media proof.** Extend existing fixtures to consume actual decoded PCM throughout their stated duration and exercise sustained mixed-media presentation/control. Record duration, decoded frames, memory, dropped/presented frames and limits; do not describe post-EOF silence or accelerated simulation as a real-time show soak.
+- [ ] **T41 / Medium — malformed nested documents.** Test representative bad nested cue/group/settings values and post-load normalization. Refusals preserve the current show/playback and disk file. Repair only proven shared validation/commit boundaries; no broad schema framework.
+- [ ] **T42 / Lower — long-position LTC.** Test frame→nanosecond arithmetic and actual generator behavior around the signed multiplication limit (~53.4-hour cue position at48kHz), then correct the conversion without changing ordinary timing or introducing callback allocation.
+- [ ] Full affected software gates, one fresh final bounded review, current documentation/manual and clean committed checkout. T24 physical/deployment acceptance stays deferred.
+
+Pre-flight: T38 changes preparation/stop lifetime semantics consumed by T39; preserve revision and queued-PCM ownership before touching the handoff. T40 measures those paths. T41 changes document admission only; keep session and cancellation fences from T38. T42 uses the existing LTC render path and must retain its real-time contract.
