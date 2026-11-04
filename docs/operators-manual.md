@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.17
-**Source revision:** 153a1a73ec189d96af3e78d7add5b67d87ea92ba
-**Native engine baseline:** 153a1a73ec189d96af3e78d7add5b67d87ea92ba
+**Source revision:** e1d50315135ba271406e94e8bd827d198b888aec
+**Native engine baseline:** e1d50315135ba271406e94e8bd827d198b888aec
 **Edition:** 4 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition describes application source **153a1a7**, including responsive Stop All during cold media preparation, cancellation-safe replay, prepared-follow retries, project admission and long-position timecode repairs. It retains the earlier live-show audit and audio/import safeguards. Package metadata remains **2.6.17**; these fixes have not been packaged, installed or published as a new release. Compare the installer you intend to use with its release notes before rehearsal.
+This edition describes application source **e1d5031**, including responsive Stop All during Preview and live edits, ordered Preview indicators and queued seeks, plus the earlier playback and timecode repairs. It retains the earlier live-show audit and audio/import safeguards. Package metadata remains **2.6.17**; these fixes have not been packaged, installed or published as a new release. Compare the installer you intend to use with its release notes before rehearsal.
 
 Interface images were captured on 3 November from the same controls and layout, which remain unchanged in this repair batch. Their templates, styles and assets were checked against this source; original capture revisions and hashes are retained. Generated tones run through the native engine's virtual NULL output with physical audio-service access blocked; the desktop bridge supplies fixture locale, display and MIDI information. The images illustrate controls and visible states, rather than physical audio, HDMI or device compatibility. The capture method, source revisions and image hashes are recorded in **docs/manual-assets/captures.json**. Equipment photographs remain illustrative.
 
@@ -232,6 +232,8 @@ The waveform's action menu separates **Loudness (LUFS)** from **Reduce peaks (dB
 
 These actions write cue gain, not a rewritten media file. **Trim Silence** adjusts the cue region around digital silence with padding; quiet breaths, ambience and tails are retained rather than treated as a loudness target. Review the resulting Volume and In/Out values and rehearse the entrance and exit.
 
+Stop All remains available during slow seek, trim, loop and cue-removal decoder work. An accepted edit stays saved, a queued seek retains the latest requested position, and a stopped cue cannot restart or advance when storage returns. Program edits and preparation remain serialized, so another GO may wait for an unfinished Program edit; let the edit settle before proceeding.
+
 ### Choose the end behavior deliberately
 
 **Properties → Basic Info → End Behavior** is the main supported way to control what follows a cue.
@@ -326,7 +328,7 @@ The engine supports more advanced routing through its API, but the current deskt
 3. At a safe level, use a cue's **Preview** control and verify that it is heard only where intended.
 4. Stop the preview before returning to show operation.
 
-If Preview is not configured, its cue-row control opens Project Settings rather than silently choosing a destination. Preview is separate from the live cue transport and does not drive Video Output. Changing the Preview device no longer closes a hardware device still owned by Main, but sharing a physical output still makes both signals audible there.
+If Preview is not configured, its cue-row control opens Project Settings. Preview is separate from Program and Video Output. A slow Preview load does not hold Program GO or Stop All. Stop Preview, Stop All or changing the Preview device cancels the pending audition; storage recovery does not start it later. Preview indicators retain the current audition when an older request finishes late. Sharing Main's physical output still makes both signals audible there.
 
 > **CAUTION — No automatic audience isolation.** The word Preview does not make the output private. Use an actually separate device/output and test it with the console operator. Do not audition an unknown cue through Main during a performance.
 
@@ -869,11 +871,11 @@ With Video Output focused, Escape also exits its fullscreen mode. In Level Check
 
 ### About this edition
 
-This manual describes application source **153a1a7**, package metadata **2.6.17**. Fixes are committed locally; a new installer has not been built, installed or published. The 22 captures retain their 3 November provenance and unchanged interface source. They use generated media, an isolated NULL output with physical audio blocked, and fixture display/MIDI/locale methods. No user show, credentials or private media appear. Capture details are in **docs/manual-assets/captures.json**.
+This manual describes application source **e1d5031**, package metadata **2.6.17**. Fixes are committed locally; a new installer has not been built, installed or published. The 22 captures retain their 3 November provenance and unchanged control templates and layout. They use generated media, an isolated NULL output with physical audio blocked, and fixture display/MIDI/locale methods. No user show, credentials or private media appear. Capture details are in **docs/manual-assets/captures.json**.
 
-The native test suite passed 13/13, isolated server integration 61/61, and client checks/typecheck passed. Six accelerated ten-minute secondary-clock cases continuously decoded generated looped audio, checking every measured block with no underruns, overruns or resyncs within the tested envelope. These are software simulations, not an hour of listening or resolution of the earlier physical intermittency. More extreme drift with timing jitter can still trigger recovery.
+The current source passes native tests 13/13, isolated API tests 61/61, client checks 222/222 and typecheck. Native checks include six simulated ten-minute secondary-clock runs with continuous generated audio and no buffer faults or resyncs inside the tested envelope. They do not establish physical alignment or resolve the earlier intermittency; more extreme drift and timing jitter can still trigger recovery.
 
-A separate ten-minute muted Chromium check passed 481 mixed SD/1080p rounds with continuing picture presentation and control-clock progress. Frame drops were recorded. Generated clips and synthetic clock messages do not establish actual-show stability, native soundtrack synchronization or physical HDMI performance. Long-position LTC arithmetic also has software waveform checks; external receiver lock still requires rehearsal.
+An earlier ten-minute muted Chromium run passed 481 mixed SD/1080p rounds and recorded frame drops; it was not repeated for this repair. Generated clips and synthetic clocks do not establish show stability, native soundtrack sync or physical HDMI performance. LTC waveform tests also do not establish external receiver lock.
 
 Instructions were checked against the Vue/Electron interface and C++ engine. Overview and detail images illustrate controls at manual size. Source verification does not replace rehearsal of media conversion, acoustic levels, physical routing, external LTC/MIDI, network/focus behavior, or display hot-plug handling.
 

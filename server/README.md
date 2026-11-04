@@ -1,10 +1,10 @@
 # DonWells Cue Server — developer guide
 
-**Source status — 4 November 2026:** application behavior is checkpointed through `153a1a7` (ordered playback repairs), including `2ea5984` (live-show reliability audit) and `a9a86a3` (secondary audio resync). Package metadata remains **2.6.17**. These are local commits, not a packaged, installed or published release. Software verification and remaining acceptance are tracked in [the current workplan](../docs/superpowers/plans/2026-11-03-live-show-reliability.md). Physical line-level audio and 1080p HDMI/adapter acceptance remain deferred.
+**Source status — 4 November 2026:** application behavior is checkpointed through `e1d5031` (Preview and live-edit storage repairs), including `2ea5984` (live-show reliability audit) and `a9a86a3` (secondary audio resync). Package metadata remains **2.6.17**. These are local commits, not a packaged, installed or published release. Software verification and remaining acceptance are tracked in [the current workplan](../docs/superpowers/plans/2026-11-03-live-show-reliability.md). Physical line-level audio and 1080p HDMI/adapter acceptance remain deferred.
 
 `dwcue-server` is the headless C++20 audio engine and control surface that backs the DonWells Cue client. It owns the audio graph, the routing matrix, the loaded project file, and exposes a REST + WebSocket API. It runs as either a child process spawned by the desktop client (single-machine installs) or as a standalone daemon on a stage-side machine that the client connects to over the LAN.
 
-This document tracks the v2.6.17 application source checkpoint `153a1a7`, including the reliability audit in `2ea5984` and is the developer's guide to the server; this is not a published-installer claim, so use the release page and installed About version to determine available behaviour. For show preparation and operation, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For client internals, see [`client/README.md`](../client/README.md); for overall project and release context, see the [root README](../README.md).
+This document tracks the v2.6.17 application source checkpoint `e1d5031`, including the reliability audit in `2ea5984` and is the developer's guide to the server; this is not a published-installer claim, so use the release page and installed About version to determine available behaviour. For show preparation and operation, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For client internals, see [`client/README.md`](../client/README.md); for overall project and release context, see the [root README](../README.md).
 
 ---
 
@@ -709,3 +709,8 @@ Inter-thread communication is lock-free atomics or immutable shared snapshots on
 - For audio-thread bugs, prefer adding atomic counters / ring-buffer logs rather than `printf` from inside `render_block()`.
 
 For deeper context on the client side of the protocol, see [`client/README.md`](../client/README.md).
+
+
+### Preview and live-edit storage waits
+
+Preview uses independent preparation ownership and an intent/document/settings fence, so cancelled auditions cannot start after storage returns. Program GO stays independent of Preview. Stop All does not inherit decoder teardown or active edit seeks through engine/project/render ownership. Live updates retain authored settings, paused state, explicit-stop cancellation and runtime-only Cue to Continue behavior. Removal retires orphaned cues without rebuilding the entire media library. The shared decoder worker skips decoder locks held by control edits; a read already blocked inside that single worker can still delay sibling refills. Program edits/preparation still serialize, and platform device/metadata calls are outside this decoder-wait guarantee. Preview HTTP/event completion carries its publication identity and revision; both client observers reject superseded state. Queued seeks reserve intent before decoder waits so the last destination wins while a later Stop cancels both. See T43/T44 in the workplan for real PCM and deterministic held-I/O tests.
