@@ -2320,7 +2320,7 @@ audio::CueId ProjectState::add_item(const json& item, const std::string& parent_
 bool ProjectState::update_item(const std::string& uuid, const json& patch_in) {
     if (!patch_in.is_object()) return false;
     std::lock_guard preparation_lock{playback_preparation_mutex_};
-    std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
+    std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
     json patch = patch_in;
     if (const auto selection = patch.find("deviceOverride"); selection != patch.end()) {
         if (!selection->is_null() && !selection->is_string()) return false;
@@ -2339,6 +2339,9 @@ bool ProjectState::update_item(const std::string& uuid, const json& patch_in) {
     bool media_path_changed = false;
     bool ltc_changed        = false;
     json* updated_item = nullptr;
+    json live_item;
+    std::shared_ptr<audio::PlaybackItem> live_cue;
+    audio::CueId retiring_cue;
 
     // Captured under mutex_, applied to the engine loop state and the sequencer
     // snapshot AFTER the lock is released — so out point / crossfade / stop-fade /
@@ -2415,7 +2418,8 @@ bool ProjectState::update_item(const std::string& uuid, const json& patch_in) {
             // and blocked every other request for its duration (#43).
             auto old = item_uuid_to_cue_.find(uuid);
             if (old != item_uuid_to_cue_.end()) {
-                engine_.unload_cue(old->second);
+                retiring_cue = old->second;
+                if (auto cue = engine_.find_cue(retiring_cue)) cue->stop_now();
                 cues_.erase(old->second.value);
                 item_uuid_to_cue_.erase(old);
             }
@@ -2427,63 +2431,10 @@ bool ProjectState::update_item(const std::string& uuid, const json& patch_in) {
             // fall back to the full mirror (cheap: nothing to decode).
             mirror_items_to_engine_locked();
         } else if (touched && updated_item) {
-            // Cheap path: apply audio-engine-visible properties to the
-            // existing PlaybackItem without a full mirror walk.
-            auto cit = item_uuid_to_cue_.find(uuid);
+            const auto cit = item_uuid_to_cue_.find(uuid);
             if (cit != item_uuid_to_cue_.end()) {
-                if (auto cue = engine_.find_cue(cit->second)) {
-                    const json& it = *updated_item;
-                    if (it.contains("volume") && it["volume"].is_number()) {
-                        const float lin = it["volume"].get<float>();
-                        const float db  = (lin <= 0.0001f) ? -120.0f :
-                                            20.0f * std::log10(lin);
-                        cue->set_gain_db(db);
-                    }
-                    if (it.contains("playFade") && it["playFade"].is_number()) {
-                        cue->set_fade_in(std::chrono::milliseconds{
-                            static_cast<long long>(it["playFade"].get<double>() * 1000.0)});
-                    }
-                    // Same max(stopFade, fadeOutDuration) rule as
-                    // mirror_items_to_engine_locked() — keep them in sync.
-                    {
-                        double stop_fade_sec = 0.0;
-                        double fade_out_dur  = 0.0;
-                        if (it.contains("stopFade") && it["stopFade"].is_number())
-                            stop_fade_sec = it["stopFade"].get<double>();
-                        if (it.contains("fadeOutDuration") && it["fadeOutDuration"].is_number())
-                            fade_out_dur = it["fadeOutDuration"].get<double>();
-                        const double effective = std::max(stop_fade_sec, fade_out_dur);
-                        cue->set_fade_out(std::chrono::milliseconds{
-                            static_cast<long long>(effective * 1000.0)});
-                    }
-                    if (it.contains("outPoint") && it["outPoint"].is_number()) {
-                        cue->set_out_point_seconds(it["outPoint"].get<double>());
-                    }
-                    // LTC property update: configure the PlaybackItem in-place.
-                    if (ltc_changed) {
-                        const bool ltc_on = it.value("ltcEnabled", false);
-                        const std::string tc_str = it.value("ltcStartTimecode",
-                                                            std::string{"00:00:00:00"});
-                        const int fps_idx = it.value("ltcFrameRate", 4);
-                        cue->set_ltc_enabled(ltc_on);
-                        if (ltc_on) {
-                            const auto offset = parse_smpte_timecode_to_ns(tc_str, fps_idx);
-                            cue->set_ltc_frame_rate(fps_index_to_rate(fps_idx));
-                            cue->set_ltc_offset(offset);
-                            auto cm_it = cues_.find(cit->second.value);
-                            if (cm_it != cues_.end()) {
-                                cm_it->second.ltc_enabled          = true;
-                                cm_it->second.ltc_frame_rate_index = fps_idx;
-                                cm_it->second.ltc_offset_ns        = offset;
-                                cm_it->second.ltc_start_timecode   = tc_str;
-                            }
-                        } else {
-                            auto cm_it = cues_.find(cit->second.value);
-                            if (cm_it != cues_.end())
-                                cm_it->second.ltc_enabled = false;
-                        }
-                    }
-                }
+                live_cue = engine_.find_cue(cit->second);
+                live_item = *updated_item;
             }
         }
 
@@ -2513,10 +2464,70 @@ bool ProjectState::update_item(const std::string& uuid, const json& patch_in) {
         }
     }
 
+    lifecycle_lock.unlock();
+    if (!retiring_cue.empty()) engine_.unload_cue(retiring_cue);
+    if (live_cue) {
+        const json& it = live_item;
+        if (it.contains("volume") && it["volume"].is_number()) {
+            const float lin = it["volume"].get<float>();
+            const float db  = (lin <= 0.0001f) ? -120.0f :
+                                20.0f * std::log10(lin);
+            live_cue->set_gain_db(db);
+        }
+        if (it.contains("playFade") && it["playFade"].is_number()) {
+            live_cue->set_fade_in(std::chrono::milliseconds{
+                static_cast<long long>(it["playFade"].get<double>() * 1000.0)});
+        }
+        // Same max(stopFade, fadeOutDuration) rule as
+        // mirror_items_to_engine_locked() — keep them in sync.
+        {
+            double stop_fade_sec = 0.0;
+            double fade_out_dur  = 0.0;
+            if (it.contains("stopFade") && it["stopFade"].is_number())
+                stop_fade_sec = it["stopFade"].get<double>();
+            if (it.contains("fadeOutDuration") && it["fadeOutDuration"].is_number())
+                fade_out_dur = it["fadeOutDuration"].get<double>();
+            const double effective = std::max(stop_fade_sec, fade_out_dur);
+            live_cue->set_fade_out(std::chrono::milliseconds{
+                static_cast<long long>(effective * 1000.0)});
+        }
+        if (it.contains("outPoint") && it["outPoint"].is_number()) {
+            live_cue->set_out_point_seconds(it["outPoint"].get<double>());
+        }
+        // LTC property update: configure the PlaybackItem in-place.
+        if (ltc_changed) {
+            const bool ltc_on = it.value("ltcEnabled", false);
+            const std::string tc_str = it.value("ltcStartTimecode",
+                                                std::string{"00:00:00:00"});
+            const int fps_idx = it.value("ltcFrameRate", 4);
+            live_cue->set_ltc_enabled(ltc_on);
+            const auto offset = parse_smpte_timecode_to_ns(tc_str, fps_idx);
+            if (ltc_on) {
+                live_cue->set_ltc_frame_rate(fps_index_to_rate(fps_idx));
+                live_cue->set_ltc_offset(offset);
+            }
+            std::lock_guard lock{mutex_};
+            if (ltc_on) {
+                auto cm_it = cues_.find(live_cue->id().value);
+                if (cm_it != cues_.end()) {
+                    cm_it->second.ltc_enabled          = true;
+                    cm_it->second.ltc_frame_rate_index = fps_idx;
+                    cm_it->second.ltc_offset_ns        = offset;
+                    cm_it->second.ltc_start_timecode   = tc_str;
+                }
+            } else {
+                auto cm_it = cues_.find(live_cue->id().value);
+                if (cm_it != cues_.end())
+                    cm_it->second.ltc_enabled = false;
+            }
+        }
+    }
+    lifecycle_lock.lock();
+
     for (const auto& item : media_swap_items) release_duck_owners(item);
 
     // Live-apply loop + sequencer timing for an already-playing cue. The engine
-    // out-point / fades were updated under the lock above; here we keep the
+    // out-point / fades were applied without project locks; here we keep the
     // audio-thread loop state and the sequencer snapshot in sync so changes to
     // out point / crossfade / stop-fade / end-behaviour take effect immediately
     // (the sequencer loop only updates a matching entry, so this is a no-op when
@@ -2558,8 +2569,11 @@ bool ProjectState::update_item(const std::string& uuid, const json& patch_in) {
             }
         }
         if (!continuation_armed) {
-            if (auto pi = engine_.find_cue(seq_cue))
+            if (auto pi = engine_.find_cue(seq_cue)) {
+                lifecycle_lock.unlock();
                 pi->set_loop(saved_looping, seq_in_point);
+                lifecycle_lock.lock();
+            }
         }
     }
 
@@ -3452,7 +3466,8 @@ bool ProjectState::set_item_paused(const std::string& uuid, bool paused) {
 }
 
 bool ProjectState::cue_to_continue(const std::string& uuid) {
-    std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
+    std::lock_guard preparation_lock{playback_preparation_mutex_};
+    std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
     if (uuid.empty()) return false;
 
     std::string target_uuid;
@@ -3502,6 +3517,7 @@ bool ProjectState::cue_to_continue(const std::string& uuid) {
 
     // set_loop flushes stale read-ahead and seeks the decoder back to the
     // audible playhead. It runs on this control thread, never the audio callback.
+    lifecycle_lock.unlock();
     cue->set_loop(false);
     Logger::playback("CUE TO CONTINUE: item '{}' target='{}'", uuid,
                      target_uuid);

@@ -381,6 +381,78 @@ void test_busy_decoder_preserves_sibling_progress() {
     std::filesystem::remove(wav);
 }
 
+void test_stop_all_during_live_edits() {
+    const auto wav = make_wav(8'196);
+    const auto replacement = make_wav(8'197);
+    for (const int mode : {0, 1, 2, 3}) {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        state.replace_full_document(document(json::array({
+            audio("edit-source", wav, {{"outPoint", 0.9},
+                {"endBehavior", {{"action", mode == 3 ? "loop" : "stop"}}}}),
+            audio("edit-target", wav)})));
+        check(wait_ready(state), "live document edit: real media ready"); close_devices(engine);
+        check(state.trigger_item("edit-source"), "live document edit: Program starts");
+        const auto source = engine.find_cue(*state.item_to_cue_id("edit-source"));
+        std::array<float, 256> left{}, right{}; float* channels[]{left.data(), right.data()};
+        source->render_block(channels, 2, 256);
+        std::promise<void> entered, release;
+        auto allowed = release.get_future().share();
+        std::atomic<bool> signalled{false};
+        auto* backend = static_cast<ma_data_source_base*>(source->decoder_->pBackend);
+        const auto* original = backend->vtable;
+        auto stalled = *original;
+        static std::function<ma_result(ma_data_source*, ma_uint64)> seek;
+        seek = [&](ma_data_source* data, ma_uint64 frame) {
+            if (!signalled.exchange(true)) entered.set_value();
+            allowed.wait(); return original->onSeek(data, frame);
+        };
+        stalled.onSeek = [](ma_data_source* data, ma_uint64 frame) { return seek(data, frame); };
+        std::unique_lock decoder_hold{source->decoder_mutex_, std::defer_lock};
+        if (mode == 2) decoder_hold.lock(); else backend->vtable = &stalled;
+        auto edit = std::async(std::launch::async, [&] {
+            if (mode == 0) return state.update_item("edit-source", {{"outPoint", 0.75}});
+            if (mode == 1) return state.update_item("edit-source", {{"endBehavior", {{"action", "loop"}}}});
+            if (mode == 2) return state.update_item("edit-source", {{"mediaServerPath", replacement.string()}});
+            return state.cue_to_continue("edit-source");
+        });
+        if (mode == 2) {
+            for (int i = 0; i < 500 && source->stats().transport != liveplay::audio::TransportState::Stopped; ++i)
+                std::this_thread::sleep_for(1ms);
+            check(source->stats().transport == liveplay::audio::TransportState::Stopped,
+                  "live document edit: old media stops before decoder teardown");
+        } else {
+            check(entered.get_future().wait_for(2s) == std::future_status::ready,
+                  "live document edit: actual seek reaches storage gate");
+        }
+        auto snapshot = std::async(std::launch::async, [&] { return state.full_document(); });
+        check(snapshot.wait_for(250ms) == std::future_status::ready,
+              "live document edit: document reads remain available during storage wait");
+        auto stop = std::async(std::launch::async, [&] { state.stop_all_cues(0); });
+        check(stop.wait_for(250ms) == std::future_status::ready &&
+                  source->stats().transport == liveplay::audio::TransportState::Stopped &&
+                  source->render_block(channels, 2, 256) == 0,
+              "live document edit: Stop All acknowledges and silences Program before storage release");
+        if (decoder_hold.owns_lock()) decoder_hold.unlock();
+        release.set_value(); check(edit.get(), "live document edit: accepted command completes");
+        stop.get(); const auto saved = snapshot.get();
+        if (mode != 2) backend->vtable = original;
+        seek = {};
+        std::this_thread::sleep_for(120ms);
+        check(!on_air(state, engine, "edit-source") && !on_air(state, engine, "edit-target"),
+              "live document edit: cancelled playback/continuation cannot return or advance");
+        check(mode == 3 ? saved["items"][0]["endBehavior"]["action"] == "loop" :
+                  mode == 0 ? saved["items"][0]["outPoint"] == 0.75 :
+                  mode == 1 ? saved["items"][0]["endBehavior"]["action"] == "loop" :
+                              saved["items"][0]["mediaServerPath"] == replacement.string(),
+              "live document edit: accepted authored change persists; Continue is runtime-only");
+        check(wait_ready(state) && state.trigger_item("edit-source"),
+              "live document edit: deliberate replay still starts");
+        state.stop_all_cues(0);
+    }
+    std::filesystem::remove(wav); std::filesystem::remove(replacement);
+}
+
 void test_stop_all_during_cold_go(const std::filesystem::path& wav) {
   for (const int mode : {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}) {
    for (const bool stall_seek : {false, true}) {
@@ -1873,6 +1945,7 @@ int main() {
     test_stop_all_during_preview_retirement();
     test_cancelled_preview_preparation();
     test_busy_decoder_preserves_sibling_progress();
+    test_stop_all_during_live_edits();
     test_stop_all_during_cold_go(wav);
     test_rejected_document_preserves_show(wav);
     test_rejected_nested_document_preserves_show(wav);
