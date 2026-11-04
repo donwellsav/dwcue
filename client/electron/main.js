@@ -5586,18 +5586,18 @@ ipcMain.handle('download-youtube-audio', async (event, jobId, videoId, title, pr
     event.sender.once(eventName, cancelOnRendererExit);
   }
 
-  const task = new Promise(async (resolve, reject) => {
+  const task = (async () => {
     console.log('YouTube download - Project folder path:', projectFolderPath);
-    
+
     const outputPath = path.join(projectFolderPath, 'media');
     console.log('YouTube download - Output path:', outputPath);
-    
+
     // Ensure output directory exists
     if (!fs.existsSync(outputPath)) {
       fs.mkdirSync(outputPath, { recursive: true });
       console.log('Created media directory:', outputPath);
     }
-    
+
     // Clean filename
     const sanitizedTitle = title.replace(/[<>:"/\\|?*]/g, '').trim().substring(0, 180)
       || `YouTube ${outputMode === 'video' ? 'video' : 'audio'} ${videoId}`;
@@ -5620,26 +5620,24 @@ ipcMain.handle('download-youtube-audio', async (event, jobId, videoId, title, pr
       }
     };
     job.cleanup = cleanupNewOutputs;
-    
+
     console.log('YouTube download - Output template:', outputTemplate);
-    
+
     const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    
+
     console.log(`Starting YouTube download: ${videoId} -> ${fileName}`);
     console.log(`Video URL: ${videoUrl}`);
-    
+
     // Wait for yt-dlp to be ready (with timeout)
-    try { await waitForYtDlp(); }
-    catch (error) { reject(error); return; }
-    if (job.cancelled) { reject(new Error('YouTube download cancelled')); return; }
-    
+    await waitForYtDlp();
+    if (job.cancelled) throw new Error('YouTube download cancelled');
+
     // Video mode needs ffmpeg to mux the separate video+audio streams; mp3
     // mode needs it for transcode.
     if ((outputMode === 'mp3' || outputMode === 'video') && !(await setupFfmpeg())) {
-      reject(new Error('Bundled FFmpeg failed to initialize. Please restart the application.'));
-      return;
+      throw new Error('Bundled FFmpeg failed to initialize. Please restart the application.');
     }
-    
+
     try {
       // Build yt-dlp arguments. Video mode strongly prefers an H.264+AAC pair
       // (the engine decodes the AAC track; Chromium shows the picture) and
@@ -5662,7 +5660,7 @@ ipcMain.handle('download-youtube-audio', async (event, jobId, videoId, title, pr
         '--progress',
         '--newline' // Force progress on new lines for easier parsing
       );
-      
+
       // Add ffmpeg path if we have it
       if ((outputMode === 'mp3' || outputMode === 'video') && ffmpegPath) {
         args.push('--ffmpeg-location', ffmpegPath);
@@ -5674,7 +5672,7 @@ ipcMain.handle('download-youtube-audio', async (event, jobId, videoId, title, pr
       // isn't ready we fall back to JS-runtime-free extraction.
       if (!denoReady) {
         let denoAttempts = 0;
-        while (!denoReady && denoAttempts < 15) {
+        while (!denoReady && !job.cancelled && denoAttempts < 15) {
           await new Promise(resolve => setTimeout(resolve, 1000));
           denoAttempts++;
         }
@@ -5684,187 +5682,196 @@ ipcMain.handle('download-youtube-audio', async (event, jobId, videoId, title, pr
       } else {
         console.warn('Proceeding without a JS runtime; some videos may fail to extract.');
       }
+      if (job.cancelled) throw new Error('YouTube download cancelled');
 
-      console.log('Running yt-dlp with args:', args);
-      console.log('yt-dlp path:', ytDlpPath);
-      
-      // Use spawn to get a proper ChildProcess
-      const downloadProcess = spawn(ytDlpPath, args, {
-        windowsHide: true,
-        detached: process.platform !== 'win32',
-      });
-      job.child = downloadProcess;
-      
-      // Check if downloadProcess is valid
-      if (!downloadProcess || !downloadProcess.stdout) {
-        throw new Error('Failed to start yt-dlp process');
-      }
-      
-      let lastProgress = 0;
-      let stderrBuffer = '';
+      return await new Promise((resolve, reject) => {
+        console.log('Running yt-dlp with args:', args);
+        console.log('yt-dlp path:', ytDlpPath);
 
-      // Track progress by parsing stdout
-      downloadProcess.stdout.on('data', (data) => {
-        const output = data.toString();
-        
-        // Parse download progress
-        const downloadMatch = output.match(/\[download\]\s+(\d+\.?\d*)%/);
-        if (downloadMatch) {
-          const percentage = parseFloat(downloadMatch[1]);
-          if (percentage > lastProgress) {
-            lastProgress = percentage;
+        // Use spawn to get a proper ChildProcess
+        const downloadProcess = spawn(ytDlpPath, args, {
+          windowsHide: true,
+          detached: process.platform !== 'win32',
+        });
+        job.child = downloadProcess;
+
+        // Check if downloadProcess is valid
+        if (!downloadProcess || !downloadProcess.stdout) {
+          throw new Error('Failed to start yt-dlp process');
+        }
+
+        let lastProgress = 0;
+        let stderrBuffer = '';
+
+        // Track progress by parsing stdout
+        downloadProcess.stdout.on('data', (data) => {
+          if (job.cancelled || event.sender.isDestroyed()) return;
+          const output = data.toString();
+
+          // Parse download progress
+          const downloadMatch = output.match(/\[download\]\s+(\d+\.?\d*)%/);
+          if (downloadMatch) {
+            const percentage = parseFloat(downloadMatch[1]);
+            if (percentage > lastProgress) {
+              lastProgress = percentage;
+              event.sender.send('youtube-download-progress', {
+                jobId,
+                videoId,
+                percentage: percentage,
+                status: (outputMode === 'mp3' || outputMode === 'video') && percentage >= 100
+                  ? 'converting'
+                  : 'downloading'
+              });
+            }
+          }
+
+          // Check for post-processing
+          if (outputMode === 'mp3' && output.includes('[ExtractAudio]')) {
             event.sender.send('youtube-download-progress', {
               jobId,
               videoId,
-              percentage: percentage,
-              status: (outputMode === 'mp3' || outputMode === 'video') && percentage >= 100
-                ? 'converting'
-                : 'downloading'
+              percentage: 95,
+              status: 'converting'
             });
           }
-        }
-        
-        // Check for post-processing
-        if (outputMode === 'mp3' && output.includes('[ExtractAudio]')) {
-          event.sender.send('youtube-download-progress', {
-            jobId,
-            videoId,
-            percentage: 95,
-            status: 'converting'
-          });
-        }
-        if (outputMode === 'video' && output.includes('[Merger]')) {
-          event.sender.send('youtube-download-progress', {
-            jobId,
-            videoId,
-            percentage: 95,
-            status: 'converting'
-          });
-        }
-      });
-      
-      downloadProcess.stderr.on('data', (data) => {
-        const errorOutput = data.toString();
-        // yt-dlp uses stderr for normal output as well as errors. Keep the
-        // tail of everything so we can report the real cause on failure.
-        stderrBuffer += errorOutput;
-        if (stderrBuffer.length > 8000) {
-          stderrBuffer = stderrBuffer.slice(-8000);
-        }
-        if (errorOutput.includes('ERROR')) {
-          console.error('yt-dlp error:', errorOutput);
-        }
-      });
-      
-      downloadProcess.on('error', (error) => {
-        console.error('yt-dlp process error:', error);
-        cleanupNewOutputs();
-        reject(new Error(`Download process failed: ${error.message}`));
-      });
-      
-      downloadProcess.on('close', (code) => {
-        job.child = null;
-        console.log(`yt-dlp process closed with code: ${code}`);
-        
-        if (job.cancelled) {
-          cleanupNewOutputs();
-          reject(new Error('YouTube download cancelled'));
-          return;
-        }
-        if (code !== 0) {
-          cleanupNewOutputs();
-          // Surface the real reason from yt-dlp's stderr instead of just the code.
-          const errorLines = stderrBuffer
-            .split('\n')
-            .filter(line => line.includes('ERROR') || line.includes('error:'))
-            .map(line => line.trim());
-          const detail = errorLines.length > 0
-            ? errorLines.join('\n')
-            : stderrBuffer.trim().split('\n').slice(-5).join('\n');
-
-          console.error('yt-dlp failed. Full stderr:\n', stderrBuffer);
-
-          let hint = '';
-          if (/Sign in to confirm|not a bot|cookies/i.test(stderrBuffer)) {
-            hint = ' (YouTube is requiring sign-in/bot verification for this video.)';
-          } else if (/Video unavailable|Private video|members-only|age/i.test(stderrBuffer)) {
-            hint = ' (This video is unavailable, private, age-restricted, or members-only.)';
-          } else if (/Requested format is not available/i.test(stderrBuffer)) {
-            hint = ' (No downloadable audio format was found for this video.)';
-          } else if (/Unable to extract|nsig|player|update.*yt-dlp/i.test(stderrBuffer)) {
-            hint = ' (yt-dlp may be out of date — YouTube changed something. Restart the app to fetch the latest yt-dlp.)';
+          if (outputMode === 'video' && output.includes('[Merger]')) {
+            event.sender.send('youtube-download-progress', {
+              jobId,
+              videoId,
+              percentage: 95,
+              status: 'converting'
+            });
           }
+        });
 
-          reject(new Error(`yt-dlp exited with code ${code}.${hint}${detail ? '\n\n' + detail : ''}`));
-          return;
-        }
-        
-        console.log(`Download completed: ${outputBaseName}`);
-        
-        // Source audio keeps the provider's actual container/codec, so discover
-        // the extension after yt-dlp finishes. The video ID makes this lookup
-        // exact even when two results share a title.
-        const expectedFile = fileName ? path.join(outputPath, fileName) : '';
-        let actualFile = expectedFile;
-        
-        // Check if file exists with expected name
-        if (!expectedFile || !fs.existsSync(expectedFile)) {
-          const files = fs.readdirSync(outputPath);
-          const matchingFile = files.find(f => {
-            const parsed = path.parse(f);
-            return parsed.name === outputBaseName &&
-              !/\.(?:part|ytdl|tmp)$/i.test(f) &&
-              (outputMode === 'source' ||
-               parsed.ext.toLowerCase() === (outputMode === 'video' ? '.mp4' : '.mp3'));
-          });
-          
-          if (matchingFile) {
-            actualFile = path.join(outputPath, matchingFile);
-            console.log('Found downloaded file:', matchingFile);
-            
-            // MP3 mode has one canonical filename. Source mode must retain the
-            // downloaded extension because changing it would mislabel the codec.
-            if (expectedFile && matchingFile !== fileName) {
-              try {
-                fs.renameSync(actualFile, expectedFile);
-                actualFile = expectedFile;
-                console.log('Renamed file to:', fileName);
-              } catch (renameError) {
-                console.error('Failed to rename file:', renameError);
+        downloadProcess.stderr.on('data', (data) => {
+          const errorOutput = data.toString();
+          // yt-dlp uses stderr for normal output as well as errors. Keep the
+          // tail of everything so we can report the real cause on failure.
+          stderrBuffer += errorOutput;
+          if (stderrBuffer.length > 8000) {
+            stderrBuffer = stderrBuffer.slice(-8000);
+          }
+          if (errorOutput.includes('ERROR')) {
+            console.error('yt-dlp error:', errorOutput);
+          }
+        });
+
+        downloadProcess.on('error', (error) => {
+          console.error('yt-dlp process error:', error);
+          cleanupNewOutputs();
+          reject(new Error(`Download process failed: ${error.message}`));
+        });
+
+        downloadProcess.on('close', (code) => {
+          try {
+            job.child = null;
+            console.log(`yt-dlp process closed with code: ${code}`);
+
+            if (job.cancelled) {
+              cleanupNewOutputs();
+              reject(new Error('YouTube download cancelled'));
+              return;
+            }
+            if (code !== 0) {
+              cleanupNewOutputs();
+              // Surface the real reason from yt-dlp's stderr instead of just the code.
+              const errorLines = stderrBuffer
+                .split('\n')
+                .filter(line => line.includes('ERROR') || line.includes('error:'))
+                .map(line => line.trim());
+              const detail = errorLines.length > 0
+                ? errorLines.join('\n')
+                : stderrBuffer.trim().split('\n').slice(-5).join('\n');
+
+              console.error('yt-dlp failed. Full stderr:\n', stderrBuffer);
+
+              let hint = '';
+              if (/Sign in to confirm|not a bot|cookies/i.test(stderrBuffer)) {
+                hint = ' (YouTube is requiring sign-in/bot verification for this video.)';
+              } else if (/Video unavailable|Private video|members-only|age/i.test(stderrBuffer)) {
+                hint = ' (This video is unavailable, private, age-restricted, or members-only.)';
+              } else if (/Requested format is not available/i.test(stderrBuffer)) {
+                hint = ' (No downloadable audio format was found for this video.)';
+              } else if (/Unable to extract|nsig|player|update.*yt-dlp/i.test(stderrBuffer)) {
+                hint = ' (yt-dlp may be out of date — YouTube changed something. Restart the app to fetch the latest yt-dlp.)';
+              }
+
+              reject(new Error(`yt-dlp exited with code ${code}.${hint}${detail ? '\n\n' + detail : ''}`));
+              return;
+            }
+
+            console.log(`Download completed: ${outputBaseName}`);
+
+            // Source audio keeps the provider's actual container/codec, so discover
+            // the extension after yt-dlp finishes. The video ID makes this lookup
+            // exact even when two results share a title.
+            const expectedFile = fileName ? path.join(outputPath, fileName) : '';
+            let actualFile = expectedFile;
+
+            // Check if file exists with expected name
+            if (!expectedFile || !fs.existsSync(expectedFile)) {
+              const files = fs.readdirSync(outputPath);
+              const matchingFile = files.find(f => {
+                const parsed = path.parse(f);
+                return parsed.name === outputBaseName &&
+                  !/\.(?:part|ytdl|tmp)$/i.test(f) &&
+                  (outputMode === 'source' ||
+                   parsed.ext.toLowerCase() === (outputMode === 'video' ? '.mp4' : '.mp3'));
+              });
+
+              if (matchingFile) {
+                actualFile = path.join(outputPath, matchingFile);
+                console.log('Found downloaded file:', matchingFile);
+
+                // MP3 mode has one canonical filename. Source mode must retain the
+                // downloaded extension because changing it would mislabel the codec.
+                if (expectedFile && matchingFile !== fileName) {
+                  try {
+                    fs.renameSync(actualFile, expectedFile);
+                    actualFile = expectedFile;
+                    console.log('Renamed file to:', fileName);
+                  } catch (renameError) {
+                    console.error('Failed to rename file:', renameError);
+                  }
+                }
+              } else {
+                console.error('Could not find downloaded file. Files in directory:', files);
+                reject(new Error('Downloaded file not found in expected location'));
+                return;
               }
             }
-          } else {
-            console.error('Could not find downloaded file. Files in directory:', files);
-            reject(new Error('Downloaded file not found in expected location'));
-            return;
+
+            // Send 100% progress
+            event.sender.send('youtube-download-progress', {
+              jobId,
+              videoId,
+              percentage: 100,
+              status: 'completed'
+            });
+
+            resolve({
+              success: true,
+              file: actualFile,
+              fileName: path.basename(actualFile),
+              title,
+            });
+          } catch (error) {
+            cleanupNewOutputs();
+            reject(error);
           }
-        }
-        
-        // Send 100% progress
-        event.sender.send('youtube-download-progress', {
-          jobId,
-          videoId,
-          percentage: 100,
-          status: 'completed'
-        });
-        
-        resolve({
-          success: true,
-          file: actualFile,
-          fileName: path.basename(actualFile),
-          title,
         });
       });
-      
+
     } catch (error) {
       console.error('YouTube download error:', error);
       console.error('Error stack:', error.stack);
-      
+
       cleanupNewOutputs();
-      
-      reject(new Error(`Download failed: ${error.message}`));
+
+      throw new Error(`Download failed: ${error.message}`);
     }
-  });
+  })();
   return task.finally(() => releaseYouTubeJob(jobId, job));
 });
 

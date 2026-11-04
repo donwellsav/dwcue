@@ -161,7 +161,7 @@ function spotifyHandler(channel, context) {
     'validatedSpotifyUrl', 'spotifyTrackId', 'spotifyContentParts',
     'spotifyEmbedCoverUrl', 'spotifyEmbedArtists', 'spotifyEmbedDate',
     'fetchSpotifyEmbedTracks', 'sanitizeSpotifyFolderName', 'summarizeSpotDlError',
-    'requireBoundedIpcObject',
+    'requireBoundedIpcObject', 'releaseYouTubeJob', 'cancelYouTubeDownload',
   ]);
   let handler;
   const visit = (node) => {
@@ -183,6 +183,143 @@ function spotifyHandler(channel, context) {
       ...context },
   );
 }
+
+function youtubeDownloadHarness(overrides = {}) {
+  const sender = new EventEmitter();
+  sender.id = 17;
+  sender.isDestroyed = () => false;
+  const progress = [];
+  sender.send = (...args) => progress.push(args);
+  const child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  const jobs = new Map();
+  const spawns = [], timers = [], detachedErrors = [];
+  const fakeFs = { existsSync: () => true, mkdirSync() {}, readdirSync: () => [], unlinkSync() {}, renameSync() {} };
+  const context = {
+    fs: fakeFs, activeYouTubeDownloads: jobs,
+    waitForYtDlp: async () => {}, setupFfmpeg: async () => true,
+    denoReady: true, denoPath: '/mock/deno', ffmpegPath: '/mock/ffmpeg', ytDlpPath: '/mock/yt-dlp',
+    spawn: (...args) => { spawns.push(args); return child; },
+    setTimeout: callback => { timers.push(callback); return { unref() {} }; },
+    isPidAlive: () => false,
+    console: { log() {}, warn() {}, error() {} },
+    // Observe ignored async-executor rejections without creating an unhandled
+    // rejection in node:test; leave the production task's settlement unchanged.
+    Promise: function (executor) {
+      return new Promise((resolve, reject) => {
+        const ignored = executor(resolve, reject);
+        if (ignored?.catch) ignored.catch(error => detachedErrors.push(error));
+      });
+    },
+    ...overrides,
+  };
+  const event = { sender };
+  const jobId = 'youtube-test-job';
+  return { sender, child, jobs, spawns, timers, detachedErrors, fakeFs, progress,
+    start: () => {
+      const pending = spotifyHandler('download-youtube-audio', context)(event, jobId, 'abcdefghi', 'Test', '/mock/show', 'video');
+      pending.catch(() => {});
+      return pending;
+    },
+    cancel: () => spotifyHandler('cancel-youtube-download', context)(event, jobId),
+  };
+}
+
+const nextTurn = () => new Promise(resolve => setImmediate(resolve));
+async function youtubeOutcome(pending) {
+  return Promise.race([
+    pending.then(value => ({ status: 'resolved', value }), error => ({ status: 'rejected', message: error.message })),
+    nextTurn().then(() => ({ status: 'pending' })),
+  ]);
+}
+function assertYouTubeReleased(h) {
+  assert.equal(h.jobs.size, 0);
+  for (const name of ['destroyed', 'render-process-gone', 'did-start-navigation'])
+    assert.equal(h.sender.listenerCount(name), 0);
+  assert.equal(h.detachedErrors.length, 0);
+}
+
+for (const stage of ['mkdir', 'readdir', 'ffmpeg']) {
+  test(`YouTube ${stage} initialization failure rejects IPC and releases its job`, async () => {
+    const h = youtubeDownloadHarness(stage === 'ffmpeg' ? {
+      setupFfmpeg: async () => { throw new Error('mock setup failure'); },
+    } : {});
+    if (stage === 'mkdir') {
+      h.fakeFs.existsSync = () => false;
+      h.fakeFs.mkdirSync = () => { throw new Error('mock mkdir failure'); };
+    }
+    if (stage === 'readdir') h.fakeFs.readdirSync = () => { throw new Error('mock readdir failure'); };
+    const outcome = await youtubeOutcome(h.start());
+    assert.equal(outcome.status, 'rejected');
+    assert.match(outcome.message, /mock .*failure/);
+    assert.equal(h.spawns.length, 0);
+    assertYouTubeReleased(h);
+  });
+}
+
+for (const stage of ['ffmpeg', 'deno']) {
+  test(`YouTube cancellation during ${stage} preparation never spawns yt-dlp afterward`, async () => {
+    let finishFfmpeg;
+    const h = youtubeDownloadHarness(stage === 'ffmpeg' ? {
+      setupFfmpeg: () => new Promise(resolve => { finishFfmpeg = resolve; }),
+    } : { denoReady: false });
+    const pending = h.start();
+    await nextTurn();
+    assert.equal(await h.cancel(), true);
+    finishFfmpeg?.(true);
+    for (let i = 0; i < 16; i++) {
+      h.timers.shift()?.();
+      await nextTurn();
+    }
+    const outcome = await youtubeOutcome(pending);
+    assert.equal(h.spawns.length, 0);
+    assert.equal(outcome.status, 'rejected');
+    assert.match(outcome.message, /cancelled/);
+    assertYouTubeReleased(h);
+  });
+}
+
+test('YouTube successful and cancelled child completion both release the job', async () => {
+  for (const cancel of [false, true]) {
+    const h = youtubeDownloadHarness();
+    const pending = h.start();
+    await nextTurn();
+    assert.equal(h.spawns.length, 1);
+    if (cancel) await h.cancel();
+    h.child.emit('close', 0);
+    const outcome = await youtubeOutcome(pending);
+    assert.equal(outcome.status, cancel ? 'rejected' : 'resolved');
+    if (!cancel) assert.equal(outcome.value.success, true);
+    assertYouTubeReleased(h);
+  }
+});
+
+test('YouTube buffered progress cannot send to a renderer after its exit cancels the job', async () => {
+  const h = youtubeDownloadHarness();
+  const pending = h.start();
+  await nextTurn();
+  h.sender.emit('destroyed');
+  h.sender.isDestroyed = () => true;
+  h.sender.send = () => { throw new Error('renderer destroyed'); };
+  assert.doesNotThrow(() => h.child.stdout.emit('data', Buffer.from('[download] 30%')));
+  h.child.emit('close', 0);
+  assert.equal((await youtubeOutcome(pending)).status, 'rejected');
+  assertYouTubeReleased(h);
+});
+
+test('YouTube output-directory read failure at child completion rejects without escaping the callback', async () => {
+  const h = youtubeDownloadHarness();
+  const pending = h.start();
+  await nextTurn();
+  h.fakeFs.existsSync = () => false;
+  h.fakeFs.readdirSync = () => { throw new Error('mock disconnected media directory'); };
+  assert.doesNotThrow(() => h.child.emit('close', 0));
+  const outcome = await youtubeOutcome(pending);
+  assert.equal(outcome.status, 'rejected');
+  assert.match(outcome.message, /disconnected media directory/);
+  assertYouTubeReleased(h);
+});
 
 function spotifyReviewHarness(count, { kind = 'playlist', exitCode = 0 } = {}) {
   const rawTracks = Array.from({ length: count }, (_, index) => ({

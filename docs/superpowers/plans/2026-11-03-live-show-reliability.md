@@ -286,7 +286,7 @@ Baseline: clean `6d99a46`; all13 native tests pass with audio-service access den
 - [x] T32 child/nested follow failure RED/GREEN; commit.
 - [x] T33 project-load state reset RED/GREEN; commit.
 - [x] T34 settings identity and save-error RED/GREEN; commit.
-- [ ] T35 initialization failure/cancellation RED/GREEN; commit.
+- [x] T35 initialization failure/cancellation RED/GREEN; commit.
 - [ ] T36 shared numeric boundary RED/GREEN; commit.
 - [ ] Final affected gates, fresh review and current evidence/documents.
 
