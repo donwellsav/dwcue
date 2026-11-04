@@ -268,3 +268,26 @@ Evidence and final restoration: `/Users/muzikfirst/Documents/donwellscue/audio-i
 - [x] Reconcile active developer/reliability documents with the committed T1–T30 source and mark superseded plans as historical.
 - [x] Refresh the operator guide, 22 current-source UI captures and generated 50-page PDF; text, links, embedded fonts and rendered pages checked.
 - [x] Run manual parser4/4 and offline reader7/7 checks; commit the verified documentation batch.
+
+## Deep bug hunt — 4 November 2026
+
+Baseline: clean `6d99a46`; all13 native tests pass with audio-service access denied. Four read-only investigation roles traced current code and existing fixtures. The following are source-backed findings; promote to repaired only after behavioral RED/GREEN. Keep each fix small, preserve the show workflow, and commit each verified repair. No physical outputs, user app, saved shows, real downloads, new dependencies or publication.
+
+| Priority | Task | Proof and repair boundary |
+| --- | --- | --- |
+| P1 | T31 Rejected client document preserves current show | Bad name/folder metadata through file load, direct load and document replacement; reuse shared preparation before lifecycle effects. Preserve missing-field compatibility and in-place session semantics. |
+| P1 | T32 Failed automatic follow holds enclosing groups | Invalid child and nested-group destinations report failure and cannot dispatch parent endings on later sequencer ticks. Reuse existing group cancellation. |
+| P2 | T33 Direct project load resets project-owned runtime state | A→B and same-file reopen clear old arming/selection/trigger state; preserve in-place same-session replacement. |
+| P1 | T34 Spotify settings stay bound to the requesting show | Delayed PATCH rejection/success cannot roll settings onto or save another show; accepted live settings survive disk-save failure. |
+| P1 | T35 YouTube initialization always settles and honors cancel | Filesystem/tool failures reject IPC and release jobs/listeners; cancellation during initialization never launches a downloader afterward. Mock all processes/filesystem in actual-handler tests. |
+| P2 | T36 Unsafe time inputs cannot disturb live PCM | Reject nonfinite/unrepresentable seek, out-point and loop inputs in shared setters; preserve negative/zero semantics and normal valid edits. |
+
+- [ ] T31 behavioral RED/GREEN and affected native tests; commit.
+- [ ] T32 child/nested follow failure RED/GREEN; commit.
+- [ ] T33 project-load state reset RED/GREEN; commit.
+- [ ] T34 settings identity and save-error RED/GREEN; commit.
+- [ ] T35 initialization failure/cancellation RED/GREEN; commit.
+- [ ] T36 shared numeric boundary RED/GREEN; commit.
+- [ ] Final affected gates, fresh review and current evidence/documents.
+
+Additional source leads remain separate from repairs: transient prepared-follow gate contention may cause a partial commit/gap; malformed snake_case legacy metadata parses after destructive load; LTC frame-to-nanosecond multiplication can overflow at long positions. Establish ordinary caller impact and deterministic proof before expanding a repair or claiming these closed. T24 physical acceptance remains deferred.
