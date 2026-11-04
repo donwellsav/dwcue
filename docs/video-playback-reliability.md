@@ -1,8 +1,10 @@
 # Video cue handoffs and control reliability
 
+**4 November software audit:** repairs through `2adf452` preserve the show workflow and add project-load refusal/state isolation, failed-group-follow holds, identity-bound Spotify settings, settled/cancellable YouTube setup and safe numeric audio edits. Full native13/13, client checks and typecheck pass; see the [current workplan](superpowers/plans/2026-11-03-live-show-reliability.md). No installed release or new physical acceptance is claimed.
+
 Initial investigation: 2026-11-03 against the working tree based on `82505580ccb6ae86ccb71e28264b6d4436641419`. The reported pattern was that a standalone video usually worked, while playing video before or after audio/another video caused freezing, loss of control, and apparent crashes. Existing audio/import/Spotify changes were retained.
 
-Current source is checkpointed in `2ea5984` and `a9a86a3` (package metadata 2.6.17). Later T20/T21/T26–T29 repairs supersede the initial recovery and monitoring decisions below: failure retains the existing native audience window under a black cover, **Restart Output** is operator-controlled, picture health uses decoded presentation/native-clock progress, and unrelated metadata/cue/preview events cannot re-seek the current picture. No new package has been installed or published; physical HDMI and the earlier long-run frame-drop observation remain unclosed.
+The 3 November source was checkpointed in `2ea5984` and `a9a86a3` (package metadata 2.6.17). Later T20/T21/T26–T29 repairs supersede the initial recovery and monitoring decisions below: failure retains the existing native audience window under a black cover, **Restart Output** is operator-controlled, picture health uses decoded presentation/native-clock progress, and unrelated metadata/cue/preview events cannot re-seek the current picture. No new package has been installed or published; physical HDMI and the earlier long-run frame-drop observation remain unclosed.
 
 ## Confirmed failure paths
 

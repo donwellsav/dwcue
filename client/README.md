@@ -1,10 +1,10 @@
 # DonWells Cue Client — developer guide
 
-**Source status — 3 November 2026:** application behavior is checkpointed in `2ea5984` (live-show reliability audit) and `a9a86a3` (secondary audio resync). Package metadata remains **2.6.17**. These are local commits, not a packaged, installed or published release. Software verification and remaining acceptance are tracked in [the current workplan](../docs/superpowers/plans/2026-11-03-live-show-reliability.md). Physical line-level audio and 1080p HDMI/adapter acceptance remain deferred.
+**Source status — 4 November 2026:** application behavior is checkpointed through `2adf452` (deep bug-hunt repairs), including `2ea5984` (live-show reliability audit) and `a9a86a3` (secondary audio resync). Package metadata remains **2.6.17**. These are local commits, not a packaged, installed or published release. Software verification and remaining acceptance are tracked in [the current workplan](../docs/superpowers/plans/2026-11-03-live-show-reliability.md). Physical line-level audio and 1080p HDMI/adapter acceptance remain deferred.
 
 The DonWells Cue client is a Vue 3 + Nuxt 4 application wrapped in Electron. It is a **remote control** for the DonWells Cue audio server: it owns no audio decoding, no playback, no Web Audio nodes. Every user action turns into a REST call or WebSocket frame sent to `dwcue-server`, and every meter / waveform / state update comes back the same way.
 
-This document tracks the v2.6.17 application source checkpoint `a9a86a3` and is the developer's guide to the client; this is not a claim about a published installer, so use the release page and installed About version to determine available behaviour. For show-day use, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For the audio engine, see [`server/README.md`](../server/README.md); for overall project and release context, see the [root README](../README.md).
+This document tracks the v2.6.17 application source checkpoint `2adf452` and is the developer's guide to the client; this is not a claim about a published installer, so use the release page and installed About version to determine available behaviour. For show-day use, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For the audio engine, see [`server/README.md`](../server/README.md); for overall project and release context, see the [root README](../README.md).
 
 ---
 

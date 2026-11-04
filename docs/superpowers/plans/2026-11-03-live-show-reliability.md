@@ -276,6 +276,7 @@ Baseline: clean `6d99a46`; all13 native tests pass with audio-service access den
 | Priority | Task | Proof and repair boundary |
 | --- | --- | --- |
 | P1 | T31 Rejected client document preserves current show | Bad name/folder metadata through file load, direct load and document replacement; reuse shared preparation before lifecycle effects. Preserve missing-field compatibility and in-place session semantics. |
+| P1 | T37 Rejected typed server document preserves current show | Stage the existing root/cue/mixer/routing parser in local values before teardown; preserve v1 conversion and valid routing defaults. |
 | P1 | T32 Failed automatic follow holds enclosing groups | Invalid child and nested-group destinations report failure and cannot dispatch parent endings on later sequencer ticks. Reuse existing group cancellation. |
 | P2 | T33 Direct project load resets project-owned runtime state | A→B and same-file reopen clear old arming/selection/trigger state; preserve in-place same-session replacement. |
 | P1 | T34 Spotify settings stay bound to the requesting show | Delayed PATCH rejection/success cannot roll settings onto or save another show; accepted live settings survive disk-save failure. |
@@ -289,6 +290,6 @@ Baseline: clean `6d99a46`; all13 native tests pass with audio-service access den
 - [x] T35 initialization failure/cancellation RED/GREEN; commit.
 - [x] T36 shared numeric boundary RED/GREEN; commit.
 - [x] T37 server-schema typed-load refusal RED/GREEN; commit.
-- [ ] Final affected gates, fresh review and current evidence/documents.
+- [x] Final affected gates, fresh review and current evidence/documents.
 
 Additional source leads remain separate from repairs: transient prepared-follow gate contention may cause a partial commit/gap; LTC frame-to-nanosecond multiplication can overflow at long positions. T37 closes the separately reproduced server-schema typed-load refusal path. Establish ordinary caller impact and deterministic proof before expanding a repair or claiming these closed. T24 physical acceptance remains deferred.

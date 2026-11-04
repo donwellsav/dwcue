@@ -1,6 +1,6 @@
 # DonWells Cue
 
-**Source status — 3 November 2026:** application behavior is checkpointed in `2ea5984` (live-show reliability audit) and `a9a86a3` (secondary audio resync). Package metadata remains **2.6.17**. These are local commits, not a packaged, installed or published release. Software verification and remaining acceptance are tracked in [the current workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md). Physical line-level audio and 1080p HDMI/adapter acceptance remain deferred.
+**Source status — 4 November 2026:** application behavior is checkpointed through `2adf452` (deep bug-hunt repairs), including `2ea5984` (live-show reliability audit) and `a9a86a3` (secondary audio resync). Package metadata remains **2.6.17**. These are local commits, not a packaged, installed or published release. Software verification and remaining acceptance are tracked in [the current workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md). Physical line-level audio and 1080p HDMI/adapter acceptance remain deferred.
 
 **DonWells Cue is a free, open-source app for playing back audio and video in live shows.** If you run sound for theatre, conferences, houses of worship, AV installs, or any live event, DonWells Cue lets you line up your music, sound effects and stings ahead of time and fire them off reliably on the night — from a laptop, a touchscreen, or even a separate stage-side machine you control over the network.
 
@@ -8,7 +8,7 @@ You build a **show** as a list of cues plus a grid of one-touch buttons, then tr
 
 This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. Published macOS packages are Developer ID signed, notarized, and package-validated.
 
-> **Current source:** package metadata is **v2.6.17** and this guide describes source commit **a9a86a3**. This is source provenance, not a published-installer claim: the release page is authoritative for release assets, and you must verify the installed About version before relying on a behaviour.
+> **Current source:** package metadata is **v2.6.17** and this guide describes source commit **2adf452**. This is source provenance, not a published-installer claim: the release page is authoritative for release assets, and you must verify the installed About version before relying on a behaviour.
 
 > **Operating a show?** Use the [operator manual (PDF)](docs/operators-manual.pdf) or its [Markdown source](docs/operators-manual.md). Those instructions track the current source. The client and server READMEs linked later are developer references, not show-day instructions.
 
@@ -117,7 +117,7 @@ If your browser blocked the download instead, choose **Keep** to save the instal
 
 ## Getting started
 
-These steps describe the current v2.6.17 source checkpoint (`a9a86a3`). It writes native show documents as `.dwcue` files and portable exports as `.dwcuepack` archives.
+These steps describe the current v2.6.17 source checkpoint (`2adf452`). It writes native show documents as `.dwcue` files and portable exports as `.dwcuepack` archives.
 
 1. Install the [latest release](https://github.com/donwellsav/dwcue/releases/latest), or build DonWells Cue from source, and launch it.
 2. Choose **New Show**, enter its name, use **Choose…** to select the read-only Location, and create it — DonWells Cue writes `<show name>.dwcue` and a `media/` sub-folder there.

@@ -1,15 +1,15 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.17
-**Source revision:** a9a86a39b0f8b75cea7a022548ab2b6a76c17256
-**Native engine baseline:** a9a86a39b0f8b75cea7a022548ab2b6a76c17256
-**Edition:** 3 November 2026 · English · Current-source operator edition
+**Source revision:** 2adf45210cc45254fbc21e6afb7a6d81b5a3db27
+**Native engine baseline:** 2adf45210cc45254fbc21e6afb7a6d81b5a3db27
+**Edition:** 4 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition describes the application source checkpoint **a9a86a3**, including the live-show audit in **2ea5984**. Package metadata remains **2.6.17**; these fixes have not been packaged, installed or published as a new release. Compare the installer you intend to use with its release notes before rehearsal.
+This edition describes the application source checkpoint **2adf452**, including the live-show audit, secondary audio repair and further project/import/sequence safeguards. Package metadata remains **2.6.17**; these fixes have not been packaged, installed or published as a new release. Compare the installer you intend to use with its release notes before rehearsal.
 
-All interface images were refreshed from this source in an isolated practice environment. Generated tones run through the native engine's virtual NULL output with physical audio-service access blocked; the desktop bridge supplies fixture locale, display and MIDI information. The images illustrate controls and visible states, rather than physical audio, HDMI or device compatibility. The capture method, source revisions and image hashes are recorded in **docs/manual-assets/captures.json**. Equipment photographs remain illustrative.
+Interface images were captured on 3 November from the same controls and layout, which remain unchanged in this repair batch. Their templates, styles and assets were checked against this source; original capture revisions and hashes are retained. Generated tones run through the native engine's virtual NULL output with physical audio-service access blocked; the desktop bridge supplies fixture locale, display and MIDI information. The images illustrate controls and visible states, rather than physical audio, HDMI or device compatibility. The capture method, source revisions and image hashes are recorded in **docs/manual-assets/captures.json**. Equipment photographs remain illustrative.
 
 ## 1. Read this before the show
 
@@ -186,8 +186,10 @@ Wait for the source copy/download to finish and for media readiness before takin
 
 YouTube and Spotify import controls are available in Edit Mode. They depend on external services and downloader availability. Prepare and verify these imports before the show, not on a live cue call. Use only material you are authorized to obtain and perform; an import feature does not supply a public-performance licence. Once imported, rehearse from the local show media rather than relying on a working internet connection at the venue.
 
-Spotify playlist import reads the full collection rather than stopping at 100 tracks. Review the returned count and selections, wait for each selected download/import result, and resolve unavailable, unmatched or failed entries. A long playlist is not an all-tracks-ready guarantee. Import failure keeps its error/retry state; avoid repeatedly adding the same downloaded result to the playlist.
+Spotify playlist import reads the full collection rather than stopping at 100 tracks. Review the returned count and selections, wait for each selected download/import result, and resolve unavailable, unmatched or failed entries. A long playlist is not an all-tracks-ready guarantee. Import failure keeps its error/retry state; avoid repeatedly adding the same downloaded result to the playlist. If Spotify settings reach the engine but cannot be saved, they stay active; correct the storage problem and save again.
 
+
+Cancelling a YouTube import during tool preparation prevents the downloader from starting afterward. Tool or media-folder failures report an error so you can correct the cause and retry. Confirm whether a local file already exists before repeating an import.
 
 ## 5. Build cues and transitions
 
@@ -402,7 +404,7 @@ Stop, replay, removal, media replacement, Stop All or project switch cancels tha
 
 ### When the expected cue does not start
 
-A failed GO retains its armed target. Resolve missing/unready media, decoder errors, connection problems or an unavailable target before one deliberate retry. Selection and Set As Next change that target only after acknowledgment. A refused Play All preflight starts none of its selected subtree; inspect every selected child’s readiness.
+A failed GO retains its armed target. Resolve missing/unready media, decoder errors, connection problems or an unavailable target before one deliberate retry. Selection and Set As Next change that target only after acknowledgment. A refused Play All preflight starts none of its selected subtree; inspect every selected child’s readiness. A failed automatic child or nested-group follow also holds enclosing group endings: correct the target, confirm Up Next, then press GO deliberately.
 
 For overlapping playback, check Ducking. If the wrong material is audible, use the rehearsed stop or console-mute procedure before investigating.
 
@@ -639,6 +641,8 @@ Extraction refuses unsafe entries and destination collisions rather than silentl
 
 On loading a document that needs supported structural repairs, **Corrupt Project Detected** can appear. **Repair & Save** writes the repaired canonical document. **Open Without Saving** opens the already repaired in-memory document but leaves its canonical disk file unchanged until a later save. It does not recover missing media or guarantee that every damaged project is repairable. Legacy source bytes remain untouched by either choice. Preserve the source, then inspect the cue count, groups, One Shots, and jump targets.
 
+A refused project open is not a Stop All command: verify which show is still loaded and sounding. A successful load, including reopening the same file, clears the previous selection and armed override. The first playable cue is armed when the project’s automatic-cue option allows it; always confirm Play Next before GO.
+
 When a project path is accepted but the page/header load cannot finish, the app enters an explicit read-only load-error state rather than exposing a partly hydrated editable document. **Stop All Cues** and its configured Escape shortcut remain available. Choose **Retry** after correcting the connection or storage fault. After native acceptance, Retry fetches the engine's current project header and pages; it never silently reopens the old file path. If the initial open itself was never accepted, Retry can retry that originally requested path. Confirm the loaded show name and cue readiness before editing or pressing GO.
 
 
@@ -861,7 +865,7 @@ With Video Output focused, Escape also exits its fullscreen mode. In Level Check
 
 ### About this edition
 
-This manual describes application source **a9a86a3**, including the audit checkpoint **2ea5984**, with package metadata **2.6.17**. The fixes are committed locally; a new installer has not been built, installed or published. All 22 interface captures were refreshed from the current Vue build with generated practice media, an isolated native NULL software output, and fixture Electron display/MIDI/locale methods. Physical audio-service access was blocked. No user show, credentials or private media appear in the illustrations. The complete capture provenance is in **docs/manual-assets/captures.json**.
+This manual describes application source **2adf452**, including the original audit checkpoint **2ea5984**, with package metadata **2.6.17**. The fixes are committed locally; a new installer has not been built, installed or published. The 22 interface captures retain their 3 November provenance; unchanged templates, styles and assets were verified for this repair edition. They use generated practice media, an isolated native NULL software output, and fixture Electron display/MIDI/locale methods. Physical audio-service access was blocked. No user show, credentials or private media appear in the illustrations. The complete capture provenance is in **docs/manual-assets/captures.json**.
 
 The native test suite passed 13/13. Six accelerated 30-minute secondary-clock simulations produced no underruns, overruns or resyncs within the tested timing envelope. PCM continuity is checked on a short ramp; the remaining clock simulation runs through post-EOF silence. These results establish bounded software repairs, not real-time performance or resolution of the earlier physical intermittency. More extreme drift with timing jitter can still trigger recovery.
 

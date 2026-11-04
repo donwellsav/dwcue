@@ -2,7 +2,7 @@
   "application": "DonWells Cue",
   "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
   "packageVersion": "2.6.17",
-  "edition": "3 November 2026 current-source operator manual; software fixtures, no installer or physical-system certification",
+  "edition": "4 November 2026 operator manual; unchanged visual controls verified against source; no installer or physical-system certification",
   "images": [
     {
       "file": "welcome-current.png",
@@ -424,5 +424,11 @@
     "duckEnvelope": "Schematic explanation, not a measured response plot",
     "gainStages": "Schematic: final physical sum and secondary-clock adaptation precede the attenuation-only limiter and device output."
   },
-  "uiBuildRevision": "4105c02dee64e7abe466fff4a0046a9c34cbf774"
+  "uiBuildRevision": "4105c02dee64e7abe466fff4a0046a9c34cbf774",
+  "manualSourceRevision": "2adf45210cc45254fbc21e6afb7a6d81b5a3db27",
+  "visualCompatibility": {
+    "checkedOn": "2026-11-04",
+    "revision": "2adf45210cc45254fbc21e6afb7a6d81b5a3db27",
+    "basis": "Only SpotifyImportModal async settings persistence changed in client/app since the capture checkpoint. Its template/styles are identical; other UI source and image assets are unchanged. Original per-image capture revisions, dates and hashes are retained."
+  }
 }

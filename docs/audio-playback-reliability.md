@@ -1,6 +1,8 @@
 # Audio import and live playback reliability
 
-Research and implementation began 2026-11-03 at `8250558`. The session repairs are now committed locally as `2ea5984` and `a9a86a3`; package metadata is 2.6.17. No new installer, installation or publication was performed. The current workplan distinguishes software verification from deferred physical acceptance.
+**4 November software audit:** repairs through `2adf452` preserve the show workflow and add project-load refusal/state isolation, failed-group-follow holds, identity-bound Spotify settings, settled/cancellable YouTube setup and safe numeric audio edits. Full native13/13, client checks and typecheck pass; see the [current workplan](superpowers/plans/2026-11-03-live-show-reliability.md). No installed release or new physical acceptance is claimed.
+
+Research and implementation began 2026-11-03 at `8250558`. The initial repairs were committed locally as `2ea5984` and `a9a86a3`; package metadata is 2.6.17. No new installer, installation or publication was performed. The current workplan distinguishes software verification from deferred physical acceptance.
 
 ## Level and timing contract
 
