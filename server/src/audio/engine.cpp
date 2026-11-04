@@ -1997,8 +1997,12 @@ void AudioEngine::render_one_block(const Topology& topo) {
                 const bool fired =
                     follow->source->finish_follow_rt(follow->source_revision) &&
                     follow->target->start_prepared_rt(follow->target_revision);
+                // A busy render gate must not force a valid handoff through EOF polling.
+                const bool retry = !fired && !follow->source->had_decode_error() &&
+                    follow->source->playback_revision() == follow->source_revision &&
+                    follow->target->prepared_start_ready(follow->target_revision);
                 follow->status.store(fired ? PreparedFollow::State::Fired
-                                          : PreparedFollow::State::Cancelled,
+                    : retry ? PreparedFollow::State::Armed : PreparedFollow::State::Cancelled,
                                       std::memory_order_release);
             } else if (stats.transport == TransportState::Stopped) {
                 follow->status.store(PreparedFollow::State::Cancelled,

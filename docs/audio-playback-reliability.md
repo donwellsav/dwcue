@@ -97,3 +97,8 @@ Exploratory ±4,000 ppm cases with the same delivery variation can still exhaust
 ## Ordered storage repair (T38)
 
 Immediate Stop All no longer waits for a decoder rewind behind a blocked storage read. Stopped transport and zero playhead publish immediately; the existing deliberate replay/prime path rewinds before reusing audio. Decoder-mutex contention RED→GREEN and affected native3/3 pass with physical audio-service access denied. Cold GO now releases its single lifecycle owner during decoder preparation, and prime seeks without render exclusion. Intent/document/cue checks reject cancelled work before it can start or duck anything. Sixteen held-read/seek cases cover ordinary GO, direct trigger/play, recovery, groups, looping and secondary start actions: Stop All completes before release and no cancelled child starts afterward. Deliberate retries retain authored in points. This is not a claim that arbitrary OS/driver stalls, separate Preview/live-edit paths or physical intermittency are closed.
+
+
+## Prepared-follow contention (T39)
+
+A transient source/target render-gate collision no longer cancels otherwise valid prepared handoff work. The source still ends at its authored endpoint; the next callback retries only the same valid playback revisions and prepared target. Stop/replay/media invalidation or decoder failure cancels it. Eight native contention/order/cancel cases verify next-callback target PCM and no late start after Stop, alongside existing exact-boundary and RT allocation checks. A held target gate can still cause silence while held; no longer-gapless or hardware performance guarantee is implied.

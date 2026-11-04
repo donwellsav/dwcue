@@ -4,7 +4,6 @@
 #include "liveplay/audio/limiter.hpp"
 #include "liveplay/audio/meter.hpp"
 #include "liveplay/audio/mixer_channel.hpp"
-#include "liveplay/audio/playback_item.hpp"
 #include <miniaudio.h>
 
 #include <algorithm>
@@ -26,8 +25,9 @@
 #include <unordered_map>
 #include <vector>
 
-// Preinclude dependencies so the access override is confined to AudioEngine.
+// Expose only playback/engine state for deterministic headless render gates.
 #define private public
+#include "liveplay/audio/playback_item.hpp"
 #include "liveplay/audio/engine.hpp"
 #undef private
 
@@ -400,6 +400,54 @@ void test_exact_follow(const std::filesystem::path& quiet,
           "follow fires once at its exact source frame and preserves target cursor");
 }
 
+void test_busy_follow(const std::filesystem::path& quiet,
+                      const std::filesystem::path& next) {
+  for (const bool source_busy : {false, true}) {
+   for (const bool target_first : {false, true}) {
+    for (const bool cancel : {false, true}) {
+    Fixture f(quiet);
+    const auto target_id = f.engine.load_cue_no_route(next);
+    const auto mixer = f.engine.snapshot_topology()->mixers.front()->id();
+    f.engine.route_item_source_to_mixer(target_id, 0, mixer, 0, 0.0f);
+    const auto target = f.engine.find_cue(target_id);
+    check(target->prime(2.0), "busy follow: target primes");
+    constexpr std::uint64_t endpoint = 1'013;
+    f.item->set_out_point_seconds(1'013.25 / 48'000.0);
+    f.item->service_read_ahead(16);
+    const auto follow = f.engine.schedule_follow(f.item->id(), target_id, endpoint);
+    check(static_cast<bool>(follow), "busy follow: source/target schedule");
+    if (!follow) continue;
+    std::vector<float> source_left(endpoint), source_right(endpoint);
+    float* channels[]{source_left.data(), source_right.data()};
+    f.item->render_block(channels, 2, endpoint);
+    auto topology = std::const_pointer_cast<Topology>(f.engine.snapshot_topology());
+    std::sort(topology->items.begin(), topology->items.end(), [&](auto& a, auto& b) {
+        return target_first ? a.item == target && b.item != target
+                            : a.item != target && b.item == target;
+    });
+    const auto held = source_busy ? f.item : target;
+    held->begin_render_exclusion();
+    f.render(); f.drain();
+    check(follow->status.load() == PreparedFollow::State::Armed &&
+              target->stats().transport == TransportState::Stopped &&
+              f.item->stats().playhead_frame == endpoint,
+          "busy follow: transient source/target gate retains valid handoff at authored endpoint");
+    if (cancel) (source_busy ? target : f.item)->stop_now();
+    held->end_render_exclusion();
+    f.render();
+    const auto output = f.drain();
+    if (cancel) check(follow->status.load() == PreparedFollow::State::Cancelled &&
+              target->stats().transport == TransportState::Stopped,
+          "busy follow: explicit stop during contention cancels without a late start");
+    else check(follow->status.load() == PreparedFollow::State::Fired &&
+              target->stats().playhead_frame == block &&
+              std::any_of(output.begin(), output.end(), [](float sample) { return sample > 0.19f; }),
+          "busy follow: first available callback starts target PCM without sequencer polling");
+    }
+   }
+  }
+}
+
 void test_main_channel_map(const std::filesystem::path& quiet,
                            const std::filesystem::path& path,
                            float expected_left, float expected_right) {
@@ -632,6 +680,7 @@ int main() {
     test_clock_resync(ramp);
     test_exact_follow(quiet, next, false);
     test_exact_follow(quiet, next, true);
+    test_busy_follow(quiet, next);
     test_main_channel_map(quiet, center, 0.7f * 0.70710678f, 0.7f * 0.70710678f);
     test_main_channel_map(quiet, left, 0.3f, 0.0f);
     test_mono_route_replacement(quiet);
