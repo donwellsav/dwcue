@@ -139,6 +139,8 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   const activeCueId = ref<string | null>(null);
   const activeTransport = ref(TRANSPORT_STOPPED);
   const previewItemUuid = ref<string | null>(null);
+  let previewStateRevision = -1;
+  let previewStateSession = '';
   const nextItemUuid = ref<string | null>(null);
   const activeCues = new Map<string, ActiveCue>();
   let diagnosticCue: ActiveCue | null = null;
@@ -626,6 +628,17 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
 
   const stopNextItemWatch = watch(nextItemUuid, preloadNextItem);
 
+  function applyPreviewState(state: Record<string, unknown> | null, fromSnapshot = false) {
+    const session = readString(state?.project_session_id) ?? '';
+    const revision = readNumber(state?.revision) ?? 0;
+    if (!fromSnapshot && session && previewStateSession && session !== previewStateSession) return false;
+    if ((!session || session === previewStateSession) && revision < previewStateRevision) return false;
+    previewStateSession = session;
+    previewStateRevision = revision;
+    previewItemUuid.value = readString(state?.itemUuid);
+    return true;
+  }
+
   const offSnapshot = server.onPlaybackSnapshot((raw: unknown) => {
     if (!raw || typeof raw !== 'object') return;
     const snapshot = raw as Record<string, unknown>;
@@ -633,7 +646,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     const preview = snapshot.preview && typeof snapshot.preview === 'object'
       ? snapshot.preview as Record<string, unknown>
       : null;
-    previewItemUuid.value = preview ? readString(preview.item_uuid) : null;
+    applyPreviewState(preview ? { ...preview, itemUuid: preview.item_uuid } : null, true);
 
     const candidates: ActiveCue[] = [];
     for (const entry of Array.isArray(snapshot.cues) ? snapshot.cues : []) {
@@ -674,6 +687,8 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
           activeCues.clear();
           nextItemUuid.value = null;
           previewItemUuid.value = null;
+          previewStateRevision = -1;
+          previewStateSession = '';
           highestTriggerSeqSeen = -1;
           acceptNextSnapshot = true;
           if (!diagnosticCue) {
@@ -692,7 +707,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
           nextItemUuid.value = readString(patch.itemUuid);
           break;
         case 'preview_started': {
-          previewItemUuid.value = readString(patch.itemUuid);
+          if (!applyPreviewState(patch)) return;
           if (previewItemUuid.value) {
             for (const [key, active] of activeCues) {
               if (active.itemUuid === previewItemUuid.value) activeCues.delete(key);
@@ -702,7 +717,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
           break;
         }
         case 'preview_stopped':
-          previewItemUuid.value = null;
+          applyPreviewState({ ...patch, itemUuid: '' });
           break;
         default:
           break;

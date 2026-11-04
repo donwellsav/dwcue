@@ -705,6 +705,35 @@ test('trigger_seq chooses newest-fired program cue while stop and preview preser
   harness.stop();
 });
 
+for (const op of ['preview_stopped', 'preview_started']) {
+  test(`a superseded ${op} cannot let the current audition take audience video`, async () => {
+    const h = createHarness(project([audioItem('program', { hasVideo: true }),
+      audioItem('preview', { hasVideo: true }), audioItem('old-preview')]));
+    try {
+      await flush(); h.emitCue(snapshotCue('program', 'program-cue', 1));
+      h.emitPatch({ op: 'preview_started', itemUuid: 'preview', cueId: 'preview-cue',
+        revision: 3, project_session_id: 'show' });
+      h.emitPatch({ op, itemUuid: op === 'preview_started' ? 'old-preview' : '',
+        revision: 2, project_session_id: 'show' });
+      h.emitCue(snapshotCue('preview', 'preview-cue', 99));
+      assert.equal(new URL(h.controller.videoSrc.value!).searchParams.get('item_uuid'), 'program');
+    } finally { h.stop(); }
+  });
+}
+
+test('a new server snapshot resets Preview ordering and refuses an older server completion', async () => {
+  const h = createHarness(project([audioItem('program', { hasVideo: true }), audioItem('preview', { hasVideo: true })]));
+  try {
+    await flush(); h.emitCue(snapshotCue('program', 'program-cue', 1));
+    h.emitPatch({ op: 'preview_started', itemUuid: 'preview', revision: 50, project_session_id: 'old-server' });
+    h.emitSnapshot({ cues: [snapshotCue('program', 'program-cue', 1)], preview: {
+      item_uuid: 'preview', cue_id: 'preview-cue', revision: 1, project_session_id: 'new-server' } });
+    h.emitPatch({ op: 'preview_stopped', revision: 51, project_session_id: 'old-server' });
+    h.emitCue(snapshotCue('preview', 'preview-cue', 99));
+    assert.equal(new URL(h.controller.videoSrc.value!).searchParams.get('item_uuid'), 'program');
+  } finally { h.stop(); }
+});
+
 test('unknown cue edges survive document loading and stale fetches cannot restore an old active source', async () => {
   const initial = project([audioItem('known', { hasVideo: true, mediaPath: 'media/old.mp4' })]);
   const harness = createHarness(initial);

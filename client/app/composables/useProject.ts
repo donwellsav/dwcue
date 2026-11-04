@@ -287,6 +287,8 @@ export const useProject = () => {
   // Engine cue ID for the active preview — needed to subscribe to its meter
   // stream and drive the seek bar / playhead time in the preview card.
   const previewCueId = useState<string>('useProject.previewCueId', () => '');
+  const previewStateRevision = useState<number>('useProject.previewStateRevision', () => -1);
+  const previewStateSession = useState<string>('useProject.previewStateSession', () => '');
 
   // ---- Autosave -----------------------------------------------------------
   // By default the project auto-saves to disk on every edit (saveProject() is
@@ -333,31 +335,43 @@ export const useProject = () => {
   };
 
   // ---- Preview controls (delegate to server) ----------------------------
+  // Teardown replies and broadcasts may arrive after a newer audition.
+  function applyPreviewState(state: any, fromSnapshot = false) {
+    const session = typeof state?.project_session_id === 'string' ? state.project_session_id : '';
+    const revision = Number.isSafeInteger(state?.revision) && state.revision >= 0 ? state.revision : 0;
+    if (!fromSnapshot && session && (previewStateSession.value && session !== previewStateSession.value
+      || serverProjectSessionId.value && session !== serverProjectSessionId.value)) return;
+    if ((!session || session === previewStateSession.value) && revision < previewStateRevision.value) return;
+    previewStateSession.value = session;
+    previewStateRevision.value = revision;
+    previewItemUuid.value = state?.itemUuid || '';
+    previewCueId.value = state?.cueId || '';
+  }
+
   async function startPreview(itemUuid: string) {
     if (!itemUuid) return;
     const server = useLiveplayServer();
+    const session = serverProjectSessionId.value;
     try {
       const res = await server.startPreview(itemUuid);
-      previewItemUuid.value = itemUuid;
-      previewCueId.value = (res as any)?.cueId ?? '';
+      if (session === serverProjectSessionId.value) applyPreviewState(res);
     } catch (e) {
       console.warn('[useProject] startPreview failed:', e);
       // Refresh authoritative state from the server.
       try {
         const s = await server.fetchPreviewState();
-        previewItemUuid.value = s.itemUuid || '';
-        previewCueId.value = (s as any).cueId ?? '';
+        if (session === serverProjectSessionId.value) applyPreviewState(s);
       }
       catch { /* ignore */ }
     }
   }
   async function stopPreview() {
     const server = useLiveplayServer();
+    const session = serverProjectSessionId.value;
     try {
-      await server.stopPreview();
+      const state = await server.stopPreview();
+      if (session === serverProjectSessionId.value) applyPreviewState(state);
     } catch { /* ignore */ }
-    previewItemUuid.value = '';
-    previewCueId.value = '';
   }
 
   // Force UI update for waveforms
@@ -955,6 +969,8 @@ export const useProject = () => {
     reportOpenProjectPath('');
     previewItemUuid.value = '';
     previewCueId.value = '';
+    previewStateRevision.value = -1;
+    previewStateSession.value = '';
     audioLoadingProgress.value = {
       ready: true,
       loading: false,
@@ -1802,13 +1818,11 @@ export const useProject = () => {
             // Handled in useAudioEngine.onDocPatch.
             break;
           case 'preview_started': {
-            previewItemUuid.value = patch.itemUuid || '';
-            previewCueId.value = patch.cueId || '';
+            applyPreviewState(patch);
             break;
           }
           case 'preview_stopped': {
-            previewItemUuid.value = '';
-            previewCueId.value = '';
+            applyPreviewState({ ...patch, itemUuid: '', cueId: '' });
             break;
           }
           case 'project_changed': {
@@ -1859,8 +1873,7 @@ export const useProject = () => {
     // transport + master gain + next-item are handled in useAudioEngine.
     server().onPlaybackSnapshot((snap: any) => {
       const prev = snap?.preview ?? {};
-      previewItemUuid.value = prev.item_uuid || '';
-      previewCueId.value = prev.cue_id || '';
+      applyPreviewState({ ...prev, itemUuid: prev.item_uuid, cueId: prev.cue_id }, true);
     });
 
     // ---- Theme ----

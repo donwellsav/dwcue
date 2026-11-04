@@ -1132,6 +1132,7 @@ void ProjectState::reset() {
         preview_cue_ = {};
     }
     preview_item_uuid_.clear();
+    ++preview_state_revision_;
 
     cues_.clear();
     mixers_.clear();
@@ -1633,6 +1634,7 @@ void ProjectState::apply_preview_device_change(std::unique_lock<std::recursive_m
         prev_cue = preview_cue_;
         preview_cue_ = audio::CueId{};
         preview_item_uuid_.clear();
+        ++preview_state_revision_;
         preview_device_name_.clear();
     }
     if (!prev_cue.empty()) {
@@ -4232,7 +4234,7 @@ constexpr audio::MasterChannelIndex kPreviewMasterL = 30;
 constexpr audio::MasterChannelIndex kPreviewMasterR = 31;
 }  // namespace
 
-bool ProjectState::start_preview(const std::string& item_uuid) {
+bool ProjectState::start_preview(const std::string& item_uuid, json* result) {
     if (item_uuid.empty()) return false;
     std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
     const auto intent = ++preview_intent_revision_;
@@ -4307,6 +4309,7 @@ bool ProjectState::start_preview(const std::string& item_uuid) {
             prev_cue = preview_cue_;
             preview_cue_ = audio::CueId{};
             preview_item_uuid_.clear();
+            ++preview_state_revision_;
         }
         if (!prev_cue.empty()) {
             engine_.stop(prev_cue);
@@ -4400,12 +4403,14 @@ bool ProjectState::start_preview(const std::string& item_uuid) {
         std::lock_guard lock{mutex_};
         preview_cue_       = cue_id;
         preview_item_uuid_ = item_uuid;
+        ++preview_state_revision_;
     }
+    if (result) *result = preview_state();
     Logger::info("preview: started for item '{}' on '{}'", item_uuid, preview_device_name);
     return true;
 }
 
-bool ProjectState::stop_preview() {
+bool ProjectState::stop_preview(json* result) {
     std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
     ++preview_intent_revision_;
     audio::CueId cue;
@@ -4414,13 +4419,22 @@ bool ProjectState::stop_preview() {
         cue = preview_cue_;
         preview_cue_ = audio::CueId{};
         preview_item_uuid_.clear();
+        ++preview_state_revision_;
     }
+    if (result) *result = preview_state();
     if (cue.empty()) return false;
     lifecycle_lock.unlock();
     engine_.stop(cue);
     engine_.unload_cue(cue);
     Logger::info("preview: stopped");
     return true;
+}
+
+json ProjectState::preview_state() const {
+    std::lock_guard lock{mutex_};
+    return json{{"active", !preview_item_uuid_.empty()}, {"itemUuid", preview_item_uuid_},
+        {"cueId", preview_cue_.value}, {"revision", preview_state_revision_},
+        {"project_session_id", project_session_id_}};
 }
 
 std::string ProjectState::current_preview_item_uuid() const {

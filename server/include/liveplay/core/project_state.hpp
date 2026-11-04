@@ -461,8 +461,10 @@ public:
     // the main outputs (DJ-style pre-listen). At most one preview is
     // active at a time; starting a new one replaces the old. Returns true
     // on success.
-    bool start_preview(const std::string& item_uuid);
-    bool stop_preview();
+    // Capture the committed identity before an unlocked completion can be superseded.
+    bool start_preview(const std::string& item_uuid, json* result = nullptr);
+    bool stop_preview(json* result = nullptr);
+    json preview_state() const;
     // uuid of the currently-previewing item, or empty if no preview active.
     std::string current_preview_item_uuid() const;
     // Engine cue ID for the active preview, or an empty CueId if none.
@@ -629,6 +631,7 @@ private:
     // device every time the user pre-listens to a new cue).
     audio::CueId           preview_cue_;
     std::uint64_t          preview_intent_revision_ = 0; // guarded by playback_lifecycle_mutex_
+    std::uint64_t          preview_state_revision_ = 0; // guarded by mutex_
     std::string            preview_item_uuid_;
     audio::MixerChannelId  preview_mixer_;
     audio::DeviceId        preview_device_;

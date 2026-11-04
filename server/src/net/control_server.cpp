@@ -1352,6 +1352,9 @@ static json build_playback_snapshot(audio::AudioEngine& engine,
         const float db = engine.output_channel_gain_db(i);
         if (db != 0.0f) out_gains.push_back(json{{"channel", i}, {"db", db}});
     }
+    auto preview = state.preview_state();
+    preview["item_uuid"] = preview["itemUuid"];
+    preview["cue_id"] = preview["cueId"];
     return json{
         {"type",                "playback_snapshot"},
         {"cues",                std::move(cues_arr)},
@@ -1364,10 +1367,7 @@ static json build_playback_snapshot(audio::AudioEngine& engine,
         {"selected_item_uuid",  state.selected_item_uuid()},
         {"show_mode",           state.show_mode()},
         {"locale",              state.ui_locale()},
-        {"preview", json{
-            {"item_uuid", state.current_preview_item_uuid()},
-            {"cue_id",    state.current_preview_cue_id().value},
-        }},
+        {"preview", std::move(preview)},
     };
 }
 
@@ -4384,13 +4384,7 @@ void ControlServer::install_routes() {
     // ---- Preview (DJ-style pre-listening on settings.previewDevice) ----
     CROW_ROUTE(app, "/api/preview").methods(crow::HTTPMethod::Get)
         ([this] {
-            const auto item_uuid = state_.current_preview_item_uuid();
-            const auto cue_id    = state_.current_preview_cue_id();
-            return json_ok(json({
-                {"active",   !item_uuid.empty()},
-                {"itemUuid", item_uuid},
-                {"cueId",    cue_id.value},
-            }));
+            return json_ok(state_.preview_state());
         });
     CROW_ROUTE(app, "/api/preview").methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req){
@@ -4404,27 +4398,23 @@ void ControlServer::install_routes() {
                 Logger::api_request("Client ({}) -> Server ({}) : POST /api/preview itemUuid='{}'",
                                     req.remote_ip_address, impl_->server_addr, uuid);
                 Logger::playback("PREVIEW START: {}", item_playback_info(uuid, state_));
-                const bool ok = state_.start_preview(uuid);
+                json result;
+                const bool ok = state_.start_preview(uuid, &result);
                 if (!ok) {
                     Logger::warn("PREVIEW START failed for item_uuid='{}' — no device or item not found", uuid);
                     return json_err(400, "preview could not start (no device, or item not found)");
                 }
-                const auto cue_id = state_.current_preview_cue_id().value;
+                const auto cue_id = result.value("cueId", std::string{});
                 Logger::api_response("Client ({}) <- Server ({}) : POST /api/preview OK — cueId='{}'",
                                      req.remote_ip_address, impl_->server_addr, cue_id);
                 // Mirror preview state to every other connected client so
                 // they can show the preview card / cue id in real time.
-                broadcast_doc_patch(json{
-                    {"type", "doc_patch"},
-                    {"op",   "preview_started"},
-                    {"itemUuid", uuid},
-                    {"cueId", cue_id},
-                });
-                return json_ok(json({
-                    {"ok",      true},
-                    {"itemUuid", uuid},
-                    {"cueId",   cue_id},
-                }));
+                auto patch = result;
+                patch["type"] = "doc_patch";
+                patch["op"] = "preview_started";
+                broadcast_doc_patch(patch);
+                result["ok"] = true;
+                return json_ok(result);
             } catch (const std::exception& e) {
                 Logger::error("POST /api/preview threw: {}", e.what());
                 return json_err(400, e.what());
@@ -4435,14 +4425,16 @@ void ControlServer::install_routes() {
             Logger::api_request("Client ({}) -> Server ({}) : DELETE /api/preview",
                                 req.remote_ip_address, impl_->server_addr);
             Logger::playback("PREVIEW STOP");
-            state_.stop_preview();
+            json result;
+            state_.stop_preview(&result);
             Logger::api_response("Client ({}) <- Server ({}) : DELETE /api/preview OK",
                                  req.remote_ip_address, impl_->server_addr);
-            broadcast_doc_patch(json{
-                {"type", "doc_patch"},
-                {"op",   "preview_stopped"},
-            });
-            return json_ok(json({{"ok", true}}));
+            auto patch = result;
+            patch["type"] = "doc_patch";
+            patch["op"] = "preview_stopped";
+            broadcast_doc_patch(patch);
+            result["ok"] = true;
+            return json_ok(result);
         });
 
     // ---- Theme + settings patches ----

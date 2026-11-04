@@ -200,6 +200,9 @@ function loadItemsSync(dependencies: Record<string, unknown>) {
         sessionLost = { value: false }, recoveringProject = { value: false },
         projectHydrationStatus = { value: 'ready' }, isHydrating = ref(false),
         previewItemUuid = ref(''), previewCueId = ref('') } = dependencies;
+      const { applyPreviewState = (state: any) => {
+        previewItemUuid.value = state.itemUuid || ''; previewCueId.value = state.cueId || '';
+      } } = dependencies;
       const _waveformCache = new Map();
       const cacheWaveform = (uuid: string, waveform: any) => _waveformCache.set(uuid, waveform);
       const restoreWaveform = () => {};
@@ -222,6 +225,69 @@ function loadItemsSync(dependencies: Record<string, unknown>) {
   `, { compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 } }).outputText;
   return Function(`${compiled}; return build;`)()({ ...dependencies, isCurrentSaveIdentity, ref, toRaw, watch, markRaw });
 }
+
+function loadPreviewControls(server: unknown) {
+  const source = readFileSync(new URL('../app/composables/useProject.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('  // ---- Preview controls');
+  const end = source.indexOf('  // Force UI update for waveforms', start);
+  const previewItemUuid = ref('a'); const previewCueId = ref('a-cue');
+  const previewStateRevision = ref(-1); const previewStateSession = ref('');
+  const serverProjectSessionId = ref('show');
+  const compiled = ts.transpileModule(`
+    function build(dependencies: any) {
+      const { server, previewItemUuid, previewCueId, previewStateRevision, previewStateSession,
+        serverProjectSessionId } = dependencies;
+      const useLiveplayServer = () => server;
+      ${source.slice(start, end)}
+      return { startPreview, stopPreview, applyPreviewState };
+    }
+  `, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+  return { ...Function(`${compiled}; return build;`)()({ server, previewItemUuid, previewCueId,
+    previewStateRevision, previewStateSession, serverProjectSessionId }), previewItemUuid, previewCueId,
+      serverProjectSessionId };
+}
+
+test('a delayed Preview stop completion cannot hide the newer audition', async () => {
+  let release!: (value: unknown) => void;
+  const oldStop = new Promise(resolve => { release = resolve; });
+  const h = loadPreviewControls({ stopPreview: () => oldStop,
+    startPreview: async () => ({ itemUuid: 'b', cueId: 'b-cue', revision: 3, project_session_id: 'show' }) });
+  const stopped = h.stopPreview();
+  await h.startPreview('b');
+  release({ itemUuid: '', cueId: '', revision: 2, project_session_id: 'show' });
+  await stopped;
+  assert.equal(h.previewItemUuid.value, 'b');
+  assert.equal(h.previewCueId.value, 'b-cue');
+});
+
+test('a delayed Preview start completion cannot resurrect an audition after Stop', async () => {
+  let release!: (value: unknown) => void;
+  const oldStart = new Promise(resolve => { release = resolve; });
+  const h = loadPreviewControls({ startPreview: () => oldStart,
+    stopPreview: async () => ({ itemUuid: '', cueId: '', revision: 4, project_session_id: 'show' }) });
+  const started = h.startPreview('a');
+  await h.stopPreview();
+  release({ itemUuid: 'a', cueId: 'a-cue', revision: 3, project_session_id: 'show' });
+  await started;
+  assert.equal(h.previewItemUuid.value, '');
+  assert.equal(h.previewCueId.value, '');
+});
+
+test('Preview broadcasts use the same ordering fence and a new server snapshot resets its scope', () => {
+  const h = loadPreviewControls({});
+  const currentProject = ref<any>({ items: [], cartOnlyItems: [] });
+  const sync = loadItemsSync({ currentProject, itemPatchIdentity: loadCreateItemPatchMutationIdentity()('local'),
+    previewItemUuid: h.previewItemUuid, previewCueId: h.previewCueId,
+    applyPreviewState: h.applyPreviewState, server: () => ({ connected: true }) });
+  sync.captureBaselines();
+  sync.applyDocPatch({ op: 'preview_started', itemUuid: 'b', cueId: 'b-cue', revision: 50, project_session_id: 'show' });
+  sync.applyDocPatch({ op: 'preview_stopped', revision: 49, project_session_id: 'show' });
+  sync.applyDocPatch({ op: 'preview_started', itemUuid: 'a', cueId: 'a-cue', revision: 48, project_session_id: 'show' });
+  assert.equal(h.previewCueId.value, 'b-cue');
+  h.applyPreviewState({ itemUuid: 'c', cueId: 'c-cue', revision: 1, project_session_id: 'new-server' }, true);
+  sync.applyDocPatch({ op: 'preview_stopped', revision: 51, project_session_id: 'show' });
+  assert.equal(h.previewCueId.value, 'c-cue');
+});
 
 test('an in-flight item diff stops dispatching after its project or connection identity changes', async () => {
   for (const change of ['project', 'close', 'reopen', 'endpoint', 'token', 'recovery']) {

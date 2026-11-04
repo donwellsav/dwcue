@@ -949,7 +949,8 @@ function createClient() {
     return rest<any>('/api/preview', { method: 'DELETE' });
   }
   async function fetchPreviewState() {
-    return rest<{ active: boolean; itemUuid: string }>('/api/preview');
+    return rest<{ active: boolean; itemUuid: string; cueId: string;
+      revision?: number; project_session_id?: string }>('/api/preview');
   }
 
   // Master gain (dB). Server is the authority — REST POST persists and

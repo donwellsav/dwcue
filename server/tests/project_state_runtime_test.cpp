@@ -246,13 +246,14 @@ void test_stop_all_during_cue_retirement(const std::filesystem::path& wav) {
 
 void test_stop_all_during_preview_retirement() {
     const auto wav = make_wav(8'192);
-    for (const int mode : {0, 1, 2}) {
+    for (const int mode : {0, 1, 2, 3}) {
         liveplay::audio::AudioEngine engine;
         liveplay::core::ProjectState state(engine);
         state.replace_full_document(document(json::array({audio("preview-bed", wav), audio("preview-item", wav)})));
         check(wait_ready(state), "preview stall: media ready"); close_devices(engine);
+        json start_result, stop_result;
         check(state.patch_settings({{"previewDevice", "NULL Playback Device"}}) &&
-                  state.start_preview("preview-item"), "preview stall: software-only Preview starts");
+                  state.start_preview("preview-item", &start_result), "preview stall: software-only Preview starts");
         check(state.trigger_item("preview-bed"), "preview stall: Program starts independently");
         const auto bed = engine.find_cue(*state.item_to_cue_id("preview-bed"));
         const auto preview = engine.find_cue(state.current_preview_cue_id());
@@ -264,10 +265,24 @@ void test_stop_all_during_preview_retirement() {
         auto operation = std::async(std::launch::async, [&] {
             if (mode == 0) return state.stop_preview();
             if (mode == 1) return state.start_preview("preview-item");
+            if (mode == 3) return state.stop_preview(&stop_result);
             return state.patch_settings({{"previewDevice", "NULL Playback Device"}});
         });
         for (int i = 0; i < 300 && preview->stats().transport != liveplay::audio::TransportState::Stopped; ++i)
             std::this_thread::sleep_for(1ms);
+        if (mode == 3) {
+            json replacement;
+            check(state.start_preview("preview-item", &replacement),
+                  "Preview ordering: replacement starts before old decoder close releases");
+            read_stall.unlock(); check(operation.get(), "Preview ordering: old stop completes");
+            const auto current = state.preview_state();
+            check(stop_result["revision"] < replacement["revision"] && stop_result["cueId"] == "" &&
+                      replacement["cueId"] != start_result["cueId"] &&
+                      start_result["cueId"] == preview->id().value && current == replacement &&
+                      engine.find_cue(state.current_preview_cue_id())->stats().transport == liveplay::audio::TransportState::Playing,
+                  "Preview ordering: old completion retains its own coherent identity and cannot describe the replacement");
+            state.stop_preview(); state.stop_all_cues(0); continue;
+        }
         auto stop = std::async(std::launch::async, [&] { state.stop_all_cues(0); });
         const bool stopped = stop.wait_for(250ms) == std::future_status::ready;
         check(stopped && bed->stats().transport == liveplay::audio::TransportState::Stopped &&
