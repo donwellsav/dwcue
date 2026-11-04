@@ -2111,10 +2111,14 @@ json ProjectState::items_page(std::size_t offset, std::size_t limit) const {
 }
 
 bool ProjectState::replace_full_document(const json& doc, bool new_session) {
-    if (!doc.is_object()) return false;
-    json migrated = doc;
-    const bool cart_migrated = core::migrate_legacy_cart_to_one_shots(migrated);
-    if (cart_migrated)
+    project_file::PreparedDocument prepared;
+    std::string error;
+    if (!project_file::prepare_client_document(doc, std::nullopt, prepared, error)) {
+        Logger::error("ProjectState::replace_full_document: {}", error);
+        return false;
+    }
+    json migrated = std::move(prepared.document);
+    if (prepared.cart_migrated)
         Logger::info("ProjectState: migrated legacy Cart data to One Shots.");
     std::lock_guard operation_lock{project_operation_mutex_};
     {
@@ -2147,16 +2151,6 @@ bool ProjectState::replace_full_document(const json& doc, bool new_session) {
         document_ = std::move(migrated);
         ++document_generation_;
         if (new_session) project_session_id_ = engine_.new_cue_id().value;
-        if (!document_.contains("settings")) {
-            document_["settings"] = json{
-                {"defaultOutputDevice", nullptr},
-                {"previewDevice",       nullptr},
-                {"ltcDevice",           nullptr},
-            };
-        }
-        if (!document_.contains("theme")) {
-            document_["theme"] = json{{"mode", "dark"}, {"accentColor", "#315FCF"}};
-        }
         project_name_ = document_.value("name", std::string{"Untitled"});
         update_media_root_from_folder_locked();
     }

@@ -221,6 +221,13 @@ bool prepare_client_document(
         prepared.document["folderPath"] =
             util::path_to_utf8(*folder_override);
     }
+    for (const char* field : {"name", "folderPath"}) {
+        if (prepared.document.contains(field) &&
+            !prepared.document[field].is_string()) {
+            error = std::string{field} + " must be a string";
+            return false;
+        }
+    }
     prepared.cart_migrated =
         migrate_legacy_cart_to_one_shots(prepared.document);
     prepared.repair = repair_client_document(prepared.document);

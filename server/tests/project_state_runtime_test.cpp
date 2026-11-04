@@ -191,6 +191,54 @@ void test_stop_all_during_project_boundaries(const std::filesystem::path& wav) {
              [](auto& state) { state.load_from_json(document(json::array())); });
 }
 
+void test_rejected_document_preserves_show(const std::filesystem::path& wav) {
+    const auto folder = std::filesystem::temp_directory_path() /
+        ("dwcue-rejected-load-" + std::to_string(
+            std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directory(folder);
+    for (const char* field : {"name", "folderPath"}) {
+      for (int method = 0; method < 5; ++method) {
+        if (method == 0 && std::string{field} == "folderPath") continue;
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        check(state.load_from_json(document(json::array({audio("preserved", wav)})),
+                                   folder / "current.dwcue") && wait_ready(state),
+              "rejected document: current show is ready");
+        check(state.trigger_item("preserved"), "rejected document: current cue plays");
+        const auto before = state.full_document();
+        const auto intent = state.playback_intent_revision();
+        const auto cue = state.item_to_cue_id("preserved");
+        const auto item = cue ? engine.find_cue(*cue) : nullptr;
+        auto invalid = document(json::array());
+        invalid[field] = 123;
+        bool accepted = false, threw = false;
+        try {
+            if (method == 0) {
+                const auto path = folder / "invalid.dwcue";
+                std::ofstream{path} << invalid.dump();
+                accepted = state.load(path);
+            } else if (method == 1) {
+                accepted = state.load_from_json(invalid, folder / "invalid.dwcue");
+            } else if (method < 4) {
+                accepted = state.replace_full_document(invalid, method == 2);
+            } else {
+                accepted = state.save(folder / "saved.dwcue", &invalid);
+            }
+        } catch (const std::exception&) { threw = true; }
+        std::printf("rejected document: field=%s method=%d\n", field, method);
+        check(!accepted && !threw, "invalid root metadata returns a refusal");
+        check(state.full_document() == before &&
+                  state.playback_intent_revision() == intent &&
+                  state.item_to_cue_id("preserved") == cue &&
+                  item && engine.find_cue(*cue) == item &&
+                  on_air(state, engine, "preserved"),
+              "invalid document preserves show, session, cue and current playback");
+        state.stop_all_cues(0);
+      }
+    }
+    std::filesystem::remove_all(folder);
+}
+
 void test_nested_group_end(const std::filesystem::path& wav) {
     liveplay::audio::AudioEngine engine;
     liveplay::core::ProjectState state(engine);
@@ -1362,6 +1410,7 @@ int main() {
     test_position_aware_recovery(wav);
     test_changed_media_readiness();
     test_stop_all_during_project_boundaries(wav);
+    test_rejected_document_preserves_show(wav);
     test_nested_group_end(wav);
     test_group_cancellation(wav);
     test_group_internal_continuations(wav);
