@@ -212,7 +212,7 @@ public:
     const CueId&     id() const noexcept                  { return desc_.id; }
     const PlaybackItemDesc& desc() const noexcept         { return desc_; }
     ChannelCount     source_channel_count() const noexcept;  // includes LTC if enabled
-    // Control thread: query the decoder's native map without changing its PCM.
+    // Control thread: cached native-map sends; never waits for decoder I/O.
     std::array<float, 2> stereo_mix_gains(ChannelIndex channel) const;
     PlaybackItemStats stats() const noexcept;
 
@@ -265,6 +265,8 @@ private:
     std::atomic<bool>           decoder_ready_{false};
     std::atomic<bool>           source_changed_{false};
     std::shared_ptr<const std::string> loaded_source_revision_;
+    using StereoGains = std::vector<std::array<float, 2>>;
+    std::shared_ptr<const StereoGains> stereo_gains_;
     std::atomic<ChannelCount>   file_channels_{0};
 
     // Fixed-capacity read-ahead allocated in load(). decoder_mutex_ serializes

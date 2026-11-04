@@ -101,6 +101,7 @@ bool PlaybackItem::load() {
     }
 #endif
     decoder_ready_ = false;
+    std::atomic_store_explicit(&stereo_gains_, std::shared_ptr<const StereoGains>{}, std::memory_order_release);
     clear_decode_error();
     if (decoder_) {
         ma_decoder_uninit(decoder_.get());
@@ -143,7 +144,37 @@ bool PlaybackItem::load() {
     if (ma_decoder_get_length_in_pcm_frames(decoder_.get(), &frames) != MA_SUCCESS || frames == UINT64_MAX)
         frames = 0;
     duration_frames_.store(frames, std::memory_order_release);
-    ma_decoder_get_data_format(decoder_.get(), nullptr, &ch, nullptr, nullptr, 0);
+    std::array<ma_channel, MA_MAX_CHANNELS> map{};
+    StereoGains new_stereo_gains;
+    if (ma_decoder_get_data_format(decoder_.get(), nullptr, &ch, nullptr, map.data(), map.size()) == MA_SUCCESS) {
+        new_stereo_gains.resize(std::min<std::size_t>(ch, map.size()));
+        for (std::size_t channel = 0; channel < new_stereo_gains.size(); ++channel) {
+            auto& gains = new_stereo_gains[channel];
+            if (ch == 1) { gains = {1.0f, 1.0f}; continue; }
+            constexpr float surround = 0.70710678f;
+            switch (map[channel]) {
+                case MA_CHANNEL_FRONT_LEFT: gains = {1.0f, 0.0f}; break;
+                case MA_CHANNEL_FRONT_RIGHT: gains = {0.0f, 1.0f}; break;
+                case MA_CHANNEL_BACK_LEFT:
+                case MA_CHANNEL_SIDE_LEFT:
+                case MA_CHANNEL_FRONT_LEFT_CENTER:
+                case MA_CHANNEL_TOP_FRONT_LEFT:
+                case MA_CHANNEL_TOP_BACK_LEFT: gains = {surround, 0.0f}; break;
+                case MA_CHANNEL_BACK_RIGHT:
+                case MA_CHANNEL_SIDE_RIGHT:
+                case MA_CHANNEL_FRONT_RIGHT_CENTER:
+                case MA_CHANNEL_TOP_FRONT_RIGHT:
+                case MA_CHANNEL_TOP_BACK_RIGHT: gains = {0.0f, surround}; break;
+                case MA_CHANNEL_MONO:
+                case MA_CHANNEL_FRONT_CENTER:
+                case MA_CHANNEL_BACK_CENTER:
+                case MA_CHANNEL_TOP_CENTER:
+                case MA_CHANNEL_TOP_FRONT_CENTER:
+                case MA_CHANNEL_TOP_BACK_CENTER: gains = {surround, surround}; break;
+                default: gains = {0.5f, 0.5f}; break; // Retain LFE and unlabelled content.
+            }
+        }
+    }
     if (ch == 0) ch = desc_.fallback_channels;
     const ChannelCount new_file_channels = static_cast<ChannelCount>(ch);
 
@@ -176,6 +207,7 @@ bool PlaybackItem::load() {
         return false;
     }
     std::atomic_store_explicit(&loaded_source_revision_, std::make_shared<const std::string>(revision ? revision->token : std::string{}), std::memory_order_release);
+    std::atomic_store_explicit(&stereo_gains_, std::make_shared<const StereoGains>(std::move(new_stereo_gains)), std::memory_order_release);
     source_changed_.store(false, std::memory_order_release);
     decoder_ready_ = true;
     Logger::info("PlaybackItem[{}] loaded '{}' ({} ch, {} Hz mix-rate, LTC={})",
@@ -208,6 +240,7 @@ void PlaybackItem::unload() {
         decoder_.reset();
     }
     decoder_ready_ = false;
+    std::atomic_store_explicit(&stereo_gains_, std::shared_ptr<const StereoGains>{}, std::memory_order_release);
     read_ahead_.clear();
     read_ahead_read_.store(0, std::memory_order_relaxed);
     read_ahead_write_.store(0, std::memory_order_relaxed);
@@ -221,35 +254,8 @@ ChannelCount PlaybackItem::source_channel_count() const noexcept {
 }
 
 std::array<float, 2> PlaybackItem::stereo_mix_gains(ChannelIndex channel) const {
-    std::lock_guard lock{decoder_mutex_};
-    ma_uint32 channels = 0;
-    std::array<ma_channel, MA_MAX_CHANNELS> map{};
-    if (!decoder_ || ma_decoder_get_data_format(decoder_.get(), nullptr,
-            &channels, nullptr, map.data(), map.size()) != MA_SUCCESS ||
-        channel >= channels || channel >= map.size()) return {0.0f, 0.0f};
-    if (channels == 1) return {1.0f, 1.0f};
-    constexpr float surround = 0.70710678f;
-    switch (map[channel]) {
-        case MA_CHANNEL_FRONT_LEFT: return {1.0f, 0.0f};
-        case MA_CHANNEL_FRONT_RIGHT: return {0.0f, 1.0f};
-        case MA_CHANNEL_BACK_LEFT:
-        case MA_CHANNEL_SIDE_LEFT:
-        case MA_CHANNEL_FRONT_LEFT_CENTER:
-        case MA_CHANNEL_TOP_FRONT_LEFT:
-        case MA_CHANNEL_TOP_BACK_LEFT: return {surround, 0.0f};
-        case MA_CHANNEL_BACK_RIGHT:
-        case MA_CHANNEL_SIDE_RIGHT:
-        case MA_CHANNEL_FRONT_RIGHT_CENTER:
-        case MA_CHANNEL_TOP_FRONT_RIGHT:
-        case MA_CHANNEL_TOP_BACK_RIGHT: return {0.0f, surround};
-        case MA_CHANNEL_MONO:
-        case MA_CHANNEL_FRONT_CENTER:
-        case MA_CHANNEL_BACK_CENTER:
-        case MA_CHANNEL_TOP_CENTER:
-        case MA_CHANNEL_TOP_FRONT_CENTER:
-        case MA_CHANNEL_TOP_BACK_CENTER: return {surround, surround};
-        default: return {0.5f, 0.5f}; // Retain LFE and unlabelled content.
-    }
+    const auto gains = std::atomic_load_explicit(&stereo_gains_, std::memory_order_acquire);
+    return gains && channel < gains->size() ? (*gains)[channel] : std::array<float, 2>{0.0f, 0.0f};
 }
 
 PlaybackItemStats PlaybackItem::stats() const noexcept {

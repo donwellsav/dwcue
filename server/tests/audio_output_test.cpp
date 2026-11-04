@@ -158,7 +158,7 @@ struct Fixture {
 };
 
 void test_blocked_decoder_reads(const std::filesystem::path& source) {
-    for (const int scenario : {0, 1, 2, 3, 4}) {
+    for (const int scenario : {0, 1, 2, 3, 4, 5}) {
         const int blocked_count = scenario == 1 ? 3 : scenario == 4 ? 4 : 1;
         auto fixture = std::make_unique<Fixture>(source);
         auto& f = *fixture;
@@ -191,10 +191,39 @@ void test_blocked_decoder_reads(const std::filesystem::path& source) {
         for (int i = 0; i < 250 && entered.load(std::memory_order_acquire) < blocked_count; ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds{2});
         check(entered.load() == blocked_count, "blocked read: each requested backend is held inside actual read");
+        if (scenario == 5) {
+            f.engine.remove_mixer_channel(silent);
+            f.engine.stop();
+            auto restart = std::async(std::launch::async, [&] { return f.engine.start(); });
+            const bool restarted = restart.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready;
+            check(restarted,
+                  "blocked read: rebuilding an unrouted cue during restart does not wait for its read");
+            bool routed = false;
+            if (restarted) {
+                std::lock_guard lock{f.engine.mutex_};
+                const auto found = f.engine.pending_.item_sources.find(blocked.front()->id().value);
+                if (found != f.engine.pending_.item_sources.end() && !found->second.by_source_channel.empty())
+                    routed = std::any_of(found->second.by_source_channel[0].begin(),
+                        found->second.by_source_channel[0].end(), [&](const auto& send) {
+                            return send.mixer == f.engine.main_mixer_ && send.lane == kAllMixerLanes && send.gain_lin == 1.0f;
+                        });
+            }
+            check(routed, "blocked read: restart retains the actual mono unity routes while storage is held");
+            auto stop = std::async(std::launch::async, [&] { f.engine.stop_all(std::chrono::milliseconds{0}, true); });
+            check(stop.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready &&
+                      f.item->stats().transport == TransportState::Stopped,
+                  "blocked read: route reconstruction does not block Stop All engine ownership");
+            release.set_value(); check(restart.get(), "blocked read: routing restart is accepted");
+            stop.get(); f.engine.stop();
+            { std::lock_guard io_complete{blocked.front()->decoder_mutex_};
+              first_backend->vtable = original; }
+            read = {}; continue;
+        }
         if (scenario == 3) {
             f.engine.stop_all(std::chrono::milliseconds{0}, true);
             std::weak_ptr<PlaybackItem> retained = blocked.front();
             std::weak_ptr<PlaybackItem> unrelated = f.item;
+            std::weak_ptr workers = f.engine.decode_state_;
             blocked.clear();
             auto destroy = std::async(std::launch::async, [owner = std::move(fixture)]() mutable { owner.reset(); });
             const bool retired = destroy.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready;
@@ -206,9 +235,10 @@ void test_blocked_decoder_reads(const std::filesystem::path& source) {
                     "blocked read: only the in-flight decoder stays owned after engine destruction");
             }
             release.set_value(); destroy.get();
-            for (int i = 0; i < 1000 && !retained.expired(); ++i)
+            for (int i = 0; i < 1000 && (!retained.expired() || !workers.expired()); ++i)
                 std::this_thread::sleep_for(std::chrono::milliseconds{2});
-            check(retained.expired(), "blocked read: delayed return releases retained decoder ownership");
+            check(retained.expired() && workers.expired(),
+                  "blocked read: delayed return releases retained decoder and worker ownership");
             read = {}; continue;
         }
         bool stopped_before_release = true;
@@ -269,6 +299,27 @@ void test_blocked_decoder_reads(const std::filesystem::path& source) {
         }
         read = {};
     }
+}
+
+void test_channel_map_reload(const std::filesystem::path& mono, const std::filesystem::path& stereo) {
+    const auto path = mono.parent_path() / "channel-map-reload.wav";
+    std::filesystem::copy_file(mono, path, std::filesystem::copy_options::overwrite_existing);
+    PlaybackItemDesc desc; desc.id = CueId{"channel-map-reload"}; desc.file_path = path;
+    PlaybackItem item{std::move(desc)};
+    check(item.load() && item.stereo_mix_gains(0) == std::array<float, 2>{1.0f, 1.0f},
+          "routing map: mono load supplies unity to both lanes");
+    item.unload();
+    check(item.stereo_mix_gains(0) == std::array<float, 2>{0.0f, 0.0f},
+          "routing map: unloaded decoder has no stale sends");
+    std::filesystem::copy_file(stereo, path, std::filesystem::copy_options::overwrite_existing);
+    check(item.load() && item.stereo_mix_gains(0) == std::array<float, 2>{1.0f, 0.0f} &&
+              item.stereo_mix_gains(1) == std::array<float, 2>{0.0f, 1.0f} &&
+              item.stereo_mix_gains(2) == std::array<float, 2>{0.0f, 0.0f},
+          "routing map: reloading changed channel layout replaces every send");
+    item.desc_.file_path = path.parent_path() / "missing-reload.wav";
+    check(!item.load() && item.stereo_mix_gains(0) == std::array<float, 2>{0.0f, 0.0f},
+          "routing map: failed reload cannot expose a previous format");
+    std::filesystem::remove(path);
 }
 
 void test_shared_output(const std::filesystem::path& tone, bool resample) {
@@ -802,6 +853,7 @@ int main() {
     const auto left = wav(dir, "left.wav", 0.3f, true, 0.0f, 2, 0);
     const auto ramp = wav(dir, "ramp.wav", 0.125f, true, 1.0f / 131'072.0f);
     test_blocked_decoder_reads(quiet);
+    test_channel_map_reload(quiet, left);
     test_shared_output(tone, false);
     test_shared_output(tone, true);
     test_delay_and_bypass(quiet);
