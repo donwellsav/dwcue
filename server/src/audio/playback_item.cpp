@@ -11,7 +11,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <thread>
 #include <vector>
 
@@ -86,6 +88,18 @@ bool PlaybackItem::load() {
     stop_now();
     std::lock_guard lock{decoder_mutex_};
 
+#ifdef LIVEPLAY_TEST_HOOKS
+    if (const char* value = std::getenv("DWCUE_TEST_LOADER_GATE"); value && *value) {
+        const std::filesystem::path gate{value};
+        std::error_code error;
+        std::filesystem::path target;
+        std::ifstream{gate} >> target;
+        if (target == desc_.file_path && std::filesystem::exists(gate, error) && !error) {
+            std::ofstream{gate.string() + ".entered"} << desc_.id.value;
+            while (std::filesystem::exists(gate, error) && !error) std::this_thread::yield();
+        }
+    }
+#endif
     decoder_ready_ = false;
     clear_decode_error();
     if (decoder_) {
@@ -756,6 +770,18 @@ bool PlaybackItem::fill_read_ahead_block_locked() noexcept {
         decode_terminal_.load(std::memory_order_acquire)) {
         return false;
     }
+#ifdef LIVEPLAY_TEST_HOOKS
+    if (const char* value = std::getenv("DWCUE_TEST_DECODER_READ_GATE"); value && *value) {
+        const std::filesystem::path gate{value};
+        std::error_code error;
+        std::filesystem::path target;
+        std::ifstream{gate} >> target;
+        if (target == desc_.file_path && std::filesystem::exists(gate, error) && !error) {
+            std::ofstream{gate.string() + ".entered"} << desc_.id.value;
+            while (std::filesystem::exists(gate, error) && !error) std::this_thread::yield();
+        }
+    }
+#endif
 
     const auto write = read_ahead_write_.load(std::memory_order_relaxed);
     const auto read  = read_ahead_read_.load(std::memory_order_acquire);

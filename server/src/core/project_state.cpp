@@ -1095,7 +1095,7 @@ void ProjectState::reset() {
     loading_audio_.store(false, std::memory_order_release);
     load_progress_loaded_.store(0, std::memory_order_release);
     load_progress_total_.store(0, std::memory_order_release);
-    std::lock_guard preparation_lock{playback_preparation_mutex_};
+    std::scoped_lock preparation_lock{playback_preparation_mutex_, preview_preparation_mutex_};
     std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
     cancel_prepared_follows();
     update_crash_resume_state({}, {}, 0.0);
@@ -1782,7 +1782,8 @@ void ProjectState::apply_default_device_routing() {
 // Preview device change — tear down any active preview so the next call to
 // start_preview() opens a fresh connection to the newly selected device.
 // ---------------------------------------------------------------------------
-void ProjectState::apply_preview_device_change() {
+void ProjectState::apply_preview_device_change(std::unique_lock<std::recursive_mutex>& lifecycle_lock) {
+    ++preview_intent_revision_;
     audio::CueId prev_cue;
     {
         std::lock_guard lock{mutex_};
@@ -1792,8 +1793,10 @@ void ProjectState::apply_preview_device_change() {
         preview_device_name_.clear();
     }
     if (!prev_cue.empty()) {
+        lifecycle_lock.unlock();
         engine_.stop(prev_cue);
         engine_.unload_cue(prev_cue);
+        lifecycle_lock.lock();
     }
 }
 
@@ -2123,7 +2126,7 @@ bool ProjectState::replace_full_document(const json& doc, bool new_session) {
         Logger::info("ProjectState: migrated legacy Cart data to One Shots.");
     std::lock_guard operation_lock{project_operation_mutex_};
     {
-    std::lock_guard preparation_lock{playback_preparation_mutex_};
+    std::scoped_lock preparation_lock{playback_preparation_mutex_, preview_preparation_mutex_};
     std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
     if (new_session) ++playback_intent_revision_;
     std::unordered_set<std::string> invalidated_playbacks;
@@ -3508,6 +3511,7 @@ bool ProjectState::cue_to_continue(const std::string& uuid) {
 void ProjectState::stop_all_cues(std::optional<long long> fade_ms) {
     std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
     ++playback_intent_revision_;
+    ++preview_intent_revision_;
     cancel_prepared_follows();
     long long resolved_ms;
     if (fade_ms.has_value()) {
@@ -4356,7 +4360,9 @@ constexpr audio::MasterChannelIndex kPreviewMasterR = 31;
 
 bool ProjectState::start_preview(const std::string& item_uuid) {
     if (item_uuid.empty()) return false;
-    std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
+    std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
+    const auto intent = ++preview_intent_revision_;
+    const auto generation = document_generation_;
 
     // 1. Resolve the source file path under the lock.
     std::filesystem::path file_path;
@@ -4364,12 +4370,15 @@ bool ProjectState::start_preview(const std::string& item_uuid) {
     double out_point = 0.0;
     bool loop = false;
     std::string preview_device_name;
+    json item_snapshot;
+    json preview_setting;
     {
         std::lock_guard lock{mutex_};
         // path
         for_each_item(document_,
             [&](json& it, const std::string&) {
                 if (it.value("uuid", std::string{}) != item_uuid) return;
+                item_snapshot = it;
                 auto p = resolve_media_path(
                     it, document_.value("folderPath", std::string{}));
                 if (!p.empty()) file_path = std::move(p);
@@ -4381,6 +4390,7 @@ bool ProjectState::start_preview(const std::string& item_uuid) {
         // Persist the catalog name; legacy projects can carry a current open id.
         if (document_.contains("settings") && document_["settings"].is_object()) {
             const auto& s = document_["settings"];
+            preview_setting = s.value("previewDevice", json{});
             if (s.contains("previewDevice") && s["previewDevice"].is_string()) {
                 preview_device_name = s["previewDevice"].get<std::string>();
             }
@@ -4390,6 +4400,23 @@ bool ProjectState::start_preview(const std::string& item_uuid) {
         Logger::warn("preview: item '{}' has no resolvable file path", item_uuid);
         return false;
     }
+    const auto current = [&] {
+        if (intent != preview_intent_revision_ || generation != document_generation_) return false;
+        std::lock_guard lock{mutex_};
+        bool unchanged = false;
+        for_each_item(document_, [&](json& item, const std::string&) {
+            if (item.value("uuid", std::string{}) == item_uuid) unchanged = item == item_snapshot;
+        });
+        const auto settings = document_.find("settings");
+        const json selected = settings != document_.end() && settings->is_object()
+            ? settings->value("previewDevice", json{}) : json{};
+        return unchanged && selected == preview_setting;
+    };
+    lifecycle_lock.unlock();
+    std::unique_lock preparation_lock{preview_preparation_mutex_};
+    lifecycle_lock.lock();
+    if (!current()) return false;
+    lifecycle_lock.unlock();
     const auto devices = engine_.enumerate_devices();
     const auto selected = detail::resolve_output_device(preview_device_name, devices);
     if (!selected) return reject_output_selection(preview_device_name, item_uuid);
@@ -4433,8 +4460,8 @@ bool ProjectState::start_preview(const std::string& item_uuid) {
             return false;
         }
 
-        if ((current_name != preview_device_name ||
-             (required_open_device && current_device != *required_open_device)) &&
+        if ((required_open_device ? current_device != *required_open_device
+                                  : current_name != preview_device_name) &&
             !current_device.empty()) {
             // Close old preview device + mixer.
             engine_.close_device(current_device);
@@ -4469,6 +4496,8 @@ bool ProjectState::start_preview(const std::string& item_uuid) {
             }
         } else {
             preview_mixer = current_mixer;
+            std::lock_guard lock{mutex_};
+            preview_device_name_ = preview_device_name;
         }
     }
 
@@ -4478,11 +4507,18 @@ bool ProjectState::start_preview(const std::string& item_uuid) {
     if (cue_id.empty()) return false;
 
     auto pi = engine_.find_cue(cue_id);
+    bool primed = false;
     if (pi) {
         route_cue_to_mixer(cue_id, preview_mixer);
         pi->set_out_point_seconds(out_point > in_point ? out_point : 0.0);
         pi->set_loop(loop, in_point);
-        pi->prime(2.0, in_point);
+        primed = pi->prime(2.0, in_point);
+    }
+    lifecycle_lock.lock();
+    if (!primed || !current() || engine_.find_cue(cue_id) != pi) {
+        lifecycle_lock.unlock();
+        engine_.unload_cue(cue_id);
+        return false;
     }
     engine_.play(cue_id);
 
@@ -4496,7 +4532,8 @@ bool ProjectState::start_preview(const std::string& item_uuid) {
 }
 
 bool ProjectState::stop_preview() {
-    std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
+    std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
+    ++preview_intent_revision_;
     audio::CueId cue;
     {
         std::lock_guard lock{mutex_};
@@ -4505,6 +4542,7 @@ bool ProjectState::stop_preview() {
         preview_item_uuid_.clear();
     }
     if (cue.empty()) return false;
+    lifecycle_lock.unlock();
     engine_.stop(cue);
     engine_.unload_cue(cue);
     Logger::info("preview: stopped");
@@ -4575,7 +4613,7 @@ bool ProjectState::patch_theme(const json& patch) {
 
 bool ProjectState::patch_settings(const json& patch_in) {
     if (!patch_in.is_object()) return false;
-    std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
+    std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
     json patch = patch_in;
     if (auto ceiling = patch.find("limiterCeilingDb");
         ceiling != patch.end() && !ceiling->is_null()) {
@@ -4668,7 +4706,7 @@ bool ProjectState::patch_settings(const json& patch_in) {
     // Re-apply device routing when device selections change mid-playback.
     if (ltc_device_changed)     apply_ltc_device_routing();
     if (default_device_changed) apply_default_device_routing();
-    if (preview_device_changed) apply_preview_device_change();
+    if (preview_device_changed) apply_preview_device_change(lifecycle_lock);
     // Apply true-peak limiter ceiling for the chosen output platform.
     if (output_target_changed || limiter_ceiling_changed)
         engine_.set_master_ceiling_db(new_ceiling_db);
@@ -4865,7 +4903,7 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
         std::lock_guard mirror_lock{mirror_mutex_};
         if (load_thread_.joinable()) load_thread_.join();
     }
-    std::lock_guard preparation_lock{playback_preparation_mutex_};
+    std::scoped_lock preparation_lock{playback_preparation_mutex_, preview_preparation_mutex_};
     std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
     {
         std::lock_guard slock{sequencer_mutex_};

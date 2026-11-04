@@ -47,19 +47,19 @@ void check(bool ok, const char* label) {
     std::printf("%-68s %s\n", label, ok ? "PASS" : "FAIL");
     if (!ok) ++failures;
 }
-void set_loader_gate(const std::filesystem::path& gate) {
+void set_loader_gate(const std::filesystem::path& gate, const char* name = "DWCUE_TEST_LOADER_GATE") {
     const auto value = gate.string();
 #ifdef _WIN32
-    _putenv_s("DWCUE_TEST_LOADER_GATE", value.c_str());
+    _putenv_s(name, value.c_str());
 #else
-    setenv("DWCUE_TEST_LOADER_GATE", value.c_str(), 1);
+    setenv(name, value.c_str(), 1);
 #endif
 }
-void clear_loader_gate() {
+void clear_loader_gate(const char* name = "DWCUE_TEST_LOADER_GATE") {
 #ifdef _WIN32
-    _putenv_s("DWCUE_TEST_LOADER_GATE", "");
+    _putenv_s(name, "");
 #else
-    unsetenv("DWCUE_TEST_LOADER_GATE");
+    unsetenv(name);
 #endif
 }
 
@@ -242,6 +242,114 @@ void test_stop_all_during_cue_retirement(const std::filesystem::path& wav) {
     read_stall.unlock(); unload.get(); stop.get();
     check(!engine.find_cue(retiring_id) && !retiring->decoder_ready_.load(),
           "retirement stall: removed cue finishes teardown without remaining registered");
+}
+
+void test_stop_all_during_preview_retirement() {
+    const auto wav = make_wav(8'192);
+    for (const int mode : {0, 1, 2}) {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        state.replace_full_document(document(json::array({audio("preview-bed", wav), audio("preview-item", wav)})));
+        check(wait_ready(state), "preview stall: media ready"); close_devices(engine);
+        check(state.patch_settings({{"previewDevice", "NULL Playback Device"}}) &&
+                  state.start_preview("preview-item"), "preview stall: software-only Preview starts");
+        check(state.trigger_item("preview-bed"), "preview stall: Program starts independently");
+        const auto bed = engine.find_cue(*state.item_to_cue_id("preview-bed"));
+        const auto preview = engine.find_cue(state.current_preview_cue_id());
+        if (!preview) { check(false, "preview stall: Preview has a native cue"); continue; }
+        std::array<float, 256> left{}, right{}; float* channels[]{left.data(), right.data()};
+        bed->render_block(channels, 2, 256);
+        check(left[0] > 0.2f, "preview stall: actual Program PCM is audible in the manual buffer");
+        std::unique_lock read_stall{preview->decoder_mutex_};
+        auto operation = std::async(std::launch::async, [&] {
+            if (mode == 0) return state.stop_preview();
+            if (mode == 1) return state.start_preview("preview-item");
+            return state.patch_settings({{"previewDevice", "NULL Playback Device"}});
+        });
+        for (int i = 0; i < 300 && preview->stats().transport != liveplay::audio::TransportState::Stopped; ++i)
+            std::this_thread::sleep_for(1ms);
+        auto stop = std::async(std::launch::async, [&] { state.stop_all_cues(0); });
+        const bool stopped = stop.wait_for(250ms) == std::future_status::ready;
+        check(stopped && bed->stats().transport == liveplay::audio::TransportState::Stopped &&
+                  bed->render_block(channels, 2, 256) == 0,
+              "preview stall: Stop All acknowledges and silences Program before Preview storage release");
+        read_stall.unlock(); const bool result = operation.get(); stop.get();
+        check(mode == 1 ? !result : result, "preview stall: cancelled replacement refuses while stop/settings settle");
+        check(state.current_preview_item_uuid().empty(), "preview stall: cancelled Preview cannot reappear after storage release");
+        check(state.start_preview("preview-item"), "preview stall: deliberate Preview retry succeeds");
+        state.stop_preview(); state.stop_all_cues(0);
+    }
+    std::filesystem::remove(wav);
+}
+
+void test_cancelled_preview_preparation() {
+    const auto wav = make_wav(8'193);
+    const auto preview_wav = make_wav(8'194);
+    for (const bool prime : {false, true}) {
+      for (const int mode : {0, 1, 2, 3}) {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        auto doc = document(json::array({audio("prepare-bed", wav),
+            audio("prepare-next", wav, {{"duckingBehavior", {{"mode", "no-ducking"}}}}),
+            audio("prepare-preview", preview_wav, {{"inPoint", 0.25}})}));
+        doc["settings"]["previewDevice"] = "NULL Playback Device";
+        state.replace_full_document(doc);
+        check(wait_ready(state), "Preview preparation: fixtures ready"); close_devices(engine);
+        check(state.trigger_item("prepare-bed"), "Preview preparation: Program starts");
+        const auto bed = engine.find_cue(*state.item_to_cue_id("prepare-bed"));
+        const auto gate = wav.string() + (prime ? ".preview-read-gate" : ".preview-load-gate");
+        std::ofstream{gate} << preview_wav;
+        const char* name = prime ? "DWCUE_TEST_DECODER_READ_GATE" : "DWCUE_TEST_LOADER_GATE";
+        set_loader_gate(gate, name);
+        auto preview = std::async(std::launch::async, [&] { return state.start_preview("prepare-preview"); });
+        check(wait_gate_entered(gate), "Preview preparation: decoder load/read reaches deterministic gate");
+        auto go = std::async(std::launch::async, [&] { return state.trigger_item("prepare-next"); });
+        check(go.wait_for(250ms) == std::future_status::ready,
+              "Preview preparation: unrelated Program GO completes before audition storage releases");
+        std::future<bool> replacement;
+        if (mode == 3) {
+            doc["name"] = "replacement-show";
+            replacement = std::async(std::launch::async, [&] { return state.replace_full_document(doc); });
+        }
+        auto cancel = std::async(std::launch::async, [&] {
+            if (mode == 0 || mode == 3) state.stop_all_cues(0);
+            else if (mode == 1) state.stop_preview();
+            else state.patch_settings({{"previewDevice", nullptr}});
+        });
+        check(cancel.wait_for(250ms) == std::future_status::ready,
+              "Preview preparation: Stop/setting cancellation completes before storage release");
+        const auto transport = bed->stats().transport;
+        check(mode == 0 || mode == 3 ? transport == liveplay::audio::TransportState::Stopped
+                                     : transport == liveplay::audio::TransportState::Playing,
+              "Preview preparation: Preview-only cancellation preserves Program; Stop All silences it");
+        std::filesystem::remove(gate);
+        const bool started = preview.get(); cancel.get();
+        check(go.get(), "Preview preparation: independent Program GO is accepted");
+        clear_loader_gate(name);
+        check(!started && state.current_preview_item_uuid().empty(),
+              "Preview preparation: cancelled work cannot publish or sound later");
+        if (replacement.valid()) check(replacement.get() && wait_ready(state), "Preview preparation: queued project replacement settles");
+        state.patch_settings({{"previewDevice", "NULL Playback Device"}});
+        check(state.start_preview("prepare-preview"), "Preview preparation: deliberate retry still starts");
+        const auto active_id = state.current_preview_cue_id();
+        const auto active = engine.find_cue(active_id);
+        check(active && active->stats().playhead_frame == 12'000,
+              "Preview preparation: authored In point is retained");
+        if (active) {
+            const auto routes = engine.pending_.item_sources.at(active_id.value).by_source_channel;
+            bool isolated = false;
+            for (const auto& channel : routes) for (const auto& send : channel) {
+                isolated = true;
+                check(send.mixer != engine.main_mixer_, "Preview preparation: no Preview send reaches Main");
+            }
+            check(isolated, "Preview preparation: dedicated mixer has actual source routes");
+        }
+        state.stop_preview(); state.stop_all_cues(0);
+        std::filesystem::remove(gate + ".entered");
+      }
+    }
+    std::filesystem::remove(wav);
+    std::filesystem::remove(preview_wav);
 }
 
 void test_stop_all_during_cold_go(const std::filesystem::path& wav) {
@@ -1733,6 +1841,8 @@ int main() {
     test_stop_all_during_project_boundaries(wav);
     test_stop_all_during_decoder_read(wav);
     test_stop_all_during_cue_retirement(wav);
+    test_stop_all_during_preview_retirement();
+    test_cancelled_preview_preparation();
     test_stop_all_during_cold_go(wav);
     test_rejected_document_preserves_show(wav);
     test_rejected_nested_document_preserves_show(wav);

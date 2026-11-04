@@ -117,3 +117,7 @@ Focused nested cue/group/settings type validation now runs in the existing share
 ## Long-position LTC arithmetic (T42)
 
 Frame→nanosecond conversion no longer multiplies a large frame counter before division, avoiding signed overflow around53.4-hour cue positions at48kHz. Quotient/remainder arithmetic preserves ordinary integer timing, and unrepresentable durations/offset sums saturate safely.35 real-render timestamp/rate vectors and two signed-offset limits pass with no callback allocation, including0/1h and positions on both sides of the old boundary. This does not establish physical receiver lock or change authored timecode settings.
+
+## Preview storage cancellation (T43)
+
+Cue retirement removes/stops the source under engine ownership, then closes its decoder after releasing the engine mutex. Preview preparation has its own short-lived ownership separate from Program preparation; its file load/read/teardown waits do not retain the project lifecycle lock. Intent, document and item/settings checks prevent a cancelled audition from starting later. Stop All, Preview stop and Preview-device changes cancel pending work; ordinary Program GO remains independent. Same-device retry retains the existing runtime device identity. Native gated load/read/teardown cases preserve Program PCM/transport, authored Preview In points and dedicated routing; full native 13/13 and RT/live static checks pass. These are software NULL-device tests, not physical output or arbitrary driver-stall acceptance. Active live-edit waits are the next repair boundary.

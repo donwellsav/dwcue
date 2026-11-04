@@ -481,7 +481,7 @@ public:
 
     // Stop any active preview and reset preview state so the next call to
     // start_preview() picks up the updated previewDevice setting.
-    void apply_preview_device_change();
+    void apply_preview_device_change(std::unique_lock<std::recursive_mutex>& lifecycle_lock);
 
     // Cart slot binding (slot → item uuid). Slot < 0 clears.
     bool set_cart_slot(int slot, const std::string& item_uuid);
@@ -628,6 +628,7 @@ private:
     // preview request, then re-used (cheaper than reopening the audio
     // device every time the user pre-listens to a new cue).
     audio::CueId           preview_cue_;
+    std::uint64_t          preview_intent_revision_ = 0; // guarded by playback_lifecycle_mutex_
     std::string            preview_item_uuid_;
     audio::MixerChannelId  preview_mixer_;
     audio::DeviceId        preview_device_;
@@ -708,6 +709,8 @@ private:
     std::recursive_mutex         playback_lifecycle_mutex_;
     // Decoder preparation serializes separately so Stop All never waits for it.
     std::mutex                  playback_preparation_mutex_;
+    // Audition storage must not delay preparation of the next Program cue.
+    std::mutex                  preview_preparation_mutex_;
     std::uint64_t                playback_intent_revision_ = 0;
     // Serializes snapshot through atomic replace. mutex_ remains brief and is
     // never held during filesystem I/O.
