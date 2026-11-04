@@ -1,5 +1,8 @@
 # DonWells Cue — Video Playback v1 Spec
 
+> **Historical design/plan snapshot:** implementation status and source-version references below describe this document’s original planning point. They are not the current task list or a release claim. For the committed live-show repairs through T30 and remaining physical acceptance, use the [current workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md). Current operator instructions are in the [manual](docs/operators-manual.md).
+
+
 > **Audience:** fresh agent / developer with zero prior context. Read
 > [`IMPROVEMENTS_PLAN.md` §1](IMPROVEMENTS_PLAN.md#1-current-architecture-read-this-first) first for the
 > general architecture.

@@ -1,5 +1,8 @@
 # DonWells Cue — Improvements & Feature Plan
 
+> **Historical design/plan snapshot:** implementation status and source-version references below describe this document’s original planning point. They are not the current task list or a release claim. For the committed live-show repairs through T30 and remaining physical acceptance, use the [current workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md). Current operator instructions are in the [manual](docs/operators-manual.md).
+
+
 > **Audience:** This document is written for a fresh agent (or developer) with **zero prior context**.
 > Section 1 tracks current source `7a0eee2`, whose package metadata is v2.6.14. This is not a published-installer claim; verify releases and the installed About version separately.
 > Sections 3–7 are proposed workstreams, not delivered features, even where they name concrete files.

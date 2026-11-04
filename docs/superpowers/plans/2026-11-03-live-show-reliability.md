@@ -8,7 +8,7 @@
 
 **Tech Stack:** Vue/Nuxt/TypeScript, Electron 42.8.0, C++20, standalone Asio/Crow, existing native decoders and Node/native assert checks.
 
-**Spec:** [App-wide audit](/Users/muzikfirst/Documents/donwellscue/dwcue/docs/live-show-code-audit.md), [playback research](/Users/muzikfirst/Documents/donwellscue/dwcue/docs/live-event-playback-research.md), and the user's instruction: “keep changes small, preserve the current show workflow, and test each fix so we dont break anything.”
+**Spec:** [App-wide audit](../../live-show-code-audit.md), [playback research](../../live-event-playback-research.md), and the user's instruction: “keep changes small, preserve the current show workflow, and test each fix so we dont break anything.”
 
 ## Global Constraints
 
@@ -18,7 +18,7 @@
 - No dependency upgrade, new framework, blanket transcoding, all-show RAM preload, navigation redesign or new background service.
 - Write the smallest behavioral regression first, watch its relevant failure, then make the shared correction and run the affected suite.
 - Keep native hardware-free fixtures hardware-free; serialize Nuxt preparation/build commands; use `JITI_FS_CACHE=false` for Nuxt commands.
-- No commit of inherited work, push, PR, packaging, installation or publication in this execution batch.
+- User authorization now permits local commits of this session’s work as each verified batch is completed. Preserve separate checkpoints for earlier audit work and the resync repair. Do not push, open a PR, package, install or publish without a separate request.
 
 ## Review Focus
 
@@ -29,6 +29,8 @@
 - Replacement/fading-group fixes must preserve paused fades, crossfade exclusions and overlapping duck owners (T6/T7).
 
 ---
+
+**Commit policy:** the user authorized local commits and ongoing checkpoints. `2ea5984` contains the earlier audit repairs; `a9a86a3` contains T30. Package metadata remains 2.6.17, with no new installer or publication.
 
 **Current checkpoint:** T1–T23 and T25–T30 software repairs are complete locally with recorded regressions and passing gates. T30 corrects fractional resampler discontinuities and secondary-ring scheduling headroom, preserving master pacing and the show workflow. T24 hardware acceptance remains deferred at the user’s request; the earlier physical resync observation is not conclusively closed. See the execution record for evidence and retained limits.
 
@@ -227,7 +229,7 @@ Pre-flight: T10's lock order must leave T11's transport intent responsive; T11/T
 - [x] Relevant real Chromium transition check passes if picture/transport behavior changed; no physical acceptance claim.
 - [x] `git diff --check` and a fresh whole-batch review pass; update the progress record with actual evidence and remaining tasks.
 
-Progress/evidence: [execution record](/Users/muzikfirst/Documents/donwellscue/dwcue/docs/superpowers/plans/2026-11-03-live-show-reliability-progress.md). Keep original audit/research observations as historical evidence; annotate corrected IDs rather than rewriting failures as if they never existed.
+Progress/evidence: [execution record](2026-11-03-live-show-reliability-progress.md). Keep original audit/research observations as historical evidence; annotate corrected IDs rather than rewriting failures as if they never existed.
 
 ## T24: show-system acceptance still to execute
 
@@ -260,3 +262,9 @@ Do not mark this gate complete from the synthetic Chromium/PCM fixtures. The loc
 - [x] T30: actual callback PCM discontinuities and jitter-driven secondary overruns reproduced; bounded phase-preserving rates and centered secondary-ring target corrected. Master pacing/priming, ring size, PI gains/limit and show workflow preserved. 13/13 native tests, static checks, six 30-minute clock simulations with zero faults, and fresh review pass. Software-only limits and extreme-drift stress results remain explicit; T24 physical recurrence/latency calibration is deferred.
 
 Evidence and final restoration: `/Users/muzikfirst/Documents/donwellscue/audio-import-audit/evidence/real-media-preview-2026-11-03/REAL-MEDIA-REPORT.md`.
+
+## Documentation completion
+
+- [x] Reconcile active developer/reliability documents with the committed T1–T30 source and mark superseded plans as historical.
+- [ ] Refresh the operator guide, current-source UI captures and generated PDF; check text, links, embedded fonts and rendered pages.
+- [ ] Run the manual checks and commit the completed documentation batch.

@@ -1,5 +1,8 @@
 # Execution ledger — plan: /Users/muzikfirst/Documents/donwellscue/dwcue/docs/superpowers/plans/2026-11-03-live-show-reliability.md
 
+Current status: session repairs through T30 are committed in `2ea5984` (audit checkpoint) and `a9a86a3` (audio resync). The user now authorizes local commits as verified work is completed. Earlier “no commit” entries are historical execution records. Physical acceptance remains deferred; no push, installer, installation or publication has occurred.
+
+
 2026-11-03: execution started on `fix/live-show-audit`, based on `82505580ccb6ae86ccb71e28264b6d4436641419` plus the intentional prior uncommitted fixes. All earlier work retained.
 
 Ruling: use the existing checkout on a dedicated topic branch — the authored/tested uncommitted fixes and absolute build paths are already here; moving or committing them merely to set up another checkout would obscure the baseline. Keep a separate pre-batch snapshot for review, and do not commit inherited work or publish.
@@ -254,3 +257,8 @@ T30 verification so far: full native build; CTest13/13 under a child-process aud
 
 
 T30 final fresh-context review: no Critical/Important/Minor findings; no correction requested. The reviewer reconciled the exact three-file pre-batch diff/hashes, traced rate/reset/master/priming callers, checked the uint32 bound and native fixed-callback contract, and independently reran the sandboxed output fixture (both nominal returns and all six drift cases green, fault counters zero). No second review was dispatched. T30 software work is complete within the stated envelope; T24 physical recurrence and latency calibration remain deferred. Client builds and live-server integration were not rerun for this native-only change because the latter normally opens physical output. No user preview/show/media/settings were operated or changed, and no dependency/install/commit/push/PR was added.
+
+
+## Documentation continuation
+
+User requested that all session work be committed as it is completed and that project documents and the manual stay current. Active readmes/reliability reports now identify the source checkpoints, updated video failure cover, confidence/continuity behavior and T30 proof/limits. Superseded plans remain historical records with links to the live workplan. No application behavior changed in this documentation batch. Operator-guide content, captures and PDF follow as a separate verified commit.

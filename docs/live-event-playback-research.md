@@ -1,10 +1,13 @@
 # Live event playback: research and measured findings
 
+**Current implementation status:** the research below preserves the original 3 November decision record and probe results. Its five proposed follow-ups and intake repairs were implemented through T18–T25; T26–T30 add video-continuity and secondary-clock corrections. Local commits `2ea5984` and `a9a86a3` checkpoint the result. Use the [workplan](superpowers/plans/2026-11-03-live-show-reliability.md) for current completion and evidence boundaries. Physical acceptance is line-level audio and 1080p through HDMI or an HDMI adapter; those tests remain deferred. No installed/published-release claim follows from this research.
+
+
 Research completed 3 November 2026 against `/Users/muzikfirst/Documents/donwellscue/dwcue`, baseline commit `82505580ccb6ae86ccb71e28264b6d4436641419` with the existing uncommitted reliability fixes retained. This report concerns corporate shows receiving unfamiliar media at short notice, usually delivered on removable storage and copied locally. The show computer, operating system, delivery codecs and physical output chain are not specified.
 
-This is an evidence and decision record. The application was not changed during this research pass. Isolated probes use synthetic media, temporary data and separate processes; they do not touch a saved show. Earlier fixes and their verification remain documented in [video reliability](/Users/muzikfirst/Documents/donwellscue/dwcue/docs/video-playback-reliability.md) and [audio reliability](/Users/muzikfirst/Documents/donwellscue/dwcue/docs/audio-playback-reliability.md).
+This is an evidence and decision record. The application was not changed during this research pass. Isolated probes use synthetic media, temporary data and separate processes; they do not touch a saved show. Earlier fixes and their verification remain documented in [video reliability](video-playback-reliability.md) and [audio reliability](audio-playback-reliability.md).
 
-## Decisions on the proposed follow-ups
+## Original decisions on the proposed follow-ups
 
 **Yes: all five address real gaps, but background preparation needs a narrower decision than “add another player.” Two intake problems also deserve immediate attention.** “Do now” below identifies a justified requirement; it is not a claim that the change has been implemented.
 
@@ -28,7 +31,7 @@ For the co-located client, the `stop_all` acknowledgement took approximately **2
 
 This establishes worker coupling under an injected storage delay. It does **not** establish that the user's external drive actually stalled, or how often a real drive would do so. Stop was exercised in isolated empty projects, so this does not measure when playing sound physically stopped: a WebSocket acknowledgement and the audio-device response are different measurements. The prior asynchronous-write patch remains useful; it removed a separately reproduced socket-backpressure problem.
 
-The affected boundaries include [Range reads](/Users/muzikfirst/Documents/donwellscue/dwcue/server/src/net/control_server.cpp:3321), [static-file streaming reads](/Users/muzikfirst/Documents/donwellscue/dwcue/server/patches/crow-async-http.patch:103), and [project-media copying](/Users/muzikfirst/Documents/donwellscue/dwcue/server/src/net/control_server.cpp:3062). The [storage report](/Users/muzikfirst/Documents/donwellscue/audio-import-audit/research-storage-isolation.md) traces metadata, waveform, locks and audio read-ahead as well.
+The affected boundaries include [Range reads](../server/src/net/control_server.cpp:3321), [static-file streaming reads](../server/patches/crow-async-http.patch:103), and [project-media copying](../server/src/net/control_server.cpp:3062). The [storage report](/Users/muzikfirst/Documents/donwellscue/audio-import-audit/research-storage-isolation.md) traces metadata, waveform, locks and audio read-ahead as well.
 
 ### 2. Successful copy and readiness checks can accept an unfinished delivery
 
@@ -50,7 +53,7 @@ The correction needs distinct observations: screenshot delivery; video presentat
 
 The coordinating probe used the installed development runtime, **Electron 42.8.0 / Chromium 148.0.7778.280 on macOS arm64**. Synthetic **1080p30 H.264** and **2160p30 HEVC** produced progressing frame callbacks. A synthetic **1080p25 ProRes MOV** returned `NotSupportedError`.
 
-These fixtures were video-only, and the test did not run the production import UI or native audio engine. The narrower conclusion is that this runtime's decode behavior differs by codec. The source trace establishes the import boundary: [FFmpeg stream inspection](/Users/muzikfirst/Documents/donwellscue/dwcue/server/src/audio/decoder.cpp:1808) sets [metadata's video flag](/Users/muzikfirst/Documents/donwellscue/dwcue/server/src/meta/metadata.cpp:42) without opening a video decoder. The browser checks the source later, when it reaches the [single output element](/Users/muzikfirst/Documents/donwellscue/dwcue/client/app/composables/useVideoOutput.ts:657).
+These fixtures were video-only, and the test did not run the production import UI or native audio engine. The narrower conclusion is that this runtime's decode behavior differs by codec. The source trace establishes the import boundary: [FFmpeg stream inspection](../server/src/audio/decoder.cpp:1808) sets [metadata's video flag](../server/src/meta/metadata.cpp:42) without opening a video decoder. The browser checks the source later, when it reaches the [single output element](../client/app/composables/useVideoOutput.ts:657).
 
 The current [W3C Media Capabilities working draft, 18 October 2026](https://www.w3.org/TR/2026/WD-media-capabilities-20261018/) distinguishes configuration support and predicted smooth/power-efficient decoding. Those are useful hints; they do not inspect a supplied file for corruption or prove sustained playback. Actual decode/seek evidence in the shipped player is stronger, and still only validates the portion exercised. Full-file validation has a separate time and I/O cost.
 
@@ -82,7 +85,7 @@ The [preparation report](/Users/muzikfirst/Documents/donwellscue/audio-import-au
 | [GStreamer `bc2abfa7`, 3 Nov 2026](https://github.com/GStreamer/gstreamer/blob/bc2abfa7ca3ccb78621f2251ac55713aa8e49970/subprojects/gst-docs/markdown/additional/design/playback-gapless.md#L64-L101) | Stages parsed sources around a shared decoder chain; compatible decoders can be reused. | Shows that duplicate decoders are not inevitable. That benefit comes from a coordinated native pipeline, not a second HTML tag. |
 | [QLab 5 loading guidance](https://reference.qlab.app/docs/v5/other-cues/transport-cues/) | Moves startup work before the trigger, including loading to a time; recommends use for an observed performance issue. | Supports targeted preparation and measurement, not all-show caching. |
 
-For **audio→video**, assess reuse of the existing element when no live video/fallback owns it. [Non-video application](/Users/muzikfirst/Documents/donwellscue/dwcue/client/app/composables/useVideoOutput.ts:317) currently hides/pauses it but also updates shared `pendingSeekSeconds` using the audio cue's playhead. Merely allowing background loading can therefore seek the pending video to the wrong time when its metadata arrives. Some older active video cues can remain valid fallbacks, so “currently hidden” does not mean free.
+For **audio→video**, assess reuse of the existing element when no live video/fallback owns it. [Non-video application](../client/app/composables/useVideoOutput.ts:317) currently hides/pauses it but also updates shared `pendingSeekSeconds` using the audio cue's playhead. Merely allowing background loading can therefore seek the pending video to the wrong time when its metadata arrives. Some older active video cues can remain valid fallbacks, so “currently hidden” does not mean free.
 
 For **video→video**, preparing B requires separately retained resources if A must continue. Two browser elements are one candidate, not a selected architecture. A 4K frame alone is roughly 11.9 MiB in 8-bit 4:2:0 or 31.6 MiB in RGBA; decoder reference frames, copies and buffering multiply that. Bound slot count, account for total memory/decoder pressure, invalidate by exact project/file/trim identity, and measure the on-air cue's frame/audio behavior while preparing the replacement.
 
@@ -96,13 +99,13 @@ On macOS, changing `ifstream` to Asio's POSIX descriptor `async_read` is not suf
 
 The existing audio read-ahead worker is not an appropriate general pool for web media/copy jobs: it already serves native audio. Moving all work onto it would connect additional stalls to the audio deadline. Likewise, unbounded per-request threads merely move resource exhaustion elsewhere. Separate work submission does not create additional disk bandwidth or guarantee that a stuck filesystem call can be canceled.
 
-There is a further source-level audio boundary: [one shared decoder worker](/Users/muzikfirst/Documents/donwellscue/dwcue/server/src/audio/engine.cpp:1902) fills the active cues' 16-slot PCM queues. At 256 frames per block and 48 kHz, a full queue represents approximately **85.3 ms**, even though priming requests two seconds before clamping to available slots. A blocked decoder could therefore prevent other active cues from refilling. Some seek/prime operations also execute under control/lifecycle locks. These paths were traced but not subjected to live-audio fault injection here; moving HTTP work alone would not establish complete audio/control isolation.
+There is a further source-level audio boundary: [one shared decoder worker](../server/src/audio/engine.cpp:1902) fills the active cues' 16-slot PCM queues. At 256 frames per block and 48 kHz, a full queue represents approximately **85.3 ms**, even though priming requests two seconds before clamping to available slots. A blocked decoder could therefore prevent other active cues from refilling. Some seek/prime operations also execute under control/lifecycle locks. These paths were traced but not subjected to live-audio fault injection here; moving HTTP work alone would not establish complete audio/control isolation.
 
 FreeShow's [recent MP4-probe change, merged 30 Oct 2026](https://github.com/ChurchApps/FreeShow/pull/3939) is a directly adjacent example: it reads requested MP4 portions asynchronously instead of blocking the Electron main process. It supports isolating intake work as well as stream delivery; its fix does not establish the cause of our reported video crash.
 
 ## Audience protection and recovery failure domains
 
-[The current handler](/Users/muzikfirst/Documents/donwellscue/dwcue/client/electron/main.js:2642) calls [the close path](/Users/muzikfirst/Documents/donwellscue/dwcue/client/electron/main.js:2693), which destroys the audience window. A real fullscreen output can therefore lose its covering surface. Desktop exposure on the audience hardware has not been directly observed in this research.
+[The current handler](../client/electron/main.js:2642) calls [the close path](../client/electron/main.js:2693), which destroys the audience window. A real fullscreen output can therefore lose its covering surface. Desktop exposure on the audience hardware has not been directly observed in this research.
 
 QLab documents keeping a black stage background between cues, explicitly to obscure the desktop; its NDI/Syphon output lifetime is managed separately. That is useful evidence for treating output continuity as distinct from media playback. It is not a guarantee of protection through every kind of crash. [QLab 5 video output](https://qlab.app/docs/v5/video/video-output/).
 
@@ -157,7 +160,7 @@ Not checked: the actual show machine/media, sustained dual-decoder performance, 
 
 ## Implementation measurements, 3 November 2026
 
-The historical research above preceded implementation. The [workplan](/Users/muzikfirst/Documents/donwellscue/dwcue/docs/superpowers/plans/2026-11-03-live-show-reliability.md) and [execution ledger](/Users/muzikfirst/Documents/donwellscue/dwcue/docs/superpowers/plans/2026-11-03-live-show-reliability-progress.md) now track the tested local repairs.
+The historical research above preceded implementation. The [workplan](superpowers/plans/2026-11-03-live-show-reliability.md) and [execution ledger](superpowers/plans/2026-11-03-live-show-reliability-progress.md) now track the tested local repairs.
 
 `node --test scripts/video-transition-playback.test.js` exercises the production controller in installed Electron 42.8.0, generated 320×180 H.264 at 30 fps, authored 1.25 s preparation, and a single experimental 1920×1080 H.264 standby element. It records compositor frames after GO for the correct source/position, not metadata/currentTime alone. HTTP fixture media opening is deliberately delayed 250 ms; this isolates how much of that work preparation can move before GO. It is not a physical-output or representative-codec benchmark.
 

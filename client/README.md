@@ -1,5 +1,7 @@
 # DonWells Cue Client — developer guide
 
+**Source status — 3 November 2026:** application behavior is checkpointed in `2ea5984` (live-show reliability audit) and `a9a86a3` (secondary audio resync). Package metadata remains **2.6.17**. These are local commits, not a packaged, installed or published release. Software verification and remaining acceptance are tracked in [the current workplan](../docs/superpowers/plans/2026-11-03-live-show-reliability.md). Physical line-level audio and 1080p HDMI/adapter acceptance remain deferred.
+
 The DonWells Cue client is a Vue 3 + Nuxt 4 application wrapped in Electron. It is a **remote control** for the DonWells Cue audio server: it owns no audio decoding, no playback, no Web Audio nodes. Every user action turns into a REST call or WebSocket frame sent to `dwcue-server`, and every meter / waveform / state update comes back the same way.
 
 This document tracks the current v2.6.15 source at `1438685` and is the developer's guide to the client; this is not a claim about a published installer, so use the release page and installed About version to determine available behaviour. For show-day use, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For the audio engine, see [`server/README.md`](../server/README.md); for overall project and release context, see the [root README](../README.md).
@@ -177,8 +179,8 @@ The Video Output window is deliberately **session-only** even though its display
 - Every app launch starts with the output closed. `video-output:open` arms it for the current process; an operator close disarms it, while an internal display-watchdog recreation preserves the current session.
 - The display selector works while the output is closed. `video-output:identify-displays` creates click-through, always-on-top number cards on every connected screen for five seconds.
 - A valid independently addressable display gets a frameless fullscreen window. An unassigned or single-display setup gets a normal 960×540 preview window instead of a fullscreen takeover.
-- The output's native context menu exposes fullscreen, test-card and **Exit Video Output** actions. On Windows the real output remains `closable` so Alt+F4 is always an escape hatch. Black is the idle base layer, not a dedicated operator blackout; no blackout/fade-to-black IPC command exists.
-- Confidence capture allows one readback in flight per output generation and ignores late completions. Renderer loss preserves its reason/exit code in status, disarms/closes the failed output and restores the control window. Reopening remains explicit; ordinary cue changes do not take focus. Retired window events cannot release a replacement's resources.
+- The output's native context menu exposes fullscreen, test-card and **Exit Video Output** actions. On Windows the real output remains `closable` so Alt+F4 is always an escape hatch. The idle base and failure cover are black; there is no separate operator blackout control: no blackout/fade-to-black IPC command exists.
+- Confidence capture allows one readback in flight per output generation and ignores late completions. Picture health also uses presented-frame and native-clock progress; fresh screenshots alone do not establish motion. Renderer crashes and hangs latch a native black cover over the existing audience window and report the reason while preserving operator control. **Restart Output** is an explicit operator action; the cover stays until the replacement view reports ready. Ordinary cue changes do not take focus. Retired window events cannot release a replacement's resources.
 
 The passive output can own keyboard focus, especially on Windows. Its Electron
 `before-input-event` handler therefore forwards application-level keys to the control
@@ -189,7 +191,7 @@ N/O/S/W/Q commands, and development shortcuts. Keep this policy in
 [`electron/video-output-shortcuts.js`](electron/video-output-shortcuts.js); do not create a
 second shortcut implementation in the output renderer.
 
-`useVideoOutput` owns pending play attempts by generation: pause, source replacement and disposal invalidate earlier promises. It waits for current-media readiness, retains the native positions of background program cues, excludes stopped cues before fallback selection, and clears the old picture while a new cue's document is unresolved. The separate `node --test scripts/video-transition-playback.test.js` check runs from the repository root on a desktop host with synthetic H.264 media and a real Chromium renderer. See [video reliability evidence and limits](../docs/video-playback-reliability.md).
+`useVideoOutput` owns pending play attempts by generation: pause, source replacement and disposal invalidate earlier promises. It waits for current-media readiness, retains the native positions of background program cues, excludes stopped cues before fallback selection, and clears the old picture while a new cue's document is unresolved. Unrelated document refreshes, older-cue events and preview events do not force a seek or establish native-clock recovery for the displayed cue. Upcoming-video warming during audio preserves any retained video fallback; there is still one video element. The separate `node --test scripts/video-transition-playback.test.js` check runs from the repository root on a desktop host with synthetic H.264 media and a real Chromium renderer. See [video reliability evidence and limits](../docs/video-playback-reliability.md).
 
 ---
 

@@ -1,5 +1,7 @@
 # DonWells Cue Server — developer guide
 
+**Source status — 3 November 2026:** application behavior is checkpointed in `2ea5984` (live-show reliability audit) and `a9a86a3` (secondary audio resync). Package metadata remains **2.6.17**. These are local commits, not a packaged, installed or published release. Software verification and remaining acceptance are tracked in [the current workplan](../docs/superpowers/plans/2026-11-03-live-show-reliability.md). Physical line-level audio and 1080p HDMI/adapter acceptance remain deferred.
+
 `dwcue-server` is the headless C++20 audio engine and control surface that backs the DonWells Cue client. It owns the audio graph, the routing matrix, the loaded project file, and exposes a REST + WebSocket API. It runs as either a child process spawned by the desktop client (single-machine installs) or as a standalone daemon on a stage-side machine that the client connects to over the LAN.
 
 This document tracks the current v2.6.14 source included at `7a0eee2` (native repair commit `0394928`) and is the developer's guide to the server; this is not a published-installer claim, so use the release page and installed About version to determine available behaviour. For show preparation and operation, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For client internals, see [`client/README.md`](../client/README.md); for overall project and release context, see the [root README](../README.md).
@@ -220,6 +222,9 @@ Mutators: `POST /api/routing/item_to_mixer`, `/mixer_to_master`, `/master_to_dev
 [`limiter.hpp`](include/liveplay/audio/limiter.hpp). Defaults: −0.1 dBTP ceiling for the Live output target, 5 ms lookahead (~240 samples at 48 kHz), 50 ms release. `settings.limiterCeilingDb` optionally overrides the selected target in the range −60..0 dBTP. This is an attenuation-only safety ceiling: audio below it keeps unity gain after the lookahead delay. The limiter reuses the meter's ITU-R BS.1770 4× intersample detector; its sliding maximum drives the lookahead gain envelope, with a 0.25 dB internal guard applied only when reducing an over. Each physical device channel has one limiter after summation and clock adaptation. Bypass keeps both detector and delay moving so live toggles do not shift timing.
 
 Import preserves source level and timing, including when opening legacy automatic-processing preferences. Explicit LUFS normalization matches a loudness target; **Reduce peaks** only attenuates an over-ceiling cue. See [research, fixes, and verification](../docs/audio-playback-reliability.md).
+
+Secondary-output clock correction preserves the resampler's fractional position across rate changes, including nominal-speed crossings. A four-block PCM ring uses a 2.5-block pre-callback target for secondary drift control; master production and reset priming retain their three-block target. The PI gains and ±5,000 ppm safety bound are unchanged. Native tests cover zero/±3,000 ppm clocks with scheduling variation; six extended 30-minute simulations had no buffer faults. They exercise callback/ring evolution through post-EOF silence, not a physical or real-time show soak. More extreme drift with jitter can still trigger recovery. See [audio reliability](../docs/audio-playback-reliability.md).
+
 
 ### Per-cue LTC generator
 

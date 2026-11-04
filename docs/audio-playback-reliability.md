@@ -1,6 +1,6 @@
 # Audio import and live playback reliability
 
-Research and implementation: 2026-11-03. These changes are local to the working tree based on `82505580ccb6ae86ccb71e28264b6d4436641419`; they have not been packaged, installed, or published.
+Research and implementation began 2026-11-03 at `8250558`. The session repairs are now committed locally as `2ea5984` and `a9a86a3`; package metadata is 2.6.17. No new installer, installation or publication was performed. The current workplan distinguishes software verification from deferred physical acceptance.
 
 ## Level and timing contract
 
@@ -79,4 +79,14 @@ Fresh results and red/green evidence are recorded alongside the original audit i
 - The engine prepares one distinct audio successor ahead of time. Group/action/self/unready follows, and very short chains that cannot be prepared before the next boundary, use the 50 ms control loop at EOF. They may have a gap; they never regain the removed 100 ms early overlap. Start actions, duck ownership and UI trigger bookkeeping also follow that control cadence.
 - HTTP action URLs originate at the engine host. `localhost` means that machine, not an operator's browser. One FIFO has capacity 64; each queued job has a five-second total lifetime and at most a two-second connection phase. Requests support HTTP/HTTPS and GET/POST/PUT/DELETE, with a 1 MiB body limit. Failures are reported; nothing retries automatically. A timeout or cancellation cannot undo a side effect already accepted by external equipment.
 - The measured ceiling is at this engine's final floating-point device callback. OS conversion, downstream processing, DAC reconstruction and physical gain remain outside this test boundary. Explicit limiter bypass intentionally removes ceiling protection.
-- Verified on this macOS arm64 checkout with existing dependencies. No packaged Electron acceptance, physical interface switching/hotplug, listening/PA test, real external HTTP automation, Windows/Linux execution, or new installer was performed. The existing operator-manual PDF has not been reissued.
+- Verified on this macOS arm64 checkout with existing dependencies. No packaged Electron acceptance, physical interface switching/hotplug, listening/PA test, real external HTTP automation, Windows/Linux execution, or new installer was performed. The operator manual is maintained as a current-source guide; check its source revision and capture provenance rather than treating it as installer acceptance.
+
+## Secondary audio resync repair (T30)
+
+The installed miniaudio rate-change path retimes fractional position with a 32-bit product. Our former one-million denominator overflowed it: an actual-library ramp probe lost 0.253404 source samples at one rate update. A smaller denominator alone still dropped phase at exact unity. The callback now uses denominator 65,536 with odd numerators, preserving its fractional denominator and avoiding the unity bypass. Rate spacing is 30.5176 ppm (maximum quantization error 15.2588 ppm); diagnostics report the realized correction. Existing gains, routing, PI gains and ±5,000 ppm limit are unchanged.
+
+The former secondary target also left unequal scheduling headroom. With the final phase-safe callback and the old three-block target, each slow-clock case produced 50 overruns/resyncs in 90 simulated seconds. Centering pre-callback occupancy at 2.5 blocks eliminated them without enlarging the four-block ring. Master pacing and recovery priming retain three blocks. The secondary nominal queue level changes by half a block; physical inter-device delay still needs later calibration.
+
+The hardware-free output fixture covers both nominal-speed crossings and six clock/phase cases at zero/±3,000 ppm with ±0.2-block callback delivery variation. All pass; extended copies run 30 simulated minutes each with zero underruns, overruns or resyncs. PCM continuity is checked on a sub-second ramp; the remainder runs through post-EOF silence. This is three hours of simulated queue evolution, not three hours of real-time decoded or audible playback. Full native CTest13/13, RT/live-safety/gain checks and fresh independent review pass.
+
+Exploratory ±4,000 ppm cases with the same delivery variation can still exhaust headroom. The original real-media secondary-output burst is not uniquely attributed or physically confirmed resolved. Hardware acceptance remains deferred. No controller redesign or widened safety limit is implied by this bounded repair.
