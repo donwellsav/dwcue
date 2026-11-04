@@ -218,6 +218,32 @@ void test_stop_all_during_decoder_read(const std::filesystem::path& wav) {
     state.stop_all_cues(0);
 }
 
+void test_stop_all_during_cue_retirement(const std::filesystem::path& wav) {
+    liveplay::audio::AudioEngine engine;
+    liveplay::core::ProjectState state(engine);
+    state.replace_full_document(document(json::array({audio("retirement-bed", wav)})));
+    check(wait_ready(state), "retirement stall: fixture ready"); close_devices(engine);
+    check(state.trigger_item("retirement-bed"), "retirement stall: program starts");
+    const auto bed = engine.find_cue(*state.item_to_cue_id("retirement-bed"));
+    const auto retiring_id = engine.load_cue_no_route(wav);
+    const auto retiring = engine.find_cue(retiring_id);
+    check(retiring && retiring->prime(2.0), "retirement stall: separate cue primes");
+    retiring->play();
+    std::unique_lock read_stall{retiring->decoder_mutex_};
+    auto unload = std::async(std::launch::async, [&] { engine.unload_cue(retiring_id); });
+    for (int i = 0; i < 200 && retiring->stats().transport != liveplay::audio::TransportState::Stopped; ++i)
+        std::this_thread::sleep_for(1ms);
+    check(retiring->stats().transport == liveplay::audio::TransportState::Stopped,
+          "retirement stall: retiring cue is silent before decoder close");
+    auto stop = std::async(std::launch::async, [&] { state.stop_all_cues(0); });
+    check(stop.wait_for(250ms) == std::future_status::ready &&
+              bed->stats().transport == liveplay::audio::TransportState::Stopped,
+          "retirement stall: unrelated Stop All completes before storage release");
+    read_stall.unlock(); unload.get(); stop.get();
+    check(!engine.find_cue(retiring_id) && !retiring->decoder_ready_.load(),
+          "retirement stall: removed cue finishes teardown without remaining registered");
+}
+
 void test_stop_all_during_cold_go(const std::filesystem::path& wav) {
   for (const int mode : {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}) {
    for (const bool stall_seek : {false, true}) {
@@ -1706,6 +1732,7 @@ int main() {
     test_changed_media_readiness();
     test_stop_all_during_project_boundaries(wav);
     test_stop_all_during_decoder_read(wav);
+    test_stop_all_during_cue_retirement(wav);
     test_stop_all_during_cold_go(wav);
     test_rejected_document_preserves_show(wav);
     test_rejected_nested_document_preserves_show(wav);

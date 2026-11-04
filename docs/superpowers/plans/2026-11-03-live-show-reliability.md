@@ -311,3 +311,14 @@ User authorized these in order from clean `8e96e39`. Preserve controls, cue orde
 - [x] Full affected software gates, one fresh final bounded review, current documentation/manual and clean committed checkout. T24 physical/deployment acceptance stays deferred.
 
 Pre-flight: T38 changes preparation/stop lifetime semantics consumed by T39; preserve revision and queued-PCM ownership before touching the handoff. T40 measures those paths. T41 changes document admission only; keep session and cancellation fences from T38. T42 uses the existing LTC render path and must retain its real-time contract.
+
+## Preview and live-edit storage waits — 4 November 2026
+
+User authorized this follow-up from clean `492aca0`: small shared repairs, unchanged show controls/behavior, software-only generated media and local tested commits. Reuse existing ownership, preparation serialization and revisions; no new dependency or general job framework.
+
+- [x] **T43a — decoder retirement releases engine ownership.** Hold a retiring cue's decoder read mutex and require unrelated Stop All/program silence before release. Detach/cancel the retiring cue before decoder teardown, retaining its lifetime safely. Audio/runtime 3/3 and final runtime regression pass; committed independently.
+- [ ] **T43b — Preview preparation/stop cancellation.** Gate Preview load/prime/replacement teardown; keep Program Stop All responsive and prevent a cancelled Preview from starting later. Preserve dedicated Preview routing, selected device and deliberate retry. Cover project/settings changes and existing resource ownership. Commit after native checks.
+- [ ] **T44 — active seek/trim/loop edits.** Gate actual decoder seeks and decoder-lock contention. Keep short render/project gates out of storage waits, preserve explicit seek/paused/fade/loop semantics and coherent PCM, and reject stale publication after Stop. Trace native APIs and document-update callers; keep unrelated decoder work progressing where current serialization permits. Commit each independently tested root fix.
+- [ ] Full affected software gates, one fresh bounded review, current workplan/developer documents/manual and a clean committed checkout. T24 physical/deployment acceptance remains deferred.
+
+Pre-flight: Preview and live edits share `PlaybackItem`, engine retirement and project lifecycle locks. Remove engine teardown ownership first; retain decoder lifetime and publication fences before releasing project/render gates. Document mutations must stay serialized against project replacement and other preparation, while Stop All never waits for those file operations. Test cancelled-seek cache coherence as well as acknowledgement; a fast Stop that later restores stale PCM is a failure.

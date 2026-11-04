@@ -987,19 +987,24 @@ CueId AudioEngine::new_cue_id() const {
 }
 
 void AudioEngine::unload_cue(const CueId& id) {
-    std::lock_guard lock{mutex_};
+    std::shared_ptr<PlaybackItem> retiring;
+    std::unique_lock lock{mutex_};
     auto it = items_.find(id.value);
     if (it == items_.end()) return;
+    retiring = it->second;
     for (const auto& follow : prepared_follows_) {
         if (follow->source != it->second && follow->target != it->second) continue;
         auto expected = PreparedFollow::State::Armed;
         follow->status.compare_exchange_strong(
             expected, PreparedFollow::State::Cancelled, std::memory_order_acq_rel);
     }
-    it->second->unload();
+    retiring->stop_now();
     items_.erase(it);
     pending_.item_sources.erase(id.value);
     rebuild_topology_locked();
+    lock.unlock();
+    // Do not hold engine ownership while decoder teardown waits for storage.
+    retiring->unload();
 }
 
 std::shared_ptr<PlaybackItem> AudioEngine::find_cue(const CueId& id) const {
