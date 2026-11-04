@@ -810,15 +810,11 @@ private:
     // Build an initial empty document with default theme + empty sections.
     static json default_empty_document();
 
-    // Extract every audio item from the client document and mirror it onto
-    // the engine + cues_/item_uuid_to_cue_ tables. Used after load and after
-    // replace_full_document.
-    void mirror_items_to_engine_locked();
+    // Stop/remove orphaned item mappings under mutex_; caller unloads returned
+    // cues after releasing document/lifecycle ownership.
+    std::vector<audio::CueId> retire_missing_item_cues_locked();
 
-    // Run mirror_items_to_engine_locked() asynchronously on a worker thread.
-    // The caller's mutex is released first. Sets loading_audio_=true for the
-    // duration. Used by load() so the document is returned to the client
-    // immediately and audio loading proceeds in the background.
+    // Decode/publish a whole project's audio on the existing background loader.
     void start_async_mirror();
 
     // ---- Single-item async audio load (#43) --------------------------------
@@ -843,9 +839,8 @@ private:
     void stop_loaders();
 
     // Apply one document item's engine-visible properties (gain, fades,
-    // out point, LTC) to its PlaybackItem. Caller must hold mutex_. Shared by
-    // mirror_items_to_engine_locked() and the loader's publish step so the two
-    // paths can't drift apart.
+    // out point, LTC) to its PlaybackItem during loader publication.
+    // Caller must hold mutex_.
     void apply_item_properties_locked(const json& item, const audio::CueId& cue);
 
     // Playback commands only inspect the pending set and published engine cue;

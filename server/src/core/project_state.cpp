@@ -1215,184 +1215,27 @@ void ProjectState::for_each_item(json& doc,
 }
 
 // ---------------------------------------------------------------------------
-// Mirror every audio item in document_ onto the engine + cue tables. Called
-// after load and after a full-document replace. Existing engine cues that
-// no longer have a matching item are unloaded.
+// Remove item cues after deletion or conversion to non-audio media.
+// The caller closes their decoders after releasing document/lifecycle ownership.
 // ---------------------------------------------------------------------------
-void ProjectState::mirror_items_to_engine_locked() {
-    // Collect uuid → file_path for current document.
-    std::unordered_map<std::string, std::filesystem::path> wanted;
+std::vector<audio::CueId> ProjectState::retire_missing_item_cues_locked() {
     std::unordered_set<std::string> audio_uuids;
-    std::unordered_set<std::string> cart_uuids;
-    std::size_t unresolved_media = 0;
-    for_each_item(document_,
-        [&](json& item, const std::string& /*parent*/) {
-            if (item.value("type", std::string{}) != "audio") return;
-            const std::string uuid = item.value("uuid", std::string{});
-            if (uuid.empty()) return;
-            audio_uuids.insert(uuid);
-            if (item.contains("oneShot") && item["oneShot"].is_object())
-                cart_uuids.insert(uuid);
-
-            // Resolve file path: prefer relative folderPath/mediaPath (portable),
-            // fall back to the absolute mediaServerPath. See resolve_media_path().
-            auto path = resolve_media_path(
-                item, document_.value("folderPath", std::string{}));
-            if (path.empty()) {
-                audio_load_failures_[uuid] = {
-                    "missing_media_path", std::string{}};
-                ++unresolved_media;
-                return;
-            }
-            wanted.emplace(uuid, std::move(path));
-        });
-
-    for (auto it = audio_load_failures_.begin();
-         it != audio_load_failures_.end();) {
-        if (audio_uuids.find(it->first) == audio_uuids.end())
-            it = audio_load_failures_.erase(it);
-        else
-            ++it;
-    }
-
-    // Unload any engine cues whose item is gone.
+    for_each_item(document_, [&](json& item, const std::string&) {
+        if (item.value("type", std::string{}) == "audio")
+            audio_uuids.insert(item.value("uuid", std::string{}));
+    });
+    std::erase_if(audio_load_failures_, [&](const auto& entry) {
+        return !audio_uuids.contains(entry.first);
+    });
+    std::vector<audio::CueId> retiring;
     for (auto it = item_uuid_to_cue_.begin(); it != item_uuid_to_cue_.end();) {
-        if (wanted.find(it->first) == wanted.end()) {
-            engine_.unload_cue(it->second);
-            cues_.erase(it->second.value);
-            it = item_uuid_to_cue_.erase(it);
-        } else {
-            ++it;
-        }
+        if (audio_uuids.contains(it->first)) { ++it; continue; }
+        if (auto cue = engine_.find_cue(it->second)) cue->stop_now();
+        retiring.push_back(it->second);
+        cues_.erase(it->second.value);
+        it = item_uuid_to_cue_.erase(it);
     }
-
-    // Gather the set of cart slot bindings so we can prioritise priming
-    // those items (cart cues need to be hot — they can be triggered at any
-    // moment by a hotkey or MIDI).
-    if (document_.contains("cartItems") && document_["cartItems"].is_array()) {
-        for (const auto& c : document_["cartItems"]) {
-            if (c.is_object()) {
-                const std::string u = c.value("itemUuid", std::string{});
-                if (!u.empty()) cart_uuids.insert(u);
-            }
-        }
-    }
-
-    // Build the list of new items to load (skip already-loaded). We do
-    // metadata + decoder init in parallel because both are I/O bound.
-    struct LoadJob {
-        std::string uuid;
-        std::filesystem::path path;
-    };
-    std::vector<LoadJob> jobs;
-    for (auto& [uuid, path] : wanted) {
-        if (item_uuid_to_cue_.find(uuid) == item_uuid_to_cue_.end()) {
-            jobs.push_back({uuid, path});
-        } else {
-            audio_load_failures_.erase(uuid);
-        }
-    }
-
-    load_progress_total_.store(jobs.size() + unresolved_media,
-                               std::memory_order_release);
-    load_progress_loaded_.store(0, std::memory_order_release);
-    if (!jobs.empty()) {
-        // Use every CPU thread except one (leave one core for the OS/UI). On
-        // single-core machines stay at 1; on hardware_concurrency() returning
-        // 0 (rare) fall back to 1 as well.
-        const unsigned hw = std::thread::hardware_concurrency();
-        const std::size_t concurrency = (hw <= 1) ? 1u : static_cast<std::size_t>(hw - 1);
-        Logger::info("ProjectState: bulk-loading {} audio items ({} parallel workers).",
-                     jobs.size(), concurrency);
-        std::vector<std::future<std::pair<std::string, audio::CueId>>> futures;
-        futures.reserve(jobs.size());
-
-        // Issue all jobs but cap in-flight concurrency by waiting once we
-        // hit the limit. This keeps memory pressure / fd usage bounded for
-        // very large projects.
-        std::vector<std::pair<std::string, audio::CueId>> done;
-        done.reserve(jobs.size());
-
-        auto drain_one = [&]() {
-            if (futures.empty()) return;
-            auto loaded = futures.front().get();
-            futures.erase(futures.begin());
-            if (!loaded.second.empty())
-                load_progress_loaded_.fetch_add(1, std::memory_order_release);
-            done.push_back(std::move(loaded));
-        };
-
-        for (const auto& job : jobs) {
-            if (futures.size() >= concurrency) drain_one();
-            futures.push_back(std::async(std::launch::async,
-                [this, job]() -> std::pair<std::string, audio::CueId> {
-                    const auto cue_id = engine_.load_cue_no_route(job.path);
-                    return {job.uuid, cue_id};
-                }));
-        }
-        while (!futures.empty()) drain_one();
-
-        // Register results sequentially (cues_ access is single-threaded under
-        // the lock the caller holds).
-        for (auto& [uuid, cue_id] : done) {
-            if (cue_id.empty()) {
-                audio_load_failures_[uuid] = {
-                    "decoder_init_failed", util::path_to_utf8(wanted[uuid])};
-                Logger::warn("ProjectState: failed to load item uuid='{}'", uuid);
-                continue;
-            }
-            audio_load_failures_.erase(uuid);
-            item_uuid_to_cue_.emplace(uuid, cue_id);
-
-            const auto file_path = wanted[uuid];
-            CueMeta meta;
-            meta.id           = cue_id;
-            meta.file_path    = file_path;
-            const auto md     = meta::read_metadata(file_path);
-            meta.display_name = md.title.empty()
-                                  ? util::path_to_utf8(file_path.filename())
-                                  : md.title;
-            meta.artist       = md.artist;
-            meta.title        = md.title;
-            meta.duration_seconds =
-                static_cast<double>(md.duration.count()) / 1000.0;
-            cues_.emplace(cue_id.value, std::move(meta));
-        }
-
-        // Prime cart cues in parallel so their first hit is glitch-free.
-        // Non-cart items are primed on-demand at play time.
-        std::vector<std::future<void>> prime_futures;
-        for (const auto& uuid : cart_uuids) {
-            auto it = item_uuid_to_cue_.find(uuid);
-            if (it == item_uuid_to_cue_.end()) continue;
-            auto pi = engine_.find_cue(it->second);
-            if (!pi) continue;
-            prime_futures.push_back(std::async(std::launch::async,
-                [pi]() { pi->prime(2.0); }));
-        }
-        for (auto& f : prime_futures) f.get();
-        if (!cart_uuids.empty()) {
-            Logger::info("ProjectState: primed {} one-shot cue(s).",
-                         cart_uuids.size());
-        }
-    }
-
-    // Apply per-item audio properties (gain/fade/in-out/LTC/etc.) to the engine.
-    // NOTE: LTC *device routing* is handled separately in apply_ltc_device_routing()
-    // which is called by callers after they release mutex_ (because
-    // ensure_device_routing() also needs to acquire mutex_).
-    for_each_item(document_,
-        [&](json& item, const std::string& /*parent*/) {
-            if (item.value("type", std::string{}) != "audio") return;
-            const std::string uuid = item.value("uuid", std::string{});
-            auto it = item_uuid_to_cue_.find(uuid);
-            if (it == item_uuid_to_cue_.end()) return;
-            apply_item_properties_locked(item, it->second);
-        });
-
-    // Now that every cue is in items_ and properties like ltc_enabled are
-    // configured, establish default routing ONCE.
-    engine_.ensure_default_routing();
+    return retiring;
 }
 
 // ---------------------------------------------------------------------------
@@ -2341,7 +2184,7 @@ bool ProjectState::update_item(const std::string& uuid, const json& patch_in) {
     json* updated_item = nullptr;
     json live_item;
     std::shared_ptr<audio::PlaybackItem> live_cue;
-    audio::CueId retiring_cue;
+    std::vector<audio::CueId> retiring_cues;
 
     // Captured under mutex_, applied to the engine loop state and the sequencer
     // snapshot AFTER the lock is released — so out point / crossfade / stop-fade /
@@ -2418,8 +2261,8 @@ bool ProjectState::update_item(const std::string& uuid, const json& patch_in) {
             // and blocked every other request for its duration (#43).
             auto old = item_uuid_to_cue_.find(uuid);
             if (old != item_uuid_to_cue_.end()) {
-                retiring_cue = old->second;
-                if (auto cue = engine_.find_cue(retiring_cue)) cue->stop_now();
+                retiring_cues.push_back(old->second);
+                if (auto cue = engine_.find_cue(old->second)) cue->stop_now();
                 cues_.erase(old->second.value);
                 item_uuid_to_cue_.erase(old);
             }
@@ -2427,9 +2270,7 @@ bool ProjectState::update_item(const std::string& uuid, const json& patch_in) {
                 *updated_item, document_.value("folderPath", std::string{}));
             begin_item_load_locked(uuid, path, *updated_item);
         } else if (touched && media_path_changed) {
-            // Media change on something that isn't a loadable audio item —
-            // fall back to the full mirror (cheap: nothing to decode).
-            mirror_items_to_engine_locked();
+            retiring_cues = retire_missing_item_cues_locked();
         } else if (touched && updated_item) {
             const auto cit = item_uuid_to_cue_.find(uuid);
             if (cit != item_uuid_to_cue_.end()) {
@@ -2464,8 +2305,21 @@ bool ProjectState::update_item(const std::string& uuid, const json& patch_in) {
         }
     }
 
+    if (!retiring_cues.empty()) {
+        std::lock_guard slock{sequencer_mutex_};
+        // shortcut: linear retirement lookup; use a cue-id set if large removals profile slow.
+        for (auto it = sequenced_items_.begin(); it != sequenced_items_.end();) {
+            if (std::find(retiring_cues.begin(), retiring_cues.end(), it->cue_id) == retiring_cues.end()) {
+                ++it; continue;
+            }
+            playback_generations_.cancel(it->uuid);
+            media_swap_items.push_back(std::move(*it));
+            it = sequenced_items_.erase(it);
+        }
+    }
+    for (const auto& item : media_swap_items) release_duck_owners(item);
     lifecycle_lock.unlock();
-    if (!retiring_cue.empty()) engine_.unload_cue(retiring_cue);
+    for (const auto& cue : retiring_cues) engine_.unload_cue(cue);
     if (live_cue) {
         const json& it = live_item;
         if (it.contains("volume") && it["volume"].is_number()) {
@@ -2479,7 +2333,7 @@ bool ProjectState::update_item(const std::string& uuid, const json& patch_in) {
                 static_cast<long long>(it["playFade"].get<double>() * 1000.0)});
         }
         // Same max(stopFade, fadeOutDuration) rule as
-        // mirror_items_to_engine_locked() — keep them in sync.
+        // apply_item_properties_locked() — keep them in sync.
         {
             double stop_fade_sec = 0.0;
             double fade_out_dur  = 0.0;
@@ -2523,8 +2377,6 @@ bool ProjectState::update_item(const std::string& uuid, const json& patch_in) {
         }
     }
     lifecycle_lock.lock();
-
-    for (const auto& item : media_swap_items) release_duck_owners(item);
 
     // Live-apply loop + sequencer timing for an already-playing cue. The engine
     // out-point / fades were applied without project locks; here we keep the
@@ -2586,9 +2438,10 @@ bool ProjectState::update_item(const std::string& uuid, const json& patch_in) {
 
 bool ProjectState::remove_item(const std::string& uuid) {
     std::lock_guard preparation_lock{playback_preparation_mutex_};
-    std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
+    std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
     cancel_group_runs_for_item(uuid);
     bool removed = false;
+    std::vector<audio::CueId> retiring_cues;
     std::function<bool(json&)> erase_from;
     erase_from = [&](json& arr) -> bool {
         if (!arr.is_array()) return false;
@@ -2622,23 +2475,28 @@ bool ProjectState::remove_item(const std::string& uuid) {
                                      }),
                       arr.end());
         }
-        if (removed) mirror_items_to_engine_locked();
+        if (removed) retiring_cues = retire_missing_item_cues_locked();
     }
     if (removed) {
-        std::optional<SequencedItem> removed_item;
+        std::vector<SequencedItem> removed_items;
         {
             std::lock_guard slock{sequencer_mutex_};
             playback_generations_.cancel(uuid);
-            auto it = std::find_if(
-                sequenced_items_.begin(), sequenced_items_.end(),
-                [&](const SequencedItem& item) { return item.uuid == uuid; });
-            if (it != sequenced_items_.end()) {
-                removed_item = std::move(*it);
-                sequenced_items_.erase(it);
+            // shortcut: linear retirement lookup; use a cue-id set if large removals profile slow.
+            for (auto it = sequenced_items_.begin(); it != sequenced_items_.end();) {
+                if (it->uuid != uuid &&
+                    std::find(retiring_cues.begin(), retiring_cues.end(), it->cue_id) == retiring_cues.end()) {
+                    ++it; continue;
+                }
+                playback_generations_.cancel(it->uuid);
+                removed_items.push_back(std::move(*it));
+                it = sequenced_items_.erase(it);
             }
         }
-        if (removed_item) release_duck_owners(*removed_item);
+        for (const auto& item : removed_items) release_duck_owners(item);
     }
+    lifecycle_lock.unlock();
+    for (const auto& cue : retiring_cues) engine_.unload_cue(cue);
     return removed;
 }
 
