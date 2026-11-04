@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.17
-**Source revision:** e1d50315135ba271406e94e8bd827d198b888aec
-**Native engine baseline:** e1d50315135ba271406e94e8bd827d198b888aec
+**Source revision:** 42ab5af5242632c766664e03422422243532ed27
+**Native engine baseline:** 42ab5af5242632c766664e03422422243532ed27
 **Edition:** 4 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition describes application source **e1d5031**, including responsive Stop All during Preview and live edits, ordered Preview indicators and queued seeks, plus the earlier playback and timecode repairs. It retains the earlier live-show audit and audio/import safeguards. Package metadata remains **2.6.17**; these fixes have not been packaged, installed or published as a new release. Compare the installer you intend to use with its release notes before rehearsal.
+This edition describes application source **42ab5af**, including bounded decoder-read isolation, independent engine worker lifetime and earlier Preview/live-edit, playback, timecode and import safeguards. Package metadata remains **2.6.17**; these fixes have not been packaged, installed or published as a new release. Compare the installer you intend to use with its release notes before rehearsal.
 
 Interface images were captured on 3 November from the same controls and layout, which remain unchanged in this repair batch. Their templates, styles and assets were checked against this source; original capture revisions and hashes are retained. Generated tones run through the native engine's virtual NULL output with physical audio-service access blocked; the desktop bridge supplies fixture locale, display and MIDI information. The images illustrate controls and visible states, rather than physical audio, HDMI or device compatibility. The capture method, source revisions and image hashes are recorded in **docs/manual-assets/captures.json**. Equipment photographs remain illustrative.
 
@@ -744,7 +744,7 @@ First protect the audience using the rehearsed stop/mute procedure. Then identif
 | Symptom | Check in this order |
 | --- | --- |
 | GO does nothing; target stays armed | Read the displayed refusal, then check connection, media readiness/errors, and the acknowledged target before one deliberate retry. An unready decoder does not block Stop All/Panic, and a rejected start preserves the armed target. |
-| Cue time moves but there is no sound | Media contains sound; In/Out and cue level; device override; Main device and level; physical console patch, mute, and loudspeaker path. In remote mode check the engine computer's device. |
+| Playing cue is silent or time stalls | Check source/drive, trims, levels and the engine computer's output/patch. An unstopped cue can resume when data returns; stop it before continuing. Healthy refills tolerate three stuck reads; four exhaust shared capacity. Stop All remains available. |
 | A sting stops the bed | Check Playback Replace Program or cue Ducking Stop All Other Cues. Use Overlay/No Ducking or a rehearsed Duck Program setting when the bed must continue. |
 | Preview is heard in the house | Stop Preview and verify the actual Preview Device and physical patch. Sharing Main's physical output is not private monitoring. |
 | A loop never advances | Check the saved Loop setting and whether Cue to Continue was armed for this playback instance. A stop/replay cancels the previous continuation. |
@@ -766,15 +766,13 @@ Perform this only during soundcheck with the console operator ready. Normal cue 
 
 ### Collect useful evidence
 
-Record the exact app build/source edition, operating system, engine computer, local/remote mode, device name, cue name, visible state, and the sequence of actions that caused the problem. Include whether the playhead and meters moved and whether sound/picture was checked at the destination.
+Record app build/source, OS, engine computer, local/remote mode, device and cue names, visible state and triggering actions. Note playhead/meter movement and whether sound/picture reached the destination.
 
-There is no general packaged Diagnostics window in this source. Use connection status, Server Settings, device selection, and the persistent server logs. **Restart engine** affects actual playback; obtain the show operator's agreement before using it.
+There is no general Diagnostics window. Use connection status, Server Settings, device selection and persistent server logs. **Restart engine** affects playback and can still wait for file/driver cleanup; coordinate with the show operator first.
 
 For upgrade compatibility, the managed desktop engine intentionally continues to use the legacy-named **LivePlay** data directory; the app does not copy, move, or rename that profile at startup. On macOS, its engine log is normally **~/Library/Application Support/LivePlay/logs/dwcue-server.log**. Fatal reports are under its **crash-logs** folder. The normal log rotates to **dwcue-server.log.1** at about 10 MiB. Standalone-server state is separate: on macOS it defaults to **~/Library/Application Support/DonWells Cue/server**, on Windows to **%LOCALAPPDATA%\DonWells Cue\server**, and on Linux to **$XDG_STATE_HOME/dwcue** or **~/.local/state/dwcue**.
 
-Provide a minimal reproducible show or media sample only if you have permission to share it. Remove tokens, personal paths, private media, and unrelated application data from reports. A device's logged negotiated sample rate is better evidence than assuming the API's reported requested/default rate is the physical driver's actual rate.
-
-Report actionable issues through the [project issue tracker](https://github.com/donwellsav/dwcue/issues). Preserve the log around the failure before repeated restarts overwrite or rotate useful evidence.
+Share a minimal sample only with permission. Remove tokens, personal paths, private media and unrelated data. Include the logged negotiated sample rate; requested/default rates may differ from the physical driver. Report through the [project issue tracker](https://github.com/donwellsav/dwcue/issues) and preserve failure logs before restarts rotate them.
 
 ## 13. Printable show-day checklists
 
@@ -871,9 +869,9 @@ With Video Output focused, Escape also exits its fullscreen mode. In Level Check
 
 ### About this edition
 
-This manual describes application source **e1d5031**, package metadata **2.6.17**. Fixes are committed locally; a new installer has not been built, installed or published. The 22 captures retain their 3 November provenance and unchanged control templates and layout. They use generated media, an isolated NULL output with physical audio blocked, and fixture display/MIDI/locale methods. No user show, credentials or private media appear. Capture details are in **docs/manual-assets/captures.json**.
+This manual describes application source **42ab5af**, package metadata **2.6.17**. Fixes are committed locally; a new installer has not been built, installed or published. The 22 captures retain their 3 November provenance and unchanged control templates and layout. They use generated media, an isolated NULL output with physical audio blocked, and fixture display/MIDI/locale methods. No user show, credentials or private media appear. Capture details are in **docs/manual-assets/captures.json**.
 
-The current source passes native tests 13/13, isolated API tests 61/61, client checks 222/222 and typecheck. Native checks include six simulated ten-minute secondary-clock runs with continuous generated audio and no buffer faults or resyncs inside the tested envelope. They do not establish physical alignment or resolve the earlier intermittency; more extreme drift and timing jitter can still trigger recovery.
+The current source passes native 13/13, isolated API 61/61, client 222/222, typecheck and RT/live safety checks. The audio-output suite also passes AddressSanitizer; leak detection is disabled. Native checks include six simulated ten-minute secondary-clock runs with continuous generated audio and no buffer faults or resyncs inside the tested envelope. Physical alignment and the earlier intermittency remain unproven; more extreme drift/jitter can trigger recovery.
 
 An earlier ten-minute muted Chromium run passed 481 mixed SD/1080p rounds and recorded frame drops; it was not repeated for this repair. Generated clips and synthetic clocks do not establish show stability, native soundtrack sync or physical HDMI performance. LTC waveform tests also do not establish external receiver lock.
 
