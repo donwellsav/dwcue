@@ -40,7 +40,7 @@ P1 means fix before relying on the affected feature in a show. P2 means a bounde
 
 ### APP-01 — Keep unchanged live properties from resetting audio
 
-A Properties volume change reaches [the full-item diff](../client/app/composables/useProject.ts:1969). [Native update_item](../server/src/core/project_state.cpp:2350) reapplies the out-point, then [loop state](../server/src/core/project_state.cpp:2448), even when those values have not changed. Both [shared setters](../server/src/audio/playback_item.cpp:509) seek and reset read-ahead.
+A Properties volume change reaches [the full-item diff](../client/app/composables/useProject.ts). [Native update_item](../server/src/core/project_state.cpp) reapplies the out-point, then [loop state](../server/src/core/project_state.cpp), even when those values have not changed. Both [shared setters](../server/src/audio/playback_item.cpp) seek and reset read-ahead.
 
 The native probe started with **15 queued blocks**. Reapplying either unchanged out-point or loop settings reduced that to **zero**; the next manual render before refill produced **zero frames**. This is a real, deliberately exercised scheduling order. A physical audible dropout or its incidence was not measured.
 
@@ -48,7 +48,7 @@ The native probe started with **15 queued blocks**. Reapplying either unchanged 
 
 ### APP-02 — Fence the entire old-project diff, including its server boundary
 
-[syncItemsDiff](../client/app/composables/useProject.ts:1903) captures a project, then performs awaited remove/add/update/reorder operations without checking project/session identity again before later requests. The APIs mutate the server's current document.
+[syncItemsDiff](../client/app/composables/useProject.ts) captures a project, then performs awaited remove/add/update/reorder operations without checking project/session identity again before later requests. The APIs mutate the server's current document.
 
 The in-memory check deferred the first old-P add, changed the current project to Q, and released it. Observed dispatch was **old-add-1 while P was current, then old-add-2 while Q was current**. The live server was not used in this probe; the source trace establishes why the latter request can mutate Q.
 
@@ -56,7 +56,7 @@ The in-memory check deferred the first old-P add, changed the current project to
 
 ### APP-03 — Apply recovery safety consistently to MIDI
 
-[The MIDI handler](../client/app/composables/useMidiController.ts:295) checks connection loss and its dispatcher checks hydration, but neither checks `sessionLost`. [Recovery](../client/app/composables/useConnectionGuard.ts:158) can deliberately retain the old ready mirror while asking the operator how to reconcile it with the reconnected server.
+[The MIDI handler](../client/app/composables/useMidiController.ts) checks connection loss and its dispatcher checks hydration, but neither checks `sessionLost`. [Recovery](../client/app/composables/useConnectionGuard.ts) can deliberately retain the old ready mirror while asking the operator how to reconcile it with the reconnected server.
 
 With connected=true, connectionLost=false, sessionLost=true and hydration ready, synthetic Note On through the **actual parser and dispatcher called playNext (modeled GO)**. No command was transmitted to a server. Keyboard/pointer recovery protection is already present; the MIDI path omits it.
 
@@ -64,7 +64,7 @@ With connected=true, connectionLost=false, sessionLost=true and hydration ready,
 
 ### APP-04 — Make displayed and accepted manual GO agree
 
-[The client derives B](../client/app/composables/useAudioEngine.ts:300) while A with End Behavior Nothing is still playing and `autoCueNextWithoutEndBehavior` is enabled, which is the default. [playNext](../client/app/composables/useAudioEngine.ts:489) delegates to [native GO](../server/src/core/project_state.cpp:3744), whose resolver returns no target for Nothing.
+[The client derives B](../client/app/composables/useAudioEngine.ts) while A with End Behavior Nothing is still playing and `autoCueNextWithoutEndBehavior` is enabled, which is the default. [playNext](../client/app/composables/useAudioEngine.ts) delegates to [native GO](../server/src/core/project_state.cpp), whose resolver returns no target for Nothing.
 
 The native probe armed/played A successfully, then issued GO with A still Playing. It returned **an empty target**, leaving B Stopped. At A's stop/end, the existing server auto-arm can mask this problem. Separately, state-summary next selection uses document order while GO iterates an unordered cue map; overlays can therefore disagree with the advertised target.
 
@@ -72,7 +72,7 @@ The native probe armed/played A successfully, then issued GO with A still Playin
 
 ### APP-05 — Retire the ownership of cues stopped by replacement
 
-[Stop All Others during play](../server/src/core/project_state.cpp:3028) directly calls PlaybackItem stop instead of the ProjectState cancellation/release path. The sequencer later [ignores the raw-stopped entry](../server/src/core/project_state.cpp:4970). The [custom Stop All action](../server/src/core/project_state.cpp:5271) has a related bypass.
+[Stop All Others during play](../server/src/core/project_state.cpp) directly calls PlaybackItem stop instead of the ProjectState cancellation/release path. The sequencer later [ignores the raw-stopped entry](../server/src/core/project_state.cpp). The [custom Stop All action](../server/src/core/project_state.cpp) has a related bypass.
 
 The native probe fired A with Duck Others at 0.1, then C with Stop All Others/zero fade. After replacement and a sequencer interval, C still had **active duck ownership targeting 0.1** despite its unity base gain. Explicitly stopping A through ProjectState released that ownership correctly. This proves the stale control state; no acoustic level was measured.
 
@@ -80,15 +80,15 @@ The native probe fired A with Duck Others at 0.1, then C with Stop All Others/ze
 
 ### APP-06 — Replace synthetic LTC routes rather than accumulating them
 
-[Settings offers None](../client/app/components/ProjectSettingsModal.vue:1201), but [apply_ltc_device_routing](../server/src/core/project_state.cpp:1623) returns for an empty selection without removing existing sends. Selecting B adds B without removing A. The old device route remains owned until a later lifecycle release. The graph therefore keeps the old LTC feed after None, or both feeds after A→B.
+[Settings offers None](../client/app/components/ProjectSettingsModal.vue), but [apply_ltc_device_routing](../server/src/core/project_state.cpp) returns for an empty selection without removing existing sends. Selecting B adds B without removing A. The old device route remains owned until a later lifecycle release. The graph therefore keeps the old LTC feed after None, or both feeds after A→B.
 
-There is also an identity inconsistency: the dropdown persists `d.id`, and [opened device enumeration](../server/src/audio/engine.cpp:298) can replace a catalog-name ID with a runtime UUID. Main/Preview already canonicalize persistent selection; LTC does not. Restart behavior was not exercised here.
+There is also an identity inconsistency: the dropdown persists `d.id`, and [opened device enumeration](../server/src/audio/engine.cpp) can replace a catalog-name ID with a runtime UUID. Main/Preview already canonicalize persistent selection; LTC does not. Restart behavior was not exercised here.
 
 **Small correction:** validate the replacement, then replace/clear only each cue's synthetic LTC sends; preserve every real audio send. Persist the catalog identity using the existing device-selection pattern. Test A→B→None, failed replacement, real-audio isolation and reopen. Existing LTC downmix exclusion tests cover a different boundary. Electrical output and downstream timecode consumers remain untested.
 
 ### APP-07 — Let newer operator intent cancel pending crash resume
 
-[PendingResume](../server/src/main.cpp:909) is local to main. It waits until audio loading finishes and the initial three-second deadline passes, then starts the saved item without comparing project or transport intent. A successful newer Stop/Panic or another Play does not clear that optional.
+[PendingResume](../server/src/main.cpp) is local to main. It waits until audio loading finishes and the initial three-second deadline passes, then starts the saved item without comparing project or transport intent. A successful newer Stop/Panic or another Play does not clear that optional.
 
 **Consequence:** the operator can stop during recovery and have the saved cue start afterward. This is a source-confirmed ordering defect; no process crash was induced for this audit.
 
@@ -96,7 +96,7 @@ There is also an identity inconsistency: the dropdown persists `d.id`, and [open
 
 ### APP-08 — Recovery needs position-aware action semantics
 
-[Recovery starts ordinary play, then seeks](../server/src/main.cpp:969). Ordinary play recreates [custom actions as untriggered](../server/src/core/project_state.cpp:2938), executes start behavior, and only then does main move the decoder to the saved position. An action previously fired at 5 seconds can become due again after recovery at 20 seconds. A past Stop All can stop restored playback; a past HTTP command can be sent again. Positions at or below one second are not sought in this path at all.
+[Recovery starts ordinary play, then seeks](../server/src/main.cpp). Ordinary play recreates [custom actions as untriggered](../server/src/core/project_state.cpp), executes start behavior, and only then does main move the decoder to the saved position. An action previously fired at 5 seconds can become due again after recovery at 20 seconds. A past Stop All can stop restored playback; a past HTTP command can be sent again. Positions at or below one second are not sought in this path at all.
 
 **Small correction:** reuse the existing atomic start-position capability for the audio position, and explicitly distinguish recovery from a fresh authored trigger for crossed actions/start behavior. Passing the position alone does not mark actions consumed. Preserve normal manual GO/replay behavior. Test with an internal action counter, without sending commands to equipment.
 
@@ -104,7 +104,7 @@ This does not promise exactly-once external effects across a crash: an earlier s
 
 ### APP-09 — Preflight Play All's required output resources
 
-[Group readiness](../server/src/core/project_state.cpp:3930) checks decoded/mapped items, but output validity is tested later by each child's play. The dispatch loop considers the group successful if any child starts.
+[Group readiness](../server/src/core/project_state.cpp) checks decoded/mapped items, but output validity is tested later by each child's play. The dispatch loop considers the group successful if any child starts.
 
 In the native check, both A and B loaded; B had a missing explicit device selector. Play All returned **accepted=true**, with **A Playing and B Stopped**. Individual output refusal correctly protected B; the missing boundary is validating all selected leaves before any group child starts.
 
@@ -112,7 +112,7 @@ In the native check, both A and B loaded; B had a missing explicit device select
 
 ### APP-10 — A fading descendant is still active for group completion
 
-[item_on_air](../server/src/core/project_state.cpp:5427) excludes FadingOut. [Group completion](../server/src/core/project_state.cpp:5353) uses that predicate to decide whether descendants remain active.
+[item_on_air](../server/src/core/project_state.cpp) excludes FadingOut. [Group completion](../server/src/core/project_state.cpp) uses that predicate to decide whether descendants remain active.
 
 **Trigger:** parallel No Ducking children; A ends at 0.4 seconds, while B with out-point 0.8/stop-fade 0.6 is still audibly fading. A's completion can treat B as finished and run the group's ending, potentially cutting its tail.
 
@@ -120,15 +120,15 @@ In the native check, both A and B loaded; B had a missing explicit device select
 
 ### APP-11 — Runtime patches must not acknowledge unrelated authored edits
 
-[Runtime-only patches also start hydration suppression](../client/app/composables/useProject.ts:1547). [Clearing suppression recaptures all baselines](../client/app/composables/useProject.ts:1509), even when `next_item_set` did not change the authored document. Own `item_updated` echoes already return before suppression.
+[Runtime-only patches also start hydration suppression](../client/app/composables/useProject.ts). [Clearing suppression recaptures all baselines](../client/app/composables/useProject.ts), even when `next_item_set` did not change the authored document. Own `item_updated` echoes already return before suppression.
 
-The in-memory check changed inPoint 0→1, received an unrelated next-item patch and ran the actual diff. The baseline became **1 with zero update requests**. With autosave off, [saveProject returns before the full write](../client/app/composables/useProject.ts:1143), so that masked granular edit need not reach the engine. Successful full autosaves can hide the gap.
+The in-memory check changed inPoint 0→1, received an unrelated next-item patch and ran the actual diff. The baseline became **1 with zero update requests**. With autosave off, [saveProject returns before the full write](../client/app/composables/useProject.ts), so that masked granular edit need not reach the engine. Successful full autosaves can hide the gap.
 
 **Small correction:** keep runtime-only patches out of full authored-baseline resets; retain real hydration and the existing own-item-echo guard. Test autosave off/on and genuine incoming document changes. A new state-management framework is unnecessary.
 
 ### APP-12 — Preserve crossed timed actions at natural EOF
 
-[Natural-end handling](../server/src/core/project_state.cpp:4959) continues before [collecting due actions](../server/src/core/project_state.cpp:4977), then terminal dispatch retires that generation.
+[Natural-end handling](../server/src/core/project_state.cpp) continues before [collecting due actions](../server/src/core/project_state.cpp), then terminal dispatch retires that generation.
 
 **Trigger:** an action inside the authored region falls after the last sequencer poll but before EOF, or a short cue finishes before the next 50 ms poll. The action can disappear rather than merely execute late.
 
@@ -136,7 +136,7 @@ The in-memory check changed inPoint 0→1, received an unrelated next-item patch
 
 ### APP-13 — Do not wait for a quit reply from a dead control renderer
 
-[The main-window close handler](../client/electron/main.js:2106) bypasses the veto only when WebContents is destroyed. A renderer crash is a different state; the handler can prevent close and send `app:request-quit` to a renderer that cannot answer.
+[The main-window close handler](../client/electron/main.js) bypasses the veto only when WebContents is destroyed. A renderer crash is a different state; the handler can prevent close and send `app:request-quit` to a renderer that cannot answer.
 
 The modeled lifecycle test executed the actual function: healthy and crashed states both **prevented close and requested the renderer's reply**; destroyed allowed close. No real control renderer was crashed in this audit. Electron documents [renderer loss, destruction and isCrashed separately](https://www.electronjs.org/docs/latest/api/web-contents).
 
@@ -144,7 +144,7 @@ The modeled lifecycle test executed the actual function: healthy and crashed sta
 
 ### APP-14 — Preserve a usable backup when replacement fails
 
-[Backup retention](../server/src/core/backup_manager.cpp:107) sorts the entire shared backups folder lexically, including project-name prefixes. A newer A backup sorts before older Z backups. It also removes entries before attempting the replacement copy.
+[Backup retention](../server/src/core/backup_manager.cpp) sorts the entire shared backups folder lexically, including project-name prefixes. A newer A backup sorts before older Z backups. It also removes entries before attempting the replacement copy.
 
 The actual implementation deleted a **newer A backup while retaining an older Z backup**. A second fixture made the source unreadable to force copy failure: usable backups fell **20→19**, with a warning and no replacement. Only disposable files were affected.
 
@@ -152,15 +152,15 @@ The actual implementation deleted a **newer A backup while retaining an older Z 
 
 ### APP-15 — Normalize equal-gain routes before replacement
 
-[Default routing](../server/src/audio/engine.cpp:1179) creates separate L/R sends for equal-gain mono/center content. [Route replacement](../server/src/audio/engine.cpp:1253) replaces only the first matching mixer entry. Reposting unity mono→Main with the API's All-lanes default leaves All plus R: L=x, R=2x before limiting.
+[Default routing](../server/src/audio/engine.cpp) creates separate L/R sends for equal-gain mono/center content. [Route replacement](../server/src/audio/engine.cpp) replaces only the first matching mixer entry. Reposting unity mono→Main with the API's All-lanes default leaves All plus R: L=x, R=2x before limiting.
 
-**Reachability:** advanced API; the Routing Matrix component is not mounted in the current operator UI. Selected-output/Preview [already uses one All-lanes send](../server/src/core/project_state.cpp:4142) for equal gains.
+**Reachability:** advanced API; the Routing Matrix component is not mounted in the current operator UI. Selected-output/Preview [already uses one All-lanes send](../server/src/core/project_state.cpp) for equal gains.
 
 **Small correction:** reuse that representation in default routing; verify replacement does not duplicate a lane or change a quiet mono signal's balance/level. No routing-screen feature is needed. This was traced, not measured at a device callback in this audit.
 
 ### APP-16 — Keep final topology reclamation off the render deadline
 
-[Topology publication](../server/src/audio/engine.cpp:183) has no control-side retired ownership. The [render-local shared snapshot](../server/src/audio/engine.cpp:1723) can become its last owner after a topology change, freeing scratch vectors on release. Snapshot ownership prevents dangling references; it does not determine which thread performs final deallocation.
+[Topology publication](../server/src/audio/engine.cpp) has no control-side retired ownership. The [render-local shared snapshot](../server/src/audio/engine.cpp) can become its last owner after a topology change, freeing scratch vectors on release. Snapshot ownership prevents dangling references; it does not determine which thread performs final deallocation.
 
 **Small correction:** use the existing retirement ownership pattern for control-side reclamation after readers release retired snapshots; do not retain every topology until shutdown. Extend the headless allocation instrumentation to observe frees too, under topology churn. This is a source-confirmed deadline hazard; no audible underrun was reproduced. The [PortAudio real-time guidance](https://portaudio.com/docs/v19-doxydocs/writing_a_callback.html) is relevant scheduling guidance, not a claim that this app uses PortAudio.
 
