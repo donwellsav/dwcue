@@ -962,6 +962,82 @@ void test_cancelled_prime_cache(const std::filesystem::path& wav) {
     }
 }
 
+void test_live_edit_storage_waits(const std::filesystem::path& wav) {
+    for (const int operation : {0, 1, 2}) {
+      for (const int mode : {0, 1, 2, 3, 4}) {
+        PlaybackItemDesc desc;
+        desc.id = CueId{"live-edit-storage"}; desc.file_path = wav;
+        desc.mix_sample_rate = kRate; desc.render_block = kBlock;
+        PlaybackItem item{std::move(desc)};
+        check(item.load() && item.prime(2.0), "live edit stall: real PCM primes");
+        item.play(); Output output; item.render_block(output.channels, 2, kBlock);
+        if (mode == 1) item.pause();
+        if (mode == 2) item.stop_with_fade(std::chrono::milliseconds{500});
+        std::promise<void> entered, release;
+        auto allowed = release.get_future().share();
+        std::atomic<bool> signalled{false};
+        auto* backend = static_cast<ma_data_source_base*>(item.decoder_->pBackend);
+        const auto* original = backend->vtable;
+        auto stalled = *original;
+        static std::function<ma_result(ma_data_source*, ma_uint64)> seek;
+        seek = [&](ma_data_source* source, ma_uint64 frame) {
+            if (!signalled.exchange(true)) entered.set_value();
+            allowed.wait(); return original->onSeek(source, frame);
+        };
+        stalled.onSeek = [](ma_data_source* source, ma_uint64 frame) { return seek(source, frame); };
+        backend->vtable = &stalled;
+        auto edit = std::async(std::launch::async, [&] {
+            if (operation == 0) item.seek_seconds(0.5);
+            else if (operation == 1) item.set_out_point_seconds(1.5);
+            else item.set_loop(true, 0.25);
+        });
+        check(entered.get_future().wait_for(std::chrono::seconds{1}) == std::future_status::ready,
+              "live edit stall: actual seek reaches gate");
+        auto control = std::async(std::launch::async, [&] {
+            if (mode == 3) item.pause();
+            else if (mode == 4) item.stop_with_fade(std::chrono::milliseconds{20});
+            else item.stop_now();
+        });
+        const bool responsive = control.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready;
+        check(responsive, "live edit stall: Stop/Pause completes before storage release");
+        if (responsive && mode == 4) {
+            for (int i = 0; i < 8; ++i) item.render_block(output.channels, 2, kBlock);
+            check(item.stats().transport == TransportState::Stopped && !item.take_natural_end(),
+                  "live edit stall: authored stop fade settles while storage is held");
+        } else if (responsive && mode != 3) {
+            check(item.stats().transport == TransportState::Stopped &&
+                      item.render_block(output.channels, 2, kBlock) == 0,
+                  "live edit stall: immediate stop is silent during the held seek");
+        }
+        release.set_value(); edit.get(); control.get();
+        backend->vtable = original; seek = {};
+        if (mode == 3) {
+            check(item.stats().transport == TransportState::Paused,
+                  "live edit stall: successful edit preserves a later Pause");
+            item.resume(); item.service_read_ahead(1);
+            const auto frame = operation == 0 ? 24'000 : kBlock;
+            const float expected = static_cast<std::int16_t>(
+                std::sin(2.0 * 3.14159265358979323846 * 997.0 * frame / kRate) * 20'000.0) / 32768.0f;
+            check(item.render_block(output.channels, 2, kBlock) == kBlock &&
+                      std::abs(output.left[0] - expected) < 0.00001f,
+                  "live edit stall: resume starts at the correct edited PCM frame");
+        } else {
+            check(item.stats().transport == TransportState::Stopped &&
+                      (mode == 4 || item.stats().playhead_frame == 0),
+                  "live edit stall: cancelled I/O cannot restore transport or stopped playhead");
+            check(item.prime(2.0, 0.125), "live edit stall: deliberate retry prepares fresh audio");
+            item.play(); item.service_read_ahead(1);
+            const float expected = static_cast<std::int16_t>(
+                std::sin(2.0 * 3.14159265358979323846 * 997.0 * 6'000 / kRate) * 20'000.0) / 32768.0f;
+            check(item.render_block(output.channels, 2, kBlock) == kBlock &&
+                      std::abs(output.left[0] - expected) < 0.00001f,
+                  "live edit stall: retry renders the requested source position");
+        }
+        item.stop_now();
+      }
+    }
+}
+
 void test_exact_eof_direct_replay() {
     const auto wav = make_wav(2, 1'024);
     PlaybackItemDesc desc;
@@ -1336,6 +1412,7 @@ int main() {
         test_stereo_mix_gains(item);
         test_prime_against_rt_start(item);
         test_cancelled_prime_cache(wav);
+        test_live_edit_storage_waits(wav);
         test_exact_eof_direct_replay();
         test_soft_out_point_fade(item);
         test_loop_and_concurrent_stress(item);

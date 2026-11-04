@@ -352,6 +352,35 @@ void test_cancelled_preview_preparation() {
     std::filesystem::remove(preview_wav);
 }
 
+void test_busy_decoder_preserves_sibling_progress() {
+    const auto wav = make_wav(8'195);
+    liveplay::audio::AudioEngine engine;
+    liveplay::core::ProjectState state(engine);
+    state.replace_full_document(document(json::array({audio("decode-a", wav), audio("decode-b", wav)})));
+    check(wait_ready(state), "busy decoder: real sources ready"); close_devices(engine);
+    engine.create_mixer_channel("Decoder-progress fixture");
+    const auto topology = engine.snapshot_topology();
+    check(topology->items.size() == 2, "busy decoder: both sources are in the worker snapshot");
+    if (topology->items.size() != 2) return;
+    for (const auto& entry : topology->items) {
+        entry.item->prime(0.0); entry.item->play();
+    }
+    const auto blocked = topology->items.front().item;
+    const auto sibling = topology->items.back().item;
+    std::unique_lock io_stall{blocked->decoder_mutex_};
+    engine.running_.store(true);
+    std::thread worker([&] { engine.decode_loop(); });
+    for (int i = 0; i < 250 && sibling->stats().read_ahead_blocks == 0; ++i)
+        std::this_thread::sleep_for(2ms);
+    std::array<float, 256> left{}, right{}; float* channels[]{left.data(), right.data()};
+    check(sibling->render_block(channels, 2, 256) == 256 && left[0] > 0.2f,
+          "busy decoder: shared worker delivers sibling PCM before another decoder lock releases");
+    engine.running_.store(false); engine.decode_cv_.notify_all();
+    io_stall.unlock(); worker.join();
+    state.stop_all_cues(0);
+    std::filesystem::remove(wav);
+}
+
 void test_stop_all_during_cold_go(const std::filesystem::path& wav) {
   for (const int mode : {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}) {
    for (const bool stall_seek : {false, true}) {
@@ -1843,6 +1872,7 @@ int main() {
     test_stop_all_during_cue_retirement(wav);
     test_stop_all_during_preview_retirement();
     test_cancelled_preview_preparation();
+    test_busy_decoder_preserves_sibling_progress();
     test_stop_all_during_cold_go(wav);
     test_rejected_document_preserves_show(wav);
     test_rejected_nested_document_preserves_show(wav);

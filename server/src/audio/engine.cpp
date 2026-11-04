@@ -1954,7 +1954,7 @@ void AudioEngine::decode_loop() {
                     transport == TransportState::Paused) {
                     continue;
                 }
-                produced = entry.item->service_read_ahead(1) || produced;
+                produced = entry.item->service_read_ahead(1, /*wait_for_decoder=*/false) || produced;
             }
         }
 

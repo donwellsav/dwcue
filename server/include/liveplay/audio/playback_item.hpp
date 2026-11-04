@@ -205,8 +205,8 @@ public:
 
     // Decode-worker entry point. Fills at most `max_blocks` free read-ahead
     // slots and returns true when it produced anything. AudioEngine calls this
-    // from one shared worker; there is never a thread per cue.
-    bool service_read_ahead(std::size_t max_blocks = 1) noexcept;
+    // from one shared worker without waiting behind a control edit's decoder lock.
+    bool service_read_ahead(std::size_t max_blocks = 1, bool wait_for_decoder = true) noexcept;
 
     // ---- Introspection ---------------------------------------------------
     const CueId&     id() const noexcept                  { return desc_.id; }

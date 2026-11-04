@@ -448,10 +448,20 @@ void PlaybackItem::seek_seconds(double seconds) {
         seconds >= static_cast<double>(UINT64_MAX) / desc_.mix_sample_rate) return;
     if (seconds < 0) seconds = 0;
     ma_uint64 frame = static_cast<ma_uint64>(seconds * desc_.mix_sample_rate);
+    const auto expected_revision = playback_revision();
     {
         std::lock_guard lock{decoder_mutex_};
-        begin_render_exclusion();
-        playback_revision_.fetch_add(1, std::memory_order_acq_rel);
+        std::uint64_t revision;
+        bool was_stopped;
+        {
+            begin_render_exclusion();
+            RenderActiveGuard guard{render_exclusion_};
+            if (playback_revision() != expected_revision) return;
+            was_stopped = transport_.load(std::memory_order_acquire) == TransportState::Stopped;
+            revision = playback_revision_.fetch_add(1, std::memory_order_acq_rel) + 1;
+            reset_read_ahead_locked(playhead_frames_.load(std::memory_order_acquire));
+            rewind_on_play_.store(true, std::memory_order_release);
+        }
         if (decoder_) {
             const ma_result r = ma_decoder_seek_to_pcm_frame(decoder_.get(), frame);
             if (r != MA_SUCCESS) {
@@ -464,6 +474,10 @@ void PlaybackItem::seek_seconds(double seconds) {
                     frame = cursor;
             }
         }
+        begin_render_exclusion();
+        RenderActiveGuard guard{render_exclusion_};
+        if (playback_revision() != revision || (!was_stopped &&
+            transport_.load(std::memory_order_acquire) == TransportState::Stopped)) return;
         // Store inside the lock so the audio thread can't decode from the new
         // decoder position while still reading the pre-seek playhead value.
         playhead_frames_.store(frame, std::memory_order_release);
@@ -474,7 +488,6 @@ void PlaybackItem::seek_seconds(double seconds) {
         // first render after a big seek.
             ltc_->reset(std::chrono::nanoseconds{ltc_offset_ns_.load()});
         }
-        end_render_exclusion();
     }
 }
 
@@ -553,7 +566,7 @@ void PlaybackItem::set_out_point_seconds(double seconds) noexcept {
         : static_cast<std::uint64_t>(seconds * static_cast<double>(desc_.mix_sample_rate));
     if (out_point_frames_.load(std::memory_order_acquire) == frames) return;
     begin_render_exclusion();
-    playback_revision_.fetch_add(1, std::memory_order_acq_rel);
+    const auto revision = playback_revision_.fetch_add(1, std::memory_order_acq_rel) + 1;
     out_point_frames_.store(frames, std::memory_order_release);
     if (transport_.load(std::memory_order_acquire) == TransportState::Stopped) {
         rewind_on_play_.store(true, std::memory_order_release);
@@ -564,15 +577,21 @@ void PlaybackItem::set_out_point_seconds(double seconds) noexcept {
     // Already-decoded blocks reflect the old boundary. Refill from the audible
     // playhead so the new out-point takes effect on the next rendered block.
     auto frame = playhead_frames_.load(std::memory_order_acquire);
+    reset_read_ahead_locked(frame);
+    rewind_on_play_.store(true, std::memory_order_release);
+    end_render_exclusion();
     if (decoder_) {
         ma_decoder_seek_to_pcm_frame(decoder_.get(), static_cast<ma_uint64>(frame));
         ma_uint64 cursor = frame;
         if (ma_decoder_get_cursor_in_pcm_frames(decoder_.get(), &cursor) == MA_SUCCESS)
             frame = cursor;
     }
+    begin_render_exclusion();
+    RenderActiveGuard guard{render_exclusion_};
+    if (playback_revision() != revision ||
+        transport_.load(std::memory_order_acquire) == TransportState::Stopped) return;
     playhead_frames_.store(frame, std::memory_order_release);
     reset_read_ahead_locked(frame);
-    end_render_exclusion();
 }
 
 void PlaybackItem::set_loop(bool enabled, double in_seconds) noexcept {
@@ -592,7 +611,7 @@ void PlaybackItem::set_loop(bool enabled, double in_seconds) noexcept {
     if (loop_enabled_.load(std::memory_order_acquire) == enabled &&
         loop_in_frames_.load(std::memory_order_acquire) == in_frames) return;
     begin_render_exclusion();
-    playback_revision_.fetch_add(1, std::memory_order_acq_rel);
+    const auto revision = playback_revision_.fetch_add(1, std::memory_order_acq_rel) + 1;
     loop_in_frames_.store(in_frames, std::memory_order_release);
     loop_enabled_.store(enabled, std::memory_order_release);
     if (transport_.load(std::memory_order_acquire) == TransportState::Stopped) {
@@ -604,15 +623,21 @@ void PlaybackItem::set_loop(bool enabled, double in_seconds) noexcept {
     // Drop blocks carrying the previous loop/end metadata and refill them from
     // the currently audible position.
     auto frame = playhead_frames_.load(std::memory_order_acquire);
+    reset_read_ahead_locked(frame);
+    rewind_on_play_.store(true, std::memory_order_release);
+    end_render_exclusion();
     if (decoder_) {
         ma_decoder_seek_to_pcm_frame(decoder_.get(), static_cast<ma_uint64>(frame));
         ma_uint64 cursor = frame;
         if (ma_decoder_get_cursor_in_pcm_frames(decoder_.get(), &cursor) == MA_SUCCESS)
             frame = cursor;
     }
+    begin_render_exclusion();
+    RenderActiveGuard guard{render_exclusion_};
+    if (playback_revision() != revision ||
+        transport_.load(std::memory_order_acquire) == TransportState::Stopped) return;
     playhead_frames_.store(frame, std::memory_order_release);
     reset_read_ahead_locked(frame);
-    end_render_exclusion();
 }
 
 bool PlaybackItem::prime(double seconds, double start_seconds) noexcept {
@@ -880,11 +905,31 @@ bool PlaybackItem::fill_read_ahead_block_locked() noexcept {
     return true;
 }
 
-bool PlaybackItem::service_read_ahead(std::size_t max_blocks) noexcept {
+bool PlaybackItem::service_read_ahead(std::size_t max_blocks, bool wait_for_decoder) noexcept {
     if (max_blocks == 0 || !decoder_ready_.load(std::memory_order_acquire))
         return false;
 
-    std::lock_guard lock{decoder_mutex_};
+    std::unique_lock lock{decoder_mutex_, std::defer_lock};
+    if (wait_for_decoder) lock.lock();
+    else if (!lock.try_lock()) return false;
+    if (rewind_on_play_.load(std::memory_order_acquire)) {
+        std::uint64_t revision;
+        ma_uint64 frame;
+        {
+            begin_render_exclusion();
+            RenderActiveGuard guard{render_exclusion_};
+            if (transport_.load(std::memory_order_acquire) == TransportState::Stopped) return false;
+            revision = playback_revision();
+            frame = playhead_frames_.load(std::memory_order_acquire);
+        }
+        const auto result = decoder_ ? ma_decoder_seek_to_pcm_frame(decoder_.get(), frame) : MA_INVALID_OPERATION;
+        begin_render_exclusion();
+        RenderActiveGuard guard{render_exclusion_};
+        if (playback_revision() != revision ||
+            transport_.load(std::memory_order_acquire) == TransportState::Stopped) return false;
+        if (result != MA_SUCCESS) { stop_for_decode_error(result); return false; }
+        reset_read_ahead_locked(frame);
+    }
     bool produced = false;
     for (std::size_t i = 0; i < max_blocks; ++i) {
         if (!fill_read_ahead_block_locked()) break;
@@ -1055,15 +1100,16 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
                     (slot.loop_end_frame - loop_in);
         }
     }
-    if (frames_read < frame_count && !natural_end &&
+    if (frames_read < frame_count && !natural_end && !rewind_on_play_.load(std::memory_order_acquire) &&
         !decode_terminal_.load(std::memory_order_acquire)) {
         read_ahead_underruns_.fetch_add(1, std::memory_order_relaxed);
     }
-    // EOF fade-outs advance across silence so they always settle to Stopped.
+    // Stop fades advance across unavailable PCM so they still settle to Stopped.
     if (frames_read == 0 && !natural_end && st != TransportState::FadingOut) return 0;
 
     // ---- LTC virtual channel ----
-    const bool ltc_on = ltc_enabled_atomic_.load(std::memory_order_acquire);
+    const bool ltc_on = ltc_enabled_atomic_.load(std::memory_order_acquire) &&
+        !rewind_on_play_.load(std::memory_order_acquire);
     if (ltc_on && ltc_ && out_channel_count > file_channels) {
         const auto frames = playhead_frames_.load(std::memory_order_relaxed);
         constexpr std::uint64_t scale = 1'000'000'000;
