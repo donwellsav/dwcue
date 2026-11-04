@@ -219,14 +219,15 @@ void test_stop_all_during_decoder_read(const std::filesystem::path& wav) {
 }
 
 void test_stop_all_during_cold_go(const std::filesystem::path& wav) {
-  for (const int mode : {0, 1, 2, 3, 4, 5, 6, 7}) {
+  for (const int mode : {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}) {
    for (const bool stall_seek : {false, true}) {
     std::printf("cold GO stall: mode=%d stage=%s\n", mode, stall_seek ? "seek" : "read");
     liveplay::audio::AudioEngine engine;
     liveplay::core::ProjectState state(engine);
     auto next_item = audio("stall-next", wav, {{"inPoint", 0.25},
         {"duckingBehavior", {{"mode", "no-ducking"}}}});
-    if (mode == 6) next_item["endBehavior"] = {{"action", "loop"}};
+    if (mode == 6 || mode == 8) next_item["endBehavior"] = {{"action", "loop"}};
+    if (mode == 9) next_item["outPoint"] = 0.75;
     json group{{"uuid", "stall-group"}, {"type", "group"},
         {"startBehavior", {{"action", "play-all"}}},
         {"children", json::array({next_item, audio("stall-sibling", wav,
@@ -246,6 +247,8 @@ void test_stop_all_during_cold_go(const std::filesystem::path& wav) {
           "cold GO stall: program plays and next cue is armed");
     const auto bed = engine.find_cue(*state.item_to_cue_id("stall-bed"));
     const auto next = engine.find_cue(*state.item_to_cue_id("stall-next"));
+    if (mode == 9) next->set_out_point_seconds(0.0);
+    if (mode >= 8) check(next->prime(2.0, 0.0), "cold GO stall: startup PCM already primed");
     std::promise<void> entered, release;
     const auto entered_future = entered.get_future();
     const auto read_release = release.get_future().share();

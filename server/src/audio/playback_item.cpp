@@ -300,11 +300,11 @@ void PlaybackItem::play() {
              playhead_frames_.load(std::memory_order_acquire) >= decode_cursor_frame_) ||
             (out_point > 0 &&
              playhead_frames_.load(std::memory_order_acquire) >= out_point);
-        if (rewind_on_play_.load(std::memory_order_acquire) || retry_error ||
-            (consumed && (decode_terminal_.load(std::memory_order_acquire) ||
-                          decode_out_point_passed_))) {
+        const bool replay_eof = consumed &&
+            (decode_terminal_.load(std::memory_order_acquire) || decode_out_point_passed_);
+        if (rewind_on_play_.load(std::memory_order_acquire) || retry_error || replay_eof) {
             begin_render_exclusion();
-            const auto frame = retry_error
+            const auto frame = retry_error || !replay_eof
                 ? playhead_frames_.load(std::memory_order_acquire)
                 : std::uint64_t{0};
             const ma_result seek_result = decoder_
@@ -541,6 +541,11 @@ void PlaybackItem::set_out_point_seconds(double seconds) noexcept {
     begin_render_exclusion();
     playback_revision_.fetch_add(1, std::memory_order_acq_rel);
     out_point_frames_.store(frames, std::memory_order_release);
+    if (transport_.load(std::memory_order_acquire) == TransportState::Stopped) {
+        rewind_on_play_.store(true, std::memory_order_release);
+        end_render_exclusion();
+        return;
+    }
 
     // Already-decoded blocks reflect the old boundary. Refill from the audible
     // playhead so the new out-point takes effect on the next rendered block.
@@ -576,6 +581,11 @@ void PlaybackItem::set_loop(bool enabled, double in_seconds) noexcept {
     playback_revision_.fetch_add(1, std::memory_order_acq_rel);
     loop_in_frames_.store(in_frames, std::memory_order_release);
     loop_enabled_.store(enabled, std::memory_order_release);
+    if (transport_.load(std::memory_order_acquire) == TransportState::Stopped) {
+        rewind_on_play_.store(true, std::memory_order_release);
+        end_render_exclusion();
+        return;
+    }
 
     // Drop blocks carrying the previous loop/end metadata and refill them from
     // the currently audible position.
@@ -623,6 +633,8 @@ bool PlaybackItem::prime(double seconds, double start_seconds) noexcept {
                     playback_revision_.fetch_add(1, std::memory_order_acq_rel);
                 return true;
             }
+            // A cancelled/failed seek must not leave the old queue reusable.
+            rewind_on_play_.store(true, std::memory_order_release);
             prepared_revision_.store(0, std::memory_order_release);
             revision = playback_revision_.fetch_add(1, std::memory_order_acq_rel) + 1;
         }
@@ -663,6 +675,7 @@ std::uint64_t PlaybackItem::prepare_start() {
     prepared_revision_.store(0, std::memory_order_release);
     const auto read = read_ahead_read_.load(std::memory_order_acquire);
     if (transport_.load(std::memory_order_acquire) != TransportState::Stopped ||
+        rewind_on_play_.load(std::memory_order_acquire) ||
         !decoder_ready_.load(std::memory_order_acquire) || read_ahead_.empty() ||
         read == read_ahead_write_.load(std::memory_order_acquire)) return 0;
     const auto& slot = read_ahead_[read % read_ahead_.size()];

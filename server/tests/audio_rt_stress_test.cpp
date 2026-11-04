@@ -13,6 +13,8 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <functional>
+#include <future>
 #include <memory>
 #include <limits>
 #include <mutex>
@@ -913,6 +915,53 @@ void test_prime_against_rt_start(PlaybackItem& item) {
     item.stop_now();
 }
 
+void test_cancelled_prime_cache(const std::filesystem::path& wav) {
+    for (const bool direct_play : {false, true}) {
+        PlaybackItemDesc desc;
+        desc.id = CueId{"cancelled-prime-cache"}; desc.file_path = wav;
+        desc.mix_sample_rate = kRate; desc.render_block = kBlock;
+        PlaybackItem item{std::move(desc)};
+        check(item.load() && item.prime(2.0, 0.125), "cancelled prime: stopped PCM is cached");
+        std::promise<void> entered, release;
+        const auto allowed = release.get_future().share();
+        auto* backend = static_cast<ma_data_source_base*>(item.decoder_->pBackend);
+        const auto* original = backend->vtable;
+        auto stalled = *original;
+        static std::function<ma_result(ma_data_source*, ma_uint64)> seek;
+        seek = [&](ma_data_source* source, ma_uint64 frame) {
+            const auto result = original->onSeek(source, frame);
+            entered.set_value(); allowed.wait(); return result;
+        };
+        stalled.onSeek = [](ma_data_source* source, ma_uint64 frame) { return seek(source, frame); };
+        backend->vtable = &stalled;
+        auto pending = std::async(std::launch::async, [&] { return item.prime(2.0, 0.25); });
+        check(entered.get_future().wait_for(std::chrono::seconds{1}) == std::future_status::ready,
+              "cancelled prime: real decoder seek reaches gate");
+        item.stop();
+        release.set_value();
+        check(!pending.get(), "cancelled prime: stopped preparation is refused");
+        backend->vtable = original; seek = {};
+        check(item.prepare_start() == 0, "cancelled prime: stale cache cannot arm a follow");
+        if (!direct_play) check(item.prime(2.0, 0.125), "cancelled prime: deliberate re-prime succeeds");
+        item.play();
+        Output output;
+        bool contiguous = true;
+        for (unsigned block = 0; block <= 16; ++block) {
+            item.service_read_ahead(1);
+            contiguous &= item.render_block(output.channels, 2, kBlock) == kBlock;
+            for (unsigned i = 0; i < kBlock; ++i) {
+                const auto frame = 6'000 + block * kBlock + i;
+                const float expected = static_cast<std::int16_t>(
+                    std::sin(2.0 * 3.14159265358979323846 * 997.0 * frame / kRate) * 20'000.0) / 32768.0f;
+                contiguous &= std::abs(output.left[i] - expected) < 0.00001f;
+            }
+        }
+        check(contiguous, direct_play ? "cancelled prime: direct play retains continuous positioned PCM"
+                                      : "cancelled prime: re-prime retains continuous positioned PCM");
+        item.stop_now();
+    }
+}
+
 void test_exact_eof_direct_replay() {
     const auto wav = make_wav(2, 1'024);
     PlaybackItemDesc desc;
@@ -1286,6 +1335,7 @@ int main() {
         test_prepared_follow(item);
         test_stereo_mix_gains(item);
         test_prime_against_rt_start(item);
+        test_cancelled_prime_cache(wav);
         test_exact_eof_direct_replay();
         test_soft_out_point_fade(item);
         test_loop_and_concurrent_stress(item);
