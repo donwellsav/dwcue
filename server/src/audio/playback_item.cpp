@@ -1026,10 +1026,14 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
     // ---- LTC virtual channel ----
     const bool ltc_on = ltc_enabled_atomic_.load(std::memory_order_acquire);
     if (ltc_on && ltc_ && out_channel_count > file_channels) {
-        const long long playhead_frames =
-            static_cast<long long>(playhead_frames_.load(std::memory_order_relaxed));
-        const auto playhead_ns = std::chrono::nanoseconds{
-            playhead_frames * 1'000'000'000LL / static_cast<long long>(desc_.mix_sample_rate)};
+        const auto frames = playhead_frames_.load(std::memory_order_relaxed);
+        constexpr std::uint64_t scale = 1'000'000'000;
+        const std::uint64_t rate = desc_.mix_sample_rate;
+        const auto seconds = frames / rate;
+        const auto maximum = static_cast<std::uint64_t>(std::chrono::nanoseconds::max().count());
+        const auto ns = seconds > maximum / scale ? maximum
+            : std::min(maximum, seconds * scale + (frames % rate) * scale / rate);
+        const auto playhead_ns = std::chrono::nanoseconds{static_cast<std::chrono::nanoseconds::rep>(ns)};
         // Refresh offset in case the control thread changed it. Use set_offset()
         // — NOT configure() — so we don't reset the encoder state every block
         // (that would force polarity back to +1 each block and corrupt the

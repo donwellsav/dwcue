@@ -112,3 +112,8 @@ The current callback fixture replaces its earlier post-EOF silence with a delibe
 ## Nested project admission (T41)
 
 Focused nested cue/group/settings type validation now runs in the existing shared document preparation before a load, replacement or save can change the current show. Seventy-five negative API cases preserve current playback/session/intent and existing disk bytes, while supported legacy/default/duplicate repairs remain covered by the format and migration suites. This does not claim complete validation of every possible authored field or malformed number.
+
+
+## Long-position LTC arithmetic (T42)
+
+Frame→nanosecond conversion no longer multiplies a large frame counter before division, avoiding signed overflow around53.4-hour cue positions at48kHz. Quotient/remainder arithmetic preserves ordinary integer timing, and unrepresentable durations/offset sums saturate safely.35 real-render timestamp/rate vectors and two signed-offset limits pass with no callback allocation, including0/1h and positions on both sides of the old boundary. This does not establish physical receiver lock or change authored timecode settings.

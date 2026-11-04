@@ -307,7 +307,7 @@ User authorized these in order from clean8e96e39. Preserve controls, cue order, 
   - [x] T40 audio: six ten-minute drift/jitter cases now decode looped PCM continuously and check every measured callback, with zero device faults.
   - [ ] T40 video: complete the isolated600-second mixed SD/1080p Chromium soak and reconcile presentation/control/memory metrics.
 - [x] **T41 / Medium — malformed nested documents.** Test representative bad nested cue/group/settings values and post-load normalization. Refusals preserve the current show/playback and disk file. Repair only proven shared validation/commit boundaries; no broad schema framework.
-- [ ] **T42 / Lower — long-position LTC.** Test frame→nanosecond arithmetic and actual generator behavior around the signed multiplication limit (~53.4-hour cue position at48kHz), then correct the conversion without changing ordinary timing or introducing callback allocation.
+- [x] **T42 / Lower — long-position LTC.** Test frame→nanosecond arithmetic and actual generator behavior around the signed multiplication limit (~53.4-hour cue position at48kHz), then correct the conversion without changing ordinary timing or introducing callback allocation.
 - [ ] Full affected software gates, one fresh final bounded review, current documentation/manual and clean committed checkout. T24 physical/deployment acceptance stays deferred.
 
 Pre-flight: T38 changes preparation/stop lifetime semantics consumed by T39; preserve revision and queued-PCM ownership before touching the handoff. T40 measures those paths. T41 changes document admission only; keep session and cancellation fences from T38. T42 uses the existing LTC render path and must retain its real-time contract.

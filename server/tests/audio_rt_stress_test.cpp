@@ -528,6 +528,53 @@ void test_invalid_time_inputs_preserve_audio(PlaybackItem& item) {
     check(item.stats().playhead_frame == 0, "valid negative seek still clamps to zero");
 }
 
+void test_long_position_ltc(PlaybackItem& item) {
+    const std::vector<std::pair<std::uint64_t, long long>> positions{
+        {0, 0}, {172'800'000, 3'600'000'000'000},
+        {9'223'372'035, 192'153'584'062'500},
+        {9'223'372'036, 192'153'584'083'333},
+        {9'223'372'037, 192'153'584'104'166},
+        {9'331'200'000, 194'400'000'000'000},
+        {UINT64_MAX, std::numeric_limits<long long>::max()},
+    };
+    item.stop_now(); item.set_loop(false); item.set_out_point_seconds(0.0);
+    item.set_gain_db(0.0f);
+    item.set_duck_gain_linear(1.0f, std::chrono::milliseconds{0}, false);
+    item.set_fade_in(std::chrono::milliseconds{0}); item.set_fade_out(std::chrono::milliseconds{0});
+    item.set_ltc_enabled(true); item.set_ltc_offset(std::chrono::nanoseconds{0});
+    for (const auto rate : {LTCFrameRate::Fps24, LTCFrameRate::Fps25,
+             LTCFrameRate::Fps2997_NDF, LTCFrameRate::Fps2997_DF, LTCFrameRate::Fps30}) {
+      item.set_ltc_frame_rate(rate);
+      for (const auto& [frame, expected_ns] : positions) {
+        item.stop_now();
+        check(item.prime(2.0, 0.0), "long LTC: real PCM fixture primes");
+        item.play();
+        // Simulate its logical position over real queued PCM; no multi-day file is needed.
+        item.playhead_frames_.store(frame);
+        std::array<float, kBlock> left{}, right{}, ltc{}, expected{};
+        float* channels[]{left.data(), right.data(), ltc.data()};
+        LTCGenerator reference;
+        reference.configure(kRate, rate, std::chrono::nanoseconds{0});
+        reference.render_block(expected.data(), kBlock, std::chrono::nanoseconds{expected_ns});
+        const auto allocations = g_allocation_count.load();
+        const auto rendered = item.render_block(channels, 3, kBlock);
+        check(rendered == kBlock && ltc == expected && g_allocation_count.load() == allocations,
+              "long LTC: rendered waveform matches exact time across old overflow boundary without allocation");
+      }
+    }
+    item.stop_now(); item.set_ltc_enabled(false);
+    item.set_ltc_frame_rate(LTCFrameRate::Fps30);
+    for (const bool positive : {false, true}) {
+        LTCGenerator generator, reference;
+        generator.configure(kRate, LTCFrameRate::Fps30, std::chrono::nanoseconds{positive ? 1 : -1});
+        std::array<float, kBlock> actual{}, expected{};
+        const auto boundary = positive ? std::chrono::nanoseconds::max() : std::chrono::nanoseconds::min();
+        generator.render_block(actual.data(), kBlock, boundary);
+        if (positive) reference.render_block(expected.data(), kBlock, boundary);
+        check(actual == expected, "LTC offset overflow saturates safely and negative time remains silent");
+    }
+}
+
 void test_pause_preserves_envelope(PlaybackItem& item) {
     for (const auto state : {TransportState::Playing, TransportState::FadingIn,
                              TransportState::FadingOut}) {
@@ -1230,6 +1277,7 @@ int main() {
         test_active_mirror_prime_is_noop(item);
         test_unchanged_boundaries_preserve_audio(item);
         test_invalid_time_inputs_preserve_audio(item);
+        test_long_position_ltc(item);
         test_pause_preserves_envelope(item);
         test_device_reference_churn();
         test_project_runtime_fences();
