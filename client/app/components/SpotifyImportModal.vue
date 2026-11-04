@@ -669,16 +669,28 @@ function getSpotifyApi(): (Window['electronAPI'] & SpotifyElectronApi) | null {
 }
 
 async function persistProjectSetting(patch: Record<string, unknown>) {
-  if (!currentProject.value || isSavingSettings.value) return;
-  const previous = { ...(currentProject.value.settings || {}) };
-  currentProject.value.settings = { ...previous, ...patch };
+  const project = currentProject.value;
+  if (!project || isSavingSettings.value) return;
+  const previous = { ...(project.settings || {}) };
+  project.settings = { ...previous, ...patch };
   isSavingSettings.value = true;
   settingsSaveError.value = '';
+  let accepted = false;
   try {
     await server.patchSettings(patch);
+    accepted = true;
+    if (currentProject.value !== project) return;
     if (!await saveProject()) throw new Error(t('spotifyImport.settingsSaveFailed'));
   } catch (error: any) {
-    currentProject.value.settings = previous;
+    if (currentProject.value !== project) return;
+    if (!accepted) {
+      const restored = { ...project.settings };
+      for (const key of Object.keys(patch)) {
+        if (Object.prototype.hasOwnProperty.call(previous, key)) restored[key] = previous[key];
+        else delete restored[key];
+      }
+      project.settings = restored;
+    }
     settingsSaveError.value = error?.message || t('spotifyImport.settingsSaveFailed');
   } finally {
     isSavingSettings.value = false;

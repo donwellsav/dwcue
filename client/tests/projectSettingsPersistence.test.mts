@@ -198,3 +198,74 @@ test('keeps a server-accepted setting live when the disk save is unsaved', async
   assert.equal(harness.project.settings.cycleTrackColors, true);
   assert.equal(harness.settingsError.value, 'project.unsavedChanges');
 });
+
+function spotifySettingsHarness() {
+  const filename = new URL('../app/components/SpotifyImportModal.vue', import.meta.url);
+  const script = parse(readFileSync(filename, 'utf8')).descriptor.scriptSetup!.content;
+  const ast = ts.createSourceFile('SpotifyImportModal.ts', script, ts.ScriptTarget.Latest, true);
+  const fn = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'persistProjectSetting');
+  assert.ok(fn);
+  const code = ts.transpileModule(fn.getText(ast), {
+    compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const project = { settings: { defaultTransitionMode: 'crossfade', keep: 'original' } as Record<string, unknown> };
+  const currentProject = { value: project as typeof project | null };
+  const patch = deferred<void>();
+  const saving = { value: false };
+  const error = { value: '' };
+  let saveCalls = 0;
+  let save = async () => true;
+  const persist = Function('currentProject', 'isSavingSettings', 'settingsSaveError', 'server', 'saveProject', 't',
+    `${code}; return persistProjectSetting;`)(currentProject, saving, error,
+    { patchSettings: () => patch.promise }, () => { saveCalls++; return save(); }, (key: string) => key);
+  return { project, currentProject, patch, saving, error, persist,
+    get saveCalls() { return saveCalls; }, setSave(next: () => Promise<boolean>) { save = next; } };
+}
+
+test('Spotify settings cannot roll back or save a replacement show after PATCH settles', async () => {
+  for (const reject of [false, true]) {
+    for (const close of [false, true]) {
+      const h = spotifySettingsHarness();
+      const pending = h.persist({ defaultTransitionMode: 'start-next' });
+      const replacement = { settings: { keep: 'replacement' } };
+      h.currentProject.value = close ? null : replacement;
+      if (reject) h.patch.reject(new Error('PATCH refused')); else h.patch.resolve();
+      await pending;
+      assert.deepEqual(replacement.settings, { keep: 'replacement' });
+      assert.equal(h.saveCalls, 0);
+      assert.equal(h.error.value, '');
+      assert.equal(h.saving.value, false);
+    }
+  }
+});
+
+test('Spotify keeps accepted live settings on save failure and only rolls back rejected keys', async () => {
+  for (const failure of ['patch', 'save-false', 'save-throw']) {
+    const h = spotifySettingsHarness();
+    h.setSave(async () => { if (failure === 'save-throw') throw new Error('disk unavailable'); return false; });
+    const pending = h.persist({ defaultTransitionMode: 'start-next', newSetting: true });
+    h.project.settings.keep = 'concurrent change';
+    if (failure === 'patch') h.patch.reject(new Error('PATCH refused')); else h.patch.resolve();
+    await pending;
+    assert.equal(h.project.settings.defaultTransitionMode, failure === 'patch' ? 'crossfade' : 'start-next');
+    assert.equal('newSetting' in h.project.settings, failure !== 'patch');
+    assert.equal(h.project.settings.keep, 'concurrent change');
+    assert.ok(h.error.value);
+    assert.equal(h.saving.value, false);
+  }
+});
+
+test('Spotify save completion cannot report an error on the next show', async () => {
+  const h = spotifySettingsHarness();
+  const save = deferred<boolean>();
+  h.setSave(() => save.promise);
+  const pending = h.persist({ defaultTransitionMode: 'start-next' });
+  h.patch.resolve();
+  await Promise.resolve();
+  assert.equal(h.saveCalls, 1);
+  h.currentProject.value = { settings: { keep: 'next show' } };
+  save.resolve(false);
+  await pending;
+  assert.deepEqual(h.currentProject.value.settings, { keep: 'next show' });
+  assert.equal(h.error.value, '');
+});

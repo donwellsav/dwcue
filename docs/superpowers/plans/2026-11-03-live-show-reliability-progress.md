@@ -285,3 +285,6 @@ T32 complete: deterministic child and nested-group invalid-follow fixtures both 
 
 
 T33 complete: direct A→B load and same-file reopen retained stale Up Next/selection/trigger stamps; both first-GO checks failed (4 assertions). Load now clears those project-owned fields under the existing mutex before either schema installs its new session. In-place replacement keeps its session/selection/stamps. Native runtime checks pass with audio-service access denied. No preference, show-mode, routing or GO algorithm changed. Evidence: deep-bug-hunt-2026-11-04/t33-{red,green}.log.
+
+
+T34 complete: exact Spotify component persistence code reproduced saving a replacement show, replacing concurrent settings during rollback, and reporting a late save failure against the next show (3 failing tests). The existing house pattern now binds continuations to the captured project, rolls back only rejected keys, and retains accepted live settings on disk-save failure. Current useProject settings watching retains its dirty/save behavior. Close/replacement and success/rejection matrices pass; full playback-safety client suite passes. No import controls or show workflow changed. Evidence: deep-bug-hunt-2026-11-04/t34-{red,green}.log.
