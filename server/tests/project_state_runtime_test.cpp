@@ -272,6 +272,67 @@ void test_load_resets_project_runtime(const std::filesystem::path& wav) {
     }
 }
 
+void test_rejected_server_document_preserves_show(const std::filesystem::path& wav) {
+    const std::vector<json> invalid_documents{
+        {{"schema_version", 2}, {"project_name", 123}},
+        {{"schema_version", 2}, {"cues", json::array({{{"gain_db", "bad"}}})}},
+        {{"schema_version", 2}, {"mixer_channels", json::array({{{"muted", "bad"}}})}},
+        {{"schema_version", 2}, {"item_routes", json::array({{{"destination_mixer", 123}}})}},
+        {{"schema_version", 2}, {"mixer_routes", json::array({{{"gain_db", "bad"}}})}},
+        {{"schema_version", 2}, {"master_assignments", json::array({{{"device", 123}}})}},
+    };
+    const auto path = wav.parent_path() / "dwcue-invalid-server-schema.dwcue";
+    for (const auto& invalid : invalid_documents) {
+      for (const bool from_file : {false, true}) {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        state.load_from_json(document(json::array({audio("preserved-server", wav)})));
+        check(wait_ready(state) && state.trigger_item("preserved-server"),
+              "server load refusal: current show plays");
+        const auto before = state.full_document();
+        const auto intent = state.playback_intent_revision();
+        const auto cue = state.item_to_cue_id("preserved-server");
+        bool accepted = false, threw = false;
+        try {
+            if (from_file) {
+                std::ofstream{path} << invalid.dump();
+                accepted = state.load(path);
+            } else accepted = state.load_from_json(invalid);
+        } catch (const std::exception&) { threw = true; }
+        check(!accepted && !threw && state.full_document() == before &&
+                  state.playback_intent_revision() == intent &&
+                  state.item_to_cue_id("preserved-server") == cue &&
+                  on_air(state, engine, "preserved-server"),
+              "server typed-load failure refuses without changing show or playback");
+        state.stop_all_cues(0);
+        const json valid{{"schema_version", 2}, {"project_name", "routing-show"}};
+        check(state.load_from_json(valid) && state.list_cues().empty(),
+              "server load refusal: normal empty server document remains loadable");
+      }
+    }
+    std::filesystem::remove(path);
+    liveplay::audio::AudioEngine engine;
+    liveplay::core::ProjectState state(engine);
+    const json valid{{"schema_version", 2}, {"project_name", "typed-routing"},
+        {"cues", json::array({{{"id", "typed"}, {"file_path", wav.string()}, {"gain_db", -6.0}, {"fade_in_ms", 17}}})},
+        {"mixer_channels", json::array({{{"id", "bus"}, {"muted", true}, {"gain_db", -3.0}}})},
+        {"item_routes", json::array({{{"source_channel", 1}, {"destination_mixer", "bus"}, {"gain_db", -2.0}, {"lane", 0}}})},
+        {"mixer_routes", json::array({{{"mixer", "bus"}, {"master_channel", 1}, {"gain_db", -1.0}, {"lane", 0}}})},
+        {"master_assignments", json::array({{{"master_channel", 1}, {"device", ""}, {"hw_channel", 1}}})}};
+    check(state.load_from_json(valid), "server typed-load: complete routing document loads");
+    const auto loaded = state.to_json();
+    check(loaded["project_name"] == "typed-routing" && loaded["cues"][0]["gain_db"] == -6.0 &&
+              loaded["cues"][0]["fade_in_ms"] == 17 && loaded["mixer_channels"][0]["muted"] == true &&
+              loaded["item_routes"] == valid["item_routes"] &&
+              loaded["mixer_routes"] == valid["mixer_routes"] &&
+              loaded["master_assignments"] == valid["master_assignments"],
+          "server typed-load: staged cue, mixer and routing values retain their semantics");
+    check(state.load_from_json({{"name", "upgraded"}, {"playlist", json::array({
+              {{"id", "legacy"}, {"path", wav.string()}, {"volume_db", -4.0}}})}}) &&
+              state.to_json()["cues"][0]["gain_db"] == -4.0,
+          "server typed-load: existing v1 upgrade still preserves its cue gain");
+}
+
 void test_nested_group_end(const std::filesystem::path& wav) {
     liveplay::audio::AudioEngine engine;
     liveplay::core::ProjectState state(engine);
@@ -1481,6 +1542,7 @@ int main() {
     test_stop_all_during_project_boundaries(wav);
     test_rejected_document_preserves_show(wav);
     test_load_resets_project_runtime(wav);
+    test_rejected_server_document_preserves_show(wav);
     test_nested_group_end(wav);
     test_group_cancellation(wav);
     test_group_internal_continuations(wav);

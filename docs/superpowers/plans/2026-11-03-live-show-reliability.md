@@ -288,6 +288,7 @@ Baseline: clean `6d99a46`; all13 native tests pass with audio-service access den
 - [x] T34 settings identity and save-error RED/GREEN; commit.
 - [x] T35 initialization failure/cancellation RED/GREEN; commit.
 - [x] T36 shared numeric boundary RED/GREEN; commit.
+- [x] T37 server-schema typed-load refusal RED/GREEN; commit.
 - [ ] Final affected gates, fresh review and current evidence/documents.
 
-Additional source leads remain separate from repairs: transient prepared-follow gate contention may cause a partial commit/gap; malformed snake_case legacy metadata parses after destructive load; LTC frame-to-nanosecond multiplication can overflow at long positions. Establish ordinary caller impact and deterministic proof before expanding a repair or claiming these closed. T24 physical acceptance remains deferred.
+Additional source leads remain separate from repairs: transient prepared-follow gate contention may cause a partial commit/gap; LTC frame-to-nanosecond multiplication can overflow at long positions. T37 closes the separately reproduced server-schema typed-load refusal path. Establish ordinary caller impact and deterministic proof before expanding a repair or claiming these closed. T24 physical acceptance remains deferred.

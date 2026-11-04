@@ -4734,6 +4734,99 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
     }
 
     std::lock_guard operation_lock{project_operation_mutex_};
+    std::string loaded_name;
+    std::optional<std::filesystem::path> loaded_media_root;
+    decltype(cues_) loaded_cues;
+    decltype(mixers_) loaded_mixers;
+    decltype(item_routes_) loaded_item_routes;
+    decltype(mixer_routes_) loaded_mixer_routes;
+    decltype(master_assignments_) loaded_master_assignments;
+    if (!client_document) {
+        std::lock_guard lock{mutex_};
+        try {
+            json doc = doc_in;
+            if (is_legacy_document(doc)) {
+                Logger::info("ProjectState: detected legacy 1.x document, upgrading.");
+                doc = upgrade_legacy_document(doc);
+            }
+
+            loaded_name = doc.value("project_name", std::string{"Untitled"});
+            if (doc.contains("media_root") && doc["media_root"].is_string()) {
+                loaded_media_root = util::utf8_to_path(doc["media_root"].get<std::string>());
+            }
+            // The project folder always wins: media must live inside it so the project
+            // stays portable and we never read media from outside the folder. load()
+            // injects the authoritative folderPath (the directory the .dwcue sits
+            // in) before calling us, so this overrides any stale stored media_root.
+            if (doc.contains("folderPath") && doc["folderPath"].is_string()) {
+                const std::string folder = doc["folderPath"].get<std::string>();
+                if (!folder.empty()) loaded_media_root = util::utf8_to_path(folder) / "media";
+            }
+
+            if (doc.contains("cues") && doc["cues"].is_array()) {
+                for (auto& c : doc["cues"]) {
+                    CueMeta m;
+                    m.id = audio::CueId{c.value("id", std::string{})};
+                    m.display_name     = c.value("display_name", "");
+                    m.file_path        = util::utf8_to_path(c.value("file_path", std::string{}));
+                    m.artist           = c.value("artist", "");
+                    m.title            = c.value("title", "");
+                    m.duration_seconds = c.value("duration_sec", 0.0);
+                    m.gain_db          = c.value("gain_db", 0.0f);
+                    m.fade_in_ms  = std::chrono::milliseconds{c.value("fade_in_ms",  (long long)0)};
+                    m.fade_out_ms = std::chrono::milliseconds{c.value("fade_out_ms", (long long)0)};
+                    m.ltc_enabled          = c.value("ltc_enabled",        false);
+                    m.ltc_frame_rate_index = c.value("ltc_fps",            4);
+                    m.ltc_offset_ns        = std::chrono::nanoseconds{c.value("ltc_offset_ns", (long long)0)};
+                    m.ltc_start_timecode   = c.value("ltc_start_timecode", std::string{"00:00:00:00"});
+                    loaded_cues.emplace(m.id.value, std::move(m));
+                }
+            }
+            if (doc.contains("mixer_channels") && doc["mixer_channels"].is_array()) {
+                for (auto& m : doc["mixer_channels"]) {
+                    MixerChannelMeta mm;
+                    mm.id           = audio::MixerChannelId{m.value("id", std::string{})};
+                    mm.display_name = m.value("display_name", "");
+                    mm.gain_db      = m.value("gain_db", 0.0f);
+                    mm.muted        = m.value("muted",   false);
+                    mm.soloed       = m.value("soloed",  false);
+                    loaded_mixers.emplace(mm.id.value, std::move(mm));
+                }
+            }
+            if (doc.contains("item_routes") && doc["item_routes"].is_array()) {
+                for (auto& r : doc["item_routes"]) {
+                    loaded_item_routes.push_back(RouteSendV2{
+                        r.value("source_channel", (audio::ChannelIndex)0),
+                        audio::MixerChannelId{r.value("destination_mixer", std::string{})},
+                        r.value("gain_db", 0.0f),
+                        r.value("lane", audio::kAllMixerLanes),
+                    });
+                }
+            }
+            if (doc.contains("mixer_routes") && doc["mixer_routes"].is_array()) {
+                for (auto& r : doc["mixer_routes"]) {
+                    loaded_mixer_routes.push_back(MixerToMasterV2{
+                        audio::MixerChannelId{r.value("mixer", std::string{})},
+                        r.value("master_channel", (audio::MasterChannelIndex)0),
+                        r.value("gain_db", 0.0f),
+                        r.value("lane", audio::kAllMixerLanes),
+                    });
+                }
+            }
+            if (doc.contains("master_assignments") && doc["master_assignments"].is_array()) {
+                for (auto& a : doc["master_assignments"]) {
+                    loaded_master_assignments.push_back(MasterAssignment{
+                        a.value("master_channel", (audio::MasterChannelIndex)0),
+                        audio::DeviceId{a.value("device", std::string{})},
+                        a.value("hw_channel", (audio::ChannelIndex)0),
+                    });
+                }
+            }
+        } catch (const std::exception& ex) {
+            Logger::error("ProjectState::load_from_json: {}", ex.what());
+            return false;
+        }
+    }
     // Quiesce the old mirror without blocking transport control. Project
     // operations are serialized by project_operation_mutex_, and the mirror's
     // document generation check fences stale publication.
@@ -4811,99 +4904,22 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
         return true;
     }
 
-    // Otherwise: assume server's snake_case schema (current behaviour).
-    json doc = doc_in;
-    if (is_legacy_document(doc)) {
-        Logger::info("ProjectState: detected legacy 1.x document, upgrading.");
-        doc = upgrade_legacy_document(doc);
-    }
-
     std::lock_guard lock{mutex_};
     for (auto& [_, id] : item_uuid_to_cue_) engine_.unload_cue(id);
     item_uuid_to_cue_.clear();
-    cues_.clear();
-    mixers_.clear();
-    item_routes_.clear();
-    mixer_routes_.clear();
-    master_assignments_.clear();
+    cues_ = std::move(loaded_cues);
+    mixers_ = std::move(loaded_mixers);
+    item_routes_ = std::move(loaded_item_routes);
+    mixer_routes_ = std::move(loaded_mixer_routes);
+    master_assignments_ = std::move(loaded_master_assignments);
+    project_name_ = std::move(loaded_name);
+    if (loaded_media_root) media_root_ = std::move(*loaded_media_root);
     ++document_generation_;
     project_session_id_ = engine_.new_cue_id().value;
     project_file_path_ = project_path;
     document_ = default_empty_document();
     apply_audio_settings(engine_, document_["settings"]);
 
-    project_name_ = doc.value("project_name", std::string{"Untitled"});
-    if (doc.contains("media_root") && doc["media_root"].is_string()) {
-        media_root_ = util::utf8_to_path(doc["media_root"].get<std::string>());
-    }
-    // The project folder always wins: media must live inside it so the project
-    // stays portable and we never read media from outside the folder. load()
-    // injects the authoritative folderPath (the directory the .dwcue sits
-    // in) before calling us, so this overrides any stale stored media_root.
-    if (doc.contains("folderPath") && doc["folderPath"].is_string()) {
-        const std::string folder = doc["folderPath"].get<std::string>();
-        if (!folder.empty()) media_root_ = util::utf8_to_path(folder) / "media";
-    }
-
-    if (doc.contains("cues") && doc["cues"].is_array()) {
-        for (auto& c : doc["cues"]) {
-            CueMeta m;
-            m.id = audio::CueId{c.value("id", std::string{})};
-            m.display_name     = c.value("display_name", "");
-            m.file_path        = util::utf8_to_path(c.value("file_path", std::string{}));
-            m.artist           = c.value("artist", "");
-            m.title            = c.value("title", "");
-            m.duration_seconds = c.value("duration_sec", 0.0);
-            m.gain_db          = c.value("gain_db", 0.0f);
-            m.fade_in_ms  = std::chrono::milliseconds{c.value("fade_in_ms",  (long long)0)};
-            m.fade_out_ms = std::chrono::milliseconds{c.value("fade_out_ms", (long long)0)};
-            m.ltc_enabled          = c.value("ltc_enabled",        false);
-            m.ltc_frame_rate_index = c.value("ltc_fps",            4);
-            m.ltc_offset_ns        = std::chrono::nanoseconds{c.value("ltc_offset_ns", (long long)0)};
-            m.ltc_start_timecode   = c.value("ltc_start_timecode", std::string{"00:00:00:00"});
-            cues_.emplace(m.id.value, std::move(m));
-        }
-    }
-    if (doc.contains("mixer_channels") && doc["mixer_channels"].is_array()) {
-        for (auto& m : doc["mixer_channels"]) {
-            MixerChannelMeta mm;
-            mm.id           = audio::MixerChannelId{m.value("id", std::string{})};
-            mm.display_name = m.value("display_name", "");
-            mm.gain_db      = m.value("gain_db", 0.0f);
-            mm.muted        = m.value("muted",   false);
-            mm.soloed       = m.value("soloed",  false);
-            mixers_.emplace(mm.id.value, std::move(mm));
-        }
-    }
-    if (doc.contains("item_routes") && doc["item_routes"].is_array()) {
-        for (auto& r : doc["item_routes"]) {
-            item_routes_.push_back(RouteSendV2{
-                r.value("source_channel", (audio::ChannelIndex)0),
-                audio::MixerChannelId{r.value("destination_mixer", std::string{})},
-                r.value("gain_db", 0.0f),
-                r.value("lane", audio::kAllMixerLanes),
-            });
-        }
-    }
-    if (doc.contains("mixer_routes") && doc["mixer_routes"].is_array()) {
-        for (auto& r : doc["mixer_routes"]) {
-            mixer_routes_.push_back(MixerToMasterV2{
-                audio::MixerChannelId{r.value("mixer", std::string{})},
-                r.value("master_channel", (audio::MasterChannelIndex)0),
-                r.value("gain_db", 0.0f),
-                r.value("lane", audio::kAllMixerLanes),
-            });
-        }
-    }
-    if (doc.contains("master_assignments") && doc["master_assignments"].is_array()) {
-        for (auto& a : doc["master_assignments"]) {
-            master_assignments_.push_back(MasterAssignment{
-                a.value("master_channel", (audio::MasterChannelIndex)0),
-                audio::DeviceId{a.value("device", std::string{})},
-                a.value("hw_channel", (audio::ChannelIndex)0),
-            });
-        }
-    }
     apply_to_engine_locked();
     return true;
 }
