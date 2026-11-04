@@ -276,11 +276,12 @@ void test_clock_zero_crossing(const std::filesystem::path& ramp) {
 }
 
 void test_clock_resync(const std::filesystem::path& ramp) {
-    constexpr double seconds = 90.0;
+    constexpr double seconds = 600.0;
     constexpr float slope = 1.0f / 131'072.0f;
     for (const double drift_ppm : {-3'000.0, 0.0, 3'000.0}) {
       for (const double phase : {0.1, 0.9}) {
         Fixture f(ramp, false, true);
+        f.item->set_loop(true, 0.0);
         // Keep equal headroom around a callback's one-block consumption.
         ma_pcm_rb_uninit(f.device->ring.get());
         if (ma_pcm_rb_init(ma_format_f32, 2, block * 4, nullptr, nullptr,
@@ -290,6 +291,8 @@ void test_clock_resync(const std::filesystem::path& ramp) {
         const double period = 1.0 / (1.0 + drift_ppm / 1'000'000.0);
         double render_at = 1.0, callback_at = phase;
         std::uint64_t callbacks = 0;
+        std::uint64_t decoded_frames = 0;
+        bool continuous_pcm = true;
         std::size_t measured = 0;
         double correction_sum = 0.0;
         std::size_t corrections = 0;
@@ -303,6 +306,12 @@ void test_clock_resync(const std::filesystem::path& ramp) {
                 continue;
             }
             const auto out = f.drain();
+            if (callback_at > 48'000.0 / block) {
+                decoded_frames += block;
+                for (std::size_t i = 0; i < block; ++i)
+                    continuous_pcm &= std::isfinite(out[i * 2]) &&
+                        out[i * 2] > 0.12f && out[i * 2] < 0.50f;
+            }
             const float correction = f.device->clock_correction_ppm.load();
             max_correction = std::max(max_correction, std::fabs(correction));
             if (callback_at > seconds * 48'000 / block / 2) {
@@ -313,7 +322,7 @@ void test_clock_resync(const std::filesystem::path& ramp) {
             minimum = std::min(minimum, occupancy);
             maximum = std::max(maximum, occupancy);
             // The exact binary ramp stays below the ceiling; ignore initial
-            // lookahead silence and stop measuring before the one-second EOF.
+            // lookahead silence and measure slope before the first intentional loop wrap.
             if (callback_at < 0.7 * 48'000 / block) {
                 for (std::size_t i = 0; i < block; ++i) {
                     const float sample = out[i * 2];
@@ -332,20 +341,24 @@ void test_clock_resync(const std::filesystem::path& ramp) {
         }
         std::printf("clock drift %.0f ppm phase %.1f: step %.6f..%.6f, "
                     "mean correction %.2f ppm, ring %u..%u, "
-                    "underruns %llu, overruns %llu, resyncs %llu\n",
+                    "underruns %llu, overruns %llu, resyncs %llu, decoded PCM frames %llu\n",
                     drift_ppm, phase, min_step, max_step,
                     correction_sum / corrections, minimum, maximum,
                     static_cast<unsigned long long>(f.device->underrun_count.load()),
                     static_cast<unsigned long long>(f.device->overrun_count.load()),
-                    static_cast<unsigned long long>(f.device->hard_resync_count.load()));
+                    static_cast<unsigned long long>(f.device->hard_resync_count.load()),
+                    static_cast<unsigned long long>(decoded_frames));
         check(measured > block && min_step >= 0.98f && max_step <= 1.02f,
               "clock rate changes preserve callback PCM continuity");
+        check(continuous_pcm && decoded_frames > (seconds - 2.0) * 48'000 *
+                  (1.0 + drift_ppm / 1'000'000.0),
+              "clock endurance: every measured callback contains decoded source PCM after the first second");
         check(max_correction <= DeviceClockController::max_correction_ppm(),
               "realized clock correction stays within its safety bound");
         check(f.device->underrun_count.load() == 0 &&
                   f.device->overrun_count.load() == 0 &&
                   f.device->hard_resync_count.load() == 0,
-              "real resampler avoids resync at production ring size for 90 seconds");
+              "real resampler avoids resync at production ring size for ten simulated minutes of decoded PCM");
       }
     }
 }

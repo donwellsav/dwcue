@@ -102,3 +102,8 @@ Immediate Stop All no longer waits for a decoder rewind behind a blocked storage
 ## Prepared-follow contention (T39)
 
 A transient source/target render-gate collision no longer cancels otherwise valid prepared handoff work. The source still ends at its authored endpoint; the next callback retries only the same valid playback revisions and prepared target. Stop/replay/media invalidation or decoder failure cancels it. Eight native contention/order/cancel cases verify next-callback target PCM and no late start after Stop, alongside existing exact-boundary and RT allocation checks. A held target gate can still cause silence while held; no longer-gapless or hardware performance guarantee is implied.
+
+
+## Continuous decoded-source coverage (T40)
+
+The current callback fixture replaces its earlier post-EOF silence with a deliberately looped generated binary ramp. Six cases now run ten simulated minutes each at zero/±3,000ppm, two phases and existing callback jitter, validating finite nonzero source PCM in every measured block as well as short-ramp slope continuity. Each delivers about28.7–28.8 million measured frames with zero underruns, overruns or resyncs. This is accelerated software decoding/resampling evidence; intentional ramp loop boundaries are not a click-free content test, and physical clocks/output remain outside it. The older T30 evidence above retains its original post-EOF limits.
