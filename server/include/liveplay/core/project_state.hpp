@@ -706,6 +706,8 @@ private:
     // (especially Stop All) to acquire playback_lifecycle_mutex_ during waits.
     std::recursive_mutex         project_operation_mutex_;
     std::recursive_mutex         playback_lifecycle_mutex_;
+    // Decoder preparation serializes separately so Stop All never waits for it.
+    std::mutex                  playback_preparation_mutex_;
     std::uint64_t                playback_intent_revision_ = 0;
     // Serializes snapshot through atomic replace. mutex_ remains brief and is
     // never held during filesystem I/O.
@@ -717,11 +719,11 @@ private:
     void start_sequencer();
     void stop_sequencer();
     void sequencer_loop();
-    void handle_item_ended(const SequencedItem& item);
-    void execute_custom_action(const json& action);
+    void handle_item_ended(std::unique_lock<std::recursive_mutex>& lifecycle_lock, const SequencedItem& item);
+    void execute_custom_action(std::unique_lock<std::recursive_mutex>& lifecycle_lock, const json& action);
     void cancel_prepared_follows(const std::string& changed_uuid = {});
     enum class ItemPlayPhase { Immediate, Validate, Prepare, AlreadyStarted, Recovery };
-    bool play_item_impl(const std::string& uuid,
+    bool play_item_impl(std::unique_lock<std::recursive_mutex>& lifecycle_lock, const std::string& uuid,
                         double fade_in_override_sec,
                         const audio::CueId& exclude_from_ducking,
                         double start_position_override_sec,
@@ -741,13 +743,13 @@ private:
         const std::vector<std::uint64_t>& preserved_generations = {});
     std::vector<std::uint64_t> prepare_group_sequence_transition(
         const std::string& source_uuid, const std::string& target_uuid);
-    bool trigger_sequence_item(const std::string& source_uuid,
+    bool trigger_sequence_item(std::unique_lock<std::recursive_mutex>& lifecycle_lock, const std::string& source_uuid,
                                const std::string& target_uuid,
                                double fade_in_override_sec = -1.0,
                                const audio::CueId& exclude_from_ducking = audio::CueId{},
                                bool already_started = false);
-    void complete_group_runs_for_item(const std::string& uuid);
-    bool trigger_item_impl(const std::string& uuid,
+    void complete_group_runs_for_item(std::unique_lock<std::recursive_mutex>& lifecycle_lock, const std::string& uuid);
+    bool trigger_item_impl(std::unique_lock<std::recursive_mutex>& lifecycle_lock, const std::string& uuid,
                            double fade_in_override_sec,
                            const audio::CueId& exclude_from_ducking,
                            bool consume_armed_override,

@@ -406,6 +406,7 @@ void PlaybackItem::stop_now() {
     playhead_frames_.store(0, std::memory_order_relaxed);
     // Rewind on deliberate replay; stopping must never wait for storage.
     rewind_on_play_.store(true, std::memory_order_release);
+    if (ltc_) ltc_->reset(std::chrono::nanoseconds{ltc_offset_ns_.load()});
     end_render_exclusion();
 }
 
@@ -602,30 +603,39 @@ bool PlaybackItem::prime(double seconds, double start_seconds) noexcept {
     const auto blocks = std::max<std::size_t>(1,
         (requested_frames + desc_.render_block - 1) / desc_.render_block);
     if (transport_.load(std::memory_order_acquire) != TransportState::Stopped) return true;
+    std::uint64_t revision;
     {
         std::lock_guard lock{decoder_mutex_};
         if (!decoder_ || !decoder_ready_) return false;
-        begin_render_exclusion();
-        RenderActiveGuard guard{render_exclusion_};
-        if (transport_.load(std::memory_order_acquire) != TransportState::Stopped) return true;
-        const auto read = read_ahead_read_.load(std::memory_order_acquire);
-        const bool cached = !rewind_on_play_.load(std::memory_order_acquire) &&
-            !decode_error_.load(std::memory_order_acquire) &&
-            playhead_frames_.load(std::memory_order_acquire) == start_frame && read_ahead_offset_ == 0 &&
-            read < read_ahead_write_.load(std::memory_order_acquire) && !read_ahead_.empty() &&
-            read_ahead_[read % read_ahead_.size()].frames > 0;
-        if (cached && (seconds <= 0.0 || decode_terminal_.load(std::memory_order_acquire) ||
-            read_ahead_write_.load(std::memory_order_acquire) - read >= blocks)) {
-            if (prepared_revision_.exchange(0, std::memory_order_acq_rel) != 0)
-                playback_revision_.fetch_add(1, std::memory_order_acq_rel);
-            return true;
+        {
+            begin_render_exclusion();
+            RenderActiveGuard guard{render_exclusion_};
+            if (transport_.load(std::memory_order_acquire) != TransportState::Stopped) return true;
+            const auto read = read_ahead_read_.load(std::memory_order_acquire);
+            const bool cached = !rewind_on_play_.load(std::memory_order_acquire) &&
+                !decode_error_.load(std::memory_order_acquire) &&
+                playhead_frames_.load(std::memory_order_acquire) == start_frame && read_ahead_offset_ == 0 &&
+                read < read_ahead_write_.load(std::memory_order_acquire) && !read_ahead_.empty() &&
+                read_ahead_[read % read_ahead_.size()].frames > 0;
+            if (cached && (seconds <= 0.0 || decode_terminal_.load(std::memory_order_acquire) ||
+                read_ahead_write_.load(std::memory_order_acquire) - read >= blocks)) {
+                if (prepared_revision_.exchange(0, std::memory_order_acq_rel) != 0)
+                    playback_revision_.fetch_add(1, std::memory_order_acq_rel);
+                return true;
+            }
+            prepared_revision_.store(0, std::memory_order_release);
+            revision = playback_revision_.fetch_add(1, std::memory_order_acq_rel) + 1;
         }
-        if (ma_decoder_seek_to_pcm_frame(decoder_.get(), start_frame) != MA_SUCCESS) return false;
-        playback_revision_.fetch_add(1, std::memory_order_acq_rel);
+        // Decoder I/O may stall; transport keeps its short render gate free.
+        const auto seek_result = ma_decoder_seek_to_pcm_frame(decoder_.get(), start_frame);
         ma_uint64 cursor = start_frame;
         if (ma_decoder_get_cursor_in_pcm_frames(decoder_.get(), &cursor) == MA_SUCCESS)
             start_frame = cursor;
-        if (end > 0 && start_frame >= end) return false;
+        begin_render_exclusion();
+        RenderActiveGuard guard{render_exclusion_};
+        if (playback_revision() != revision ||
+            transport_.load(std::memory_order_acquire) != TransportState::Stopped) return false;
+        if (seek_result != MA_SUCCESS || (end > 0 && start_frame >= end)) return false;
         playhead_frames_.store(start_frame, std::memory_order_release);
         stopped_naturally_.store(false, std::memory_order_release);
         fading_out_naturally_.store(false, std::memory_order_release);
@@ -636,7 +646,8 @@ bool PlaybackItem::prime(double seconds, double start_seconds) noexcept {
     std::lock_guard lock{decoder_mutex_};
     begin_render_exclusion();
     RenderActiveGuard guard{render_exclusion_};
-    if (transport_.load(std::memory_order_acquire) != TransportState::Stopped) return true;
+    if (playback_revision() != revision ||
+        transport_.load(std::memory_order_acquire) != TransportState::Stopped) return false;
     const auto read = read_ahead_read_.load(std::memory_order_acquire);
     return !decode_error_.load(std::memory_order_acquire) && !read_ahead_.empty() &&
         read < read_ahead_write_.load(std::memory_order_acquire) &&

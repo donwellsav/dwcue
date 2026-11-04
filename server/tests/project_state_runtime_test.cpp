@@ -218,6 +218,88 @@ void test_stop_all_during_decoder_read(const std::filesystem::path& wav) {
     state.stop_all_cues(0);
 }
 
+void test_stop_all_during_cold_go(const std::filesystem::path& wav) {
+  for (const int mode : {0, 1, 2, 3, 4, 5, 6, 7}) {
+   for (const bool stall_seek : {false, true}) {
+    std::printf("cold GO stall: mode=%d stage=%s\n", mode, stall_seek ? "seek" : "read");
+    liveplay::audio::AudioEngine engine;
+    liveplay::core::ProjectState state(engine);
+    auto next_item = audio("stall-next", wav, {{"inPoint", 0.25},
+        {"duckingBehavior", {{"mode", "no-ducking"}}}});
+    if (mode == 6) next_item["endBehavior"] = {{"action", "loop"}};
+    json group{{"uuid", "stall-group"}, {"type", "group"},
+        {"startBehavior", {{"action", "play-all"}}},
+        {"children", json::array({next_item, audio("stall-sibling", wav,
+            {{"duckingBehavior", {{"mode", "no-ducking"}}}})})}};
+    if (mode == 5) group["children"][0] = json{{"uuid", "stall-inner"}, {"type", "group"},
+        {"startBehavior", {{"action", "play-first"}}}, {"children", json::array({next_item})}};
+    if (mode == 7) group["children"][0] = audio("stall-first", wav,
+        {{"startBehavior", {{"action", "play-item"}, {"targetUuid", "stall-next"}}},
+         {"duckingBehavior", {{"mode", "no-ducking"}}}});
+    const bool grouped = mode == 4 || mode == 5 || mode == 7;
+    const std::string target = grouped ? "stall-group" : "stall-next";
+    auto items = json::array({audio("stall-bed", wav), grouped ? group : next_item});
+    if (mode == 7) items.push_back(next_item);
+    state.replace_full_document(document(items));
+    check(wait_ready(state), "cold GO stall: media ready"); close_devices(engine);
+    check(state.trigger_item("stall-bed") && state.set_next_item_override(target),
+          "cold GO stall: program plays and next cue is armed");
+    const auto bed = engine.find_cue(*state.item_to_cue_id("stall-bed"));
+    const auto next = engine.find_cue(*state.item_to_cue_id("stall-next"));
+    std::promise<void> entered, release;
+    const auto entered_future = entered.get_future();
+    const auto read_release = release.get_future().share();
+    std::atomic<bool> signalled{false};
+    auto* backend = static_cast<ma_data_source_base*>(next->decoder_->pBackend);
+    const auto* original_vtable = backend->vtable;
+    auto stalled_vtable = *original_vtable;
+    const auto gate = [&] {
+        if (!signalled.exchange(true)) entered.set_value();
+        read_release.wait();
+    };
+    static std::function<ma_result(ma_data_source*, void*, ma_uint64, ma_uint64*)> stalled_read;
+    static std::function<ma_result(ma_data_source*, ma_uint64)> stalled_seek;
+    stalled_read = [&](ma_data_source* source, void* buffer, ma_uint64 count, ma_uint64* read) {
+        gate(); return original_vtable->onRead(source, buffer, count, read);
+    };
+    stalled_seek = [&](ma_data_source* source, ma_uint64 frame) {
+        gate(); return original_vtable->onSeek(source, frame);
+    };
+    if (stall_seek) stalled_vtable.onSeek = [](ma_data_source* source, ma_uint64 frame) {
+        return stalled_seek(source, frame);
+    };
+    else stalled_vtable.onRead = [](ma_data_source* source, void* buffer, ma_uint64 count, ma_uint64* read) {
+        return stalled_read(source, buffer, count, read);
+    };
+    backend->vtable = &stalled_vtable;
+    const auto intent = state.playback_intent_revision();
+    auto go = std::async(std::launch::async, [&] {
+        if (mode == 0 || mode >= 4) return state.go() == target;
+        if (mode == 1) return state.trigger_item(target);
+        if (mode == 2) return state.play_item(target);
+        return state.resume_item(target, 0.25, intent);
+    });
+    check(entered_future.wait_for(2s) == std::future_status::ready,
+          "cold GO stall: actual decoder reached deterministic gate");
+    auto stop = std::async(std::launch::async, [&] { state.stop_all_cues(0); });
+    check(stop.wait_for(250ms) == std::future_status::ready &&
+              bed->stats().transport == liveplay::audio::TransportState::Stopped,
+          "cold GO stall: Stop All completes and silences program before storage release");
+    release.set_value();
+    const auto result = go.get();
+    stop.get();
+    backend->vtable = original_vtable;
+    stalled_read = {}; stalled_seek = {};
+    check(!result && !on_air(state, engine, "stall-next") && !on_air(state, engine, "stall-sibling"),
+          "cold GO stall: cancelled start/group cannot play after storage recovers");
+    check(state.set_next_item_override(target) && state.go() == target &&
+              next->stats().playhead_frame == 12'000,
+          "cold GO stall: a deliberate retry still starts at the authored in point");
+    state.stop_all_cues(0);
+   }
+  }
+}
+
 void test_rejected_document_preserves_show(const std::filesystem::path& wav) {
     const auto folder = std::filesystem::temp_directory_path() /
         ("dwcue-rejected-load-" + std::to_string(
@@ -1568,6 +1650,7 @@ int main() {
     test_changed_media_readiness();
     test_stop_all_during_project_boundaries(wav);
     test_stop_all_during_decoder_read(wav);
+    test_stop_all_during_cold_go(wav);
     test_rejected_document_preserves_show(wav);
     test_load_resets_project_runtime(wav);
     test_rejected_server_document_preserves_show(wav);

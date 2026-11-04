@@ -1095,6 +1095,7 @@ void ProjectState::reset() {
     loading_audio_.store(false, std::memory_order_release);
     load_progress_loaded_.store(0, std::memory_order_release);
     load_progress_total_.store(0, std::memory_order_release);
+    std::lock_guard preparation_lock{playback_preparation_mutex_};
     std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
     cancel_prepared_follows();
     update_crash_resume_state({}, {}, 0.0);
@@ -2122,6 +2123,7 @@ bool ProjectState::replace_full_document(const json& doc, bool new_session) {
         Logger::info("ProjectState: migrated legacy Cart data to One Shots.");
     std::lock_guard operation_lock{project_operation_mutex_};
     {
+    std::lock_guard preparation_lock{playback_preparation_mutex_};
     std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
     if (new_session) ++playback_intent_revision_;
     std::unordered_set<std::string> invalidated_playbacks;
@@ -2314,6 +2316,7 @@ audio::CueId ProjectState::add_item(const json& item, const std::string& parent_
 
 bool ProjectState::update_item(const std::string& uuid, const json& patch_in) {
     if (!patch_in.is_object()) return false;
+    std::lock_guard preparation_lock{playback_preparation_mutex_};
     std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
     json patch = patch_in;
     if (const auto selection = patch.find("deviceOverride"); selection != patch.end()) {
@@ -2565,6 +2568,7 @@ bool ProjectState::update_item(const std::string& uuid, const json& patch_in) {
 }
 
 bool ProjectState::remove_item(const std::string& uuid) {
+    std::lock_guard preparation_lock{playback_preparation_mutex_};
     std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
     cancel_group_runs_for_item(uuid);
     bool removed = false;
@@ -2926,9 +2930,9 @@ bool ProjectState::play_item(const std::string& uuid,
                              double fade_in_override_sec,
                              const audio::CueId& exclude_from_ducking,
                              double start_position_override_sec) {
-    std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
+    std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
     ++playback_intent_revision_;
-    return play_item_impl(uuid, fade_in_override_sec, exclude_from_ducking,
+    return play_item_impl(lifecycle_lock, uuid, fade_in_override_sec, exclude_from_ducking,
                           start_position_override_sec, ItemPlayPhase::Immediate);
 }
 
@@ -2939,24 +2943,24 @@ std::uint64_t ProjectState::playback_intent_revision() {
 
 bool ProjectState::resume_item(const std::string& uuid, double position_sec,
                                std::uint64_t expected_intent_revision) {
-    std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
+    std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
     if (expected_intent_revision != playback_intent_revision_ ||
         !std::isfinite(position_sec) || position_sec < 0.0) return false;
     ++playback_intent_revision_;
-    return play_item_impl(uuid, -1.0, audio::CueId{}, position_sec, ItemPlayPhase::Recovery);
+    return play_item_impl(lifecycle_lock, uuid, -1.0, audio::CueId{}, position_sec, ItemPlayPhase::Recovery);
 }
 
-bool ProjectState::play_item_impl(const std::string& uuid,
+bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecycle_lock, const std::string& uuid,
                                 double fade_in_override_sec,
                                 const audio::CueId& exclude_from_ducking,
                                 double start_position_override_sec,
                                 ItemPlayPhase phase) {
-    std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
   // Guard the whole body: a malformed item field must never throw uncaught
   // into the network layer. (#5)
   try {
-    // Reject pending loader work; cold priming below still performs bounded synchronous read-ahead.
+    // Pending loader work is refused; cold decoder work releases lifecycle ownership below.
     if (!item_ready_to_play(uuid)) return false;
+    const auto intent = playback_intent_revision_;
     const bool preparing = phase == ItemPlayPhase::Prepare || phase == ItemPlayPhase::Validate;
     const bool recovering = phase == ItemPlayPhase::Recovery;
     if (!preparing) cancel_prepared_follows(uuid);
@@ -2996,6 +3000,7 @@ bool ProjectState::play_item_impl(const std::string& uuid,
     bool         one_shot = false;
     std::vector<int> end_behavior_target_index;
     audio::CueId target_cue;
+    json item_snapshot;
     std::vector<audio::CueId> other_cues;
     std::unordered_map<std::string, std::string> item_uuids_by_cue;
 
@@ -3024,6 +3029,7 @@ bool ProjectState::play_item_impl(const std::string& uuid,
         if (!found && doc.contains("cartOnlyItems")) walk(doc["cartOnlyItems"]);
 
         if (found) {
+            item_snapshot = *found;
             one_shot      = is_one_shot_cue(*found);
             in_point      = json_get_or(*found, "inPoint",         0.0);
             out_point     = json_get_or(*found, "outPoint",         0.0);
@@ -3146,6 +3152,29 @@ bool ProjectState::play_item_impl(const std::string& uuid,
         !std::isfinite(out_point) || out_point < 0.0 || (out_point > 0.0 && out_point <= in_point) ||
         (file_duration > 0.0 && play_start >= std::min(effective_end, file_duration))) return reject_preparation();
     if (phase == ItemPlayPhase::Validate) return true;
+    if (phase != ItemPlayPhase::AlreadyStarted) {
+        const auto generation = document_generation_;
+        lifecycle_lock.unlock();
+        std::unique_lock preparation_lock{playback_preparation_mutex_};
+        lifecycle_lock.lock();
+        if (intent != playback_intent_revision_) return false;
+        lifecycle_lock.unlock();
+        playback->set_out_point_seconds(out_point > 0.0 ? out_point : 0.0);
+        playback->set_loop(end_behavior_action == "loop", in_point);
+        const bool primed = playback->prime(2.0, play_start);
+        lifecycle_lock.lock();
+        if (intent != playback_intent_revision_ || generation != document_generation_ ||
+            item_to_cue_id(uuid) != std::optional<audio::CueId>{target_cue}) return false;
+        bool unchanged = false;
+        {
+            std::lock_guard lock{mutex_};
+            for_each_item(document_, [&](json& item, const std::string&) {
+                if (item.value("uuid", std::string{}) == uuid) unchanged = item == item_snapshot;
+            });
+        }
+        if (!unchanged) return false;
+        if (!primed) return reject_preparation();
+    }
     // Resolve the requested audience output before ducking/stopping another
     // cue. A failed selection must leave the current show playing as it was.
     // AlreadyStarted keeps its prepared topology continuously connected.
@@ -3173,12 +3202,7 @@ bool ProjectState::play_item_impl(const std::string& uuid,
         apply_ltc_device_routing();
     }
 
-    if (phase != ItemPlayPhase::AlreadyStarted) {
-        playback->set_out_point_seconds(out_point > 0.0 ? out_point : 0.0);
-        playback->set_loop(end_behavior_action == "loop", in_point);
-        if (!playback->prime(2.0, play_start)) return reject_preparation();
-        if (preparing) return true;
-    }
+    if (preparing) return true;
 
     // Replay is a fresh runtime instance of the saved cue behavior. Cancel any
     // pending one-shot continuation (and all other stale sequencing state)
@@ -3363,7 +3387,8 @@ bool ProjectState::play_item_impl(const std::string& uuid,
         secondary = resolve_index_path_locked(start_behavior_target_index);
     }
     if (!recovering && start_requested &&
-        (secondary.empty() || !trigger_sequence_item(uuid, secondary, -1.0, target_cue))) {
+        (secondary.empty() || !trigger_sequence_item(lifecycle_lock, uuid, secondary, -1.0, target_cue))) {
+        if (intent != playback_intent_revision_) return false;
         Logger::warn("START BEHAVIOUR: secondary item '{}' was not ready; "
                      "primary '{}' remains playing", secondary, uuid);
         std::function<void(const json&)> cb;
@@ -3376,7 +3401,7 @@ bool ProjectState::play_item_impl(const std::string& uuid,
                         {"message", "Start action target was unavailable or cyclic"},
                         {"item_uuid", uuid}, {"target_uuid", secondary}});
     }
-    return true;
+    return intent == playback_intent_revision_;
   } catch (const std::exception& e) {
     Logger::error("ProjectState::play_item('{}') failed: {}", uuid, e.what());
     return false;
@@ -3913,13 +3938,13 @@ json ProjectState::state_summary() const {
 }
 
 std::string ProjectState::go() {
-    std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
+    std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
     ++playback_intent_revision_;
     const auto next = state_summary()["next"];
     if (!next.is_object()) return {};
     const auto target = next.value("itemUuid", std::string{});
     if (target.empty()) return {};
-    if (!trigger_item(target, -1.0, audio::CueId{}, false)) return {};
+    if (!trigger_item_impl(lifecycle_lock, target, -1.0, audio::CueId{}, false, {})) return {};
     if (next.value("source", std::string{}) == "override") (void)set_next_item_override("");
     return target;
 }
@@ -3943,19 +3968,19 @@ bool ProjectState::trigger_item(const std::string& uuid,
                                 double fade_in_override_sec,
                                 const audio::CueId& exclude_from_ducking,
                                 bool consume_armed_override) {
-    std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
+    std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
     ++playback_intent_revision_;
-    return trigger_item_impl(uuid, fade_in_override_sec, exclude_from_ducking,
+    return trigger_item_impl(lifecycle_lock, uuid, fade_in_override_sec, exclude_from_ducking,
                              consume_armed_override, {});
 }
 
-bool ProjectState::trigger_item_impl(
+bool ProjectState::trigger_item_impl(std::unique_lock<std::recursive_mutex>& lifecycle_lock,
     const std::string& uuid, double fade_in_override_sec,
     const audio::CueId& exclude_from_ducking, bool consume_armed_override,
     const std::vector<std::uint64_t>& preserved_generations,
     bool already_started) {
     static thread_local unsigned group_dispatch_depth = 0;
-    std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
+    const auto intent = playback_intent_revision_;
   // Guard the whole body: a malformed item field must never throw uncaught
   // into the network layer. (#5)
   try {
@@ -4057,7 +4082,7 @@ bool ProjectState::trigger_item_impl(
     }
 
     if (type == "audio") {
-        const bool triggered = play_item_impl(uuid, fade_in_override_sec,
+        const bool triggered = play_item_impl(lifecycle_lock, uuid, fade_in_override_sec,
             exclude_from_ducking, -1.0, already_started
                 ? ItemPlayPhase::AlreadyStarted : ItemPlayPhase::Immediate);
         if (triggered && group_dispatch_depth == 0) cancel_group_runs_for_item(uuid, preserved_generations);
@@ -4075,7 +4100,7 @@ bool ProjectState::trigger_item_impl(
         if (child_uuids.empty()) return false;
 
         for (const auto& [leaf, output] : selected_leaves) {
-            if (!play_item_impl(leaf, fade_in_override_sec, exclude_from_ducking, -1.0, ItemPlayPhase::Validate)) return false;
+            if (!play_item_impl(lifecycle_lock, leaf, fade_in_override_sec, exclude_from_ducking, -1.0, ItemPlayPhase::Validate)) return false;
             if (!output.empty() && ensure_device_routing(output).empty())
                 return reject_output_selection(output, leaf);
             const auto id = item_to_cue_id(leaf);
@@ -4083,7 +4108,7 @@ bool ProjectState::trigger_item_impl(
             if (!cue) return false;
             if (cue->stats().transport == audio::TransportState::Stopped &&
                 !cue->prepared_start_ready(cue->playback_revision()) &&
-                !play_item_impl(leaf, fade_in_override_sec, exclude_from_ducking, -1.0, ItemPlayPhase::Prepare))
+                !play_item_impl(lifecycle_lock, leaf, fade_in_override_sec, exclude_from_ducking, -1.0, ItemPlayPhase::Prepare))
                 return false;
         }
         if (group_dispatch_depth == 0) cancel_group_runs_for_item(uuid, preserved_generations);
@@ -4095,13 +4120,15 @@ bool ProjectState::trigger_item_impl(
         bool triggered = false;
         if (start_action == "play-all") {
             for (const auto& child_uuid : child_uuids) {
-                if (trigger_item(child_uuid, fade_in_override_sec,
-                                 exclude_from_ducking, false)) triggered = true;
+                if (intent != playback_intent_revision_) return false;
+                if (trigger_item_impl(lifecycle_lock, child_uuid, fade_in_override_sec,
+                                 exclude_from_ducking, false, {})) triggered = true;
             }
         } else {
-            triggered = trigger_item(child_uuids.front(), fade_in_override_sec,
-                                     exclude_from_ducking, false);
+            triggered = trigger_item_impl(lifecycle_lock, child_uuids.front(), fade_in_override_sec,
+                                     exclude_from_ducking, false, {});
         }
+        if (intent != playback_intent_revision_) return false;
         if (triggered) {
             std::lock_guard lock{sequencer_mutex_};
             group_runs_.erase(
@@ -4838,6 +4865,7 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
         std::lock_guard mirror_lock{mirror_mutex_};
         if (load_thread_.joinable()) load_thread_.join();
     }
+    std::lock_guard preparation_lock{playback_preparation_mutex_};
     std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
     {
         std::lock_guard slock{sequencer_mutex_};
@@ -5228,7 +5256,7 @@ void ProjectState::sequencer_loop() {
             // after the action was copied above. Serialize validation and the
             // complete side effect against those lifecycle changes so stale
             // work can neither stop the new play nor advance from the old one.
-            std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
+            std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
             const bool terminal =
                 p.kind == PendingAction::Kind::PlaybackError ||
                 p.kind == PendingAction::Kind::NaturalEnd ||
@@ -5258,7 +5286,7 @@ void ProjectState::sequencer_loop() {
             switch (p.kind) {
             case PendingAction::Kind::PlaybackError: {
                 // Restore any gains this cue ducked, but deliberately do not call
-                // handle_item_ended(): decoder failure must never execute a follow
+                // handle_item_ended(lifecycle_lock, ): decoder failure must never execute a follow
                 // action or arm the next cue.
                 cancel_group_runs_for_item(p.item.uuid);
                 release_duck_owners(p.item);
@@ -5292,7 +5320,7 @@ void ProjectState::sequencer_loop() {
 
             case PendingAction::Kind::NaturalEnd:
             case PendingAction::Kind::StopFadeEnded:
-                handle_item_ended(p.item);
+                handle_item_ended(lifecycle_lock, p.item);
                 break;
 
             case PendingAction::Kind::Crossfade: {
@@ -5302,7 +5330,7 @@ void ProjectState::sequencer_loop() {
                 // Skip if the operator already started the next item manually —
                 // restarting it mid-play is never what a crossfade means.
                 const bool started = !next_uuid.empty() &&
-                    (item_on_air(next_uuid) || trigger_sequence_item(
+                    (item_on_air(next_uuid) || trigger_sequence_item(lifecycle_lock,
                         p.item.uuid, next_uuid, p.item.crossfade_sec, p.item.cue_id));
                 if (!started) {
                     std::lock_guard slock{sequencer_mutex_};
@@ -5331,7 +5359,7 @@ void ProjectState::sequencer_loop() {
             case PendingAction::Kind::StartNext: {
                 const auto next_uuid = resolve_advance_target(p.item);
                 const bool started = !next_uuid.empty() &&
-                    (item_on_air(next_uuid) || trigger_sequence_item(
+                    (item_on_air(next_uuid) || trigger_sequence_item(lifecycle_lock,
                         p.item.uuid, next_uuid, -1.0, p.item.cue_id));
                 {
                     std::lock_guard slock{sequencer_mutex_};
@@ -5367,10 +5395,10 @@ void ProjectState::sequencer_loop() {
                 // An operator may have replayed/replaced the target after the
                 // audio handoff. Never overwrite that newer playback instance.
                 if (follow && follow->target->playback_revision() == follow->target_revision) {
-                    (void)trigger_sequence_item(p.item.uuid, p.item.prepared_target_uuid,
+                    (void)trigger_sequence_item(lifecycle_lock, p.item.uuid, p.item.prepared_target_uuid,
                                                -1.0, p.item.cue_id, true);
                 }
-                complete_group_runs_for_item(p.item.uuid);
+                complete_group_runs_for_item(lifecycle_lock, p.item.uuid);
                 break;
             }
 
@@ -5383,7 +5411,7 @@ void ProjectState::sequencer_loop() {
                 // the ordinary control-thread EOF follow (up to one poll late).
                 if (engine_.is_running() && source && target_id &&
                     next_uuid != p.item.uuid && !item_on_air(next_uuid) &&
-                    play_item_impl(next_uuid, -1.0, p.item.cue_id, -1.0,
+                    play_item_impl(lifecycle_lock, next_uuid, -1.0, p.item.cue_id, -1.0,
                                    ItemPlayPhase::Prepare)) {
                     follow = engine_.schedule_follow(p.item.cue_id, *target_id, p.item.end_frame);
                 }
@@ -5411,7 +5439,7 @@ void ProjectState::sequencer_loop() {
                 break;
 
             case PendingAction::Kind::CustomAction:
-                execute_custom_action(p.custom_action);
+                execute_custom_action(lifecycle_lock, p.custom_action);
                 break;
             }
           } catch (const std::exception& e) {
@@ -5421,7 +5449,7 @@ void ProjectState::sequencer_loop() {
 
 
         // Retired crossfade/replacement tails have no sequencer entry left to report their end.
-        std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
+        std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
         std::vector<std::string> untracked_group_items;
         {
             std::lock_guard slock{sequencer_mutex_};
@@ -5437,7 +5465,7 @@ void ProjectState::sequencer_loop() {
             }
         }
         for (const auto& uuid : untracked_group_items) {
-            try { complete_group_runs_for_item(uuid); }
+            try { complete_group_runs_for_item(lifecycle_lock, uuid); }
             catch (const std::exception& e) { Logger::warn("group completion (item '{}') threw: {}", uuid, e.what()); }
         }
     }
@@ -5448,13 +5476,13 @@ void ProjectState::sequencer_loop() {
 // crosses a customAction.timePoint. Server-side action types are executed
 // directly; http-request is queued by the control server's bounded worker.
 // ---------------------------------------------------------------------------
-void ProjectState::execute_custom_action(const json& action) {
+void ProjectState::execute_custom_action(std::unique_lock<std::recursive_mutex>& lifecycle_lock, const json& action) {
     if (!action.is_object()) return;
     const std::string type = action.value("type", "");
 
     if (type == "play-item") {
         const auto u = action.value("uuid", std::string{});
-        if (!u.empty()) trigger_item(u);
+        if (!u.empty()) trigger_item_impl(lifecycle_lock, u, -1.0, audio::CueId{}, true, {});
     }
     else if (type == "play-index") {
         // index is an array path through the items tree. Resolve under lock.
@@ -5483,7 +5511,7 @@ void ProjectState::execute_custom_action(const json& action) {
             if (current && current->is_object())
                 target_uuid = current->value("uuid", std::string{});
         }
-        if (!target_uuid.empty()) trigger_item(target_uuid);
+        if (!target_uuid.empty()) trigger_item_impl(lifecycle_lock, target_uuid, -1.0, audio::CueId{}, true, {});
     }
     else if (type == "stop-all") {
         stop_all_cues(0);
@@ -5542,17 +5570,16 @@ std::vector<std::uint64_t> ProjectState::prepare_group_sequence_transition(
     return preserved;
 }
 
-bool ProjectState::trigger_sequence_item(
+bool ProjectState::trigger_sequence_item(std::unique_lock<std::recursive_mutex>& lifecycle_lock,
     const std::string& source_uuid, const std::string& target_uuid,
     double fade_in_override_sec, const audio::CueId& exclude_from_ducking,
     bool already_started) {
-    std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
     const auto preserved = prepare_group_sequence_transition(source_uuid, target_uuid);
-    return trigger_item_impl(target_uuid, fade_in_override_sec, exclude_from_ducking,
+    return trigger_item_impl(lifecycle_lock, target_uuid, fade_in_override_sec, exclude_from_ducking,
                              true, preserved, already_started);
 }
 
-void ProjectState::complete_group_runs_for_item(const std::string& completed_uuid) {
+void ProjectState::complete_group_runs_for_item(std::unique_lock<std::recursive_mutex>& lifecycle_lock, const std::string& completed_uuid) {
     std::string completed = completed_uuid;
     for (;;) {
         std::optional<GroupRun> candidate;
@@ -5628,7 +5655,7 @@ void ProjectState::complete_group_runs_for_item(const std::string& completed_uui
         const bool target_failed =
             (explicit_target && target.empty()) ||
             target == candidate->group_uuid ||
-            (!target.empty() && !trigger_item(target));
+            (!target.empty() && !trigger_item_impl(lifecycle_lock, target, -1.0, audio::CueId{}, true, {}));
         if (target_failed) {
             cancel_group_runs_for_item(candidate->group_uuid);
             Logger::warn("GROUP END: target '{}' was not ready; group '{}' completed",
@@ -5855,7 +5882,7 @@ void ProjectState::arm_first_item_on_open() {
     if (!first.empty()) (void)set_next_item_override(first, /*manual=*/false);
 }
 
-void ProjectState::handle_item_ended(const SequencedItem& item) {
+void ProjectState::handle_item_ended(std::unique_lock<std::recursive_mutex>& lifecycle_lock, const SequencedItem& item) {
     // Ensure the engine explicitly transitions the transport state and 
     // triggers a cue_state broadcast so the client UI updates.
     engine_.stop(item.cue_id);
@@ -5868,12 +5895,12 @@ void ProjectState::handle_item_ended(const SequencedItem& item) {
     if (item.start_next_triggered) {
         Logger::playback("END BEHAVIOUR suppressed for '{}' "
                          "(Start Next marker already fired)", item.uuid);
-        complete_group_runs_for_item(item.uuid);
+        complete_group_runs_for_item(lifecycle_lock, item.uuid);
         return;
     }
 
     const auto trigger_follow = [&](const std::string& target) {
-        if (!target.empty() && (item_on_air(target) || trigger_sequence_item(item.uuid, target))) return;
+        if (!target.empty() && (item_on_air(target) || trigger_sequence_item(lifecycle_lock, item.uuid, target))) return;
         cancel_group_runs_for_item(item.uuid);
         // Do not retry automatically after EOF: a repaired cue could otherwise
         // fire long after its scheduled time. Keep a valid target for explicit GO.
@@ -5892,7 +5919,7 @@ void ProjectState::handle_item_ended(const SequencedItem& item) {
         Logger::playback("CUE TO CONTINUE END: item '{}' target='{}'",
                          item.uuid, item.continue_target_uuid);
         if (!item.continue_target_uuid.empty()) trigger_follow(item.continue_target_uuid);
-        complete_group_runs_for_item(item.uuid);
+        complete_group_runs_for_item(lifecycle_lock, item.uuid);
         return;
     }
 
@@ -5914,7 +5941,7 @@ void ProjectState::handle_item_ended(const SequencedItem& item) {
         // back to the in-point on EOF). This is the fallback path for when the
         // engine couldn't loop (e.g. a decoder that can't seek) — re-trigger
         // the same item so "loop" still loops, just with a gap.
-        play_item(item.uuid);
+        (void)play_item_impl(lifecycle_lock, item.uuid, -1.0, audio::CueId{}, -1.0, ItemPlayPhase::Immediate);
     } else if (end_action == "next" || end_action == "goto-item" ||
                end_action == "goto-index") {
         const auto target = resolve_advance_target(item);
@@ -5926,7 +5953,7 @@ void ProjectState::handle_item_ended(const SequencedItem& item) {
         // the top of the playlist at the end of the list.
         arm_next_after_stop(item.uuid, /*was_manual=*/false);
     }
-    complete_group_runs_for_item(item.uuid);
+    complete_group_runs_for_item(lifecycle_lock, item.uuid);
 }
 
 } // namespace liveplay::core
