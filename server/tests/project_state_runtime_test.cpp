@@ -191,6 +191,33 @@ void test_stop_all_during_project_boundaries(const std::filesystem::path& wav) {
              [](auto& state) { state.load_from_json(document(json::array())); });
 }
 
+void test_stop_all_during_decoder_read(const std::filesystem::path& wav) {
+    liveplay::audio::AudioEngine engine;
+    liveplay::core::ProjectState state(engine);
+    state.replace_full_document(document(json::array({audio("stalled-stop", wav)})));
+    check(wait_ready(state), "stalled stop: fixture ready"); close_devices(engine);
+    check(state.trigger_item("stalled-stop"), "stalled stop: cue starts");
+    const auto item = engine.find_cue(*state.item_to_cue_id("stalled-stop"));
+    std::array<float, 256> left{}, right{};
+    float* channels[]{left.data(), right.data()};
+    item->render_block(channels, 2, 256);
+    // A decoder read owns this exact mutex for its entire filesystem call.
+    std::unique_lock read_stall{item->decoder_mutex_};
+    auto stop = std::async(std::launch::async, [&] { state.stop_all_cues(0); });
+    check(stop.wait_for(250ms) == std::future_status::ready,
+          "stalled stop: immediate Stop All completes before decoder read releases");
+    check(item->stats().transport == liveplay::audio::TransportState::Stopped &&
+              item->render_block(channels, 2, 256) == 0,
+          "stalled stop: current cue is silent while decoder remains blocked");
+    read_stall.unlock();
+    stop.get();
+    check(state.trigger_item("stalled-stop"), "stalled stop: deliberate replay still works");
+    item->render_block(channels, 2, 256);
+    check(item->stats().playhead_frame == 256,
+          "stalled stop: replay begins at source start rather than stale queued position");
+    state.stop_all_cues(0);
+}
+
 void test_rejected_document_preserves_show(const std::filesystem::path& wav) {
     const auto folder = std::filesystem::temp_directory_path() /
         ("dwcue-rejected-load-" + std::to_string(
@@ -1540,6 +1567,7 @@ int main() {
     test_position_aware_recovery(wav);
     test_changed_media_readiness();
     test_stop_all_during_project_boundaries(wav);
+    test_stop_all_during_decoder_read(wav);
     test_rejected_document_preserves_show(wav);
     test_load_resets_project_runtime(wav);
     test_rejected_server_document_preserves_show(wav);

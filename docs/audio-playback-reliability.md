@@ -92,3 +92,8 @@ The former secondary target also left unequal scheduling headroom. With the fina
 The hardware-free output fixture covers both nominal-speed crossings and six clock/phase cases at zero/±3,000 ppm with ±0.2-block callback delivery variation. All pass; extended copies run 30 simulated minutes each with zero underruns, overruns or resyncs. PCM continuity is checked on a sub-second ramp; the remainder runs through post-EOF silence. This is three hours of simulated queue evolution, not three hours of real-time decoded or audible playback. Full native CTest13/13, RT/live-safety/gain checks and fresh independent review pass.
 
 Exploratory ±4,000 ppm cases with the same delivery variation can still exhaust headroom. The original real-media secondary-output burst is not uniquely attributed or physically confirmed resolved. Hardware acceptance remains deferred. No controller redesign or widened safety limit is implied by this bounded repair.
+
+
+## Ordered storage repair in progress (T38)
+
+Immediate Stop All no longer waits for a decoder rewind behind a blocked storage read. Stopped transport and zero playhead publish immediately; the existing deliberate replay/prime path rewinds before reusing audio. Decoder-mutex contention RED→GREEN and affected native3/3 pass with physical audio-service access denied. This is the first T38 boundary only: cold GO’s lifecycle ownership and seek exclusion remain under investigation. It is not a claim that arbitrary storage faults or the physical intermittency are closed.

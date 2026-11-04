@@ -300,7 +300,7 @@ void PlaybackItem::play() {
              playhead_frames_.load(std::memory_order_acquire) >= decode_cursor_frame_) ||
             (out_point > 0 &&
              playhead_frames_.load(std::memory_order_acquire) >= out_point);
-        if (retry_error ||
+        if (rewind_on_play_.load(std::memory_order_acquire) || retry_error ||
             (consumed && (decode_terminal_.load(std::memory_order_acquire) ||
                           decode_out_point_passed_))) {
             begin_render_exclusion();
@@ -404,16 +404,8 @@ void PlaybackItem::stop_now() {
     fade_duration_samples_.store(0, std::memory_order_relaxed);
     fade_elapsed_samples_.store(0, std::memory_order_relaxed);
     playhead_frames_.store(0, std::memory_order_relaxed);
-    end_render_exclusion();
-
-    std::lock_guard lock{decoder_mutex_};
-    begin_render_exclusion();
-    // Invalidate preparations made while stop was waiting for decoder I/O.
-    playback_revision_.fetch_add(1, std::memory_order_acq_rel);
-    transport_.store(TransportState::Stopped, std::memory_order_release);
-    if (decoder_) ma_decoder_seek_to_pcm_frame(decoder_.get(), 0);
-    reset_read_ahead_locked(0);
-    if (ltc_) ltc_->reset(std::chrono::nanoseconds{ltc_offset_ns_.load()});
+    // Rewind on deliberate replay; stopping must never wait for storage.
+    rewind_on_play_.store(true, std::memory_order_release);
     end_render_exclusion();
 }
 
@@ -617,7 +609,8 @@ bool PlaybackItem::prime(double seconds, double start_seconds) noexcept {
         RenderActiveGuard guard{render_exclusion_};
         if (transport_.load(std::memory_order_acquire) != TransportState::Stopped) return true;
         const auto read = read_ahead_read_.load(std::memory_order_acquire);
-        const bool cached = !decode_error_.load(std::memory_order_acquire) &&
+        const bool cached = !rewind_on_play_.load(std::memory_order_acquire) &&
+            !decode_error_.load(std::memory_order_acquire) &&
             playhead_frames_.load(std::memory_order_acquire) == start_frame && read_ahead_offset_ == 0 &&
             read < read_ahead_write_.load(std::memory_order_acquire) && !read_ahead_.empty() &&
             read_ahead_[read % read_ahead_.size()].frames > 0;
@@ -724,6 +717,7 @@ void PlaybackItem::end_render_exclusion() noexcept {
 }
 
 void PlaybackItem::reset_read_ahead_locked(std::uint64_t frame) noexcept {
+    rewind_on_play_.store(false, std::memory_order_release);
     read_ahead_read_.store(0, std::memory_order_relaxed);
     read_ahead_write_.store(0, std::memory_order_release);
     read_ahead_offset_ = 0;

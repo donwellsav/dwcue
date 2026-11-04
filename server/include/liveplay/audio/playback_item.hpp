@@ -298,6 +298,7 @@ private:
     std::atomic<TransportState> transport_{TransportState::Stopped};
     std::atomic<std::uint64_t>  playback_revision_{1};
     std::atomic<std::uint64_t>  prepared_revision_{0};
+    std::atomic<bool>           rewind_on_play_{false};
     TransportState             paused_transport_ = TransportState::Playing; // render_exclusion_
     std::atomic<float>          gain_target_linear_{1.0f};
     std::atomic<float>          gain_current_linear_{1.0f};     // smoothed
