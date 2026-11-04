@@ -908,7 +908,7 @@ bool PlaybackItem::fill_read_ahead_block_locked() noexcept {
         decode_cursor_frame_ = in_frame;
 
         // A malformed/empty source whose loop point also yields no audio must
-        // not spin forever on the single shared decode worker.
+        // not spin forever on a shared decode worker.
         if (got == 0 && ++zero_progress_loops > 1) {
             slot.natural_end = true;
             decode_terminal_.store(true, std::memory_order_release);

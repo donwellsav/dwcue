@@ -16,6 +16,8 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <new>
@@ -154,6 +156,66 @@ struct Fixture {
         return out;
     }
 };
+
+void test_blocked_decoder_reads(const std::filesystem::path& source) {
+    for (const int blocked_count : {1, 3}) {
+        Fixture f(source);
+        std::vector<std::shared_ptr<PlaybackItem>> blocked;
+        const auto silent = f.engine.create_mixer_channel("Held decoder fixture");
+        for (int i = 0; i < blocked_count; ++i) {
+            const auto id = f.engine.load_cue_no_route(source);
+            auto item = f.engine.find_cue(id);
+            check(item && item->prime(0.0), "blocked read: real source prepares without resident PCM");
+            item->play(); blocked.push_back(item);
+            f.engine.route_item_source_to_mixer(id, 0, silent, 0, 0.0f);
+        }
+        std::promise<void> release;
+        const auto allowed = release.get_future().share();
+        std::atomic<int> entered{0};
+        auto* first_backend = static_cast<ma_data_source_base*>(blocked.front()->decoder_->pBackend);
+        const auto* original = first_backend->vtable;
+        auto stalled = *original;
+        static std::function<ma_result(ma_data_source*, void*, ma_uint64, ma_uint64*)> read;
+        read = [&](ma_data_source* decoder, void* data, ma_uint64 frames, ma_uint64* got) {
+            entered.fetch_add(1, std::memory_order_release);
+            allowed.wait(); return original->onRead(decoder, data, frames, got);
+        };
+        stalled.onRead = [](ma_data_source* decoder, void* data, ma_uint64 frames, ma_uint64* got) {
+            return read(decoder, data, frames, got);
+        };
+        for (const auto& item : blocked)
+            static_cast<ma_data_source_base*>(item->decoder_->pBackend)->vtable = &stalled;
+        check(f.engine.start(), "blocked read: production engine workers start with software output");
+        for (int i = 0; i < 250 && entered.load(std::memory_order_acquire) < blocked_count; ++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        check(entered.load() == blocked_count, "blocked read: each requested backend is held inside actual read");
+        int audible_blocks = 0;
+        for (int i = 0; i < 64; ++i) {
+            for (int wait = 0; wait < 50 && ma_pcm_rb_available_read(f.device->ring.get()) < block; ++wait)
+                std::this_thread::sleep_for(std::chrono::milliseconds{1});
+            const auto out = f.drain();
+            if (std::any_of(out.begin(), out.end(), [](float sample) { return sample > 0.05f; }))
+                ++audible_blocks;
+            std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        }
+        std::printf("MEASURE blocked_read_sources=%d healthy_pcm_blocks=%d/64\n", blocked_count, audible_blocks);
+        check(audible_blocks >= 48 && f.item->stats().playhead_frame > 8'192,
+              "blocked read: healthy PCM continues beyond all resident queue/ring capacity");
+        auto stop = std::async(std::launch::async, [&] {
+            f.engine.stop_all(std::chrono::milliseconds{0}, true);
+        });
+        check(stop.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready &&
+                  f.item->stats().transport == TransportState::Stopped,
+              "blocked read: Stop All remains independent of held reads");
+        release.set_value(); stop.get(); f.engine.stop();
+        for (const auto& item : blocked) {
+            static_cast<ma_data_source_base*>(item->decoder_->pBackend)->vtable = original;
+            check(item->stats().transport == TransportState::Stopped && item->stats().playhead_frame == 0,
+                  "blocked read: delayed decoder return cannot revive stopped transport");
+        }
+        read = {};
+    }
+}
 
 void test_shared_output(const std::filesystem::path& tone, bool resample) {
     Fixture f(tone, true, resample);
@@ -685,6 +747,7 @@ int main() {
     const auto center = wav(dir, "center.wav", 0.7f, true, 0.0f, 6, 2);
     const auto left = wav(dir, "left.wav", 0.3f, true, 0.0f, 2, 0);
     const auto ramp = wav(dir, "ramp.wav", 0.125f, true, 1.0f / 131'072.0f);
+    test_blocked_decoder_reads(quiet);
     test_shared_output(tone, false);
     test_shared_output(tone, true);
     test_delay_and_bypass(quiet);

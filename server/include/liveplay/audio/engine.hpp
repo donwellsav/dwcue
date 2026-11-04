@@ -36,6 +36,7 @@
 #include "liveplay/audio/device_clock_controller.hpp"
 #include "liveplay/audio/types.hpp"
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -555,7 +556,7 @@ private:
     // Render thread plumbing.
     std::atomic<bool>                running_{false};
     std::thread                      render_thread_;
-    std::thread                      decode_thread_;
+    std::array<std::thread, 4>        decode_threads_;
     std::thread                      device_watchdog_thread_;
     std::condition_variable          decode_cv_;
     std::mutex                       decode_wait_mutex_;

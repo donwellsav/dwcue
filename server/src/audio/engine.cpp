@@ -134,7 +134,8 @@ bool AudioEngine::start() {
                  cfg_.master_ceiling_db);
 
     render_thread_ = std::thread([this] { render_loop(); });
-    decode_thread_ = std::thread([this] { decode_loop(); });
+    for (auto& worker : decode_threads_)
+        worker = std::thread([this] { decode_loop(); });
     device_watchdog_thread_ = std::thread([this] { device_watchdog_loop(); });
 
 #if defined(_WIN32)
@@ -159,7 +160,8 @@ void AudioEngine::stop() {
     consumption_counter_.fetch_add(1, std::memory_order_release);
     consumption_counter_.notify_all();
     if (render_thread_.joinable()) render_thread_.join();
-    if (decode_thread_.joinable()) decode_thread_.join();
+    for (auto& worker : decode_threads_)
+        if (worker.joinable()) worker.join();
     if (device_watchdog_thread_.joinable()) device_watchdog_thread_.join();
     Logger::info("AudioEngine: stopped.");
 }

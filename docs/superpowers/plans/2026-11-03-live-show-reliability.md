@@ -327,3 +327,18 @@ Pre-flight: Preview and live edits share `PlaybackItem`, engine retirement and p
 
 
 T43/T44 closure: Preview replies/events now retain their publication identity/revision through HTTP and both client observers, and two queued seeks preserve the latest requested position while honoring Stop. The final review's other declined areas remain separate audit leads: a read stuck inside the single worker, serialized Program edits/GO, general metadata/device-change/full-project paths and type-only conversion without media-path change. These are not certified closed by the bounded decoder-wait fixes.
+
+
+## Stuck shared decoder reads — 4 November 2026 (T45)
+
+Continue from clean `1d5a3c5`. User authorized small fixes, unchanged show workflow, software-only generated media, tested local commits and current workplan/docs. Preserve current queues, cue/transport revisions, Stop/Pause/fade/follow semantics and Preview isolation. No dependency, UI, media conversion or per-cue thread.
+
+- [x] **T45a — bounded shared read isolation.** Hold actual native backend reads for one and three sources. Require healthy PCM beyond resident read-ahead/ring capacity, independent Stop All, and no late transport revival. Reuse decoder try-lock serialization with four fixed shared workers; keep read order/PCM/fades intact. Run affected native gates and commit.
+- [ ] **T45b — worker lifetime and restart.** Reproduce engine stop/destruction waiting on those reads. Keep blocked calls owned independently of engine lifetime, reuse bounded workers across stop/start, prevent stale work publication/resume, and release retained decoder ownership when I/O returns. No forced thread cancellation or unbounded replacement. Test delayed return, stop/restart, destruction and all-worker exhaustion; commit each independently verified fix.
+- [ ] **T45 closure.** Full native/API/client/type/RT/live software gates, one fresh bounded review and one parent correction pass if required, updated current docs/manual and clean local commits. Physical/show-system acceptance stays deferred.
+
+Pre-flight: worker concurrency consumes the cue's existing decoder mutex and fixed read-ahead queue; that mutex already serializes loader/control producers, so multiple workers must continue using try-lock. Engine stop currently joins the read thread, and the worker currently retains `this`/a full topology during I/O. Lifetime changes must remove those dependencies before leaving a read in flight at engine shutdown. Explicit cue teardown may still await its own decoder operation; this batch must not reintroduce global ownership around that wait.
+
+Ruling: four fixed workers preserve capacity for a healthy cue with three concurrently blocked sources (e.g. an overlapping pair plus Preview), with a bounded thread count. All four blocked reads can still exhaust refill capacity; document this boundary rather than spawning replacements. Retain the existing show controls and explicit retry behavior.
+
+Research basis: the C++ thread stop mechanism is cooperative and a jthread destructor still joins ([C++ draft](https://www.eel.is/c%2B%2Bdraft/thread.jthread.cons)); Windows I/O cancellation also depends on operation/driver support ([Microsoft guidance](https://learn.microsoft.com/en-us/windows/win32/fileio/canceling-pending-i-o-operations)). A timeout cannot safely destroy the still-running decoder. Keep the decoder owned until its call returns and isolate healthy work around it. This is a local design inference from those primary sources and the traced native flow.
