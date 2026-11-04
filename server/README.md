@@ -4,7 +4,7 @@
 
 `dwcue-server` is the headless C++20 audio engine and control surface that backs the DonWells Cue client. It owns the audio graph, the routing matrix, the loaded project file, and exposes a REST + WebSocket API. It runs as either a child process spawned by the desktop client (single-machine installs) or as a standalone daemon on a stage-side machine that the client connects to over the LAN.
 
-This document tracks the current v2.6.14 source included at `7a0eee2` (native repair commit `0394928`) and is the developer's guide to the server; this is not a published-installer claim, so use the release page and installed About version to determine available behaviour. For show preparation and operation, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For client internals, see [`client/README.md`](../client/README.md); for overall project and release context, see the [root README](../README.md).
+This document tracks the v2.6.17 application source checkpoint `a9a86a3`, including the reliability audit in `2ea5984` and is the developer's guide to the server; this is not a published-installer claim, so use the release page and installed About version to determine available behaviour. For show preparation and operation, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For client internals, see [`client/README.md`](../client/README.md); for overall project and release context, see the [root README](../README.md).
 
 ---
 

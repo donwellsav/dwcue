@@ -8,7 +8,7 @@ You build a **show** as a list of cues plus a grid of one-touch buttons, then tr
 
 This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. Published macOS packages are Developer ID signed, notarized, and package-validated.
 
-> **Current source:** package metadata is **v2.6.16** and this guide describes source commit **39c3129**. This is source provenance, not a published-installer claim: the release page is authoritative for release assets, and you must verify the installed About version before relying on a behaviour.
+> **Current source:** package metadata is **v2.6.17** and this guide describes source commit **a9a86a3**. This is source provenance, not a published-installer claim: the release page is authoritative for release assets, and you must verify the installed About version before relying on a behaviour.
 
 > **Operating a show?** Use the [operator manual (PDF)](docs/operators-manual.pdf) or its [Markdown source](docs/operators-manual.md). Those instructions track the current source. The client and server READMEs linked later are developer references, not show-day instructions.
 
@@ -58,7 +58,7 @@ Video cues are ordinary audio cues whose media file also carries a picture (H.26
 - **Silent videos** — a video file with no audio track still plays: the engine runs a silent transport of the container's duration so the cue advances, auto-follows and reports progress exactly like an audible cue.
 - **Grouped cues and One Shots** — nested video/image cues and cart-only video are supported; video uses the same media resolution as native audio. Reopening the output restores the most recently fired program source, not arbitrary cue-list order.
 - **Visible failures** — unsupported or undecodable video tracks produce an error in the control window and do not leave a misleading picture on the audience output. A healthy replacement source clears the error.
-- **Cue handoffs and recovery** — cancelled play attempts cannot mark a later cue as failed, background cues retain their current native position, and a failed output renderer closes with its reason shown in the control window. [Video reliability checks and limits](docs/video-playback-reliability.md).
+- **Cue handoffs and recovery** — cancelled play attempts cannot mark a later cue as failed, background cues retain their current native position, and a failed output renderer stays under a native black cover with its reason shown in the control window; **Restart Output** is operator-controlled. [Video reliability checks and limits](docs/video-playback-reliability.md).
 - **Audio output recovery** — a stalled callback clock produces an operator warning. **Retry now** restarts that device in place, preserving its identity, routes, and loaded cues. Request acceptance is not success: the warning clears only after the matching restart receives a real callback. A failed attempt remains retryable.
 - **Diagnostic test cards** — Project Settings → Video Output offers the DonWells Cue signature card, Simple/SMPTE/ARIB/HDR/SDI/Single bars, Grid, Ramp, Name, AV Sync, DeGhost and LED Wall. These reproduce [Alteka Kards](https://github.com/Alteka/Kards) geometry, levels and diagnostic motion with DonWells Cue branding; their card-specific controls include colours, levels, grids, ramps, masks, logos and LED dimensions. Settings stay on this machine rather than modifying the project.
 - **Native AV Sync** — the original bundled 24, 25, 29.97, 30, 50, 59.94, 60, 100 and 120 FPS clips use the existing native decoder, loop, mixer and selected PA output. Their picture uses the same muted, native-clocked video element as Program playback. **Stop All** stops the diagnostic even when no project cue is active; switch the test card off and on to restart it. Switching away, closing the output, relaunching or quitting must unload the transient diagnostic without adding or editing project cues. If native removal fails, the app keeps the diagnostic ownership/error visible and cancels exit or relaunch so cleanup can be retried. **Close Client Only** removes the client-owned diagnostic but deliberately leaves the detached Program server and its normal show state running. Preferences persist, but the output and test card remain disarmed on app launch.
@@ -117,7 +117,7 @@ If your browser blocked the download instead, choose **Keep** to save the instal
 
 ## Getting started
 
-These steps describe the current v2.6.16 working tree. It writes native show documents as `.dwcue` files and portable exports as `.dwcuepack` archives.
+These steps describe the current v2.6.17 source checkpoint (`a9a86a3`). It writes native show documents as `.dwcue` files and portable exports as `.dwcuepack` archives.
 
 1. Install the [latest release](https://github.com/donwellsav/dwcue/releases/latest), or build DonWells Cue from source, and launch it.
 2. Choose **New Show**, enter its name, use **Choose…** to select the read-only Location, and create it — DonWells Cue writes `<show name>.dwcue` and a `media/` sub-folder there.
@@ -351,7 +351,7 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.16**; the release page remains the source of truth for published artefacts and their checksums.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.17**; the release page remains the source of truth for published artefacts and their checksums.
 
 ### Triggering a release
 

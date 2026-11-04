@@ -1,13 +1,15 @@
 # DonWells Cue — Operator's Manual
 
-**Version:** 2.6.14
-**Source revision:** 8ea1e9c6ee02414301947f210b35b4952aa5d254
-**Native engine baseline:** 7a0eee21688e378e99a78b50c0c4ec414435bb65
-**Edition:** 6 September 2026 · English · Current-source operator edition
+**Version:** 2.6.17
+**Source revision:** a9a86a39b0f8b75cea7a022548ab2b6a76c17256
+**Native engine baseline:** a9a86a39b0f8b75cea7a022548ab2b6a76c17256
+**Edition:** 3 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition was prepared and captured from the verified 2.6.14 package at source revision **8ea1e9c**, whose native engine baseline remains **7a0eee2**. It is not a published-release claim: check the installer you will actually use and rehearse it on the performance hardware. Every interface image in this edition is a fresh capture from that package using a disposable practice show and purpose-made test fixtures; engine output was silenced using owned test-gain settings, with the per-image method recorded in **docs/manual-assets/captures.json**. The photographs illustrate physical setup only. No image proves acoustic level, wiring continuity, external-device compatibility, or audience readiness.
+This edition describes the application source checkpoint **a9a86a3**, including the live-show audit in **2ea5984**. Package metadata remains **2.6.17**; these fixes have not been packaged, installed or published as a new release. Compare the installer you intend to use with its release notes before rehearsal.
+
+All interface images were refreshed from this source in an isolated practice environment. Generated tones run through the native engine's virtual NULL output with physical audio-service access blocked; the desktop bridge supplies fixture locale, display and MIDI information. The images illustrate controls and visible states, rather than physical audio, HDMI or device compatibility. The capture method, source revisions and image hashes are recorded in **docs/manual-assets/captures.json**. Equipment photographs remain illustrative.
 
 ## 1. Read this before the show
 
@@ -56,7 +58,7 @@ Connect the audio interface before opening the show. Confirm the correct outputs
 
 On launch, the desktop normally starts its managed local server automatically. The welcome screen indicates **Using local server on this computer** once connected. If the engine is starting, wait for connection rather than repeatedly reopening the app. The **Connect to a server on the network…** option reveals remote setup; see chapter 10 before using it.
 
-![Current welcome screen after the managed local engine has connected. Look for the local-server status before creating or opening a show. This does not prove that an audio device is patched or audible.](manual-assets/welcome-current.png)
+![Welcome screen connected to the isolated software engine, showing version 2.6.17.](manual-assets/welcome-current.png)
 
 **Procedure — establish a known starting state**
 
@@ -74,11 +76,13 @@ On launch, the desktop normally starts its managed local server automatically. T
 4. In the folder picker, navigate to the destination. You may type an absolute path in its path bar and press Enter. Choose **Select folder**.
 5. Back in the combined name/location form, check both values and choose **Create Show**.
 
-![New Show dialog with the show name and destination choices visible. Check both fields before creating; this does not prove that the destination is writable or backed up.](manual-assets/new-show-current.png)
+![New Show form with a practice name and disposable destination selected.](manual-assets/new-show-current.png)
 
 **Expected result:** The workspace opens with the new show name and an empty playlist. **If it does not:** remain on the welcome/dialog state, choose a writable dedicated folder, and create again; do not reuse a folder merely because its name resembles the show.
 
 DonWells Cue creates `<show name>.dwcue` and `media/` in the selected folder; portable exports use `.dwcuepack`. Keep that folder dedicated to the show. A remote picker uses the engine computer. See chapter 11 for legacy import and non-overwrite safeguards.
+
+<!-- pagebreak -->
 
 ### Make the first cue deliberately manual
 
@@ -99,9 +103,9 @@ DonWells Cue creates `<show name>.dwcue` and `media/` in the selected folder; po
 
 Use Edit Mode to import, organize, and configure the show. The top bar contains project settings, shortcuts, video output, level checking, Autosave, and the Show Mode switch. Transport sits below it: **Stop All Cues**, the active-cue area, and **Play Next** with its target name. The playlist contains the prepared cue order. The output strip shows the selected device, main level, meters, and true-peak limiter.
 
-![Annotated current Edit Mode orientation: **1** transport, **2** playlist, **3** Properties, and **4** output console. The numbered markers sit outside the live UI to guide reading; the capture shows an armed Up Next cue and Basic Info open but does not prove decoder readiness or audible routing.](manual-assets/edit-workspace.png)
+![Current Edit Mode with the playlist, acknowledged Up Next target, Basic Info and output console.](manual-assets/edit-workspace.png)
 
-![Cue Basic Info detail showing identity, end behavior, and trigger information. Read the displayed values for the selected cue; this does not prove that the selected cue is the armed or playing cue.](manual-assets/cue-basic-current.png)
+![Basic Info for House-open, including cue identity, ducking and start/end behavior.](manual-assets/cue-basic-current.png)
 
 **Procedure — inspect a cue without firing it**
 
@@ -121,15 +125,16 @@ Switch to **Show Mode** for performance after preparation is complete. It simpli
 
 Rehearse at the actual display size and app zoom. Keep the next cue name and active-cue controls visible. If a panel or dialog obscures transport, close it before the next call. The **Shortcuts** display is useful during training; check **Customize Shortcuts…** when taking over somebody else's show.
 
-![Current Show Mode with **House-open** RUNNING, **Walk-on sequence** named as Play Next, and the **Opening-sting** One Shot ARMED. These are three different states; the image does not prove decoder readiness, audible output, or that firing the One Shot is safe for the house.](manual-assets/show-mode.png)
+![Show Mode with a looping practice bed and an armed Sting One Shot on the virtual output.](manual-assets/show-mode.png)
 
 ### Selection is not arming
 
-Arrow keys can move selection without starting sound. The selected item's properties may be visible while a different item is Up Next. Use **Set As Next** when you need an explicit GO target. Pressing it again on the manually armed row requests that the override be cleared; an automatic candidate can remain. Wait for the acknowledged target shown on **Play Next** rather than repeatedly clicking to make sure a cue is armed.
+Selection and arming are independent: arrow keys and Properties can refer to a different cue from **Up Next**. Use **Set As Next** for an explicit GO target; pressing it again on that row requests clearing the override. Wait for the acknowledged name beside **Play Next**.
 
-Automatic Up Next is enabled by default. Opening a project prepares the first playable item; when a cue with **End Behavior: Nothing** stops, the next sibling is prepared. A natural end at the end of the top-level list can wrap to the first playable item. This prepares a later GO; it does not itself start the next cue. An explicit override takes precedence. Selection alone is not arming.
+Automatic Up Next defaults on. Opening prepares the first playable item; stopping a cue with **End Behavior: Nothing** prepares its next sibling. A natural end at the top-level list’s end can wrap to the first item. Preparation waits for a deliberate GO unless an authored automatic action applies. An explicit override takes precedence.
 
-An accepted GO consumes an explicit override. A rejected command retains it for retry. **Play** and GO remain responsive while a decoder is still becoming ready: the engine either accepts the start when ready or refuses it without inventing playback state. Read the reported readiness/error and connection state before one deliberate retry. **Stop All Cues** and Panic remain available while starts are waiting or refused. Repeated input while the same action is awaiting acknowledgment is suppressed, but a new press after the first action completes is a new command.
+Accepted GO consumes an override; refused GO retains it. Read readiness/error and connection state before one retry. **Stop All Cues** and Panic remain available during start refusal or preparation. Repeated input is suppressed while the same request awaits acknowledgment; a press after completion is a new command.
+
 
 ## 4. Import and protect the media
 
@@ -137,11 +142,11 @@ An accepted GO consumes an explicit override. A rejected command retains it for 
 
 Open **Import Media**. In local mode the primary action is **Choose files…**. **Browse Server** and **Advanced options** are collapsed until needed. The server browser remains useful when media is already on the engine computer, including a same-machine setup.
 
-![Current Import Media dialog with local file selection primary. Confirm whether the source is this computer or the server; the dialog does not prove that a selected file is supported, copied, or decoder-ready.](manual-assets/import-media.png)
+![Import Media with local file selection and the source-level/full-duration preservation notice.](manual-assets/import-media.png)
 
 In **Browse Server**, double-click folders to open them. Click files to select; use Shift or Ctrl/Cmd-click for multiple files, then **Import selected**. The file list distinguishes recognizable media, unsupported file types, and files whose type still needs verification. An extension or icon is not proof of decodability; wait for the import result.
 
-![Current Browse Server file picker with three practice WAV files selected and **Import selected (3)** ready. Confirm the folder, file count, and selection before importing; this does not prove that the files are decoder-ready or copied into the show.](manual-assets/server-picker-current.png)
+![Browse Server showing the three generated practice WAV files.](manual-assets/server-picker-current.png)
 
 Remote operation separates the two computers: **From This Computer** transfers files from the controller, while **Browse Server** selects files already accessible to the engine. Do not enter a controller-only path into the server browser and expect it to exist remotely.
 
@@ -149,7 +154,7 @@ Remote operation separates the two computers: **From This Computer** transfers f
 
 The import dialog starts with **Copy into project media** and **Reuse existing copy** when opened. Check the choices under **Advanced options** if your workflow needs something else.
 
-![Current Advanced options detail with copy/link and duplicate handling visible. Verify these choices before importing; this does not prove that externally linked media will travel with an export.](manual-assets/import-options-current.png)
+![Advanced import options for copying/linking, duplicate handling and new-cue settings. Audio processing is explicit after import.](manual-assets/import-options-current.png)
 
 **Procedure — import media that will travel with the show**
 
@@ -171,15 +176,17 @@ For a travelling show, prefer copying media and test the export on the destinati
 
 ### Import processing and readiness
 
-Project/import settings include automatic loudness matching, true-peak reduction, and silence trimming. The new-project defaults in this source enable true-peak reduction, while loudness matching and silence trimming are off. Review the active project's settings rather than assuming another operator left the defaults unchanged.
+Imports preserve the source level and full duration: new cues begin at **0.0 dB** with the full source region. Import does not normalize, reduce peaks or trim silence. Older saved automatic-processing preferences are ignored. Analysis and waveform updates cannot apply those adjustments later.
 
-Processing can change the resulting media or its playback level. Keep the original files outside the working copy if you may need to undo preparation decisions. Listen to entrances, tails, and intentional silence after trimming or processing. Check that music, dialogue, and effects have sensible relative levels; matching a numeric loudness target does not make every cue equally appropriate for the room.
+Choose any preparation explicitly in **Properties → Playback**. **Normalize** uses a loudness target; **Reduce peaks** uses a maximum true-peak ceiling; **Trim Silence** adjusts cue boundaries. These actions change cue settings and keep the source media bytes unchanged. Existing authored gains and trims are retained when opening a show. To recover a cue affected by older automatic import behavior, review its Volume and In/Out values or import a fresh copy.
 
-Do not start the show while media is still being verified or decoded. Resolve failed or missing files, then audition the cue. Regenerating a waveform updates its display; it is not a substitute for a successful decoder load or a listening check.
+Wait for the source copy/download to finish and for media readiness before taking the cue. Missing, changed or provably incomplete files can be refused; resolve the reported file before one deliberate retry. A generated waveform is an analysis result, not a guarantee that an unfamiliar file will decode throughout the show. Recheck media after replacing or editing a file outside the app.
 
 ### Online imports
 
 YouTube and Spotify import controls are available in Edit Mode. They depend on external services and downloader availability. Prepare and verify these imports before the show, not on a live cue call. Use only material you are authorized to obtain and perform; an import feature does not supply a public-performance licence. Once imported, rehearse from the local show media rather than relying on a working internet connection at the venue.
+
+Spotify playlist import reads the full collection rather than stopping at 100 tracks. Review the returned count and selections, wait for each selected download/import result, and resolve unavailable, unmatched or failed entries. A long playlist is not an all-tracks-ready guarantee. Import failure keeps its error/retry state; avoid repeatedly adding the same downloaded result to the playlist.
 
 
 ## 5. Build cues and transitions
@@ -196,7 +203,7 @@ Replacing a cue's file keeps its cue identity but reloads the corresponding medi
 
 Open **Properties → Playback** for the waveform and timing controls. Set **In Point** and **Out Point** around the part you want to use. Listen to the entrance and exit; a visually quiet waveform may contain room tone, a breath, or an intentional pause. Leave enough material for any fade or transition you configure.
 
-![Cue Playback detail with waveform, In/Out, fade, and transition controls visible at readable scale. Inspect the saved values and marker positions; the waveform does not prove a clean edit or an audible destination.](manual-assets/cue-playback-current.png)
+![Playback controls and waveform for the generated practice cue; In/Out and explicit preparation controls are visible.](manual-assets/cue-playback-current.png)
 
 **Procedure — trim and rehearse one cue**
 
@@ -217,7 +224,9 @@ Open **Properties → Playback** for the waveform and timing controls. Set **In 
 
 **Start Next at Marker** takes precedence over ordinary cross-fade timing. Loop suppresses automatic next, Start Next, and cross-fade until its live behavior is changed. Manual Stop uses the greater of Stop Fade Out and the cue's legacy fade-out duration, which is 1 second on a new cue even when the visible Stop Fade Out is 0. Fade Out at Marker uses that legacy duration. Stop All uses its separate global fade. Rehearse these paths separately rather than assuming a zero visible fade makes every stop instantaneous.
 
-The waveform's **Normalize** control offers **Loudness (LUFS)** and **True peak (dBTP)**. It writes an absolute cue **Volume** value, not a rewritten media file, and can set Volume as high as +10 dB. The true-peak target cannot exceed the active limiter ceiling. After normalizing, inspect Volume and audition at a safe output level; normalization can make a cue substantially louder.
+The waveform's action menu separates **Loudness (LUFS)** from **Reduce peaks (dBTP)**. LUFS normalization can raise or lower the cue's **Volume** toward a measured loudness target, up to the existing +10 dB cue-gain limit. **Reduce peaks** only lowers a cue whose resulting peak exceeds the chosen ceiling; safe, quiet or muted cues keep their level. Raising that ceiling never boosts the cue back up. The peak ceiling is bounded by the active limiter ceiling.
+
+These actions write cue gain, not a rewritten media file. **Trim Silence** adjusts the cue region around digital silence with padding; quiet breaths, ambience and tails are retained rather than treated as a loudness target. Review the resulting Volume and In/Out values and rehearse the entrance and exit.
 
 ### Choose the end behavior deliberately
 
@@ -243,7 +252,7 @@ The group cue-lifecycle chart distinguishes Audio Start actions, descendant play
 - **Common mistake:** Reading **Up Next** as proof that the next cue will start automatically.
 - **Recovery:** Stop unexpected playback safely, return the ending to **Nothing**, inspect Audio Start Behavior and marker actions for other automatic starts, and rehearse again.
 
-![Current End Behavior detail with **Nothing** selected for the practice cue. Use it to confirm a stop-and-wait authored ending; this does not prove that Audio Start actions, markers, or the acknowledged Up Next target are inactive.](manual-assets/cue-end-detail-current.png)
+![End Behavior with Nothing selected for a manually called cue.](manual-assets/cue-end-detail-current.png)
 
 Do not use a loop as a substitute for rehearsing the loop boundary. Check for clicks, a level change, or a gap at the join on the actual output hardware. See chapter 7 for **Cue to Continue**, which releases the current pass without rewriting the saved Loop setting.
 
@@ -251,15 +260,15 @@ Do not use a loop as a substitute for rehearsing the loop boundary. Check for cl
 
 ### Groups
 
-A group's **Start Behavior** can be **Play First** or **Play All**. Play First triggers its first playable descendant. Play All owns the selected descendant subtree and starts each selected playable descendant exactly once, including nested groups. For Play All, set each child's ducking so the children do not immediately stop one another when simultaneous playback is intended.
+A group's **Start Behavior** can be **Play First** or **Play All**. Play First follows the first-child path and honors each nested group’s Start Behavior. It does not skip an empty or unready first child to find a later playable sibling. A nested Play All on that path can start several cues. Play All owns the selected descendant subtree and starts each selected playable descendant exactly once, including nested groups. For Play All, set each child's ducking so the children do not immediately stop one another when simultaneous playback is intended.
 
-![Current Group Properties view with **Start Behavior → Play All** selected for the Walk-on sequence. The adjacent Basic Info and End Behavior tabs hold the other group policies; this capture does not display their values or prove that every descendant is decoder-ready.](manual-assets/group-current.png)
+![Group Properties with Start Behavior set to Play All.](manual-assets/group-current.png)
 
 **Procedure — validate a group before it reaches the run sheet**
 
 - **Prerequisites:** All intended descendants are imported, named, and individually playable.
 - **Actions:** Select the group, set **Start Behavior**, inspect every selected child's ducking and ending, and set the group's own End Behavior. Arm the group and fire it once in rehearsal.
-- **Expected visible outcome:** **Play First** starts one first playable descendant; **Play All** starts the complete selected subtree only after preflight succeeds. The group ending runs once after normal completion.
+- **Expected visible outcome:** **Play First** follows the first-child path, including any nested Play All; **Play All** starts the complete selected subtree only after preflight succeeds. The group ending runs once after normal completion.
 - **Common mistake:** Giving children **Stop All Other Cues** inside a Play All group.
 - **Recovery:** Stop the run, correct child ducking, return the group ending to **Nothing** until its exit is certain, and repeat the complete rehearsal.
 
@@ -290,7 +299,7 @@ Open **Settings** and choose **Audio Device** for the show. Check the device nam
 
 ![Rear-panel audio-interface connector reference. Use it to discuss labelled outputs, cable seating, and strain relief; the photograph does not certify pinout, signal continuity, gain, or a particular show setup.](manual-assets/audio-connector-photo.jpg)
 
-![Current Audio Routing settings with Audio, Preview, and LTC device selectors visible. Read every selected device on this machine; the screen does not prove the physical console patch.](manual-assets/audio-settings-current.png)
+![Audio Routing settings showing the isolated NULL software output. Choose the actual show interface on the performance computer.](manual-assets/audio-settings-current.png)
 
 **Procedure — prove the Main route end to end**
 
@@ -304,7 +313,7 @@ A cue may specify a different **Properties → Output → Output device**. An ex
 
 The engine supports more advanced routing through its API, but the current desktop app does not mount a routing-matrix editor. The current operator-visible routing detail is the project device selection and a cue's **Properties → Output** override.
 
-![Current **House-open** cue Output detail with Output device, Output LTC Timecode, Starting Timecode, and Frame Rate controls fully visible. Confirm whether the cue follows **Use project default** or a deliberate device override; this does not show an advanced routing matrix or prove hardware output.](manual-assets/output-routing-current.png)
+![Cue Output controls, including device override, channel and LTC routing.](manual-assets/output-routing-current.png)
 
 ### Configure Preview before using headphones
 
@@ -317,19 +326,27 @@ If Preview is not configured, its cue-row control opens Project Settings rather 
 
 > **CAUTION — No automatic audience isolation.** The word Preview does not make the output private. Use an actually separate device/output and test it with the console operator. Do not audition an unknown cue through Main during a performance.
 
+### Respond to an audio-output warning
+
+A missing or stalled audio callback can report a device warning even while cue controls remain available. Confirm the intended interface and cable, then use the warning's **Retry now** for that output. This restarts the device stream in place while retaining its routes and cue identities. Acceptance of the request is not the same as a recovered output: wait for the warning to clear after callbacks return, then verify the physical destination before another GO. Explicit Stop and current recovery choices still take precedence over pending playback recovery.
+
+Secondary devices follow the master clock using continuous correction. The software resync repairs preserve fractional sample timing and balance queue headroom; they do not establish physical alignment between independently clocked interfaces. Record and investigate recurring buffer/device warnings during rehearsal. Prefer one verified program interface when the show does not require several, and calibrate any required independent outputs at their actual line-level destinations.
+
 ### Gain, metering, and the limiter
 
 <!-- diagram:gain-stages -->
 
-The gain-stages chart separates cue gain, ducking, the engine/MIDI internal global-gain stage, the existing downstream output faders/trims, the device stream, and the Preview monitor route. **Preview is also affected by the internal global-gain stage.** That internal stage has no separate UI control or readout; the visible main **Master** fader remains an output control. The chart is a logical map, not a calibrated measurement of the interface, console, amplifier, or room; limiter behavior is described below.
+The gain-stages chart separates cue gain, ducking, engine/MIDI internal global gain, output faders/trims, and the final device stage. That final stage sums all logical routes sharing each physical channel, adapts secondary device clocks, then applies the true-peak limiter. The Preview route joins its selected device and shares the same final-channel protection when it uses Main’s hardware. **Preview is also affected by the internal global-gain stage.** That internal stage has no separate UI control or readout; the visible main **Master** fader remains an output control. The chart is a logical map, not a calibrated measurement of the interface, console, amplifier, or room; limiter behavior is described below.
 
 Balance cues at their own level controls first, then use the main output level for the overall show. Leave practical headroom for overlapping cues. A large positive gain setting can make a quiet source unexpectedly loud; changing the output target is not a replacement for a listening check.
 
 The selected output target influences meter presentation, loudness targets, and limiter ceiling. The Live target uses a true-peak ceiling of approximately **−0.1 dBTP** by default. The **TP Limiter** control shows gain reduction; the ceiling can be adjusted. Keep the limiter enabled unless you have a specific, rehearsed reason not to.
 
+The limiter is a maximum, not a measurement target. Signals below its ceiling keep their gain. It only attenuates overs, with continuous lookahead through a ceiling change or an explicit bypass. It does not normalize the show or lift a quiet cue. When Main and Preview share a physical channel, their combined signal receives the final protection; the mapped meters and gain-reduction display report that physical sum.
+
 A limiter reduces digital peaks; it does not protect against an inappropriate acoustic level, a badly balanced cue, a wrong output patch, or downstream console gain. Persistent large gain reduction is a reason to lower and rebalance the source, not to raise the ceiling until the warning disappears. Use **Level Check** during preparation and resolve problems before switching to Show Mode.
 
-![Current Output Console detail with one existing output fader, meters, and TP Limiter at readable scale. The crop does not print a main-Master route label or prove the selected hardware destination or acoustic silence.](manual-assets/output-console-current.png)
+![Output console with its existing output fader, meters and attenuation-only TP Limiter on the virtual output.](manual-assets/output-console-current.png)
 
 **Procedure — set a repeatable operating level**
 
@@ -357,7 +374,7 @@ Keep the LTC destination separate from the audience audio path. Do not enable ti
 4. On the cue call, press **Play Next** or its assigned shortcut once.
 5. Confirm the expected active cue and progress, then prepare the next target.
 
-![Annotated close-ups from one current playback state, arranged vertically for manual-size legibility rather than as a literal whole-window layout: **1** Stop All, **2** active **House-open** at 0:42 elapsed / −0:47 remaining with Pause and Stop, and **3** Play Next **Walk-on sequence**. This does not prove audible output or the next cue's readiness.](manual-assets/transport-detail-current.png)
+![Transport controls during the generated looping practice cue; the native virtual clock drives its timing.](manual-assets/transport-detail-current.png)
 
 ![Production digital-mixer control surface as an operator-position reference. Use it to discuss sightlines and disciplined access to controls; the photograph does not certify the venue, equipment configuration, or show readiness.](manual-assets/stage-operator-photo.jpg)
 
@@ -373,28 +390,25 @@ The default GO key is **Space**. **Enter** is Play Selected, a separate action. 
 
 ### Active-cue controls
 
-The active-cue area provides per-cue controls as appropriate. Pause/Resume holds and resumes playback. Stop ends the cue with its configured stop behavior. A row's live controls can also stop or restart that cue. Restarting is a fresh playback instance, not a continuation of a previously armed one-pass action.
-
-**Stop All Cues** affects all current live cues, not just the selected row. It is available by button and by the assigned shortcut. With the default project settings the fade is 1 second. Set and rehearse a 0-second Stop All fade only if immediate silence is the required operating policy.
+Pause/Resume holds or resumes an active cue. Stop uses its configured stop behavior; a row’s Restart starts a fresh playback instance and cancels a pending one-pass action. **Stop All Cues** affects every active cue. Its default fade is 1 second; set and rehearse 0 seconds if immediate silence is required.
 
 ### Finish a loop without changing the saved show
 
-Use **Cue to Continue** on an active looping cue when the current loop pass should finish and then advance. The cue must be authored to Loop. The action belongs to this playback instance: it disables repeating for this pass and resolves the continuation from a saved item/index destination or the next sibling. If no valid target exists, the current pass finishes without starting another cue. The saved End Behavior remains Loop.
+Use **Cue to Continue** to finish the active loop pass and advance. It resolves the saved item/index destination or next sibling; with no valid target, the pass ends without another cue. The saved End Behavior stays Loop.
 
-Stopping, replaying, removing the cue, replacing its media, using Stop All, or switching projects cancels that one-pass continuation. A later replay uses the authored behavior again. By contrast, the separately assignable keyboard/MIDI **Toggle Loop** action sets **End Behavior** to **Loop** when it was not Loop, otherwise to **Nothing**; it does not restore the previous ending. This is a project edit, autosaved while Autosave is enabled and otherwise left dirty until you save. Use Cue to Continue when you intend only a one-pass release without changing the authored show.
+Stop, replay, removal, media replacement, Stop All or project switch cancels that one-pass continuation. A later replay uses the authored ending. **Toggle Loop** instead edits the project’s End Behavior between Loop and Nothing; it does not restore a prior ending. Autosave saves this edit; otherwise it remains dirty. Choose Cue to Continue for a one-pass release.
 
-**Jump Cue** stops the current cue and advances immediately rather than waiting for the loop end. Rehearse the exact jump target and audible transition before using it live. Neither Cue to Continue nor Jump Cue has a default keyboard binding; use its visible active-cue control or assign a deliberate shortcut.
+**Jump Cue** stops the current cue and advances immediately. Rehearse its target and audible transition. Neither Jump Cue nor Cue to Continue has a default key; use the visible control or assign a shortcut.
 
 ### When the expected cue does not start
 
-A failed GO preserves the armed target. It may be waiting for media, unable to decode, disconnected, or pointing at an unavailable item. Read the refusal and resolve the cause before one deliberate retry. Do not assume that selecting a different row or clicking **Set As Next** has changed the armed target; wait for the acknowledged name shown beside Play Next.
+A failed GO retains its armed target. Resolve missing/unready media, decoder errors, connection problems or an unavailable target before one deliberate retry. Selection and Set As Next change that target only after acknowledgment. A refused Play All preflight starts none of its selected subtree; inspect every selected child’s readiness.
 
-For group playback, a refused Play All preflight starts none of the selected descendants; inspect readiness across the selected subtree before retrying. For overlapping playback, verify the new cue's Ducking mode. If the wrong material is audible, follow the rehearsed stop or console-mute procedure first, then investigate without repeatedly firing additional cues.
+For overlapping playback, check Ducking. If the wrong material is audible, use the rehearsed stop or console-mute procedure before investigating.
 
 ### At the interval and at the end
 
 Stop or intentionally leave only the required interval material running. Disarm unnecessary One Shots, verify the next target for the restart, and avoid editing device assignments while audio is live. After the final cue, confirm that all active cues and previews have stopped. Save any intended changes, make the required backup, and choose the appropriate client/server quit action in chapter 11.
-
 
 
 ## 8. One Shots, keyboard control, and MIDI
@@ -405,7 +419,7 @@ Reveal **One Shots**, then use an empty cell's **Import One Shot** action, drop 
 
 Open a tile's settings and review these choices before assigning its control key:
 
-![Current One Shot Settings for the practice sting: **Duck Program**, retrigger **Restart**, Auto-disarm enabled, ending **Stop**, Program Level **−20.0 dB**, Duck Time **0.25 s**, Release Time **1 s**, and project-default output. These authored values do not prove that the tile is armed or acoustically safe.](manual-assets/one-shot-settings-current.png)
+![One Shot Settings for Sting, including ducking, retrigger, arming, gain and output choices.](manual-assets/one-shot-settings-current.png)
 
 | Setting | Operator decision |
 | --- | --- |
@@ -424,7 +438,7 @@ New One Shots start with Ending Stop, retrigger Restart, and Duck Program behavi
 
 In **Show Mode**, use **Arm** and verify **ARMED** before firing a tile, its keyboard shortcut, or its MIDI mapping. Unarmed activation is ignored. A successful fire auto-disarms when that setting is enabled; a failed fire does not. The Stop control remains available regardless of arming.
 
-![Cropped current Show Mode One Shots heading and first row, with **Opening-sting** visibly ARMED. Confirm the exact tile and label before triggering; ARMED does not mean playing, decoder-ready, or safe in the house.](manual-assets/one-shot-armed-current.png)
+![The armed Sting One Shot in Show Mode, ready for deliberate activation.](manual-assets/one-shot-armed-current.png)
 
 **Procedure — prepare one Show Mode One Shot**
 
@@ -442,7 +456,7 @@ The bank can **Detach** into a separate window and **Attach** again. Rehearse fo
 
 Open **Shortcuts → Customize Shortcuts…** and use the **Keyboard** tab. Select a playback action or configured One Shot and press the desired key. The app reports reserved combinations or conflicts; resolve those deliberately rather than creating ambiguous show controls. Individual tile settings also provide **Keyboard Shortcut**, **Assign shortcut**, and **Clear shortcut**.
 
-![Current Keyboard shortcuts detail with playback actions and assignments visible. Compare the actual project to the printed default table; this does not prove focus, external-keyboard layout, or that a One Shot is armed.](manual-assets/shortcuts-current.png)
+![Keyboard configuration with the current playback-action bindings.](manual-assets/shortcuts-current.png)
 
 **Procedure — hand over a keyboard-controlled show**
 
@@ -460,7 +474,7 @@ Text fields normally own typing, so a playback letter does not fire while you ar
 
 ### Map a MIDI controller
 
-![Current MIDI configuration with **All Devices** selected, no detected MIDI hardware, Learn controls, and currently unassigned mapping fields. Verify the chosen device and mapping on this computer; the capture is not certification of physical MIDI hardware.](manual-assets/midi-current.png)
+![MIDI configuration with fixture MIDI access and no detected hardware; assign and rehearse physical controls separately.](manual-assets/midi-current.png)
 
 1. Connect the controller before the show and open the shortcut/control configuration's **MIDI** tab.
 2. Select the intended **MIDI Device**. **All Devices** listens broadly; choosing a particular controller reduces accidental input from other connected equipment.
@@ -485,7 +499,7 @@ Video Output belongs to the desktop client, not to the headless engine. The reco
 
 Use **Video Output** in the toolbar or **Settings → Video Output**. Assign the intended display and verify its identity against the physical projector, switcher, or monitor. The app remembers the display assignment on that computer, but the output window starts closed on every application launch. Open and check it for each session.
 
-![Current Video Output settings with session enablement, display assignment, Identify displays, standby image, and test-card controls. Read Output status after each change; this does not prove that the projector or switcher is showing the same picture.](manual-assets/video-settings-current.png)
+![Video Output settings with the output closed, test-card options.](manual-assets/video-settings-current.png)
 
 **Procedure — open and identify the audience output**
 
@@ -497,7 +511,6 @@ Use **Video Output** in the toolbar or **Settings → Video Output**. Assign the
 
 With only one display or no dedicated assignment, the app uses a normal preview window rather than automatically taking over the control screen fullscreen. Do not mistake a preview window for a correctly assigned projector output. Use an extended desktop, not operating-system display mirroring, when you need separate operator and audience surfaces.
 
-![Current Video Output test card showing output identity, resolution, and framing guides. Use it to align the physical chain; a correct card does not prove cue-video decoding, soundtrack routing, color calibration, or later hot-plug recovery.](manual-assets/video-test-card-current.png)
 
 **Procedure — line up picture and optional AV Sync**
 
@@ -517,6 +530,16 @@ Use H.264 or HEVC media for this source edition. ProRes and other production cod
 
 > **CAUTION — A fallback can hide a video failure.** If video cannot load or decode, the output can fall through to a cue image, standby image, or black without a blocking show alert. A healthy audio cue does not prove the picture is playing. Watch the actual destination during rehearsal.
 
+### Recover a frozen or failed video output
+
+Use **Settings → Video Output** to read output status. Renderer crashes and hangs latch a native black cover over the existing audience window while the operator controls remain available. Choose **Restart Output** once; the cover stays until the replacement view is ready. The replacement follows the current native cue state, so check the active cue rather than firing GO again to restart the picture. **Copy Output Diagnostics** captures current output information for investigation.
+
+![Output status and recovery controls in Video Output settings. Restart Output is disabled while the output is closed.](manual-assets/video-recovery-current.png)
+
+Keep the audience output open during this recovery. Closing the output window removes that surface and can expose the desktop. A lost display connection, a system/GPU failure or a downstream switcher fault may require the venue's separate standby/black source. Restart Output does not repair the physical chain.
+
+The confidence display uses presented-frame and native-audio-clock progress as well as thumbnail delivery. A fresh thumbnail by itself does not prove a moving decoded picture. Paused cues and authored still images are valid still states. Rehearse the transitions between audio, video and standby with the actual show media.
+
 ### Fullscreen, keyboard focus, and blackout
 
 Double-click or use the output window's context controls to change fullscreen. If the assigned display disappears, the app closes that output instead of moving it onto the control display; it can reacquire the assignment when the display returns while the session remains enabled. Recheck the physical output after reconnecting a cable.
@@ -531,7 +554,7 @@ There is no dedicated video-blackout button or shortcut in this source. **Stop A
 
 Use remote mode only when the audio computer is separate. The operator needs its address, control port, access token, and authorized restart contact.
 
-![Current remote-server connection screen with network discovery, a practice loopback address, and a blank Access token field. Confirm the engine computer and address before connecting; this image contains no real credential and does not prove authenticated control or an external-network path.](manual-assets/server-connection-current.png)
+![Remote connection form with an illustrative address and blank access token; no remote connection was attempted.](manual-assets/server-connection-current.png)
 
 For a trusted-LAN setup, an administrator can start the installed standalone server with:
 
@@ -569,7 +592,6 @@ A browser integration's exact origin must be authorized; another localhost spell
 A remote server is shared state. Another operator can close, replace, or edit its project, so agree who owns show control, changes, and restarts. Dirty local edits require the recovery choice described in chapter 11 rather than being silently replaced.
 
 
-
 ## 11. Save, back up, recover, and quit
 
 ### Know what is saved
@@ -582,7 +604,6 @@ The save-recovery chart separates an Autosave toggle's forced save from later of
 
 A failed toggle-save or ordinary save retains the dirty state. Enabling Autosave can hide the header's unsaved badge even when that forced save failed, because the badge appears only while Autosave is off and the document is dirty. Verify the save result and known-good disk copy rather than relying on the badge alone. A detached One Shot save failure is reported in the loaded detached panel and its error popover, not as the general presentation for every primary-window save failure. Correct the path, permissions, or storage fault before retrying.
 
-![Current detached One Shot save-error state: the loaded panel remains visible and its error popover reports that the change was applied but could not be saved. This presentation is specific to the detached mutation path, not the general primary-window save path, and it does not prove that disk data or backups are current.](manual-assets/save-error-current.png)
 
 **Procedure — recover from a save refusal without losing the show**
 
@@ -620,7 +641,6 @@ On loading a document that needs supported structural repairs, **Corrupt Project
 
 When a project path is accepted but the page/header load cannot finish, the app enters an explicit read-only load-error state rather than exposing a partly hydrated editable document. **Stop All Cues** and its configured Escape shortcut remain available. Choose **Retry** after correcting the connection or storage fault. After native acceptance, Retry fetches the engine's current project header and pages; it never silently reopens the old file path. If the initial open itself was never accepted, Retry can retry that originally requested path. Confirm the loaded show name and cue readiness before editing or pressing GO.
 
-![Current project-hydration failure view with the partial project blocked read-only and Retry visible. Stop All remains available; the screen does not prove that the previously requested file is still the server's active project.](manual-assets/hydration-failed-current.png)
 
 **Procedure — retry a failed project load safely**
 
@@ -634,9 +654,8 @@ When a project path is accepted but the page/header load cannot finish, the app 
 
 The **Connection lost** overlay blocks normal playback/edit input while reconnection is attempted. **Retry now** retries the same server. Its **Restart** action relaunches the client only; the audio engine and Program can continue running. **Exit** closes the client. Before restart or exit, the desktop removes client-owned AV resources. If that cleanup fails, the diagnostic remains visible and the action is refused rather than abandoning an owned resource; correct the cause and retry. Correct a wrong address or credential through Server Settings rather than repeatedly retrying the wrong destination.
 
-After the managed engine actually restarts, the controller can present the different **Server restarted** prompt shown below; do not confuse it with the Connection lost overlay's Retry, Restart-client, and Exit actions.
+After the managed engine actually restarts, the controller can present the different **Server restarted** prompt; do not confuse it with the Connection lost overlay's Retry, Restart-client, and Exit actions.
 
-![Current **Server restarted** recovery prompt naming the practice project, with **Continue session** and **Start fresh**. Confirm project authority before choosing; the prompt proves neither Program silence nor equivalence between local edits and the server's saved document.](manual-assets/connection-recovery-current.png)
 
 **Procedure — respond to connection loss during a show**
 
@@ -681,11 +700,9 @@ For unsaved edits, ordinary New/Open/Close actions offer **Save**, **Don't Save*
 - **Common mistake:** Treating **Save project, then close** as successful before the save result is known.
 - **Recovery:** If save fails, remain with the project and selection intact, correct the storage fault, verify a deliberate save, then request Quit again.
 
-![Current first-stage quit guard for unsaved changes, with **Return to Project**, **Close and disregard changes**, and **Save project, then close**. A server shutdown choice can follow this guard; the image does not prove that Program has stopped.](manual-assets/quit-current.png)
 
 If the managed local engine is running, the next choice distinguishes **Close Client Only** from **Close Server**. **Close Client Only removes client-owned Preview/test-tone resources but leaves the Program mix and engine running. Close Server stops playback and disconnects every connected client.** A failed AV cleanup retains the owned-resource diagnostic and refuses the terminal action. Closing a controller connected to a remote engine does not shut down that remote engine.
 
-![Current managed-server quit choice distinguishing **Return to Project**, **Close Client Only**, and **Close Server**. Read the consequence before choosing; the image does not prove Program silence or authorize closing a shared engine.](manual-assets/quit-server-choice-current.png)
 
 **Procedure — end an operating session**
 
@@ -698,6 +715,9 @@ If the managed local engine is running, the next choice distinguishes **Close Cl
 At pack-down, explicitly stop live cues and previews, verify the physical outputs, save the intended changes, and select the appropriate shutdown action. Closing a window is not the same operation as stopping the show.
 
 ## 12. Troubleshooting at the operator position
+
+For the corporate-show setup covered by this audit, final acceptance is the actual **line-level output** into the receiving console and **1920×1080 progressive video** through the intended HDMI or adapter-to-HDMI path. Use the interface's documented line-level reference and verify the negotiated display refresh, channel mapping, representative A/V synchronization and mixed-cue handoffs. Software checks and these illustrations do not replace that rehearsal.
+
 
 ### Use a short, ordered diagnosis
 
@@ -841,7 +861,9 @@ With Video Output focused, Escape also exits its fullscreen mode. In Level Check
 
 ### About this edition
 
-This manual documents package version **2.6.14** as exercised at source revision **8ea1e9c6ee02414301947f210b35b4952aa5d254**, with native engine baseline **7a0eee21688e378e99a78b50c0c4ec414435bb65**. It does not claim that a published installer contains these changes. All interface screenshots were newly captured from the verified current package using disposable show data and purpose-made test fixtures; engine output was silenced using owned test-gain settings, with the per-image method recorded in **docs/manual-assets/captures.json**. They contain no access tokens or private projects. No screenshot certifies audience audio, physical routing, projector behavior, network performance, or external MIDI hardware.
+This manual describes application source **a9a86a3**, including the audit checkpoint **2ea5984**, with package metadata **2.6.17**. The fixes are committed locally; a new installer has not been built, installed or published. All 22 interface captures were refreshed from the current Vue build with generated practice media, an isolated native NULL software output, and fixture Electron display/MIDI/locale methods. Physical audio-service access was blocked. No user show, credentials or private media appear in the illustrations. The complete capture provenance is in **docs/manual-assets/captures.json**.
+
+The native test suite passed 13/13. Six accelerated 30-minute secondary-clock simulations produced no underruns, overruns or resyncs within the tested timing envelope. PCM continuity is checked on a short ramp; the remaining clock simulation runs through post-EOF silence. These results establish bounded software repairs, not real-time performance or resolution of the earlier physical intermittency. More extreme drift with timing jitter can still trigger recovery.
 
 The preparation and recovery instructions were checked against the Vue/Electron interface and C++ control engine. Fresh overview images establish orientation; fresh detail images keep the named controls readable at manual size. They are documentation evidence, not certification of a published installer or every platform. Source verification does not replace rehearsal of conversion, acoustic levels, physical routing, external LTC lock, physical MIDI hardware, network performance, focus behavior, or projector/display hot-plug handling.
 

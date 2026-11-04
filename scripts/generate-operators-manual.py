@@ -1339,7 +1339,7 @@ class GainStagesDiagram(_ManualDiagram):
             ("DUCKING", "Active generations; strongest ceiling"),
             ("INTERNAL GLOBAL GAIN", "Engine / MIDI stage; no separate UI control"),
             ("OUTPUT FADER / TRIMS", "Existing operator output controls"),
-            ("DEVICE", "Audio device / stream"),
+            ("FINAL DEVICE STAGE", "Sum routes, adapt clock, limit peaks; device output"),
         ]
         xs = [margin + i * (width + gap) for i in range(5)]
         for i, (title, detail) in enumerate(stages):

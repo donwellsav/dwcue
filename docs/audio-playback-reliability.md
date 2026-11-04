@@ -71,7 +71,7 @@ git diff --check
 
 The native output harness exercises the actual render/device callbacks with headless device rings and an independent true-peak detector. It checks C++ allocation counts during the audio paths. Project runtime tests exercise real sequencer and decoder instances; the broadcast race self-check compiles the real publication code with deterministic fake connections. Network integration uses isolated child servers and localhost endpoints, never stage equipment.
 
-Fresh results and red/green evidence are recorded alongside the original audit in `audio-import-audit/IMPLEMENTED-LIVE-PLAYBACK.md` and its evidence folder. CTest covers twelve suites, including import decoding, limiter, RT playback, physical outputs, project runtime, crash-state and format/security checks. The client gate includes import preservation, One Shot identity/rollback, YouTube cancellation, hotkeys, video output, authentication and operator-manual contracts.
+Fresh results and red/green evidence are recorded alongside the original audit in `audio-import-audit/IMPLEMENTED-LIVE-PLAYBACK.md` and its evidence folder. CTest covers thirteen suites, including import decoding, limiter, RT playback, device-callback PCM, project runtime, crash-state and format/security checks. The client gate includes import preservation, One Shot identity/rollback, YouTube cancellation, hotkeys, video output, authentication and operator-manual contracts.
 
 ## Operator-visible changes and limits
 

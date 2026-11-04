@@ -4,7 +4,7 @@
 
 
 > **Audience:** This document is written for a fresh agent (or developer) with **zero prior context**.
-> Section 1 tracks current source `7a0eee2`, whose package metadata is v2.6.14. This is not a published-installer claim; verify releases and the installed About version separately.
+> Section 1 records the earlier source snapshot `7a0eee2`, whose package metadata was v2.6.14. This is not a published-installer claim; verify releases and the installed About version separately.
 > Sections 3–7 are proposed workstreams, not delivered features, even where they name concrete files.
 > Only **Stage 1 — Touch-Friendly Playback Mode** is marked complete here.
 > For show operation, use the [operator manual (PDF)](docs/operators-manual.pdf) or its

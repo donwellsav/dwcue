@@ -36,7 +36,7 @@
 
 ## Priority and delivery boundaries
 
-This is one ordered workplan. **Start with T1–T9 as a bounded first delivery**, review it and run the existing gates before taking the larger cross-boundary work. Later tasks remain authorized; the checkpoint is a verification boundary, not a request for routine permission. A completed task does not close a finding whose additional boundary is listed below.
+This ordered plan preserves the original delivery sequence. T1–T23 and T25–T30 are complete; resume only the unchecked work and acceptance boundaries. A completed software task does not close a finding whose physical or extended validation remains open.
 
 | Order | Task / finding | Reason and completion boundary |
 | --- | --- | --- |
@@ -266,5 +266,5 @@ Evidence and final restoration: `/Users/muzikfirst/Documents/donwellscue/audio-i
 ## Documentation completion
 
 - [x] Reconcile active developer/reliability documents with the committed T1–T30 source and mark superseded plans as historical.
-- [ ] Refresh the operator guide, current-source UI captures and generated PDF; check text, links, embedded fonts and rendered pages.
-- [ ] Run the manual checks and commit the completed documentation batch.
+- [x] Refresh the operator guide, 22 current-source UI captures and generated 50-page PDF; text, links, embedded fonts and rendered pages checked.
+- [x] Run manual parser4/4 and offline reader7/7 checks; commit the verified documentation batch.
