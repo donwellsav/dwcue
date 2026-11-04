@@ -282,3 +282,6 @@ T31 complete: root `name`/`folderPath` type errors reproduced through file load,
 
 
 T32 complete: deterministic child and nested-group invalid-follow fixtures both started the outer group’s destination despite the visible error (2 failures). Failed child/Continue follows now cancel their enclosing group runs through the existing helper. Failed group-end dispatch cancels its ancestors and returns; later untracked-tail polling cannot restart the chain. Native runtime checks pass, including normal nested completion, retired tails, decoder failure and explicit GO after correction. No cue layout, group mode or timing policy changed. Evidence: deep-bug-hunt-2026-11-04/t32-{red,green}.log.
+
+
+T33 complete: direct A→B load and same-file reopen retained stale Up Next/selection/trigger stamps; both first-GO checks failed (4 assertions). Load now clears those project-owned fields under the existing mutex before either schema installs its new session. In-place replacement keeps its session/selection/stamps. Native runtime checks pass with audio-service access denied. No preference, show-mode, routing or GO algorithm changed. Evidence: deep-bug-hunt-2026-11-04/t33-{red,green}.log.

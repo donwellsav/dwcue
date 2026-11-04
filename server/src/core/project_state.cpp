@@ -4756,6 +4756,13 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
     release_device_routings();
     // Canonical .dwcue documents use the camelCase desktop schema. Keep the
     // full document for clients while mirroring its engine-facing state.
+    {
+        std::lock_guard lock{mutex_};
+        next_item_override_.clear();
+        next_item_override_manual_ = false;
+        selected_item_uuid_.clear();
+        item_trigger_seq_.clear();
+    }
     if (client_document) {
         if (client_document->cart_migrated)
             Logger::info("ProjectState: migrated legacy Cart data to One Shots.");

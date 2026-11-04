@@ -239,6 +239,39 @@ void test_rejected_document_preserves_show(const std::filesystem::path& wav) {
     std::filesystem::remove_all(folder);
 }
 
+void test_load_resets_project_runtime(const std::filesystem::path& wav) {
+    for (const bool same_file : {false, true}) {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        const auto original = document(json::array({audio("old-first", wav), audio("old-armed", wav)}));
+        const auto incoming = same_file ? original : document(json::array({audio("new-first", wav)}));
+        const auto path = wav.parent_path() / "runtime-show.dwcue";
+        check(state.load_from_json(original, path) && wait_ready(state), "load runtime: first show ready");
+        close_devices(engine);
+        check(state.trigger_item("old-armed") && state.set_next_item_override("old-armed") &&
+                  state.set_selected_item("old-armed") && state.item_trigger_seq("old-armed"),
+              "load runtime: first show has an armed/selected/triggered cue");
+        state.stop_all_cues(0);
+        const auto session = state.project_session_id();
+        check(state.replace_full_document(original, false) && wait_ready(state) &&
+                  state.project_session_id() == session &&
+                  state.selected_item_uuid() == "old-armed" && state.item_trigger_seq("old-armed"),
+              "load runtime: in-place replacement retains selection and trigger stamps");
+        state.set_next_item_override("old-armed");
+        check(state.load_from_json(incoming, same_file ? path : path.parent_path() / "replacement.dwcue") &&
+                  wait_ready(state), "load runtime: incoming show ready");
+        close_devices(engine);
+        const std::string first = same_file ? "old-first" : "new-first";
+        check(state.project_session_id() != session && state.selected_item_uuid().empty() &&
+                  !state.item_trigger_seq("old-armed") && state.next_item_override() == first,
+              same_file ? "same-file reopen clears stale runtime and arms the first cue"
+                        : "different-show load clears stale runtime and arms the first cue");
+        check(state.go() == first && on_air(state, engine, first),
+              "load runtime: first GO starts the incoming first cue");
+        state.stop_all_cues(0);
+    }
+}
+
 void test_nested_group_end(const std::filesystem::path& wav) {
     liveplay::audio::AudioEngine engine;
     liveplay::core::ProjectState state(engine);
@@ -1447,6 +1480,7 @@ int main() {
     test_changed_media_readiness();
     test_stop_all_during_project_boundaries(wav);
     test_rejected_document_preserves_show(wav);
+    test_load_resets_project_runtime(wav);
     test_nested_group_end(wav);
     test_group_cancellation(wav);
     test_group_internal_continuations(wav);
