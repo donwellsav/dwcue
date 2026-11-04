@@ -963,8 +963,9 @@ void test_cancelled_prime_cache(const std::filesystem::path& wav) {
 }
 
 void test_live_edit_storage_waits(const std::filesystem::path& wav) {
-    for (const int operation : {0, 1, 2}) {
+    for (const int operation : {0, 1, 2, 3, 4}) {
       for (const int mode : {0, 1, 2, 3, 4}) {
+        if (operation >= 3 && mode != 0) continue;
         PlaybackItemDesc desc;
         desc.id = CueId{"live-edit-storage"}; desc.file_path = wav;
         desc.mix_sample_rate = kRate; desc.render_block = kBlock;
@@ -973,6 +974,7 @@ void test_live_edit_storage_waits(const std::filesystem::path& wav) {
         item.play(); Output output; item.render_block(output.channels, 2, kBlock);
         if (mode == 1) item.pause();
         if (mode == 2) item.stop_with_fade(std::chrono::milliseconds{500});
+        if (operation >= 3) item.stop_now();
         std::promise<void> entered, release;
         auto allowed = release.get_future().share();
         std::atomic<bool> signalled{false};
@@ -980,19 +982,31 @@ void test_live_edit_storage_waits(const std::filesystem::path& wav) {
         const auto* original = backend->vtable;
         auto stalled = *original;
         static std::function<ma_result(ma_data_source*, ma_uint64)> seek;
+        static std::function<ma_result(ma_data_source*, void*, ma_uint64, ma_uint64*)> read;
         seek = [&](ma_data_source* source, ma_uint64 frame) {
             if (!signalled.exchange(true)) entered.set_value();
             allowed.wait(); return original->onSeek(source, frame);
         };
         stalled.onSeek = [](ma_data_source* source, ma_uint64 frame) { return seek(source, frame); };
+        if (operation == 4) {
+            stalled.onSeek = original->onSeek;
+            read = [&](ma_data_source* source, void* data, ma_uint64 frames, ma_uint64* got) {
+                if (!signalled.exchange(true)) entered.set_value();
+                allowed.wait(); return original->onRead(source, data, frames, got);
+            };
+            stalled.onRead = [](ma_data_source* source, void* data, ma_uint64 frames, ma_uint64* got) {
+                return read(source, data, frames, got);
+            };
+        }
         backend->vtable = &stalled;
         auto edit = std::async(std::launch::async, [&] {
             if (operation == 0) item.seek_seconds(0.5);
             else if (operation == 1) item.set_out_point_seconds(1.5);
-            else item.set_loop(true, 0.25);
+            else if (operation == 2) item.set_loop(true, 0.25);
+            else item.play();
         });
         check(entered.get_future().wait_for(std::chrono::seconds{1}) == std::future_status::ready,
-              "live edit stall: actual seek reaches gate");
+              "live edit stall: actual edit/replay I/O reaches gate");
         auto control = std::async(std::launch::async, [&] {
             if (mode == 3) item.pause();
             else if (mode == 4) item.stop_with_fade(std::chrono::milliseconds{20});
@@ -1010,7 +1024,7 @@ void test_live_edit_storage_waits(const std::filesystem::path& wav) {
                   "live edit stall: immediate stop is silent during the held seek");
         }
         release.set_value(); edit.get(); control.get();
-        backend->vtable = original; seek = {};
+        backend->vtable = original; seek = {}; read = {};
         if (mode == 3) {
             check(item.stats().transport == TransportState::Paused,
                   "live edit stall: successful edit preserves a later Pause");

@@ -288,6 +288,7 @@ MeterSnapshot PlaybackItem::source_meter_consume(ChannelIndex ch) noexcept {
 }
 
 void PlaybackItem::play() {
+    const auto expected_revision = playback_revision();
     if (source_changed()) return;
     if (!decoder_ready_) {
         Logger::warn("PlaybackItem[{}] play() ignored — decoder not ready", desc_.id.value);
@@ -318,12 +319,23 @@ void PlaybackItem::play() {
             (decode_terminal_.load(std::memory_order_acquire) || decode_out_point_passed_);
         if (rewind_on_play_.load(std::memory_order_acquire) || retry_error || replay_eof) {
             begin_render_exclusion();
+            if (playback_revision() != expected_revision) {
+                end_render_exclusion();
+                return;
+            }
             const auto frame = retry_error || !replay_eof
                 ? playhead_frames_.load(std::memory_order_acquire)
                 : std::uint64_t{0};
+            rewind_on_play_.store(true, std::memory_order_release);
+            end_render_exclusion();
             const ma_result seek_result = decoder_
                 ? ma_decoder_seek_to_pcm_frame(decoder_.get(), frame)
                 : MA_INVALID_OPERATION;
+            begin_render_exclusion();
+            if (playback_revision() != expected_revision) {
+                end_render_exclusion();
+                return;
+            }
             if (seek_result != MA_SUCCESS) {
                 end_render_exclusion();
                 Logger::warn(
@@ -333,12 +345,16 @@ void PlaybackItem::play() {
             }
             playhead_frames_.store(frame, std::memory_order_release);
             reset_read_ahead_locked(frame);
-            fill_read_ahead_block_locked();
             end_render_exclusion();
+            fill_read_ahead_block_locked();
         }
     }
 
     begin_render_exclusion();
+    if (playback_revision() != expected_revision) {
+        end_render_exclusion();
+        return;
+    }
     playback_revision_.fetch_add(1, std::memory_order_acq_rel);
     // A deliberate replay is a fresh attempt. Drop any error notification from
     // the prior attempt so the sequencer cannot attach it to this new play.
