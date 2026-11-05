@@ -80,6 +80,84 @@ std::filesystem::path wav(const std::filesystem::path& dir,
     return path;
 }
 
+// Intercept the real null backend, so native device waits need no hardware.
+struct NativeDeviceGate {
+    ma_context context{};
+    ma_backend_callbacks original{};
+    std::atomic<bool> hold_start{false}, hold_uninit{false}, fail_start{false}, entered{false};
+    NativeDeviceGate() {
+        const ma_backend backend = ma_backend_null;
+        auto config = ma_context_config_init();
+        config.pUserData = this;
+        if (ma_context_init(&backend, 1, &config, &context) != MA_SUCCESS) std::abort();
+        original = context.callbacks;
+        context.callbacks.onDeviceStart = [](ma_device* device) {
+            auto& gate = *static_cast<NativeDeviceGate*>(device->pContext->pUserData);
+            if (gate.hold_start.load()) {
+                gate.entered.store(true);
+                while (gate.hold_start.load()) std::this_thread::sleep_for(std::chrono::milliseconds{1});
+            }
+            return gate.fail_start.load() ? MA_ERROR : gate.original.onDeviceStart(device);
+        };
+        context.callbacks.onDeviceUninit = [](ma_device* device) {
+            auto& gate = *static_cast<NativeDeviceGate*>(device->pContext->pUserData);
+            if (gate.hold_uninit.load()) {
+                gate.entered.store(true);
+                while (gate.hold_uninit.load()) std::this_thread::sleep_for(std::chrono::milliseconds{1});
+            }
+            return gate.original.onDeviceUninit(device);
+        };
+    }
+    ~NativeDeviceGate() { ma_context_uninit(&context); }
+    bool wait_entered() {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+        while (!entered.load() && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        return entered.load();
+    }
+};
+
+void test_initial_device_start_keeps_controls() {
+  for (const int mode : {0, 1, 2}) { // Start, duplicate cleanup, failed-start cleanup.
+    NativeDeviceGate gate;
+    AudioEngine engine;
+    engine.device_test_context_ = &gate.context;
+    const auto original = mode == 1 ? engine.open_default_device() : DeviceId{};
+    gate.hold_start.store(mode == 0);
+    gate.hold_uninit.store(mode != 0);
+    gate.fail_start.store(mode == 2);
+    auto open = std::async(std::launch::async, [&] { return engine.open_default_device(); });
+    check(gate.wait_entered(), "actual null-backend start/duplicate/failure cleanup reaches held native call");
+    auto controls = std::async(std::launch::async, [&] {
+        engine.stop_all(); engine.set_master_ceiling_db(-6.0f);
+        return !engine.find_cue(CueId{"missing"});
+    });
+    check(controls.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready,
+          "Stop All, settings and cue introspection survive held device start/cleanup");
+    std::future<DeviceId> reuse;
+    if (!original.empty()) {
+        reuse = std::async(std::launch::async, [&] { return engine.open_device_by_name(original.value); });
+        check(reuse.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready,
+              "already opened runtime device can be acquired during duplicate cleanup");
+    }
+    gate.hold_start.store(false); gate.hold_uninit.store(false);
+    const auto id = open.get();
+    check(controls.get() && (mode == 2 ? id.empty() : !id.empty()),
+          "native return preserves successful opens and failed-start refusal");
+    if (!id.empty()) {
+        const auto device = engine.devices_.front();
+        check(mode != 1 || (id == original && reuse.get() == original &&
+              device->open_references.value() == 3), "duplicate and runtime acquisitions share one native output");
+        engine.close_device(id);
+        if (mode == 1) { engine.close_device(id); engine.close_device(id); }
+        std::vector<float> samples(4096, 0.9f);
+        device->outputs.front().limiter->process(samples.data(), samples.size());
+        check(*std::max_element(samples.begin(), samples.end()) < 0.51f,
+              "ceiling changed during native wait is applied to the opened output");
+    }
+  }
+}
+
 struct Fixture {
     AudioEngine engine{EngineConfig{48'000, block, 32, -1.0f}};
     std::shared_ptr<AudioEngine::Device> device =
@@ -943,6 +1021,7 @@ int main() {
     const auto center = wav(dir, "center.wav", 0.7f, true, 0.0f, 6, 2);
     const auto left = wav(dir, "left.wav", 0.3f, true, 0.0f, 2, 0);
     const auto ramp = wav(dir, "ramp.wav", 0.125f, true, 1.0f / 131'072.0f);
+    test_initial_device_start_keeps_controls();
     test_blocked_decoder_reads(quiet);
     test_source_starvation(quiet, silence);
     test_channel_map_reload(quiet, left);

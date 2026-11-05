@@ -436,6 +436,7 @@ if(LIVEPLAY_BUILD_TESTS)
         FluidSynth::libfluidsynth ${GME_LIBRARY} ${VGMSTREAM_LIBRARY}
     )
     target_compile_definitions(liveplay-audio-output-tests PRIVATE
+        LIVEPLAY_TEST_HOOKS=1
         LIVEPLAY_DEFAULT_SOUNDFONT="${CMAKE_CURRENT_SOURCE_DIR}/assets/TimGM6mb.sf2")
     add_test(NAME audio-output COMMAND liveplay-audio-output-tests)
     add_executable(liveplay-project-state-runtime-tests

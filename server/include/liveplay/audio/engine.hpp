@@ -492,6 +492,9 @@ private:
     // platforms and must not run concurrently. Recovery request state and its
     // monotonically increasing id source are guarded by the same lock.
     mutable std::mutex                           device_lifecycle_mutex_;
+#ifdef LIVEPLAY_TEST_HOOKS
+    ma_context*                                  device_test_context_ = nullptr;
+#endif
     std::uint64_t                                next_recovery_request_id_ = 1;
     mutable std::mutex                           mutex_;          // guards registries + topology rebuild
     std::unordered_map<std::string, std::shared_ptr<PlaybackItem>>  items_;

@@ -692,7 +692,6 @@ DeviceId AudioEngine::open_default_device(ChannelCount output_channels) {
 
 DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
                                           ChannelCount output_channels) {
-    std::lock_guard lifecycle_lock{device_lifecycle_mutex_};
     {
         std::lock_guard lock{mutex_};
         if (auto* existing = find_device_locked(DeviceId{name_substring});
@@ -701,6 +700,7 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
             return existing->id;
         }
     }
+    std::lock_guard lifecycle_lock{device_lifecycle_mutex_};
     auto dev = std::make_shared<Device>();
     dev->id           = DeviceId{gen_uuid_like()};
     dev->channels     = output_channels;
@@ -792,7 +792,11 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
         }
     }
 
-    if (ma_device_init(nullptr, &cfg, dev->ma_dev.get()) != MA_SUCCESS) {
+    ma_context* device_context = nullptr;
+#ifdef LIVEPLAY_TEST_HOOKS
+    device_context = device_test_context_;
+#endif
+    if (ma_device_init(device_context, &cfg, dev->ma_dev.get()) != MA_SUCCESS) {
         Logger::error("ma_device_init failed for '{}'", dev->display_name);
         ma_pcm_rb_uninit(dev->ring.get());
         return {};
@@ -804,6 +808,7 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
     // Resolve the native device first: "default" and an explicit device name
     // can address the same hardware, which a request-string comparison misses.
     // Opening it twice produces doubled/echoing audio.
+    DeviceId duplicate;
     {
         std::lock_guard lock{mutex_};
         const auto existing = std::find_if(
@@ -817,11 +822,13 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
             });
         if (existing != devices_.end()) {
             (*existing)->open_references.acquire();
-            const auto existing_id = (*existing)->id;
-            ma_device_uninit(dev->ma_dev.get());
-            ma_pcm_rb_uninit(dev->ring.get());
-            return existing_id;
+            duplicate = (*existing)->id;
         }
+    }
+    if (!duplicate.empty()) {
+        ma_device_uninit(dev->ma_dev.get());
+        ma_pcm_rb_uninit(dev->ring.get());
+        return duplicate;
     }
 
     dev->scratch.assign(cfg_.render_block * output_channels, 0.0f);
@@ -841,13 +848,22 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
         }
         dev->callback_liveness.arm(
             dev->callback_entries.value(), CallbackLivenessMonitor::Clock::now());
-        if (ma_device_start(dev->ma_dev.get()) != MA_SUCCESS) {
-            Logger::error("ma_device_start failed for '{}'", dev->display_name);
-            ma_device_uninit(dev->ma_dev.get());
-            ma_pcm_rb_uninit(dev->ring.get());
-            return {};
+    }
+    if (ma_device_start(dev->ma_dev.get()) != MA_SUCCESS) {
+        Logger::error("ma_device_start failed for '{}'", dev->display_name);
+        ma_device_uninit(dev->ma_dev.get());
+        ma_pcm_rb_uninit(dev->ring.get());
+        return {};
+    }
+    dev->started.store(true, std::memory_order_release);
+    {
+        std::lock_guard lock{mutex_};
+        for (auto& state : dev->outputs) {
+            state.limiter->set_ceiling_db(cfg_.master_ceiling_db);
+            state.meter->configure(cfg_.mix_sample_rate, meter_ballistics_);
+            state.meter->set_true_peak_enabled(meter_true_peak_);
+            state.meter->set_loudness_enabled(meter_loudness_);
         }
-        dev->started.store(true, std::memory_order_release);
         devices_.emplace_back(dev);
         publish_device_snapshot_locked();
     }
