@@ -2030,6 +2030,9 @@ void AudioEngine::render_loop() {
                             cfg_.render_block <=
                         target;
                     if (!can_render) {
+#ifdef LIVEPLAY_TEST_ACCESS
+                        if (before_render_wait_snapshot_for_test_) before_render_wait_snapshot_for_test_();
+#endif
                         // Capture the sequence before re-checking occupancy.
                         // If a callback consumes between the re-check and
                         // wait(), its sequence change returns immediately.
@@ -2048,6 +2051,8 @@ void AudioEngine::render_loop() {
                 continue;
             }
             if (!can_render) {
+                // Stop may have already published the wake captured in before.
+                if (!running_.load(std::memory_order_acquire)) break;
                 callback_state_->consumption_counter.wait(before, std::memory_order_acquire);
                 continue;
             }

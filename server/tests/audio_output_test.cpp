@@ -357,6 +357,37 @@ struct Fixture {
     }
 };
 
+void test_stop_before_render_wait_snapshot(const std::filesystem::path& source) {
+    Fixture f(source);
+    std::promise<void> entered, release;
+    auto reached = entered.get_future();
+    auto proceed = release.get_future();
+    f.engine.before_render_wait_snapshot_for_test_ = [&] {
+        entered.set_value();
+        proceed.wait();
+    };
+    check(f.engine.start(), "render shutdown: software output starts");
+    check(reached.wait_for(std::chrono::seconds{2}) == std::future_status::ready,
+          "render shutdown: full ring holds the renderer before it snapshots the wait counter");
+    auto& counter = f.engine.callback_state_->consumption_counter;
+    const auto before = counter.load(std::memory_order_acquire);
+    auto stop = std::async(std::launch::async, [&] { f.engine.stop(); });
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+    while (counter.load(std::memory_order_acquire) == before && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    check(counter.load(std::memory_order_acquire) != before && !f.engine.is_running(),
+          "render shutdown: stop sends its wake before the renderer snapshots the counter");
+    release.set_value();
+    const auto stopped = stop.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready;
+    check(stopped, "render shutdown: a full ring cannot strand Stop after its wake");
+    // Let a broken build report its failure and exit.
+    for (int i = 0; i < 400 && stop.wait_for(std::chrono::milliseconds{5}) != std::future_status::ready; ++i) {
+        counter.fetch_add(1, std::memory_order_release);
+        counter.notify_all();
+    }
+    stop.get();
+}
+
 void test_blocked_decoder_reads(const std::filesystem::path& source) {
     for (const int scenario : {0, 1, 2, 3, 4, 5, 6, 7, 8}) {
         const int blocked_count = scenario == 1 ? 3 : scenario == 4 ? 4 : scenario == 6 ? 12 : 1;
@@ -1152,6 +1183,7 @@ int main() {
     test_held_device_recovery_lifetime();
     test_device_catalog_survives_native_stall();
     test_catalog_follows_native_reroute();
+    test_stop_before_render_wait_snapshot(quiet);
     test_blocked_decoder_reads(quiet);
     test_source_starvation(quiet, silence);
     test_channel_map_reload(quiet, left);

@@ -39,6 +39,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <condition_variable>
 #include <filesystem>
 #include <memory>
@@ -520,6 +521,9 @@ private:
     std::shared_ptr<std::mutex>                   device_lifecycle_mutex_;
 #ifdef LIVEPLAY_TEST_HOOKS
     ma_context*                                  device_test_context_ = nullptr;
+#endif
+#ifdef LIVEPLAY_TEST_ACCESS
+    std::function<void()>                        before_render_wait_snapshot_for_test_;
 #endif
     std::uint64_t                                next_recovery_request_id_ = 1;
     mutable std::mutex                           mutex_;          // guards registries + topology rebuild
