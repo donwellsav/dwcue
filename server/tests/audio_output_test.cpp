@@ -468,18 +468,24 @@ void test_blocked_decoder_reads(const std::filesystem::path& source) {
                 release.set_value(); pause.get();
             }
         }
-        int audible_blocks = 0;
-        for (int i = 0; i < 64; ++i) {
-            for (int wait = 0; wait < 50 && ma_pcm_rb_available_read(f.device->ring.get()) < block; ++wait)
-                std::this_thread::sleep_for(std::chrono::milliseconds{1});
-            const auto out = f.drain();
-            if (std::any_of(out.begin(), out.end(), [](float sample) { return sample > 0.05f; }))
-                ++audible_blocks;
-            std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        constexpr int expected_blocks = 64;
+        constexpr auto block_period = std::chrono::microseconds{block * 1'000'000 / 48'000};
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{3};
+        int drained_blocks = 0, audible_blocks = 0;
+        // Consume at device cadence and count only blocks the render worker produced.
+        while (drained_blocks < expected_blocks && std::chrono::steady_clock::now() < deadline) {
+            if (ma_pcm_rb_available_read(f.device->ring.get()) >= block) {
+                const auto out = f.drain();
+                ++drained_blocks;
+                if (std::any_of(out.begin(), out.end(), [](float sample) { return sample > 0.05f; }))
+                    ++audible_blocks;
+            }
+            std::this_thread::sleep_for(block_period);
         }
-        std::printf("MEASURE blocked_read_sources=%d healthy_pcm_blocks=%d/64\n", blocked_count, audible_blocks);
+        std::printf("MEASURE blocked_read_sources=%d drained_blocks=%d/%d healthy_pcm_blocks=%d\n",
+                    blocked_count, drained_blocks, expected_blocks, audible_blocks);
         if (stopped_before_release) {
-            check(audible_blocks >= 48 && f.item->stats().playhead_frame > 8'192,
+            check(drained_blocks == expected_blocks && audible_blocks >= 48 && f.item->stats().playhead_frame > 8'192,
                   "blocked read: healthy PCM continues beyond all resident queue/ring capacity");
             check(entered.load() == blocked_count,
                   "blocked read: restart retains the existing blocked calls without retrying them");
