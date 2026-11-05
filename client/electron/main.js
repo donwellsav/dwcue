@@ -437,7 +437,8 @@ async function terminateLiveplayPid(pid, port, instanceToken, legacy = false) {
     if (process.platform === 'win32') {
       if (!(await identityMatches())) return false;
       await new Promise((resolve) => execFile(
-        'taskkill.exe', ['/pid', String(pid), '/T', '/F'], resolve,
+        'taskkill.exe', ['/pid', String(pid), '/T', '/F'],
+        { timeout: 3000, windowsHide: true }, resolve,
       ));
     } else {
       process.kill(pid, 'SIGINT');
@@ -854,6 +855,8 @@ async function reconcileLiveplayServerIdentity(waitForReplacement = false) {
       if (owned) {
         return current;
       }
+      // A failed probe is not evidence that a live child has exited.
+      return null;
     }
     clearLiveplayIdentity(current);
   }
@@ -913,8 +916,9 @@ async function startLiveplayServerOnce() {
   // Never signal, adopt, or overwrite a live PID that failed identity checks.
   // The user can stop that process directly; spawning beside it risks two
   // independent audio engines if the configured port also changed.
-  const unverifiedLock = readLiveplayLock();
-  if (unverifiedLock && isPidAlive(unverifiedLock.pid)) {
+  const unverifiedLock = [readLiveplayLock(), liveplayServerIdentity].find(
+    identity => identity && isPidAlive(identity.pid));
+  if (unverifiedLock) {
     console.error('[liveplay-server] refusing to launch beside unverified pid',
                   unverifiedLock.pid);
     notifyServerStateChange();
@@ -929,8 +933,7 @@ async function startLiveplayServerOnce() {
     return;
   }
 
-  // Launch detached and headless. The server writes its real PID to the
-  // lockfile and persists logs under its state directory.
+  // Launch detached and headless; retain ownership even if readiness stalls.
   const lockPath = liveplayLockPath();
   const instanceToken = crypto.randomBytes(16).toString('hex');
   const accessToken = crypto.randomBytes(32).toString('hex');
@@ -971,13 +974,13 @@ async function startLiveplayServerOnce() {
     notifyServerStateChange();
   });
 
-  // We don't track the spawn handle's lifetime — the server's real PID
-  // arrives via the pidfile within ~1 s. unref() so Electron can quit
-  // independently.
+  if (Number.isSafeInteger(launcher.pid) && launcher.pid > 0) {
+    adoptLiveplayIdentity({ pid: launcher.pid, port: cfg.localPort,
+      instanceToken, accessToken, legacy: false });
+  }
   try { launcher.unref(); } catch {}
 
-  // Adopt the real PID before completing this launch so a concurrent stop or
-  // restart cannot miss the new server in the pidfile handoff window.
+  // Readiness still requires the server's authenticated health response.
   const identity = await pollPidfileForServerPid(
     lockPath, instanceToken, accessToken, cfg.localPort, launchState,
   );
@@ -1028,11 +1031,11 @@ async function stopLiveplayServer() {
   if (liveplayServerStartPromise) await liveplayServerStartPromise;
   const identity = await reconcileLiveplayServerIdentity(true);
   if (!identity) {
-    const unverifiedLock = readLiveplayLock();
-    if (unverifiedLock && isPidAlive(unverifiedLock.pid)) {
+    const unverifiedLock = [readLiveplayLock(), liveplayServerIdentity].find(
+      candidate => candidate && isPidAlive(candidate.pid));
+    if (unverifiedLock) {
       console.error('[liveplay-server] refusing to stop unverified lock PID:',
                     unverifiedLock.pid);
-      clearLiveplayIdentity();
       notifyServerStateChange();
       return false;
     }
