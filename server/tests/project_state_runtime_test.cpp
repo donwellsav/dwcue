@@ -1863,6 +1863,33 @@ void test_starvation_holds_show(const std::filesystem::path& wav) {
     state.set_ui_state_broadcaster({});
 }
 
+void test_unchanged_mirror_keeps_controls(const std::filesystem::path& wav) {
+    liveplay::audio::AudioEngine engine;
+    liveplay::core::ProjectState state(engine);
+    auto doc = document(json::array({audio("mirror-busy", wav, {{"outPoint", 0.0}, {"ltcEnabled", true}, {"ltcFrameRate", 1}})}));
+    state.replace_full_document(doc);
+    check(wait_ready(state) && state.trigger_item("mirror-busy"), "unchanged mirror: prepared cue starts");
+    const auto item = engine.find_cue(*state.item_to_cue_id("mirror-busy"));
+    std::unique_lock held{item->decoder_mutex_};
+    doc["name"] = "Republished Show";
+    const auto marker = wav.string() + ".mirror-properties";
+    std::filesystem::remove(marker + ".entered");
+    set_loader_gate(marker, "DWCUE_TEST_MIRROR_PROPERTIES_MARKER");
+    auto mirror = std::async(std::launch::async, [&] { return state.replace_full_document(doc); });
+    check(wait_gate_entered(marker), "unchanged mirror: native property publication begins under the real project lock");
+    check(mirror.wait_for(250ms) == std::future_status::ready,
+          "unchanged mirror: document replacement returns before the busy decoder");
+    auto snapshot = std::async(std::launch::async, [&] { return state.full_document(); });
+    auto stop = std::async(std::launch::async, [&] { state.stop_all_cues(0); });
+    check(snapshot.wait_for(250ms) == std::future_status::ready && stop.wait_for(250ms) == std::future_status::ready,
+          "unchanged mirror: document access and Stop All survive repeated native properties");
+    held.unlock(); mirror.get(); snapshot.get(); stop.get();
+    clear_loader_gate("DWCUE_TEST_MIRROR_PROPERTIES_MARKER");
+    std::filesystem::remove(marker + ".entered");
+    check(wait_ready(state) && item->stats().transport == liveplay::audio::TransportState::Stopped,
+          "unchanged mirror: stopped cue stays stopped after native return");
+}
+
 void test_completed_loader_worker_retires() {
     if (std::thread::hardware_concurrency() < 3) return; // This case needs two concurrent bulk slots.
     const auto held = make_wav(8'230), healthy = make_wav(8'231);
@@ -2107,6 +2134,7 @@ int main() {
     test_completed_loader_worker_retires();
     failures += test_crash_resume_lifecycle();
     const auto wav = make_wav();
+    test_unchanged_mirror_keeps_controls(wav);
     test_position_aware_recovery(wav);
     test_changed_media_readiness();
     test_stop_all_during_project_boundaries(wav);

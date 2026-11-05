@@ -71,6 +71,7 @@ PlaybackItem::PlaybackItem(PlaybackItemDesc desc)
     fade_in_ms_.store(desc_.fade_in_duration.count());
     fade_out_ms_.store(desc_.fade_out_duration.count());
     ltc_enabled_atomic_.store(desc_.ltc_enabled);
+    ltc_frame_rate_atomic_.store(desc_.ltc_frame_rate);
     ltc_offset_ns_.store(desc_.ltc_offset.count());
     if (desc_.ltc_enabled) {
         ltc_ = std::make_unique<LTCGenerator>();
@@ -566,14 +567,17 @@ void PlaybackItem::set_ltc_enabled(bool enabled) {
 }
 
 void PlaybackItem::set_ltc_frame_rate(LTCFrameRate fr) {
+    if (ltc_frame_rate_atomic_.load(std::memory_order_acquire) == fr) return;
     std::lock_guard lock{decoder_mutex_};
+    if (ltc_frame_rate_atomic_.load(std::memory_order_acquire) == fr) return;
     begin_render_exclusion();
+    RenderActiveGuard guard{render_exclusion_};
     desc_.ltc_frame_rate = fr;
     if (ltc_) {
         ltc_->configure(desc_.mix_sample_rate, fr,
                         std::chrono::nanoseconds{ltc_offset_ns_.load()});
     }
-    end_render_exclusion();
+    ltc_frame_rate_atomic_.store(fr, std::memory_order_release);
 }
 
 void PlaybackItem::set_ltc_offset(std::chrono::nanoseconds offset) noexcept {
@@ -583,9 +587,10 @@ void PlaybackItem::set_ltc_offset(std::chrono::nanoseconds offset) noexcept {
 void PlaybackItem::set_out_point_seconds(double seconds) noexcept {
     if (!std::isfinite(seconds) ||
         seconds >= static_cast<double>(UINT64_MAX) / desc_.mix_sample_rate) return;
-    std::lock_guard lock{decoder_mutex_};
     const auto frames = seconds <= 0.0 ? std::uint64_t{0}
         : static_cast<std::uint64_t>(seconds * static_cast<double>(desc_.mix_sample_rate));
+    if (out_point_frames_.load(std::memory_order_acquire) == frames) return;
+    std::lock_guard lock{decoder_mutex_};
     if (out_point_frames_.load(std::memory_order_acquire) == frames) return;
     begin_render_exclusion();
     const auto revision = playback_revision_.fetch_add(1, std::memory_order_acq_rel) + 1;
@@ -620,16 +625,17 @@ void PlaybackItem::set_loop(bool enabled, double in_seconds) noexcept {
     if (!enabled) in_seconds = 0.0;
     if (!std::isfinite(in_seconds) ||
         in_seconds >= static_cast<double>(UINT64_MAX) / desc_.mix_sample_rate) return;
+    const auto normalized_in = [&] {
+        auto frames = in_seconds <= 0.0 ? std::uint64_t{0} :
+            static_cast<std::uint64_t>(in_seconds * static_cast<double>(desc_.mix_sample_rate));
+        const auto out = out_point_frames_.load(std::memory_order_acquire);
+        return out > 0 && frames >= out ? std::uint64_t{0} : frames;
+    };
+    auto in_frames = normalized_in();
+    if (loop_enabled_.load(std::memory_order_acquire) == enabled &&
+        loop_in_frames_.load(std::memory_order_acquire) == in_frames) return;
     std::lock_guard lock{decoder_mutex_};
-    const auto rate = static_cast<double>(desc_.mix_sample_rate);
-    auto in_frames = (in_seconds <= 0.0)
-        ? std::uint64_t{0}
-        : static_cast<std::uint64_t>(in_seconds * rate);
-    // A loop-in point at or past the out-point would make render_block() re-hit
-    // the out-point on every block — a rapid Stopped/loop retrigger with silence
-    // and high seek churn. Fall back to looping from the start in that case.
-    const auto out_pt = out_point_frames_.load(std::memory_order_acquire);
-    if (out_pt > 0 && in_frames >= out_pt) in_frames = 0;
+    in_frames = normalized_in(); // The out point may have changed while waiting.
     if (loop_enabled_.load(std::memory_order_acquire) == enabled &&
         loop_in_frames_.load(std::memory_order_acquire) == in_frames) return;
     begin_render_exclusion();

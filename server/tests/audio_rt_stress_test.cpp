@@ -431,6 +431,27 @@ void test_active_mirror_prime_is_noop(PlaybackItem& item) {
     item.set_fade_out(std::chrono::milliseconds{0});
 }
 
+void test_unchanged_setters_skip_decoder(PlaybackItem& item) {
+  for (const int mode : {0, 1, 2}) {
+    item.stop_now(); item.set_out_point_seconds(0.1); item.set_loop(true, 0.01);
+    item.set_ltc_frame_rate(LTCFrameRate::Fps25); item.prime(2.0); item.play();
+    const auto revision = item.playback_revision();
+    std::unique_lock held{item.decoder_mutex_};
+    auto repeat = std::async(std::launch::async, [&] {
+        if (mode == 0) item.set_out_point_seconds(0.1);
+        else if (mode == 1) item.set_loop(true, 0.01);
+        else item.set_ltc_frame_rate(LTCFrameRate::Fps25);
+    });
+    check(repeat.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready,
+          "unchanged native properties return before a held decoder lock");
+    Output output;
+    check(item.playback_revision() == revision && item.render_block(output.channels, 2, kBlock) == kBlock,
+          "unchanged native properties preserve revision and queued PCM while decoder is busy");
+    held.unlock(); repeat.get(); item.stop_now();
+  }
+  item.set_out_point_seconds(0.0); item.set_loop(false); item.set_ltc_frame_rate(LTCFrameRate::Fps30);
+}
+
 void test_unchanged_boundaries_preserve_audio(PlaybackItem& item) {
     item.stop_now();
     item.set_fade_in(std::chrono::milliseconds{0});
@@ -1455,6 +1476,7 @@ int main() {
         test_item_gain_path(item);
         test_duck_automation(item);
         test_active_mirror_prime_is_noop(item);
+        test_unchanged_setters_skip_decoder(item);
         test_unchanged_boundaries_preserve_audio(item);
         test_invalid_time_inputs_preserve_audio(item);
         test_long_position_ltc(item);

@@ -1058,6 +1058,10 @@ void ProjectState::start_async_mirror() {
                     cues_.emplace(loaded.cue_id.value, std::move(meta));
                 }
 
+#ifdef LIVEPLAY_TEST_HOOKS
+                if (const char* marker = std::getenv("DWCUE_TEST_MIRROR_PROPERTIES_MARKER"); marker && *marker)
+                    std::ofstream{std::string{marker} + ".entered"} << mirror_generation;
+#endif
                 // Apply per-item audio properties to the engine cues we just
                 // registered (including LTC settings).
                 for_each_item(document_,

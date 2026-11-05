@@ -371,6 +371,7 @@ private:
     // LTC generator (optional). Built fresh whenever LTC config changes.
     std::unique_ptr<LTCGenerator> ltc_;
     std::atomic<bool>             ltc_enabled_atomic_{false};
+    std::atomic<LTCFrameRate>     ltc_frame_rate_atomic_{LTCFrameRate::Fps30};
     // Atomic offset so set_ltc_offset() can be called while playing without
     // touching the LTCGenerator from the control thread.
     std::atomic<long long>        ltc_offset_ns_{0};
