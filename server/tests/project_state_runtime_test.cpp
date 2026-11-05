@@ -1562,6 +1562,7 @@ void test_failed_follow_requires_go(const std::filesystem::path& wav) {
     });
     check(state.trigger_item("failed-follow-a"), "failed follow: source starts");
     render_to_end(state, engine, "failed-follow-a");
+    for (int i = 0; i < 400 && !visible_error.load(); ++i) std::this_thread::sleep_for(5ms);
     check(visible_error.load(), "failed follow: unavailable EOF destination is operator-visible");
     check(state.set_next_item_override("failed-follow-b"), "failed follow: operator corrects Up Next");
     std::this_thread::sleep_for(160ms);
@@ -2161,21 +2162,23 @@ void test_position_aware_recovery(const std::filesystem::path& wav) {
     check(!on_air(state, engine, "secondary"), "recovery position: fresh-start action is not repeated");
     std::array<float, 256> left{}, right{};
     float* channels[]{left.data(), right.data()};
-    for (int i = 0; i < 45; ++i) {
-        item->service_read_ahead(1);
-        item->render_block(channels, 2, 256);
-    }
-    std::this_thread::sleep_for(120ms);
+    const auto render_through = [&](std::uint64_t frame) {
+        const auto deadline = std::chrono::steady_clock::now() + 2s;
+        while (item->stats().playhead_frame < frame && std::chrono::steady_clock::now() < deadline) {
+            item->service_read_ahead(1);
+            if (item->render_block(channels, 2, 256) == 0) std::this_thread::sleep_for(1ms);
+        }
+        return item->stats().playhead_frame >= frame;
+    };
+    check(render_through(40'320), "recovery position: actual PCM crosses the future action marker");
+    for (int i = 0; i < 400 && future == 0; ++i) std::this_thread::sleep_for(5ms);
     check(past == 0 && future == 1, "recovery position: crossed actions consumed; future action fires once");
     check(!state.resume_item("resume", 0.6, revision), "recovery position: consumed recovery cannot replay");
     state.stop_all_cues(0);
     check(state.play_item("resume") && on_air(state, engine, "secondary"),
           "recovery position: ordinary replay retains fresh-start action");
-    for (int i = 0; i < 100; ++i) {
-        item->service_read_ahead(1);
-        item->render_block(channels, 2, 256);
-    }
-    std::this_thread::sleep_for(120ms);
+    check(render_through(30'400), "recovery position: replay PCM crosses both earlier markers");
+    for (int i = 0; i < 400 && past < 2; ++i) std::this_thread::sleep_for(5ms);
     check(past == 2 && future == 1, "recovery position: ordinary replay retains crossed custom actions");
     state.stop_all_cues(0);
 }
