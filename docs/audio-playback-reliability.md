@@ -1,6 +1,6 @@
 # Audio import and live playback reliability
 
-**4 November software audit:** source `87bcd46` replaces T45's shared four-worker budget with per-live-cue read-ahead ownership, holds a cue after 250 ms of missing PCM, refuses busy failed retries and retires active workers off control locks. Other sources retain independent refill capacity. Earlier Preview/live-edit, level, follow, project and timecode safeguards remain covered. Software evidence and remaining preparation/metadata/driver/physical limits are tracked in the [workplan](superpowers/plans/2026-11-03-live-show-reliability.md). These are local source commits; package metadata remains 2.6.17.
+**4 November software audit:** current source `2f372c2` adds owned file preparation/cleanup, cancellable publication, nonblocking native-device status, device-owned recovery and ordered managed-engine lifecycle operations. Per-cue starvation hold, level/timing and existing show controls remain. Current software results and the remaining first-open routing, filesystem and sequential-publication limits are in the [workplan](superpowers/plans/2026-11-03-live-show-reliability.md). These are local commits; package metadata remains 2.6.17.
 
 Research and implementation began 2026-11-03 at `8250558`. The initial repairs were committed locally as `2ea5984` and `a9a86a3`; package metadata is 2.6.17. No new installer, installation or publication was performed. The current workplan distinguishes software verification from deferred physical acceptance.
 
@@ -144,12 +144,27 @@ Routing reads an immutable copy of the native mono/stereo/surround sends prepare
 
 The software matrix uses actual backend-read gates and the real render/ring/device callback with a headless device. Healthy PCM is measured beyond all resident queue/ring capacity. It covers one/three blocked reads, five restarts, all-slot exhaustion, engine destruction, late decoder release, route reconstruction and deliberate retry. Full native/API/client and address-sanitized results are recorded in the execution ledger; physical acceptance remains deferred.
 
-## Per-cue fault containment and starvation hold (T46)
+## Per-cue fault containment and starvation hold (T46 checkpoint)
 
 The shared finite pool was still a show-wide failure path. An I/O-free dispatcher now assigns one worker to each live cue; idle library cues own no thread. Each cue retains at most its own outstanding worker across stop/start, including a stalled call. Actual native backend gates with four and twelve held sources leave healthy PCM running beyond resident buffering. Thread/resource use follows live and still-blocked cues; the OS call itself is not forcibly canceled or reclaimed.
 
 After 250 ms of missing decoded PCM on the render timeline, only the affected cue stops with MA_TIMEOUT through the existing playback-error path. Brief gaps can recover; full PCM resets the budget. Digital silence is valid content. Pause, deliberate repositioning and stop-fades retain their semantics. This threshold is an application policy, not an external standard. Late data cannot resume a failed cue, execute a follow or advance an enclosing group. An explicit retry is required; a failed read still owning its decoder is refused before Program preparation, leaving other GO available. Successful preparation after return clears the old error.
 
-Engine removal of an active-worker cue revokes readiness and returns; that worker closes its decoder after its current call finishes, outside engine/dispatch locks. Ordinary explicit unload without an active worker and separate loader/project/new-preparation/metadata/driver operations retain their existing completion behavior. The held-read tests establish this worker boundary, not universal application/platform fault isolation.
+Engine removal of an active-worker cue revokes readiness and returns; that worker closes its decoder after its current call finishes, outside engine/dispatch locks. At the T46 checkpoint, explicit unload without an active worker and separate loader/project/new-preparation/metadata/driver operations retained their completion behavior. T47-T50 below supersede the repaired boundaries. The held-read tests establish this worker boundary, not universal application/platform fault isolation.
 
 Native tests cover the exact starvation boundary at 44.1/48/96 kHz, brief recovery, intentional silence, explicit fades, real backend late return, one-shot/sticky error reporting, group/follow hold, busy-retry refusal, healthy backup GO, retirement, engine lifetime and deliberately retried PCM. The concurrency fixture now paces empty blocks by their audio deadline, while still requiring actual decoded PCM under 1,000 concurrent seeks. Full gates and sanitizer evidence are recorded in the execution ledger.
+
+
+## Loader publication and native driver lifetime (T47-T50)
+
+Pure file tasks own decoder initialization, metadata, authored configuration and fresh One Shot priming. Coordinators can abandon their promise-backed results without waiting for the OS call or allowing stale engine registration. Generation/reserved-CueId checks prevent old completion from clearing a newer request. The last shared owner also moves discarded native teardown off controls; finished file threads do not accumulate behind a stalled batch sibling.
+
+Cue withdrawal stops transport and revokes readiness before native cleanup, even without a registered read-ahead worker. Owned diagnostic files remain until native close. Whole-document trim/LTC changes use cue-owned work outside project/lifecycle locks, snapshot current properties after source reservation, and cancel their coordinator independently. A busy cue refuses GO/native edits before changing saved state; level/fade edits and prepared backup GO remain available. Stop All never waits on that publication worker. Routing reads atomic file-channel/LTC state.
+
+Device init/uninit remain serialized as required by the installed miniaudio 0.11.25 backend. Engine ownership is released for initial start and failed/duplicate cleanup. Hardware discovery uses one background refresh and overlays current runtime state; the first catalog allows 50 ms, later status does not wait for native discovery. This grace and the one-second refresh spacing are local policies. Recovery/retirement own device buffers, native serialization and callback signals; Stop/Close generations reject obsolete native return without retaining a raw engine pointer.
+
+Managed recovery retains startup process identity through readiness failure, refuses duplicate engines and unverified signals, bounds Windows taskkill to three seconds, and verifies actual process exit. Start/Stop/Restart/configuration/reattachment are ordered. The existing client-only Restart remains distinct from Restart engine.
+
+The native gates hold actual decoder/metadata/backend operations; the manager uses the real implementation with a fake OS. Full current results are recorded in the execution ledger. No new physical, platform, installed-app or long-video-soak acceptance is implied.
+
+Still open: project routing callers around first native open, filesystem resolution/revision sweeps, healthy queued/bulk publication behind a blocked sibling, and unrelated Program preparation serialization. Native calls retain resources until return; OS thread exhaustion can fall back to synchronous cue/device cleanup. These remain prioritized repairs, not completed isolation guarantees.

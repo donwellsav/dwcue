@@ -1,10 +1,10 @@
 # DonWells Cue Client — developer guide
 
-**Source status — 4 November 2026:** application behavior is checkpointed through `87bcd46` (per-cue decoder isolation, starvation hold and safe retirement), including the earlier Preview/live-edit, live-show audit and secondary audio resync fixes. Package metadata remains **2.6.17**. These are local commits, not a packaged, installed or published release. Software verification and remaining acceptance are tracked in [the current workplan](../docs/superpowers/plans/2026-11-03-live-show-reliability.md). Physical line-level audio and 1080p HDMI/adapter acceptance remain deferred.
+**Source status — 4 November 2026:** application behavior is checkpointed through `2f372c2` (owned loader/native cleanup, independent device status/recovery and ordered managed-engine operations), retaining per-cue decoder isolation, starvation hold and earlier playback safeguards. Package metadata remains **2.6.17**. These are local commits, not a packaged, installed or published release. Software verification and remaining acceptance are tracked in [the current workplan](../docs/superpowers/plans/2026-11-03-live-show-reliability.md). Physical line-level audio and 1080p HDMI/adapter acceptance remain deferred.
 
 The DonWells Cue client is a Vue 3 + Nuxt 4 application wrapped in Electron. It is a **remote control** for the DonWells Cue audio server: it owns no audio decoding, no playback, no Web Audio nodes. Every user action turns into a REST call or WebSocket frame sent to `dwcue-server`, and every meter / waveform / state update comes back the same way.
 
-This document tracks the v2.6.17 application source checkpoint `87bcd46` and is the developer's guide to the client; this is not a claim about a published installer, so use the release page and installed About version to determine available behaviour. For show-day use, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For the audio engine, see [`server/README.md`](../server/README.md); for overall project and release context, see the [root README](../README.md).
+This document tracks the v2.6.17 application source checkpoint `2f372c2` and is the developer's guide to the client; this is not a claim about a published installer, so use the release page and installed About version to determine available behaviour. For show-day use, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For the audio engine, see [`server/README.md`](../server/README.md); for overall project and release context, see the [root README](../README.md).
 
 ---
 
@@ -395,3 +395,10 @@ Use IPC **only** for capabilities that genuinely need the Electron main process 
 - **Video Output safety policy**: run `npm run test:video-output` from `client/` (or `npm run test:video-output --workspace=client` from the monorepo root) after changing shortcut forwarding or the native recovery menu.
 
 For the audio/transport side of any bug (timing, fades, routing, meters), the issue is almost always server-side — see [`server/README.md`](../server/README.md).
+
+
+### Managed-engine recovery ownership
+
+The Electron manager retains a directly spawned engine even if pidfile/readiness publication fails; an unverified live engine blocks duplicate startup. Signaling still requires identity proof. Start, Stop, Restart, startup reattachment and configuration actions share one ordered promise chain, so an older Restart cannot launch after an acknowledged Shutdown. A failed action releases the chain; late health results cannot revive a dead identity. Windows taskkill has a three-second subprocess timeout and stop success still requires observed process disappearance.
+
+The Connection lost overlay's **Restart** relaunches the client and deliberately leaves the detached engine running. **Server Settings -> Restart engine** in Local mode interrupts the managed engine; use the coordinated show recovery procedure and verify the resulting project/cue state. Hardware readiness and physical silence are separate observations. These paths are covered by seven actual-manager tests with a fake OS; no physical process termination or Windows execution is claimed.

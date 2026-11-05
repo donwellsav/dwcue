@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.17
-**Source revision:** 87bcd4695c3bc1658782716f1e6e59ece57b5fad
-**Native engine baseline:** 87bcd4695c3bc1658782716f1e6e59ece57b5fad
+**Source revision:** 2f372c21e6111a5dc91f532da97fc98b98ccf279
+**Native engine baseline:** 2f372c21e6111a5dc91f532da97fc98b98ccf279
 **Edition:** 4 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition describes application source **87bcd46**, including per-cue decoder isolation, sustained-starvation hold, safe retry/retirement and earlier Preview/live-edit, playback, timecode and import safeguards. Package metadata remains **2.6.17**; these fixes have not been packaged, installed or published as a new release. Compare the installer you intend to use with its release notes before rehearsal.
+This edition describes application source **2f372c2**, including owned loader preparation, native cleanup/recovery, independent device status and ordered engine restart, with the earlier playback, level, timecode and import safeguards retained. Package metadata remains **2.6.17**; these fixes have not been packaged, installed or published as a new release. Compare the installer you intend to use with its release notes before rehearsal.
 
 Interface images were captured on 3 November from the same controls and layout, which remain unchanged in this repair batch. Their templates, styles and assets were checked against this source; original capture revisions and hashes are retained. Generated tones run through the native engine's virtual NULL output with physical audio-service access blocked; the desktop bridge supplies fixture locale, display and MIDI information. The images illustrate controls and visible states, rather than physical audio, HDMI or device compatibility. The capture method, source revisions and image hashes are recorded in **docs/manual-assets/captures.json**. Equipment photographs remain illustrative.
 
@@ -677,6 +677,12 @@ After the managed engine actually restarts, the controller can present the diffe
 
 When a network controller loses contact, do not assume the audience has silence. The remote engine may still be playing. Use the venue's agreed communication and independent output-control procedure. Avoid restarting an engine that another operator is actively using.
 
+### Choose client or engine restart
+
+In the **Connection lost** overlay, **Restart** relaunches only the client; it leaves the audio engine and Program running. To restart the managed local audio process, use **Server Settings -> Restart engine** in Local mode. Coordinate that interruption with the show team and verify the returned project, active cue, position and output before GO. A remote engine requires its own operator's recovery procedure.
+
+Managed Start, Stop and Restart actions run in order. If an old local engine is still present but cannot be verified or stopped, the app refuses another launch. A running process or an open device does not establish usable audio. Correct the storage/driver fault, retain the diagnostic and use the rehearsed backup rather than repeatedly issuing Restart.
+
 ### Choose the correct recovery direction
 
 <!-- diagram:recovery -->
@@ -745,6 +751,8 @@ First protect the audience using the rehearsed stop/mute procedure. Then identif
 | --- | --- |
 | GO does nothing; target stays armed | Read the displayed refusal, then check connection, media readiness/errors, and the acknowledged target before one deliberate retry. An unready decoder does not block Stop All/Panic, and a rejected start preserves the armed target. |
 | Playing cue is silent or time stalls | Brief gaps may recover. After **250 ms** of missing decoded audio, the cue stops with an error and holds sequencing. Retry explicitly after storage recovers; a pending failed read is refused. Check source/drive, trims, levels and engine output/patch. |
+| Import remains loading after a file/storage fault | Use an already-prepared backup cue. File preparation cancellation no longer joins native file calls, but healthy files in a queued/bulk import may still await a stalled sibling. Do not assume an unfinished import is ready for GO. |
+| A cue refuses GO or a trim/LTC edit while configuration is busy | Keep the current show or use a prepared backup. Retry the affected command once configuration finishes. A refused native edit leaves its saved value unchanged; independent level/fade edits and Stop All remain available in this publication case. |
 | A sting stops the bed | Check Playback Replace Program or cue Ducking Stop All Other Cues. Use Overlay/No Ducking or a rehearsed Duck Program setting when the bed must continue. |
 | Preview is heard in the house | Stop Preview and verify the actual Preview Device and physical patch. Sharing Main's physical output is not private monitoring. |
 | A loop never advances | Check the saved Loop setting and whether Cue to Continue was armed for this playback instance. A stop/replay cancels the previous continuation. |
@@ -869,9 +877,11 @@ With Video Output focused, Escape also exits its fullscreen mode. In Level Check
 
 ### About this edition
 
-This manual describes application source **87bcd46**, package metadata **2.6.17**. Fixes are committed locally; a new installer has not been built, installed or published. The 22 captures retain their 3 November provenance and unchanged control templates and layout. They use generated media, an isolated NULL output with physical audio blocked, and fixture display/MIDI/locale methods. No user show, credentials or private media appear. Capture details are in **docs/manual-assets/captures.json**.
+This manual describes application source **2f372c2**, package metadata **2.6.17**. Fixes are committed locally; a new installer has not been built, installed or published. The 22 captures retain their 3 November provenance and unchanged control templates and layout. They use generated media, an isolated NULL output with physical audio blocked, and fixture display/MIDI/locale methods. No user show, credentials or private media appear. Capture details are in **docs/manual-assets/captures.json**.
 
-The current source passes native 13/13, isolated API 61/61, client 222/222, typecheck and RT/live safety checks. The audio-output suite also passes AddressSanitizer; leak detection is disabled. Native checks include six simulated ten-minute secondary-clock runs with continuous generated audio and no buffer faults or resyncs inside the tested envelope. Physical alignment and the earlier intermittency remain unproven; more extreme drift/jitter can trigger recovery.
+The current source passes native 13/13, isolated API 61/61, client 229/229, typecheck and RT/live safety checks. Audio-output and project-runtime suites also pass AddressSanitizer; leak detection is disabled. Native checks include six simulated ten-minute secondary-clock runs with continuous generated audio and no buffer faults or resyncs inside the tested envelope. Physical alignment and the earlier intermittency remain unproven; more extreme drift/jitter can trigger recovery.
+
+Held-operation tests cover loader, metadata, priming, property publication, cue/device cleanup and engine lifetime. Seven managed-engine tests use a fake OS. First-open routing, filesystem/revision checks, healthy-file publication and unrelated Program preparation remain open workplan items. Cancellation does not force an OS call to return.
 
 An earlier ten-minute muted Chromium run passed 481 mixed SD/1080p rounds and recorded frame drops; it was not repeated for this repair. Generated clips and synthetic clocks do not establish show stability, native soundtrack sync or physical HDMI performance. LTC waveform tests also do not establish external receiver lock.
 
@@ -881,8 +891,6 @@ Instructions were checked against the Vue/Electron interface and C++ engine. Ove
 
 - **audio-connector-photo.jpg:** Musicproducer, “Professional sound card fireface uc back side with connectors,” Wikimedia Commons, [source](https://commons.wikimedia.org/wiki/File:Professional_sound_card_fireface_uc_back_side_with_connectors.jpg), [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
 - **stage-operator-photo.jpg:** unknown author via Pxhere, “Behringer X32 Digital Mixer in operation - angled,” Wikimedia Commons, [source](https://commons.wikimedia.org/wiki/File:Behringer_X32_Digital_Mixer_in_operation_-_angled_(2017-07-21_17.23.52_@pxhere_174508).jpg), [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
-
-For technical maintainers, the principal source areas are **client/app/components**, **client/app/composables/useProject.ts**, **useAudioEngine.ts**, **useLiveplayServer.ts**, **useConnectionGuard.ts**, **useLevelCheck.ts**, **client/electron/main.js**, **server/src/core/project_state.cpp**, and **server/src/net/control_server.cpp**. The repository's root, client, and server READMEs are developer references; historical design documents are not operator promises.
 
 The editable manual is **docs/operators-manual.md**. Its PDF is generated by **scripts/generate-operators-manual.py**, with screenshot provenance in **docs/manual-assets/captures.json**. Update the source and regenerate the PDF together after an operator-visible change.
 

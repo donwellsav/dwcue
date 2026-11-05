@@ -1,10 +1,10 @@
 # DonWells Cue Server — developer guide
 
-**Source status — 4 November 2026:** application behavior is checkpointed through `87bcd46` (per-cue decoder isolation, starvation hold and safe retirement), including the earlier Preview/live-edit, live-show audit and secondary audio resync fixes. Package metadata remains **2.6.17**. These are local commits, not a packaged, installed or published release. Software verification and remaining acceptance are tracked in [the current workplan](../docs/superpowers/plans/2026-11-03-live-show-reliability.md). Physical line-level audio and 1080p HDMI/adapter acceptance remain deferred.
+**Source status — 4 November 2026:** application behavior is checkpointed through `2f372c2` (owned loader/native cleanup, independent device status/recovery and ordered managed-engine operations), retaining per-cue decoder isolation, starvation hold and earlier playback safeguards. Package metadata remains **2.6.17**. These are local commits, not a packaged, installed or published release. Software verification and remaining acceptance are tracked in [the current workplan](../docs/superpowers/plans/2026-11-03-live-show-reliability.md). Physical line-level audio and 1080p HDMI/adapter acceptance remain deferred.
 
 `dwcue-server` is the headless C++20 audio engine and control surface that backs the DonWells Cue client. It owns the audio graph, the routing matrix, the loaded project file, and exposes a REST + WebSocket API. It runs as either a child process spawned by the desktop client (single-machine installs) or as a standalone daemon on a stage-side machine that the client connects to over the LAN.
 
-This document tracks the v2.6.17 application source checkpoint `87bcd46`, including the reliability audit in `2ea5984` and is the developer's guide to the server; this is not a published-installer claim, so use the release page and installed About version to determine available behaviour. For show preparation and operation, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For client internals, see [`client/README.md`](../client/README.md); for overall project and release context, see the [root README](../README.md).
+This document tracks the v2.6.17 application source checkpoint `2f372c2`, including the reliability audit in `2ea5984` and is the developer's guide to the server; this is not a published-installer claim, so use the release page and installed About version to determine available behaviour. For show preparation and operation, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For client internals, see [`client/README.md`](../client/README.md); for overall project and release context, see the [root README](../README.md).
 
 ---
 
@@ -725,3 +725,14 @@ Missing source PCM is counted on the render timeline. After 250 ms, only that cu
 Engine destruction joins the I/O-free dispatcher. In-flight cue workers retain their own state/source until native work returns. Removing a cue with an active worker revokes readiness and hands final unload to that worker, outside engine/dispatch locks. Explicit unload without an active worker, loader/project teardown, new preparation, metadata and device/driver operations retain their separate completion contracts. This is software fault containment for native worker reads, not certification of arbitrary platform hangs or complete application exit.
 
 An unrouted cue's mono/stereo/surround sends remain cached immutably during load. Both routing callers read that snapshot; reload/failure/unload preserve existing coefficients, source PCM and LTC exclusion. The workplan records the held-read, retry, retirement and address-sanitized lifetime evidence.
+
+
+### Loader and driver containment (T47-T50)
+
+File preparation owns decoder init, metadata and new One Shot priming independently of ProjectState/AudioEngine. Canceled coordinators stop waiting and fence adoption by generation/reserved CueId; completed native workers exit instead of waiting for the bulk batch. Shared-owned native teardown also covers cues with no active read-ahead worker. Diagnostic file removal follows actual decoder close.
+
+Whole-document trim/LTC application reserves the cue before copying current properties, then performs native work outside project/lifecycle ownership. Same-cue GO and native edits refuse while that configuration is busy; pure level/fade edits, document access, Stop All and prepared backup GO remain available. Atomic file-channel/LTC state keeps timecode out of audible routing during configuration.
+
+Device start and failed/duplicate cleanup release the engine mutex. One refresh supplies a cached hardware catalog plus current runtime state (50 ms first-catalog grace, at most one refresh in flight, no more often than one second after completion). Device-owned recovery/retirement retain native buffers and callback signals across engine destruction; closing/stopped generations cannot restart from a late native return. Process-wide init/uninit serialization is retained.
+
+Remaining blocking paths are explicit workplan items: first-open project routing/lifecycle callers, filesystem resolution/revision sweeps and sequential or whole-batch healthy-loader publication. A canceled OS operation retains its owner/resources until return. There is no forced thread cancellation or general hard native-call deadline. OS thread exhaustion may retain synchronous cleanup as the documented fallback.

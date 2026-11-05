@@ -393,7 +393,7 @@
       "originalSha256": "979b0c8ea5df2809b1f885bed6948091d02e4dbb1b39409947a5601d9891216a",
       "derivativeDimensions": "1064x430 (unaltered download)",
       "derivativeSha256": "979b0c8ea5df2809b1f885bed6948091d02e4dbb1b39409947a5601d9891216a",
-      "attribution": "Photo: Musicproducer, “Professional sound card fireface uc back side with connectors,” Wikimedia Commons, CC BY-SA 4.0."
+      "attribution": "Photo: Musicproducer, \u201cProfessional sound card fireface uc back side with connectors,\u201d Wikimedia Commons, CC BY-SA 4.0."
     },
     {
       "asset": "docs/manual-assets/stage-operator-photo.jpg",
@@ -408,7 +408,7 @@
       "originalSha256": "26e7b33f8ffa75464e9e16769365adad6f817219a7581430c4b2b0e4f85fa158",
       "derivativeDimensions": "1800x1200 (aspect ratio preserved)",
       "derivativeSha256": "6fd772e754e05c75acad468f6726e155903a2813faff4d6b5f352e508c02b677",
-      "attribution": "Photo: unknown author via Pxhere, “Behringer X32 Digital Mixer in operation - angled,” Wikimedia Commons, CC0 1.0."
+      "attribution": "Photo: unknown author via Pxhere, \u201cBehringer X32 Digital Mixer in operation - angled,\u201d Wikimedia Commons, CC0 1.0."
     }
   ],
   "diagrams": {
@@ -425,10 +425,10 @@
     "gainStages": "Schematic: final physical sum and secondary-clock adaptation precede the attenuation-only limiter and device output."
   },
   "uiBuildRevision": "4105c02dee64e7abe466fff4a0046a9c34cbf774",
-  "manualSourceRevision": "87bcd4695c3bc1658782716f1e6e59ece57b5fad",
+  "manualSourceRevision": "2f372c21e6111a5dc91f532da97fc98b98ccf279",
   "visualCompatibility": {
     "checkedOn": "2026-11-04",
-    "revision": "87bcd4695c3bc1658782716f1e6e59ece57b5fad",
-    "basis": "T46 changes native scheduling, starvation failure, retry and retirement only; client/app and client/electron are unchanged from 209c555. T43/T44 changed Preview state/cancellation composables, with component/page/layout templates, styles, assets and Electron source unchanged from 492aca0. The earlier Spotify persistence repair retains identical template/styles to the capture checkpoint. Original per-image capture revisions, dates, dimensions and hashes are retained."
+    "revision": "2f372c21e6111a5dc91f532da97fc98b98ccf279",
+    "basis": "T47-T50 change native loader/driver ownership and Electron managed-engine lifecycle only. client/app component/page/layout templates, styles, assets and output-window controls remain unchanged from 87bcd46; earlier compatibility checks for T43-T46 and the Spotify persistence repair remain historical. Original per-image capture revisions, dates, dimensions and hashes are retained; no new captures or installed/physical acceptance are claimed."
   }
 }
