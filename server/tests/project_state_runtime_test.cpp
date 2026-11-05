@@ -1891,6 +1891,55 @@ void test_diagnostic_retirement(const std::filesystem::path& wav) {
     }
 }
 
+void test_changed_mirror_keeps_controls(const std::filesystem::path& wav) {
+  for (const bool source_guard : {false, true}) {
+    auto engine = std::make_unique<liveplay::audio::AudioEngine>();
+    auto state = std::make_unique<liveplay::core::ProjectState>(*engine);
+    auto doc = document(json::array({audio("changing-bed", wav, {{"outPoint", 0.0}}), audio("changing-backup", wav)}));
+    state->replace_full_document(doc);
+    check(wait_ready(*state) && state->trigger_item("changing-bed"), "changed mirror: current show is ready and playing");
+    auto bed = engine->find_cue(*state->item_to_cue_id("changing-bed"));
+    std::unique_lock held{source_guard ? bed->preparation_mutex() : bed->decoder_mutex_};
+    const auto marker = wav.string() + ".changed-mirror";
+    std::filesystem::remove(marker + ".entered");
+    std::filesystem::remove(marker + ".native.entered");
+    set_loader_gate(marker, "DWCUE_TEST_MIRROR_PROPERTIES_MARKER");
+    doc["items"][0]["outPoint"] = 0.5;
+    auto mirror = std::async(std::launch::async, [&] { return state->replace_full_document(doc); });
+    check(wait_gate_entered(marker), "changed mirror: genuine native property publication begins");
+    if (!source_guard) check(wait_gate_entered(marker + ".native"), "changed mirror: owned worker enters the real native property call");
+    auto snapshot = std::async(std::launch::async, [&] { return state->full_document(); });
+    auto stop = std::async(std::launch::async, [&] { state->stop_all_cues(0); });
+    const bool snapshot_ready = snapshot.wait_for(250ms) == std::future_status::ready;
+    const bool stop_ready = stop.wait_for(250ms) == std::future_status::ready;
+    check(snapshot_ready && stop_ready, "changed mirror: document access and Stop All precede native completion");
+    if (source_guard && snapshot_ready) check(bed->out_point_frames_.load() == 0,
+        "changed mirror: queued configuration cannot bypass source preparation ownership");
+    std::future<bool> backup;
+    if (snapshot_ready && stop_ready) {
+        check(!state->trigger_item("changing-bed"), "changed mirror: busy cue refuses GO without blocking controls");
+        check(!state->update_item("changing-bed", json{{"outPoint", 0.75}}), "changed mirror: busy native edit leaves saved range unchanged");
+        check(state->update_item("changing-bed", json{{"volume", 0.4}}), "changed mirror: pure level edit remains available");
+        backup = std::async(std::launch::async, [&] { return state->trigger_item("changing-backup"); });
+        check(backup.wait_for(250ms) == std::future_status::ready, "changed mirror: healthy backup GO precedes native completion");
+    }
+    const bool mirror_ready = mirror.wait_for(250ms) == std::future_status::ready;
+    const bool controls_ready = mirror_ready && snapshot_ready && stop_ready && (!backup.valid() || backup.wait_for(0ms) == std::future_status::ready);
+    if (controls_ready) { mirror.get(); snapshot.get(); stop.get(); if (backup.valid()) check(backup.get(), "changed mirror: backup GO is accepted"); }
+    auto close = std::async(std::launch::async, [&] { if (controls_ready) state.reset(); else state->reset(); });
+    const bool closed = close.wait_for(250ms) == std::future_status::ready;
+    check(closed, "changed mirror: cancellation/destruction does not join a native property wait");
+    if (closed && controls_ready) engine.reset();
+    held.unlock(); if (mirror.valid()) mirror.get(); close.get();
+    check(bed->stats().transport == liveplay::audio::TransportState::Stopped, "changed mirror: late native completion cannot restart a stopped cue");
+    if (!controls_ready) { snapshot.get(); stop.get(); if (backup.valid()) backup.get(); }
+    clear_loader_gate("DWCUE_TEST_MIRROR_PROPERTIES_MARKER");
+    std::filesystem::remove(marker + ".entered");
+    std::filesystem::remove(marker + ".native.entered");
+    state.reset(); engine.reset();
+  }
+}
+
 void test_unchanged_mirror_keeps_controls(const std::filesystem::path& wav) {
     liveplay::audio::AudioEngine engine;
     liveplay::core::ProjectState state(engine);
@@ -2163,6 +2212,7 @@ int main() {
     failures += test_crash_resume_lifecycle();
     const auto wav = make_wav();
     test_diagnostic_retirement(wav);
+    test_changed_mirror_keeps_controls(wav);
     test_unchanged_mirror_keeps_controls(wav);
     test_position_aware_recovery(wav);
     test_changed_media_readiness();

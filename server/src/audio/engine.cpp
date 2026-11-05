@@ -271,7 +271,7 @@ void AudioEngine::rebuild_topology_locked() {
         // Keep one spare channel so toggling LTC on does not force allocation
         // on the render thread before the routing snapshot is rebuilt.
         const ChannelCount scratch_channels =
-            n_src + (item->desc().ltc_enabled ? 0u : 1u);
+            item->file_channel_count() + 1u;
         entry.channel_buffers.assign(
             scratch_channels, std::vector<Sample>(block, 0.0f));
         entry.channel_ptrs.reserve(scratch_channels);
@@ -1298,8 +1298,7 @@ void AudioEngine::ensure_default_routing_impl(
             auto& srcs = pending_.item_sources[cue_id].by_source_channel;
             const auto src_count = item->source_channel_count();
             if (srcs.size() < src_count) srcs.resize(src_count);
-            const auto audio_count = item->desc().ltc_enabled
-                                     ? src_count - 1 : src_count;
+            const auto audio_count = item->file_channel_count();
             // Determine whether ANY audio source channel of this cue already
             // has a route to any mixer. If so, leave the cue alone.
             bool has_any_existing_route = false;

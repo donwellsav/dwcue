@@ -213,6 +213,12 @@ public:
     const CueId&     id() const noexcept                  { return desc_.id; }
     const PlaybackItemDesc& desc() const noexcept         { return desc_; }
     ChannelCount     source_channel_count() const noexcept;  // includes LTC if enabled
+    ChannelCount file_channel_count() const noexcept { return file_channels_.load(std::memory_order_acquire); }
+    bool ltc_enabled() const noexcept { return ltc_enabled_atomic_.load(std::memory_order_acquire); }
+    LTCFrameRate ltc_frame_rate() const noexcept { return ltc_frame_rate_atomic_.load(std::memory_order_acquire); }
+    std::chrono::nanoseconds ltc_offset() const noexcept { return std::chrono::nanoseconds{ltc_offset_ns_.load(std::memory_order_acquire)}; }
+    // Serialize complete control preparations; Stop/render never acquire this mutex.
+    std::mutex& preparation_mutex() noexcept { return preparation_mutex_; }
     // Control thread: cached native-map sends; never waits for decoder I/O.
     std::array<float, 2> stereo_mix_gains(ChannelIndex channel) const;
     PlaybackItemStats stats() const noexcept;
@@ -262,6 +268,7 @@ public:
 
 private:
     PlaybackItemDesc desc_;
+    std::mutex preparation_mutex_;
 
     // Owned decoder. Pointer because miniaudio types stay out of this header.
     // Only control operations and AudioEngine's shared decode workers touch it;
