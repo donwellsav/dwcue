@@ -460,24 +460,29 @@ void apply_audio_item_properties(const json& item, const std::shared_ptr<audio::
     }
 }
 
+#ifdef LIVEPLAY_TEST_HOOKS
+std::atomic<std::size_t> completed_load_workers{0};
+#endif
+
 struct LoadedAudio {
     std::shared_ptr<audio::PlaybackItem> item;
     meta::AudioFileMetadata metadata;
 };
-struct AudioLoadTask {
-    // Destroy the result before releasing its native owner (including cancellation).
-    std::promise<void> publication_done;
-    std::future<LoadedAudio> result;
-};
-AudioLoadTask prepare_audio_load(audio::PlaybackItemDesc desc, json properties, bool prime) {
-    AudioLoadTask task;
+std::future<LoadedAudio> prepare_audio_load(audio::PlaybackItemDesc desc, json properties, bool prime) {
     std::promise<LoadedAudio> result;
-    task.result = result.get_future();
+    auto task = result.get_future();
     std::thread([desc = std::move(desc), properties = std::move(properties), prime,
-                 result = std::move(result), published = task.publication_done.get_future()]() mutable {
+                 result = std::move(result)]() mutable {
         std::shared_ptr<audio::PlaybackItem> item;
         try {
-            item = std::make_shared<audio::PlaybackItem>(std::move(desc));
+            item = std::shared_ptr<audio::PlaybackItem>(new audio::PlaybackItem(std::move(desc)), [](auto* retiring) {
+                // Discarded results must not close a native decoder on a control thread.
+                try { std::thread([retiring] { delete retiring; }).detach(); }
+                catch (const std::system_error& error) {
+                    Logger::error("Loader retirement worker failed: {}", error.what());
+                    delete retiring; // shortcut: synchronous cleanup only if OS thread creation fails.
+                }
+            });
             if (item->load()) {
                 auto metadata = meta::read_metadata(item->desc().file_path);
                 apply_audio_item_properties(properties, item);
@@ -485,13 +490,18 @@ AudioLoadTask prepare_audio_load(audio::PlaybackItemDesc desc, json properties, 
                 result.set_value({item, std::move(metadata)});
             } else result.set_value({});
         } catch (...) { result.set_exception(std::current_exception()); }
-        // A broken promise means cancelled. Last native cleanup stays on this thread.
-        published.wait();
+#ifdef LIVEPLAY_TEST_HOOKS
+        completed_load_workers.fetch_add(1, std::memory_order_release);
+#endif
     }).detach();
     return task;
 }
 
 } // namespace
+
+#ifdef LIVEPLAY_TEST_HOOKS
+std::size_t completed_load_workers_for_test() { return completed_load_workers.load(std::memory_order_acquire); }
+#endif
 
 // ---------------------------------------------------------------------------
 
@@ -613,7 +623,7 @@ void ProjectState::loader_loop() {
             desc.render_block = engine_.config().render_block;
             auto task = prepare_audio_load(std::move(desc), req.properties, req.prime);
             bool abandoned = false;
-            while (task.result.wait_for(std::chrono::milliseconds{2}) != std::future_status::ready) {
+            while (task.wait_for(std::chrono::milliseconds{2}) != std::future_status::ready) {
                 std::lock_guard lock{mutex_};
                 const auto wanted = item_uuid_to_cue_.find(req.uuid);
                 std::lock_guard qlock{loader_mutex_};
@@ -629,7 +639,7 @@ void ProjectState::loader_loop() {
                     pending_load_uuids_.erase(current);
                 continue;
             }
-            const auto loaded = task.result.get();
+            const auto loaded = task.get();
             const auto loaded_id = loaded.item ? req.cue_id : audio::CueId{};
             const auto& md = loaded.metadata;
 
@@ -941,7 +951,7 @@ void ProjectState::start_async_mirror() {
                          actually_wanted.size(), concurrency);
 
             struct Loaded {
-                AudioLoadTask task;
+                std::future<LoadedAudio> task;
                 std::string uuid;
                 std::filesystem::path path;
                 audio::CueId cue_id;
@@ -953,11 +963,11 @@ void ProjectState::start_async_mirror() {
             done.reserve(actually_wanted.size());
             auto drain_one = [&]() {
                 if (in_flight.empty()) return true;
-                while (in_flight.front().task.result.wait_for(std::chrono::milliseconds{2}) != std::future_status::ready)
+                while (in_flight.front().task.wait_for(std::chrono::milliseconds{2}) != std::future_status::ready)
                     if (mirror_cancel_.load(std::memory_order_acquire)) return false;
                 auto loaded = std::move(in_flight.front());
                 in_flight.erase(in_flight.begin());
-                auto result = loaded.task.result.get();
+                auto result = loaded.task.get();
                 loaded.item = std::move(result.item);
                 loaded.metadata = std::move(result.metadata);
                 if (loaded.item) load_progress_loaded_.fetch_add(1, std::memory_order_release);

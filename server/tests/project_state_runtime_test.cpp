@@ -38,6 +38,8 @@
 #include <thread>
 #include <vector>
 
+namespace liveplay::core { std::size_t completed_load_workers_for_test(); }
+
 using json = nlohmann::json;
 using namespace std::chrono_literals;
 
@@ -1861,6 +1863,27 @@ void test_starvation_holds_show(const std::filesystem::path& wav) {
     state.set_ui_state_broadcaster({});
 }
 
+void test_completed_loader_worker_retires() {
+    if (std::thread::hardware_concurrency() < 3) return; // This case needs two concurrent bulk slots.
+    const auto held = make_wav(8'230), healthy = make_wav(8'231);
+    const auto gate = held.string() + ".worker-lifetime-gate";
+    std::ofstream{gate} << held; set_loader_gate(gate, "DWCUE_TEST_METADATA_GATE");
+    const auto completed = liveplay::core::completed_load_workers_for_test();
+    liveplay::audio::AudioEngine engine;
+    liveplay::core::ProjectState state(engine);
+    state.replace_full_document(document(json::array({audio("load-held", held), audio("load-healthy", healthy)})));
+    check(wait_gate_entered(gate), "loader worker budget: one native metadata extraction is held");
+    const auto deadline = std::chrono::steady_clock::now() + 250ms;
+    while (liveplay::core::completed_load_workers_for_test() == completed && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(1ms);
+    check(liveplay::core::completed_load_workers_for_test() > completed,
+          "loader worker budget: completed sibling frees its thread before blocked batch returns");
+    std::filesystem::remove(gate); clear_loader_gate("DWCUE_TEST_METADATA_GATE");
+    check(wait_ready(state), "loader worker budget: complete batch still publishes after native return");
+    std::filesystem::remove(gate + ".entered");
+    std::filesystem::remove(held); std::filesystem::remove(healthy);
+}
+
 void test_owned_loader_destruction() {
   for (const bool queued : {false, true}) for (const int stage : {0, 1, 2}) {
     const auto wav = make_wav(static_cast<std::int16_t>(8'220 + (queued ? 3 : 0) + stage));
@@ -2081,6 +2104,7 @@ void test_changed_media_readiness() {
 }
 
 int main() {
+    test_completed_loader_worker_retires();
     failures += test_crash_resume_lifecycle();
     const auto wav = make_wav();
     test_position_aware_recovery(wav);
