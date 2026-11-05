@@ -379,7 +379,7 @@ public:
     // audio in time. Audio-thread safe via an atomic flag.
     void set_limiter_enabled(bool enabled) noexcept;
     bool limiter_enabled() const noexcept {
-        return limiter_enabled_.load(std::memory_order_acquire);
+        return callback_state_->limiter_enabled.load(std::memory_order_acquire);
     }
     // Master gain in dB. Applied to every master accumulator before the
     // limiter, so a value of 0 dB is unity. Range is clamped at -120..+12.
@@ -421,6 +421,16 @@ private:
         std::unique_ptr<Meter>   meter;
     };
 
+    // Callbacks and native jobs retain only these signals, never the engine.
+    struct DeviceCallbackState {
+        std::atomic<std::uint32_t> consumption_counter{0};
+        std::condition_variable watchdog_cv;
+        std::atomic<bool> limiter_enabled{true};
+        std::atomic<std::uint64_t> run_generation{0};
+        std::atomic<bool> active{false};
+    };
+    std::shared_ptr<DeviceCallbackState> callback_state_ = std::make_shared<DeviceCallbackState>();
+
     // ---- Internal device wrapper ----------------------------------------
     struct Device {
         DeviceId                    id;
@@ -428,6 +438,11 @@ private:
         ChannelCount                channels = 2;
         SampleRate                  sample_rate = kDefaultMixSampleRate;
         std::unique_ptr<ma_device>  ma_dev;
+        ma_device_id                native_id{}; // Immutable after init; uninit may clear ma_dev.
+        bool                        native_id_valid = false;
+        std::mutex                  native_mutex; // One stop/start/uninit per device.
+        mutable std::mutex          state_mutex;  // Short recovery/watchdog publication only.
+        std::atomic<bool>           cleanup_done{false};
         std::unique_ptr<ma_pcm_rb>  ring;             // SPSC PCM ring
         std::unique_ptr<ma_resampler> clock_resampler;
         bool                        clock_resampler_initialized = false;
@@ -453,7 +468,7 @@ private:
         std::atomic<std::uint64_t>  liveness_epoch{0};
         std::uint64_t               observed_liveness_epoch = 0; // watchdog only
         std::atomic<bool>           native_recovery_pending{false};
-        // Guarded by device_lifecycle_mutex_. The started id binds liveness
+        // Guarded by state_mutex. The started id binds liveness
         // completion to the request whose replacement stream was armed.
         DeviceRecoveryRequest       recovery_request;
         std::uint64_t               started_recovery_request_id = 0;
@@ -472,7 +487,7 @@ private:
         std::atomic<std::uint64_t>  reroute_count{0};
         std::atomic<std::uint64_t>  interruption_count{0};
         std::atomic<std::uint64_t>  correction_limit_count{0};
-        AudioEngine*                engine = nullptr; // back-pointer for callback
+        std::shared_ptr<DeviceCallbackState> callback_state;
 
         ~Device();
     };
@@ -482,16 +497,12 @@ private:
     // Master gain in linear amplitude. Audio thread reads via load-acquire;
     // set_master_gain_db is the only writer. 1.0 = unity (0 dB).
     std::atomic<float>                           master_gain_linear_{1.0f};
-    // When false, the output limiter is bypassed (peaks pass through). Read by
-    // device callbacks; only set_limiter_enabled writes it.
-    std::atomic<bool>                            limiter_enabled_{true};
     // Per-output-channel gains (index matches master channel index). Fixed-size
     // atomics let the render thread read without copying or taking mutex_.
     std::unique_ptr<std::atomic<float>[]>         output_channel_gains_;
     // miniaudio device init/uninit mutates backend-global state on some
-    // platforms and must not run concurrently. Recovery request state and its
-    // monotonically increasing id source are guarded by the same lock.
-    mutable std::mutex                           device_lifecycle_mutex_;
+    // platforms. Retained across engine lifetimes by unfinished native jobs.
+    std::shared_ptr<std::mutex>                   device_lifecycle_mutex_;
 #ifdef LIVEPLAY_TEST_HOOKS
     ma_context*                                  device_test_context_ = nullptr;
 #endif
@@ -575,14 +586,8 @@ private:
     // shortcut: a stuck read retains one worker per cue; process isolation is needed to reclaim it.
     std::thread                      decode_thread_;
     std::thread                      device_watchdog_thread_;
-    std::condition_variable          device_watchdog_cv_;
     std::mutex                       device_watchdog_wait_mutex_;
     std::atomic<std::uint64_t>       render_error_count_{0};
-
-    // Device-callback-driven render trigger. Each device callback bumps
-    // consumption_counter_ + notifies after consuming samples, waking the
-    // render thread to refill rings. Eliminates the previous polling delay.
-    std::atomic<std::uint32_t>       consumption_counter_{0};
 
     // -- Helpers ---------------------------------------------------------
     void rebuild_topology_locked();
@@ -598,7 +603,7 @@ private:
     void render_one_block(const Topology& topo);
     static void decode_loop(const std::shared_ptr<DecodeState>& state);
     void device_watchdog_loop();
-    void recover_device(Device& device) noexcept;
+    static void recover_device(const std::shared_ptr<Device>& device, std::uint64_t generation) noexcept;
     bool reset_device_if_requested(Device& device) noexcept;
 
     Device* find_device_locked(const DeviceId& id) const;

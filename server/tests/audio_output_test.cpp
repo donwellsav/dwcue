@@ -84,7 +84,7 @@ std::filesystem::path wav(const std::filesystem::path& dir,
 struct NativeDeviceGate {
     ma_context context{};
     ma_backend_callbacks original{};
-    std::atomic<bool> hold_start{false}, hold_uninit{false}, fail_start{false}, entered{false};
+    std::atomic<bool> hold_start{false}, hold_stop{false}, hold_uninit{false}, fail_start{false}, entered{false};
     NativeDeviceGate() {
         const ma_backend backend = ma_backend_null;
         auto config = ma_context_config_init();
@@ -98,6 +98,14 @@ struct NativeDeviceGate {
                 while (gate.hold_start.load()) std::this_thread::sleep_for(std::chrono::milliseconds{1});
             }
             return gate.fail_start.load() ? MA_ERROR : gate.original.onDeviceStart(device);
+        };
+        context.callbacks.onDeviceStop = [](ma_device* device) {
+            auto& gate = *static_cast<NativeDeviceGate*>(device->pContext->pUserData);
+            if (gate.hold_stop.load()) {
+                gate.entered.store(true);
+                while (gate.hold_stop.load()) std::this_thread::sleep_for(std::chrono::milliseconds{1});
+            }
+            return gate.original.onDeviceStop(device);
         };
         context.callbacks.onDeviceUninit = [](ma_device* device) {
             auto& gate = *static_cast<NativeDeviceGate*>(device->pContext->pUserData);
@@ -150,11 +158,58 @@ void test_initial_device_start_keeps_controls() {
               device->open_references.value() == 3), "duplicate and runtime acquisitions share one native output");
         engine.close_device(id);
         if (mode == 1) { engine.close_device(id); engine.close_device(id); }
+        while (!device->cleanup_done.load(std::memory_order_acquire)) std::this_thread::sleep_for(std::chrono::milliseconds{1});
         std::vector<float> samples(4096, 0.9f);
         device->outputs.front().limiter->process(samples.data(), samples.size());
         check(*std::max_element(samples.begin(), samples.end()) < 0.51f,
               "ceiling changed during native wait is applied to the opened output");
     }
+  }
+}
+
+void test_held_device_recovery_lifetime() {
+  for (const bool during_start : {false, true}) for (const int mode : {0, 1, 2}) { // Stop/restart, Close, destruction.
+    NativeDeviceGate gate;
+    auto engine = std::make_unique<AudioEngine>();
+    engine->device_test_context_ = &gate.context;
+    check(engine->start(), "recovery lifetime: real null-backend engine starts");
+    auto device = engine->devices_.front();
+    const auto id = device->id;
+    gate.hold_stop.store(!during_start); gate.hold_start.store(during_start); gate.entered.store(false);
+    check(engine->request_device_recovery(id).has_value(), "recovery lifetime: explicit recovery accepted");
+    check(gate.wait_entered(), "recovery lifetime: actual native stop is held");
+    auto finish = std::async(std::launch::async, [&] {
+        if (mode == 0) engine->stop();
+        else if (mode == 1) engine->close_device(id);
+        else engine.reset();
+    });
+    const bool responsive = finish.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready;
+    check(responsive, "recovery lifetime: Stop, Close and destruction do not wait for native recovery");
+    if (responsive && mode == 0) check(engine->start(), "recovery lifetime: engine can restart before old native work returns");
+    gate.hold_stop.store(false); gate.hold_start.store(false); finish.get();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+    while (device->recovery_in_progress.load() && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    check(!device->started.load() && (mode != 0 || ma_device_get_state(device->ma_dev.get()) == ma_device_state_stopped),
+          "recovery lifetime: obsolete native return cannot restart a closed/stopped generation");
+    if (mode != 0) {
+        ma_device_notification late{};
+        ma_device retained{}; retained.pUserData = device.get(); retained.playback.channels = device->channels;
+        late.pDevice = &retained;
+        late.type = ma_device_notification_type_interruption_began;
+        AudioEngine::ma_notification_callback(&late);
+        std::array<float, 16> samples{}; samples.fill(1.0f);
+        AudioEngine::ma_data_callback(&retained, samples.data(), nullptr, 8);
+        check(device->runtime_state.load() == DeviceRuntimeState::Closing &&
+              std::all_of(samples.begin(), samples.end(), [](float value) { return value == 0.0f; }),
+              "recovery lifetime: late callbacks keep Closing/silence without accessing a destroyed engine");
+    }
+    if (engine) engine.reset();
+    std::weak_ptr<AudioEngine::Device> weak = device;
+    device.reset();
+    while (!weak.expired() && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    check(weak.expired(), "recovery lifetime: retained native state retires after return without a leaked device");
   }
 }
 
@@ -170,7 +225,7 @@ struct Fixture {
         device->id = DeviceId{"headless-output"};
         device->channels = 2;
         device->sample_rate = 48'000;
-        device->engine = &engine;
+        device->callback_state = engine.callback_state_;
         device->scratch.resize(block * 2);
         device->output_mono.resize(block);
         device->outputs.resize(2);
@@ -995,7 +1050,7 @@ void test_snapshot_reclamation() {
           "snapshot churn retains only the outstanding reader after maintenance");
     held.reset();
     engine.running_.store(false);
-    engine.device_watchdog_cv_.notify_all();
+    engine.callback_state_->watchdog_cv.notify_all();
     maintenance.join();
 }
 } // namespace
@@ -1022,6 +1077,7 @@ int main() {
     const auto left = wav(dir, "left.wav", 0.3f, true, 0.0f, 2, 0);
     const auto ramp = wav(dir, "ramp.wav", 0.125f, true, 1.0f / 131'072.0f);
     test_initial_device_start_keeps_controls();
+    test_held_device_recovery_lifetime();
     test_blocked_decoder_reads(quiet);
     test_source_starvation(quiet, silence);
     test_channel_map_reload(quiet, left);
