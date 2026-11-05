@@ -258,10 +258,22 @@ void test_stop_all_during_cue_retirement(const std::filesystem::path& wav) {
           "retirement stall: removed cue finishes teardown without remaining registered");
 }
 
+ma_context* null_preview_context() {
+    // ponytail: one process-lifetime fixture for catalog and retirement workers that outlive an engine.
+    static ma_context context{};
+    static const auto result = [] {
+        const auto backend = ma_backend_null;
+        return ma_context_init(&backend, 1, nullptr, &context);
+    }();
+    if (result != MA_SUCCESS) std::abort();
+    return &context;
+}
+
 void test_stop_all_during_preview_retirement() {
     const auto wav = make_wav(8'192);
     for (const int mode : {0, 1, 2, 3}) {
         liveplay::audio::AudioEngine engine;
+        engine.device_test_context_ = null_preview_context();
         liveplay::core::ProjectState state(engine);
         state.replace_full_document(document(json::array({audio("preview-bed", wav), audio("preview-item", wav)})));
         check(wait_ready(state), "preview stall: media ready"); close_devices(engine);
@@ -317,6 +329,7 @@ void test_cancelled_preview_preparation() {
     for (const bool prime : {false, true}) {
       for (const int mode : {0, 1, 2, 3}) {
         liveplay::audio::AudioEngine engine;
+        engine.device_test_context_ = null_preview_context();
         liveplay::core::ProjectState state(engine);
         auto doc = document(json::array({audio("prepare-bed", wav),
             audio("prepare-next", wav, {{"duckingBehavior", {{"mode", "no-ducking"}}}}),
