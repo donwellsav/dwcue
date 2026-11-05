@@ -1208,7 +1208,9 @@ void test_loop_and_concurrent_stress(PlaybackItem& item) {
             const auto got =
                 item.render_block(threaded_output.channels, 2, kBlock);
             if (got != 0 && got != kBlock) invalid.fetch_add(1);
-            if (got == kBlock) rendered.fetch_add(1);
+            if (got == kBlock && std::any_of(threaded_output.left.begin(), threaded_output.left.end(),
+                                           [](Sample sample) { return std::abs(sample) > 0.01f; }))
+                rendered.fetch_add(1);
             if (got == 0) {
                 // Missing blocks consume their actual audio deadline, not 10 us of CPU time.
                 std::this_thread::sleep_for(std::chrono::microseconds{kBlock * 1'000'000 / kRate});
@@ -1229,6 +1231,13 @@ void test_loop_and_concurrent_stress(PlaybackItem& item) {
     for (std::uint64_t i = 0; i < seeks; ++i) {
         item.seek_seconds((256.0 + (i % 2) * 256.0) / kRate);
         item.set_ltc_enabled((i & 1u) != 0);
+        if (i + 1 == seeks / 2) {
+            const auto before = rendered.load();
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+            while (rendered.load() == before && std::chrono::steady_clock::now() < deadline)
+                std::this_thread::sleep_for(std::chrono::milliseconds{1});
+            check(rendered.load() > before, "stress: concurrent consumer renders decoded PCM between seek bursts");
+        }
         std::this_thread::yield();
     }
     run_worker.store(false, std::memory_order_release);
@@ -1238,7 +1247,6 @@ void test_loop_and_concurrent_stress(PlaybackItem& item) {
 
     const auto after = item.stats();
     check(invalid.load() == 0, "stress: render returns only full blocks or silence");
-    check(rendered.load() > 0, "stress: concurrent consumer renders actual decoded PCM");
     check(after.transport == TransportState::Playing,
           "stress: concurrent refill/seek leaves transport playing");
     check(!item.had_decode_error(), "stress: no decoder failure");
