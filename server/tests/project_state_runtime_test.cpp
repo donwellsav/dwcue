@@ -30,6 +30,7 @@
 #include <fstream>
 #include <future>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -70,9 +71,15 @@ void u32(std::ofstream& out, std::uint32_t v) {
                    static_cast<char>(v >> 16), static_cast<char>(v >> 24)};
     out.write(b, 4);
 }
+const std::filesystem::path& fixture_dir() {
+    static const auto path = std::filesystem::temp_directory_path() /
+        ("dwcue-project-state-runtime-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    return path;
+}
+
 std::filesystem::path make_wav(std::int16_t sample = 0, std::uint32_t frames = 48'000) {
-    const auto path = std::filesystem::temp_directory_path() /
-                      ("dwcue-project-state-runtime-" + std::to_string(sample) + ".wav");
+    static std::size_t file_number = 0;
+    const auto path = fixture_dir() / (std::to_string(++file_number) + ".wav");
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     out.write("RIFF", 4); u32(out, 36 + frames * 2); out.write("WAVEfmt ", 8);
     u32(out, 16); u16(out, 1); u16(out, 1); u32(out, 48'000); u32(out, 96'000);
@@ -162,12 +169,12 @@ bool wait_gate_entered(const std::filesystem::path& gate) {
 }
 
 void test_stop_all_during_project_boundaries(const std::filesystem::path& wav) {
+    int gate_number = 0;
     const auto run_case = [&](const char* label, auto operation) {
       for (const bool queued : {false, true}) {
         liveplay::audio::AudioEngine engine;
         liveplay::core::ProjectState state(engine);
-        const auto gate = std::filesystem::temp_directory_path() /
-                          (std::string{"dwcue-loader-gate-"} + label);
+        const auto gate = fixture_dir() / ("boundary-" + std::to_string(++gate_number) + ".gate");
         std::ofstream{gate} << wav;
         std::filesystem::remove(gate.string() + ".entered");
         set_loader_gate(gate);
@@ -329,7 +336,6 @@ void test_stop_all_during_preview_retirement() {
         check(state.start_preview("preview-item"), "preview stall: deliberate Preview retry succeeds");
         state.stop_preview(); state.stop_all_cues(0);
     }
-    std::filesystem::remove(wav);
 }
 
 void test_cancelled_preview_preparation() {
@@ -399,8 +405,6 @@ void test_cancelled_preview_preparation() {
         std::filesystem::remove(gate + ".entered");
       }
     }
-    std::filesystem::remove(wav);
-    std::filesystem::remove(preview_wav);
 }
 
 void test_busy_decoder_preserves_sibling_progress() {
@@ -431,7 +435,6 @@ void test_busy_decoder_preserves_sibling_progress() {
     decoding->wake.notify_all();
     io_stall.unlock(); worker.join();
     state.stop_all_cues(0);
-    std::filesystem::remove(wav);
 }
 
 void test_stop_all_during_live_edits() {
@@ -517,7 +520,6 @@ void test_stop_all_during_live_edits() {
               "live document edit: deliberate replay still starts");
         state.stop_all_cues(0);
     }
-    std::filesystem::remove(wav); std::filesystem::remove(replacement);
 }
 
 void test_stop_all_during_cold_go(const std::filesystem::path& wav) {
@@ -1171,7 +1173,6 @@ void test_untrimmed_follow_keeps_final_frame() {
           "full-file boundary: final fractional-millisecond sample survives before the target");
     state.stop_all_cues(0);
     engine.running_.store(false);
-    std::filesystem::remove(source); std::filesystem::remove(target);
 }
 
 void test_live_out_point_refreshes_prepared_endpoint() {
@@ -1204,7 +1205,6 @@ void test_live_out_point_refreshes_prepared_endpoint() {
     state.stop_all_cues(0);
     engine.running_.store(false);
     }
-    std::filesystem::remove(source); std::filesystem::remove(target);
 }
 
 void test_prepared_follow_runtime(const std::filesystem::path& wav) {
@@ -1293,7 +1293,7 @@ void test_prepared_follow_cancellation(const std::filesystem::path& wav) {
 }
 
 void test_selected_output_channels() {
-    const auto wav = std::filesystem::temp_directory_path() / "dwcue-selected-5.1.wav";
+    const auto wav = fixture_dir() / "selected-5.1.wav";
     {
         std::ofstream out(wav, std::ios::binary | std::ios::trunc);
         constexpr unsigned frames = 256, channels = 6;
@@ -1369,8 +1369,6 @@ void test_selected_output_channels() {
                   cleared[2][0].mixer == program_before[0].mixer,
               "LTC routing: None removes synthetic sends and preserves program");
     }
-    std::error_code error;
-    std::filesystem::remove(wav, error);
 }
 
 void test_unknown_output_rejection(const std::filesystem::path& wav) {
@@ -1738,7 +1736,6 @@ void test_replacement_cancels_ownership() {
     check(state.trigger_item("bed") && std::fabs(peak("bed") - 0.25f) < 1e-6f,
           "ownership: custom Stop All releases duck ownership before replay");
     state.stop_all_cues(0);
-    std::filesystem::remove(wav);
 }
 
 void test_group_waits_for_fading_child(const std::filesystem::path& wav) {
@@ -2008,7 +2005,6 @@ void test_completed_loader_worker_retires() {
     std::filesystem::remove(gate); clear_loader_gate("DWCUE_TEST_METADATA_GATE");
     check(wait_ready(state), "loader worker budget: complete batch still publishes after native return");
     std::filesystem::remove(gate + ".entered");
-    std::filesystem::remove(held); std::filesystem::remove(healthy);
 }
 
 void test_owned_loader_destruction() {
@@ -2036,7 +2032,6 @@ void test_owned_loader_destruction() {
     std::filesystem::remove(gate); close.get(); clear_loader_gate(hook);
     if (engine) engine.reset();
     std::filesystem::remove(gate + ".entered");
-    std::filesystem::remove(wav);
   }
 }
 
@@ -2070,7 +2065,6 @@ void test_loading_metadata_preserves_controls(const std::filesystem::path& wav) 
               cue->stats().transport == liveplay::audio::TransportState::Stopped,
           "metadata wait: loaded PCM duration is retained without a late start");
     std::filesystem::remove(gate + ".entered");
-    std::filesystem::remove(pending_wav);
 }
 
 void test_backup_retention() {
@@ -2184,8 +2178,7 @@ void test_position_aware_recovery(const std::filesystem::path& wav) {
 }
 
 void test_changed_media_readiness() {
-    const auto folder = std::filesystem::temp_directory_path() /
-        ("dwcue-media-revision-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    const auto folder = fixture_dir() / "revision";
     std::filesystem::create_directories(folder);
     const auto path = folder / "cue.wav", replacement = folder / "replacement.wav";
     const auto first = make_wav(8192), second = make_wav(16384);
@@ -2201,19 +2194,34 @@ void test_changed_media_readiness() {
     const auto old_id = *state.item_to_cue_id("revision");
     const auto old = engine.find_cue(old_id);
     std::error_code error;
-    check(liveplay::util::replace_file_atomically(replacement, path, error),
-          "file revision: same-size/date replacement publishes");
-    for (int i = 0; i < 200 && state.audio_readiness().value("ready", true); ++i)
-        std::this_thread::sleep_for(10ms);
-    check(!state.audio_readiness().value("ready", true) && on_air(state, engine, "revision"),
-          "file revision: changed source invalidates readiness without cutting active playback");
-    check(!state.trigger_item("revision") && on_air(state, engine, "revision"),
-          "file revision: stale decoder cannot be accepted as a new play");
+    const bool replaced = liveplay::util::replace_file_atomically(replacement, path, error);
+    bool held_by_decoder = false;
+#ifdef _WIN32
+    held_by_decoder = !replaced && (error.value() == ERROR_SHARING_VIOLATION || error.value() == ERROR_ACCESS_DENIED);
+#endif
+    check(replaced || held_by_decoder, "file revision: same-size/date replacement publishes or Windows holds the active file");
+    if (!replaced && !held_by_decoder) return;
+    if (held_by_decoder) {
+        check(state.audio_readiness().value("ready", false) && on_air(state, engine, "revision"),
+              "file revision: refused Windows replacement leaves the original cue ready and on air");
+    } else {
+        for (int i = 0; i < 200 && state.audio_readiness().value("ready", true); ++i)
+            std::this_thread::sleep_for(10ms);
+        check(!state.audio_readiness().value("ready", true) && on_air(state, engine, "revision"),
+              "file revision: changed source invalidates readiness without cutting active playback");
+        check(!state.trigger_item("revision") && on_air(state, engine, "revision"),
+              "file revision: stale decoder cannot be accepted as a new play");
+    }
     std::array<float, 256> left{}, right{};
     float* channels[]{left.data(), right.data()};
     old->service_read_ahead(1); old->render_block(channels, 2, 256);
     check(std::abs(left[0] - 0.25f) < 1e-6f, "file revision: active pinned file retains its original PCM");
     state.stop_item("revision");
+    if (held_by_decoder) {
+        old->unload();
+        check(liveplay::util::replace_file_atomically(replacement, path, error),
+              "file revision: Windows replacement publishes after decoder close");
+    }
     bool reloaded = false;
     for (int i = 0; i < 400; ++i) {
         const auto id = state.item_to_cue_id("revision");
@@ -2227,12 +2235,12 @@ void test_changed_media_readiness() {
         check(std::abs(left[0] - 0.5f) < 1e-6f, "file revision: the accepted new play renders replacement PCM");
     }
     state.stop_all_cues(0);
-    std::filesystem::remove_all(folder);
-    std::filesystem::remove(first);
-    std::filesystem::remove(second);
 }
 
-int main() {
+int main() try {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    if (!std::filesystem::create_directory(fixture_dir()))
+        throw std::runtime_error("Runtime test fixture directory already exists");
     test_completed_loader_worker_retires();
     failures += test_crash_resume_lifecycle();
     const auto wav = make_wav();
@@ -2283,8 +2291,17 @@ int main() {
     test_group_waits_for_retired_tail(wav);
     test_backup_retention();
     std::error_code error;
-    std::filesystem::remove(wav, error);
+    // Detached decoder cleanup can outlive a fixture. Windows waits for the handle to close.
+    for (int i = 0; i < 200; ++i) {
+        std::filesystem::remove_all(fixture_dir(), error);
+        if (!error) break;
+        std::this_thread::sleep_for(5ms);
+    }
+    check(!error, "runtime test: temporary media removed after decoder retirement");
     std::printf("\n%s (%d failure%s)\n", failures ? "FAILURES" : "ALL PASS",
                 failures, failures == 1 ? "" : "s");
     return failures ? 1 : 0;
+} catch (const std::exception& error) {
+    std::fprintf(stderr, "Runtime test exception: %s\n", error.what());
+    return 1;
 }
