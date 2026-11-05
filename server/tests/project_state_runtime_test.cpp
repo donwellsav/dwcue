@@ -288,6 +288,13 @@ void test_stop_all_during_preview_retirement() {
         bed->render_block(channels, 2, 256);
         check(left[0] > 0.2f, "preview stall: actual Program PCM is audible in the manual buffer");
         std::unique_lock read_stall{preview->decoder_mutex_};
+        const auto replacement_gate = wav.string() + ".preview-replacement-gate";
+        if (mode == 1) {
+            // Old decoder cleanup no longer blocks a replacement, so hold its own load.
+            std::filesystem::remove(replacement_gate + ".entered");
+            std::ofstream{replacement_gate} << wav;
+            set_loader_gate(replacement_gate);
+        }
         auto operation = std::async(std::launch::async, [&] {
             if (mode == 0) return state.stop_preview();
             if (mode == 1) return state.start_preview("preview-item");
@@ -296,6 +303,7 @@ void test_stop_all_during_preview_retirement() {
         });
         for (int i = 0; i < 300 && preview->stats().transport != liveplay::audio::TransportState::Stopped; ++i)
             std::this_thread::sleep_for(1ms);
+        if (mode == 1) check(wait_gate_entered(replacement_gate), "Preview retirement: replacement decoder is held before publication");
         if (mode == 3) {
             json replacement;
             check(state.start_preview("preview-item", &replacement),
@@ -314,7 +322,12 @@ void test_stop_all_during_preview_retirement() {
         check(stopped && bed->stats().transport == liveplay::audio::TransportState::Stopped &&
                   bed->render_block(channels, 2, 256) == 0,
               "preview stall: Stop All acknowledges and silences Program before Preview storage release");
+        if (mode == 1) std::filesystem::remove(replacement_gate);
         read_stall.unlock(); const bool result = operation.get(); stop.get();
+        if (mode == 1) {
+            clear_loader_gate();
+            std::filesystem::remove(replacement_gate + ".entered");
+        }
         check(mode == 1 ? !result : result, "preview stall: cancelled replacement refuses while stop/settings settle");
         check(state.current_preview_item_uuid().empty(), "preview stall: cancelled Preview cannot reappear after storage release");
         check(state.start_preview("preview-item"), "preview stall: deliberate Preview retry succeeds");
