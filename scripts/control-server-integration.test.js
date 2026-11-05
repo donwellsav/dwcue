@@ -815,7 +815,9 @@ test('native media, recovery correlation, and authoritative trigger order stay c
   const home = await mkdtemp(path.join(os.tmpdir(), 'dwcue-media-integration-'));
   const loaderGate = path.join(home, 'loader.gate');
   const loaderEntered = loaderGate + '.entered';
-  await writeFile(loaderGate, 'closed');
+  const audioPath = path.join(home, 'trigger-order.wav');
+  const gateContents = JSON.stringify(audioPath); // Native gate targets this actual decoder, including paths with spaces.
+  await writeFile(loaderGate, gateContents);
   const port = await unusedPort();
   const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(serverBinary, ['--bind', '127.0.0.1', '--port', String(port)], {
@@ -949,7 +951,6 @@ test('native media, recovery correlation, and authoritative trigger order stay c
     assert.equal(recovery.status, 404);
     assert.deepEqual(await recovery.json(), { error: 'device not found or recovery unavailable' });
 
-    const audioPath = path.join(home, 'trigger-order.wav');
     await writeFile(audioPath, silentWav());
     for (const uuid of ['older-trigger', 'newer-trigger']) {
       const created = await request(baseUrl, '/api/project/items', {
@@ -996,7 +997,7 @@ test('native media, recovery correlation, and authoritative trigger order stay c
     assert.equal((await causalStopAck).ok, true, 'Stop All must dispatch while decode is latched');
     assert.ok(performance.now() - commandStart < 500,
       'latched decoder delayed command dispatch');
-    assert.equal(await readFile(loaderGate, 'utf8'), 'closed',
+    assert.equal(await readFile(loaderGate, 'utf8'), gateContents,
       'Stop All incorrectly waited for or released decoder latch');
     await rm(loaderGate, { force: true });
     latchStream.socket.close();
