@@ -159,7 +159,7 @@ struct Fixture {
 };
 
 void test_blocked_decoder_reads(const std::filesystem::path& source) {
-    for (const int scenario : {0, 1, 2, 3, 4, 5, 6, 7}) {
+    for (const int scenario : {0, 1, 2, 3, 4, 5, 6, 7, 8}) {
         const int blocked_count = scenario == 1 ? 3 : scenario == 4 ? 4 : scenario == 6 ? 12 : 1;
         auto fixture = std::make_unique<Fixture>(source);
         auto& f = *fixture;
@@ -192,6 +192,18 @@ void test_blocked_decoder_reads(const std::filesystem::path& source) {
         for (int i = 0; i < 250 && entered.load(std::memory_order_acquire) < blocked_count; ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds{2});
         check(entered.load() == blocked_count, "blocked read: each requested backend is held inside actual read");
+        if (scenario == 8) {
+            const auto& item = blocked.front();
+            auto retire = std::async(std::launch::async, [&] { f.engine.unload_cue(item->id()); });
+            check(retire.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready &&
+                      !f.engine.find_cue(item->id()) && !item->decoder_ready_.load(),
+                  "blocked read: cue removal retires its worker without waiting for the native read");
+            release.set_value(); retire.get();
+            f.engine.stop_all(std::chrono::milliseconds{0}, true); f.engine.stop();
+            { std::lock_guard io_complete{item->decoder_mutex_};
+              if (item->decoder_) static_cast<ma_data_source_base*>(item->decoder_->pBackend)->vtable = original; }
+            read = {}; continue;
+        }
         if (scenario == 5) {
             f.engine.remove_mixer_channel(silent);
             f.engine.stop();

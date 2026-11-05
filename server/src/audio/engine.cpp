@@ -1029,6 +1029,14 @@ void AudioEngine::unload_cue(const CueId& id) {
     pending_.item_sources.erase(id.value);
     rebuild_topology_locked();
     lock.unlock();
+    {
+        std::lock_guard decode_lock{decode_state_->wait_mutex};
+        if (decode_state_->workers.contains(retiring.get())) {
+            // Its worker retains the decoder and closes it after the read returns.
+            retiring->decoder_ready_.store(false, std::memory_order_release);
+            return;
+        }
+    }
     // Do not hold engine ownership while decoder teardown waits for storage.
     retiring->unload();
 }
@@ -2004,7 +2012,13 @@ void AudioEngine::decode_loop(const std::shared_ptr<DecodeState>& state) {
                                 });
                             }
                         }
-                        { std::lock_guard lock{state->wait_mutex}; state->workers.erase(item.get()); }
+                        {
+                            std::unique_lock lock{state->wait_mutex};
+                            if (!item->decoder_ready_.load(std::memory_order_acquire)) {
+                                lock.unlock(); item->unload(); lock.lock();
+                            }
+                            state->workers.erase(item.get());
+                        }
                         state->wake.notify_all();
                     }).detach();
                 } catch (...) {

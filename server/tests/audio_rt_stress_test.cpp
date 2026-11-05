@@ -1191,7 +1191,8 @@ void test_loop_and_concurrent_stress(PlaybackItem& item) {
             if (got != 0 && got != kBlock) invalid.fetch_add(1);
             if (got == kBlock) rendered.fetch_add(1);
             if (got == 0) {
-                std::this_thread::sleep_for(std::chrono::microseconds{10});
+                // Missing blocks consume their actual audio deadline, not 10 us of CPU time.
+                std::this_thread::sleep_for(std::chrono::microseconds{kBlock * 1'000'000 / kRate});
             }
         }
     });
@@ -1218,6 +1219,7 @@ void test_loop_and_concurrent_stress(PlaybackItem& item) {
 
     const auto after = item.stats();
     check(invalid.load() == 0, "stress: render returns only full blocks or silence");
+    check(rendered.load() > 0, "stress: concurrent consumer renders actual decoded PCM");
     check(after.transport == TransportState::Playing,
           "stress: concurrent refill/seek leaves transport playing");
     check(!item.had_decode_error(), "stress: no decoder failure");
