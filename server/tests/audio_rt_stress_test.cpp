@@ -662,6 +662,8 @@ void test_pause_preserves_envelope(PlaybackItem& item) {
             item.service_read_ahead(1);
             item.render_block(output.channels, 2, kBlock);
             callbacks.fetch_add(1, std::memory_order_release);
+            // Pace callbacks so a scheduler pause cannot consume the entire fade.
+            std::this_thread::sleep_for(std::chrono::microseconds{kBlock * 1'000'000 / kRate});
         }
     });
     bool coherent = true;
