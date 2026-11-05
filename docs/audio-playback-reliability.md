@@ -1,6 +1,6 @@
 # Audio import and live playback reliability
 
-**4 November software audit:** source `42ab5af` adds four fixed decoder workers, engine stop/restart independent of held reads and cached routing maps. Healthy PCM survives up to three stuck reads; four exhaust refill capacity. Earlier Preview/live-edit, import/level, prepared-follow, project-admission and timecode safeguards remain covered. Rebuilt native 13/13, isolated API 61/61, client 222/222, typecheck, RT/live safety and the address-sanitized audio-output suite pass; see the [current workplan](superpowers/plans/2026-11-03-live-show-reliability.md). These are local source commits, with physical/deployment acceptance deferred. Program preparation, explicit unload and other metadata/driver completion limits remain.
+**4 November software audit:** source `87bcd46` replaces T45's shared four-worker budget with per-live-cue read-ahead ownership, holds a cue after 250 ms of missing PCM, refuses busy failed retries and retires active workers off control locks. Other sources retain independent refill capacity. Earlier Preview/live-edit, level, follow, project and timecode safeguards remain covered. Software evidence and remaining preparation/metadata/driver/physical limits are tracked in the [workplan](superpowers/plans/2026-11-03-live-show-reliability.md). These are local source commits; package metadata remains 2.6.17.
 
 Research and implementation began 2026-11-03 at `8250558`. The initial repairs were committed locally as `2ea5984` and `a9a86a3`; package metadata is 2.6.17. No new installer, installation or publication was performed. The current workplan distinguishes software verification from deferred physical acceptance.
 
@@ -132,7 +132,9 @@ Document property updates, media replacement and Cue to Continue release documen
 
 Preview responses and events carry the item/cue identity captured at publication, a state revision and project-session scope. Both the operator card and audience-output observer reject superseded completions. A new-server snapshot resets that scope. Two queued seeks reserve separate intents before waiting for the decoder, so the latest destination wins; explicit Stop still cancels both. Native held-retirement/PCM checks and deferred client/audience/reconnect cases cover these interleavings.
 
-## Stuck decoder read isolation (T45)
+## Stuck decoder read isolation (T45, historical)
+
+T46 below supersedes this four-worker capacity and late-resumption policy. These paragraphs retain the prior checkpoint's tested behavior and limits.
 
 Four fixed shared workers refill the existing queues using each cue's decoder try-lock. A source's stalled read consumes one slot, so healthy PCM continues with up to three such calls held. Four held calls exhaust refill capacity; repeated stop/start reuses those slots. No replacement worker or new cue start is created. The stalled cue itself can exhaust its buffered sound; if it remains Playing, data returning can continue that playback. Stop the stalled cue before continuing the show when that later return would be unwanted. Explicit Stop still prevents late revival; this batch adds no guessed underrun timeout or automatic cue advance.
 
@@ -141,3 +143,13 @@ Workers own independent state and weak cue lists, retaining only the decoder the
 Routing reads an immutable copy of the native mono/stereo/surround sends prepared during load, rather than taking a decoder lock behind its file read. Existing coefficients and source PCM are preserved. Failed load/unload clears the map, and reload replaces it. This keeps unrouted-cue restart and Stop All available during held reads without silently dropping the source's routes.
 
 The software matrix uses actual backend-read gates and the real render/ring/device callback with a headless device. Healthy PCM is measured beyond all resident queue/ring capacity. It covers one/three blocked reads, five restarts, all-slot exhaustion, engine destruction, late decoder release, route reconstruction and deliberate retry. Full native/API/client and address-sanitized results are recorded in the execution ledger; physical acceptance remains deferred.
+
+## Per-cue fault containment and starvation hold (T46)
+
+The shared finite pool was still a show-wide failure path. An I/O-free dispatcher now assigns one worker to each live cue; idle library cues own no thread. Each cue retains at most its own outstanding worker across stop/start, including a stalled call. Actual native backend gates with four and twelve held sources leave healthy PCM running beyond resident buffering. Thread/resource use follows live and still-blocked cues; the OS call itself is not forcibly canceled or reclaimed.
+
+After 250 ms of missing decoded PCM on the render timeline, only the affected cue stops with MA_TIMEOUT through the existing playback-error path. Brief gaps can recover; full PCM resets the budget. Digital silence is valid content. Pause, deliberate repositioning and stop-fades retain their semantics. This threshold is an application policy, not an external standard. Late data cannot resume a failed cue, execute a follow or advance an enclosing group. An explicit retry is required; a failed read still owning its decoder is refused before Program preparation, leaving other GO available. Successful preparation after return clears the old error.
+
+Engine removal of an active-worker cue revokes readiness and returns; that worker closes its decoder after its current call finishes, outside engine/dispatch locks. Ordinary explicit unload without an active worker and separate loader/project/new-preparation/metadata/driver operations retain their existing completion behavior. The held-read tests establish this worker boundary, not universal application/platform fault isolation.
+
+Native tests cover the exact starvation boundary at 44.1/48/96 kHz, brief recovery, intentional silence, explicit fades, real backend late return, one-shot/sticky error reporting, group/follow hold, busy-retry refusal, healthy backup GO, retirement, engine lifetime and deliberately retried PCM. The concurrency fixture now paces empty blocks by their audio deadline, while still requiring actual decoded PCM under 1,000 concurrent seeks. Full gates and sanitizer evidence are recorded in the execution ledger.

@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.17
-**Source revision:** 42ab5af5242632c766664e03422422243532ed27
-**Native engine baseline:** 42ab5af5242632c766664e03422422243532ed27
+**Source revision:** 87bcd4695c3bc1658782716f1e6e59ece57b5fad
+**Native engine baseline:** 87bcd4695c3bc1658782716f1e6e59ece57b5fad
 **Edition:** 4 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition describes application source **42ab5af**, including bounded decoder-read isolation, independent engine worker lifetime and earlier Preview/live-edit, playback, timecode and import safeguards. Package metadata remains **2.6.17**; these fixes have not been packaged, installed or published as a new release. Compare the installer you intend to use with its release notes before rehearsal.
+This edition describes application source **87bcd46**, including per-cue decoder isolation, sustained-starvation hold, safe retry/retirement and earlier Preview/live-edit, playback, timecode and import safeguards. Package metadata remains **2.6.17**; these fixes have not been packaged, installed or published as a new release. Compare the installer you intend to use with its release notes before rehearsal.
 
 Interface images were captured on 3 November from the same controls and layout, which remain unchanged in this repair batch. Their templates, styles and assets were checked against this source; original capture revisions and hashes are retained. Generated tones run through the native engine's virtual NULL output with physical audio-service access blocked; the desktop bridge supplies fixture locale, display and MIDI information. The images illustrate controls and visible states, rather than physical audio, HDMI or device compatibility. The capture method, source revisions and image hashes are recorded in **docs/manual-assets/captures.json**. Equipment photographs remain illustrative.
 
@@ -744,7 +744,7 @@ First protect the audience using the rehearsed stop/mute procedure. Then identif
 | Symptom | Check in this order |
 | --- | --- |
 | GO does nothing; target stays armed | Read the displayed refusal, then check connection, media readiness/errors, and the acknowledged target before one deliberate retry. An unready decoder does not block Stop All/Panic, and a rejected start preserves the armed target. |
-| Playing cue is silent or time stalls | Check source/drive, trims, levels and the engine computer's output/patch. An unstopped cue can resume when data returns; stop it before continuing. Healthy refills tolerate three stuck reads; four exhaust shared capacity. Stop All remains available. |
+| Playing cue is silent or time stalls | Brief gaps may recover. After **250 ms** of missing decoded audio, the cue stops with an error and holds sequencing. Retry explicitly after storage recovers; a pending failed read is refused. Check source/drive, trims, levels and engine output/patch. |
 | A sting stops the bed | Check Playback Replace Program or cue Ducking Stop All Other Cues. Use Overlay/No Ducking or a rehearsed Duck Program setting when the bed must continue. |
 | Preview is heard in the house | Stop Preview and verify the actual Preview Device and physical patch. Sharing Main's physical output is not private monitoring. |
 | A loop never advances | Check the saved Loop setting and whether Cue to Continue was armed for this playback instance. A stop/replay cancels the previous continuation. |
@@ -869,7 +869,7 @@ With Video Output focused, Escape also exits its fullscreen mode. In Level Check
 
 ### About this edition
 
-This manual describes application source **42ab5af**, package metadata **2.6.17**. Fixes are committed locally; a new installer has not been built, installed or published. The 22 captures retain their 3 November provenance and unchanged control templates and layout. They use generated media, an isolated NULL output with physical audio blocked, and fixture display/MIDI/locale methods. No user show, credentials or private media appear. Capture details are in **docs/manual-assets/captures.json**.
+This manual describes application source **87bcd46**, package metadata **2.6.17**. Fixes are committed locally; a new installer has not been built, installed or published. The 22 captures retain their 3 November provenance and unchanged control templates and layout. They use generated media, an isolated NULL output with physical audio blocked, and fixture display/MIDI/locale methods. No user show, credentials or private media appear. Capture details are in **docs/manual-assets/captures.json**.
 
 The current source passes native 13/13, isolated API 61/61, client 222/222, typecheck and RT/live safety checks. The audio-output suite also passes AddressSanitizer; leak detection is disabled. Native checks include six simulated ten-minute secondary-clock runs with continuous generated audio and no buffer faults or resyncs inside the tested envelope. Physical alignment and the earlier intermittency remain unproven; more extreme drift/jitter can trigger recovery.
 

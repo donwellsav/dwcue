@@ -425,10 +425,10 @@
     "gainStages": "Schematic: final physical sum and secondary-clock adaptation precede the attenuation-only limiter and device output."
   },
   "uiBuildRevision": "4105c02dee64e7abe466fff4a0046a9c34cbf774",
-  "manualSourceRevision": "42ab5af5242632c766664e03422422243532ed27",
+  "manualSourceRevision": "87bcd4695c3bc1658782716f1e6e59ece57b5fad",
   "visualCompatibility": {
     "checkedOn": "2026-11-04",
-    "revision": "42ab5af5242632c766664e03422422243532ed27",
-    "basis": "T45 changes native decoder workers, lifetime and routing only; client/app and client/electron are unchanged from 1d5a3c5. T43/T44 changed Preview state/cancellation composables, with component/page/layout templates, styles, assets and Electron source unchanged from 492aca0. The earlier Spotify persistence repair retains identical template/styles to the capture checkpoint. Original per-image capture revisions, dates, dimensions and hashes are retained."
+    "revision": "87bcd4695c3bc1658782716f1e6e59ece57b5fad",
+    "basis": "T46 changes native scheduling, starvation failure, retry and retirement only; client/app and client/electron are unchanged from 209c555. T43/T44 changed Preview state/cancellation composables, with component/page/layout templates, styles, assets and Electron source unchanged from 492aca0. The earlier Spotify persistence repair retains identical template/styles to the capture checkpoint. Original per-image capture revisions, dates, dimensions and hashes are retained."
   }
 }
