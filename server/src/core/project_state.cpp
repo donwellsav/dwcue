@@ -3025,7 +3025,7 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
             {"message", "Media could not be prepared at the requested In point. Check the file and trim range."}});
         return false;
     };
-    if (!playback || !std::isfinite(in_point) || in_point < 0.0 ||
+    if (!playback || playback->failed_read_pending() || !std::isfinite(in_point) || in_point < 0.0 ||
         !std::isfinite(out_point) || out_point < 0.0 || (out_point > 0.0 && out_point <= in_point) ||
         (file_duration > 0.0 && play_start >= std::min(effective_end, file_duration))) return reject_preparation();
     if (phase == ItemPlayPhase::Validate) return true;

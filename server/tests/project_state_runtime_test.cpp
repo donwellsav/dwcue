@@ -1833,6 +1833,16 @@ void test_starvation_holds_show(const std::filesystem::path& wav) {
           "starvation hold: actual render starvation reports one operator playback error");
     check(!on_air(state, engine, "starve-target"),
           "starvation hold: failed child cannot run follow or enclosing group ending");
+    std::unique_lock held_read{cue->decoder_mutex_};
+    auto retry = std::async(std::launch::async, [&] { return state.trigger_item("starve"); });
+    const bool retry_ready = retry.wait_for(250ms) == std::future_status::ready;
+    check(retry_ready, "starvation hold: retry refuses before the failed decoder read returns");
+    auto backup = std::async(std::launch::async, [&] { return state.trigger_item("starve-target"); });
+    const bool backup_ready = backup.wait_for(250ms) == std::future_status::ready;
+    check(backup_ready, "starvation hold: a busy failed retry cannot block another Program GO");
+    held_read.unlock();
+    check(!retry.get() && backup.get(), "starvation hold: failed retry is refused and healthy backup starts");
+    state.stop_all_cues(0);
     check(state.trigger_item("starve"), "starvation hold: explicit operator retry remains available");
     check(cue->render_block(channels, 2, 256) == 256 && left[0] == 0.0f,
           "starvation hold: explicit retry produces original project PCM");

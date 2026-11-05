@@ -295,7 +295,7 @@ MeterSnapshot PlaybackItem::source_meter_consume(ChannelIndex ch) noexcept {
 
 void PlaybackItem::play() {
     const auto expected_revision = playback_revision();
-    if (source_changed()) return;
+    if (source_changed() || failed_read_pending()) return;
     if (!decoder_ready_) {
         Logger::warn("PlaybackItem[{}] play() ignored — decoder not ready", desc_.id.value);
         return;
@@ -663,7 +663,7 @@ void PlaybackItem::set_loop(bool enabled, double in_seconds) noexcept {
 }
 
 bool PlaybackItem::prime(double seconds, double start_seconds) noexcept {
-    if (source_changed() || !std::isfinite(seconds) || !std::isfinite(start_seconds) ||
+    if (source_changed() || failed_read_pending() || !std::isfinite(seconds) || !std::isfinite(start_seconds) ||
         start_seconds >= static_cast<double>(UINT64_MAX) / desc_.mix_sample_rate) return false;
     auto start_frame = start_seconds <= 0.0 ? std::uint64_t{0} :
         static_cast<std::uint64_t>(start_seconds * desc_.mix_sample_rate);

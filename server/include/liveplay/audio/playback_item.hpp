@@ -225,6 +225,11 @@ public:
     bool had_decode_error() const noexcept {
         return decode_error_.load(std::memory_order_acquire);
     }
+    bool failed_read_pending() const noexcept {
+        if (!had_decode_error()) return false;
+        std::unique_lock lock{decoder_mutex_, std::try_to_lock};
+        return !lock.owns_lock();
+    }
     int decoder_error_code() const noexcept {
         return decode_error_code_.load(std::memory_order_acquire);
     }
