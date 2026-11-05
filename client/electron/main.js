@@ -258,6 +258,7 @@ const LIVEPLAY_CONFIG_FILENAME = 'liveplay-server.json';
 const LIVEPLAY_LOCK_FILENAME   = 'liveplay-server.lock';
 let liveplayServerIdentity = null;
 let liveplayServerStartPromise = null;
+let liveplayServerLifecyclePromise = Promise.resolve();
 
 function liveplayConfigPath() {
   return path.join(app.getPath('userData'), LIVEPLAY_CONFIG_FILENAME);
@@ -802,13 +803,13 @@ async function verifyLiveplayLock(lock) {
   if (/^[0-9a-f]{32}$/.test(lock.instanceToken || '')) {
     // A tokenless generation from an older release may be stopped only after
     // the existing PID + health/process identity checks prove we own it.
-    if (healthMatchesIdentity(health, lock) ||
-        await processRunsOwnedServer(lock.pid, lock.instanceToken)) {
+    if ((healthMatchesIdentity(health, lock) ||
+        await processRunsOwnedServer(lock.pid, lock.instanceToken)) && isPidAlive(lock.pid)) {
       return { ...lock, legacy: false };
     }
     return null;
   }
-  if (isLegacyServerHealth(health) && await processRunsLegacyServer(lock)) {
+  if (isLegacyServerHealth(health) && await processRunsLegacyServer(lock) && isPidAlive(lock.pid)) {
     return { ...lock, legacy: true };
   }
   return null;
@@ -852,11 +853,11 @@ async function reconcileLiveplayServerIdentity(waitForReplacement = false) {
         ? await processRunsLegacyServer(current)
         : healthMatchesIdentity(health, current) ||
           await processRunsOwnedServer(current.pid, current.instanceToken);
-      if (owned) {
+      if (owned && isPidAlive(current.pid)) {
         return current;
       }
       // A failed probe is not evidence that a live child has exited.
-      return null;
+      if (isPidAlive(current.pid)) return null;
     }
     clearLiveplayIdentity(current);
   }
@@ -866,7 +867,17 @@ async function reconcileLiveplayServerIdentity(waitForReplacement = false) {
 // Reattach to a verified detached server. A tokenless pre-rebrand server is
 // adopted only after both its old health response and exact process arguments
 // agree, then replaced once with the tokenized current binary.
+function runLiveplayServerOperation(operation) {
+  const pending = liveplayServerLifecyclePromise.then(operation);
+  liveplayServerLifecyclePromise = pending.catch(() => {});
+  return pending;
+}
+
 async function tryReattachLiveplayServer() {
+  return runLiveplayServerOperation(tryReattachLiveplayServerOnce);
+}
+
+async function tryReattachLiveplayServerOnce() {
   const lock = readLiveplayLock();
   if (!lock) return;
   const identity = await reconcileLiveplayServerIdentity(true);
@@ -887,30 +898,32 @@ async function tryReattachLiveplayServer() {
   if (identity.legacy || !validManagedAccessToken(identity.accessToken) ||
       identity.port !== cfg.localPort) {
     if (!(await stopVerifiedLiveplayServer(identity))) return identity;
-    return startLiveplayServer();
+    return startLiveplayServerOnce();
   }
   return identity;
 }
 
 async function startLiveplayServer() {
   if (liveplayServerStartPromise) return liveplayServerStartPromise;
-  liveplayServerStartPromise = startLiveplayServerOnce();
-  try {
-    return await liveplayServerStartPromise;
-  } finally {
-    liveplayServerStartPromise = null;
-  }
+  const pending = runLiveplayServerOperation(startLiveplayServerOnce);
+  liveplayServerStartPromise = pending;
+  try { return await pending; }
+  finally { if (liveplayServerStartPromise === pending) liveplayServerStartPromise = null; }
 }
 
 async function startLiveplayServerOnce() {
-  const cfg = readLiveplayConfig();
+  let cfg = readLiveplayConfig();
   if (cfg.mode !== 'local') return;
 
   const current = await reconcileLiveplayServerIdentity(true);
+  cfg = readLiveplayConfig();
+  if (cfg.mode !== 'local') return null;
   if (current) {
     if (!current.legacy && validManagedAccessToken(current.accessToken) &&
         current.port === cfg.localPort) return current;
     if (!(await stopVerifiedLiveplayServer(current))) return null;
+    cfg = readLiveplayConfig();
+    if (cfg.mode !== 'local') return null;
   }
 
   // Never signal, adopt, or overwrite a live PID that failed identity checks.
@@ -1028,7 +1041,11 @@ async function stopVerifiedLiveplayServer(identity) {
 }
 
 async function stopLiveplayServer() {
-  if (liveplayServerStartPromise) await liveplayServerStartPromise;
+  liveplayServerStartPromise = null;
+  return runLiveplayServerOperation(stopLiveplayServerOnce);
+}
+
+async function stopLiveplayServerOnce() {
   const identity = await reconcileLiveplayServerIdentity(true);
   if (!identity) {
     const unverifiedLock = [readLiveplayLock(), liveplayServerIdentity].find(
@@ -1106,19 +1123,9 @@ ipcMain.handle('liveplay-server:set-config', async (event, incoming) => {
   writeLiveplayConfig(next);
   notifyServerStateChange();
 
-  if (next.mode === 'remote') {
-    await stopLiveplayServer();
-  } else {
-    // Start is promise-coalesced, and startLiveplayServerOnce replaces a
-    // verified legacy or wrong-port generation before launching.
-    await startLiveplayServer();
-    const identity = await reconcileLiveplayServerIdentity();
-    if (identity && (identity.legacy ||
-        !validManagedAccessToken(identity.accessToken) ||
-        identity.port !== next.localPort)) {
-      if (await stopVerifiedLiveplayServer(identity)) await startLiveplayServer();
-    }
-  }
+  liveplayServerStartPromise = null;
+  await runLiveplayServerOperation(() => readLiveplayConfig().mode === 'remote'
+    ? stopLiveplayServerOnce() : startLiveplayServerOnce());
 
   notifyServerStateChange();
   return next;
@@ -1189,9 +1196,12 @@ ipcMain.handle('app:confirm-quit', async (event, opts) => {
 
 ipcMain.handle('liveplay-server:restart', async (event) => {
   requireTrustedIpc(event);
-  if (!(await stopLiveplayServer())) return false;
-  await startLiveplayServer();
-  return true;
+  liveplayServerStartPromise = null;
+  return runLiveplayServerOperation(async () => {
+    if (!(await stopLiveplayServerOnce())) return false;
+    await startLiveplayServerOnce();
+    return true;
+  });
 });
 
 // Explicit shutdown — the server is now detached, so quitting the
@@ -1222,7 +1232,12 @@ ipcMain.handle('liveplay-server:ensure-running', async (event) => {
     const health = lock?.port === cfg.localPort
       ? await probeServerHealth(cfg.localPort, 800)
       : null;
-    if (lock && healthMatchesIdentity(health, lock)) {
+    const currentConfig = readLiveplayConfig();
+    if (currentConfig.mode !== 'local' || currentConfig.localPort !== cfg.localPort) {
+      return { ok: false, port: cfg.localPort, error: 'server configuration changed while connecting' };
+    }
+    if (lock && isPidAlive(lock.pid) && liveplayServerIdentity?.pid === lock.pid &&
+        liveplayServerIdentity.instanceToken === lock.instanceToken && healthMatchesIdentity(health, lock)) {
       if (!validManagedAccessToken(lock.accessToken)) {
         return {
           ok: false,

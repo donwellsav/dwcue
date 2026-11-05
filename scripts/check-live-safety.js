@@ -1360,10 +1360,11 @@ assert.match(
   /async function reconcileLiveplayServerIdentity[\s\S]*adoptLiveplayIdentity\(verifiedLock\)/,
   'lifecycle operations must reconcile crash-restarted server identities',
 );
-assert.match(electron, /async function stopLiveplayServer\(\)[\s\S]*if \(liveplayServerStartPromise\) await liveplayServerStartPromise/, 'shutdown must wait for an in-flight launch');
+assert.match(electron, /async function stopLiveplayServer\(\)[\s\S]*runLiveplayServerOperation\(stopLiveplayServerOnce\)/, 'shutdown must run after earlier lifecycle actions');
+assert.match(electron, /const pending = liveplayServerLifecyclePromise\.then\(operation\)/, 'server lifecycle actions share one ordered chain');
 assert.match(electron, /async function stopVerifiedLiveplayServer\([\s\S]*await terminateLiveplayPid\(/, 'normal shutdown must wait for verified termination');
 assert.match(electron, /ipcMain\.handle\('app:confirm-quit', async[\s\S]*await stopLiveplayServer\(\)/, 'confirmed shutdown must finish before Electron exits');
-assert.match(electron, /ipcMain\.handle\('liveplay-server:restart', async[\s\S]*await stopLiveplayServer\(\)[\s\S]*await startLiveplayServer\(\)/, 'restart must not overlap two servers');
+assert.match(electron, /ipcMain\.handle\('liveplay-server:restart', async[\s\S]*runLiveplayServerOperation\(async[\s\S]*await stopLiveplayServerOnce\(\)[\s\S]*await startLiveplayServerOnce\(\)/, 'restart must not overlap two servers');
 assert.match(
   electron,
   /ipcMain\.handle\('install-update', async \(event\) =>[\s\S]*requireTrustedIpc\(event\);[\s\S]*return installDownloadedUpdate\(\);/,
