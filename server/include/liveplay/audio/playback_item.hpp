@@ -290,6 +290,7 @@ private:
     bool                        decode_out_point_passed_ = false; // decoder_mutex_
     std::atomic<bool>           decode_terminal_{false};
     std::atomic<std::uint64_t>  read_ahead_underruns_{0};
+    std::uint64_t               starved_frames_ = 0; // render_exclusion_
 
     // Control operations occasionally replace queue/meter/LTC storage. One
     // lock-free gate gives those operations exclusive access; render_block()

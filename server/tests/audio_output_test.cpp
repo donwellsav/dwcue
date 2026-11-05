@@ -159,7 +159,7 @@ struct Fixture {
 };
 
 void test_blocked_decoder_reads(const std::filesystem::path& source) {
-    for (const int scenario : {0, 1, 2, 3, 4, 5, 6}) {
+    for (const int scenario : {0, 1, 2, 3, 4, 5, 6, 7}) {
         const int blocked_count = scenario == 1 ? 3 : scenario == 4 ? 4 : scenario == 6 ? 12 : 1;
         auto fixture = std::make_unique<Fixture>(source);
         auto& f = *fixture;
@@ -168,7 +168,7 @@ void test_blocked_decoder_reads(const std::filesystem::path& source) {
         for (int i = 0; i < blocked_count; ++i) {
             const auto id = f.engine.load_cue_no_route(source);
             auto item = f.engine.find_cue(id);
-            check(item && item->prime(0.0), "blocked read: real source prepares without resident PCM");
+            check(item && item->prime(2.0), "blocked read: real source prepares resident PCM before the fault");
             item->play(); blocked.push_back(item);
             f.engine.route_item_source_to_mixer(id, 0, silent, 0, 0.0f);
         }
@@ -273,18 +273,41 @@ void test_blocked_decoder_reads(const std::filesystem::path& source) {
             check(entered.load() == blocked_count,
                   "blocked read: restart retains the existing blocked calls without retrying them");
         }
+        if (scenario == 7) {
+            const auto& item = blocked.front();
+            check(item->had_decode_error() && item->stats().transport == TransportState::Stopped &&
+                      item->stats().decoder_result == MA_TIMEOUT && !item->take_natural_end(),
+                  "blocked read: sustained missing PCM fails only its cue without a natural end");
+            const auto frame = item->stats().playhead_frame;
+            release.set_value();
+            { std::lock_guard io_complete{item->decoder_mutex_}; first_backend->vtable = original; }
+            std::array<float, block> left{}, right{}; float* channels[]{left.data(), right.data()};
+            check(item->render_block(channels, 2, block) == 0 &&
+                      item->stats().transport == TransportState::Stopped && item->stats().playhead_frame == frame,
+                  "blocked read: a late real backend return cannot re-enter the show");
+            f.engine.stop();
+            check(item->prime(2.0, 0.25), "blocked read: deliberate retry after failure prepares fresh PCM");
+            item->play();
+            check(item->render_block(channels, 2, block) == block && std::abs(left[0] - 0.1f) < 1e-6f,
+                  "blocked read: deliberate retry after failure is audible at its authored level");
+            f.engine.stop_all(std::chrono::milliseconds{0}, true); f.engine.stop();
+            read = {}; continue;
+        }
         auto stop = std::async(std::launch::async, [&] {
             f.engine.stop_all(std::chrono::milliseconds{0}, true);
         });
         check(stop.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready &&
                   f.item->stats().transport == TransportState::Stopped,
               "blocked read: Stop All remains independent of held reads");
+        std::vector<std::uint64_t> stopped_frames;
+        for (const auto& item : blocked) stopped_frames.push_back(item->stats().playhead_frame);
         if (stopped_before_release) release.set_value();
         stop.get(); f.engine.stop();
-        for (const auto& item : blocked) {
+        for (std::size_t i = 0; i < blocked.size(); ++i) {
+            const auto& item = blocked[i];
             std::lock_guard io_complete{item->decoder_mutex_};
             static_cast<ma_data_source_base*>(item->decoder_->pBackend)->vtable = original;
-            check(item->stats().transport == TransportState::Stopped && item->stats().playhead_frame == 0,
+            check(item->stats().transport == TransportState::Stopped && item->stats().playhead_frame == stopped_frames[i],
                   "blocked read: delayed decoder return cannot revive stopped transport");
         }
         if (scenario >= 2) {
@@ -299,6 +322,61 @@ void test_blocked_decoder_reads(const std::filesystem::path& source) {
         }
         read = {};
     }
+}
+
+void test_source_starvation(const std::filesystem::path& source, const std::filesystem::path& silence) {
+    for (const SampleRate rate : {44'100u, 48'000u, 96'000u}) {
+        PlaybackItemDesc desc; desc.id = CueId{"starvation"}; desc.file_path = source;
+        desc.mix_sample_rate = rate; desc.render_block = block;
+        PlaybackItem item{desc};
+        check(item.load() && item.prime(2.0), "starvation: actual source prepares at the requested mix rate");
+        item.play();
+        std::array<float, block> left{}, right{}; float* channels[]{left.data(), right.data()};
+        item.render_block(channels, 2, block);
+        std::printf("MEASURE source_mix_rate=%u initial_first=%.8f initial_settled=%.8f\n", rate, left[0], left.back());
+        for (int i = 1; i < 16; ++i) item.render_block(channels, 2, block);
+        const auto missing = [&](std::size_t frames) {
+            while (frames > 0) {
+                const auto n = std::min(frames, block);
+                measure_allocations = true; item.render_block(channels, 2, n); measure_allocations = false;
+                frames -= n;
+            }
+        };
+        missing(rate / 4 - 1);
+        check(item.stats().transport == TransportState::Playing && !item.had_decode_error(),
+              "starvation: a gap shorter than 250 ms is recoverable");
+        item.service_read_ahead(1);
+        check(item.render_block(channels, 2, block) == block && std::abs(left[0] - 0.1f) < 1e-6f,
+              "starvation: brief missing PCM recovers with original decoded audio");
+        missing(rate / 4 - 1);
+        check(!item.had_decode_error(), "starvation: successful PCM resets the continuous-gap budget");
+        missing(1);
+        check(item.stats().transport == TransportState::Stopped && item.had_decode_error() &&
+                  item.stats().decoder_result == MA_TIMEOUT && !item.take_natural_end(),
+              "starvation: 250 ms missing PCM is an error and cannot advance a cue");
+        check(item.take_decode_error() == MA_TIMEOUT && item.take_decode_error() == 0 && item.had_decode_error(),
+              "starvation: one error edge retains the stopped failure for reconnects");
+        item.service_read_ahead(1);
+        check(item.render_block(channels, 2, block) == 0 && left[0] == 0.0f,
+              "starvation: data returning after failure cannot resume playback");
+        check(item.prime(2.0, 0.25), "starvation: explicit recovery primes after the decoder is available");
+        item.play();
+        const auto rendered = item.render_block(channels, 2, block);
+        std::printf("MEASURE source_mix_rate=%u retry_first=%.8f retry_settled=%.8f\n", rate, left[0], left.back());
+        check(rendered == block && std::abs(left.back() - 0.1f) < 1e-6f &&
+                  !item.had_decode_error(), "starvation: explicit retry returns original PCM without a stale error");
+    }
+    PlaybackItemDesc desc; desc.id = CueId{"silence"}; desc.file_path = silence;
+    PlaybackItem item{desc}; check(item.load() && item.prime(2.0), "starvation: intentional silence loads");
+    item.play();
+    std::array<float, block> left{}, right{}; float* channels[]{left.data(), right.data()};
+    for (int i = 0; i < 100; ++i) { item.service_read_ahead(1); item.render_block(channels, 2, block); }
+    check(item.stats().transport == TransportState::Playing && !item.had_decode_error(),
+          "starvation: decoded digital silence is not missing PCM");
+    item.stop_now(); item.set_fade_out(std::chrono::milliseconds{500}); item.prime(0.0); item.play(); item.stop();
+    for (int i = 0; i < 100; ++i) item.render_block(channels, 2, block);
+    check(item.stats().transport == TransportState::Stopped && !item.had_decode_error(),
+          "starvation: an explicit stop fade settles without PCM or a false failure");
 }
 
 void test_channel_map_reload(const std::filesystem::path& mono, const std::filesystem::path& stereo) {
@@ -848,11 +926,13 @@ int main() {
     std::filesystem::create_directory(dir);
     const auto tone = wav(dir, "tone.wav", 0.7f);
     const auto quiet = wav(dir, "quiet.wav", 0.1f, true);
+    const auto silence = wav(dir, "silence.wav", 0.0f, true);
     const auto next = wav(dir, "next.wav", 0.2f, true, 0.00001f);
     const auto center = wav(dir, "center.wav", 0.7f, true, 0.0f, 6, 2);
     const auto left = wav(dir, "left.wav", 0.3f, true, 0.0f, 2, 0);
     const auto ramp = wav(dir, "ramp.wav", 0.125f, true, 1.0f / 131'072.0f);
     test_blocked_decoder_reads(quiet);
+    test_source_starvation(quiet, silence);
     test_channel_map_reload(quiet, left);
     test_shared_output(tone, false);
     test_shared_output(tone, true);

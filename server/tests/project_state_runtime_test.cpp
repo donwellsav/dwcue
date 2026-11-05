@@ -1808,6 +1808,38 @@ void test_group_waits_for_retired_tail(const std::filesystem::path& wav) {
     }
 }
 
+void test_starvation_holds_show(const std::filesystem::path& wav) {
+    liveplay::audio::AudioEngine engine;
+    std::atomic<int> errors{0};
+    liveplay::core::ProjectState state(engine);
+    json group{{"uuid", "starve-group"}, {"type", "group"},
+        {"startBehavior", {{"action", "play-first"}}},
+        {"endBehavior", {{"action", "goto-item"}, {"targetUuid", "starve-target"}}},
+        {"children", json::array({audio("starve", wav, {
+            {"endBehavior", {{"action", "next"}}}, {"duckingBehavior", {{"mode", "no-ducking"}}}})})}};
+    state.replace_full_document(document(json::array({group, audio("starve-target", wav)})));
+    check(wait_ready(state), "starvation hold: real project media ready"); close_devices(engine);
+    state.set_ui_state_broadcaster([&](const json& event) {
+        if (event.value("type", std::string{}) == "playback_error" &&
+            event.value("item_uuid", std::string{}) == "starve" &&
+            event.value("decoder_result", 0) == MA_TIMEOUT) ++errors;
+    });
+    check(state.trigger_item("starve-group"), "starvation hold: group starts normally");
+    const auto cue = engine.find_cue(*state.item_to_cue_id("starve"));
+    std::array<float, 256> left{}, right{}; float* channels[]{left.data(), right.data()};
+    for (int i = 0; i < 80; ++i) cue->render_block(channels, 2, 256);
+    for (int i = 0; i < 100 && errors.load() == 0; ++i) std::this_thread::sleep_for(5ms);
+    check(errors.load() == 1 && cue->had_decode_error(),
+          "starvation hold: actual render starvation reports one operator playback error");
+    check(!on_air(state, engine, "starve-target"),
+          "starvation hold: failed child cannot run follow or enclosing group ending");
+    check(state.trigger_item("starve"), "starvation hold: explicit operator retry remains available");
+    check(cue->render_block(channels, 2, 256) == 256 && left[0] == 0.0f,
+          "starvation hold: explicit retry produces original project PCM");
+    state.stop_all_cues(0);
+    state.set_ui_state_broadcaster({});
+}
+
 void test_backup_retention() {
     namespace fs = std::filesystem;
     const auto root = fs::temp_directory_path() /
@@ -1972,6 +2004,7 @@ int main() {
     test_changed_media_readiness();
     test_stop_all_during_project_boundaries(wav);
     test_stop_all_during_decoder_read(wav);
+    test_starvation_holds_show(wav);
     test_stop_all_during_cue_retirement(wav);
     test_stop_all_during_preview_retirement();
     test_cancelled_preview_preparation();

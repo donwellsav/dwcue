@@ -713,6 +713,7 @@ bool PlaybackItem::prime(double seconds, double start_seconds) noexcept {
         stopped_naturally_.store(false, std::memory_order_release);
         fading_out_naturally_.store(false, std::memory_order_release);
         reset_read_ahead_locked(start_frame);
+        clear_decode_error();
     }
     if (seconds <= 0.0) return true;
     service_read_ahead(std::min(blocks, kReadAheadBlockCount));
@@ -806,6 +807,7 @@ void PlaybackItem::reset_read_ahead_locked(std::uint64_t frame) noexcept {
     read_ahead_read_.store(0, std::memory_order_relaxed);
     read_ahead_write_.store(0, std::memory_order_release);
     read_ahead_offset_ = 0;
+    starved_frames_ = 0;
     decode_cursor_frame_ = frame;
     decode_out_point_passed_ = false;
     decode_terminal_.store(false, std::memory_order_release);
@@ -1125,6 +1127,18 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
     if (frames_read < frame_count && !natural_end && !rewind_on_play_.load(std::memory_order_acquire) &&
         !decode_terminal_.load(std::memory_order_acquire)) {
         read_ahead_underruns_.fetch_add(1, std::memory_order_relaxed);
+        // Let brief gaps recover; a sustained 250 ms gap must never re-enter late.
+        if (st != TransportState::FadingOut) {
+            starved_frames_ += frame_count - frames_read;
+            if (starved_frames_ >= std::max<std::uint64_t>(1, desc_.mix_sample_rate / 4)) {
+                stop_for_decode_error(MA_TIMEOUT);
+                for (ChannelCount c = 0; c < out_channel_count; ++c)
+                    std::memset(out_channel_buffers[c], 0, frame_count * sizeof(Sample));
+                return 0;
+            }
+        } else starved_frames_ = 0;
+    } else {
+        starved_frames_ = 0;
     }
     // Stop fades advance across unavailable PCM so they still settle to Stopped.
     if (frames_read == 0 && !natural_end && st != TransportState::FadingOut) return 0;
