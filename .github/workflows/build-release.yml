@@ -17,6 +17,10 @@ on:
         required: true
         default: false
         type: boolean
+      website_commit:
+        description: Exact dwcue-site commit to publish after the release
+        required: false
+        type: string
 
 jobs:
   check-version:
@@ -34,21 +38,21 @@ jobs:
         id: version
         run: |
           CURRENT_VERSION=$(node -p "require('./package.json').version")
-          echo "version=v${CURRENT_VERSION}" >> $GITHUB_OUTPUT
+          echo "version=v${CURRENT_VERSION}" >> "$GITHUB_OUTPUT"
 
           # workflow_dispatch always runs.
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "Manual dispatch — building ${CURRENT_VERSION}"
             exit 0
           fi
 
           git diff HEAD^ HEAD -- package.json > package_diff.txt
           if grep -q '"version"' package_diff.txt; then
-            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "Version changed to ${CURRENT_VERSION}"
           else
-            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "Version not changed"
           fi
 
@@ -256,10 +260,14 @@ jobs:
         env:
           MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          WEBSITE_COMMIT: ${{ inputs.website_commit }}
         run: |
           if [ -n "$MAC_CSC_LINK" ] && [ -n "$MAC_CSC_KEY_PASSWORD" ]; then
             printf 'CSC_LINK=%s\nCSC_KEY_PASSWORD=%s\nMAC_SIGNING=true\n' \
               "$MAC_CSC_LINK" "$MAC_CSC_KEY_PASSWORD" >> "$GITHUB_ENV"
+          elif [ -n "$WEBSITE_COMMIT" ]; then
+            echo "Publishing to dwcue.com requires Developer ID signing" >&2
+            exit 1
           fi
 
       - name: Build Electron app
@@ -595,8 +603,6 @@ jobs:
       - name: Generate changelog
         id: changelog
         run: |
-          VERSION="${{ needs.check-version.outputs.version }}"
-
           PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           if [ -z "$PREVIOUS_TAG" ]; then
             COMMIT_RANGE="HEAD"
@@ -607,26 +613,36 @@ jobs:
           {
             echo "## What's Changed"
             echo ""
-            git log ${COMMIT_RANGE} --pretty=format:"- %s (%an)" --no-merges
+            git log "$COMMIT_RANGE" --pretty=format:"- %s (%an)" --no-merges
             echo ""
             echo ""
             echo "## Statistics"
             echo ""
-            echo "- **Commits**: $(git rev-list --count ${COMMIT_RANGE})"
-            echo "- **Contributors**: $(git log ${COMMIT_RANGE} --format='%an' --no-merges | sort -u | wc -l)"
+            echo "- **Commits**: $(git rev-list --count "$COMMIT_RANGE")"
+            echo "- **Contributors**: $(git log "$COMMIT_RANGE" --format='%an' --no-merges | sort -u | wc -l)"
             LANG_COUNT=$(find client/locales -name "*.json" -type f | wc -l)
             echo "- **Supported Languages**: ${LANG_COUNT}"
           } > CHANGELOG.md
 
           cat CHANGELOG.md
 
+      - name: Verify source tag and website credentials
+        if: inputs.website_commit != ''
+        env:
+          RELEASE_TAG: ${{ needs.check-version.outputs.version }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$GITHUB_SHA"
+
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3.0.4
         with:
           tag_name: ${{ needs.check-version.outputs.version }}
           name: DonWells Cue ${{ needs.check-version.outputs.version }}
           body_path: CHANGELOG.md
-          draft: false
+          target_commitish: ${{ github.sha }}
+          draft: ${{ inputs.website_commit != '' }}
           prerelease: false
           files: |
             artifacts/*.exe
@@ -771,7 +787,94 @@ jobs:
               --cache-control "public, max-age=31536000, immutable"
           done
 
+      - name: Publish completed website release
+        if: inputs.website_commit != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.check-version.outputs.version }}
+        run: gh release edit "$RELEASE_TAG" --draft=false --latest
+
       - name: Update latest release
         run: |
           echo "Release ${{ needs.check-version.outputs.version }} published successfully!"
           echo "Download at: https://github.com/${{ github.repository }}/releases/tag/${{ needs.check-version.outputs.version }}"
+
+
+  website:
+    name: Publish dwcue.com
+    needs: [check-version, release]
+    if: inputs.website_commit != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: donwellsav/dwcue-site
+          ref: ${{ inputs.website_commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Build the selected site commit
+        env:
+          WEBSITE_COMMIT: ${{ inputs.website_commit }}
+          RELEASE_TAG: ${{ needs.check-version.outputs.version }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$WEBSITE_COMMIT"
+          test "v$(node -p 'require("./public/package.json").version')" = "$RELEASE_TAG"
+          npm ci --include=optional
+          NUXT_APP_BASE_URL=/ npm run generate
+      - name: Verify installer URLs before changing the site
+        env:
+          RELEASE_TAG: ${{ needs.check-version.outputs.version }}
+        run: |
+          set -euo pipefail
+          version=${RELEASE_TAG#v}
+          release_url="https://github.com/donwellsav/dwcue/releases/download/$RELEASE_TAG"
+          for file in "DonWells-Cue-Setup-$version.exe" "DonWells-Cue-$version-x86_64.AppImage" \
+            "DonWells-Cue-$version-amd64.deb" "DonWells-Cue-$version-x86_64.rpm"; do
+            curl --fail --silent --show-error --head --location --retry 4 "$release_url/$file" >/dev/null
+          done
+          for arch in arm64 x64; do
+            for ext in dmg zip; do
+              curl --fail --silent --show-error --head --location --retry 4 \
+                "https://dwcue.com/downloads/DonWells-Cue-$version-$arch.$ext" >/dev/null
+            done
+          done
+      - name: Publish generated site files
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          python3 - <<'PY'
+          from concurrent.futures import ThreadPoolExecutor
+          import mimetypes
+          from pathlib import Path
+          import subprocess
+
+          root = Path(".output/public")
+          last = ["package.json", "index.html"]
+          no_cache = {*last, "sitemap.xml", "robots.txt", "_payload.json", "assets/builds/latest.json"}
+
+          def upload(key):
+              content_type = mimetypes.guess_type(key)[0] or "application/octet-stream"
+              cache = "no-cache" if key in no_cache or key.endswith(".html") else "public, max-age=31536000, immutable"
+              subprocess.run([
+                  "npx", "--yes", "wrangler@4", "r2", "object", "put", f"dwcue-site/{key}",
+                  "--remote", "--file", str(root / key), "--content-type", content_type,
+                  "--cache-control", cache,
+              ], check=True)
+
+          for key in last:
+              if not (root / key).is_file():
+                  raise SystemExit(f"Missing generated website file: {key}")
+          files = [p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()]
+          # Keep the live version pointer and home page until their assets are ready.
+          with ThreadPoolExecutor(max_workers=4) as pool:
+              list(pool.map(upload, [key for key in files if key not in last and not key.startswith("downloads/")]))
+          for key in last:
+              upload(key)
+          PY
