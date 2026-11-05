@@ -51,6 +51,11 @@ if(MSVC)
     # runtime DLLs without running a separate redistributable installer.
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
     include(InstallRequiredSystemLibraries)
+    if(CMAKE_GENERATOR MATCHES "^Ninja")
+        # App-local deployment scans the same DLL directory after each link.
+        list(APPEND CMAKE_JOB_POOLS dwcue_app_local=1)
+        set(CMAKE_JOB_POOL_LINK dwcue_app_local)
+    endif()
 endif()
 
 set(CMAKE_CXX_STANDARD 20)
