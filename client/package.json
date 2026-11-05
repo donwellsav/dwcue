@@ -1,6 +1,6 @@
 {
   "name": "donwells-cue",
-  "version": "2.6.17",
+  "version": "2.6.18",
   "description": "Audio cue playback application for live events",
   "homepage": "https://github.com/donwellsav/dwcue",
   "repository": {
@@ -65,7 +65,7 @@
   "build": {
     "appId": "com.donwells.cue",
     "productName": "DonWells Cue",
-    "copyright": "Copyright \u00a9 2026 DonWells. Original software \u00a9 Thomas Doukinitsas and contributors.",
+    "copyright": "Copyright © 2026 DonWells. Original software © Thomas Doukinitsas and contributors.",
     "artifactName": "DonWells-Cue-${version}-${arch}.${ext}",
     "directories": {
       "output": "dist-electron"
