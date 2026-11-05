@@ -1021,6 +1021,11 @@ CueId AudioEngine::load_cue_no_route(const std::filesystem::path& file_path,
     auto item = std::make_shared<PlaybackItem>(std::move(desc));
     if (!item->load()) return {};
 
+    return adopt_cue(item);
+}
+
+CueId AudioEngine::adopt_cue(const std::shared_ptr<PlaybackItem>& item) {
+    if (!item) return {};
     // Register the cue, but do NOT call rebuild_topology_locked() or
     // ensure_default_routing() — both walk every loaded cue and turn a bulk
     // load into O(N²) work. The caller is responsible for invoking

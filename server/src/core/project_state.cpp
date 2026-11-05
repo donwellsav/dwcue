@@ -407,6 +407,90 @@ std::chrono::nanoseconds parse_smpte_timecode_to_ns(const std::string& tc,
     return std::chrono::nanoseconds{static_cast<long long>(seconds * 1e9)};
 }
 
+// Only a prepared item's owner mutates its decoder; metadata publication stays separate.
+void apply_audio_item_properties(const json& item, const std::shared_ptr<audio::PlaybackItem>& cue) {
+    // volume: 0..2 linear (matches the client). Engine takes dB.
+    if (item.contains("volume") && item["volume"].is_number()) {
+        const float lin = item["volume"].get<float>();
+        const float db  = (lin <= 0.0001f) ? -120.0f :
+                            20.0f * std::log10(lin);
+        cue->set_gain_db(db);
+    }
+    if (item.contains("playFade") && item["playFade"].is_number()) {
+        cue->set_fade_in(std::chrono::milliseconds{
+            static_cast<long long>(item["playFade"].get<double>() * 1000.0)});
+    }
+    // Manual-stop fade-out: the UI's "STOP FADE OUT" slider writes to
+    // `stopFade`, which is also used by the sequencer to begin fading
+    // before natural end. We expose the larger of the two as the
+    // PlaybackItem's fade_out_duration so the stop button (and global
+    // stop) honour whichever value the user actually configured —
+    // without breaking legacy projects that only set fadeOutDuration.
+    {
+        double stop_fade_sec = 0.0;
+        double fade_out_dur  = 0.0;
+        if (item.contains("stopFade") && item["stopFade"].is_number())
+            stop_fade_sec = item["stopFade"].get<double>();
+        if (item.contains("fadeOutDuration") && item["fadeOutDuration"].is_number())
+            fade_out_dur = item["fadeOutDuration"].get<double>();
+        const double effective = std::max(stop_fade_sec, fade_out_dur);
+        cue->set_fade_out(std::chrono::milliseconds{
+            static_cast<long long>(effective * 1000.0)});
+    }
+    // outPoint: when set (> 0), engine fades out as the playhead reaches
+    // that time instead of running to the file end.
+    if (item.contains("outPoint") && item["outPoint"].is_number()) {
+        cue->set_out_point_seconds(item["outPoint"].get<double>());
+    } else {
+        cue->set_out_point_seconds(0.0);  // disabled
+    }
+
+    // LTC: configure enabled/rate/offset on the PlaybackItem.
+    // Routing of the synthetic LTC channel to the ltcDevice is done by the
+    // caller after it releases mutex_ (via apply_ltc_device_routing()).
+    const bool ltc_on = item.value("ltcEnabled", false);
+    const std::string tc_str = item.value("ltcStartTimecode",
+                                           std::string{"00:00:00:00"});
+    const int fps_idx = item.value("ltcFrameRate", 4);
+    cue->set_ltc_enabled(ltc_on);
+    if (ltc_on) {
+        const auto offset = parse_smpte_timecode_to_ns(tc_str, fps_idx);
+        cue->set_ltc_frame_rate(fps_index_to_rate(fps_idx));
+        cue->set_ltc_offset(offset);
+    }
+}
+
+struct LoadedAudio {
+    std::shared_ptr<audio::PlaybackItem> item;
+    meta::AudioFileMetadata metadata;
+};
+struct AudioLoadTask {
+    // Destroy the result before releasing its native owner (including cancellation).
+    std::promise<void> publication_done;
+    std::future<LoadedAudio> result;
+};
+AudioLoadTask prepare_audio_load(audio::PlaybackItemDesc desc, json properties, bool prime) {
+    AudioLoadTask task;
+    std::promise<LoadedAudio> result;
+    task.result = result.get_future();
+    std::thread([desc = std::move(desc), properties = std::move(properties), prime,
+                 result = std::move(result), published = task.publication_done.get_future()]() mutable {
+        std::shared_ptr<audio::PlaybackItem> item;
+        try {
+            item = std::make_shared<audio::PlaybackItem>(std::move(desc));
+            if (item->load()) {
+                auto metadata = meta::read_metadata(item->desc().file_path);
+                apply_audio_item_properties(properties, item);
+                if (prime) item->prime(2.0);
+                result.set_value({item, std::move(metadata)});
+            } else result.set_value({});
+        } catch (...) { result.set_exception(std::current_exception()); }
+        // A broken promise means cancelled. Last native cleanup stays on this thread.
+        published.wait();
+    }).detach();
+    return task;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -422,11 +506,12 @@ ProjectState::ProjectState(audio::AudioEngine& engine) : engine_(engine) {
 ProjectState::~ProjectState() {
     stop_sequencer();
     stop_loaders();
-    // Make sure any in-flight async mirror finishes before the engine is
-    // torn down — otherwise the worker would dereference dangling state.
+    // Native tasks own their data; only their short publication coordinator is joined.
     {
         std::lock_guard lock{mirror_mutex_};
+        mirror_cancel_.store(true, std::memory_order_release);
         if (load_thread_.joinable()) load_thread_.join();
+        loading_audio_.store(false, std::memory_order_release);
     }
     clear_diagnostic_cues();
 
@@ -484,8 +569,12 @@ audio::CueId ProjectState::begin_item_load_locked(const std::string& uuid,
 
     {
         std::lock_guard qlock{loader_mutex_};
-        load_queue_.push_back(LoadRequest{uuid, cue_id, path, media_changed});
-        pending_load_uuids_.insert(uuid);
+        bool prime = item.contains("oneShot") && item["oneShot"].is_object();
+        if (!prime && document_.contains("cartItems") && document_["cartItems"].is_array())
+            for (const auto& cart : document_["cartItems"])
+                if (cart.is_object() && cart.value("itemUuid", std::string{}) == uuid) { prime = true; break; }
+        load_queue_.push_back(LoadRequest{uuid, cue_id, path, media_changed, item, prime});
+        pending_load_uuids_.insert_or_assign(uuid, cue_id);
     }
     loader_cv_.notify_one();
     return cue_id;
@@ -518,24 +607,33 @@ void ProjectState::loader_loop() {
         // process, and a decode touches the filesystem (network shares, removable
         // media) where anything can go wrong.
         try {
-            // The expensive part: decoder init + metadata read, NO lock held.
-#ifdef LIVEPLAY_TEST_HOOKS
-            // Deterministic integration-test gate around the real decoder path.
-            // Release builds do not compile this branch.
-            if (const char* gate_value = std::getenv("DWCUE_TEST_LOADER_GATE");
-                gate_value && *gate_value) {
-                const std::filesystem::path gate{gate_value};
-                std::ofstream{gate.string() + ".entered", std::ios::trunc} << req.uuid;
-                std::error_code gate_error;
-                while (std::filesystem::exists(gate, gate_error) && !gate_error)
-                    std::this_thread::sleep_for(std::chrono::milliseconds{2});
+            audio::PlaybackItemDesc desc;
+            desc.id = req.cue_id; desc.file_path = req.path;
+            desc.mix_sample_rate = engine_.config().mix_sample_rate;
+            desc.render_block = engine_.config().render_block;
+            auto task = prepare_audio_load(std::move(desc), req.properties, req.prime);
+            bool abandoned = false;
+            while (task.result.wait_for(std::chrono::milliseconds{2}) != std::future_status::ready) {
+                std::lock_guard lock{mutex_};
+                const auto wanted = item_uuid_to_cue_.find(req.uuid);
+                std::lock_guard qlock{loader_mutex_};
+                if (loaders_stop_) return;
+                const auto current = pending_load_uuids_.find(req.uuid);
+                if (wanted == item_uuid_to_cue_.end() || wanted->second != req.cue_id ||
+                    current == pending_load_uuids_.end() || current->second != req.cue_id) { abandoned = true; break; }
             }
-#endif
-            const auto loaded_id = engine_.load_cue_no_route(req.path, req.cue_id);
-            const auto md        = meta::read_metadata(req.path);
+            if (abandoned) {
+                std::lock_guard qlock{loader_mutex_};
+                const auto current = pending_load_uuids_.find(req.uuid);
+                if (current != pending_load_uuids_.end() && current->second == req.cue_id)
+                    pending_load_uuids_.erase(current);
+                continue;
+            }
+            const auto loaded = task.result.get();
+            const auto loaded_id = loaded.item ? req.cue_id : audio::CueId{};
+            const auto& md = loaded.metadata;
 
             bool  publish   = false;
-            bool  is_cart   = false;
             json  item_snap;
             {
                 std::lock_guard lock{mutex_};
@@ -546,7 +644,6 @@ void ProjectState::loader_loop() {
                     it != item_uuid_to_cue_.end() && it->second == req.cue_id;
 
                 if (!still_wanted || loaded_id.empty()) {
-                    if (!loaded_id.empty()) engine_.unload_cue(loaded_id);
                     cues_.erase(req.cue_id.value);
                     if (!still_wanted) {
                         Logger::info("ProjectState: dropped stale load for uuid='{}'",
@@ -561,6 +658,7 @@ void ProjectState::loader_loop() {
                                      req.uuid, util::path_to_utf8(req.path));
                     }
                 } else {
+                    engine_.adopt_cue(loaded.item);
                     audio_load_failures_.erase(req.uuid);
                     auto cm_it = cues_.find(req.cue_id.value);
                     if (cm_it != cues_.end()) {
@@ -581,20 +679,6 @@ void ProjectState::loader_loop() {
                     });
                     if (item_snap.is_object())
                         apply_item_properties_locked(item_snap, req.cue_id);
-                    // One Shots (and legacy Cart-bound cues) can be fired at
-                    // any moment by a hotkey/MIDI and must be hot.
-                    is_cart = item_snap.contains("oneShot") &&
-                              item_snap["oneShot"].is_object();
-                    if (!is_cart && document_.contains("cartItems") &&
-                        document_["cartItems"].is_array()) {
-                        for (const auto& c : document_["cartItems"]) {
-                            if (c.is_object() &&
-                                c.value("itemUuid", std::string{}) == req.uuid) {
-                                is_cart = true;
-                                break;
-                            }
-                        }
-                    }
                     publish = true;
                 }
             }
@@ -606,9 +690,6 @@ void ProjectState::loader_loop() {
                 engine_.ensure_default_routing();
 #endif
                 apply_ltc_device_routing();
-                if (is_cart) {
-                    if (auto pi = engine_.find_cue(req.cue_id)) pi->prime(2.0);
-                }
                 Logger::info("ProjectState: loaded item uuid='{}' cue='{}'",
                              req.uuid, req.cue_id.value);
                 if (req.media_changed) {
@@ -653,12 +734,13 @@ void ProjectState::loader_loop() {
             Logger::error("ProjectState loader: uuid='{}' threw (unknown).", req.uuid);
         }
 
-        // Release anyone waiting on this specific item (see wait_for_item_load).
+        // An obsolete completion must not clear a newer request for this UUID.
         {
             std::lock_guard qlock{loader_mutex_};
-            pending_load_uuids_.erase(req.uuid);
+            const auto current = pending_load_uuids_.find(req.uuid);
+            if (current != pending_load_uuids_.end() && current->second == req.cue_id)
+                pending_load_uuids_.erase(current);
         }
-        loader_done_cv_.notify_all();
     }
 }
 
@@ -669,13 +751,12 @@ void ProjectState::stop_loaders() {
     }
     loader_cv_.notify_all();
     if (loader_thread_.joinable()) loader_thread_.join();
-    // Nothing will ever complete now — release any wait_for_item_load() caller.
+    // No coordinator can publish after this join.
     {
         std::lock_guard qlock{loader_mutex_};
         load_queue_.clear();
         pending_load_uuids_.clear();
     }
-    loader_done_cv_.notify_all();
 }
 
 void ProjectState::refresh_media_revisions() {
@@ -739,10 +820,11 @@ bool ProjectState::item_ready_to_play(const std::string& uuid) const {
 }
 
 void ProjectState::start_async_mirror() {
-    // Wait for any prior background mirror to finish before launching a new
-    // one — overlapping mirrors against the same engine state would race.
+    // Revoke and join the previous coordinator; native file tasks retain their own lifetime.
     std::lock_guard mirror_lock{mirror_mutex_};
+    mirror_cancel_.store(true, std::memory_order_release);
     if (load_thread_.joinable()) load_thread_.join();
+    mirror_cancel_.store(false, std::memory_order_release);
 
     // Apply the new project's output contract before any decoded cue can
     // become playable; a large project must not inherit the prior ceiling.
@@ -763,6 +845,7 @@ void ProjectState::start_async_mirror() {
         try {
             // Phase 1: snapshot what we need to load under a brief lock.
             std::unordered_map<std::string, std::filesystem::path> wanted;
+            std::unordered_map<std::string, json> item_snaps;
             std::unordered_set<std::string> cart_uuids;
             // LTC: per-item settings snapshotted here, device opened between Phase 2/3.
             struct LtcItemSnap { bool enabled; std::string timecode; int fps_index; };
@@ -778,6 +861,7 @@ void ProjectState::start_async_mirror() {
                     if (item.value("type", std::string{}) != "audio") return;
                     const std::string uuid = item.value("uuid", std::string{});
                     if (uuid.empty()) return;
+                    item_snaps.emplace(uuid, item);
                     if (item.contains("oneShot") && item["oneShot"].is_object())
                         cart_uuids.insert(uuid);
                     auto path = resolve_media_path(
@@ -857,41 +941,43 @@ void ProjectState::start_async_mirror() {
                          actually_wanted.size(), concurrency);
 
             struct Loaded {
+                AudioLoadTask task;
                 std::string uuid;
                 std::filesystem::path path;
                 audio::CueId cue_id;
                 meta::AudioFileMetadata metadata;
+                std::shared_ptr<audio::PlaybackItem> item;
             };
-            std::vector<std::future<Loaded>> in_flight;
+            std::vector<Loaded> in_flight;
             std::vector<Loaded> done;
             done.reserve(actually_wanted.size());
             auto drain_one = [&]() {
-                if (in_flight.empty()) return;
-                auto loaded = in_flight.front().get();
+                if (in_flight.empty()) return true;
+                while (in_flight.front().task.result.wait_for(std::chrono::milliseconds{2}) != std::future_status::ready)
+                    if (mirror_cancel_.load(std::memory_order_acquire)) return false;
+                auto loaded = std::move(in_flight.front());
                 in_flight.erase(in_flight.begin());
-                if (!loaded.cue_id.empty())
-                    load_progress_loaded_.fetch_add(1, std::memory_order_release);
+                auto result = loaded.task.result.get();
+                loaded.item = std::move(result.item);
+                loaded.metadata = std::move(result.metadata);
+                if (loaded.item) load_progress_loaded_.fetch_add(1, std::memory_order_release);
+                else loaded.cue_id = {};
                 done.push_back(std::move(loaded));
+                return true;
             };
             for (auto& [uuid, path] : actually_wanted) {
-                if (in_flight.size() >= concurrency) drain_one();
-                in_flight.push_back(std::async(std::launch::async,
-                    [this, u = uuid, p = path]() -> Loaded {
-#ifdef LIVEPLAY_TEST_HOOKS
-                        if (const char* gate_value = std::getenv("DWCUE_TEST_LOADER_GATE");
-                            gate_value && *gate_value) {
-                            const std::filesystem::path gate{gate_value};
-                            std::ofstream{gate.string() + ".entered", std::ios::trunc} << u;
-                            std::error_code gate_error;
-                            while (std::filesystem::exists(gate, gate_error) && !gate_error)
-                                std::this_thread::yield();
-                        }
-#endif
-                        const auto cue = engine_.load_cue_no_route(p);
-                        return {u, p, cue, cue.empty() ? meta::AudioFileMetadata{} : meta::read_metadata(p)};
-                    }));
+                if (mirror_cancel_.load(std::memory_order_acquire)) return;
+                if (in_flight.size() >= concurrency && !drain_one()) return;
+                audio::PlaybackItemDesc desc;
+                desc.id = engine_.new_cue_id(); desc.file_path = path;
+                desc.mix_sample_rate = engine_.config().mix_sample_rate;
+                desc.render_block = engine_.config().render_block;
+                const auto id = desc.id;
+                in_flight.push_back({prepare_audio_load(std::move(desc), item_snaps.at(uuid), cart_uuids.contains(uuid)),
+                    uuid, path, id, {}, {}});
             }
-            while (!in_flight.empty()) drain_one();
+            while (!in_flight.empty()) if (!drain_one()) return;
+            if (mirror_cancel_.load(std::memory_order_acquire)) return;
 
             // Phase 2.5: ensure the LTC output device is open and has a mixer
             // allocated BEFORE we take the mutex again in Phase 3. Doing it here
@@ -929,7 +1015,6 @@ void ProjectState::start_async_mirror() {
                         expected != current_wanted.end() &&
                         detail::same_media_identity(expected->second, loaded.path);
                     if (!identity_matches) {
-                        if (!loaded.cue_id.empty()) engine_.unload_cue(loaded.cue_id);
                         continue;
                     }
                     if (loaded.cue_id.empty()) {
@@ -943,9 +1028,9 @@ void ProjectState::start_async_mirror() {
                     // flight. Never overwrite it or leak the losing engine cue.
                     if (item_uuid_to_cue_.find(loaded.uuid) !=
                         item_uuid_to_cue_.end()) {
-                        engine_.unload_cue(loaded.cue_id);
                         continue;
                     }
+                    engine_.adopt_cue(loaded.item);
                     audio_load_failures_.erase(loaded.uuid);
                     item_uuid_to_cue_.emplace(loaded.uuid, loaded.cue_id);
 
@@ -1030,26 +1115,7 @@ void ProjectState::start_async_mirror() {
 #endif
             }
 
-            // Phase 4: prime One Shots / legacy cart cues (also unlocked —
-            // engine handles its own).
-            std::vector<std::future<void>> prime_futures;
-            for (const auto& uuid : cart_uuids) {
-                audio::CueId cue;
-                {
-                    std::lock_guard lock{mutex_};
-                    auto it = item_uuid_to_cue_.find(uuid);
-                    if (it == item_uuid_to_cue_.end()) continue;
-                    cue = it->second;
-                }
-                prime_futures.push_back(std::async(std::launch::async,
-                    [this, cue]() {
-                        if (auto pi = engine_.find_cue(cue)) pi->prime(2.0);
-                    }));
-            }
-            for (auto& f : prime_futures) f.get();
-            if (!cart_uuids.empty()) {
-                Logger::info("ProjectState: primed {} one-shot cue(s).", cart_uuids.size());
-            }
+            // New One Shots are primed by owned file tasks; reused cues keep their live buffers.
         } catch (const std::exception& e) {
             Logger::error("async mirror threw: {}", e.what());
         }
@@ -1069,19 +1135,12 @@ void ProjectState::reset() {
         std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
         ++playback_intent_revision_;
     }
-    // Drop queued single-item loads and let any in-flight decode finish before
-    // we clear the tables (#43). A load that published after the reset would
-    // resurrect a cue belonging to the project we just closed.
     {
-        std::unique_lock qlock{loader_mutex_};
-        for (const auto& req : load_queue_) pending_load_uuids_.erase(req.uuid);
+        std::lock_guard qlock{loader_mutex_};
         load_queue_.clear();
-        loader_done_cv_.wait_for(qlock, std::chrono::seconds{20}, [this] {
-            return pending_load_uuids_.empty();
-        });
+        pending_load_uuids_.clear();
     }
-    // Release anyone waiting on a load we just cancelled.
-    loader_done_cv_.notify_all();
+    loader_cv_.notify_all();
 
     // Quiesce any in-flight async mirror BEFORE taking mutex_. The mirror
     // worker acquires mutex_ in its phases, so joining it while we held the
@@ -1092,6 +1151,7 @@ void ProjectState::reset() {
     // project is opened.
     {
         std::lock_guard mirror_lock{mirror_mutex_};
+        mirror_cancel_.store(true, std::memory_order_release);
         if (load_thread_.joinable()) load_thread_.join();
     }
     loading_audio_.store(false, std::memory_order_release);
@@ -1251,55 +1311,12 @@ void ProjectState::apply_item_properties_locked(const json& item,
                                                 const audio::CueId& cue_id) {
     auto cue = engine_.find_cue(cue_id);
     if (!cue) return;
-
-    // volume: 0..2 linear (matches the client). Engine takes dB.
-    if (item.contains("volume") && item["volume"].is_number()) {
-        const float lin = item["volume"].get<float>();
-        const float db  = (lin <= 0.0001f) ? -120.0f :
-                            20.0f * std::log10(lin);
-        cue->set_gain_db(db);
-    }
-    if (item.contains("playFade") && item["playFade"].is_number()) {
-        cue->set_fade_in(std::chrono::milliseconds{
-            static_cast<long long>(item["playFade"].get<double>() * 1000.0)});
-    }
-    // Manual-stop fade-out: the UI's "STOP FADE OUT" slider writes to
-    // `stopFade`, which is also used by the sequencer to begin fading
-    // before natural end. We expose the larger of the two as the
-    // PlaybackItem's fade_out_duration so the stop button (and global
-    // stop) honour whichever value the user actually configured —
-    // without breaking legacy projects that only set fadeOutDuration.
-    {
-        double stop_fade_sec = 0.0;
-        double fade_out_dur  = 0.0;
-        if (item.contains("stopFade") && item["stopFade"].is_number())
-            stop_fade_sec = item["stopFade"].get<double>();
-        if (item.contains("fadeOutDuration") && item["fadeOutDuration"].is_number())
-            fade_out_dur = item["fadeOutDuration"].get<double>();
-        const double effective = std::max(stop_fade_sec, fade_out_dur);
-        cue->set_fade_out(std::chrono::milliseconds{
-            static_cast<long long>(effective * 1000.0)});
-    }
-    // outPoint: when set (> 0), engine fades out as the playhead reaches
-    // that time instead of running to the file end.
-    if (item.contains("outPoint") && item["outPoint"].is_number()) {
-        cue->set_out_point_seconds(item["outPoint"].get<double>());
-    } else {
-        cue->set_out_point_seconds(0.0);  // disabled
-    }
-
-    // LTC: configure enabled/rate/offset on the PlaybackItem.
-    // Routing of the synthetic LTC channel to the ltcDevice is done by the
-    // caller after it releases mutex_ (via apply_ltc_device_routing()).
+    apply_audio_item_properties(item, cue);
     const bool ltc_on = item.value("ltcEnabled", false);
-    const std::string tc_str = item.value("ltcStartTimecode",
-                                           std::string{"00:00:00:00"});
+    const std::string tc_str = item.value("ltcStartTimecode", std::string{"00:00:00:00"});
     const int fps_idx = item.value("ltcFrameRate", 4);
-    cue->set_ltc_enabled(ltc_on);
     if (ltc_on) {
         const auto offset = parse_smpte_timecode_to_ns(tc_str, fps_idx);
-        cue->set_ltc_frame_rate(fps_index_to_rate(fps_idx));
-        cue->set_ltc_offset(offset);
         auto cm_it = cues_.find(cue_id.value);
         if (cm_it != cues_.end()) {
             cm_it->second.ltc_enabled          = true;
@@ -4791,7 +4808,9 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
     }
     {
         std::lock_guard mirror_lock{mirror_mutex_};
+        mirror_cancel_.store(true, std::memory_order_release);
         if (load_thread_.joinable()) load_thread_.join();
+        loading_audio_.store(false, std::memory_order_release);
     }
     std::scoped_lock preparation_lock{playback_preparation_mutex_, preview_preparation_mutex_};
     std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};

@@ -165,23 +165,33 @@ bool wait_gate_entered(const std::filesystem::path& gate) {
 
 void test_stop_all_during_project_boundaries(const std::filesystem::path& wav) {
     const auto run_case = [&](const char* label, auto operation) {
+      for (const bool queued : {false, true}) {
         liveplay::audio::AudioEngine engine;
         liveplay::core::ProjectState state(engine);
         const auto gate = std::filesystem::temp_directory_path() /
                           (std::string{"dwcue-loader-gate-"} + label);
-        std::ofstream{gate};
+        std::ofstream{gate} << wav;
         std::filesystem::remove(gate.string() + ".entered");
         set_loader_gate(gate);
-        state.replace_full_document(document(json::array({audio("latched", wav)})));
+        if (queued) {
+            state.replace_full_document(document(json::array()));
+            check(wait_ready(state), "project boundary: empty project ready before queued load");
+            state.add_item(audio("latched", wav));
+        } else state.replace_full_document(document(json::array({audio("latched", wav)})));
         check(wait_gate_entered(gate), "project boundary: decoder reached deterministic gate");
         auto boundary = std::async(std::launch::async, [&] { operation(state); });
+        check(boundary.wait_for(250ms) == std::future_status::ready,
+              "project boundary: reset/replace/load completes before native loader return");
         auto stop = std::async(std::launch::async, [&] { state.stop_all_cues(0); });
         check(stop.wait_for(250ms) == std::future_status::ready, label);
+        const bool ready = boundary.wait_for(0ms) == std::future_status::ready;
+        if (ready) check(wait_ready(state), "project boundary: cancelled load does not keep a replacement show pending");
         std::filesystem::remove(gate);
         boundary.get();
         stop.get();
         clear_loader_gate();
         std::filesystem::remove(gate.string() + ".entered");
+      }
     };
     run_case("project boundary: Stop All is not blocked by reset",
              [](auto& state) { state.reset(); });
@@ -1851,6 +1861,35 @@ void test_starvation_holds_show(const std::filesystem::path& wav) {
     state.set_ui_state_broadcaster({});
 }
 
+void test_owned_loader_destruction() {
+  for (const bool queued : {false, true}) for (const int stage : {0, 1, 2}) {
+    const auto wav = make_wav(static_cast<std::int16_t>(8'220 + (queued ? 3 : 0) + stage));
+    auto engine = std::make_unique<liveplay::audio::AudioEngine>();
+    auto state = std::make_unique<liveplay::core::ProjectState>(*engine);
+    if (queued) {
+        state->replace_full_document(document(json::array()));
+        check(wait_ready(*state), "loader lifetime: empty project ready");
+    }
+    const auto gate = wav.string() + ".load-lifetime-" + std::to_string(queued) + "-" + std::to_string(stage);
+    const char* hook = stage == 2 ? "DWCUE_TEST_DECODER_READ_GATE" :
+        stage == 1 ? "DWCUE_TEST_METADATA_GATE" : "DWCUE_TEST_LOADER_GATE";
+    std::ofstream{gate} << wav; set_loader_gate(gate, hook);
+    auto item = audio("owned-load", wav);
+    if (stage == 2) item["oneShot"] = json::object();
+    if (queued) state->add_item(item);
+    else state->replace_full_document(document(json::array({item})));
+    check(wait_gate_entered(gate), "loader lifetime: actual queued/bulk decoder/metadata call is held");
+    auto close = std::async(std::launch::async, [&] { state.reset(); });
+    const bool responsive = close.wait_for(250ms) == std::future_status::ready;
+    check(responsive, "loader lifetime: project destruction does not wait for native file work");
+    if (responsive) engine.reset(); // A late file task must not retain either object.
+    std::filesystem::remove(gate); close.get(); clear_loader_gate(hook);
+    if (engine) engine.reset();
+    std::filesystem::remove(gate + ".entered");
+    std::filesystem::remove(wav);
+  }
+}
+
 void test_loading_metadata_preserves_controls(const std::filesystem::path& wav) {
     const auto pending_wav = make_wav(8'199);
     liveplay::audio::AudioEngine engine;
@@ -2049,6 +2088,7 @@ int main() {
     test_stop_all_during_project_boundaries(wav);
     test_stop_all_during_decoder_read(wav);
     test_starvation_holds_show(wav);
+    test_owned_loader_destruction();
     test_loading_metadata_preserves_controls(wav);
     test_stop_all_during_cue_retirement(wav);
     test_stop_all_during_preview_retirement();

@@ -284,6 +284,9 @@ public:
     CueId load_cue_no_route(const std::filesystem::path& file_path,
                             std::optional<CueId> requested_id = std::nullopt);
 
+    // Publish a fully prepared cue; performs no decoder or filesystem work.
+    CueId adopt_cue(const std::shared_ptr<PlaybackItem>& item);
+
     // Mint a fresh, unused CueId without loading anything. Lets a caller hand
     // out the id of a cue synchronously and pass it back as `requested_id` when
     // the (slow) decode finishes on a worker thread. See

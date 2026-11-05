@@ -590,6 +590,7 @@ private:
     std::atomic<std::size_t> load_progress_loaded_{0};
     std::atomic<std::size_t> load_progress_total_{0};
     std::thread              load_thread_;
+    std::atomic<bool>        mirror_cancel_{false};
     struct AudioLoadFailure {
         std::string code;
         std::string path;
@@ -855,12 +856,13 @@ private:
         audio::CueId          cue_id;
         std::filesystem::path path;
         bool                  media_changed = false;
+        json                  properties;
+        bool                  prime = false;
     };
     std::deque<LoadRequest>         load_queue_;
-    std::unordered_set<std::string> pending_load_uuids_;
+    std::unordered_map<std::string, audio::CueId> pending_load_uuids_;
     mutable std::mutex              loader_mutex_;      // guards both of the above
     std::condition_variable         loader_cv_;         // work available
-    std::condition_variable         loader_done_cv_;    // a pending load finished
     std::thread                     loader_thread_;
     bool                            loaders_stop_ = false;
 
