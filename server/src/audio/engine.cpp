@@ -801,6 +801,11 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
     cfg.pUserData          = dev.get();
     cfg.periodSizeInFrames = static_cast<ma_uint32>(cfg_.render_block);
 
+    ma_context* device_context = nullptr;
+#ifdef LIVEPLAY_TEST_HOOKS
+    device_context = device_test_context_;
+#endif
+
     // A saved display name wins over a prefix sibling (USB 1 vs USB 10).
     // Legacy callers retain the case-insensitive substring fallback. Empty
     // string leaves pDeviceID null for the system default.
@@ -808,10 +813,13 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
     ma_device_id matched_id;
     bool         have_match = false;
     if (!name_substring.empty()) {
-        if (ma_context_init(nullptr, 0, nullptr, &ctx) == MA_SUCCESS) {
+        auto* lookup_context = device_context;
+        if (!lookup_context && ma_context_init(nullptr, 0, nullptr, &ctx) == MA_SUCCESS)
+            lookup_context = &ctx;
+        if (lookup_context) {
             ma_device_info* infos = nullptr;
             ma_uint32       count = 0;
-            if (ma_context_get_devices(&ctx, &infos, &count, nullptr, nullptr) == MA_SUCCESS) {
+            if (ma_context_get_devices(lookup_context, &infos, &count, nullptr, nullptr) == MA_SUCCESS) {
                 ma_uint32 selected = 0;
                 for (; selected < count; ++selected)
                     if (name_substring == infos[selected].name) break;
@@ -833,7 +841,7 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
                     have_match = true;
                 }
             }
-            ma_context_uninit(&ctx);
+            if (lookup_context == &ctx) ma_context_uninit(&ctx);
         }
         if (!have_match) {
             Logger::warn("Device matching '{}' not found.", name_substring);
@@ -842,10 +850,6 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
         }
     }
 
-    ma_context* device_context = nullptr;
-#ifdef LIVEPLAY_TEST_HOOKS
-    device_context = device_test_context_;
-#endif
     if (ma_device_init(device_context, &cfg, dev->ma_dev.get()) != MA_SUCCESS) {
         Logger::error("ma_device_init failed for '{}'", dev->display_name);
         ma_pcm_rb_uninit(dev->ring.get());
