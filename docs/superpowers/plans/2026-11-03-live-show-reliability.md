@@ -355,3 +355,17 @@ T45's four shared workers reduced the original coupling but did not close it: fo
 - [x] Full software closure at application `87bcd46`: native 13/13, API 61/61, client 222/222, typecheck, RT/live safety and the final audio-output AddressSanitizer suite pass. Corrected concurrency stress passes three repeats. Current developer docs, workplan and rendered/verified 50-page manual are refreshed in the final local documentation checkpoint. Physical/deployment acceptance remains T24.
 
 Pre-flight: a timeout does not cancel an OS read. Keep its decoder owned until completion, and bound each cue to its existing outstanding worker rather than creating replacements. System thread/memory exhaustion remains an operating-system resource failure; do not claim infinite fault tolerance. Thread startup failure must fail only its cue through the existing error path, preserving controls and unrelated playback.
+
+
+## Loader and driver waits — 4 November 2026 (T47–T50)
+
+Continue from clean dfcbf42. User authorized small repairs, unchanged show workflow, software fault tests only and a local commit per tested fix. Trace actual native calls and all callers before changing ownership. Existing T46 decode-worker guarantees remain mandatory. No new dependency, UI controls, physical outputs, user show/media, installer or publication.
+
+- [x] **T47a — loader metadata publication.** Whole-project metadata/probe work now runs in the existing unlocked file task. Actual held extraction preserves document access and Stop All, then correct metadata and stopped playback publish after release; native runtime passes.
+- [ ] **T47b — sibling loader publication waits.** Audit native property application, stale-result retirement and routing under project ownership; repair reproduced control stalls without letting obsolete results overwrite current intent.
+- [ ] **T48 — loader progress, cancellation and lifetime.** Reproduce blocked queued/bulk load and reset/replacement/shutdown waits. Keep completed healthy files usable and prevent obsolete loads from publishing. Native tasks must own their data before a coordinator can stop waiting; a timeout does not cancel a decoder/TagLib call. Reuse existing cues, generations and pending-readiness semantics.
+- [ ] **T49 — driver calls and transport ownership.** Gate device start/stop/uninit/enumeration at the native boundary. Keep engine/project control ownership out of those waits, retain device/callback/ring lifetimes and make Stop All/healthy output independent. Preserve device sharing, exact selection, routing and limiter state.
+- [ ] **T50 — recovery, stop and driver lifetime.** Keep a hung driver operation from disabling independent status/control or engine stop. No callbacks may retain a dangling engine pointer, no resources may be freed under a native call, and late recovery must honor Close/Stop. Reuse the existing managed-process recovery boundary where possible; do not force-cancel native threads.
+- [ ] Final complete software gates, current workplan/evidence/developer docs and rendered manual, with clean local commits. T24 physical acceptance remains deferred.
+
+Primary driver reference: [miniaudio's low-level documentation](https://miniaud.io/docs/manual/) explicitly excludes device init/start/stop/uninit from callbacks because they can deadlock. That establishes an off-callback requirement; it does not guarantee cancellation or bounded OS-driver execution. Local lock/lifetime tests must establish this application's containment.

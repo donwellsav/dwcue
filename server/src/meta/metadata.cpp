@@ -13,6 +13,11 @@
 #include <taglib/fileref.h>
 #include <taglib/tag.h>
 #include <taglib/tstring.h>
+#ifdef LIVEPLAY_TEST_HOOKS
+#include <cstdlib>
+#include <fstream>
+#include <thread>
+#endif
 
 namespace liveplay::meta {
 
@@ -40,6 +45,19 @@ std::chrono::milliseconds duration_via_miniaudio(const std::filesystem::path& pa
 } // namespace
 
 AudioFileMetadata read_metadata(const std::filesystem::path& path) noexcept {
+#ifdef LIVEPLAY_TEST_HOOKS
+    if (const char* value = std::getenv("DWCUE_TEST_METADATA_GATE"); value && *value) {
+        const std::filesystem::path gate{value};
+        std::filesystem::path target;
+        std::ifstream{gate} >> target;
+        if (target == path) {
+            std::ofstream{gate.string() + ".entered"} << path;
+            std::error_code error;
+            while (std::filesystem::exists(gate, error) && !error)
+                std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        }
+    }
+#endif
     AudioFileMetadata out;
     const std::string utf8 = util::path_to_utf8(path);
     // Probed once up front so every TagLib/miniaudio fallback path below

@@ -1206,7 +1206,8 @@ void test_prepared_follow_runtime(const std::filesystem::path& wav) {
           target->stats().playhead_frame == 240,
           "prepared follow: target begins at source frame 528 inside render block");
     const auto deadline = std::chrono::steady_clock::now() + 2s;
-    while (!state.item_trigger_seq("prepared-b") && std::chrono::steady_clock::now() < deadline)
+    while ((!state.item_trigger_seq("prepared-b") || !on_air(state, engine, "prepared-c")) &&
+           std::chrono::steady_clock::now() < deadline)
         std::this_thread::sleep_for(5ms);
     check(state.item_trigger_seq("prepared-b").has_value() &&
           target->stats().playhead_frame == 240 && on_air(state, engine, "prepared-c"),
@@ -1850,6 +1851,39 @@ void test_starvation_holds_show(const std::filesystem::path& wav) {
     state.set_ui_state_broadcaster({});
 }
 
+void test_loading_metadata_preserves_controls(const std::filesystem::path& wav) {
+    const auto pending_wav = make_wav(8'199);
+    liveplay::audio::AudioEngine engine;
+    liveplay::core::ProjectState state(engine);
+    auto doc = document(json::array({audio("metadata-bed", wav)}));
+    state.replace_full_document(doc);
+    check(wait_ready(state), "metadata wait: existing show ready"); close_devices(engine);
+    check(state.trigger_item("metadata-bed"), "metadata wait: existing cue starts");
+    const auto bed = engine.find_cue(*state.item_to_cue_id("metadata-bed"));
+    const auto gate = pending_wav.string() + ".metadata-gate";
+    std::ofstream{gate} << pending_wav;
+    set_loader_gate(gate, "DWCUE_TEST_METADATA_GATE");
+    doc["items"].push_back(audio("metadata-new", pending_wav));
+    state.replace_full_document(doc);
+    check(wait_gate_entered(gate), "metadata wait: actual whole-project metadata extraction is held");
+    auto snapshot = std::async(std::launch::async, [&] { return state.full_document(); });
+    check(snapshot.wait_for(250ms) == std::future_status::ready,
+          "metadata wait: document access completes before metadata I/O returns");
+    auto stop = std::async(std::launch::async, [&] { state.stop_all_cues(0); });
+    check(stop.wait_for(250ms) == std::future_status::ready &&
+              bed->stats().transport == liveplay::audio::TransportState::Stopped,
+          "metadata wait: Stop All completes before metadata I/O returns");
+    std::filesystem::remove(gate); snapshot.get(); stop.get();
+    clear_loader_gate("DWCUE_TEST_METADATA_GATE");
+    check(wait_ready(state), "metadata wait: current media publishes after the read returns");
+    const auto cue = engine.find_cue(*state.item_to_cue_id("metadata-new"));
+    check(cue && cue->duration_frames() == 48'000 &&
+              cue->stats().transport == liveplay::audio::TransportState::Stopped,
+          "metadata wait: loaded PCM duration is retained without a late start");
+    std::filesystem::remove(gate + ".entered");
+    std::filesystem::remove(pending_wav);
+}
+
 void test_backup_retention() {
     namespace fs = std::filesystem;
     const auto root = fs::temp_directory_path() /
@@ -2015,6 +2049,7 @@ int main() {
     test_stop_all_during_project_boundaries(wav);
     test_stop_all_during_decoder_read(wav);
     test_starvation_holds_show(wav);
+    test_loading_metadata_preserves_controls(wav);
     test_stop_all_during_cue_retirement(wav);
     test_stop_all_during_preview_retirement();
     test_cancelled_preview_preparation();

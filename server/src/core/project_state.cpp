@@ -860,6 +860,7 @@ void ProjectState::start_async_mirror() {
                 std::string uuid;
                 std::filesystem::path path;
                 audio::CueId cue_id;
+                meta::AudioFileMetadata metadata;
             };
             std::vector<std::future<Loaded>> in_flight;
             std::vector<Loaded> done;
@@ -886,7 +887,8 @@ void ProjectState::start_async_mirror() {
                                 std::this_thread::yield();
                         }
 #endif
-                        return { u, p, engine_.load_cue_no_route(p) };
+                        const auto cue = engine_.load_cue_no_route(p);
+                        return {u, p, cue, cue.empty() ? meta::AudioFileMetadata{} : meta::read_metadata(p)};
                     }));
             }
             while (!in_flight.empty()) drain_one();
@@ -950,7 +952,7 @@ void ProjectState::start_async_mirror() {
                     CueMeta meta;
                     meta.id           = loaded.cue_id;
                     meta.file_path    = loaded.path;
-                    const auto md     = meta::read_metadata(loaded.path);
+                    const auto& md    = loaded.metadata;
                     meta.display_name = md.title.empty()
                                           ? util::path_to_utf8(loaded.path.filename())
                                           : md.title;
