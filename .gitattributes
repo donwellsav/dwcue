@@ -1,1 +1,2 @@
 *.pdf binary
+server/patches/crow-async-http.patch text eol=lf

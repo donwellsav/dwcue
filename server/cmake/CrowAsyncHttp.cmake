@@ -32,7 +32,8 @@ endforeach()
 set(_crow_patch "${CMAKE_CURRENT_SOURCE_DIR}/patches/crow-async-http.patch")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_crow_patch}")
 file(RELATIVE_PATH _crow_generated_relative "${CMAKE_CURRENT_SOURCE_DIR}/.." "${DWCUE_CROW_ASYNC_INCLUDE_DIR}")
-execute_process(COMMAND "${GIT_EXECUTABLE}" apply --unsafe-paths
+# Keep generated header bytes independent of the host Git line-ending settings.
+execute_process(COMMAND "${GIT_EXECUTABLE}" -c core.autocrlf=false apply --unsafe-paths
     --directory "${_crow_generated_relative}" "${_crow_patch}"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.."
     RESULT_VARIABLE _crow_patch_result ERROR_VARIABLE _crow_patch_error)
