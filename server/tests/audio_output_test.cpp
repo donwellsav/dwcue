@@ -213,6 +213,74 @@ void test_held_device_recovery_lifetime() {
   }
 }
 
+void test_device_catalog_survives_native_stall() {
+  for (const bool cold : {false, true}) {
+    NativeDeviceGate gate;
+    auto engine = std::make_unique<AudioEngine>();
+    engine->device_test_context_ = &gate.context;
+    const auto id = engine->open_default_device();
+    auto device = engine->devices_.front();
+    const auto catalog = engine->device_catalog_;
+    if (!cold) (void)engine->enumerate_devices();
+    const auto wait_catalog = [&] {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+        for (;;) {
+            { std::lock_guard lock{catalog->mutex}; if (!catalog->refreshing) return true; }
+            if (std::chrono::steady_clock::now() >= deadline) return false;
+            std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        }
+    };
+    check(wait_catalog(), "device catalog: initial native enumeration settles");
+    gate.entered.store(false); gate.hold_uninit.store(true);
+    engine->close_device(id);
+    check(gate.wait_entered(), "device catalog: actual native uninit holds backend serialization");
+    auto status = std::async(std::launch::async, [&] { return engine->enumerate_devices(); });
+    const bool responsive = status.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready;
+    check(responsive, "device catalog: enumeration/status never waits behind a hung native operation");
+    std::vector<DeviceInfo> devices;
+    if (responsive) { devices = status.get(); engine.reset(); }
+    gate.hold_uninit.store(false);
+    if (!responsive) { devices = status.get(); engine.reset(); }
+    check(std::none_of(devices.begin(), devices.end(), [](const auto& info) { return info.is_open; }),
+          "device catalog: current withdrawal overrides cached native availability");
+    check(wait_catalog(), "device catalog: owned refresh returns safely after engine destruction");
+    while (!device->cleanup_done.load(std::memory_order_acquire)) std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    device.reset();
+  }
+}
+
+void test_catalog_follows_native_reroute() {
+    NativeDeviceGate gate;
+    AudioEngine engine;
+    engine.device_test_context_ = &gate.context;
+    const auto id = engine.open_default_device();
+    auto device = engine.devices_.front();
+    (void)engine.enumerate_devices();
+    AudioEngine::NativeDeviceInfo original, rerouted;
+    original.native_id = device->ma_dev->playback.id;
+    original.info.id = DeviceId{"Original"}; original.info.display_name = "Original";
+    rerouted = original;
+    reinterpret_cast<unsigned char*>(&rerouted.native_id)[0] ^= 1;
+    rerouted.info.id = DeviceId{"Rerouted"}; rerouted.info.display_name = "Rerouted";
+    {
+        std::unique_lock lock{engine.device_catalog_->mutex};
+        engine.device_catalog_->ready.wait_for(lock, std::chrono::seconds{2}, [&] { return !engine.device_catalog_->refreshing; });
+        engine.device_catalog_->devices = {original, rerouted};
+        engine.device_catalog_->has_snapshot = true;
+        engine.device_catalog_->next_refresh = std::chrono::steady_clock::now() + std::chrono::hours{1};
+    }
+    { std::lock_guard native_lock{device->native_mutex}; device->ma_dev->playback.id = rerouted.native_id; }
+    ma_device_notification moved{};
+    moved.pDevice = device->ma_dev.get(); moved.type = ma_device_notification_type_rerouted;
+    AudioEngine::ma_notification_callback(&moved);
+    const auto devices = engine.enumerate_devices();
+    check(std::any_of(devices.begin(), devices.end(), [&](const auto& info) {
+        return info.id == id && info.display_name == "Rerouted" && info.is_open;
+    }), "device catalog: opened runtime identity follows the current native reroute target");
+    engine.close_device(id);
+    while (!device->cleanup_done.load(std::memory_order_acquire)) std::this_thread::sleep_for(std::chrono::milliseconds{1});
+}
+
 struct Fixture {
     AudioEngine engine{EngineConfig{48'000, block, 32, -1.0f}};
     std::shared_ptr<AudioEngine::Device> device =
@@ -1078,6 +1146,8 @@ int main() {
     const auto ramp = wav(dir, "ramp.wav", 0.125f, true, 1.0f / 131'072.0f);
     test_initial_device_start_keeps_controls();
     test_held_device_recovery_lifetime();
+    test_device_catalog_survives_native_stall();
+    test_catalog_follows_native_reroute();
     test_blocked_decoder_reads(quiet);
     test_source_starvation(quiet, silence);
     test_channel_map_reload(quiet, left);

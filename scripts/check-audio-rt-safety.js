@@ -81,9 +81,11 @@ assert.match(engine, /notificationCallback\s*=\s*&AudioEngine::ma_notification_c
   'device loss/reroute/interruption notifications must be wired');
 assert.match(
   enumerateDevices,
-  /ma_device_id_equal\([\s\S]*playback_infos\[i\]\.id/,
+  /ma_device_id_equal\(&dev->ma_dev->playback\.id, &entry\.native_id\)/,
   'enumeration must follow the native output ID across default-device reroutes',
 );
+assert.doesNotMatch(enumerateDevices, /ma_context_(?:init|get_devices|get_device_info|uninit)\(/,
+  'device status must not execute native discovery on a control or broadcast worker');
 assert.ok(
   openDevice.indexOf('ma_device_init') <
     openDevice.indexOf('ma_device_id_equal'),

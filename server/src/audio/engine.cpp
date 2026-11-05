@@ -335,8 +335,80 @@ void AudioEngine::rebuild_topology_locked() {
 // ---------------------------------------------------------------------------
 // Devices
 // ---------------------------------------------------------------------------
+void AudioEngine::refresh_device_catalog(const std::shared_ptr<DeviceCatalog>& catalog,
+    const std::shared_ptr<std::mutex>& lifecycle, ma_context* test_context) {
+    std::vector<NativeDeviceInfo> devices;
+    bool complete = false;
+    try {
+        std::lock_guard lifecycle_lock{*lifecycle};
+        ma_context local{};
+        ma_context* context = test_context;
+        std::unique_ptr<ma_context, decltype(&ma_context_uninit)> cleanup{nullptr, &ma_context_uninit};
+        if (!context && ma_context_init(nullptr, 0, nullptr, &local) == MA_SUCCESS) {
+            context = &local; cleanup.reset(context);
+        }
+        ma_device_info* playback = nullptr;
+        ma_uint32 count = 0;
+        if (context && ma_context_get_devices(context, &playback, &count, nullptr, nullptr) == MA_SUCCESS) {
+            for (ma_uint32 i = 0; i < count; ++i) {
+                NativeDeviceInfo entry;
+                entry.native_id = playback[i].id;
+                auto& info = entry.info;
+                info.id = DeviceId{playback[i].name};
+                info.display_name = playback[i].name;
+                info.is_default = playback[i].isDefault != 0;
+                ma_device_info full{};
+                if (ma_context_get_device_info(context, ma_device_type_playback, &playback[i].id, &full) == MA_SUCCESS) {
+                    info.channel_count = full.nativeDataFormatCount > 0 ? full.nativeDataFormats[0].channels : 2;
+                    info.sample_rate = full.nativeDataFormatCount > 0 ? full.nativeDataFormats[0].sampleRate : 48'000;
+                }
+                devices.push_back(std::move(entry));
+            }
+            complete = true;
+        }
+    } catch (const std::exception& error) { Logger::warn("Device catalog refresh failed: {}", error.what()); }
+    std::lock_guard lock{catalog->mutex};
+    if (complete) { catalog->devices = std::move(devices); catalog->has_snapshot = true; }
+    catalog->next_refresh = std::chrono::steady_clock::now() + std::chrono::seconds{1};
+    catalog->refreshing = false;
+    catalog->ready.notify_all();
+}
+
 std::vector<DeviceInfo> AudioEngine::enumerate_devices() const {
-    std::lock_guard lifecycle_lock{*device_lifecycle_mutex_};
+    std::vector<NativeDeviceInfo> hardware;
+    bool refresh = false;
+    bool has_snapshot;
+    {
+        std::lock_guard lock{device_catalog_->mutex};
+        hardware = device_catalog_->devices;
+        has_snapshot = device_catalog_->has_snapshot;
+        if (!device_catalog_->refreshing && std::chrono::steady_clock::now() >= device_catalog_->next_refresh) {
+            device_catalog_->refreshing = refresh = true;
+            device_catalog_->next_refresh = std::chrono::steady_clock::now() + std::chrono::seconds{1};
+        }
+    }
+    if (refresh) {
+        ma_context* test_context = nullptr;
+#ifdef LIVEPLAY_TEST_HOOKS
+        test_context = device_test_context_;
+#endif
+        try {
+            std::thread([catalog = device_catalog_, lifecycle = device_lifecycle_mutex_, test_context] {
+                refresh_device_catalog(catalog, lifecycle, test_context);
+            }).detach();
+        } catch (const std::system_error& error) {
+            std::lock_guard lock{device_catalog_->mutex};
+            device_catalog_->refreshing = false;
+            Logger::warn("Device catalog worker failed: {}", error.what());
+        }
+    }
+    if (!has_snapshot) {
+        // Preserve ordinary cold selections without inheriting an unbounded OS wait.
+        std::unique_lock lock{device_catalog_->mutex};
+        device_catalog_->ready.wait_for(lock, std::chrono::milliseconds{50}, [&] { return !device_catalog_->refreshing; });
+        hardware = device_catalog_->devices;
+        has_snapshot = device_catalog_->has_snapshot;
+    }
     std::vector<DeviceInfo> out;
     const auto opened = snapshot_devices();
     std::vector<bool> opened_matched(opened ? opened->size() : 0, false);
@@ -356,6 +428,8 @@ std::vector<DeviceInfo> AudioEngine::enumerate_devices() const {
             runtime_state == DeviceRuntimeState::Running &&
             dev.clock_master.load(std::memory_order_acquire);
         info.runtime_state = device_runtime_state_name(runtime_state);
+        if (runtime_state == DeviceRuntimeState::Disconnected || runtime_state == DeviceRuntimeState::Closing ||
+            runtime_state == DeviceRuntimeState::Interrupted) info.is_available = false;
         info.underrun_count +=
             dev.underrun_count.load(std::memory_order_acquire);
         info.underrun_frames +=
@@ -383,64 +457,29 @@ std::vector<DeviceInfo> AudioEngine::enumerate_devices() const {
             dev.clock_correction_ppm.load(std::memory_order_acquire);
     };
 
-    ma_context ctx;
-    if (ma_context_init(nullptr, 0, nullptr, &ctx) != MA_SUCCESS) return out;
-
-    ma_device_info* playback_infos = nullptr;
-    ma_uint32       playback_count = 0;
-    if (ma_context_get_devices(&ctx, &playback_infos, &playback_count, nullptr, nullptr) == MA_SUCCESS) {
-        for (ma_uint32 i = 0; i < playback_count; ++i) {
-            DeviceInfo info;
-            info.id            = DeviceId{playback_infos[i].name};   // by-name id is portable
-            info.display_name  = playback_infos[i].name;
-            info.channel_count = 0;
-            info.sample_rate   = 0;
-            info.is_default    = (playback_infos[i].isDefault != 0);
-
-            // Pull fuller info for the channel / rate fields.
-            ma_device_info full;
-            if (ma_context_get_device_info(&ctx, ma_device_type_playback,
-                                           &playback_infos[i].id, &full) == MA_SUCCESS) {
-                info.channel_count = full.nativeDataFormatCount > 0
-                                         ? full.nativeDataFormats[0].channels : 2;
-                info.sample_rate   = full.nativeDataFormatCount > 0
-                                         ? full.nativeDataFormats[0].sampleRate : 48000;
-            }
-            if (opened) {
-                for (std::size_t opened_index = 0;
-                     opened_index < opened->size(); ++opened_index) {
-                    const auto& dev = (*opened)[opened_index];
-                    if (dev->closing.load(std::memory_order_acquire) ||
-                        !dev->native_id_valid ||
-                        !ma_device_id_equal(
-                            &dev->native_id,
-                            &playback_infos[i].id)) {
-                        continue;
-                    }
-                    opened_matched[opened_index] = true;
-                    overlay_runtime(info, *dev);
-                }
-            }
-            out.emplace_back(std::move(info));
-        }
-    }
-    ma_context_uninit(&ctx);
-
-    // A removed named device no longer appears in the hardware enumeration,
-    // but its logical output and loss counters must remain visible.
-    if (opened) {
-        for (std::size_t i = 0; i < opened->size(); ++i) {
-            if (opened_matched[i]) continue;
+    for (const auto& entry : hardware) {
+        auto info = entry.info;
+        if (opened) for (std::size_t i = 0; i < opened->size(); ++i) {
             const auto& dev = (*opened)[i];
-            DeviceInfo info;
-            info.id = dev->id;
-            info.display_name = dev->display_name;
-            info.channel_count = dev->channels;
-            info.sample_rate = dev->sample_rate;
-            info.is_available = false;
+            if (dev->closing.load(std::memory_order_acquire) || !dev->ma_dev) continue;
+            std::unique_lock native_lock{dev->native_mutex, std::try_to_lock};
+            if (!native_lock.owns_lock() ||
+                !ma_device_id_equal(&dev->ma_dev->playback.id, &entry.native_id)) continue;
+            opened_matched[i] = true;
             overlay_runtime(info, *dev);
-            out.emplace_back(std::move(info));
         }
+        out.emplace_back(std::move(info));
+    }
+    if (opened) for (std::size_t i = 0; i < opened->size(); ++i) {
+        if (opened_matched[i]) continue;
+        const auto& dev = (*opened)[i];
+        DeviceInfo info;
+        info.display_name = dev->display_name;
+        info.channel_count = dev->channels;
+        info.sample_rate = dev->sample_rate;
+        info.is_available = !has_snapshot;
+        overlay_runtime(info, *dev);
+        out.emplace_back(std::move(info));
     }
     return out;
 }
@@ -812,8 +851,6 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
         ma_pcm_rb_uninit(dev->ring.get());
         return {};
     }
-    dev->native_id = dev->ma_dev->playback.id;
-    dev->native_id_valid = true;
     if (dev->ma_dev->playback.name[0] != '\0') {
         dev->display_name = dev->ma_dev->playback.name;
     }
@@ -822,21 +859,23 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
     // can address the same hardware, which a request-string comparison misses.
     // Opening it twice produces doubled/echoing audio.
     DeviceId duplicate;
+    bool identity_pending = false;
     {
         std::lock_guard lock{mutex_};
         const auto existing = std::find_if(
             devices_.begin(), devices_.end(),
             [&](const std::shared_ptr<Device>& candidate) {
-                return !candidate->closing.load(std::memory_order_acquire) &&
-                       candidate->native_id_valid &&
-                       ma_device_id_equal(&candidate->native_id, &dev->native_id);
+                if (candidate->closing.load(std::memory_order_acquire) || !candidate->ma_dev) return false;
+                std::unique_lock native_lock{candidate->native_mutex, std::try_to_lock};
+                if (!native_lock.owns_lock()) { identity_pending = true; return false; }
+                return ma_device_id_equal(&candidate->ma_dev->playback.id, &dev->ma_dev->playback.id) != MA_FALSE;
             });
         if (existing != devices_.end()) {
             (*existing)->open_references.acquire();
             duplicate = (*existing)->id;
         }
     }
-    if (!duplicate.empty()) {
+    if (!duplicate.empty() || identity_pending) {
         ma_device_uninit(dev->ma_dev.get());
         ma_pcm_rb_uninit(dev->ring.get());
         return duplicate;

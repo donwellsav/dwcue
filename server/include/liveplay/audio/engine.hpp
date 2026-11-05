@@ -252,6 +252,7 @@ public:
     }
 
     // ---- Device management ----------------------------------------------
+    // Cached hardware plus current runtime; only the first catalog has a bounded 50 ms grace.
     std::vector<DeviceInfo> enumerate_devices() const;
 
     // Open the platform's default playback device with `output_channels`
@@ -424,6 +425,17 @@ private:
         std::unique_ptr<Meter>   meter;
     };
 
+    struct NativeDeviceInfo { DeviceInfo info; ma_device_id native_id; };
+    struct DeviceCatalog {
+        std::mutex mutex;
+        std::condition_variable ready;
+        std::vector<NativeDeviceInfo> devices;
+        bool refreshing = false;
+        bool has_snapshot = false;
+        std::chrono::steady_clock::time_point next_refresh{};
+    };
+    std::shared_ptr<DeviceCatalog> device_catalog_ = std::make_shared<DeviceCatalog>();
+
     // Callbacks and native jobs retain only these signals, never the engine.
     struct DeviceCallbackState {
         std::atomic<std::uint32_t> consumption_counter{0};
@@ -441,8 +453,6 @@ private:
         ChannelCount                channels = 2;
         SampleRate                  sample_rate = kDefaultMixSampleRate;
         std::unique_ptr<ma_device>  ma_dev;
-        ma_device_id                native_id{}; // Immutable after init; uninit may clear ma_dev.
-        bool                        native_id_valid = false;
         std::mutex                  native_mutex; // One stop/start/uninit per device.
         mutable std::mutex          state_mutex;  // Short recovery/watchdog publication only.
         std::atomic<bool>           cleanup_done{false};
@@ -605,6 +615,8 @@ private:
     void render_loop();
     void render_one_block(const Topology& topo);
     static void decode_loop(const std::shared_ptr<DecodeState>& state);
+    static void refresh_device_catalog(const std::shared_ptr<DeviceCatalog>& catalog,
+        const std::shared_ptr<std::mutex>& lifecycle, ma_context* test_context);
     void device_watchdog_loop();
     static void recover_device(const std::shared_ptr<Device>& device, std::uint64_t generation) noexcept;
     bool reset_device_if_requested(Device& device) noexcept;
