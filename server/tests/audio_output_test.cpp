@@ -29,10 +29,8 @@
 #include <vector>
 
 // Expose only playback/engine state for deterministic headless render gates.
-#define private public
 #include "liveplay/audio/playback_item.hpp"
 #include "liveplay/audio/engine.hpp"
-#undef private
 
 namespace {
 using namespace liveplay::audio;

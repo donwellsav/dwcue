@@ -411,6 +411,7 @@ if(LIVEPLAY_BUILD_TESTS)
         ${VGMSTREAM_LIBRARY}
     )
     target_compile_definitions(liveplay-audio-rt-tests PRIVATE
+        LIVEPLAY_TEST_ACCESS=1
         LIVEPLAY_DEFAULT_SOUNDFONT="${CMAKE_CURRENT_SOURCE_DIR}/assets/TimGM6mb.sf2")
     add_test(NAME audio-rt COMMAND liveplay-audio-rt-tests)
     add_executable(liveplay-audio-output-tests
@@ -436,6 +437,7 @@ if(LIVEPLAY_BUILD_TESTS)
         FluidSynth::libfluidsynth ${GME_LIBRARY} ${VGMSTREAM_LIBRARY}
     )
     target_compile_definitions(liveplay-audio-output-tests PRIVATE
+        LIVEPLAY_TEST_ACCESS=1
         LIVEPLAY_TEST_HOOKS=1
         LIVEPLAY_DEFAULT_SOUNDFONT="${CMAKE_CURRENT_SOURCE_DIR}/assets/TimGM6mb.sf2")
     add_test(NAME audio-output COMMAND liveplay-audio-output-tests)
@@ -483,6 +485,7 @@ if(LIVEPLAY_BUILD_TESTS)
         target_link_libraries(liveplay-project-state-runtime-tests PRIVATE unofficial::taglib::tag)
     endif()
     target_compile_definitions(liveplay-project-state-runtime-tests PRIVATE
+        LIVEPLAY_TEST_ACCESS=1
         LIVEPLAY_TEST_NO_DEVICE_ROUTING=1
         LIVEPLAY_TEST_HOOKS=1
         LIVEPLAY_DEFAULT_SOUNDFONT="${CMAKE_CURRENT_SOURCE_DIR}/assets/TimGM6mb.sf2")

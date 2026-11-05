@@ -266,7 +266,9 @@ public:
                              ChannelCount   out_channel_count,
                              std::size_t    frame_count) noexcept;
 
+#ifndef LIVEPLAY_TEST_ACCESS
 private:
+#endif
     PlaybackItemDesc desc_;
     std::mutex preparation_mutex_;
 

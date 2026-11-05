@@ -419,7 +419,9 @@ public:
     // ---- Introspection ---------------------------------------------------
     const EngineConfig& config() const noexcept { return cfg_; }
 
+#ifndef LIVEPLAY_TEST_ACCESS
 private:
+#endif
     struct OutputChannelState {
         std::unique_ptr<Limiter> limiter;
         std::unique_ptr<Meter>   meter;

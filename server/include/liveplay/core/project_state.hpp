@@ -527,7 +527,9 @@ public:
     // current mirror finishes with no such entries.
     json audio_readiness() const;
 
+#ifndef LIVEPLAY_TEST_ACCESS
 private:
+#endif
     audio::AudioEngine&        engine_;
     mutable std::mutex         mutex_;
     std::mutex                 mirror_mutex_;

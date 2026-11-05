@@ -25,9 +25,7 @@
 #include <new>
 
 // Coordinate the real control/render gates without a production test hook.
-#define private public
 #include "liveplay/audio/playback_item.hpp"
-#undef private
 #include "liveplay/audio/engine.hpp"
 #include "liveplay/core/project_state.hpp"
 

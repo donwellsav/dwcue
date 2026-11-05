@@ -6,9 +6,7 @@
 #include <nlohmann/json.hpp>
 #include <unordered_set>
 // Exercise the same lifecycle fence used by reset, without production hooks.
-#define private public
 #include "liveplay/core/project_state.hpp"
-#undef private
 
 int test_crash_resume_lifecycle() {
     int failures = 0;

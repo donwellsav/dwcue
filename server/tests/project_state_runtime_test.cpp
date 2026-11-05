@@ -14,15 +14,11 @@
 #include <unordered_map>
 #include <vector>
 // Headless engine setup and deterministic render-side decoder-failure publication.
-#define private public
 #include "liveplay/audio/playback_item.hpp"
 #include "liveplay/audio/engine.hpp"
-#undef private
 #include "liveplay/core/project_state.hpp"
 #include "liveplay/util/atomic_file.hpp"
-#define private public
 #include "liveplay/core/backup_manager.hpp"
-#undef private
 
 #include <array>
 #include <chrono>
