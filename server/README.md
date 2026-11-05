@@ -1,10 +1,10 @@
 # DonWells Cue Server — developer guide
 
-**Source status — 4 November 2026:** application behavior is checkpointed through `2f372c2` (owned loader/native cleanup, independent device status/recovery and ordered managed-engine operations), retaining per-cue decoder isolation, starvation hold and earlier playback safeguards. Package metadata remains **2.6.17**. These are local commits, not a packaged, installed or published release. Software verification and remaining acceptance are tracked in [the current workplan](../docs/superpowers/plans/2026-11-03-live-show-reliability.md). Physical line-level audio and 1080p HDMI/adapter acceptance remain deferred.
+DonWells Cue **2.6.18** includes the playback reliability changes through `2f372c2`. The [workplan](../docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification, remaining engineering work and the deferred line-level audio and 1080p HDMI acceptance checks.
 
 `dwcue-server` is the headless C++20 audio engine and control surface that backs the DonWells Cue client. It owns the audio graph, the routing matrix, the loaded project file, and exposes a REST + WebSocket API. It runs as either a child process spawned by the desktop client (single-machine installs) or as a standalone daemon on a stage-side machine that the client connects to over the LAN.
 
-This document tracks the v2.6.17 application source checkpoint `2f372c2`, including the reliability audit in `2ea5984` and is the developer's guide to the server; this is not a published-installer claim, so use the release page and installed About version to determine available behaviour. For show preparation and operation, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For client internals, see [`client/README.md`](../client/README.md); for overall project and release context, see the [root README](../README.md).
+This document tracks the v2.6.18 release and its playback checkpoint `2f372c2`, including the reliability audit in `2ea5984` and is the developer's guide to the server; use the release page and installed About version to identify a particular build. For show preparation and operation, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For client internals, see [`client/README.md`](../client/README.md); for overall project and release context, see the [root README](../README.md).
 
 ---
 

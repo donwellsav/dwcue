@@ -1,6 +1,6 @@
 # DonWells Cue
 
-**Source status — 4 November 2026:** application behavior is checkpointed through `2f372c2` (owned loader/native cleanup, independent device status/recovery and ordered managed-engine operations), retaining per-cue decoder isolation, starvation hold and earlier playback safeguards. Package metadata remains **2.6.17**. These are local commits, not a packaged, installed or published release. Software verification and remaining acceptance are tracked in [the current workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md). Physical line-level audio and 1080p HDMI/adapter acceptance remain deferred.
+DonWells Cue **2.6.18** includes the playback reliability changes through `2f372c2`. The [workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification, remaining engineering work and the deferred line-level audio and 1080p HDMI acceptance checks.
 
 **DonWells Cue is a free, open-source app for playing back audio and video in live shows.** If you run sound for theatre, conferences, houses of worship, AV installs, or any live event, DonWells Cue lets you line up your music, sound effects and stings ahead of time and fire them off reliably on the night — from a laptop, a touchscreen, or even a separate stage-side machine you control over the network.
 
@@ -8,7 +8,7 @@ You build a **show** as a list of cues plus a grid of one-touch buttons, then tr
 
 This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. Published macOS packages are Developer ID signed, notarized, and package-validated.
 
-> **Current source:** package metadata is **v2.6.17** and this guide describes source commit **2f372c2**. This is source provenance, not a published-installer claim: the release page is authoritative for release assets, and you must verify the installed About version before relying on a behaviour.
+> **Current source:** package metadata is **v2.6.18**. Playback behavior is documented at checkpoint **2f372c2**. This is source provenance, not a published-installer claim: the release page is authoritative for release assets, and you must verify the installed About version before relying on a behaviour.
 
 > **Operating a show?** Use the [operator manual (PDF)](docs/operators-manual.pdf) or its [Markdown source](docs/operators-manual.md). Those instructions track the current source. The client and server READMEs linked later are developer references, not show-day instructions.
 
