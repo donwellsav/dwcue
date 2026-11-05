@@ -4,7 +4,7 @@ DonWells Cue **2.6.18** includes the playback reliability changes through `2f372
 
 The DonWells Cue client is a Vue 3 + Nuxt 4 application wrapped in Electron. It is a **remote control** for the DonWells Cue audio server: it owns no audio decoding, no playback, no Web Audio nodes. Every user action turns into a REST call or WebSocket frame sent to `dwcue-server`, and every meter / waveform / state update comes back the same way.
 
-This document tracks the v2.6.18 release and its playback checkpoint `2f372c2` and is the developer's guide to the client; this is not a claim about a published installer, so use the release page and installed About version to determine available behaviour. For show-day use, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For the audio engine, see [`server/README.md`](../server/README.md); for overall project and release context, see the [root README](../README.md).
+This developer guide tracks the v2.6.18 client. Match the installed About version to the release notes. For show-day use, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). See the [server guide](../server/README.md) for engine internals and the [root README](../README.md) for release details.
 
 ---
 

@@ -1,8 +1,8 @@
 # Audio import and live playback reliability
 
-**4 November software audit:** current source `2f372c2` adds owned file preparation/cleanup, cancellable publication, nonblocking native-device status, device-owned recovery and ordered managed-engine lifecycle operations. Per-cue starvation hold, level/timing and existing show controls remain. Current software results and the remaining first-open routing, filesystem and sequential-publication limits are in the [workplan](superpowers/plans/2026-11-03-live-show-reliability.md). These are local commits; package metadata remains 2.6.17.
+**5 November release check:** v2.6.18 rechecks engine state after the renderer captures the device wake counter. A regression holds the renderer at a full software output ring and sends the shutdown wake before letting it continue. The [workplan](superpowers/plans/2026-11-03-live-show-reliability.md) tracks the remaining first-open routing, filesystem and sequential-publication limits.
 
-Research and implementation began 2026-11-03 at `8250558`. The initial repairs were committed locally as `2ea5984` and `a9a86a3`; package metadata is 2.6.17. No new installer, installation or publication was performed. The current workplan distinguishes software verification from deferred physical acceptance.
+The 4 November software checkpoint `2f372c2` added owned file preparation and cleanup, cancellable publication, independent device status and recovery, and ordered managed-engine operations. The initial 3 November repairs are recorded in `2ea5984` and `a9a86a3`.
 
 ## Level and timing contract
 

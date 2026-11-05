@@ -425,10 +425,10 @@
     "gainStages": "Schematic: final physical sum and secondary-clock adaptation precede the attenuation-only limiter and device output."
   },
   "uiBuildRevision": "4105c02dee64e7abe466fff4a0046a9c34cbf774",
-  "manualSourceRevision": "1e96370f6a6ab4ee9d49b6ff857a5a6518a23f54",
+  "manualSourceRevision": "4e5855ada5d9363b31e7d3863b6b9c96a92ebec6",
   "visualCompatibility": {
     "checkedOn": "2026-11-05",
-    "revision": "1e96370f6a6ab4ee9d49b6ff857a5a6518a23f54",
+    "revision": "4e5855ada5d9363b31e7d3863b6b9c96a92ebec6",
     "basis": "The 2.6.18 release metadata changes the version displayed by Welcome and About. The other control templates, styles and assets match the verified 2f372c2 checkpoint. Original capture revisions, versions, dates, dimensions and hashes are retained."
   }
 }

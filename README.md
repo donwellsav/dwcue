@@ -8,7 +8,7 @@ You build a **show** as a list of cues plus a grid of one-touch buttons, then tr
 
 This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. Published macOS packages are Developer ID signed, notarized, and package-validated.
 
-> **Current source:** package metadata is **v2.6.18**. Playback behavior is documented at checkpoint **2f372c2**. This is source provenance, not a published-installer claim: the release page is authoritative for release assets, and you must verify the installed About version before relying on a behaviour.
+> **Current source:** package metadata is **v2.6.18**. The [playback workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md) tracks the audit checkpoint and the renderer shutdown fix. Match the installed About version to the release notes before rehearsal.
 
 > **Operating a show?** Use the [operator manual (PDF)](docs/operators-manual.pdf) or its [Markdown source](docs/operators-manual.md). Those instructions track the current source. The client and server READMEs linked later are developer references, not show-day instructions.
 
@@ -117,7 +117,7 @@ If your browser blocked the download instead, choose **Keep** to save the instal
 
 ## Getting started
 
-These steps describe the current v2.6.17 source checkpoint (`2f372c2`). It writes native show documents as `.dwcue` files and portable exports as `.dwcuepack` archives.
+DonWells Cue v2.6.18 writes native show documents as `.dwcue` files and portable exports as `.dwcuepack` archives.
 
 1. Install the [latest release](https://github.com/donwellsav/dwcue/releases/latest), or build DonWells Cue from source, and launch it.
 2. Choose **New Show**, enter its name, use **Choose…** to select the read-only Location, and create it — DonWells Cue writes `<show name>.dwcue` and a `media/` sub-folder there.
@@ -351,7 +351,7 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.17**; the release page remains the source of truth for published artefacts and their checksums.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.18**. Find published artefacts and checksums on the release page.
 
 ### Triggering a release
 
@@ -365,9 +365,9 @@ A release pipeline is configured in [`.github/workflows/build-release.yml`](.git
 4. Each job builds the C++ server through CMake/vcpkg, then runs the client `electron-builder` step with `extraResources` picking up the freshly compiled server binary.
 5. All artefacts are uploaded, then a final `release` job downloads them, auto-generates a changelog from git commits since the last tag, and creates a GitHub Release tagged `v<version>` with every installer attached.
 
-The vcpkg binary cache (`x-gha,readwrite` backend) is reused across runs so compiled C++ dependencies don't have to be re-built from scratch every time.
+Release jobs restore vcpkg binary archives by triplet and save them before running the native tests. Each native test has a three-minute limit.
 
-Manual runs are validation-only by default. They build the full matrix and smoke-test the unpacked Windows app and bundled native server without publishing anything. Enable the `publish_release` input only when the same validated installers should become a GitHub Release.
+Manual runs validate the full matrix by default, including packaged macOS and Windows smoke tests. Set `publish_release` to publish those installers. For a coordinated website update, first tag the exact app revision and pass the exact website revision as `website_commit`. The workflow checks the signed Mac packages and public installer URLs before publishing the site.
 
 ### Other workflows
 

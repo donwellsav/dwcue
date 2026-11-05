@@ -1,10 +1,10 @@
 # Video cue handoffs and control reliability
 
-**4 November software audit:** current source `2f372c2` adds native loader/driver containment and ordered managed-engine recovery while retaining the existing video controller, audience cover and Preview exclusion. Vue components, output-window logic and styles are unchanged in this batch; Electron's native-engine manager changed. The prior ten-minute muted mixed-video soak at `153a1a7` passed 481 SD/1080p rounds and was not repeated. Current software results and open routing/storage boundaries are in the [workplan](superpowers/plans/2026-11-03-live-show-reliability.md). No installed release or physical acceptance is claimed.
+**4 November software checkpoint:** `2f372c2` added native loader and driver containment and ordered managed-engine recovery. The earlier ten-minute muted mixed-video soak at `153a1a7` passed 481 SD/1080p rounds. The [workplan](superpowers/plans/2026-11-03-live-show-reliability.md) records software results, open routing and storage work, and deferred physical acceptance.
 
 Initial investigation: 2026-11-03 against the working tree based on `82505580ccb6ae86ccb71e28264b6d4436641419`. The reported pattern was that a standalone video usually worked, while playing video before or after audio/another video caused freezing, loss of control, and apparent crashes. Existing audio/import/Spotify changes were retained.
 
-The 3 November source was checkpointed in `2ea5984` and `a9a86a3` (package metadata 2.6.17). Later T20/T21/T26–T29 repairs supersede the initial recovery and monitoring decisions below: failure retains the existing native audience window under a black cover, **Restart Output** is operator-controlled, picture health uses decoded presentation/native-clock progress, and unrelated metadata/cue/preview events cannot re-seek the current picture. No new package has been installed or published. The bounded visibility comparison is now recorded below; physical HDMI and causal resolution of the earlier full-app frame-drop observation remain unclosed.
+The 3 November source was checkpointed in `2ea5984` and `a9a86a3` (package metadata 2.6.17). The later T20/T21/T26–T29 repairs ship with v2.6.18. A failure keeps the audience window under a black cover, **Restart Output** remains operator-controlled, and picture health follows decoded presentation and native-clock progress. Unrelated metadata, cue and Preview events leave the current picture's position alone. Physical HDMI and the cause of the earlier full-app frame drops remain open.
 
 ## Confirmed failure paths
 

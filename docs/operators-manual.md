@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.18
-**Source revision:** 1e96370f6a6ab4ee9d49b6ff857a5a6518a23f54
+**Source revision:** 4e5855ada5d9363b31e7d3863b6b9c96a92ebec6
 **Native engine baseline:** 2f372c21e6111a5dc91f532da97fc98b98ccf279
 **Edition:** 5 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition covers DonWells Cue **2.6.18**, source **1e96370**. It includes the loader, native device and engine recovery repairs from the November playback audit. Match your installer to the release notes before rehearsal.
+This edition covers DonWells Cue **2.6.18**, source **4e5855a**. It includes the loader, native device and engine recovery repairs from the November playback audit. Match your installer to the release notes before rehearsal.
 
 Interface images were captured on 3 November from the same controls and layout, which remain unchanged in this repair batch. Their templates, styles and assets were checked against this source; original capture revisions and hashes are retained. Generated tones run through the native engine's virtual NULL output with physical audio-service access blocked; the desktop bridge supplies fixture locale, display and MIDI information. The images illustrate controls and visible states, rather than physical audio, HDMI or device compatibility. The capture method, source revisions and image hashes are recorded in **docs/manual-assets/captures.json**. Equipment photographs remain illustrative.
 
@@ -877,11 +877,11 @@ With Video Output focused, Escape also exits its fullscreen mode. In Level Check
 
 ### About this edition
 
-This edition covers DonWells Cue **2.6.18** at source **1e96370**. The 22 captures retain their 3 November provenance. They use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
+This edition covers DonWells Cue **2.6.18** at source **4e5855a**. The 22 captures retain their 3 November provenance. They use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
 
 The playback checkpoint **2f372c2** passed native 13/13, isolated API 61/61, client 229/229, typecheck and RT/live safety checks. Audio-output and project-runtime suites also pass AddressSanitizer; leak detection is disabled. Native checks include six simulated ten-minute secondary-clock runs with continuous generated audio and no buffer faults or resyncs inside the tested envelope. Physical alignment and the earlier intermittency remain unproven; more extreme drift/jitter can trigger recovery.
 
-Held-operation tests cover loader, metadata, priming, property publication, cue/device cleanup and engine lifetime. Seven managed-engine tests use a fake OS. First-open routing, filesystem/revision checks, healthy-file publication and unrelated Program preparation remain open workplan items. Cancellation does not force an OS call to return.
+Held-operation tests cover loader, metadata, priming, property publication, cue/device cleanup and renderer shutdown. Seven managed-engine tests use a fake OS. First-open routing, filesystem/revision checks, healthy-file publication and unrelated Program preparation remain open workplan items. Cancellation does not force an OS call to return.
 
 An earlier ten-minute muted Chromium run passed 481 mixed SD/1080p rounds and recorded frame drops; it was not repeated for this repair. Generated clips and synthetic clocks do not establish show stability, native soundtrack sync or physical HDMI performance. LTC waveform tests also do not establish external receiver lock.
 

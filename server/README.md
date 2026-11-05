@@ -1,6 +1,6 @@
 # DonWells Cue Server — developer guide
 
-DonWells Cue **2.6.18** includes the playback reliability changes through `2f372c2`. The [workplan](../docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification, remaining engineering work and the deferred line-level audio and 1080p HDMI acceptance checks.
+DonWells Cue **2.6.18** includes the playback checkpoint `2f372c2` and the renderer shutdown wake fix. The [workplan](../docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification, remaining engineering work and the deferred line-level audio and 1080p HDMI acceptance checks.
 
 `dwcue-server` is the headless C++20 audio engine and control surface that backs the DonWells Cue client. It owns the audio graph, the routing matrix, the loaded project file, and exposes a REST + WebSocket API. It runs as either a child process spawned by the desktop client (single-machine installs) or as a standalone daemon on a stage-side machine that the client connects to over the LAN.
 
