@@ -1097,6 +1097,7 @@ void AudioEngine::unload_cue(const CueId& id) {
             expected, PreparedFollow::State::Cancelled, std::memory_order_acq_rel);
     }
     retiring->stop_now();
+    retiring->decoder_ready_.store(false, std::memory_order_release);
     items_.erase(it);
     pending_.item_sources.erase(id.value);
     rebuild_topology_locked();
@@ -1105,12 +1106,16 @@ void AudioEngine::unload_cue(const CueId& id) {
         std::lock_guard decode_lock{decode_state_->wait_mutex};
         if (decode_state_->workers.contains(retiring.get())) {
             // Its worker retains the decoder and closes it after the read returns.
-            retiring->decoder_ready_.store(false, std::memory_order_release);
             return;
         }
     }
-    // Do not hold engine ownership while decoder teardown waits for storage.
-    retiring->unload();
+    // Preparation/edit calls may also own the decoder; withdrawal must not join them.
+    const auto retire = [retiring] { retiring->unload(); };
+    try { std::thread(retire).detach(); }
+    catch (const std::system_error& error) {
+        Logger::error("Cue retirement worker failed: {}", error.what());
+        retire(); // shortcut: synchronous cleanup only if OS thread creation fails.
+    }
 }
 
 std::shared_ptr<PlaybackItem> AudioEngine::find_cue(const CueId& id) const {

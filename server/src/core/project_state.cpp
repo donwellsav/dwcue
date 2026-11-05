@@ -497,6 +497,21 @@ std::future<LoadedAudio> prepare_audio_load(audio::PlaybackItemDesc desc, json p
     return task;
 }
 
+// Owned diagnostic files must outlive native decoder close, including on Windows.
+void remove_owned_diagnostic_file(std::shared_ptr<audio::PlaybackItem> item, std::filesystem::path file) {
+    if (file.empty()) return;
+    try {
+        std::thread([item = std::move(item), file = std::move(file)] {
+            if (item) item->unload();
+            std::error_code ec;
+            std::filesystem::remove(file, ec);
+        }).detach();
+    } catch (const std::system_error& error) {
+        Logger::error("Diagnostic cleanup worker failed: {}", error.what());
+        // shortcut: retain the generated file on OS thread exhaustion instead of blocking Stop/Close.
+    }
+}
+
 } // namespace
 
 #ifdef LIVEPLAY_TEST_HOOKS
@@ -1492,15 +1507,13 @@ void ProjectState::remove_cue(const audio::CueId& id) {
         }
     }
 
+    auto retiring = engine_.find_cue(id);
     engine_.unload_cue(id);
     {
         std::lock_guard lock{mutex_};
         cues_.erase(id.value);
     }
-    if (!owned_file.empty()) {
-        std::error_code ec;
-        std::filesystem::remove(owned_file, ec);
-    }
+    remove_owned_diagnostic_file(std::move(retiring), std::move(owned_file));
 }
 
 void ProjectState::clear_diagnostic_cues() noexcept {
@@ -1512,17 +1525,16 @@ void ProjectState::clear_diagnostic_cues() noexcept {
     }
 
     for (const auto& [id, owned_file] : diagnostics) {
+        std::shared_ptr<audio::PlaybackItem> retiring;
         try {
             const audio::CueId cue_id{id};
+            retiring = engine_.find_cue(cue_id);
             engine_.stop(cue_id);
             engine_.unload_cue(cue_id);
         } catch (...) {
             Logger::warn("Failed to unload diagnostic cue '{}' during cleanup", id);
         }
-        if (!owned_file.empty()) {
-            std::error_code ec;
-            std::filesystem::remove(owned_file, ec);
-        }
+        remove_owned_diagnostic_file(std::move(retiring), owned_file);
     }
 }
 void ProjectState::rename_cue(const audio::CueId& id, std::string new_name) {

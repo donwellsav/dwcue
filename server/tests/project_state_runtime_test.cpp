@@ -247,6 +247,8 @@ void test_stop_all_during_cue_retirement(const std::filesystem::path& wav) {
         std::this_thread::sleep_for(1ms);
     check(retiring->stats().transport == liveplay::audio::TransportState::Stopped,
           "retirement stall: retiring cue is silent before decoder close");
+    check(unload.wait_for(250ms) == std::future_status::ready,
+          "retirement stall: unload acknowledges without a registered read-ahead worker");
     auto stop = std::async(std::launch::async, [&] { state.stop_all_cues(0); });
     check(stop.wait_for(250ms) == std::future_status::ready &&
               bed->stats().transport == liveplay::audio::TransportState::Stopped,
@@ -1863,6 +1865,32 @@ void test_starvation_holds_show(const std::filesystem::path& wav) {
     state.set_ui_state_broadcaster({});
 }
 
+void test_diagnostic_retirement(const std::filesystem::path& wav) {
+    for (const int action : {0, 1, 2}) {
+        const auto file = wav.string() + ".diagnostic-" + std::to_string(action) + ".wav";
+        std::filesystem::copy_file(wav, file, std::filesystem::copy_options::overwrite_existing);
+        auto engine = std::make_unique<liveplay::audio::AudioEngine>();
+        auto state = std::make_unique<liveplay::core::ProjectState>(*engine);
+        const auto diagnostic = state->add_av_sync_diagnostic_cue(file, "default", file);
+        check(diagnostic.error.empty(), "diagnostic retirement: owned cue is prepared");
+        const auto item = engine->find_cue(diagnostic.cue_id);
+        if (!item) { std::filesystem::remove(file); continue; }
+        std::unique_lock held{item->decoder_mutex_};
+        auto remove = std::async(std::launch::async, [&] {
+            if (action == 0) state->remove_cue(diagnostic.cue_id);
+            else if (action == 1) state->reset();
+            else state.reset();
+        });
+        const bool ready = remove.wait_for(250ms) == std::future_status::ready;
+        check(ready, "diagnostic retirement: remove/reset/destruction acknowledges before native close");
+        check(std::filesystem::exists(file), "diagnostic retirement: owned file retained until decoder closes");
+        if (ready) engine.reset();
+        held.unlock(); remove.get();
+        for (int i = 0; i < 2000 && std::filesystem::exists(file); ++i) std::this_thread::sleep_for(1ms);
+        check(!std::filesystem::exists(file), "diagnostic retirement: owned file removed after native return");
+    }
+}
+
 void test_unchanged_mirror_keeps_controls(const std::filesystem::path& wav) {
     liveplay::audio::AudioEngine engine;
     liveplay::core::ProjectState state(engine);
@@ -2134,6 +2162,7 @@ int main() {
     test_completed_loader_worker_retires();
     failures += test_crash_resume_lifecycle();
     const auto wav = make_wav();
+    test_diagnostic_retirement(wav);
     test_unchanged_mirror_keeps_controls(wav);
     test_position_aware_recovery(wav);
     test_changed_media_readiness();
