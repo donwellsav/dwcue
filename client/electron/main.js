@@ -4436,10 +4436,13 @@ function terminateSpotifyChild(child) {
   timer.unref();
 }
 
-function summarizeSpotDlError(lines, code) {
-  const useful = [...lines].reverse().find((line) =>
-    /(?:\bError\b|\bException\b|failed|no songs found|spotify playlist error)/i.test(line));
-  return useful || lines.slice(-5).join('\n') || `spotDL exited with code ${code}`;
+function summarizeSpotDlError(stdout, stderr, code) {
+  const lines = `${stdout}\n${stderr}`
+    .replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '').split(/\r?\n/);
+  const useful = lines.findLast((line) =>
+    !/^\s*\[PYI-\d+:ERROR\] Failed to execute script\b/i.test(line) &&
+    /\b(?:\w*(?:error|exception)|failed|no songs found)\b/i.test(line));
+  return useful?.trim() || `spotDL exited with code ${code}`;
 }
 
 function sanitizeSpotifyFolderName(value) {
@@ -4656,15 +4659,18 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
 
     if (!embedReview?.rawTracks) {
       const setupResult = await Promise.race([
-        setupSpotDl().then((ready) => ({ ready }), (error) => ({ error })),
+        Promise.all([setupSpotDl(), setupFfmpeg()])
+          .then((value) => ({ value }), (error) => ({ error })),
         job.cancelledSignal.then(() => ({ cancelled: true })),
       ]);
       if (setupResult.cancelled || job.cancelled) throw new Error('Spotify review cancelled');
       if (setupResult.error) throw setupResult.error;
-      if (!setupResult.ready || !spotDlPath) throw new Error('Spotify downloader is unavailable');
+      const [spotDlReady, ffmpegReady] = setupResult.value;
+      if (!spotDlReady || !spotDlPath) throw new Error('Spotify downloader is unavailable');
+      if (!ffmpegReady || !ffmpegPath) throw new Error('FFmpeg is unavailable for Spotify review');
       const metadataUrl = embedReview?.playlistUrl || url;
       stdout = await new Promise((resolve, reject) => {
-        const child = spawn(spotDlPath, ['save', metadataUrl, '--save-file', '-'], {
+        const child = spawn(spotDlPath, ['save', metadataUrl, '--save-file', '-', '--ffmpeg', ffmpegPath], {
           windowsHide: true,
           detached: process.platform !== 'win32',
           stdio: ['ignore', 'pipe', 'pipe'],
@@ -4697,7 +4703,7 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
         child.once('close', (code) => {
           job.child = null;
           if (job.cancelled) finish(new Error('Spotify review cancelled'));
-          else if (code !== 0) finish(new Error(summarizeSpotDlError(errors.split(/\r?\n/), code)));
+          else if (code !== 0) finish(new Error(summarizeSpotDlError(output, errors, code)));
           else finish(null, output);
         });
         timeout = setTimeout(() => {

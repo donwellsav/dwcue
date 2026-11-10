@@ -321,7 +321,10 @@ test('YouTube output-directory read failure at child completion rejects without 
   assertYouTubeReleased(h);
 });
 
-function spotifyReviewHarness(count, { kind = 'playlist', exitCode = 0 } = {}) {
+function spotifyReviewHarness(count, {
+  kind = 'playlist', exitCode = 0, failedStdout = '',
+  failedStderr = 'Error: playlist metadata unavailable', ffmpegReady = true,
+} = {}) {
   const rawTracks = Array.from({ length: count }, (_, index) => ({
     song_id: String(index).padStart(22, '0'), name: `Track ${index + 1}`,
     artists: ['Artist'], duration: 60, list_name: 'Entire playlist',
@@ -335,6 +338,7 @@ function spotifyReviewHarness(count, { kind = 'playlist', exitCode = 0 } = {}) {
   const run = spotifyHandler('spotify-preflight', {
     activeSpotifyPreflightJobs, spotifyPreflights, spotDlPath: '/tools/spotdl',
     console: { warn() {} }, setupSpotDl: async () => true, terminateSpotifyChild() {},
+    ffmpegPath: '/tools/bundled ffmpeg/ffmpeg', setupFfmpeg: async () => ffmpegReady,
     setTimeout: () => ({ unref() {} }), clearTimeout() {},
     async fetch(url) {
       fetches.push(String(url));
@@ -357,8 +361,8 @@ function spotifyReviewHarness(count, { kind = 'playlist', exitCode = 0 } = {}) {
       const child = new EventEmitter();
       child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
       queueMicrotask(() => {
-        child.stdout.emit('data', Buffer.from(JSON.stringify(rawTracks)));
-        child.stderr.emit('data', Buffer.from(exitCode ? 'Error: playlist metadata unavailable' : ''));
+        child.stdout.emit('data', Buffer.from(exitCode ? failedStdout : JSON.stringify(rawTracks)));
+        child.stderr.emit('data', Buffer.from(exitCode ? failedStderr : ''));
         child.emit('close', exitCode);
       });
       return child;
@@ -376,7 +380,9 @@ for (const count of [100, 235, 10001]) {
     assert.deepEqual([...review.tracks.map(track => track.id)], harness.rawTracks.map(track => track.song_id));
     assert.equal(review.totalDuration, count * 60);
     assert.equal(review.playlistName, 'Entire playlist');
-    assert.deepEqual(harness.commands, [['/tools/spotdl', ['save', harness.canonicalUrl, '--save-file', '-']]]);
+    assert.deepEqual(harness.commands, [['/tools/spotdl', [
+      'save', harness.canonicalUrl, '--save-file', '-', '--ffmpeg', '/tools/bundled ffmpeg/ffmpeg',
+    ]]]);
     assert.equal(harness.fetches.length, 0, 'playlist embeds cannot prove that their track list is complete');
     assert.equal(harness.spotifyPreflights.get(review.preflightId).rawTracks.length, count);
     assert.equal(harness.activeSpotifyPreflightJobs.size, 0);
@@ -397,6 +403,22 @@ test('a failed full Spotify playlist review never returns a successful truncated
   const harness = spotifyReviewHarness(235, { exitCode: 1 });
   await assert.rejects(harness.run(), /playlist metadata unavailable/);
   assert.equal(harness.spotifyPreflights.size, 0);
+  assert.equal(harness.activeSpotifyPreflightJobs.size, 0);
+});
+
+test('Spotify review reports the downloader error from stdout past the PyInstaller footer', async () => {
+  const harness = spotifyReviewHarness(235, {
+    exitCode: 1,
+    failedStdout: 'FFmpegError: FFmpeg is not installed.\n',
+    failedStderr: "[PYI-42:ERROR] Failed to execute script '__main__' due to unhandled exception!\n",
+  });
+  await assert.rejects(harness.run(), { message: 'FFmpegError: FFmpeg is not installed.' });
+});
+
+test('Spotify review reports an unavailable FFmpeg before spawning the downloader', async () => {
+  const harness = spotifyReviewHarness(235, { ffmpegReady: false });
+  await assert.rejects(harness.run(), /FFmpeg is unavailable/);
+  assert.equal(harness.commands.length, 0);
   assert.equal(harness.activeSpotifyPreflightJobs.size, 0);
 });
 
