@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
-**Version:** 2.6.18
-**Source revision:** 4e5855ada5d9363b31e7d3863b6b9c96a92ebec6
+**Version:** 2.6.19
+**Source revision:** 48ebe0b17b469c1b966b64c2f9a9a9f44afb7d75
 **Native engine baseline:** 2f372c21e6111a5dc91f532da97fc98b98ccf279
-**Edition:** 5 November 2026 · English · Current-source operator edition
+**Edition:** 11 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition covers DonWells Cue **2.6.18**, source **4e5855a**. It includes the loader, native device and engine recovery repairs from the November playback audit. Match your installer to the release notes before rehearsal.
+This edition covers DonWells Cue **2.6.19**, source **48ebe0b**. It includes the recovery repairs from the November playback audit, plus fixes for Spotify playlist review and display identification on macOS. Match your installer to the release notes before rehearsal.
 
 Interface images were captured on 3 November from the same controls and layout, which remain unchanged in this repair batch. Their templates, styles and assets were checked against this source; original capture revisions and hashes are retained. Generated tones run through the native engine's virtual NULL output with physical audio-service access blocked; the desktop bridge supplies fixture locale, display and MIDI information. The images illustrate controls and visible states, rather than physical audio, HDMI or device compatibility. The capture method, source revisions and image hashes are recorded in **docs/manual-assets/captures.json**. Equipment photographs remain illustrative.
 
@@ -188,7 +188,7 @@ Wait for the source copy/download to finish and for media readiness before takin
 
 YouTube and Spotify import controls are available in Edit Mode. They depend on external services and downloader availability. Prepare and verify these imports before the show, not on a live cue call. Use only material you are authorized to obtain and perform; an import feature does not supply a public-performance licence. Once imported, rehearse from the local show media rather than relying on a working internet connection at the venue.
 
-Spotify playlist import reads the full collection rather than stopping at 100 tracks. Review the returned count and selections, wait for each selected download/import result, and resolve unavailable, unmatched or failed entries. A long playlist is not an all-tracks-ready guarantee. Import failure keeps its error/retry state; avoid repeatedly adding the same downloaded result to the playlist. If Spotify settings reach the engine but cannot be saved, they stay active; correct the storage problem and save again.
+Choose **Review tracks** to retrieve the full Spotify playlist in its original order. Large playlists can take several minutes to review. Check the returned count and your selections, then wait for each selected download and import result. Resolve unavailable, unmatched or failed entries before taking the cues. Failed imports keep their retry state. Avoid adding the same downloaded result to the playlist twice. If Spotify settings reach the engine but cannot be saved, they stay active. Correct the storage problem and save again.
 
 
 Cancelling a YouTube import during tool preparation prevents the downloader from starting afterward. Tool or media-folder failures report an error so you can correct the cause and retry. Confirm whether a local file already exists before repeating an import.
@@ -877,7 +877,7 @@ With Video Output focused, Escape also exits its fullscreen mode. In Level Check
 
 ### About this edition
 
-This edition covers DonWells Cue **2.6.18** at source **4e5855a**. The 22 captures retain their 3 November provenance. They use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
+This edition covers DonWells Cue **2.6.19** at source **48ebe0b**. The 22 captures retain their 3 November provenance. They use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
 
 The playback checkpoint **2f372c2** passed native 13/13, isolated API 61/61, client 229/229, typecheck and RT/live safety checks. Audio-output and project-runtime suites also pass AddressSanitizer; leak detection is disabled. Native checks include six simulated ten-minute secondary-clock runs with continuous generated audio and no buffer faults or resyncs inside the tested envelope. Physical alignment and the earlier intermittency remain unproven; more extreme drift/jitter can trigger recovery.
 

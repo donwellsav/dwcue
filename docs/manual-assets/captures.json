@@ -2,7 +2,7 @@
   "application": "DonWells Cue",
   "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
   "packageVersion": "2.6.17",
-  "edition": "5 November 2026 operator manual for DonWells Cue 2.6.18 with original 3 November capture provenance",
+  "edition": "11 November 2026 operator manual for DonWells Cue 2.6.19 with original 3 November capture provenance",
   "images": [
     {
       "file": "welcome-current.png",
@@ -425,10 +425,10 @@
     "gainStages": "Schematic: final physical sum and secondary-clock adaptation precede the attenuation-only limiter and device output."
   },
   "uiBuildRevision": "4105c02dee64e7abe466fff4a0046a9c34cbf774",
-  "manualSourceRevision": "4e5855ada5d9363b31e7d3863b6b9c96a92ebec6",
+  "manualSourceRevision": "48ebe0b17b469c1b966b64c2f9a9a9f44afb7d75",
   "visualCompatibility": {
-    "checkedOn": "2026-11-05",
-    "revision": "4e5855ada5d9363b31e7d3863b6b9c96a92ebec6",
-    "basis": "The 2.6.18 release metadata changes the version displayed by Welcome and About. The other control templates, styles and assets match the verified 2f372c2 checkpoint. Original capture revisions, versions, dates, dimensions and hashes are retained."
+    "checkedOn": "2026-11-11",
+    "revision": "48ebe0b17b469c1b966b64c2f9a9a9f44afb7d75",
+    "basis": "The Spotify review and display identification fixes are in the desktop main process. Welcome and About show their original capture versions. Original capture revisions, versions, dates, dimensions and hashes are retained."
   }
 }

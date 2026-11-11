@@ -30,7 +30,9 @@
 
 ---
 
-**Commit policy:** commit each tested fix. `2ea5984` contains the earlier audit repairs and `a9a86a3` contains T30. The user later authorized the v2.6.18 release build and website update.
+**Commit policy:** commit each tested fix. `2ea5984` contains the earlier audit repairs and `a9a86a3` contains T30. The user authorized the v2.6.18 and v2.6.19 release builds and website updates.
+
+**v2.6.19 follow-up:** `60086ef` and `530661d` repair Spotify review startup, speed and track order. `48ebe0b` keeps the macOS operator app accessible during display identification. The software checks include the real 200-track metadata review and a fullscreen label check on the built-in Mac display.
 
 **Current checkpoint:** application source `153a1a7` includes T1–T23 and T25–T42 software repairs/coverage. The ordered batch fixes storage/Stop All cancellation, prepared-follow contention, nested project admission and long-position LTC, and strengthens continuous-media tests. All 13 native suites, 61 isolated integration tests, client checks/typecheck and the ten-minute video soak pass. One fresh final review found two T38 edges; one correction pass and native regressions close both. The remaining visibility comparison now passes four 300-second cells with 36,029 presentation callbacks and zero measured drops/additional seeks. Developer documents, workplan and the 50-page operator manual match this unchanged application source. All software checkboxes are complete; T24 hardware acceptance and original physical intermittency remain deferred.
 

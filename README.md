@@ -1,6 +1,6 @@
 # DonWells Cue
 
-DonWells Cue **2.6.18** includes the playback reliability changes through `2f372c2`. The [workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification, remaining engineering work and the deferred line-level audio and 1080p HDMI acceptance checks.
+DonWells Cue **2.6.19** fixes Spotify playlist review and keeps the operator app accessible when identifying displays on macOS. The [workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification, remaining engineering work and the deferred line-level audio and 1080p HDMI acceptance checks.
 
 **DonWells Cue is a free, open-source app for playing back audio and video in live shows.** If you run sound for theatre, conferences, houses of worship, AV installs, or any live event, DonWells Cue lets you line up your music, sound effects and stings ahead of time and fire them off reliably on the night — from a laptop, a touchscreen, or even a separate stage-side machine you control over the network.
 
@@ -8,7 +8,7 @@ You build a **show** as a list of cues plus a grid of one-touch buttons, then tr
 
 This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. Published macOS packages are Developer ID signed, notarized, and package-validated.
 
-> **Current source:** package metadata is **v2.6.18**. The [playback workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md) tracks the audit checkpoint and the renderer shutdown fix. Match the installed About version to the release notes before rehearsal.
+> **Current source:** package metadata is **v2.6.19**. Match the installed About version to the release notes before rehearsal.
 
 > **Operating a show?** Use the [operator manual (PDF)](docs/operators-manual.pdf) or its [Markdown source](docs/operators-manual.md). Those instructions track the current source. The client and server READMEs linked later are developer references, not show-day instructions.
 
@@ -117,7 +117,7 @@ If your browser blocked the download instead, choose **Keep** to save the instal
 
 ## Getting started
 
-DonWells Cue v2.6.18 writes native show documents as `.dwcue` files and portable exports as `.dwcuepack` archives.
+DonWells Cue writes native show documents as `.dwcue` files and portable exports as `.dwcuepack` archives.
 
 1. Install the [latest release](https://github.com/donwellsav/dwcue/releases/latest), or build DonWells Cue from source, and launch it.
 2. Choose **New Show**, enter its name, use **Choose…** to select the read-only Location, and create it — DonWells Cue writes `<show name>.dwcue` and a `media/` sub-folder there.
@@ -351,7 +351,7 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.18**. Find published artefacts and checksums on the release page.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.19**. Find published artefacts and checksums on the release page.
 
 ### Triggering a release
 

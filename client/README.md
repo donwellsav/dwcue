@@ -1,10 +1,10 @@
 # DonWells Cue Client — developer guide
 
-DonWells Cue **2.6.18** includes the playback reliability changes through `2f372c2`. The [workplan](../docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification, remaining engineering work and the deferred line-level audio and 1080p HDMI acceptance checks.
+DonWells Cue **2.6.19** includes the Spotify playlist review and macOS display identification fixes. The [workplan](../docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification, remaining engineering work and the deferred line-level audio and 1080p HDMI acceptance checks.
 
 The DonWells Cue client is a Vue 3 + Nuxt 4 application wrapped in Electron. It is a **remote control** for the DonWells Cue audio server: it owns no audio decoding, no playback, no Web Audio nodes. Every user action turns into a REST call or WebSocket frame sent to `dwcue-server`, and every meter / waveform / state update comes back the same way.
 
-This developer guide tracks the v2.6.18 client. Match the installed About version to the release notes. For show-day use, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). See the [server guide](../server/README.md) for engine internals and the [root README](../README.md) for release details.
+This developer guide tracks the v2.6.19 client. Match the installed About version to the release notes. For show-day use, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). See the [server guide](../server/README.md) for engine internals and the [root README](../README.md) for release details.
 
 ---
 
