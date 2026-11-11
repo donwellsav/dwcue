@@ -160,6 +160,7 @@ function trackedProcessHarness() {
 }
 
 function spotifyHandler(channel, context) {
+  const channels = Array.isArray(channel) ? channel : [channel];
   const helpers = new Set([
     'validatedSpotifyUrl', 'spotifyTrackId', 'spotifyContentParts',
     'spotifyEmbedCoverUrl', 'spotifyEmbedArtists', 'spotifyEmbedDate',
@@ -167,28 +168,70 @@ function spotifyHandler(channel, context) {
     'requireBoundedIpcObject', 'releaseYouTubeJob', 'cancelYouTubeDownload',
     'createSpotifyProjectFolder', 'spotifyOutputTrackId', 'orderedSpotifyOutputs',
     'copySpotifyOutputsToMedia', 'cleanupSpotifyFiles', 'releaseSpotifyJob',
+    'importPreferencesPath', 'readImportPreferences', 'writeImportPreferences',
   ]);
-  let handler;
+  const handlers = new Map();
   const visit = (node) => {
     if (ts.isCallExpression(node) && node.expression.getText(electronSource) === 'ipcMain.handle' &&
-        node.arguments[0]?.text === channel) handler = node.arguments[1].getText(electronSource);
+        channels.includes(node.arguments[0]?.text)) {
+      handlers.set(node.arguments[0].text, node.arguments[1].getText(electronSource));
+    }
     ts.forEachChild(node, visit);
   };
   visit(electronSource);
-  assert.ok(handler, `${channel} must use the production IPC handler`);
+  assert.equal(handlers.size, channels.length);
   const declarations = electronSource.statements.filter(node =>
-    ts.isFunctionDeclaration(node) && helpers.has(node.name?.text));
+    ts.isFunctionDeclaration(node) && helpers.has(node.name?.text) && !Object.hasOwn(context, node.name.text));
+  const handler = Array.isArray(channel)
+    ? `{${[...handlers].map(([name, code]) => `${JSON.stringify(name)}: ${code}`).join(',')}}`
+    : handlers.get(channel);
   return vm.runInNewContext(
     declarations.map(node => node.getText(electronSource)).join('\n') + `\n(${handler})`,
     { URL, AbortSignal, Buffer, path, process, crypto: require('node:crypto'),
       renewSpotifyReview, spotifyReviewIsValid, normalizeSpotifyBitrate,
-      normalizeSpotifyRecovery, normalizeSpotifyTrackIds,
+      normalizeSpotifyRecovery, normalizeSpotifyTrackIds, unsavedImportPreferences: null,
       requireTrustedIpc() {},
       requireIpcString(value) { assert.equal(typeof value, 'string'); return value; },
       requireAuthorizedIpcPath(value) { return value; },
       ...context },
   );
 }
+
+test('failed preference writes keep the selected Spotify destination and the latest recovery state for this session', () => {
+  let preferences = { spotifyRecovery: recovery };
+  let writable = false;
+  const handlers = spotifyHandler([
+    'get-import-preferences', 'set-spotify-import-destination', 'clear-spotify-import-recovery',
+  ], {
+    app: { getPath: () => '/user-data' },
+    fs: {
+      readFileSync: () => JSON.stringify(preferences),
+      writeFileSync(_path, value) {
+        if (!writable) throw new Error('Preferences are read-only');
+        preferences = JSON.parse(value);
+      },
+      existsSync: () => true,
+      statSync: file => ({ isDirectory: () => !file.endsWith('.mp3'), isFile: () => file.endsWith('.mp3') }),
+    },
+    pathCapabilities: { authorizeRoot: folder => folder, authorizeFile: file => file },
+    console: { warn() {} },
+  });
+  const event = {};
+  const choose = handlers['set-spotify-import-destination'];
+  const get = handlers['get-import-preferences'];
+  assert.throws(() => choose(event, '/Music/invalid.mp3'), /must be a directory/);
+  assert.equal(choose(event, '/Music/New Destination'), false);
+  assert.equal(get(event).spotifyDestination, '/Music/New Destination');
+  assert.equal(get(event).preferencesSaved, false);
+  assert.equal(get(event).spotifyRecovery.url, recovery.url);
+  assert.equal(handlers['clear-spotify-import-recovery'](event, recovery.activeProjectFolderPath), false);
+  assert.equal(get(event).spotifyRecovery, null);
+  assert.ok(preferences.spotifyRecovery);
+  writable = true;
+  assert.equal(choose(event, '/Music/Final Destination'), true);
+  assert.equal(get(event).preferencesSaved, true);
+  assert.equal(preferences.spotifyRecovery, null);
+});
 
 function youtubeDownloadHarness(overrides = {}) {
   const sender = new EventEmitter();
@@ -415,15 +458,23 @@ test('Spotify keeps the first appearance and skips repeated selections without f
   t.after(() => fs.rmSync(folder, { recursive: true, force: true }));
   const activeSpotifyDownloads = new Map();
   const matched = [], downloaded = [];
-  let preferences;
+  const preferencesPath = path.join(folder, 'import-preferences.json');
+  let writable = true;
   const run = spotifyHandler('download-spotify-audio', {
-    fs, pipeline, AbortController, setTimeout, clearTimeout, setInterval, clearInterval,
+    fs: {
+      ...fs,
+      writeFileSync(file, value) {
+        if (!writable && file === preferencesPath) throw new Error('Preferences are read-only');
+        fs.writeFileSync(file, value);
+      },
+    },
+    pipeline, AbortController, setTimeout, clearTimeout, setInterval, clearInterval,
     app: { getPath: () => folder }, activeSpotifyDownloads,
     spotifyPreflights: harness.spotifyPreflights,
     sendSpotifyProgress() {}, setupSpotDl: async () => true, setupFfmpeg: async () => true,
     spotDlPath: '/tools/spotdl', ytDlpPath: '/tools/yt-dlp', ffmpegPath: '/tools/ffmpeg',
     denoInitialization: Promise.resolve(), denoReady: false, SPOTIFY_AUDIO_PROVIDERS,
-    readImportPreferences: () => ({}), writeImportPreferences: value => { preferences = value; },
+    console: { warn() {} },
     spawn(binary, args) {
       const child = new EventEmitter();
       child.stdout = new EventEmitter();
@@ -461,12 +512,18 @@ test('Spotify keeps the first appearance and skips repeated selections without f
   assert.deepEqual([...result.completedTrackIds], [first.song_id, second.song_id]);
   assert.deepEqual([...result.failedTrackIds], [unavailable.song_id]);
   assert.deepEqual(Array.from(result.files, file => fs.readFileSync(file, 'utf8')), [first.song_id, second.song_id]);
-  const recovery = normalizeSpotifyRecovery(preferences.spotifyRecovery);
+  const recovery = normalizeSpotifyRecovery(JSON.parse(fs.readFileSync(preferencesPath, 'utf8')).spotifyRecovery);
   assert.deepEqual([...recovery.selectedTrackIds], [first.song_id, second.song_id, unavailable.song_id]);
   assert.deepEqual([...recovery.pendingTrackIds], [first.song_id, second.song_id]);
   assert.deepEqual([...recovery.pendingFiles], [...result.files]);
   const finalize = spotifyHandler('finalize-spotify-import', { activeSpotifyDownloads });
   assert.equal(await finalize({ sender: harness.sender }, 'download-job-12345', true), true);
+
+  writable = false;
+  const unsaved = await run({ sender: harness.sender }, 'download-job-23456', harness.canonicalUrl, folder, selection);
+  assert.equal(unsaved.preferencesSaved, false);
+  assert.deepEqual(Array.from(unsaved.files, file => fs.readFileSync(file, 'utf8')), [first.song_id, second.song_id]);
+  assert.equal(await finalize({ sender: harness.sender }, 'download-job-23456', true), true);
 });
 
 test('Spotify playlist share links resolve to the full metadata query', async () => {

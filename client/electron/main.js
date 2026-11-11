@@ -530,7 +530,10 @@ function importPreferencesPath() {
   return path.join(app.getPath('userData'), 'import-preferences.json');
 }
 
+let unsavedImportPreferences = null;
+
 function readImportPreferences() {
+  if (unsavedImportPreferences) return unsavedImportPreferences;
   try {
     const value = JSON.parse(fs.readFileSync(importPreferencesPath(), 'utf8'));
     const pickerFolders = value.pickerFolders && typeof value.pickerFolders === 'object' && !Array.isArray(value.pickerFolders)
@@ -547,7 +550,16 @@ function readImportPreferences() {
 }
 
 function writeImportPreferences(value) {
-  fs.writeFileSync(importPreferencesPath(), JSON.stringify(value, null, 2));
+  try {
+    fs.writeFileSync(importPreferencesPath(), JSON.stringify(value, null, 2));
+    unsavedImportPreferences = null;
+    return true;
+  } catch (error) {
+    // A stale disk record must not resurrect already imported tracks in this session.
+    unsavedImportPreferences = value;
+    console.warn('[import-preferences] could not save:', error.message);
+    return false;
+  }
 }
 
 function nativePickerFolder(purpose) {
@@ -559,13 +571,9 @@ function nativePickerFolder(purpose) {
 
 function rememberNativePickerFolder(purpose, folder) {
   const preferences = readImportPreferences();
-  try {
-    writeImportPreferences({
-      ...preferences, pickerFolders: { ...preferences.pickerFolders, [purpose]: folder },
-    });
-  } catch (error) {
-    console.warn('[file-picker] could not save folder history:', error.message);
-  }
+  writeImportPreferences({
+    ...preferences, pickerFolders: { ...preferences.pickerFolders, [purpose]: folder },
+  });
 }
 
 let nativeFilePickerOpen = false;
@@ -3723,15 +3731,14 @@ ipcMain.handle('get-import-preferences', (event) => {
       writeImportPreferences({ ...preferences, spotifyRecovery: restoredRecovery });
     }
   }
-  return response;
+  return { ...response, preferencesSaved: !unsavedImportPreferences };
 });
 
 ipcMain.handle('set-spotify-import-destination', (event, destination) => {
   requireTrustedIpc(event);
   destination = requireAuthorizedIpcPath(destination, 'destination');
   if (!fs.statSync(destination).isDirectory()) throw new TypeError('destination must be a directory');
-  writeImportPreferences({ ...readImportPreferences(), spotifyDestination: destination });
-  return true;
+  return writeImportPreferences({ ...readImportPreferences(), spotifyDestination: destination });
 });
 
 ipcMain.handle('set-spotify-import-recovery', (event, rawRecovery) => {
@@ -3751,8 +3758,7 @@ ipcMain.handle('set-spotify-import-recovery', (event, rawRecovery) => {
     requireAuthorizedIpcPath(filePath, 'pendingFile');
     if (!fs.statSync(filePath).isFile()) throw new TypeError('pendingFile must be a file');
   }
-  writeImportPreferences({ ...readImportPreferences(), spotifyRecovery: recovery });
-  return true;
+  return writeImportPreferences({ ...readImportPreferences(), spotifyRecovery: recovery });
 });
 
 ipcMain.handle('clear-spotify-import-recovery', (event, activeProjectFolderPath) => {
@@ -3761,9 +3767,9 @@ ipcMain.handle('clear-spotify-import-recovery', (event, activeProjectFolderPath)
     activeProjectFolderPath, 'activeProjectFolderPath');
   const preferences = readImportPreferences();
   if (preferences.spotifyRecovery?.activeProjectFolderPath === activeProjectFolderPath) {
-    writeImportPreferences({ ...preferences, spotifyRecovery: null });
+    return writeImportPreferences({ ...preferences, spotifyRecovery: null });
   }
-  return true;
+  return !unsavedImportPreferences;
 });
 
 // This channel is intentionally not exposed directly. The preload invokes it
@@ -5454,7 +5460,7 @@ ipcMain.handle(
         updatedAt: Date.now(),
       });
       if (!recovery) throw new Error('Could not save Spotify recovery state');
-      writeImportPreferences({
+      const preferencesSaved = writeImportPreferences({
         ...readImportPreferences(),
         spotifyDestination: destinationParentPath,
         spotifyRecovery: recovery,
@@ -5478,6 +5484,7 @@ ipcMain.handle(
         completedTrackIds,
         failedTrackIds,
         groupUuid,
+        preferencesSaved,
       };
     } catch (error) {
       try {

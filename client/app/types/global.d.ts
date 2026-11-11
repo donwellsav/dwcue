@@ -44,6 +44,7 @@ declare global {
       generateWaveform: (audioPath: string, outputPath: string) => Promise<{ success: boolean; error?: string }>;
       openFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>;
       getImportPreferences: () => Promise<{
+        preferencesSaved: boolean;
         spotifyDestination: string;
         spotifyRecovery: {
           version: 1;
@@ -159,6 +160,7 @@ declare global {
         completedTrackIds: string[];
         failedTrackIds: string[];
         groupUuid?: string;
+        preferencesSaved?: boolean;
       }>;
       cancelSpotifyDownload: (jobId: string) => Promise<boolean>;
       finalizeSpotifyImport: (jobId: string, keepFiles: boolean) => Promise<boolean>;

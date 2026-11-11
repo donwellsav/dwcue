@@ -100,7 +100,8 @@ test('native pickers leave the operator window enabled and authorize one selecti
       return node.declarationList.declarations.some(decl => decl.name.getText(source) === 'nativeFilePickerOpen');
     }
     if (ts.isFunctionDeclaration(node)) {
-      return ['showNativeFilePicker', 'rememberNativePickerFolder', 'authorizeOpenableFilePath'].includes(node.name?.text || '');
+      return ['showNativeFilePicker', 'rememberNativePickerFolder', 'writeImportPreferences',
+        'authorizeOpenableFilePath'].includes(node.name?.text || '');
     }
     if (!ts.isExpressionStatement(node) || !ts.isCallExpression(node.expression)) return false;
     const [channel] = node.expression.arguments;
@@ -132,10 +133,15 @@ test('native pickers leave the operator window enabled and authorize one selecti
       showOpenDialog: (...args: unknown[]) => choose(false, ...args),
       showSaveDialog: (...args: unknown[]) => choose(true, ...args),
     },
-    fs: { existsSync: () => true, statSync: () => ({ isFile: () => true }) },
+    fs: {
+      existsSync: () => true,
+      statSync: () => ({ isFile: () => true }),
+      writeFileSync() { throw new Error('Folder history is read-only'); },
+    },
     pathCapabilities: { authorizeRoot: authorize('root'), authorizeProjectFile: authorize('project'), authorizeFile: authorize('file') },
     readImportPreferences: () => ({ pickerFolders: {} }),
-    writeImportPreferences() { throw new Error('Folder history is read-only'); },
+    importPreferencesPath: () => '/isolated/import-preferences.json',
+    unsavedImportPreferences: null,
     console: { warn: (...args: unknown[]) => warnings.push(args.join(' ')) },
   });
   for (const [channel, item] of cases) {

@@ -32,6 +32,9 @@
 
           <p class="hint selectable">{{ t('spotifyImport.hint') }}</p>
           <p class="hint selectable">{{ t('importAudio.preserveAudio') }}</p>
+          <p v-if="preferencesWarning" class="settings-save-error selectable" role="status">
+            {{ t('spotifyImport.preferencesSaveFailed') }}
+          </p>
 
           <section class="import-plan selectable" :aria-labelledby="planId">
             <button
@@ -338,6 +341,7 @@ interface SpotifyDownloadResult {
   completedTrackIds: string[];
   failedTrackIds: string[];
   groupUuid?: string;
+  preferencesSaved?: boolean;
 }
 
 interface SpotifyRecoveryState {
@@ -466,6 +470,7 @@ const progressState = ref<SpotifyDownloadProgress | null>(null);
 const resultState = ref<SpotifyDownloadResult | null>(null);
 const errorMessage = ref('');
 const technicalMessage = ref('');
+const preferencesWarning = ref(false);
 const reviewState = ref<SpotifyPreflight | null>(null);
 watch(reviewState, (state, prev) => {
   if (state && !prev) planCollapsed.value = true;
@@ -629,7 +634,7 @@ watch(spotifyUrl, () => {
   pendingRecoveryFiles.value = [];
   pendingRecoveryTrackIds.value = [];
   if (props.projectFolderPath) {
-    void getSpotifyApi()?.clearSpotifyImportRecovery(props.projectFolderPath).catch(() => {});
+    void persistRecovery(null).catch(() => {});
   }
 });
 
@@ -715,12 +720,11 @@ async function chooseDestination(): Promise<string> {
   isChoosingDestination.value = true;
   try {
     const selected = await api.selectProjectFolder();
+    if (!selected || !props.open || props.projectEpoch !== epoch) return '';
+    preferencesWarning.value = !await api.setSpotifyImportDestination(selected);
     if (!props.open || props.projectEpoch !== epoch) return '';
-    if (selected) {
-      destinationParentPath.value = selected;
-      await api.setSpotifyImportDestination(selected);
-    }
-    return selected || '';
+    destinationParentPath.value = selected;
+    return selected;
   } catch (error: any) {
     errorMessage.value = error?.message || t('spotifyImport.destinationFailed');
     return '';
@@ -732,6 +736,7 @@ async function chooseDestination(): Promise<string> {
 async function loadImportPreferences() {
   if (!import.meta.client) return;
   const preferences = await window.electronAPI.getImportPreferences().catch(() => null);
+  if (preferences) preferencesWarning.value = preferences.preferencesSaved === false;
   if (!destinationParentPath.value && preferences?.spotifyDestination) {
     destinationParentPath.value = preferences.spotifyDestination;
   }
@@ -816,18 +821,21 @@ function recoveryForResult(
   };
 }
 
-async function persistRecovery(result: SpotifyDownloadResult) {
+async function persistRecovery(
+  result: SpotifyDownloadResult | null,
+  projectFolderPath = props.projectFolderPath,
+) {
   const api = getSpotifyApi();
   if (!api) return;
-  if (!result.failedTrackIds.length && !pendingRecoveryFiles.value.length) {
-    await api.clearSpotifyImportRecovery(props.projectFolderPath);
-    return;
+  if (!result || (!result.failedTrackIds.length && !pendingRecoveryFiles.value.length)) {
+    preferencesWarning.value = !await api.clearSpotifyImportRecovery(projectFolderPath);
+  } else {
+    preferencesWarning.value = !await api.setSpotifyImportRecovery(recoveryForResult(
+      result,
+      pendingRecoveryTrackIds.value,
+      pendingRecoveryFiles.value,
+    ));
   }
-  await api.setSpotifyImportRecovery(recoveryForResult(
-    result,
-    pendingRecoveryTrackIds.value,
-    pendingRecoveryFiles.value,
-  ));
 }
 
 async function reviewSpotify() {
@@ -1015,7 +1023,7 @@ async function openResultFolder() {
 
 async function startAnotherImport() {
   if (props.projectFolderPath) {
-    await getSpotifyApi()?.clearSpotifyImportRecovery(props.projectFolderPath).catch(() => {});
+    await persistRecovery(null).catch(() => {});
   }
   const destination = destinationParentPath.value;
   resetState();
@@ -1111,6 +1119,7 @@ async function startDownload() {
     );
 
     needsFinalize = true;
+    if (downloadResult.preferencesSaved === false) preferencesWarning.value = true;
     // ponytail: once files reach the user-selected collection, preserve them as canonical media.
     finalizeKeepFiles = true;
     if (props.projectFolderPath !== projectFolderPath ||
@@ -1178,7 +1187,7 @@ async function startDownload() {
     }
 
     if (!downloadResult.partial) {
-      await api.clearSpotifyImportRecovery(projectFolderPath);
+      await persistRecovery(null, projectFolderPath);
     }
 
     resultState.value = downloadResult;

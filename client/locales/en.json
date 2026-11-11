@@ -403,6 +403,7 @@
     "chooseDestination": "Choose Folder",
     "changeDestination": "Change",
     "destinationFailed": "Could not choose the destination folder.",
+    "preferencesSaveFailed": "Spotify import can continue. The folder choice and retry information could not be saved for the next app launch.",
     "createsDescription": "Creates one child folder for the collection. Its media files are used directly by both the reusable .dwcue template and the current project — no second copy.",
     "cueSetup": "Cue setup",
     "settingOn": "On",
