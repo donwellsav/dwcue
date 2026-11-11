@@ -96,7 +96,8 @@ std::optional<double> integrated_loudness(
 Waveform compute_waveform(const std::filesystem::path& path,
                           std::uint32_t bucket_count,
                           std::optional<std::chrono::milliseconds> analysis_start,
-                          std::optional<std::chrono::milliseconds> analysis_end) noexcept {
+                          std::optional<std::chrono::milliseconds> analysis_end,
+                          bool verify_only) noexcept {
     Waveform out;
     bucket_count = std::clamp<std::uint32_t>(bucket_count, 16, 16384);
 
@@ -111,6 +112,29 @@ Waveform compute_waveform(const std::filesystem::path& path,
     ma_uint32 channels    = 0;
     ma_uint32 sample_rate = 0;
     ma_decoder_get_data_format(&decoder, nullptr, &channels, &sample_rate, nullptr, 0);
+    if (verify_only) {
+        if (channels == 0 || channels > MA_MAX_CHANNELS || sample_rate == 0) {
+            ma_decoder_uninit(&decoder);
+            return out;
+        }
+        constexpr ma_uint64 frames_per_read = 4096;
+        std::vector<float> pcm(frames_per_read * channels);
+        ma_uint64 total = 0;
+        ma_result result;
+        do {
+            ma_uint64 frames = 0;
+            result = ma_decoder_read_pcm_frames(&decoder, pcm.data(), frames_per_read, &frames);
+            total += frames;
+            if (frames == 0) break;
+        } while (result == MA_SUCCESS);
+        ma_decoder_uninit(&decoder);
+        if (result != MA_AT_END || total == 0) return out;
+        out.source_channels = channels;
+        out.sample_rate = sample_rate;
+        out.duration = std::chrono::milliseconds{static_cast<long long>(total * 1000 / sample_rate)};
+        out.ok = out.duration.count() > 0;
+        return out;
+    }
     if (channels == 0) channels = 2;
     if (sample_rate == 0) sample_rate = audio::kDefaultMixSampleRate;
 

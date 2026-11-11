@@ -56,6 +56,7 @@ struct Waveform {
 Waveform compute_waveform(const std::filesystem::path& path,
                           std::uint32_t bucket_count = 1000,
                           std::optional<std::chrono::milliseconds> analysis_start = std::nullopt,
-                          std::optional<std::chrono::milliseconds> analysis_end = std::nullopt) noexcept;
+                          std::optional<std::chrono::milliseconds> analysis_end = std::nullopt,
+                          bool verify_only = false) noexcept;
 
 } // namespace liveplay::meta

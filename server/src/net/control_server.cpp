@@ -2808,6 +2808,8 @@ void ControlServer::install_routes() {
                         return json_err(
                             413, "archive exceeds compressed-size limit");
                 } else {
+                    auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
+                    if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before importing");
                     staging_root = state_.media_root();
                     if (staging_root.empty())
                         return json_err(500, "media root not configured");
@@ -3305,13 +3307,20 @@ void ControlServer::install_routes() {
                     query_milliseconds(req, "analysis_end_ms");
                 const auto revision = util::file_revision(file_path);
                 if (!revision) return json_err(404, "media file not found");
+                const auto* verify_revision = req.url_params.get("verify_revision");
+                if (verify_revision && revision->token != verify_revision)
+                    return json_err(409, "media changed before decode verification");
+                if (verify_revision && audio::file_has_truncated_riff(file_path, revision->size))
+                    return json_err(409, "media is incomplete; finish the source copy before importing");
                 const auto wf = liveplay::meta::compute_waveform(
-                    file_path, buckets, analysis_start, analysis_end);
+                    file_path, buckets, analysis_start, analysis_end, verify_revision != nullptr);
                 if (!wf.ok) return json_err(500, "waveform decode failed");
 
                 if (util::file_revision(file_path) != revision)
                     return json_err(409, "media changed during analysis");
-                return json_ok(waveform_data_json(wf, revision->token));
+                auto result = waveform_data_json(wf, revision->token);
+                if (verify_revision) result["verified"] = true;
+                return json_ok(result);
             } catch (const std::invalid_argument& e) {
                 return json_err(400, e.what());
             } catch (const std::exception& e) { return json_err(500, e.what()); }

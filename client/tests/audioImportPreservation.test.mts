@@ -154,6 +154,63 @@ test('silence with no measured true peak is not reported as a zero-dBTP source',
   assert.equal(result.warning, undefined);
 });
 
+test('missing waveform admits only decoder-verified media at the same file revision', async () => {
+  let probe = { verified: true, duration_ms: 9000, file_revision: 'exact', sample_rate: 48000, source_channels: 2 };
+  const build = compile(section(playlist, 'const buildVerifiedAudioCue =', 'const buildSpotifyCueSpecs ='), {
+    ...project, ...audio, crypto: globalThis.crypto, t: (key: string) => key,
+    server: {
+      fetchMetadata: async () => ({ valid: true, duration_ms: 10000, file_revision: 'exact' }),
+      fetchWaveformByPath: async () => { throw new Error('analysis unavailable'); },
+      verifyAudioFile: async (path: string, revision: string) => {
+        assert.equal(path, '/show/clip.wav');
+        assert.equal(revision, 'exact');
+        return probe;
+      },
+    },
+  }, 'buildVerifiedAudioCue');
+  const result = await build('/show/clip.wav', {}, 0);
+  assert.equal(result.warning, 'importAudio.analysisUnavailable');
+  assert.equal(result.cue.waveform, undefined);
+  assert.equal(result.cue.outPoint, 9);
+  assert.equal(result.cue.volume, 1);
+  probe = { ...probe, file_revision: 'replacement' };
+  await assert.rejects(build('/show/clip.wav', {}, 0));
+  probe = { ...probe, verified: false, file_revision: 'exact' };
+  await assert.rejects(build('/show/clip.wav', {}, 0));
+});
+
+test('upload continues after a failed file and retries only the failed selection', async () => {
+  const calls: string[] = [];
+  const projectEpoch = ref(0);
+  const selectedUploaded = ref<string[]>([]);
+  const failedUploads = ref<Array<{ file: File; reason: string }>>([]);
+  let fail = true;
+  const server = { serverUrl: 'http://engine', projectSessionId: 'show', connected: true,
+    async uploadFile(_file: File, name: string, session: string) {
+      assert.equal(session, 'show');
+      calls.push(name);
+      if (name === 'bad.wav' && fail) throw new Error('400 invalid source');
+      if (name === 'late.wav') projectEpoch.value++;
+      return { saved: [`/media/${name}`] };
+    },
+  };
+  const upload = compile(section(read('components/AudioImportModal.vue'), 'async function uploadFiles(', 'function formatBytes('), {
+    server, projectEpoch, currentProject: ref({}), uploadBatch: 0, uploading: ref(false), uploadStatus: ref(''),
+    selectedUploaded, failedUploads, uploadedThisSession: ref([]), uploadedSizes: ref({}), t: (key: string) => key,
+  }, 'uploadFiles');
+  await upload(['first.wav', 'bad.wav', 'third.wav'].map(name => new File(['sample'], name)));
+  assert.deepEqual(calls, ['first.wav', 'bad.wav', 'third.wav']);
+  assert.deepEqual(selectedUploaded.value, ['/media/first.wav', '/media/third.wav']);
+  assert.equal(failedUploads.value[0]?.file.name, 'bad.wav');
+  fail = false;
+  await upload(failedUploads.value.map(entry => entry.file));
+  assert.deepEqual(failedUploads.value, []);
+  assert.deepEqual(calls.slice(3), ['bad.wav']);
+  await upload(['late.wav', 'wrong-show.wav'].map(name => new File(['sample'], name)));
+  assert.deepEqual(calls.slice(4), ['late.wav']);
+  assert.equal(selectedUploaded.value.includes('/media/late.wav'), false);
+});
+
 test('a later waveform cannot overwrite an imported cue gain or trim edit', async () => {
   const item = { type: 'audio', uuid: 'cue', duration: 10, inPoint: 1, outPoint: 9, volume: 0.75 };
   const cache = new Map();

@@ -1014,6 +1014,10 @@
     "emptyFavorites": "Add folders you use often."
   },
   "importAudio": {
+    "analysisUnavailable": "Audio verified. Waveform and peak analysis are unavailable.",
+    "mediaChanged": "The source changed during import. Try the completed file again.",
+    "uploadPaused": "Upload paused. Check the server connection and retry.",
+    "uploadEmpty": "The server did not return an uploaded file.",
     "title": "Import Media",
     "localIntro": "Choose audio or video files from this computer.",
     "preserveAudio": "Imports preserve the source level and full duration. Use Normalize or Trim Silence in Properties when needed.",

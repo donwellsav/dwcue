@@ -387,6 +387,29 @@ test('waveform caches and analysis identify the current file revision', { timeou
     const current = await (await request(baseUrl, `/api/metadata?path=${encodeURIComponent(media)}`)).json();
     assert.equal(waveform.file_revision, current.file_revision);
   });
+  await t.test('decode-only verification checks the exact media revision and rejects unreadable audio', async () => {
+    const verify = (file, revision) => request(baseUrl, `/api/waveform_path?${new URLSearchParams({ path: file, verify_revision: revision })}`);
+    const response = await verify(media, second.file_revision);
+    assert.equal(response.status, 200, await response.clone().text());
+    const decoded = await response.json();
+    assert.equal(decoded.verified, true);
+    assert.equal(decoded.duration_ms, 1000);
+    assert.equal(decoded.file_revision, second.file_revision);
+    assert.deepEqual(decoded.channels, []);
+    assert.equal((await verify(media, first.file_revision)).status, 409);
+
+    const invalid = path.join(folder, 'unreadable.wav');
+    await writeFile(invalid, 'no audio stream');
+    const probe = await (await request(baseUrl, `/api/metadata?path=${encodeURIComponent(invalid)}`)).json();
+    assert.equal((await verify(invalid, probe.file_revision)).status, 500);
+  });
+  await t.test('a stale media upload cannot stage a file in the replacement show', async () => {
+    const stale = await request(baseUrl, '/api/upload/start', {
+      method: 'POST', body: JSON.stringify({ filename: 'late.wav', size: 64, purpose: 'media' }),
+      headers: { 'X-DWCUE-Project-Session': 'superseded-session' },
+    });
+    assert.equal(stale.status, 409, await stale.text());
+  });
   await t.test('old-session analysis requests are rejected before writing a cache', async () => {
     const stale = await request(baseUrl, '/api/waveform_generate', { method: 'POST',
       headers: { 'X-DWCUE-Project-Session': 'superseded-session' },

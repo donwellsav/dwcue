@@ -78,6 +78,17 @@
               {{ uploadStatus }}
             </span>
           </div>
+          <section v-if="failedUploads.length" class="import-results" aria-live="polite">
+            <button type="button" class="btn small" :disabled="uploading || busy" @click="uploadFiles(failedUploads.map(entry => entry.file))">
+              {{ t('importAudio.retryFailed') }}
+            </button>
+            <ul>
+              <li v-for="(entry, index) in failedUploads" :key="index" class="failed">
+                <span class="result-name">{{ entry.file.name }}</span>
+                <span class="result-reason">{{ entry.reason }}</span>
+              </li>
+            </ul>
+          </section>
 
           <ul v-if="uploadedThisSession.length" class="uploaded">
             <li v-for="(p, i) in uploadedThisSession"
@@ -245,7 +256,7 @@ const emit  = defineEmits<{
 }>();
 
 const server = useLiveplayServer();
-const { currentProject } = useProject();
+const { currentProject, projectEpoch } = useProject();
 const { t }  = useLocalization();
 
 // Local Electron uses the server tab shell for its native picker; remote
@@ -281,10 +292,21 @@ const importSettings = computed(() => [
 ]);
 
 const uploading           = ref(false);
+let uploadBatch = 0;
+const failedUploads       = ref<Array<{ file: File; reason: string }>>([]);
 const uploadStatus        = ref<string>('');
 const uploadedThisSession = ref<string[]>([]);
 const selectedUploaded    = ref<string[]>([]);
 const uploadedSizes       = ref<Record<string, number>>({});
+watch([projectEpoch, () => server.serverUrl, () => server.projectSessionId], () => {
+  ++uploadBatch;
+  uploading.value = false;
+  uploadedThisSession.value = [];
+  selectedUploaded.value = [];
+  uploadedSizes.value = {};
+  failedUploads.value = [];
+  uploadStatus.value = '';
+});
 const uploadedAnchor      = { i: -1 };
 const uploadInput          = ref<HTMLInputElement | null>(null);
 const mediaAccept = [
@@ -324,6 +346,9 @@ function close()       { if (!props.busy && !pickingLocal.value) emit('close'); 
 // modal open so the result list and retry affordance stay visible.
 watch([() => props.result, () => props.busy], ([result, busy]) => {
   if (!result || busy) return;
+  const finished = new Set(result.results.filter(item => item.status !== 'failed').map(item => item.sourcePath));
+  selectedLocal.value = selectedLocal.value.filter(path => !finished.has(path));
+  selectedUploaded.value = selectedUploaded.value.filter(path => !finished.has(path));
   if (result.results.length > 0 && result.results.every(item => item.status !== 'failed')) close();
 });
 function basename(p: string): string { return p.split(/[\\/]/).pop() || p; }
@@ -430,30 +455,53 @@ async function uploadSelectedFiles(event: Event) {
   const input = event.target as HTMLInputElement;
   const files = Array.from(input.files ?? []);
   input.value = '';
-  if (files.length === 0) return;
+  await uploadFiles(files);
+}
 
+async function uploadFiles(files: File[]) {
+  if (!files.length || uploading.value || !currentProject.value) return;
+  const serverUrl = server.serverUrl;
+  const session = server.projectSessionId;
+  const epoch = projectEpoch.value;
+  const batch = ++uploadBatch;
+  const sameShow = () => batch === uploadBatch && server.serverUrl === serverUrl &&
+    server.projectSessionId === session && projectEpoch.value === epoch;
   uploading.value = true;
+  failedUploads.value = failedUploads.value.filter(entry => !files.includes(entry.file));
   try {
     let uploadedCount = 0;
     for (let i = 0; i < files.length; ++i) {
-      const file = files[i];
+      const file = files[i]!;
+      if (!sameShow()) return;
+      if (!server.connected || server.cueStartsBlocked) {
+        failedUploads.value.push(...files.slice(i).map(file => ({ file, reason: t('importAudio.uploadPaused') })));
+        break;
+      }
       uploadStatus.value = t('importAudio.uploadingProgress',
         { i: i + 1, total: files.length, name: file.name });
-      const out = await server.uploadFile(file, file.name);
-      if (out?.saved?.length) {
+      try {
+        const out = await server.uploadFile(file, file.name, session);
+        if (!sameShow()) return;
+        if (!out?.saved?.length) throw new Error(t('importAudio.uploadEmpty'));
         for (const savedPath of out.saved) {
           uploadedThisSession.value.push(savedPath);
           selectedUploaded.value.push(savedPath);   // pre-select for one-click import
           uploadedSizes.value[savedPath] = file.size;
           uploadedCount++;
         }
+      } catch (error) {
+        if (!sameShow()) return;
+        const reason = error instanceof Error ? error.message : String(error);
+        failedUploads.value.push({ file, reason });
+        if (/^(401|403) /.test(reason) || /project session changed/i.test(reason)) {
+          failedUploads.value.push(...files.slice(i + 1).map(file => ({ file, reason: t('importAudio.uploadPaused') })));
+          break;
+        }
       }
     }
     uploadStatus.value = t('importAudio.uploadedCount', { count: uploadedCount });
-  } catch (e: any) {
-    uploadStatus.value = t('importAudio.uploadFailed', { error: e?.message ?? e });
   } finally {
-    uploading.value = false;
+    if (batch === uploadBatch) uploading.value = false;
   }
 }
 

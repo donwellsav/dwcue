@@ -1164,6 +1164,7 @@ function createClient() {
     readChunk: (offset: number, length: number) =>
       Blob | ArrayBuffer | Promise<Blob | ArrayBuffer>,
     finishTimeoutMs = 30000,
+    expectedSessionId?: string,
   ): Promise<T> {
     if (!Number.isSafeInteger(size) || size < 0) {
       throw new RangeError('upload failed: invalid source size');
@@ -1174,6 +1175,7 @@ function createClient() {
     const session = await rest<{ upload_id: string; chunk_size: number }>(
       '/api/upload/start', {
         method: 'POST',
+        headers: expectedSessionId ? { 'X-DWCUE-Project-Session': expectedSessionId } : undefined,
         body: JSON.stringify({ ...start, size }),
       });
     if (!/^[0-9a-f]{64}$/.test(session.upload_id)) {
@@ -1216,10 +1218,10 @@ function createClient() {
     }
   }
 
-  async function uploadFile(file: File | Blob, filename?: string) {
+  async function uploadFile(file: File | Blob, filename?: string, expectedSessionId = projectSessionId.value) {
     return uploadInChunks<{ saved: string[] }>(file.size, {
       filename: filename ?? (file as File).name ?? 'audio',
-    }, (offset, length) => file.slice(offset, offset + length));
+    }, (offset, length) => file.slice(offset, offset + length), 30000, expectedSessionId);
   }
 
   // ---- Waveform fetch queue + cache --------------------------------
@@ -1294,6 +1296,14 @@ function createClient() {
         ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
         : undefined,
     });
+  }
+
+  async function verifyAudioFile(path: string, fileRevision: string, signal?: AbortSignal) {
+    const params = new URLSearchParams({ path, verify_revision: fileRevision });
+    return rest<Pick<ServerWaveform, 'file_revision' | 'duration_ms' | 'sample_rate' | 'source_channels'> & { verified: boolean }>(
+      `/api/waveform_path?${params}`, {
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : undefined,
+      });
   }
 
   // Compute a waveform for an arbitrary server-side file path. Used right
@@ -1486,6 +1496,7 @@ function createClient() {
     requestWaveformGeneration,
     invalidateWaveformCache,
     fetchMetadata,
+    verifyAudioFile,
 
     // project I/O
     fetchProject,
