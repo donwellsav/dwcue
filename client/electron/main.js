@@ -4557,13 +4557,14 @@ async function fetchSpotifyEmbedTracks(rawUrl) {
       (typeof track?.id === 'string' && /^[A-Za-z0-9]{10,64}$/.test(track.id)
         ? track.id
         : '');
-    if (!id) throw new Error(`Spotify track ${index + 1} has no usable ID`);
+    if (!id) return null;
 
     const artists = spotifyEmbedArtists(track);
-    const durationMs = Number(track?.duration);
+    const durationMs = typeof track.duration === 'string' ? Number(track.duration) : track.duration;
     const date = spotifyEmbedDate(track, entity);
+    const title = typeof track.title === 'string' && track.title ? track.title : track.name;
     return {
-      name: String(track?.title || track?.name || 'Untitled').slice(0, 500),
+      name: (typeof title === 'string' && title ? title : 'Untitled').slice(0, 500),
       artists,
       artist: artists[0] || '',
       genres: null,
@@ -4595,6 +4596,7 @@ async function fetchSpotifyEmbedTracks(rawUrl) {
       album_type: null,
     };
   });
+  if (!rawTracks.some(Boolean)) throw new Error('Spotify embed returned no usable tracks');
 
   return {
     playlistName: playlistName || (rawTracks.length === 1
@@ -4720,33 +4722,34 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
     if (start < 0 || end <= start) throw new Error('Spotify returned no track list');
     return JSON.parse(clean.slice(start, end + 1));
   })();
-  if (!Array.isArray(rawTracks) || rawTracks.length === 0) {
+  if (!Array.isArray(rawTracks)) {
     throw new Error('Spotify returned an invalid track list');
   }
+  const usableTracks = rawTracks.filter(spotifyTrackId);
+  if (usableTracks.length === 0) throw new Error('Spotify returned no usable tracks');
   // spotDL returns completed metadata lookups out of playlist order.
-  if (embedReview?.playlistUrl && rawTracks.every((track) => Number.isSafeInteger(track?.list_position))) {
-    rawTracks.sort((a, b) => a.list_position - b.list_position);
+  if (embedReview?.playlistUrl && usableTracks.every((track) => Number.isSafeInteger(track.list_position))) {
+    usableTracks.sort((a, b) => a.list_position - b.list_position);
   }
-  const rawTracksById = new Map();
-  const tracks = [];
-  for (const [index, track] of rawTracks.entries()) {
+  const tracksById = new Map();
+  for (const track of usableTracks) {
     const id = spotifyTrackId(track);
-    if (!id) throw new Error(`Spotify track ${index + 1} has no usable ID`);
-    if (rawTracksById.has(id)) continue;
-    rawTracksById.set(id, track);
+    if (tracksById.has(id)) continue;
     const artists = Array.isArray(track.artists)
-      ? track.artists.filter((artist) => typeof artist === 'string').slice(0, 20)
+      ? track.artists.filter((artist) => typeof artist === 'string' && artist.trim()).slice(0, 20)
       : [];
-    tracks.push({
+    if (!artists.length && typeof track.artist === 'string' && track.artist.trim()) artists.push(track.artist);
+    tracksById.set(id, {
       id,
-      title: String(track.name || 'Untitled').slice(0, 500),
+      title: (typeof track.name === 'string' && track.name ? track.name : 'Untitled').slice(0, 500),
       artists,
-      album: String(track.album_name || '').slice(0, 500),
+      album: typeof track.album_name === 'string' ? track.album_name.slice(0, 500) : '',
       duration: Number.isFinite(track.duration) ? Math.max(0, track.duration) : 0,
       coverUrl: typeof track.cover_url === 'string' ? track.cover_url : '',
       spotifyUrl: `https://open.spotify.com/track/${id}`,
     });
   }
+  const tracks = [...tracksById.values()];
   const preflightId = crypto.randomUUID();
   const playlistName = sanitizeSpotifyFolderName(
     embedReview?.playlistName ||
@@ -4760,12 +4763,13 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
     senderId: event.sender.id,
     url,
     playlistName,
-    rawTracksById,
+    tracksById,
   }));
   return {
     preflightId,
     playlistName,
     tracks,
+    skippedTrackCount: rawTracks.length - usableTracks.length,
     totalDuration: tracks.reduce((sum, track) => sum + track.duration, 0),
   };
 });
@@ -5024,8 +5028,8 @@ ipcMain.handle(
       throw new Error('Spotify review expired; review the link again');
     }
     renewSpotifyReview(preflight);
-    const selectedRawTracks = selectedTrackIds.map((id) => preflight.rawTracksById.get(id));
-    if (selectedRawTracks.some((track) => !track)) throw new Error('Selected Spotify track is not in this review');
+    const selectedTracks = selectedTrackIds.map((id) => preflight.tracksById.get(id));
+    if (selectedTracks.some((track) => !track)) throw new Error('Selected Spotify track is not in this review');
     if (activeSpotifyDownloads.has(jobId)) throw new Error('Spotify job already exists');
     // ponytail: one job avoids spotDL's shared cache/temp races; add a queue
     // only if concurrent playlist imports become a real operator need.
@@ -5148,8 +5152,8 @@ ipcMain.handle(
         });
       });
       const trackLabel = (index) => {
-        const track = selectedRawTracks[index];
-        return `${track.artists.join(', ') || track.artist} - ${track.name}`;
+        const track = selectedTracks[index];
+        return [track.artists.join(', '), track.title].filter(Boolean).join(' - ');
       };
       const runPool = async (concurrency, count, visit) => {
         let cursor = 0;
@@ -5196,7 +5200,7 @@ ipcMain.handle(
       };
       const downloadTrack = async (index) => {
         const providerUrl = matchedUrls[index];
-        const track = selectedRawTracks[index];
+        const track = selectedTracks[index];
         if (!providerUrl) {
           attempted += 1;
           return;
@@ -5204,7 +5208,7 @@ ipcMain.handle(
         const baseName = [
           selectedTrackIds[index],
           sanitizeFilePart(track.artists.join(', ')),
-          sanitizeFilePart(track.name),
+          sanitizeFilePart(track.title),
         ].filter(Boolean).join(' - ').slice(0, 160);
         const outputPath = path.join(stagingDir, `${baseName}.mp3`);
         for (let attempt = 1; attempt <= 2 && !job.cancelled; attempt += 1) {
@@ -5225,7 +5229,7 @@ ipcMain.handle(
           const taggedPath = `${outputPath}.tagged.mp3`;
           const tagResult = await runTracked(ffmpegPath, [
             '-y', '-i', outputPath, '-c', 'copy', '-id3v2_version', '3',
-            '-metadata', `title=${track.name}`,
+            '-metadata', `title=${track.title}`,
             '-metadata', `artist=${track.artists.join(', ')}`,
             '-metadata', `album=${playlistName}`,
             '-metadata', `track=${index + 1}`,
@@ -5299,9 +5303,9 @@ ipcMain.handle(
       };
       const matchChunk = async (chunkIndex) => {
         const c = chunkIndex * chunkSize;
-        const chunkTracks = selectedRawTracks.slice(c, c + chunkSize);
+        const chunkTracks = selectedTracks.slice(c, c + chunkSize);
         await runTracked(spotDlPath, [
-          'url', ...chunkTracks.map((track) => track.url),
+          'url', ...chunkTracks.map((track) => track.spotifyUrl),
           '--audio', ...SPOTIFY_AUDIO_PROVIDERS,
           '--max-retries', '1',
           '--threads', '2',
@@ -5335,10 +5339,10 @@ ipcMain.handle(
         }
         await runPool(4, missed.length, async (missedCursor) => {
           const index = missed[missedCursor];
-          const track = selectedRawTracks[index];
+          const track = selectedTracks[index];
           for (let attempt = 1; attempt <= 2 && !job.cancelled; attempt += 1) {
             const result = await runTracked(spotDlPath, [
-              'url', track.url,
+              'url', track.spotifyUrl,
               '--audio', ...SPOTIFY_AUDIO_PROVIDERS,
               '--max-retries', '1',
               '--cache-path', path.join(stagingDir, `match-cache-${selectedTrackIds[index]}`),

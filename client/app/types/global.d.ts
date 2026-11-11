@@ -117,6 +117,7 @@ declare global {
         preflightId: string;
         playlistName: string;
         totalDuration: number;
+        skippedTrackCount: number;
         tracks: Array<{
           id: string;
           title: string;

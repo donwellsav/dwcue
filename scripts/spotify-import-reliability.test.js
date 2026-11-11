@@ -408,7 +408,7 @@ function spotifyReviewHarness(count, {
       if (new URL(url).hostname !== 'open.spotify.com') return {
         headers: { get: () => canonicalUrl }, body: { cancel: async () => {} },
       };
-      const embedTracks = rawTracks.slice(0, 100).map(track => ({
+      const embedTracks = rawTracks.slice(0, 100).map(track => track && ({
         uri: `spotify:track:${track.song_id}`, title: track.name,
         artists: track.artists, duration: track.duration * 1000,
       }));
@@ -449,7 +449,7 @@ for (const count of [100, 235, 10001]) {
       '--threads', '8', '--audio', 'youtube', '--lyrics',
     ]]]);
     assert.equal(harness.fetches.length, 0, 'playlist embeds cannot prove that their track list is complete');
-    assert.equal(harness.spotifyPreflights.get(review.preflightId).rawTracksById.size, count);
+    assert.equal(harness.spotifyPreflights.get(review.preflightId).tracksById.size, count);
     assert.equal(harness.activeSpotifyPreflightJobs.size, 0);
   });
 }
@@ -459,13 +459,39 @@ test('Spotify review restores playlist order after concurrent metadata lookups',
   const review = await harness.run();
   const expected = harness.rawTracks.map(track => track.song_id);
   assert.deepEqual([...review.tracks.map(track => track.id)], expected);
-  assert.deepEqual([...harness.spotifyPreflights.get(review.preflightId).rawTracksById.keys()], expected);
+  assert.deepEqual([...harness.spotifyPreflights.get(review.preflightId).tracksById.keys()], expected);
+});
+
+test('Spotify review skips unusable rows and keeps the remaining tracks in order', async () => {
+  for (const kind of ['playlist', 'album']) {
+    const harness = spotifyReviewHarness(5, { kind, reverseResults: true });
+    const [first, , , fourth] = harness.rawTracks;
+    harness.rawTracks[1] = null;
+    harness.rawTracks[2] = { name: 'Missing track ID' };
+    harness.rawTracks[4] = { ...first, name: 'Repeated entry', list_position: 5 };
+    const review = await harness.run();
+    assert.equal(review.skippedTrackCount, 2);
+    assert.deepEqual(Array.from(review.tracks, track => [track.id, track.title]),
+      [[first.song_id, first.name], [fourth.song_id, fourth.name]]);
+    assert.equal(review.totalDuration, 120);
+    if (kind === 'album') assert.equal(harness.commands.length, 0);
+  }
+});
+
+test('Spotify reports a clear error when no usable tracks remain', async () => {
+  const harness = spotifyReviewHarness(2);
+  harness.rawTracks.splice(0, 2, null, { song_id: 'invalid' });
+  await assert.rejects(harness.run(), /no usable tracks/);
+  assert.equal(harness.spotifyPreflights.size, 0);
 });
 
 test('Spotify keeps the first appearance and skips repeated selections without failing the import', async (t) => {
   const harness = spotifyReviewHarness(4, { reverseResults: true });
   const [first, second, , unavailable] = harness.rawTracks;
   second.name = first.name;
+  const secondUrl = second.url;
+  second.url = null;
+  second.artists = null;
   harness.rawTracks[2] = { ...first, name: 'Repeated entry', list_position: 3 };
   const url = 'https://spotify.link/Share12345';
   const review = await harness.run(url);
@@ -517,10 +543,10 @@ test('Spotify keeps the first appearance and skips repeated selections without f
     selectedTrackIds: [first.song_id, second.song_id, first.song_id, unavailable.song_id],
   };
   const result = await run({ sender: harness.sender }, 'download-job-12345', url, folder, selection);
-  assert.deepEqual([...review.tracks.map(track => track.spotifyUrl)], [first.url, second.url, unavailable.url]);
+  assert.deepEqual([...review.tracks.map(track => track.spotifyUrl)], [first.url, secondUrl, unavailable.url]);
   assert.equal(review.tracks[0].title, first.name);
   assert.equal(review.totalDuration, 180);
-  assert.deepEqual(matched, [first.url, second.url, unavailable.url]);
+  assert.deepEqual(matched, [first.url, secondUrl, unavailable.url]);
   assert.deepEqual(downloaded.sort(), [first.song_id, second.song_id].sort());
   assert.equal(result.total, 3);
   assert.equal(result.completed, 2);
@@ -584,20 +610,17 @@ test('individual Spotify track review keeps its complete embed fast path', async
 });
 
 test('large Spotify reviews remain selectable for download and recoverable', async () => {
-  const tracks = spotifyReviewHarness(10001).rawTracks;
-  const selectedTrackIds = tracks.map(track => track.song_id);
-  const url = 'https://open.spotify.com/playlist/0123456789ABCDEFGHIJKL';
-  const sender = { id: 7 };
+  const harness = spotifyReviewHarness(10001);
+  const { preflightId, tracks } = await harness.run();
+  const selectedTrackIds = tracks.map(track => track.id);
   const run = spotifyHandler('download-spotify-audio', {
     fs: { statSync: () => ({ isDirectory: () => true }) },
-    spotifyPreflights: new Map([['review-id', renewSpotifyReview({
-      senderId: sender.id, url, rawTracksById: new Map(tracks.map(track => [track.song_id, track])),
-    })]]),
+    spotifyPreflights: harness.spotifyPreflights,
     activeSpotifyDownloads: { has: () => true },
   });
   // The existing-job boundary follows selection validation, before any I/O.
-  await assert.rejects(run({ sender }, 'download-job-12345', url, '/Music', {
-    activeProjectFolderPath: '/Projects/Show', preflightId: 'review-id', selectedTrackIds,
+  await assert.rejects(run({ sender: harness.sender }, 'download-job-12345', harness.canonicalUrl, '/Music', {
+    activeProjectFolderPath: '/Projects/Show', preflightId, selectedTrackIds,
   }), /Spotify job already exists/);
   const largeRecovery = normalizeSpotifyRecovery({
     ...recovery, selectedTrackIds, completedTrackIds: [], failedTrackIds: selectedTrackIds,
@@ -619,14 +642,14 @@ test('large Spotify downloads match every selected track in bounded batches with
   };
   visit(electronSource);
   assert.ok(start >= 0 && end > start && pool);
-  const selectedRawTracks = spotifyReviewHarness(10001).rawTracks;
+  const { tracks: selectedTracks } = await spotifyReviewHarness(10001).run();
   const batches = [];
   let active = 0, peakActive = 0;
   const run = vm.runInNewContext(`(async () => {
     const runPool = ${pool};
     ${source.slice(start, end)}
   })`, {
-    total: selectedRawTracks.length, selectedRawTracks, job: { cancelled: false },
+    total: selectedTracks.length, selectedTracks, job: { cancelled: false },
     path, stagingDir: '/isolated-staging', spotDlPath: '/tools/spotdl', SPOTIFY_AUDIO_PROVIDERS,
     matchedUrls: [], onMatchLine() {}, progress() {},
     setInterval: () => 1, clearInterval() {}, terminateSpotifyChild() {}, console,
@@ -640,7 +663,7 @@ test('large Spotify downloads match every selected track in bounded batches with
   await run();
   assert.ok(batches.every(batch => batch.length <= 100), 'batch argv must fit Windows command-line limits');
   assert.equal(peakActive, 4, 'batch count must not create unbounded helper processes');
-  assert.deepEqual(batches.flat(), selectedRawTracks.map(track => track.url));
+  assert.deepEqual(batches.flat(), Array.from(selectedTracks, track => track.spotifyUrl));
 });
 
 test('Spotify tools receive literal argv and release tracked children on completion', async () => {

@@ -2323,7 +2323,7 @@ assert.match(
 );
 assert.match(
   electronMain,
-  /spotify-preflight[\s\S]*'save', metadataUrl, '--save-file', '-', '--ffmpeg', ffmpegPath[\s\S]*selectedRawTracks = selectedTrackIds\.map[\s\S]*selectedRawTracks\.some\(\(track\) => !track\)[\s\S]*const chunkTracks = selectedRawTracks\.slice[\s\S]*'url', \.\.\.chunkTracks\.map\(\(track\) => track\.url\)/,
+  /spotify-preflight[\s\S]*'save', metadataUrl, '--save-file', '-', '--ffmpeg', ffmpegPath[\s\S]*selectedTracks = selectedTrackIds\.map[\s\S]*selectedTracks\.some\(\(track\) => !track\)[\s\S]*const chunkTracks = selectedTracks\.slice[\s\S]*'url', \.\.\.chunkTracks\.map\(\(track\) => track\.spotifyUrl\)/,
   'Spotify review must stay metadata-only and download only the validated selected tracks',
 );
 assert.match(

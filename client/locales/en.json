@@ -370,6 +370,7 @@
     "reviewing": "Reading Spotify metadata…",
     "reviewTitle": "Spotify track review",
     "reviewSummary": "{selected} of {total} selected · {duration}",
+    "skippedTracks": "Skipped {count} entries with missing or invalid Spotify track IDs.",
     "reviewFailed": "Spotify track information could not be loaded.",
     "selectAll": "Select all",
     "selectNone": "Select none",

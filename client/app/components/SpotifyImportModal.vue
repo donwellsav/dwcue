@@ -139,6 +139,9 @@
                   total: reviewState.tracks.length,
                   duration: formatDuration(selectedDuration),
                 }) }}</p>
+                <p v-if="reviewState.skippedTrackCount" role="status">
+                  {{ t('spotifyImport.skippedTracks', { count: reviewState.skippedTrackCount }) }}
+                </p>
               </div>
               <div class="review-actions">
                 <button type="button" class="btn compact" :disabled="isBusy" @click="selectAllTracks">{{ t('spotifyImport.selectAll') }}</button>
@@ -377,6 +380,7 @@ interface SpotifyPreflight {
   preflightId: string;
   playlistName: string;
   totalDuration: number;
+  skippedTrackCount: number;
   tracks: SpotifyTrackReview[];
 }
 
