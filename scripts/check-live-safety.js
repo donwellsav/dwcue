@@ -1554,16 +1554,7 @@ assert.match(
   /execFilePromise\(ffmpegPath, \['-version'\], \{ timeout: 5000 \}\)/,
   'bundled FFmpeg startup probes must have a hard timeout',
 );
-const spotifyUrlStart = electron.indexOf('function validatedSpotifyUrl');
-const spotifyUrlEnd = electron.indexOf(
-  '\n}\n\nfunction sendSpotifyProgress', spotifyUrlStart) + 2;
-const validatedSpotifyUrl = Function(
-  'requireIpcString',
-  `return (${electron.slice(spotifyUrlStart, spotifyUrlEnd)})`,
-)((value) => {
-  if (typeof value !== 'string' || !value) throw new TypeError('invalid string');
-  return value;
-});
+const { validatedSpotifyUrl } = require('../client/electron/spotify-import-reliability');
 assert.match(
   validatedSpotifyUrl('https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M?si=test'),
   /^https:\/\/open\.spotify\.com\/playlist\//,

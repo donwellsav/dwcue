@@ -40,7 +40,9 @@ const {
   normalizeSpotifyTrackIds,
   normalizeSpotifyBitrate,
   renewSpotifyReview,
+  spotifyContentParts,
   spotifyReviewIsValid,
+  validatedSpotifyUrl,
 } = require('../client/electron/spotify-import-reliability');
 
 assert.deepEqual(
@@ -107,6 +109,18 @@ assert.equal(recovery.pendingTrackIds[0], 'track0000003');
 assert.equal(recovery.pendingFiles[0], '/Music/Spotify/Conference Playlist/media/Artist - Pending.mp3');
 assert.equal(recovery.groupUuid, 'group-1');
 assert.equal(recovery.audioBitrate, '256k');
+for (const host of ['spotify.link', 'spotify.app.link']) {
+  const url = `https://${host}/Share12345`;
+  assert.equal(normalizeSpotifyRecovery({ ...recovery, url: url + '#fragment' })?.url, url);
+}
+for (const url of [
+  'https://spotify.link.example.test/Share12345',
+  'https://user@spotify.link/Share12345',
+  'https://spotify.app.link:8443/Share12345',
+  'https://open.spotify.com/episode/0123456789ABCDEFGHIJKL',
+]) {
+  assert.equal(normalizeSpotifyRecovery({ ...recovery, url }), null);
+}
 assert.equal(
   normalizeSpotifyRecovery({ ...recovery, projectFolderPath: 'relative/path' }),
   null,
@@ -162,7 +176,7 @@ function trackedProcessHarness() {
 function spotifyHandler(channel, context) {
   const channels = Array.isArray(channel) ? channel : [channel];
   const helpers = new Set([
-    'validatedSpotifyUrl', 'spotifyTrackId', 'spotifyContentParts',
+    'spotifyTrackId',
     'spotifyEmbedCoverUrl', 'spotifyEmbedArtists', 'spotifyEmbedDate',
     'fetchSpotifyEmbedTracks', 'sanitizeSpotifyFolderName', 'summarizeSpotDlError',
     'requireBoundedIpcObject', 'releaseYouTubeJob', 'cancelYouTubeDownload',
@@ -188,7 +202,7 @@ function spotifyHandler(channel, context) {
   return vm.runInNewContext(
     declarations.map(node => node.getText(electronSource)).join('\n') + `\n(${handler})`,
     { URL, AbortSignal, Buffer, path, process, crypto: require('node:crypto'),
-      renewSpotifyReview, spotifyReviewIsValid, normalizeSpotifyBitrate,
+      renewSpotifyReview, spotifyContentParts, spotifyReviewIsValid, validatedSpotifyUrl, normalizeSpotifyBitrate,
       normalizeSpotifyRecovery, normalizeSpotifyTrackIds, unsavedImportPreferences: null,
       requireTrustedIpc() {},
       requireIpcString(value) { assert.equal(typeof value, 'string'); return value; },
@@ -453,7 +467,8 @@ test('Spotify keeps the first appearance and skips repeated selections without f
   const [first, second, , unavailable] = harness.rawTracks;
   second.name = first.name;
   harness.rawTracks[2] = { ...first, name: 'Repeated entry', list_position: 3 };
-  const review = await harness.run();
+  const url = 'https://spotify.link/Share12345';
+  const review = await harness.run(url);
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'dwcue-spotify-repeat-'));
   t.after(() => fs.rmSync(folder, { recursive: true, force: true }));
   const activeSpotifyDownloads = new Map();
@@ -501,7 +516,7 @@ test('Spotify keeps the first appearance and skips repeated selections without f
     activeProjectFolderPath: folder, preflightId: review.preflightId,
     selectedTrackIds: [first.song_id, second.song_id, first.song_id, unavailable.song_id],
   };
-  const result = await run({ sender: harness.sender }, 'download-job-12345', harness.canonicalUrl, folder, selection);
+  const result = await run({ sender: harness.sender }, 'download-job-12345', url, folder, selection);
   assert.deepEqual([...review.tracks.map(track => track.spotifyUrl)], [first.url, second.url, unavailable.url]);
   assert.equal(review.tracks[0].title, first.name);
   assert.equal(review.totalDuration, 180);
@@ -513,6 +528,7 @@ test('Spotify keeps the first appearance and skips repeated selections without f
   assert.deepEqual([...result.failedTrackIds], [unavailable.song_id]);
   assert.deepEqual(Array.from(result.files, file => fs.readFileSync(file, 'utf8')), [first.song_id, second.song_id]);
   const recovery = normalizeSpotifyRecovery(JSON.parse(fs.readFileSync(preferencesPath, 'utf8')).spotifyRecovery);
+  assert.equal(recovery.url, url);
   assert.deepEqual([...recovery.selectedTrackIds], [first.song_id, second.song_id, unavailable.song_id]);
   assert.deepEqual([...recovery.pendingTrackIds], [first.song_id, second.song_id]);
   assert.deepEqual([...recovery.pendingFiles], [...result.files]);
@@ -520,7 +536,7 @@ test('Spotify keeps the first appearance and skips repeated selections without f
   assert.equal(await finalize({ sender: harness.sender }, 'download-job-12345', true), true);
 
   writable = false;
-  const unsaved = await run({ sender: harness.sender }, 'download-job-23456', harness.canonicalUrl, folder, selection);
+  const unsaved = await run({ sender: harness.sender }, 'download-job-23456', url, folder, selection);
   assert.equal(unsaved.preferencesSaved, false);
   assert.deepEqual(Array.from(unsaved.files, file => fs.readFileSync(file, 'utf8')), [first.song_id, second.song_id]);
   assert.equal(await finalize({ sender: harness.sender }, 'download-job-23456', true), true);

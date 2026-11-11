@@ -39,7 +39,9 @@ const {
   normalizeSpotifyRecovery,
   normalizeSpotifyTrackIds,
   renewSpotifyReview,
+  spotifyContentParts,
   spotifyReviewIsValid,
+  validatedSpotifyUrl,
 } = require('./spotify-import-reliability');
 const execPromise = promisify(exec);
 const execFilePromise = promisify(execFile);
@@ -4416,33 +4418,6 @@ const activeSpotifyDownloads = new Map();
 const activeSpotifyPreflightJobs = new Map();
 const spotifyPreflights = new Map();
 
-function validatedSpotifyUrl(rawUrl) {
-  const checked = requireIpcString(rawUrl, 'url', 2048);
-  const parsed = new URL(checked);
-  if (parsed.protocol !== 'https:' || parsed.port || parsed.username || parsed.password) {
-    throw new TypeError('A valid Spotify HTTPS URL is required');
-  }
-
-  const host = parsed.hostname.toLowerCase();
-  if (host === 'open.spotify.com') {
-    const parts = parsed.pathname.split('/').filter(Boolean);
-    if (/^intl-[a-z]{2}(?:-[a-z]{2})?$/i.test(parts[0] || '')) parts.shift();
-    if (parts.length !== 2 ||
-        !['track', 'album', 'playlist', 'artist'].includes(parts[0]) ||
-        !/^[A-Za-z0-9]{10,64}$/.test(parts[1])) {
-      throw new TypeError('Use a Spotify track, album, playlist, or artist URL');
-    }
-  } else if (
-    !['spotify.link', 'spotify.app.link'].includes(host) ||
-    !/^\/[A-Za-z0-9_-]{3,128}\/?$/.test(parsed.pathname)
-  ) {
-    throw new TypeError('Use a Spotify share URL');
-  }
-
-  parsed.hash = '';
-  return parsed.toString();
-}
-
 function sendSpotifyProgress(sender, progress) {
   if (!sender.isDestroyed()) sender.send('spotify-download-progress', progress);
 }
@@ -4489,19 +4464,6 @@ function sanitizeSpotifyFolderName(value) {
 function spotifyTrackId(track) {
   const id = typeof track?.song_id === 'string' ? track.song_id : '';
   return /^[A-Za-z0-9]{10,64}$/.test(id) ? id : '';
-}
-
-function spotifyContentParts(rawUrl) {
-  const parsed = rawUrl instanceof URL ? rawUrl : new URL(rawUrl);
-  if (parsed.hostname.toLowerCase() !== 'open.spotify.com') return null;
-  const parts = parsed.pathname.split('/').filter(Boolean);
-  if (/^intl-[a-z]{2}(?:-[a-z]{2})?$/i.test(parts[0] || '')) parts.shift();
-  if (parts.length !== 2 ||
-      !['track', 'album', 'playlist', 'artist'].includes(parts[0]) ||
-      !/^[A-Za-z0-9]{10,64}$/.test(parts[1])) {
-    return null;
-  }
-  return { type: parts[0], id: parts[1] };
 }
 
 function spotifyEmbedCoverUrl(entity) {
@@ -4646,7 +4608,7 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
   requireTrustedIpc(event);
   jobId = requireIpcString(jobId, 'jobId', 64);
   if (!/^[A-Za-z0-9-]{8,64}$/.test(jobId)) throw new TypeError('jobId is invalid');
-  const url = validatedSpotifyUrl(rawUrl);
+  const url = validatedSpotifyUrl(requireIpcString(rawUrl, 'url', 2048));
   if (activeSpotifyPreflightJobs.has(jobId)) throw new Error('Spotify review job already exists');
   let cancelReview;
   const cancelledSignal = new Promise((resolve) => { cancelReview = resolve; });
@@ -5023,7 +4985,7 @@ ipcMain.handle(
     requireTrustedIpc(event);
     jobId = requireIpcString(jobId, 'jobId', 64);
     if (!/^[A-Za-z0-9-]{8,64}$/.test(jobId)) throw new TypeError('jobId is invalid');
-    const url = validatedSpotifyUrl(rawUrl);
+    const url = validatedSpotifyUrl(requireIpcString(rawUrl, 'url', 2048));
     destinationParentPath = requireAuthorizedIpcPath(
       destinationParentPath, 'destinationParentPath');
     if (!fs.statSync(destinationParentPath).isDirectory()) {
@@ -5459,7 +5421,7 @@ ipcMain.handle(
         groupUuid,
         updatedAt: Date.now(),
       });
-      if (!recovery) throw new Error('Could not save Spotify recovery state');
+      if (!recovery) throw new Error('Could not verify Spotify download results');
       const preferencesSaved = writeImportPreferences({
         ...readImportPreferences(),
         spotifyDestination: destinationParentPath,
