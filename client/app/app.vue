@@ -46,7 +46,14 @@
 
     <!-- Normal mode -->
     <template v-else>
-      <WelcomeScreen v-if="!currentProject" />
+      <WelcomeScreen
+        v-if="!currentProject"
+        ref="welcomeScreen"
+        :open-project="guardedOpenProject"
+        :project-file-dialog-open="projectFileDialogOpen"
+        @new-project="showNewProjectDialog"
+        @open-project="showOpenProjectPicker"
+      />
       <div v-else-if="projectHydrationStatus === 'failed'" class="project-hydration-error" role="alert">
         <strong>{{ t('projectHydration.failed') }}</strong>
         <span v-if="projectHydrationError">{{ projectHydrationError }}</span>
@@ -109,6 +116,59 @@
       @select="handleProjectSelection"
       @cancel="handleProjectSelectionCancel"
     />
+
+    <!-- The New Show form owns both values. Browsing for a location temporarily
+         swaps to the server-side picker so remote servers remain supported. -->
+    <ServerFilePickerModal
+      :open="projectPicker !== null"
+      :mode="projectPicker === 'new-location' ? 'directory' : 'file'"
+      :filter="projectPicker === 'new-location' ? 'all' : '.dwcue,.liveplay'"
+      :filter-options="projectPicker === 'new-location' ? ['all'] : ['.dwcue,.liveplay', 'all']"
+      :fallback-start-path="projectPickerFallback"
+      :location-context="projectPicker === 'new-location' ? 'project-create' : 'project-open'"
+      @pick="onProjectPickerPick"
+      @close="closeProjectPicker"
+    />
+
+    <Teleport to="body">
+      <div v-if="showNewShowDialog" class="name-dialog-backdrop" :data-theme="theme" @click.self="cancelNewShowDialog">
+        <form
+          class="name-dialog new-show-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="welcome-new-show-title"
+          @submit.prevent="createNewShow"
+          @keydown.stop
+          @keydown.escape.prevent="cancelNewShowDialog"
+        >
+          <h3 id="welcome-new-show-title" class="name-dialog__title">{{ t('project.newShow') }}</h3>
+          <label class="new-show-field" for="welcome-new-show-name">
+            <span>{{ t('project.showName') }}</span>
+            <input
+              id="welcome-new-show-name"
+              ref="newShowNameInput"
+              class="name-dialog__input"
+              v-model="newShowName"
+              :placeholder="t('project.placeholder')"
+              autocomplete="off"
+            />
+          </label>
+          <div class="new-show-field">
+            <label for="welcome-new-show-location">{{ t('project.location') }}</label>
+            <div class="new-show-location">
+              <input id="welcome-new-show-location" class="name-dialog__input" :value="newShowLocation" readonly />
+              <button ref="newShowBrowseButton" type="button" class="name-dialog__btn" @click="browseNewShowLocation">
+                {{ t('project.chooseLocation') }}
+              </button>
+            </div>
+          </div>
+          <div class="name-dialog__actions">
+            <button type="button" class="name-dialog__btn" :disabled="creatingNewShow" @click="cancelNewShowDialog">{{ t('common.cancel') }}</button>
+            <button type="submit" class="name-dialog__btn name-dialog__btn--primary" :disabled="!canCreateNewShow || creatingNewShow">{{ t('project.createShow') }}</button>
+          </div>
+        </form>
+      </div>
+    </Teleport>
 
     <!-- Loading overlay (project open / create / save) -->
     <LoadingOverlay :visible="isLoading" :title="loadingMessage" />
@@ -204,14 +264,17 @@
 <script setup lang="ts">
 import 'material-symbols/rounded.css';
 import OneShotPanel from './components/OneShotPanel.vue';
+import WelcomeScreen from './components/WelcomeScreen.vue';
 import type { ProjectFileKind } from '~/utils/projectFileFormats';
+import { projectFileAction } from '~/utils/projectFileFormats';
 import type { OneShotMutationIdentity, OneShotMutationRequest, OneShotMutationResult, OneShotProjectEnvelope } from '~/types/oneShotMutation';
 import { sameOneShotMutationIdentity } from '~/types/oneShotMutation';
 import { createProjectOpenGuard } from '~/utils/projectOpenGuard';
+import { runExclusivePendingAction } from '~/utils/acknowledgedAction';
 import { applyOneShotMutation, enforceOneShotDisarmFences } from '~/utils/oneShotMutation';
 
 const {
-  currentProject, saveProject, openProject, closeProject, confirmUnsavedChanges,
+  currentProject, saveProject, createNewProject, openProject, importLegacyProject, confirmUnsavedChanges,
   hasUnsavedChanges, autoSaveEnabled, projectSyncIdentity,
   projectHydrationStatus, projectHydrationError, retryProjectHydration,
   isLoading, loadingMessage,
@@ -231,20 +294,110 @@ import LocationChoiceModal from './components/LocationChoiceModal.vue';
 import ServerFilePickerModal from './components/ServerFilePickerModal.vue';
 const { currentLocale, setLocale, getDirection, t } = useLocalization();
 
-const guardedOpenProject = createProjectOpenGuard({
-  confirmUnsavedChanges,
-  openProject,
-  onOpenFailed() {
-    useLiveplayServer().lastError = t('importProgress.openFailed');
+const openProjectGuard = createProjectOpenGuard({
+  confirmUnsavedChanges: () => unsavedDialogVisible.value ? Promise.resolve(false) : confirmUnsavedChanges(),
+  openProject(path) {
+    const action = projectFileAction(path);
+    if (action === 'open-project') return openProject(path);
+    if (action === 'import-legacy-project') return importLegacyProject(path);
+    return Promise.resolve(false);
+  },
+  onOpenFailed(path) {
+    useLiveplayServer().lastError = t('project.openFailed', { path });
   },
 });
+const guardedOpenProject = (path: string) =>
+  runExclusivePendingAction('project-file-change', `open:${path}`, () => openProjectGuard(path));
+
+const welcomeScreen = ref<InstanceType<typeof WelcomeScreen> | null>(null);
+const projectPicker = ref<'open' | 'new-location' | null>(null);
+const projectPickerFallback = ref('');
+const showNewShowDialog = ref(false);
+const projectFileDialogOpen = computed(() => showNewShowDialog.value || projectPicker.value !== null);
+const newShowName = ref('');
+const newShowLocation = ref('');
+const newShowLocations = useFilePickerLocations(() => String(useLiveplayServer().serverUrl), 'project-create');
+const newShowNameInput = ref<HTMLInputElement | null>(null);
+const newShowBrowseButton = ref<HTMLButtonElement | null>(null);
+const newShowDialogReturnFocus = ref<HTMLElement | null>(null);
+const creatingNewShow = ref(false);
+const canCreateNewShow = computed(() => !!newShowName.value.trim() && !!newShowLocation.value.trim());
+
+function showNewProjectDialog(fallbackFolder: string) {
+  if (projectFileDialogOpen.value || isLoading.value || unsavedDialogVisible.value) return;
+  projectPickerFallback.value = fallbackFolder;
+  newShowName.value = '';
+  newShowLocation.value = newShowLocations.lastFolder.value ?? fallbackFolder;
+  newShowDialogReturnFocus.value = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  showNewShowDialog.value = true;
+  nextTick(() => newShowNameInput.value?.focus());
+}
+
+function showOpenProjectPicker(fallbackFolder: string) {
+  if (projectFileDialogOpen.value || isLoading.value || unsavedDialogVisible.value) return;
+  projectPickerFallback.value = fallbackFolder;
+  projectPicker.value = 'open';
+}
+
+function browseNewShowLocation() {
+  showNewShowDialog.value = false;
+  projectPicker.value = 'new-location';
+}
+
+function closeProjectPicker() {
+  if (projectPicker.value === 'new-location') {
+    showNewShowDialog.value = true;
+    nextTick(() => newShowBrowseButton.value?.focus());
+  }
+  projectPicker.value = null;
+}
+
+function onProjectPickerPick(path: string) {
+  const intent = projectPicker.value;
+  closeProjectPicker();
+  if (!path) return;
+  if (intent === 'new-location') newShowLocation.value = path;
+  else if (intent === 'open') void guardedOpenProject(path);
+}
+
+async function createNewShow() {
+  const name = newShowName.value.trim();
+  const folder = newShowLocation.value.trim();
+  if (!name || !folder || creatingNewShow.value || unsavedDialogVisible.value) return;
+  creatingNewShow.value = true;
+  try {
+    const created = await runExclusivePendingAction('project-file-change', 'create', async () => {
+      if (!await confirmUnsavedChanges()) return false;
+      const ok = await createNewProject(name, folder);
+      if (!ok) useLiveplayServer().lastError = t('project.createFailed');
+      return ok;
+    });
+    if (created) showNewShowDialog.value = false;
+    else nextTick(() => newShowNameInput.value?.focus());
+  } finally {
+    creatingNewShow.value = false;
+  }
+}
+
+function cancelNewShowDialog() {
+  if (creatingNewShow.value) return;
+  showNewShowDialog.value = false;
+  nextTick(() => {
+    if (newShowDialogReturnFocus.value?.isConnected) newShowDialogReturnFocus.value.focus();
+    else welcomeScreen.value?.queueStageFocus();
+  });
+}
 
 let activeFileRoute = '';
 async function routePendingFile(data: { filePath: string; kind: ProjectFileKind }) {
   if (!data?.filePath || activeFileRoute) return;
   activeFileRoute = data.filePath;
   try {
-    if (data.kind === 'native-project') {
+    if (data.kind === 'native-project' || (data.kind === 'legacy-project' && currentProject.value)) {
+      if (data.kind === 'legacy-project' && !useLiveplayServer().isLocalServer) {
+        useLiveplayServer().lastError = t('project.openFailed', { path: data.filePath });
+        return;
+      }
       await guardedOpenProject(data.filePath);
       return;
     }
@@ -257,13 +410,6 @@ async function routePendingFile(data: { filePath: string; kind: ProjectFileKind 
       return;
     }
     pendingFileOpen.value = { path: data.filePath, kind: data.kind };
-    if (currentProject.value) {
-      if (!(await confirmUnsavedChanges())) {
-        pendingFileOpen.value = null;
-        return;
-      }
-      await closeProject();
-    }
   } finally {
     activeFileRoute = '';
   }
@@ -497,6 +643,20 @@ onMounted(() => {
     
     window.electronAPI.onMenuShowAbout(() => {
       showAboutModal.value = true;
+    });
+
+    window.electronAPI.onMenuNewProject(() => {
+      if (currentProject.value) showNewProjectDialog(currentProject.value.folderPath);
+      else welcomeScreen.value?.handleNewProject();
+    });
+    window.electronAPI.onMenuOpenProject(() => {
+      if (currentProject.value) showOpenProjectPicker(currentProject.value.folderPath);
+      else welcomeScreen.value?.handleOpenProject();
+    });
+    window.electronAPI.onMenuOpenRecentProject((_event, path) => {
+      if (!projectFileDialogOpen.value && (currentProject.value || welcomeScreen.value?.projectPickerReady)) {
+        return guardedOpenProject(path);
+      }
     });
     
     // File > Import Project. Local servers can browse a canonical .dwcuepack
@@ -1025,5 +1185,116 @@ onMounted(() => {
     font-size: 48px;
     opacity: 0.3;
   }
+}
+</style>
+
+<style>
+/* New Show form is teleported to body. */
+.name-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9200;
+  background: var(--dialog-backdrop);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.name-dialog {
+  background: var(--dialog-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--dialog-radius);
+  padding: var(--dialog-padding);
+  min-width: 360px;
+  max-width: 480px;
+  width: 90vw;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  box-shadow: var(--dialog-shadow);
+}
+
+.name-dialog__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.name-dialog__input {
+  padding: 10px 12px;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-md);
+  color: var(--color-text-primary);
+  font-size: 14px;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.name-dialog__input:focus { border-color: var(--color-accent); }
+
+.new-show-dialog { width: min(520px, 92vw); }
+
+.new-show-field {
+  display: grid;
+  gap: 6px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.new-show-location {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--spacing-sm);
+}
+
+.new-show-location .name-dialog__input {
+  min-width: 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+}
+
+.name-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+}
+
+.name-dialog__btn {
+  min-height: var(--panel-control-height);
+  padding: 6px 12px;
+  border-radius: var(--control-radius);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  color: var(--color-text-primary);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.name-dialog__btn:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+  border-color: var(--color-accent);
+}
+
+.name-dialog__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.name-dialog__btn--primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
+.name-dialog__btn--primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
 }
 </style>

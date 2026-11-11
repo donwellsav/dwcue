@@ -590,33 +590,6 @@ if (import.meta.client && window.electronAPI) {
     void closeProject();
   });
 
-  // File > New and File > Open while a project is already open: close the
-  // current project (locally + on the server) and stash the intent so the
-  // welcome screen pops the corresponding picker as soon as it mounts.
-  // Without this, these menu items were silent when something was open —
-  // only WelcomeScreen used to subscribe, and it isn't mounted right now.
-  window.electronAPI.onMenuNewProject(async () => {
-    if (!(await confirmUnsavedChanges())) return;
-    try { sessionStorage.setItem('liveplay:welcomeIntent', 'new'); } catch {}
-    await closeProject();
-  });
-
-  window.electronAPI.onMenuOpenProject(async () => {
-    if (!(await confirmUnsavedChanges())) return;
-    try { sessionStorage.setItem('liveplay:welcomeIntent', 'open'); } catch {}
-    await closeProject();
-  });
-
-  // File > Open Recent > <project> while a project is already open. Same
-  // shape as onMenuOpenProject, but we stash the exact path so the welcome
-  // screen opens it directly instead of popping the file picker.
-  window.electronAPI.onMenuOpenRecentProject(async (_e, projectPath) => {
-    if (!projectPath) return;
-    if (!(await confirmUnsavedChanges())) return;
-    try { sessionStorage.setItem('liveplay:welcomeOpenPath', projectPath); } catch {}
-    await closeProject();
-  });
-
   window.electronAPI.onMenuOpenProjectFolder(() => {
     if (currentProject.value) {
       window.electronAPI.openFolder(currentProject.value.folderPath);

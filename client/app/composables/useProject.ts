@@ -633,8 +633,7 @@ export const useProject = () => {
   // ----------------------------------------------------------------------
   // Server-backed project I/O.
   // ----------------------------------------------------------------------
-  // Create a new empty project, push it to the server, and ask the server
-  // to write the canonical .dwcue file.
+  // Create and save the canonical show before the server switches to it.
   const createNewProject = async (name: string, folderPath: string): Promise<boolean> => {
     isLoading.value = true;
     loadingMessage.value = 'Creating project…';
@@ -659,16 +658,10 @@ export const useProject = () => {
         lastModified: new Date().toISOString()
       };
 
-      // Server-side: load a new show session with this fresh shell. Returns the
-      // header (items array is empty for a fresh project anyway, so no
-      // streaming is needed here).
       isHydrating.value = true;
       try {
-        const created = await server.loadProjectDocument(newProject as any);
         const projectFilePath = projectPathInFolder(folderPath, name);
-        const saved = await server.saveProjectTo(projectFilePath, newProject, undefined, created?.server?.projectSessionId);
-        if (!saved?.ok) throw new Error('Server did not save the new project');
-        const header = await server.fetchProjectHeader();
+        const header = await server.loadProjectDocument(newProject, projectFilePath);
         const hydration = applyServerHeader(header);
         if (!hydration) throw new Error('Server did not open the new project');
         hydration.finish(true);

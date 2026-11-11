@@ -648,10 +648,11 @@ function createClient() {
       body: JSON.stringify({ path }),
     }).then(p => { fetchCues(); fetchMixerChannels(); return p; });
   }
-  async function loadProjectDocument(document: any) {
+  async function loadProjectDocument(document: any, createPath: string) {
     return rest<any>('/api/project/load', {
       method: 'POST',
-      body: JSON.stringify({ document }),
+      // Older servers reject this shape instead of loading an unsaved show.
+      body: JSON.stringify({ create: { path: createPath, document } }),
     });
   }
   async function importLegacyProjectFromPath(path: string, destinationPath?: string) {

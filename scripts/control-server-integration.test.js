@@ -137,6 +137,57 @@ test('project session preconditions reject delayed edits after switching or reop
       assert.equal(saved.status, 200, await saved.text());
       assert.equal((await current()).path, q);
     });
+    await t.test('rejected show files and failed New Show writes preserve playing cues', async () => {
+      const media = path.join(folder, 'show-bed.wav');
+      await writeFile(media, silentWav(10));
+      await writeFile(p, JSON.stringify({ ...project('Running'), items: [{
+        uuid: 'show-bed', type: 'audio', displayName: 'Show bed', mediaServerPath: media,
+        duration: 10, endBehavior: { action: 'loop' },
+      }] }));
+      await load(p);
+      const before = await current();
+      const play = await request(baseUrl, '/api/project/items/show-bed/play', {
+        method: 'POST', body: '{}',
+      });
+      assert.equal(play.status, 200, await play.text());
+      const playing = async () => (await (await request(baseUrl, '/api/state/summary')).json())
+        .playing.map(item => item.itemUuid);
+      assert.deepEqual(await playing(), ['show-bed']);
+      const broken = path.join(folder, 'Broken.dwcue');
+      const unrelated = path.join(folder, 'Unrelated.dwcue');
+      const legacy = path.join(folder, 'Broken.liveplay');
+      await writeFile(broken, '{');
+      await writeFile(unrelated, '{"event":"This is not a show"}');
+      await writeFile(legacy, '{');
+      const createPath = path.join(folder, 'New.dwcue');
+      const newShow = { ...project('New'), items: [], cartItems: [] };
+      const originalBytes = await readFile(p, 'utf8');
+      const change = (route, body) => request(baseUrl, `/api/project/${route}`, {
+        method: 'POST', body: JSON.stringify(body),
+        headers: { 'X-DWCUE-Project-Session': before.session },
+      });
+      for (const [route, body, status] of [
+        ['load', { path: broken }, 400],
+        ['load', { path: unrelated }, 400],
+        ['load', { path: path.join(folder, 'Missing.dwcue') }, 400],
+        ['import-legacy', { path: legacy }, 400],
+        ['load', { create: { document: newShow, path: path.join(folder, 'missing', 'New.dwcue') } }, 500],
+        ['load', { create: { document: newShow, path: p } }, 409],
+      ]) {
+        const result = await change(route, body);
+        assert.equal(result.status, status, await result.text());
+        assert.deepEqual(await current(), before);
+        assert.deepEqual(await playing(), ['show-bed']);
+      }
+      assert.equal(await readFile(p, 'utf8'), originalBytes);
+      const created = await change('load', { create: { document: newShow, path: createPath } });
+      assert.equal(created.status, 200, await created.clone().text());
+      const header = await created.json();
+      assert.equal(header.server.projectFilePath, createPath);
+      assert.notEqual(header.server.projectSessionId, before.session);
+      assert.equal(JSON.parse(await readFile(createPath, 'utf8')).name, 'New');
+      assert.deepEqual(await playing(), []);
+    });
   } catch (error) { error.message += `\nNative server diagnostics:\n${diagnostics}`; throw error; }
 });
 

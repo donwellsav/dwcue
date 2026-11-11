@@ -70,7 +70,7 @@ On launch, the desktop normally starts its managed local server automatically. T
 
 ### Create a show
 
-1. On the welcome screen choose **New Show**.
+1. On the welcome screen choose **New Show**, or use **File → New Project** while a show is open.
 2. Enter a descriptive **Show name**, such as `Evening Show - rehearsal`.
 3. Beside **Location**, choose **Choose…**. Location is a read-only summary, not a text field.
 4. In the folder picker, navigate to the destination. You may type an absolute path in its path bar and press Enter. Choose **Select folder**.
@@ -78,7 +78,7 @@ On launch, the desktop normally starts its managed local server automatically. T
 
 ![New Show form with a practice name and disposable destination selected.](manual-assets/new-show-current.png)
 
-**Expected result:** The workspace opens with the new show name and an empty playlist. **If it does not:** remain on the welcome/dialog state, choose a writable dedicated folder, and create again; do not reuse a folder merely because its name resembles the show.
+**Expected result:** After the new file is saved, the workspace opens with the new show name and an empty playlist. Canceling or a failed write leaves any current show playing. If the selected name already exists in that folder, choose a different name or folder.
 
 DonWells Cue creates `<show name>.dwcue` and `media/` in the selected folder; portable exports use `.dwcuepack`. Keep that folder dedicated to the show. A remote picker uses the engine computer. See chapter 11 for legacy import and non-overwrite safeguards.
 
@@ -645,7 +645,7 @@ Extraction refuses unsafe entries and destination collisions rather than silentl
 
 On loading a document that needs supported structural repairs, **Corrupt Project Detected** can appear. **Repair & Save** writes the repaired canonical document. **Open Without Saving** opens the already repaired in-memory document but leaves its canonical disk file unchanged until a later save. It does not recover missing media or guarantee that every damaged project is repairable. Legacy source bytes remain untouched by either choice. Preserve the source, then inspect the cue count, groups, One Shots, and jump targets.
 
-A refused project open is not a Stop All command: verify which show is still loaded and sounding. A successful load, including reopening the same file, clears the previous selection and armed override. The first playable cue is armed when the project’s automatic-cue option allows it; always confirm Play Next before GO.
+**File → Open Project** lets you browse while the current show plays. Canceling the picker or selecting an unavailable or invalid file leaves that show playing. The same applies if **Open Recent** cannot load its file. A successful load, including reopening the same file, clears the previous selection and armed override. The first playable cue is armed when the project’s automatic-cue option allows it. Confirm Play Next before GO.
 
 Recognized malformed cue, group and audio-settings values are refused before replacing the current show or overwriting its saved file. Keep the known-good copy and correct the rejected document separately. Supported legacy/default repairs still apply; a refusal does not promise that every damaged file can be repaired.
 

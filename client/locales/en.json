@@ -334,6 +334,8 @@
     "location": "Location",
     "chooseLocation": "Choose…",
     "createShow": "Create Show",
+    "createFailed": "Could not create the show. Check the folder permissions and choose an unused show name.",
+    "openFailed": "Could not open {path}. Check that the show file is available and valid.",
     "enterName": "Enter Project Name",
     "placeholder": "My Project",
     "cancel": "Cancel",

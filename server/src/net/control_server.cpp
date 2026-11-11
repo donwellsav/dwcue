@@ -3506,7 +3506,25 @@ void ControlServer::install_routes() {
             if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
             try {
                 auto j = json::parse(req.body);
-                if (j.contains("path")) {
+                if (const auto create = j.find("create"); create != j.end()) {
+                    const auto path = liveplay::util::utf8_to_path(create->at("path").get<std::string>());
+                    if (!path.is_absolute() || !core::project_file::is_native_project(path))
+                        return json_err(400, "new show requires an absolute .dwcue path");
+                    core::project_file::PreparedDocument prepared;
+                    std::string error;
+                    if (!core::project_file::prepare_client_document(
+                            create->at("document"), path.parent_path(), prepared, error))
+                        return json_err(400, error);
+                    // Persist before replacing the live document, including for same-name shows.
+                    std::error_code write_error;
+                    if (!core::project_file::write_new_canonical_project(path, prepared.document, write_error)) {
+                        if (write_error == std::errc::file_exists)
+                            return json_err(409, "a show already exists at the chosen path");
+                        return json_err(500, "could not save the new show: " + write_error.message());
+                    }
+                    if (!state_.load_from_json(prepared.document, path))
+                        return json_err(400, "the new show was saved but could not be opened");
+                } else if (j.contains("path")) {
                     const std::string path_str = j["path"].get<std::string>();
                     Logger::api_request("Client ({}) -> Server ({}) : POST /api/project/load path='{}'",
                                         req.remote_ip_address, impl_->server_addr, path_str);
@@ -3529,8 +3547,7 @@ void ControlServer::install_routes() {
                         return json_err(400, "load failed");
                     }
                 } else {
-                    Logger::warn("POST /api/project/load — missing 'path' or 'document' in body");
-                    return json_err(400, "expected 'path' or 'document'");
+                    return json_err(400, "expected 'path', 'document', or 'create'");
                 }
                 auto repair = state_.consume_repair_info();
                 auto header = state_.header_document();

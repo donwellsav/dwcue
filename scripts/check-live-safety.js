@@ -174,14 +174,15 @@ assert.match(
 );
 
 const welcome = read('client/app/components/WelcomeScreen.vue');
+const appVue = read('client/app/app.vue');
 assert.match(
   welcome,
   /discovered-rescan[\s\S]*:aria-label="t\('welcome\.rescan'\)"/,
   'the icon-only server rescan control must have an explicit accessible name',
 );
 assert.match(
-  welcome,
-  /class="name-dialog(?: [^"]*)?"[\s\S]*role="dialog"[\s\S]*aria-modal="true"[\s\S]*:aria-labelledby/,
+  appVue,
+  /class="name-dialog(?: [^"]*)?"[\s\S]*role="dialog"[\s\S]*aria-modal="true"[\s\S]*aria-labelledby=/,
   'the new-project prompt must expose native dialog semantics',
 );
 const playlistItem = read('client/app/components/PlaylistItem.vue');
@@ -2249,7 +2250,6 @@ assert.match(
   'project export must persist the authoritative document before zipping disk state',
 );
 
-const appVue = read('client/app/app.vue');
 assert.match(
   appVue,
   /watch\(theme,[\s\S]*document\.documentElement\.dataset\.theme = value/,
@@ -2598,10 +2598,9 @@ for (const file of [
   'SpotifyImportModal.vue',
   'UnsavedChangesModal.vue',
   'UpdateModal.vue',
-  'WelcomeScreen.vue',
   'YouTubeImportModal.vue',
-]) {
-  const dialog = read(`client/app/components/${file}`);
+].map(file => `client/app/components/${file}`).concat('client/app/app.vue')) {
+  const dialog = read(file);
   for (const token of ['backdrop', 'surface', 'radius', 'shadow']) {
     assert.match(dialog, new RegExp(`var\\(--dialog-${token}\\)`),
       `${file} must use the shared dialog ${token}`);

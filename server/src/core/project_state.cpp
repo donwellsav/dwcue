@@ -4991,6 +4991,16 @@ bool ProjectState::load(const std::filesystem::path& path) {
         }
         json doc;
         f >> doc;
+        const auto has_array = [&doc](const char* key) {
+            const auto field = doc.find(key);
+            return field != doc.end() && field->is_array();
+        };
+        const bool legacy = is_legacy_document(doc) &&
+            (has_array("carts") || has_array("playlist") || has_array("cues_legacy"));
+        if (!project_file::is_client_document(doc) && !has_array("cues") && !legacy) {
+            Logger::error("ProjectState::load: unsupported show document in '{}'", util::path_to_utf8(path));
+            return false;
+        }
         // The media/ folder always lives next to the .dwcue file, so the
         // project folder is authoritatively the directory the file sits in —
         // regardless of any (possibly stale) folderPath baked into the document

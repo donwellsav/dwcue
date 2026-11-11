@@ -98,26 +98,27 @@ test('an owned project header commits its server session together with the local
   assert.equal(session.value, 'closed-session');
 });
 
-test('new-project save uses the session returned by loading its new document', async () => {
-  const calls: any[][] = [];
+test('New Show opens the header from the server operation that saves before switching', async () => {
+  const calls: unknown[][] = [];
+  const header = { hasOpenProject: true, server: { projectFilePath: '/show/New.dwcue', projectSessionId: 'created-session' } };
   const server = { connected: true,
-    replaceProjectDocument: async (...args: any[]) => { calls.push(['replace', ...args]); return { server: { projectSessionId: 'existing-session' } }; },
-    loadProjectDocument: async (...args: any[]) => { calls.push(['load-document', ...args]); return { server: { projectSessionId: 'created-session' } }; },
-    saveProjectTo: async (...args: any[]) => { calls.push(['save', ...args]); return { ok: true }; },
-    fetchProjectHeader: async () => ({ server: { projectSessionId: 'saved-session' } }),
+    loadProjectDocument: async (document: { name: string }, createPath?: string) => {
+      calls.push([document.name, createPath]);
+      return header;
+    },
+    saveProjectTo: async () => { calls.push(['separate save']); return { ok: true }; },
+    fetchProjectHeader: async () => header,
   };
   const create = projectFunction('createNewProject', {
     isLoading: { value: false }, loadingMessage: { value: '' }, isHydrating: { value: false },
     useLiveplayServer: () => server, DEFAULT_CART_SLOT_KEYS: {}, DEFAULT_THEME: {}, DEFAULT_PROJECT_SETTINGS: {},
     projectPathInFolder: (folder: string, name: string) => `${folder}/${name}.dwcue`,
-    applyServerHeader: () => ({ finish() {} }), nextTick: async () => {},
+    applyServerHeader: (accepted: unknown) => { calls.push(['accepted', accepted]); return { finish() {} }; }, nextTick: async () => {},
     refreshItemsBaselineAfterHydrate() {}, installItemsWatcherFn() {}, recordRecentProject() {},
     projectFilePathRef: { value: '/show/New.dwcue' },
   });
   assert.equal(await create('New', '/show'), true);
-  assert.equal(calls[0][0], 'load-document');
-  assert.equal(calls[1][0], 'save');
-  assert.equal(calls[1][4], 'created-session');
+  assert.deepEqual(calls, [['New', '/show/New.dwcue'], ['accepted', header]]);
 });
 
 test('explicit session recovery uses fresh server and load identities for its chained writes', async () => {

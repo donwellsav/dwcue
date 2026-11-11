@@ -270,67 +270,21 @@ ref="localModeButton"
       >{{ t('menu.operatorManual') }}</button>
     </div>
 
-    <!-- The New Show form owns both values. Browsing for a location temporarily
-         swaps to the server-side picker so remote servers remain supported. -->
-    <ServerFilePickerModal
-      :open="showPicker"
-      :mode="pickerMode"
-      :filter="pickerFilter"
-      :filter-options="pickerFilterOptions"
-      :start-path="pickerStart"
-      :fallback-start-path="pickerFallbackStart"
-      :location-context="pickerIntent === 'new-location' ? 'project-create' : 'project-open'"
-      @pick="onPickerPick"
-      @close="onPickerClose"
-    />
-
-    <Teleport to="body">
-      <div v-if="showNewShowDialog" class="name-dialog-backdrop" :data-theme="theme" @click.self="cancelNewShowDialog">
-        <form
-          class="name-dialog new-show-dialog"
-          role="dialog"
-          aria-modal="true"
-          :aria-labelledby="newShowDialogTitleId"
-          @submit.prevent="createNewShow"
-          @keydown.escape.prevent="cancelNewShowDialog"
-        >
-          <h3 :id="newShowDialogTitleId" class="name-dialog__title">{{ t('project.newShow') }}</h3>
-          <label class="new-show-field" for="welcome-new-show-name">
-            <span>{{ t('project.showName') }}</span>
-            <input
-              id="welcome-new-show-name"
-              ref="newShowNameInput"
-              class="name-dialog__input"
-              v-model="newShowName"
-              :placeholder="t('project.placeholder')"
-              autocomplete="off"
-            />
-          </label>
-          <div class="new-show-field">
-            <label for="welcome-new-show-location">{{ t('project.location') }}</label>
-            <div class="new-show-location">
-              <input id="welcome-new-show-location" class="name-dialog__input" :value="newShowLocation" readonly />
-              <button ref="newShowBrowseButton" type="button" class="name-dialog__btn" @click="browseNewShowLocation">
-                {{ t('project.chooseLocation') }}
-              </button>
-            </div>
-          </div>
-          <div class="name-dialog__actions">
-            <button type="button" class="name-dialog__btn" :disabled="creatingNewShow" @click="cancelNewShowDialog">{{ t('common.cancel') }}</button>
-            <button type="submit" class="name-dialog__btn name-dialog__btn--primary" :disabled="!canCreateNewShow || creatingNewShow">{{ t('project.createShow') }}</button>
-          </div>
-        </form>
-      </div>
-    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import ServerFilePickerModal from './ServerFilePickerModal.vue';
 import type { ProjectFileKind } from '~/utils/projectFileFormats';
-import { projectFileAction } from '~/utils/projectFileFormats';
 
-const { createNewProject, importLegacyProject, openProject, tryRejoinExistingProject } = useProject();
+const props = defineProps<{
+  openProject: (path: string) => Promise<boolean>;
+  projectFileDialogOpen: boolean;
+}>();
+const emit = defineEmits<{
+  newProject: [fallbackFolder: string];
+  openProject: [fallbackFolder: string];
+}>();
+const { tryRejoinExistingProject } = useProject();
 const { t } = useLocalization();
 const server = useLiveplayServer();
 
@@ -385,26 +339,12 @@ const localModeButton = ref<HTMLButtonElement | null>(null);
 const remoteAddressInput = ref<HTMLInputElement | null>(null);
 const changeModeButton = ref<HTMLButtonElement | null>(null);
 const newProjectButton = ref<HTMLButtonElement | null>(null);
-const newShowNameInput = ref<HTMLInputElement | null>(null);
-const newShowBrowseButton = ref<HTMLButtonElement | null>(null);
-const newShowDialogReturnFocus = ref<HTMLElement | null>(null);
-const newShowDialogTitleId = 'welcome-new-show-title';
 
 const canOpenOperatorManual = import.meta.client && typeof window.electronAPI?.openOperatorManual === 'function';
 const openOperatorManual = () => { void window.electronAPI.openOperatorManual(); };
 
 // Computed reflection of the currently-configured server URL.
 const serverUrlDisplay = computed(() => server.serverUrl ?? 'http://127.0.0.1:4480');
-
-// Server file picker state — Open Project, plus the location chooser launched
-// from the combined New Show form.
-const showPicker          = ref(false);
-const pickerMode          = ref<'file' | 'directory'>('directory');
-const pickerFilter        = ref<string>('.dwcue,.liveplay');
-const pickerFilterOptions = ref<string[]>(['.dwcue,.liveplay', 'all']);
-const pickerStart         = ref<string | undefined>(undefined);
-const pickerFallbackStart = ref<string>('');
-const pickerIntent        = ref<'new-location' | 'open'>('open');
 
 // Get app version
 const appVersion = ref('2.6.19');
@@ -438,41 +378,8 @@ onMounted(async () => {
   if (pending) {
     await handlePendingFileOpen(pending);
   } else {
-    // If the user just hit File > New / Open while a project was open, we
-    // closed that project to land them here — skip the mode picker (their
-    // server is still configured) and pop the appropriate picker straight
-    // away. Without this, File > New would dump them at the mode picker
-    // instead of the new-project flow they actually asked for.
-    let welcomeOpenPath: string | null = null;
-    try { welcomeOpenPath = sessionStorage.getItem('liveplay:welcomeOpenPath'); } catch {}
-    let welcomeIntent: string | null = null;
-    try { welcomeIntent = sessionStorage.getItem('liveplay:welcomeIntent'); } catch {}
-    if (welcomeOpenPath) {
-      // File > Open Recent closed the previous project to land us here with an
-      // exact path to open or import. The server connection remains active.
-      try { sessionStorage.removeItem('liveplay:welcomeOpenPath'); } catch {}
-      stage.value = 'project';
-      nextTick(async () => {
-        const ok = await openSelectedProject(welcomeOpenPath!);
-        if (!ok) alert('Failed to open project');
-      });
-    } else if (welcomeIntent === 'new' || welcomeIntent === 'open') {
-      try { sessionStorage.removeItem('liveplay:welcomeIntent'); } catch {}
-      stage.value = 'project';
-      // Defer to next tick so the project-stage UI is mounted before we
-      // ask it to open its modal.
-      nextTick(() => {
-        if (welcomeIntent === 'new') handleNewProject();
-        else                          handleOpenProject();
-      });
-    } else {
-      // This release ships local-only: skip the server-choice screen and go
-      // straight to the embedded engine. The remote/network UI stays in place
-      // (behind the per-device toggle) for a future update. stage is already
-      // 'mode', so if the local server fails to start the picker reappears
-      // with the error visible.
-      void chooseLocal();
-    }
+    // Start the embedded engine. The mode picker remains available on failure.
+    void chooseLocal();
   }
 
   // Start LAN discovery so the remote-mode stage immediately shows any
@@ -513,7 +420,7 @@ async function handlePendingFileOpen(p: { path: string; kind: ProjectFileKind })
     connecting.value = true;
     try {
       if (!(await ensureLocalServer())) { stage.value = 'mode'; return; }
-      const ok = await openSelectedProject(p.path);
+      const ok = await props.openProject(p.path);
       if (!ok) {
         connectionError.value = t('welcome.connectionFailed');
         stage.value = 'mode';
@@ -797,34 +704,12 @@ function projectBasename(path: string): string {
 function projectFolder(path: string): string {
   return path.replace(/[\\/][^\\/]*$/, '');
 }
-async function openSelectedProject(projectPath: string): Promise<boolean> {
-  const action = projectFileAction(projectPath);
-  if (action === 'open-project') return openProject(projectPath);
-  if (action === 'import-legacy-project') return importLegacyProject(projectPath);
-  return false;
-}
-
 function recentProjectStartPath(): string {
   const first = recentProjects.value[0];
   return first?.folderPath || (first?.path ? projectFolder(first.path) : '');
 }
 
-async function openRecentProject(project: RecentProject) {
-  if (!project.path) return;
-
-  const ok = await openSelectedProject(project.path);
-
-  if (!ok) {
-    console.warn('[welcome] failed to open recent project:', project.path);
-    alert(
-      `Failed to open project.\n\n` +
-      `DonWells Cue could not load this recent project from the current server. ` +
-      `The file may exist, but it may be unavailable, locked, not fully synced, or not readable by the server.\n\n` +
-      `Recent entry:\n${project.path}\n\n` +
-      `The entry was not removed. You can remove it manually with the X button.`
-    );
-  }
-}
+const openRecentProject = (project: RecentProject) => props.openProject(project.path);
 
 async function removeRecentProject(project: RecentProject) {
   if (!project.path) return;
@@ -843,7 +728,7 @@ function focusIfConnected(el: HTMLElement | null | undefined) {
 
 function queueStageFocus(targetStage = stage.value) {
   nextTick(() => {
-    if (showNewShowDialog.value || showPicker.value) return;
+    if (props.projectFileDialogOpen) return;
     if (targetStage === 'remote') {
       focusIfConnected(remoteAddressInput.value);
       return;
@@ -855,114 +740,15 @@ function queueStageFocus(targetStage = stage.value) {
     focusIfConnected(localModeButton.value);
   });
 }
-// ---- Project pickers -------------------------------------------------------
-const showNewShowDialog = ref(false);
-const newShowName = ref('');
-const newShowLocation = ref('');
-const newShowLocations = useFilePickerLocations(() => String(server.serverUrl), 'project-create');
-const creatingNewShow = ref(false);
-const canCreateNewShow = computed(() => !!newShowName.value.trim() && !!newShowLocation.value.trim());
-
+const projectPickerReady = computed(() => stage.value === 'project');
 const handleNewProject = () => {
-  newShowName.value = '';
-  newShowLocation.value = newShowLocations.lastFolder.value ?? recentProjectStartPath();
-  newShowDialogReturnFocus.value = document.activeElement instanceof HTMLElement
-    ? document.activeElement
-    : null;
-  showNewShowDialog.value = true;
-  nextTick(() => newShowNameInput.value?.focus());
+  if (projectPickerReady.value) emit('newProject', recentProjectStartPath());
 };
-
-function browseNewShowLocation() {
-  pickerIntent.value        = 'new-location';
-  pickerMode.value          = 'directory';
-  pickerFilter.value        = 'all';
-  pickerFilterOptions.value = ['all'];
-  pickerStart.value         = undefined;
-  pickerFallbackStart.value = recentProjectStartPath();
-  showNewShowDialog.value   = false;
-  showPicker.value          = true;
-}
-
 const handleOpenProject = () => {
-  pickerIntent.value        = 'open';
-  pickerMode.value          = 'file';
-  pickerFilter.value        = '.dwcue,.liveplay';
-  pickerFilterOptions.value = ['.dwcue,.liveplay', 'all'];
-  pickerStart.value         = undefined;
-  pickerFallbackStart.value = recentProjectStartPath();
-  showPicker.value          = true;
+  if (projectPickerReady.value) emit('openProject', recentProjectStartPath());
 };
 
-const onPickerPick = async (fullPath: string) => {
-  showPicker.value = false;
-  if (pickerIntent.value === 'new-location') {
-    if (fullPath) newShowLocation.value = fullPath;
-    showNewShowDialog.value = true;
-    nextTick(() => newShowBrowseButton.value?.focus());
-    return;
-  }
-  if (!fullPath) return;
-  const ok = await openSelectedProject(fullPath);
-  if (!ok) alert('Failed to open project');
-};
-
-function onPickerClose() {
-  showPicker.value = false;
-  if (pickerIntent.value !== 'new-location') return;
-  showNewShowDialog.value = true;
-  nextTick(() => newShowBrowseButton.value?.focus());
-}
-
-function restoreNewShowDialogFocus() {
-  nextTick(() => {
-    if (newShowDialogReturnFocus.value?.isConnected) {
-      newShowDialogReturnFocus.value.focus();
-      return;
-    }
-    queueStageFocus();
-  });
-}
-
-async function createNewShow() {
-  const name = newShowName.value.trim();
-  const location = newShowLocation.value.trim();
-  if (!name || !location || creatingNewShow.value) return;
-  creatingNewShow.value = true;
-  const ok = await createNewProject(name, location);
-  creatingNewShow.value = false;
-  if (!ok) {
-    alert('Failed to create project');
-    nextTick(() => newShowNameInput.value?.focus());
-    return;
-  }
-  showNewShowDialog.value = false;
-}
-
-function cancelNewShowDialog() {
-  if (creatingNewShow.value) return;
-  showNewShowDialog.value = false;
-  restoreNewShowDialogFocus();
-}
-
-// Listen for menu events
-if (import.meta.client && (window as any).electronAPI) {
-  (window as any).electronAPI.onMenuNewProject(() => {
-    if (stage.value === 'project') handleNewProject();
-  });
-
-  (window as any).electronAPI.onMenuOpenProject(() => {
-    if (stage.value === 'project') handleOpenProject();
-  });
-
-  // File > Open Recent while no project is open (we're already on the project
-  // stage, connected to a server) — open the chosen path directly.
-  (window as any).electronAPI.onMenuOpenRecentProject(async (_e: any, projectPath: string) => {
-    if (stage.value !== 'project' || !projectPath) return;
-    const ok = await openSelectedProject(projectPath);
-    if (!ok) alert('Failed to open project');
-  });
-}
+defineExpose({ handleNewProject, handleOpenProject, projectPickerReady, queueStageFocus });
 </script>
 
 <style scoped>
@@ -1306,116 +1092,5 @@ if (import.meta.client && (window as any).electronAPI) {
   .welcome-actions {
     grid-template-columns: 1fr;
   }
-}
-</style>
-
-/* New-project name dialog — unscoped due to Teleport to body */
-<style>
-.name-dialog-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 9200;
-  background: var(--dialog-backdrop);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.name-dialog {
-  background: var(--dialog-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--dialog-radius);
-  padding: var(--dialog-padding);
-  min-width: 360px;
-  max-width: 480px;
-  width: 90vw;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-md);
-  box-shadow: var(--dialog-shadow);
-}
-
-.name-dialog__title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.name-dialog__input {
-  padding: 10px 12px;
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-md);
-  color: var(--color-text-primary);
-  font-size: 14px;
-  outline: none;
-  transition: border-color var(--transition-fast);
-}
-
-.name-dialog__input:focus { border-color: var(--color-accent); }
-
-.new-show-dialog { width: min(520px, 92vw); }
-
-.new-show-field {
-  display: grid;
-  gap: 6px;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.new-show-location {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--spacing-sm);
-}
-
-.new-show-location .name-dialog__input {
-  min-width: 0;
-  color: var(--color-text-secondary);
-  font-family: var(--font-mono);
-  text-overflow: ellipsis;
-}
-
-.name-dialog__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--spacing-sm);
-}
-
-.name-dialog__btn {
-  min-height: var(--panel-control-height);
-  padding: 6px 12px;
-  border-radius: var(--control-radius);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-raised);
-  color: var(--color-text-primary);
-  transition: background var(--transition-fast), border-color var(--transition-fast);
-}
-
-.name-dialog__btn:hover:not(:disabled) {
-  background: var(--color-surface-hover);
-  border-color: var(--color-accent);
-}
-
-.name-dialog__btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.name-dialog__btn--primary {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-  color: #fff;
-}
-
-.name-dialog__btn--primary:hover:not(:disabled) {
-  filter: brightness(1.1);
-  background: var(--color-accent);
-  border-color: var(--color-accent);
 }
 </style>
