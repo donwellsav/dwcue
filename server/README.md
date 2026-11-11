@@ -415,6 +415,7 @@ Uploads land in `state.media_root()` (the loaded project's `media/` sub-folder).
 | `GET /api/metadata?path=<utf8>` | — | `{ valid, artist, title, album, genre, year, track_number, duration_ms, sample_rate, channels, bitrate_kbps }` |
 | `GET /api/waveform/<cue_id>?buckets=1000` | — | waveform object (see below); `404` if cue not registered |
 | `GET /api/waveform_path?path=<utf8>&buckets=1000` | — | waveform object (no `cue_id` field) |
+| `GET /api/waveform_path?path=<utf8>&verify_revision=<revision>` | — | Decoder verification with `verified`, `duration_ms`, `sample_rate`, `source_channels`, and `file_revision`. The engine reads the specified revision through EOF without peak or waveform analysis. |
 | `POST /api/waveform_generate` | `{ "path": "/abs/file.wav", "item_uuid": "<uuid>" }` | `{ "ok": true }` immediately; result arrives as a `waveform_ready` (or `waveform_failed`) `doc_patch` over WebSocket |
 
 **Waveform object**:
@@ -450,7 +451,7 @@ Plays an item on `settings.previewDevice` without routing through the live mixer
 | Method · Path | Body | Response | Notes |
 |---------------|------|----------|-------|
 | `GET /api/project`              | — | full project JSON document | The single GET a remote client needs to render the whole project. |
-| `GET /api/project/header`       | — | lightweight header `{ name, itemCount, theme, settings, cart, hasOpenProject, … }` | Hit this first so the workspace shell can paint before the items array arrives. |
+| `GET /api/project/header`       | — | lightweight header `{ name, itemCount, theme, settings, cart, hasOpenProject, needsRepair, repairIssues, … }` | Repair details belong to the active show and remain in the header until it is saved. |
 | `GET /api/project/items?offset=0&limit=100` | — | `{ "offset": int, "limit": int, "total": int, "items": [...] }` | `limit` clamps to [1,1000]. Top-level items only (groups carry their children inline). |
 | `GET /api/project/progress`     | — | `{ "ready": bool, "loading": bool, "loaded": int, "total": int, "failedCount": int, "failures": [...] }` | Cheap poll for playback readiness and missing/unreadable media. |
 | `POST /api/project/load`        | `{ "path": "/abs/file.dwcue" }` *or* `{ "document": { … } }` | header object, augmented with `needsRepair`/`repairIssues` if the document was auto-repaired on load | broadcasts `project_changed`. `400` if neither field is present or load fails. |
