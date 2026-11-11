@@ -4,6 +4,7 @@
       <div class="modal">
         <header>
           <h2>{{ t('importAudio.title') }}</h2>
+          <Btn type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
           <button class="x" :aria-label="t('actions.close')" :disabled="busy" @click="close">✕</button>
         </header>
 
@@ -485,8 +486,17 @@ function formatBytes(n: number): string {
   box-shadow: var(--dialog-shadow);
   display: flex; flex-direction: column; gap: 12px;
 
-  header { display: flex; justify-content: space-between; align-items: center; min-height: 32px; }
-  h2 { margin: 0; font-size: 18px; }
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    min-height: 32px;
+    background: var(--dialog-surface);
+  }
+  h2 { flex: 1; margin: 0; font-size: 18px; }
   .x {
     display: grid; place-items: center;
     width: 32px; height: 32px; padding: 0;

@@ -4,6 +4,7 @@
     <div class="modal-content youtube-import-modal" role="dialog" aria-modal="true" :aria-labelledby="titleId">
       <div class="modal-header">
         <h2 :id="titleId">{{ t('youtube.importFromYouTube') }}</h2>
+        <Btn type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
         <button type="button" class="close-btn" :aria-label="t('actions.close')" @click="closeModal">
           <span class="material-symbols-rounded" aria-hidden="true">close</span>
         </button>
@@ -651,13 +652,14 @@ onBeforeUnmount(() => {
 
 .modal-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: var(--spacing-sm);
   padding: var(--dialog-header-padding);
   border-bottom: 1px solid var(--color-border);
 }
 
 .modal-header h2 {
+  flex: 1;
   margin: 0;
   color: var(--color-text-primary);
 }

@@ -9,12 +9,14 @@
       <div class="progress-bar-container">
         <div class="progress-bar" :style="{ width: percentage + '%' }"></div>
       </div>
+      <Btn class="progress-stop-all" type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+const { t } = useLocalization();
+const server = useLiveplayServer();
 
 const props = defineProps<{
   visible: boolean;
@@ -100,5 +102,9 @@ const handleOverlayClick = () => {
   background: var(--color-accent);
   border-radius: 4px;
   transition: width 0.3s ease;
+}
+
+.progress-stop-all {
+  margin-top: var(--spacing-md);
 }
 </style>

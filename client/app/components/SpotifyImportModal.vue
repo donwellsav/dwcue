@@ -4,6 +4,7 @@
       <div class="modal" role="dialog" aria-modal="true" :aria-labelledby="titleId">
         <header class="modal-header">
           <h2 :id="titleId">{{ t('spotifyImport.title') }}</h2>
+          <Btn type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
           <button
             type="button"
             class="icon-btn"
@@ -1308,13 +1309,18 @@ function resetState() {
 }
 
 .modal-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: var(--spacing-sm);
   padding: var(--dialog-header-padding);
+  background: var(--dialog-surface);
   border-bottom: 1px solid var(--color-border);
 
   h2 {
+    flex: 1;
     margin: 0;
     font-size: 15px;
     font-weight: 650;

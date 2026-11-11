@@ -8,18 +8,18 @@ import * as Vue from 'vue';
 import ts from 'typescript';
 import { runExclusivePendingAction } from '../app/utils/acknowledgedAction.ts';
 
-function panicButtonSource(): string {
-  const filename = new URL('../app/components/PlaybackControls.vue', import.meta.url);
+function elementSource(component: string, tag: string, className?: string): string {
+  const filename = new URL(`../app/components/${component}.vue`, import.meta.url);
   const source = readFileSync(filename, 'utf8');
   const descriptor = parseSfc(source, { filename: filename.pathname }).descriptor;
-  assert.ok(descriptor.template, 'PlaybackControls must have a template');
+  assert.ok(descriptor.template, `${component} must have a template`);
   const root = parseTemplate(descriptor.template.content);
 
   const visit = (node: any): any => {
-    if (node.type === NodeTypes.ELEMENT && node.tag === 'button') {
+    if (node.type === NodeTypes.ELEMENT && node.tag === tag) {
       const classAttribute = node.props.find((prop: any) =>
         prop.type === NodeTypes.ATTRIBUTE && prop.name === 'class');
-      if (classAttribute?.value?.content.split(/\s+/).includes('panic-btn')) return node;
+      if (!className || classAttribute?.value?.content.split(/\s+/).includes(className)) return node;
     }
     for (const child of node.children ?? []) {
       const match = visit(child);
@@ -28,13 +28,13 @@ function panicButtonSource(): string {
     return null;
   };
 
-  const button = visit(root);
-  assert.ok(button, 'PlaybackControls must render its panic button');
-  return button.loc.source;
+  const element = visit(root);
+  assert.ok(element, `${component} must render ${className || tag}`);
+  return element.loc.source;
 }
 
 test('Stop All remains clickable when no project-backed cue is active', () => {
-  const code = compile(panicButtonSource(), { mode: 'function' }).code;
+  const code = compile(elementSource('PlaybackControls', 'button', 'panic-btn'), { mode: 'function' }).code;
   const render = Function('Vue', `${code}; return render;`)(Vue);
   let panicCalls = 0;
   const button = render({
@@ -47,6 +47,35 @@ test('Stop All remains clickable when no project-backed cue is active', () => {
   assert.notEqual(button.props?.disabled, true);
   button.props?.onClick();
   assert.equal(panicCalls, 1);
+});
+
+test('Stop All sends the normal command from each busy import and archive dialog', () => {
+  const dialogs = [
+    ['AudioImportModal', 'header'],
+    ['SpotifyImportModal', 'header'],
+    ['YouTubeImportModal', 'div', 'modal-header'],
+    ['ProgressModal', 'div', 'modal-content'],
+  ];
+  for (const [component, tag, className] of dialogs) {
+    const code = compile(elementSource(component, tag, className), { mode: 'function' }).code;
+    const render = Function('Vue', `${code}; return render;`)({ ...Vue, resolveComponent: (name: string) => name });
+    const stopCalls: unknown[][] = [];
+    const region = render({
+      t: (key: string) => key,
+      busy: true, isBusy: true, visible: true, percentage: 50,
+      titleId: 'import-test', title: 'Archive transfer', message: 'Working',
+      server: { stopAll: (...args: unknown[]) => { stopCalls.push(args); } },
+      close: () => assert.fail('Stop All must not close the import'),
+      handleClose: () => assert.fail('Stop All must not close the import'),
+      closeModal: () => assert.fail('Stop All must not close the import'),
+    }, []);
+    const button = region.children.find((child: Vue.VNode) => child.props?.text === 'controls.stopAll');
+    assert.ok(button, `${component} must show Stop All while busy`);
+    assert.notEqual(button.props.disabled, true);
+    assert.equal(button.props.type, 'button', 'Stop All must not submit an import form');
+    button.props.onClick();
+    assert.deepEqual(stopCalls, [[]], `${component} must let the server apply the configured Stop All fade`);
+  }
 });
 
 function loadHandleKeydown(dependencies: Record<string, unknown>) {
