@@ -743,6 +743,7 @@
     "projectChangedMessage": "The server’s project “{name}” has changed. Your local project has unsaved changes, so nothing was replaced automatically.",
     "useServerProject": "Use server project",
     "keepLocalProject": "Restore local project",
+    "actionFailed": "Could not recover the show. Check the server and try again.",
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
   },
   "audioImport": {

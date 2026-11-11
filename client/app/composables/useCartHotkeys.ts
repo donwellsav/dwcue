@@ -19,7 +19,7 @@ const RESERVED_COMBOS: CartSlotKeyBinding[] = [
   { key: 'F1', ctrlKey: false, shiftKey: false, altKey: false },
 ];
 
-const bindingsMatch = (a: CartSlotKeyBinding, b: CartSlotKeyBinding): boolean =>
+export const bindingsMatch = (a: CartSlotKeyBinding, b: CartSlotKeyBinding): boolean =>
   a.key.toLowerCase() === b.key.toLowerCase()
   && a.ctrlKey  === b.ctrlKey
   && a.shiftKey === b.shiftKey
@@ -149,16 +149,9 @@ export const useCartHotkeys = () => {
 
   const findPlaybackActionForEvent = (e: KeyboardEvent): PlaybackKeyAction | null => {
     const mappings = playbackMappings.value;
+    const pressed = eventToBinding(e);
     for (const [action, binding] of Object.entries(mappings) as [PlaybackKeyAction, CartSlotKeyBinding | null][]) {
-      if (!binding) continue;
-      if (
-        e.key.toLowerCase() === binding.key.toLowerCase()
-        && (e.ctrlKey || e.metaKey) === binding.ctrlKey
-        && e.shiftKey === binding.shiftKey
-        && e.altKey   === binding.altKey
-      ) {
-        return action;
-      }
+      if (binding && bindingsMatch(binding, pressed)) return action;
     }
     return null;
   };

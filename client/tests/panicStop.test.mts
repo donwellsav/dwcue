@@ -7,6 +7,7 @@ import { parse as parseSfc } from '@vue/compiler-sfc';
 import * as Vue from 'vue';
 import ts from 'typescript';
 import { runExclusivePendingAction } from '../app/utils/acknowledgedAction.ts';
+import { DEFAULT_PLAYBACK_KEYS } from '../app/types/project.ts';
 
 function elementSource(component: string, tag: string, className?: string): string {
   const filename = new URL(`../app/components/${component}.vue`, import.meta.url);
@@ -76,6 +77,66 @@ test('Stop All sends the normal command from each busy import and archive dialog
     button.props.onClick();
     assert.deepEqual(stopCalls, [[]], `${component} must let the server apply the configured Stop All fade`);
   }
+});
+
+test('Stop All remains available inside the recovery prompt while a recovery choice is pending', () => {
+  const code = compile(elementSource('SessionRecoveryModal', 'div', 'srm-dialog'), { mode: 'function' }).code;
+  const render = Function('Vue', `${code}; return render;`)({ ...Vue, resolveComponent: (name: string) => name });
+  const stopCalls: unknown[][] = [];
+  const server = { connected: true, stopAll: (...args: unknown[]) => stopCalls.push(args) };
+  const context = { t: (key: string) => key, projectChanged: true, recovering: true, server,
+    currentProject: { name: 'Local show' }, serverProjectName: 'Server show', actionFailed: false };
+  const findStop = () => render(context, []).children.find((child: Vue.VNode) =>
+    child.props?.text === 'controls.stopAll');
+  const button = findStop();
+  assert.ok(button, 'recovery must offer Stop All when the transport is connected');
+  assert.notEqual(button.props.disabled, true);
+  button.props.onClick();
+  assert.deepEqual(stopCalls, [[]], 'recovery uses the normal server fade');
+  server.connected = false;
+  assert.equal(findStop(), undefined);
+});
+
+test('recovery permits the configured Stop All shortcut while blocking other playback input', () => {
+  const source = readFileSync(new URL('../app/composables/useConnectionGuard.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('  const trapKeydown =');
+  const end = source.indexOf('  window.addEventListener', start);
+  assert.ok(start >= 0 && end > start);
+  const hotkeys = readFileSync(new URL('../app/composables/useCartHotkeys.ts', import.meta.url), 'utf8');
+  const compare = hotkeys.slice(hotkeys.indexOf('const bindingsMatch ='), hotkeys.indexOf('export const isReservedCombo'));
+  const binding = hotkeys.slice(hotkeys.indexOf('const eventToBinding ='), hotkeys.indexOf('// Playback action metadata'));
+  const code = ts.transpileModule(`${compare}\n${binding}\n${source.slice(start, end)}`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const calls: unknown[][] = [];
+  const server = { connected: true, connectionLost: false, stopAll: (...args: unknown[]) => calls.push(args) };
+  const sessionLost = { value: true };
+  const currentProject = { value: { playbackKeys: {} as Record<string, unknown> } };
+  const trap = Function('server', 'sessionLost', 'currentProject', 'DEFAULT_PLAYBACK_KEYS',
+    `${code}\nreturn trapKeydown;`)(server, sessionLost, currentProject, DEFAULT_PLAYBACK_KEYS);
+  const press = (key: string, opts = {}) => {
+    let swallowed = false;
+    trap({ key, target: { closest: () => null }, ctrlKey: false, metaKey: false, shiftKey: false,
+      altKey: false, repeat: false, preventDefault() {}, stopImmediatePropagation() { swallowed = true; }, ...opts });
+    return swallowed;
+  };
+  assert.equal(press(' '), true, 'GO must stay guarded');
+  assert.equal(press('Tab'), false);
+  assert.deepEqual(calls, []);
+  assert.equal(press('Escape'), true);
+  press('Escape', { repeat: true });
+  assert.deepEqual(calls, [[]]);
+  currentProject.value.playbackKeys['stop-all'] = { key: 'k', ctrlKey: true, shiftKey: false, altKey: false };
+  press('Escape');
+  assert.equal(press('K', { metaKey: true, target: { closest: (selector: string) => selector.includes('.srm-overlay') } }), true);
+  currentProject.value.playbackKeys['stop-all'] = null;
+  press('Escape');
+  assert.deepEqual(calls, [[], []]);
+  server.connected = false;
+  server.connectionLost = true;
+  currentProject.value.playbackKeys = {};
+  press('Escape');
+  assert.deepEqual(calls, [[], []]);
 });
 
 function loadHandleKeydown(dependencies: Record<string, unknown>) {

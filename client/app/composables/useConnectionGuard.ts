@@ -25,6 +25,9 @@
 // Wired once per renderer from plugins/liveplay-server.client.ts.
 // =====================================================================
 
+import { bindingsMatch, eventToBinding } from './useCartHotkeys';
+import { DEFAULT_PLAYBACK_KEYS, type Project } from '~/types/project';
+
 // Renderer-scoped: the plugin calls this once, but guard anyway so a component
 // calling it for the recovery actions can't install a second keyboard trap.
 let _wired = false;
@@ -110,6 +113,7 @@ export const useConnectionGuard = () => {
     };
   }
   _wired = true;
+  const currentProject = useState<Project | null>('currentProject', () => null);
 
   // ---- Input freeze --------------------------------------------------
   // Capture phase on `window` runs before every other listener in the app
@@ -119,12 +123,23 @@ export const useConnectionGuard = () => {
   // the operator can always drive the recovery UI.
   const trapKeydown = (e: KeyboardEvent) => {
     if (!server.connectionLost && !sessionLost.value) return;
-    // Keys aimed at the recovery dialogs — or at Server Settings, which stacks
-    // above them so the URL can be retargeted — go through untouched.
-    const el = e.target as HTMLElement | null;
-    if (el?.closest?.('.clm-overlay, .srm-overlay, .modal-backdrop')) return;
     // Tab still moves focus, so the dialog is reachable from anywhere.
     if (e.key === 'Tab') return;
+    const el = e.target as HTMLElement | null;
+    if (server.connected && !server.connectionLost && sessionLost.value && !e.isComposing &&
+        !el?.closest?.('input, textarea, [contenteditable]:not([contenteditable="false"])')) {
+      const saved = currentProject.value?.playbackKeys?.['stop-all'];
+      const binding = saved === undefined ? DEFAULT_PLAYBACK_KEYS['stop-all'] : saved;
+      if (binding && bindingsMatch(binding, eventToBinding(e))) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (!e.repeat) void server.stopAll();
+        return;
+      }
+    }
+    // Keys aimed at the recovery dialogs — or at Server Settings, which stacks
+    // above them so the URL can be retargeted — go through untouched.
+    if (el?.closest?.('.clm-overlay, .srm-overlay, .modal-backdrop')) return;
     e.preventDefault();
     e.stopImmediatePropagation();
   };
@@ -141,7 +156,6 @@ export const useConnectionGuard = () => {
   server.onReconnected(() => {
     void nuxtApp.runWithContext(async () => {
       const {
-        currentProject,
         hasUnsavedChanges,
         tryRejoinExistingProject,
       } = useProject();

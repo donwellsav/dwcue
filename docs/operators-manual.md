@@ -666,6 +666,8 @@ The **Connection lost** overlay blocks normal playback/edit input while reconnec
 
 After the managed engine actually restarts, the controller can present the different **Server restarted** prompt; do not confuse it with the Connection lost overlay's Retry, Restart-client, and Exit actions.
 
+Once the connection returns, the recovery prompt offers **Stop All Cues** and accepts its configured shortcut. Both stop cues on the connected server with that show's Stop All fade and leave the recovery choices available.
+
 
 **Procedure — respond to connection loss during a show**
 
