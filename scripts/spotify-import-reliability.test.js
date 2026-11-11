@@ -1,9 +1,11 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 const ts = require('typescript');
 const { EventEmitter } = require('node:events');
+const { pipeline } = require('node:stream/promises');
 const test = require('node:test');
 
 const root = path.resolve(__dirname, '..');
@@ -35,6 +37,7 @@ const {
   SPOTIFY_AUDIO_PROVIDERS,
   SPOTIFY_REVIEW_TTL_MS,
   normalizeSpotifyRecovery,
+  normalizeSpotifyTrackIds,
   normalizeSpotifyBitrate,
   renewSpotifyReview,
   spotifyReviewIsValid,
@@ -162,6 +165,8 @@ function spotifyHandler(channel, context) {
     'spotifyEmbedCoverUrl', 'spotifyEmbedArtists', 'spotifyEmbedDate',
     'fetchSpotifyEmbedTracks', 'sanitizeSpotifyFolderName', 'summarizeSpotDlError',
     'requireBoundedIpcObject', 'releaseYouTubeJob', 'cancelYouTubeDownload',
+    'createSpotifyProjectFolder', 'spotifyOutputTrackId', 'orderedSpotifyOutputs',
+    'copySpotifyOutputsToMedia', 'cleanupSpotifyFiles', 'releaseSpotifyJob',
   ]);
   let handler;
   const visit = (node) => {
@@ -177,6 +182,7 @@ function spotifyHandler(channel, context) {
     declarations.map(node => node.getText(electronSource)).join('\n') + `\n(${handler})`,
     { URL, AbortSignal, Buffer, path, process, crypto: require('node:crypto'),
       renewSpotifyReview, spotifyReviewIsValid, normalizeSpotifyBitrate,
+      normalizeSpotifyRecovery, normalizeSpotifyTrackIds,
       requireTrustedIpc() {},
       requireIpcString(value) { assert.equal(typeof value, 'string'); return value; },
       requireAuthorizedIpcPath(value) { return value; },
@@ -370,7 +376,7 @@ function spotifyReviewHarness(count, {
     },
   });
   return { run: url => run({ sender }, 'review-job-12345', url || canonicalUrl), rawTracks,
-    canonicalUrl, commands, fetches, activeSpotifyPreflightJobs, spotifyPreflights };
+    canonicalUrl, commands, fetches, activeSpotifyPreflightJobs, spotifyPreflights, sender };
 }
 
 for (const count of [100, 235, 10001]) {
@@ -386,7 +392,7 @@ for (const count of [100, 235, 10001]) {
       '--threads', '8', '--audio', 'youtube', '--lyrics',
     ]]]);
     assert.equal(harness.fetches.length, 0, 'playlist embeds cannot prove that their track list is complete');
-    assert.equal(harness.spotifyPreflights.get(review.preflightId).rawTracks.length, count);
+    assert.equal(harness.spotifyPreflights.get(review.preflightId).rawTracksById.size, count);
     assert.equal(harness.activeSpotifyPreflightJobs.size, 0);
   });
 }
@@ -396,7 +402,82 @@ test('Spotify review restores playlist order after concurrent metadata lookups',
   const review = await harness.run();
   const expected = harness.rawTracks.map(track => track.song_id);
   assert.deepEqual([...review.tracks.map(track => track.id)], expected);
-  assert.deepEqual([...harness.spotifyPreflights.get(review.preflightId).rawTracks.map(track => track.song_id)], expected);
+  assert.deepEqual([...harness.spotifyPreflights.get(review.preflightId).rawTracksById.keys()], expected);
+});
+
+test('Spotify repeats download once and produce separate ordered import and recovery entries', async (t) => {
+  const harness = spotifyReviewHarness(4, { reverseResults: true });
+  const [first, second, , unavailable] = harness.rawTracks;
+  harness.rawTracks[2] = { ...first, list_position: 3 };
+  const review = await harness.run();
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'dwcue-spotify-repeat-'));
+  t.after(() => fs.rmSync(folder, { recursive: true, force: true }));
+  const activeSpotifyDownloads = new Map();
+  const matched = [], downloaded = [];
+  let preferences;
+  const run = spotifyHandler('download-spotify-audio', {
+    fs, pipeline, AbortController, setTimeout, clearTimeout, setInterval, clearInterval,
+    app: { getPath: () => folder }, activeSpotifyDownloads,
+    spotifyPreflights: harness.spotifyPreflights,
+    sendSpotifyProgress() {}, setupSpotDl: async () => true, setupFfmpeg: async () => true,
+    spotDlPath: '/tools/spotdl', ytDlpPath: '/tools/yt-dlp', ffmpegPath: '/tools/ffmpeg',
+    denoInitialization: Promise.resolve(), denoReady: false, SPOTIFY_AUDIO_PROVIDERS,
+    readImportPreferences: () => ({}), writeImportPreferences: value => { preferences = value; },
+    spawn(binary, args) {
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      queueMicrotask(() => {
+        if (binary === '/tools/spotdl' && args.includes('MATCH')) {
+          for (const url of args.slice(1, args.indexOf('--audio'))) {
+            matched.push(url);
+            if (url === unavailable.url) continue;
+            const id = url.split('/').pop();
+            child.stdout.emit('data', Buffer.from(`[${id}] Returning best result https://example.test/${id}\n`));
+          }
+        } else if (binary === '/tools/yt-dlp') {
+          const id = args.at(-1).split('/').pop();
+          downloaded.push(id);
+          fs.writeFileSync(args[args.indexOf('-o') + 1].replace('%(ext)s', 'mp3'), id);
+        }
+        child.emit('close', 0);
+      });
+      return child;
+    },
+  });
+  const selection = {
+    activeProjectFolderPath: folder, preflightId: review.preflightId,
+    selectedTrackIds: [...review.tracks.map(track => track.id)],
+  };
+  const result = await run({ sender: harness.sender }, 'download-job-12345', harness.canonicalUrl, folder, selection);
+  assert.equal(new Set(selection.selectedTrackIds).size, 4);
+  assert.deepEqual([...review.tracks.map(track => track.spotifyUrl)], [first.url, second.url, first.url, unavailable.url]);
+  assert.deepEqual(matched, [first.url, second.url, unavailable.url]);
+  assert.deepEqual(downloaded.sort(), [first.song_id, second.song_id].sort());
+  assert.equal(result.total, 4);
+  assert.equal(result.completed, 3);
+  assert.deepEqual([...result.completedTrackIds], selection.selectedTrackIds.slice(0, 3));
+  assert.deepEqual([...result.failedTrackIds], [unavailable.song_id]);
+  assert.equal(new Set(result.files).size, 3);
+  assert.deepEqual(Array.from(result.files, file => fs.readFileSync(file, 'utf8')), [first.song_id, second.song_id, first.song_id]);
+  const recovery = normalizeSpotifyRecovery(preferences.spotifyRecovery);
+  assert.deepEqual([...recovery.pendingTrackIds], selection.selectedTrackIds.slice(0, 3));
+  assert.deepEqual([...recovery.pendingFiles], [...result.files]);
+  const finalize = spotifyHandler('finalize-spotify-import', { activeSpotifyDownloads });
+  const event = { sender: harness.sender };
+  assert.equal(await finalize(event, 'download-job-12345', true), true);
+
+  const reviewedAgain = await harness.run();
+  assert.deepEqual([...reviewedAgain.tracks.map(track => track.id)], selection.selectedTrackIds);
+  const repeatId = reviewedAgain.tracks[2].id;
+  const repeatSelection = { ...selection, preflightId: reviewedAgain.preflightId, selectedTrackIds: [repeatId] };
+  await assert.rejects(run(event, 'download-job-repeat', harness.canonicalUrl, folder, {
+    ...repeatSelection, selectedTrackIds: [repeatId, repeatId],
+  }), /selectedTrackIds must contain unique Spotify playlist entries/);
+  const repeat = await run(event, 'download-job-repeat', harness.canonicalUrl, folder, repeatSelection);
+  assert.deepEqual([...repeat.completedTrackIds], [repeatId]);
+  assert.equal(fs.readFileSync(repeat.files[0], 'utf8'), first.song_id);
+  assert.equal(await finalize(event, 'download-job-repeat', true), true);
 });
 
 test('Spotify playlist share links resolve to the full metadata query', async () => {
@@ -447,7 +528,9 @@ test('large Spotify reviews remain selectable for download and recoverable', asy
   const sender = { id: 7 };
   const run = spotifyHandler('download-spotify-audio', {
     fs: { statSync: () => ({ isDirectory: () => true }) },
-    spotifyPreflights: new Map([['review-id', renewSpotifyReview({ senderId: sender.id, url, rawTracks: tracks })]]),
+    spotifyPreflights: new Map([['review-id', renewSpotifyReview({
+      senderId: sender.id, url, rawTracksById: new Map(tracks.map(track => [track.song_id, track])),
+    })]]),
     activeSpotifyDownloads: { has: () => true },
   });
   // The existing-job boundary follows selection validation, before any I/O.

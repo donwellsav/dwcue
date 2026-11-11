@@ -22,9 +22,9 @@ function spotifyReviewIsValid(review, senderId, url, now = Date.now()) {
   return !!review && review.senderId === senderId && review.url === url && review.expiresAt >= now;
 }
 
-function normalizeTrackIds(value) {
+function normalizeSpotifyTrackIds(value) {
   if (!Array.isArray(value)) return null;
-  const ids = value.filter((id) => typeof id === 'string' && /^[A-Za-z0-9]{10,64}$/.test(id));
+  const ids = value.filter((id) => typeof id === 'string' && /^[A-Za-z0-9]{10,64}(?:-[1-9]\d{0,9})?$/.test(id));
   return ids.length === value.length && new Set(ids).size === ids.length ? ids : null;
 }
 
@@ -39,10 +39,10 @@ function normalizeSpotifyRecovery(value) {
   let parsedUrl;
   try { parsedUrl = new URL(value.url); } catch { return null; }
   if (parsedUrl.protocol !== 'https:' || parsedUrl.hostname !== 'open.spotify.com') return null;
-  const selectedTrackIds = normalizeTrackIds(value.selectedTrackIds);
-  const completedTrackIds = normalizeTrackIds(value.completedTrackIds);
-  const failedTrackIds = normalizeTrackIds(value.failedTrackIds);
-  const pendingTrackIds = normalizeTrackIds(value.pendingTrackIds || []);
+  const selectedTrackIds = normalizeSpotifyTrackIds(value.selectedTrackIds);
+  const completedTrackIds = normalizeSpotifyTrackIds(value.completedTrackIds);
+  const failedTrackIds = normalizeSpotifyTrackIds(value.failedTrackIds);
+  const pendingTrackIds = normalizeSpotifyTrackIds(value.pendingTrackIds || []);
   if (!selectedTrackIds || !completedTrackIds || !failedTrackIds || !pendingTrackIds) return null;
   const projectFolderPath = path.normalize(value.projectFolderPath);
   if (!Array.isArray(value.pendingFiles) || value.pendingFiles.length !== pendingTrackIds.length ||
@@ -91,6 +91,7 @@ module.exports = {
   SPOTIFY_REVIEW_TTL_MS,
   normalizeSpotifyBitrate,
   normalizeSpotifyRecovery,
+  normalizeSpotifyTrackIds,
   renewSpotifyReview,
   spotifyReviewIsValid,
 };
