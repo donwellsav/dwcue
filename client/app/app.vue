@@ -300,13 +300,15 @@ const { currentLocale, setLocale, getDirection, t } = useLocalization();
 const openProjectGuard = createProjectOpenGuard({
   confirmUnsavedChanges,
   openProject(path) {
+    useLiveplayServer().clearLastError();
     const action = projectFileAction(path);
     if (action === 'open-project') return openProject(path);
     if (action === 'import-legacy-project') return importLegacyProject(path);
     return Promise.resolve(false);
   },
   onOpenFailed(path) {
-    useLiveplayServer().lastError = t('project.openFailed', { path });
+    const server = useLiveplayServer();
+    server.lastError ??= t('project.openFailed', { path });
   },
 });
 const guardedOpenProject = (path: string) =>

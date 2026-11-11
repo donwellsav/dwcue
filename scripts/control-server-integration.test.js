@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
-const { mkdir, mkdtemp, readFile, rename, rm, utimes, writeFile } = require('node:fs/promises');
+const { constants } = require('node:fs');
+const { mkdir, mkdtemp, open, readFile, rename, rm, utimes, writeFile } = require('node:fs/promises');
 const http = require('node:http');
 const net = require('node:net');
 const os = require('node:os');
@@ -180,6 +181,45 @@ test('project session preconditions reject delayed edits after switching or reop
         assert.deepEqual(await playing(), ['show-bed']);
       }
       assert.equal(await readFile(p, 'utf8'), originalBytes);
+      const lease = async () => {
+        const response = await request(baseUrl, '/api/project/header?open_deadline=1');
+        assert.equal(response.status, 200);
+        const { openDeadlineMs } = await response.json();
+        assert.ok(Number.isSafeInteger(openDeadlineMs) && openDeadlineMs > 0);
+        return openDeadlineMs;
+      };
+      await writeFile(q, JSON.stringify(newShow));
+      const expired = await change('load', { path: q, openDeadlineMs: 0 });
+      assert.equal(expired.status, 410, await expired.text());
+      assert.deepEqual(await current(), before);
+      assert.deepEqual(await playing(), ['show-bed']);
+
+      if (process.platform !== 'win32') {
+        const delayed = path.join(folder, 'Delayed.dwcue');
+        const fifo = spawn('mkfifo', [delayed]);
+        assert.equal(await new Promise(resolve => fifo.once('exit', resolve)), 0);
+        // Shorten the engine's 25-second lease to hold a real file read past expiry.
+        const pending = change('load', { path: delayed, openDeadlineMs: await lease() - 24_000 });
+        let writer;
+        try {
+          for (let attempt = 0; attempt < 80 && !writer; ++attempt) {
+            try { writer = await open(delayed, constants.O_WRONLY | constants.O_NONBLOCK); }
+            catch (error) {
+              if (error.code !== 'ENXIO') throw error;
+              await new Promise(resolve => setTimeout(resolve, 10));
+            }
+          }
+          assert.ok(writer, 'the engine must be reading the delayed file');
+          await new Promise(resolve => setTimeout(resolve, 1100));
+          assert.deepEqual(await playing(), ['show-bed']);
+          await writer.writeFile(JSON.stringify(newShow));
+        } finally { await writer?.close(); }
+        const rejected = await pending;
+        assert.equal(rejected.status, 410, await rejected.text());
+        assert.deepEqual(await current(), before);
+        assert.deepEqual(await playing(), ['show-bed']);
+      }
+
       const created = await change('load', { create: { document: newShow, path: createPath } });
       assert.equal(created.status, 200, await created.clone().text());
       const header = await created.json();
@@ -187,6 +227,11 @@ test('project session preconditions reject delayed edits after switching or reop
       assert.notEqual(header.server.projectSessionId, before.session);
       assert.equal(JSON.parse(await readFile(createPath, 'utf8')).name, 'New');
       assert.deepEqual(await playing(), []);
+      const fresh = await request(baseUrl, '/api/project/load', {
+        method: 'POST', body: JSON.stringify({ path: q, openDeadlineMs: await lease() }),
+      });
+      assert.equal(fresh.status, 200, await fresh.clone().text());
+      assert.equal((await fresh.json()).server.projectFilePath, q);
     });
   } catch (error) { error.message += `\nNative server diagnostics:\n${diagnostics}`; throw error; }
 });

@@ -76,6 +76,9 @@ namespace liveplay::net {
 
 namespace {
 
+// Leave time for the refusal to reach the controller's 30-second request.
+constexpr auto kOpenLifetime = std::chrono::seconds{25};
+
 long long current_process_id() noexcept {
 #if defined(_WIN32)
     return static_cast<long long>(::GetCurrentProcessId());
@@ -3473,6 +3476,10 @@ void ControlServer::install_routes() {
             Logger::api_request("Client ({}) -> Server ({}) : GET /api/project/header",
                                 req.remote_ip_address, impl_->server_addr);
             auto hdr = state_.header_document();
+            if (req.url_params.get("open_deadline")) {
+                hdr["openDeadlineMs"] = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    (std::chrono::steady_clock::now() + kOpenLifetime).time_since_epoch()).count();
+            }
             Logger::api_response("Client ({}) <- Server ({}) : GET /api/project/header OK — '{}' ({} items)",
                                  req.remote_ip_address, impl_->server_addr,
                                  hdr.value("name", "?"),
@@ -3537,6 +3544,15 @@ void ControlServer::install_routes() {
                     if (!state_.load_from_json(prepared.document, path))
                         return json_err(400, "the new show was saved but could not be opened");
                 } else if (j.contains("path")) {
+                    auto deadline = std::chrono::steady_clock::time_point::max();
+                    if (const auto expires = j.find("openDeadlineMs"); expires != j.end()) {
+                        const auto latest = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            (std::chrono::steady_clock::now() + kOpenLifetime).time_since_epoch()).count();
+                        if (!expires->is_number_unsigned() || expires->get<std::uint64_t>() > static_cast<std::uint64_t>(latest))
+                            return json_err(400, "invalid Open deadline");
+                        deadline = std::chrono::steady_clock::time_point{
+                            std::chrono::milliseconds{expires->get<std::int64_t>()}};
+                    }
                     const std::string path_str = j["path"].get<std::string>();
                     Logger::api_request("Client ({}) -> Server ({}) : POST /api/project/load path='{}'",
                                         req.remote_ip_address, impl_->server_addr, path_str);
@@ -3547,7 +3563,9 @@ void ControlServer::install_routes() {
                     }
                     if (!core::project_file::is_native_project(p))
                         return json_err(400, "project path must use .dwcue");
-                    if (!state_.load(p)) {
+                    if (!state_.load(p, deadline)) {
+                        if (std::chrono::steady_clock::now() >= deadline)
+                            return json_err(410, "Open expired before switching shows");
                         Logger::error("POST /api/project/load FAILED — load returned false for '{}'", path_str);
                         return json_err(400, "load failed");
                     }

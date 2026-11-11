@@ -708,6 +708,35 @@ void test_rejected_nested_document_preserves_show(const std::filesystem::path& w
     std::filesystem::remove(path);
 }
 
+void test_open_expires_while_waiting_to_switch(const std::filesystem::path& wav) {
+    liveplay::audio::AudioEngine engine;
+    liveplay::core::ProjectState state(engine);
+    const auto path = wav.parent_path() / "active.dwcue";
+    check(state.load_from_json(document(json::array({audio("active", wav)})), path) && wait_ready(state),
+          "expiring Open: current show is ready");
+    close_devices(engine);
+    check(state.trigger_item("active") && state.set_next_item_override("active"),
+          "expiring Open: current show is playing and armed");
+    const auto session = state.project_session_id();
+    const auto intent = state.playback_intent_revision();
+    std::unique_lock held{state.playback_preparation_mutex_};
+    const auto deadline = std::chrono::steady_clock::now() + 250ms;
+    const auto replacement = document(json::array({audio("replacement", wav)}));
+    auto pending = std::async(std::launch::async, [&] {
+        return state.load_from_json(replacement, wav.parent_path() / "replacement.dwcue", deadline);
+    });
+    while (!state.mirror_cancel_.load() && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(1ms);
+    const bool reached_switch = state.mirror_cancel_.load();
+    std::this_thread::sleep_until(deadline + 5ms);
+    held.unlock();
+    const bool opened = pending.get();
+    check(reached_switch && !opened && state.project_session_id() == session &&
+              state.project_file_path() == path && on_air(state, engine, "active") &&
+              state.next_item_override() == "active" && state.playback_intent_revision() == intent,
+          "expiring Open: a wait at the switch preserves playback, identity, arming and intent");
+}
+
 void test_load_resets_project_runtime(const std::filesystem::path& wav) {
     for (const bool same_file : {false, true}) {
         liveplay::audio::AudioEngine engine;
@@ -2262,6 +2291,7 @@ int main() try {
     test_stop_all_during_cold_go(wav);
     test_rejected_document_preserves_show(wav);
     test_rejected_nested_document_preserves_show(wav);
+    test_open_expires_while_waiting_to_switch(wav);
     test_load_resets_project_runtime(wav);
     test_rejected_server_document_preserves_show(wav);
     test_nested_group_end(wav);

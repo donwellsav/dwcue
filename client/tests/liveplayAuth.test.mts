@@ -441,12 +441,16 @@ test('project REST calls carry the bound session while chained creation uses its
   const server = useLiveplayServer() as any;
   const originalFetch = globalThis.fetch;
   const calls: Array<{ path: string; session: string | null; mutation: string | null }> = [];
+  const openRequests: unknown[] = [];
+  let supportsOpenDeadline = true;
   globalThis.fetch = async (input, init) => {
     const url = new URL(String(input));
     const headers = new Headers(init?.headers);
     calls.push({ path: url.pathname, session: headers.get('X-DWCUE-Project-Session'), mutation: headers.get('X-DWCUE-Mutation-ID') });
+    if (url.pathname === '/api/project/load') openRequests.push(JSON.parse(String(init?.body)));
     return new Response(JSON.stringify(url.pathname === '/api/cues' || url.pathname === '/api/mixers' ? [] : {
       ok: true, hasOpenProject: true, name: 'Other', items: [], cartItems: [], cartOnlyItems: [], settings: {}, theme: {},
+      ...(supportsOpenDeadline && url.searchParams.has('open_deadline') ? { openDeadlineMs: 123456 } : {}),
       server: { projectFilePath: '/other.dwcue', projectSessionId: 'other-response-session', mediaRoot: '/other/media', audioLoading: false, audioLoaded: 0, audioTotal: 0 },
     }), { status: 200 });
   };
@@ -462,6 +466,7 @@ test('project REST calls carry the bound session while chained creation uses its
     await server.patchSettings({ autoSave: false });
     await server.fetchProjectItemsPage();
     await server.loadProjectFromPath('/next.dwcue');
+    assert.deepEqual(openRequests, [{ path: '/next.dwcue', openDeadlineMs: 123456 }]);
     await server.closeProjectOnServer('bound-show-session');
     await server.repairProject();
     await server.fetchProjectHeader();
@@ -478,7 +483,13 @@ test('project REST calls carry the bound session while chained creation uses its
     const sent = calls.length;
     await assert.rejects(server.closeProjectOnServer(''), /project session/i);
     assert.equal(calls.length, sent, 'an explicitly unbound close sends no request');
-  } finally { globalThis.fetch = originalFetch; }
+    supportsOpenDeadline = false;
+    await assert.rejects(server.loadProjectFromPath('/older.dwcue'), /Update the engine/);
+    assert.equal(openRequests.length, 1, 'an older engine must not receive an unbounded Open');
+  } finally {
+    server.clearLastError();
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('an open local project cannot send unbound REST edits', async () => {

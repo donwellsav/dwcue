@@ -694,11 +694,38 @@ function createClient() {
     return rest<ServerAudioReadiness>('/api/project/progress');
   }
   async function loadProjectFromPath(path: string, expectedSessionId?: string) {
-    return rest<any>('/api/project/load', {
-      method: 'POST',
-      headers: expectedSessionId === undefined ? undefined : { 'X-DWCUE-Project-Session': expectedSessionId },
-      body: JSON.stringify({ path }),
-    }).then(p => { fetchCues(); fetchMixerChannels(); return p; });
+    const endpoint = httpBase.value;
+    const token = effectiveAccessToken.value;
+    const session = expectedSessionId ?? (projectSessionId.value || undefined);
+    const lease = await rest<{ openDeadlineMs?: number; server?: { projectSessionId?: string } }>(
+      '/api/project/header?open_deadline=1', { cache: 'no-store' },
+    );
+    if (httpBase.value !== endpoint || effectiveAccessToken.value !== token)
+      throw new Error('Server changed while opening the show. Try again.');
+    if (!Number.isSafeInteger(lease?.openDeadlineMs)) {
+      lastError.value = 'Update the engine to use safe Open from this controller.';
+      throw new Error(lastError.value);
+    }
+    const boundSession = session ?? (lease.server?.projectSessionId || undefined);
+    try {
+      const header = await rest<any>('/api/project/load', {
+        method: 'POST',
+        headers: boundSession === undefined ? undefined : { 'X-DWCUE-Project-Session': boundSession },
+        body: JSON.stringify({ path, openDeadlineMs: lease.openDeadlineMs }),
+      });
+      void fetchCues().catch(() => {});
+      void fetchMixerChannels().catch(() => {});
+      return header;
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('410 ')) {
+        lastError.value = 'Open expired before the engine switched shows.';
+      } else if (error instanceof Error && ['TimeoutError', 'TypeError', 'AbortError'].includes(error.name) &&
+          httpBase.value === endpoint && effectiveAccessToken.value === token) {
+        // A lost response can follow an already accepted switch. Rejoin the engine's show.
+        forceReconnect();
+      }
+      throw error;
+    }
   }
   async function loadProjectDocument(document: any, createPath: string) {
     return rest<any>('/api/project/load', {

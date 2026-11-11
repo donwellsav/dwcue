@@ -4777,7 +4777,8 @@ json ProjectState::upgrade_legacy_document(const json& legacy) const {
     return out;
 }
 
-bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::path& project_path) {
+bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::path& project_path,
+                                  std::chrono::steady_clock::time_point deadline) {
     std::optional<project_file::PreparedDocument> client_document;
     if (project_file::is_client_document(doc_in)) {
         project_file::PreparedDocument prepared;
@@ -4787,6 +4788,7 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
             Logger::error("ProjectState::load_from_json: {}", preparation_error);
             return false;
         }
+        if (!project_path.empty()) relativize_media_paths(prepared.document);
         client_document = std::move(prepared);
     }
 
@@ -4884,21 +4886,32 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
             return false;
         }
     }
+    if (std::chrono::steady_clock::now() >= deadline) return false;
     // Quiesce the old mirror without blocking transport control. Project
     // operations are serialized by project_operation_mutex_, and the mirror's
     // document generation check fences stale publication.
-    {
+    const bool timed_open = deadline != std::chrono::steady_clock::time_point::max();
+    if (!timed_open) {
         std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
         ++playback_intent_revision_;
     }
+    bool resume_old_mirror = false;
     {
         std::lock_guard mirror_lock{mirror_mutex_};
+        if (std::chrono::steady_clock::now() >= deadline) return false;
+        resume_old_mirror = loading_audio_.load(std::memory_order_acquire);
         mirror_cancel_.store(true, std::memory_order_release);
         if (load_thread_.joinable()) load_thread_.join();
         loading_audio_.store(false, std::memory_order_release);
     }
     std::scoped_lock preparation_lock{playback_preparation_mutex_, preview_preparation_mutex_};
     std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
+    // An expired request may have waited for preparation or the old mirror.
+    if (std::chrono::steady_clock::now() >= deadline) {
+        if (resume_old_mirror) start_async_mirror();
+        return false;
+    }
+    if (timed_open) ++playback_intent_revision_;
     {
         std::lock_guard slock{sequencer_mutex_};
         sequenced_items_.clear();
@@ -4984,8 +4997,10 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
     return true;
 }
 
-bool ProjectState::load(const std::filesystem::path& path) {
+bool ProjectState::load(const std::filesystem::path& path,
+                        std::chrono::steady_clock::time_point deadline) {
     std::lock_guard operation_lock{project_operation_mutex_};
+    if (std::chrono::steady_clock::now() >= deadline) return false;
     if (!project_file::is_native_project(path)) {
         Logger::error("ProjectState::load: native project path must use .dwcue: '{}'",
                       util::path_to_utf8(path));
@@ -4999,6 +5014,7 @@ bool ProjectState::load(const std::filesystem::path& path) {
         }
         json doc;
         f >> doc;
+        if (std::chrono::steady_clock::now() >= deadline) return false;
         const auto has_array = [&doc](const char* key) {
             const auto field = doc.find(key);
             return field != doc.end() && field->is_array();
@@ -5021,17 +5037,10 @@ bool ProjectState::load(const std::filesystem::path& path) {
         if (path.has_parent_path() && doc.is_object()) {
             doc["folderPath"] = util::path_to_utf8(path.parent_path());
         }
-        const bool ok = load_from_json(doc, path);
-        if (ok) {
-            // Normalise media references to the portable relative form now that
-            // folderPath points at the file's real location: drops stale
-            // absolute mediaServerPaths so the document served to clients (and
-            // written on the next save) stays portable across moves.
+        const bool ok = load_from_json(doc, path, deadline);
+        if (ok && !project_file::is_client_document(doc) && path.has_parent_path()) {
             std::lock_guard lock{mutex_};
-            if (path.has_parent_path()) {
-                document_["folderPath"] = util::path_to_utf8(path.parent_path());
-            }
-            relativize_media_paths(document_);
+            document_["folderPath"] = util::path_to_utf8(path.parent_path());
         }
         return ok;
     } catch (const std::exception& ex) {
