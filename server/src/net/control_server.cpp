@@ -185,7 +185,7 @@ struct ControlSecurityMiddleware {
             req.url.starts_with("/api/fs/") || req.url.starts_with("/api/upload") ||
             req.url == "/api/file/download" || req.url == "/api/project/load" ||
             req.url == "/api/project/save" || req.url == "/api/project/import" ||
-            req.url == "/api/project/import-legacy" || req.url == "/api/project/export" ||
+            req.url == "/api/project/export" ||
             (req.url != "/ws" && !req.url.starts_with("/api/"));
     }
 
@@ -2475,7 +2475,7 @@ void ControlServer::install_routes() {
     //   filter:
     //     "audio" (default) — show files and let the decoder inspect them
     //     "all"             — list every regular file
-    //     ".liveplay,.lpa"  — comma-separated extension allow-list
+    //     ".dwcue,.dwcuepack"  — comma-separated extension allow-list
     CROW_ROUTE(app, "/api/fs/list").methods(crow::HTTPMethod::Get)
         ([](const crow::request& req){
             try {
@@ -2640,7 +2640,7 @@ void ControlServer::install_routes() {
                 if (filter == "all" || filter == "audio") {
                     allow_all = true;
                 } else {
-                    // Custom comma-separated list, e.g. ".liveplay,.lpa".
+                    // Custom comma-separated list, e.g. ".dwcue,.dwcuepack".
                     std::string token;
                     for (char c : filter) {
                         if (c == ',') {
@@ -2791,8 +2791,8 @@ void ControlServer::install_routes() {
                 fs::path staging_root;
                 fs::path extract_path;
                 if (purpose == "project_import") {
-                    if (!core::project_file::archive_kind(filename))
-                        return json_err(400, "project import filename must use .dwcuepack or .lpa");
+                    if (!core::project_file::is_native_archive(filename))
+                        return json_err(400, "project import filename must use .dwcuepack");
                     const auto extract_value = body.find("extract_path");
                     if (extract_value == body.end() ||
                         !extract_value->is_string()) {
@@ -3557,10 +3557,6 @@ void ControlServer::install_routes() {
                     Logger::api_request("Client ({}) -> Server ({}) : POST /api/project/load path='{}'",
                                         req.remote_ip_address, impl_->server_addr, path_str);
                     const fs::path p = liveplay::util::utf8_to_path(path_str);
-                    if (core::project_file::is_legacy_project(p)) {
-                        return json_err(400,
-                            "legacy .liveplay projects must be imported via /api/project/import-legacy");
-                    }
                     if (!core::project_file::is_native_project(p))
                         return json_err(400, "project path must use .dwcue");
                     if (!state_.load(p, deadline)) {
@@ -3603,115 +3599,6 @@ void ControlServer::install_routes() {
             }
         });
 
-    CROW_ROUTE(app, "/api/project/import-legacy").methods(crow::HTTPMethod::Post)
-        ([this](const crow::request& req) {
-            auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
-            if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
-            try {
-                const auto body = json::parse(req.body);
-                const auto source_value = body.find("path");
-                if (source_value == body.end() || !source_value->is_string())
-                    return json_err(400, "expected 'path'");
-                const fs::path source = liveplay::util::utf8_to_path(
-                    source_value->get<std::string>());
-
-                core::project_file::PreparedDocument prepared;
-                std::string preparation_error;
-                if (!core::project_file::read_legacy_project(
-                        source, prepared, preparation_error)) {
-                    return json_err(400, preparation_error);
-                }
-
-                const auto destination_value = body.find("destinationPath");
-                const bool explicit_destination =
-                    destination_value != body.end();
-                fs::path destination;
-                if (explicit_destination) {
-                    if (!destination_value->is_string() ||
-                        destination_value->get<std::string>().empty()) {
-                        return json_err(400, "destinationPath must be a non-empty string");
-                    }
-                    destination = liveplay::util::utf8_to_path(
-                        destination_value->get<std::string>());
-                    std::string destination_error;
-                    if (!core::project_file::valid_legacy_destination(
-                            source, destination, destination_error)) {
-                        const int status = destination_error ==
-                                "destinationPath already exists"
-                            ? 409 : 400;
-                        return json_err(status, destination_error);
-                    }
-                }
-
-                std::error_code write_error;
-                {
-                    std::lock_guard import_lock{g_media_import_mutex};
-                    if (explicit_destination) {
-                        if (!core::project_file::write_new_canonical_project(
-                                destination, prepared.document, write_error)) {
-                            return json_err(
-                                write_error == std::errc::file_exists ? 409 : 500,
-                                write_error == std::errc::file_exists
-                                    ? "destinationPath already exists"
-                                    : "failed to create canonical project");
-                        }
-                    } else {
-                        bool created = false;
-                        for (unsigned attempt = 0; attempt < 100; ++attempt) {
-                            std::string destination_error;
-                            const auto candidate =
-                                core::project_file::unique_legacy_destination(
-                                    source, destination_error);
-                            if (!candidate)
-                                return json_err(500, destination_error);
-                            destination = *candidate;
-                            if (core::project_file::write_new_canonical_project(
-                                    destination, prepared.document, write_error)) {
-                                created = true;
-                                break;
-                            }
-                            if (write_error != std::errc::file_exists)
-                                return json_err(500, "failed to create canonical project");
-                        }
-                        if (!created)
-                            return json_err(409, "could not reserve a unique .dwcue sibling");
-                    }
-
-                    if (!state_.load(destination)) {
-                        return json_err(400,
-                            "legacy project was converted to '" +
-                            liveplay::util::path_to_utf8(destination) +
-                            "' but could not be opened");
-                    }
-                }
-
-                auto load_repair = state_.consume_repair_info();
-                core::RepairInfo repair{
-                    prepared.repair.repaired || load_repair.repaired,
-                    prepared.repair.issues,
-                };
-                repair.issues.insert(repair.issues.end(),
-                                     load_repair.issues.begin(),
-                                     load_repair.issues.end());
-                auto header = state_.header_document();
-                header["needsRepair"] = repair.repaired;
-                if (repair.repaired)
-                    header["repairIssues"] = repair.issues;
-                broadcast_doc_patch(json{
-                    {"type", "doc_patch"}, {"op", "project_changed"},
-                });
-                Logger::api_response(
-                    "Client ({}) <- Server ({}) : POST /api/project/import-legacy OK — '{}'",
-                    req.remote_ip_address, impl_->server_addr,
-                    liveplay::util::path_to_utf8(destination));
-                return json_ok(header);
-            } catch (const std::exception& exception) {
-                Logger::error("POST /api/project/import-legacy threw: {}",
-                              exception.what());
-                return json_err(400, exception.what());
-            }
-        });
-
     // Close the currently-loaded project on the server. After this the
     // server has no open project — the next /api/project/header will report
     // hasOpenProject=false and clients land back on the welcome screen. We
@@ -3737,7 +3624,7 @@ void ControlServer::install_routes() {
             }
         });
 
-    // ---- Project export / import (.dwcuepack and legacy .lpa archives) ----
+    // ---- Project export / import (.dwcuepack archives) ----
     // Package the active canonical show and its project folder into a raw ZIP
     // with the .dwcuepack extension.
     // Request body:
@@ -3878,7 +3765,7 @@ void ControlServer::install_routes() {
             }
         });
 
-    // Import a canonical .dwcuepack or legacy .lpa archive uploaded through
+    // Import a .dwcuepack archive uploaded through
     // multipart, chunked upload, or already present on the server filesystem.
     // The existing request/response shape is preserved. Successful responses
     // contain exactly one canonical root filename in projectFiles.
@@ -3940,8 +3827,8 @@ void ControlServer::install_routes() {
                     if (file_filename_missing)
                         return json_err(400,
                             "file part must include a non-empty filename");
-                    if (!core::project_file::archive_kind(trusted_archive_filename))
-                        return json_err(400, "archive filename must use .dwcuepack or .lpa");
+                    if (!core::project_file::is_native_archive(trusted_archive_filename))
+                        return json_err(400, "archive filename must use .dwcuepack");
                     if (file_part->body.size() > cfg_.max_upload_bytes)
                         return json_err(413, "uploaded archive too large");
                     if (extract_path.empty())
@@ -3965,8 +3852,8 @@ void ControlServer::install_routes() {
                     archive_path = liveplay::util::utf8_to_path(j["archivePath"].get<std::string>());
                     extract_path = liveplay::util::utf8_to_path(j["extractPath"].get<std::string>());
                     trusted_archive_filename = archive_path.filename();
-                    if (!core::project_file::archive_kind(trusted_archive_filename))
-                        return json_err(400, "archivePath must use .dwcuepack or .lpa");
+                    if (!core::project_file::is_native_archive(trusted_archive_filename))
+                        return json_err(400, "archivePath must use .dwcuepack");
                 }
 
                 if (extract_path.empty())

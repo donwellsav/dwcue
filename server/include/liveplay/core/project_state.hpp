@@ -11,10 +11,8 @@
 // On load(), the ProjectState walks the document and instructs the
 // AudioEngine to mirror it (load cues, create mixer channels, wire routes).
 //
-// Native persistence uses .dwcue JSON. Legacy .liveplay files are converted
-// through the explicit one-way import path before ProjectState::load() sees
-// them. In-memory server routing documents remain supported for control-plane
-// compatibility.
+// Native persistence uses .dwcue JSON.
+// In-memory server routing documents remain supported.
 // ============================================================================
 #pragma once
 

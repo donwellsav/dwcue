@@ -156,12 +156,13 @@ test('project session preconditions reject delayed edits after switching or reop
       assert.deepEqual(await playing(), ['show-bed']);
       const broken = path.join(folder, 'Broken.dwcue');
       const unrelated = path.join(folder, 'Unrelated.dwcue');
-      const legacy = path.join(folder, 'Broken.liveplay');
+      const legacy = path.join(folder, 'Foreign.liveplay');
       await writeFile(broken, '{');
       await writeFile(unrelated, '{"event":"This is not a show"}');
-      await writeFile(legacy, '{');
       const createPath = path.join(folder, 'New.dwcue');
       const newShow = { ...project('New'), items: [], cartItems: [] };
+      const legacyBytes = JSON.stringify(newShow);
+      await writeFile(legacy, legacyBytes);
       const originalBytes = await readFile(p, 'utf8');
       const change = (route, body) => request(baseUrl, `/api/project/${route}`, {
         method: 'POST', body: JSON.stringify(body),
@@ -171,7 +172,8 @@ test('project session preconditions reject delayed edits after switching or reop
         ['load', { path: broken }, 400],
         ['load', { path: unrelated }, 400],
         ['load', { path: path.join(folder, 'Missing.dwcue') }, 400],
-        ['import-legacy', { path: legacy }, 400],
+        ['load', { path: legacy }, 400],
+        ['import-legacy', { path: legacy }, 404],
         ['load', { create: { document: newShow, path: path.join(folder, 'missing', 'New.dwcue') } }, 500],
         ['load', { create: { document: newShow, path: p } }, 409],
       ]) {
@@ -181,6 +183,23 @@ test('project session preconditions reject delayed edits after switching or reop
         assert.deepEqual(await playing(), ['show-bed']);
       }
       assert.equal(await readFile(p, 'utf8'), originalBytes);
+      assert.equal(await readFile(legacy, 'utf8'), legacyBytes);
+      await assert.rejects(readFile(path.join(folder, 'Foreign.dwcue')), { code: 'ENOENT' });
+      const extractPath = path.join(folder, 'foreign-archive');
+      const archiveRefused = await change('import', {
+        archivePath: path.join(folder, 'Foreign.LPA'), extractPath,
+      });
+      assert.equal(archiveRefused.status, 400);
+      assert.match(await archiveRefused.text(), /archivePath must use \.dwcuepack/);
+      const uploadRefused = await request(baseUrl, '/api/upload/start', {
+        method: 'POST', body: JSON.stringify({
+          filename: 'Foreign.LPA', size: 16, purpose: 'project_import', extract_path: extractPath,
+        }),
+      });
+      assert.equal(uploadRefused.status, 400);
+      assert.match(await uploadRefused.text(), /filename must use \.dwcuepack/);
+      assert.deepEqual(await current(), before);
+      assert.deepEqual(await playing(), ['show-bed']);
       const lease = async () => {
         const response = await request(baseUrl, '/api/project/header?open_deadline=1');
         assert.equal(response.status, 200);

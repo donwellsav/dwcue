@@ -124,8 +124,8 @@
     <ServerFilePickerModal
       :open="projectPicker !== null"
       :mode="projectPicker === 'new-location' ? 'directory' : 'file'"
-      :filter="projectPicker === 'new-location' ? 'all' : '.dwcue,.liveplay'"
-      :filter-options="projectPicker === 'new-location' ? ['all'] : ['.dwcue,.liveplay', 'all']"
+      :filter="projectPicker === 'new-location' ? 'all' : '.dwcue'"
+      :filter-options="projectPicker === 'new-location' ? ['all'] : ['.dwcue', 'all']"
       :fallback-start-path="projectPickerFallback"
       :location-context="projectPicker === 'new-location' ? 'project-create' : 'project-open'"
       @pick="onProjectPickerPick"
@@ -248,13 +248,13 @@
       @cancel="importChoiceVisible = false"
     />
 
-    <!-- Server file picker — used both to choose a canonical or legacy archive
+    <!-- Server file picker — used both to choose a show archive
          on the server and to choose the extract destination. -->
     <ServerFilePickerModal
       :open="importServerPickerOpen"
       :mode="importServerPickerStage === 'destination' ? 'directory' : 'file'"
-      :filter="importServerPickerStage === 'destination' ? 'all' : '.dwcuepack,.lpa'"
-      :filter-options="importServerPickerStage === 'destination' ? ['all'] : ['.dwcuepack,.lpa', 'all']"
+      :filter="importServerPickerStage === 'destination' ? 'all' : '.dwcuepack'"
+      :filter-options="importServerPickerStage === 'destination' ? ['all'] : ['.dwcuepack', 'all']"
       :location-context="importServerPickerStage === 'destination' ? 'archive-import-destination' : 'archive-import'"
       @pick="onImportServerPickerPick"
       @close="importServerPickerOpen = false"
@@ -277,7 +277,7 @@ import { runExclusivePendingAction } from '~/utils/acknowledgedAction';
 import { applyOneShotMutation, enforceOneShotDisarmFences } from '~/utils/oneShotMutation';
 
 const {
-  currentProject, saveProject, createNewProject, openProject, importLegacyProject, confirmUnsavedChanges,
+  currentProject, saveProject, createNewProject, openProject, confirmUnsavedChanges,
   autoSaveEnabled, projectSyncIdentity,
   projectHydrationStatus, projectHydrationError, retryProjectHydration,
   isLoading, loadingMessage,
@@ -287,9 +287,6 @@ const {
   deleteDialogConfirmAll, deleteDialogConfirmOnly, deleteDialogCancel,
 } = useProject();
 const { stopAllCues } = useAudioEngine();
-const pendingFileOpen = useState<{ path: string; kind: ProjectFileKind } | null>(
-  'liveplay:pendingFileOpen', () => null,
-);
 const { cartOnlyItems, clearCartOnlyItems, addCartOnlyItem } = useCartItems();
 import LoadingOverlay from './components/LoadingOverlay.vue';
 import AudioLoadProgress from './components/AudioLoadProgress.vue';
@@ -301,18 +298,20 @@ const openProjectGuard = createProjectOpenGuard({
   confirmUnsavedChanges,
   openProject(path) {
     useLiveplayServer().clearLastError();
-    const action = projectFileAction(path);
-    if (action === 'open-project') return openProject(path);
-    if (action === 'import-legacy-project') return importLegacyProject(path);
-    return Promise.resolve(false);
+    return openProject(path);
   },
   onOpenFailed(path) {
     const server = useLiveplayServer();
     server.lastError ??= t('project.openFailed', { path });
   },
 });
-const guardedOpenProject = (path: string) =>
-  runExclusivePendingAction('project-file-change', `open:${path}`, () => openProjectGuard(path));
+const guardedOpenProject = (path: string) => {
+  if (projectFileAction(path) !== 'open-project') {
+    useLiveplayServer().lastError = t('project.openFailed', { path });
+    return Promise.resolve(false);
+  }
+  return runExclusivePendingAction('project-file-change', `open:${path}`, () => openProjectGuard(path));
+};
 
 const welcomeScreen = ref<InstanceType<typeof WelcomeScreen> | null>(null);
 const projectPicker = ref<'open' | 'new-location' | null>(null);
@@ -398,15 +397,11 @@ async function routePendingFile(data: { filePath: string; kind: ProjectFileKind 
   if (!data?.filePath || activeFileRoute) return;
   activeFileRoute = data.filePath;
   try {
-    if (data.kind === 'native-project' || (data.kind === 'legacy-project' && currentProject.value)) {
-      if (data.kind === 'legacy-project' && !useLiveplayServer().isLocalServer) {
-        useLiveplayServer().lastError = t('project.openFailed', { path: data.filePath });
-        return;
-      }
+    if (data.kind === 'native-project') {
       await guardedOpenProject(data.filePath);
       return;
     }
-    if (data.kind === 'native-archive' || data.kind === 'legacy-archive') {
+    if (data.kind === 'native-archive' && projectFileAction(data.filePath) === 'import-archive') {
       if (!(await confirmUnsavedChanges())) return;
       pendingArchiveClientPath.value = data.filePath;
       pendingArchiveName.value = data.filePath.split(/[\/]/).pop() || 'import.dwcuepack';
@@ -414,7 +409,6 @@ async function routePendingFile(data: { filePath: string; kind: ProjectFileKind 
       importServerPickerOpen.value = true;
       return;
     }
-    pendingFileOpen.value = { path: data.filePath, kind: data.kind };
   } finally {
     activeFileRoute = '';
   }
@@ -664,8 +658,8 @@ onMounted(() => {
       }
     });
     
-    // File > Import Project. Local servers can browse a canonical .dwcuepack
-    // or legacy .lpa directly. Remote servers can browse their filesystem or
+    // File > Import Project. Local servers can browse a .dwcuepack directly.
+    // Remote servers can browse their filesystem or
     // upload an archive selected on this computer. Extraction always happens
     // beside the server's audio engine so imported media paths resolve.
     window.electronAPI.onMenuImportProject(() => {
@@ -711,8 +705,7 @@ onMounted(() => {
       void window.electronAPI.checkForUpdates();
     });
     
-    // Warm-start pushes and cold-start pulls share semantic file kinds, then
-    // WelcomeScreen chooses native open, legacy conversion, or archive import.
+    // Cold and warm file associations share the same native format routing.
     window.electronAPI.onOpenFileAssociation((_event: any, data: { filePath: string; kind: ProjectFileKind }) => {
       void routePendingFile(data);
     });
@@ -844,16 +837,6 @@ const pendingArchiveOnServer    = ref('');
 const pendingArchiveClientPath  = ref('');
 const pendingArchiveName        = ref('');
 
-const pendingArchiveImportReady = useState<string | null>('liveplay:pendingLpaImportReady', () => null);
-watch(pendingArchiveImportReady, (archivePath) => {
-  if (!archivePath) return;
-  pendingArchiveImportReady.value = null;
-  pendingArchiveClientPath.value = archivePath;
-  pendingArchiveName.value = archivePath.split(/[\/]/).pop() || 'import.dwcuepack';
-  importServerPickerStage.value = 'destination';
-  importServerPickerOpen.value = true;
-});
-
 let importFlowActive = false;
 async function startImportFlow() {
   if (importFlowActive) return;
@@ -892,6 +875,10 @@ async function onImportServerPickerPick(serverPath: string) {
   if (!serverPath) return;
   const server = useLiveplayServer();
   if (importServerPickerStage.value === 'archive') {
+    if (projectFileAction(serverPath) !== 'import-archive') {
+      server.lastError = t('importProgress.openFailed');
+      return;
+    }
     pendingArchiveOnServer.value = serverPath;
     importServerPickerStage.value = 'destination';
     importServerPickerOpen.value = true;

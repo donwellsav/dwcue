@@ -274,8 +274,6 @@ ref="localModeButton"
 </template>
 
 <script setup lang="ts">
-import type { ProjectFileKind } from '~/utils/projectFileFormats';
-
 const props = defineProps<{
   openProject: (path: string) => Promise<boolean>;
   projectFileDialogOpen: boolean;
@@ -297,16 +295,6 @@ const remoteAddress   = ref('');
 const remoteAccessToken = ref(String(server.accessToken || ''));
 const connecting      = ref(false);
 const connectionError = ref<string>('');
-
-// File-association routing is extension-aware. Canonical .dwcue shows open;
-// legacy .liveplay shows convert through the explicit importer; .dwcuepack and
-// legacy .lpa archives continue through app.vue's archive destination flow.
-const pendingFileOpen = useState<{ path: string; kind: ProjectFileKind } | null>(
-  'liveplay:pendingFileOpen', () => null);
-const pendingArchiveImportReady = useState<string | null>(
-  'liveplay:pendingLpaImportReady', () => null);
-const importAfterConnect = ref(false);
-const pendingArchivePath = ref('');
 
 // LAN-discovered servers (populated from the UDP beacon via Electron IPC).
 type DiscoveredServer = {
@@ -372,15 +360,8 @@ onMounted(async () => {
 
   await loadRecentProjects();
 
-  // A queued native open or explicit legacy import takes precedence over the
-  // ordinary welcome flow.
-  const pending = pendingFileOpen.value;
-  if (pending) {
-    await handlePendingFileOpen(pending);
-  } else {
-    // Start the embedded engine. The mode picker remains available on failure.
-    void chooseLocal();
-  }
+  // Start the embedded engine. The mode picker remains available on failure.
+  void chooseLocal();
 
   // Start LAN discovery so the remote-mode stage immediately shows any
   // servers visible on the network.
@@ -408,42 +389,6 @@ onMounted(async () => {
 watch(stage, (s) => {
   if (s === 'project') void loadRecentProjects();
   queueStageFocus(s);
-});
-
-// Drive a queued native open or legacy import. Show files use the local server;
-// archives hand off to app.vue after the local connection is ready.
-async function handlePendingFileOpen(p: { path: string; kind: ProjectFileKind }) {
-  pendingFileOpen.value = null;
-  if (p.kind === 'native-project' || p.kind === 'legacy-project') {
-    mode.value = 'local';
-    connectionError.value = '';
-    connecting.value = true;
-    try {
-      if (!(await ensureLocalServer())) { stage.value = 'mode'; return; }
-      const ok = await props.openProject(p.path);
-      if (!ok) {
-        connectionError.value = t('welcome.connectionFailed');
-        stage.value = 'mode';
-      }
-    } catch (e: any) {
-      connectionError.value = e?.message ?? String(e);
-      stage.value = 'mode';
-    } finally {
-      connecting.value = false;
-    }
-    return;
-  }
-
-  pendingArchivePath.value = p.path;
-  importAfterConnect.value = true;
-  void chooseLocal();
-}
-
-// Late-arrival case: a file double-clicked while this screen is already
-// mounted (e.g. sitting on the welcome screen with no project open). onMounted
-// won't re-run, so react to the shared state changing.
-watch(pendingFileOpen, (p) => {
-  if (p) void handlePendingFileOpen(p);
 });
 
 onUnmounted(() => {
@@ -530,8 +475,6 @@ async function chooseLocal() {
   connecting.value = true;
   try {
     if (!(await ensureLocalServer())) return;
-    // A queued archive skips the project picker and proceeds to extraction.
-    if (importAfterConnect.value) { beginImportDestination(); return; }
     // If a project is already open server-side (e.g. the user kept the
     // detached server running between renderer reloads), drop straight
     // into the workspace.
@@ -542,16 +485,6 @@ async function chooseLocal() {
   } finally {
     connecting.value = false;
   }
-}
-
-// Hand a queued archive to app.vue, which owns destination selection, upload,
-// extraction, and canonical project open. Cancelling leaves this screen usable.
-function beginImportDestination() {
-  importAfterConnect.value = false;
-  const archivePath = pendingArchivePath.value;
-  pendingArchivePath.value = '';
-  stage.value = 'project';
-  if (archivePath) pendingArchiveImportReady.value = archivePath;
 }
 
 const { showNetworkUi, setNetworkUiVisible } = useNetworkUiVisibility();
@@ -598,8 +531,6 @@ async function connectToRemote() {
       });
     }
     void rememberServer(url);
-    // A queued archive skips the project picker and proceeds to extraction.
-    if (importAfterConnect.value) { beginImportDestination(); return; }
     // Multi-client: if the remote server is already running a project,
     // join the live session directly instead of showing New/Open.
     if (await tryRejoinExistingProject()) return;
@@ -634,7 +565,6 @@ async function connectToDiscovered(srv: DiscoveredServer) {
       });
     }
     void rememberServer(url, { name: srv.name });
-    if (importAfterConnect.value) { beginImportDestination(); return; }
     if (await tryRejoinExistingProject()) return;
     stage.value = 'project';
   } catch (e: any) {

@@ -24,7 +24,7 @@ OperationResult export_project(
     const std::filesystem::path& output_zip,
     const std::filesystem::path& excluded_final_output = {});
 
-// Imports a trusted filename-classified .dwcuepack/.lpa into an absent or empty
+// Imports a .dwcuepack into an absent or empty
 // destination. Extraction and root validation happen in a fresh sibling
 // directory before the result is published. Successful results always expose
 // exactly one canonical root .dwcue path.

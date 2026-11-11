@@ -3659,17 +3659,12 @@ ipcMain.handle('select-project-file', async (event) => {
   const result = await showNativeFilePicker(() => dialog.showOpenDialog({
     defaultPath: nativePickerFolder('project-open'),
     properties: ['openFile'],
-    filters: [
-      { name: 'DonWells Cue Show', extensions: ['dwcue'] },
-      { name: 'Legacy Show (Import)', extensions: ['liveplay'] },
-    ],
+    filters: [{ name: 'DonWells Cue Show', extensions: ['dwcue'] }],
   }));
 
   if (result.canceled || result.filePaths.length === 0) return null;
   const selectedPath = result.filePaths[0];
-  const kind = fileKindFor(selectedPath);
-  if (kind !== ProjectFileKind.NativeProject &&
-      kind !== ProjectFileKind.LegacyProject) return null;
+  if (fileKindFor(selectedPath) !== ProjectFileKind.NativeProject) return null;
   rememberNativePickerFolder('project-open', path.dirname(selectedPath));
   return authorizeOpenableFilePath(selectedPath);
 });
@@ -3885,23 +3880,18 @@ ipcMain.handle('show-save-archive-dialog', async (event, defaultName) => {
     canonicalArchivePath(result.filePath), { allowMissing: true });
 });
 
-// Choose either a canonical archive or an explicitly imported legacy archive.
+// Choose a DonWells Cue archive.
 ipcMain.handle('show-open-archive-dialog', async (event) => {
   requireTrustedIpc(event);
   const result = await showNativeFilePicker(() => dialog.showOpenDialog({
     defaultPath: nativePickerFolder('archive-import'),
     title: 'Choose DonWells Cue Show Archive',
     properties: ['openFile'],
-    filters: [
-      { name: 'DonWells Cue Show Archive', extensions: ['dwcuepack'] },
-      { name: 'Legacy Show Archive (Import)', extensions: ['lpa'] },
-    ],
+    filters: [{ name: 'DonWells Cue Show Archive', extensions: ['dwcuepack'] }],
   }));
   if (result.canceled || result.filePaths.length === 0) return null;
   const selectedPath = result.filePaths[0];
-  const kind = fileKindFor(selectedPath);
-  if (kind !== ProjectFileKind.NativeArchive &&
-      kind !== ProjectFileKind.LegacyArchive) return null;
+  if (fileKindFor(selectedPath) !== ProjectFileKind.NativeArchive) return null;
   rememberNativePickerFolder('archive-import', path.dirname(selectedPath));
   return pathCapabilities.authorizeFile(selectedPath);
 });
@@ -4144,8 +4134,7 @@ ipcMain.handle('set-current-project', async (event, projectPath) => {
   } else {
     const checked = requireIpcString(projectPath, 'projectPath', MAX_IPC_PATH_LENGTH);
     // A live local canonical show is authorized on report, even if no dialog
-    // picked it (for example after server auto-restore). Legacy .liveplay files
-    // are import sources only and must never become writable project roots.
+    // picked it (for example after server auto-restore).
     const isNativeProjectFile = path.isAbsolute(checked) &&
       fileKindFor(checked) === ProjectFileKind.NativeProject &&
       fs.existsSync(checked);

@@ -121,7 +121,7 @@
     mode       : 'file' | 'directory'
                             — pick a file (with extension filter) or a folder
     filter     : string    — initial filter token, e.g. 'audio', 'all',
-                              '.dwcue,.liveplay', '.dwcuepack,.lpa'
+                              '.dwcue', '.dwcuepack'
     filterOptions: string[]— filters offered in the dropdown
     startPath  : string    — initial directory (empty = computer root)
     title      : string    — header text shown if you want one
@@ -261,10 +261,7 @@ function filterDisplay(f: string): string {
   if (f === 'all')        return 'All files';
   if (f === 'audio')      return 'Audio files';
   if (f === '.dwcue') return 'DonWells Cue Shows (.dwcue)';
-  if (f === '.liveplay') return 'Legacy Shows (.liveplay)';
-  if (f === '.dwcue,.liveplay') return 'DonWells Cue Shows (.dwcue; legacy .liveplay)';
   if (f === '.dwcuepack') return 'DonWells Cue Show Archives (.dwcuepack)';
-  if (f === '.dwcuepack,.lpa') return 'DonWells Cue Show Archives (.dwcuepack; legacy .lpa)';
   return f;
 }
 

@@ -1075,8 +1075,8 @@ const projectArchive = read('server/src/net/project_archive.cpp');
 const controlSecurity = read('server/include/liveplay/net/control_security.hpp');
 assert.match(
   projectFileHeader,
-  /kNativeProjectExtension = "\.dwcue"[\s\S]*kLegacyProjectExtension = "\.liveplay"[\s\S]*kNativeArchiveExtension = "\.dwcuepack"[\s\S]*kLegacyArchiveExtension = "\.lpa"/,
-  'native and one-way legacy file classifications must remain explicit',
+  /kNativeProjectExtension = "\.dwcue"[\s\S]*kNativeArchiveExtension = "\.dwcuepack"/,
+  'native show and archive extensions must remain explicit',
 );
 assert.match(
   projectFile,
@@ -1085,13 +1085,8 @@ assert.match(
 );
 assert.match(
   projectFile,
-  /bool valid_legacy_destination[\s\S]*is_native_project\(destination\)[\s\S]*destination_parent != source_parent[\s\S]*path_is_occupied\(destination/,
-  'legacy conversion must target an unused canonical sibling',
-);
-assert.match(
-  projectFile,
   /bool write_new_canonical_project[\s\S]*CreateFileW\([\s\S]*CREATE_NEW[\s\S]*O_EXCL/,
-  'canonical legacy conversion must use exclusive creation on every platform',
+  'new native shows must use exclusive creation on every platform',
 );
 assert.match(
   projectArchive,
@@ -1197,7 +1192,7 @@ const importRouteEnd = controlServer.indexOf('CROW_ROUTE(app, "/api/mixers")', i
 const importRoute = controlServer.slice(importRouteStart, importRouteEnd);
 assert.match(
   importRoute,
-  /trusted_archive_filename =\s*[\s\S]*sanitize_upload_filename\([\s\S]*filename_it->second[\s\S]*archive_kind\(trusted_archive_filename\)[\s\S]*archive_path = tmp \/ \(make_download_token\(\) \+ "\.part"\);/,
+  /trusted_archive_filename =\s*[\s\S]*sanitize_upload_filename\([\s\S]*filename_it->second[\s\S]*is_native_archive\(trusted_archive_filename\)[\s\S]*archive_path = tmp \/ \(make_download_token\(\) \+ "\.part"\);/,
   'multipart imports must validate the trusted source filename classification before random-token .part staging',
 );
 assert.match(
@@ -2260,8 +2255,8 @@ assert.ok(archiveImportStart >= 0 && archiveImportEnd > archiveImportStart,
 const archiveImport = appVue.slice(archiveImportStart, archiveImportEnd);
 assert.equal(
   (archiveImport.match(/server\.lastError = t\('importProgress\.openFailed'\);/g) ?? []).length,
-  2,
-  'empty and failed archive imports must both show the localized operator error',
+  3,
+  'unsupported, empty and failed archive imports must show the localized operator error',
 );
 assert.match(
   appVue,

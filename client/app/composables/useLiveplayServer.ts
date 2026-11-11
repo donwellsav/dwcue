@@ -596,7 +596,7 @@ function createClient() {
       const resource = path.split('?')[0];
       const projectScoped = resource.startsWith('/api/project/items') || resource.startsWith('/api/project/cart')
         || ['/api/project/save', '/api/project/document', '/api/project/theme', '/api/project/settings',
-          '/api/project/repair', '/api/project/close', '/api/project/load', '/api/project/import-legacy',
+          '/api/project/repair', '/api/project/close', '/api/project/load',
           '/api/waveform_generate'].includes(resource);
       if (projectScoped) {
         const session = headers.get('X-DWCUE-Project-Session') ?? projectSessionId.value;
@@ -734,18 +734,6 @@ function createClient() {
       body: JSON.stringify({ create: { path: createPath, document } }),
     });
   }
-  async function importLegacyProjectFromPath(path: string, destinationPath?: string) {
-    const body: { path: string; destinationPath?: string } = { path };
-    if (destinationPath) body.destinationPath = destinationPath;
-    return rest<any>('/api/project/import-legacy', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }).then(project => {
-      fetchCues();
-      fetchMixerChannels();
-      return project;
-    });
-  }
   async function saveProjectTo(path?: string, document?: any, signal?: AbortSignal, expectedSessionId?: string) {
     // Authoritative-save: when the caller provides the latest document, send
     // it along so the server replaces its in-memory copy (and re-mirrors per-
@@ -845,7 +833,7 @@ function createClient() {
     if (!result.success) throw new Error(result.error || 'download failed');
   }
 
-  // Upload a .dwcuepack or legacy .lpa archive and have the server extract it
+  // Upload a .dwcuepack archive and have the server extract it
   // into the server-side absolute extractPath.
   async function importProjectArchiveUpload(file: File | Blob,
                                             extractPath: string,
@@ -890,7 +878,7 @@ function createClient() {
     }, 60 * 60 * 1000);
   }
 
-  // Have the server extract a canonical or legacy archive that already exists
+  // Have the server extract a .dwcuepack archive that already exists
   // on its filesystem (chosen via the server file browser).
   async function importProjectArchiveFromServer(archivePath: string,
                                                 extractPath: string) {
@@ -1497,7 +1485,6 @@ function createClient() {
     fetchProjectProgress,
     loadProjectFromPath,
     loadProjectDocument,
-    importLegacyProjectFromPath,
     replaceProjectDocument,
     saveProjectTo,
     repairProject,

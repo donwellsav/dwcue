@@ -6,11 +6,7 @@ import type {
   OneShotMutationResult,
   OneShotProjectEnvelope,
 } from './oneShotMutation';
-type ProjectFileKind =
-  | 'native-project'
-  | 'native-archive'
-  | 'legacy-project'
-  | 'legacy-archive';
+import type { ProjectFileKind } from '../utils/projectFileFormats';
 
 declare global {
   interface Window {

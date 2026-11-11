@@ -27,7 +27,7 @@ class MemoryStorage implements FilePickerLocationStorage {
   }
 }
 
-const projectContext = pickerLocationContext('file', '.dwcue,.liveplay');
+const projectContext = pickerLocationContext('file', '.dwcue');
 
 test('restores the last successful folder after a new store instance without crossing server or picker scopes', () => {
   const storage = new MemoryStorage();

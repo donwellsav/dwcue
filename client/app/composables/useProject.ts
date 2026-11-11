@@ -42,7 +42,6 @@ import {
   projectPathFromHeader,
 } from '~/utils/projectIdentity';
 import {
-  isLegacyProjectPath,
   isNativeProjectPath,
   projectPathInFolder,
 } from '~/utils/projectFileFormats';
@@ -744,9 +743,6 @@ export const useProject = () => {
     }
   };
 
-  // Native opens and explicit legacy imports share hydration. The only
-  // difference is the server endpoint: legacy sources are converted to a new
-  // canonical sibling before their returned header is applied.
   const hydrateProjectFrom = async (
     loadHeader: (server: any) => Promise<any>,
   ): Promise<boolean> => {
@@ -815,19 +811,6 @@ export const useProject = () => {
       return false;
     }
     return hydrateProjectFrom(server => server.loadProjectFromPath(projectFilePath));
-  };
-
-  const importLegacyProject = async (
-    sourcePath: string,
-    destinationPath?: string,
-  ): Promise<boolean> => {
-    if (!isLegacyProjectPath(sourcePath)) {
-      console.warn('[useProject] legacy import rejected non-.liveplay path:', sourcePath);
-      return false;
-    }
-    return hydrateProjectFrom(
-      server => server.importLegacyProjectFromPath(sourcePath, destinationPath),
-    );
   };
 
   // Stream paged items from the server into currentProject.items. Yields
@@ -2219,7 +2202,6 @@ export const useProject = () => {
     resolveProjectPath,
     createNewProject,
     openProject,
-    importLegacyProject,
     tryRejoinExistingProject,
     resumeProjectOnServer,
     saveProject,
