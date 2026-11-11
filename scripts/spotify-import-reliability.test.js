@@ -405,10 +405,11 @@ test('Spotify review restores playlist order after concurrent metadata lookups',
   assert.deepEqual([...harness.spotifyPreflights.get(review.preflightId).rawTracksById.keys()], expected);
 });
 
-test('Spotify repeats download once and produce separate ordered import and recovery entries', async (t) => {
+test('Spotify keeps the first appearance and skips repeated selections without failing the import', async (t) => {
   const harness = spotifyReviewHarness(4, { reverseResults: true });
   const [first, second, , unavailable] = harness.rawTracks;
-  harness.rawTracks[2] = { ...first, list_position: 3 };
+  second.name = first.name;
+  harness.rawTracks[2] = { ...first, name: 'Repeated entry', list_position: 3 };
   const review = await harness.run();
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'dwcue-spotify-repeat-'));
   t.after(() => fs.rmSync(folder, { recursive: true, force: true }));
@@ -447,37 +448,25 @@ test('Spotify repeats download once and produce separate ordered import and reco
   });
   const selection = {
     activeProjectFolderPath: folder, preflightId: review.preflightId,
-    selectedTrackIds: [...review.tracks.map(track => track.id)],
+    selectedTrackIds: [first.song_id, second.song_id, first.song_id, unavailable.song_id],
   };
   const result = await run({ sender: harness.sender }, 'download-job-12345', harness.canonicalUrl, folder, selection);
-  assert.equal(new Set(selection.selectedTrackIds).size, 4);
-  assert.deepEqual([...review.tracks.map(track => track.spotifyUrl)], [first.url, second.url, first.url, unavailable.url]);
+  assert.deepEqual([...review.tracks.map(track => track.spotifyUrl)], [first.url, second.url, unavailable.url]);
+  assert.equal(review.tracks[0].title, first.name);
+  assert.equal(review.totalDuration, 180);
   assert.deepEqual(matched, [first.url, second.url, unavailable.url]);
   assert.deepEqual(downloaded.sort(), [first.song_id, second.song_id].sort());
-  assert.equal(result.total, 4);
-  assert.equal(result.completed, 3);
-  assert.deepEqual([...result.completedTrackIds], selection.selectedTrackIds.slice(0, 3));
+  assert.equal(result.total, 3);
+  assert.equal(result.completed, 2);
+  assert.deepEqual([...result.completedTrackIds], [first.song_id, second.song_id]);
   assert.deepEqual([...result.failedTrackIds], [unavailable.song_id]);
-  assert.equal(new Set(result.files).size, 3);
-  assert.deepEqual(Array.from(result.files, file => fs.readFileSync(file, 'utf8')), [first.song_id, second.song_id, first.song_id]);
+  assert.deepEqual(Array.from(result.files, file => fs.readFileSync(file, 'utf8')), [first.song_id, second.song_id]);
   const recovery = normalizeSpotifyRecovery(preferences.spotifyRecovery);
-  assert.deepEqual([...recovery.pendingTrackIds], selection.selectedTrackIds.slice(0, 3));
+  assert.deepEqual([...recovery.selectedTrackIds], [first.song_id, second.song_id, unavailable.song_id]);
+  assert.deepEqual([...recovery.pendingTrackIds], [first.song_id, second.song_id]);
   assert.deepEqual([...recovery.pendingFiles], [...result.files]);
   const finalize = spotifyHandler('finalize-spotify-import', { activeSpotifyDownloads });
-  const event = { sender: harness.sender };
-  assert.equal(await finalize(event, 'download-job-12345', true), true);
-
-  const reviewedAgain = await harness.run();
-  assert.deepEqual([...reviewedAgain.tracks.map(track => track.id)], selection.selectedTrackIds);
-  const repeatId = reviewedAgain.tracks[2].id;
-  const repeatSelection = { ...selection, preflightId: reviewedAgain.preflightId, selectedTrackIds: [repeatId] };
-  await assert.rejects(run(event, 'download-job-repeat', harness.canonicalUrl, folder, {
-    ...repeatSelection, selectedTrackIds: [repeatId, repeatId],
-  }), /selectedTrackIds must contain unique Spotify playlist entries/);
-  const repeat = await run(event, 'download-job-repeat', harness.canonicalUrl, folder, repeatSelection);
-  assert.deepEqual([...repeat.completedTrackIds], [repeatId]);
-  assert.equal(fs.readFileSync(repeat.files[0], 'utf8'), first.song_id);
-  assert.equal(await finalize(event, 'download-job-repeat', true), true);
+  assert.equal(await finalize({ sender: harness.sender }, 'download-job-12345', true), true);
 });
 
 test('Spotify playlist share links resolve to the full metadata query', async () => {

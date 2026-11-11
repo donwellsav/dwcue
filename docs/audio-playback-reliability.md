@@ -57,7 +57,7 @@ Playlist review uses the checksum-pinned spotDL metadata reader to retrieve the 
 
 Matching uses batches of at most 100 tracks with up to four concurrent processes, reusing the existing worker pool. The batch size keeps command lines bounded without limiting the total playlist. The regression in `scripts/spotify-import-reliability.test.js` exercises the real Electron handler with 100, 235 and 10,001 tracks, both share-link hosts, metadata failure, single-track review, large selection/recovery, and complete bounded-batch scheduling. Run it with `node --test scripts/spotify-import-reliability.test.js`. Network responses and helper processes are simulated; this check does not download a live Spotify collection.
 
-Each appearance of a song is selectable and recoverable on its own. The importer matches and downloads that song once per job, then creates separate cues in the submitted selection order. The regression covers repeated entries alongside a track that fails to match, including the order of files saved for recovery.
+Review and download keep the first appearance of each Spotify track ID. Tracks with different IDs remain separate even when their titles match. The regression checks that usable tracks import and can be recovered when the playlist contains repeats and an unmatched track.
 
 ## Verification
 

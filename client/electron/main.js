@@ -4743,29 +4743,26 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
   if (embedReview?.playlistUrl && rawTracks.every((track) => Number.isSafeInteger(track?.list_position))) {
     rawTracks.sort((a, b) => a.list_position - b.list_position);
   }
-  const trackOccurrences = new Map();
   const rawTracksById = new Map();
-  const tracks = rawTracks.map((track, index) => {
-    const spotifyId = spotifyTrackId(track);
-    if (!spotifyId) throw new Error(`Spotify track ${index + 1} has no usable ID`);
-    const occurrence = (trackOccurrences.get(spotifyId) || 0) + 1;
-    trackOccurrences.set(spotifyId, occurrence);
-    // Keep the first occurrence compatible with existing recovery records.
-    const id = occurrence === 1 ? spotifyId : `${spotifyId}-${occurrence}`;
+  const tracks = [];
+  for (const [index, track] of rawTracks.entries()) {
+    const id = spotifyTrackId(track);
+    if (!id) throw new Error(`Spotify track ${index + 1} has no usable ID`);
+    if (rawTracksById.has(id)) continue;
     rawTracksById.set(id, track);
     const artists = Array.isArray(track.artists)
       ? track.artists.filter((artist) => typeof artist === 'string').slice(0, 20)
       : [];
-    return {
+    tracks.push({
       id,
       title: String(track.name || 'Untitled').slice(0, 500),
       artists,
       album: String(track.album_name || '').slice(0, 500),
       duration: Number.isFinite(track.duration) ? Math.max(0, track.duration) : 0,
       coverUrl: typeof track.cover_url === 'string' ? track.cover_url : '',
-      spotifyUrl: `https://open.spotify.com/track/${spotifyId}`,
-    };
-  });
+      spotifyUrl: `https://open.spotify.com/track/${id}`,
+    });
+  }
   const preflightId = crypto.randomUUID();
   const playlistName = sanitizeSpotifyFolderName(
     embedReview?.playlistName ||
@@ -5032,17 +5029,19 @@ ipcMain.handle(
       }
     }
     const preflightId = requireIpcString(selection?.preflightId, 'preflightId', 64);
-    const selectedTrackIds = normalizeSpotifyTrackIds(selection?.selectedTrackIds);
+    const selectedTrackIds = Array.isArray(selection?.selectedTrackIds)
+      ? normalizeSpotifyTrackIds([...new Set(selection.selectedTrackIds)])
+      : null;
     if (!selectedTrackIds?.length) {
-      throw new TypeError('selectedTrackIds must contain unique Spotify playlist entries');
+      throw new TypeError('selectedTrackIds must contain valid Spotify track IDs');
     }
     const preflight = spotifyPreflights.get(preflightId);
     if (!spotifyReviewIsValid(preflight, event.sender.id, url)) {
       throw new Error('Spotify review expired; review the link again');
     }
     renewSpotifyReview(preflight);
-    const selectedTracks = selectedTrackIds.map((id) => preflight.rawTracksById.get(id));
-    if (selectedTracks.some((track) => !track)) throw new Error('Selected Spotify track is not in this review');
+    const selectedRawTracks = selectedTrackIds.map((id) => preflight.rawTracksById.get(id));
+    if (selectedRawTracks.some((track) => !track)) throw new Error('Selected Spotify track is not in this review');
     if (activeSpotifyDownloads.has(jobId)) throw new Error('Spotify job already exists');
     // ponytail: one job avoids spotDL's shared cache/temp races; add a queue
     // only if concurrent playlist imports become a real operator need.
@@ -5050,10 +5049,6 @@ ipcMain.handle(
       throw new Error('Another Spotify download is already running');
     }
 
-    const tracksBySpotifyId = new Map(selectedTracks.map((track) => [spotifyTrackId(track), track]));
-    const downloadIds = [...tracksBySpotifyId.keys()];
-    const selectedRawTracks = [...tracksBySpotifyId.values()];
-    const selectedCount = selectedTrackIds.length;
     const stagingDir = fs.mkdtempSync(path.join(app.getPath('temp'), 'dwcue-spotify-'));
     const abortController = new AbortController();
     const cancelledSignal = new Promise((resolve) => {
@@ -5126,7 +5121,7 @@ ipcMain.handle(
       // spotDL remains the best metadata matcher, so run it in match-only
       // mode (`spotdl url`) in batches, then
       // download and convert with our own maintained yt-dlp.
-      const total = downloadIds.length;
+      const total = selectedTrackIds.length;
       let playlistName = preflight.playlistName;
       const failures = [];
       const runTracked = (command, commandArgs, timeoutMs, onLine = null, onSpawn = null) => new Promise((resolve, reject) => {
@@ -5187,7 +5182,7 @@ ipcMain.handle(
 
       progress('resolving', { total, completed: 0, message: 'Matching tracks…' });
       const matchedUrls = new Array(total).fill(null);
-      const trackIndexById = new Map(downloadIds.map((id, index) => [id, index]));
+      const trackIndexById = new Map(selectedTrackIds.map((id, index) => [id, index]));
       let matched = 0;
       let resolveFinished = false;
 
@@ -5223,7 +5218,7 @@ ipcMain.handle(
           return;
         }
         const baseName = [
-          downloadIds[index],
+          selectedTrackIds[index],
           sanitizeFilePart(track.artists.join(', ')),
           sanitizeFilePart(track.name),
         ].filter(Boolean).join(' - ').slice(0, 160);
@@ -5362,7 +5357,7 @@ ipcMain.handle(
               'url', track.url,
               '--audio', ...SPOTIFY_AUDIO_PROVIDERS,
               '--max-retries', '1',
-              '--cache-path', path.join(stagingDir, `match-cache-${downloadIds[index]}`),
+              '--cache-path', path.join(stagingDir, `match-cache-${selectedTrackIds[index]}`),
               '--log-level', 'ERROR',
             ], 120000);
             const urlMatch = result.tail.match(/https?:\/\/\S+/);
@@ -5390,16 +5385,7 @@ ipcMain.handle(
         throw new Error('Spotify download cancelled');
       }
 
-      const stagedById = new Map(orderedSpotifyOutputs(stagingDir, downloadIds)
-        .map((file) => [spotifyOutputTrackId(file, downloadIds), file]));
-      const outputs = [];
-      const completedTrackIds = [];
-      for (const [index, track] of selectedTracks.entries()) {
-        const output = stagedById.get(spotifyTrackId(track));
-        if (!output) continue;
-        outputs.push(output);
-        completedTrackIds.push(selectedTrackIds[index]);
-      }
+      const outputs = orderedSpotifyOutputs(stagingDir, selectedTrackIds);
       if (outputs.length === 0) {
         throw new Error(failures.length
           ? `No tracks could be downloaded. ${failures.slice(0, 3).join('; ')}`
@@ -5418,15 +5404,18 @@ ipcMain.handle(
 
       progress('importing', {
         playlistName,
-        total: selectedCount,
+        total,
         completed: outputs.length,
         message: 'Adding tracks to project…',
       });
       const files = await copySpotifyOutputsToMedia(outputs, mediaDir, job);
-      const partial = failures.length > 0 || files.length < selectedCount;
+      const partial = failures.length > 0 || files.length < total;
       const error = partial
-        ? `${selectedCount - files.length} of ${selectedCount} track(s) failed${failures.length ? ` — ${failures[0]}` : ''}`
+        ? `${total - files.length} of ${total} track(s) failed${failures.length ? ` — ${failures[0]}` : ''}`
         : undefined;
+      const completedTrackIds = outputs
+        .map((filePath) => spotifyOutputTrackId(filePath, selectedTrackIds))
+        .filter(Boolean);
       const completedTrackIdSet = new Set(completedTrackIds);
       const failedTrackIds = selectedTrackIds.filter((id) => !completedTrackIdSet.has(id));
       const groupUuid = crypto.randomUUID();
@@ -5443,7 +5432,7 @@ ipcMain.handle(
         failedTrackIds,
         pendingTrackIds: completedTrackIds,
         pendingFiles: files,
-        total: selectedCount,
+        total,
         completed: 0,
         groupUuid,
         updatedAt: Date.now(),
@@ -5458,13 +5447,13 @@ ipcMain.handle(
       job.awaitingImport = true;
       progress('importing', {
         playlistName,
-        total: selectedCount,
+        total,
         completed: files.length,
         message: 'Saving cues to the project…',
       });
       return {
         files,
-        total: selectedCount,
+        total,
         completed: files.length,
         partial,
         error,

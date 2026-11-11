@@ -24,7 +24,7 @@ function spotifyReviewIsValid(review, senderId, url, now = Date.now()) {
 
 function normalizeSpotifyTrackIds(value) {
   if (!Array.isArray(value)) return null;
-  const ids = value.filter((id) => typeof id === 'string' && /^[A-Za-z0-9]{10,64}(?:-[1-9]\d{0,9})?$/.test(id));
+  const ids = value.filter((id) => typeof id === 'string' && /^[A-Za-z0-9]{10,64}$/.test(id));
   return ids.length === value.length && new Set(ids).size === ids.length ? ids : null;
 }
 
