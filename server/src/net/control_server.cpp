@@ -3575,20 +3575,12 @@ void ControlServer::install_routes() {
                 } else {
                     return json_err(400, "expected 'path', 'document', or 'create'");
                 }
-                auto repair = state_.consume_repair_info();
                 auto header = state_.header_document();
                 const std::size_t item_count = header.value("itemCount", (std::size_t)0);
                 Logger::api_response("Client ({}) <- Server ({}) : POST /api/project/load OK — '{}' ({} items){}",
                                      req.remote_ip_address, impl_->server_addr,
                                      header.value("name", "?"), item_count,
-                                     repair.repaired ? " [repaired]" : "");
-                // Attach repair metadata so the client can prompt the user.
-                header["needsRepair"] = repair.repaired;
-                if (repair.repaired) {
-                    auto issues = json::array();
-                    for (const auto& iss : repair.issues) issues.push_back(iss);
-                    header["repairIssues"] = std::move(issues);
-                }
+                                    header.value("needsRepair", false) ? " [repaired]" : "");
                 broadcast_doc_patch(json{
                     {"type", "doc_patch"}, {"op", "project_changed"},
                 });

@@ -80,9 +80,11 @@ test('an owned project header commits its server session together with the local
   const session = { value: 'old-session' };
   const currentProject = { value: null as any };
   const path = { value: '' };
+  const repairNotice = { value: null as any };
   const apply = projectFunction('applyServerHeader', {
     currentProject, projectFilePathRef: path, serverProjectSessionId: session,
     projectEpoch: { value: 0 }, hasUnsavedChanges: { value: false },
+    repairNotice, useLiveplayServer: () => ({ serverUrl: 'http://engine' }),
     projectPathFromHeader: (h: any) => h.server.projectFilePath,
     isNativeProjectPath: (p: string) => p.endsWith('.dwcue'),
     reportOpenProjectPath() {}, updateIndices() {}, _uninstallItemsWatcherFn() {},
@@ -90,10 +92,13 @@ test('an owned project header commits its server session together with the local
     _projectHydration: { begin: () => ({ finish() {} }) },
     clearLocalProjectMirror: () => { currentProject.value = null; path.value = ''; session.value = ''; },
   });
-  apply({ hasOpenProject: true, name: 'New', server: { projectFilePath: '/new.dwcue', projectSessionId: 'new-session' } });
+  apply({ hasOpenProject: true, name: 'New', needsRepair: true, repairIssues: ['duplicate cue'],
+    server: { projectFilePath: '/new.dwcue', projectSessionId: 'new-session' } });
   assert.equal(currentProject.value.name, 'New');
   assert.equal(path.value, '/new.dwcue');
   assert.equal(session.value, 'new-session');
+  assert.equal(repairNotice.value.session, 'new-session');
+  assert.deepEqual(repairNotice.value.issues, ['duplicate cue']);
   apply({ hasOpenProject: false, server: { projectFilePath: '', projectSessionId: 'closed-session' } });
   assert.equal(currentProject.value, null);
   assert.equal(session.value, 'closed-session');

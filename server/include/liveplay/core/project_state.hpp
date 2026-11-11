@@ -192,7 +192,6 @@ public:
     // Returns and clears any repair info recorded during the last load /
     // load_from_json call. The repair has already been applied in memory;
     // call save() if the caller wants to persist it.
-    RepairInfo consume_repair_info();
 
     // Re-run validation + repair on the in-memory document and return the
     // result. Useful when the caller wants to trigger an explicit repair
@@ -558,7 +557,7 @@ private:
     // whole document here so a remote client can fetch it back via GET.
     json document_;
 
-    // Repair info from the last load. Consumed by consume_repair_info().
+    // Repairs to the current show remain visible until a successful save.
     RepairInfo pending_repair_info_;
 
     // uuid → engine cue id, for audio items currently loaded.

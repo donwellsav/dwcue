@@ -983,6 +983,10 @@
     "progress": "Cue {index} of {total}"
   },
   "repair": {
+    "noticeTitle": "Show opened with repairs",
+    "review": "Review Repairs",
+    "saveRepaired": "Save Repaired Show",
+    "saveFailed": "The repaired show is open. Saving failed. Check the file location and try again.",
     "title": "Corrupt Project Detected",
     "message": "This project was found to have issues and has been automatically repaired. The following problems were detected:",
     "dataLossWarning": "Warning: some data may have been lost during repair.",

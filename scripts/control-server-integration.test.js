@@ -252,6 +252,39 @@ test('project session preconditions reject delayed edits after switching or reop
       assert.equal(fresh.status, 200, await fresh.clone().text());
       assert.equal((await fresh.json()).server.projectFilePath, q);
     });
+    await t.test('a repaired show stays usable and reports its repairs until the file is saved', async () => {
+      const file = path.join(folder, 'Repair.dwcue');
+      const media = path.join(folder, 'show-bed.wav');
+      const cue = { uuid: 'repair-bed', type: 'audio', displayName: 'Bed', mediaServerPath: media,
+        duration: 10, endBehavior: { action: 'loop' } };
+      const original = JSON.stringify({ ...project('Repair'), items: [cue, cue] });
+      await writeFile(file, original);
+      const opened = await request(baseUrl, '/api/project/load', { method: 'POST', body: JSON.stringify({ path: file }) });
+      assert.equal(opened.status, 200, await opened.clone().text());
+      const accepted = await opened.json();
+      assert.equal(accepted.needsRepair, true);
+      assert.equal(accepted.itemCount, 1);
+      const header = async () => (await request(baseUrl, '/api/project/header')).json();
+      assert.deepEqual((await header()).repairIssues, accepted.repairIssues);
+      const session = accepted.server.projectSessionId;
+      const save = () => request(baseUrl, '/api/project/save', {
+        method: 'POST', body: '{}', headers: { 'X-DWCUE-Project-Session': session },
+      });
+      const tmp = file + '.tmp';
+      await mkdir(tmp);
+      assert.equal((await save()).status, 500);
+      assert.equal(await readFile(file, 'utf8'), original);
+      assert.equal((await header()).needsRepair, true);
+      assert.equal((await current()).session, session);
+      const play = await request(baseUrl, '/api/project/items/repair-bed/play', { method: 'POST', body: '{}' });
+      assert.equal(play.status, 200, await play.text());
+      await rm(tmp, { recursive: true });
+      assert.equal((await save()).status, 200);
+      assert.equal((await header()).needsRepair, false);
+      assert.equal(JSON.parse(await readFile(file, 'utf8')).items.length, 1);
+      await load(q);
+      assert.equal((await save()).status, 409);
+    });
   } catch (error) { error.message += `\nNative server diagnostics:\n${diagnostics}`; throw error; }
 });
 

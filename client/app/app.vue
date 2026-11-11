@@ -182,13 +182,7 @@
     <!-- Loading overlay (project open / create / save) -->
     <LoadingOverlay :visible="isLoading" :title="loadingMessage" />
 
-    <!-- Project repair dialog -->
-    <ProjectRepairModal
-      :visible="repairDialogVisible"
-      :issues="repairDialogIssues"
-      @confirm="confirmRepair"
-      @cancel="cancelRepair"
-    />
+    <ProjectRepairNotice v-if="projectRepair" :notice="projectRepair" @save="saveRepairedProject" />
 
     <!-- Unsaved-changes prompt (shown when leaving a project with autosave off) -->
     <UnsavedChangesModal
@@ -288,7 +282,7 @@ const {
   autoSaveEnabled, projectSyncIdentity,
   projectHydrationStatus, projectHydrationError, retryProjectHydration,
   isLoading, loadingMessage,
-  repairDialogVisible, repairDialogIssues, confirmRepair, cancelRepair,
+  projectRepair, saveRepairedProject,
   unsavedDialogVisible, unsavedDialogReason, unsavedDialogBlocked, unsavedSave, unsavedDiscard, unsavedCancel,
   deleteDialogVisible, deleteDialogCount, deleteDialogName, deleteDialogAllowOnly,
   deleteDialogConfirmAll, deleteDialogConfirmOnly, deleteDialogCancel,

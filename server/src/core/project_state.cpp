@@ -1276,6 +1276,7 @@ void ProjectState::reset() {
     project_name_ = "Untitled";
     project_file_path_.clear();
     document_ = default_empty_document();
+    pending_repair_info_ = {};
     ++document_generation_;
     project_session_id_ = engine_.new_cue_id().value;
     apply_audio_settings(engine_, document_["settings"]);
@@ -1858,6 +1859,7 @@ bool ProjectState::save(const std::filesystem::path& requested_path,
             if (project_file_path_ != path) project_session_id_ = engine_.new_cue_id().value;
             project_file_path_ = path;
             document_["folderPath"] = util::path_to_utf8(path.parent_path());
+            pending_repair_info_ = {};
             update_media_root_from_folder_locked();
         }
         if (published_path) *published_path = path;
@@ -2001,6 +2003,8 @@ json ProjectState::header_document() const {
         {"playbackKeys", document_.value("playbackKeys",  json::object())},
         {"cartOnlyItems", std::move(cart_only)},
         {"itemCount",    item_count},
+        {"needsRepair", pending_repair_info_.repaired},
+        {"repairIssues", pending_repair_info_.issues},
         // "Open" means a real project landed — either it has items or it
         // was loaded/saved from disk. A fresh server has a default name
         // "Untitled" but no file path and no items, so the welcome screen
@@ -2083,7 +2087,10 @@ bool ProjectState::replace_full_document(const json& doc, bool new_session) {
         }
         document_ = std::move(migrated);
         ++document_generation_;
-        if (new_session) project_session_id_ = engine_.new_cue_id().value;
+        if (new_session) {
+            project_session_id_ = engine_.new_cue_id().value;
+            pending_repair_info_ = {prepared.repair.repaired, std::move(prepared.repair.issues)};
+        }
         project_name_ = document_.value("name", std::string{"Untitled"});
         update_media_root_from_folder_locked();
     }
@@ -4991,6 +4998,7 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
     project_session_id_ = engine_.new_cue_id().value;
     project_file_path_ = project_path;
     document_ = default_empty_document();
+    pending_repair_info_ = {};
     apply_audio_settings(engine_, document_["settings"]);
 
     apply_to_engine_locked();
@@ -5047,13 +5055,6 @@ bool ProjectState::load(const std::filesystem::path& path,
         Logger::error("ProjectState::load failed: {}", ex.what());
         return false;
     }
-}
-
-RepairInfo ProjectState::consume_repair_info() {
-    std::lock_guard lock{mutex_};
-    RepairInfo result;
-    std::swap(result, pending_repair_info_);
-    return result;
 }
 
 RepairInfo ProjectState::repair_project() {

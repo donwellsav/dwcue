@@ -149,10 +149,7 @@ const restoreWaveform = (item: any): void => {
 // via useState. Not reactive: it's only ever read inside selection handlers.
 let selectionAnchorUuid: string | null = null;
 
-// ---- Repair dialog state (module-scoped so it works across all useProject() calls) ----
-const repairDialogVisible = ref(false);
-const repairDialogIssues  = ref<string[]>([]);
-let _repairPromiseResolve: ((confirmed: boolean) => void) | null = null;
+const repairNotice = ref<{ serverUrl: string; session: string; issues: string[]; saving: boolean; failed: boolean } | null>(null);
 
 // ---- Unsaved-changes dialog state (module-scoped, shared across calls) ----
 // Shown when the user tries to leave the current project (New / Open / Close)
@@ -230,6 +227,12 @@ export const useProject = () => {
   const projectFilePathRef = useState<string>('useProject.projectFilePath', () => '');
   const projectHydrationStatus = _hydrationStatus;
   const projectHydrationError = _hydrationError;
+  const projectRepair = computed(() => {
+    const notice = repairNotice.value;
+    const server = useLiveplayServer();
+    return notice && projectHydrationStatus.value === 'ready' &&
+      notice.serverUrl === server.serverUrl && notice.session === server.projectSessionId ? notice : null;
+  });
 
   // Bumped every time the client re-hydrates its project from the server.
   // Tell the main process which project file is live so it can authorize the
@@ -764,19 +767,6 @@ export const useProject = () => {
       // A page-stream retry must rejoin that live document rather than reload
       // the originally requested file over newer server-side state.
       _hydrationRetry.set(() => tryRejoinExistingProject());
-      if (header?.needsRepair) {
-        repairDialogIssues.value = Array.isArray(header.repairIssues) ? header.repairIssues : [];
-        repairDialogVisible.value = true;
-        const confirmed = await new Promise<boolean>(resolve => {
-          _repairPromiseResolve = resolve;
-        });
-        repairDialogVisible.value = false;
-        if (requestRevision !== _hydrationRequestRevision) return false;
-        if (confirmed) {
-          try { await server.repairProject(); } catch { /* save failure is non-fatal */ }
-        }
-      }
-
       isHydrating.value = true;
       let hydration: ProjectHydrationLoad | false = false;
       try {
@@ -947,6 +937,7 @@ export const useProject = () => {
     const hadIdentity = currentProject.value !== null || projectFilePathRef.value !== '';
     _uninstallItemsWatcherFn?.();
     currentProject.value = null;
+    repairNotice.value = null;
     selectedItem.value = null;
     selectedItems.value.clear();
     selectionAnchorUuid = null;
@@ -995,6 +986,15 @@ export const useProject = () => {
     }
     projectFilePathRef.value = nextProjectPath;
     serverProjectSessionId.value = typeof header.server?.projectSessionId === 'string' ? header.server.projectSessionId : '';
+    const serverUrl = useLiveplayServer().serverUrl;
+    if (header.needsRepair === true) {
+      repairNotice.value = {
+        serverUrl, session: serverProjectSessionId.value,
+        issues: Array.isArray(header.repairIssues) ? header.repairIssues.filter((issue: unknown) => typeof issue === 'string') : [],
+        saving: false, failed: false,
+      };
+    } else if (header.needsRepair === false || repairNotice.value?.serverUrl !== serverUrl ||
+      repairNotice.value?.session !== serverProjectSessionId.value) repairNotice.value = null;
     reportOpenProjectPath(nextProjectPath);
 
     const project: Project = {
@@ -1158,6 +1158,8 @@ export const useProject = () => {
     const server = useLiveplayServer();
     const path = projectFilePathRef.value;
     const epoch = projectEpoch.value;
+    const session = serverProjectSessionId.value;
+    const serverUrl = server.serverUrl;
     if (!isNativeProjectPath(path) || !server.connected ||
         sessionLost.value || recoveringProject.value) return false;
     if (!await _projectHydration.wait(project) || opts?.signal?.aborted) return false;
@@ -1195,7 +1197,10 @@ export const useProject = () => {
           projectFilePathRef.value,
           projectEpoch.value,
         )) return false;
-        const response = await server.saveProjectTo(path, docSnapshot, opts?.signal);
+        if (server.serverUrl !== serverUrl || server.projectSessionId !== session) return false;
+        const response = await server.saveProjectTo(path, docSnapshot, opts?.signal, session);
+        if (response?.ok && server.serverUrl === serverUrl && server.projectSessionId === session &&
+          repairNotice.value?.session === session) repairNotice.value = null;
         return !!response?.ok;
       },
     };
@@ -2124,8 +2129,21 @@ export const useProject = () => {
     }, { deep: true });
   }
 
-  const confirmRepair = () => { _repairPromiseResolve?.(true);  _repairPromiseResolve = null; };
-  const cancelRepair  = () => { _repairPromiseResolve?.(false); _repairPromiseResolve = null; };
+  const saveRepairedProject = async () => {
+    const notice = projectRepair.value;
+    const server = useLiveplayServer();
+    if (!notice || notice.saving || server.cueStartsBlocked) return;
+    notice.saving = true;
+    notice.failed = false;
+    try {
+      notice.failed = !await saveProject({ force: true });
+    } catch (error) {
+      console.error('Error saving repaired show:', error);
+      notice.failed = true;
+    } finally {
+      notice.saving = false;
+    }
+  };
 
   // Guard an action that can discard current project state (New / Open /
   // Close / update install). Resolves true when there are no pending edits.
@@ -2231,10 +2249,8 @@ export const useProject = () => {
     previewCueId,
     startPreview,
     stopPreview,
-    repairDialogVisible,
-    repairDialogIssues,
-    confirmRepair,
-    cancelRepair,
+    projectRepair,
+    saveRepairedProject,
     unsavedDialogVisible,
     unsavedDialogReason,
     unsavedDialogBlocked,

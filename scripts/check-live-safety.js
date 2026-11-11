@@ -2574,7 +2574,6 @@ for (const file of [
   'LoadingOverlay.vue',
   'LocationChoiceModal.vue',
   'ProgressModal.vue',
-  'ProjectRepairModal.vue',
   'ProjectSelectionModal.vue',
   'ProjectSettingsModal.vue',
   'QuitConfirmModal.vue',
