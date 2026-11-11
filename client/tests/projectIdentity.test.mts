@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
+import { createProjectHydrationRetry } from '../app/utils/projectHydration';
 
 function projectFunction(name: string, dependencies: Record<string, unknown>) {
   const source = readFileSync(new URL('../app/composables/useProject.ts', import.meta.url), 'utf8');
@@ -279,6 +280,22 @@ test('closing keeps the old server session after clearing the local mirror and c
   finish(); await pending;
   assert.equal(currentProject.value.name, 'new');
   assert.equal(session.value, 'new-session');
+});
+
+test('Retry still recovers the current cue list after a replacement show is refused', async () => {
+  const retry = createProjectHydrationRetry();
+  const attempts: string[] = [];
+  retry.set(async () => { attempts.push('current show'); return true; });
+  const open = projectFunction('hydrateProjectFrom', {
+    _hydrationRequestRevision: 0, _hydrationRetry: retry,
+    projectHydrationStatus: { value: 'failed' },
+    isLoading: { value: false }, loadingMessage: { value: '' },
+    useLiveplayServer: () => ({ connected: true }),
+    _projectHydration: { current: () => null }, console: { error() {} },
+  });
+  assert.equal(await open(async () => { attempts.push('replacement'); throw new Error('Invalid show'); }), false);
+  assert.equal(await retry.run(), true);
+  assert.deepEqual(attempts, ['replacement', 'current show']);
 });
 
 test('only the first unsaved decision can authorize an action, including while Save is pending', async () => {

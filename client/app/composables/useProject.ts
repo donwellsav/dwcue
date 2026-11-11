@@ -745,7 +745,9 @@ export const useProject = () => {
     loadHeader: (server: any) => Promise<any>,
   ): Promise<boolean> => {
     const requestRevision = ++_hydrationRequestRevision;
-    _hydrationRetry.set(() => hydrateProjectFrom(loadHeader));
+    if (projectHydrationStatus.value !== 'failed') {
+      _hydrationRetry.set(() => hydrateProjectFrom(loadHeader));
+    }
     isLoading.value = true;
     loadingMessage.value = 'Loading project…';
     try {

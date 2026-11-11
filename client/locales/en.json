@@ -870,7 +870,8 @@
   "projectHydration": {
     "loading": "Loading project…",
     "failed": "Project loading failed. This partial project is read-only.",
-    "retry": "Retry"
+    "retry": "Retry",
+    "chooseAnotherShow": "Choose Another Show"
   },
   "midi": {
     "configTitle": "MIDI Controller Configuration",

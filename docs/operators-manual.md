@@ -655,6 +655,8 @@ Recognized malformed cue, group and audio-settings values are refused before rep
 
 When a project path is accepted but the page/header load cannot finish, the app enters an explicit read-only load-error state rather than exposing a partly hydrated editable document. **Stop All Cues** and its configured Escape shortcut remain available. Choose **Retry** after correcting the connection or storage fault. After native acceptance, Retry fetches the engine's current project header and pages; it never silently reopens the old file path. If the initial open itself was never accepted, Retry can retry that originally requested path. Confirm the loaded show name and cue readiness before editing or pressing GO.
 
+Use **Choose Another Show** to open the standard show picker from the load-error screen. Canceling the picker or selecting a file the engine refuses leaves the current show running and keeps **Retry** available for its cue list.
+
 
 **Procedure — retry a failed project load safely**
 

@@ -61,6 +61,9 @@
           {{ t('controls.stopAll') }}
         </button>
         <button type="button" @click="retryProjectHydration">{{ t('projectHydration.retry') }}</button>
+        <button type="button" @click="showOpenProjectPicker(currentProject.folderPath)">
+          {{ t('projectHydration.chooseAnotherShow') }}
+        </button>
       </div>
       <MainWorkspace v-else />
     <!-- Accent Color Picker Modal -->
