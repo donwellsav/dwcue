@@ -304,18 +304,17 @@ const startCaptureAction = (action: PlaybackKeyAction) => {
 
 const handleKeydown = (e: KeyboardEvent) => {
   if (e.key === 'Escape') {
+    e.preventDefault();
     if (capturingSlot.value !== null || capturingKeyAction.value !== null) {
       capturingSlot.value = null;
       capturingKeyAction.value = null;
       keyErrorMessage.value = null;
       keyErrorSlot.value = null;
       keyErrorActionId.value = null;
-      e.preventDefault();
       return;
     }
     if (learning.value) {
       stopLearn();
-      e.preventDefault();
       return;
     }
     emit('close');

@@ -178,6 +178,7 @@ function loadHandleKeydown(dependencies: Record<string, unknown>) {
   const factorySource = `
     function buildHandleKeydown(dependencies: Record<string, any>) {
       const {
+        allowOtherShortcuts = () => true,
         currentProject,
         projectHydrationStatus,
         dispatchPlaybackAction,
@@ -229,6 +230,44 @@ test('Stop All shortcut reaches the server-global action without an open project
   assert.deepEqual(actions, ['stop-all'], 'partial project accepted a playback shortcut');
   handleKeydown(keyEvent('Escape'));
   assert.deepEqual(actions, ['stop-all', 'stop-all']);
+});
+
+test('Stop All stays available with One Shots hidden without enabling other shortcuts', () => {
+  const actions: string[] = [];
+  let panelVisible = false;
+  let typing = false;
+  const handleKeydown = loadHandleKeydown({
+    allowOtherShortcuts: () => panelVisible,
+    currentProject: { value: {} },
+    projectHydrationStatus: { value: 'ready' },
+    dispatchPlaybackAction: (action: string) => actions.push(action),
+    findPlaybackActionForEvent: ({ key }: { key: string }) =>
+      key === 'F9' ? 'stop-all' : key === ' ' ? 'play-next' : null,
+    findSlotForEvent: () => 0,
+    isForwardedFromVideoOutput: (event: { forwarded?: boolean }) => event.forwarded === true,
+    isTextInputFocused: () => typing,
+    triggerSlot: () => actions.push('one-shot'),
+  });
+  const press = (key: string, overrides = {}) => handleKeydown({
+    key, preventDefault() {}, stopPropagation() {}, ...overrides,
+  });
+
+  press(' ');
+  press('z');
+  press('F9');
+  press('F9', { repeat: true });
+  press('F9', { defaultPrevented: true });
+  typing = true;
+  press('F9');
+  assert.deepEqual(actions, ['stop-all']);
+  press('F9', { forwarded: true });
+
+  typing = false;
+  panelVisible = true;
+  press(' ');
+  press('z');
+  press('F9');
+  assert.deepEqual(actions, ['stop-all', 'stop-all', 'play-next', 'one-shot', 'stop-all']);
 });
 
 function transpileFactory(source: string, factoryName: string): (...args: any[]) => any {

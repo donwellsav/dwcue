@@ -61,7 +61,7 @@ export const PLAYBACK_ACTIONS: { id: PlaybackKeyAction; labelKey: string }[] = [
   { id: 'play-selected', labelKey: 'controls.playSelected' },
 ];
 
-export const useCartHotkeys = () => {
+export const useCartHotkeys = (allowOtherShortcuts = () => true) => {
   const { currentProject, projectHydrationStatus, selectedItem, selectedItems, saveProject, getAllItemsFlat, toggleItemSelection, findItemByUuid } = useProject();
   const { cartOnlyItems } = useCartItems();
   const { fireBlocked, afterFire } = useOneShotArm();
@@ -228,23 +228,21 @@ export const useCartHotkeys = () => {
   };
 
   const handleKeydown = (e: KeyboardEvent) => {
-    if (!isForwardedFromVideoOutput(e) && isTextInputFocused()) return;
+    if (e.defaultPrevented || (!isForwardedFromVideoOutput(e) && isTextInputFocused())) return;
 
     // Stop All is a server-global panic action: native diagnostics and orphaned
     // cues can remain active without a project document or local activeCue.
     const playbackAction = findPlaybackActionForEvent(e);
-    if (playbackAction && (
-      playbackAction === 'stop-all'
-      || (currentProject.value && projectHydrationStatus.value === 'ready')
-    )) {
+    if (playbackAction !== 'stop-all' &&
+        (!allowOtherShortcuts() || !currentProject.value || projectHydrationStatus.value !== 'ready')) return;
+
+    if (playbackAction) {
       e.preventDefault();
       e.stopPropagation();
       if (e.repeat && playbackAction !== 'select-up' && playbackAction !== 'select-down') return;
       void dispatchPlaybackAction(playbackAction);
       return;
     }
-
-    if (!currentProject.value || projectHydrationStatus.value !== 'ready') return;
 
     // Cart slot hotkeys
     const slotIndex = findSlotForEvent(e);

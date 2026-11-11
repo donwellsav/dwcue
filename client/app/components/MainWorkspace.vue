@@ -47,7 +47,7 @@
 
       <div class="workspace-panels">
         <div
-          v-if="!cartClosed && !cartDetached"
+          v-if="cartVisible"
           id="cart-player-panel"
           class="cart-section"
           :class="{ 'cart-section--fullscreen': cartFullscreen }"
@@ -296,6 +296,8 @@ watch(hasAssignedOneShots, (assigned) => {
 }, { immediate: true });
 const cartFullscreen = ref(false);
 const cartDetached = ref(false);
+const cartVisible = computed(() => !cartClosed.value && !cartDetached.value);
+const { mount: mountHotkeys, unmount: unmountHotkeys } = useCartHotkeys(() => cartVisible.value);
 const outputConsoleMinDb = -60;
 const outputConsoleMaxDb = 40;
 const limiterCeilingDragPixelsPerStep = 6;
@@ -754,7 +756,7 @@ const isForwardedFromVideoOutput = (e: KeyboardEvent): boolean =>
     .dwcueForwardedFromVideoOutput === true;
 
 const handleKeydown = (e: KeyboardEvent) => {
-  if (projectHydrationStatus.value !== 'ready') return;
+  if (e.defaultPrevented || projectHydrationStatus.value !== 'ready') return;
   // Save on F1 key (alternative to big play button)
   if (e.key === 'F1') {
     e.preventDefault();
@@ -809,12 +811,14 @@ const handleKeydown = (e: KeyboardEvent) => {
 
 onMounted(() => {
   if (import.meta.client) {
+    mountHotkeys();
     window.addEventListener('keydown', handleKeydown);
   }
 });
 
 onUnmounted(() => {
   if (import.meta.client) {
+    unmountHotkeys();
     window.removeEventListener('keydown', handleKeydown);
   }
 });

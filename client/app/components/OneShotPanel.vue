@@ -458,7 +458,7 @@ const handleAttach = () => {
 };
 
 onMounted(() => {
-  mountHotkeys();
+  if (props.isDetachedWindow) mountHotkeys();
   mountMidi();
 });
 
