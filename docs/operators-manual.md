@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.19
-**Source revision:** 755d72aee603dbd54702d06edd78c872761f1333
-**Native engine baseline:** 540c11433ea9d3f6ce1f22bf80174d58d2384b72
+**Source revision:** 7c3a2cf473f143ec23eb435159a0dcd9ca86bafe
+**Native engine baseline:** 7c3a2cf473f143ec23eb435159a0dcd9ca86bafe
 **Edition:** 11 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition covers the DonWells Cue **2.6.19** source at **755d72a**. It includes the November playback and recovery repairs, including Stop All and Open, plus fixes for Spotify playlist review and display identification on macOS. Match your installer to its release notes before rehearsal.
+This edition covers the DonWells Cue **2.6.19** source at **7c3a2cf**. It includes the November playback and recovery repairs, including Stop All and Open, plus fixes for Spotify playlist review and display identification on macOS. Match your installer to its release notes before rehearsal.
 
 Interface images were captured on 3 November from the same controls and layout, which remain unchanged in this repair batch. Their templates, styles and assets were checked against this source; original capture revisions and hashes are retained. Generated tones run through the native engine's virtual NULL output with physical audio-service access blocked; the desktop bridge supplies fixture locale, display and MIDI information. The images illustrate controls and visible states, rather than physical audio, HDMI or device compatibility. The capture method, source revisions and image hashes are recorded in **docs/manual-assets/captures.json**. Equipment photographs remain illustrative.
 
@@ -46,7 +46,6 @@ This manual uses the English labels. Change language through **Settings → User
 | One Shot | An independent quick-play copy in the One Shots bank. |
 | Engine / server | The process that owns audio playback and the active project. |
 | Portable archive | A ZIP-based `.dwcuepack` export containing one active show and the files in its dedicated project folder. |
-| Legacy import | A `.liveplay` show or `.lpa` archive converted one way into a new canonical `.dwcue` without changing the original source bytes. |
 
 ## 2. First setup and a safe first cue
 
@@ -80,7 +79,7 @@ On launch, the desktop normally starts its managed local server automatically. T
 
 **Expected result:** After the new file is saved, the workspace opens with the new show name and an empty playlist. Canceling or a failed write leaves any current show playing. If the selected name already exists in that folder, choose a different name or folder.
 
-DonWells Cue creates `<show name>.dwcue` and `media/` in the selected folder; portable exports use `.dwcuepack`. Keep that folder dedicated to the show. A remote picker uses the engine computer. See chapter 11 for legacy import and non-overwrite safeguards.
+DonWells Cue creates `<show name>.dwcue` and `media/` in the selected folder; portable exports use `.dwcuepack`. Keep that folder dedicated to the show. A remote picker uses the engine computer. See chapter 11 for archive import and non-overwrite safeguards.
 
 <!-- pagebreak -->
 
@@ -627,7 +626,7 @@ A failed toggle-save or ordinary save retains the dirty state. Enabling Autosave
 - **Common mistake:** Enabling Autosave, seeing the header badge disappear, and concluding that the forced save succeeded.
 - **Recovery:** Treat the document as dirty until a positive save succeeds. If it cannot, preserve the running session and use an authorized writable destination/export path without overwriting a known-good show.
 
-Saving is serialized: each save captures one consistent document and destination, publishes through a unique sibling temporary file, and leaves newer pending edits dirty until their own save succeeds. A failed Save As does not change the project's identity or path. A late response from an older project, detached window, or older edit cannot clear or mutate the current project. Closing a project clears its identity and destination path; a blank welcome screen is not an invitation to overwrite the previous show. A converted legacy show never uses the selected `.liveplay` source as its save target.
+Saving is serialized: each save captures one consistent document and destination, publishes through a unique sibling temporary file, and leaves newer pending edits dirty until their own save succeeds. A failed Save As does not change the project's identity or path. A late response from an older project, detached window, or older edit cannot clear or mutate the current project. Closing a project clears its identity and destination path; a blank welcome screen is not an invitation to overwrite the previous show.
 
 The server makes background copies of the existing disk project every 10 minutes into a **backups** folder beside it, retaining at most 20. Those are project-file backups, not full media packages, and they cannot capture unsaved edits that never reached disk. Keep a separate known-good full-show copy as well.
 
@@ -645,13 +644,13 @@ Device assignments, physical patching, local MIDI mappings, and video display id
 
 ### Import a show or archive and inspect repairs
 
-Use **File → Import Project…** for a portable `.dwcuepack`, an older `.liveplay` show, or an older `.lpa` archive. A native `.dwcuepack` or legacy `.lpa` archive must contain exactly one root project; an archive with none or more than one is refused. A direct `.liveplay` import creates an available `.dwcue` sibling beside the source and loads that canonical result. It does not overwrite the legacy document.
+Use **File → Import Project…** for a portable `.dwcuepack` containing exactly one root `.dwcue` show. DonWells Cue refuses upstream LivePlay `.liveplay` shows and `.lpa` archives. Previously converted `.dwcue` shows open through **File → Open Project**.
 
-For an archive, the app infers native or legacy handling from the `.dwcuepack` or `.lpa` filename. In remote operation, choose **Browse Server** for a server-resident archive or **From This Computer** to upload it, then select a fresh extraction directory on the audio-server computer. A successful import returns and opens one canonical `.dwcue`. If an older server response exposes multiple candidate results, choosing among them is a compatibility-only branch; it does not relax the rule that a native archive itself must contain exactly one root project. A legacy archive's original bytes remain unchanged and its staged `.liveplay` is not published in the destination.
+In remote operation, choose **Browse Server** for a server-resident archive or **From This Computer** to upload it. Select a fresh extraction directory on the audio-server computer. A successful import returns and opens the extracted `.dwcue`.
 
 Extraction refuses unsafe entries and destination collisions rather than silently overwriting an existing show. If import reports a collision, choose a clean destination; do not delete the working show just to force an import. Wait for import and audio readiness, then listen to representative cues and inspect the important transitions.
 
-On loading a document that needs supported structural repairs, **Corrupt Project Detected** can appear. **Repair & Save** writes the repaired canonical document. **Open Without Saving** opens the already repaired in-memory document but leaves its canonical disk file unchanged until a later save. It does not recover missing media or guarantee that every damaged project is repairable. Legacy source bytes remain untouched by either choice. Preserve the source, then inspect the cue count, groups, One Shots, and jump targets.
+On loading a document that needs supported structural repairs, **Corrupt Project Detected** can appear. **Repair & Save** writes the repaired canonical document. **Open Without Saving** opens the already repaired in-memory document but leaves its canonical disk file unchanged until a later save. It does not recover missing media or guarantee that every damaged project is repairable. Preserve the source, then inspect the cue count, groups, One Shots, and jump targets.
 
 **File → Open Project** lets you browse while the current show plays. Canceling the picker or selecting an unavailable or invalid file leaves that show playing. The same applies if **Open Recent** cannot load its file. A successful load, including reopening the same file, clears the previous selection and armed override. The first playable cue is armed when the project’s automatic-cue option allows it. Confirm Play Next before GO.
 
@@ -895,7 +894,7 @@ With Video Output focused, Escape also exits its fullscreen mode. In Level Check
 
 ### About this edition
 
-This edition covers the DonWells Cue **2.6.19** source at **755d72a**. The 22 captures retain their 3 November provenance. They use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
+This edition covers the DonWells Cue **2.6.19** source at **7c3a2cf**. The 22 captures retain their 3 November provenance. They use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
 
 The playback checkpoint **2f372c2** passed native 13/13, isolated API 61/61, client 229/229, typecheck and RT/live safety checks. Audio-output and project-runtime suites also pass AddressSanitizer; leak detection is disabled. Native checks include six simulated ten-minute secondary-clock runs with continuous generated audio and no buffer faults or resyncs inside the tested envelope. Physical alignment and the earlier intermittency remain unproven; more extreme drift/jitter can trigger recovery.
 

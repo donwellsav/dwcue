@@ -503,12 +503,11 @@ A `.dwcuepack` is a raw ZIP of the active `.dwcue` project's folder; it does not
 | Method · Path | Body | Response |
 |---------------|------|----------|
 | `POST /api/project/export` | `{ "folderPath": "/abs/project", "outputPath": "/abs/out.dwcuepack" (optional), "projectName": "MyShow" (optional) }` | `{ "archivePath": "/abs/out.dwcuepack", "size": uint64, "downloadToken": "…" (only when outputPath omitted), "downloadFilename": "MyShow.dwcuepack" (only when outputPath omitted) }` |
-| `POST /api/project/import` | **multipart** with a `file` part (the `.dwcuepack` or `.lpa`) and an `extractPath` text field, *or* **JSON** `{ "archivePath": "/abs/src.dwcuepack", "extractPath": "/abs/dest" }` | `{ "extractPath": "…", "projectFiles": ["one.dwcue"] }` |
-| `POST /api/project/import-legacy` | `{ "path": "/abs/old.liveplay", "destinationPath": "/abs/new.dwcue" (optional) }` | project header, as returned by `POST /api/project/load` |
+| `POST /api/project/import` | **multipart** with a `file` part (the `.dwcuepack`) and an `extractPath` text field, *or* **JSON** `{ "archivePath": "/abs/src.dwcuepack", "extractPath": "/abs/dest" }` | `{ "extractPath": "…", "projectFiles": ["one.dwcue"] }` |
 
 If `outputPath` is omitted on export, the archive is staged privately in the server's temporary export area and surfaced through a one-shot 10-minute `downloadToken` that's redeemed via `GET /api/file/download`. The temp file is deleted after the download completes.
 
-Archive import infers native versus legacy handling from the supplied filename. A native `.dwcuepack` must contain exactly one root `.dwcue`; a legacy `.lpa` must contain exactly one root `.liveplay`, which is converted into the single canonical `.dwcue` result. Multi-root archives are rejected, even though clients retain a multiple-result compatibility branch for controlled older-server responses. Extraction uses a fresh destination directory and rejects absolute paths, `..` traversal, links and special entries, unsafe expansion, compression-ratio abuse, and collisions. Legacy conversion never changes the original archive and does not publish the staged `.liveplay` file.
+A `.dwcuepack` must contain exactly one root `.dwcue`. Extraction uses a fresh destination directory and rejects absolute paths, `..` traversal, links and special entries, unsafe expansion, compression-ratio abuse, and collisions.
 
 ---
 
@@ -633,15 +632,15 @@ End-to-end transport latency depends on the configured render-block size and the
 
 ### File format
 
-A native `.dwcue` project is a JSON document beside its `media/` sub-folder. All new project creation and normal saves use `.dwcue`. A legacy `.liveplay` document is import-only: `POST /api/project/import-legacy` preserves its bytes and loads a new canonical `.dwcue`. With no `destinationPath`, the server chooses an available `.dwcue` sibling; an explicit destination must be an absent `.dwcue` filename in the same parent directory.
+A native `.dwcue` project is a JSON document beside its `media/` sub-folder. All new project creation and normal saves use `.dwcue`. The server refuses upstream LivePlay `.liveplay` and `.lpa` imports.
 
-The document schema is **v2**. Legacy 1.x content is auto-upgraded when loaded, including during one-way legacy import, by `ProjectState::upgrade_legacy_document` ([`src/core/project_state.cpp`](src/core/project_state.cpp)):
+The document schema is **v2**. Older native documents with 1.x content are upgraded on load by `ProjectState::upgrade_legacy_document` ([`src/core/project_state.cpp`](src/core/project_state.cpp)):
 
 - Walks legacy `carts` / `playlist` arrays and reconstructs the v2 `cues` list with the same names, file paths, gains, and fade durations.
 - Synthesises stereo master assignments: master channel 0 → default device hw ch 0, master channel 1 → default device hw ch 1.
 - Auto-creates one per-cue mixer channel so each cue still has independent gain/fade.
 
-The upgrade reconstructs legacy cues and baseline routes so old projects remain importable without making their source files writable aliases. Verify a converted show before live use. The server exposes the full routing API, but the current client does not mount `RoutingMatrixPanel.vue` as an operator screen; the available UI is Settings → **Audio Routing** for devices and Properties → **Output device** / **LTC** for a cue.
+The upgrade reconstructs cues and baseline routes for older native shows. Verify an upgraded show before live use. The server exposes the full routing API, but the current client does not mount `RoutingMatrixPanel.vue` as an operator screen; the available UI is Settings → **Audio Routing** for devices and Properties → **Output device** / **LTC** for a cue.
 
 ### Backups
 

@@ -38,7 +38,7 @@ This developer guide tracks the v2.6.19 client. Match the installed About versio
 | Media tooling    | `@ffmpeg-installer/ffmpeg`, `@ffprobe-installer/ffprobe`        |
 | YouTube import   | `yt-dlp-wrap` + `youtube-search-api`                            |
 | Updates          | `electron-updater` (GitHub Releases feed: `donwellsav/dwcue`)      |
-| File transport   | Server-backed REST upload/download for `.dwcuepack` project archives; one-way `.lpa` legacy import |
+| File transport   | Server-backed REST upload/download for `.dwcuepack` project archives |
 
 Audio playback, waveform extraction, metering and routing all live in the C++ server. The renderer never decodes audio.
 
@@ -121,7 +121,7 @@ Key IPC channels (non-exhaustive):
 | `read-file` / `write-file` / `copy-file` | Authorized project filesystem helpers. |
 | `get-binary-file-info` / `read-binary-file-chunk` | Bounded local archive reads for remote imports. |
 | `download-archive-to-file` | Streams a server archive directly to an authorized local destination. |
-| `menu-export-project` / `menu-import-project` (main → renderer) | Menu-triggered `.dwcuepack` export/import plus explicit `.lpa` legacy import; the renderer owns the dialogs. |
+| `menu-export-project` / `menu-import-project` (main → renderer) | Menu-triggered `.dwcuepack` export/import. The renderer owns the dialogs. |
 | `check-for-updates` / `download-update` / `install-update` / `get-update-install-supported` / `get-app-version` | `electron-updater` controls. |
 | `update-available` / `update-up-to-date` / `update-download-progress` / `update-downloaded` / `update-error` / `menu-check-for-updates` (main → renderer) | Update flow events; `menu-check-for-updates` is the Help-menu trigger. |
 | `update-menu-language` / `get-system-locale` / `get-available-locales` / `get-locale-data` | Dynamic menu localisation. |
@@ -140,7 +140,7 @@ The audio data path is **not** via IPC — it's directly between the renderer an
 
 Electron Builder copies `../docs/operators-manual.pdf` unchanged to `resources/help/operators-manual.pdf` using `extraResources`; development reads that same repository PDF. No network or audio-server connection is needed to read it. The reader has its own minimal preload and exact-owner IPC checks; the PDF view has no application preload. Neither receives the main renderer's filesystem or transport API. Run `npm run test:operator-manual` in `client` for the navigation, search, IPC, keyboard, and bounds contracts; it is also part of the root `check:client` gate.
 
-New shows and normal saves use the native `.dwcue` JSON document. New portable exports are ZIP archives named `.dwcuepack`; no additional manifest is required. Native `.dwcuepack` and legacy `.lpa` imports each require exactly one project document at the archive root. The multiple-result selection branch remains for compatibility with older servers, not as a native multi-root format. A direct `.liveplay` import writes an available `.dwcue` sibling; an `.lpa` import writes one canonical `.dwcue` in a fresh extraction directory. Both preserve the original legacy bytes and continue saving the canonical result rather than the legacy source.
+New shows and normal saves use the native `.dwcue` JSON document. Portable exports are ZIP archives named `.dwcuepack`. Each archive must contain exactly one root `.dwcue` document. The project selector handles older DonWells Cue server responses.
 
 ### The renderer ↔ DonWells Cue server link
 
@@ -344,7 +344,7 @@ The `build` block in [`package.json`](package.json) drives `electron-builder`:
 - `files`: includes `.output/`, `electron/`, `assets/`, `locales/`. Locales must be listed explicitly or they don't ship.
 - `extraResources`: copies the C++ server binary into `resources/server-bin/`.
 - `asarUnpack`: the ffmpeg/ffprobe installers can't run from inside an asar, so they're unpacked.
-- `fileAssociations`: registers the native `.dwcue` document and `.dwcuepack` archive extensions. Legacy `.liveplay` and `.lpa` inputs remain available through **Import Project**, not as canonical OS associations.
+- `fileAssociations` registers the native `.dwcue` document and `.dwcuepack` archive extensions.
 
 Run the unified package build from the monorepo root so the matching native server is configured and rebuilt before Electron packaging:
 
