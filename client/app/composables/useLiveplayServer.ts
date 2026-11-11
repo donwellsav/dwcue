@@ -137,6 +137,7 @@ function createClient() {
   const stopAllUnconfirmed = 'Stop All unconfirmed. Check the server connection.';
   const transportConfirmationMs = 2500;
   let stopAllRequest = 0;
+  let stopRevision = 0;
   const cues          = ref<ServerCue[]>([]);
   const mixerChannels = ref<ServerMixerChannel[]>([]);
   const devices       = ref<ServerDeviceInfo[]>([]);
@@ -282,6 +283,7 @@ function createClient() {
       console.log('[liveplay] connecting to', httpBase.value.replace(/^http/i, 'ws') + '/ws');
       socket = new WebSocket(wsUrl.value);
       ws = socket;
+      stopRevision = 0;
     } catch (e) {
       lastError.value = String(e);
       // eslint-disable-next-line no-console
@@ -366,6 +368,9 @@ function createClient() {
       let payload: any;
       try { payload = JSON.parse(ev.data); } catch { return; }
       if (!payload || typeof payload !== 'object' || !payload.type) return;
+      if (Number.isSafeInteger(payload.stop_revision)) {
+        stopRevision = Math.max(stopRevision, payload.stop_revision);
+      }
 
       switch (payload.type) {
         case 'meters': {
@@ -502,8 +507,9 @@ function createClient() {
   }
 
   function wsSend(payload: Record<string, unknown>, requireAck = false): Promise<boolean> {
-    if (cueStartsBlocked.value &&
-        ['go', 'play', 'resume', 'cue_to_continue', 'set_next_item'].some(type => type === payload.type)) {
+    const startsCue = payload.type === 'go' || payload.type === 'play' || payload.type === 'resume';
+    if ((startsCue && stopAllStatus.value === 'pending') ||
+        (cueStartsBlocked.value && (startsCue || payload.type === 'cue_to_continue' || payload.type === 'set_next_item'))) {
       return Promise.resolve(false);
     }
     if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -521,7 +527,9 @@ function createClient() {
     }
 
     const commandId = crypto.randomUUID();
-    const body = JSON.stringify({ ...payload, command_id: commandId });
+    const body = JSON.stringify({
+      ...payload, command_id: commandId, ...(startsCue ? { stop_revision: stopRevision } : {}),
+    });
     return new Promise<boolean>((resolve) => {
       const timer = setTimeout(() => {
         pendingCommands.delete(commandId);
@@ -545,16 +553,21 @@ function createClient() {
   // instant panic) to override it for this call.
   async function stopAll(fadeMs?: number): Promise<boolean> {
     const request = ++stopAllRequest;
+    const socket = ws;
     stopAllStatus.value = 'pending';
     let confirmed = false;
     try {
       // The socket can be open while an earlier GO is holding its handler.
-      const result = await rest<{ ok: boolean }>('/api/transport/stop_all', {
+      const result = await rest<{ ok: boolean; stop_revision?: number }>('/api/transport/stop_all', {
         method: 'POST',
         body: JSON.stringify(fadeMs === undefined ? {} : { fade_ms: fadeMs }),
         signal: AbortSignal.timeout(transportConfirmationMs),
       });
       confirmed = result?.ok === true;
+      if (confirmed && ws === socket && typeof result.stop_revision === 'number' &&
+          Number.isSafeInteger(result.stop_revision)) {
+        stopRevision = Math.max(stopRevision, result.stop_revision);
+      }
     } catch (error) {
       console.warn('[liveplay] Stop All confirmation failed:', error);
     }

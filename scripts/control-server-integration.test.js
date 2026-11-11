@@ -1095,6 +1095,23 @@ test('native media, recovery correlation, and authoritative trigger order stay c
     });
     assert.equal(clearStartPatch.status, 200);
 
+    const stopReply = await request(baseUrl, '/api/transport/stop_all', {
+      method: 'POST', body: JSON.stringify({ fade_ms: 0 }),
+    });
+    assert.equal(stopReply.status, 200);
+    const { stop_revision: stopRevision } = await stopReply.json();
+    assert.ok(Number.isSafeInteger(stopRevision) && stopRevision > 0);
+    for (const type of ['go', 'play', 'resume']) {
+      const commandId = `pre-stop-${type}`;
+      const received = stream.next(message => message.type === 'command_ack' && message.command_id === commandId);
+      stream.socket.send(JSON.stringify({
+        type, command_id: commandId, item_uuid: 'older-trigger', stop_revision: stopRevision - 1,
+      }));
+      const ack = await received;
+      assert.equal(ack.ok, false);
+      assert.match(ack.error, /expired after Stop All/);
+    }
+
     for (const uuid of ['older-trigger', 'newer-trigger']) {
       const played = await request(baseUrl, `/api/project/items/${uuid}/play`, { method: 'POST' });
       assert.equal(played.status, 200, `play failed: ${await played.text()}`);

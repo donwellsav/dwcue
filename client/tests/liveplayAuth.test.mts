@@ -499,6 +499,7 @@ test('Stop All uses authenticated HTTP with or without a WebSocket', async () =>
   const originalFetch = globalThis.fetch;
   const requests: Array<{ body: unknown; authorization: string | null; session: string | null }> = [];
   let accepted = true;
+  let revision = 0;
   globalThis.fetch = async (input, init) => {
     const url = new URL(String(input));
     if (url.pathname !== '/api/transport/stop_all') return originalFetch(input, init);
@@ -511,7 +512,8 @@ test('Stop All uses authenticated HTTP with or without a WebSocket', async () =>
       authorization: headers.get('Authorization'),
       session: headers.get('X-DWCUE-Project-Session'),
     });
-    return new Response(JSON.stringify({ ok: accepted }), { status: accepted ? 200 : 503 });
+    return new Response(JSON.stringify(accepted ? { ok: true, stop_revision: ++revision } : { ok: false }),
+      { status: accepted ? 200 : 503 });
   };
   try {
     server.configureRemoteConnection('https://stop-test.example', 'stop-test-token');
@@ -533,6 +535,12 @@ test('Stop All uses authenticated HTTP with or without a WebSocket', async () =>
       body, authorization: 'Bearer stop-test-token', session: null,
     })));
     assert.deepEqual(socket.sent, [], 'Stop All must not wait for or replay over the socket');
+    socket.receive({ type: 'meters', stop_revision: 1 });
+    const start = server.go();
+    const command = JSON.parse(socket.sent[0]!);
+    assert.equal(command.stop_revision, 2, 'an older meter frame cannot undo the HTTP stop revision');
+    socket.receive({ type: 'command_ack', command_id: command.command_id, ok: true });
+    assert.equal(await start, true);
   } finally {
     server.destroy();
     globalThis.fetch = originalFetch;

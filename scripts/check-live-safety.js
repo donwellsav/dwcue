@@ -1111,7 +1111,7 @@ assert.match(
 const mainCpp = read('server/src/main.cpp');
 assert.match(
   projectStateHeader + projectState + controlServer,
-  /start_position_override_sec[\s\S]*std::clamp\(start_position_override_sec, in_point,[\s\S]*playback->prime\(2\.0, play_start\)[\s\S]*start_seconds must be a number[\s\S]*start_seconds requires an audio item[\s\S]*state\.play_item\(uuid, -1\.0, audio::CueId\{\}, \*start_seconds\)/,
+  /start_position_override_sec[\s\S]*std::clamp\(start_position_override_sec, in_point,[\s\S]*playback->prime\(2\.0, play_start\)[\s\S]*start_seconds must be a number[\s\S]*start_seconds requires an audio item[\s\S]*state\.play_item\(uuid, -1\.0, audio::CueId\{\}, \*start_seconds, expected_stop_revision\)/,
   'the server must validate and clamp Properties audition starts before priming audio',
 );
 assert.match(

@@ -887,6 +887,7 @@ void ControlServer::broadcast_loop() {
         // Build the meters payload.
         json payload;
         payload["type"] = "meters";
+        payload["stop_revision"] = state_.stop_revision();
 
         json item_meters = json::array();
         // Helper: append a meter frame for an arbitrary engine cue. Used for
@@ -1357,6 +1358,7 @@ static json build_playback_snapshot(audio::AudioEngine& engine,
     preview["cue_id"] = preview["cueId"];
     return json{
         {"type",                "playback_snapshot"},
+        {"stop_revision",       state.stop_revision()},
         {"cues",                std::move(cues_arr)},
         {"next_item_uuid",      state.next_item_override()},
         {"master_gain_db",      engine.master_gain_db()},
@@ -1492,6 +1494,16 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
     };
 
     try {
+        std::optional<std::uint64_t> expected_stop_revision;
+        if (type == "go" || type == "play" || type == "resume") {
+            if (const auto revision = j.find("stop_revision"); revision != j.end()) {
+                if (!revision->is_number_unsigned())
+                    return command_error("stop_revision must be a non-negative integer");
+                expected_stop_revision = revision->get<std::uint64_t>();
+                if (*expected_stop_revision != state.stop_revision())
+                    return command_error("Cue start expired after Stop All. Check the cue and try again.");
+            }
+        }
         if (type == "play") {
             if (j.contains("item_uuid") && j["item_uuid"].is_string()) {
                 const auto uuid = j["item_uuid"].get<std::string>();
@@ -1509,8 +1521,8 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
                 // Ordinary plays retain group dispatch; Properties can give an
                 // audio item an explicit audition start without a seek/play race.
                 const bool played = start_seconds
-                    ? state.play_item(uuid, -1.0, audio::CueId{}, *start_seconds)
-                    : state.trigger_item(uuid);
+                    ? state.play_item(uuid, -1.0, audio::CueId{}, *start_seconds, expected_stop_revision)
+                    : state.trigger_item(uuid, -1.0, audio::CueId{}, true, expected_stop_revision);
                 if (!played)
                     return command_error("play: item not loaded into engine");
             } else {
@@ -1523,7 +1535,7 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
                     // (e.g. ad-hoc /api/cues registrations with no item).
                     if (auto uuid = state.cue_to_item_uuid(*cue)) {
                         Logger::playback("PLAY: {}", item_playback_info(*uuid, state));
-                        if (!state.play_item(*uuid))
+                        if (!state.play_item(*uuid, -1.0, audio::CueId{}, -1.0, expected_stop_revision))
                             return command_error("play: item not loaded into engine");
                     } else {
                         Logger::playback("PLAY: cue_id={} (orphan)", cue->value);
@@ -1578,7 +1590,7 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
                                      cue->value);
                     const auto uuid = state.cue_to_item_uuid(*cue);
                     if (uuid) {
-                        if (!state.set_item_paused(*uuid, type == "pause"))
+                        if (!state.set_item_paused(*uuid, type == "pause", expected_stop_revision))
                             return command_error(type + ": cue not available");
                     } else if (type == "pause") pi->pause();
                     else                        pi->resume();
@@ -1606,7 +1618,7 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
             // Play whatever is armed as "Up Next" (override first, else the
             // playing item's endBehavior target). Same semantics as
             // POST /api/transport/go.
-            const auto uuid = state.go();
+            const auto uuid = state.go(expected_stop_revision);
             if (uuid.empty()) {
                 Logger::warn("WS go: nothing armed or derivable to play");
                 return command_error("nothing armed to GO to");
@@ -2072,7 +2084,7 @@ void ControlServer::install_routes() {
                 if (j.contains("fade_ms") && j["fade_ms"].is_number())
                     fade = j["fade_ms"].get<long long>();
                 state_.stop_all_cues(fade);
-                return json_ok(json({{"ok", true}}));
+                return json_ok(json({{"ok", true}, {"stop_revision", state_.stop_revision()}}));
             } catch (const std::exception& e) { return json_err(400, e.what()); }
         });
 

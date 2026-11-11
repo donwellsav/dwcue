@@ -2900,8 +2900,10 @@ std::string ProjectState::item_uuid_by_index(const std::vector<int>& path) const
 bool ProjectState::play_item(const std::string& uuid,
                              double fade_in_override_sec,
                              const audio::CueId& exclude_from_ducking,
-                             double start_position_override_sec) {
+                             double start_position_override_sec,
+                             std::optional<std::uint64_t> expected_stop_revision) {
     std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
+    if (expected_stop_revision && *expected_stop_revision != stop_revision()) return false;
     ++playback_intent_revision_;
     return play_item_impl(lifecycle_lock, uuid, fade_in_override_sec, exclude_from_ducking,
                           start_position_override_sec, ItemPlayPhase::Immediate);
@@ -3411,8 +3413,10 @@ bool ProjectState::stop_item(const std::string& uuid, const std::string& replace
     return true;
 }
 
-bool ProjectState::set_item_paused(const std::string& uuid, bool paused) {
+bool ProjectState::set_item_paused(const std::string& uuid, bool paused,
+                                   std::optional<std::uint64_t> expected_stop_revision) {
     std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
+    if (expected_stop_revision && *expected_stop_revision != stop_revision()) return false;
     ++playback_intent_revision_;
     const auto id = item_to_cue_id(uuid);
     const auto cue = id ? engine_.find_cue(*id) : nullptr;
@@ -3484,6 +3488,7 @@ bool ProjectState::cue_to_continue(const std::string& uuid) {
 
 void ProjectState::stop_all_cues(std::optional<long long> fade_ms) {
     std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
+    ++stop_revision_;
     ++playback_intent_revision_;
     ++preview_intent_revision_;
     cancel_prepared_follows();
@@ -3915,8 +3920,9 @@ json ProjectState::state_summary() const {
     };
 }
 
-std::string ProjectState::go() {
+std::string ProjectState::go(std::optional<std::uint64_t> expected_stop_revision) {
     std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
+    if (expected_stop_revision && *expected_stop_revision != stop_revision()) return {};
     ++playback_intent_revision_;
     const auto next = state_summary()["next"];
     if (!next.is_object()) return {};
@@ -3945,8 +3951,10 @@ std::string ProjectState::cart_slot_item_uuid(int slot) const {
 bool ProjectState::trigger_item(const std::string& uuid,
                                 double fade_in_override_sec,
                                 const audio::CueId& exclude_from_ducking,
-                                bool consume_armed_override) {
+                                bool consume_armed_override,
+                                std::optional<std::uint64_t> expected_stop_revision) {
     std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
+    if (expected_stop_revision && *expected_stop_revision != stop_revision()) return false;
     ++playback_intent_revision_;
     return trigger_item_impl(lifecycle_lock, uuid, fade_in_override_sec, exclude_from_ducking,
                              consume_armed_override, {});

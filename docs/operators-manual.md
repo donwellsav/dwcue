@@ -133,9 +133,9 @@ Selection and arming are independent: arrow keys and Properties can refer to a d
 
 Automatic Up Next defaults on. Opening prepares the first playable item; stopping a cue with **End Behavior: Nothing** prepares its next sibling. A natural end at the top-level list’s end can wrap to the first item. Preparation waits for a deliberate GO unless an authored automatic action applies. An explicit override takes precedence.
 
-Accepted GO consumes an override; refused GO retains it. Check readiness, errors and connection before retrying. **Stop All Cues** and Panic remain available during preparation. Repeated input is suppressed until acknowledgment; a later press is a new command.
+Accepted GO consumes an override and refused GO retains it. Check readiness, errors and connection before retrying. **Stop All Cues** and Panic remain available during preparation. Repeated GO input shares the pending confirmation. If it times out, check live state before pressing again.
 
-**Stop All Cues** cancels a GO still preparing media; it cannot fire later when storage recovers. Correct the cause, confirm **Play Next** and press GO deliberately. Playing cues keep the configured Stop All fade; 0 is immediate.
+**Stop All Cues** cancels a GO still preparing media. With the current engine, it also rejects cue starts sent before Stop All that were still waiting in the control socket. Correct the cause, confirm **Play Next** and press GO deliberately. Playing cues keep the configured Stop All fade. A fade of 0 is immediate.
 
 
 ## 4. Import and protect the media

@@ -316,14 +316,16 @@ public:
     bool play_item(const std::string& uuid,
                    double fade_in_override_sec = -1.0,
                    const audio::CueId& exclude_from_ducking = audio::CueId{},
-                   double start_position_override_sec = -1.0);
+                   double start_position_override_sec = -1.0,
+                   std::optional<std::uint64_t> expected_stop_revision = std::nullopt);
     std::uint64_t playback_intent_revision();
     bool resume_item(const std::string& uuid, double position_sec,
                      std::uint64_t expected_intent_revision);
     // A replacement preserves group runs containing its target and does not arm a manual-stop successor.
     bool stop_item(const std::string& uuid, const std::string& replacement_uuid = {});
     // Serialize Pause/Resume with copied sequencer actions.
-    bool set_item_paused(const std::string& uuid, bool paused);
+    bool set_item_paused(const std::string& uuid, bool paused,
+                         std::optional<std::uint64_t> expected_stop_revision = std::nullopt);
     // Arm a currently-playing looping item to finish its present pass and then
     // advance once. This is runtime-only: the project document's endBehavior is
     // never modified, and replaying the item restores its saved loop behavior.
@@ -336,6 +338,7 @@ public:
     // over every per-track fade-out (global fade always wins); a resolved fade
     // of 0 is an instant panic stop.
     void stop_all_cues(std::optional<long long> fade_ms = std::nullopt);
+    std::uint64_t stop_revision() const noexcept { return stop_revision_.load(); }
 
     // Trigger an item by uuid: audio items go through play_item; group items
     // are dispatched per their startBehavior (play-first / play-all),
@@ -344,7 +347,8 @@ public:
     bool trigger_item(const std::string& uuid,
                       double fade_in_override_sec = -1.0,
                       const audio::CueId& exclude_from_ducking = audio::CueId{},
-                      bool consume_armed_override = true);
+                      bool consume_armed_override = true,
+                      std::optional<std::uint64_t> expected_stop_revision = std::nullopt);
 
     // Resolve an index path (array of child indices) to an item uuid,
     // descending into group `children` at each level. Mirrors the client's
@@ -433,7 +437,7 @@ public:
     // the currently-playing item's endBehavior — mirroring the client's GO
     // button. Returns the uuid triggered, or empty if nothing was armed /
     // derivable / loaded.
-    std::string go();
+    std::string go(std::optional<std::uint64_t> expected_stop_revision = std::nullopt);
 
     // Item uuid bound to a cart slot, or empty if the slot is unbound.
     std::string cart_slot_item_uuid(int slot) const;
@@ -718,6 +722,8 @@ private:
     // Audition storage must not delay preparation of the next Program cue.
     std::mutex                  preview_preparation_mutex_;
     std::uint64_t                playback_intent_revision_ = 0;
+    // HTTP Stop All can overtake cue starts still waiting in a WebSocket.
+    std::atomic<std::uint64_t>    stop_revision_{0};
     // Serializes snapshot through atomic replace. mutex_ remains brief and is
     // never held during filesystem I/O.
     mutable std::mutex           save_mutex_;
