@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.19
-**Source revision:** 48ebe0b17b469c1b966b64c2f9a9a9f44afb7d75
-**Native engine baseline:** 2f372c21e6111a5dc91f532da97fc98b98ccf279
+**Source revision:** 755d72aee603dbd54702d06edd78c872761f1333
+**Native engine baseline:** 540c11433ea9d3f6ce1f22bf80174d58d2384b72
 **Edition:** 11 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition covers DonWells Cue **2.6.19**, source **48ebe0b**. It includes the recovery repairs from the November playback audit, plus fixes for Spotify playlist review and display identification on macOS. Match your installer to the release notes before rehearsal.
+This edition covers the DonWells Cue **2.6.19** source at **755d72a**. It includes the November playback and recovery repairs, including Stop All and Open, plus fixes for Spotify playlist review and display identification on macOS. Match your installer to its release notes before rehearsal.
 
 Interface images were captured on 3 November from the same controls and layout, which remain unchanged in this repair batch. Their templates, styles and assets were checked against this source; original capture revisions and hashes are retained. Generated tones run through the native engine's virtual NULL output with physical audio-service access blocked; the desktop bridge supplies fixture locale, display and MIDI information. The images illustrate controls and visible states, rather than physical audio, HDMI or device compatibility. The capture method, source revisions and image hashes are recorded in **docs/manual-assets/captures.json**. Equipment photographs remain illustrative.
 
@@ -478,6 +478,8 @@ Open **Shortcuts → Customize Shortcuts…** and use the **Keyboard** tab. Sele
 
 Playback assignments belong to the project. No One Shot has a default key. The baseline defaults are Space for Play Next, P for Pause/Resume, Escape for Stop All, Up/Down for selection, and Enter for Play Selected. Toggle Loop, Cue to Continue, and Jump Cue are initially unbound. F1 is a separate Play Selected audio action, not a help key in this app.
 
+The Stop All shortcut works from the main workspace with One Shots visible, hidden or detached. In the shortcut editor, Escape cancels assignment or closes the editor.
+
 Text fields normally own typing, so a playback letter does not fire while you are editing a name. Close editors and dialogs before the next cue call. Keyboard/MIDI Pause/Resume and Toggle Loop target the first active cue, otherwise the selected audio cue; use the specific cue's visible control if several cues are active and you need certainty about the target.
 
 > **SAFETY — Pause/Resume can start audio.** With no active cue, keyboard or MIDI Pause/Resume starts the selected audio cue if it is inactive. It is not a universal silence command. Mapped Toggle Loop also edits authored project behavior, subject to Autosave/Save; use Cue to Continue for a runtime-only loop release.
@@ -893,7 +895,7 @@ With Video Output focused, Escape also exits its fullscreen mode. In Level Check
 
 ### About this edition
 
-This edition covers DonWells Cue **2.6.19** at source **48ebe0b**. The 22 captures retain their 3 November provenance. They use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
+This edition covers the DonWells Cue **2.6.19** source at **755d72a**. The 22 captures retain their 3 November provenance. They use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
 
 The playback checkpoint **2f372c2** passed native 13/13, isolated API 61/61, client 229/229, typecheck and RT/live safety checks. Audio-output and project-runtime suites also pass AddressSanitizer; leak detection is disabled. Native checks include six simulated ten-minute secondary-clock runs with continuous generated audio and no buffer faults or resyncs inside the tested envelope. Physical alignment and the earlier intermittency remain unproven; more extreme drift/jitter can trigger recovery.
 
