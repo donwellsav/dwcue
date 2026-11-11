@@ -50,7 +50,7 @@ test('Stop All remains clickable when no project-backed cue is active', () => {
   assert.equal(panicCalls, 1);
 });
 
-test('Stop All sends the normal command from transfer and file selection dialogs', () => {
+test('Stop All sends the normal command from transfer, file selection and loading dialogs', () => {
   const dialogs = [
     ['AudioImportModal', 'header'],
     ['SpotifyImportModal', 'header'],
@@ -59,6 +59,7 @@ test('Stop All sends the normal command from transfer and file selection dialogs
     ['ServerFilePickerModal', 'header', 'toolbar'],
     ['LocationChoiceModal', 'div', 'lc-footer'],
     ['ConnectionLostModal', 'div', 'clm-dialog'],
+    ['LoadingOverlay', 'div', 'loading-panel'],
   ];
   for (const [component, tag, className] of dialogs) {
     const code = compile(elementSource(component, tag, className), { mode: 'function' }).code;
@@ -69,7 +70,7 @@ test('Stop All sends the normal command from transfer and file selection dialogs
     const region = render({
       t: (key: string) => key,
       busy: true, isBusy: true, visible: true, percentage: 50, attempts: 0, actionError: '', verifying: false,
-      titleId: 'import-test', title: 'Archive transfer', message: 'Working',
+      titleId: 'import-test', title: 'Working', message: 'Working', isDark: true, subtitle: '',
       pickingLocal: true, isChoosingDestination: true,
       historyBack: [], canGoUp: false, pathDraft: '', goBack() {}, goUp() {}, navigate() {}, cancelLabel: 'Cancel',
       server: { stopAll: (...args: unknown[]) => { stopCalls.push(args); } },
@@ -106,7 +107,7 @@ test('Stop All remains available inside the recovery prompt while a recovery cho
   assert.ok(findStop(), 'the HTTP stop must remain available during a second disconnect');
 });
 
-test('recovery permits the configured Stop All shortcut while blocking other playback input', () => {
+test('the configured Stop All shortcut works during recovery and project loading', () => {
   const source = readFileSync(new URL('../app/composables/useConnectionGuard.ts', import.meta.url), 'utf8');
   const start = source.indexOf('  const trapKeydown =');
   const end = source.indexOf('  window.addEventListener', start);
@@ -119,14 +120,15 @@ test('recovery permits the configured Stop All shortcut while blocking other pla
   }).outputText;
   const calls: unknown[][] = [];
   const sessionLost = { value: true };
+  const projectLoading = { value: false };
   const server = {
     connected: true, connectionLost: false, showVerification: false,
     get cueStartsBlocked() { return this.connectionLost || this.showVerification || sessionLost.value; },
     stopAll: (...args: unknown[]) => calls.push(args),
   };
   const currentProject = { value: { playbackKeys: {} as Record<string, unknown> } };
-  const trap = Function('server', 'sessionLost', 'currentProject', 'DEFAULT_PLAYBACK_KEYS',
-    `${code}\nreturn trapKeydown;`)(server, sessionLost, currentProject, DEFAULT_PLAYBACK_KEYS);
+  const trap = Function('server', 'projectLoading', 'currentProject', 'DEFAULT_PLAYBACK_KEYS',
+    `${code}\nreturn trapKeydown;`)(server, projectLoading, currentProject, DEFAULT_PLAYBACK_KEYS);
   const press = (key: string, opts = {}) => {
     let swallowed = false;
     trap({ key, target: { closest: () => null }, ctrlKey: false, metaKey: false, shiftKey: false,
@@ -157,6 +159,14 @@ test('recovery permits the configured Stop All shortcut while blocking other pla
   assert.equal(press(' '), true);
   assert.equal(press('Escape'), true);
   assert.deepEqual(calls, [[], [], [], []]);
+  server.showVerification = false;
+  projectLoading.value = true;
+  currentProject.value.playbackKeys['stop-all'] = { key: 'F9', ctrlKey: false, shiftKey: false, altKey: false };
+  assert.equal(press('F9'), true, 'loading captures Stop All without the One Shots panel');
+  assert.equal(press(' '), false, 'loading leaves other shortcuts to their usual handlers');
+  projectLoading.value = false;
+  assert.equal(press('F9'), false, 'the trap defers to normal routing after loading');
+  assert.deepEqual(calls, [[], [], [], [], []]);
 });
 
 function loadHandleKeydown(dependencies: Record<string, unknown>) {

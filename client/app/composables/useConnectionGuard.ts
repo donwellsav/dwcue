@@ -114,6 +114,7 @@ export const useConnectionGuard = () => {
   }
   _wired = true;
   const currentProject = useState<Project | null>('currentProject', () => null);
+  const projectLoading = useState<boolean>('useProject.isLoading', () => false);
 
   // ---- Input freeze --------------------------------------------------
   // Capture phase on `window` runs before every other listener in the app
@@ -122,7 +123,8 @@ export const useConnectionGuard = () => {
   // needing its own check. Keys inside the dialogs themselves are exempt, so
   // the operator can always drive the recovery UI.
   const trapKeydown = (e: KeyboardEvent) => {
-    if (!server.cueStartsBlocked) return;
+    const blocked = server.cueStartsBlocked;
+    if (!blocked && !projectLoading.value) return;
     // Tab still moves focus, so the dialog is reachable from anywhere.
     if (e.key === 'Tab') return;
     const el = e.target as HTMLElement | null;
@@ -137,6 +139,7 @@ export const useConnectionGuard = () => {
         return;
       }
     }
+    if (!blocked) return;
     // Keys aimed at the recovery dialogs — or at Server Settings, which stacks
     // above them so the URL can be retargeted — go through untouched.
     if (el?.closest?.('.clm-overlay, .srm-overlay, .modal-backdrop')) return;
