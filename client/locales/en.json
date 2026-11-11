@@ -870,11 +870,14 @@
   "exportProgress": {
     "title": "Exporting Project",
     "message": "Compressing",
-    "downloading": "Downloading"
+    "downloading": "Downloading",
+    "saved": "Archive saved to {path}"
   },
   "importProgress": {
     "title": "Importing Project",
     "message": "Extracting",
+    "returnToShow": "Return to Show",
+    "savedOnServer": "Extracted to {path} on {server}",
     "openFailed": "The imported project could not be opened."
   },
   "projectHydration": {

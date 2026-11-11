@@ -50,6 +50,21 @@ test('false open result is surfaced exactly once', async () => {
   assert.deepEqual(failures, ['/shows/b.dwcue']);
 });
 
+test('archive Open rechecks its originating show after the save prompt', async () => {
+  let release!: (value: boolean) => void;
+  const confirmation = new Promise<boolean>(resolve => { release = resolve; });
+  let sameShow = true;
+  const guard = createProjectOpenGuard({
+    confirmUnsavedChanges: () => confirmation,
+    async openProject() { assert.fail('a stale archive must not switch shows'); },
+    onOpenFailed() { assert.fail('a withdrawn open is not a failed file'); },
+  });
+  const pending = guard('/shows/extracted.dwcue', () => sameShow);
+  sameShow = false;
+  release(true);
+  assert.equal(await pending, false);
+});
+
 test('New and Open menu cancellation and a rejected recent file keep the active show', async () => {
   const menu = ['onMenuNewProject', 'onMenuOpenProject', 'onMenuOpenRecentProject'];
   const callbacks = new Map<string, (...args: any[]) => unknown>();

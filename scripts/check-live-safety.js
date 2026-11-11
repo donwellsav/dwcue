@@ -2248,7 +2248,7 @@ assert.match(
 );
 const archiveImportStart = appVue.indexOf('async function onImportServerPickerPick');
 const archiveImportEnd = appVue.indexOf(
-  '\n}\n\nconst handleProjectSelection', archiveImportStart,
+  '\n}\n\nasync function openImportedArchive', archiveImportStart,
 );
 assert.ok(archiveImportStart >= 0 && archiveImportEnd > archiveImportStart,
   'app must define the archive import handler');

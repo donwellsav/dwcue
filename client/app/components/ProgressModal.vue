@@ -1,5 +1,5 @@
 <template>
-  <div v-if="visible" class="modal-overlay" @click="handleOverlayClick">
+  <div v-if="visible" class="modal-overlay" :class="{ 'progress-background': background }">
     <div class="modal-content" @click.stop>
       <h3>{{ title }}</h3>
       <div class="progress-info">
@@ -10,6 +10,8 @@
         <div class="progress-bar" :style="{ width: percentage + '%' }"></div>
       </div>
       <Btn class="progress-stop-all" type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
+      <Btn v-if="!background" type="button" :text="t('importProgress.returnToShow')" @click="emit('background')" />
+      <slot />
     </div>
   </div>
 </template>
@@ -18,23 +20,17 @@
 const { t } = useLocalization();
 const server = useLiveplayServer();
 
-const props = defineProps<{
+defineProps<{
   visible: boolean;
   title: string;
   message: string;
   percentage: number;
-  allowCancel?: boolean;
+  background?: boolean;
 }>();
 
 const emit = defineEmits<{
-  cancel: [];
+  background: [];
 }>();
-
-const handleOverlayClick = () => {
-  if (props.allowCancel) {
-    emit('cancel');
-  }
-};
 </script>
 
 <style scoped lang="scss">
@@ -65,6 +61,19 @@ const handleOverlayClick = () => {
     color: var(--color-text-primary);
     font-size: 18px;
     font-weight: 600;
+  }
+}
+
+.progress-background {
+  inset: auto 16px 16px auto;
+  max-width: calc(100vw - 32px);
+  background: transparent;
+  z-index: 1400;
+
+  .modal-content {
+    min-width: 0;
+    width: min(360px, calc(100vw - 32px));
+    overflow-wrap: anywhere;
   }
 }
 

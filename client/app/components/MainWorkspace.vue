@@ -207,7 +207,11 @@
       :title="progressModal.title"
       :message="progressModal.message"
       :percentage="progressModal.percentage"
-    />
+      :background="progressModal.background"
+      @background="progressModal.background = true"
+    >
+      <Btn v-if="progressModal.percentage === 100" type="button" :text="t('actions.close')" @click="progressModal.visible = false" />
+    </ProgressModal>
 
     <!-- Export: server vs client choice (only shown for remote servers). -->
     <LocationChoiceModal
@@ -270,10 +274,12 @@ const { levels: outputTargetLevels } = useOutputTarget();
 // Progress modal state
 const progressModal = ref({
   visible: false,
+  background: false,
   title: '',
   message: '',
   percentage: 0
 });
+const exportBusy = ref(false);
 
 // Resizable cart width
 const cartWidth = ref(300);
@@ -620,7 +626,7 @@ const exportChoiceVisible   = ref(false);
 const exportServerPickerOpen = ref(false);
 
 async function startExportFlow() {
-  if (!currentProject.value) return;
+  if (!currentProject.value || exportBusy.value) return;
   if (server.isLocalServer) {
     // Local: skip the choice modal and go straight to the server picker
     // (the "server" here is this same computer, so this matches the user's
@@ -666,10 +672,14 @@ async function exportToClientDownload() {
 }
 
 async function runExport(opts: { outputPath: string; downloadTo?: string }) {
-  if (!currentProject.value) return;
+  if (!currentProject.value || exportBusy.value) return;
   const project = currentProject.value;
+  const serverUrl = server.serverUrl;
+  const session = server.projectSessionId;
+  exportBusy.value = true;
   progressModal.value = {
     visible: true,
+    background: false,
     title: t('exportProgress.title'),
     message: t('exportProgress.message') + ' ' + project.name + '.dwcuepack…',
     percentage: 30,
@@ -678,21 +688,25 @@ async function runExport(opts: { outputPath: string; downloadTo?: string }) {
     if (!(await saveProject({ force: true }))) {
       throw new Error('Project must be saved before it can be exported');
     }
+    if (currentProject.value !== project || server.serverUrl !== serverUrl || server.projectSessionId !== session)
+      throw new Error('Show changed before export. Start the export again.');
     const result = await server.exportProjectArchive(
       project.folderPath, project.name, opts.outputPath);
-    progressModal.value.percentage = opts.downloadTo ? 60 : 100;
-
-    if (opts.downloadTo && result.downloadToken) {
+    if (opts.downloadTo) {
+      if (!result.downloadToken || server.serverUrl !== serverUrl) throw new Error('Archive download is unavailable.');
+      progressModal.value.percentage = 60;
       progressModal.value.message =
         t('exportProgress.downloading') + ' ' + project.name + '.dwcuepack…';
       await server.downloadArchiveToFile(result.downloadToken, opts.downloadTo);
     }
+    progressModal.value.message = t('exportProgress.saved', { path: opts.downloadTo || result.archivePath });
     progressModal.value.percentage = 100;
   } catch (e) {
     console.error('Export failed:', e);
     server.lastError = `Export failed: ${e instanceof Error ? e.message : String(e)}`;
   } finally {
-    setTimeout(() => { progressModal.value.visible = false; }, 400);
+    exportBusy.value = false;
+    progressModal.value.visible = progressModal.value.background && progressModal.value.percentage === 100;
   }
 }
 

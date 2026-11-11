@@ -65,11 +65,13 @@ test('Stop All sends the normal command from transfer, file selection and loadin
     const code = compile(elementSource(component, tag, className), { mode: 'function' }).code;
     const render = Function('Vue', `${code}; return render;`)({
       ...Vue, resolveComponent: (name: string) => name, withDirectives: (vnode: Vue.VNode) => vnode,
+      renderSlot: () => Vue.createCommentVNode(),
     });
     const stopCalls: unknown[][] = [];
     const region = render({
+      $slots: {},
       t: (key: string) => key,
-      busy: true, isBusy: true, visible: true, percentage: 50, attempts: 0, actionError: '', verifying: false,
+      busy: true, isBusy: true, visible: true, background: false, percentage: 50, attempts: 0, actionError: '', verifying: false,
       titleId: 'import-test', title: 'Working', message: 'Working', isDark: true, subtitle: '',
       pickingLocal: true, isChoosingDestination: true,
       historyBack: [], canGoUp: false, pathDraft: '', goBack() {}, goUp() {}, navigate() {}, cancelLabel: 'Cancel',

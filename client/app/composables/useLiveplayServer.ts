@@ -858,7 +858,11 @@ function createClient() {
     if (!api?.getBinaryFileInfo || !api?.readBinaryFileChunk) {
       throw new Error('Local archive access is unavailable');
     }
+    const endpoint = httpBase.value;
+    const accessToken = effectiveAccessToken.value;
     const info = await api.getBinaryFileInfo(filePath);
+    if (httpBase.value !== endpoint || effectiveAccessToken.value !== accessToken)
+      throw new Error('Server changed before archive upload.');
     if (!info?.success || !Number.isSafeInteger(info.size) || info.size < 0) {
       throw new Error(info?.error || 'Could not inspect local archive');
     }
@@ -1164,6 +1168,9 @@ function createClient() {
     if (!Number.isSafeInteger(size) || size < 0) {
       throw new RangeError('upload failed: invalid source size');
     }
+    const endpoint = httpBase.value;
+    const accessToken = effectiveAccessToken.value;
+    const sameServer = () => httpBase.value === endpoint && effectiveAccessToken.value === accessToken;
     const session = await rest<{ upload_id: string; chunk_size: number }>(
       '/api/upload/start', {
         method: 'POST',
@@ -1187,6 +1194,7 @@ function createClient() {
         if (bodyBytes !== length) {
           throw new Error('upload failed: source file changed while reading');
         }
+        if (!sameServer()) throw new Error('Server changed during upload.');
         await rest(`${uploadPath}?offset=${offset}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/octet-stream' },
@@ -1194,12 +1202,13 @@ function createClient() {
           signal: AbortSignal.timeout(120000),
         });
       }
+      if (!sameServer()) throw new Error('Server changed during upload.');
       return await rest<T>(`${uploadPath}/finish`, {
         method: 'POST',
         signal: AbortSignal.timeout(finishTimeoutMs),
       });
     } catch (error) {
-      await rest(uploadPath, {
+      if (sameServer()) await rest(uploadPath, {
         method: 'DELETE',
         signal: AbortSignal.timeout(3000),
       }).catch(() => {});

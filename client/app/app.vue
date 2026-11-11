@@ -109,12 +109,19 @@
       :title="progressModal.title"
       :message="progressModal.message"
       :percentage="progressModal.percentage"
-    />
+      :background="progressModal.background"
+      @background="progressModal.background = true"
+    >
+      <template v-if="archiveReceipt">
+        <Btn type="button" :text="t('selectProject.open')" :disabled="archiveOpening || !archiveCanOpen" @click="openImportedArchive()" />
+        <Btn type="button" :text="t('actions.close')" @click="dismissArchiveReceipt" />
+      </template>
+    </ProgressModal>
     
     <!-- Project Selection Modal -->
     <ProjectSelectionModal
       :visible="showProjectSelection"
-      :projects="availableProjects"
+      :projects="archiveReceipt?.projectFiles ?? []"
       @select="handleProjectSelection"
       @cancel="handleProjectSelectionCancel"
     />
@@ -277,7 +284,7 @@ import { runExclusivePendingAction } from '~/utils/acknowledgedAction';
 import { applyOneShotMutation, enforceOneShotDisarmFences } from '~/utils/oneShotMutation';
 
 const {
-  currentProject, saveProject, createNewProject, openProject, confirmUnsavedChanges,
+  currentProject, projectEpoch, saveProject, createNewProject, openProject, confirmUnsavedChanges,
   autoSaveEnabled, projectSyncIdentity,
   projectHydrationStatus, projectHydrationError, retryProjectHydration,
   isLoading, loadingMessage,
@@ -305,12 +312,12 @@ const openProjectGuard = createProjectOpenGuard({
     server.lastError ??= t('project.openFailed', { path });
   },
 });
-const guardedOpenProject = (path: string) => {
+const guardedOpenProject = (path: string, canOpen?: () => boolean) => {
   if (projectFileAction(path) !== 'open-project') {
     useLiveplayServer().lastError = t('project.openFailed', { path });
     return Promise.resolve(false);
   }
-  return runExclusivePendingAction('project-file-change', `open:${path}`, () => openProjectGuard(path));
+  return runExclusivePendingAction('project-file-change', `open:${path}`, () => openProjectGuard(path, canOpen));
 };
 
 const welcomeScreen = ref<InstanceType<typeof WelcomeScreen> | null>(null);
@@ -402,7 +409,8 @@ async function routePendingFile(data: { filePath: string; kind: ProjectFileKind 
       return;
     }
     if (data.kind === 'native-archive' && projectFileAction(data.filePath) === 'import-archive') {
-      if (!(await confirmUnsavedChanges())) return;
+      if (archiveBusy.value || archiveOpening.value || importServerPickerOpen.value || !(await confirmUnsavedChanges())) return;
+      pendingArchiveOnServer.value = '';
       pendingArchiveClientPath.value = data.filePath;
       pendingArchiveName.value = data.filePath.split(/[\/]/).pop() || 'import.dwcuepack';
       importServerPickerStage.value = 'destination';
@@ -446,6 +454,7 @@ useStateViewer();
 // Progress modal state
 const progressModal = ref({
   visible: false,
+  background: false,
   title: '',
   message: '',
   percentage: 0
@@ -453,8 +462,13 @@ const progressModal = ref({
 
 // Project selection modal state
 const showProjectSelection = ref(false);
-const availableProjects = ref<string[]>([]);
-const pendingImportPath = ref<string>('');
+const archiveBusy = ref(false);
+const archiveOpening = ref(false);
+const archiveReceipt = shallowRef<{ serverUrl: string; extractPath: string; projectFiles: string[] } | null>(null);
+const archiveCanOpen = computed(() => {
+  const server = useLiveplayServer();
+  return server.connected && !server.cueStartsBlocked && archiveReceipt.value?.serverUrl === server.serverUrl;
+});
 
 // Color picker for accent color
 const showColorPicker = ref(false);
@@ -839,11 +853,14 @@ const pendingArchiveName        = ref('');
 
 let importFlowActive = false;
 async function startImportFlow() {
-  if (importFlowActive) return;
+  if (importFlowActive || archiveBusy.value || archiveOpening.value || importServerPickerOpen.value) return;
   importFlowActive = true;
   try {
     if (!(await confirmUnsavedChanges())) return;
     const server = useLiveplayServer();
+    pendingArchiveClientPath.value = '';
+    pendingArchiveOnServer.value = '';
+    pendingArchiveName.value = '';
     importServerPickerStage.value = 'archive';
     if (server.isLocalServer) importServerPickerOpen.value = true;
     else importChoiceVisible.value = true;
@@ -872,7 +889,7 @@ async function onImportChoice(choice: 'server' | 'client') {
 
 async function onImportServerPickerPick(serverPath: string) {
   importServerPickerOpen.value = false;
-  if (!serverPath) return;
+  if (!serverPath || archiveBusy.value || archiveOpening.value) return;
   const server = useLiveplayServer();
   if (importServerPickerStage.value === 'archive') {
     if (projectFileAction(serverPath) !== 'import-archive') {
@@ -885,8 +902,17 @@ async function onImportServerPickerPick(serverPath: string) {
     return;
   }
 
+  const serverUrl = server.serverUrl;
+  const session = server.projectSessionId;
+  const epoch = projectEpoch.value;
+  const canAutoOpen = () => !progressModal.value.background && archiveCanOpen.value &&
+    server.projectSessionId === session && projectEpoch.value === epoch;
+  archiveBusy.value = true;
+  archiveReceipt.value = null;
+  showProjectSelection.value = false;
   progressModal.value = {
     visible: true,
+    background: false,
     title: t('importProgress.title'),
     message: t('importProgress.message') + ' ' + (pendingArchiveName.value
       || pendingArchiveOnServer.value.split(/[\/]/).pop() || '') + '…',
@@ -904,36 +930,60 @@ async function onImportServerPickerPick(serverPath: string) {
       server.lastError = t('importProgress.openFailed');
       return;
     }
-    if (result.projectFiles.length > 1) {
-      availableProjects.value = result.projectFiles;
-      pendingImportPath.value = result.extractPath;
-      showProjectSelection.value = true;
-    } else {
-      await guardedOpenProject(result.extractPath + '/' + result.projectFiles[0]);
-    }
+    archiveReceipt.value = { ...result, serverUrl };
+    progressModal.value.message = t('importProgress.savedOnServer', { path: result.extractPath, server: serverUrl });
+    if (canAutoOpen()) await openImportedArchive(canAutoOpen);
   } catch (error) {
     console.error('Import failed:', error);
     server.lastError = t('importProgress.openFailed');
   } finally {
-    window.setTimeout(() => { progressModal.value.visible = false; }, 300);
+    archiveBusy.value = false;
+    progressModal.value.background = true;
+    progressModal.value.visible = !!archiveReceipt.value && !showProjectSelection.value;
     pendingArchiveOnServer.value = '';
     pendingArchiveClientPath.value = '';
     pendingArchiveName.value = '';
   }
 }
 
-const handleProjectSelection = async (projectName: string) => {
-  const projectPath = pendingImportPath.value + '/' + projectName;
-  if (!await guardedOpenProject(projectPath)) return;
+async function openImportedArchive(canOpen = () => true) {
+  const receipt = archiveReceipt.value;
+  if (!receipt || !archiveCanOpen.value || !canOpen()) return;
+  if (receipt.projectFiles.length > 1) {
+    progressModal.value.visible = false;
+    showProjectSelection.value = true;
+    return;
+  }
+  await handleProjectSelection(receipt.projectFiles[0]!, canOpen);
+}
+
+async function handleProjectSelection(projectName: string, canOpen = () => true) {
+  const receipt = archiveReceipt.value;
+  if (archiveOpening.value || !receipt?.projectFiles.includes(projectName) || !archiveCanOpen.value) return;
+  const session = useLiveplayServer().projectSessionId;
+  const epoch = projectEpoch.value;
+  archiveOpening.value = true;
+  progressModal.value.visible = false;
   showProjectSelection.value = false;
-  pendingImportPath.value = '';
-  availableProjects.value = [];
-};
+  try {
+    const path = receipt.extractPath + '/' + projectName;
+    if (await guardedOpenProject(path, () => canOpen() && archiveCanOpen.value &&
+      archiveReceipt.value === receipt && useLiveplayServer().projectSessionId === session &&
+      projectEpoch.value === epoch)) dismissArchiveReceipt();
+  } finally {
+    archiveOpening.value = false;
+    progressModal.value.visible = !!archiveReceipt.value;
+  }
+}
+
+function dismissArchiveReceipt() {
+  archiveReceipt.value = null;
+  progressModal.value.visible = false;
+}
 
 const handleProjectSelectionCancel = () => {
   showProjectSelection.value = false;
-  pendingImportPath.value = '';
-  availableProjects.value = [];
+  progressModal.value.visible = !!archiveReceipt.value;
 };
 
 // Set initial theme from project
