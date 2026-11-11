@@ -4670,7 +4670,11 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
       if (!ffmpegReady || !ffmpegPath) throw new Error('FFmpeg is unavailable for Spotify review');
       const metadataUrl = embedReview?.playlistUrl || url;
       stdout = await new Promise((resolve, reject) => {
-        const child = spawn(spotDlPath, ['save', metadataUrl, '--save-file', '-', '--ffmpeg', ffmpegPath], {
+        // Review only needs metadata. Skip the YouTube Music connection check and lyrics lookups.
+        const child = spawn(spotDlPath, [
+          'save', metadataUrl, '--save-file', '-', '--ffmpeg', ffmpegPath,
+          '--threads', '8', '--audio', 'youtube', '--lyrics',
+        ], {
           windowsHide: true,
           detached: process.platform !== 'win32',
           stdio: ['ignore', 'pipe', 'pipe'],
@@ -4730,6 +4734,10 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
   })();
   if (!Array.isArray(rawTracks) || rawTracks.length === 0) {
     throw new Error('Spotify returned an invalid track list');
+  }
+  // spotDL returns completed metadata lookups out of playlist order.
+  if (embedReview?.playlistUrl && rawTracks.every((track) => Number.isSafeInteger(track?.list_position))) {
+    rawTracks.sort((a, b) => a.list_position - b.list_position);
   }
   const tracks = rawTracks.map((track, index) => {
     const id = spotifyTrackId(track);

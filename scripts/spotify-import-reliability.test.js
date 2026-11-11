@@ -323,11 +323,11 @@ test('YouTube output-directory read failure at child completion rejects without 
 
 function spotifyReviewHarness(count, {
   kind = 'playlist', exitCode = 0, failedStdout = '',
-  failedStderr = 'Error: playlist metadata unavailable', ffmpegReady = true,
+  failedStderr = 'Error: playlist metadata unavailable', ffmpegReady = true, reverseResults = false,
 } = {}) {
   const rawTracks = Array.from({ length: count }, (_, index) => ({
     song_id: String(index).padStart(22, '0'), name: `Track ${index + 1}`,
-    artists: ['Artist'], duration: 60, list_name: 'Entire playlist',
+    artists: ['Artist'], duration: 60, list_name: 'Entire playlist', list_position: index + 1,
     url: `https://open.spotify.com/track/${String(index).padStart(22, '0')}`,
   }));
   const canonicalUrl = `https://open.spotify.com/${kind}/0123456789ABCDEFGHIJKL`;
@@ -361,7 +361,8 @@ function spotifyReviewHarness(count, {
       const child = new EventEmitter();
       child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
       queueMicrotask(() => {
-        child.stdout.emit('data', Buffer.from(exitCode ? failedStdout : JSON.stringify(rawTracks)));
+        const result = reverseResults ? [...rawTracks].reverse() : rawTracks;
+        child.stdout.emit('data', Buffer.from(exitCode ? failedStdout : JSON.stringify(result)));
         child.stderr.emit('data', Buffer.from(exitCode ? failedStderr : ''));
         child.emit('close', exitCode);
       });
@@ -382,12 +383,21 @@ for (const count of [100, 235, 10001]) {
     assert.equal(review.playlistName, 'Entire playlist');
     assert.deepEqual(harness.commands, [['/tools/spotdl', [
       'save', harness.canonicalUrl, '--save-file', '-', '--ffmpeg', '/tools/bundled ffmpeg/ffmpeg',
+      '--threads', '8', '--audio', 'youtube', '--lyrics',
     ]]]);
     assert.equal(harness.fetches.length, 0, 'playlist embeds cannot prove that their track list is complete');
     assert.equal(harness.spotifyPreflights.get(review.preflightId).rawTracks.length, count);
     assert.equal(harness.activeSpotifyPreflightJobs.size, 0);
   });
 }
+
+test('Spotify review restores playlist order after concurrent metadata lookups', async () => {
+  const harness = spotifyReviewHarness(235, { reverseResults: true });
+  const review = await harness.run();
+  const expected = harness.rawTracks.map(track => track.song_id);
+  assert.deepEqual([...review.tracks.map(track => track.id)], expected);
+  assert.deepEqual([...harness.spotifyPreflights.get(review.preflightId).rawTracks.map(track => track.song_id)], expected);
+});
 
 test('Spotify playlist share links resolve to the full metadata query', async () => {
   for (const host of ['spotify.link', 'spotify.app.link']) {
