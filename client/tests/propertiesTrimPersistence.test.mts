@@ -97,6 +97,7 @@ function loadHandleReplaceMedia(dependencies: Record<string, unknown>) {
         electronAPI,
         isReplacingMedia,
         audioItem,
+        currentProject,
         replaceMediaError,
         replaceMediaStatus,
         t,
@@ -567,6 +568,7 @@ test('replace media saves the final reactive item and snapshots the replacement'
     },
     isReplacingMedia,
     audioItem,
+    currentProject: ref({ name: 'Current show' }),
     replaceMediaError,
     replaceMediaStatus,
     t: (key: string) => key,
@@ -638,6 +640,7 @@ test('replace media restores and re-saves the original reactive item when save r
     },
     isReplacingMedia,
     audioItem,
+    currentProject: ref({ name: 'Current show' }),
     replaceMediaError,
     replaceMediaStatus,
     t: (key: string) => key,
@@ -672,6 +675,32 @@ test('replace media restores and re-saves the original reactive item when save r
   assert.equal(replaceMediaError.value, true);
   assert.equal(replaceMediaStatus.value, 'properties.replacementSaveFailed');
   assert.equal(isReplacingMedia.value, false);
+});
+
+test('a replacement selected in the native picker cannot change a different cue', async () => {
+  const first = { type: 'audio', mediaServerPath: '/first.wav' };
+  const second = { type: 'audio', mediaServerPath: '/second.wav' };
+  const audioItem = ref(first);
+  let probes = 0;
+  let choose!: (files: string[]) => void;
+  const selection = new Promise<string[]>(resolve => { choose = resolve; });
+  const replace = loadHandleReplaceMedia({
+    client: true, audioItem, currentProject: ref({ name: 'Show' }),
+    isReplacingMedia: ref(false),
+    electronAPI: { selectAudioFiles: () => selection },
+    replaceMediaError: ref(false), replaceMediaStatus: ref(''), t: (key: string) => key,
+    _server: {
+      fetchMetadata: async () => { probes += 1; return { valid: false }; },
+      fetchWaveformByPath: async () => ({ channels: [], duration_ms: 0 }),
+    },
+    buildWaveformFromChannels: () => null,
+  });
+  const pending = replace();
+  audioItem.value = second;
+  choose(['/replacement.wav']);
+  await pending;
+  assert.equal(probes, 0);
+  assert.deepEqual([first.mediaServerPath, second.mediaServerPath], ['/first.wav', '/second.wav']);
 });
 
 test('rapid manual edit then trim survives a delayed local PATCH echo and reload', async () => {

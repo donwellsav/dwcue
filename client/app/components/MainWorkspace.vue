@@ -654,11 +654,12 @@ async function onExportServerPath(serverDir: string) {
 async function exportToClientDownload() {
   if (!currentProject.value) return;
   const project = currentProject.value;
+  const serverUrl = server.serverUrl;
   const defaultName = project.name + '.dwcuepack';
   // Pick the local destination FIRST so a cancelled save dialog doesn't
   // leave a stray archive sitting in the server's temp directory.
   const localDest = await window.electronAPI.showSaveArchiveDialog(defaultName);
-  if (!localDest) return;
+  if (!localDest || currentProject.value !== project || server.serverUrl !== serverUrl) return;
   await runExport({ outputPath: '', downloadTo: localDest });
 }
 

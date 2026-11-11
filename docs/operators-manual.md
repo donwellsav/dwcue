@@ -144,6 +144,8 @@ Accepted GO consumes an override; refused GO retains it. Check readiness, errors
 
 Open **Import Media**. In local mode the primary action is **Choose files…**. **Browse Server** and **Advanced options** are collapsed until needed. The server browser remains useful when media is already on the engine computer, including a same-machine setup.
 
+The desktop media chooser opens in a separate window. Bring the operator window forward to use **Stop All Cues** while the chooser remains open. In the app’s file and folder picker, use **Stop All Cues** in the toolbar. Stopping cues uses the show’s configured fade and keeps the file selection open.
+
 ![Import Media with local file selection and the source-level/full-duration preservation notice.](manual-assets/import-media.png)
 
 In **Browse Server**, double-click folders to open them. Click files to select; use Shift or Ctrl/Cmd-click for multiple files, then **Import selected**. The file list distinguishes recognizable media, unsupported file types, and files whose type still needs verification. An extension or icon is not proof of decodability; wait for the import result.

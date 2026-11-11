@@ -9,7 +9,7 @@
             type="button"
             class="icon-btn"
             :aria-label="t('actions.close')"
-            :disabled="isBusy"
+            :disabled="isBusy || isChoosingDestination"
             @click="handleClose"
           >
             <span class="material-symbols-rounded" aria-hidden="true">close</span>
@@ -711,9 +711,11 @@ function updateBooleanSetting(key: string, event: Event) {
 async function chooseDestination(): Promise<string> {
   const api = getSpotifyApi();
   if (!api || isActive.value || isChoosingDestination.value || hasLockedDestination.value) return '';
+  const epoch = props.projectEpoch;
   isChoosingDestination.value = true;
   try {
     const selected = await api.selectProjectFolder();
+    if (!props.open || props.projectEpoch !== epoch) return '';
     if (selected) {
       destinationParentPath.value = selected;
       await api.setSpotifyImportDestination(selected);
@@ -1256,7 +1258,7 @@ async function cancelDownload() {
 }
 
 function handleClose() {
-  if (isBusy.value) return;
+  if (isBusy.value || isChoosingDestination.value) return;
   resetState();
   emit('close');
 }

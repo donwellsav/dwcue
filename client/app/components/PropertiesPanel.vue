@@ -1128,11 +1128,14 @@ const handleRegenerateWaveform = async () => {
 
 const handleReplaceMedia = async () => {
   if (!import.meta.client || !window.electronAPI || isReplacingMedia.value) return;
+  const project = currentProject.value;
+  const item = audioItem.value;
+  if (!item || item.type !== 'audio') return;
+  const isCurrent = () => currentProject.value === project && audioItem.value === item;
 
   const files = await window.electronAPI.selectAudioFiles();
   const sourcePath = files?.[0];
-  const item = audioItem.value;
-  if (!sourcePath || !item) return;
+  if (!sourcePath || !isCurrent()) return;
 
   const snapshot = JSON.parse(JSON.stringify(item));
   let mutated = false;
@@ -1144,6 +1147,7 @@ const handleReplaceMedia = async () => {
       _server.fetchMetadata(sourcePath),
       _server.fetchWaveformByPath(sourcePath),
     ]);
+    if (!isCurrent()) return;
     const metadataDuration = Number((metadata as any)?.duration_ms);
     const durationMs = Number.isFinite(metadataDuration) && metadataDuration > 0
       ? metadataDuration
@@ -1156,6 +1160,7 @@ const handleReplaceMedia = async () => {
 
     const linked = !snapshot.mediaPath;
     const mediaServerPath = linked ? sourcePath : await _server.copyToMedia(sourcePath);
+    if (!isCurrent()) return;
     const fileName = mediaServerPath.split(/[\\/]/).pop() || sourcePath.split(/[\\/]/).pop() || 'audio';
     const usedWholeFile = snapshot.inPoint <= 0 && Math.abs(snapshot.outPoint - snapshot.duration) < 0.01;
 
@@ -1179,8 +1184,10 @@ const handleReplaceMedia = async () => {
     replaceMediaStatus.value = t('properties.replacementComplete');
     void _server.requestWaveformGeneration(mediaServerPath, item.uuid, true).catch(() => {});
   } catch (error: any) {
-    Object.assign(item, snapshot);
-    if (mutated) await saveProject();
+    if (mutated) {
+      Object.assign(item, snapshot);
+      if (currentProject.value === project) await saveProject();
+    }
     replaceMediaError.value = true;
     replaceMediaStatus.value = error?.message || t('properties.replacementFailed');
   } finally {

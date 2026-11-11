@@ -15,6 +15,7 @@
           <button class="nav-btn neutral" @click="navigate('')" title="Computer / drives">
             <span class="material-symbols-rounded">computer</span>
           </button>
+          <Btn type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
         </header>
 
         <!-- Breadcrumb -->
@@ -453,6 +454,7 @@ watch([() => props.open, () => String(server.serverUrl), () => props.mode, () =>
   }
   .path-input {
     flex: 1;
+    min-width: 0;
     background: var(--color-control); border: 1px solid var(--color-border);
     border-radius: var(--control-radius); padding: 4px 10px;
     color: var(--color-text-primary); font-family: var(--font-mono); font-size: 12px;

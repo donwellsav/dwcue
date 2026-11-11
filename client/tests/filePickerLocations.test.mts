@@ -84,7 +84,7 @@ test('derives native media selection folders for POSIX and Windows paths', () =>
   assert.equal(pickerParentPath('D:\\Shows\\Act One\\intro.wav'), 'D:\\Shows\\Act One');
 });
 
-test('native pickers return authorized selections when folder history cannot be saved', async () => {
+test('native pickers leave the operator window enabled and authorize one selection at a time', async () => {
   const folder = path.join(tmpdir(), 'dwcue-picker');
   const cases = new Map([
     ['select-project-folder', { selected: folder, authorization: 'root' }],
@@ -96,8 +96,11 @@ test('native pickers return authorized selections when folder history cannot be 
   const source = ts.createSourceFile('main.js',
     readFileSync(new URL('../electron/main.js', import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   const code = source.statements.filter(node => {
+    if (ts.isVariableStatement(node)) {
+      return node.declarationList.declarations.some(decl => decl.name.getText(source) === 'nativeFilePickerOpen');
+    }
     if (ts.isFunctionDeclaration(node)) {
-      return ['rememberNativePickerFolder', 'authorizeOpenableFilePath'].includes(node.name?.text || '');
+      return ['showNativeFilePicker', 'rememberNativePickerFolder', 'authorizeOpenableFilePath'].includes(node.name?.text || '');
     }
     if (!ts.isExpressionStatement(node) || !ts.isCallExpression(node.expression)) return false;
     const [channel] = node.expression.arguments;
@@ -114,13 +117,20 @@ test('native pickers return authorized selections when folder history cannot be 
   };
   let selected = '';
   let canceled = false;
+  let hold: Promise<void> | undefined;
+  const choose = async (saving: boolean, ...args: unknown[]) => {
+    assert.equal(args.length, 1, 'passing an operator window disables it during native file selection');
+    assert.ok(args[0] && typeof args[0] === 'object');
+    await hold;
+    return saving ? { canceled, filePath: selected } : { canceled, filePaths: [selected] };
+  };
   runInNewContext(code, {
     ...createRequire(import.meta.url)('../electron/project-file-formats.js'),
     path, mainWindow: {}, ipcMain: { handle: handlers.set.bind(handlers) },
     requireTrustedIpc() {}, nativePickerFolder() {}, requireAbsoluteIpcPath: (file: string) => file,
     dialog: {
-      showOpenDialog: async () => ({ canceled, filePaths: [selected] }),
-      showSaveDialog: async () => ({ canceled, filePath: selected }),
+      showOpenDialog: (...args: unknown[]) => choose(false, ...args),
+      showSaveDialog: (...args: unknown[]) => choose(true, ...args),
     },
     fs: { existsSync: () => true, statSync: () => ({ isFile: () => true }) },
     pathCapabilities: { authorizeRoot: authorize('root'), authorizeProjectFile: authorize('project'), authorizeFile: authorize('file') },
@@ -144,4 +154,24 @@ test('native pickers return authorized selections when folder history cannot be 
   assert.equal(authorized.length, 0);
   assert.equal(warnings.length, cases.size);
   assert.ok(warnings.every(message => message.includes('Folder history is read-only')));
+
+  let finish!: () => void;
+  hold = new Promise<void>(resolve => { finish = resolve; });
+  selected = folder;
+  const first = handlers.get('select-project-folder')!();
+  try {
+    const overlapping = handlers.get('show-save-archive-dialog')!();
+    const pending = new Promise(resolve => setImmediate(() => resolve('pending')));
+    assert.equal(await Promise.race([overlapping, pending]), null);
+  } finally {
+    finish();
+    await first;
+  }
+  assert.deepEqual(authorized, [['root', folder, false]]);
+
+  const chooseFolder = handlers.get('select-project-folder')!;
+  hold = Promise.reject(new Error('Native panel could not open'));
+  await assert.rejects(chooseFolder(), /Native panel could not open/);
+  hold = undefined;
+  assert.equal(await chooseFolder(), folder, 'a native failure must release the picker for a retry');
 });

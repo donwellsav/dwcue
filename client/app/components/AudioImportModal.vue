@@ -5,7 +5,7 @@
         <header>
           <h2>{{ t('importAudio.title') }}</h2>
           <Btn type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
-          <button class="x" :aria-label="t('actions.close')" :disabled="busy" @click="close">✕</button>
+          <button class="x" :aria-label="t('actions.close')" :disabled="busy || pickingLocal" @click="close">✕</button>
         </header>
 
         <!-- Source mode toggle. Only rendered when the server is on a
@@ -41,7 +41,7 @@
               </li>
             </ul>
             <div v-if="localPicked.length" class="list-footer">
-              <button class="btn primary" :disabled="!selectedLocal.length || busy" @click="importLocalSelected">
+              <button class="btn primary" :disabled="!selectedLocal.length || busy || pickingLocal" @click="importLocalSelected">
                 {{ busy ? t('importAudio.verifying') : t('importAudio.importSelected') }}<span v-if="selectedLocal.length"> ({{ selectedLocal.length }})</span>
               </button>
             </div>
@@ -319,7 +319,7 @@ function isVideoPath(p: string): boolean {
   return !!m && VIDEO_CONTAINER_EXT.has(m[0].toLowerCase());
 }
 
-function close()       { if (!props.busy) emit('close'); }
+function close()       { if (!props.busy && !pickingLocal.value) emit('close'); }
 // Auto-close once the import finishes cleanly. Any failed file keeps the
 // modal open so the result list and retry affordance stay visible.
 watch([() => props.result, () => props.busy], ([result, busy]) => {
@@ -407,11 +407,12 @@ function toggleUploaded(item: string, index: number, e: MouseEvent) {
 
 async function pickLocal() {
   const api: any = (globalThis as any).electronAPI;
-  if (!api?.selectAudioFiles) return;
+  if (!api?.selectAudioFiles || pickingLocal.value) return;
+  const project = currentProject.value;
   pickingLocal.value = true;
   try {
     const paths: string[] | null = await api.selectAudioFiles();
-    if (paths?.length) {
+    if (paths?.length && props.open && currentProject.value === project) {
       for (const p of paths) {
         if (!localPicked.value.includes(p)) {
           localPicked.value.push(p);

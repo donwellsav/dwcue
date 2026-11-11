@@ -568,6 +568,18 @@ function rememberNativePickerFolder(purpose, folder) {
   }
 }
 
+let nativeFilePickerOpen = false;
+async function showNativeFilePicker(show) {
+  if (nativeFilePickerOpen) return { canceled: true };
+  nativeFilePickerOpen = true;
+  try {
+    // The chooser stays independent of the operator window so Stop All remains available.
+    return await show();
+  } finally {
+    nativeFilePickerOpen = false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Recent-servers history (separate file so it survives config rewrites).
 // Stored newest-first, capped, keyed by normalised URL.
@@ -3620,10 +3632,10 @@ ipcMain.handle('help:open-operator-manual', (event) => {
 
 ipcMain.handle('select-project-folder', async (event) => {
   requireTrustedIpc(event);
-  const result = await dialog.showOpenDialog(mainWindow, {
+  const result = await showNativeFilePicker(() => dialog.showOpenDialog({
     defaultPath: nativePickerFolder('project-folder'),
     properties: ['openDirectory', 'createDirectory']
-  });
+  }));
 
   if (!result.canceled && result.filePaths.length > 0) {
     rememberNativePickerFolder('project-folder', result.filePaths[0]);
@@ -3634,14 +3646,14 @@ ipcMain.handle('select-project-folder', async (event) => {
 
 ipcMain.handle('select-project-file', async (event) => {
   requireTrustedIpc(event);
-  const result = await dialog.showOpenDialog(mainWindow, {
+  const result = await showNativeFilePicker(() => dialog.showOpenDialog({
     defaultPath: nativePickerFolder('project-open'),
     properties: ['openFile'],
     filters: [
       { name: 'DonWells Cue Show', extensions: ['dwcue'] },
       { name: 'Legacy Show (Import)', extensions: ['liveplay'] },
     ],
-  });
+  }));
 
   if (result.canceled || result.filePaths.length === 0) return null;
   const selectedPath = result.filePaths[0];
@@ -3654,7 +3666,7 @@ ipcMain.handle('select-project-file', async (event) => {
 
 ipcMain.handle('select-audio-files', async (event) => {
   requireTrustedIpc(event);
-  const result = await dialog.showOpenDialog(mainWindow, {
+  const result = await showNativeFilePicker(() => dialog.showOpenDialog({
     defaultPath: nativePickerFolder('media'),
     properties: ['openFile', 'multiSelections'],
     // Audio plus the video containers the engine decodes (H.264/HEVC tracks);
@@ -3669,7 +3681,7 @@ ipcMain.handle('select-audio-files', async (event) => {
         'wmv', 'flv', '3gp',
       ],
     }],
-  });
+  }));
 
   if (result.canceled || result.filePaths.length === 0) return null;
   rememberNativePickerFolder('media', path.dirname(result.filePaths[0]));
@@ -3854,11 +3866,11 @@ ipcMain.handle('show-save-archive-dialog', async (event, defaultName) => {
   const requestedName = typeof defaultName === 'string' && defaultName.length <= 255
     ? path.basename(defaultName)
     : 'project.dwcuepack';
-  const result = await dialog.showSaveDialog(mainWindow, {
+  const result = await showNativeFilePicker(() => dialog.showSaveDialog({
     title: 'Save DonWells Cue Show Archive',
     defaultPath: path.join(nativePickerFolder('archive-export') || '', canonicalArchivePath(requestedName)),
     filters: [{ name: 'DonWells Cue Show Archive', extensions: ['dwcuepack'] }],
-  });
+  }));
   if (result.canceled || !result.filePath) return null;
   rememberNativePickerFolder('archive-export', path.dirname(result.filePath));
   return pathCapabilities.authorizeFile(
@@ -3868,7 +3880,7 @@ ipcMain.handle('show-save-archive-dialog', async (event, defaultName) => {
 // Choose either a canonical archive or an explicitly imported legacy archive.
 ipcMain.handle('show-open-archive-dialog', async (event) => {
   requireTrustedIpc(event);
-  const result = await dialog.showOpenDialog(mainWindow, {
+  const result = await showNativeFilePicker(() => dialog.showOpenDialog({
     defaultPath: nativePickerFolder('archive-import'),
     title: 'Choose DonWells Cue Show Archive',
     properties: ['openFile'],
@@ -3876,7 +3888,7 @@ ipcMain.handle('show-open-archive-dialog', async (event) => {
       { name: 'DonWells Cue Show Archive', extensions: ['dwcuepack'] },
       { name: 'Legacy Show Archive (Import)', extensions: ['lpa'] },
     ],
-  });
+  }));
   if (result.canceled || result.filePaths.length === 0) return null;
   const selectedPath = result.filePaths[0];
   const kind = fileKindFor(selectedPath);

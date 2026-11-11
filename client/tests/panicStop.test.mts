@@ -50,28 +50,35 @@ test('Stop All remains clickable when no project-backed cue is active', () => {
   assert.equal(panicCalls, 1);
 });
 
-test('Stop All sends the normal command from each busy import and archive dialog', () => {
+test('Stop All sends the normal command from transfer and file selection dialogs', () => {
   const dialogs = [
     ['AudioImportModal', 'header'],
     ['SpotifyImportModal', 'header'],
     ['YouTubeImportModal', 'div', 'modal-header'],
     ['ProgressModal', 'div', 'modal-content'],
+    ['ServerFilePickerModal', 'header', 'toolbar'],
+    ['LocationChoiceModal', 'div', 'lc-footer'],
   ];
   for (const [component, tag, className] of dialogs) {
     const code = compile(elementSource(component, tag, className), { mode: 'function' }).code;
-    const render = Function('Vue', `${code}; return render;`)({ ...Vue, resolveComponent: (name: string) => name });
+    const render = Function('Vue', `${code}; return render;`)({
+      ...Vue, resolveComponent: (name: string) => name, withDirectives: (vnode: Vue.VNode) => vnode,
+    });
     const stopCalls: unknown[][] = [];
     const region = render({
       t: (key: string) => key,
       busy: true, isBusy: true, visible: true, percentage: 50,
       titleId: 'import-test', title: 'Archive transfer', message: 'Working',
+      pickingLocal: true, isChoosingDestination: true,
+      historyBack: [], canGoUp: false, pathDraft: '', goBack() {}, goUp() {}, navigate() {}, cancelLabel: 'Cancel',
       server: { stopAll: (...args: unknown[]) => { stopCalls.push(args); } },
       close: () => assert.fail('Stop All must not close the import'),
+      cancel: () => assert.fail('Stop All must not cancel file selection'),
       handleClose: () => assert.fail('Stop All must not close the import'),
       closeModal: () => assert.fail('Stop All must not close the import'),
     }, []);
     const button = region.children.find((child: Vue.VNode) => child.props?.text === 'controls.stopAll');
-    assert.ok(button, `${component} must show Stop All while busy`);
+    assert.ok(button, `${component} must show Stop All during its operation`);
     assert.notEqual(button.props.disabled, true);
     assert.equal(button.props.type, 'button', 'Stop All must not submit an import form');
     button.props.onClick();

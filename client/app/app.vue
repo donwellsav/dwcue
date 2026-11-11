@@ -895,8 +895,11 @@ async function onImportChoice(choice: 'server' | 'client') {
     importServerPickerOpen.value = true;
     return;
   }
+  const project = currentProject.value;
+  const server = useLiveplayServer();
+  const serverUrl = server.serverUrl;
   const archivePath = await window.electronAPI.showOpenArchiveDialog();
-  if (!archivePath) return;
+  if (!archivePath || currentProject.value !== project || server.serverUrl !== serverUrl) return;
   pendingArchiveClientPath.value = archivePath;
   pendingArchiveName.value = archivePath.split(/[\/]/).pop() || 'import.dwcuepack';
   importServerPickerStage.value = 'destination';
