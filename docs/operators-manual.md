@@ -511,7 +511,7 @@ Use **Video Output** in the toolbar or **Settings → Video Output**. Assign the
 
 - **Prerequisites:** Operator and audience displays are extended rather than mirrored, the switcher/projector operator is ready, and no private desktop content is exposed.
 - **Actions:** Open **Settings → Video Output**, choose **Identify displays**, match the number at the physical destination, select that **Output display**, and enable **Open video output for this session**. Read **Output status**.
-- **Expected visible outcome:** The output reports live on the intended display and the destination operator confirms the same image.
+- **Expected visible outcome:** The numbered labels clear after five seconds. Settings stays available while they are shown. After you enable output, it reports live on the intended display and the destination operator confirms the same image.
 - **Common mistake:** Treating the single-display preview window as the assigned fullscreen output.
 - **Recovery:** Disable the session output, correct mirroring/cabling/assignment, identify again, then reopen and verify at the physical destination.
 

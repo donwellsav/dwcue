@@ -16,6 +16,7 @@ The 3 November source was checkpointed in `2ea5984` and `a9a86a3` (package metad
 | Confidence readbacks overlapped and outlived their output window. | Three timer ticks produced three unresolved `capturePage()` requests; closing/recreating output still allowed old frames to publish. | Permit one capture in flight per window/timer generation and discard retired completions. A rejected capture releases the slot for the next tick. |
 | A failed output renderer remained armed and appeared open without an error. | Simulated `render-process-gone(crashed,139)` previously produced no status update and left the window/session active. | Preserve reason/exit code, retain the audience window under a native black cover, and restore control-window access. An explicit **Restart Output** replaces the failed renderer; the cover remains until the replacement view is ready. |
 | Retired output lifecycle events could clean up a replacement's resources. | Delayed close/load/crash callbacks could release the new capture timer, power ownership or diagnostic connection. | Detach an output's owned resources before destruction; identity-fence subsequent callbacks. Normal cue changes do not move focus. |
+| **Identify displays** hid the operator app from the macOS Dock. | The installed Electron version reproduced the Dock change as soon as the label windows were created. | Keep the numbered overlays without changing the app's macOS process type. [Electron's macOS implementation](https://github.com/electron/electron/blob/v42.8.0/shell/browser/native_window_mac.mm#L1330-L1347). |
 | Slow video downloads blocked control networking. | A paused whole-file reader delayed an already-connected WebSocket's command acknowledgment for more than 2 s. The installed Crow transport uses synchronous writes for both general and static-file responses. | Repair and verification are recorded with the native transport patch described below. |
 
 Independent review also reproduced a meter/stop-edge ordering bug: a Stopped background video could become the fallback before its `cue_state` edge arrived. Stopped normal cues are now removed before selection, including during device-health loss; removing the displayed cue immediately selects the remaining picture or clears to idle. Diagnostic transport retains its separate behavior.
@@ -45,6 +46,8 @@ npm run check:client
 npm run typecheck --workspace=client
 npm run build:client
 ```
+
+Run `node --test scripts/video-output-recovery.test.cjs` on a desktop to check that repeated display identification preserves Dock visibility, lets the labels expire, and keeps the audience window open. The same fixture checks recovery from a renderer crash and a hung output renderer. On the built-in Mac display, a separate fullscreen check confirmed that the label appeared above the app's fullscreen video window.
 
 A separate desktop-host check exercises the production `useVideoOutput` controller inside a real Electron/Chromium renderer with generated H.264 media:
 

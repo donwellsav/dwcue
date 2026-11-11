@@ -7,7 +7,7 @@ const path = require('node:path');
 const { once } = require('node:events');
 
 async function runElectronFixture() {
-  const { app, BrowserWindow, View, ipcMain, powerSaveBlocker } = require('electron');
+  const { app, BrowserWindow, View, ipcMain, powerSaveBlocker, screen } = require('electron');
   const root = process.env.DWCUE_RECOVERY_FIXTURE;
   app.setPath('userData', path.join(root, 'profile'));
   await app.whenReady();
@@ -18,7 +18,9 @@ async function runElectronFixture() {
   const functions = ast.statements.filter(ts.isFunctionDeclaration);
   const names = ['sanitizeVideoPlaybackErrorMessage', 'loadVideoOutputWindow', 'failVideoOutputRenderer', 'markVideoOutputReady',
     'restartVideoOutputWindow', 'requireVideoOutputIpc', 'startVideoOutputFrames',
-    'stopVideoOutputFrames', 'createVideoOutputWindow', 'closeVideoOutputWindow'];
+    'stopVideoOutputFrames', 'createVideoOutputWindow', 'closeVideoOutputWindow',
+    'orderedVideoOutputDisplays', 'videoOutputDisplays', 'closeDisplayIdentifierWindows',
+    'escapeDisplayIdentifierText', 'identifyVideoOutputDisplays'];
   const fixturePath = path.join(root, 'output.html');
   fs.writeFileSync(fixturePath, '<!doctype html><title>Isolated output recovery test</title><body style="background:#900"></body>');
   let operator;
@@ -29,7 +31,7 @@ async function runElectronFixture() {
       return win;
     }, View, path, __dirname: path.join(__dirname, '../client/electron'), isDevMode: false,
     readVideoOutputConfig: () => ({}), resolveVideoOutputDisplay: () => null,
-    screen: { getAllDisplays: () => [{}] }, powerSaveBlocker,
+    screen, powerSaveBlocker, displayIdentifierWindows: [], displayIdentifierTimer: null,
     videoOutputWindow: null, videoOutputSessionEnabled: true, videoOutputPowerSaveId: null,
     videoOutputPlaybackError: null, videoOutputTestCardConnection: null, videoOutputFrameTimer: null,
     videoOutputRendererReady: false, videoOutputRendererResponsive: true,
@@ -43,6 +45,7 @@ async function runElectronFixture() {
   };
   vm.runInNewContext(functions.filter(node => names.includes(node.name?.text))
     .map(node => node.getText(ast)).join('\n'), context);
+  ipcMain.handle('video-output:identify-displays', context.identifyVideoOutputDisplays);
   if (context.markVideoOutputReady) ipcMain.handle('video-output:renderer-ready', context.markVideoOutputReady);
   try {
     operator = new BrowserWindow({ show: false, webPreferences: {
@@ -56,6 +59,22 @@ async function runElectronFixture() {
     if (output.webContents.isLoading()) await once(output.webContents, 'did-finish-load');
     assert.notEqual(output.webContents.getOSProcessId(), operator.webContents.getOSProcessId(), 'output renderer isolated from operator');
     if (context.markVideoOutputReady) await output.webContents.executeJavaScript('window.electronAPI.videoOutput.rendererReady()');
+
+    const dockVisible = app.dock?.isVisible();
+    const identify = () => operator.webContents.executeJavaScript('window.electronAPI.videoOutput.identifyDisplays()');
+    const displays = await identify();
+    assert.equal(app.dock?.isVisible(), dockVisible, 'identifying displays must preserve Dock visibility');
+    const firstIdentifiers = [...context.displayIdentifierWindows];
+    await identify();
+    assert.ok(firstIdentifiers.every(win => win.isDestroyed()), 'repeated identification replaces earlier overlays');
+    const identifiers = context.displayIdentifierWindows;
+    assert.equal(identifiers.length, displays.length);
+    await Promise.all(identifiers.map(win => win.isVisible() ? undefined : once(win, 'show')));
+    assert.ok(identifiers.every(win => !win.isFocused()), 'labels must not take keyboard focus');
+    await Promise.all(identifiers.map(win => once(win, 'closed')));
+    assert.equal(app.dock?.isVisible(), dockVisible);
+    assert.equal(context.videoOutputWindow, output, 'identification leaves the audience window open');
+
     const gone = once(output.webContents, 'render-process-gone');
     output.webContents.forcefullyCrashRenderer();
     await gone;
@@ -85,6 +104,7 @@ async function runElectronFixture() {
     assert.equal(output.videoOutputCover.getVisible(), false);
     process.stdout.write('Native cover retained across actual renderer crash and busy-loop restart; operator responsive.\n');
   } finally {
+    context.closeDisplayIdentifierWindows();
     context.closeVideoOutputWindow();
     operator?.destroy();
     app.quit();
@@ -97,7 +117,7 @@ if (process.versions.electron) {
   const { test } = require('node:test');
   const { spawn } = require('node:child_process');
   const os = require('node:os');
-  test('native audience cover survives actual Electron crash and hung-output restart', { timeout: 45000 }, async () => {
+  test('display labels preserve app access and the audience window survives renderer failures', { timeout: 45000 }, async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dwcue-output-recovery-'));
     const env = { ...process.env, DWCUE_RECOVERY_FIXTURE: root };
     delete env.ELECTRON_RUN_AS_NODE;

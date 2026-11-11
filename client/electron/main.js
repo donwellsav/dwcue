@@ -2550,7 +2550,10 @@ function identifyVideoOutputDisplays() {
     identifierWindow.setAlwaysOnTop(true, 'screen-saver');
     identifierWindow.setIgnoreMouseEvents(true);
     try {
-      identifierWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+      // Keep the operator app in the Dock and app switcher on macOS.
+      identifierWindow.setVisibleOnAllWorkspaces(true, {
+        visibleOnFullScreen: true, skipTransformProcessType: true,
+      });
     } catch { /* not supported by every Linux window manager */ }
 
     const label = escapeDisplayIdentifierText(display.label || `Display ${display.id}`);
