@@ -559,9 +559,13 @@ function nativePickerFolder(purpose) {
 
 function rememberNativePickerFolder(purpose, folder) {
   const preferences = readImportPreferences();
-  writeImportPreferences({
-    ...preferences, pickerFolders: { ...preferences.pickerFolders, [purpose]: folder },
-  });
+  try {
+    writeImportPreferences({
+      ...preferences, pickerFolders: { ...preferences.pickerFolders, [purpose]: folder },
+    });
+  } catch (error) {
+    console.warn('[file-picker] could not save folder history:', error.message);
+  }
 }
 
 // ---------------------------------------------------------------------------
