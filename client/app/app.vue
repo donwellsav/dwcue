@@ -95,10 +95,9 @@
       @install-on-exit="handleUpdateInstallOnExit"
     />
 
-    <!-- Transient confirmation for Help → Check for Updates when the
-         current version is already the latest. -->
     <Transition name="update-toast">
-      <div v-if="upToDateToast" class="update-toast">{{ upToDateToast }}</div>
+      <div v-if="unsavedDialogBlocked && !unsavedDialogVisible" class="update-toast" role="status">{{ t('unsavedModal.waitForSave') }}</div>
+      <div v-else-if="upToDateToast" class="update-toast">{{ upToDateToast }}</div>
     </Transition>
     
     <!-- Progress Modal for Import/Export -->
@@ -183,7 +182,8 @@
 
     <!-- Unsaved-changes prompt (shown when leaving a project with autosave off) -->
     <UnsavedChangesModal
-      :visible="unsavedDialogVisible"
+      :visible="unsavedDialogVisible && unsavedDialogReason === 'project'"
+      :blocked="unsavedDialogBlocked"
       @save="unsavedSave"
       @discard="unsavedDiscard"
       @cancel="unsavedCancel"
@@ -219,9 +219,9 @@
     <!-- App-quit confirmation: unsaved changes, then (in local mode) whether
          to also shut the local audio server down. -->
     <QuitConfirmModal
-      :visible="quitUnsavedVisible"
+      :visible="unsavedDialogVisible && unsavedDialogReason === 'quit'"
       :title="t('quitModal.unsavedTitle')"
-      :message="t('quitModal.unsavedMessage')"
+      :message="t('quitModal.unsavedMessage') + (unsavedDialogBlocked ? ' ' + t('unsavedModal.finishCurrent') : '')"
       :buttons="quitUnsavedButtons"
       @pick="onQuitUnsavedPick"
     />
@@ -275,11 +275,11 @@ import { applyOneShotMutation, enforceOneShotDisarmFences } from '~/utils/oneSho
 
 const {
   currentProject, saveProject, createNewProject, openProject, importLegacyProject, confirmUnsavedChanges,
-  hasUnsavedChanges, autoSaveEnabled, projectSyncIdentity,
+  autoSaveEnabled, projectSyncIdentity,
   projectHydrationStatus, projectHydrationError, retryProjectHydration,
   isLoading, loadingMessage,
   repairDialogVisible, repairDialogIssues, confirmRepair, cancelRepair,
-  unsavedDialogVisible, unsavedSave, unsavedDiscard, unsavedCancel,
+  unsavedDialogVisible, unsavedDialogReason, unsavedDialogBlocked, unsavedSave, unsavedDiscard, unsavedCancel,
   deleteDialogVisible, deleteDialogCount, deleteDialogName, deleteDialogAllowOnly,
   deleteDialogConfirmAll, deleteDialogConfirmOnly, deleteDialogCancel,
 } = useProject();
@@ -295,7 +295,7 @@ import ServerFilePickerModal from './components/ServerFilePickerModal.vue';
 const { currentLocale, setLocale, getDirection, t } = useLocalization();
 
 const openProjectGuard = createProjectOpenGuard({
-  confirmUnsavedChanges: () => unsavedDialogVisible.value ? Promise.resolve(false) : confirmUnsavedChanges(),
+  confirmUnsavedChanges,
   openProject(path) {
     const action = projectFileAction(path);
     if (action === 'open-project') return openProject(path);
@@ -363,7 +363,7 @@ function onProjectPickerPick(path: string) {
 async function createNewShow() {
   const name = newShowName.value.trim();
   const folder = newShowLocation.value.trim();
-  if (!name || !folder || creatingNewShow.value || unsavedDialogVisible.value) return;
+  if (!name || !folder || creatingNewShow.value) return;
   creatingNewShow.value = true;
   try {
     const created = await runExclusivePendingAction('project-file-change', 'create', async () => {
@@ -732,9 +732,7 @@ onMounted(() => {
 //      or return to the project.
 // Either prompt's "return" aborts the quit entirely.
 // ---------------------------------------------------------------------------
-const quitUnsavedVisible = ref(false);
 const quitServerVisible  = ref(false);
-let _quitUnsavedResolve: ((choice: 'discard' | 'save' | 'cancel') => void) | null = null;
 let _quitServerResolve:  ((choice: 'server'  | 'client' | 'cancel') => void) | null = null;
 let quitFlowActive = false;
 
@@ -749,19 +747,12 @@ const quitServerButtons = computed(() => [
   { key: 'server', label: t('quitModal.serverCloseServer'), variant: 'danger' as const, icon: 'power_settings_new' },
 ]);
 
-function onQuitUnsavedPick(choice: string) { _quitUnsavedResolve?.(choice as 'discard' | 'save' | 'cancel'); }
-function onQuitServerPick(choice: string)  { _quitServerResolve?.(choice as 'server' | 'client' | 'cancel'); }
-
-function askQuitUnsaved(): Promise<'discard' | 'save' | 'cancel'> {
-  quitUnsavedVisible.value = true;
-  return new Promise((resolve) => {
-    _quitUnsavedResolve = (choice) => {
-      quitUnsavedVisible.value = false;
-      _quitUnsavedResolve = null;
-      resolve(choice);
-    };
-  });
+function onQuitUnsavedPick(choice: string) {
+  if (choice === 'save') void unsavedSave();
+  else if (choice === 'discard') void unsavedDiscard();
+  else void unsavedCancel();
 }
+function onQuitServerPick(choice: string)  { _quitServerResolve?.(choice as 'server' | 'client' | 'cancel'); }
 
 function askQuitServer(): Promise<'server' | 'client' | 'cancel'> {
   quitServerVisible.value = true;
@@ -780,22 +771,7 @@ async function runQuitFlow() {
   const api = (window as any).electronAPI;
   try {
     // Step 1 — unsaved changes (including a failed autosave).
-    if (hasUnsavedChanges.value) {
-      const choice = await askQuitUnsaved();
-      if (choice === 'cancel') return;
-      if (choice === 'save') {
-        try {
-          const saved = await saveProject({ force: true });
-          if (!saved) {
-            console.error('[quit] save failed, aborting quit');
-            return;
-          }
-        } catch (e) {
-          console.error('[quit] save failed, aborting quit:', e);
-          return;
-        }
-      }
-    }
+    if (!await confirmUnsavedChanges('quit')) return;
     if (installOnExitRequested) {
       const accepted = await api?.app?.confirmQuit?.({
         installUpdate: true,

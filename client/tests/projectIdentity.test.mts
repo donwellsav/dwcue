@@ -280,3 +280,62 @@ test('closing keeps the old server session after clearing the local mirror and c
   assert.equal(currentProject.value.name, 'new');
   assert.equal(session.value, 'new-session');
 });
+
+test('only the first unsaved decision can authorize an action, including while Save is pending', async () => {
+  const source = readFileSync(new URL('../app/composables/useProject.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('  const confirmUnsavedChanges =');
+  const end = source.indexOf('  // Drag-batch helpers', start);
+  assert.ok(start >= 0 && end > start);
+  const compiled = ts.transpileModule(source.slice(start, end), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const currentProject = { value: { name: 'Running show' } };
+  const hasUnsavedChanges = { value: true };
+  const unsavedDialogVisible = { value: false };
+  const unsavedDialogReason = { value: 'project' };
+  const unsavedDialogBlocked = { value: false };
+  let finishSave!: (saved: boolean) => void;
+  const saved = new Promise<boolean>(resolve => { finishSave = resolve; });
+  let saveProject = async (opts: { force: boolean }) => {
+    assert.equal(opts.force, true);
+    return saved;
+  };
+  const state = { currentProject, hasUnsavedChanges, unsavedDialogVisible, unsavedDialogReason,
+    unsavedDialogBlocked, _unsavedPromiseResolve: null, saveProject: (opts: { force: boolean }) => saveProject(opts),
+    console: { warn() {}, error() {} } };
+  const prompt = Function(...Object.keys(state), `${compiled}
+    return { confirmUnsavedChanges, unsavedSave, unsavedDiscard, unsavedCancel };`)(...Object.values(state));
+  const resultNow = (promise: Promise<boolean>) => Promise.race([
+    promise, new Promise(resolve => setImmediate(() => resolve('pending'))),
+  ]);
+
+  const first = prompt.confirmUnsavedChanges('project');
+  assert.equal(await resultNow(prompt.confirmUnsavedChanges('quit')), false);
+  assert.equal(unsavedDialogReason.value, 'project');
+  assert.equal(unsavedDialogVisible.value, true);
+  assert.equal(unsavedDialogBlocked.value, true);
+  const writing = prompt.unsavedSave();
+  hasUnsavedChanges.value = false;
+  assert.equal(await resultNow(prompt.confirmUnsavedChanges()), false);
+  prompt.unsavedCancel();
+  assert.equal(await resultNow(first), 'pending');
+  finishSave(true);
+  await writing;
+  assert.equal(await first, true);
+  assert.equal(unsavedDialogBlocked.value, false);
+
+  hasUnsavedChanges.value = true;
+  saveProject = async () => { throw new Error('Save failed'); };
+  const failed = prompt.confirmUnsavedChanges('quit');
+  await prompt.unsavedSave();
+  assert.equal(await failed, false);
+
+  const stale = prompt.confirmUnsavedChanges('project');
+  currentProject.value = { name: 'Different show' };
+  prompt.unsavedDiscard();
+  assert.equal(await stale, false);
+  const retried = prompt.confirmUnsavedChanges('quit');
+  assert.equal(unsavedDialogReason.value, 'quit');
+  prompt.unsavedCancel();
+  assert.equal(await retried, false);
+});

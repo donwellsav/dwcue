@@ -160,7 +160,9 @@ let _repairPromiseResolve: ((confirmed: boolean) => void) | null = null;
 // while autosave is off and edits are pending. Resolves the in-flight guard
 // promise with the user's choice.
 const unsavedDialogVisible = ref(false);
-let _unsavedPromiseResolve: ((choice: 'save' | 'discard' | 'cancel') => void) | null = null;
+const unsavedDialogReason = ref<'project' | 'quit'>('project');
+const unsavedDialogBlocked = ref(false);
+let _unsavedPromiseResolve: ((choice: 'save' | 'discard' | 'cancel') => Promise<void>) | null = null;
 
 // ---- Delete-selection dialog state (module-scoped, shared across calls) ----
 // Shown when a delete is triggered while more than one item is selected, so a
@@ -2138,20 +2140,34 @@ export const useProject = () => {
   // choice: "save" force-saves first, "discard" proceeds without saving,
   // "cancel" aborts. This also catches an autosave failure, which marks the
   // project dirty even when autosave is on.
-  const confirmUnsavedChanges = (): Promise<boolean> => {
+  const confirmUnsavedChanges = (reason: 'project' | 'quit' = 'project'): Promise<boolean> => {
+    if (_unsavedPromiseResolve) {
+      unsavedDialogBlocked.value = true;
+      return Promise.resolve(false);
+    }
     if (!hasUnsavedChanges.value) return Promise.resolve(true);
-    unsavedDialogVisible.value = true;
+    const project = currentProject.value;
     return new Promise<boolean>((resolve) => {
       _unsavedPromiseResolve = async (choice) => {
+        if (!unsavedDialogVisible.value) return;
         unsavedDialogVisible.value = false;
-        _unsavedPromiseResolve = null;
-        if (choice === 'cancel') { resolve(false); return; }
-        if (choice === 'save') {
-          const saved = await saveProject({ force: true });
-          if (!saved) { resolve(false); return; }
+        try {
+          if (choice === 'cancel' || currentProject.value !== project) return resolve(false);
+          if (choice === 'save') {
+            const saved = await saveProject({ force: true });
+            if (!saved) return resolve(false);
+          }
+          resolve(currentProject.value === project);
+        } catch (error) {
+          console.error('[useProject] save before leaving failed:', error);
+          resolve(false);
+        } finally {
+          _unsavedPromiseResolve = null;
+          unsavedDialogBlocked.value = false;
         }
-        resolve(true);
       };
+      unsavedDialogReason.value = reason;
+      unsavedDialogVisible.value = true;
     });
   };
   const unsavedSave    = () => _unsavedPromiseResolve?.('save');
@@ -2228,6 +2244,8 @@ export const useProject = () => {
     confirmRepair,
     cancelRepair,
     unsavedDialogVisible,
+    unsavedDialogReason,
+    unsavedDialogBlocked,
     confirmUnsavedChanges,
     unsavedSave,
     unsavedDiscard,

@@ -6,11 +6,12 @@
           <h3>{{ t('unsavedModal.title') }}</h3>
         </header>
         <p class="uc-message">{{ t('unsavedModal.message') }}</p>
+        <p v-if="blocked" class="uc-message" role="status">{{ t('unsavedModal.finishCurrent') }}</p>
         <div class="uc-actions">
           <button class="uc-btn ghost" @click="cancel">{{ t('unsavedModal.cancel') }}</button>
           <button class="uc-btn danger" @click="discard">{{ t('unsavedModal.discard') }}</button>
           <button class="uc-btn primary" @click="save">
-            <span class="material-symbols-rounded">save</span>
+            <span class="material-symbols-rounded" aria-hidden="true">save</span>
             <span>{{ t('unsavedModal.save') }}</span>
           </button>
         </div>
@@ -36,7 +37,7 @@
   carries a literal fallback as a second line of defence).
 -->
 <script setup lang="ts">
-defineProps<{ visible: boolean }>();
+defineProps<{ visible: boolean; blocked: boolean }>();
 
 const emit = defineEmits<{
   save: [];
