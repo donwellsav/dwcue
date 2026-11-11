@@ -54,6 +54,7 @@ function createClient() {
   const currentProjectForImport = useState<{ folderPath: string } | null>('currentProject', () => null);
   const projectPathForImport = useState<string>('useProject.projectFilePath', () => '');
   const projectSessionId = useState<string>('useProject.serverSessionId', () => '');
+  const sessionLost = useState<boolean>('connectionGuard.sessionLost', () => false);
   const detachedProjectForImport = useState<OneShotMutationIdentity | null>('oneShots.detachedProjectIdentity', () => null);
   // ---- Server URL config (persisted via localStorage) ---------------
   const defaultUrl = (typeof window !== 'undefined' &&
@@ -173,10 +174,8 @@ function createClient() {
     return () => playbackSnapshotSubscribers.delete(cb);
   }
 
-  // Subscribers notified whenever a previously-open connection is restored on
-  // the same endpoint. This is deliberately independent of the modal's grace
-  // period so a fast server restart still triggers project reconciliation.
-  type ReconnectedSubscriber = () => void;
+  // Verify a retained show on every new socket, even within the loss grace period.
+  type ReconnectedSubscriber = (signal: AbortSignal) => void;
   const reconnectedSubscribers = new Set<ReconnectedSubscriber>();
   function onReconnected(cb: ReconnectedSubscriber): () => void {
     reconnectedSubscribers.add(cb);
@@ -214,6 +213,9 @@ function createClient() {
   // reconnect. UI binds to this to show the connection-lost modal and to
   // freeze every control that would otherwise mutate unreachable state.
   const connectionLost = ref(false);
+  const showVerification = ref<'checking' | 'failed' | null>(null);
+  const cueStartsBlocked = computed(() => connectionLost.value || showVerification.value !== null || sessionLost.value);
+  let socketLifetime: AbortController | null = null;
   // Grace period before we shout about it. A WS bounce that heals inside this
   // window is invisible to the operator; anything longer gets the modal.
   // Time-based rather than attempt-based so the delay is predictable no matter
@@ -287,8 +289,13 @@ function createClient() {
       scheduleReconnect();
       return;
     }
+    const lifetime = new AbortController();
+    socketLifetime = lifetime;
     socket.onopen = () => {
       if (ws !== socket) return;
+      const shouldProbeAfterReconnect = reconnectProbePending || !!currentProjectForImport.value;
+      reconnectProbePending = false;
+      showVerification.value = currentProjectForImport.value ? 'checking' : null;
       connected.value = true;
       reconnecting.value = false;
       reconnectDelay = 1500;
@@ -296,15 +303,10 @@ function createClient() {
       stopAllStatus.value = null;
       failedReconnectAttempts.value = 0;
       clearConnectionLostTimer();
-      const shouldProbeAfterReconnect = reconnectProbePending;
-      reconnectProbePending = false;
       connectionLost.value = false;
-      // Never fires on the first connection to an endpoint. Every later
-      // transport recovery does fire, including one that beats the modal's
-      // grace period and a managed restart that rotates only the token.
       if (shouldProbeAfterReconnect) {
         for (const cb of reconnectedSubscribers) {
-          try { cb(); } catch (e) { console.warn('[liveplay] reconnect handler threw:', e); }
+          try { cb(lifetime.signal); } catch (e) { console.warn('[liveplay] reconnect handler threw:', e); }
         }
       }
       // Only refresh REST-backed catalogues on the very first connection.
@@ -331,6 +333,8 @@ function createClient() {
 
     socket.onclose = () => {
       if (ws !== socket) return;
+      lifetime.abort();
+      socketLifetime = null;
       ws = null;
       const wasConnected = connected.value;
       connected.value = false;
@@ -476,6 +480,8 @@ function createClient() {
   }
 
   function disconnect() {
+    socketLifetime?.abort();
+    socketLifetime = null;
     ++stopAllRequest;
     stopAllStatus.value = null;
     if (reconnectTimer) {
@@ -496,6 +502,10 @@ function createClient() {
   }
 
   function wsSend(payload: Record<string, unknown>, requireAck = false): Promise<boolean> {
+    if (cueStartsBlocked.value &&
+        ['go', 'play', 'resume', 'cue_to_continue', 'set_next_item'].some(type => type === payload.type)) {
+      return Promise.resolve(false);
+    }
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       const state = ws ? ws.readyState : 'no-ws';
       lastError.value = 'Command was not sent because the server is disconnected.';
@@ -636,7 +646,7 @@ function createClient() {
   // Lightweight header — everything except the items tree. Used by the
   // "open project" flow so the workspace shell paints before the items
   // array has even started downloading.
-  async function fetchProjectHeader() {
+  async function fetchProjectHeader(signal?: AbortSignal) {
     return rest<{
       name: string;
       version: string;
@@ -654,14 +664,18 @@ function createClient() {
       server: { projectFilePath: string; projectSessionId: string; mediaRoot: string;
                 audioLoading: boolean; audioLoaded: number; audioTotal: number;
                 audioReadiness?: ServerAudioReadiness };
-    }>('/api/project/header');
+    }>('/api/project/header', {
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : undefined,
+    });
   }
   // Paged items. Caller drives the loop; we keep this stateless so it
   // composes with the open-project streaming logic in useProject.
-  async function fetchProjectItemsPage(offset = 0, limit = 100) {
+  async function fetchProjectItemsPage(offset = 0, limit = 100, signal?: AbortSignal) {
     return rest<{
       offset: number; limit: number; total: number; items: any[];
-    }>(`/api/project/items?offset=${offset}&limit=${limit}`);
+    }>(`/api/project/items?offset=${offset}&limit=${limit}`, {
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : undefined,
+    });
   }
   async function fetchProjectProgress() {
     return rest<ServerAudioReadiness>('/api/project/progress');
@@ -1367,6 +1381,8 @@ function createClient() {
     connected,
     reconnecting,
     connectionLost,
+    showVerification,
+    cueStartsBlocked,
     failedReconnectAttempts,
     lastError,
     stopAllStatus,

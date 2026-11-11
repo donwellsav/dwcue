@@ -724,6 +724,9 @@
     "title": "Connection lost",
     "message": "The connection to the DonWells Cue server at {url} has been lost.",
     "attempting": "Attempting to reconnect…",
+    "verifyingTitle": "Verifying show",
+    "verifying": "Checking which show is open and loading its cue list…",
+    "verificationFailed": "Could not verify the active show. Retry to continue.",
     "attemptCount": "(Failed attempts: {count})",
     "locked": "Cue starts and editing are unavailable while reconnecting. Audio may still be playing.",
     "stopAllStatus": {

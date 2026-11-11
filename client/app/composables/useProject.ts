@@ -702,7 +702,8 @@ export const useProject = () => {
   // the welcome screen on connect: if another client already opened a
   // project, we drop straight into MainWorkspace instead of showing
   // New/Open. Returns true if a project was rejoined.
-  const tryRejoinExistingProject = async (existingHeader?: any): Promise<boolean> => {
+  const tryRejoinExistingProject = async (existingHeader?: any, signal?: AbortSignal): Promise<boolean> => {
+    if (signal?.aborted) return false;
     const requestRevision = ++_hydrationRequestRevision;
     _hydrationRetry.set(() => tryRejoinExistingProject());
     try {
@@ -710,8 +711,8 @@ export const useProject = () => {
       if (!server.connected) {
         try { server.connect(); } catch { /* noop */ }
       }
-      const header = existingHeader ?? await server.fetchProjectHeader();
-      if (requestRevision !== _hydrationRequestRevision) return false;
+      const header = existingHeader ?? await server.fetchProjectHeader(signal);
+      if (signal?.aborted || requestRevision !== _hydrationRequestRevision) return false;
       if (!header || !header.hasOpenProject) return false;
 
       isHydrating.value = true;
@@ -723,12 +724,17 @@ export const useProject = () => {
         isHydrating.value = false;
       }
 
+      if (!hydration) return false;
+      if (signal?.aborted) {
+        hydration.finish(false);
+        return false;
+      }
       const { clearCartOnlyItems, addCartOnlyItem } = useCartItems();
       clearCartOnlyItems();
       const cartOnly = currentProject.value?.cartOnlyItems ?? [];
       for (const item of cartOnly) addCartOnlyItem(item);
 
-      if (!hydration || !await streamItemPages(server, header.itemCount ?? 0, hydration)) return false;
+      if (!await streamItemPages(server, header.itemCount ?? 0, hydration, signal)) return false;
       void pollLoadingProgress(server);
       return true;
     } catch (error) {
@@ -828,7 +834,9 @@ export const useProject = () => {
   // to the renderer between pages via requestAnimationFrame so the
   // playlist paints incrementally rather than blocking on one giant tick.
   // Safe to call multiple times — bails if currentProject becomes null.
-  async function streamItemPages(server: any, totalHint: number, hydration: ProjectHydrationLoad): Promise<boolean> {
+  async function streamItemPages(
+    server: any, totalHint: number, hydration: ProjectHydrationLoad, signal?: AbortSignal,
+  ): Promise<boolean> {
     const project = hydration.project;
     const isCurrent = () => _projectHydration.current() === hydration && currentProject.value === project;
     let complete = false;
@@ -838,15 +846,15 @@ export const useProject = () => {
     try {
       while (true) {
         // Abort if another openProject started, or the project was closed.
-        if (!isCurrent()) return false;
+        if (signal?.aborted || !isCurrent()) return false;
         let page: { offset: number; limit: number; total: number; items: any[] };
-        try { page = await server.fetchProjectItemsPage(offset, PAGE); }
+        try { page = await server.fetchProjectItemsPage(offset, PAGE, signal); }
         catch (error) {
           failure = error;
           console.warn('[useProject] item page fetch failed:', error);
           return false;
         }
-        if (!isCurrent()) return false;
+        if (signal?.aborted || !isCurrent()) return false;
         if (!Array.isArray(page.items)) {
           failure = new Error('Server returned an invalid project page');
           return false;
@@ -897,7 +905,7 @@ export const useProject = () => {
           }
         });
       }
-      if (!isCurrent()) return false;
+      if (signal?.aborted || !isCurrent()) return false;
       // One-time repair for projects corrupted by an earlier bug where a
       // cart-only item leaked into the playlist tree (the same uuid ended up
       // in BOTH `cartOnlyItems` and the root `items`, so it rendered twice —
@@ -935,7 +943,7 @@ export const useProject = () => {
       // push (O(n²)) and is what made large projects feel like they
       // hung for several seconds after opening.
       refreshItemsBaselineAfterHydrate();
-      if (!isCurrent()) return false;
+      if (signal?.aborted || !isCurrent()) return false;
       installItemsWatcherFn();
       complete = true;
       return true;

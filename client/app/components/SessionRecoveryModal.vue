@@ -86,7 +86,7 @@ const {
   joinServerSession,
 } = useConnectionGuard();
 
-const visible = computed(() => sessionLost.value && !!currentProject.value && !server.connectionLost);
+const visible = computed(() => sessionLost.value && !!currentProject.value && !server.connectionLost && !server.showVerification);
 const actionFailed = ref(false);
 
 async function onRecover(recover: () => Promise<boolean>) {

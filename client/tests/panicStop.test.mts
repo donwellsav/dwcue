@@ -68,7 +68,7 @@ test('Stop All sends the normal command from transfer and file selection dialogs
     const stopCalls: unknown[][] = [];
     const region = render({
       t: (key: string) => key,
-      busy: true, isBusy: true, visible: true, percentage: 50, attempts: 0, actionError: '',
+      busy: true, isBusy: true, visible: true, percentage: 50, attempts: 0, actionError: '', verifying: false,
       titleId: 'import-test', title: 'Archive transfer', message: 'Working',
       pickingLocal: true, isChoosingDestination: true,
       historyBack: [], canGoUp: false, pathDraft: '', goBack() {}, goUp() {}, navigate() {}, cancelLabel: 'Cancel',
@@ -118,8 +118,12 @@ test('recovery permits the configured Stop All shortcut while blocking other pla
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const calls: unknown[][] = [];
-  const server = { connected: true, connectionLost: false, stopAll: (...args: unknown[]) => calls.push(args) };
   const sessionLost = { value: true };
+  const server = {
+    connected: true, connectionLost: false, showVerification: false,
+    get cueStartsBlocked() { return this.connectionLost || this.showVerification || sessionLost.value; },
+    stopAll: (...args: unknown[]) => calls.push(args),
+  };
   const currentProject = { value: { playbackKeys: {} as Record<string, unknown> } };
   const trap = Function('server', 'sessionLost', 'currentProject', 'DEFAULT_PLAYBACK_KEYS',
     `${code}\nreturn trapKeydown;`)(server, sessionLost, currentProject, DEFAULT_PLAYBACK_KEYS);
@@ -146,6 +150,13 @@ test('recovery permits the configured Stop All shortcut while blocking other pla
   currentProject.value.playbackKeys = {};
   press('Escape');
   assert.deepEqual(calls, [[], [], []]);
+  server.connected = true;
+  server.connectionLost = false;
+  sessionLost.value = false;
+  server.showVerification = true;
+  assert.equal(press(' '), true);
+  assert.equal(press('Escape'), true);
+  assert.deepEqual(calls, [[], [], [], []]);
 });
 
 function loadHandleKeydown(dependencies: Record<string, unknown>) {
@@ -227,7 +238,10 @@ function midiRecoveryHarness() {
   const sessionLost = { value: true };
   const projectHydrationStatus = { value: 'ready' };
   const learning = { value: null as string | null };
-  const server = { connectionLost: false };
+  const server = {
+    connectionLost: false, showVerification: false,
+    get cueStartsBlocked() { return this.connectionLost || this.showVerification || sessionLost.value; },
+  };
   const calls: string[] = [], learned: unknown[] = [];
   const build = transpileFactory(`
     function buildMidi(deps: Record<string, any>) {
@@ -285,6 +299,10 @@ test('MIDI Stop and Learn remain available during recovery', () => {
   midi.projectHydrationStatus.value = 'ready';
   midi.send(0x90, 60, 127);
   midi.send(0x90, 61, 127);
+  assert.deepEqual(midi.calls, ['stop', 'stop']);
+  midi.server.connectionLost = false;
+  midi.server.showVerification = true;
+  midi.send(0x90, 60, 127);
   assert.deepEqual(midi.calls, ['stop', 'stop']);
   midi.learning.value = 'play-next';
   midi.send(0x90, 60, 127);

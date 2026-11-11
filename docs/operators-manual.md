@@ -676,12 +676,14 @@ After the managed engine actually restarts, the controller can present the diffe
 
 **Stop All Cues** stays available in the **Connection lost** and recovery prompts, including its configured keyboard and MIDI bindings. It uses a separate HTTP request so the engine can receive Stop All while the control socket is down or waiting on a cue. The engine applies the active show's Stop All fade. **The engine accepted Stop All** confirms receipt of the stop request. If Stop All is unconfirmed, check the output and use your independent console-silence procedure as needed.
 
+After the control link returns, **Verifying show** keeps GO and other cue starts unavailable while the controller checks the active show and loads its cue list. Stop All stays available. If verification fails, choose **Retry now**. When the engine has no show open or local edits need a decision, use the recovery prompt to choose what to load.
+
 
 **Procedure — respond to connection loss during a show**
 
 - **Prerequisites:** The team has an independent console-silence procedure and a named person authorized to restart the engine.
 - **Actions:** Tell the caller/control team that controller state is unknown. Listen and check the physical destination without firing controls blindly. If the same endpoint remains correct, choose **Retry now** once. Use **Restart** only to relaunch the client; use Server Settings for a wrong endpoint. If **Server restarted** appears, establish project authority before choosing **Continue session** or **Start fresh**.
-- **Expected visible outcome:** The same project and current live state rehydrate before normal input is exposed, or an explicit recovery choice remains visible instead of a partly trusted workspace.
+- **Expected visible outcome:** The controller shows the verified active show and cue list before enabling cue starts. If recovery needs a choice, the prompt stays open until you decide.
 - **Common mistake:** Treating **Restart** as an engine stop, or choosing **Exit** to silence Program.
 - **Recovery:** Control sound through the agreed independent path, coordinate with the server operator, then verify project identity, active cues, devices, arming, and save state before the next GO.
 

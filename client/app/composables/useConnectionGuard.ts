@@ -122,7 +122,7 @@ export const useConnectionGuard = () => {
   // needing its own check. Keys inside the dialogs themselves are exempt, so
   // the operator can always drive the recovery UI.
   const trapKeydown = (e: KeyboardEvent) => {
-    if (!server.connectionLost && !sessionLost.value) return;
+    if (!server.cueStartsBlocked) return;
     // Tab still moves focus, so the dialog is reachable from anywhere.
     if (e.key === 'Tab') return;
     const el = e.target as HTMLElement | null;
@@ -153,19 +153,27 @@ export const useConnectionGuard = () => {
   // The callback fires from a WebSocket event, outside any Nuxt context, so
   // useState/useProject would throw there — runWithContext restores it.
   const nuxtApp = useNuxtApp();
-  server.onReconnected(() => {
+  server.onReconnected((signal) => {
     void nuxtApp.runWithContext(async () => {
-      const {
-        hasUnsavedChanges,
-        tryRejoinExistingProject,
-      } = useProject();
-      if (!currentProject.value || sessionLost.value || recovering.value) return;
+      if (signal.aborted) return;
+      if (!currentProject.value || sessionLost.value || recovering.value) {
+        server.showVerification = null;
+        return;
+      }
+      let verified = false;
       try {
-        const header = await server.fetchProjectHeader();
-        if (!header?.hasOpenProject) {
+        const { hasUnsavedChanges, tryRejoinExistingProject } = useProject();
+        const header = await server.fetchProjectHeader(signal);
+        if (signal.aborted) return;
+        if (typeof header?.hasOpenProject !== 'boolean' ||
+            (header.hasOpenProject && !header.server?.projectSessionId)) {
+          throw new Error('Server returned an invalid show identity');
+        }
+        if (!header.hasOpenProject) {
           projectChanged.value = false;
           serverProjectName.value = '';
           sessionLost.value = true;
+          verified = true;
           return;
         }
 
@@ -176,16 +184,17 @@ export const useConnectionGuard = () => {
           serverProjectName.value = header.name || 'Untitled';
           projectChanged.value = true;
           sessionLost.value = true;
+          verified = true;
           return;
         }
 
         // A clean mirror can always accept the authoritative reconnect header,
         // including same-project edits made by another client while offline.
-        await tryRejoinExistingProject(header);
+        verified = await tryRejoinExistingProject(header, signal);
       } catch (e) {
-        // Couldn't ask — don't throw an unnecessary dialog at the operator on
-        // the strength of a failed probe. The next reconnect re-checks.
-        console.warn('[connectionGuard] post-reconnect project probe failed:', e);
+        if (!signal.aborted) console.warn('[connectionGuard] post-reconnect project probe failed:', e);
+      } finally {
+        if (!signal.aborted) server.showVerification = verified ? null : 'failed';
       }
     });
   });

@@ -312,7 +312,7 @@ export const useMidiController = () => {
     // Look up binding in config
     for (const [actionId, configured] of Object.entries(config.value.bindings)) {
       if (bindingsMatch(configured, binding)) {
-        if (useLiveplayServer().connectionLost && actionId !== 'stop-all') return;
+        if (useLiveplayServer().cueStartsBlocked && actionId !== 'stop-all') return;
         const action = MIDI_ACTIONS.find(a => a.id === actionId);
         if (!action) continue;
 

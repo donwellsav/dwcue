@@ -538,3 +538,51 @@ test('Stop All uses authenticated HTTP with or without a WebSocket', async () =>
     globalThis.fetch = originalFetch;
   }
 });
+
+test('cue starts wait for show verification and explicit session recovery', async () => {
+  const { useLiveplayServer } = await import('../app/composables/useLiveplayServer.ts');
+  const server = useLiveplayServer();
+  const currentProject = nuxtState.get('currentProject')!;
+  const signals: AbortSignal[] = [];
+  const unsubscribe = server.onReconnected(signal => signals.push(signal));
+  try {
+    currentProject.value = { folderPath: '/show' };
+    server.configureRemoteConnection('https://verify-test.example', 'verify-test-token');
+    const openSocket = () => {
+      const socket = sockets.at(-1)!;
+      socket.readyState = FakeWebSocket.OPEN;
+      socket.onopen?.({});
+      return socket;
+    };
+    const first = openSocket();
+    assert.equal(server.showVerification, 'checking');
+    assert.equal(await server.go(), false);
+    assert.equal(await server.playItem('old-cue'), false);
+    assert.equal(await server.resumeItem('old-cue'), false);
+    assert.deepEqual(first.sent, []);
+
+    server.forceReconnect();
+    const next = openSocket();
+    assert.equal(signals[0]?.aborted, true);
+    assert.equal(signals[1]?.aborted, false);
+    server.showVerification = 'failed';
+    assert.equal(await server.go(), false);
+    assert.deepEqual(next.sent, []);
+
+    server.showVerification = null;
+    const sessionLost = nuxtState.get('connectionGuard.sessionLost')!;
+    sessionLost.value = true;
+    assert.equal(await server.go(), false);
+    assert.deepEqual(next.sent, []);
+    sessionLost.value = false;
+    const started = server.go();
+    const command = JSON.parse(next.sent[0]!);
+    assert.equal(command.type, 'go');
+    next.receive({ type: 'command_ack', command_id: command.command_id, ok: true });
+    assert.equal(await started, true);
+  } finally {
+    unsubscribe();
+    currentProject.value = null;
+    server.destroy();
+  }
+});
