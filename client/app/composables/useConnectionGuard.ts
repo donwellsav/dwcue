@@ -126,7 +126,7 @@ export const useConnectionGuard = () => {
     // Tab still moves focus, so the dialog is reachable from anywhere.
     if (e.key === 'Tab') return;
     const el = e.target as HTMLElement | null;
-    if (server.connected && !server.connectionLost && sessionLost.value && !e.isComposing &&
+    if (!e.isComposing &&
         !el?.closest?.('input, textarea, [contenteditable]:not([contenteditable="false"])')) {
       const saved = currentProject.value?.playbackKeys?.['stop-all'];
       const binding = saved === undefined ? DEFAULT_PLAYBACK_KEYS['stop-all'] : saved;

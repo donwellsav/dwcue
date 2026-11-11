@@ -58,6 +58,7 @@ test('Stop All sends the normal command from transfer and file selection dialogs
     ['ProgressModal', 'div', 'modal-content'],
     ['ServerFilePickerModal', 'header', 'toolbar'],
     ['LocationChoiceModal', 'div', 'lc-footer'],
+    ['ConnectionLostModal', 'div', 'clm-dialog'],
   ];
   for (const [component, tag, className] of dialogs) {
     const code = compile(elementSource(component, tag, className), { mode: 'function' }).code;
@@ -67,11 +68,12 @@ test('Stop All sends the normal command from transfer and file selection dialogs
     const stopCalls: unknown[][] = [];
     const region = render({
       t: (key: string) => key,
-      busy: true, isBusy: true, visible: true, percentage: 50,
+      busy: true, isBusy: true, visible: true, percentage: 50, attempts: 0, actionError: '',
       titleId: 'import-test', title: 'Archive transfer', message: 'Working',
       pickingLocal: true, isChoosingDestination: true,
       historyBack: [], canGoUp: false, pathDraft: '', goBack() {}, goUp() {}, navigate() {}, cancelLabel: 'Cancel',
       server: { stopAll: (...args: unknown[]) => { stopCalls.push(args); } },
+      onReconnect() {}, onRestart() {}, onExit() {},
       close: () => assert.fail('Stop All must not close the import'),
       cancel: () => assert.fail('Stop All must not cancel file selection'),
       handleClose: () => assert.fail('Stop All must not close the import'),
@@ -101,7 +103,7 @@ test('Stop All remains available inside the recovery prompt while a recovery cho
   button.props.onClick();
   assert.deepEqual(stopCalls, [[]], 'recovery uses the normal server fade');
   server.connected = false;
-  assert.equal(findStop(), undefined);
+  assert.ok(findStop(), 'the HTTP stop must remain available during a second disconnect');
 });
 
 test('recovery permits the configured Stop All shortcut while blocking other playback input', () => {
@@ -143,7 +145,7 @@ test('recovery permits the configured Stop All shortcut while blocking other pla
   server.connectionLost = true;
   currentProject.value.playbackKeys = {};
   press('Escape');
-  assert.deepEqual(calls, [[], []]);
+  assert.deepEqual(calls, [[], [], []]);
 });
 
 function loadHandleKeydown(dependencies: Record<string, unknown>) {
@@ -279,10 +281,15 @@ test('MIDI Stop and Learn remain available during recovery', () => {
   midi.send(0x90, 61, 127);
   assert.deepEqual(midi.calls, ['stop']);
   midi.server.connectionLost = true;
+  midi.sessionLost.value = false;
+  midi.projectHydrationStatus.value = 'ready';
+  midi.send(0x90, 60, 127);
+  midi.send(0x90, 61, 127);
+  assert.deepEqual(midi.calls, ['stop', 'stop']);
   midi.learning.value = 'play-next';
   midi.send(0x90, 60, 127);
   assert.deepEqual(midi.learned, [{ channel: 0, type: 'note', number: 60 }]);
-  assert.deepEqual(midi.calls, ['stop']);
+  assert.deepEqual(midi.calls, ['stop', 'stop']);
 });
 
 test('held keys fire discrete actions once while selection arrows can repeat', () => {

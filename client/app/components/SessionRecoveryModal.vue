@@ -17,13 +17,15 @@
         </p>
         <p class="srm-project">{{ currentProject?.name }}</p>
         <Btn
-          v-if="server.connected"
           class="srm-stop-all"
           type="button"
           icon="stop_circle"
           :text="t('controls.stopAll')"
           @click="server.stopAll()"
         />
+        <p v-if="server.stopAllStatus" class="srm-body" role="status">
+          {{ t(`connectionLost.stopAllStatus.${server.stopAllStatus}`) }}
+        </p>
 
         <div class="srm-actions">
           <button

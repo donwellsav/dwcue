@@ -674,7 +674,7 @@ The **Connection lost** overlay blocks normal playback/edit input while reconnec
 
 After the managed engine actually restarts, the controller can present the different **Server restarted** prompt; do not confuse it with the Connection lost overlay's Retry, Restart-client, and Exit actions.
 
-Once the connection returns, the recovery prompt offers **Stop All Cues** and accepts its configured shortcut. Both stop cues on the connected server with that show's Stop All fade and leave the recovery choices available.
+**Stop All Cues** stays available in the **Connection lost** and recovery prompts, including its configured keyboard and MIDI bindings. It uses a separate HTTP request so the engine can receive Stop All while the control socket is down or waiting on a cue. The engine applies the active show's Stop All fade. **The engine accepted Stop All** confirms receipt of the stop request. If Stop All is unconfirmed, check the output and use your independent console-silence procedure as needed.
 
 
 **Procedure — respond to connection loss during a show**

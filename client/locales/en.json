@@ -725,7 +725,12 @@
     "message": "The connection to the DonWells Cue server at {url} has been lost.",
     "attempting": "Attempting to reconnect…",
     "attemptCount": "(Failed attempts: {count})",
-    "locked": "Playback and editing are paused until the connection is back — changes made now could not be sent to the server.",
+    "locked": "Cue starts and editing are unavailable while reconnecting. Audio may still be playing.",
+    "stopAllStatus": {
+      "pending": "Sending Stop All…",
+      "confirmed": "The engine accepted Stop All.",
+      "unconfirmed": "Stop All unconfirmed. Check the output and retry."
+    },
     "pill": "Reconnecting…",
     "reconnect": "Retry now",
     "restart": "Restart",

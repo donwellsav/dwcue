@@ -492,3 +492,49 @@ test('an open local project cannot send unbound REST edits', async () => {
     await assert.rejects(server.patchSettings({ autoSave: false }), /project session/i);
   } finally { project.value = before; }
 });
+
+test('Stop All uses authenticated HTTP with or without a WebSocket', async () => {
+  const { useLiveplayServer } = await import('../app/composables/useLiveplayServer.ts');
+  const server = useLiveplayServer();
+  const originalFetch = globalThis.fetch;
+  const requests: Array<{ body: unknown; authorization: string | null; session: string | null }> = [];
+  let accepted = true;
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(String(input));
+    if (url.pathname !== '/api/transport/stop_all') return originalFetch(input, init);
+    assert.equal(url.origin, 'https://stop-test.example');
+    assert.equal(init?.method, 'POST');
+    assert.ok(init?.signal, 'Stop All confirmation must have a deadline');
+    const headers = new Headers(init?.headers);
+    requests.push({
+      body: JSON.parse(String(init?.body)),
+      authorization: headers.get('Authorization'),
+      session: headers.get('X-DWCUE-Project-Session'),
+    });
+    return new Response(JSON.stringify({ ok: accepted }), { status: accepted ? 200 : 503 });
+  };
+  try {
+    server.configureRemoteConnection('https://stop-test.example', 'stop-test-token');
+    assert.equal(server.connected, false);
+    assert.equal(await server.stopAll(0), true);
+    assert.equal(server.stopAllStatus, 'confirmed');
+
+    const socket = sockets.at(-1)!;
+    socket.readyState = FakeWebSocket.OPEN;
+    socket.onopen?.({});
+    accepted = false;
+    assert.equal(await server.stopAll(), false);
+    assert.equal(server.stopAllStatus, 'unconfirmed');
+    assert.match(server.lastError ?? '', /Stop All unconfirmed/);
+    accepted = true;
+    assert.equal(await server.stopAll(), true);
+    assert.equal(server.lastError, null);
+    assert.deepEqual(requests, [{ fade_ms: 0 }, {}, {}].map(body => ({
+      body, authorization: 'Bearer stop-test-token', session: null,
+    })));
+    assert.deepEqual(socket.sent, [], 'Stop All must not wait for or replay over the socket');
+  } finally {
+    server.destroy();
+    globalThis.fetch = originalFetch;
+  }
+});

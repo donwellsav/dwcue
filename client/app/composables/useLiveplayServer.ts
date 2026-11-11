@@ -132,6 +132,10 @@ function createClient() {
   const connected     = ref(false);
   const reconnecting  = ref(false);
   const lastError     = ref<string | null>(null);
+  const stopAllStatus = ref<'pending' | 'confirmed' | 'unconfirmed' | null>(null);
+  const stopAllUnconfirmed = 'Stop All unconfirmed. Check the server connection.';
+  const transportConfirmationMs = 2500;
+  let stopAllRequest = 0;
   const cues          = ref<ServerCue[]>([]);
   const mixerChannels = ref<ServerMixerChannel[]>([]);
   const devices       = ref<ServerDeviceInfo[]>([]);
@@ -289,6 +293,7 @@ function createClient() {
       reconnecting.value = false;
       reconnectDelay = 1500;
       lastError.value = null;
+      stopAllStatus.value = null;
       failedReconnectAttempts.value = 0;
       clearConnectionLostTimer();
       const shouldProbeAfterReconnect = reconnectProbePending;
@@ -329,6 +334,7 @@ function createClient() {
       ws = null;
       const wasConnected = connected.value;
       connected.value = false;
+      if (wasConnected) stopAllStatus.value = null;
       failPendingCommands('Connection closed before the server confirmed the command.');
       // Count pre-handshake closes — the socket bounced straight to close
       // without an onopen in between. Purely for display in the modal.
@@ -470,6 +476,8 @@ function createClient() {
   }
 
   function disconnect() {
+    ++stopAllRequest;
+    stopAllStatus.value = null;
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
@@ -509,7 +517,7 @@ function createClient() {
         pendingCommands.delete(commandId);
         lastError.value = `The server did not confirm the ${String(payload.type || 'transport')} command.`;
         resolve(false);
-      }, 2500);
+      }, transportConfirmationMs);
       pendingCommands.set(commandId, { timer, resolve });
       ws!.send(body);
     });
@@ -525,10 +533,27 @@ function createClient() {
   // Omit fadeMs to let the server apply the project-wide Stop All fade
   // (settings.stopAllFadeMs, default 1000 ms). Pass a number (incl. 0 for an
   // instant panic) to override it for this call.
-  function stopAll(fadeMs?: number) {
-    return wsSend(fadeMs === undefined
-      ? { type: 'stop_all' }
-      : { type: 'stop_all', fade_ms: fadeMs }, true);
+  async function stopAll(fadeMs?: number): Promise<boolean> {
+    const request = ++stopAllRequest;
+    stopAllStatus.value = 'pending';
+    let confirmed = false;
+    try {
+      // The socket can be open while an earlier GO is holding its handler.
+      const result = await rest<{ ok: boolean }>('/api/transport/stop_all', {
+        method: 'POST',
+        body: JSON.stringify(fadeMs === undefined ? {} : { fade_ms: fadeMs }),
+        signal: AbortSignal.timeout(transportConfirmationMs),
+      });
+      confirmed = result?.ok === true;
+    } catch (error) {
+      console.warn('[liveplay] Stop All confirmation failed:', error);
+    }
+    if (request === stopAllRequest) {
+      stopAllStatus.value = confirmed ? 'confirmed' : 'unconfirmed';
+      if (!confirmed) lastError.value = stopAllUnconfirmed;
+      else if (lastError.value === stopAllUnconfirmed) lastError.value = null;
+    }
+    return confirmed;
   }
   function setGainDb(cue: CueId, db: number)
                                         { wsSend({ type: 'gain', cue_id: cue, db }); }
@@ -1344,6 +1369,7 @@ function createClient() {
     connectionLost,
     failedReconnectAttempts,
     lastError,
+    stopAllStatus,
     cues,
     mixerChannels,
     devices,

@@ -289,12 +289,6 @@ export const useMidiController = () => {
     const data = event.data;
     if (!data) return;
 
-    // Every MIDI action ends up as a command to the server. While the
-    // connection is lost those drop silently, so ignore the surface entirely
-    // rather than letting the operator believe a fader move landed. MIDI Learn
-    // is exempt below — it only writes local config.
-    if (useLiveplayServer().connectionLost && learning.value === null) return;
-
     // Filter to preferred device if one is selected
     if (config.value.preferredDevice) {
       const inputName = (event.target as any)?.name as string | undefined;
@@ -318,6 +312,7 @@ export const useMidiController = () => {
     // Look up binding in config
     for (const [actionId, configured] of Object.entries(config.value.bindings)) {
       if (bindingsMatch(configured, binding)) {
+        if (useLiveplayServer().connectionLost && actionId !== 'stop-all') return;
         const action = MIDI_ACTIONS.find(a => a.id === actionId);
         if (!action) continue;
 
