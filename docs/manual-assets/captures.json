@@ -2,7 +2,7 @@
   "application": "DonWells Cue",
   "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
   "packageVersion": "2.6.17",
-  "edition": "12 November 2026 development operator manual at f0b9781 with original 3 November capture provenance",
+  "edition": "12 November 2026 development operator manual at 100247a with per-image capture provenance",
   "images": [
     {
       "file": "welcome-current.png",
@@ -74,19 +74,19 @@
     },
     {
       "file": "show-mode.png",
-      "view": "Show Mode with a looping practice bed and an armed Sting One Shot on the virtual output.",
-      "version": "2.6.17",
-      "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "nativeSourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "capturedOn": "2026-11-03",
+      "view": "Show Mode with the One Shots bank open and the default number keys visible.",
+      "version": "2.6.20 development",
+      "sourceRevision": "bdcc79a2b2df5c90e9eab39759327957a547835d",
+      "nativeSourceRevision": "f14629d954a0ab6c312f4f37e4eec9b101cf84ea",
+      "capturedOn": "2026-11-12",
       "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
       "dimensions": [
-        1600,
-        1000
+        1200,
+        800
       ],
-      "sha256": "34f65ea97f5fc004e8d6084d57921b7f7d489ac71e6c5d99cb7bc4caa91dff00",
-      "fixture": "Disposable Conference rehearsal with generated WAV tones. Native engine uses NULL software output inside audio-service-denial sandbox; no user media, live app or physical outputs.",
-      "captureMethod": "Playwright screenshot of the actual rendered page or control panel; no UI controls redrawn.",
+      "sha256": "34a5d0f551d90dbc2846f99d78533d7f927a9129214c5018a441adcda44dd8dd",
+      "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
+      "captureMethod": "Playwright screenshot of the rendered page or panel at its actual CSS pixel size.",
       "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
     },
     {
@@ -261,53 +261,53 @@
     },
     {
       "file": "one-shot-settings-current.png",
-      "view": "One Shot Settings for Sting, including ducking, retrigger, arming, gain and output choices.",
-      "version": "2.6.17",
-      "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "nativeSourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "capturedOn": "2026-11-03",
+      "view": "One Shot settings with playback, retrigger, ending, gain and fade controls.",
+      "version": "2.6.20 development",
+      "sourceRevision": "bdcc79a2b2df5c90e9eab39759327957a547835d",
+      "nativeSourceRevision": "f14629d954a0ab6c312f4f37e4eec9b101cf84ea",
+      "capturedOn": "2026-11-12",
       "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
       "dimensions": [
         311,
-        749
+        589
       ],
-      "sha256": "837d274a708ee14e817499f73cdc42fea8d032d621f19077283c021c19d3e054",
-      "fixture": "Disposable Conference rehearsal with generated WAV tones. Native engine uses NULL software output inside audio-service-denial sandbox; no user media, live app or physical outputs.",
-      "captureMethod": "Playwright screenshot of the actual rendered page or control panel; no UI controls redrawn.",
+      "sha256": "36cee2ba992bac280e67c36f2e63f6be9debf7d682fe1ccd78dee849c9536f95",
+      "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
+      "captureMethod": "Playwright screenshot of the rendered page or panel at its actual CSS pixel size.",
       "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
     },
     {
-      "file": "one-shot-armed-current.png",
-      "view": "The armed Sting One Shot in Show Mode, ready for deliberate activation.",
-      "version": "2.6.17",
-      "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "nativeSourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "capturedOn": "2026-11-03",
+      "file": "one-shot-show-mode.png",
+      "view": "An idle One Shot in Show Mode with its Play button and number key.",
+      "version": "2.6.20 development",
+      "sourceRevision": "bdcc79a2b2df5c90e9eab39759327957a547835d",
+      "nativeSourceRevision": "f14629d954a0ab6c312f4f37e4eec9b101cf84ea",
+      "capturedOn": "2026-11-12",
       "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
       "dimensions": [
-        129,
+        120,
         122
       ],
-      "sha256": "3839de8fb42a92441d0955f7ed1c5ae86a0f1a0c6eccd99864f01c9936bc61cd",
-      "fixture": "Disposable Conference rehearsal with generated WAV tones. Native engine uses NULL software output inside audio-service-denial sandbox; no user media, live app or physical outputs.",
-      "captureMethod": "Playwright screenshot of the actual rendered panel at saved CSS pixel dimensions; viewport and accessible panel-height controls used for readable detail.",
+      "sha256": "b882f1574018e7433ae6d428d8ff76bc221b4aa071b8c97c9dd8f407ed540349",
+      "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
+      "captureMethod": "Playwright screenshot of the rendered page or panel at its actual CSS pixel size.",
       "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
     },
     {
       "file": "shortcuts-current.png",
-      "view": "Keyboard configuration with the current playback-action bindings.",
-      "version": "2.6.17",
-      "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "nativeSourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "capturedOn": "2026-11-03",
+      "view": "The Shortcuts tab in Settings with the reference bar toggle and Customize Shortcuts button.",
+      "version": "2.6.20 development",
+      "sourceRevision": "100247ab6b139d0d1810e8c61d46d960cd74a6f2",
+      "nativeSourceRevision": "f14629d954a0ab6c312f4f37e4eec9b101cf84ea",
+      "capturedOn": "2026-11-12",
       "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
       "dimensions": [
-        504,
-        516
+        720,
+        648
       ],
-      "sha256": "8690551db166ddd54ac9628fcefb9d010819cda4d45359e3e3b425f73c8ba4e8",
-      "fixture": "Disposable Conference rehearsal with generated WAV tones. Native engine uses NULL software output inside audio-service-denial sandbox; no user media, live app or physical outputs.",
-      "captureMethod": "Playwright screenshot of the actual rendered page or control panel; no UI controls redrawn.",
+      "sha256": "c3578b006ee178ba4e566b666e2b81ce3cbf258f4d66e7f929092c5075fc3f70",
+      "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
+      "captureMethod": "Playwright screenshot of the rendered page or panel at its actual CSS pixel size.",
       "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
     },
     {
