@@ -191,7 +191,7 @@ declare global {
       onUpdateDownloaded: (callback: (event: any, info: { version: string }) => void) => void;
       onUpdateError: (callback: (event: any, error: string) => void) => void;
       onMenuCheckForUpdates: (callback: () => void) => void;
-      syncProjectData: (data: any, identity: OneShotMutationIdentity | null) => void;
+      syncProjectData: (data: any, identity: OneShotMutationIdentity | null, captureSession?: string | null) => void;
       app?: {
         relaunch: () => Promise<boolean>;
         exit: () => Promise<boolean>;
@@ -241,6 +241,11 @@ declare global {
         listDisplays: () => Promise<VideoOutputDisplay[]>;
         identifyDisplays: () => Promise<VideoOutputDisplay[]>;
         setDisplay: (displayId: string | null) => Promise<VideoOutputStatus>;
+        setCaptureSettings: (displayId: string | null, target: VideoStandbyDestination) => Promise<VideoOutputStatus>;
+        captureStandby: (source: 'output' | 'display', target: VideoStandbyTarget) => Promise<void>;
+        clearStandbyCapture: (target: VideoStandbyTarget) => Promise<void>;
+        getStandbyCapture: (sessionId: string, uuid: string | null, media: string | null) => Promise<VideoStandbyStill>;
+        onStandbyCaptureChanged: (callback: () => void) => () => void;
         setTestCard: (show: boolean) => Promise<boolean>;
         setTestCardConfig: (config: TestCardConfig) => Promise<VideoOutputStatus>;
         setTestCardConnection: (connection: { serverUrl: string; accessToken: string } | null) => Promise<VideoOutputStatus>;
@@ -286,6 +291,8 @@ declare global {
     enabled: boolean;
     open: boolean;
     displayId: string | null;
+    captureDisplayId: string | null;
+    captureTarget: VideoStandbyDestination;
     targetId: string | null;
     targetLabel: string | null;
     displays: VideoOutputDisplay[];
@@ -302,6 +309,17 @@ declare global {
     testCardError: string | null;
     testCardInfo: { displayFrequency: number; network: string[] };
     fullscreen: boolean;
+  }
+
+  type VideoStandbyDestination = 'session' | 'cue';
+  interface VideoStandbyTarget {
+    identity: OneShotMutationIdentity;
+    sessionId: string;
+    itemUuid: string | null;
+  }
+  interface VideoStandbyStill {
+    standby: string | null;
+    cue: string | null;
   }
 
   interface VideoPictureHealth {

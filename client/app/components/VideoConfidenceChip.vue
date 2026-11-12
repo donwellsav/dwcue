@@ -1,15 +1,20 @@
 <template>
-  <div
+  <button
     v-if="open"
+    type="button"
     class="confidence-chip"
     :class="{ 'confidence-chip--stale': stale }"
     :title="confidenceTitle"
+    :aria-label="t('standbyCapture.captureForCue')"
+    :disabled="standbyCapturePending"
+    @click="captureStandby('output', 'cue')"
+    @keydown.enter.space.stop
   >
-    <div class="confidence-chip__frame">
+    <span class="confidence-chip__frame">
       <img v-if="frameUrl" :src="frameUrl" :alt="t('videoConfidence.title')" />
-    </div>
+    </span>
     <span class="confidence-chip__health">{{ pictureLabel }}</span>
-  </div>
+  </button>
 </template>
 
 <script setup lang="ts">
@@ -19,6 +24,7 @@
 const props = defineProps<{ open: boolean }>();
 
 const { t } = useLocalization();
+const { captureStandby, standbyCapturePending } = useVideoStandbyCapture();
 
 const frameUrl = ref('');
 const lastFrameAt = ref(0);
@@ -47,7 +53,8 @@ const pictureLabel = computed(() => {
 const confidenceTitle = computed(() => `${t('videoConfidence.title')} · ${pictureLabel.value} · `
   + t('videoConfidence.captureAge', { seconds: secondsAgo.value })
   + (health.value?.preparedSeconds != null ? ` · ${t('videoConfidence.prepared', { seconds: health.value.preparedSeconds })}` : '')
-  + (health.value ? ` · PTS ${health.value.mediaTime ?? '?'} · ${t('videoConfidence.dropped', { count: health.value.droppedFrames ?? '?' })}` : ''));
+  + (health.value ? ` · PTS ${health.value.mediaTime ?? '?'} · ${t('videoConfidence.dropped', { count: health.value.droppedFrames ?? '?' })}` : '')
+  + ` · ${t('standbyCapture.captureForCue')}`);
 watch(() => props.open, (open) => {
   if (!open) {
     frameUrl.value = '';
@@ -92,6 +99,9 @@ onUnmounted(() => {
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
   background-color: var(--color-control);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
   transition: border-color var(--transition-base);
 }
 

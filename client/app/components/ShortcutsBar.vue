@@ -29,8 +29,7 @@
 <script setup lang="ts">
 // Compact shortcut reference pinned to the bottom of the workspace, in both
 // edit and show mode — operators should never have to guess the keys. The
-// full editor stays one click away via the Settings Help tab or the
-// Customize button here.
+// full editor is available under Settings → Shortcuts and from Customize.
 import { PLAYBACK_ACTIONS, formatKeyLabel, useCartHotkeys } from '~/composables/useCartHotkeys';
 import type { PlaybackKeyAction } from '~/types/project';
 

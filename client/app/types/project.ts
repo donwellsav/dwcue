@@ -166,6 +166,8 @@ export type PlaybackKeyAction =
   | 'select-down'
   | 'set-up-next'
   | 'toggle-video-output'
+  | 'capture-video-standby'
+  | 'capture-display-standby'
   | 'play-selected'
   | 'play-next';
 
@@ -464,4 +466,6 @@ export const DEFAULT_PLAYBACK_KEYS: Partial<Record<PlaybackKeyAction, CartSlotKe
   'select-down':   { key: 'ArrowDown', ctrlKey: false, shiftKey: false, altKey: false },
   'set-up-next':   { key: 'Enter',     ctrlKey: false, shiftKey: false, altKey: false },
   'toggle-video-output': { key: 'v',   ctrlKey: false, shiftKey: false, altKey: false },
+  'capture-video-standby': { key: 'g', ctrlKey: false, shiftKey: false, altKey: false },
+  'capture-display-standby': { key: 'g', ctrlKey: false, shiftKey: true, altKey: false },
 };

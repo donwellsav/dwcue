@@ -9,11 +9,12 @@ test('fresh captures do not claim frame progress and sparse/paused pictures do n
   const source = readFileSync(new URL('../app/components/VideoConfidenceChip.vue', import.meta.url), 'utf8');
   const script = parse(source).descriptor.scriptSetup!.content.replaceAll('import.meta.client', 'true');
   const compiled = ts.transpileModule(script, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-  const build = Function('deps', `const { ref, shallowRef, computed, watch, defineProps, useLocalization, onMounted, onUnmounted } = deps;
+  const build = Function('deps', `const { ref, shallowRef, computed, watch, defineProps, useLocalization, useVideoStandbyCapture, onMounted, onUnmounted } = deps;
     ${compiled}; return { status, now, lastFrameAt, stale, pictureLabel };`);
   const scope = Vue.effectScope();
   const chip = scope.run(() => build({ ...Vue, defineProps: () => ({ open: true }),
     useLocalization: () => ({ t: (key: string, args: unknown) => `${key}:${JSON.stringify(args)}` }),
+    useVideoStandbyCapture: () => ({ captureStandby() {}, standbyCapturePending: Vue.ref(false) }),
     onMounted() {}, onUnmounted() {},
   }));
   chip.now.value = 100000;

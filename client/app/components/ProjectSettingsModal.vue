@@ -621,6 +621,37 @@
               <p class="settings-help">{{ t('settings.videoOutputStandbyImageHelp') }}</p>
             </section>
 
+            <section v-if="voStatus" class="settings-field">
+              <label for="capture-display" class="settings-label">{{ t('standbyCapture.display') }}</label>
+              <select id="capture-display" class="settings-select" :value="voStatus.captureDisplayId ?? ''"
+                :disabled="captureSettingsPending || standbyCapturePending"
+                @change="onCaptureSettingsChange($event, 'display')">
+                <option value="">{{ t('standbyCapture.chooseDisplay') }}</option>
+                <option v-if="voStatus.captureDisplayId && !voDisplays.some(d => d.id === voStatus?.captureDisplayId)"
+                  :value="voStatus.captureDisplayId" disabled>{{ t('standbyCapture.missingDisplay') }}</option>
+                <option v-for="d in voDisplays" :key="d.id" :value="d.id">
+                  {{ d.index }} · {{ d.label }} ({{ d.width }} × {{ d.height }})
+                </option>
+              </select>
+              <label for="capture-destination" class="settings-label">{{ t('standbyCapture.destination') }}</label>
+              <select id="capture-destination" class="settings-select" :value="voStatus.captureTarget ?? 'session'"
+                :disabled="captureSettingsPending || standbyCapturePending"
+                @change="onCaptureSettingsChange($event, 'target')">
+                <option value="session">{{ t('standbyCapture.session') }}</option>
+                <option value="cue">{{ t('standbyCapture.cue') }}</option>
+              </select>
+              <div class="video-output-standby">
+                <button type="button" class="modal-btn" :disabled="standbyCapturePending || !voStatus.open"
+                  @click="captureStandby('output', voStatus.captureTarget)">{{ t('controls.captureVideoStandby') }}</button>
+                <button type="button" class="modal-btn"
+                  :disabled="standbyCapturePending || !voDisplays.some(d => d.id === voStatus?.captureDisplayId)"
+                  @click="captureStandby('display', voStatus.captureTarget)">{{ t('controls.captureDisplayStandby') }}</button>
+                <button type="button" class="modal-btn" :disabled="standbyCapturePending"
+                  @click="captureStandby('clear', voStatus.captureTarget)">{{ t('standbyCapture.clear') }}</button>
+              </div>
+              <p class="settings-help">{{ t('standbyCapture.help') }}</p>
+            </section>
+
             <!-- Test card for the switcher/projector end of the chain -->
             <section class="settings-field">
               <label class="settings-label settings-label--checkbox">
@@ -714,8 +745,15 @@
                 </a>
               </div>
             </section>
+          </template>
 
+          <template v-else-if="activeTab === 'shortcuts'">
             <section class="settings-field">
+              <button type="button" class="help-link help-link--button"
+                :aria-pressed="showShortcutsBar" @click="showShortcutsBar = !showShortcutsBar">
+                <span class="material-symbols-rounded" aria-hidden="true">keyboard</span>
+                <span>{{ t('settings.showShortcutsBar') }}</span>
+              </button>
               <label class="settings-label">
                 <span class="material-symbols-rounded" aria-hidden="true">keyboard</span>
                 {{ t('settings.helpShortcutsTitle') }}
@@ -857,7 +895,7 @@ const devices = computed(() => server.devices ?? []);
 //  - ui       : metering + list behaviour
 // help/about are informational tabs, not project settings — nothing in
 // them patches the document.
-type SettingsTabId = 'audio' | 'playback' | 'ui' | 'video' | 'help' | 'about';
+type SettingsTabId = 'audio' | 'playback' | 'ui' | 'video' | 'shortcuts' | 'help' | 'about';
 interface SettingsTab {
   id: SettingsTabId;
   label: string;
@@ -871,11 +909,13 @@ const tabs = computed<SettingsTab[]>(() => [
   { id: 'playback', icon: 'play_circle', label: t('settings.tabPlaybackBehaviour') },
   { id: 'ui', icon: 'desktop_windows', label: t('settings.tabUserInterface') },
   { id: 'video', symbol: 'video-output', label: t('settings.tabVideoOutput') },
+  { id: 'shortcuts', icon: 'keyboard', label: t('controls.shortcutBtn') },
   // menu_book, NOT help: a circled "?" reads as a tooltip affordance and
   // the operator has repeatedly rejected those.
   { id: 'help', icon: 'menu_book', label: t('settings.tabHelp') },
   { id: 'about', icon: 'info', label: t('settings.tabAbout') },
 ]);
+const showShortcutsBar = useState('showShortcutsBar', () => true);
 
 // The settings live on the project document; we read them from there and
 // patch via the server endpoint.
@@ -934,6 +974,8 @@ watch(() => props.open, async (v) => {
 // status; the onStatus push keeps this panel live while it is open.
 // ---------------------------------------------------------------------------
 const voStatus = ref<VideoOutputStatus | null>(null);
+const { captureStandby, standbyCapturePending } = useVideoStandbyCapture();
+const captureSettingsPending = ref(false);
 const voDiagnosticsCopied = ref(false);
 const voTestCardConfig = ref<TestCardConfig>(createTestCardConfig());
 
@@ -994,6 +1036,25 @@ async function onVideoOutputDisplayChange(event: Event) {
     receiveVideoOutputStatus(await api.setDisplay(value || null));
   } catch (error) {
     settingsError.value = describeSettingsError(error);
+  }
+}
+
+async function onCaptureSettingsChange(event: Event, field: 'display' | 'target') {
+  const input = event.target as HTMLSelectElement;
+  const api = window.electronAPI?.videoOutput;
+  const status = voStatus.value;
+  if (!api?.setCaptureSettings || !status) return;
+  const display = field === 'display' ? input.value || null : status.captureDisplayId;
+  const target = field === 'target' ? (input.value === 'cue' ? 'cue' : 'session') : status.captureTarget;
+  captureSettingsPending.value = true;
+  settingsError.value = '';
+  try {
+    receiveVideoOutputStatus(await api.setCaptureSettings(display, target));
+  } catch (error) {
+    input.value = field === 'display' ? status.captureDisplayId ?? '' : status.captureTarget;
+    settingsError.value = describeSettingsError(error);
+  } finally {
+    captureSettingsPending.value = false;
   }
 }
 

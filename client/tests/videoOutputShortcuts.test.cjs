@@ -41,6 +41,72 @@ test('mounted audience view reports DOM readiness without waiting for an animati
   assert.equal(ready, 1, 'the native cover must not wait on hidden-window animation');
 });
 
+test('standby capture uses only the selected source and rejects stale shows and authored art', async () => {
+  const handlers = new Map();
+  const sender = {};
+  const identity = { projectPath: '/show.dwcue', projectEpoch: 1, ownerSessionId: 'owner' };
+  const cue = { uuid: 'cue', type: 'audio', mediaPath: 'media/test.wav' };
+  const still = value => ({
+    isEmpty: () => false,
+    getSize: () => ({ width: 1920, height: 1080 }),
+    toJPEG: () => Buffer.from(value),
+  });
+  const output = { isDestroyed: () => false, webContents: {
+    isDestroyed: () => false, send() {}, capturePage: async () => still('output'),
+  } };
+  const sourceStart = mainSource.indexOf('function requireCaptureOwner(');
+  const sourceEnd = mainSource.indexOf("ipcMain.handle('video-output:set-display'", sourceStart);
+  assert.ok(sourceStart > 0 && sourceEnd > sourceStart);
+  const captureHelpers = require('../electron/video-standby-capture');
+  const context = {
+    Buffer,
+    ...captureHelpers, videoStandbyCaptures: captureHelpers.createStandbyCaptureStore(128),
+    ipcMain: { handle: (name, handler) => handlers.set(name, handler) },
+    mainWindow: { webContents: sender }, requireTrustedIpc() {},
+    ...require('../electron/one-shot-mutation-broker'),
+    currentProjectIdentity: identity, currentCaptureSession: 'session',
+    currentProjectData: { items: [{ type: 'group', children: [cue] }] },
+    videoOutputWindow: output, videoOutputRendererReady: true, videoOutputRendererResponsive: true,
+    videoOutputRecoveryRequired: false, capturingVideoStandby: false,
+    readVideoOutputConfig: () => ({ captureDisplayId: '42' }),
+    videoOutputDisplays: () => [{ id: '42' }],
+    desktopCapturer: { getSources: async () => [
+      { display_id: 'other', thumbnail: still('wrong screen') },
+      { display_id: '42', thumbnail: still('selected screen') },
+    ] },
+  };
+  vm.runInNewContext([
+    productionFunctionSource('requireVideoOutputIpc'), productionFunctionSource('requireIpcString'),
+    productionFunctionSource('requireBoundedIpcObject'), mainSource.slice(sourceStart, sourceEnd),
+  ].join('\n'), context);
+  const capture = (source, itemUuid, event = { sender }) => handlers.get('video-output:capture-standby')(
+    event, source, { identity, sessionId: 'session', itemUuid },
+  );
+  const read = (session, media = cue.mediaPath) =>
+    handlers.get('video-output:get-standby-capture')({ sender: output.webContents }, session, cue.uuid, media);
+  await capture('display', null);
+  await capture('output', cue.uuid);
+  assert.equal(read('session').standby, 'data:image/jpeg;base64,' + Buffer.from('selected screen').toString('base64'));
+  assert.equal(read('session').cue, 'data:image/jpeg;base64,' + Buffer.from('output').toString('base64'));
+  assert.equal(read('session', 'media/replacement.wav').cue, null);
+  assert.equal(read('other-session').standby, null);
+  await assert.rejects(capture('output', null, { sender: output.webContents }), /main workspace/);
+  assert.throws(() => handlers.get('video-output:get-standby-capture')({ sender }, 'session', null, null), /output window/);
+  cue.imagePath = 'images/manual.png';
+  await assert.rejects(capture('output', cue.uuid), /assigned image/);
+  delete cue.imagePath;
+  context.desktopCapturer.getSources = async () => [{ display_id: 'wrong', thumbnail: still('wrong') }];
+  await assert.rejects(capture('display', null), /No picture was captured/);
+  const pending = deferred();
+  output.webContents.capturePage = () => pending.promise;
+  const inFlight = capture('output', null);
+  context.currentCaptureSession = 'another show';
+  pending.resolve(still('late'));
+  await assert.rejects(inFlight, /active show changed/);
+  handlers.get('video-output:clear-standby-capture')({ sender }, { identity, sessionId: 'another show', itemUuid: null });
+  assert.equal(read('another show').standby, null);
+});
+
 function deferred() {
   let resolve;
   let reject;

@@ -36,7 +36,6 @@
       <ConnectionStatusPill />
 
       <Btn :text="t('settings.title')" @click="showProjectSettings = true" />
-      <Btn :text="t('controls.shortcutBtn')" @click="showShortcutsBar = !showShortcutsBar" />
       <Btn
         :text="t('settings.tabVideoOutput')"
         symbol="video-output"
@@ -132,7 +131,6 @@ const { uiMode, toggleUiMode } = useUiMode();
 const { warning, silenceRemaining } = useHeaderWarnings();
 
 const showControlConfig = useState('showControlConfig', () => false);
-const showShortcutsBar = useState('showShortcutsBar', () => true);
 const showProjectSettings = useState('showProjectSettings', () => false);
 
 const isDark = computed(() => currentProject.value?.theme.mode === 'dark');

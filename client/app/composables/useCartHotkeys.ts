@@ -47,7 +47,7 @@ export const eventToBinding = (e: KeyboardEvent): CartSlotKeyBinding => ({
   altKey: e.altKey,
 });
 
-// Shared by the shortcuts editor and the read-only shortcuts summary on the Help tab.
+// Shared by the shortcut editor and Settings summary.
 export const PLAYBACK_ACTIONS: { id: PlaybackKeyAction; labelKey: string }[] = [
   { id: 'play-next',     labelKey: 'controls.playNext'     },
   { id: 'pause-resume',  labelKey: 'controls.pauseResume'  },
@@ -59,6 +59,8 @@ export const PLAYBACK_ACTIONS: { id: PlaybackKeyAction; labelKey: string }[] = [
   { id: 'select-down',   labelKey: 'controls.selectDown'   },
   { id: 'set-up-next',   labelKey: 'controls.setUpNext'    },
   { id: 'toggle-video-output', labelKey: 'controls.toggleVideoOutput' },
+  { id: 'capture-video-standby', labelKey: 'controls.captureVideoStandby' },
+  { id: 'capture-display-standby', labelKey: 'controls.captureDisplayStandby' },
   { id: 'play-selected', labelKey: 'controls.playSelected' },
 ];
 
@@ -74,7 +76,7 @@ export const resolveKeyboardBindings = (
   };
   // A new default must yield to a key the operator already assigned.
   const assigned = [...Object.values(keyMappings), ...Object.values(savedPlayback)];
-  for (const action of ['set-up-next', 'toggle-video-output'] as const) {
+  for (const action of ['set-up-next', 'toggle-video-output', 'capture-video-standby', 'capture-display-standby'] as const) {
     const defaultKey = DEFAULT_PLAYBACK_KEYS[action];
     if (savedPlayback[action] === undefined && defaultKey
         && assigned.some(binding => binding && bindingsMatch(binding, defaultKey))) {
@@ -120,6 +122,7 @@ export const useCartHotkeys = () => {
   const { cartOnlyItems } = useCartItems();
   const { fireBlocked, afterFire } = useOneShotArm();
   const toggleVideoOutput = useVideoOutputToggle();
+  const { captureStandby } = useVideoStandbyCapture();
   const { playCue, playNext, setNextItem, pauseCue, resumeCue, stopAllCues, activeCues, queueLoopContinuation, jumpCue } = useAudioEngine();
 
   const oneShotSlots = computed(() => buildOneShotSlots(
@@ -238,6 +241,8 @@ export const useCartHotkeys = () => {
 
     if (action === 'stop-all') return stopAllCues();
     if (action === 'toggle-video-output') return toggleVideoOutput();
+    if (action === 'capture-video-standby') return captureStandby('output');
+    if (action === 'capture-display-standby') return captureStandby('display');
 
     if (action === 'select-up' || action === 'select-down') {
       const project = currentProject.value;

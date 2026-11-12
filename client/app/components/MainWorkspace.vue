@@ -732,8 +732,8 @@ const isCartWindowMode = import.meta.client
   : false;
 
 watch(
-  [currentProject, projectSyncIdentity, projectHydrationStatus],
-  ([project, identity, hydrationStatus]) => {
+  [currentProject, projectSyncIdentity, projectHydrationStatus, () => server.projectSessionId],
+  ([project, identity, hydrationStatus, sessionId]) => {
     // Only sync from the main window, not from the detached cart window.
     if (!import.meta.client || !window.electronAPI || isCartWindowMode) return;
     if (!project || !identity || hydrationStatus !== 'ready') {
@@ -751,7 +751,7 @@ watch(
       // needs them and the cart is bounded to 64 slots.
       cartOnlyItems: Array.from(cartOnlyItems.value.values()).map(i => ({ ...i })),
     };
-    window.electronAPI.syncProjectData(JSON.parse(JSON.stringify(data)), identity);
+    window.electronAPI.syncProjectData(JSON.parse(JSON.stringify(data)), identity, sessionId || null);
   },
   { deep: true, immediate: true },
 );
