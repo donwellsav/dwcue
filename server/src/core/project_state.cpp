@@ -3178,10 +3178,17 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
             if (mixer.empty()) return reject_output_selection(requested_output, uuid);
             route_cue_to_mixer(target_cue, mixer);
         } else {
-            engine_.unroute_item_from_all_mixers(target_cue);
-#ifndef LIVEPLAY_TEST_NO_DEVICE_ROUTING
-            engine_.ensure_default_routing();
+#ifdef LIVEPLAY_TEST_NO_DEVICE_ROUTING
+            if (!test_program_main_routing_) engine_.unroute_item_from_all_mixers(target_cue);
+            else
 #endif
+            {
+                const auto route_is_current = [&] { return current() && default_output().empty(); };
+                const auto mixer = ensure_program_main(lifecycle_lock, route_is_current);
+                if (!route_is_current()) return false;
+                if (mixer.empty()) return reject_output_selection("System Default", uuid);
+                route_cue_to_mixer(target_cue, mixer);
+            }
         }
         apply_ltc_device_routing();
     }
@@ -4070,9 +4077,7 @@ bool ProjectState::trigger_item_impl(std::unique_lock<std::recursive_mutex>& lif
             };
             collect_descendants((*found)["children"]);
             collect_selected(*found);
-            if (std::any_of(selected_leaves.begin(), selected_leaves.end(),
-                            [](const auto& leaf) { return !leaf.second.empty(); }))
-                routed_group = *found;
+            routed_group = *found;
             if (found->contains("endBehavior") && (*found)["endBehavior"].is_object()) {
                 const auto& end = (*found)["endBehavior"];
                 group_end_action = end.value("action", std::string{"nothing"});
@@ -4101,23 +4106,8 @@ bool ProjectState::trigger_item_impl(std::unique_lock<std::recursive_mutex>& lif
     }
     if (type == "group") {
         if (child_uuids.empty()) return false;
-
-        for (const auto& [leaf, output] : selected_leaves) {
-            if (!play_item_impl(lifecycle_lock, leaf, fade_in_override_sec, exclude_from_ducking, -1.0, ItemPlayPhase::Validate)) return false;
-            if (!output.empty()) {
-                const auto mixer = ensure_device_routing(output, &lifecycle_lock);
-                if (intent != playback_intent_revision_ || generation != document_generation_) return false;
-                if (mixer.empty()) return reject_output_selection(output, leaf);
-            }
-            const auto id = item_to_cue_id(leaf);
-            const auto cue = id ? engine_.find_cue(*id) : nullptr;
-            if (!cue) return false;
-            if (cue->stats().transport == audio::TransportState::Stopped &&
-                !cue->prepared_start_ready(cue->playback_revision()) &&
-                !play_item_impl(lifecycle_lock, leaf, fade_in_override_sec, exclude_from_ducking, -1.0, ItemPlayPhase::Prepare))
-                return false;
-        }
-        if (!routed_group.is_null()) {
+        const auto current = [&] {
+            if (intent != playback_intent_revision_ || generation != document_generation_) return false;
             std::lock_guard lock{mutex_};
             const auto settings = document_.find("settings");
             if ((settings != document_.end() && settings->is_object()
@@ -4127,8 +4117,34 @@ bool ProjectState::trigger_item_impl(std::unique_lock<std::recursive_mutex>& lif
             for_each_item(document_, [&](json& item, const std::string&) {
                 if (item.value("uuid", std::string{}) == uuid) unchanged = item == routed_group;
             });
-            if (!unchanged) return false;
+            return unchanged;
+        };
+        bool main_ready = false;
+        for (const auto& [leaf, output] : selected_leaves) {
+            if (!play_item_impl(lifecycle_lock, leaf, fade_in_override_sec, exclude_from_ducking, -1.0, ItemPlayPhase::Validate)) return false;
+            if (!output.empty()) {
+                const auto mixer = ensure_device_routing(output, &lifecycle_lock);
+                if (intent != playback_intent_revision_ || generation != document_generation_) return false;
+                if (mixer.empty()) return reject_output_selection(output, leaf);
+            } else if (!main_ready
+#ifdef LIVEPLAY_TEST_NO_DEVICE_ROUTING
+                       && test_program_main_routing_
+#endif
+            ) {
+                const auto mixer = ensure_program_main(lifecycle_lock, current);
+                if (!current()) return false;
+                if (mixer.empty()) return reject_output_selection("System Default", leaf);
+                main_ready = true;
+            }
+            const auto id = item_to_cue_id(leaf);
+            const auto cue = id ? engine_.find_cue(*id) : nullptr;
+            if (!cue) return false;
+            if (cue->stats().transport == audio::TransportState::Stopped &&
+                !cue->prepared_start_ready(cue->playback_revision()) &&
+                !play_item_impl(lifecycle_lock, leaf, fade_in_override_sec, exclude_from_ducking, -1.0, ItemPlayPhase::Prepare))
+                return false;
         }
+        if (!current()) return false;
         if (group_dispatch_depth == 0) cancel_group_runs_for_item(uuid, preserved_generations);
         struct GroupDispatchGuard {
             unsigned& depth;
@@ -4225,6 +4241,24 @@ bool ProjectState::reject_output_selection(const std::string& selection,
     if (cb) cb(json{{"type", "playback_error"}, {"code", "output_device_unavailable"},
                     {"message", message}, {"item_uuid", item_uuid}, {"device", selection}});
     return false;
+}
+
+audio::MixerChannelId ProjectState::ensure_program_main(
+    std::unique_lock<std::recursive_mutex>& lifecycle_lock, const std::function<bool()>& current) {
+    return engine_.ensure_main_output([&]() -> audio::DeviceId {
+        lifecycle_lock.unlock();
+        audio::DeviceId device;
+        try {
+            device = engine_.open_default_device();
+        } catch (...) {
+            lifecycle_lock.lock();
+            throw;
+        }
+        lifecycle_lock.lock();
+        if (current()) return device;
+        if (!device.empty()) engine_.close_device(device);
+        return {};
+    });
 }
 
 audio::MixerChannelId ProjectState::ensure_device_routing_impl(

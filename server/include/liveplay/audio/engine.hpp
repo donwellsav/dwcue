@@ -324,6 +324,9 @@ public:
     // Establish the same Main -> OS-default path, but attach only one cue.
     // Existing cue routes are left untouched.
     void ensure_default_routing_for_cue(const CueId& cue);
+    // Establish Main without changing cue sends. The opener runs only when
+    // Main needs a device and runs without the engine mutex.
+    MixerChannelId ensure_main_output(const std::function<DeviceId()>& open);
 
     // ---- Mixer channels --------------------------------------------------
     MixerChannelId create_mixer_channel(std::string display_name);
@@ -611,7 +614,8 @@ private:
     // -- Helpers ---------------------------------------------------------
     void rebuild_topology_locked();
     void reclaim_snapshots_locked();
-    void ensure_default_routing_impl(const std::optional<CueId>& cue_filter);
+    MixerChannelId ensure_default_routing_impl(
+        const std::optional<CueId>& cue_filter, const std::function<DeviceId()>& open = {});
     MixerChannelId create_mixer_channel_locked(std::string display_name);
     void publish_topology(std::shared_ptr<const Topology> snap);
     std::shared_ptr<const Topology> snapshot_topology() const noexcept;

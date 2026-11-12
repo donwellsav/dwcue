@@ -362,6 +362,79 @@ void test_stop_all_during_program_device_start() {
     }
 }
 
+void test_stop_all_during_system_default_open() {
+    auto* context = null_preview_context();
+    static const auto init = context->callbacks.onDeviceInit;
+    static std::atomic<bool> hold{false}, entered{false}, fail{false};
+    context->callbacks.onDeviceInit = [](ma_device* device, const ma_device_config* config,
+                                       ma_device_descriptor* playback, ma_device_descriptor* capture) {
+        if (!config->playback.pDeviceID) {
+            if (hold.load()) {
+                entered.store(true);
+                while (hold.load()) std::this_thread::sleep_for(1ms);
+            }
+            if (fail.load()) return MA_ERROR;
+        }
+        return init(device, config, playback, capture);
+    };
+    const auto wav = make_wav(8'192, 480'000);
+    for (const bool group : {false, true}) {
+        liveplay::audio::AudioEngine engine;
+        engine.device_test_context_ = context;
+        liveplay::core::ProjectState state(engine);
+        state.test_program_main_routing_ = true;
+        const json named{{"deviceOverride", "NULL Playback Device"}, {"duckingBehavior", {{"mode", "no-ducking"}}}};
+        const auto main = audio("cold-main", wav, {{"duckingBehavior", {{"mode", "no-ducking"}}}});
+        const auto target = group ? "main-group" : "cold-main";
+        const auto item = group
+            ? json{{"uuid", target}, {"type", "group"}, {"startBehavior", {{"action", "play-all"}}},
+                   {"children", json::array({audio("named-first", wav, named), main})}}
+            : main;
+        check(state.replace_full_document(document(json::array({
+            audio("main-test-bed", wav, named), item, audio("main-test-backup", wav, named),
+        }))) && wait_ready(state) && state.trigger_item("main-test-bed"), "Main open: named route and media ready");
+        check(engine.devices_.size() == 1 && engine.main_mixer_.empty(), "Main open: only the named route is open");
+        const auto backup = engine.find_cue(*state.item_to_cue_id("main-test-backup"));
+        check(backup && backup->prime(2.0) && state.set_next_item_override(target), "Main open: backup primed");
+
+        entered.store(false);
+        hold.store(true);
+        auto opening = std::async(std::launch::async, [&] { return state.go(); });
+        for (int i = 0; i < 1000 && !entered.load(); ++i) std::this_thread::sleep_for(2ms);
+        check(entered.load() && !on_air(state, engine, "named-first"), "Main open: native init waits before any group child plays");
+        auto controls = std::async(std::launch::async, [&] {
+            state.stop_all_cues(0);
+            return !on_air(state, engine, "main-test-bed") && state.set_next_item_override("main-test-backup") &&
+                state.go() == "main-test-backup" && state.state_summary().is_object();
+        });
+        check(controls.wait_for(250ms) == std::future_status::ready, "Main open: Stop All and named backup GO before init returns");
+        hold.store(false);
+        check(opening.get().empty() && controls.get() && on_air(state, engine, "main-test-backup") &&
+                  !on_air(state, engine, "cold-main") && !on_air(state, engine, "named-first") &&
+                  engine.main_mixer_.empty() && engine.devices_.front()->open_references.value() == 1,
+              "Main open: canceled result releases its reference and leaves the backup playing");
+
+        std::atomic<bool> warned{false};
+        state.set_ui_state_broadcaster([&](const json& event) {
+            if (event.value("code", "") == "output_device_unavailable" && event.value("device", "") == "System Default")
+                warned.store(true);
+        });
+        fail.store(true);
+        const auto failed = state.set_next_item_override(target) && state.go().empty();
+        fail.store(false);
+        check(failed && warned.load() && state.next_item_override() == target &&
+                  on_air(state, engine, "main-test-backup") && !on_air(state, engine, "named-first"),
+              "Main open: failed default warns and preserves backup and armed target");
+        check(state.set_next_item_override(target) && state.go() == target && on_air(state, engine, "cold-main") &&
+                  !engine.main_mixer_.empty() && engine.devices_.size() == 1 &&
+                  engine.devices_.front()->open_references.value() == 2,
+              "Main open: retry shares hardware and acquires one Main reference");
+        state.set_ui_state_broadcaster({});
+        state.stop_all_cues(0);
+    }
+    context->callbacks.onDeviceInit = init;
+}
+
 void test_stop_all_during_preview_retirement() {
     const auto wav = make_wav(8'192);
     for (const int mode : {0, 1, 2, 3}) {
@@ -2375,6 +2448,7 @@ int main() try {
     test_loading_metadata_preserves_controls(wav);
     test_stop_all_during_cue_retirement(wav);
     test_stop_all_during_program_device_start();
+    test_stop_all_during_system_default_open();
     test_stop_all_during_preview_retirement();
     test_cancelled_preview_preparation();
     test_busy_decoder_preserves_sibling_progress();

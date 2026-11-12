@@ -623,6 +623,9 @@ private:
     // settings, and transport callers. Always acquire before mutex_.
     std::mutex device_routing_mutex_;
     std::uint64_t device_routing_generation_ = 0; // guarded by device_routing_mutex_
+#ifdef LIVEPLAY_TEST_NO_DEVICE_ROUTING
+    bool test_program_main_routing_ = false;
+#endif
     // Next free master channel pair when allocating new device routings.
     // Default device occupies 0/1; preview occupies 30/31; overrides start
     // at 2 and increment by 2.
@@ -634,6 +637,8 @@ private:
         std::unique_lock<std::recursive_mutex>* lifecycle_lock = nullptr);
     bool reject_output_selection(const std::string& selection,
                                  const std::string& item_uuid = {});
+    audio::MixerChannelId ensure_program_main(std::unique_lock<std::recursive_mutex>& lifecycle_lock,
+                                             const std::function<bool()>& current);
     void clear_diagnostic_cues() noexcept;
 
     // Preview state. The preview infrastructure is opened lazily on first

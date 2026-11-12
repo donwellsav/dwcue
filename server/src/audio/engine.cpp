@@ -1225,40 +1225,44 @@ void AudioEngine::ensure_default_routing_for_cue(const CueId& cue) {
     ensure_default_routing_impl(cue);
 }
 
-void AudioEngine::ensure_default_routing_impl(
-    const std::optional<CueId>& cue_filter) {
-    // Step 1: open a device if none open. open_device_by_name takes its own
-    // lock; we must therefore call it OUTSIDE the engine mutex.
-    DeviceId chosen_device{};
-    {
-        std::lock_guard lock{mutex_};
+MixerChannelId AudioEngine::ensure_main_output(const std::function<DeviceId()>& open) {
+    return ensure_default_routing_impl(CueId{}, open);
+}
+
+MixerChannelId AudioEngine::ensure_default_routing_impl(
+    const std::optional<CueId>& cue_filter, const std::function<DeviceId()>& open) {
+    std::unique_lock lock{mutex_};
+    const auto main_device = [&] {
         // An existing Main master assignment already owns its device. Merely
         // finding some other open device is not ownership: preview may have
         // opened it first and is allowed to release its own reference later.
         for (std::size_t i = 0;
              i < 2 && i < pending_.master_destinations.size(); ++i) {
-            if (pending_.master_destinations[i]) {
-                chosen_device = pending_.master_destinations[i]->device;
-                break;
-            }
+            if (pending_.master_destinations[i]) return pending_.master_destinations[i]->device;
         }
-    }
+        return DeviceId{};
+    };
+    auto chosen_device = main_device();
+    DeviceId redundant_reference;
     if (chosen_device.empty()) {
         // Acquire a dedicated Main reference even when this resolves to native
         // hardware already opened by preview or another routing owner.
-        chosen_device = open_default_device(2);
+        lock.unlock();
+        const auto opened = open ? open() : open_default_device(2);
+        lock.lock();
+        chosen_device = main_device();
+        if (chosen_device.empty() && find_device_locked(opened)) chosen_device = opened;
+        else redundant_reference = opened;
         if (chosen_device.empty()) {
-            Logger::warn("ensure_default_routing: could not open default device — playback will be silent.");
-            return;
+            Logger::warn("ensure_default_routing: could not open default device.");
+            return {};
         }
     }
 
     // Keep the automatic Main identity independent of other strips and names.
-    MixerChannelId main_mixer{};
-
     // Step 3: wire master 0/1 → device 0/1 if not already.
+    MixerChannelId main_mixer{};
     {
-        std::lock_guard lock{mutex_};
         if (main_mixer_.empty() || !mixers_.contains(main_mixer_.value))
             main_mixer_ = create_mixer_channel_locked("Main");
         main_mixer = main_mixer_;
@@ -1323,8 +1327,11 @@ void AudioEngine::ensure_default_routing_impl(
 
         rebuild_topology_locked();
     }
+    lock.unlock();
+    if (!redundant_reference.empty()) close_device(redundant_reference);
     Logger::info("ensure_default_routing: ready (device='{}', main_mixer='{}')",
                  chosen_device.value, main_mixer.value);
+    return main_mixer;
 }
 
 // ---------------------------------------------------------------------------
