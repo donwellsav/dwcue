@@ -31,6 +31,7 @@
 #include "liveplay/audio/types.hpp"
 
 #include <atomic>
+#include <array>
 #include <chrono>
 #include <filesystem>
 #include <memory>
@@ -88,6 +89,7 @@ struct PlaybackItemStats {
 };
 
 class PlaybackItem {
+    friend class AudioEngine;
 public:
     explicit PlaybackItem(PlaybackItemDesc desc);
     ~PlaybackItem();
@@ -99,6 +101,18 @@ public:
     // unsupported, etc.). Idempotent — calling twice is allowed but rebuilds
     // the decoder.
     bool load();
+    bool refresh_source_revision(); // Filesystem check; background/control threads only.
+    bool source_changed() const noexcept { return source_changed_.load(std::memory_order_acquire); }
+    void invalidate_source() noexcept {
+        if (!source_changed_.exchange(true, std::memory_order_acq_rel))
+            playback_revision_.fetch_add(1, std::memory_order_acq_rel);
+    }
+    std::string source_revision() const;
+    std::uint64_t duration_frames() const noexcept { return duration_frames_.load(std::memory_order_acquire); }
+    std::uint64_t end_frame() const noexcept {
+        const auto out = out_point_frames_.load(std::memory_order_acquire), total = duration_frames();
+        return out > 0 && (total == 0 || out < total) ? out : total;
+    }
 
     // Close the decoder and free its memory. Stops playback first.
     void unload();
@@ -113,10 +127,11 @@ public:
 
     // ---- Mutators --------------------------------------------------------
     void set_gain_db(float db) noexcept;
-    // Multiplicative automation independent of the saved fader and transport
-    // fade. The audio callback advances this envelope lock-free.
+    // Absolute Duck Level ceiling, independent of the saved fader. Set active
+    // false to release it; an active level of 1 still caps boosts at 0 dB.
     void set_duck_gain_linear(float linear,
-                              std::chrono::milliseconds duration) noexcept;
+                              std::chrono::milliseconds duration,
+                              bool active = true) noexcept;
     // Fade durations are mirrored into atomics so the audio thread can read the
     // fade-out length without racing these control-thread writes (desc_ keeps a
     // copy for serialization and control-thread reads).
@@ -179,15 +194,33 @@ public:
     // decoder isn't ready.
     bool prime(double seconds = 2.0, double start_seconds = 0.0) noexcept;
 
+    // Prepared follows keep decoding/control work off the audio callback.
+    // Zero means preparation failed; changes to playback intent invalidate it.
+    std::uint64_t prepare_start();
+    std::uint64_t playback_revision() const noexcept {
+        return playback_revision_.load(std::memory_order_acquire);
+    }
+    bool prepared_start_ready(std::uint64_t expected) const noexcept;
+    bool start_prepared_rt(std::uint64_t expected) noexcept;
+    bool finish_follow_rt(std::uint64_t expected) noexcept;
+
     // Decode-worker entry point. Fills at most `max_blocks` free read-ahead
     // slots and returns true when it produced anything. AudioEngine calls this
-    // from one shared worker; there is never a thread per cue.
-    bool service_read_ahead(std::size_t max_blocks = 1) noexcept;
+    // from fixed shared workers without waiting behind another decoder operation.
+    bool service_read_ahead(std::size_t max_blocks = 1, bool wait_for_decoder = true) noexcept;
 
     // ---- Introspection ---------------------------------------------------
     const CueId&     id() const noexcept                  { return desc_.id; }
     const PlaybackItemDesc& desc() const noexcept         { return desc_; }
     ChannelCount     source_channel_count() const noexcept;  // includes LTC if enabled
+    ChannelCount file_channel_count() const noexcept { return file_channels_.load(std::memory_order_acquire); }
+    bool ltc_enabled() const noexcept { return ltc_enabled_atomic_.load(std::memory_order_acquire); }
+    LTCFrameRate ltc_frame_rate() const noexcept { return ltc_frame_rate_atomic_.load(std::memory_order_acquire); }
+    std::chrono::nanoseconds ltc_offset() const noexcept { return std::chrono::nanoseconds{ltc_offset_ns_.load(std::memory_order_acquire)}; }
+    // Serialize complete control preparations; Stop/render never acquire this mutex.
+    std::mutex& preparation_mutex() noexcept { return preparation_mutex_; }
+    // Control thread: cached native-map sends; never waits for decoder I/O.
+    std::array<float, 2> stereo_mix_gains(ChannelIndex channel) const;
     PlaybackItemStats stats() const noexcept;
 
     // True if the decoder returned an unexpected error mid-playback (i.e. not a
@@ -197,6 +230,11 @@ public:
     // the sequencer/control layer.
     bool had_decode_error() const noexcept {
         return decode_error_.load(std::memory_order_acquire);
+    }
+    bool failed_read_pending() const noexcept {
+        if (!had_decode_error()) return false;
+        std::unique_lock lock{decoder_mutex_, std::try_to_lock};
+        return !lock.owns_lock();
     }
     int decoder_error_code() const noexcept {
         return decode_error_code_.load(std::memory_order_acquire);
@@ -228,35 +266,45 @@ public:
                              ChannelCount   out_channel_count,
                              std::size_t    frame_count) noexcept;
 
+#ifndef LIVEPLAY_TEST_ACCESS
 private:
+#endif
     PlaybackItemDesc desc_;
+    std::mutex preparation_mutex_;
 
     // Owned decoder. Pointer because miniaudio types stay out of this header.
-    // Only control operations and AudioEngine's shared decode worker touch it;
+    // Only control operations and AudioEngine's shared decode workers touch it;
     // render_block() consumes predecoded blocks and never locks or reads files.
     std::unique_ptr<ma_decoder> decoder_;
     mutable std::mutex          decoder_mutex_;
     std::atomic<bool>           decoder_ready_{false};
+    std::atomic<bool>           source_changed_{false};
+    std::shared_ptr<const std::string> loaded_source_revision_;
+    using StereoGains = std::vector<std::array<float, 2>>;
+    std::shared_ptr<const StereoGains> stereo_gains_;
     std::atomic<ChannelCount>   file_channels_{0};
 
-    // Fixed-capacity SPSC read-ahead. Slots and their sample storage are
-    // allocated in load(); the producer is the shared decode worker and the
-    // sole consumer is render_block().
+    // Fixed-capacity read-ahead allocated in load(). decoder_mutex_ serializes
+    // worker/control producers; the sole consumer is render_block().
     static constexpr std::size_t kReadAheadBlockCount = 16;
     struct ReadAheadBlock {
         std::vector<Sample> samples;
         std::uint32_t       frames = 0;
+        std::uint64_t       playhead_before = 0;
         std::uint64_t       playhead_after = 0;
+        std::uint64_t       loop_end_frame = 0;
         bool                natural_end = false;
         int                 decoder_result = 0;
     };
     std::vector<ReadAheadBlock> read_ahead_;
     std::atomic<std::uint64_t>  read_ahead_read_{0};
     std::atomic<std::uint64_t>  read_ahead_write_{0};
+    std::size_t                 read_ahead_offset_ = 0; // render_exclusion_
     std::uint64_t               decode_cursor_frame_ = 0; // decoder_mutex_
     bool                        decode_out_point_passed_ = false; // decoder_mutex_
     std::atomic<bool>           decode_terminal_{false};
     std::atomic<std::uint64_t>  read_ahead_underruns_{0};
+    std::uint64_t               starved_frames_ = 0; // render_exclusion_
 
     // Control operations occasionally replace queue/meter/LTC storage. One
     // lock-free gate gives those operations exclusive access; render_block()
@@ -265,6 +313,10 @@ private:
 
     // Transport + gain state (hot atomics).
     std::atomic<TransportState> transport_{TransportState::Stopped};
+    std::atomic<std::uint64_t>  playback_revision_{1};
+    std::atomic<std::uint64_t>  prepared_revision_{0};
+    std::atomic<bool>           rewind_on_play_{false};
+    TransportState             paused_transport_ = TransportState::Playing; // render_exclusion_
     std::atomic<float>          gain_target_linear_{1.0f};
     std::atomic<float>          gain_current_linear_{1.0f};     // smoothed
     std::atomic<float>          duck_current_linear_{1.0f};
@@ -275,11 +327,12 @@ private:
     std::atomic<std::uint64_t>  duck_command_revision_{0};
     std::atomic<float>          duck_command_target_linear_{1.0f};
     std::atomic<long long>      duck_command_duration_samples_{0};
+    std::atomic<bool>           duck_command_active_{false};
     std::uint64_t               duck_applied_revision_ = 0; // render thread
-    float                       duck_start_linear_ = 1.0f; // render thread
     float                       duck_target_linear_ = 1.0f; // render thread
     long long                   duck_duration_samples_ = 0; // render thread
     long long                   duck_elapsed_samples_ = 0; // render thread
+    bool                        duck_active_ = false; // render thread
 
     // Per-block fade state (active when transport_ == FadingIn or FadingOut).
     std::atomic<float>          fade_start_linear_{0.0f};
@@ -301,6 +354,7 @@ private:
 
     // Playhead in mix-rate frames. Audio thread is the only writer.
     std::atomic<std::uint64_t>  playhead_frames_{0};
+    std::atomic<std::uint64_t>  duration_frames_{0};
 
     // Out-point: when playhead_frames_ reaches this value, render_block
     // triggers the natural-EOF code path (fade-out then Stopped). 0 disables
@@ -326,6 +380,7 @@ private:
     // LTC generator (optional). Built fresh whenever LTC config changes.
     std::unique_ptr<LTCGenerator> ltc_;
     std::atomic<bool>             ltc_enabled_atomic_{false};
+    std::atomic<LTCFrameRate>     ltc_frame_rate_atomic_{LTCFrameRate::Fps30};
     // Atomic offset so set_ltc_offset() can be called while playing without
     // touching the LTCGenerator from the control thread.
     std::atomic<long long>        ltc_offset_ns_{0};

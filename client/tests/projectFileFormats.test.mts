@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import {
   PROJECT_FILE_EXTENSIONS,
-  isLegacyProjectPath,
   isNativeProjectPath,
   projectFileAction,
   projectFileKind,
@@ -20,8 +19,8 @@ const cases = [
   ['/shows/Opening.dwcue', 'native-project', 'open-project'],
   ['C:' + windowsSeparator + 'Shows' + windowsSeparator + 'Opening.DWCUE', 'native-project', 'open-project'],
   ['/shows/Opening.dwcuepack', 'native-archive', 'import-archive'],
-  ['/legacy/Opening.liveplay', 'legacy-project', 'import-legacy-project'],
-  ['C:' + windowsSeparator + 'Legacy' + windowsSeparator + 'Opening.LPA', 'legacy-archive', 'import-archive'],
+  ['/legacy/Opening.liveplay', null, null],
+  ['C:' + windowsSeparator + 'Legacy' + windowsSeparator + 'Opening.LPA', null, null],
   ['/shows/Opening.dwcue.backup', null, null],
   ['/shows/dwcue', null, null],
   ['/shows/.dwcue', null, null],
@@ -39,8 +38,6 @@ assert.equal(isNativeProjectPath('/shows/Opening.dwcue'), true);
 assert.equal(isNativeProjectPath('/shows/Opening.liveplay'), false,
   'legacy shows must never enter native save/load routes');
 assert.equal(isNativeProjectPath('/shows/Opening.dwcuepack'), false);
-assert.equal(isLegacyProjectPath('/shows/Opening.liveplay'), true);
-assert.equal(isLegacyProjectPath('/shows/Opening.dwcue'), false);
 assert.equal(projectPathInFolder('/shows/', 'Opening'), '/shows/Opening.dwcue');
 assert.equal(
   projectPathInFolder('C:' + windowsSeparator + 'Shows' + windowsSeparator, 'Opening'),
@@ -51,8 +48,6 @@ const archivePaths = [
   ['/shows/Opening', '/shows/Opening.dwcuepack'],
   ['/shows/Opening.dwcuepack', '/shows/Opening.dwcuepack'],
   ['/shows/Opening.DWCUEPACK', '/shows/Opening.dwcuepack'],
-  ['/legacy/Opening.lpa', '/legacy/Opening.dwcuepack'],
-  ['/legacy/Opening.LPA', '/legacy/Opening.dwcuepack'],
   ['/shows/Opening.zip', '/shows/Opening.zip.dwcuepack'],
 ] as const;
 for (const [input, expected] of archivePaths) {
@@ -70,8 +65,9 @@ assert.equal(
 );
 assert.equal(
   desktopFormats.getOpenableFileFromArgv(['dwcue', '/legacy/Opening.liveplay']),
-  '/legacy/Opening.liveplay',
+  null,
 );
+assert.equal(desktopFormats.getOpenableFileFromArgv(['dwcue', '/legacy/Opening.LPA']), null);
 assert.equal(
   desktopFormats.getOpenableFileFromArgv(['dwcue', '/shows/Opening.dwcuepack']),
   '/shows/Opening.dwcuepack',
@@ -120,8 +116,8 @@ const serverComposableSource = readFileSync(
   new URL('../app/composables/useLiveplayServer.ts', import.meta.url),
   'utf8',
 );
-assert.match(serverComposableSource, /['"]\/api\/project\/import-legacy['"]/,
-  'legacy show routing must use the explicit conversion endpoint');
+assert.doesNotMatch(serverComposableSource, /['"]\/api\/project\/import-legacy['"]/,
+  'desktop clients must not offer LivePlay conversion');
 const projectComposableSource = readFileSync(
   new URL('../app/composables/useProject.ts', import.meta.url),
   'utf8',
@@ -130,11 +126,6 @@ assert.equal(
   projectComposableSource.includes('if (!isNativeProjectPath(projectFilePath))'),
   true,
   'native open must reject legacy and archive paths before calling /load',
-);
-assert.equal(
-  projectComposableSource.includes('server.importLegacyProjectFromPath(sourcePath, destinationPath)'),
-  true,
-  'legacy input must route through conversion rather than native load',
 );
 assert.equal(
   projectComposableSource.includes('if (!isNativeProjectPath(path) || !server.connected ||'),

@@ -97,6 +97,7 @@
 import { useDetachedOneShotMutation } from '~/composables/useDetachedOneShotMutation';
 import type { CartGridProfile } from '~/composables/useUiMode';
 import type { AudioItem } from '~/types/project';
+import { sameOneShotMutationIdentity } from '~/types/oneShotMutation';
 import { DEFAULT_CART_AUDIO_ITEM, colorForNewAudioItem } from '~/types/project';
 import { buildWaveformFromChannels } from '~/utils/audio';
 import {
@@ -113,12 +114,13 @@ const props = defineProps<{ isDetachedWindow?: boolean }>();
 const {
   currentProject,
   findItemByUuid,
-  markPendingImportProcessing,
+  projectEpoch,
   projectHydrationStatus,
   propertiesPanelOpen,
   saveProject,
   selectedItem,
   selectedItems,
+  triggerWaveformUpdate,
 } = useProject();
 const { cartOnlyItems, addCartOnlyItem, removeCartOnlyItem } = useCartItems();
 const { uiMode, cartGridLayouts, oneShotFontScale } = useUiMode();
@@ -190,6 +192,22 @@ const errorMessage = (error: unknown): string => t('oneShots.importFailed', {
   reason: error instanceof Error && error.message ? error.message : t('oneShots.unknownImportError'),
 });
 
+const captureProjectMutation = () => {
+  const project = currentProject.value;
+  const epoch = projectEpoch.value;
+  const hydration = projectHydrationStatus.value;
+  const identity = detachedIdentity.value ? { ...detachedIdentity.value } : null;
+  const ownsProject = () => !!currentProject.value && (isDetached
+    ? sameOneShotMutationIdentity(identity, detachedIdentity.value)
+    : currentProject.value === project && projectEpoch.value === epoch);
+  return {
+    project,
+    ownsProject,
+    isCurrent: () => ownsProject() && canMutate.value && !showMode.value
+      && projectHydrationStatus.value === hydration,
+  };
+};
+
 const rollbackSelectionForRemovedItem = (uuid: string) => {
   selectedItems.value.delete(uuid);
   if (selectedItem.value?.uuid !== uuid) return;
@@ -197,34 +215,42 @@ const rollbackSelectionForRemovedItem = (uuid: string) => {
   propertiesPanelOpen.value = false;
 };
 
-const replaceSlotItem = async (slot: number, replacement: AudioItem): Promise<void> => {
-  if (!currentProject.value) throw new Error(t('oneShots.noProject'));
+const replaceSlotItem = async (
+  slot: number,
+  replacement: AudioItem,
+  isCurrent = captureProjectMutation().isCurrent,
+): Promise<boolean> => {
+  const { project, ownsProject } = captureProjectMutation();
+  if (!project || !isCurrent()) return false;
   const previous = oneShotSlots.value[slot];
   const previousWasStandalone = !!previous && cartOnlyItems.value.has(previous.uuid);
-  const previousOneShot = previous?.oneShot ? structuredClone(previous.oneShot) : undefined;
+  const previousOneShot = previous?.oneShot;
 
   if (isDetached) {
     const result = await mutate({ kind: 'replace-slot', payload: { slot, item: replacement } });
+    if (!ownsProject()) return false;
     if (!result?.accepted) throw new Error(result?.error ?? t('oneShots.saveFailed'));
     if (previousWasStandalone && previous) removeCartOnlyItem(previous.uuid);
     else if (previous) removeOneShotDesignation(previous);
     addCartOnlyItem(replacement);
     if (previousWasStandalone && previous) rollbackSelectionForRemovedItem(previous.uuid);
-    return;
+    return true;
   }
 
   if (previousWasStandalone && previous) removeCartOnlyItem(previous.uuid);
   else if (previous) removeOneShotDesignation(previous);
   addCartOnlyItem(replacement);
-  if (await saveProject()) {
+  const saved = await saveProject();
+  if (!ownsProject()) return false;
+  if (saved) {
     if (previousWasStandalone && previous) rollbackSelectionForRemovedItem(previous.uuid);
-    return;
+    return true;
   }
 
   removeCartOnlyItem(replacement.uuid);
   if (previousWasStandalone && previous) addCartOnlyItem(previous);
   else if (previous && previousOneShot) previous.oneShot = previousOneShot;
-  currentProject.value.cartOnlyItems = Array.from(cartOnlyItems.value.values());
+  project.cartOnlyItems = Array.from(cartOnlyItems.value.values());
   throw new Error(t('oneShots.saveFailed'));
 };
 
@@ -233,13 +259,15 @@ const importFromServerPath = async (
   slot: number,
   options: ImportOptions,
 ): Promise<boolean> => {
-  if (!canMutate.value || !currentProject.value || busySlot.value !== null) return false;
+  const { project, isCurrent, ownsProject } = captureProjectMutation();
+  if (!project || !isCurrent() || busySlot.value !== null) return false;
   busySlot.value = slot;
   clearSlotError(slot);
   try {
     let mediaServerPath = serverPath;
     if (options.fileMode === 'copy') {
       const copy = await server.copyToMediaResult(serverPath, options.duplicatePolicy);
+      if (!isCurrent()) return false;
       if (copy.skipped) throw new Error(t('importAudio.duplicateSkipped'));
       mediaServerPath = copy.destPath;
     }
@@ -248,6 +276,7 @@ const importFromServerPath = async (
       server.fetchMetadata(mediaServerPath),
       server.fetchWaveformByPath(mediaServerPath),
     ]);
+    if (!isCurrent()) return false;
     const metadataDuration = Number((metadata as any)?.duration_ms);
     const durationMs = Number.isFinite(metadataDuration) && metadataDuration > 0
       ? metadataDuration
@@ -267,7 +296,7 @@ const importFromServerPath = async (
       uuid,
       index: [-1, slot],
       type: 'audio',
-      color: colorForNewAudioItem(currentProject.value.settings, slot),
+      color: colorForNewAudioItem(project.settings, slot),
       displayName: artist && title
         ? `${artist} — ${title}`
         : title || fileName.replace(/\.[^/.]+$/, ''),
@@ -281,13 +310,11 @@ const importFromServerPath = async (
       ...(metadata as any)?.has_video === true ? { hasVideo: true as const } : {},
     } as AudioItem;
     markAsOneShot(item, slot);
-    await replaceSlotItem(slot, item);
-    markPendingImportProcessing(uuid);
-    void server.requestWaveformGeneration(mediaServerPath, uuid).catch((error) => {
-      console.warn(`[one-shot waveform] generation failed for ${item.displayName}:`, error);
-    });
+    if (!await replaceSlotItem(slot, item, isCurrent) || !isCurrent()) return false;
+    triggerWaveformUpdate();
     return true;
   } catch (error) {
+    if (!ownsProject()) return false;
     console.error('[one-shot import] failed:', error);
     slotErrors[slot] = errorMessage(error);
     return false;
@@ -304,14 +331,16 @@ const handleImportPick = async (paths: string[], options: ImportOptions) => {
 };
 
 const copyPlaylistItemIntoSlot = async (uuid: string, slot: number) => {
+  const { isCurrent, ownsProject } = captureProjectMutation();
+  if (!isCurrent()) return;
   const source = findItemByUuid(uuid);
   if (!source || source.type !== 'audio' || !currentProject.value) return;
   const clone = cloneAsIndependentOneShot(source, crypto.randomUUID(), slot);
   clearSlotError(slot);
   try {
-    await replaceSlotItem(slot, clone);
+    await replaceSlotItem(slot, clone, isCurrent);
   } catch (error) {
-    slotErrors[slot] = errorMessage(error);
+    if (ownsProject()) slotErrors[slot] = errorMessage(error);
   }
 };
 
@@ -370,6 +399,7 @@ const handleDrop = async (event: DragEvent, slot: number) => {
 
   const file = event.dataTransfer?.files?.[0];
   if (file) {
+    const { isCurrent } = captureProjectMutation();
     busySlot.value = slot;
     clearSlotError(slot);
     let path: string | null = null;
@@ -380,6 +410,7 @@ const handleDrop = async (event: DragEvent, slot: number) => {
     } finally {
       busySlot.value = null;
     }
+    if (!isCurrent()) return;
     if (path) await importFromServerPath(path, slot, { fileMode: 'copy', duplicatePolicy: 'reuse' });
     else slotErrors[slot] = t('oneShots.dropFailed');
     return;
@@ -427,7 +458,7 @@ const handleAttach = () => {
 };
 
 onMounted(() => {
-  mountHotkeys();
+  if (props.isDetachedWindow) mountHotkeys();
   mountMidi();
 });
 

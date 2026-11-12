@@ -46,7 +46,14 @@
 
     <!-- Normal mode -->
     <template v-else>
-      <WelcomeScreen v-if="!currentProject" />
+      <WelcomeScreen
+        v-if="!currentProject"
+        ref="welcomeScreen"
+        :open-project="guardedOpenProject"
+        :project-file-dialog-open="projectFileDialogOpen"
+        @new-project="showNewProjectDialog"
+        @open-project="showOpenProjectPicker"
+      />
       <div v-else-if="projectHydrationStatus === 'failed'" class="project-hydration-error" role="alert">
         <strong>{{ t('projectHydration.failed') }}</strong>
         <span v-if="projectHydrationError">{{ projectHydrationError }}</span>
@@ -54,6 +61,9 @@
           {{ t('controls.stopAll') }}
         </button>
         <button type="button" @click="retryProjectHydration">{{ t('projectHydration.retry') }}</button>
+        <button type="button" @click="showOpenProjectPicker(currentProject.folderPath)">
+          {{ t('projectHydration.chooseAnotherShow') }}
+        </button>
       </div>
       <MainWorkspace v-else />
     <!-- Accent Color Picker Modal -->
@@ -88,10 +98,9 @@
       @install-on-exit="handleUpdateInstallOnExit"
     />
 
-    <!-- Transient confirmation for Help → Check for Updates when the
-         current version is already the latest. -->
     <Transition name="update-toast">
-      <div v-if="upToDateToast" class="update-toast">{{ upToDateToast }}</div>
+      <div v-if="unsavedDialogBlocked && !unsavedDialogVisible" class="update-toast" role="status">{{ t('unsavedModal.waitForSave') }}</div>
+      <div v-else-if="upToDateToast" class="update-toast">{{ upToDateToast }}</div>
     </Transition>
     
     <!-- Progress Modal for Import/Export -->
@@ -100,30 +109,86 @@
       :title="progressModal.title"
       :message="progressModal.message"
       :percentage="progressModal.percentage"
-    />
+      :background="progressModal.background"
+      @background="progressModal.background = true"
+    >
+      <template v-if="archiveReceipt">
+        <Btn type="button" :text="t('selectProject.open')" :disabled="archiveOpening || !archiveCanOpen" @click="openImportedArchive()" />
+        <Btn type="button" :text="t('actions.close')" @click="dismissArchiveReceipt" />
+      </template>
+    </ProgressModal>
     
     <!-- Project Selection Modal -->
     <ProjectSelectionModal
       :visible="showProjectSelection"
-      :projects="availableProjects"
+      :projects="archiveReceipt?.projectFiles ?? []"
       @select="handleProjectSelection"
       @cancel="handleProjectSelectionCancel"
     />
 
+    <!-- The New Show form owns both values. Browsing for a location temporarily
+         swaps to the server-side picker so remote servers remain supported. -->
+    <ServerFilePickerModal
+      :open="projectPicker !== null"
+      :mode="projectPicker === 'new-location' ? 'directory' : 'file'"
+      :filter="projectPicker === 'new-location' ? 'all' : '.dwcue'"
+      :filter-options="projectPicker === 'new-location' ? ['all'] : ['.dwcue', 'all']"
+      :fallback-start-path="projectPickerFallback"
+      :location-context="projectPicker === 'new-location' ? 'project-create' : 'project-open'"
+      @pick="onProjectPickerPick"
+      @close="closeProjectPicker"
+    />
+
+    <Teleport to="body">
+      <div v-if="showNewShowDialog && !(creatingNewShow && isLoading)" class="name-dialog-backdrop" :data-theme="theme" @click.self="cancelNewShowDialog">
+        <form
+          class="name-dialog new-show-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="welcome-new-show-title"
+          @submit.prevent="createNewShow"
+          @keydown.stop
+          @keydown.escape.prevent="cancelNewShowDialog"
+        >
+          <h3 id="welcome-new-show-title" class="name-dialog__title">{{ t('project.newShow') }}</h3>
+          <label class="new-show-field" for="welcome-new-show-name">
+            <span>{{ t('project.showName') }}</span>
+            <input
+              id="welcome-new-show-name"
+              ref="newShowNameInput"
+              class="name-dialog__input"
+              v-model="newShowName"
+              :placeholder="t('project.placeholder')"
+              autocomplete="off"
+            />
+          </label>
+          <div class="new-show-field">
+            <label for="welcome-new-show-location">{{ t('project.location') }}</label>
+            <div class="new-show-location">
+              <input id="welcome-new-show-location" class="name-dialog__input" :value="newShowLocation" readonly />
+              <button ref="newShowBrowseButton" type="button" class="name-dialog__btn" @click="browseNewShowLocation">
+                {{ t('project.chooseLocation') }}
+              </button>
+            </div>
+          </div>
+          <p v-if="newShowError" class="new-show-error" role="alert">{{ newShowError }}</p>
+          <div class="name-dialog__actions">
+            <button type="button" class="name-dialog__btn" :disabled="creatingNewShow" @click="cancelNewShowDialog">{{ t('common.cancel') }}</button>
+            <button type="submit" class="name-dialog__btn name-dialog__btn--primary" :disabled="!canCreateNewShow || creatingNewShow">{{ t('project.createShow') }}</button>
+          </div>
+        </form>
+      </div>
+    </Teleport>
+
     <!-- Loading overlay (project open / create / save) -->
     <LoadingOverlay :visible="isLoading" :title="loadingMessage" />
 
-    <!-- Project repair dialog -->
-    <ProjectRepairModal
-      :visible="repairDialogVisible"
-      :issues="repairDialogIssues"
-      @confirm="confirmRepair"
-      @cancel="cancelRepair"
-    />
+    <ProjectRepairNotice v-if="projectRepair" :notice="projectRepair" @save="saveRepairedProject" />
 
     <!-- Unsaved-changes prompt (shown when leaving a project with autosave off) -->
     <UnsavedChangesModal
-      :visible="unsavedDialogVisible"
+      :visible="unsavedDialogVisible && unsavedDialogReason === 'project'"
+      :blocked="unsavedDialogBlocked"
       @save="unsavedSave"
       @discard="unsavedDiscard"
       @cancel="unsavedCancel"
@@ -159,9 +224,9 @@
     <!-- App-quit confirmation: unsaved changes, then (in local mode) whether
          to also shut the local audio server down. -->
     <QuitConfirmModal
-      :visible="quitUnsavedVisible"
+      :visible="unsavedDialogVisible && unsavedDialogReason === 'quit'"
       :title="t('quitModal.unsavedTitle')"
-      :message="t('quitModal.unsavedMessage')"
+      :message="t('quitModal.unsavedMessage') + (unsavedDialogBlocked ? ' ' + t('unsavedModal.finishCurrent') : '')"
       :buttons="quitUnsavedButtons"
       @pick="onQuitUnsavedPick"
     />
@@ -185,13 +250,13 @@
       @cancel="importChoiceVisible = false"
     />
 
-    <!-- Server file picker — used both to choose a canonical or legacy archive
+    <!-- Server file picker — used both to choose a show archive
          on the server and to choose the extract destination. -->
     <ServerFilePickerModal
       :open="importServerPickerOpen"
       :mode="importServerPickerStage === 'destination' ? 'directory' : 'file'"
-      :filter="importServerPickerStage === 'destination' ? 'all' : '.dwcuepack,.lpa'"
-      :filter-options="importServerPickerStage === 'destination' ? ['all'] : ['.dwcuepack,.lpa', 'all']"
+      :filter="importServerPickerStage === 'destination' ? 'all' : '.dwcuepack'"
+      :filter-options="importServerPickerStage === 'destination' ? ['all'] : ['.dwcuepack', 'all']"
       :location-context="importServerPickerStage === 'destination' ? 'archive-import-destination' : 'archive-import'"
       @pick="onImportServerPickerPick"
       @close="importServerPickerOpen = false"
@@ -204,26 +269,26 @@
 <script setup lang="ts">
 import 'material-symbols/rounded.css';
 import OneShotPanel from './components/OneShotPanel.vue';
+import WelcomeScreen from './components/WelcomeScreen.vue';
 import type { ProjectFileKind } from '~/utils/projectFileFormats';
+import { projectFileAction } from '~/utils/projectFileFormats';
 import type { OneShotMutationIdentity, OneShotMutationRequest, OneShotMutationResult, OneShotProjectEnvelope } from '~/types/oneShotMutation';
 import { sameOneShotMutationIdentity } from '~/types/oneShotMutation';
 import { createProjectOpenGuard } from '~/utils/projectOpenGuard';
+import { runExclusivePendingAction } from '~/utils/acknowledgedAction';
 import { applyOneShotMutation, enforceOneShotDisarmFences } from '~/utils/oneShotMutation';
 
 const {
-  currentProject, saveProject, openProject, closeProject, confirmUnsavedChanges,
-  hasUnsavedChanges, autoSaveEnabled, projectSyncIdentity,
+  currentProject, projectEpoch, saveProject, createNewProject, openProject, confirmUnsavedChanges,
+  autoSaveEnabled, projectSyncIdentity,
   projectHydrationStatus, projectHydrationError, retryProjectHydration,
   isLoading, loadingMessage,
-  repairDialogVisible, repairDialogIssues, confirmRepair, cancelRepair,
-  unsavedDialogVisible, unsavedSave, unsavedDiscard, unsavedCancel,
+  projectRepair, saveRepairedProject,
+  unsavedDialogVisible, unsavedDialogReason, unsavedDialogBlocked, unsavedSave, unsavedDiscard, unsavedCancel,
   deleteDialogVisible, deleteDialogCount, deleteDialogName, deleteDialogAllowOnly,
   deleteDialogConfirmAll, deleteDialogConfirmOnly, deleteDialogCancel,
 } = useProject();
 const { stopAllCues } = useAudioEngine();
-const pendingFileOpen = useState<{ path: string; kind: ProjectFileKind } | null>(
-  'liveplay:pendingFileOpen', () => null,
-);
 const { cartOnlyItems, clearCartOnlyItems, addCartOnlyItem } = useCartItems();
 import LoadingOverlay from './components/LoadingOverlay.vue';
 import AudioLoadProgress from './components/AudioLoadProgress.vue';
@@ -231,13 +296,108 @@ import LocationChoiceModal from './components/LocationChoiceModal.vue';
 import ServerFilePickerModal from './components/ServerFilePickerModal.vue';
 const { currentLocale, setLocale, getDirection, t } = useLocalization();
 
-const guardedOpenProject = createProjectOpenGuard({
+const openProjectGuard = createProjectOpenGuard({
   confirmUnsavedChanges,
-  openProject,
-  onOpenFailed() {
-    useLiveplayServer().lastError = t('importProgress.openFailed');
+  openProject(path) {
+    useLiveplayServer().clearLastError();
+    return openProject(path);
+  },
+  onOpenFailed(path) {
+    const server = useLiveplayServer();
+    server.lastError ??= t('project.openFailed', { path });
   },
 });
+const guardedOpenProject = (path: string, canOpen?: () => boolean) => {
+  if (projectFileAction(path) !== 'open-project') {
+    useLiveplayServer().lastError = t('project.openFailed', { path });
+    return Promise.resolve(false);
+  }
+  return runExclusivePendingAction('project-file-change', `open:${path}`, () => openProjectGuard(path, canOpen));
+};
+
+const welcomeScreen = ref<InstanceType<typeof WelcomeScreen> | null>(null);
+const projectPicker = ref<'open' | 'new-location' | null>(null);
+const projectPickerFallback = ref('');
+const showNewShowDialog = ref(false);
+const projectFileDialogOpen = computed(() => showNewShowDialog.value || projectPicker.value !== null);
+const newShowName = ref('');
+const newShowLocation = ref('');
+const newShowLocations = useFilePickerLocations(() => String(useLiveplayServer().serverUrl), 'project-create');
+const newShowNameInput = ref<HTMLInputElement | null>(null);
+const newShowBrowseButton = ref<HTMLButtonElement | null>(null);
+const newShowDialogReturnFocus = ref<HTMLElement | null>(null);
+const creatingNewShow = ref(false);
+const newShowError = ref<string | null>(null);
+const canCreateNewShow = computed(() => !!newShowName.value.trim() && !!newShowLocation.value.trim());
+
+function showNewProjectDialog(fallbackFolder: string) {
+  if (projectFileDialogOpen.value || isLoading.value || unsavedDialogVisible.value) return;
+  projectPickerFallback.value = fallbackFolder;
+  newShowName.value = '';
+  newShowError.value = null;
+  newShowLocation.value = newShowLocations.lastFolder.value ?? fallbackFolder;
+  newShowDialogReturnFocus.value = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  showNewShowDialog.value = true;
+  nextTick(() => newShowNameInput.value?.focus());
+}
+
+function showOpenProjectPicker(fallbackFolder: string) {
+  if (projectFileDialogOpen.value || isLoading.value || unsavedDialogVisible.value) return;
+  projectPickerFallback.value = fallbackFolder;
+  projectPicker.value = 'open';
+}
+
+function browseNewShowLocation() {
+  showNewShowDialog.value = false;
+  projectPicker.value = 'new-location';
+}
+
+function closeProjectPicker() {
+  if (projectPicker.value === 'new-location') {
+    showNewShowDialog.value = true;
+    nextTick(() => newShowBrowseButton.value?.focus());
+  }
+  projectPicker.value = null;
+}
+
+function onProjectPickerPick(path: string) {
+  const intent = projectPicker.value;
+  closeProjectPicker();
+  if (!path) return;
+  if (intent === 'new-location') newShowLocation.value = path;
+  else if (intent === 'open') void guardedOpenProject(path);
+}
+
+async function createNewShow() {
+  const name = newShowName.value.trim();
+  const folder = newShowLocation.value.trim();
+  if (!name || !folder || creatingNewShow.value) return;
+  creatingNewShow.value = true;
+  newShowError.value = null;
+  try {
+    const created = await runExclusivePendingAction('project-file-change', 'create', async () => {
+      if (!await confirmUnsavedChanges()) return false;
+      const server = useLiveplayServer();
+      server.clearLastError();
+      const ok = await createNewProject(name, folder);
+      if (!ok) newShowError.value = server.lastError ?? t('project.createFailed');
+      return ok;
+    });
+    if (created) showNewShowDialog.value = false;
+    else nextTick(() => newShowNameInput.value?.focus());
+  } finally {
+    creatingNewShow.value = false;
+  }
+}
+
+function cancelNewShowDialog() {
+  if (creatingNewShow.value) return;
+  showNewShowDialog.value = false;
+  nextTick(() => {
+    if (newShowDialogReturnFocus.value?.isConnected) newShowDialogReturnFocus.value.focus();
+    else welcomeScreen.value?.queueStageFocus();
+  });
+}
 
 let activeFileRoute = '';
 async function routePendingFile(data: { filePath: string; kind: ProjectFileKind }) {
@@ -248,21 +408,14 @@ async function routePendingFile(data: { filePath: string; kind: ProjectFileKind 
       await guardedOpenProject(data.filePath);
       return;
     }
-    if (data.kind === 'native-archive' || data.kind === 'legacy-archive') {
-      if (!(await confirmUnsavedChanges())) return;
+    if (data.kind === 'native-archive' && projectFileAction(data.filePath) === 'import-archive') {
+      if (archiveBusy.value || archiveOpening.value || importServerPickerOpen.value || !(await confirmUnsavedChanges())) return;
+      pendingArchiveOnServer.value = '';
       pendingArchiveClientPath.value = data.filePath;
       pendingArchiveName.value = data.filePath.split(/[\/]/).pop() || 'import.dwcuepack';
       importServerPickerStage.value = 'destination';
       importServerPickerOpen.value = true;
       return;
-    }
-    pendingFileOpen.value = { path: data.filePath, kind: data.kind };
-    if (currentProject.value) {
-      if (!(await confirmUnsavedChanges())) {
-        pendingFileOpen.value = null;
-        return;
-      }
-      await closeProject();
     }
   } finally {
     activeFileRoute = '';
@@ -301,6 +454,7 @@ useStateViewer();
 // Progress modal state
 const progressModal = ref({
   visible: false,
+  background: false,
   title: '',
   message: '',
   percentage: 0
@@ -308,8 +462,13 @@ const progressModal = ref({
 
 // Project selection modal state
 const showProjectSelection = ref(false);
-const availableProjects = ref<string[]>([]);
-const pendingImportPath = ref<string>('');
+const archiveBusy = ref(false);
+const archiveOpening = ref(false);
+const archiveReceipt = shallowRef<{ serverUrl: string; extractPath: string; projectFiles: string[] } | null>(null);
+const archiveCanOpen = computed(() => {
+  const server = useLiveplayServer();
+  return server.connected && !server.cueStartsBlocked && archiveReceipt.value?.serverUrl === server.serverUrl;
+});
 
 // Color picker for accent color
 const showColorPicker = ref(false);
@@ -498,9 +657,23 @@ onMounted(() => {
     window.electronAPI.onMenuShowAbout(() => {
       showAboutModal.value = true;
     });
+
+    window.electronAPI.onMenuNewProject(() => {
+      if (currentProject.value) showNewProjectDialog(currentProject.value.folderPath);
+      else welcomeScreen.value?.handleNewProject();
+    });
+    window.electronAPI.onMenuOpenProject(() => {
+      if (currentProject.value) showOpenProjectPicker(currentProject.value.folderPath);
+      else welcomeScreen.value?.handleOpenProject();
+    });
+    window.electronAPI.onMenuOpenRecentProject((_event, path) => {
+      if (!projectFileDialogOpen.value && (currentProject.value || welcomeScreen.value?.projectPickerReady)) {
+        return guardedOpenProject(path);
+      }
+    });
     
-    // File > Import Project. Local servers can browse a canonical .dwcuepack
-    // or legacy .lpa directly. Remote servers can browse their filesystem or
+    // File > Import Project. Local servers can browse a .dwcuepack directly.
+    // Remote servers can browse their filesystem or
     // upload an archive selected on this computer. Extraction always happens
     // beside the server's audio engine so imported media paths resolve.
     window.electronAPI.onMenuImportProject(() => {
@@ -546,8 +719,7 @@ onMounted(() => {
       void window.electronAPI.checkForUpdates();
     });
     
-    // Warm-start pushes and cold-start pulls share semantic file kinds, then
-    // WelcomeScreen chooses native open, legacy conversion, or archive import.
+    // Cold and warm file associations share the same native format routing.
     window.electronAPI.onOpenFileAssociation((_event: any, data: { filePath: string; kind: ProjectFileKind }) => {
       void routePendingFile(data);
     });
@@ -572,9 +744,7 @@ onMounted(() => {
 //      or return to the project.
 // Either prompt's "return" aborts the quit entirely.
 // ---------------------------------------------------------------------------
-const quitUnsavedVisible = ref(false);
 const quitServerVisible  = ref(false);
-let _quitUnsavedResolve: ((choice: 'discard' | 'save' | 'cancel') => void) | null = null;
 let _quitServerResolve:  ((choice: 'server'  | 'client' | 'cancel') => void) | null = null;
 let quitFlowActive = false;
 
@@ -589,19 +759,12 @@ const quitServerButtons = computed(() => [
   { key: 'server', label: t('quitModal.serverCloseServer'), variant: 'danger' as const, icon: 'power_settings_new' },
 ]);
 
-function onQuitUnsavedPick(choice: string) { _quitUnsavedResolve?.(choice as 'discard' | 'save' | 'cancel'); }
-function onQuitServerPick(choice: string)  { _quitServerResolve?.(choice as 'server' | 'client' | 'cancel'); }
-
-function askQuitUnsaved(): Promise<'discard' | 'save' | 'cancel'> {
-  quitUnsavedVisible.value = true;
-  return new Promise((resolve) => {
-    _quitUnsavedResolve = (choice) => {
-      quitUnsavedVisible.value = false;
-      _quitUnsavedResolve = null;
-      resolve(choice);
-    };
-  });
+function onQuitUnsavedPick(choice: string) {
+  if (choice === 'save') void unsavedSave();
+  else if (choice === 'discard') void unsavedDiscard();
+  else void unsavedCancel();
 }
+function onQuitServerPick(choice: string)  { _quitServerResolve?.(choice as 'server' | 'client' | 'cancel'); }
 
 function askQuitServer(): Promise<'server' | 'client' | 'cancel'> {
   quitServerVisible.value = true;
@@ -620,22 +783,7 @@ async function runQuitFlow() {
   const api = (window as any).electronAPI;
   try {
     // Step 1 — unsaved changes (including a failed autosave).
-    if (hasUnsavedChanges.value) {
-      const choice = await askQuitUnsaved();
-      if (choice === 'cancel') return;
-      if (choice === 'save') {
-        try {
-          const saved = await saveProject({ force: true });
-          if (!saved) {
-            console.error('[quit] save failed, aborting quit');
-            return;
-          }
-        } catch (e) {
-          console.error('[quit] save failed, aborting quit:', e);
-          return;
-        }
-      }
-    }
+    if (!await confirmUnsavedChanges('quit')) return;
     if (installOnExitRequested) {
       const accepted = await api?.app?.confirmQuit?.({
         installUpdate: true,
@@ -703,23 +851,16 @@ const pendingArchiveOnServer    = ref('');
 const pendingArchiveClientPath  = ref('');
 const pendingArchiveName        = ref('');
 
-const pendingArchiveImportReady = useState<string | null>('liveplay:pendingLpaImportReady', () => null);
-watch(pendingArchiveImportReady, (archivePath) => {
-  if (!archivePath) return;
-  pendingArchiveImportReady.value = null;
-  pendingArchiveClientPath.value = archivePath;
-  pendingArchiveName.value = archivePath.split(/[\/]/).pop() || 'import.dwcuepack';
-  importServerPickerStage.value = 'destination';
-  importServerPickerOpen.value = true;
-});
-
 let importFlowActive = false;
 async function startImportFlow() {
-  if (importFlowActive) return;
+  if (importFlowActive || archiveBusy.value || archiveOpening.value || importServerPickerOpen.value) return;
   importFlowActive = true;
   try {
     if (!(await confirmUnsavedChanges())) return;
     const server = useLiveplayServer();
+    pendingArchiveClientPath.value = '';
+    pendingArchiveOnServer.value = '';
+    pendingArchiveName.value = '';
     importServerPickerStage.value = 'archive';
     if (server.isLocalServer) importServerPickerOpen.value = true;
     else importChoiceVisible.value = true;
@@ -735,8 +876,11 @@ async function onImportChoice(choice: 'server' | 'client') {
     importServerPickerOpen.value = true;
     return;
   }
+  const project = currentProject.value;
+  const server = useLiveplayServer();
+  const serverUrl = server.serverUrl;
   const archivePath = await window.electronAPI.showOpenArchiveDialog();
-  if (!archivePath) return;
+  if (!archivePath || currentProject.value !== project || server.serverUrl !== serverUrl) return;
   pendingArchiveClientPath.value = archivePath;
   pendingArchiveName.value = archivePath.split(/[\/]/).pop() || 'import.dwcuepack';
   importServerPickerStage.value = 'destination';
@@ -745,17 +889,30 @@ async function onImportChoice(choice: 'server' | 'client') {
 
 async function onImportServerPickerPick(serverPath: string) {
   importServerPickerOpen.value = false;
-  if (!serverPath) return;
+  if (!serverPath || archiveBusy.value || archiveOpening.value) return;
   const server = useLiveplayServer();
   if (importServerPickerStage.value === 'archive') {
+    if (projectFileAction(serverPath) !== 'import-archive') {
+      server.lastError = t('importProgress.openFailed');
+      return;
+    }
     pendingArchiveOnServer.value = serverPath;
     importServerPickerStage.value = 'destination';
     importServerPickerOpen.value = true;
     return;
   }
 
+  const serverUrl = server.serverUrl;
+  const session = server.projectSessionId;
+  const epoch = projectEpoch.value;
+  const canAutoOpen = () => !progressModal.value.background && archiveCanOpen.value &&
+    server.projectSessionId === session && projectEpoch.value === epoch;
+  archiveBusy.value = true;
+  archiveReceipt.value = null;
+  showProjectSelection.value = false;
   progressModal.value = {
     visible: true,
+    background: false,
     title: t('importProgress.title'),
     message: t('importProgress.message') + ' ' + (pendingArchiveName.value
       || pendingArchiveOnServer.value.split(/[\/]/).pop() || '') + '…',
@@ -773,36 +930,60 @@ async function onImportServerPickerPick(serverPath: string) {
       server.lastError = t('importProgress.openFailed');
       return;
     }
-    if (result.projectFiles.length > 1) {
-      availableProjects.value = result.projectFiles;
-      pendingImportPath.value = result.extractPath;
-      showProjectSelection.value = true;
-    } else {
-      await guardedOpenProject(result.extractPath + '/' + result.projectFiles[0]);
-    }
+    archiveReceipt.value = { ...result, serverUrl };
+    progressModal.value.message = t('importProgress.savedOnServer', { path: result.extractPath, server: serverUrl });
+    if (canAutoOpen()) await openImportedArchive(canAutoOpen);
   } catch (error) {
     console.error('Import failed:', error);
     server.lastError = t('importProgress.openFailed');
   } finally {
-    window.setTimeout(() => { progressModal.value.visible = false; }, 300);
+    archiveBusy.value = false;
+    progressModal.value.background = true;
+    progressModal.value.visible = !!archiveReceipt.value && !showProjectSelection.value;
     pendingArchiveOnServer.value = '';
     pendingArchiveClientPath.value = '';
     pendingArchiveName.value = '';
   }
 }
 
-const handleProjectSelection = async (projectName: string) => {
-  const projectPath = pendingImportPath.value + '/' + projectName;
-  if (!await guardedOpenProject(projectPath)) return;
+async function openImportedArchive(canOpen = () => true) {
+  const receipt = archiveReceipt.value;
+  if (!receipt || !archiveCanOpen.value || !canOpen()) return;
+  if (receipt.projectFiles.length > 1) {
+    progressModal.value.visible = false;
+    showProjectSelection.value = true;
+    return;
+  }
+  await handleProjectSelection(receipt.projectFiles[0]!, canOpen);
+}
+
+async function handleProjectSelection(projectName: string, canOpen = () => true) {
+  const receipt = archiveReceipt.value;
+  if (archiveOpening.value || !receipt?.projectFiles.includes(projectName) || !archiveCanOpen.value) return;
+  const session = useLiveplayServer().projectSessionId;
+  const epoch = projectEpoch.value;
+  archiveOpening.value = true;
+  progressModal.value.visible = false;
   showProjectSelection.value = false;
-  pendingImportPath.value = '';
-  availableProjects.value = [];
-};
+  try {
+    const path = receipt.extractPath + '/' + projectName;
+    if (await guardedOpenProject(path, () => canOpen() && archiveCanOpen.value &&
+      archiveReceipt.value === receipt && useLiveplayServer().projectSessionId === session &&
+      projectEpoch.value === epoch)) dismissArchiveReceipt();
+  } finally {
+    archiveOpening.value = false;
+    progressModal.value.visible = !!archiveReceipt.value;
+  }
+}
+
+function dismissArchiveReceipt() {
+  archiveReceipt.value = null;
+  progressModal.value.visible = false;
+}
 
 const handleProjectSelectionCancel = () => {
   showProjectSelection.value = false;
-  pendingImportPath.value = '';
-  availableProjects.value = [];
+  progressModal.value.visible = !!archiveReceipt.value;
 };
 
 // Set initial theme from project
@@ -1025,5 +1206,122 @@ onMounted(() => {
     font-size: 48px;
     opacity: 0.3;
   }
+}
+</style>
+
+<style>
+/* New Show form is teleported to body. */
+.name-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9200;
+  background: var(--dialog-backdrop);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.name-dialog {
+  background: var(--dialog-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--dialog-radius);
+  padding: var(--dialog-padding);
+  min-width: 360px;
+  max-width: 480px;
+  width: 90vw;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  box-shadow: var(--dialog-shadow);
+}
+
+.name-dialog__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.name-dialog__input {
+  padding: 10px 12px;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-md);
+  color: var(--color-text-primary);
+  font-size: 14px;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.name-dialog__input:focus { border-color: var(--color-accent); }
+
+.new-show-dialog { width: min(520px, 92vw); }
+
+.new-show-error {
+  margin: 0;
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.new-show-field {
+  display: grid;
+  gap: 6px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.new-show-location {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--spacing-sm);
+}
+
+.new-show-location .name-dialog__input {
+  min-width: 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+}
+
+.name-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+}
+
+.name-dialog__btn {
+  min-height: var(--panel-control-height);
+  padding: 6px 12px;
+  border-radius: var(--control-radius);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  color: var(--color-text-primary);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.name-dialog__btn:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+  border-color: var(--color-accent);
+}
+
+.name-dialog__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.name-dialog__btn--primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
+.name-dialog__btn--primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
 }
 </style>

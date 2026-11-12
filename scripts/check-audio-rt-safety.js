@@ -20,11 +20,11 @@ const callback = section(
 const renderLoop = section(
   engine,
   'void AudioEngine::render_loop()',
-  'void AudioEngine::decode_loop()',
+  'void AudioEngine::decode_loop(',
 );
 const decodeLoop = section(
   engine,
-  'void AudioEngine::decode_loop()',
+  'void AudioEngine::decode_loop(',
   'void AudioEngine::render_one_block',
 );
 const renderBlock = section(
@@ -81,9 +81,11 @@ assert.match(engine, /notificationCallback\s*=\s*&AudioEngine::ma_notification_c
   'device loss/reroute/interruption notifications must be wired');
 assert.match(
   enumerateDevices,
-  /ma_device_id_equal\([\s\S]*playback_infos\[i\]\.id/,
+  /ma_device_id_equal\(&dev->ma_dev->playback\.id, &entry\.native_id\)/,
   'enumeration must follow the native output ID across default-device reroutes',
 );
+assert.doesNotMatch(enumerateDevices, /ma_context_(?:init|get_devices|get_device_info|uninit)\(/,
+  'device status must not execute native discovery on a control or broadcast worker');
 assert.ok(
   openDevice.indexOf('ma_device_init') <
     openDevice.indexOf('ma_device_id_equal'),
@@ -96,10 +98,10 @@ assert.match(
 );
 assert.match(renderLoop, /ma_device_get_state/,
   'render loop must reconcile backends that omit stop notifications');
-assert.match(renderLoop, /clock_master->clock_controller\.target_frames\(\)/,
-  'clock-master occupancy must gate production without filling the ring');
-assert.match(engine, /void AudioEngine::decode_loop\(\)[\s\S]*service_read_ahead\(1\)/,
-  'one shared decode worker must service cue read-ahead');
+assert.match(renderLoop, /const auto target = cfg_\.render_block \* 3;/,
+  'clock-master production must keep its three-block target independent of drift correction');
+assert.match(decodeLoop, /service_read_ahead\(1,\s*\/\*wait_for_decoder=\*\/false\)/,
+  'the shared decode worker must skip a busy cue instead of waiting behind control I/O');
 assert.match(
   decodeLoop,
   /transport\s*==\s*TransportState::Stopped[\s\S]*transport\s*==\s*TransportState::Paused/,

@@ -3,15 +3,11 @@
 const ProjectFileKind = Object.freeze({
   NativeProject: 'native-project',
   NativeArchive: 'native-archive',
-  LegacyProject: 'legacy-project',
-  LegacyArchive: 'legacy-archive',
 });
 
 const PROJECT_EXTENSIONS = Object.freeze({
   nativeProject: '.dwcue',
   nativeArchive: '.dwcuepack',
-  legacyProject: '.liveplay',
-  legacyArchive: '.lpa',
 });
 
 function extensionForFilePath(filePath) {
@@ -27,10 +23,6 @@ function fileKindFor(filePath) {
       return ProjectFileKind.NativeProject;
     case PROJECT_EXTENSIONS.nativeArchive:
       return ProjectFileKind.NativeArchive;
-    case PROJECT_EXTENSIONS.legacyProject:
-      return ProjectFileKind.LegacyProject;
-    case PROJECT_EXTENSIONS.legacyArchive:
-      return ProjectFileKind.LegacyArchive;
     default:
       return null;
   }
@@ -40,10 +32,7 @@ function fileActionFor(filePath) {
   switch (fileKindFor(filePath)) {
     case ProjectFileKind.NativeProject:
       return 'open-project';
-    case ProjectFileKind.LegacyProject:
-      return 'import-legacy-project';
     case ProjectFileKind.NativeArchive:
-    case ProjectFileKind.LegacyArchive:
       return 'import-archive';
     default:
       return null;
@@ -52,8 +41,7 @@ function fileActionFor(filePath) {
 
 function canonicalArchivePath(filePath) {
   const extension = extensionForFilePath(filePath);
-  if (extension === PROJECT_EXTENSIONS.nativeArchive ||
-      extension === PROJECT_EXTENSIONS.legacyArchive) {
+  if (extension === PROJECT_EXTENSIONS.nativeArchive) {
     return filePath.slice(0, -extension.length) + PROJECT_EXTENSIONS.nativeArchive;
   }
   return filePath + PROJECT_EXTENSIONS.nativeArchive;

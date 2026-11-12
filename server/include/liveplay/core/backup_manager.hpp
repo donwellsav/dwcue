@@ -30,7 +30,9 @@ public:
     void start();
     void stop();
 
+#ifndef LIVEPLAY_TEST_ACCESS
 private:
+#endif
     void loop();
     void do_backup();
 

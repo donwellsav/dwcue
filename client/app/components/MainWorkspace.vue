@@ -47,7 +47,7 @@
 
       <div class="workspace-panels">
         <div
-          v-if="!cartClosed && !cartDetached"
+          v-if="cartVisible"
           id="cart-player-panel"
           class="cart-section"
           :class="{ 'cart-section--fullscreen': cartFullscreen }"
@@ -207,7 +207,11 @@
       :title="progressModal.title"
       :message="progressModal.message"
       :percentage="progressModal.percentage"
-    />
+      :background="progressModal.background"
+      @background="progressModal.background = true"
+    >
+      <Btn v-if="progressModal.percentage === 100" type="button" :text="t('actions.close')" @click="progressModal.visible = false" />
+    </ProgressModal>
 
     <!-- Export: server vs client choice (only shown for remote servers). -->
     <LocationChoiceModal
@@ -270,10 +274,12 @@ const { levels: outputTargetLevels } = useOutputTarget();
 // Progress modal state
 const progressModal = ref({
   visible: false,
+  background: false,
   title: '',
   message: '',
   percentage: 0
 });
+const exportBusy = ref(false);
 
 // Resizable cart width
 const cartWidth = ref(300);
@@ -296,6 +302,8 @@ watch(hasAssignedOneShots, (assigned) => {
 }, { immediate: true });
 const cartFullscreen = ref(false);
 const cartDetached = ref(false);
+const cartVisible = computed(() => !cartClosed.value && !cartDetached.value);
+const { mount: mountHotkeys, unmount: unmountHotkeys } = useCartHotkeys(() => cartVisible.value);
 const outputConsoleMinDb = -60;
 const outputConsoleMaxDb = 40;
 const limiterCeilingDragPixelsPerStep = 6;
@@ -590,33 +598,6 @@ if (import.meta.client && window.electronAPI) {
     void closeProject();
   });
 
-  // File > New and File > Open while a project is already open: close the
-  // current project (locally + on the server) and stash the intent so the
-  // welcome screen pops the corresponding picker as soon as it mounts.
-  // Without this, these menu items were silent when something was open —
-  // only WelcomeScreen used to subscribe, and it isn't mounted right now.
-  window.electronAPI.onMenuNewProject(async () => {
-    if (!(await confirmUnsavedChanges())) return;
-    try { sessionStorage.setItem('liveplay:welcomeIntent', 'new'); } catch {}
-    await closeProject();
-  });
-
-  window.electronAPI.onMenuOpenProject(async () => {
-    if (!(await confirmUnsavedChanges())) return;
-    try { sessionStorage.setItem('liveplay:welcomeIntent', 'open'); } catch {}
-    await closeProject();
-  });
-
-  // File > Open Recent > <project> while a project is already open. Same
-  // shape as onMenuOpenProject, but we stash the exact path so the welcome
-  // screen opens it directly instead of popping the file picker.
-  window.electronAPI.onMenuOpenRecentProject(async (_e, projectPath) => {
-    if (!projectPath) return;
-    if (!(await confirmUnsavedChanges())) return;
-    try { sessionStorage.setItem('liveplay:welcomeOpenPath', projectPath); } catch {}
-    await closeProject();
-  });
-
   window.electronAPI.onMenuOpenProjectFolder(() => {
     if (currentProject.value) {
       window.electronAPI.openFolder(currentProject.value.folderPath);
@@ -645,7 +626,7 @@ const exportChoiceVisible   = ref(false);
 const exportServerPickerOpen = ref(false);
 
 async function startExportFlow() {
-  if (!currentProject.value) return;
+  if (!currentProject.value || exportBusy.value) return;
   if (server.isLocalServer) {
     // Local: skip the choice modal and go straight to the server picker
     // (the "server" here is this same computer, so this matches the user's
@@ -681,19 +662,24 @@ async function onExportServerPath(serverDir: string) {
 async function exportToClientDownload() {
   if (!currentProject.value) return;
   const project = currentProject.value;
+  const serverUrl = server.serverUrl;
   const defaultName = project.name + '.dwcuepack';
   // Pick the local destination FIRST so a cancelled save dialog doesn't
   // leave a stray archive sitting in the server's temp directory.
   const localDest = await window.electronAPI.showSaveArchiveDialog(defaultName);
-  if (!localDest) return;
+  if (!localDest || currentProject.value !== project || server.serverUrl !== serverUrl) return;
   await runExport({ outputPath: '', downloadTo: localDest });
 }
 
 async function runExport(opts: { outputPath: string; downloadTo?: string }) {
-  if (!currentProject.value) return;
+  if (!currentProject.value || exportBusy.value) return;
   const project = currentProject.value;
+  const serverUrl = server.serverUrl;
+  const session = server.projectSessionId;
+  exportBusy.value = true;
   progressModal.value = {
     visible: true,
+    background: false,
     title: t('exportProgress.title'),
     message: t('exportProgress.message') + ' ' + project.name + '.dwcuepack…',
     percentage: 30,
@@ -702,21 +688,25 @@ async function runExport(opts: { outputPath: string; downloadTo?: string }) {
     if (!(await saveProject({ force: true }))) {
       throw new Error('Project must be saved before it can be exported');
     }
+    if (currentProject.value !== project || server.serverUrl !== serverUrl || server.projectSessionId !== session)
+      throw new Error('Show changed before export. Start the export again.');
     const result = await server.exportProjectArchive(
       project.folderPath, project.name, opts.outputPath);
-    progressModal.value.percentage = opts.downloadTo ? 60 : 100;
-
-    if (opts.downloadTo && result.downloadToken) {
+    if (opts.downloadTo) {
+      if (!result.downloadToken || server.serverUrl !== serverUrl) throw new Error('Archive download is unavailable.');
+      progressModal.value.percentage = 60;
       progressModal.value.message =
         t('exportProgress.downloading') + ' ' + project.name + '.dwcuepack…';
       await server.downloadArchiveToFile(result.downloadToken, opts.downloadTo);
     }
+    progressModal.value.message = t('exportProgress.saved', { path: opts.downloadTo || result.archivePath });
     progressModal.value.percentage = 100;
   } catch (e) {
     console.error('Export failed:', e);
     server.lastError = `Export failed: ${e instanceof Error ? e.message : String(e)}`;
   } finally {
-    setTimeout(() => { progressModal.value.visible = false; }, 400);
+    exportBusy.value = false;
+    progressModal.value.visible = progressModal.value.background && progressModal.value.percentage === 100;
   }
 }
 
@@ -780,7 +770,7 @@ const isForwardedFromVideoOutput = (e: KeyboardEvent): boolean =>
     .dwcueForwardedFromVideoOutput === true;
 
 const handleKeydown = (e: KeyboardEvent) => {
-  if (projectHydrationStatus.value !== 'ready') return;
+  if (e.defaultPrevented || projectHydrationStatus.value !== 'ready') return;
   // Save on F1 key (alternative to big play button)
   if (e.key === 'F1') {
     e.preventDefault();
@@ -835,12 +825,14 @@ const handleKeydown = (e: KeyboardEvent) => {
 
 onMounted(() => {
   if (import.meta.client) {
+    mountHotkeys();
     window.addEventListener('keydown', handleKeydown);
   }
 });
 
 onUnmounted(() => {
   if (import.meta.client) {
+    unmountHotkeys();
     window.removeEventListener('keydown', handleKeydown);
   }
 });

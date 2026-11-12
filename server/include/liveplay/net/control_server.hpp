@@ -51,9 +51,8 @@
 //   GET    /api/project                      — current project JSON
 //   POST   /api/project/load                 — open native .dwcue
 //   POST   /api/project/save                 — save native .dwcue
-//   POST   /api/project/import-legacy        — copy .liveplay to sibling .dwcue
 //   POST   /api/project/export               — export native .dwcuepack
-//   POST   /api/project/import               — import .dwcuepack or legacy .lpa
+//   POST   /api/project/import               — import .dwcuepack
 //
 // WebSocket: /ws — bidirectional JSON message stream.
 //   Server → Client: { "type": "meters", ... } @ ~60Hz, plus
@@ -115,6 +114,7 @@ private:
     void install_routes();
     void broadcast_loop();
     void waveform_worker();   // drains the async waveform-generation queue
+    void http_action_worker();
 
     // Fan-out helper for multi-client mutation sync. Mutating REST routes
     // call this with a doc_patch payload so every connected client mirrors

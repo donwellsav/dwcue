@@ -1,5 +1,8 @@
 # Direct Common-Audio Playback Design
 
+> **Historical design/plan snapshot:** implementation status and source-version references below describe this document’s original planning point. They are not the current task list or a release claim. For the committed live-show repairs through T30 and remaining physical acceptance, use the [current workplan](../plans/2026-11-03-live-show-reliability.md). Current operator instructions are in the [manual](../../operators-manual.md).
+
+
 ## Goal
 
 DonWells Cue plays common audio formats from their original files. Decode, channel conversion, and resampling happen in memory; playback does not create replacement media files or persistent decoded-audio caches.

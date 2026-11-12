@@ -5,7 +5,7 @@
         <header class="qm-header">
           <h3>{{ title }}</h3>
         </header>
-        <p class="qm-message">{{ message }}</p>
+        <p class="qm-message" aria-live="polite">{{ message }}</p>
         <div class="qm-actions">
           <button
             v-for="btn in buttons"
@@ -14,7 +14,7 @@
             :class="btn.variant"
             @click="$emit('pick', btn.key)"
           >
-            <span v-if="btn.icon" class="material-symbols-rounded">{{ btn.icon }}</span>
+            <span v-if="btn.icon" class="material-symbols-rounded" aria-hidden="true">{{ btn.icon }}</span>
             <span>{{ btn.label }}</span>
           </button>
         </div>

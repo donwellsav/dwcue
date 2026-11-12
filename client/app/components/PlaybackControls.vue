@@ -287,7 +287,7 @@ const server = useLiveplayServer();
 const { uiMode } = useUiMode();
 // Show Mode enlarges the GO / Stop-All buttons for touch.
 const showMode = computed(() => uiMode.value === 'playback');
-const projectControlsReady = computed(() => projectHydrationStatus.value === 'ready');
+const projectControlsReady = computed(() => projectHydrationStatus.value === 'ready' && !server.cueStartsBlocked);
 
 // Preview is an isolated audition workspace. Its In/Out edits stay temporary
 // until the operator explicitly chooses Save Trim.

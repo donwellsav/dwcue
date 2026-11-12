@@ -1,9 +1,12 @@
 # DonWells Cue — Video Playback v1 Spec
 
+> **Historical design/plan snapshot:** implementation status and source-version references below describe this document’s original planning point. They are not the current task list or a release claim. For the committed live-show repairs through T30 and remaining physical acceptance, use the [current workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md). Current operator instructions are in the [manual](docs/operators-manual.md).
+
+
 > **Audience:** fresh agent / developer with zero prior context. Read
 > [`IMPROVEMENTS_PLAN.md` §1](IMPROVEMENTS_PLAN.md#1-current-architecture-read-this-first) first for the
 > general architecture.
-> **Status:** Video Playback v1 shipped in v2.6.12 and remains supported in current v2.6.14 source `7a0eee2`. Section 7 also records session, recovery, shortcut-focus and fail-closed diagnostic cleanup hardening.
+> **Original checkpoint:** Video Playback v1 was recorded as delivered by v2.6.12; this plan’s later v2.6.14 source snapshot was `7a0eee2`. Current behavior and verification are tracked in the workplan linked above. Section 7 also records session, recovery, shortcut-focus and fail-closed diagnostic cleanup hardening.
 > This source provenance is not a published-installer claim; verify the release page and installed About version, and do not infer platform certification from source support alone.
 > This is an implementation/design record and retains some proposal tense, not an operator guide.
 > For show operation, use the [operator manual (PDF)](docs/operators-manual.pdf) or its

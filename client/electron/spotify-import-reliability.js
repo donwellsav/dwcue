@@ -22,10 +22,41 @@ function spotifyReviewIsValid(review, senderId, url, now = Date.now()) {
   return !!review && review.senderId === senderId && review.url === url && review.expiresAt >= now;
 }
 
-function normalizeTrackIds(value) {
-  if (!Array.isArray(value) || value.length > 10000) return null;
+function normalizeSpotifyTrackIds(value) {
+  if (!Array.isArray(value)) return null;
   const ids = value.filter((id) => typeof id === 'string' && /^[A-Za-z0-9]{10,64}$/.test(id));
   return ids.length === value.length && new Set(ids).size === ids.length ? ids : null;
+}
+
+function spotifyContentParts(parsed) {
+  if (parsed.hostname !== 'open.spotify.com') return null;
+  const parts = parsed.pathname.split('/').filter(Boolean);
+  if (/^intl-[a-z]{2}(?:-[a-z]{2})?$/i.test(parts[0] || '')) parts.shift();
+  if (parts.length !== 2 ||
+      !['track', 'album', 'playlist', 'artist'].includes(parts[0]) ||
+      !/^[A-Za-z0-9]{10,64}$/.test(parts[1])) {
+    return null;
+  }
+  return { type: parts[0], id: parts[1] };
+}
+
+function validatedSpotifyUrl(rawUrl) {
+  const parsed = new URL(rawUrl);
+  if (parsed.protocol !== 'https:' || parsed.port || parsed.username || parsed.password) {
+    throw new TypeError('A valid Spotify HTTPS URL is required');
+  }
+  if (parsed.hostname === 'open.spotify.com') {
+    if (!spotifyContentParts(parsed)) {
+      throw new TypeError('Use a Spotify track, album, playlist, or artist URL');
+    }
+  } else if (
+    !['spotify.link', 'spotify.app.link'].includes(parsed.hostname) ||
+    !/^\/[A-Za-z0-9_-]{3,128}\/?$/.test(parsed.pathname)
+  ) {
+    throw new TypeError('Use a Spotify share URL');
+  }
+  parsed.hash = '';
+  return parsed.toString();
 }
 
 function normalizeSpotifyRecovery(value) {
@@ -36,13 +67,13 @@ function normalizeSpotifyRecovery(value) {
     value.projectFolderPath,
   ];
   if (paths.some((item) => typeof item !== 'string' || !path.isAbsolute(item))) return null;
-  let parsedUrl;
-  try { parsedUrl = new URL(value.url); } catch { return null; }
-  if (parsedUrl.protocol !== 'https:' || parsedUrl.hostname !== 'open.spotify.com') return null;
-  const selectedTrackIds = normalizeTrackIds(value.selectedTrackIds);
-  const completedTrackIds = normalizeTrackIds(value.completedTrackIds);
-  const failedTrackIds = normalizeTrackIds(value.failedTrackIds);
-  const pendingTrackIds = normalizeTrackIds(value.pendingTrackIds || []);
+  if (typeof value.url !== 'string') return null;
+  let url;
+  try { url = validatedSpotifyUrl(value.url); } catch { return null; }
+  const selectedTrackIds = normalizeSpotifyTrackIds(value.selectedTrackIds);
+  const completedTrackIds = normalizeSpotifyTrackIds(value.completedTrackIds);
+  const failedTrackIds = normalizeSpotifyTrackIds(value.failedTrackIds);
+  const pendingTrackIds = normalizeSpotifyTrackIds(value.pendingTrackIds || []);
   if (!selectedTrackIds || !completedTrackIds || !failedTrackIds || !pendingTrackIds) return null;
   const projectFolderPath = path.normalize(value.projectFolderPath);
   if (!Array.isArray(value.pendingFiles) || value.pendingFiles.length !== pendingTrackIds.length ||
@@ -71,7 +102,7 @@ function normalizeSpotifyRecovery(value) {
     activeProjectFolderPath: path.normalize(value.activeProjectFolderPath),
     destinationParentPath: path.normalize(value.destinationParentPath),
     projectFolderPath,
-    url: parsedUrl.toString(),
+    url,
     playlistName: value.playlistName.trim(),
     audioBitrate: normalizeSpotifyBitrate(value.audioBitrate),
     selectedTrackIds,
@@ -91,6 +122,9 @@ module.exports = {
   SPOTIFY_REVIEW_TTL_MS,
   normalizeSpotifyBitrate,
   normalizeSpotifyRecovery,
+  normalizeSpotifyTrackIds,
   renewSpotifyReview,
+  spotifyContentParts,
   spotifyReviewIsValid,
+  validatedSpotifyUrl,
 };

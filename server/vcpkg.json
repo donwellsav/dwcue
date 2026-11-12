@@ -1,11 +1,19 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "liveplay-server",
-  "version-string": "2.6.17",
+  "version-string": "2.6.20",
   "description": "DonWells Cue headless audio engine and control server.",
   "homepage": "https://github.com/donwellsav/dwcue",
   "license": "AGPL-3.0-only",
   "dependencies": [
+    {
+      "name": "curl",
+      "default-features": false,
+      "features": [
+        "ssl"
+      ],
+      "platform": "!osx"
+    },
     {
       "name": "nlohmann-json",
       "version>=": "3.11.3"

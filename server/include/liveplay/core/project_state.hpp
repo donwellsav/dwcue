@@ -11,10 +11,8 @@
 // On load(), the ProjectState walks the document and instructs the
 // AudioEngine to mirror it (load cues, create mixer channels, wire routes).
 //
-// Native persistence uses .dwcue JSON. Legacy .liveplay files are converted
-// through the explicit one-way import path before ProjectState::load() sees
-// them. In-memory server routing documents remain supported for control-plane
-// compatibility.
+// Native persistence uses .dwcue JSON.
+// In-memory server routing documents remain supported.
 // ============================================================================
 #pragma once
 
@@ -42,6 +40,28 @@ namespace liveplay::core {
 using json = nlohmann::json;
 
 namespace detail {
+
+// Runtime ids are session-local. Persist a unique catalog name; never guess
+// between duplicate names or route a disconnected output to another device.
+inline const audio::DeviceInfo* resolve_output_device(
+    const std::string& selection, const std::vector<audio::DeviceInfo>& devices) {
+    if (selection.empty()) return nullptr;
+    const audio::DeviceInfo* opened_id = nullptr;
+    const audio::DeviceInfo* named = nullptr;
+    bool ambiguous_name = false;
+    for (const auto& device : devices) {
+        if (!device.is_available) continue;
+        if (device.is_open && device.id.value == selection) {
+            if (opened_id) return nullptr;
+            opened_id = &device;
+        }
+        if (device.display_name == selection) {
+            ambiguous_name = named != nullptr;
+            named = &device;
+        }
+    }
+    return opened_id ? opened_id : ambiguous_name ? nullptr : named;
+}
 
 // Generation tokens fence sequencer work copied for unlocked dispatch from a
 // later replay/cancellation of the same logical cue. Guarded by the owning
@@ -89,6 +109,12 @@ private:
     const std::filesystem::path& rhs) noexcept {
     return lhs.lexically_normal() == rhs.lexically_normal();
 }
+
+struct MediaPaths {
+    std::filesystem::path preferred;
+    std::filesystem::path fallback;
+    bool operator==(const MediaPaths&) const = default;
+};
 
 } // namespace detail
 
@@ -157,7 +183,8 @@ public:
 
     // Load a canonical project file (.dwcue JSON). Returns true on success. On
     // failure, the previous state is preserved.
-    bool load(const std::filesystem::path& path);
+    bool load(const std::filesystem::path& path,
+              std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max());
     // Serialize saves and optional document replacement as one operation. An
     // empty path resolves to the current project path while holding save_mutex_;
     // identity/folder metadata commit only after atomic publication succeeds.
@@ -165,12 +192,12 @@ public:
               std::filesystem::path* published_path = nullptr);
 
     // Replace state from an in-memory JSON document. Same semantics as load.
-    bool load_from_json(const json& doc);
+    bool load_from_json(const json& doc, const std::filesystem::path& project_path = {},
+                        std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max());
 
     // Returns and clears any repair info recorded during the last load /
     // load_from_json call. The repair has already been applied in memory;
     // call save() if the caller wants to persist it.
-    RepairInfo consume_repair_info();
 
     // Re-run validation + repair on the in-memory document and return the
     // result. Useful when the caller wants to trigger an explicit repair
@@ -203,12 +230,14 @@ public:
     // Replace the full project document. The server extracts audio items
     // (uuid → file path) and re-mirrors them onto the engine. Other fields
     // are stored verbatim for the client to read back.
-    bool replace_full_document(const json& doc);
+    bool replace_full_document(const json& doc, bool new_session = true);
 
     // Path to the open canonical project file (.dwcue), if any. Empty if the
     // project is in-memory only.
     std::filesystem::path project_file_path() const;
     void set_project_file_path(std::filesystem::path p);
+    std::string project_session_id() const;
+    std::unique_lock<std::recursive_mutex> lock_project_session(const std::string& expected);
 
     // Clear everything and rewind the AudioEngine to an empty graph.
     void reset();
@@ -250,7 +279,8 @@ public:
     // decode (and only that one), so an immediate play after add still works.
     audio::CueId add_item(const json& item, const std::string& parent_uuid = "",
                           bool cart_only = false);
-    bool         update_item(const std::string& uuid, const json& patch);
+    bool         update_item(const std::string& uuid, const json& patch,
+                             std::unique_lock<std::recursive_mutex>* project_lock = nullptr);
     bool         remove_item(const std::string& uuid);
 
     // Reorder a top-level / inside-group sequence. `uuids` is the desired
@@ -292,13 +322,22 @@ public:
     bool play_item(const std::string& uuid,
                    double fade_in_override_sec = -1.0,
                    const audio::CueId& exclude_from_ducking = audio::CueId{},
-                   double start_position_override_sec = -1.0);
-    bool stop_item(const std::string& uuid);
+                   double start_position_override_sec = -1.0,
+                   std::optional<std::uint64_t> expected_stop_revision = std::nullopt);
+    std::uint64_t playback_intent_revision();
+    bool resume_item(const std::string& uuid, double position_sec,
+                     std::uint64_t expected_intent_revision);
+    // A replacement preserves group runs containing its target and does not arm a manual-stop successor.
+    bool stop_item(const std::string& uuid, const std::string& replacement_uuid = {});
+    // Serialize Pause/Resume with copied sequencer actions.
+    bool set_item_paused(const std::string& uuid, bool paused,
+                         std::optional<std::uint64_t> expected_stop_revision = std::nullopt);
     // Arm a currently-playing looping item to finish its present pass and then
     // advance once. This is runtime-only: the project document's endBehavior is
     // never modified, and replaying the item restores its saved loop behavior.
     // Returns false when uuid is not an active, sequenced loop or is already armed.
-    bool cue_to_continue(const std::string& uuid);
+    bool cue_to_continue(const std::string& uuid,
+                         std::optional<std::uint64_t> expected_stop_revision = std::nullopt);
 
     // Stop every cue for the global "Stop All" command. When `fade_ms` is
     // provided it is used directly; when omitted the project-wide
@@ -306,6 +345,7 @@ public:
     // over every per-track fade-out (global fade always wins); a resolved fade
     // of 0 is an instant panic stop.
     void stop_all_cues(std::optional<long long> fade_ms = std::nullopt);
+    std::uint64_t stop_revision() const noexcept { return stop_revision_.load(); }
 
     // Trigger an item by uuid: audio items go through play_item; group items
     // are dispatched per their startBehavior (play-first / play-all),
@@ -314,7 +354,8 @@ public:
     bool trigger_item(const std::string& uuid,
                       double fade_in_override_sec = -1.0,
                       const audio::CueId& exclude_from_ducking = audio::CueId{},
-                      bool consume_armed_override = true);
+                      bool consume_armed_override = true,
+                      std::optional<std::uint64_t> expected_stop_revision = std::nullopt);
 
     // Resolve an index path (array of child indices) to an item uuid,
     // descending into group `children` at each level. Mirrors the client's
@@ -403,26 +444,28 @@ public:
     // the currently-playing item's endBehavior — mirroring the client's GO
     // button. Returns the uuid triggered, or empty if nothing was armed /
     // derivable / loaded.
-    std::string go();
+    std::string go(std::optional<std::uint64_t> expected_stop_revision = std::nullopt);
 
     // Item uuid bound to a cart slot, or empty if the slot is unbound.
     std::string cart_slot_item_uuid(int slot) const;
 
     // ---- Per-device routing ---------------------------------------------
-    // Ensure a "device mixer" exists for `device_name` (the user-visible
-    // name from /api/devices). Opens the audio device if needed, creates a
+    // Resolve a unique catalog name or current opened-device id. Opens the
+    // selected audio device if needed and creates a
     // dedicated mixer + two master channels routed to it. Returns the
     // mixer id, or empty on failure (device not found).
-    audio::MixerChannelId ensure_device_routing(const std::string& device_name);
+    audio::MixerChannelId ensure_device_routing(
+        const std::string& device_name,
+        std::unique_lock<std::recursive_mutex>* lifecycle_lock = nullptr);
     // Release per-project override mixers/master pairs/device references.
     // Owns ProjectState locking; call without mutex_.
     void release_device_routings();
 
-    // Route a cue's first two source channels to the given mixer, removing
+    // Downmix every real audio channel using its decoder channel map, removing
     // any prior item-to-mixer routes for this cue (so the cue plays through
     // exactly one device's mixer).
     void route_cue_to_mixer(const audio::CueId& cue,
-                            const audio::MixerChannelId& mixer);
+                            const audio::MixerChannelId& mixer, bool keep_ltc = false);
 
     // ---- Preview --------------------------------------------------------
     // Play an item through the configured preview device (project
@@ -431,8 +474,10 @@ public:
     // the main outputs (DJ-style pre-listen). At most one preview is
     // active at a time; starting a new one replaces the old. Returns true
     // on success.
-    bool start_preview(const std::string& item_uuid);
-    bool stop_preview();
+    // Capture the committed identity before an unlocked completion can be superseded.
+    bool start_preview(const std::string& item_uuid, json* result = nullptr);
+    bool stop_preview(json* result = nullptr);
+    json preview_state() const;
     // uuid of the currently-previewing item, or empty if no preview active.
     std::string current_preview_item_uuid() const;
     // Engine cue ID for the active preview, or an empty CueId if none.
@@ -442,16 +487,19 @@ public:
     // project's configured ltcDevice mixer. Safe to call at any time without
     // holding mutex_ — it acquires the lock internally as needed and delegates
     // engine operations to independently-locked engine APIs.
-    void apply_ltc_device_routing();
+    void apply_ltc_device_routing(const audio::CueId& only = {},
+                                  std::unique_lock<std::recursive_mutex>* playback_lock = nullptr,
+                                  std::optional<audio::MixerChannelId> prepared = std::nullopt);
 
     // Re-route all cues that have no per-item deviceOverride to the project's
     // configured defaultOutputDevice mixer. Called when defaultOutputDevice
     // changes in settings (including during playback).
-    void apply_default_device_routing();
+    void apply_default_device_routing(std::unique_lock<std::recursive_mutex>& playback_lock,
+                                      const audio::MixerChannelId& prepared = {});
 
     // Stop any active preview and reset preview state so the next call to
     // start_preview() picks up the updated previewDevice setting.
-    void apply_preview_device_change();
+    void apply_preview_device_change(std::unique_lock<std::recursive_mutex>& lifecycle_lock);
 
     // Cart slot binding (slot → item uuid). Slot < 0 clears.
     bool set_cart_slot(int slot, const std::string& item_uuid);
@@ -460,7 +508,7 @@ public:
     // Theme + project settings patches. Each accepts a JSON object that's
     // shallow-merged into the corresponding section.
     bool patch_theme(const json& patch);
-    bool patch_settings(const json& patch);
+    bool patch_settings(const json& patch, std::unique_lock<std::recursive_mutex>* project_lock = nullptr);
 
     // ---- Introspection ---------------------------------------------------
     std::vector<CueMeta> list_cues() const;
@@ -481,6 +529,8 @@ public:
     };
     // Thread-safe; safe to call from the heartbeat loop every 200 ms.
     PlaybackSnapshot current_playback_snapshot() const;
+    // Snapshot and publish under the reset/close lifecycle lock.
+    void publish_crash_resume_state();
 
     // Audio-load progress accessors — the document JSON arrives instantly,
     // but the engine load can take seconds for big projects. The client
@@ -493,13 +543,16 @@ public:
     // current mirror finishes with no such entries.
     json audio_readiness() const;
 
+#ifndef LIVEPLAY_TEST_ACCESS
 private:
+#endif
     audio::AudioEngine&        engine_;
     mutable std::mutex         mutex_;
     std::mutex                 mirror_mutex_;
     // Incremented whenever the complete project document is replaced. Async
     // decoder publication must match the generation it snapshotted.
     std::uint64_t              document_generation_ = 0;
+    std::string                project_session_id_;
 
     std::unordered_map<std::string, CueMeta>          cues_;
     std::unordered_map<std::string, MixerChannelMeta> mixers_;
@@ -517,7 +570,7 @@ private:
     // whole document here so a remote client can fetch it back via GET.
     json document_;
 
-    // Repair info from the last load. Consumed by consume_repair_info().
+    // Repairs to the current show remain visible until a successful save.
     RepairInfo pending_repair_info_;
 
     // uuid → engine cue id, for audio items currently loaded.
@@ -555,6 +608,7 @@ private:
     std::atomic<std::size_t> load_progress_loaded_{0};
     std::atomic<std::size_t> load_progress_total_{0};
     std::thread              load_thread_;
+    std::atomic<bool>        mirror_cancel_{false};
     struct AudioLoadFailure {
         std::string code;
         std::string path;
@@ -579,6 +633,11 @@ private:
     // Serializes route creation with project-boundary release across mirror,
     // settings, and transport callers. Always acquire before mutex_.
     std::mutex device_routing_mutex_;
+    std::uint64_t device_routing_generation_ = 0; // guarded by device_routing_mutex_
+#ifdef LIVEPLAY_TEST_NO_DEVICE_ROUTING
+    bool test_program_main_routing_ = false;
+    bool test_loader_main_routing_ = false;
+#endif
     // Next free master channel pair when allocating new device routings.
     // Default device occupies 0/1; preview occupies 30/31; overrides start
     // at 2 and increment by 2.
@@ -586,13 +645,26 @@ private:
     audio::MixerChannelId ensure_device_routing_impl(
         const std::string& routing_key,
         const std::string& device_name,
-        std::optional<audio::DeviceId> required_open_device);
+        std::optional<audio::DeviceId> required_open_device,
+        std::unique_lock<std::recursive_mutex>* lifecycle_lock = nullptr,
+        const std::function<audio::DeviceId()>& open = {});
+    bool reject_output_selection(const std::string& selection,
+                                 const std::string& item_uuid = {});
+    audio::MixerChannelId ensure_program_main(std::unique_lock<std::recursive_mutex>& lifecycle_lock,
+                                             const std::function<bool()>& current,
+                                             bool route_unassigned = false);
+    audio::DeviceId open_output_for_edit(
+        const std::string& name, std::unique_lock<std::recursive_mutex>& lifecycle_lock,
+        std::unique_lock<std::recursive_mutex>* project_lock, const std::function<bool()>& current,
+        std::unique_lock<std::mutex>* preparation_lock = nullptr);
     void clear_diagnostic_cues() noexcept;
 
     // Preview state. The preview infrastructure is opened lazily on first
     // preview request, then re-used (cheaper than reopening the audio
     // device every time the user pre-listens to a new cue).
     audio::CueId           preview_cue_;
+    std::uint64_t          preview_intent_revision_ = 0; // guarded by playback_lifecycle_mutex_
+    std::uint64_t          preview_state_revision_ = 0; // guarded by mutex_
     std::string            preview_item_uuid_;
     audio::MixerChannelId  preview_mixer_;
     audio::DeviceId        preview_device_;
@@ -624,6 +696,7 @@ private:
         double                   crossfade_sec       = 0.0;
         double                   stop_fade_sec       = 0.0;
         double                   effective_end       = 0.0;
+        std::uint64_t            end_frame           = 0;
         bool                     crossfade_triggered = false;
         bool                     stop_fade_triggered = false;
         // "Start Next" segue marker: when the playhead crosses
@@ -636,14 +709,14 @@ private:
         double                   start_next_time      = 0.0;
         double                   start_next_fade_sec  = 0.0;
         bool                     start_next_triggered = false;
-        // End-behaviour snapshot, used by the seamless-advance pre-roll so the
-        // next cue can be started a hair before this one's out-point (no
-        // audible gap) for auto-advancing behaviours with no crossfade / stop-
-        // fade / start-next marker. Populated at play_item() time.
+        // End-behaviour snapshot decides whether to prepare an exact audio
+        // handoff for a zero-crossfade follow. Preparation stays silent.
         std::string              end_action;            // next / goto-item / goto-index / loop / nothing
         std::string              goto_target_uuid;      // goto-item target
         std::vector<int>         goto_target_index;     // goto-index path
         bool                     advance_triggered    = false;
+        std::shared_ptr<audio::PreparedFollow> prepared_follow;
+        std::string              prepared_target_uuid;
         // Runtime-only Cue to Continue state. The resolved target is captured
         // when the operator arms the current pass; it is never serialized.
         bool                     continue_armed       = false;
@@ -668,8 +741,16 @@ private:
     // sequencer dispatch. Recursive because a follow action can trigger play.
     // Serializes project lifetime boundaries while allowing transport controls
     // (especially Stop All) to acquire playback_lifecycle_mutex_ during waits.
-    std::mutex                   project_operation_mutex_;
+    std::recursive_mutex         project_operation_mutex_;
     std::recursive_mutex         playback_lifecycle_mutex_;
+    // Serializes edits and show switches. GO uses only the target's source ownership.
+    std::mutex                  playback_preparation_mutex_;
+    // Audition storage must not delay preparation of the next Program cue.
+    std::mutex                  preview_preparation_mutex_;
+    std::uint64_t                playback_intent_revision_ = 0;
+    std::uint64_t                settings_intent_revision_ = 0;
+    // HTTP Stop All can overtake cue starts still waiting in a WebSocket.
+    std::atomic<std::uint64_t>    stop_revision_{0};
     // Serializes snapshot through atomic replace. mutex_ remains brief and is
     // never held during filesystem I/O.
     mutable std::mutex           save_mutex_;
@@ -680,14 +761,20 @@ private:
     void start_sequencer();
     void stop_sequencer();
     void sequencer_loop();
-    void handle_item_ended(const SequencedItem& item);
-    void execute_custom_action(const json& action);
+    void handle_item_ended(std::unique_lock<std::recursive_mutex>& lifecycle_lock, const SequencedItem& item);
+    void execute_custom_action(std::unique_lock<std::recursive_mutex>& lifecycle_lock, const json& action);
+    void cancel_prepared_follows(const std::string& changed_uuid = {});
+    enum class ItemPlayPhase { Immediate, Validate, Prepare, AlreadyStarted, Recovery };
+    bool play_item_impl(std::unique_lock<std::recursive_mutex>& lifecycle_lock, const std::string& uuid,
+                        double fade_in_override_sec,
+                        const audio::CueId& exclude_from_ducking,
+                        double start_position_override_sec,
+                        ItemPlayPhase phase);
 
     // Resolve the uuid the given item should auto-advance to, for its
     // endBehavior (next / goto-item / goto-index only; empty for loop /
-    // nothing / no target). For "next" this consumes the user-set "Up Next"
-    // override exactly once, mirroring handle_item_ended. Takes its own locks —
-    // call with no lock held. Used by the sequencer's seamless-advance pre-roll.
+    // nothing / no target). An armed "Up Next" override takes precedence and
+    // is consumed only by a successful trigger. Takes its own locks.
     std::string resolve_advance_target(const SequencedItem& item);
     void apply_duck_owner(detail::PlaybackGenerationFence::Generation owner,
                           const audio::CueId& target, float target_linear,
@@ -698,16 +785,18 @@ private:
         const std::vector<std::uint64_t>& preserved_generations = {});
     std::vector<std::uint64_t> prepare_group_sequence_transition(
         const std::string& source_uuid, const std::string& target_uuid);
-    bool trigger_sequence_item(const std::string& source_uuid,
+    bool trigger_sequence_item(std::unique_lock<std::recursive_mutex>& lifecycle_lock, const std::string& source_uuid,
                                const std::string& target_uuid,
                                double fade_in_override_sec = -1.0,
-                               const audio::CueId& exclude_from_ducking = audio::CueId{});
-    void complete_group_runs_for_item(const std::string& uuid);
-    bool trigger_item_impl(const std::string& uuid,
+                               const audio::CueId& exclude_from_ducking = audio::CueId{},
+                               bool already_started = false);
+    void complete_group_runs_for_item(std::unique_lock<std::recursive_mutex>& lifecycle_lock, const std::string& uuid);
+    bool trigger_item_impl(std::unique_lock<std::recursive_mutex>& lifecycle_lock, const std::string& uuid,
                            double fade_in_override_sec,
                            const audio::CueId& exclude_from_ducking,
                            bool consume_armed_override,
-                           const std::vector<std::uint64_t>& preserved_generations);
+                           const std::vector<std::uint64_t>& preserved_generations,
+                           bool already_started = false);
 
     // Resolve Cue to Continue's target without consulting endBehavior.action:
     // targetUuid, then targetIndex, then the next sibling. Caller holds mutex_.
@@ -734,11 +823,8 @@ private:
     bool item_on_air(const std::string& uuid);
 
 public:
-    // Subscribe to "external" custom actions the server can't perform on its
-    // own — currently just http-request. The control server installs a
-    // handler that broadcasts the action as a doc_patch so a connected
-    // client makes the actual fetch. Keeps a libcurl/winhttp dependency
-    // out of the server.
+    // The control server queues HTTP custom actions on its single bounded
+    // worker; renderers receive results without executing side effects.
     void set_external_action_handler(std::function<void(const json&)> handler);
 
     // Install a callback invoked whenever the "Up Next" override changes for
@@ -763,15 +849,11 @@ private:
     // Build an initial empty document with default theme + empty sections.
     static json default_empty_document();
 
-    // Extract every audio item from the client document and mirror it onto
-    // the engine + cues_/item_uuid_to_cue_ tables. Used after load and after
-    // replace_full_document.
-    void mirror_items_to_engine_locked();
+    // Stop/remove orphaned item mappings under mutex_; caller unloads returned
+    // cues after releasing document/lifecycle ownership.
+    std::vector<audio::CueId> retire_missing_item_cues_locked();
 
-    // Run mirror_items_to_engine_locked() asynchronously on a worker thread.
-    // The caller's mutex is released first. Sets loading_audio_=true for the
-    // duration. Used by load() so the document is returned to the client
-    // immediately and audio loading proceeds in the background.
+    // Decode/publish a whole project's audio on the existing background loader.
     void start_async_mirror();
 
     // ---- Single-item async audio load (#43) --------------------------------
@@ -787,18 +869,21 @@ private:
     // unless `path` is empty). `item` is the document node, used for the
     // placeholder's display name / duration and re-read when the load lands.
     audio::CueId begin_item_load_locked(const std::string& uuid,
-                                        const std::filesystem::path& path,
-                                        const json& item);
+                                        detail::MediaPaths paths,
+                                        const json& item, bool media_changed = false);
 
     // Loader thread body: decode queued items and publish them.
     void loader_loop();
+    void queue_loaded_routing(std::uint64_t generation, bool apply_program);
+    void loaded_routing_loop();
+    using MediaRevisionCandidates = std::vector<std::pair<std::string, std::weak_ptr<audio::PlaybackItem>>>;
+    void publish_media_revisions(std::uint64_t generation, const MediaRevisionCandidates& changed);
     void stop_loaders();
 
     // Apply one document item's engine-visible properties (gain, fades,
-    // out point, LTC) to its PlaybackItem. Caller must hold mutex_. Shared by
-    // mirror_items_to_engine_locked() and the loader's publish step so the two
-    // paths can't drift apart.
-    void apply_item_properties_locked(const json& item, const audio::CueId& cue);
+    // out point, LTC) to its PlaybackItem during loader publication.
+    // Caller must hold mutex_.
+    void apply_item_properties_locked(const json& item, const std::shared_ptr<audio::PlaybackItem>& cue);
 
     // Playback commands only inspect the pending set and published engine cue;
     // decoder completion is never awaited by a transport request.
@@ -807,26 +892,39 @@ private:
     struct LoadRequest {
         std::string           uuid;
         audio::CueId          cue_id;
-        std::filesystem::path path;
+        detail::MediaPaths    paths;
+        bool                  media_changed = false;
+        json                  properties;
+        bool                  prime = false;
     };
     std::deque<LoadRequest>         load_queue_;
-    std::unordered_set<std::string> pending_load_uuids_;
+    std::unordered_map<std::string, audio::CueId> pending_load_uuids_;
     mutable std::mutex              loader_mutex_;      // guards both of the above
     std::condition_variable         loader_cv_;         // work available
-    std::condition_variable         loader_done_cv_;    // a pending load finished
     std::thread                     loader_thread_;
     bool                            loaders_stop_ = false;
+    struct LoadedRoutingRequest {
+        std::uint64_t generation;
+        std::uint64_t stop;
+        bool apply_program;
+    };
+    std::optional<LoadedRoutingRequest> loaded_routing_; // guarded by loader_mutex_
+    std::condition_variable            loaded_routing_cv_;
+    std::thread                        loaded_routing_thread_;
 
     // Walk the items tree calling `visit(item_json, parent_uuid)` for each.
     static void for_each_item(json& doc,
                               const std::function<void(json& /*item*/,
                                                        const std::string& /*parent_uuid*/)>& visit);
+    static std::unordered_map<std::string, detail::MediaPaths> media_paths_by_uuid(json& doc);
 
     // Return the uuid of the item that should play *after* `current_uuid`,
     // based on its endBehavior. Empty string if there isn't a deterministic
-    // next item (e.g. "nothing"). Used for cache pre-warming. Caller must
-    // hold mutex_.
-    std::string resolve_next_item_locked(const std::string& current_uuid) const;
+    // next item (e.g. "nothing"). Manual GO also honors the Nothing setting
+    // and loop replay; automatic follow/pre-warming retain their old behavior.
+    // Caller must hold mutex_.
+    std::string resolve_next_item_locked(const std::string& current_uuid,
+                                         bool manual_go = false) const;
 
     // Resolve an index *path* (array of child indices, as produced by the
     // client's endBehavior.targetIndex / findItemByIndex) to the uuid of the

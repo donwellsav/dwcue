@@ -17,6 +17,7 @@
           </button>
         </div>
         <div class="lc-footer">
+          <Btn type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
           <button class="lc-btn ghost" @click="cancel">{{ cancelLabel }}</button>
         </div>
       </div>
@@ -58,6 +59,8 @@ const emit = defineEmits<{
 // Mirror the app-wide theme so [data-theme='…'] CSS variables resolve
 // inside the teleported subtree.
 const theme = useState<string>('theme', () => 'dark');
+const server = useLiveplayServer();
+const { t } = useLocalization();
 
 function pick(choice: 'server' | 'client') { emit('pick', choice); }
 function cancel() { emit('cancel'); }

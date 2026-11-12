@@ -1,5 +1,8 @@
 # One Shots Design
 
+> **Historical design/plan snapshot:** implementation status and source-version references below describe this document’s original planning point. They are not the current task list or a release claim. For the committed live-show repairs through T30 and remaining physical acceptance, use the [current workplan](../plans/2026-11-03-live-show-reliability.md). Current operator instructions are in the [manual](../../operators-manual.md).
+
+
 ## Product intent
 
 Replace the retired fixed-slot model with a compact live surface over the existing playlist. A One Shot is an audio cue with `oneShot` metadata, never a second copy of that cue. It is intended for announcements, stingers, walk-up sounds, and effects that must remain ready and may be fired without changing Up Next.

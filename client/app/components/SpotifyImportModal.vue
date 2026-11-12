@@ -4,11 +4,12 @@
       <div class="modal" role="dialog" aria-modal="true" :aria-labelledby="titleId">
         <header class="modal-header">
           <h2 :id="titleId">{{ t('spotifyImport.title') }}</h2>
+          <Btn type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
           <button
             type="button"
             class="icon-btn"
             :aria-label="t('actions.close')"
-            :disabled="isBusy"
+            :disabled="isBusy || isChoosingDestination"
             @click="handleClose"
           >
             <span class="material-symbols-rounded" aria-hidden="true">close</span>
@@ -30,6 +31,10 @@
           </label>
 
           <p class="hint selectable">{{ t('spotifyImport.hint') }}</p>
+          <p class="hint selectable">{{ t('importAudio.preserveAudio') }}</p>
+          <p v-if="preferencesWarning" class="settings-save-error selectable" role="status">
+            {{ t('spotifyImport.preferencesSaveFailed') }}
+          </p>
 
           <section class="import-plan selectable" :aria-labelledby="planId">
             <button
@@ -112,33 +117,6 @@
               <label class="processing-control">
                 <input
                   type="checkbox"
-                  :checked="cueProcessingSettings.trimSilence"
-                  :disabled="isBusy || isSavingSettings"
-                  @change="updateBooleanSetting('autoTrimSilenceOnImport', $event)"
-                >
-                <span>{{ t('settings.autoTrimSilenceOnImport') }}</span>
-              </label>
-              <label class="processing-control">
-                <input
-                  type="checkbox"
-                  :checked="cueProcessingSettings.matchLoudness"
-                  :disabled="isBusy || isSavingSettings"
-                  @change="updateBooleanSetting('autoMatchLoudnessOnImport', $event)"
-                >
-                <span>{{ t('settings.autoMatchLoudnessOnImport') }}</span>
-              </label>
-              <label class="processing-control">
-                <input
-                  type="checkbox"
-                  :checked="cueProcessingSettings.reduceTruePeaks"
-                  :disabled="isBusy || isSavingSettings"
-                  @change="updateBooleanSetting('autoReduceTruePeaksOnImport', $event)"
-                >
-                <span>{{ t('settings.autoReduceTruePeaksOnImport') }}</span>
-              </label>
-              <label class="processing-control">
-                <input
-                  type="checkbox"
                   :checked="cueProcessingSettings.cycleColors"
                   :disabled="isBusy || isSavingSettings"
                   @change="updateBooleanSetting('cycleTrackColors', $event)"
@@ -161,6 +139,9 @@
                   total: reviewState.tracks.length,
                   duration: formatDuration(selectedDuration),
                 }) }}</p>
+                <p v-if="reviewState.skippedTrackCount" role="status">
+                  {{ t('spotifyImport.skippedTracks', { count: reviewState.skippedTrackCount }) }}
+                </p>
               </div>
               <div class="review-actions">
                 <button type="button" class="btn compact" :disabled="isBusy" @click="selectAllTracks">{{ t('spotifyImport.selectAll') }}</button>
@@ -363,6 +344,7 @@ interface SpotifyDownloadResult {
   completedTrackIds: string[];
   failedTrackIds: string[];
   groupUuid?: string;
+  preferencesSaved?: boolean;
 }
 
 interface SpotifyRecoveryState {
@@ -398,6 +380,7 @@ interface SpotifyPreflight {
   preflightId: string;
   playlistName: string;
   totalDuration: number;
+  skippedTrackCount: number;
   tracks: SpotifyTrackReview[];
 }
 
@@ -491,6 +474,7 @@ const progressState = ref<SpotifyDownloadProgress | null>(null);
 const resultState = ref<SpotifyDownloadResult | null>(null);
 const errorMessage = ref('');
 const technicalMessage = ref('');
+const preferencesWarning = ref(false);
 const reviewState = ref<SpotifyPreflight | null>(null);
 watch(reviewState, (state, prev) => {
   if (state && !prev) planCollapsed.value = true;
@@ -546,9 +530,6 @@ const cueProcessingSettings = computed(() => {
   const settings = currentProject.value?.settings;
   return {
     transitionMode: settings?.defaultTransitionMode === 'start-next' ? 'start-next' : 'crossfade',
-    trimSilence: settings?.autoTrimSilenceOnImport === true,
-    matchLoudness: settings?.autoMatchLoudnessOnImport === true,
-    reduceTruePeaks: settings?.autoReduceTruePeaksOnImport !== false,
     cycleColors: settings?.cycleTrackColors !== false,
   };
 });
@@ -657,7 +638,7 @@ watch(spotifyUrl, () => {
   pendingRecoveryFiles.value = [];
   pendingRecoveryTrackIds.value = [];
   if (props.projectFolderPath) {
-    void getSpotifyApi()?.clearSpotifyImportRecovery(props.projectFolderPath).catch(() => {});
+    void persistRecovery(null).catch(() => {});
   }
 });
 
@@ -698,16 +679,28 @@ function getSpotifyApi(): (Window['electronAPI'] & SpotifyElectronApi) | null {
 }
 
 async function persistProjectSetting(patch: Record<string, unknown>) {
-  if (!currentProject.value || isSavingSettings.value) return;
-  const previous = { ...(currentProject.value.settings || {}) };
-  currentProject.value.settings = { ...previous, ...patch };
+  const project = currentProject.value;
+  if (!project || isSavingSettings.value) return;
+  const previous = { ...(project.settings || {}) };
+  project.settings = { ...previous, ...patch };
   isSavingSettings.value = true;
   settingsSaveError.value = '';
+  let accepted = false;
   try {
     await server.patchSettings(patch);
+    accepted = true;
+    if (currentProject.value !== project) return;
     if (!await saveProject()) throw new Error(t('spotifyImport.settingsSaveFailed'));
   } catch (error: any) {
-    currentProject.value.settings = previous;
+    if (currentProject.value !== project) return;
+    if (!accepted) {
+      const restored = { ...project.settings };
+      for (const key of Object.keys(patch)) {
+        if (Object.prototype.hasOwnProperty.call(previous, key)) restored[key] = previous[key];
+        else delete restored[key];
+      }
+      project.settings = restored;
+    }
     settingsSaveError.value = error?.message || t('spotifyImport.settingsSaveFailed');
   } finally {
     isSavingSettings.value = false;
@@ -727,14 +720,15 @@ function updateBooleanSetting(key: string, event: Event) {
 async function chooseDestination(): Promise<string> {
   const api = getSpotifyApi();
   if (!api || isActive.value || isChoosingDestination.value || hasLockedDestination.value) return '';
+  const epoch = props.projectEpoch;
   isChoosingDestination.value = true;
   try {
     const selected = await api.selectProjectFolder();
-    if (selected) {
-      destinationParentPath.value = selected;
-      await api.setSpotifyImportDestination(selected);
-    }
-    return selected || '';
+    if (!selected || !props.open || props.projectEpoch !== epoch) return '';
+    preferencesWarning.value = !await api.setSpotifyImportDestination(selected);
+    if (!props.open || props.projectEpoch !== epoch) return '';
+    destinationParentPath.value = selected;
+    return selected;
   } catch (error: any) {
     errorMessage.value = error?.message || t('spotifyImport.destinationFailed');
     return '';
@@ -746,6 +740,7 @@ async function chooseDestination(): Promise<string> {
 async function loadImportPreferences() {
   if (!import.meta.client) return;
   const preferences = await window.electronAPI.getImportPreferences().catch(() => null);
+  if (preferences) preferencesWarning.value = preferences.preferencesSaved === false;
   if (!destinationParentPath.value && preferences?.spotifyDestination) {
     destinationParentPath.value = preferences.spotifyDestination;
   }
@@ -830,18 +825,21 @@ function recoveryForResult(
   };
 }
 
-async function persistRecovery(result: SpotifyDownloadResult) {
+async function persistRecovery(
+  result: SpotifyDownloadResult | null,
+  projectFolderPath = props.projectFolderPath,
+) {
   const api = getSpotifyApi();
   if (!api) return;
-  if (!result.failedTrackIds.length && !pendingRecoveryFiles.value.length) {
-    await api.clearSpotifyImportRecovery(props.projectFolderPath);
-    return;
+  if (!result || (!result.failedTrackIds.length && !pendingRecoveryFiles.value.length)) {
+    preferencesWarning.value = !await api.clearSpotifyImportRecovery(projectFolderPath);
+  } else {
+    preferencesWarning.value = !await api.setSpotifyImportRecovery(recoveryForResult(
+      result,
+      pendingRecoveryTrackIds.value,
+      pendingRecoveryFiles.value,
+    ));
   }
-  await api.setSpotifyImportRecovery(recoveryForResult(
-    result,
-    pendingRecoveryTrackIds.value,
-    pendingRecoveryFiles.value,
-  ));
 }
 
 async function reviewSpotify() {
@@ -1029,7 +1027,7 @@ async function openResultFolder() {
 
 async function startAnotherImport() {
   if (props.projectFolderPath) {
-    await getSpotifyApi()?.clearSpotifyImportRecovery(props.projectFolderPath).catch(() => {});
+    await persistRecovery(null).catch(() => {});
   }
   const destination = destinationParentPath.value;
   resetState();
@@ -1125,6 +1123,7 @@ async function startDownload() {
     );
 
     needsFinalize = true;
+    if (downloadResult.preferencesSaved === false) preferencesWarning.value = true;
     // ponytail: once files reach the user-selected collection, preserve them as canonical media.
     finalizeKeepFiles = true;
     if (props.projectFolderPath !== projectFolderPath ||
@@ -1192,7 +1191,7 @@ async function startDownload() {
     }
 
     if (!downloadResult.partial) {
-      await api.clearSpotifyImportRecovery(projectFolderPath);
+      await persistRecovery(null, projectFolderPath);
     }
 
     resultState.value = downloadResult;
@@ -1272,7 +1271,7 @@ async function cancelDownload() {
 }
 
 function handleClose() {
-  if (isBusy.value) return;
+  if (isBusy.value || isChoosingDestination.value) return;
   resetState();
   emit('close');
 }
@@ -1325,13 +1324,18 @@ function resetState() {
 }
 
 .modal-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: var(--spacing-sm);
   padding: var(--dialog-header-padding);
+  background: var(--dialog-surface);
   border-bottom: 1px solid var(--color-border);
 
   h2 {
+    flex: 1;
     margin: 0;
     font-size: 15px;
     font-weight: 650;

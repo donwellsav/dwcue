@@ -112,9 +112,9 @@
           <span
             v-if="isPeaking"
             class="material-symbols-rounded peak-warning-icon"
-            :title="t('properties.peakWarning')"
+            :title="t('properties.peakCeilingWarning')"
             role="img"
-            :aria-label="t('properties.peakWarning')"
+            :aria-label="t('properties.peakCeilingWarning')"
             draggable="false"
             @click.stop
           >bomb</span>

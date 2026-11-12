@@ -1,8 +1,10 @@
 # DonWells Cue Client — developer guide
 
+DonWells Cue **2.6.20** keeps Stop All available during transfers and show recovery. After a blocked transport command, the controller verifies the active show and current stop revision before enabling GO. The [workplan](../docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification, remaining engineering work and the deferred line-level audio and 1080p HDMI checks.
+
 The DonWells Cue client is a Vue 3 + Nuxt 4 application wrapped in Electron. It is a **remote control** for the DonWells Cue audio server: it owns no audio decoding, no playback, no Web Audio nodes. Every user action turns into a REST call or WebSocket frame sent to `dwcue-server`, and every meter / waveform / state update comes back the same way.
 
-This document tracks the current v2.6.15 source at `1438685` and is the developer's guide to the client; this is not a claim about a published installer, so use the release page and installed About version to determine available behaviour. For show-day use, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For the audio engine, see [`server/README.md`](../server/README.md); for overall project and release context, see the [root README](../README.md).
+This developer guide tracks the v2.6.20 client. Match the installed About version to the release notes. For show-day use, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). See the [server guide](../server/README.md) for engine internals and the [root README](../README.md) for release details.
 
 ---
 
@@ -36,7 +38,7 @@ This document tracks the current v2.6.15 source at `1438685` and is the develope
 | Media tooling    | `@ffmpeg-installer/ffmpeg`, `@ffprobe-installer/ffprobe`        |
 | YouTube import   | `yt-dlp-wrap` + `youtube-search-api`                            |
 | Updates          | `electron-updater` (GitHub Releases feed: `donwellsav/dwcue`)      |
-| File transport   | Server-backed REST upload/download for `.dwcuepack` project archives; one-way `.lpa` legacy import |
+| File transport   | Server-backed REST upload/download for `.dwcuepack` project archives |
 
 Audio playback, waveform extraction, metering and routing all live in the C++ server. The renderer never decodes audio.
 
@@ -119,7 +121,7 @@ Key IPC channels (non-exhaustive):
 | `read-file` / `write-file` / `copy-file` | Authorized project filesystem helpers. |
 | `get-binary-file-info` / `read-binary-file-chunk` | Bounded local archive reads for remote imports. |
 | `download-archive-to-file` | Streams a server archive directly to an authorized local destination. |
-| `menu-export-project` / `menu-import-project` (main → renderer) | Menu-triggered `.dwcuepack` export/import plus explicit `.lpa` legacy import; the renderer owns the dialogs. |
+| `menu-export-project` / `menu-import-project` (main → renderer) | Menu-triggered `.dwcuepack` export/import. The renderer owns the dialogs. |
 | `check-for-updates` / `download-update` / `install-update` / `get-update-install-supported` / `get-app-version` | `electron-updater` controls. |
 | `update-available` / `update-up-to-date` / `update-download-progress` / `update-downloaded` / `update-error` / `menu-check-for-updates` (main → renderer) | Update flow events; `menu-check-for-updates` is the Help-menu trigger. |
 | `update-menu-language` / `get-system-locale` / `get-available-locales` / `get-locale-data` | Dynamic menu localisation. |
@@ -138,7 +140,7 @@ The audio data path is **not** via IPC — it's directly between the renderer an
 
 Electron Builder copies `../docs/operators-manual.pdf` unchanged to `resources/help/operators-manual.pdf` using `extraResources`; development reads that same repository PDF. No network or audio-server connection is needed to read it. The reader has its own minimal preload and exact-owner IPC checks; the PDF view has no application preload. Neither receives the main renderer's filesystem or transport API. Run `npm run test:operator-manual` in `client` for the navigation, search, IPC, keyboard, and bounds contracts; it is also part of the root `check:client` gate.
 
-New shows and normal saves use the native `.dwcue` JSON document. New portable exports are ZIP archives named `.dwcuepack`; no additional manifest is required. Native `.dwcuepack` and legacy `.lpa` imports each require exactly one project document at the archive root. The multiple-result selection branch remains for compatibility with older servers, not as a native multi-root format. A direct `.liveplay` import writes an available `.dwcue` sibling; an `.lpa` import writes one canonical `.dwcue` in a fresh extraction directory. Both preserve the original legacy bytes and continue saving the canonical result rather than the legacy source.
+New shows and normal saves use the native `.dwcue` JSON document. Portable exports are ZIP archives named `.dwcuepack`. Each archive must contain exactly one root `.dwcue` document. The project selector handles older DonWells Cue server responses.
 
 ### The renderer ↔ DonWells Cue server link
 
@@ -177,7 +179,8 @@ The Video Output window is deliberately **session-only** even though its display
 - Every app launch starts with the output closed. `video-output:open` arms it for the current process; an operator close disarms it, while an internal display-watchdog recreation preserves the current session.
 - The display selector works while the output is closed. `video-output:identify-displays` creates click-through, always-on-top number cards on every connected screen for five seconds.
 - A valid independently addressable display gets a frameless fullscreen window. An unassigned or single-display setup gets a normal 960×540 preview window instead of a fullscreen takeover.
-- The output's native context menu exposes fullscreen, test-card and **Exit Video Output** actions. On Windows the real output remains `closable` so Alt+F4 is always an escape hatch. Black is the idle base layer, not a dedicated operator blackout; no blackout/fade-to-black IPC command exists.
+- The output's native context menu exposes fullscreen, test-card and **Exit Video Output** actions. On Windows the real output remains `closable` so Alt+F4 is always an escape hatch. The idle base and failure cover are black; there is no separate operator blackout control: no blackout/fade-to-black IPC command exists.
+- Confidence capture allows one readback in flight per output generation and ignores late completions. Picture health also uses presented-frame and native-clock progress; fresh screenshots alone do not establish motion. Renderer crashes and hangs latch a native black cover over the existing audience window and report the reason while preserving operator control. **Restart Output** is an explicit operator action; the cover stays until the replacement view reports ready. Ordinary cue changes do not take focus. Retired window events cannot release a replacement's resources.
 
 The passive output can own keyboard focus, especially on Windows. Its Electron
 `before-input-event` handler therefore forwards application-level keys to the control
@@ -187,6 +190,8 @@ forwarding: Windows Alt+F4, Windows-key combinations, F11, the standard Ctrl/Cmd
 N/O/S/W/Q commands, and development shortcuts. Keep this policy in
 [`electron/video-output-shortcuts.js`](electron/video-output-shortcuts.js); do not create a
 second shortcut implementation in the output renderer.
+
+`useVideoOutput` owns pending play attempts by generation: pause, source replacement and disposal invalidate earlier promises. It waits for current-media readiness, retains the native positions of background program cues, excludes stopped cues before fallback selection, and clears the old picture while a new cue's document is unresolved. Unrelated document refreshes, older-cue events and preview events do not force a seek or establish native-clock recovery for the displayed cue. Upcoming-video warming during audio preserves any retained video fallback; there is still one video element. The separate `node --test scripts/video-transition-playback.test.js` check runs from the repository root on a desktop host with synthetic H.264 media and a real Chromium renderer. See [video reliability evidence and limits](../docs/video-playback-reliability.md).
 
 ---
 
@@ -339,7 +344,7 @@ The `build` block in [`package.json`](package.json) drives `electron-builder`:
 - `files`: includes `.output/`, `electron/`, `assets/`, `locales/`. Locales must be listed explicitly or they don't ship.
 - `extraResources`: copies the C++ server binary into `resources/server-bin/`.
 - `asarUnpack`: the ffmpeg/ffprobe installers can't run from inside an asar, so they're unpacked.
-- `fileAssociations`: registers the native `.dwcue` document and `.dwcuepack` archive extensions. Legacy `.liveplay` and `.lpa` inputs remain available through **Import Project**, not as canonical OS associations.
+- `fileAssociations` registers the native `.dwcue` document and `.dwcuepack` archive extensions.
 
 Run the unified package build from the monorepo root so the matching native server is configured and rebuilt before Electron packaging:
 
@@ -390,3 +395,10 @@ Use IPC **only** for capabilities that genuinely need the Electron main process 
 - **Video Output safety policy**: run `npm run test:video-output` from `client/` (or `npm run test:video-output --workspace=client` from the monorepo root) after changing shortcut forwarding or the native recovery menu.
 
 For the audio/transport side of any bug (timing, fades, routing, meters), the issue is almost always server-side — see [`server/README.md`](../server/README.md).
+
+
+### Managed-engine recovery ownership
+
+The Electron manager retains a directly spawned engine even if pidfile/readiness publication fails; an unverified live engine blocks duplicate startup. Signaling still requires identity proof. Start, Stop, Restart, startup reattachment and configuration actions share one ordered promise chain, so an older Restart cannot launch after an acknowledged Shutdown. A failed action releases the chain; late health results cannot revive a dead identity. Windows taskkill has a three-second subprocess timeout and stop success still requires observed process disappearance.
+
+The Connection lost overlay's **Restart** relaunches the client and deliberately leaves the detached engine running. **Server Settings -> Restart engine** in Local mode interrupts the managed engine; use the coordinated show recovery procedure and verify the resulting project/cue state. Hardware readiness and physical silence are separate observations. These paths are covered by seven actual-manager tests with a fake OS; no physical process termination or Windows execution is claimed.

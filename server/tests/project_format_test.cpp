@@ -131,63 +131,39 @@ void test_atomic_no_replace_contract(const fs::path& base) {
            "source-directory");
 }
 
-void test_extensions_and_direct_legacy_conversion(const fs::path& base) {
+void test_native_project_creation(const fs::path& base) {
     assert(project_file::is_native_project("show.dwcue"));
     assert(project_file::is_native_project("show.DWCUE"));
     assert(!project_file::is_native_project("show.liveplay"));
-    assert(project_file::is_legacy_project("show.LIVEPLAY"));
     assert(project_file::is_native_archive("show.DWCUEPACK"));
-    assert(project_file::is_legacy_archive("show.LPA"));
-    assert(!project_file::archive_kind("show.zip"));
+    assert(!project_file::is_native_archive("show.LPA"));
+    assert(!project_file::is_native_archive("show.zip"));
 
     const fs::path project_folder = base / "direct";
     fs::create_directories(project_folder);
-    json legacy = client_document("Legacy", base / "stale-folder");
-    legacy["lastModified"] = 1'700'000'000;
-    legacy["items"] = json::array({
+    json document = client_document("Native", base / "stale-folder");
+    document["items"] = json::array({
         json{{"uuid", "duplicate"}, {"type", "audio"},
              {"displayName", "First"}, {"mediaPath", "media/a.wav"}},
         json{{"uuid", "duplicate"}, {"type", "audio"},
              {"displayName", "Second"}, {"mediaPath", "media/b.wav"}},
     });
-    const fs::path source = project_folder / "Show.LIVEPLAY";
-    const std::string source_bytes = legacy.dump(2);
-    write_text(source, source_bytes);
-
     project_file::PreparedDocument prepared;
     std::string error;
-    assert(project_file::read_legacy_project(source, prepared, error));
-    assert(error.empty());
+    assert(project_file::prepare_client_document(document, project_folder, prepared, error));
     assert(prepared.repair.repaired);
     assert(prepared.document["items"].size() == 1);
     assert(prepared.document["folderPath"] ==
            liveplay::util::path_to_utf8(project_folder));
-    assert(read_text(source) == source_bytes);
 
-    const fs::path occupied = project_folder / "Show.dwcue";
-    write_text(occupied, "do-not-overwrite");
-    assert(!project_file::valid_legacy_destination(
-        source, occupied, error));
-    assert(error == "destinationPath already exists");
-    assert(!project_file::valid_legacy_destination(
-        source, base / "elsewhere" / "Show.dwcue", error));
-
-    const auto unique = project_file::unique_legacy_destination(source, error);
-    assert(unique && unique->filename() == "Show (2).dwcue");
+    const auto path = project_folder / "Show.dwcue";
     std::error_code write_error;
-    assert(project_file::write_new_canonical_project(
-        *unique, prepared.document, write_error));
-    const std::string canonical_bytes = read_text(*unique);
+    assert(project_file::write_new_canonical_project(path, prepared.document, write_error));
+    const std::string canonical_bytes = read_text(path);
     assert(!project_file::write_new_canonical_project(
-        *unique, json{{"name", "replacement"}}, write_error));
+        path, json{{"name", "replacement"}}, write_error));
     assert(write_error == std::errc::file_exists);
-    assert(read_text(*unique) == canonical_bytes);
-    assert(read_text(source) == source_bytes);
-
-    const fs::path malformed = project_folder / "Broken.liveplay";
-    write_text(malformed, "{not-json");
-    assert(!project_file::read_legacy_project(malformed, prepared, error));
-    assert(!fs::exists(project_folder / "Broken.dwcue"));
+    assert(read_text(path) == canonical_bytes);
 
     const std::string bounded =
         liveplay::net::security::canonical_archive_download_filename(
@@ -238,7 +214,7 @@ void test_native_archive_round_trip(const fs::path& base) {
     assert(read_text(archive) == archive_bytes);
 }
 
-void test_legacy_and_rejected_archives(const fs::path& base) {
+void test_archive_format_boundaries(const fs::path& base) {
     const fs::path legacy_archive = base / "Legacy.LPA";
     const std::string legacy_json =
         client_document("Legacy archive", base / "old-location").dump(2);
@@ -250,15 +226,12 @@ void test_legacy_and_rejected_archives(const fs::path& base) {
     const fs::path legacy_destination = base / "legacy-import";
     const auto legacy_imported = project_archive::import_project(
         legacy_archive, legacy_archive.filename(), legacy_destination);
-    assert(legacy_imported.ok);
-    assert(legacy_imported.project_file ==
-           legacy_destination / "Legacy.dwcue");
-    assert(!fs::exists(legacy_destination / "Legacy.LIVEPLAY"));
-    assert(read_text(legacy_destination / "media" / "song.wav") ==
-           "legacy-media");
-    const json migrated = json::parse(read_text(legacy_imported.project_file));
-    assert(migrated["folderPath"] ==
-           liveplay::util::path_to_utf8(legacy_destination));
+    assert(!legacy_imported.ok && legacy_imported.status == 400);
+    assert(!fs::exists(legacy_destination));
+    const auto renamed = project_archive::import_project(
+        legacy_archive, "Legacy.dwcuepack", legacy_destination);
+    assert(!renamed.ok && renamed.status == 400);
+    assert(!fs::exists(legacy_destination));
     assert(read_text(legacy_archive) == legacy_archive_bytes);
 
     const fs::path uppercase_archive = base / "Upper.dwcuepack";
@@ -300,17 +273,6 @@ void test_legacy_and_rejected_archives(const fs::path& base) {
     assert(!no_root_result.ok && no_root_result.status == 400);
     assert(!fs::exists(base / "no-root-target"));
 
-    const fs::path ambiguous_legacy = base / "ambiguous.lpa";
-    create_zip(ambiguous_legacy, {
-        {"One.liveplay", client_document("One", base).dump()},
-        {"Two.liveplay", client_document("Two", base).dump()},
-    });
-    const auto ambiguous_legacy_result = project_archive::import_project(
-        ambiguous_legacy, ambiguous_legacy.filename(),
-        base / "ambiguous-legacy-target");
-    assert(!ambiguous_legacy_result.ok &&
-           ambiguous_legacy_result.status == 400);
-    assert(!fs::exists(base / "ambiguous-legacy-target"));
 }
 
 void test_archive_traversal_rejected(const fs::path& base) {
@@ -340,8 +302,8 @@ int main() {
     fs::create_directories(temporary.path);
 
     test_atomic_no_replace_contract(temporary.path);
-    test_extensions_and_direct_legacy_conversion(temporary.path);
+    test_native_project_creation(temporary.path);
     test_native_archive_round_trip(temporary.path);
-    test_legacy_and_rejected_archives(temporary.path);
+    test_archive_format_boundaries(temporary.path);
     test_archive_traversal_rejected(temporary.path);
 }

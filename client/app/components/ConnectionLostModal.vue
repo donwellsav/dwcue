@@ -1,19 +1,22 @@
 <template>
   <transition name="fade">
-    <div v-if="visible" class="clm-overlay">
-      <div class="clm-dialog">
+    <div v-if="visible" class="clm-overlay" @keydown.stop>
+      <div class="clm-dialog" role="dialog" aria-modal="true" aria-labelledby="connection-lost-title">
         <div class="clm-header">
           <span class="material-symbols-rounded clm-icon">cloud_off</span>
-          <h2>{{ t('connectionLost.title') }}</h2>
+          <h2 id="connection-lost-title">{{ t(verifying ? 'connectionLost.verifyingTitle' : 'connectionLost.title') }}</h2>
         </div>
-        <p class="clm-body">
+        <p v-if="verifying" class="clm-body" role="status">
+          {{ t(server.showVerification === 'failed' ? 'connectionLost.verificationFailed' : 'connectionLost.verifying') }}
+        </p>
+        <p v-else class="clm-body">
           {{ t('connectionLost.message', { url: server.serverUrl }) }}
         </p>
 
         <!-- Retry pulse: the reconnect loop never stops on its own, so the
              animation is the honest signal that work is still happening.
              Without it a stalled-looking modal reads as "app has hung". -->
-        <p class="clm-retry">
+        <p v-if="!verifying" class="clm-retry">
           <span class="material-symbols-rounded clm-spinner">progress_activity</span>
           <span>{{ t('connectionLost.attempting') }}</span>
           <span v-if="attempts > 0" class="clm-attempts">
@@ -21,7 +24,17 @@
           </span>
         </p>
         <p class="clm-locked">{{ t('connectionLost.locked') }}</p>
-        <p v-if="server.lastError" class="clm-error">{{ server.lastError }}</p>
+        <Btn
+          class="clm-stop-all"
+          type="button"
+          icon="stop_circle"
+          :text="t('controls.stopAll')"
+          @click="server.stopAll()"
+        />
+        <p v-if="server.stopAllStatus" :class="server.stopAllStatus === 'unconfirmed' ? 'clm-error' : 'clm-locked'" role="status">
+          {{ t(`connectionLost.stopAllStatus.${server.stopAllStatus}`) }}
+        </p>
+        <p v-else-if="server.lastError" class="clm-error">{{ server.lastError }}</p>
         <p v-if="actionError" class="clm-error">{{ actionError }}</p>
 
         <div class="clm-actions">
@@ -51,7 +64,8 @@
 <script setup lang="ts">
 const { t } = useLocalization();
 const server = useLiveplayServer();
-const visible = computed(() => !!server.connectionLost);
+const visible = computed(() => !!server.connectionLost || !!server.showVerification);
+const verifying = computed(() => server.connected && !!server.showVerification);
 const attempts = computed(() => Number(server.failedReconnectAttempts) || 0);
 const actionError = ref('');
 
@@ -160,6 +174,7 @@ async function onExit() {
   color: var(--color-text-secondary);
   margin: 0 0 4px;
 }
+.clm-stop-all { width: 100%; }
 .clm-error {
   font-size: 12px;
   color: var(--color-danger);

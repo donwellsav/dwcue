@@ -15,6 +15,7 @@
           <button class="nav-btn neutral" @click="navigate('')" title="Computer / drives">
             <span class="material-symbols-rounded">computer</span>
           </button>
+          <Btn type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
         </header>
 
         <!-- Breadcrumb -->
@@ -120,7 +121,7 @@
     mode       : 'file' | 'directory'
                             — pick a file (with extension filter) or a folder
     filter     : string    — initial filter token, e.g. 'audio', 'all',
-                              '.dwcue,.liveplay', '.dwcuepack,.lpa'
+                              '.dwcue', '.dwcuepack'
     filterOptions: string[]— filters offered in the dropdown
     startPath  : string    — initial directory (empty = computer root)
     title      : string    — header text shown if you want one
@@ -260,10 +261,7 @@ function filterDisplay(f: string): string {
   if (f === 'all')        return 'All files';
   if (f === 'audio')      return 'Audio files';
   if (f === '.dwcue') return 'DonWells Cue Shows (.dwcue)';
-  if (f === '.liveplay') return 'Legacy Shows (.liveplay)';
-  if (f === '.dwcue,.liveplay') return 'DonWells Cue Shows (.dwcue; legacy .liveplay)';
   if (f === '.dwcuepack') return 'DonWells Cue Show Archives (.dwcuepack)';
-  if (f === '.dwcuepack,.lpa') return 'DonWells Cue Show Archives (.dwcuepack; legacy .lpa)';
   return f;
 }
 
@@ -453,6 +451,7 @@ watch([() => props.open, () => String(server.serverUrl), () => props.mode, () =>
   }
   .path-input {
     flex: 1;
+    min-width: 0;
     background: var(--color-control); border: 1px solid var(--color-border);
     border-radius: var(--control-radius); padding: 4px 10px;
     color: var(--color-text-primary); font-family: var(--font-mono); font-size: 12px;

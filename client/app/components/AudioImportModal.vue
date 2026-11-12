@@ -4,7 +4,8 @@
       <div class="modal">
         <header>
           <h2>{{ t('importAudio.title') }}</h2>
-          <button class="x" :aria-label="t('actions.close')" :disabled="busy" @click="close">✕</button>
+          <Btn type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
+          <button class="x" :aria-label="t('actions.close')" :disabled="busy || pickingLocal" @click="close">✕</button>
         </header>
 
         <!-- Source mode toggle. Only rendered when the server is on a
@@ -40,7 +41,7 @@
               </li>
             </ul>
             <div v-if="localPicked.length" class="list-footer">
-              <button class="btn primary" :disabled="!selectedLocal.length || busy" @click="importLocalSelected">
+              <button class="btn primary" :disabled="!selectedLocal.length || busy || pickingLocal" @click="importLocalSelected">
                 {{ busy ? t('importAudio.verifying') : t('importAudio.importSelected') }}<span v-if="selectedLocal.length"> ({{ selectedLocal.length }})</span>
               </button>
             </div>
@@ -77,6 +78,17 @@
               {{ uploadStatus }}
             </span>
           </div>
+          <section v-if="failedUploads.length" class="import-results" aria-live="polite">
+            <button type="button" class="btn small" :disabled="uploading || busy" @click="uploadFiles(failedUploads.map(entry => entry.file))">
+              {{ t('importAudio.retryFailed') }}
+            </button>
+            <ul>
+              <li v-for="(entry, index) in failedUploads" :key="index" class="failed">
+                <span class="result-name">{{ entry.file.name }}</span>
+                <span class="result-reason">{{ entry.reason }}</span>
+              </li>
+            </ul>
+          </section>
 
           <ul v-if="uploadedThisSession.length" class="uploaded">
             <li v-for="(p, i) in uploadedThisSession"
@@ -96,6 +108,8 @@
             </button>
           </div>
         </section>
+
+        <p class="hint">{{ t('importAudio.preserveAudio') }}</p>
 
         <details class="import-advanced">
           <summary>{{ t('importAudio.advanced') }}</summary>
@@ -242,7 +256,7 @@ const emit  = defineEmits<{
 }>();
 
 const server = useLiveplayServer();
-const { currentProject } = useProject();
+const { currentProject, projectEpoch } = useProject();
 const { t }  = useLocalization();
 
 // Local Electron uses the server tab shell for its native picker; remote
@@ -272,28 +286,27 @@ const transitionLabel = computed(() => projectSettings.value?.defaultTransitionM
   : t('settings.transitionModeCrossfade'));
 const importSettings = computed(() => [
   {
-    label: t('settings.autoTrimSilenceOnImport'),
-    enabled: projectSettings.value?.autoTrimSilenceOnImport === true,
-  },
-  {
-    label: t('settings.autoMatchLoudnessOnImport'),
-    enabled: projectSettings.value?.autoMatchLoudnessOnImport === true,
-  },
-  {
-    label: t('settings.autoReduceTruePeaksOnImport'),
-    enabled: projectSettings.value?.autoReduceTruePeaksOnImport !== false,
-  },
-  {
     label: t('settings.cycleTrackColors'),
     enabled: projectSettings.value?.cycleTrackColors !== false,
   },
 ]);
 
 const uploading           = ref(false);
+let uploadBatch = 0;
+const failedUploads       = ref<Array<{ file: File; reason: string }>>([]);
 const uploadStatus        = ref<string>('');
 const uploadedThisSession = ref<string[]>([]);
 const selectedUploaded    = ref<string[]>([]);
 const uploadedSizes       = ref<Record<string, number>>({});
+watch([projectEpoch, () => server.serverUrl, () => server.projectSessionId], () => {
+  ++uploadBatch;
+  uploading.value = false;
+  uploadedThisSession.value = [];
+  selectedUploaded.value = [];
+  uploadedSizes.value = {};
+  failedUploads.value = [];
+  uploadStatus.value = '';
+});
 const uploadedAnchor      = { i: -1 };
 const uploadInput          = ref<HTMLInputElement | null>(null);
 const mediaAccept = [
@@ -328,11 +341,14 @@ function isVideoPath(p: string): boolean {
   return !!m && VIDEO_CONTAINER_EXT.has(m[0].toLowerCase());
 }
 
-function close()       { if (!props.busy) emit('close'); }
+function close()       { if (!props.busy && !pickingLocal.value) emit('close'); }
 // Auto-close once the import finishes cleanly. Any failed file keeps the
 // modal open so the result list and retry affordance stay visible.
 watch([() => props.result, () => props.busy], ([result, busy]) => {
   if (!result || busy) return;
+  const finished = new Set(result.results.filter(item => item.status !== 'failed').map(item => item.sourcePath));
+  selectedLocal.value = selectedLocal.value.filter(path => !finished.has(path));
+  selectedUploaded.value = selectedUploaded.value.filter(path => !finished.has(path));
   if (result.results.length > 0 && result.results.every(item => item.status !== 'failed')) close();
 });
 function basename(p: string): string { return p.split(/[\\/]/).pop() || p; }
@@ -416,11 +432,12 @@ function toggleUploaded(item: string, index: number, e: MouseEvent) {
 
 async function pickLocal() {
   const api: any = (globalThis as any).electronAPI;
-  if (!api?.selectAudioFiles) return;
+  if (!api?.selectAudioFiles || pickingLocal.value) return;
+  const project = currentProject.value;
   pickingLocal.value = true;
   try {
     const paths: string[] | null = await api.selectAudioFiles();
-    if (paths?.length) {
+    if (paths?.length && props.open && currentProject.value === project) {
       for (const p of paths) {
         if (!localPicked.value.includes(p)) {
           localPicked.value.push(p);
@@ -438,30 +455,53 @@ async function uploadSelectedFiles(event: Event) {
   const input = event.target as HTMLInputElement;
   const files = Array.from(input.files ?? []);
   input.value = '';
-  if (files.length === 0) return;
+  await uploadFiles(files);
+}
 
+async function uploadFiles(files: File[]) {
+  if (!files.length || uploading.value || !currentProject.value) return;
+  const serverUrl = server.serverUrl;
+  const session = server.projectSessionId;
+  const epoch = projectEpoch.value;
+  const batch = ++uploadBatch;
+  const sameShow = () => batch === uploadBatch && server.serverUrl === serverUrl &&
+    server.projectSessionId === session && projectEpoch.value === epoch;
   uploading.value = true;
+  failedUploads.value = failedUploads.value.filter(entry => !files.includes(entry.file));
   try {
     let uploadedCount = 0;
     for (let i = 0; i < files.length; ++i) {
-      const file = files[i];
+      const file = files[i]!;
+      if (!sameShow()) return;
+      if (!server.connected || server.cueStartsBlocked) {
+        failedUploads.value.push(...files.slice(i).map(file => ({ file, reason: t('importAudio.uploadPaused') })));
+        break;
+      }
       uploadStatus.value = t('importAudio.uploadingProgress',
         { i: i + 1, total: files.length, name: file.name });
-      const out = await server.uploadFile(file, file.name);
-      if (out?.saved?.length) {
+      try {
+        const out = await server.uploadFile(file, file.name, session);
+        if (!sameShow()) return;
+        if (!out?.saved?.length) throw new Error(t('importAudio.uploadEmpty'));
         for (const savedPath of out.saved) {
           uploadedThisSession.value.push(savedPath);
           selectedUploaded.value.push(savedPath);   // pre-select for one-click import
           uploadedSizes.value[savedPath] = file.size;
           uploadedCount++;
         }
+      } catch (error) {
+        if (!sameShow()) return;
+        const reason = error instanceof Error ? error.message : String(error);
+        failedUploads.value.push({ file, reason });
+        if (/^(401|403) /.test(reason) || /project session changed/i.test(reason)) {
+          failedUploads.value.push(...files.slice(i + 1).map(file => ({ file, reason: t('importAudio.uploadPaused') })));
+          break;
+        }
       }
     }
     uploadStatus.value = t('importAudio.uploadedCount', { count: uploadedCount });
-  } catch (e: any) {
-    uploadStatus.value = t('importAudio.uploadFailed', { error: e?.message ?? e });
   } finally {
-    uploading.value = false;
+    if (batch === uploadBatch) uploading.value = false;
   }
 }
 
@@ -495,8 +535,17 @@ function formatBytes(n: number): string {
   box-shadow: var(--dialog-shadow);
   display: flex; flex-direction: column; gap: 12px;
 
-  header { display: flex; justify-content: space-between; align-items: center; min-height: 32px; }
-  h2 { margin: 0; font-size: 18px; }
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    min-height: 32px;
+    background: var(--dialog-surface);
+  }
+  h2 { flex: 1; margin: 0; font-size: 18px; }
   .x {
     display: grid; place-items: center;
     width: 32px; height: 32px; padding: 0;

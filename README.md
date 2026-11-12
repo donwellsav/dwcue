@@ -1,12 +1,16 @@
 # DonWells Cue
 
+DonWells Cue **2.6.20** keeps Stop All available during imports, file selection and show recovery. Healthy cues can load and take GO while another file is stalled. After Stop All, a ready backup can start while the old decoder or edit is still waiting.
+
+New and Open preserve the running show when a request fails or expires. Spotify imports skip repeated and unavailable tracks and keep successful results. Use `.dwcue` show files and `.dwcuepack` archives. The [workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification, remaining engineering work and the deferred line-level audio and 1080p HDMI checks.
+
 **DonWells Cue is a free, open-source app for playing back audio and video in live shows.** If you run sound for theatre, conferences, houses of worship, AV installs, or any live event, DonWells Cue lets you line up your music, sound effects and stings ahead of time and fire them off reliably on the night — from a laptop, a touchscreen, or even a separate stage-side machine you control over the network.
 
 You build a **show** as a list of cues plus a grid of one-touch buttons, then trigger them with a click, a tap, a keyboard shortcut, or a MIDI controller. DonWells Cue handles the fades, the transitions between tracks, and keeps a close eye on your levels so nothing clips or distorts.
 
 This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. Published macOS packages are Developer ID signed, notarized, and package-validated.
 
-> **Current source:** package metadata is **v2.6.16** and this guide describes source commit **39c3129**. This is source provenance, not a published-installer claim: the release page is authoritative for release assets, and you must verify the installed About version before relying on a behaviour.
+> The current source builds **v2.6.20**. Match the installed About version to the release notes before rehearsal.
 
 > **Operating a show?** Use the [operator manual (PDF)](docs/operators-manual.pdf) or its [Markdown source](docs/operators-manual.md). Those instructions track the current source. The client and server READMEs linked later are developer references, not show-day instructions.
 
@@ -22,11 +26,11 @@ The screenshots in this README are representative captures and may lag the newes
 
 - **🎵 Build a cue list** — arrange audio into a playlist with nested groups. Set volume, In/Out points, fades, ducking, and what happens when a cue finishes: stop, **Play Next**, loop, or jump to another cue.
 - **⚡ Fire One Shots** — use a configurable grid of one-touch cells for stings, SFX, announcements, walk-on music and beds. An unused grid stays collapsed unless you explicitly show it. Drag a local file or a playlist cue into a cell to copy it without changing the source list; the panel can detach into its own window. The primary window remains the project owner: detached edits are identity-fenced and acknowledged before they appear. Arm a cell to make it fire-ready (ARMED badge): armed cells fire from the tile, its hotkey, or MIDI, auto-disarm after an accepted play by default, and leaving Show Mode disarms everything — Stop is never gated. Duck Level, Attack and Release are applied by the server. A playing cell shows a live −m:ss countdown of time remaining.
-- **🔎 Prepare cues precisely** — Properties provides a detailed peak/RMS waveform, separate program and Preview playheads, click-to-seek, editable In/Out and Start Next markers, transport controls, Trim Silence, and loudness or true-peak normalization.
+- **🔎 Prepare cues precisely** — imports preserve source level and timing. Properties provides a detailed peak/RMS waveform, separate program and Preview playheads, click-to-seek, editable In/Out and Start Next markers, transport controls, explicit Trim Silence, loudness normalization, and attenuation-only peak reduction.
 - **🎧 Preview safely** — assign a monitor output and audition a cue away from the program bus. The lower Preview panel supports transport, seeking, quick Set In/Out, saving trim, Start Next markers, and Set As Next.
 - **📺 Show Mode** — switch to a simplified, touch-friendly playback view for the actual performance. Preview remains available as the lighter-weight way to inspect and prepare a cue during a show.
 - **⏭ Smooth transitions** — automatic advance, crossfades, and radio-style "Start Next" segue markers with an on-screen countdown. **Cue to Continue** is a one-play runtime override: it never changes the saved end behaviour, and Stop or replay cancels it. **Set As Next** changes only after the server accepts the UUID (or an explicit clear), and GO consumes that target only after playback is accepted. Rejected or not-yet-loaded targets remain ready for retry, and repeated identical inputs are coalesced.
-- **🔊 Sounds great, stays safe** — pick an **Output Target** for your show (Broadcast / EBU R128, Streaming, Radio, Netflix / OTT, or Live console), normalize cues to a chosen loudness or true-peak value, and use the adjustable true-peak limiter to control intersample peaks.
+- **🔊 Sounds great, stays safe** — pick an **Output Target** for your show (Broadcast / EBU R128, Streaming, Radio, Netflix / OTT, or Live console), explicitly normalize cues to a chosen loudness, and use peak reduction and the adjustable true-peak limiter as safety ceilings. Safe cues are never raised to those ceilings.
 - **📊 See your levels** — real-time metering at every stage (per-cue, per-channel and master), shown in LUFS, dBFS, true-peak or RMS.
 - **🎚 Choose show outputs** — configure program and Preview devices in Settings, then choose an output device (and LTC routing when needed) per cue in Properties. The server exposes a richer multi-device routing API, but the current client does not mount its Routing Matrix component as an operator screen.
 - **🎬 Timecode** — send SMPTE LTC timecode from a cue to keep lighting, video or other systems in sync.
@@ -56,6 +60,7 @@ Video cues are ordinary audio cues whose media file also carries a picture (H.26
 - **Silent videos** — a video file with no audio track still plays: the engine runs a silent transport of the container's duration so the cue advances, auto-follows and reports progress exactly like an audible cue.
 - **Grouped cues and One Shots** — nested video/image cues and cart-only video are supported; video uses the same media resolution as native audio. Reopening the output restores the most recently fired program source, not arbitrary cue-list order.
 - **Visible failures** — unsupported or undecodable video tracks produce an error in the control window and do not leave a misleading picture on the audience output. A healthy replacement source clears the error.
+- **Cue handoffs and recovery** — cancelled play attempts cannot mark a later cue as failed, background cues retain their current native position, and a failed output renderer stays under a native black cover with its reason shown in the control window; **Restart Output** is operator-controlled. [Video reliability checks and limits](docs/video-playback-reliability.md).
 - **Audio output recovery** — a stalled callback clock produces an operator warning. **Retry now** restarts that device in place, preserving its identity, routes, and loaded cues. Request acceptance is not success: the warning clears only after the matching restart receives a real callback. A failed attempt remains retryable.
 - **Diagnostic test cards** — Project Settings → Video Output offers the DonWells Cue signature card, Simple/SMPTE/ARIB/HDR/SDI/Single bars, Grid, Ramp, Name, AV Sync, DeGhost and LED Wall. These reproduce [Alteka Kards](https://github.com/Alteka/Kards) geometry, levels and diagnostic motion with DonWells Cue branding; their card-specific controls include colours, levels, grids, ramps, masks, logos and LED dimensions. Settings stay on this machine rather than modifying the project.
 - **Native AV Sync** — the original bundled 24, 25, 29.97, 30, 50, 59.94, 60, 100 and 120 FPS clips use the existing native decoder, loop, mixer and selected PA output. Their picture uses the same muted, native-clocked video element as Program playback. **Stop All** stops the diagnostic even when no project cue is active; switch the test card off and on to restart it. Switching away, closing the output, relaunching or quitting must unload the transient diagnostic without adding or editing project cues. If native removal fails, the app keeps the diagnostic ownership/error visible and cancels exit or relaunch so cleanup can be retried. **Close Client Only** removes the client-owned diagnostic but deliberately leaves the detached Program server and its normal show state running. Preferences persist, but the output and test card remain disarmed on app launch.
@@ -114,7 +119,7 @@ If your browser blocked the download instead, choose **Keep** to save the instal
 
 ## Getting started
 
-These steps describe the current v2.6.16 working tree. It writes native show documents as `.dwcue` files and portable exports as `.dwcuepack` archives.
+DonWells Cue writes native show documents as `.dwcue` files and portable exports as `.dwcuepack` archives.
 
 1. Install the [latest release](https://github.com/donwellsav/dwcue/releases/latest), or build DonWells Cue from source, and launch it.
 2. Choose **New Show**, enter its name, use **Choose…** to select the read-only Location, and create it — DonWells Cue writes `<show name>.dwcue` and a `media/` sub-folder there.
@@ -126,7 +131,7 @@ These steps describe the current v2.6.16 working tree. It writes native show doc
 8. If the show uses video, open Project Settings → **Video Output**, click **Identify displays**, assign the projector/switcher display, then manually open the output and verify the test card.
 9. Switch on **Show Mode** for the live performance.
 
-Use **File → Import Project…** for an older `.liveplay` show or `.lpa` archive. Legacy import is one-way: a direct `.liveplay` import creates an available `.dwcue` sibling, while an `.lpa` import publishes one canonical `.dwcue` inside a fresh destination folder. Native `.dwcuepack` and legacy `.lpa` archives must each contain exactly one project document at the archive root; the project-selection screen remains only for compatibility with older server responses. The original legacy file or archive stays unchanged, and new saves remain on the canonical file. Native file associations are registered only for `.dwcue` and `.dwcuepack`; select legacy files from the import flow instead of treating them as current-format aliases.
+Use **File → Open Project** for a `.dwcue` show and **File → Import Project…** for a `.dwcuepack` archive. Each archive must contain exactly one `.dwcue` at its root. The app refuses upstream LivePlay `.liveplay` and `.lpa` files. Previously converted `.dwcue` shows open as native projects.
 
 The file browsers remember the last successfully visited folder separately for each server and picker purpose. Use the Favorites sidebar to add, revisit, or remove frequent folders. If the configured starting location is available, a missing remembered folder falls back there with a notice. Failed navigation clears the selection and disables Open. Native desktop choosers also remember their last selected folder by purpose.
 
@@ -178,6 +183,8 @@ Made with some help from Claude Sonnet 4.5, Claude Sonnet 4.6 and Claude Opus 4.
 Client and server can run on **the same machine** (the desktop installer bundles both, spawns the server on `127.0.0.1:4480`, and supplies a per-generation managed token) or on **different machines** on a LAN — e.g. the show laptop driving a stage-side mini-PC that's wired to the actual sound interfaces.
 
 For the deep architectural docs (mixer tiers, routing matrix, LTC, limiter, metering, network event lifecycle, project-file backwards compatibility), see [`server/README.md`](server/README.md).
+
+The [audio playback reliability report](docs/audio-playback-reliability.md) records the import and live-event fixes, primary research sources, regression checks, and deployment limits.
 
 ### Network ports
 
@@ -346,11 +353,11 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.16**; the release page remains the source of truth for published artefacts and their checksums.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.20**. Find published artefacts and checksums on the release page.
 
 ### Triggering a release
 
-1. Bump the version in the root `package.json` (use `npm run bump -- patch|minor|major`, which propagates to `client/package.json`).
+1. Use `npm run bump -- patch|minor|major` to update the root, client and server versions. Match the root and workspace versions in `package-lock.json` and update the operator manual.
 2. Push the release branch and open a pull request; after review, merge it to `main`.
 3. The `build-release` workflow detects the version change and runs the platform matrix:
    - **Windows x64** (MSVC, WASAPI)
@@ -360,9 +367,9 @@ A release pipeline is configured in [`.github/workflows/build-release.yml`](.git
 4. Each job builds the C++ server through CMake/vcpkg, then runs the client `electron-builder` step with `extraResources` picking up the freshly compiled server binary.
 5. All artefacts are uploaded, then a final `release` job downloads them, auto-generates a changelog from git commits since the last tag, and creates a GitHub Release tagged `v<version>` with every installer attached.
 
-The vcpkg binary cache (`x-gha,readwrite` backend) is reused across runs so compiled C++ dependencies don't have to be re-built from scratch every time.
+Release jobs restore vcpkg binary archives by triplet and save them before running the native tests. Each native test has a three-minute limit.
 
-Manual runs are validation-only by default. They build the full matrix and smoke-test the unpacked Windows app and bundled native server without publishing anything. Enable the `publish_release` input only when the same validated installers should become a GitHub Release.
+Manual runs validate the full matrix by default, including packaged macOS and Windows smoke tests. Set `publish_release` to publish those installers. For a coordinated website update, first tag the exact app revision and pass the exact website revision as `website_commit`. The workflow checks the signed Mac packages and public installer URLs before publishing the site.
 
 ### Other workflows
 

@@ -3,6 +3,7 @@
 #include <miniaudio.h>
 
 #include <filesystem>
+#include <cstdint>
 
 namespace liveplay::audio {
 
@@ -10,6 +11,8 @@ ma_decoder_config decoder_config(ma_format format, ma_uint32 channels, ma_uint32
 ma_result decoder_init_file(const std::filesystem::path& path,
                             const ma_decoder_config& config,
                             ma_decoder& decoder);
+// A finite RIFF/RF64 length can prove truncation; false does not prove completion.
+bool file_has_truncated_riff(const std::filesystem::path& path, std::uintmax_t size);
 
 // True when the container carries a real video stream (attached pictures —
 // MP3/MP4 cover art — do not count). Best-effort probe: false on any error.

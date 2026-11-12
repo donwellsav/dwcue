@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, session, screen, powerSaveBlocker, webContents } = require('electron');
+const { app, BrowserWindow, View, ipcMain, dialog, shell, Menu, session, screen, powerSaveBlocker, webContents } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -37,8 +37,11 @@ const {
   SPOTIFY_AUDIO_PROVIDERS,
   normalizeSpotifyBitrate,
   normalizeSpotifyRecovery,
+  normalizeSpotifyTrackIds,
   renewSpotifyReview,
+  spotifyContentParts,
   spotifyReviewIsValid,
+  validatedSpotifyUrl,
 } = require('./spotify-import-reliability');
 const execPromise = promisify(exec);
 const execFilePromise = promisify(execFile);
@@ -258,6 +261,7 @@ const LIVEPLAY_CONFIG_FILENAME = 'liveplay-server.json';
 const LIVEPLAY_LOCK_FILENAME   = 'liveplay-server.lock';
 let liveplayServerIdentity = null;
 let liveplayServerStartPromise = null;
+let liveplayServerLifecyclePromise = Promise.resolve();
 
 function liveplayConfigPath() {
   return path.join(app.getPath('userData'), LIVEPLAY_CONFIG_FILENAME);
@@ -437,7 +441,8 @@ async function terminateLiveplayPid(pid, port, instanceToken, legacy = false) {
     if (process.platform === 'win32') {
       if (!(await identityMatches())) return false;
       await new Promise((resolve) => execFile(
-        'taskkill.exe', ['/pid', String(pid), '/T', '/F'], resolve,
+        'taskkill.exe', ['/pid', String(pid), '/T', '/F'],
+        { timeout: 3000, windowsHide: true }, resolve,
       ));
     } else {
       process.kill(pid, 'SIGINT');
@@ -527,7 +532,10 @@ function importPreferencesPath() {
   return path.join(app.getPath('userData'), 'import-preferences.json');
 }
 
+let unsavedImportPreferences = null;
+
 function readImportPreferences() {
+  if (unsavedImportPreferences) return unsavedImportPreferences;
   try {
     const value = JSON.parse(fs.readFileSync(importPreferencesPath(), 'utf8'));
     const pickerFolders = value.pickerFolders && typeof value.pickerFolders === 'object' && !Array.isArray(value.pickerFolders)
@@ -544,7 +552,16 @@ function readImportPreferences() {
 }
 
 function writeImportPreferences(value) {
-  fs.writeFileSync(importPreferencesPath(), JSON.stringify(value, null, 2));
+  try {
+    fs.writeFileSync(importPreferencesPath(), JSON.stringify(value, null, 2));
+    unsavedImportPreferences = null;
+    return true;
+  } catch (error) {
+    // A stale disk record must not resurrect already imported tracks in this session.
+    unsavedImportPreferences = value;
+    console.warn('[import-preferences] could not save:', error.message);
+    return false;
+  }
 }
 
 function nativePickerFolder(purpose) {
@@ -559,6 +576,18 @@ function rememberNativePickerFolder(purpose, folder) {
   writeImportPreferences({
     ...preferences, pickerFolders: { ...preferences.pickerFolders, [purpose]: folder },
   });
+}
+
+let nativeFilePickerOpen = false;
+async function showNativeFilePicker(show) {
+  if (nativeFilePickerOpen) return { canceled: true };
+  nativeFilePickerOpen = true;
+  try {
+    // The chooser stays independent of the operator window so Stop All remains available.
+    return await show();
+  } finally {
+    nativeFilePickerOpen = false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -801,13 +830,13 @@ async function verifyLiveplayLock(lock) {
   if (/^[0-9a-f]{32}$/.test(lock.instanceToken || '')) {
     // A tokenless generation from an older release may be stopped only after
     // the existing PID + health/process identity checks prove we own it.
-    if (healthMatchesIdentity(health, lock) ||
-        await processRunsOwnedServer(lock.pid, lock.instanceToken)) {
+    if ((healthMatchesIdentity(health, lock) ||
+        await processRunsOwnedServer(lock.pid, lock.instanceToken)) && isPidAlive(lock.pid)) {
       return { ...lock, legacy: false };
     }
     return null;
   }
-  if (isLegacyServerHealth(health) && await processRunsLegacyServer(lock)) {
+  if (isLegacyServerHealth(health) && await processRunsLegacyServer(lock) && isPidAlive(lock.pid)) {
     return { ...lock, legacy: true };
   }
   return null;
@@ -851,9 +880,11 @@ async function reconcileLiveplayServerIdentity(waitForReplacement = false) {
         ? await processRunsLegacyServer(current)
         : healthMatchesIdentity(health, current) ||
           await processRunsOwnedServer(current.pid, current.instanceToken);
-      if (owned) {
+      if (owned && isPidAlive(current.pid)) {
         return current;
       }
+      // A failed probe is not evidence that a live child has exited.
+      if (isPidAlive(current.pid)) return null;
     }
     clearLiveplayIdentity(current);
   }
@@ -863,7 +894,17 @@ async function reconcileLiveplayServerIdentity(waitForReplacement = false) {
 // Reattach to a verified detached server. A tokenless pre-rebrand server is
 // adopted only after both its old health response and exact process arguments
 // agree, then replaced once with the tokenized current binary.
+function runLiveplayServerOperation(operation) {
+  const pending = liveplayServerLifecyclePromise.then(operation);
+  liveplayServerLifecyclePromise = pending.catch(() => {});
+  return pending;
+}
+
 async function tryReattachLiveplayServer() {
+  return runLiveplayServerOperation(tryReattachLiveplayServerOnce);
+}
+
+async function tryReattachLiveplayServerOnce() {
   const lock = readLiveplayLock();
   if (!lock) return;
   const identity = await reconcileLiveplayServerIdentity(true);
@@ -884,37 +925,40 @@ async function tryReattachLiveplayServer() {
   if (identity.legacy || !validManagedAccessToken(identity.accessToken) ||
       identity.port !== cfg.localPort) {
     if (!(await stopVerifiedLiveplayServer(identity))) return identity;
-    return startLiveplayServer();
+    return startLiveplayServerOnce();
   }
   return identity;
 }
 
 async function startLiveplayServer() {
   if (liveplayServerStartPromise) return liveplayServerStartPromise;
-  liveplayServerStartPromise = startLiveplayServerOnce();
-  try {
-    return await liveplayServerStartPromise;
-  } finally {
-    liveplayServerStartPromise = null;
-  }
+  const pending = runLiveplayServerOperation(startLiveplayServerOnce);
+  liveplayServerStartPromise = pending;
+  try { return await pending; }
+  finally { if (liveplayServerStartPromise === pending) liveplayServerStartPromise = null; }
 }
 
 async function startLiveplayServerOnce() {
-  const cfg = readLiveplayConfig();
+  let cfg = readLiveplayConfig();
   if (cfg.mode !== 'local') return;
 
   const current = await reconcileLiveplayServerIdentity(true);
+  cfg = readLiveplayConfig();
+  if (cfg.mode !== 'local') return null;
   if (current) {
     if (!current.legacy && validManagedAccessToken(current.accessToken) &&
         current.port === cfg.localPort) return current;
     if (!(await stopVerifiedLiveplayServer(current))) return null;
+    cfg = readLiveplayConfig();
+    if (cfg.mode !== 'local') return null;
   }
 
   // Never signal, adopt, or overwrite a live PID that failed identity checks.
   // The user can stop that process directly; spawning beside it risks two
   // independent audio engines if the configured port also changed.
-  const unverifiedLock = readLiveplayLock();
-  if (unverifiedLock && isPidAlive(unverifiedLock.pid)) {
+  const unverifiedLock = [readLiveplayLock(), liveplayServerIdentity].find(
+    identity => identity && isPidAlive(identity.pid));
+  if (unverifiedLock) {
     console.error('[liveplay-server] refusing to launch beside unverified pid',
                   unverifiedLock.pid);
     notifyServerStateChange();
@@ -929,8 +973,7 @@ async function startLiveplayServerOnce() {
     return;
   }
 
-  // Launch detached and headless. The server writes its real PID to the
-  // lockfile and persists logs under its state directory.
+  // Launch detached and headless; retain ownership even if readiness stalls.
   const lockPath = liveplayLockPath();
   const instanceToken = crypto.randomBytes(16).toString('hex');
   const accessToken = crypto.randomBytes(32).toString('hex');
@@ -971,13 +1014,13 @@ async function startLiveplayServerOnce() {
     notifyServerStateChange();
   });
 
-  // We don't track the spawn handle's lifetime — the server's real PID
-  // arrives via the pidfile within ~1 s. unref() so Electron can quit
-  // independently.
+  if (Number.isSafeInteger(launcher.pid) && launcher.pid > 0) {
+    adoptLiveplayIdentity({ pid: launcher.pid, port: cfg.localPort,
+      instanceToken, accessToken, legacy: false });
+  }
   try { launcher.unref(); } catch {}
 
-  // Adopt the real PID before completing this launch so a concurrent stop or
-  // restart cannot miss the new server in the pidfile handoff window.
+  // Readiness still requires the server's authenticated health response.
   const identity = await pollPidfileForServerPid(
     lockPath, instanceToken, accessToken, cfg.localPort, launchState,
   );
@@ -1025,14 +1068,18 @@ async function stopVerifiedLiveplayServer(identity) {
 }
 
 async function stopLiveplayServer() {
-  if (liveplayServerStartPromise) await liveplayServerStartPromise;
+  liveplayServerStartPromise = null;
+  return runLiveplayServerOperation(stopLiveplayServerOnce);
+}
+
+async function stopLiveplayServerOnce() {
   const identity = await reconcileLiveplayServerIdentity(true);
   if (!identity) {
-    const unverifiedLock = readLiveplayLock();
-    if (unverifiedLock && isPidAlive(unverifiedLock.pid)) {
+    const unverifiedLock = [readLiveplayLock(), liveplayServerIdentity].find(
+      candidate => candidate && isPidAlive(candidate.pid));
+    if (unverifiedLock) {
       console.error('[liveplay-server] refusing to stop unverified lock PID:',
                     unverifiedLock.pid);
-      clearLiveplayIdentity();
       notifyServerStateChange();
       return false;
     }
@@ -1103,19 +1150,9 @@ ipcMain.handle('liveplay-server:set-config', async (event, incoming) => {
   writeLiveplayConfig(next);
   notifyServerStateChange();
 
-  if (next.mode === 'remote') {
-    await stopLiveplayServer();
-  } else {
-    // Start is promise-coalesced, and startLiveplayServerOnce replaces a
-    // verified legacy or wrong-port generation before launching.
-    await startLiveplayServer();
-    const identity = await reconcileLiveplayServerIdentity();
-    if (identity && (identity.legacy ||
-        !validManagedAccessToken(identity.accessToken) ||
-        identity.port !== next.localPort)) {
-      if (await stopVerifiedLiveplayServer(identity)) await startLiveplayServer();
-    }
-  }
+  liveplayServerStartPromise = null;
+  await runLiveplayServerOperation(() => readLiveplayConfig().mode === 'remote'
+    ? stopLiveplayServerOnce() : startLiveplayServerOnce());
 
   notifyServerStateChange();
   return next;
@@ -1186,9 +1223,12 @@ ipcMain.handle('app:confirm-quit', async (event, opts) => {
 
 ipcMain.handle('liveplay-server:restart', async (event) => {
   requireTrustedIpc(event);
-  if (!(await stopLiveplayServer())) return false;
-  await startLiveplayServer();
-  return true;
+  liveplayServerStartPromise = null;
+  return runLiveplayServerOperation(async () => {
+    if (!(await stopLiveplayServerOnce())) return false;
+    await startLiveplayServerOnce();
+    return true;
+  });
 });
 
 // Explicit shutdown — the server is now detached, so quitting the
@@ -1219,7 +1259,12 @@ ipcMain.handle('liveplay-server:ensure-running', async (event) => {
     const health = lock?.port === cfg.localPort
       ? await probeServerHealth(cfg.localPort, 800)
       : null;
-    if (lock && healthMatchesIdentity(health, lock)) {
+    const currentConfig = readLiveplayConfig();
+    if (currentConfig.mode !== 'local' || currentConfig.localPort !== cfg.localPort) {
+      return { ok: false, port: cfg.localPort, error: 'server configuration changed while connecting' };
+    }
+    if (lock && isPidAlive(lock.pid) && liveplayServerIdentity?.pid === lock.pid &&
+        liveplayServerIdentity.instanceToken === lock.instanceToken && healthMatchesIdentity(health, lock)) {
       if (!validManagedAccessToken(lock.accessToken)) {
         return {
           ok: false,
@@ -2102,7 +2147,7 @@ function createWindow() {
   // renderer is gone (crash / already destroyed) we let the close proceed.
   mainWindow.on('close', (e) => {
     if (quitConfirmed) return;
-    if (!mainWindow || mainWindow.webContents.isDestroyed()) return;
+    if (!mainWindow || mainWindow.webContents.isDestroyed() || mainWindow.webContents.isCrashed()) return;
     // Packaged-app smoke test launches with --smoke-quit: no human is
     // present to answer the quit-confirmation dialogs, so skip the veto.
     if (process.argv.includes('--smoke-quit')) return;
@@ -2191,6 +2236,12 @@ let videoOutputWatchdogInstalled = false;
 let videoOutputWatchdogTimer = null;
 let videoOutputTestCard = false;
 let videoOutputPlaybackError = null;
+let videoOutputRendererReady = false;
+let videoOutputRendererResponsive = true;
+let videoOutputRecoveryRequired = false;
+let videoOutputRestarting = false;
+let videoOutputPictureHealth = null;
+const videoOutputDiagnostics = [];
 let videoOutputFrameTimer = null;
 let displayIdentifierWindows = [];
 let displayIdentifierTimer = null;
@@ -2290,19 +2341,31 @@ function normalizeVideoPlaybackError(payload) {
 // Runs only while the output window exists.
 function startVideoOutputFrames() {
   if (videoOutputFrameTimer !== null) return;
-  videoOutputFrameTimer = setInterval(async () => {
-    if (!videoOutputWindow || videoOutputWindow.isDestroyed()) return;
+  const outputWindow = videoOutputWindow;
+  if (!outputWindow || outputWindow.isDestroyed()) return;
+  let capturePending = false;
+  const timer = setInterval(async () => {
+    if (capturePending || videoOutputFrameTimer !== timer ||
+        videoOutputWindow !== outputWindow || outputWindow.isDestroyed() ||
+        outputWindow.webContents.isDestroyed()) return;
     if (!mainWindow || mainWindow.isDestroyed()) return;
+    capturePending = true;
     try {
-      const img = await videoOutputWindow.webContents.capturePage();
+      const img = await outputWindow.webContents.capturePage();
+      // A native readback can finish after close/recreate or a timer restart.
+      if (videoOutputFrameTimer !== timer || videoOutputWindow !== outputWindow ||
+          outputWindow.isDestroyed() || !mainWindow || mainWindow.isDestroyed() ||
+          mainWindow.webContents.isDestroyed()) return;
       if (!img || img.isEmpty()) return;
       const thumb = img.resize({ width: 320, quality: 'good' });
       mainWindow.webContents.send('video-output:frame', {
         jpeg: thumb.toJPEG(60).toString('base64'),
         at: Date.now(),
       });
-    } catch { /* window mid-teardown; the closed handler stops the timer */ }
+    } catch { /* capture can race native teardown */ }
+    finally { capturePending = false; }
   }, 1000);
+  videoOutputFrameTimer = timer;
 }
 
 function stopVideoOutputFrames() {
@@ -2402,6 +2465,11 @@ function videoOutputStatus() {
     displays,
     warning,
     playbackError: videoOutputPlaybackError,
+    rendererReady: videoOutputRendererReady,
+    rendererResponsive: videoOutputRendererResponsive,
+    recoveryRequired: videoOutputRecoveryRequired,
+    restarting: videoOutputRestarting,
+    pictureHealth: videoOutputPictureHealth,
     testCard: videoOutputTestCard,
     testCardConfig: cfg.testCardConfig,
     testCardPlayback: testCardPlayback.playback,
@@ -2509,7 +2577,10 @@ function identifyVideoOutputDisplays() {
     identifierWindow.setAlwaysOnTop(true, 'screen-saver');
     identifierWindow.setIgnoreMouseEvents(true);
     try {
-      identifierWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+      // Keep the operator app in the Dock and app switcher on macOS.
+      identifierWindow.setVisibleOnAllWorkspaces(true, {
+        visibleOnFullScreen: true, skipTransformProcessType: true,
+      });
     } catch { /* not supported by every Linux window manager */ }
 
     const label = escapeDisplayIdentifierText(display.label || `Display ${display.id}`);
@@ -2540,9 +2611,106 @@ function identifyVideoOutputDisplays() {
   return videoOutputDisplays();
 }
 
+function loadVideoOutputWindow(outputWindow) {
+  return isDevMode
+    ? outputWindow.loadURL('http://localhost:3000/?videoOutput=1')
+    : outputWindow.loadFile(path.join(__dirname, '../.output/public/index.html'), { query: { videoOutput: '1' } });
+}
+
+function failVideoOutputRenderer(outputWindow, message) {
+  if (videoOutputWindow !== outputWindow || outputWindow.isDestroyed()) return;
+  videoOutputRendererReady = false;
+  videoOutputRecoveryRequired = true;
+  videoOutputPictureHealth = null;
+  outputWindow.videoOutputCover.setVisible(true);
+  videoOutputPlaybackError = { itemUuid: null, message };
+  videoOutputDiagnostics.push({ at: Date.now(), error: sanitizeVideoPlaybackErrorMessage(message) });
+  if (videoOutputDiagnostics.length > 32) videoOutputDiagnostics.shift();
+  stopVideoOutputFrames();
+  const connection = videoOutputTestCardConnection;
+  videoOutputTestCardConnection = null;
+  void testCardPlayback.update(null, connection);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    mainWindow.focus();
+  }
+  broadcastVideoOutputStatus();
+}
+
+function markVideoOutputReady(event) {
+  requireVideoOutputIpc(event);
+  if (event.senderFrame !== event.sender.mainFrame) throw new Error('Expected output main frame');
+  if (!videoOutputRecoveryRequired) {
+    videoOutputRendererReady = true;
+    videoOutputRendererResponsive = true;
+    videoOutputWindow.videoOutputCover.setVisible(false);
+    startVideoOutputFrames();
+  }
+  return broadcastVideoOutputStatus();
+}
+
+function reportVideoPictureHealth(event, payload) {
+  requireVideoOutputIpc(event);
+  if (event.senderFrame !== event.sender.mainFrame) throw new Error('Expected output main frame');
+  if (videoOutputRecoveryRequired) return;
+  if (!payload || !['idle', 'still', 'paused', 'loading', 'seeking', 'playing', 'clock-wait', 'error'].includes(payload.state)
+    || !(payload.itemUuid === null || (typeof payload.itemUuid === 'string' && payload.itemUuid.length <= 128))
+    || !(payload.sourceItemUuid === null || (typeof payload.sourceItemUuid === 'string' && payload.sourceItemUuid.length <= 128))
+    || !(payload.fileRevision === null || (typeof payload.fileRevision === 'string' && payload.fileRevision.length <= 1024))
+    || !Number.isInteger(payload.readyState) || payload.readyState < 0 || payload.readyState > 4) {
+    throw new Error('Invalid picture health');
+  }
+  for (const key of ['mediaTime', 'presentedFrames', 'presentedAgeMs', 'droppedFrames', 'totalFrames', 'preparedSeconds']) {
+    if (payload[key] !== null && (!Number.isFinite(payload[key]) || payload[key] < 0)) throw new Error('Invalid picture health');
+  }
+  const { itemUuid, sourceItemUuid, fileRevision, preparedSeconds, state, mediaTime, presentedFrames, presentedAgeMs, droppedFrames, totalFrames, readyState } = payload;
+  videoOutputPictureHealth = { itemUuid, sourceItemUuid, fileRevision, preparedSeconds, state, mediaTime, presentedFrames, presentedAgeMs,
+    droppedFrames, totalFrames, readyState, receivedAt: Date.now() };
+  videoOutputDiagnostics.push(videoOutputPictureHealth);
+  if (videoOutputDiagnostics.length > 32) videoOutputDiagnostics.shift();
+  broadcastVideoOutputStatus();
+}
+
+async function restartVideoOutputWindow() {
+  const outputWindow = videoOutputWindow;
+  if (!outputWindow || outputWindow.isDestroyed() || videoOutputRestarting) return videoOutputStatus();
+  videoOutputRestarting = true;
+  failVideoOutputRenderer(outputWindow, 'Restarting Video Output; audience output is held black.');
+  try {
+    if (!outputWindow.webContents.isCrashed()) {
+      await new Promise((resolve, reject) => {
+        const done = () => { clearTimeout(timer); resolve(); };
+        const timer = setTimeout(() => {
+          outputWindow.webContents.removeListener('render-process-gone', done);
+          reject(new Error('Video Output renderer did not stop. Retry Restart Output.'));
+        }, 3000);
+        outputWindow.webContents.once('render-process-gone', done);
+        outputWindow.webContents.forcefullyCrashRenderer();
+      });
+    }
+    if (videoOutputWindow !== outputWindow || outputWindow.isDestroyed()) return videoOutputStatus();
+    videoOutputRecoveryRequired = false;
+    videoOutputPlaybackError = null;
+    await loadVideoOutputWindow(outputWindow);
+  } catch (error) {
+    failVideoOutputRenderer(outputWindow, `Video Output restart failed: ${error.message}`);
+  } finally {
+    if (videoOutputWindow === outputWindow) {
+      videoOutputRestarting = false;
+      broadcastVideoOutputStatus();
+    }
+  }
+  return videoOutputStatus();
+}
+
 function createVideoOutputWindow() {
   if (videoOutputWindow && !videoOutputWindow.isDestroyed()) return;
   videoOutputPlaybackError = null;
+  videoOutputRendererReady = false;
+  videoOutputRendererResponsive = true;
+  videoOutputRecoveryRequired = false;
+  videoOutputRestarting = false;
+  videoOutputPictureHealth = null;
 
   const cfg = readVideoOutputConfig();
   const target = resolveVideoOutputDisplay(cfg);
@@ -2598,37 +2766,51 @@ function createVideoOutputWindow() {
 
   const outputWindow = new BrowserWindow(options);
   videoOutputWindow = outputWindow;
+  // Native coverage survives renderer loss and hides the control page during hydration.
+  const cover = new View();
+  cover.setBackgroundColor('#000000');
+  outputWindow.videoOutputCover = cover;
+  outputWindow.contentView.addChildView(cover);
+  const resizeCover = () => {
+    const [width, height] = outputWindow.getContentSize();
+    cover.setBounds({ x: 0, y: 0, width, height });
+  };
+  resizeCover();
+  cover.setVisible(true);
+  outputWindow.on('resize', resizeCover);
   if (realOutput) outputWindow.setAlwaysOnTop(true, 'screen-saver');
   startVideoOutputFrames();
 
-  outputWindow.once('ready-to-show', () => {
-    if (!outputWindow.isDestroyed()) outputWindow.show();
-  });
-
-  if (isDevMode) {
-    outputWindow.loadURL('http://localhost:3000/?videoOutput=1');
-  } else {
-    const indexPath = path.join(__dirname, '../.output/public/index.html');
-    outputWindow.loadFile(indexPath, { query: { videoOutput: '1' } });
-  }
-
   outputWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _url, isMainFrame) => {
+    if (videoOutputWindow !== outputWindow) return;
     console.error('[video-output] Failed to load:', errorCode, errorDescription);
     if (isMainFrame && errorCode !== -3) {
-      const connection = videoOutputTestCardConnection;
-      videoOutputTestCardConnection = null;
-      void testCardPlayback.update(null, connection);
+      failVideoOutputRenderer(outputWindow, `Video Output could not load (${errorCode}). Restart Output to retry.`);
     }
   });
 
   outputWindow.webContents.on('did-finish-load', () => {
+    if (videoOutputWindow !== outputWindow) return;
     broadcastVideoOutputStatus();
     void reconcileTestCardPlayback();
   });
-  outputWindow.webContents.on('render-process-gone', () => {
-    const connection = videoOutputTestCardConnection;
-    videoOutputTestCardConnection = null;
-    void testCardPlayback.update(null, connection);
+  outputWindow.webContents.on('render-process-gone', (_event, details) => {
+    if (videoOutputWindow !== outputWindow) return;
+    const reason = details?.reason || 'unknown';
+    const exitCode = details?.exitCode ?? 'unknown';
+    console.error('[video-output] Renderer stopped:', reason, exitCode);
+    videoOutputRendererResponsive = false;
+    failVideoOutputRenderer(outputWindow, `Video Output renderer stopped (${reason}, exit code ${exitCode}). Audience output is held black. Restart Output to retry.`);
+  });
+  outputWindow.webContents.on('unresponsive', () => {
+    if (videoOutputWindow !== outputWindow) return;
+    videoOutputRendererResponsive = false;
+    failVideoOutputRenderer(outputWindow, 'Video Output is unresponsive. Audience output is held black. Restart Output to retry.');
+  });
+  outputWindow.webContents.on('responsive', () => {
+    if (videoOutputWindow !== outputWindow) return;
+    videoOutputRendererResponsive = true;
+    broadcastVideoOutputStatus();
   });
 
   // The passive output renderer otherwise owns keyboard focus on Windows.
@@ -2655,17 +2837,8 @@ function createVideoOutputWindow() {
 
   outputWindow.on('closed', () => {
     const preserveSession = videoOutputWindowsPreservingSession.delete(outputWindow);
-    if (!preserveSession) videoOutputSessionEnabled = false;
-    if (videoOutputWindow === outputWindow) videoOutputWindow = null;
-    videoOutputPlaybackError = null;
-    const connection = videoOutputTestCardConnection;
-    videoOutputTestCardConnection = null;
-    void testCardPlayback.update(null, connection);
-    stopVideoOutputFrames();
-    if (videoOutputPowerSaveId !== null) {
-      try { powerSaveBlocker.stop(videoOutputPowerSaveId); } catch { /* already stopped */ }
-      videoOutputPowerSaveId = null;
-    }
+    if (videoOutputWindow !== outputWindow) return;
+    closeVideoOutputWindow({ preserveSession });
     broadcastVideoOutputStatus();
   });
 
@@ -2673,22 +2846,34 @@ function createVideoOutputWindow() {
   if (videoOutputPowerSaveId === null || !powerSaveBlocker.isStarted(videoOutputPowerSaveId)) {
     videoOutputPowerSaveId = powerSaveBlocker.start('prevent-display-sleep');
   }
+  outputWindow.show();
+  void loadVideoOutputWindow(outputWindow).catch(error => {
+    failVideoOutputRenderer(outputWindow, `Video Output could not load: ${error.message}`);
+  });
 }
 
-function closeVideoOutputWindow({ preserveSession = false } = {}) {
+function closeVideoOutputWindow({ preserveSession = false, playbackError = null } = {}) {
   const outputWindow = videoOutputWindow;
   if (!preserveSession) videoOutputSessionEnabled = false;
-  if (!outputWindow || outputWindow.isDestroyed()) {
-    videoOutputWindow = null;
-    videoOutputPlaybackError = null;
-    const connection = videoOutputTestCardConnection;
-    videoOutputTestCardConnection = null;
-    void testCardPlayback.update(null, connection);
-    return;
+  // Release this generation before destroy can emit a late closed event.
+  videoOutputWindow = null;
+  videoOutputPlaybackError = playbackError;
+  videoOutputRendererReady = false;
+  videoOutputRendererResponsive = true;
+  videoOutputRecoveryRequired = false;
+  videoOutputRestarting = false;
+  videoOutputPictureHealth = null;
+  const connection = videoOutputTestCardConnection;
+  videoOutputTestCardConnection = null;
+  void testCardPlayback.update(null, connection);
+  stopVideoOutputFrames();
+  if (videoOutputPowerSaveId !== null) {
+    try { powerSaveBlocker.stop(videoOutputPowerSaveId); } catch { /* already stopped */ }
+    videoOutputPowerSaveId = null;
   }
+  if (!outputWindow || outputWindow.isDestroyed()) return;
   if (preserveSession) videoOutputWindowsPreservingSession.add(outputWindow);
   outputWindow.destroy();
-  if (videoOutputWindow === outputWindow) videoOutputWindow = null;
 }
 
 // Watchdog: when the display topology changes (switcher EDID renegotiation,
@@ -2758,9 +2943,25 @@ ipcMain.handle('video-output:status', (event) => {
   requireTrustedIpc(event);
   return videoOutputStatus();
 });
+ipcMain.handle('video-output:restart', (event) => {
+  requireTrustedIpc(event);
+  return restartVideoOutputWindow();
+});
+ipcMain.handle('video-output:renderer-ready', markVideoOutputReady);
+ipcMain.handle('video-output:picture-health', reportVideoPictureHealth);
+ipcMain.handle('video-output:diagnostics', (event) => {
+  requireTrustedIpc(event);
+  return { runtime: { electron: process.versions.electron, chromium: process.versions.chrome,
+    platform: process.platform, arch: process.arch }, status: videoOutputStatus(), recent: [...videoOutputDiagnostics] };
+});
 ipcMain.handle('video-output:report-playback-error', async (event, payload) => {
   requireVideoOutputIpc(event);
+  if (videoOutputRecoveryRequired) return broadcastVideoOutputStatus();
   videoOutputPlaybackError = normalizeVideoPlaybackError(payload);
+  if (videoOutputPlaybackError) {
+    videoOutputDiagnostics.push({ at: Date.now(), ...videoOutputPlaybackError });
+    if (videoOutputDiagnostics.length > 32) videoOutputDiagnostics.shift();
+  }
   if (videoOutputPlaybackError?.itemUuid === testCardPlayback.session?.cue.id
     && videoOutputPlaybackError) {
     await testCardPlayback.fail(videoOutputPlaybackError.message, videoOutputTestCardConnection);
@@ -3441,10 +3642,10 @@ ipcMain.handle('help:open-operator-manual', (event) => {
 
 ipcMain.handle('select-project-folder', async (event) => {
   requireTrustedIpc(event);
-  const result = await dialog.showOpenDialog(mainWindow, {
+  const result = await showNativeFilePicker(() => dialog.showOpenDialog({
     defaultPath: nativePickerFolder('project-folder'),
     properties: ['openDirectory', 'createDirectory']
-  });
+  }));
 
   if (!result.canceled && result.filePaths.length > 0) {
     rememberNativePickerFolder('project-folder', result.filePaths[0]);
@@ -3455,27 +3656,22 @@ ipcMain.handle('select-project-folder', async (event) => {
 
 ipcMain.handle('select-project-file', async (event) => {
   requireTrustedIpc(event);
-  const result = await dialog.showOpenDialog(mainWindow, {
+  const result = await showNativeFilePicker(() => dialog.showOpenDialog({
     defaultPath: nativePickerFolder('project-open'),
     properties: ['openFile'],
-    filters: [
-      { name: 'DonWells Cue Show', extensions: ['dwcue'] },
-      { name: 'Legacy Show (Import)', extensions: ['liveplay'] },
-    ],
-  });
+    filters: [{ name: 'DonWells Cue Show', extensions: ['dwcue'] }],
+  }));
 
   if (result.canceled || result.filePaths.length === 0) return null;
   const selectedPath = result.filePaths[0];
-  const kind = fileKindFor(selectedPath);
-  if (kind !== ProjectFileKind.NativeProject &&
-      kind !== ProjectFileKind.LegacyProject) return null;
+  if (fileKindFor(selectedPath) !== ProjectFileKind.NativeProject) return null;
   rememberNativePickerFolder('project-open', path.dirname(selectedPath));
   return authorizeOpenableFilePath(selectedPath);
 });
 
 ipcMain.handle('select-audio-files', async (event) => {
   requireTrustedIpc(event);
-  const result = await dialog.showOpenDialog(mainWindow, {
+  const result = await showNativeFilePicker(() => dialog.showOpenDialog({
     defaultPath: nativePickerFolder('media'),
     properties: ['openFile', 'multiSelections'],
     // Audio plus the video containers the engine decodes (H.264/HEVC tracks);
@@ -3490,7 +3686,7 @@ ipcMain.handle('select-audio-files', async (event) => {
         'wmv', 'flv', '3gp',
       ],
     }],
-  });
+  }));
 
   if (result.canceled || result.filePaths.length === 0) return null;
   rememberNativePickerFolder('media', path.dirname(result.filePaths[0]));
@@ -3532,15 +3728,14 @@ ipcMain.handle('get-import-preferences', (event) => {
       writeImportPreferences({ ...preferences, spotifyRecovery: restoredRecovery });
     }
   }
-  return response;
+  return { ...response, preferencesSaved: !unsavedImportPreferences };
 });
 
 ipcMain.handle('set-spotify-import-destination', (event, destination) => {
   requireTrustedIpc(event);
   destination = requireAuthorizedIpcPath(destination, 'destination');
   if (!fs.statSync(destination).isDirectory()) throw new TypeError('destination must be a directory');
-  writeImportPreferences({ ...readImportPreferences(), spotifyDestination: destination });
-  return true;
+  return writeImportPreferences({ ...readImportPreferences(), spotifyDestination: destination });
 });
 
 ipcMain.handle('set-spotify-import-recovery', (event, rawRecovery) => {
@@ -3560,8 +3755,7 @@ ipcMain.handle('set-spotify-import-recovery', (event, rawRecovery) => {
     requireAuthorizedIpcPath(filePath, 'pendingFile');
     if (!fs.statSync(filePath).isFile()) throw new TypeError('pendingFile must be a file');
   }
-  writeImportPreferences({ ...readImportPreferences(), spotifyRecovery: recovery });
-  return true;
+  return writeImportPreferences({ ...readImportPreferences(), spotifyRecovery: recovery });
 });
 
 ipcMain.handle('clear-spotify-import-recovery', (event, activeProjectFolderPath) => {
@@ -3570,9 +3764,9 @@ ipcMain.handle('clear-spotify-import-recovery', (event, activeProjectFolderPath)
     activeProjectFolderPath, 'activeProjectFolderPath');
   const preferences = readImportPreferences();
   if (preferences.spotifyRecovery?.activeProjectFolderPath === activeProjectFolderPath) {
-    writeImportPreferences({ ...preferences, spotifyRecovery: null });
+    return writeImportPreferences({ ...preferences, spotifyRecovery: null });
   }
-  return true;
+  return !unsavedImportPreferences;
 });
 
 // This channel is intentionally not exposed directly. The preload invokes it
@@ -3675,34 +3869,29 @@ ipcMain.handle('show-save-archive-dialog', async (event, defaultName) => {
   const requestedName = typeof defaultName === 'string' && defaultName.length <= 255
     ? path.basename(defaultName)
     : 'project.dwcuepack';
-  const result = await dialog.showSaveDialog(mainWindow, {
+  const result = await showNativeFilePicker(() => dialog.showSaveDialog({
     title: 'Save DonWells Cue Show Archive',
     defaultPath: path.join(nativePickerFolder('archive-export') || '', canonicalArchivePath(requestedName)),
     filters: [{ name: 'DonWells Cue Show Archive', extensions: ['dwcuepack'] }],
-  });
+  }));
   if (result.canceled || !result.filePath) return null;
   rememberNativePickerFolder('archive-export', path.dirname(result.filePath));
   return pathCapabilities.authorizeFile(
     canonicalArchivePath(result.filePath), { allowMissing: true });
 });
 
-// Choose either a canonical archive or an explicitly imported legacy archive.
+// Choose a DonWells Cue archive.
 ipcMain.handle('show-open-archive-dialog', async (event) => {
   requireTrustedIpc(event);
-  const result = await dialog.showOpenDialog(mainWindow, {
+  const result = await showNativeFilePicker(() => dialog.showOpenDialog({
     defaultPath: nativePickerFolder('archive-import'),
     title: 'Choose DonWells Cue Show Archive',
     properties: ['openFile'],
-    filters: [
-      { name: 'DonWells Cue Show Archive', extensions: ['dwcuepack'] },
-      { name: 'Legacy Show Archive (Import)', extensions: ['lpa'] },
-    ],
-  });
+    filters: [{ name: 'DonWells Cue Show Archive', extensions: ['dwcuepack'] }],
+  }));
   if (result.canceled || result.filePaths.length === 0) return null;
   const selectedPath = result.filePaths[0];
-  const kind = fileKindFor(selectedPath);
-  if (kind !== ProjectFileKind.NativeArchive &&
-      kind !== ProjectFileKind.LegacyArchive) return null;
+  if (fileKindFor(selectedPath) !== ProjectFileKind.NativeArchive) return null;
   rememberNativePickerFolder('archive-import', path.dirname(selectedPath));
   return pathCapabilities.authorizeFile(selectedPath);
 });
@@ -3945,8 +4134,7 @@ ipcMain.handle('set-current-project', async (event, projectPath) => {
   } else {
     const checked = requireIpcString(projectPath, 'projectPath', MAX_IPC_PATH_LENGTH);
     // A live local canonical show is authorized on report, even if no dialog
-    // picked it (for example after server auto-restore). Legacy .liveplay files
-    // are import sources only and must never become writable project roots.
+    // picked it (for example after server auto-restore).
     const isNativeProjectFile = path.isAbsolute(checked) &&
       fileKindFor(checked) === ProjectFileKind.NativeProject &&
       fs.existsSync(checked);
@@ -4219,33 +4407,6 @@ const activeSpotifyDownloads = new Map();
 const activeSpotifyPreflightJobs = new Map();
 const spotifyPreflights = new Map();
 
-function validatedSpotifyUrl(rawUrl) {
-  const checked = requireIpcString(rawUrl, 'url', 2048);
-  const parsed = new URL(checked);
-  if (parsed.protocol !== 'https:' || parsed.port || parsed.username || parsed.password) {
-    throw new TypeError('A valid Spotify HTTPS URL is required');
-  }
-
-  const host = parsed.hostname.toLowerCase();
-  if (host === 'open.spotify.com') {
-    const parts = parsed.pathname.split('/').filter(Boolean);
-    if (/^intl-[a-z]{2}(?:-[a-z]{2})?$/i.test(parts[0] || '')) parts.shift();
-    if (parts.length !== 2 ||
-        !['track', 'album', 'playlist', 'artist'].includes(parts[0]) ||
-        !/^[A-Za-z0-9]{10,64}$/.test(parts[1])) {
-      throw new TypeError('Use a Spotify track, album, playlist, or artist URL');
-    }
-  } else if (
-    !['spotify.link', 'spotify.app.link'].includes(host) ||
-    !/^\/[A-Za-z0-9_-]{3,128}\/?$/.test(parsed.pathname)
-  ) {
-    throw new TypeError('Use a Spotify share URL');
-  }
-
-  parsed.hash = '';
-  return parsed.toString();
-}
-
 function sendSpotifyProgress(sender, progress) {
   if (!sender.isDestroyed()) sender.send('spotify-download-progress', progress);
 }
@@ -4265,10 +4426,13 @@ function terminateSpotifyChild(child) {
   timer.unref();
 }
 
-function summarizeSpotDlError(lines, code) {
-  const useful = [...lines].reverse().find((line) =>
-    /(?:\bError\b|\bException\b|failed|no songs found|spotify playlist error)/i.test(line));
-  return useful || lines.slice(-5).join('\n') || `spotDL exited with code ${code}`;
+function summarizeSpotDlError(stdout, stderr, code) {
+  const lines = `${stdout}\n${stderr}`
+    .replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '').split(/\r?\n/);
+  const useful = lines.findLast((line) =>
+    !/^\s*\[PYI-\d+:ERROR\] Failed to execute script\b/i.test(line) &&
+    /\b(?:\w*(?:error|exception)|failed|no songs found)\b/i.test(line));
+  return useful?.trim() || `spotDL exited with code ${code}`;
 }
 
 function sanitizeSpotifyFolderName(value) {
@@ -4289,19 +4453,6 @@ function sanitizeSpotifyFolderName(value) {
 function spotifyTrackId(track) {
   const id = typeof track?.song_id === 'string' ? track.song_id : '';
   return /^[A-Za-z0-9]{10,64}$/.test(id) ? id : '';
-}
-
-function spotifyContentParts(rawUrl) {
-  const parsed = rawUrl instanceof URL ? rawUrl : new URL(rawUrl);
-  if (parsed.hostname.toLowerCase() !== 'open.spotify.com') return null;
-  const parts = parsed.pathname.split('/').filter(Boolean);
-  if (/^intl-[a-z]{2}(?:-[a-z]{2})?$/i.test(parts[0] || '')) parts.shift();
-  if (parts.length !== 2 ||
-      !['track', 'album', 'playlist', 'artist'].includes(parts[0]) ||
-      !/^[A-Za-z0-9]{10,64}$/.test(parts[1])) {
-    return null;
-  }
-  return { type: parts[0], id: parts[1] };
 }
 
 function spotifyEmbedCoverUrl(entity) {
@@ -4354,6 +4505,11 @@ async function fetchSpotifyEmbedTracks(rawUrl) {
   }
   if (!content) throw new Error('Spotify share URL did not resolve to a supported item');
 
+  // Playlist embeds are previews; the existing spotDL metadata path paginates.
+  if (content.type === 'playlist') {
+    return { playlistUrl: `https://open.spotify.com/playlist/${content.id}` };
+  }
+
   const response = await fetch(
     `https://open.spotify.com/embed/${content.type}/${content.id}`,
     {
@@ -4373,7 +4529,7 @@ async function fetchSpotifyEmbedTracks(rawUrl) {
   const sourceTracks = entity?.type === 'track'
     ? [entity]
     : (Array.isArray(entity?.trackList) ? entity.trackList : []);
-  if (sourceTracks.length === 0 || sourceTracks.length > 10000) {
+  if (sourceTracks.length === 0) {
     throw new Error('Spotify embed returned no usable tracks');
   }
 
@@ -4390,13 +4546,14 @@ async function fetchSpotifyEmbedTracks(rawUrl) {
       (typeof track?.id === 'string' && /^[A-Za-z0-9]{10,64}$/.test(track.id)
         ? track.id
         : '');
-    if (!id) throw new Error(`Spotify track ${index + 1} has no usable ID`);
+    if (!id) return null;
 
     const artists = spotifyEmbedArtists(track);
-    const durationMs = Number(track?.duration);
+    const durationMs = typeof track.duration === 'string' ? Number(track.duration) : track.duration;
     const date = spotifyEmbedDate(track, entity);
+    const title = typeof track.title === 'string' && track.title ? track.title : track.name;
     return {
-      name: String(track?.title || track?.name || 'Untitled').slice(0, 500),
+      name: (typeof title === 'string' && title ? title : 'Untitled').slice(0, 500),
       artists,
       artist: artists[0] || '',
       genres: null,
@@ -4428,6 +4585,7 @@ async function fetchSpotifyEmbedTracks(rawUrl) {
       album_type: null,
     };
   });
+  if (!rawTracks.some(Boolean)) throw new Error('Spotify embed returned no usable tracks');
 
   return {
     playlistName: playlistName || (rawTracks.length === 1
@@ -4441,7 +4599,7 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
   requireTrustedIpc(event);
   jobId = requireIpcString(jobId, 'jobId', 64);
   if (!/^[A-Za-z0-9-]{8,64}$/.test(jobId)) throw new TypeError('jobId is invalid');
-  const url = validatedSpotifyUrl(rawUrl);
+  const url = validatedSpotifyUrl(requireIpcString(rawUrl, 'url', 2048));
   if (activeSpotifyPreflightJobs.has(jobId)) throw new Error('Spotify review job already exists');
   let cancelReview;
   const cancelledSignal = new Promise((resolve) => { cancelReview = resolve; });
@@ -4478,16 +4636,24 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
       console.warn('[spotify] embed preflight unavailable; falling back to spotDL:', error.message);
     }
 
-    if (!embedReview) {
+    if (!embedReview?.rawTracks) {
       const setupResult = await Promise.race([
-        setupSpotDl().then((ready) => ({ ready }), (error) => ({ error })),
+        Promise.all([setupSpotDl(), setupFfmpeg()])
+          .then((value) => ({ value }), (error) => ({ error })),
         job.cancelledSignal.then(() => ({ cancelled: true })),
       ]);
       if (setupResult.cancelled || job.cancelled) throw new Error('Spotify review cancelled');
       if (setupResult.error) throw setupResult.error;
-      if (!setupResult.ready || !spotDlPath) throw new Error('Spotify downloader is unavailable');
+      const [spotDlReady, ffmpegReady] = setupResult.value;
+      if (!spotDlReady || !spotDlPath) throw new Error('Spotify downloader is unavailable');
+      if (!ffmpegReady || !ffmpegPath) throw new Error('FFmpeg is unavailable for Spotify review');
+      const metadataUrl = embedReview?.playlistUrl || url;
       stdout = await new Promise((resolve, reject) => {
-        const child = spawn(spotDlPath, ['save', url, '--save-file', '-'], {
+        // Review only needs metadata. Skip the YouTube Music connection check and lyrics lookups.
+        const child = spawn(spotDlPath, [
+          'save', metadataUrl, '--save-file', '-', '--ffmpeg', ffmpegPath,
+          '--threads', '8', '--audio', 'youtube', '--lyrics',
+        ], {
           windowsHide: true,
           detached: process.platform !== 'win32',
           stdio: ['ignore', 'pipe', 'pipe'],
@@ -4520,7 +4686,7 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
         child.once('close', (code) => {
           job.child = null;
           if (job.cancelled) finish(new Error('Spotify review cancelled'));
-          else if (code !== 0) finish(new Error(summarizeSpotDlError(errors.split(/\r?\n/), code)));
+          else if (code !== 0) finish(new Error(summarizeSpotDlError(output, errors, code)));
           else finish(null, output);
         });
         timeout = setTimeout(() => {
@@ -4545,25 +4711,34 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
     if (start < 0 || end <= start) throw new Error('Spotify returned no track list');
     return JSON.parse(clean.slice(start, end + 1));
   })();
-  if (!Array.isArray(rawTracks) || rawTracks.length === 0 || rawTracks.length > 10000) {
+  if (!Array.isArray(rawTracks)) {
     throw new Error('Spotify returned an invalid track list');
   }
-  const tracks = rawTracks.map((track, index) => {
+  const usableTracks = rawTracks.filter(spotifyTrackId);
+  if (usableTracks.length === 0) throw new Error('Spotify returned no usable tracks');
+  // spotDL returns completed metadata lookups out of playlist order.
+  if (embedReview?.playlistUrl && usableTracks.every((track) => Number.isSafeInteger(track.list_position))) {
+    usableTracks.sort((a, b) => a.list_position - b.list_position);
+  }
+  const tracksById = new Map();
+  for (const track of usableTracks) {
     const id = spotifyTrackId(track);
-    if (!id) throw new Error(`Spotify track ${index + 1} has no usable ID`);
+    if (tracksById.has(id)) continue;
     const artists = Array.isArray(track.artists)
-      ? track.artists.filter((artist) => typeof artist === 'string').slice(0, 20)
+      ? track.artists.filter((artist) => typeof artist === 'string' && artist.trim()).slice(0, 20)
       : [];
-    return {
+    if (!artists.length && typeof track.artist === 'string' && track.artist.trim()) artists.push(track.artist);
+    tracksById.set(id, {
       id,
-      title: String(track.name || 'Untitled').slice(0, 500),
+      title: (typeof track.name === 'string' && track.name ? track.name : 'Untitled').slice(0, 500),
       artists,
-      album: String(track.album_name || '').slice(0, 500),
+      album: typeof track.album_name === 'string' ? track.album_name.slice(0, 500) : '',
       duration: Number.isFinite(track.duration) ? Math.max(0, track.duration) : 0,
       coverUrl: typeof track.cover_url === 'string' ? track.cover_url : '',
       spotifyUrl: `https://open.spotify.com/track/${id}`,
-    };
-  });
+    });
+  }
+  const tracks = [...tracksById.values()];
   const preflightId = crypto.randomUUID();
   const playlistName = sanitizeSpotifyFolderName(
     embedReview?.playlistName ||
@@ -4577,12 +4752,13 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
     senderId: event.sender.id,
     url,
     playlistName,
-    rawTracks,
+    tracksById,
   }));
   return {
     preflightId,
     playlistName,
     tracks,
+    skippedTrackCount: rawTracks.length - usableTracks.length,
     totalDuration: tracks.reduce((sum, track) => sum + track.duration, 0),
   };
 });
@@ -4802,7 +4978,7 @@ ipcMain.handle(
     requireTrustedIpc(event);
     jobId = requireIpcString(jobId, 'jobId', 64);
     if (!/^[A-Za-z0-9-]{8,64}$/.test(jobId)) throw new TypeError('jobId is invalid');
-    const url = validatedSpotifyUrl(rawUrl);
+    const url = validatedSpotifyUrl(requireIpcString(rawUrl, 'url', 2048));
     destinationParentPath = requireAuthorizedIpcPath(
       destinationParentPath, 'destinationParentPath');
     if (!fs.statSync(destinationParentPath).isDirectory()) {
@@ -4830,26 +5006,19 @@ ipcMain.handle(
       }
     }
     const preflightId = requireIpcString(selection?.preflightId, 'preflightId', 64);
-    if (!Array.isArray(selection?.selectedTrackIds) || selection.selectedTrackIds.length === 0 ||
-        selection.selectedTrackIds.length > 10000) {
-      throw new TypeError('selectedTrackIds must be a non-empty array');
+    const selectedTrackIds = Array.isArray(selection?.selectedTrackIds)
+      ? normalizeSpotifyTrackIds([...new Set(selection.selectedTrackIds)])
+      : null;
+    if (!selectedTrackIds?.length) {
+      throw new TypeError('selectedTrackIds must contain valid Spotify track IDs');
     }
     const preflight = spotifyPreflights.get(preflightId);
     if (!spotifyReviewIsValid(preflight, event.sender.id, url)) {
       throw new Error('Spotify review expired; review the link again');
     }
     renewSpotifyReview(preflight);
-    const selectedTrackIds = selection.selectedTrackIds.map((id) => {
-      id = requireIpcString(id, 'trackId', 64);
-      if (!/^[A-Za-z0-9]{10,64}$/.test(id)) throw new TypeError('trackId is invalid');
-      return id;
-    });
-    if (new Set(selectedTrackIds).size !== selectedTrackIds.length) {
-      throw new TypeError('selectedTrackIds contains duplicates');
-    }
-    const rawById = new Map(preflight.rawTracks.map((track) => [spotifyTrackId(track), track]));
-    const selectedRawTracks = selectedTrackIds.map((id) => rawById.get(id));
-    if (selectedRawTracks.some((track) => !track)) throw new Error('Selected Spotify track is not in this review');
+    const selectedTracks = selectedTrackIds.map((id) => preflight.tracksById.get(id));
+    if (selectedTracks.some((track) => !track)) throw new Error('Selected Spotify track is not in this review');
     if (activeSpotifyDownloads.has(jobId)) throw new Error('Spotify job already exists');
     // ponytail: one job avoids spotDL's shared cache/temp races; add a queue
     // only if concurrent playlist imports become a real operator need.
@@ -4927,7 +5096,7 @@ ipcMain.handle(
       // spotDL's bundled yt-dlp is frozen at its build date and can no longer
       // download from YouTube (HTTP 403 since the 2026-08 PO-token rollout).
       // spotDL remains the best metadata matcher, so run it in match-only
-      // mode (`spotdl url`) for the whole playlist in one process, then
+      // mode (`spotdl url`) in batches, then
       // download and convert with our own maintained yt-dlp.
       const total = selectedTrackIds.length;
       let playlistName = preflight.playlistName;
@@ -4972,8 +5141,8 @@ ipcMain.handle(
         });
       });
       const trackLabel = (index) => {
-        const track = selectedRawTracks[index];
-        return `${track.artists.join(', ') || track.artist} - ${track.name}`;
+        const track = selectedTracks[index];
+        return [track.artists.join(', '), track.title].filter(Boolean).join(' - ');
       };
       const runPool = async (concurrency, count, visit) => {
         let cursor = 0;
@@ -5020,7 +5189,7 @@ ipcMain.handle(
       };
       const downloadTrack = async (index) => {
         const providerUrl = matchedUrls[index];
-        const track = selectedRawTracks[index];
+        const track = selectedTracks[index];
         if (!providerUrl) {
           attempted += 1;
           return;
@@ -5028,7 +5197,7 @@ ipcMain.handle(
         const baseName = [
           selectedTrackIds[index],
           sanitizeFilePart(track.artists.join(', ')),
-          sanitizeFilePart(track.name),
+          sanitizeFilePart(track.title),
         ].filter(Boolean).join(' - ').slice(0, 160);
         const outputPath = path.join(stagingDir, `${baseName}.mp3`);
         for (let attempt = 1; attempt <= 2 && !job.cancelled; attempt += 1) {
@@ -5049,7 +5218,7 @@ ipcMain.handle(
           const taggedPath = `${outputPath}.tagged.mp3`;
           const tagResult = await runTracked(ffmpegPath, [
             '-y', '-i', outputPath, '-c', 'copy', '-id3v2_version', '3',
-            '-metadata', `title=${track.name}`,
+            '-metadata', `title=${track.title}`,
             '-metadata', `artist=${track.artists.join(', ')}`,
             '-metadata', `album=${playlistName}`,
             '-metadata', `track=${index + 1}`,
@@ -5087,13 +5256,7 @@ ipcMain.handle(
         () => downloadWorker(),
       );
 
-      // Match every selected track in one spotDL process — one interpreter
-      // start and one Spotify session for the whole playlist, with spotDL's
-      // own thread pool running the provider searches. Measured on this
-      // playlist: one process per track at concurrency 4 took 42-73s per
-      // track and left the progress counter at 0 for over a minute; the
-      // threaded batch lands a match about every 11s. Per-track results are
-      // parsed from MATCH-level log lines, which carry the Spotify track id.
+      // MATCH-level lines carry the Spotify ID, so titles cannot conflate tracks.
       const onMatchLine = (line) => {
         const resultMatch = line.match(
           /^\[([A-Za-z0-9]{10,64})\]\s+Returning (?:verified )?best result\s+(\S+)/);
@@ -5105,18 +5268,12 @@ ipcMain.handle(
         progress('resolving', { total, completed: matched, message: trackLabel(index) });
         enqueueDownload(index);
       };
-      // Split the playlist into a few chunks matched by concurrent spotDL
-      // processes. spotDL fetches each track's Spotify metadata serially
-      // inside a process (~5s per track — the phase that used to leave the
-      // counter at 0 for many minutes on long playlists), so chunking
-      // parallelizes exactly the part that dominates. --threads 2 per chunk
-      // keeps ~8 provider searches in flight overall, the highest measured
-      // rate that does not trigger throttling.
+      // Bound argv for Windows while retaining at most four parallel matchers;
+      // 100 is a batch size, not a playlist limit. Each matcher uses two threads.
       let lastMatchActivity = Date.now();
       const batchChildren = new Set();
-      const chunkCount = Math.min(4, Math.max(1, Math.ceil(total / 10)));
-      const chunkSize = Math.ceil(total / chunkCount);
-      const chunkRuns = [];
+      const matchConcurrency = Math.min(4, Math.max(1, Math.ceil(total / 10)));
+      const chunkSize = Math.min(100, Math.ceil(total / matchConcurrency));
       let metadataSeen = 0;
       const onChunkLine = (line) => {
         lastMatchActivity = Date.now();
@@ -5133,11 +5290,11 @@ ipcMain.handle(
         }
         onMatchLine(line);
       };
-      for (let c = 0; c < total; c += chunkSize) {
-        const chunkTracks = selectedRawTracks.slice(c, c + chunkSize);
-        const chunkIndex = chunkRuns.length;
-        chunkRuns.push(runTracked(spotDlPath, [
-          'url', ...chunkTracks.map((track) => track.url),
+      const matchChunk = async (chunkIndex) => {
+        const c = chunkIndex * chunkSize;
+        const chunkTracks = selectedTracks.slice(c, c + chunkSize);
+        await runTracked(spotDlPath, [
+          'url', ...chunkTracks.map((track) => track.spotifyUrl),
           '--audio', ...SPOTIFY_AUDIO_PROVIDERS,
           '--max-retries', '1',
           '--threads', '2',
@@ -5145,8 +5302,11 @@ ipcMain.handle(
           '--log-level', 'MATCH',
           '--log-format', '%(message)s',
         ], Math.max(300000, chunkTracks.length * 60000), onChunkLine,
-        (tracked) => batchChildren.add(tracked)));
-      }
+        (tracked) => {
+          batchChildren.add(tracked);
+          tracked.once('close', () => batchChildren.delete(tracked));
+        });
+      };
       // A hung track can stall a batch matcher; cut it loose and let the
       // per-track fallback below take the stragglers.
       const watchdog = setInterval(() => {
@@ -5156,7 +5316,7 @@ ipcMain.handle(
         }
       }, 30000);
       try {
-        await Promise.all(chunkRuns);
+        await runPool(matchConcurrency, Math.ceil(total / chunkSize), matchChunk);
       } finally {
         clearInterval(watchdog);
       }
@@ -5168,10 +5328,10 @@ ipcMain.handle(
         }
         await runPool(4, missed.length, async (missedCursor) => {
           const index = missed[missedCursor];
-          const track = selectedRawTracks[index];
+          const track = selectedTracks[index];
           for (let attempt = 1; attempt <= 2 && !job.cancelled; attempt += 1) {
             const result = await runTracked(spotDlPath, [
-              'url', track.url,
+              'url', track.spotifyUrl,
               '--audio', ...SPOTIFY_AUDIO_PROVIDERS,
               '--max-retries', '1',
               '--cache-path', path.join(stagingDir, `match-cache-${selectedTrackIds[index]}`),
@@ -5221,12 +5381,12 @@ ipcMain.handle(
 
       progress('importing', {
         playlistName,
-        total: total || outputs.length,
+        total,
         completed: outputs.length,
         message: 'Adding tracks to project…',
       });
       const files = await copySpotifyOutputsToMedia(outputs, mediaDir, job);
-      const partial = failures.length > 0 || (total > 0 && files.length < total);
+      const partial = failures.length > 0 || files.length < total;
       const error = partial
         ? `${total - files.length} of ${total} track(s) failed${failures.length ? ` — ${failures[0]}` : ''}`
         : undefined;
@@ -5249,13 +5409,13 @@ ipcMain.handle(
         failedTrackIds,
         pendingTrackIds: completedTrackIds,
         pendingFiles: files,
-        total: total || files.length,
+        total,
         completed: 0,
         groupUuid,
         updatedAt: Date.now(),
       });
-      if (!recovery) throw new Error('Could not save Spotify recovery state');
-      writeImportPreferences({
+      if (!recovery) throw new Error('Could not verify Spotify download results');
+      const preferencesSaved = writeImportPreferences({
         ...readImportPreferences(),
         spotifyDestination: destinationParentPath,
         spotifyRecovery: recovery,
@@ -5264,13 +5424,13 @@ ipcMain.handle(
       job.awaitingImport = true;
       progress('importing', {
         playlistName,
-        total: total || files.length,
+        total,
         completed: files.length,
         message: 'Saving cues to the project…',
       });
       return {
         files,
-        total: total || files.length,
+        total,
         completed: files.length,
         partial,
         error,
@@ -5279,6 +5439,7 @@ ipcMain.handle(
         completedTrackIds,
         failedTrackIds,
         groupUuid,
+        preferencesSaved,
       };
     } catch (error) {
       try {
@@ -5437,18 +5598,18 @@ ipcMain.handle('download-youtube-audio', async (event, jobId, videoId, title, pr
     event.sender.once(eventName, cancelOnRendererExit);
   }
 
-  const task = new Promise(async (resolve, reject) => {
+  const task = (async () => {
     console.log('YouTube download - Project folder path:', projectFolderPath);
-    
+
     const outputPath = path.join(projectFolderPath, 'media');
     console.log('YouTube download - Output path:', outputPath);
-    
+
     // Ensure output directory exists
     if (!fs.existsSync(outputPath)) {
       fs.mkdirSync(outputPath, { recursive: true });
       console.log('Created media directory:', outputPath);
     }
-    
+
     // Clean filename
     const sanitizedTitle = title.replace(/[<>:"/\\|?*]/g, '').trim().substring(0, 180)
       || `YouTube ${outputMode === 'video' ? 'video' : 'audio'} ${videoId}`;
@@ -5471,26 +5632,24 @@ ipcMain.handle('download-youtube-audio', async (event, jobId, videoId, title, pr
       }
     };
     job.cleanup = cleanupNewOutputs;
-    
+
     console.log('YouTube download - Output template:', outputTemplate);
-    
+
     const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    
+
     console.log(`Starting YouTube download: ${videoId} -> ${fileName}`);
     console.log(`Video URL: ${videoUrl}`);
-    
+
     // Wait for yt-dlp to be ready (with timeout)
-    try { await waitForYtDlp(); }
-    catch (error) { reject(error); return; }
-    if (job.cancelled) { reject(new Error('YouTube download cancelled')); return; }
-    
+    await waitForYtDlp();
+    if (job.cancelled) throw new Error('YouTube download cancelled');
+
     // Video mode needs ffmpeg to mux the separate video+audio streams; mp3
     // mode needs it for transcode.
     if ((outputMode === 'mp3' || outputMode === 'video') && !(await setupFfmpeg())) {
-      reject(new Error('Bundled FFmpeg failed to initialize. Please restart the application.'));
-      return;
+      throw new Error('Bundled FFmpeg failed to initialize. Please restart the application.');
     }
-    
+
     try {
       // Build yt-dlp arguments. Video mode strongly prefers an H.264+AAC pair
       // (the engine decodes the AAC track; Chromium shows the picture) and
@@ -5513,7 +5672,7 @@ ipcMain.handle('download-youtube-audio', async (event, jobId, videoId, title, pr
         '--progress',
         '--newline' // Force progress on new lines for easier parsing
       );
-      
+
       // Add ffmpeg path if we have it
       if ((outputMode === 'mp3' || outputMode === 'video') && ffmpegPath) {
         args.push('--ffmpeg-location', ffmpegPath);
@@ -5525,7 +5684,7 @@ ipcMain.handle('download-youtube-audio', async (event, jobId, videoId, title, pr
       // isn't ready we fall back to JS-runtime-free extraction.
       if (!denoReady) {
         let denoAttempts = 0;
-        while (!denoReady && denoAttempts < 15) {
+        while (!denoReady && !job.cancelled && denoAttempts < 15) {
           await new Promise(resolve => setTimeout(resolve, 1000));
           denoAttempts++;
         }
@@ -5535,187 +5694,196 @@ ipcMain.handle('download-youtube-audio', async (event, jobId, videoId, title, pr
       } else {
         console.warn('Proceeding without a JS runtime; some videos may fail to extract.');
       }
+      if (job.cancelled) throw new Error('YouTube download cancelled');
 
-      console.log('Running yt-dlp with args:', args);
-      console.log('yt-dlp path:', ytDlpPath);
-      
-      // Use spawn to get a proper ChildProcess
-      const downloadProcess = spawn(ytDlpPath, args, {
-        windowsHide: true,
-        detached: process.platform !== 'win32',
-      });
-      job.child = downloadProcess;
-      
-      // Check if downloadProcess is valid
-      if (!downloadProcess || !downloadProcess.stdout) {
-        throw new Error('Failed to start yt-dlp process');
-      }
-      
-      let lastProgress = 0;
-      let stderrBuffer = '';
+      return await new Promise((resolve, reject) => {
+        console.log('Running yt-dlp with args:', args);
+        console.log('yt-dlp path:', ytDlpPath);
 
-      // Track progress by parsing stdout
-      downloadProcess.stdout.on('data', (data) => {
-        const output = data.toString();
-        
-        // Parse download progress
-        const downloadMatch = output.match(/\[download\]\s+(\d+\.?\d*)%/);
-        if (downloadMatch) {
-          const percentage = parseFloat(downloadMatch[1]);
-          if (percentage > lastProgress) {
-            lastProgress = percentage;
+        // Use spawn to get a proper ChildProcess
+        const downloadProcess = spawn(ytDlpPath, args, {
+          windowsHide: true,
+          detached: process.platform !== 'win32',
+        });
+        job.child = downloadProcess;
+
+        // Check if downloadProcess is valid
+        if (!downloadProcess || !downloadProcess.stdout) {
+          throw new Error('Failed to start yt-dlp process');
+        }
+
+        let lastProgress = 0;
+        let stderrBuffer = '';
+
+        // Track progress by parsing stdout
+        downloadProcess.stdout.on('data', (data) => {
+          if (job.cancelled || event.sender.isDestroyed()) return;
+          const output = data.toString();
+
+          // Parse download progress
+          const downloadMatch = output.match(/\[download\]\s+(\d+\.?\d*)%/);
+          if (downloadMatch) {
+            const percentage = parseFloat(downloadMatch[1]);
+            if (percentage > lastProgress) {
+              lastProgress = percentage;
+              event.sender.send('youtube-download-progress', {
+                jobId,
+                videoId,
+                percentage: percentage,
+                status: (outputMode === 'mp3' || outputMode === 'video') && percentage >= 100
+                  ? 'converting'
+                  : 'downloading'
+              });
+            }
+          }
+
+          // Check for post-processing
+          if (outputMode === 'mp3' && output.includes('[ExtractAudio]')) {
             event.sender.send('youtube-download-progress', {
               jobId,
               videoId,
-              percentage: percentage,
-              status: (outputMode === 'mp3' || outputMode === 'video') && percentage >= 100
-                ? 'converting'
-                : 'downloading'
+              percentage: 95,
+              status: 'converting'
             });
           }
-        }
-        
-        // Check for post-processing
-        if (outputMode === 'mp3' && output.includes('[ExtractAudio]')) {
-          event.sender.send('youtube-download-progress', {
-            jobId,
-            videoId,
-            percentage: 95,
-            status: 'converting'
-          });
-        }
-        if (outputMode === 'video' && output.includes('[Merger]')) {
-          event.sender.send('youtube-download-progress', {
-            jobId,
-            videoId,
-            percentage: 95,
-            status: 'converting'
-          });
-        }
-      });
-      
-      downloadProcess.stderr.on('data', (data) => {
-        const errorOutput = data.toString();
-        // yt-dlp uses stderr for normal output as well as errors. Keep the
-        // tail of everything so we can report the real cause on failure.
-        stderrBuffer += errorOutput;
-        if (stderrBuffer.length > 8000) {
-          stderrBuffer = stderrBuffer.slice(-8000);
-        }
-        if (errorOutput.includes('ERROR')) {
-          console.error('yt-dlp error:', errorOutput);
-        }
-      });
-      
-      downloadProcess.on('error', (error) => {
-        console.error('yt-dlp process error:', error);
-        cleanupNewOutputs();
-        reject(new Error(`Download process failed: ${error.message}`));
-      });
-      
-      downloadProcess.on('close', (code) => {
-        job.child = null;
-        console.log(`yt-dlp process closed with code: ${code}`);
-        
-        if (job.cancelled) {
-          cleanupNewOutputs();
-          reject(new Error('YouTube download cancelled'));
-          return;
-        }
-        if (code !== 0) {
-          cleanupNewOutputs();
-          // Surface the real reason from yt-dlp's stderr instead of just the code.
-          const errorLines = stderrBuffer
-            .split('\n')
-            .filter(line => line.includes('ERROR') || line.includes('error:'))
-            .map(line => line.trim());
-          const detail = errorLines.length > 0
-            ? errorLines.join('\n')
-            : stderrBuffer.trim().split('\n').slice(-5).join('\n');
-
-          console.error('yt-dlp failed. Full stderr:\n', stderrBuffer);
-
-          let hint = '';
-          if (/Sign in to confirm|not a bot|cookies/i.test(stderrBuffer)) {
-            hint = ' (YouTube is requiring sign-in/bot verification for this video.)';
-          } else if (/Video unavailable|Private video|members-only|age/i.test(stderrBuffer)) {
-            hint = ' (This video is unavailable, private, age-restricted, or members-only.)';
-          } else if (/Requested format is not available/i.test(stderrBuffer)) {
-            hint = ' (No downloadable audio format was found for this video.)';
-          } else if (/Unable to extract|nsig|player|update.*yt-dlp/i.test(stderrBuffer)) {
-            hint = ' (yt-dlp may be out of date — YouTube changed something. Restart the app to fetch the latest yt-dlp.)';
+          if (outputMode === 'video' && output.includes('[Merger]')) {
+            event.sender.send('youtube-download-progress', {
+              jobId,
+              videoId,
+              percentage: 95,
+              status: 'converting'
+            });
           }
+        });
 
-          reject(new Error(`yt-dlp exited with code ${code}.${hint}${detail ? '\n\n' + detail : ''}`));
-          return;
-        }
-        
-        console.log(`Download completed: ${outputBaseName}`);
-        
-        // Source audio keeps the provider's actual container/codec, so discover
-        // the extension after yt-dlp finishes. The video ID makes this lookup
-        // exact even when two results share a title.
-        const expectedFile = fileName ? path.join(outputPath, fileName) : '';
-        let actualFile = expectedFile;
-        
-        // Check if file exists with expected name
-        if (!expectedFile || !fs.existsSync(expectedFile)) {
-          const files = fs.readdirSync(outputPath);
-          const matchingFile = files.find(f => {
-            const parsed = path.parse(f);
-            return parsed.name === outputBaseName &&
-              !/\.(?:part|ytdl|tmp)$/i.test(f) &&
-              (outputMode === 'source' ||
-               parsed.ext.toLowerCase() === (outputMode === 'video' ? '.mp4' : '.mp3'));
-          });
-          
-          if (matchingFile) {
-            actualFile = path.join(outputPath, matchingFile);
-            console.log('Found downloaded file:', matchingFile);
-            
-            // MP3 mode has one canonical filename. Source mode must retain the
-            // downloaded extension because changing it would mislabel the codec.
-            if (expectedFile && matchingFile !== fileName) {
-              try {
-                fs.renameSync(actualFile, expectedFile);
-                actualFile = expectedFile;
-                console.log('Renamed file to:', fileName);
-              } catch (renameError) {
-                console.error('Failed to rename file:', renameError);
+        downloadProcess.stderr.on('data', (data) => {
+          const errorOutput = data.toString();
+          // yt-dlp uses stderr for normal output as well as errors. Keep the
+          // tail of everything so we can report the real cause on failure.
+          stderrBuffer += errorOutput;
+          if (stderrBuffer.length > 8000) {
+            stderrBuffer = stderrBuffer.slice(-8000);
+          }
+          if (errorOutput.includes('ERROR')) {
+            console.error('yt-dlp error:', errorOutput);
+          }
+        });
+
+        downloadProcess.on('error', (error) => {
+          console.error('yt-dlp process error:', error);
+          cleanupNewOutputs();
+          reject(new Error(`Download process failed: ${error.message}`));
+        });
+
+        downloadProcess.on('close', (code) => {
+          try {
+            job.child = null;
+            console.log(`yt-dlp process closed with code: ${code}`);
+
+            if (job.cancelled) {
+              cleanupNewOutputs();
+              reject(new Error('YouTube download cancelled'));
+              return;
+            }
+            if (code !== 0) {
+              cleanupNewOutputs();
+              // Surface the real reason from yt-dlp's stderr instead of just the code.
+              const errorLines = stderrBuffer
+                .split('\n')
+                .filter(line => line.includes('ERROR') || line.includes('error:'))
+                .map(line => line.trim());
+              const detail = errorLines.length > 0
+                ? errorLines.join('\n')
+                : stderrBuffer.trim().split('\n').slice(-5).join('\n');
+
+              console.error('yt-dlp failed. Full stderr:\n', stderrBuffer);
+
+              let hint = '';
+              if (/Sign in to confirm|not a bot|cookies/i.test(stderrBuffer)) {
+                hint = ' (YouTube is requiring sign-in/bot verification for this video.)';
+              } else if (/Video unavailable|Private video|members-only|age/i.test(stderrBuffer)) {
+                hint = ' (This video is unavailable, private, age-restricted, or members-only.)';
+              } else if (/Requested format is not available/i.test(stderrBuffer)) {
+                hint = ' (No downloadable audio format was found for this video.)';
+              } else if (/Unable to extract|nsig|player|update.*yt-dlp/i.test(stderrBuffer)) {
+                hint = ' (yt-dlp may be out of date — YouTube changed something. Restart the app to fetch the latest yt-dlp.)';
+              }
+
+              reject(new Error(`yt-dlp exited with code ${code}.${hint}${detail ? '\n\n' + detail : ''}`));
+              return;
+            }
+
+            console.log(`Download completed: ${outputBaseName}`);
+
+            // Source audio keeps the provider's actual container/codec, so discover
+            // the extension after yt-dlp finishes. The video ID makes this lookup
+            // exact even when two results share a title.
+            const expectedFile = fileName ? path.join(outputPath, fileName) : '';
+            let actualFile = expectedFile;
+
+            // Check if file exists with expected name
+            if (!expectedFile || !fs.existsSync(expectedFile)) {
+              const files = fs.readdirSync(outputPath);
+              const matchingFile = files.find(f => {
+                const parsed = path.parse(f);
+                return parsed.name === outputBaseName &&
+                  !/\.(?:part|ytdl|tmp)$/i.test(f) &&
+                  (outputMode === 'source' ||
+                   parsed.ext.toLowerCase() === (outputMode === 'video' ? '.mp4' : '.mp3'));
+              });
+
+              if (matchingFile) {
+                actualFile = path.join(outputPath, matchingFile);
+                console.log('Found downloaded file:', matchingFile);
+
+                // MP3 mode has one canonical filename. Source mode must retain the
+                // downloaded extension because changing it would mislabel the codec.
+                if (expectedFile && matchingFile !== fileName) {
+                  try {
+                    fs.renameSync(actualFile, expectedFile);
+                    actualFile = expectedFile;
+                    console.log('Renamed file to:', fileName);
+                  } catch (renameError) {
+                    console.error('Failed to rename file:', renameError);
+                  }
+                }
+              } else {
+                console.error('Could not find downloaded file. Files in directory:', files);
+                reject(new Error('Downloaded file not found in expected location'));
+                return;
               }
             }
-          } else {
-            console.error('Could not find downloaded file. Files in directory:', files);
-            reject(new Error('Downloaded file not found in expected location'));
-            return;
+
+            // Send 100% progress
+            event.sender.send('youtube-download-progress', {
+              jobId,
+              videoId,
+              percentage: 100,
+              status: 'completed'
+            });
+
+            resolve({
+              success: true,
+              file: actualFile,
+              fileName: path.basename(actualFile),
+              title,
+            });
+          } catch (error) {
+            cleanupNewOutputs();
+            reject(error);
           }
-        }
-        
-        // Send 100% progress
-        event.sender.send('youtube-download-progress', {
-          jobId,
-          videoId,
-          percentage: 100,
-          status: 'completed'
-        });
-        
-        resolve({
-          success: true,
-          file: actualFile,
-          fileName: path.basename(actualFile),
-          title,
         });
       });
-      
+
     } catch (error) {
       console.error('YouTube download error:', error);
       console.error('Error stack:', error.stack);
-      
+
       cleanupNewOutputs();
-      
-      reject(new Error(`Download failed: ${error.message}`));
+
+      throw new Error(`Download failed: ${error.message}`);
     }
-  });
+  })();
   return task.finally(() => releaseYouTubeJob(jobId, job));
 });
 

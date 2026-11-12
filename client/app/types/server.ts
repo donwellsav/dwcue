@@ -129,6 +129,7 @@ export interface ServerAudioReadinessFailure {
 }
 
 export interface ServerAudioReadiness {
+  fileRevisions?: Record<string, string>;
   ready: boolean;
   loading: boolean;
   loaded: number;
@@ -223,13 +224,14 @@ export interface WaveformAnalysisRange {
 }
 
 export interface ServerWaveform {
+  file_revision?: string;
   cue_id?: CueId;
   bucket_count: number;
   duration_ms: number;
   sample_rate: number;
   source_channels: number;
   channels: ServerWaveformChannel[];
-  analysis_version: 1;
+  analysis_version: 2;
   integrated_lufs: number | null;
   true_peak_dbtp: number | null;
 }

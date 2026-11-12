@@ -1,19 +1,14 @@
 export const PROJECT_FILE_EXTENSIONS = {
   nativeProject: '.dwcue',
   nativeArchive: '.dwcuepack',
-  legacyProject: '.liveplay',
-  legacyArchive: '.lpa',
 } as const;
 
 export type ProjectFileKind =
   | 'native-project'
-  | 'native-archive'
-  | 'legacy-project'
-  | 'legacy-archive';
+  | 'native-archive';
 
 export type ProjectFileAction =
   | 'open-project'
-  | 'import-legacy-project'
   | 'import-archive';
 
 function extensionForFilePath(filePath: string): string {
@@ -28,10 +23,6 @@ export function projectFileKind(filePath: string): ProjectFileKind | null {
       return 'native-project';
     case PROJECT_FILE_EXTENSIONS.nativeArchive:
       return 'native-archive';
-    case PROJECT_FILE_EXTENSIONS.legacyProject:
-      return 'legacy-project';
-    case PROJECT_FILE_EXTENSIONS.legacyArchive:
-      return 'legacy-archive';
     default:
       return null;
   }
@@ -40,17 +31,12 @@ export function projectFileKind(filePath: string): ProjectFileKind | null {
 export function projectFileAction(filePath: string): ProjectFileAction | null {
   const kind = projectFileKind(filePath);
   if (kind === 'native-project') return 'open-project';
-  if (kind === 'legacy-project') return 'import-legacy-project';
-  if (kind === 'native-archive' || kind === 'legacy-archive') return 'import-archive';
+  if (kind === 'native-archive') return 'import-archive';
   return null;
 }
 
 export function isNativeProjectPath(filePath: string): boolean {
   return projectFileKind(filePath) === 'native-project';
-}
-
-export function isLegacyProjectPath(filePath: string): boolean {
-  return projectFileKind(filePath) === 'legacy-project';
 }
 
 export function projectPathInFolder(folderPath: string, projectName: string): string {

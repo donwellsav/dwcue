@@ -3,7 +3,45 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import { parse } from '@vue/compiler-sfc';
+import { compile, NodeTypes, parse as parseTemplate } from '@vue/compiler-dom';
+import * as Vue from 'vue';
 import ts from 'typescript';
+
+test('project and cue output choices persist hardware names instead of opened-session IDs', () => {
+  const device = { id: 'ephemeral-opened-device-id', display_name: 'Stage USB output' };
+  for (const [component, handler] of [['ProjectSettingsModal', 'onAudioDeviceChange'], ['ProjectSettingsModal', 'onLtcDeviceChange'], ['PropertiesPanel', 'onDeviceOverrideChange']]) {
+    const filename = new URL(`../app/components/${component}.vue`, import.meta.url);
+    const template = parse(readFileSync(filename, 'utf8')).descriptor.template!;
+    const ast = parseTemplate(template.content);
+    const find = (node: any): any => {
+      if (node.type === NodeTypes.ELEMENT && node.tag === 'select' && node.loc.source.includes(`@change="${handler}"`)) return node;
+      for (const child of node.children ?? []) {
+        const found = find(child);
+        if (found) return found;
+      }
+    };
+    const select = find(ast);
+    assert.ok(select, `${component} output selector must exist`);
+    const code = ts.transpileModule(compile(select.loc.source, { mode: 'function', isTS: true }).code, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+    }).outputText;
+    const render = Function('Vue', `${code}; return render;`)(Vue);
+    const node = render({
+      devices: [device], devicesList: [device], audioDeviceId: device.display_name,
+      ltcDeviceId: device.display_name,
+      audioItem: { deviceOverride: device.display_name }, audioDeviceOverride: device.display_name,
+      deviceOverrideEditPending: false,
+      t: (key: string) => key, [handler]() {},
+    }, []);
+    const options: any[] = [];
+    const walk = (value: any) => {
+      if (value?.type === 'option') options.push(value);
+      if (Array.isArray(value?.children)) value.children.forEach(walk);
+    };
+    walk(node);
+    assert.equal(options.find(option => option.key === device.id)?.props.value, device.display_name);
+  }
+});
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -83,14 +121,14 @@ function settingsHarness(initialSettings: Record<string, unknown>) {
 }
 
 test('serializes same-key edits so two rejected patches restore the acknowledged value', async () => {
-  const harness = settingsHarness({ autoTrimSilenceOnImport: false });
+  const harness = settingsHarness({ cycleTrackColors: false });
 
-  const first = harness.applyPatch({ autoTrimSilenceOnImport: true });
+  const first = harness.applyPatch({ cycleTrackColors: true });
   await Promise.resolve();
-  assert.equal(harness.project.settings.autoTrimSilenceOnImport, true);
+  assert.equal(harness.project.settings.cycleTrackColors, true);
   assert.equal(harness.patchRequests.length, 1);
 
-  const second = harness.applyPatch({ autoTrimSilenceOnImport: false });
+  const second = harness.applyPatch({ cycleTrackColors: false });
   await Promise.resolve();
   assert.equal(harness.patchRequests.length, 1, 'second edit must wait for the first acknowledgement');
 
@@ -98,12 +136,68 @@ test('serializes same-key edits so two rejected patches restore the acknowledged
   assert.equal(await first, 'failed');
   await Promise.resolve();
   assert.equal(harness.patchRequests.length, 2);
-  assert.equal(harness.project.settings.autoTrimSilenceOnImport, false);
+  assert.equal(harness.project.settings.cycleTrackColors, false);
 
   harness.patchRequests[1]!.pending.reject(new Error('second rejected'));
   assert.equal(await second, 'failed');
-  assert.equal(harness.project.settings.autoTrimSilenceOnImport, false);
+  assert.equal(harness.project.settings.cycleTrackColors, false);
   assert.equal(harness.settingsError.value, 'second rejected');
+});
+
+test('device edits keep the acknowledged project setting until the engine accepts the new route', async () => {
+  const harness = settingsHarness({ defaultOutputDevice: 'Running output' });
+  const pending = harness.applyPatch({ defaultOutputDevice: 'Cold output' });
+  await Promise.resolve();
+  assert.equal(harness.project.settings.defaultOutputDevice, 'Running output');
+  harness.patchRequests[0]!.pending.reject(new Error('Device open canceled'));
+  assert.equal(await pending, 'failed');
+  assert.equal(harness.project.settings.defaultOutputDevice, 'Running output');
+
+  const retry = harness.applyPatch({ defaultOutputDevice: 'Cold output' });
+  await Promise.resolve();
+  assert.equal(harness.project.settings.defaultOutputDevice, 'Running output');
+  harness.patchRequests[1]!.pending.resolve();
+  assert.equal(await retry, 'saved');
+  assert.equal(harness.project.settings.defaultOutputDevice, 'Cold output');
+});
+
+test('a refused cue device change preserves the running route and skips the save', async () => {
+  const filename = new URL('../app/components/PropertiesPanel.vue', import.meta.url);
+  const script = parse(readFileSync(filename, 'utf8')).descriptor.scriptSetup!.content;
+  const ast = ts.createSourceFile('PropertiesPanel.ts', script, ts.ScriptTarget.Latest, true);
+  const declaration = ast.statements.filter(ts.isVariableStatement)
+    .flatMap(node => [...node.declarationList.declarations])
+    .find(node => node.name.getText(ast) === 'onDeviceOverrideChange');
+  assert.ok(declaration);
+  const code = ts.transpileModule('const ' + declaration.getText(ast), {
+    compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const cue = { uuid: 'cue', deviceOverride: 'Running output' };
+  const pending = deferred<void>();
+  let saves = 0;
+  const factory = Function('deps', `
+    const { audioItem, currentProject, audioDeviceOverride, deviceOverrideEditPending,
+      _server, t, endItemBatch, persistPropertyChanges, handleSave } = deps;
+    ${code}
+    return onDeviceOverrideChange;
+  `);
+  const server = { updateProjectItem: () => pending.promise, lastError: '' };
+  const change = factory({
+    audioItem: { value: cue }, currentProject: { value: {} },
+    audioDeviceOverride: { value: cue.deviceOverride }, deviceOverrideEditPending: { value: false },
+    _server: server, t: (key: string) => key,
+    endItemBatch: async () => {}, persistPropertyChanges: () => { ++saves; }, handleSave: () => { ++saves; },
+  });
+  const select = { value: 'Cold output' };
+  const result = change({ target: select });
+  assert.equal(cue.deviceOverride, 'Running output');
+  assert.equal(saves, 0);
+  pending.reject(new Error('Device open canceled'));
+  await result;
+  assert.equal(cue.deviceOverride, 'Running output');
+  assert.equal(select.value, 'Running output');
+  assert.equal(saves, 0);
+  assert.equal(server.lastError, 'properties.deviceOverrideFailed');
 });
 test('does not start a save after the current project changes during PATCH', async () => {
   const harness = settingsHarness({ defaultTransitionMode: 'crossfade' });
@@ -160,4 +254,75 @@ test('keeps a server-accepted setting live when the disk save is unsaved', async
   assert.equal(await pending, 'unsaved');
   assert.equal(harness.project.settings.cycleTrackColors, true);
   assert.equal(harness.settingsError.value, 'project.unsavedChanges');
+});
+
+function spotifySettingsHarness() {
+  const filename = new URL('../app/components/SpotifyImportModal.vue', import.meta.url);
+  const script = parse(readFileSync(filename, 'utf8')).descriptor.scriptSetup!.content;
+  const ast = ts.createSourceFile('SpotifyImportModal.ts', script, ts.ScriptTarget.Latest, true);
+  const fn = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'persistProjectSetting');
+  assert.ok(fn);
+  const code = ts.transpileModule(fn.getText(ast), {
+    compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const project = { settings: { defaultTransitionMode: 'crossfade', keep: 'original' } as Record<string, unknown> };
+  const currentProject = { value: project as typeof project | null };
+  const patch = deferred<void>();
+  const saving = { value: false };
+  const error = { value: '' };
+  let saveCalls = 0;
+  let save = async () => true;
+  const persist = Function('currentProject', 'isSavingSettings', 'settingsSaveError', 'server', 'saveProject', 't',
+    `${code}; return persistProjectSetting;`)(currentProject, saving, error,
+    { patchSettings: () => patch.promise }, () => { saveCalls++; return save(); }, (key: string) => key);
+  return { project, currentProject, patch, saving, error, persist,
+    get saveCalls() { return saveCalls; }, setSave(next: () => Promise<boolean>) { save = next; } };
+}
+
+test('Spotify settings cannot roll back or save a replacement show after PATCH settles', async () => {
+  for (const reject of [false, true]) {
+    for (const close of [false, true]) {
+      const h = spotifySettingsHarness();
+      const pending = h.persist({ defaultTransitionMode: 'start-next' });
+      const replacement = { settings: { keep: 'replacement' } };
+      h.currentProject.value = close ? null : replacement;
+      if (reject) h.patch.reject(new Error('PATCH refused')); else h.patch.resolve();
+      await pending;
+      assert.deepEqual(replacement.settings, { keep: 'replacement' });
+      assert.equal(h.saveCalls, 0);
+      assert.equal(h.error.value, '');
+      assert.equal(h.saving.value, false);
+    }
+  }
+});
+
+test('Spotify keeps accepted live settings on save failure and only rolls back rejected keys', async () => {
+  for (const failure of ['patch', 'save-false', 'save-throw']) {
+    const h = spotifySettingsHarness();
+    h.setSave(async () => { if (failure === 'save-throw') throw new Error('disk unavailable'); return false; });
+    const pending = h.persist({ defaultTransitionMode: 'start-next', newSetting: true });
+    h.project.settings.keep = 'concurrent change';
+    if (failure === 'patch') h.patch.reject(new Error('PATCH refused')); else h.patch.resolve();
+    await pending;
+    assert.equal(h.project.settings.defaultTransitionMode, failure === 'patch' ? 'crossfade' : 'start-next');
+    assert.equal('newSetting' in h.project.settings, failure !== 'patch');
+    assert.equal(h.project.settings.keep, 'concurrent change');
+    assert.ok(h.error.value);
+    assert.equal(h.saving.value, false);
+  }
+});
+
+test('Spotify save completion cannot report an error on the next show', async () => {
+  const h = spotifySettingsHarness();
+  const save = deferred<boolean>();
+  h.setSave(() => save.promise);
+  const pending = h.persist({ defaultTransitionMode: 'start-next' });
+  h.patch.resolve();
+  await Promise.resolve();
+  assert.equal(h.saveCalls, 1);
+  h.currentProject.value = { settings: { keep: 'next show' } };
+  save.resolve(false);
+  await pending;
+  assert.deepEqual(h.currentProject.value.settings, { keep: 'next show' });
+  assert.equal(h.error.value, '');
 });

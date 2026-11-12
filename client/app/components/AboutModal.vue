@@ -26,12 +26,13 @@ const close = () => {
 onMounted(() => {
   const handleEscape = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
+      e.preventDefault();
       close();
     }
   };
-  window.addEventListener('keydown', handleEscape);
+  window.addEventListener('keydown', handleEscape, true);
   onUnmounted(() => {
-    window.removeEventListener('keydown', handleEscape);
+    window.removeEventListener('keydown', handleEscape, true);
   });
 });
 </script>

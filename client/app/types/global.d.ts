@@ -6,11 +6,7 @@ import type {
   OneShotMutationResult,
   OneShotProjectEnvelope,
 } from './oneShotMutation';
-type ProjectFileKind =
-  | 'native-project'
-  | 'native-archive'
-  | 'legacy-project'
-  | 'legacy-archive';
+import type { ProjectFileKind } from '../utils/projectFileFormats';
 
 declare global {
   interface Window {
@@ -44,6 +40,7 @@ declare global {
       generateWaveform: (audioPath: string, outputPath: string) => Promise<{ success: boolean; error?: string }>;
       openFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>;
       getImportPreferences: () => Promise<{
+        preferencesSaved: boolean;
         spotifyDestination: string;
         spotifyRecovery: {
           version: 1;
@@ -116,6 +113,7 @@ declare global {
         preflightId: string;
         playlistName: string;
         totalDuration: number;
+        skippedTrackCount: number;
         tracks: Array<{
           id: string;
           title: string;
@@ -159,6 +157,7 @@ declare global {
         completedTrackIds: string[];
         failedTrackIds: string[];
         groupUuid?: string;
+        preferencesSaved?: boolean;
       }>;
       cancelSpotifyDownload: (jobId: string) => Promise<boolean>;
       finalizeSpotifyImport: (jobId: string, keepFiles: boolean) => Promise<boolean>;
@@ -233,6 +232,11 @@ declare global {
         open: () => Promise<VideoOutputStatus>;
         close: () => Promise<VideoOutputStatus>;
         status: () => Promise<VideoOutputStatus>;
+        restart: () => Promise<VideoOutputStatus>;
+        rendererReady: () => Promise<VideoOutputStatus>;
+        reportPictureHealth: (health: VideoPictureHealth) => Promise<void>;
+        diagnostics: () => Promise<unknown>;
+        onFrame: (callback: (frame: { jpeg: string; at: number }) => void) => () => void;
         listDisplays: () => Promise<VideoOutputDisplay[]>;
         identifyDisplays: () => Promise<VideoOutputDisplay[]>;
         setDisplay: (displayId: string | null) => Promise<VideoOutputStatus>;
@@ -286,12 +290,31 @@ declare global {
     displays: VideoOutputDisplay[];
     warning: 'single-display' | 'display-missing' | 'display-shared-with-control' | null;
     playbackError: VideoPlaybackError | null;
+    rendererReady: boolean;
+    rendererResponsive: boolean;
+    recoveryRequired: boolean;
+    restarting: boolean;
+    pictureHealth: (VideoPictureHealth & { receivedAt: number }) | null;
     testCard: boolean;
     testCardConfig: TestCardConfig;
     testCardPlayback: VideoTestCardPlayback | null;
     testCardError: string | null;
     testCardInfo: { displayFrequency: number; network: string[] };
     fullscreen: boolean;
+  }
+
+  interface VideoPictureHealth {
+    itemUuid: string | null;
+    sourceItemUuid: string | null;
+    fileRevision: string | null;
+    preparedSeconds: number | null;
+    state: 'idle' | 'still' | 'paused' | 'loading' | 'seeking' | 'playing' | 'clock-wait' | 'error';
+    mediaTime: number | null;
+    presentedFrames: number | null;
+    presentedAgeMs: number | null;
+    droppedFrames: number | null;
+    totalFrames: number | null;
+    readyState: number;
   }
 
   interface ImportMeta {

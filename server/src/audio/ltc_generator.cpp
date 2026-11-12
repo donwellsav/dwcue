@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace liveplay::audio {
 
@@ -170,7 +171,11 @@ void LTCGenerator::render_block(Sample* dst,
 
     // Compute LTC absolute time (= playhead + offset) and the absolute frame
     // number containing the *first* sample of this block.
-    const long long abs_ns = static_cast<long long>(playhead.count()) + offset_ns_;
+    const auto head_ns = static_cast<long long>(playhead.count());
+    constexpr auto maximum = std::numeric_limits<long long>::max();
+    constexpr auto minimum = std::numeric_limits<long long>::lowest();
+    const long long abs_ns = offset_ns_ > 0 && head_ns > maximum - offset_ns_ ? maximum
+        : offset_ns_ < 0 && head_ns < minimum - offset_ns_ ? minimum : head_ns + offset_ns_;
     // Negative timecode (offset earlier than playhead start) → output silence.
     if (abs_ns < 0) {
         std::fill_n(dst, frame_count, 0.0f);

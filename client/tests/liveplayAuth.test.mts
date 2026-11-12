@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { ref } from 'vue';
 
 class MemoryStorage {
   private readonly values = new Map<string, string>();
@@ -46,6 +47,14 @@ class FakeWebSocket {
 }
 
 const storage = new MemoryStorage();
+const nuxtState = new Map<string, ReturnType<typeof ref>>();
+Object.defineProperty(globalThis, 'useState', {
+  configurable: true,
+  value: (key: string, initialize: () => unknown) => {
+    if (!nuxtState.has(key)) nuxtState.set(key, ref(initialize()));
+    return nuxtState.get(key);
+  },
+});
 const sockets: FakeWebSocket[] = [];
 const fetchAuthorizations: string[] = [];
 const fetchRequests: Array<{ url: string; method: string }> = [];
@@ -388,6 +397,20 @@ test('deduplicates server state, rotates managed credentials, and fences stale s
   assert.equal(await primaryPlay, true);
   assert.equal(server.lastError, sequenceWarning, 'successful primary acknowledgement cleared the secondary-action warning');
 
+  const unavailable = server.go();
+  const unavailableFrame = JSON.parse(rotatedSocket.sent.at(-1) ?? '{}');
+  const outputWarning = "Output device 'USB Playback' is unavailable or ambiguous. Reselect an output device.";
+  rotatedSocket.receive({
+    type: 'playback_error', code: 'output_device_unavailable',
+    item_uuid: 'routed-item', device: 'USB Playback', message: outputWarning,
+  });
+  rotatedSocket.receive({
+    type: 'command_ack', command_id: unavailableFrame.command_id, ok: false,
+    error: 'nothing armed to GO to',
+  });
+  assert.equal(await unavailable, false);
+  assert.equal(server.lastError, outputWarning, 'failed GO keeps the named output warning visible');
+
   const lostAckResult = server.setNextItem('item-9');
   rotatedSocket.receive({ type: 'doc_patch', op: 'next_item_set', itemUuid: 'item-9' });
   assert.deepEqual(docPatches.at(-1), {
@@ -425,4 +448,225 @@ test('deduplicates server state, rotates managed credentials, and fences stale s
   );
 
   server.destroy();
+});
+
+test('project REST calls carry the bound session while chained creation uses its returned session', async () => {
+  const { useLiveplayServer } = await import('../app/composables/useLiveplayServer.ts');
+  const server = useLiveplayServer() as any;
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ path: string; session: string | null; mutation: string | null }> = [];
+  const openRequests: unknown[] = [];
+  let supportsOpenDeadline = true;
+  let supportsCreateDeadline = false;
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const headers = new Headers(init?.headers);
+    calls.push({ path: url.pathname, session: headers.get('X-DWCUE-Project-Session'), mutation: headers.get('X-DWCUE-Mutation-ID') });
+    if (url.pathname === '/api/project/load') openRequests.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify(url.pathname === '/api/cues' || url.pathname === '/api/mixers' ? [] : {
+      ok: true, hasOpenProject: true, name: 'Other', items: [], cartItems: [], cartOnlyItems: [], settings: {}, theme: {},
+      ...(supportsOpenDeadline && url.searchParams.has('open_deadline') ? { openDeadlineMs: 123456 } : {}),
+      ...(supportsCreateDeadline ? { createDeadlineSupported: true } : {}),
+      server: { projectFilePath: '/other.dwcue', projectSessionId: 'other-response-session', mediaRoot: '/other/media', audioLoading: false, audioLoaded: 0, audioTotal: 0 },
+    }), { status: 200 });
+  };
+  try {
+    server.projectSessionId = 'bound-show-session';
+    await server.updateProjectItem('same', { volume: 0.5 }, 'owner:7');
+    await server.addProjectItem({ uuid: 'new', type: 'group', children: [] });
+    await server.removeProjectItem('same');
+    await server.reorderProjectItems(['new']);
+    await server.setCartSlot(0, 'new');
+    await server.clearCartSlot(0);
+    await server.patchTheme({ accentColor: '#abcdef' });
+    await server.patchSettings({ autoSave: false });
+    await server.fetchProjectItemsPage();
+    await server.loadProjectFromPath('/next.dwcue');
+    assert.deepEqual(openRequests, [{ path: '/next.dwcue', openDeadlineMs: 123456 }]);
+    await assert.rejects(server.loadProjectDocument({ name: 'New' }, '/new.dwcue'), /Update the engine/);
+    supportsCreateDeadline = true;
+    await server.loadProjectDocument({ name: 'New' }, '/new.dwcue');
+    assert.deepEqual(openRequests.at(-1), { create: { path: '/new.dwcue', document: { name: 'New' } }, openDeadlineMs: 123456 });
+    await server.closeProjectOnServer('bound-show-session');
+    await server.repairProject();
+    await server.fetchProjectHeader();
+    assert.equal(server.projectSessionId, 'bound-show-session', 'unowned/late headers cannot replace the local show binding');
+    await server.replaceProjectDocument({ name: 'New', items: [] }, 'creation-session');
+    await server.saveProjectTo('/new.dwcue', { name: 'New', items: [] }, undefined, 'creation-session');
+    const scoped = calls.filter(call => call.path.startsWith('/api/project/') && call.path !== '/api/project/header');
+    assert.equal(scoped.length, 15);
+    assert.deepEqual(scoped.map(call => call.session), Array(13).fill('bound-show-session').concat(['creation-session', 'creation-session']));
+    assert.equal(scoped[0].mutation, 'owner:7', 'session tagging preserves the item mutation echo identity');
+    server.projectSessionId = 'newer-show-session';
+    await server.closeProjectOnServer('captured-closing-session');
+    assert.equal(calls.at(-1)!.session, 'captured-closing-session', 'late close cannot adopt the newer current session');
+    const sent = calls.length;
+    await assert.rejects(server.closeProjectOnServer(''), /project session/i);
+    assert.equal(calls.length, sent, 'an explicitly unbound close sends no request');
+    supportsOpenDeadline = false;
+    await assert.rejects(server.loadProjectFromPath('/older.dwcue'), /Update the engine/);
+    assert.equal(openRequests.length, 2, 'an older engine must not receive an unbounded show switch');
+  } finally {
+    server.clearLastError();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('an open local project cannot send unbound REST edits', async () => {
+  const { useLiveplayServer } = await import('../app/composables/useLiveplayServer.ts');
+  const server = useLiveplayServer() as any;
+  const project = nuxtState.get('currentProject')!;
+  const before = project.value;
+  try {
+    project.value = { name: 'Local', folderPath: '/show', items: [], cartItems: [], cartOnlyItems: [] };
+    server.projectSessionId = '';
+    await assert.rejects(server.patchSettings({ autoSave: false }), /project session/i);
+  } finally { project.value = before; }
+});
+
+test('Stop All uses authenticated HTTP with or without a WebSocket', async () => {
+  const { useLiveplayServer } = await import('../app/composables/useLiveplayServer.ts');
+  const server = useLiveplayServer();
+  const originalFetch = globalThis.fetch;
+  const requests: Array<{ body: unknown; authorization: string | null; session: string | null }> = [];
+  const currentProject = nuxtState.get('currentProject')!;
+  const originalProject = currentProject.value;
+  let accepted = true;
+  let revision = 0;
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(String(input));
+    if (url.pathname !== '/api/transport/stop_all') return originalFetch(input, init);
+    assert.equal(url.origin, 'https://stop-test.example');
+    assert.equal(init?.method, 'POST');
+    assert.ok(init?.signal, 'Stop All confirmation must have a deadline');
+    const headers = new Headers(init?.headers);
+    requests.push({
+      body: JSON.parse(String(init?.body)),
+      authorization: headers.get('Authorization'),
+      session: headers.get('X-DWCUE-Project-Session'),
+    });
+    return new Response(JSON.stringify(accepted ? { ok: true, stop_revision: ++revision } : { ok: false }),
+      { status: accepted ? 200 : 503 });
+  };
+  try {
+    server.configureRemoteConnection('https://stop-test.example', 'stop-test-token');
+    assert.equal(server.connected, false);
+    assert.equal(await server.stopAll(0), true);
+    assert.equal(server.stopAllStatus, 'confirmed');
+
+    const socket = sockets.at(-1)!;
+    socket.readyState = FakeWebSocket.OPEN;
+    socket.onopen?.({});
+    accepted = false;
+    assert.equal(await server.stopAll(), false);
+    assert.equal(server.stopAllStatus, 'unconfirmed');
+    assert.match(server.lastError ?? '', /Stop All unconfirmed/);
+    accepted = true;
+    assert.equal(await server.stopAll(), true);
+    assert.equal(server.lastError, null);
+    assert.deepEqual(requests, [{ fade_ms: 0 }, {}, {}].map(body => ({
+      body, authorization: 'Bearer stop-test-token', session: null,
+    })));
+    assert.deepEqual(socket.sent, [], 'Stop All must not wait for or replay over the socket');
+    socket.receive({ type: 'meters', stop_revision: 1 });
+    const start = server.go();
+    const command = JSON.parse(socket.sent[0]!);
+    assert.equal(command.stop_revision, 2, 'an older meter frame cannot undo the HTTP stop revision');
+    socket.receive({ type: 'command_ack', command_id: command.command_id, ok: true });
+    assert.equal(await start, true);
+    assert.equal(sockets.at(-1), socket, 'a confirmed GO leaves its socket in place');
+
+    currentProject.value = { folderPath: '/show' };
+    const heldGo = server.go();
+    const heldFrame = JSON.parse(socket.sent.at(-1)!);
+    const lateMessage = socket.onmessage;
+    assert.equal(await server.stopAll(0), true);
+    const replacement = sockets.at(-1)!;
+    assert.notEqual(replacement, socket, 'confirmed Stop All replaces a socket with an unacknowledged start');
+    assert.equal(await heldGo, false, 'the old GO releases its local pending action');
+    lateMessage?.({ data: JSON.stringify({ type: 'command_ack', command_id: heldFrame.command_id, ok: false }) });
+    replacement.readyState = FakeWebSocket.OPEN;
+    replacement.onopen?.({});
+    assert.equal(await server.go(), false, 'backup GO waits for show verification');
+    server.showVerification = null;
+    assert.equal(await server.go(), false, 'backup GO waits for the replacement socket stop revision');
+    replacement.receive({ type: 'meters', stop_revision: 3 });
+    const backupGo = server.go();
+    const backupFrame = JSON.parse(replacement.sent.at(-1)!);
+    assert.equal(backupFrame.stop_revision, 3);
+    replacement.receive({ type: 'command_ack', command_id: backupFrame.command_id, ok: true });
+    assert.equal(await backupGo, true);
+
+    const heldContinue = server.cueToContinue('looping-item');
+    const continueFrame = JSON.parse(replacement.sent.at(-1)!);
+    assert.equal(continueFrame.type, 'cue_to_continue');
+    assert.equal(await server.stopAll(0), true);
+    const continueRecovery = sockets.at(-1)!;
+    assert.notEqual(continueRecovery, replacement, 'a pending Continue can also hold the old socket');
+    assert.equal(continueFrame.stop_revision, 3);
+    assert.equal(await heldContinue, false);
+    continueRecovery.readyState = FakeWebSocket.OPEN;
+    continueRecovery.onopen?.({});
+    assert.equal(await server.go(), false);
+    server.showVerification = null;
+    assert.equal(await server.go(), false);
+    continueRecovery.receive({ type: 'meters', stop_revision: 4 });
+    const nextGo = server.go();
+    const nextGoFrame = JSON.parse(continueRecovery.sent.at(-1)!);
+    assert.equal(nextGoFrame.stop_revision, 4);
+    continueRecovery.receive({ type: 'command_ack', command_id: nextGoFrame.command_id, ok: true });
+    assert.equal(await nextGo, true);
+  } finally {
+    currentProject.value = originalProject;
+    server.destroy();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('cue starts wait for show verification and explicit session recovery', async () => {
+  const { useLiveplayServer } = await import('../app/composables/useLiveplayServer.ts');
+  const server = useLiveplayServer();
+  const currentProject = nuxtState.get('currentProject')!;
+  const signals: AbortSignal[] = [];
+  const unsubscribe = server.onReconnected(signal => signals.push(signal));
+  try {
+    currentProject.value = { folderPath: '/show' };
+    server.configureRemoteConnection('https://verify-test.example', 'verify-test-token');
+    const openSocket = () => {
+      const socket = sockets.at(-1)!;
+      socket.readyState = FakeWebSocket.OPEN;
+      socket.onopen?.({});
+      return socket;
+    };
+    const first = openSocket();
+    assert.equal(server.showVerification, 'checking');
+    assert.equal(await server.go(), false);
+    assert.equal(await server.playItem('old-cue'), false);
+    assert.equal(await server.resumeItem('old-cue'), false);
+    assert.deepEqual(first.sent, []);
+
+    server.forceReconnect();
+    const next = openSocket();
+    assert.equal(signals[0]?.aborted, true);
+    assert.equal(signals[1]?.aborted, false);
+    server.showVerification = 'failed';
+    assert.equal(await server.go(), false);
+    assert.deepEqual(next.sent, []);
+
+    server.showVerification = null;
+    const sessionLost = nuxtState.get('connectionGuard.sessionLost')!;
+    sessionLost.value = true;
+    assert.equal(await server.go(), false);
+    assert.deepEqual(next.sent, []);
+    sessionLost.value = false;
+    const started = server.go();
+    const command = JSON.parse(next.sent[0]!);
+    assert.equal(command.type, 'go');
+    next.receive({ type: 'command_ack', command_id: command.command_id, ok: true });
+    assert.equal(await started, true);
+  } finally {
+    unsubscribe();
+    currentProject.value = null;
+    server.destroy();
+  }
 });

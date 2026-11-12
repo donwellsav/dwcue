@@ -13,6 +13,7 @@
         <h2>{{ title || t('common.loading') }}</h2>
         <p v-if="subtitle" class="loading-subtitle">{{ subtitle }}</p>
       </div>
+      <Btn type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
     </div>
   </div>
 </template>
@@ -25,6 +26,7 @@ defineProps<{
 }>();
 
 const { t } = useLocalization();
+const server = useLiveplayServer();
 
 const theme = useState('theme', () => 'dark');
 const isDark = computed(() => theme.value === 'dark');

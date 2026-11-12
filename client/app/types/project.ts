@@ -30,6 +30,7 @@ export interface AudioItem extends BaseItem {
   inPoint: number; // in seconds
   outPoint: number; // in seconds
   volume: number; // 0-2 (1 is normal, >1 is louder, <1 is quieter)
+  deviceOverride?: string | null;
   endBehavior: EndBehavior;
   startBehavior: StartBehavior;
   customActions: CustomAction[];
@@ -73,7 +74,7 @@ export interface WaveformData {
   channelRms?: number[][];
   // BS.1770 analysis measured from decoded samples by the server. Legacy
   // waveform files have none of these fields and are never loudness-matched.
-  analysis_version?: 1;
+  analysis_version?: 2;
   integrated_lufs?: number | null;
   true_peak_dbtp?: number | null;
 }
@@ -215,6 +216,7 @@ export interface ProjectSettings {
   autoCueNextWithoutEndBehavior?: boolean;
   stopAllFadeMs?: number;
   uiScrollToPlaying?: boolean;
+  // Legacy file fields; import always preserves audio regardless of these values.
   autoTrimSilenceOnImport?: boolean;
   autoMatchLoudnessOnImport?: boolean;
   autoReduceTruePeaksOnImport?: boolean;
@@ -388,9 +390,6 @@ export function countdownColorForSeconds(
 export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   outputTarget: 'live',
   meterMode: 'dBFS',
-  autoTrimSilenceOnImport: false,
-  autoMatchLoudnessOnImport: false,
-  autoReduceTruePeaksOnImport: true,
   cycleTrackColors: true,
   cartSlotCount: CART_SLOT_COUNT_LIMITS.default,
   countdownColorBands: DEFAULT_COUNTDOWN_COLOR_BANDS.map(band => ({ ...band })),

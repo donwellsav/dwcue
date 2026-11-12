@@ -143,6 +143,9 @@
     "videoOutputTestCardHelp": "Displays the output name, resolution and framing guides on the video output — use it to line up the switcher and projector before showtime.",
     "videoOutputStatus": "Output status",
     "videoOutputStatusOff": "Video output is off.",
+    "videoOutputRestart": "Restart Output",
+    "videoOutputCopyDiagnostics": "Copy Output Diagnostics",
+    "videoOutputDiagnosticsCopied": "Output diagnostics copied. Stored locally in this session; no media or access tokens included.",
     "videoOutputStatusOn": "Live on {label} ({size}).",
     "videoOutputStatusPreview": "Preview mode — windowed on this display.",
     "videoOutputWarnSingleDisplay": "Only one display detected (or displays are mirrored). Connect a second display to use the video output; for now the window opens as a preview.",
@@ -331,6 +334,8 @@
     "location": "Location",
     "chooseLocation": "Choose…",
     "createShow": "Create Show",
+    "createFailed": "Could not create the show. Check the folder permissions and choose an unused show name.",
+    "openFailed": "Could not open {path}. Check that the show file is available and valid.",
     "enterName": "Enter Project Name",
     "placeholder": "My Project",
     "cancel": "Cancel",
@@ -365,6 +370,7 @@
     "reviewing": "Reading Spotify metadata…",
     "reviewTitle": "Spotify track review",
     "reviewSummary": "{selected} of {total} selected · {duration}",
+    "skippedTracks": "Skipped {count} entries with missing or invalid Spotify track IDs.",
     "reviewFailed": "Spotify track information could not be loaded.",
     "selectAll": "Select all",
     "selectNone": "Select none",
@@ -398,6 +404,7 @@
     "chooseDestination": "Choose Folder",
     "changeDestination": "Change",
     "destinationFailed": "Could not choose the destination folder.",
+    "preferencesSaveFailed": "Spotify import can continue. The folder choice and retry information could not be saved for the next app launch.",
     "createsDescription": "Creates one child folder for the collection. Its media files are used directly by both the reusable .dwcue template and the current project — no second copy.",
     "cueSetup": "Cue setup",
     "settingOn": "On",
@@ -553,7 +560,7 @@
   "properties": {
     "title": "Properties",
     "multipleItemsSelected": "{count} items selected",
-    "peakWarning": "True-peak ceiling warning: This cue's measured true peak, after its volume setting, exceeds the limiter ceiling for the selected output target. Use Normalize or lower the cue volume.",
+    "peakCeilingWarning": "This cue's measured true peak, after cue gain, exceeds the output ceiling. The limiter caps playback peaks when enabled; it does not set cue gain.",
     "noSelection": "Select an item to view properties",
     "displayName": "Display Name",
     "color": "Color",
@@ -590,12 +597,16 @@
     "playback": "Playback",
     "output": "Output",
     "deviceOverride": "Output device",
+    "deviceOverrideFailed": "The cue’s output device could not be changed. Check the selection and try again.",
     "deviceOverrideHelp": "Override the project's default output for this cue. Leave on 'Use project default' to follow the project setting.",
     "ducking": "Ducking",
     "duckLevel": "Duck Level",
     "trimSilence": "Trim Silence",
     "normalize": "Normalize",
-    "normalizeHelp": "Normalize selected cues to this level. True peak cannot exceed the active limiter ceiling.",
+    "normalizationTargetHelp": "Normalize selected cues to the chosen loudness target in LUFS. The playback limiter independently caps output peaks.",
+    "reducePeaks": "Reduce peaks",
+    "peakCeiling": "Peak ceiling",
+    "peakReductionHelp": "Only turn down selected cues whose measured true peak after cue gain exceeds this ceiling. Quieter cues retain their current gain. This does not run during import.",
     "normalizeMode": "Normalization measurement",
     "normalizeTarget": "Normalization level",
     "loudnessTargets": "Loudness (LUFS)",
@@ -714,8 +725,16 @@
     "title": "Connection lost",
     "message": "The connection to the DonWells Cue server at {url} has been lost.",
     "attempting": "Attempting to reconnect…",
+    "verifyingTitle": "Verifying show",
+    "verifying": "Checking which show is open and loading its cue list…",
+    "verificationFailed": "Could not verify the active show. Retry to continue.",
     "attemptCount": "(Failed attempts: {count})",
-    "locked": "Playback and editing are paused until the connection is back — changes made now could not be sent to the server.",
+    "locked": "Cue starts and editing are unavailable while reconnecting. Audio may still be playing.",
+    "stopAllStatus": {
+      "pending": "Sending Stop All…",
+      "confirmed": "The engine accepted Stop All.",
+      "unconfirmed": "Stop All unconfirmed. Check the output and retry."
+    },
     "pill": "Reconnecting…",
     "reconnect": "Retry now",
     "restart": "Restart",
@@ -735,6 +754,7 @@
     "projectChangedMessage": "The server’s project “{name}” has changed. Your local project has unsaved changes, so nothing was replaced automatically.",
     "useServerProject": "Use server project",
     "keepLocalProject": "Restore local project",
+    "actionFailed": "Could not recover the show. Check the server and try again.",
     "projectChangedHint": "Use server project discards the unsaved local edits. Restore local project explicitly replaces the server’s active project with this one."
   },
   "audioImport": {
@@ -851,17 +871,21 @@
   "exportProgress": {
     "title": "Exporting Project",
     "message": "Compressing",
-    "downloading": "Downloading"
+    "downloading": "Downloading",
+    "saved": "Archive saved to {path}"
   },
   "importProgress": {
     "title": "Importing Project",
     "message": "Extracting",
+    "returnToShow": "Return to Show",
+    "savedOnServer": "Extracted to {path} on {server}",
     "openFailed": "The imported project could not be opened."
   },
   "projectHydration": {
     "loading": "Loading project…",
     "failed": "Project loading failed. This partial project is read-only.",
-    "retry": "Retry"
+    "retry": "Retry",
+    "chooseAnotherShow": "Choose Another Show"
   },
   "midi": {
     "configTitle": "MIDI Controller Configuration",
@@ -929,6 +953,22 @@
     "previewing": "Preview"
   },
   "videoConfidence": {
+    "heldBlack": "Held black",
+    "unconfirmed": "Picture unconfirmed",
+    "frameUnconfirmed": "Frame unconfirmed",
+    "prepared": "Video decoded and seek settled at {seconds}s",
+    "frameAge": "Frame {seconds}s ago",
+    "captureAge": "Capture {seconds}s ago",
+    "dropped": "Dropped frames: {count}",
+    "states": {
+      "idle": "Black",
+      "still": "Still image",
+      "paused": "Paused",
+      "loading": "Loading",
+      "seeking": "Seeking",
+      "clock-wait": "Waiting for audio clock",
+      "error": "Video error"
+    },
     "title": "Audience output",
     "live": "Live",
     "updated": "Updated {seconds}s ago",
@@ -944,6 +984,10 @@
     "progress": "Cue {index} of {total}"
   },
   "repair": {
+    "noticeTitle": "Show opened with repairs",
+    "review": "Review Repairs",
+    "saveRepaired": "Save Repaired Show",
+    "saveFailed": "The repaired show is open. Saving failed. Check the file location and try again.",
     "title": "Corrupt Project Detected",
     "message": "This project was found to have issues and has been automatically repaired. The following problems were detected:",
     "dataLossWarning": "Warning: some data may have been lost during repair.",
@@ -971,8 +1015,13 @@
     "emptyFavorites": "Add folders you use often."
   },
   "importAudio": {
+    "analysisUnavailable": "Audio verified. Waveform and peak analysis are unavailable.",
+    "mediaChanged": "The source changed during import. Try the completed file again.",
+    "uploadPaused": "Upload paused. Check the server connection and retry.",
+    "uploadEmpty": "The server did not return an uploaded file.",
     "title": "Import Media",
     "localIntro": "Choose audio or video files from this computer.",
+    "preserveAudio": "Imports preserve the source level and full duration. Use Normalize or Trim Silence in Properties when needed.",
     "advanced": "Advanced options",
     "unsupportedFileType": "Unsupported file type",
     "verifyFileType": "File type will be verified",
@@ -1013,7 +1062,7 @@
     "duplicateSkipped": "An identical project copy already exists; this file was skipped.",
     "duplicateReused": "Reused the identical file already in project media.",
     "linkWarning": "Linked in place. Keep the original file available at this location.",
-    "truePeakWarning": "Measured true peak is {peak} dBTP and automatic peak reduction is off.",
+    "truePeakWarning": "Measured true peak is {peak} dBTP, above 0 dBTP. The source level is unchanged. Adjust gain in Properties if needed.",
     "saveFailed": "The project could not be saved after import.",
     "partialFailure": "Some files could not be imported.",
     "audioFile": "Audio",
@@ -1031,6 +1080,8 @@
   "unsavedModal": {
     "title": "Unsaved Changes",
     "message": "You have unsaved changes. Do you want to save them before continuing?",
+    "finishCurrent": "Finish this save prompt before starting another action.",
+    "waitForSave": "Wait for the current save to finish, then try again.",
     "save": "Save",
     "discard": "Don't Save",
     "cancel": "Cancel"

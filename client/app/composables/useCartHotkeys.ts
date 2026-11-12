@@ -19,7 +19,7 @@ const RESERVED_COMBOS: CartSlotKeyBinding[] = [
   { key: 'F1', ctrlKey: false, shiftKey: false, altKey: false },
 ];
 
-const bindingsMatch = (a: CartSlotKeyBinding, b: CartSlotKeyBinding): boolean =>
+export const bindingsMatch = (a: CartSlotKeyBinding, b: CartSlotKeyBinding): boolean =>
   a.key.toLowerCase() === b.key.toLowerCase()
   && a.ctrlKey  === b.ctrlKey
   && a.shiftKey === b.shiftKey
@@ -61,7 +61,7 @@ export const PLAYBACK_ACTIONS: { id: PlaybackKeyAction; labelKey: string }[] = [
   { id: 'play-selected', labelKey: 'controls.playSelected' },
 ];
 
-export const useCartHotkeys = () => {
+export const useCartHotkeys = (allowOtherShortcuts = () => true) => {
   const { currentProject, projectHydrationStatus, selectedItem, selectedItems, saveProject, getAllItemsFlat, toggleItemSelection, findItemByUuid } = useProject();
   const { cartOnlyItems } = useCartItems();
   const { fireBlocked, afterFire } = useOneShotArm();
@@ -149,16 +149,9 @@ export const useCartHotkeys = () => {
 
   const findPlaybackActionForEvent = (e: KeyboardEvent): PlaybackKeyAction | null => {
     const mappings = playbackMappings.value;
+    const pressed = eventToBinding(e);
     for (const [action, binding] of Object.entries(mappings) as [PlaybackKeyAction, CartSlotKeyBinding | null][]) {
-      if (!binding) continue;
-      if (
-        e.key.toLowerCase() === binding.key.toLowerCase()
-        && (e.ctrlKey || e.metaKey) === binding.ctrlKey
-        && e.shiftKey === binding.shiftKey
-        && e.altKey   === binding.altKey
-      ) {
-        return action;
-      }
+      if (binding && bindingsMatch(binding, pressed)) return action;
     }
     return null;
   };
@@ -235,29 +228,28 @@ export const useCartHotkeys = () => {
   };
 
   const handleKeydown = (e: KeyboardEvent) => {
-    if (!isForwardedFromVideoOutput(e) && isTextInputFocused()) return;
+    if (e.defaultPrevented || (!isForwardedFromVideoOutput(e) && isTextInputFocused())) return;
 
     // Stop All is a server-global panic action: native diagnostics and orphaned
     // cues can remain active without a project document or local activeCue.
     const playbackAction = findPlaybackActionForEvent(e);
-    if (playbackAction && (
-      playbackAction === 'stop-all'
-      || (currentProject.value && projectHydrationStatus.value === 'ready')
-    )) {
+    if (playbackAction !== 'stop-all' &&
+        (!allowOtherShortcuts() || !currentProject.value || projectHydrationStatus.value !== 'ready')) return;
+
+    if (playbackAction) {
       e.preventDefault();
       e.stopPropagation();
+      if (e.repeat && playbackAction !== 'select-up' && playbackAction !== 'select-down') return;
       void dispatchPlaybackAction(playbackAction);
       return;
     }
-
-    if (!currentProject.value || projectHydrationStatus.value !== 'ready') return;
 
     // Cart slot hotkeys
     const slotIndex = findSlotForEvent(e);
     if (slotIndex >= 0) {
       e.preventDefault();
       e.stopPropagation();
-      void triggerSlot(slotIndex);
+      if (!e.repeat) void triggerSlot(slotIndex);
     }
   };
 

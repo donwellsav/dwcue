@@ -1,8 +1,10 @@
 # DonWells Cue Server — developer guide
 
+DonWells Cue **2.6.20** publishes healthy cue loads independently and confines Program preparation to the target cue. Stop All and backup GO stay available during a different cue's stalled decoder operation. The [workplan](../docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification, remaining engineering work and the deferred line-level audio and 1080p HDMI checks.
+
 `dwcue-server` is the headless C++20 audio engine and control surface that backs the DonWells Cue client. It owns the audio graph, the routing matrix, the loaded project file, and exposes a REST + WebSocket API. It runs as either a child process spawned by the desktop client (single-machine installs) or as a standalone daemon on a stage-side machine that the client connects to over the LAN.
 
-This document tracks the current v2.6.14 source included at `7a0eee2` (native repair commit `0394928`) and is the developer's guide to the server; this is not a published-installer claim, so use the release page and installed About version to determine available behaviour. For show preparation and operation, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For client internals, see [`client/README.md`](../client/README.md); for overall project and release context, see the [root README](../README.md).
+This guide covers the v2.6.20 server, including the playback checkpoint `2f372c2` and reliability audit `2ea5984`. Use the release page and installed About version to identify a particular build. For show preparation and operation, see the [operator manual (PDF)](../docs/operators-manual.pdf) or [Markdown source](../docs/operators-manual.md). For client internals, see [`client/README.md`](../client/README.md). For overall project and release context, see the [root README](../README.md).
 
 ---
 
@@ -35,9 +37,10 @@ This document tracks the current v2.6.14 source included at `7a0eee2` (native re
 |--------------|--------------------------------------------------------------------------------|
 | Audio I/O    | [miniaudio](https://miniaud.io/) (header-only, vendored as `miniaudio_impl.c`) |
 | HTTP / WS    | [Crow](https://crowcpp.org/)                                                   |
+| Outbound HTTP | [libcurl](https://curl.se/libcurl/) (macOS SDK; vcpkg with TLS on other platforms) |
 | Metadata     | [TagLib](https://taglib.org/)                                                  |
 | JSON         | [nlohmann/json](https://github.com/nlohmann/json)                              |
-| Build        | CMake (≥ 3.21) + vcpkg manifest mode (`vcpkg.json`)                            |
+| Build        | CMake (≥ 3.21), Git, and vcpkg manifest mode (`vcpkg.json`)                    |
 
 Native backends per platform:
 
@@ -70,7 +73,7 @@ server/
 │   │   └── engine.hpp         Tier 3: master bus + device fan-out
 │   ├── core/
 │   │   ├── project_state.hpp  v2 project model + legacy 1.x upgrade
-│   │   └── backup_manager.hpp on-save rotating backups
+│   │   └── backup_manager.hpp periodic rotating backups
 │   ├── meta/
 │   │   ├── metadata.hpp       TagLib wrapper
 │   │   └── waveform.hpp       offline downsample → peak JSON
@@ -184,22 +187,19 @@ In LAN mode, the boot banner shows the reachable URL:
 
 ### Three-tier mixer
 
-Every cue's audio goes through three explicit tiers, in order, on the engine's render thread:
+Every cue's audio goes through three explicit mixer tiers on the engine's render thread, followed by protection in the device callback:
 
 ```
-   Tier 1                Tier 2                  Tier 3
-   ──────                ──────                  ──────
- PlaybackItem  ─send─►  MixerChannel  ─send─►  Master Output Bus  ─hw─►  Device:HwCh
-   (one per                (group bus,            (per-channel
-   live cue,               gain/mute/             true-peak
-   own decoder)            solo/fade)             limiter)
+ PlaybackItem → MixerChannel → Logical master → Device channel sum
+                                                    ↓
+                                  Clock adaptation → Limiter + meter → Hardware
 ```
 
 - **Tier 1 — [`PlaybackItem`](include/liveplay/audio/playback_item.hpp)**: one instance per active cue, with its own `ma_decoder`, gain/fade state machine, optional LTC generator, and a per-source-channel meter. Loading the same `.wav` into two One Shot cells yields **two independent instances**; attenuating one never affects the other.
 - **Tier 2 — [`MixerChannel`](include/liveplay/audio/mixer_channel.hpp)**: a virtual strip with gain, mute, solo, and a smooth-fade ramp. Many items can route into one channel; one item's source channels can fan out to multiple channels.
-- **Tier 3 — Master output bus** ([`engine.hpp`](include/liveplay/audio/engine.hpp)): the current executable exposes 32 logical master channels. Each carries a limiter + meter and is assigned to exactly one `(Device, HardwareChannelIndex)` tuple.
+- **Tier 3 — Master output bus** ([`engine.hpp`](include/liveplay/audio/engine.hpp)): the current executable exposes 32 logical master channels. A master can be assigned to a `(Device, HardwareChannelIndex)` tuple; several masters can share that destination. The device callback limits their combined signal after clock adaptation. Assigned master meters and gain reduction report that final physical channel; unassigned buses retain their logical meters.
 
-All three tiers run at a 256-frame block (~5.3 ms at 48 kHz). Meters and limiter envelopes update once per block.
+The mixer renders 256-frame blocks (~5.3 ms at 48 kHz). Device callbacks can request different frame counts; final limiting uses preallocated scratch buffers and handles those counts without allocation or locks.
 
 Control-plane registries and immutable topology snapshots share ownership of playback items, mixer channels, and output devices, so removing an object cannot destroy storage still visible to the render thread. Native devices are deduplicated and reference-counted: Main and Preview can share one physical device, and releasing Preview cannot close Main's device. Device initialisation and shutdown are serialized; retired device storage stays off the real-time destruction path until engine shutdown.
 
@@ -219,7 +219,14 @@ Mutators: `POST /api/routing/item_to_mixer`, `/mixer_to_master`, `/master_to_dev
 
 ### True-peak master limiter
 
-[`limiter.hpp`](include/liveplay/audio/limiter.hpp). Defaults: −0.1 dBTP ceiling for the Live output target, 5 ms lookahead (~240 samples at 48 kHz), 50 ms release. `settings.limiterCeilingDb` optionally overrides the selected target in the range −60..0 dBTP. The limiter reuses the meter's ITU-R BS.1770 4× intersample detector; its sliding maximum drives the lookahead gain envelope with a 0.25 dB internal guard against envelope-created peaks. Bypass keeps both detector and delay moving so live toggles do not shift timing.
+[`limiter.hpp`](include/liveplay/audio/limiter.hpp). Defaults: −0.1 dBTP ceiling for the Live output target, 5 ms lookahead (~240 samples at 48 kHz), 50 ms release. `settings.limiterCeilingDb` optionally overrides the selected target in the range −60..0 dBTP. This is an attenuation-only safety ceiling: audio below it keeps unity gain after the lookahead delay. The limiter reuses the meter's ITU-R BS.1770 4× intersample detector; its sliding maximum drives the lookahead gain envelope, with a 0.25 dB internal guard applied only when reducing an over. Each physical device channel has one limiter after summation and clock adaptation. Bypass keeps both detector and delay moving so live toggles do not shift timing.
+
+Import preserves source level and timing, including when opening legacy automatic-processing preferences. Explicit LUFS normalization matches a loudness target; **Reduce peaks** only attenuates an over-ceiling cue. See [research, fixes, and verification](../docs/audio-playback-reliability.md).
+
+Secondary-output clock correction preserves the resampler's fractional position across rate changes, including nominal-speed crossings. A four-block PCM ring uses a 2.5-block pre-callback target for secondary drift control; master production and reset priming retain their three-block target. The PI gains and ±5,000 ppm safety bound are unchanged. Six current ten-minute simulated drift/phase cases at zero/±3,000 ppm continuously decode generated looped PCM, checking every measured callback with no buffer faults. This supersedes the earlier post-EOF coverage limit; accelerated simulation is not a physical or real-time show soak. More extreme drift with jitter can still trigger recovery. See [audio reliability](../docs/audio-playback-reliability.md).
+
+Cold cue preparation releases transport lifecycle ownership while decoder I/O runs. Stop All cancels that pending intent without waiting for its rewind/read/seek, including preprimed loop/trim changes; no cancelled start may fire later. Interrupted seeks invalidate cached/prepared starts until deliberate preparation/replay resynchronizes the decoder. Native tests cover 20 held-I/O cases plus actual PCM after cancellation. T43–T45 below add Preview/live-edit wait and shared decoder-read isolation. Metadata/device-change paths are not certified against arbitrary storage/driver stalls.
+
 
 ### Per-cue LTC generator
 
@@ -241,12 +248,16 @@ All three stop paths funnel through the same fade-out envelope:
 
 `stop()` calls `start_fade()` which feeds the same state machine the natural-end branch uses. The contract is documented inline in [`src/audio/playback_item.cpp`](src/audio/playback_item.cpp) (search for `// Manual-stop fade contract:`).
 
+Stopping a Paused cue clears it immediately while remaining silent. Pause also freezes a fade already in progress; Resume continues that fade from the held position.
+
 ### Sequencer trigger invariants
 
 - **Cue to Continue** arms a one-pass, runtime-only continuation for the cue's current playback instance. It temporarily supersedes saved Loop, Start Next, crossfade/stop-fade, and end-behaviour advance; at natural end it starts the resolved target. Stop, remove, replay, Stop All, media replacement, or project switch cancels the arm, so replay falls back to the saved behaviour. `cue_to_continue` is never serialized.
 - A manual **Play Next** override changes only when the server accepts a valid UUID or an explicit empty clear. GO consumes it only when playback is accepted; failed or not-yet-loaded targets remain armed. One Shot arming follows the same accepted-play rule.
 - Repeated identical arming is coalesced without another state broadcast. Successful GO clears its override; failed GO leaves it intact.
 - Each play receives a server-side generation fence. Replay, stop, removal, media replacement, and project changes invalidate older generations so a copied terminal action from an earlier playback instance cannot advance or otherwise affect the new one.
+- Pause holds timed actions and auto-follow until Resume. Crossfade and Start Next resolve all supported destinations before committing the source fade; failed destinations leave the follow retryable until EOF and report an error if they still cannot start.
+- Zero-crossfade follow has no implicit early overlap. A prepared, distinct audio successor starts at the exact source sample boundary. Groups, actions, self-targets, unready cues and chains too short to prepare use the EOF control path, which can add one 50 ms polling interval. Start actions and duck ownership bookkeeping also use that control cadence.
 - Group **Play First** selects its first-child path. **Play All** preflights the exact selected subtree and starts nothing unless all selected descendants are ready. A `GroupRun` owns the descendants it started, including nested runs, and executes the group's authored End Behavior exactly once after natural completion. Manual stop, external retrigger, looping descendants and cancellation prevent premature group-end dispatch. The default group End Behavior remains **Nothing**.
 - Audio Start Behaviors `play-next`, `play-item`, and `play-index` execute before the audio item itself; cycle detection prevents recursive chains. Start `play-next` is structural and never consumes the global operator override. Natural-end Audio End Behavior `next` may honor that override. Timed **Start Next at Marker** / **Start Next At** / **Fade Out at Marker** preserve the active group generation through internal transitions.
 - Ducking is owner- and playback-generation-fenced. Each sounding owner contributes its authored absolute ceiling plus attack/release times; the strongest active ceiling wins, base gains are recomputed when parameters change, and the original gain is restored only after the last owner releases. Attack/release ramps run without audio-thread allocation.
@@ -292,6 +303,8 @@ AV Sync uses the existing native decoder, loop and mixer. `default` follows the 
 Open-device snapshots include `runtime_state`, `is_clock_master`, `callback_entry_count`, `stream_recovery_count`, `recovery_request_id`, and `recovery_status` (`idle`, `pending`, `succeeded`, or `failed`). A successful backend start remains `starting` until a real callback arrives; a missing callback clock becomes `stalled` and cannot be clock master. Recovery stops and starts the existing stream without replacing its ID or cue routing. Match the returned request ID against full `{ "type": "device_state", "device": { ... } }` WebSocket events; only `succeeded` with `runtime_state: "running"` establishes recovered output. Restart errors and callback-startup timeout publish `failed` and permit another request.
 
 Authenticated `GET`/`HEAD /api/media?item_uuid=<uuid>` resolves the exact project media path used by native audio, including valid fallback paths. Byte ranges and the legacy `path` query remain supported. Live `cue_state` and reconnect `playback_snapshot` cues carry authoritative `trigger_seq` firing order for video-source selection.
+
+Media responses use asynchronous socket writes so a slow or paused reader cannot block the control worker. General responses retain their body/header storage until completion; static files use one owned 16 KiB chunk buffer. Pipelined requests wait before reusing response storage. CMake applies the hash-checked Crow 1.3.2 transport patch to build-local headers and retains the original dependency files; review the patch when upgrading Crow. HEAD returns the selected representation length without a body. Disk reads remain synchronous. See [video reliability research, regressions and limits](../docs/video-playback-reliability.md).
 
 #### Cues (engine-direct)
 
@@ -402,6 +415,7 @@ Uploads land in `state.media_root()` (the loaded project's `media/` sub-folder).
 | `GET /api/metadata?path=<utf8>` | — | `{ valid, artist, title, album, genre, year, track_number, duration_ms, sample_rate, channels, bitrate_kbps }` |
 | `GET /api/waveform/<cue_id>?buckets=1000` | — | waveform object (see below); `404` if cue not registered |
 | `GET /api/waveform_path?path=<utf8>&buckets=1000` | — | waveform object (no `cue_id` field) |
+| `GET /api/waveform_path?path=<utf8>&verify_revision=<revision>` | — | Decoder verification with `verified`, `duration_ms`, `sample_rate`, `source_channels`, and `file_revision`. The engine reads the specified revision through EOF without peak or waveform analysis. |
 | `POST /api/waveform_generate` | `{ "path": "/abs/file.wav", "item_uuid": "<uuid>" }` | `{ "ok": true }` immediately; result arrives as a `waveform_ready` (or `waveform_failed`) `doc_patch` over WebSocket |
 
 **Waveform object**:
@@ -437,15 +451,18 @@ Plays an item on `settings.previewDevice` without routing through the live mixer
 | Method · Path | Body | Response | Notes |
 |---------------|------|----------|-------|
 | `GET /api/project`              | — | full project JSON document | The single GET a remote client needs to render the whole project. |
-| `GET /api/project/header`       | — | lightweight header `{ name, itemCount, theme, settings, cart, hasOpenProject, … }` | Hit this first so the workspace shell can paint before the items array arrives. |
+| `GET /api/project/header`       | — | lightweight header `{ name, itemCount, theme, settings, cart, hasOpenProject, needsRepair, repairIssues, … }` | Repair details belong to the active show and remain in the header until it is saved. |
 | `GET /api/project/items?offset=0&limit=100` | — | `{ "offset": int, "limit": int, "total": int, "items": [...] }` | `limit` clamps to [1,1000]. Top-level items only (groups carry their children inline). |
 | `GET /api/project/progress`     | — | `{ "ready": bool, "loading": bool, "loaded": int, "total": int, "failedCount": int, "failures": [...] }` | Cheap poll for playback readiness and missing/unreadable media. |
-| `POST /api/project/load`        | `{ "path": "/abs/file.dwcue" }` *or* `{ "document": { … } }` | header object, augmented with `needsRepair`/`repairIssues` if the document was auto-repaired on load | broadcasts `project_changed`. `400` if neither field is present or load fails. |
+| `POST /api/project/load`        | `{ "path": "/abs/file.dwcue", "openDeadlineMs": 123 }` or `{ "document": { … } }` | header object, augmented with `needsRepair`/`repairIssues` if the document was auto-repaired on load | Broadcasts `project_changed` on success. The controller requests a fresh engine-clock deadline before Open. |
+| `POST /api/project/load`        | `{ "create": { "path": "/abs/new.dwcue", "document": { … } }, "openDeadlineMs": 123 }` | header object on save and switch | New Show requires the deadline and creates the file exclusively. `412` for expiry before writing. `410` with the saved path when expiry or a different show session prevents the switch. |
 | `POST /api/project/close`       | — | `{ "closed": true }` | broadcasts `project_changed`; clients clear both their project document and remembered path |
 | `PUT /api/project/document`     | full project JSON document | header object | Replaces the entire in-memory document. Broadcasts `project_changed`. |
 | `POST /api/project/save`        | `{ "path": "/abs/file.dwcue" (optional), "document": { … } (optional) }` | `{ "ok": true, "path": "…" }` | Serialized snapshot + atomic sibling-temp publication to the supplied canonical path or current path. `400` if neither is set; failure leaves the previous file and project identity unchanged. |
 | `POST /api/project/repair`      | — | `{ "repaired": bool, "issues": [string], "saved": bool }` | Forces a re-save of the (already auto-repaired on load) in-memory document. |
 Project load returns its header while media readiness continues asynchronously; callers use `/api/project/progress` and per-item errors rather than blocking all transport. Play/GO reject an unready selected target without consuming the operator override. Group Play All performs its all-or-nothing readiness preflight, while Stop All/Panic stay callable regardless of loader failures.
+
+Get `/api/project/header?open_deadline=1` immediately before a switch request. Use the returned `openDeadlineMs` as-is and bind the request to the expected show using `X-DWCUE-Project-Session`. The controller requires `createDeadlineSupported: true` before sending New Show. If an older controller calls New Show without a deadline, the engine rejects the request before writing.
 
 #### Project items
 
@@ -490,12 +507,11 @@ A `.dwcuepack` is a raw ZIP of the active `.dwcue` project's folder; it does not
 | Method · Path | Body | Response |
 |---------------|------|----------|
 | `POST /api/project/export` | `{ "folderPath": "/abs/project", "outputPath": "/abs/out.dwcuepack" (optional), "projectName": "MyShow" (optional) }` | `{ "archivePath": "/abs/out.dwcuepack", "size": uint64, "downloadToken": "…" (only when outputPath omitted), "downloadFilename": "MyShow.dwcuepack" (only when outputPath omitted) }` |
-| `POST /api/project/import` | **multipart** with a `file` part (the `.dwcuepack` or `.lpa`) and an `extractPath` text field, *or* **JSON** `{ "archivePath": "/abs/src.dwcuepack", "extractPath": "/abs/dest" }` | `{ "extractPath": "…", "projectFiles": ["one.dwcue"] }` |
-| `POST /api/project/import-legacy` | `{ "path": "/abs/old.liveplay", "destinationPath": "/abs/new.dwcue" (optional) }` | project header, as returned by `POST /api/project/load` |
+| `POST /api/project/import` | **multipart** with a `file` part (the `.dwcuepack`) and an `extractPath` text field, *or* **JSON** `{ "archivePath": "/abs/src.dwcuepack", "extractPath": "/abs/dest" }` | `{ "extractPath": "…", "projectFiles": ["one.dwcue"] }` |
 
 If `outputPath` is omitted on export, the archive is staged privately in the server's temporary export area and surfaced through a one-shot 10-minute `downloadToken` that's redeemed via `GET /api/file/download`. The temp file is deleted after the download completes.
 
-Archive import infers native versus legacy handling from the supplied filename. A native `.dwcuepack` must contain exactly one root `.dwcue`; a legacy `.lpa` must contain exactly one root `.liveplay`, which is converted into the single canonical `.dwcue` result. Multi-root archives are rejected, even though clients retain a multiple-result compatibility branch for controlled older-server responses. Extraction uses a fresh destination directory and rejects absolute paths, `..` traversal, links and special entries, unsafe expansion, compression-ratio abuse, and collisions. Legacy conversion never changes the original archive and does not publish the staged `.liveplay` file.
+A `.dwcuepack` must contain exactly one root `.dwcue`. Extraction uses a fresh destination directory and rejects absolute paths, `..` traversal, links and special entries, unsafe expansion, compression-ratio abuse, and collisions.
 
 ---
 
@@ -565,9 +581,13 @@ Stopped cues are omitted from `items`. Silent master channels (`peak_db <= -119 
 | `next_item_set`                 | `itemUuid` (empty string clears)                           | WS `set_next_item` |
 | `waveform_ready`                | `item_uuid`, `bucket_count`, `duration_ms`, `sample_rate`, `source_channels`, `channels` | waveform worker, after `/api/waveform_generate` finishes |
 | `waveform_failed`               | `item_uuid`                                                | waveform worker on decode failure |
-| `custom_action_http`            | `action` (project-defined HTTP action descriptor)          | `ProjectState` external-action handler — server has no HTTP client, so clients perform the fetch |
+| `custom_action_result`          | `actionId`, `ok`, `httpStatus`, `message`                   | Native HTTP action worker; feedback only, clients never execute the request |
 
 Clients apply doc_patch ops as idempotent state updates; the originating client also receives the echo (its local state already matches, so the apply is a no-op).
+
+Authored HTTP requests execute once per accepted cue action on the server host, including with no connected clients. One bounded worker preserves order, expires work after five seconds, verifies TLS certificates, and never automatically retries or follows redirects. Project changes discard queued work and cancel transfers where possible. `localhost` in these URLs now identifies the engine host. An unsuccessful request may already have reached its destination; operators must check the receiving system before manually retrying a side effect. See [HTTP behavior and limits](../docs/audio-playback-reliability.md#operator-visible-changes-and-limits).
+
+`project_changed` also fences cached meter/transport/snapshot batches, so an old Playing edge cannot arrive after the new-project boundary. Audience output clears immediately and rejects stale asynchronous fetches.
 
 #### Client → server frames
 
@@ -596,12 +616,12 @@ Unknown `type` values get a `{ "type": "error", "message": "unknown type" }` rep
 3. WebSocket frame { "type": "play", "cue_id": "…" } sent to server.
 4. ControlServer::handle_ws_message → engine_.play(cueId) — O(1) atomic state flip.
 5. AudioEngine render thread, next block:
-     PlaybackItem.render_block() decodes + applies fade-in envelope.
+     PlaybackItem.render_block() consumes read-ahead PCM and applies envelopes.
      Mixer summing through the matrix.
-     Master limiter + meter on per-device output buffers.
      Buffers pushed into each device's miniaudio ring buffer.
-6. Per-device miniaudio callback drains the ring → hardware DAC.
-7. Render thread also pushes amplitude into the 3-tier meters.
+6. Per-device miniaudio callback drains the ring, adapts its clock, then limits
+   and meters each final hardware-channel sum → hardware DAC.
+7. Render thread also updates source and mixer meters.
 8. Broadcast thread, ~33 ms later at the default cadence: snapshot all meters → JSON → fan out to every WS client.
 9. Client's LiveMeterBar.vue reflects the new levels in the next frame paint.
 ```
@@ -616,19 +636,19 @@ End-to-end transport latency depends on the configured render-block size and the
 
 ### File format
 
-A native `.dwcue` project is a JSON document beside its `media/` sub-folder. All new project creation and normal saves use `.dwcue`. A legacy `.liveplay` document is import-only: `POST /api/project/import-legacy` preserves its bytes and loads a new canonical `.dwcue`. With no `destinationPath`, the server chooses an available `.dwcue` sibling; an explicit destination must be an absent `.dwcue` filename in the same parent directory.
+A native `.dwcue` project is a JSON document beside its `media/` sub-folder. All new project creation and normal saves use `.dwcue`. The server refuses upstream LivePlay `.liveplay` and `.lpa` imports.
 
-The document schema is **v2**. Legacy 1.x content is auto-upgraded when loaded, including during one-way legacy import, by `ProjectState::upgrade_legacy_document` ([`src/core/project_state.cpp`](src/core/project_state.cpp)):
+The document schema is **v2**. Older native documents with 1.x content are upgraded on load by `ProjectState::upgrade_legacy_document` ([`src/core/project_state.cpp`](src/core/project_state.cpp)):
 
 - Walks legacy `carts` / `playlist` arrays and reconstructs the v2 `cues` list with the same names, file paths, gains, and fade durations.
 - Synthesises stereo master assignments: master channel 0 → default device hw ch 0, master channel 1 → default device hw ch 1.
 - Auto-creates one per-cue mixer channel so each cue still has independent gain/fade.
 
-The upgrade reconstructs legacy cues and baseline routes so old projects remain importable without making their source files writable aliases. Verify a converted show before live use. The server exposes the full routing API, but the current client does not mount `RoutingMatrixPanel.vue` as an operator screen; the available UI is Settings → **Audio Routing** for devices and Properties → **Output device** / **LTC** for a cue.
+The upgrade reconstructs cues and baseline routes for older native shows. Verify an upgraded show before live use. The server exposes the full routing API, but the current client does not mount `RoutingMatrixPanel.vue` as an operator screen; the available UI is Settings → **Audio Routing** for devices and Properties → **Output device** / **LTC** for a cue.
 
 ### Backups
 
-`BackupManager` ([`core/backup_manager.hpp`](include/liveplay/core/backup_manager.hpp)) keeps rotating timestamped copies of the project file on every save, so a corrupt write or bad mutation can be recovered.
+`BackupManager` ([`core/backup_manager.hpp`](include/liveplay/core/backup_manager.hpp)) copies the saved project file every ten minutes. It publishes a complete copy before pruning the oldest backups to the existing cap of 20 in the adjacent `backups` folder; a failed copy retains the previous history. Unsaved edits are not included in these periodic copies.
 
 Native saves are serialized under the project save mutex. The target path and complete document snapshot are resolved under that serialization boundary, written to a sibling temporary file and atomically published. A failed Save As does not adopt the requested path; a pathless save resolves the current canonical path while holding the same lock.
 
@@ -647,7 +667,7 @@ The server uses several long-lived service threads plus backend-owned audio call
 | Crow I/O + workers        | REST/WS handlers and connection lifecycle. |
 | Engine render             | `AudioEngine::render_loop()`; refills per-device rings from immutable topology snapshots. No locks, allocations, exceptions, or syscalls in the render path. |
 | Native device callbacks   | One real-time callback per open native device; drains its ring and wakes the render thread after consumption. |
-| Engine decode             | Bounded read-ahead for loaded playback items, outside the render thread. |
+| Engine decode             | One dispatcher assigns one worker per live cue; stalled sources retain their own workers without consuming another cue's refill capacity. |
 | Sequencer                 | End behaviours, timed actions, ducking transitions, and playback-generation terminal actions. |
 | Project loaders           | One persistent single-item/media-swap loader; bulk project loads may temporarily fan out to parallel workers. |
 | Meter/event broadcast     | Snapshots meters and transport edges at the default ~30 Hz cadence and fans JSON out to WebSocket clients. |
@@ -692,3 +712,44 @@ Inter-thread communication is lock-free atomics or immutable shared snapshots on
 - For audio-thread bugs, prefer adding atomic counters / ring-buffer logs rather than `printf` from inside `render_block()`.
 
 For deeper context on the client side of the protocol, see [`client/README.md`](../client/README.md).
+
+
+### Preview and live-edit storage waits
+
+Preview uses independent preparation ownership and an intent/document/settings fence, so cancelled auditions cannot start after storage returns. Program GO stays independent of Preview. Stop All does not inherit decoder teardown or active edit seeks through engine/project/render ownership. Live updates retain authored settings, paused state, explicit-stop cancellation and runtime-only Cue to Continue behavior. Removal retires orphaned cues without rebuilding the entire media library. Source-owned workers skip busy decoder locks; four or twelve held reads leave healthy PCM available. Repeated restart retains each cue's outstanding worker. Program edits/preparation still serialize, and platform device/metadata calls are outside this decoder-wait guarantee. Preview HTTP/event completion carries its publication identity and revision; both client observers reject superseded state. Queued seeks reserve intent before decoder waits so the last destination wins while a later Stop cancels both. See T43–T46 in the workplan for real PCM and deterministic held-I/O tests.
+
+
+### Decoder worker lifetime and restart
+
+One dispatcher performs no decoder calls. Each live cue owns at most one read-ahead worker; stopped/paused workers exit and idle library entries have no thread. Its registry entry persists across engine stop/start until its call and cleanup finish. A stalled source therefore does not consume a shared four-slot failure budget. Actual held-read tests sustain healthy PCM with four and twelve other reads blocked. Resource use follows live plus still-blocked cues; no infinite OS resource/fault tolerance is claimed.
+
+Missing source PCM is counted on the render timeline. After 250 ms, only that cue receives MA_TIMEOUT and stops through the existing decode-error/hold path. Full PCM resets the budget; decoded silence is valid audio, and intentional repositioning/Pause/stop-fades keep their semantics. The cue cannot resume or auto-advance when data returns. Deliberate prime after return clears the old error; failed_read_pending refuses busy failed retries before shared Program preparation and in direct Play/prime.
+
+Engine destruction joins the I/O-free dispatcher. In-flight cue workers retain their own state/source until native work returns. Removing a cue with an active worker revokes readiness and hands final unload to that worker, outside engine/dispatch locks. Explicit unload without an active worker, loader/project teardown, new preparation, metadata and device/driver operations retain their separate completion contracts. This is software fault containment for native worker reads, not certification of arbitrary platform hangs or complete application exit.
+
+An unrouted cue's mono/stereo/surround sends remain cached immutably during load. Both routing callers read that snapshot; reload/failure/unload preserve existing coefficients, source PCM and LTC exclusion. The workplan records the held-read, retry, retirement and address-sanitized lifetime evidence.
+
+
+### Loader and driver containment (T47-T50)
+
+File preparation owns decoder init, metadata and new One Shot priming independently of ProjectState/AudioEngine. Canceled coordinators stop waiting and fence adoption by generation/reserved CueId; completed native workers exit instead of waiting for the bulk batch. Shared-owned native teardown also covers cues with no active read-ahead worker. Diagnostic file removal follows actual decoder close.
+
+Whole-document trim/LTC application reserves the cue before copying current properties, then performs native work outside project/lifecycle ownership. Same-cue GO and native edits refuse while that configuration is busy; pure level/fade edits, document access, Stop All and prepared backup GO remain available. Atomic file-channel/LTC state keeps timecode out of audible routing during configuration.
+
+Program GO acquires preparation ownership for its target cue only. A stalled seek, read or edit on another cue can remain outstanding while Stop All and backup GO complete. Show identity and playback intent fence late starts and follow actions. Confirmed Stop All also replaces a socket with pending Cue to Continue, and the server rejects a Continue carrying an old stop revision. Edits and show switches still share their existing serialization.
+
+Device start and failed/duplicate cleanup release the engine mutex. One refresh supplies a cached hardware catalog plus current runtime state (50 ms first-catalog grace, at most one refresh in flight, no more often than one second after completion). Device-owned recovery/retirement retain native buffers and callback signals across engine destruction; closing/stopped generations cannot restart from a late native return. Process-wide init/uninit serialization is retained.
+
+Named Program and group output opens release the routing and playback lifecycle locks during native work. Stop All or a newer start invalidates the held cue. A reset invalidates the route and any late device reference is released. If a confirmed HTTP Stop All overtakes an unacknowledged start, the controller replaces the blocked control socket and verifies the active show and stop revision before enabling cue starts.
+
+Program and Play All use the same first-open protection for System Default. Play All checks Main before dispatch, and a failed open leaves the armed target and active audio intact. Concurrent Main setup retains one reference. Program GO applies LTC routing only to the cue it is preparing. Diagnostic setup releases playback ownership during media preparation and device startup. Stop, a newer play intent, or project replacement discards an obsolete diagnostic before publication.
+
+The initial open for a project Program or LTC selection or a cue override releases project and playback ownership. Stop All and superseding project edits can reject the late result and release its device reference. The controller keeps the acknowledged selection while the request waits and saves after acceptance.
+
+A separate worker prepares System Default, configured Program and LTC after media publication. Open, Close and the single-item loader can finish while native startup waits. Stop All or a show change discards a late route and releases its device reference. Settings reuses the validated mixer and keeps the current LTC feed when Program changes.
+
+One owned revision sweep checks loaded media without waiting on the queued loader. Changed results apply only to the current document and cue. Playlist loads probe a relative path against its absolute fallback outside document ownership. Preview and media requests recheck the reference after the probe. Adding a cue queues its own media and any group children.
+
+Queued loads use two worker slots. Whole-show loads use the existing CPU-based limit with at least two slots. Repeated references to the same preferred path share one slot in each loader. Each completed cue publishes against its current identity, so it can take GO while an unrelated file is still pending. The show remains in loading state until current work settles. Several simultaneous stalls can fill the available slots.
+
+The workplan tracks storage waits during project-file Open/Save, cold LTC routing edits and engine startup/shutdown. A stuck native open can still occupy the shared device lifecycle lock or delay server shutdown until the driver returns. OS thread exhaustion may retain synchronous cleanup as a fallback.

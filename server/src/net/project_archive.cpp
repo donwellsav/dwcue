@@ -552,10 +552,9 @@ OperationResult export_project(const fs::path& project_folder,
 ImportResult import_project(const fs::path& archive_path,
                             const fs::path& trusted_archive_filename,
                             const fs::path& destination) {
-    const auto kind = project_file::archive_kind(trusted_archive_filename);
-    if (!kind) {
+    if (!project_file::is_native_archive(trusted_archive_filename)) {
         return {{false, 400,
-                 "archive filename must use .dwcuepack or .lpa"}, {}};
+                 "archive filename must use .dwcuepack"}, {}};
     }
 
     std::error_code error;
@@ -598,7 +597,7 @@ ImportResult import_project(const fs::path& archive_path,
     if (!extraction.ok) return {std::move(extraction), {}};
 
     std::vector<fs::path> native_roots;
-    std::vector<fs::path> legacy_roots;
+    bool has_foreign_root = false;
     for (fs::directory_iterator it{staging, error}, end;
          !error && it != end; it.increment(error)) {
         const auto status = it->symlink_status(error);
@@ -608,68 +607,37 @@ ImportResult import_project(const fs::path& archive_path,
         if (project_file::is_native_project(it->path()))
             native_roots.push_back(it->path());
         else if (project_file::is_legacy_project(it->path()))
-            legacy_roots.push_back(it->path());
+            has_foreign_root = true;
     }
     if (error)
         return {{false, 500, "cannot inspect imported archive"}, {}};
 
-    fs::path canonical_root;
-    if (*kind == project_file::ArchiveKind::Native) {
-        if (native_roots.size() != 1 || !legacy_roots.empty()) {
-            return {{false, 400,
-                     "native archive must contain exactly one root .dwcue project"},
+    if (native_roots.size() != 1 || has_foreign_root) {
+        return {{false, 400,
+                 "native archive must contain exactly one root .dwcue project"},
+                {}};
+    }
+    auto validation = validate_json_project(native_roots.front());
+    if (!validation.ok) return {std::move(validation), {}};
+
+    fs::path canonical_root = native_roots.front();
+    fs::path canonical_name = canonical_root.stem();
+    canonical_name += util::utf8_to_path(
+        std::string{project_file::kNativeProjectExtension});
+    const fs::path normalized = staging / canonical_name;
+    if (canonical_root.filename() != canonical_name) {
+        const fs::path intermediate = staging / util::utf8_to_path(
+            ".canonicalize-" + security::random_hex_token(16) + ".part");
+        fs::rename(canonical_root, intermediate, error);
+        if (!error) fs::rename(intermediate, normalized, error);
+        if (error) {
+            std::error_code restore_error;
+            if (fs::exists(intermediate, restore_error) && !restore_error)
+                fs::rename(intermediate, canonical_root, restore_error);
+            return {{false, 500, "cannot canonicalize archived project name"},
                     {}};
         }
-        auto validation = validate_json_project(native_roots.front());
-        if (!validation.ok) return {std::move(validation), {}};
-
-        canonical_root = native_roots.front();
-        fs::path canonical_name = canonical_root.stem();
-        canonical_name += util::utf8_to_path(
-            std::string{project_file::kNativeProjectExtension});
-        const fs::path normalized = staging / canonical_name;
-        if (canonical_root.filename() != canonical_name) {
-            const fs::path intermediate = staging / util::utf8_to_path(
-                ".canonicalize-" + security::random_hex_token(16) + ".part");
-            fs::rename(canonical_root, intermediate, error);
-            if (!error) fs::rename(intermediate, normalized, error);
-            if (error) {
-                std::error_code restore_error;
-                if (fs::exists(intermediate, restore_error) && !restore_error)
-                    fs::rename(intermediate, canonical_root, restore_error);
-                return {{false, 500, "cannot canonicalize archived project name"},
-                        {}};
-            }
-            canonical_root = normalized;
-        }
-    } else {
-        if (legacy_roots.size() != 1 || !native_roots.empty()) {
-            return {{false, 400,
-                     "legacy archive must contain exactly one root .liveplay project"},
-                    {}};
-        }
-
-        project_file::PreparedDocument prepared;
-        std::string preparation_error;
-        if (!project_file::read_legacy_project(
-                legacy_roots.front(), prepared, preparation_error)) {
-            return {{false, 400, std::move(preparation_error)}, {}};
-        }
-        prepared.document["folderPath"] = util::path_to_utf8(destination);
-
-        fs::path canonical_name = legacy_roots.front().stem();
-        canonical_name += util::utf8_to_path(
-            std::string{project_file::kNativeProjectExtension});
-        canonical_root = staging / canonical_name;
-        if (!project_file::write_new_canonical_project(
-                canonical_root, prepared.document, error)) {
-            return {{false, error == std::errc::file_exists ? 409 : 500,
-                     "cannot create canonical project from legacy archive"},
-                    {}};
-        }
-        if (!fs::remove(legacy_roots.front(), error) || error) {
-            return {{false, 500, "cannot remove staged legacy project"}, {}};
-        }
+        canonical_root = normalized;
     }
 
     const fs::path project_filename = canonical_root.filename();

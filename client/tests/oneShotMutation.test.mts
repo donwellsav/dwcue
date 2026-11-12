@@ -5,12 +5,13 @@ import type { AudioItem, Project } from '../app/types/project';
 import type { OneShotMutationIdentity, OneShotMutationRequest } from '../app/types/oneShotMutation';
 import type { OneShotMutationDraft } from '../app/utils/oneShotMutation';
 import { applyOneShotMutation, createDetachedOneShotMutationClient } from '../app/utils/oneShotMutation';
+import { cloneAsIndependentOneShot } from '../app/utils/oneShots';
 
 const identity: OneShotMutationIdentity = {
   projectPath: '/shows/a.dwcue', projectEpoch: 7, ownerSessionId: 'primary-1',
 };
 const audio = (uuid: string, order: number): AudioItem => ({
-  uuid, index: [], displayName: uuid, color: '#00cc99', type: 'audio',
+  uuid, index: [-1, order], displayName: uuid, color: '#00cc99', type: 'audio',
   mediaFileName: `${uuid}.wav`, mediaPath: `media/${uuid}.wav`, waveformPath: '',
   inPoint: 0, outPoint: 10, volume: 1, duration: 10, fadeOutDuration: 1,
   playFade: 0, stopFade: 0, crossFade: 0, customActions: [],
@@ -20,6 +21,7 @@ const audio = (uuid: string, order: number): AudioItem => ({
 });
 const document = () => {
   const playlist = audio('playlist', 0);
+  playlist.index = [0];
   const standalone = audio('standalone', 1);
   const project: Project = {
     name: 'Test', version: '2', folderPath: '/shows/a', items: [playlist], cartItems: [],
@@ -139,6 +141,9 @@ test('replace-slot rejects incomplete or malformed nested AudioItems without cha
       timePoint: 1, action: { type: 'http-request', request: { method: 'PATCH', url: '/hook', contentType: 'json' } },
     }] },
     { ...audio('replacement', 1), oneShot: { order: 1, retrigger: 'sometimes' } },
+    ...[[-1], [-1, 0], [-1, 1, 0], [-2, 1], [0, -1], [-1, 1.5]].map(index => ({ ...audio('replacement', 1), index })),
+    { ...audio('replacement', 1), endBehavior: { action: 'goto-index', targetIndex: [-1, 1] } },
+    { ...audio('replacement', 1), customActions: [{ timePoint: 1, action: { type: 'play-index', index: [-1, 1] } }] },
   ];
 
   for (const item of [...incomplete, ...malformed]) {
@@ -164,6 +169,16 @@ test('replace-slot preserves a complete factory-shaped AudioItem exactly', () =>
   assert.equal(result.accepted, true);
   assert.deepEqual(state.cartOnlyItems.get(replacement.uuid), replacement);
   assert.notEqual(state.cartOnlyItems.get(replacement.uuid), replacement);
+});
+
+test('replace-slot accepts the standalone index produced by the playlist clone factory', () => {
+  const state = document();
+  const replacement = cloneAsIndependentOneShot(state.playlist, 'cloned-replacement', 1);
+  const result = applyOneShotMutation(state, request({
+    kind: 'replace-slot', payload: { slot: 1, item: replacement },
+  }));
+  assert.equal(result.accepted, true);
+  assert.deepEqual(state.cartOnlyItems.get(replacement.uuid)?.index, [-1, 1]);
 });
 
 test('detached requests are serialized and stale completions are rejected', async () => {

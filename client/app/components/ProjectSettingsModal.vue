@@ -46,7 +46,7 @@
                 @change="onAudioDeviceChange"
               >
                 <option :value="''">{{ t('settings.noneSelected') }}</option>
-                <option v-for="d in devices" :key="d.id" :value="d.id">
+                <option v-for="d in devices" :key="d.id" :value="d.display_name">
                   {{ d.display_name }}{{ d.is_default ? ' (' + t('common.default') + ')' : '' }}
                 </option>
               </select>
@@ -84,7 +84,7 @@
                 @change="onLtcDeviceChange"
               >
                 <option :value="''">{{ t('settings.noneSelected') }}</option>
-                <option v-for="d in devices" :key="d.id" :value="d.id">
+                <option v-for="d in devices" :key="d.id" :value="d.display_name">
                   {{ d.display_name }}{{ d.is_default ? ' (' + t('common.default') + ')' : '' }}
                 </option>
               </select>
@@ -161,41 +161,8 @@
               <p class="settings-help">{{ t('settings.stopAllFadeHelp') }}</p>
             </section>
 
-            <!-- Import processing options are independently controlled. -->
             <section class="settings-field">
-              <label class="settings-label settings-label--checkbox">
-                <input
-                  type="checkbox"
-                  :checked="autoTrimSilenceOnImport"
-                  @change="onAutoTrimSilenceOnImportChange"
-                />
-                {{ t('settings.autoTrimSilenceOnImport') }}
-              </label>
-              <p class="settings-help">{{ t('settings.autoTrimSilenceOnImportHelp') }}</p>
-            </section>
-
-            <section class="settings-field">
-              <label class="settings-label settings-label--checkbox">
-                <input
-                  type="checkbox"
-                  :checked="autoMatchLoudnessOnImport"
-                  @change="onAutoMatchLoudnessOnImportChange"
-                />
-                {{ t('settings.autoMatchLoudnessOnImport') }}
-              </label>
-              <p class="settings-help">{{ t('settings.autoMatchLoudnessOnImportHelp') }}</p>
-            </section>
-
-            <section class="settings-field">
-              <label class="settings-label settings-label--checkbox">
-                <input
-                  type="checkbox"
-                  :checked="autoReduceTruePeaksOnImport"
-                  @change="onAutoReduceTruePeaksOnImportChange"
-                />
-                {{ t('settings.autoReduceTruePeaksOnImport') }}
-              </label>
-              <p class="settings-help">{{ t('settings.autoReduceTruePeaksOnImportHelp') }}</p>
+              <p class="settings-help">{{ t('importAudio.preserveAudio') }}</p>
             </section>
 
             <!-- Disable true-peak limiter -->
@@ -682,6 +649,16 @@
                 {{ voStatus.playbackError.message }}
               </p>
               <p class="settings-help">{{ t('settings.videoOutputMachineNote') }}</p>
+              <button
+                type="button"
+                class="modal-btn"
+                :disabled="!voStatus?.open || voStatus.restarting"
+                @click="onVideoOutputRestart"
+              >{{ t('settings.videoOutputRestart') }}</button>
+              <button type="button" class="modal-btn" @click="onVideoOutputCopyDiagnostics">
+                {{ t('settings.videoOutputCopyDiagnostics') }}
+              </button>
+              <p v-if="voDiagnosticsCopied" class="settings-help" role="status">{{ t('settings.videoOutputDiagnosticsCopied') }}</p>
             </section>
           </template>
 
@@ -840,7 +817,7 @@ const devices = computed(() => server.devices ?? []);
 
 // Tabs mirror the Properties panel's tab styling. Grouping:
 //  - audio    : device routing + loudness target
-//  - playback : transitions, auto-cue, stop-all fade, processing toggles
+//  - playback : transitions, auto-cue, stop-all fade, limiter and warnings
 //  - ui       : metering + list behaviour
 // help/about are informational tabs, not project settings — nothing in
 // them patches the document.
@@ -866,16 +843,13 @@ const tabs = computed<SettingsTab[]>(() => [
 
 // The settings live on the project document; we read them from there and
 // patch via the server endpoint.
-const audioDeviceId          = computed(() => (currentProject.value as any)?.settings?.defaultOutputDevice || '');
+const audioDeviceId = computed(() => {
+  const selected = (currentProject.value as any)?.settings?.defaultOutputDevice || '';
+  return devices.value.find(device => device.id === selected)?.display_name ?? selected;
+});
 const previewDeviceId        = computed(() => (currentProject.value as any)?.settings?.previewDevice || '');
 const ltcDeviceId            = computed(() => (currentProject.value as any)?.settings?.ltcDevice || '');
 const outputTarget           = computed(() => (currentProject.value as any)?.settings?.outputTarget || 'ebu-r128');
-const autoTrimSilenceOnImport = computed(() =>
-  (currentProject.value as any)?.settings?.autoTrimSilenceOnImport === true);
-const autoMatchLoudnessOnImport = computed(() =>
-  (currentProject.value as any)?.settings?.autoMatchLoudnessOnImport === true);
-const autoReduceTruePeaksOnImport = computed(() =>
-  (currentProject.value as any)?.settings?.autoReduceTruePeaksOnImport !== false);
 const cycleTrackColors = computed(() =>
   (currentProject.value as any)?.settings?.cycleTrackColors !== false);
 const disableLimiter           = computed(() => !!(currentProject.value as any)?.settings?.disableLimiter);
@@ -924,6 +898,7 @@ watch(() => props.open, async (v) => {
 // status; the onStatus push keeps this panel live while it is open.
 // ---------------------------------------------------------------------------
 const voStatus = ref<VideoOutputStatus | null>(null);
+const voDiagnosticsCopied = ref(false);
 const voTestCardConfig = ref<TestCardConfig>(createTestCardConfig());
 
 const voEnabled  = computed(() => voStatus.value?.enabled === true);
@@ -984,6 +959,25 @@ async function onVideoOutputDisplayChange(event: Event) {
   } catch (error) {
     settingsError.value = describeSettingsError(error);
   }
+}
+
+async function onVideoOutputRestart() {
+  const api = window.electronAPI?.videoOutput;
+  if (!api) return;
+  settingsError.value = '';
+  try { receiveVideoOutputStatus(await api.restart()); }
+  catch (error) { settingsError.value = describeSettingsError(error); }
+}
+
+async function onVideoOutputCopyDiagnostics() {
+  const api = window.electronAPI?.videoOutput;
+  if (!api) return;
+  voDiagnosticsCopied.value = false;
+  settingsError.value = '';
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(await api.diagnostics(), null, 2));
+    voDiagnosticsCopied.value = true;
+  } catch (error) { settingsError.value = describeSettingsError(error); }
 }
 
 async function onVideoOutputIdentifyDisplays() {
@@ -1106,6 +1100,7 @@ function applyPatch(patch: Record<string, any>): Promise<PatchResult> {
     if (!project || currentProject.value !== project) return 'saved';
 
     const settings = (project.settings ?? {});
+    const outputEdit = ['defaultOutputDevice', 'previewDevice', 'ltcDevice'].some(key => key in patch);
     const previousSettings = new Map<string, PreviousSetting>();
     settingsError.value = '';
     for (const key of Object.keys(patch)) {
@@ -1114,7 +1109,7 @@ function applyPatch(patch: Record<string, any>): Promise<PatchResult> {
         value: settings[key],
       });
     }
-    project.settings = { ...settings, ...patch };
+    if (!outputEdit) project.settings = { ...settings, ...patch };
 
     try {
       await server.patchSettings(patch);
@@ -1122,12 +1117,14 @@ function applyPatch(patch: Record<string, any>): Promise<PatchResult> {
       console.warn('[ProjectSettings] patch failed:', error);
       if (currentProject.value !== project) return 'saved';
 
-      const restored = { ...(project.settings ?? {}) };
-      for (const [key, previous] of previousSettings) {
-        if (previous.exists) restored[key] = previous.value;
-        else delete restored[key];
+      if (!outputEdit) {
+        const restored = { ...(project.settings ?? {}) };
+        for (const [key, previous] of previousSettings) {
+          if (previous.exists) restored[key] = previous.value;
+          else delete restored[key];
+        }
+        project.settings = restored;
       }
-      project.settings = restored;
       settingsError.value = describeSettingsError(error);
       return 'failed';
     }
@@ -1135,6 +1132,13 @@ function applyPatch(patch: Record<string, any>): Promise<PatchResult> {
     // The server accepted this project's live change. Never save whichever
     // project happens to become current while that acknowledgement is pending.
     if (currentProject.value !== project) return 'saved';
+    if (outputEdit) {
+      const applied = { ...(project.settings ?? {}) };
+      for (const [key, previous] of previousSettings) {
+        if (applied[key] === previous.value) applied[key] = patch[key];
+      }
+      project.settings = applied;
+    }
     try {
       const saved = await saveProject();
       if (currentProject.value !== project) return 'saved';
@@ -1227,15 +1231,21 @@ function removeCountdownBand(index: number) {
 }
 
 async function onAudioDeviceChange(e: Event) {
-  const v = (e.target as HTMLSelectElement).value;
+  const input = e.target as HTMLSelectElement;
+  const v = input.value;
+  input.value = audioDeviceId.value;
   await applyPatch({ defaultOutputDevice: v || null });
 }
 async function onPreviewDeviceChange(e: Event) {
-  const v = (e.target as HTMLSelectElement).value;
+  const input = e.target as HTMLSelectElement;
+  const v = input.value;
+  input.value = previewDeviceId.value;
   await applyPatch({ previewDevice: v || null });
 }
 async function onLtcDeviceChange(e: Event) {
-  const v = (e.target as HTMLSelectElement).value;
+  const input = e.target as HTMLSelectElement;
+  const v = input.value;
+  input.value = ltcDeviceId.value;
   await applyPatch({ ltcDevice: v || null });
 }
 async function onOutputTargetChange(e: Event) {
@@ -1249,15 +1259,6 @@ async function onMeterModeChange(e: Event) {
 async function onMeterBallisticsChange(e: Event) {
   const v = (e.target as HTMLSelectElement).value;
   await applyPatch({ meterBallistics: v });
-}
-async function onAutoTrimSilenceOnImportChange(e: Event) {
-  await applyPatch({ autoTrimSilenceOnImport: (e.target as HTMLInputElement).checked });
-}
-async function onAutoMatchLoudnessOnImportChange(e: Event) {
-  await applyPatch({ autoMatchLoudnessOnImport: (e.target as HTMLInputElement).checked });
-}
-async function onAutoReduceTruePeaksOnImportChange(e: Event) {
-  await applyPatch({ autoReduceTruePeaksOnImport: (e.target as HTMLInputElement).checked });
 }
 async function onCycleTrackColorsChange(e: Event) {
   await applyPatch({ cycleTrackColors: (e.target as HTMLInputElement).checked });

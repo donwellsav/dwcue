@@ -8,6 +8,7 @@
       <!-- Import / add-group are edit actions — hidden in Show Mode. -->
       <div v-if="!showMode" class="playlist-actions">
         <Btn icon="audio_file" :text="t('playlist.importAudio')" :disabled="!currentProject" @click="handleImport" />
+        <Btn v-if="importReviewAvailable" :text="t('importAudio.resultsTitle')" @click="handleImport" />
         <Btn v-if="canOnlineImport" icon="youtube_activity" :text="t('youtube.importFromYouTube')" @click="showYouTubeModal = true" />
         <Btn v-if="canOnlineImport" icon="library_music" :text="t('spotifyImport.button')" @click="showSpotifyModal = true" />
         <Btn icon="folder" :text="t('playlist.addGroup')" :disabled="!currentProject" @click="handleAddGroup" />
@@ -89,13 +90,7 @@ import {
   transitionDefaultsForImport,
 } from '~/types/project';
 import { useLiveplayServer } from '~/composables/useLiveplayServer';
-import { useOutputTarget } from '~/composables/useOutputTarget';
-import {
-  applyLoudnessMatch,
-  applyTruePeakCeiling,
-  buildWaveformFromChannels,
-  trimSilence,
-} from '~/utils/audio';
+import { buildWaveformFromChannels } from '~/utils/audio';
 import { canonicalSpotifyMediaReference } from '~/utils/spotifyImport';
 import { cloneAsPlaylistItem } from '~/utils/oneShots';
 import { projectPathInFolder } from '~/utils/projectFileFormats';
@@ -112,7 +107,6 @@ const {
 const { t } = useLocalization();
 const theme = useState('theme', () => 'dark');
 const isDark = computed(() => theme.value === 'dark');
-const { levels: outputTargetLevels } = useOutputTarget();
 const { activeCues, nextItemOverrideUuid } = useAudioEngine();
 const {
   uiMode,
@@ -142,8 +136,14 @@ const showSpotifyModal = ref(false);
 const showImportModal  = ref(false);
 const audioImportBusy = ref(false);
 const audioImportResult = ref<ImportBatchResult | null>(null);
+const importReviewAvailable = computed(() => audioImportResult.value?.results.some(
+  result => result.status === 'warning' || result.status === 'failed'));
 const audioImportProgress = ref<{ current: number; total: number; name: string } | null>(null);
 let audioImportAbortController: AbortController | null = null;
+watch([projectEpoch, () => server.serverUrl, () => server.projectSessionId], () => {
+  audioImportAbortController?.abort();
+  audioImportResult.value = null;
+});
 
 // ---------------------------------------------------------------------------
 // Progressive mount.
@@ -331,7 +331,7 @@ const scanForMissingWaveforms = async () => {
     for (const item of all) {
       if (item.type !== 'audio') continue;
       const ai = item as AudioItem;
-      if (ai.waveform?.analysis_version === 1) continue;
+      if (ai.waveform?.analysis_version === 2) continue;
 
       // Prefer the explicit server-absolute path written by the new import
       // flow. Fall back to project-folder + relative mediaPath for items
@@ -425,7 +425,6 @@ onUnmounted(() => {
 
 const handleImport = () => {
   if (!currentProject.value) return;
-  audioImportResult.value = null;
   showImportModal.value = true;
 };
 
@@ -438,17 +437,19 @@ const onImportPick = async (
   // The modal now batches selections; accept either a single path (legacy) or
   // an array. Import sequentially so each item gets a stable, ordered index.
   const paths = Array.isArray(serverPaths) ? serverPaths : [serverPaths];
-  audioImportAbortController?.abort();
-  audioImportAbortController = new AbortController();
+  if (audioImportBusy.value) return;
+  const controller = new AbortController();
+  audioImportAbortController = controller;
   audioImportProgress.value = null;
   audioImportBusy.value = true;
   try {
-    audioImportResult.value = await importFromServerPaths(paths, audioImportAbortController.signal, {
+    const result = await importFromServerPaths(paths, controller.signal, {
       ...options,
       onProgress: (current, total, name) => {
         audioImportProgress.value = { current, total, name };
       },
     });
+    if (!controller.signal.aborted) audioImportResult.value = result;
   } finally {
     audioImportBusy.value = false;
     audioImportProgress.value = null;
@@ -461,7 +462,6 @@ const cancelAudioImport = () => audioImportAbortController?.abort();
 const closeAudioImport = () => {
   if (audioImportBusy.value) return;
   showImportModal.value = false;
-  audioImportResult.value = null;
 };
 
 interface PreparedImport {
@@ -514,26 +514,45 @@ const buildVerifiedAudioCue = async (
   displayName = '',
   signal?: AbortSignal,
 ): Promise<{ cue: AudioItem; details: NonNullable<ImportFileResult['details']>; warning?: string }> => {
-  const [metadata, serverWaveform] = await Promise.all([
+  const serverUrl = server.serverUrl;
+  const session = server.projectSessionId;
+  const [metadata, analysis] = await Promise.all([
     server.fetchMetadata(serverPath, signal),
-    server.fetchWaveformByPath(serverPath),
+    server.fetchWaveformByPath(serverPath, 1000, undefined, signal).catch(() => null),
   ]);
-  if (signal?.aborted) throw new Error(t('spotifyImport.cancelled'));
+  const checkShow = () => {
+    if (signal?.aborted || server.serverUrl !== serverUrl || server.projectSessionId !== session)
+      throw new Error(t('spotifyImport.cancelled'));
+  };
+  checkShow();
+  if (metadata?.valid !== true) throw new Error(t('importAudio.decodeFailed'));
+  const revision = metadata.file_revision;
+  if (revision && analysis?.file_revision && revision !== analysis.file_revision)
+    throw new Error(t('importAudio.mediaChanged'));
 
   const fileName = serverPath.split(/[\\/]/).pop() || 'audio';
   const metadataDuration = Number((metadata as any)?.duration_ms);
   const durationMs = Number.isFinite(metadataDuration) && metadataDuration > 0
     ? metadataDuration
-    : Number(serverWaveform.duration_ms);
-  const duration = durationMs / 1000;
-  const waveform = buildWaveformFromChannels(
-    serverWaveform.channels,
+    : Number(analysis?.duration_ms);
+  let duration = durationMs / 1000;
+  const waveform = analysis && buildWaveformFromChannels(
+    analysis.channels,
     duration,
-    serverWaveform,
+    analysis,
   );
-  if ((metadata as any)?.valid !== true || !Number.isFinite(duration) || duration <= 0 || !waveform) {
-    throw new Error(t('importAudio.decodeFailed'));
+  let sampleRate = Number(metadata.sample_rate) || analysis?.sample_rate || 0;
+  let channels = Number(metadata.channels) || analysis?.source_channels || 0;
+  if (!waveform) {
+    if (typeof revision !== 'string' || !revision) throw new Error(t('importAudio.decodeFailed'));
+    const verified = await server.verifyAudioFile(serverPath, revision, signal);
+    checkShow();
+    if (!verified.verified || verified.file_revision !== revision) throw new Error(t('importAudio.decodeFailed'));
+    duration = verified.duration_ms / 1000;
+    sampleRate = verified.sample_rate;
+    channels = verified.source_channels;
   }
+  if (!Number.isFinite(duration) || duration <= 0) throw new Error(t('importAudio.decodeFailed'));
 
   const artist = typeof (metadata as any)?.artist === 'string'
     ? (metadata as any).artist.trim()
@@ -556,48 +575,28 @@ const buildVerifiedAudioCue = async (
     mediaPath: `media/${fileName}`,
     mediaServerPath: serverPath,
     waveformPath: `waveforms/${uuid}.json`,
-    waveform,
+    ...(waveform ? { waveform } : {}),
     outPoint: duration,
     duration,
     // Server-probed video stream → this cue also drives the Video Output.
     ...(metadata as any)?.has_video === true ? { hasVideo: true as const } : {},
   } as AudioItem;
 
-  const trimmed = settings?.autoTrimSilenceOnImport === true ? trimSilence(cue) : false;
-  const matchLoudness = settings?.autoMatchLoudnessOnImport === true;
-  const reduceTruePeaks = settings?.autoReduceTruePeaksOnImport !== false;
-  const analysis = trimmed && (matchLoudness || reduceTruePeaks)
-    ? await server.fetchWaveformByPath(serverPath, 1000, {
-        startMs: cue.inPoint * 1000,
-        endMs: cue.outPoint * 1000,
-      })
-    : serverWaveform;
-  if (matchLoudness) {
-    applyLoudnessMatch(
-      cue,
-      analysis,
-      outputTargetLevels.value.loudnessTargetLufs,
-      outputTargetLevels.value.limiterCeilingDb,
-    );
-  }
-  if (reduceTruePeaks) {
-    applyTruePeakCeiling(cue, analysis, outputTargetLevels.value.limiterCeilingDb);
-  }
   anchorStartNextMarker(cue);
 
-  const sourceTruePeak = Number(serverWaveform.true_peak_dbtp);
+  const sourceTruePeak = waveform ? analysis?.true_peak_dbtp : null;
   return {
     cue,
     details: {
       fileType: fileName.includes('.') ? fileName.split('.').pop()!.toUpperCase() : t('importAudio.audioFile'),
       duration,
-      sampleRate: Number((metadata as any)?.sample_rate) || serverWaveform.sample_rate || 0,
-      channels: Number((metadata as any)?.channels) || serverWaveform.source_channels || 0,
+      sampleRate,
+      channels,
       bitrateKbps: Number((metadata as any)?.bitrate_kbps) || 0,
       truePeakDbtp: Number.isFinite(sourceTruePeak) ? sourceTruePeak : null,
     },
-    warning: !reduceTruePeaks && Number.isFinite(sourceTruePeak) && sourceTruePeak > -0.1
-      ? t('importAudio.truePeakWarning', { peak: sourceTruePeak.toFixed(1) })
+    warning: !waveform ? t('importAudio.analysisUnavailable') : Number.isFinite(sourceTruePeak) && sourceTruePeak! > 0
+      ? t('importAudio.truePeakWarning', { peak: sourceTruePeak!.toFixed(1) })
       : undefined,
   };
 };
@@ -673,12 +672,6 @@ const importSpotifyTemplate = async (
       ? { meterMode: project.settings.meterMode }
       : {}),
     defaultTransitionMode: project.settings?.defaultTransitionMode,
-    autoTrimSilenceOnImport:
-      project.settings?.autoTrimSilenceOnImport === true,
-    autoMatchLoudnessOnImport:
-      project.settings?.autoMatchLoudnessOnImport === true,
-    autoReduceTruePeaksOnImport:
-      project.settings?.autoReduceTruePeaksOnImport !== false,
     cycleTrackColors:
       project.settings?.cycleTrackColors !== false,
   };
@@ -834,6 +827,9 @@ const importSpotifyTemplate = async (
     if (currentProject.value !== project || projectEpoch.value !== epoch) {
       throw new Error(t('spotifyImport.cancelled'));
     }
+    for (const cue of activeCues) {
+      if (!cue.waveform && cue.mediaServerPath) queueWaveformGeneration(cue.mediaServerPath, cue.uuid);
+    }
     return {
       success: !verificationResults.some(result => result.status === 'failed'),
       imported: verificationResults.filter(result => result.status !== 'failed').length,
@@ -888,7 +884,9 @@ const prepareImportFromServerPath = async (
 ): Promise<{ prepared?: PreparedImport; result: ImportFileResult }> => {
   const fallbackName = displayName.trim() ||
     (serverPath.split(/[\\/]/).pop() || serverPath).replace(/\.[^/.]+$/, '');
-  if (!currentProject.value) {
+  const project = currentProject.value;
+  const epoch = projectEpoch.value;
+  if (!project) {
     return {
       result: {
         sourcePath: serverPath,
@@ -900,13 +898,6 @@ const prepareImportFromServerPath = async (
   }
   try {
     if (signal?.aborted) throw new Error(t('spotifyImport.cancelled'));
-    const verified = await buildVerifiedAudioCue(
-      serverPath,
-      currentProject.value.settings,
-      colorIndex,
-      displayName,
-      signal,
-    );
     let destPath = serverPath;
     let duplicateReused = false;
     if (fileMode === 'copy') {
@@ -923,6 +914,13 @@ const prepareImportFromServerPath = async (
       }
       destPath = copied.destPath;
       duplicateReused = copied.duplicate && copied.reused;
+    }
+    if (signal?.aborted || currentProject.value !== project || projectEpoch.value !== epoch) {
+      throw new Error(t('spotifyImport.cancelled'));
+    }
+    const verified = await buildVerifiedAudioCue(destPath, project.settings, colorIndex, displayName, signal);
+    if (signal?.aborted || currentProject.value !== project || projectEpoch.value !== epoch) {
+      throw new Error(t('spotifyImport.cancelled'));
     }
     const fileName = destPath.split(/[\\/]/).pop() || verified.cue.mediaFileName;
     verified.cue.mediaFileName = fileName;
@@ -1069,9 +1067,7 @@ const importFromServerPaths = async (
   if (currentProject.value === project && projectEpoch.value === epoch) {
     for (const entry of prepared) {
       results[entry.resultIndex]!.itemUuid = entry.audioItem.uuid;
-      queueWaveformGeneration(entry.mediaServerPath, entry.audioItem.uuid, (e) => {
-        console.warn(`[waveform] generation request failed for ${entry.audioItem.displayName}:`, e);
-      });
+      if (!entry.audioItem.waveform) queueWaveformGeneration(entry.mediaServerPath, entry.audioItem.uuid);
     }
   }
   const failed = results.some(result => result.status === 'failed');
@@ -1181,6 +1177,9 @@ const handleDrop = async (e: DragEvent) => {
 
   const files = Array.from(e.dataTransfer.files);
   if (files.length === 0) return;
+  const project = currentProject.value;
+  const epoch = projectEpoch.value;
+  const isCurrent = () => !!project && currentProject.value === project && projectEpoch.value === epoch && !showMode.value;
 
   // Files dropped from the OS must be uploaded to (or copied into) the
   // server's media root and registered with the project — the server owns
@@ -1189,8 +1188,21 @@ const handleDrop = async (e: DragEvent) => {
   // engine could never create a cue for it ("PLAY: ?" in the server log).
   const serverPaths: string[] = [];
   for (const file of files) {
-    const serverPath = await server.resolveDroppedFileToMedia(file);
-    if (serverPath) serverPaths.push(serverPath);
+    if (!isCurrent()) return;
+    try {
+      const serverPath = await server.resolveDroppedFileToMedia(file);
+      if (!isCurrent()) return;
+      if (serverPath) serverPaths.push(serverPath);
+    } catch (error) {
+      if (!isCurrent()) return;
+      const reason = error instanceof Error ? error.message : String(error);
+      audioImportResult.value = {
+        success: false, imported: 0, error: reason,
+        results: [{ sourcePath: file.name, displayName: file.name, status: 'failed', reason }],
+      };
+      showImportModal.value = true;
+      return;
+    }
   }
   await importFromServerPaths(serverPaths);
 };

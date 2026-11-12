@@ -6,10 +6,12 @@
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <ctime>
-#include <fstream>
+#include <functional>
 #include <limits>
+#include <stdexcept>
 #include <cctype>
 #include <unordered_map>
 #include <unordered_set>
@@ -100,21 +102,6 @@ int remove_duplicate_items(json& items,
     return removed;
 }
 
-fs::path effective_parent(const fs::path& path) {
-    return path.has_parent_path() ? path.parent_path() : fs::current_path();
-}
-
-bool path_is_occupied(const fs::path& path, std::error_code& error) {
-    error.clear();
-    const auto status = fs::symlink_status(path, error);
-    if (error == std::errc::no_such_file_or_directory) {
-        error.clear();
-        return false;
-    }
-    if (error) return false;
-    return status.type() != fs::file_type::not_found;
-}
-
 } // namespace
 
 bool is_native_project(const fs::path& path) {
@@ -127,16 +114,6 @@ bool is_legacy_project(const fs::path& path) {
 
 bool is_native_archive(const fs::path& path) {
     return lower_extension(path) == kNativeArchiveExtension;
-}
-
-bool is_legacy_archive(const fs::path& path) {
-    return lower_extension(path) == kLegacyArchiveExtension;
-}
-
-std::optional<ArchiveKind> archive_kind(const fs::path& trusted_filename) {
-    if (is_native_archive(trusted_filename)) return ArchiveKind::Native;
-    if (is_legacy_archive(trusted_filename)) return ArchiveKind::Legacy;
-    return std::nullopt;
 }
 
 bool is_client_document(const json& document) {
@@ -221,9 +198,53 @@ bool prepare_client_document(
         prepared.document["folderPath"] =
             util::path_to_utf8(*folder_override);
     }
-    prepared.cart_migrated =
-        migrate_legacy_cart_to_one_shots(prepared.document);
-    prepared.repair = repair_client_document(prepared.document);
+    for (const char* field : {"name", "folderPath"}) {
+        if (prepared.document.contains(field) &&
+            !prepared.document[field].is_string()) {
+            error = std::string{field} + " must be a string";
+            return false;
+        }
+    }
+    try {
+        std::function<void(const json&)> validate_items = [&](const json& items) {
+            for (const auto& item : items.get_ref<const json::array_t&>()) {
+                (void)item.value("uuid", std::string{});
+                const auto type = item.value("type", std::string{});
+                if (type == "audio") {
+                    (void)item.value("ltcEnabled", false);
+                    (void)item.value("ltcStartTimecode", std::string{});
+                    const auto fps = item.value("ltcFrameRate", 4.0);
+                    if (!std::isfinite(fps) || fps < std::numeric_limits<int>::lowest() ||
+                        fps > std::numeric_limits<int>::max())
+                        throw std::invalid_argument("ltcFrameRate exceeds its integer range");
+                }
+                for (const char* behavior : {"startBehavior", "endBehavior"}) {
+                    if (item.contains(behavior) && item[behavior].is_object())
+                        (void)item[behavior].value("action", std::string{});
+                }
+                if (type == "group" && item.contains("children")) validate_items(item["children"]);
+            }
+        };
+        if (prepared.document.contains("items")) validate_items(prepared.document["items"]);
+        if (prepared.document.contains("cartOnlyItems") && prepared.document["cartOnlyItems"].is_array())
+            validate_items(prepared.document["cartOnlyItems"]);
+        if (prepared.document.contains("settings") && prepared.document["settings"].is_object()) {
+            const auto& settings = prepared.document["settings"];
+            (void)settings.value("outputTarget", std::string{"ebu-r128"});
+            (void)settings.value("disableLimiter", false);
+            const auto preset = settings.value("meterBallistics", std::string{"digital-ppm"});
+            if (preset == "custom" && settings.contains("meterBallisticsCustom") &&
+                settings["meterBallisticsCustom"].is_object()) {
+                for (const char* key : {"attackMs", "releaseMs", "rmsWindowMs"})
+                    (void)settings["meterBallisticsCustom"].value(key, 1.0);
+            }
+        }
+        prepared.cart_migrated = migrate_legacy_cart_to_one_shots(prepared.document);
+        prepared.repair = repair_client_document(prepared.document);
+    } catch (const std::exception& ex) {
+        error = ex.what();
+        return false;
+    }
 
     if (!prepared.document.contains("settings") ||
         !prepared.document["settings"].is_object()) {
@@ -244,116 +265,6 @@ bool prepare_client_document(
     }
     error.clear();
     return true;
-}
-
-bool read_legacy_project(const fs::path& source,
-                         PreparedDocument& prepared,
-                         std::string& error) {
-    if (!is_legacy_project(source)) {
-        error = "legacy import requires a .liveplay project";
-        return false;
-    }
-
-    std::error_code status_error;
-    const auto status = fs::symlink_status(source, status_error);
-    if (status_error || !fs::is_regular_file(status)) {
-        error = "legacy project does not exist or is not a regular file";
-        return false;
-    }
-
-    try {
-        std::ifstream input{source, std::ios::binary};
-        if (!input) {
-            error = "cannot open legacy project";
-            return false;
-        }
-        json document;
-        input >> document;
-        if (!input.good() && !input.eof()) {
-            error = "cannot read legacy project";
-            return false;
-        }
-        return prepare_client_document(
-            document, effective_parent(source), prepared, error);
-    } catch (const json::exception& exception) {
-        error = std::string{"invalid legacy project JSON: "} + exception.what();
-        return false;
-    } catch (const std::exception& exception) {
-        error = exception.what();
-        return false;
-    }
-}
-
-bool valid_legacy_destination(const fs::path& source,
-                              const fs::path& destination,
-                              std::string& error) {
-    if (!is_legacy_project(source)) {
-        error = "legacy import requires a .liveplay project";
-        return false;
-    }
-    if (!is_native_project(destination)) {
-        error = "destinationPath must use the .dwcue extension";
-        return false;
-    }
-
-    std::error_code path_error;
-    const fs::path source_parent =
-        fs::canonical(effective_parent(source), path_error);
-    if (path_error) {
-        error = "cannot resolve legacy project parent";
-        return false;
-    }
-    const fs::path destination_parent =
-        fs::weakly_canonical(effective_parent(destination), path_error);
-    if (path_error || destination_parent != source_parent) {
-        error = "destinationPath must be in the same folder as the legacy project";
-        return false;
-    }
-
-    if (path_is_occupied(destination, path_error)) {
-        error = "destinationPath already exists";
-        return false;
-    }
-    if (path_error) {
-        error = "cannot inspect destinationPath";
-        return false;
-    }
-    error.clear();
-    return true;
-}
-
-std::optional<fs::path> unique_legacy_destination(
-    const fs::path& source, std::string& error) {
-    if (!is_legacy_project(source)) {
-        error = "legacy import requires a .liveplay project";
-        return std::nullopt;
-    }
-
-    const fs::path parent = effective_parent(source);
-    const auto make_candidate = [&](unsigned number) {
-        fs::path name = source.stem();
-        if (number > 1) {
-            name += util::utf8_to_path(
-                " (" + std::to_string(number) + ")");
-        }
-        name += util::utf8_to_path(std::string{kNativeProjectExtension});
-        return parent / name;
-    };
-
-    std::error_code path_error;
-    for (unsigned number = 1; number < 100'000; ++number) {
-        fs::path candidate = make_candidate(number);
-        if (!path_is_occupied(candidate, path_error)) {
-            if (path_error) {
-                error = "cannot inspect legacy import destination";
-                return std::nullopt;
-            }
-            error.clear();
-            return candidate;
-        }
-    }
-    error = "could not choose an unused .dwcue sibling";
-    return std::nullopt;
 }
 
 bool write_new_canonical_project(const fs::path& destination,

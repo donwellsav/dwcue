@@ -1,10 +1,10 @@
 <template>
   <transition name="fade">
     <div v-if="visible" class="srm-overlay" @keydown.stop>
-      <div class="srm-dialog">
+      <div class="srm-dialog" role="dialog" aria-modal="true" aria-labelledby="session-recovery-title">
         <div class="srm-header">
           <span class="material-symbols-rounded srm-icon">restart_alt</span>
-          <h2>
+          <h2 id="session-recovery-title">
             {{ t(projectChanged
               ? 'sessionRecovery.projectChangedTitle'
               : 'sessionRecovery.title') }}
@@ -16,12 +16,22 @@
             : t('sessionRecovery.message') }}
         </p>
         <p class="srm-project">{{ currentProject?.name }}</p>
+        <Btn
+          class="srm-stop-all"
+          type="button"
+          icon="stop_circle"
+          :text="t('controls.stopAll')"
+          @click="server.stopAll()"
+        />
+        <p v-if="server.stopAllStatus" class="srm-body" role="status">
+          {{ t(`connectionLost.stopAllStatus.${server.stopAllStatus}`) }}
+        </p>
 
         <div class="srm-actions">
           <button
             class="srm-btn primary"
             :disabled="recovering"
-            @click="projectChanged ? onJoinServer() : onResume()"
+            @click="onRecover(projectChanged ? joinServerSession : resumeSession)"
           >
             <span class="material-symbols-rounded" :class="{ spin: recovering }">
               {{ recovering ? 'progress_activity' : (projectChanged ? 'login' : 'restore') }}
@@ -35,7 +45,7 @@
           <button
             class="srm-btn"
             :disabled="recovering"
-            @click="projectChanged ? onResume() : onFresh()"
+            @click="projectChanged ? onRecover(resumeSession) : onFresh()"
           >
             <span class="material-symbols-rounded">
               {{ projectChanged ? 'restore' : 'home' }}
@@ -47,6 +57,7 @@
             </span>
           </button>
         </div>
+        <p v-if="actionFailed" class="srm-error" role="alert">{{ t('sessionRecovery.actionFailed') }}</p>
         <p class="srm-hint">
           {{ projectChanged
             ? t('sessionRecovery.projectChangedHint')
@@ -64,6 +75,7 @@
 // failure: push it back and carry on, or drop it and start over.
 const { t } = useLocalization();
 const { currentProject } = useProject();
+const server = useLiveplayServer();
 const {
   sessionLost,
   projectChanged,
@@ -74,20 +86,22 @@ const {
   joinServerSession,
 } = useConnectionGuard();
 
-const visible = computed(() => sessionLost.value && !!currentProject.value);
+const visible = computed(() => sessionLost.value && !!currentProject.value && !server.connectionLost && !server.showVerification);
+const actionFailed = ref(false);
 
-async function onResume() {
-  const ok = await resumeSession();
-  if (!ok) console.warn('[SessionRecoveryModal] resume failed; leaving prompt open');
+async function onRecover(recover: () => Promise<boolean>) {
+  actionFailed.value = false;
+  try {
+    actionFailed.value = !await recover();
+  } catch (error) {
+    console.warn('[SessionRecoveryModal] recovery failed:', error);
+    actionFailed.value = true;
+  }
 }
 
 async function onFresh() {
+  actionFailed.value = false;
   await startFresh();
-}
-
-async function onJoinServer() {
-  const ok = await joinServerSession();
-  if (!ok) console.warn('[SessionRecoveryModal] server rejoin failed; leaving prompt open');
 }
 </script>
 
@@ -135,6 +149,8 @@ async function onJoinServer() {
   border: 1px solid var(--color-border);
   word-break: break-all;
 }
+.srm-stop-all { width: 100%; }
+.srm-error { color: var(--color-danger); font-size: 13px; }
 .srm-actions {
   display: flex;
   gap: 8px;

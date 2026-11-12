@@ -22,6 +22,7 @@
 //   watch(server.connected, ...);        // react to connection state
 // =====================================================================
 import { reactive, ref, shallowRef, computed } from 'vue';
+import { sameOneShotMutationIdentity, type OneShotMutationIdentity } from '../types/oneShotMutation';
 import type {
   CueId,
   DeviceId,
@@ -50,6 +51,11 @@ export function useLiveplayServer() {
 }
 
 function createClient() {
+  const currentProjectForImport = useState<{ folderPath: string } | null>('currentProject', () => null);
+  const projectPathForImport = useState<string>('useProject.projectFilePath', () => '');
+  const projectSessionId = useState<string>('useProject.serverSessionId', () => '');
+  const sessionLost = useState<boolean>('connectionGuard.sessionLost', () => false);
+  const detachedProjectForImport = useState<OneShotMutationIdentity | null>('oneShots.detachedProjectIdentity', () => null);
   // ---- Server URL config (persisted via localStorage) ---------------
   const defaultUrl = (typeof window !== 'undefined' &&
                       window.localStorage?.getItem('liveplay.serverUrl')) ||
@@ -127,6 +133,14 @@ function createClient() {
   const connected     = ref(false);
   const reconnecting  = ref(false);
   const lastError     = ref<string | null>(null);
+  const stopAllStatus = ref<'pending' | 'confirmed' | 'unconfirmed' | null>(null);
+  const stopAllUnconfirmed = 'Stop All unconfirmed. Check the server connection.';
+  const transportConfirmationMs = 2500;
+  let stopAllRequest = 0;
+  let stopRevision = 0;
+  let unacknowledgedStart = '';
+  let unacknowledgedContinue = '';
+  const awaitingStopRevision = ref(false);
   const cues          = ref<ServerCue[]>([]);
   const mixerChannels = ref<ServerMixerChannel[]>([]);
   const devices       = ref<ServerDeviceInfo[]>([]);
@@ -164,10 +178,8 @@ function createClient() {
     return () => playbackSnapshotSubscribers.delete(cb);
   }
 
-  // Subscribers notified whenever a previously-open connection is restored on
-  // the same endpoint. This is deliberately independent of the modal's grace
-  // period so a fast server restart still triggers project reconciliation.
-  type ReconnectedSubscriber = () => void;
+  // Verify a retained show on every new socket, even within the loss grace period.
+  type ReconnectedSubscriber = (signal: AbortSignal) => void;
   const reconnectedSubscribers = new Set<ReconnectedSubscriber>();
   function onReconnected(cb: ReconnectedSubscriber): () => void {
     reconnectedSubscribers.add(cb);
@@ -188,6 +200,7 @@ function createClient() {
   const pendingCommands = new Map<string, {
     timer: ReturnType<typeof setTimeout>;
     resolve: (ok: boolean) => void;
+    outputWarning?: string;
   }>();
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectDelay = 1500;         // start higher; backs off to 10 s
@@ -205,6 +218,10 @@ function createClient() {
   // reconnect. UI binds to this to show the connection-lost modal and to
   // freeze every control that would otherwise mutate unreachable state.
   const connectionLost = ref(false);
+  const showVerification = ref<'checking' | 'failed' | null>(null);
+  const cueStartsBlocked = computed(() =>
+    connectionLost.value || showVerification.value !== null || sessionLost.value || awaitingStopRevision.value);
+  let socketLifetime: AbortController | null = null;
   // Grace period before we shout about it. A WS bounce that heals inside this
   // window is invisible to the operator; anything longer gets the modal.
   // Time-based rather than attempt-based so the delay is predictable no matter
@@ -271,6 +288,9 @@ function createClient() {
       console.log('[liveplay] connecting to', httpBase.value.replace(/^http/i, 'ws') + '/ws');
       socket = new WebSocket(wsUrl.value);
       ws = socket;
+      stopRevision = 0;
+      unacknowledgedStart = '';
+      unacknowledgedContinue = '';
     } catch (e) {
       lastError.value = String(e);
       // eslint-disable-next-line no-console
@@ -278,23 +298,24 @@ function createClient() {
       scheduleReconnect();
       return;
     }
+    const lifetime = new AbortController();
+    socketLifetime = lifetime;
     socket.onopen = () => {
       if (ws !== socket) return;
+      const shouldProbeAfterReconnect = reconnectProbePending || !!currentProjectForImport.value;
+      reconnectProbePending = false;
+      showVerification.value = currentProjectForImport.value ? 'checking' : null;
       connected.value = true;
       reconnecting.value = false;
       reconnectDelay = 1500;
       lastError.value = null;
+      stopAllStatus.value = null;
       failedReconnectAttempts.value = 0;
       clearConnectionLostTimer();
-      const shouldProbeAfterReconnect = reconnectProbePending;
-      reconnectProbePending = false;
       connectionLost.value = false;
-      // Never fires on the first connection to an endpoint. Every later
-      // transport recovery does fire, including one that beats the modal's
-      // grace period and a managed restart that rotates only the token.
       if (shouldProbeAfterReconnect) {
         for (const cb of reconnectedSubscribers) {
-          try { cb(); } catch (e) { console.warn('[liveplay] reconnect handler threw:', e); }
+          try { cb(lifetime.signal); } catch (e) { console.warn('[liveplay] reconnect handler threw:', e); }
         }
       }
       // Only refresh REST-backed catalogues on the very first connection.
@@ -321,9 +342,12 @@ function createClient() {
 
     socket.onclose = () => {
       if (ws !== socket) return;
+      lifetime.abort();
+      socketLifetime = null;
       ws = null;
       const wasConnected = connected.value;
       connected.value = false;
+      if (wasConnected) stopAllStatus.value = null;
       failPendingCommands('Connection closed before the server confirmed the command.');
       // Count pre-handshake closes — the socket bounced straight to close
       // without an onopen in between. Purely for display in the modal.
@@ -351,6 +375,10 @@ function createClient() {
       let payload: any;
       try { payload = JSON.parse(ev.data); } catch { return; }
       if (!payload || typeof payload !== 'object' || !payload.type) return;
+      if (Number.isSafeInteger(payload.stop_revision)) {
+        stopRevision = Math.max(stopRevision, payload.stop_revision);
+        awaitingStopRevision.value = false;
+      }
 
       switch (payload.type) {
         case 'meters': {
@@ -432,16 +460,24 @@ function createClient() {
           break;
         case 'command_ack': {
           const commandId = typeof payload.command_id === 'string' ? payload.command_id : '';
+          if (commandId === unacknowledgedStart) unacknowledgedStart = '';
+          if (commandId === unacknowledgedContinue) unacknowledgedContinue = '';
           const pending = pendingCommands.get(commandId);
           if (!pending) break;
           clearTimeout(pending.timer);
           pendingCommands.delete(commandId);
           const ok = payload.ok === true;
-          if (!ok) lastError.value = String(payload.error || 'Server rejected the command.');
+          if (!ok) lastError.value = pending.outputWarning ?? String(payload.error || 'Server rejected the command.');
           pending.resolve(ok);
           break;
         }
         case 'playback_error': {
+          if (payload.code === 'output_device_unavailable' && typeof payload.message === 'string') {
+            lastError.value = payload.message;
+            const start = pendingCommands.get(unacknowledgedStart);
+            if (start && payload.item_uuid) start.outputWarning = payload.message;
+            break;
+          }
           if (payload.code === 'sequence_target_invalid' && typeof payload.message === 'string') {
             const target = typeof payload.target_uuid === 'string' && payload.target_uuid
               ? ` (target ${payload.target_uuid})`
@@ -465,6 +501,11 @@ function createClient() {
   }
 
   function disconnect() {
+    socketLifetime?.abort();
+    socketLifetime = null;
+    ++stopAllRequest;
+    stopAllStatus.value = null;
+    awaitingStopRevision.value = false;
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
@@ -483,6 +524,12 @@ function createClient() {
   }
 
   function wsSend(payload: Record<string, unknown>, requireAck = false): Promise<boolean> {
+    const startsCue = payload.type === 'go' || payload.type === 'play' || payload.type === 'resume';
+    const continuesCue = payload.type === 'cue_to_continue';
+    if (((startsCue || continuesCue) && stopAllStatus.value === 'pending') ||
+        (cueStartsBlocked.value && (startsCue || continuesCue || payload.type === 'set_next_item'))) {
+      return Promise.resolve(false);
+    }
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       const state = ws ? ws.readyState : 'no-ws';
       lastError.value = 'Command was not sent because the server is disconnected.';
@@ -498,13 +545,17 @@ function createClient() {
     }
 
     const commandId = crypto.randomUUID();
-    const body = JSON.stringify({ ...payload, command_id: commandId });
+    if (startsCue) unacknowledgedStart = commandId;
+    if (continuesCue) unacknowledgedContinue = commandId;
+    const body = JSON.stringify({
+      ...payload, command_id: commandId, ...(startsCue || continuesCue ? { stop_revision: stopRevision } : {}),
+    });
     return new Promise<boolean>((resolve) => {
       const timer = setTimeout(() => {
         pendingCommands.delete(commandId);
         lastError.value = `The server did not confirm the ${String(payload.type || 'transport')} command.`;
         resolve(false);
-      }, 2500);
+      }, transportConfirmationMs);
       pendingCommands.set(commandId, { timer, resolve });
       ws!.send(body);
     });
@@ -520,10 +571,40 @@ function createClient() {
   // Omit fadeMs to let the server apply the project-wide Stop All fade
   // (settings.stopAllFadeMs, default 1000 ms). Pass a number (incl. 0 for an
   // instant panic) to override it for this call.
-  function stopAll(fadeMs?: number) {
-    return wsSend(fadeMs === undefined
-      ? { type: 'stop_all' }
-      : { type: 'stop_all', fade_ms: fadeMs }, true);
+  async function stopAll(fadeMs?: number): Promise<boolean> {
+    const request = ++stopAllRequest;
+    const socket = ws;
+    stopAllStatus.value = 'pending';
+    let confirmed = false;
+    let replaceSocket = false;
+    try {
+      // The socket can be open while an earlier GO is holding its handler.
+      const result = await rest<{ ok: boolean; stop_revision?: number }>('/api/transport/stop_all', {
+        method: 'POST',
+        body: JSON.stringify(fadeMs === undefined ? {} : { fade_ms: fadeMs }),
+        signal: AbortSignal.timeout(transportConfirmationMs),
+      });
+      confirmed = result?.ok === true;
+      if (confirmed && ws === socket && typeof result.stop_revision === 'number' &&
+          Number.isSafeInteger(result.stop_revision)) {
+        stopRevision = Math.max(stopRevision, result.stop_revision);
+        replaceSocket = !!(unacknowledgedStart || unacknowledgedContinue);
+      }
+    } catch (error) {
+      console.warn('[liveplay] Stop All confirmation failed:', error);
+    }
+    if (request === stopAllRequest) {
+      if (replaceSocket) {
+        // The canceled command can still occupy this socket until native work returns.
+        failPendingCommands('Stop All canceled the pending cue command.');
+        forceReconnect();
+        awaitingStopRevision.value = true;
+      }
+      stopAllStatus.value = confirmed ? 'confirmed' : 'unconfirmed';
+      if (!confirmed) lastError.value = stopAllUnconfirmed;
+      else if (lastError.value === stopAllUnconfirmed) lastError.value = null;
+    }
+    return confirmed;
   }
   function setGainDb(cue: CueId, db: number)
                                         { wsSend({ type: 'gain', cue_id: cue, db }); }
@@ -540,6 +621,17 @@ function createClient() {
     let res: Response;
     try {
       const headers = new Headers(init?.headers);
+      const resource = path.split('?')[0];
+      const projectScoped = resource.startsWith('/api/project/items') || resource.startsWith('/api/project/cart')
+        || ['/api/project/save', '/api/project/document', '/api/project/theme', '/api/project/settings',
+          '/api/project/repair', '/api/project/close', '/api/project/load',
+          '/api/waveform_generate'].includes(resource);
+      if (projectScoped) {
+        const session = headers.get('X-DWCUE-Project-Session') ?? projectSessionId.value;
+        if (!session && (currentProjectForImport.value || headers.has('X-DWCUE-Project-Session')))
+          throw new Error('Project session is unavailable; reconnect before editing this show');
+        if (session) headers.set('X-DWCUE-Project-Session', session);
+      }
       if (init?.body != null && !headers.has('Content-Type')) {
         headers.set('Content-Type', 'application/json');
       }
@@ -595,7 +687,7 @@ function createClient() {
   // Lightweight header — everything except the items tree. Used by the
   // "open project" flow so the workspace shell paints before the items
   // array has even started downloading.
-  async function fetchProjectHeader() {
+  async function fetchProjectHeader(signal?: AbortSignal) {
     return rest<{
       name: string;
       version: string;
@@ -610,40 +702,81 @@ function createClient() {
       cartOnlyItems: any[];
       itemCount: number;
       hasOpenProject: boolean;
-      server: { projectFilePath: string; mediaRoot: string;
+      server: { projectFilePath: string; projectSessionId: string; mediaRoot: string;
                 audioLoading: boolean; audioLoaded: number; audioTotal: number;
                 audioReadiness?: ServerAudioReadiness };
-    }>('/api/project/header');
+    }>('/api/project/header', {
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : undefined,
+    });
   }
   // Paged items. Caller drives the loop; we keep this stateless so it
   // composes with the open-project streaming logic in useProject.
-  async function fetchProjectItemsPage(offset = 0, limit = 100) {
+  async function fetchProjectItemsPage(offset = 0, limit = 100, signal?: AbortSignal) {
     return rest<{
       offset: number; limit: number; total: number; items: any[];
-    }>(`/api/project/items?offset=${offset}&limit=${limit}`);
+    }>(`/api/project/items?offset=${offset}&limit=${limit}`, {
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : undefined,
+    });
   }
   async function fetchProjectProgress() {
     return rest<ServerAudioReadiness>('/api/project/progress');
   }
-  async function loadProjectFromPath(path: string) {
-    return rest<any>('/api/project/load', {
-      method: 'POST',
-      body: JSON.stringify({ path }),
-    }).then(p => { fetchCues(); fetchMixerChannels(); return p; });
+  async function loadProjectWithDeadline(
+    request: { path: string } | { create: { path: string; document: unknown } },
+    expectedSessionId?: string,
+  ) {
+    const createPath = 'create' in request ? request.create.path : undefined;
+    const action = createPath === undefined ? 'Open' : 'New Show';
+    const endpoint = httpBase.value;
+    const token = effectiveAccessToken.value;
+    const session = expectedSessionId ?? (projectSessionId.value || undefined);
+    const lease = await rest<{ openDeadlineMs?: number; createDeadlineSupported?: boolean; server?: { projectSessionId?: string } }>(
+      '/api/project/header?open_deadline=1', { cache: 'no-store' },
+    );
+    if (httpBase.value !== endpoint || effectiveAccessToken.value !== token) {
+      lastError.value = 'Server changed during the show request. Try again.';
+      throw new Error(lastError.value);
+    }
+    if (!Number.isSafeInteger(lease?.openDeadlineMs) ||
+        (createPath !== undefined && lease.createDeadlineSupported !== true)) {
+      lastError.value = `Update the engine to use safe ${action} from this controller.`;
+      throw new Error(lastError.value);
+    }
+    const boundSession = session ?? (lease.server?.projectSessionId || undefined);
+    try {
+      return await rest<any>('/api/project/load', {
+        method: 'POST',
+        headers: boundSession === undefined ? undefined : { 'X-DWCUE-Project-Session': boundSession },
+        body: JSON.stringify({ ...request, openDeadlineMs: lease.openDeadlineMs }),
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('410 ')) {
+        lastError.value = createPath === undefined
+          ? 'Open expired before the engine switched shows.'
+          : `New show saved at ${createPath}. Use Open Project when you are ready.`;
+      } else if (createPath !== undefined && error instanceof Error && error.message.startsWith('412 ')) {
+        lastError.value = 'New Show expired before writing the file. You can try again.';
+      } else if (error instanceof Error && ['TimeoutError', 'TypeError', 'AbortError'].includes(error.name) &&
+          httpBase.value === endpoint && effectiveAccessToken.value === token) {
+        // A lost response can follow an already accepted switch. Rejoin the engine's show.
+        forceReconnect();
+        if (createPath !== undefined) {
+          lastError.value = `New Show did not confirm completion. If the file appears at ${createPath}, use Open Project.`;
+        }
+      }
+      throw error;
+    }
   }
-  async function importLegacyProjectFromPath(path: string, destinationPath?: string) {
-    const body: { path: string; destinationPath?: string } = { path };
-    if (destinationPath) body.destinationPath = destinationPath;
-    return rest<any>('/api/project/import-legacy', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }).then(project => {
-      fetchCues();
-      fetchMixerChannels();
-      return project;
-    });
+  async function loadProjectFromPath(path: string, expectedSessionId?: string) {
+    const header = await loadProjectWithDeadline({ path }, expectedSessionId);
+    void fetchCues().catch(() => {});
+    void fetchMixerChannels().catch(() => {});
+    return header;
   }
-  async function saveProjectTo(path?: string, document?: any, signal?: AbortSignal) {
+  async function loadProjectDocument(document: any, createPath: string) {
+    return loadProjectWithDeadline({ create: { path: createPath, document } });
+  }
+  async function saveProjectTo(path?: string, document?: any, signal?: AbortSignal, expectedSessionId?: string) {
     // Authoritative-save: when the caller provides the latest document, send
     // it along so the server replaces its in-memory copy (and re-mirrors per-
     // cue properties to the audio engine) before writing to disk. Belt-and-
@@ -654,6 +787,7 @@ function createClient() {
     if (document) body.document = document;
     return rest<any>('/api/project/save', {
       method: 'POST',
+      headers: expectedSessionId === undefined ? undefined : { 'X-DWCUE-Project-Session': expectedSessionId },
       body: JSON.stringify(body),
       signal: signal
         ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
@@ -666,8 +800,9 @@ function createClient() {
   // Close the project on the server (reset to no-project state). Mirrors the
   // local closeProject() in useProject so the server doesn't keep playing /
   // holding a project we've dismissed.
-  async function closeProjectOnServer(): Promise<{ closed: boolean }> {
-    return rest<any>('/api/project/close', { method: 'POST', body: '{}' });
+  async function closeProjectOnServer(expectedSession: string): Promise<{ closed: boolean }> {
+    return rest<any>('/api/project/close', { method: 'POST', body: '{}',
+      headers: { 'X-DWCUE-Project-Session': expectedSession } });
   }
 
   // True when the configured server is running on this same machine. Used
@@ -740,7 +875,7 @@ function createClient() {
     if (!result.success) throw new Error(result.error || 'download failed');
   }
 
-  // Upload a .dwcuepack or legacy .lpa archive and have the server extract it
+  // Upload a .dwcuepack archive and have the server extract it
   // into the server-side absolute extractPath.
   async function importProjectArchiveUpload(file: File | Blob,
                                             extractPath: string,
@@ -765,7 +900,11 @@ function createClient() {
     if (!api?.getBinaryFileInfo || !api?.readBinaryFileChunk) {
       throw new Error('Local archive access is unavailable');
     }
+    const endpoint = httpBase.value;
+    const accessToken = effectiveAccessToken.value;
     const info = await api.getBinaryFileInfo(filePath);
+    if (httpBase.value !== endpoint || effectiveAccessToken.value !== accessToken)
+      throw new Error('Server changed before archive upload.');
     if (!info?.success || !Number.isSafeInteger(info.size) || info.size < 0) {
       throw new Error(info?.error || 'Could not inspect local archive');
     }
@@ -785,7 +924,7 @@ function createClient() {
     }, 60 * 60 * 1000);
   }
 
-  // Have the server extract a canonical or legacy archive that already exists
+  // Have the server extract a .dwcuepack archive that already exists
   // on its filesystem (chosen via the server file browser).
   async function importProjectArchiveFromServer(archivePath: string,
                                                 extractPath: string) {
@@ -799,9 +938,10 @@ function createClient() {
   }
   // PUT the full project document. Server replaces in-memory state and
   // re-mirrors audio items into the engine.
-  async function replaceProjectDocument(document: any) {
+  async function replaceProjectDocument(document: any, expectedSessionId?: string) {
     return rest<any>('/api/project/document', {
       method: 'PUT',
+      headers: expectedSessionId === undefined ? undefined : { 'X-DWCUE-Project-Session': expectedSessionId },
       body: JSON.stringify(document),
     }).then(p => { fetchCues(); fetchMixerChannels(); return p; });
   }
@@ -923,7 +1063,8 @@ function createClient() {
     return rest<any>('/api/preview', { method: 'DELETE' });
   }
   async function fetchPreviewState() {
-    return rest<{ active: boolean; itemUuid: string }>('/api/preview');
+    return rest<{ active: boolean; itemUuid: string; cueId: string;
+      revision?: number; project_session_id?: string }>('/api/preview');
   }
 
   // Master gain (dB). Server is the authority — REST POST persists and
@@ -1065,13 +1206,18 @@ function createClient() {
     readChunk: (offset: number, length: number) =>
       Blob | ArrayBuffer | Promise<Blob | ArrayBuffer>,
     finishTimeoutMs = 30000,
+    expectedSessionId?: string,
   ): Promise<T> {
     if (!Number.isSafeInteger(size) || size < 0) {
       throw new RangeError('upload failed: invalid source size');
     }
+    const endpoint = httpBase.value;
+    const accessToken = effectiveAccessToken.value;
+    const sameServer = () => httpBase.value === endpoint && effectiveAccessToken.value === accessToken;
     const session = await rest<{ upload_id: string; chunk_size: number }>(
       '/api/upload/start', {
         method: 'POST',
+        headers: expectedSessionId ? { 'X-DWCUE-Project-Session': expectedSessionId } : undefined,
         body: JSON.stringify({ ...start, size }),
       });
     if (!/^[0-9a-f]{64}$/.test(session.upload_id)) {
@@ -1092,6 +1238,7 @@ function createClient() {
         if (bodyBytes !== length) {
           throw new Error('upload failed: source file changed while reading');
         }
+        if (!sameServer()) throw new Error('Server changed during upload.');
         await rest(`${uploadPath}?offset=${offset}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/octet-stream' },
@@ -1099,12 +1246,13 @@ function createClient() {
           signal: AbortSignal.timeout(120000),
         });
       }
+      if (!sameServer()) throw new Error('Server changed during upload.');
       return await rest<T>(`${uploadPath}/finish`, {
         method: 'POST',
         signal: AbortSignal.timeout(finishTimeoutMs),
       });
     } catch (error) {
-      await rest(uploadPath, {
+      if (sameServer()) await rest(uploadPath, {
         method: 'DELETE',
         signal: AbortSignal.timeout(3000),
       }).catch(() => {});
@@ -1112,10 +1260,10 @@ function createClient() {
     }
   }
 
-  async function uploadFile(file: File | Blob, filename?: string) {
+  async function uploadFile(file: File | Blob, filename?: string, expectedSessionId = projectSessionId.value) {
     return uploadInChunks<{ saved: string[] }>(file.size, {
       filename: filename ?? (file as File).name ?? 'audio',
-    }, (offset, length) => file.slice(offset, offset + length));
+    }, (offset, length) => file.slice(offset, offset + length), 30000, expectedSessionId);
   }
 
   // ---- Waveform fetch queue + cache --------------------------------
@@ -1192,6 +1340,14 @@ function createClient() {
     });
   }
 
+  async function verifyAudioFile(path: string, fileRevision: string, signal?: AbortSignal) {
+    const params = new URLSearchParams({ path, verify_revision: fileRevision });
+    return rest<Pick<ServerWaveform, 'file_revision' | 'duration_ms' | 'sample_rate' | 'source_channels'> & { verified: boolean }>(
+      `/api/waveform_path?${params}`, {
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : undefined,
+      });
+  }
+
   // Compute a waveform for an arbitrary server-side file path. Used right
   // after import so the client can show a waveform without the file needing
   // to be a registered engine cue yet.
@@ -1199,10 +1355,13 @@ function createClient() {
     filePath: string,
     buckets = 1000,
     range?: WaveformAnalysisRange,
+    signal?: AbortSignal,
   ): Promise<ServerWaveform> {
     const params = new URLSearchParams({ path: filePath, buckets: String(buckets) });
     appendAnalysisRange(params, range);
-    return rest<ServerWaveform>(`/api/waveform_path?${params}`);
+    return rest<ServerWaveform>(`/api/waveform_path?${params}`, {
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : undefined,
+    });
   }
 
   // Copy a server-side file into the project's media root. Returns the
@@ -1217,6 +1376,8 @@ function createClient() {
     duplicatePolicy: 'reuse' | 'skip' | 'keep',
     signal?: AbortSignal,
   ): Promise<{ destPath: string; duplicate: boolean; reused: boolean; skipped: boolean }> {
+    const folder = currentProjectForImport.value?.folderPath.replace(/[\\/]+$/, '');
+    if (!folder) throw new Error('Open a project before importing media.');
     const result = await rest<{
       dest_path: string;
       duplicate?: boolean;
@@ -1224,7 +1385,12 @@ function createClient() {
       skipped?: boolean;
     }>('/api/copy_to_media', {
       method: 'POST',
-      body: JSON.stringify({ source_path: sourcePath, duplicate_policy: duplicatePolicy }),
+      body: JSON.stringify({
+        source_path: sourcePath,
+        duplicate_policy: duplicatePolicy,
+        expected_project_file_path: detachedProjectForImport.value?.projectPath ?? projectPathForImport.value,
+        expected_media_root: `${folder}/media`,
+      }),
       signal: signal
         ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
         : undefined,
@@ -1249,13 +1415,27 @@ function createClient() {
   // copyToMedia failing (e.g. a remote server that can't see the path) falls
   // back to upload, so a misdetected "local" server still works.
   async function resolveDroppedFileToMedia(file: File): Promise<string | null> {
+    const project = currentProjectForImport.value;
+    const projectPath = projectPathForImport.value;
+    const detached = detachedProjectForImport.value ? { ...detachedProjectForImport.value } : null;
+    const isCurrent = () => detached
+      ? sameOneShotMutationIdentity(detachedProjectForImport.value, detached)
+      : currentProjectForImport.value === project && projectPathForImport.value === projectPath;
     const osPath = (import.meta.client && (window as any).electronAPI?.getFilePath)
       ? (window as any).electronAPI.getFilePath(file)
       : null;
     if (osPath && isLocalServer.value) {
-      try { return await copyToMedia(osPath); }
-      catch (e) { console.warn('[import] copyToMedia failed, uploading bytes instead:', e); }
+      try {
+        const path = await copyToMedia(osPath);
+        if (!isCurrent()) throw new DOMException('Project changed during import', 'AbortError');
+        return path;
+      } catch (e) {
+        if (!isCurrent()) throw new DOMException('Project changed during import', 'AbortError');
+        if (e instanceof Error && /^4\d\d\b/.test(e.message) && !/^404\b/.test(e.message)) throw e;
+        console.warn('[import] copyToMedia failed, uploading bytes instead:', e);
+      }
     }
+    if (!isCurrent()) throw new DOMException('Project changed during import', 'AbortError');
     try {
       const res = await uploadFile(file, file.name);
       return res?.saved?.[0] ?? null;
@@ -1269,10 +1449,10 @@ function createClient() {
   // the result arrives as a { op: 'waveform_ready', item_uuid, channels, ... }
   // doc_patch over WebSocket once computation finishes.
   // Pass force=true to delete any cached waveform file and recompute from scratch.
-  async function requestWaveformGeneration(path: string, itemUuid: string, force = false): Promise<void> {
+  async function requestWaveformGeneration(path: string, itemUuid: string, force = false, fileRevision?: string): Promise<void> {
     await rest('/api/waveform_generate', {
       method: 'POST',
-      body: JSON.stringify({ path, item_uuid: itemUuid, force }),
+      body: JSON.stringify({ path, item_uuid: itemUuid, force, file_revision: fileRevision }),
     });
   }
 
@@ -1284,13 +1464,17 @@ function createClient() {
   return reactive({
     // state
     serverUrl,
+    projectSessionId,
     accessToken,
     effectiveAccessToken,
     connected,
     reconnecting,
     connectionLost,
+    showVerification,
+    cueStartsBlocked,
     failedReconnectAttempts,
     lastError,
+    stopAllStatus,
     cues,
     mixerChannels,
     devices,
@@ -1354,6 +1538,7 @@ function createClient() {
     requestWaveformGeneration,
     invalidateWaveformCache,
     fetchMetadata,
+    verifyAudioFile,
 
     // project I/O
     fetchProject,
@@ -1361,7 +1546,7 @@ function createClient() {
     fetchProjectItemsPage,
     fetchProjectProgress,
     loadProjectFromPath,
-    importLegacyProjectFromPath,
+    loadProjectDocument,
     replaceProjectDocument,
     saveProjectTo,
     repairProject,

@@ -24,34 +24,11 @@ function range(source, start, end) {
   return { from, to, source: source.slice(from, to) };
 }
 
-function callSites(files, functionName) {
-  const sites = [];
-  const pattern = new RegExp(`\\b${functionName}\\s*\\(`, 'g');
-  for (const [file, source] of files) {
-    for (const match of source.matchAll(pattern)) {
-      const before = source.slice(Math.max(0, match.index - 80), match.index);
-      if (/\bfunction\s*$/.test(before)) continue;
-      sites.push({ file, source, index: match.index });
-    }
-  }
-  return sites;
-}
-
 const files = sourceFiles('client/app')
   .map(file => [file, read(file)]);
 const byFile = new Map(files);
 
 const projectTypes = byFile.get('client/app/types/project.ts');
-const defaultSettings = range(
-  projectTypes,
-  'export const DEFAULT_PROJECT_SETTINGS',
-  'export const DEFAULT_AUDIO_ITEM',
-).source;
-assert.match(defaultSettings, /autoTrimSilenceOnImport:\s*false/,
-  'new projects must default automatic trimming off');
-assert.match(defaultSettings, /autoMatchLoudnessOnImport:\s*false/,
-  'new projects must default automatic loudness matching off');
-
 for (const [name, source] of [
   ['playlist audio', range(
     projectTypes,
@@ -181,16 +158,6 @@ assert.match(
   'detached Spotify templates must start from safe import defaults',
 );
 assert.match(
-  templateSettings,
-  /autoTrimSilenceOnImport:\s*[\s\S]*===\s*true/,
-  'template auto-trim must remain off unless explicitly enabled',
-);
-assert.match(
-  templateSettings,
-  /autoMatchLoudnessOnImport:\s*[\s\S]*===\s*true/,
-  'template loudness matching must remain off unless explicitly enabled',
-);
-assert.match(
   range(
     playlistView,
     'const templateProject: Project =',
@@ -205,7 +172,7 @@ assert.match(
     'const scanForMissingWaveforms',
     'watch(',
   ).source,
-  /if \(ai\.waveform\?\.analysis_version === 1\) continue;/,
+  /if \(ai\.waveform\?\.analysis_version === 2\) continue;/,
   'legacy peak-only waveforms must be regenerated once for real analysis',
 );
 
@@ -224,17 +191,15 @@ const loudnessVolume = range(
 for (const field of [
   'analysis_version',
   'integrated_lufs',
-  'true_peak_dbtp',
   'loudnessTargetLufs',
-  'limiterCeilingDb',
 ]) {
   assert.match(loudnessVolume, new RegExp(`\\b${field}\\b`),
     `measured normalization must consume ${field}`);
 }
-assert.match(
+assert.doesNotMatch(
   loudnessVolume,
-  /limiterCeilingDb\s*-\s*\(analysis\.true_peak_dbtp/,
-  'normalization gain must respect measured true peak',
+  /limiterCeilingDb|true_peak_dbtp/,
+  'loudness normalization must follow its selected LUFS target independently of the peak ceiling',
 );
 assert.doesNotMatch(
   loudnessVolume,
@@ -245,12 +210,12 @@ assert.doesNotMatch(
 const applyLoudness = range(
   audioUtils,
   'export function applyLoudnessMatch',
-  'export function exceedsTruePeakCeiling',
+  'export function applyTruePeakCeiling',
 ).source;
 assert.match(applyLoudness, /loudnessMatchedVolume\(/,
   'the volume mutation must use measured loudness gain');
 assert.match(applyLoudness, /item\.volume\s*=\s*volume/,
-  'measured normalization must be the only gain assignment');
+  'manual normalization must apply the measured gain');
 assert.match(
   audioUtils,
   /export function exceedsTruePeakCeiling[\s\S]*item\.inPoint > 0\.001[\s\S]*outPoint < duration - 0\.001[\s\S]*return false/,
@@ -277,55 +242,15 @@ assert.doesNotMatch(
   'explicit normalization must not use waveform display peaks',
 );
 
-let guardedLoudnessCalls = 0;
-let explicitLoudnessCalls = 0;
-for (const site of callSites(files, 'applyLoudnessMatch')) {
-  if (site.file === 'client/app/components/PropertiesPanel.vue' &&
-      site.index >= explicitNormalize.from && site.index < explicitNormalize.to) {
-    explicitLoudnessCalls++;
-    continue;
-  }
-  const before = site.source.slice(Math.max(0, site.index - 2200), site.index);
-  assert.match(
-    before,
-    /autoMatchLoudnessOnImport\s*===\s*true/,
-    `${site.file}: automatic loudness matching must be explicitly opted in`,
-  );
-  guardedLoudnessCalls++;
-}
-assert.ok(explicitLoudnessCalls >= 1,
-  'expected an explicit measured-normalization call');
-assert.ok(guardedLoudnessCalls >= 1,
-  'expected an opt-in automatic measured-normalization call');
-assert.match(
-  useProject,
-  /const requestedVolume = \(target as AudioItem\)\.volume[\s\S]*current\.volume !== requestedVolume[\s\S]*return;[\s\S]*applyLoudnessMatch\(/,
-  'delayed import analysis must not overwrite an operator volume edit',
-);
-
 const explicitTrim = range(
   properties,
   'const handleTrimSilence',
   'const handlePlayFadeUpdate',
 );
-let guardedTrimCalls = 0;
-let explicitTrimCalls = 0;
-for (const site of callSites(files, 'trimSilence')) {
-  if (site.file === 'client/app/components/PropertiesPanel.vue' &&
-      site.index >= explicitTrim.from && site.index < explicitTrim.to) {
-    explicitTrimCalls++;
-    continue;
-  }
-  const before = site.source.slice(Math.max(0, site.index - 1000), site.index);
-  assert.match(
-    before,
-    /autoTrimSilenceOnImport\s*===\s*true/,
-    `${site.file}: automatic trimming must be explicitly opted in`,
-  );
-  guardedTrimCalls++;
-}
-assert.ok(explicitTrimCalls >= 1, 'expected an explicit operator trim call');
-assert.ok(guardedTrimCalls >= 1, 'expected an opt-in automatic trim call');
+assert.match(explicitTrim.source, /\btrimSilence\(/,
+  'expected an explicit operator trim call');
+
+// Import preservation and late-waveform edits are covered behaviorally in audioImportPreservation.test.mts.
 
 for (const [file, source] of files) {
   for (const match of source.matchAll(/\bcalculatePerceivedLoudness\s*\(/g)) {

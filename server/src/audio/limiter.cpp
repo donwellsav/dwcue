@@ -139,9 +139,10 @@ void Limiter::process(Sample* samples, std::size_t frame_count,
             recompute_window_max();
         }
 
-        // Target gain keeps the prediction below the guarded ceiling.
+        // Engage at the selected ceiling; the guard only adds headroom when
+        // reducing an over, so idle below-ceiling audio retains unity gain.
         float target_gain = 1.0f;
-        if (peak_window_max_val_ > detector_ceiling) {
+        if (peak_window_max_val_ > ceiling) {
             target_gain = detector_ceiling / peak_window_max_val_;
         }
 

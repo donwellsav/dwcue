@@ -214,14 +214,15 @@
         <div class="property-field">
           <label>{{ t('properties.deviceOverride') }}</label>
           <select
-            :value="(audioItem as any).deviceOverride ?? ''"
+            :value="audioDeviceOverride"
+            :disabled="deviceOverrideEditPending"
             @change="onDeviceOverrideChange"
           >
             <option value="">{{ t('settings.useProjectDefault') }}</option>
             <option
               v-for="d in devicesList"
               :key="d.id"
-              :value="d.id"
+              :value="d.display_name"
             >
               {{ d.display_name }}{{ d.is_default ? ' (' + t('common.default') + ')' : '' }}
             </option>
@@ -396,7 +397,7 @@ import type { AudioItem, GroupItem } from '~/types/project';
 import { PRESET_COLORS } from '~/types/project';
 import {
   applyLoudnessMatch,
-  applyTruePeakNormalization,
+  applyTruePeakCeiling,
   buildWaveformFromChannels,
   trimSilence,
   type MeasuredLoudness,
@@ -407,7 +408,6 @@ import {
   nextAvailableOneShotOrder,
   removeOneShotDesignation,
 } from '~/utils/oneShots';
-import { useOutputTarget } from '~/composables/useOutputTarget';
 
 const {
   selectedItem,
@@ -424,7 +424,6 @@ const {
 const { t } = useLocalization();
 const { uiMode } = useUiMode();
 const { cartOnlyItems, addCartOnlyItem, removeCartOnlyItem } = useCartItems();
-const { levels: outputTargetLevels } = useOutputTarget();
 const panelHeight = useState<number>('PropertiesPanel.height', () => 320);
 const propertySaveFailed = ref(false);
 const propertySavePending = ref(false);
@@ -554,6 +553,11 @@ const ltcDeviceConfigured = computed(() => {
 // shared server state — populated once on connect.
 const _server = useLiveplayServer();
 const devicesList = computed(() => _server.devices ?? []);
+const audioDeviceOverride = computed(() => {
+  const selected = (audioItem.value as any)?.deviceOverride || '';
+  return devicesList.value.find(device => device.id === selected)?.display_name ?? selected;
+});
+const deviceOverrideEditPending = ref(false);
 
 // API endpoint that triggers playback of the selected item. Points at the
 // audio server's transport route (routed through ProjectState so ducking,
@@ -562,15 +566,29 @@ const apiTriggerUrl = computed(() => {
   const base = (_server.serverUrl ?? 'http://127.0.0.1:4480').replace(/\/+$/, '');
   return `${base}/api/project/items/${selectedItem.value?.uuid}/play`;
 });
-const onDeviceOverrideChange = (e: Event) => {
-  const v = (e.target as HTMLSelectElement).value;
-  const it = audioItem.value as any;
-  if (!v) {
-    delete it.deviceOverride;
-  } else {
-    it.deviceOverride = v;
+const onDeviceOverrideChange = async (e: Event) => {
+  const input = e.target as HTMLSelectElement;
+  const value = input.value;
+  const project = currentProject.value;
+  const item = audioItem.value;
+  input.value = audioDeviceOverride.value;
+  if (!project || !item || deviceOverrideEditPending.value) return;
+  const previous = item.deviceOverride;
+  deviceOverrideEditPending.value = true;
+  try {
+    await _server.updateProjectItem(item.uuid, { deviceOverride: value || null }, crypto.randomUUID());
+    if (currentProject.value !== project) return;
+    if (item.deviceOverride === previous) {
+      if (value) item.deviceOverride = value;
+      else delete item.deviceOverride;
+    }
+    await endItemBatch();
+    if (currentProject.value === project) await persistPropertyChanges();
+  } catch {
+    if (currentProject.value === project) _server.lastError = t('properties.deviceOverrideFailed');
+  } finally {
+    deviceOverrideEditPending.value = false;
   }
-  handleSave();
 };
 
 // LTC helpers
@@ -936,7 +954,7 @@ const handleCycleSelectedColors = async () => {
   await saveProject();
 };
 
-// Handle normalize: normalize ALL selected audio items individually
+// Apply manual loudness matching or peak reduction to each selected cue.
 const handleNormalize = async (
   mode: 'loudness' | 'truePeak',
   normalizeTarget: number,
@@ -948,11 +966,7 @@ const handleNormalize = async (
     items = [selectedItem.value];
   }
   
-  const limiterCeilingDb = outputTargetLevels.value.limiterCeilingDb;
-  const effectiveTarget = Math.max(-60, Math.min(
-    mode === 'truePeak' ? limiterCeilingDb : 0,
-    normalizeTarget,
-  ));
+  const effectiveTarget = Math.max(-60, Math.min(0, normalizeTarget));
   if (!Number.isFinite(effectiveTarget)) return;
   
   let normalizedCount = 0;
@@ -969,7 +983,7 @@ const handleNormalize = async (
       (duration <= 0 || outPoint >= duration - 0.001);
     let analysis: MeasuredLoudness | undefined = audioItem.waveform;
 
-    if (!isFullFile || analysis?.analysis_version !== 1) {
+    if (!isFullFile || analysis?.analysis_version !== 2) {
       const folder = currentProject.value?.folderPath || '';
       const relativePath = audioItem.mediaPath?.replace(/^[\\/]+/, '') || '';
       const mediaPath = audioItem.mediaServerPath ||
@@ -996,12 +1010,11 @@ const handleNormalize = async (
     }
 
     const changed = mode === 'truePeak'
-      ? applyTruePeakNormalization(audioItem, analysis, effectiveTarget)
+      ? applyTruePeakCeiling(audioItem, analysis, effectiveTarget)
       : applyLoudnessMatch(
           audioItem,
           analysis,
           effectiveTarget,
-          limiterCeilingDb,
         );
     if (changed) {
       normalizedCount++;
@@ -1010,9 +1023,9 @@ const handleNormalize = async (
   
   if (normalizedCount > 0) {
     await saveProject();
-    console.log(`Normalized ${normalizedCount} item(s) to ${
-      effectiveTarget.toFixed(1)
-    } ${mode === 'truePeak' ? 'dBTP' : 'LUFS'}`);
+    console.log(mode === 'truePeak'
+      ? `Reduced peaks above ${effectiveTarget.toFixed(1)} dBTP for ${normalizedCount} item(s)`
+      : `Normalized ${normalizedCount} item(s) to ${effectiveTarget.toFixed(1)} LUFS`);
   }
 };
 
@@ -1131,11 +1144,14 @@ const handleRegenerateWaveform = async () => {
 
 const handleReplaceMedia = async () => {
   if (!import.meta.client || !window.electronAPI || isReplacingMedia.value) return;
+  const project = currentProject.value;
+  const item = audioItem.value;
+  if (!item || item.type !== 'audio') return;
+  const isCurrent = () => currentProject.value === project && audioItem.value === item;
 
   const files = await window.electronAPI.selectAudioFiles();
   const sourcePath = files?.[0];
-  const item = audioItem.value;
-  if (!sourcePath || !item) return;
+  if (!sourcePath || !isCurrent()) return;
 
   const snapshot = JSON.parse(JSON.stringify(item));
   let mutated = false;
@@ -1147,6 +1163,7 @@ const handleReplaceMedia = async () => {
       _server.fetchMetadata(sourcePath),
       _server.fetchWaveformByPath(sourcePath),
     ]);
+    if (!isCurrent()) return;
     const metadataDuration = Number((metadata as any)?.duration_ms);
     const durationMs = Number.isFinite(metadataDuration) && metadataDuration > 0
       ? metadataDuration
@@ -1159,6 +1176,7 @@ const handleReplaceMedia = async () => {
 
     const linked = !snapshot.mediaPath;
     const mediaServerPath = linked ? sourcePath : await _server.copyToMedia(sourcePath);
+    if (!isCurrent()) return;
     const fileName = mediaServerPath.split(/[\\/]/).pop() || sourcePath.split(/[\\/]/).pop() || 'audio';
     const usedWholeFile = snapshot.inPoint <= 0 && Math.abs(snapshot.outPoint - snapshot.duration) < 0.01;
 
@@ -1182,8 +1200,10 @@ const handleReplaceMedia = async () => {
     replaceMediaStatus.value = t('properties.replacementComplete');
     void _server.requestWaveformGeneration(mediaServerPath, item.uuid, true).catch(() => {});
   } catch (error: any) {
-    Object.assign(item, snapshot);
-    if (mutated) await saveProject();
+    if (mutated) {
+      Object.assign(item, snapshot);
+      if (currentProject.value === project) await saveProject();
+    }
     replaceMediaError.value = true;
     replaceMediaStatus.value = error?.message || t('properties.replacementFailed');
   } finally {

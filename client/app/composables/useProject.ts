@@ -29,15 +29,9 @@ import {
   DEFAULT_THEME,
   DEFAULT_CART_SLOT_KEYS,
   DEFAULT_PROJECT_SETTINGS,
-  anchorStartNextMarker,
 } from '~/types/project';
 import type { ServerAudioReadiness } from '~/types/server';
-import {
-  applyLoudnessMatch,
-  applyTruePeakCeiling,
-  buildWaveformFromChannels,
-  trimSilence,
-} from '~/utils/audio';
+import { buildWaveformFromChannels } from '~/utils/audio';
 import {
   formatDisplayIndexPath,
   normalizeIndexDisplayStart,
@@ -48,7 +42,6 @@ import {
   projectPathFromHeader,
 } from '~/utils/projectIdentity';
 import {
-  isLegacyProjectPath,
   isNativeProjectPath,
   projectPathInFolder,
 } from '~/utils/projectFileFormats';
@@ -113,13 +106,6 @@ const createItemPatchMutationIdentity = (clientId: string) => {
   };
 };
 
-// UUIDs of items that were just added in this session and are waiting for
-// their first waveform so the enabled import processing can run.
-// Items loaded from the saved project file are NEVER added here — only
-// items created via addItem() with no pre-existing waveform. The set is
-// cleared on project close/open so stale entries don't accumulate.
-const _importProcessingPendingUuids = new Set<string>();
-
 // ---------------------------------------------------------------------------
 // Client-side waveform cache (uuid -> WaveformData).
 // ---------------------------------------------------------------------------
@@ -134,8 +120,8 @@ const _importProcessingPendingUuids = new Set<string>();
 // The fix is to treat the client as the source of truth for waveforms: cache
 // each waveform by uuid as it arrives, and re-attach it to any item that
 // reappears from the server missing one. The peaks never change unless the
-// underlying media is re-imported (a new uuid), so a uuid-keyed cache is
-// always valid for the session. Cleared on project close.
+// underlying media changes; media reload events invalidate that uuid's entry.
+// Cleared on project close.
 const _waveformCache = new Map<string, any>();
 
 const cacheWaveform = (uuid: string, wf: any): void => {
@@ -163,17 +149,16 @@ const restoreWaveform = (item: any): void => {
 // via useState. Not reactive: it's only ever read inside selection handlers.
 let selectionAnchorUuid: string | null = null;
 
-// ---- Repair dialog state (module-scoped so it works across all useProject() calls) ----
-const repairDialogVisible = ref(false);
-const repairDialogIssues  = ref<string[]>([]);
-let _repairPromiseResolve: ((confirmed: boolean) => void) | null = null;
+const repairNotice = ref<{ serverUrl: string; session: string; issues: string[]; saving: boolean; failed: boolean } | null>(null);
 
 // ---- Unsaved-changes dialog state (module-scoped, shared across calls) ----
 // Shown when the user tries to leave the current project (New / Open / Close)
 // while autosave is off and edits are pending. Resolves the in-flight guard
 // promise with the user's choice.
 const unsavedDialogVisible = ref(false);
-let _unsavedPromiseResolve: ((choice: 'save' | 'discard' | 'cancel') => void) | null = null;
+const unsavedDialogReason = ref<'project' | 'quit'>('project');
+const unsavedDialogBlocked = ref(false);
+let _unsavedPromiseResolve: ((choice: 'save' | 'discard' | 'cancel') => Promise<void>) | null = null;
 
 // ---- Delete-selection dialog state (module-scoped, shared across calls) ----
 // Shown when a delete is triggered while more than one item is selected, so a
@@ -242,6 +227,12 @@ export const useProject = () => {
   const projectFilePathRef = useState<string>('useProject.projectFilePath', () => '');
   const projectHydrationStatus = _hydrationStatus;
   const projectHydrationError = _hydrationError;
+  const projectRepair = computed(() => {
+    const notice = repairNotice.value;
+    const server = useLiveplayServer();
+    return notice && projectHydrationStatus.value === 'ready' &&
+      notice.serverUrl === server.serverUrl && notice.session === server.projectSessionId ? notice : null;
+  });
 
   // Bumped every time the client re-hydrates its project from the server.
   // Tell the main process which project file is live so it can authorize the
@@ -258,6 +249,7 @@ export const useProject = () => {
   // see a reload of the *same* project (both are unchanged), which is exactly
   // what session recovery does — this counter gives them the edge they need.
   const projectEpoch = useState<number>('useProject.projectEpoch', () => 0);
+  const serverProjectSessionId = useState<string>('useProject.serverSessionId', () => '');
   const projectSyncIdentity = computed<OneShotMutationIdentity | null>(() =>
     projectHydrationStatus.value === 'ready'
       && currentProject.value
@@ -299,6 +291,8 @@ export const useProject = () => {
   // Engine cue ID for the active preview — needed to subscribe to its meter
   // stream and drive the seek bar / playhead time in the preview card.
   const previewCueId = useState<string>('useProject.previewCueId', () => '');
+  const previewStateRevision = useState<number>('useProject.previewStateRevision', () => -1);
+  const previewStateSession = useState<string>('useProject.previewStateSession', () => '');
 
   // ---- Autosave -----------------------------------------------------------
   // By default the project auto-saves to disk on every edit (saveProject() is
@@ -345,31 +339,43 @@ export const useProject = () => {
   };
 
   // ---- Preview controls (delegate to server) ----------------------------
+  // Teardown replies and broadcasts may arrive after a newer audition.
+  function applyPreviewState(state: any, fromSnapshot = false) {
+    const session = typeof state?.project_session_id === 'string' ? state.project_session_id : '';
+    const revision = Number.isSafeInteger(state?.revision) && state.revision >= 0 ? state.revision : 0;
+    if (!fromSnapshot && session && (previewStateSession.value && session !== previewStateSession.value
+      || serverProjectSessionId.value && session !== serverProjectSessionId.value)) return;
+    if ((!session || session === previewStateSession.value) && revision < previewStateRevision.value) return;
+    previewStateSession.value = session;
+    previewStateRevision.value = revision;
+    previewItemUuid.value = state?.itemUuid || '';
+    previewCueId.value = state?.cueId || '';
+  }
+
   async function startPreview(itemUuid: string) {
     if (!itemUuid) return;
     const server = useLiveplayServer();
+    const session = serverProjectSessionId.value;
     try {
       const res = await server.startPreview(itemUuid);
-      previewItemUuid.value = itemUuid;
-      previewCueId.value = (res as any)?.cueId ?? '';
+      if (session === serverProjectSessionId.value) applyPreviewState(res);
     } catch (e) {
       console.warn('[useProject] startPreview failed:', e);
       // Refresh authoritative state from the server.
       try {
         const s = await server.fetchPreviewState();
-        previewItemUuid.value = s.itemUuid || '';
-        previewCueId.value = (s as any).cueId ?? '';
+        if (session === serverProjectSessionId.value) applyPreviewState(s);
       }
       catch { /* ignore */ }
     }
   }
   async function stopPreview() {
     const server = useLiveplayServer();
+    const session = serverProjectSessionId.value;
     try {
-      await server.stopPreview();
+      const state = await server.stopPreview();
+      if (session === serverProjectSessionId.value) applyPreviewState(state);
     } catch { /* ignore */ }
-    previewItemUuid.value = '';
-    previewCueId.value = '';
   }
 
   // Force UI update for waveforms
@@ -631,8 +637,7 @@ export const useProject = () => {
   // ----------------------------------------------------------------------
   // Server-backed project I/O.
   // ----------------------------------------------------------------------
-  // Create a new empty project, push it to the server, and ask the server
-  // to write the canonical .dwcue file.
+  // Create and save the canonical show before the server switches to it.
   const createNewProject = async (name: string, folderPath: string): Promise<boolean> => {
     isLoading.value = true;
     loadingMessage.value = 'Creating project…';
@@ -657,16 +662,10 @@ export const useProject = () => {
         lastModified: new Date().toISOString()
       };
 
-      // Server-side: replace document with this fresh shell. Returns the
-      // header (items array is empty for a fresh project anyway, so no
-      // streaming is needed here).
       isHydrating.value = true;
       try {
-        await server.replaceProjectDocument(newProject as any);
         const projectFilePath = projectPathInFolder(folderPath, name);
-        const saved = await server.saveProjectTo(projectFilePath, newProject);
-        if (!saved?.ok) throw new Error('Server did not save the new project');
-        const header = await server.fetchProjectHeader();
+        const header = await server.loadProjectDocument(newProject, projectFilePath);
         const hydration = applyServerHeader(header);
         if (!hydration) throw new Error('Server did not open the new project');
         hydration.finish(true);
@@ -705,7 +704,8 @@ export const useProject = () => {
   // the welcome screen on connect: if another client already opened a
   // project, we drop straight into MainWorkspace instead of showing
   // New/Open. Returns true if a project was rejoined.
-  const tryRejoinExistingProject = async (existingHeader?: any): Promise<boolean> => {
+  const tryRejoinExistingProject = async (existingHeader?: any, signal?: AbortSignal): Promise<boolean> => {
+    if (signal?.aborted) return false;
     const requestRevision = ++_hydrationRequestRevision;
     _hydrationRetry.set(() => tryRejoinExistingProject());
     try {
@@ -713,8 +713,8 @@ export const useProject = () => {
       if (!server.connected) {
         try { server.connect(); } catch { /* noop */ }
       }
-      const header = existingHeader ?? await server.fetchProjectHeader();
-      if (requestRevision !== _hydrationRequestRevision) return false;
+      const header = existingHeader ?? await server.fetchProjectHeader(signal);
+      if (signal?.aborted || requestRevision !== _hydrationRequestRevision) return false;
       if (!header || !header.hasOpenProject) return false;
 
       isHydrating.value = true;
@@ -726,12 +726,17 @@ export const useProject = () => {
         isHydrating.value = false;
       }
 
+      if (!hydration) return false;
+      if (signal?.aborted) {
+        hydration.finish(false);
+        return false;
+      }
       const { clearCartOnlyItems, addCartOnlyItem } = useCartItems();
       clearCartOnlyItems();
       const cartOnly = currentProject.value?.cartOnlyItems ?? [];
       for (const item of cartOnly) addCartOnlyItem(item);
 
-      if (!hydration || !await streamItemPages(server, header.itemCount ?? 0, hydration)) return false;
+      if (!await streamItemPages(server, header.itemCount ?? 0, hydration, signal)) return false;
       void pollLoadingProgress(server);
       return true;
     } catch (error) {
@@ -741,14 +746,13 @@ export const useProject = () => {
     }
   };
 
-  // Native opens and explicit legacy imports share hydration. The only
-  // difference is the server endpoint: legacy sources are converted to a new
-  // canonical sibling before their returned header is applied.
   const hydrateProjectFrom = async (
     loadHeader: (server: any) => Promise<any>,
   ): Promise<boolean> => {
     const requestRevision = ++_hydrationRequestRevision;
-    _hydrationRetry.set(() => hydrateProjectFrom(loadHeader));
+    if (projectHydrationStatus.value !== 'failed') {
+      _hydrationRetry.set(() => hydrateProjectFrom(loadHeader));
+    }
     isLoading.value = true;
     loadingMessage.value = 'Loading project…';
     try {
@@ -763,19 +767,6 @@ export const useProject = () => {
       // A page-stream retry must rejoin that live document rather than reload
       // the originally requested file over newer server-side state.
       _hydrationRetry.set(() => tryRejoinExistingProject());
-      if (header?.needsRepair) {
-        repairDialogIssues.value = Array.isArray(header.repairIssues) ? header.repairIssues : [];
-        repairDialogVisible.value = true;
-        const confirmed = await new Promise<boolean>(resolve => {
-          _repairPromiseResolve = resolve;
-        });
-        repairDialogVisible.value = false;
-        if (requestRevision !== _hydrationRequestRevision) return false;
-        if (confirmed) {
-          try { await server.repairProject(); } catch { /* save failure is non-fatal */ }
-        }
-      }
-
       isHydrating.value = true;
       let hydration: ProjectHydrationLoad | false = false;
       try {
@@ -812,24 +803,13 @@ export const useProject = () => {
     return hydrateProjectFrom(server => server.loadProjectFromPath(projectFilePath));
   };
 
-  const importLegacyProject = async (
-    sourcePath: string,
-    destinationPath?: string,
-  ): Promise<boolean> => {
-    if (!isLegacyProjectPath(sourcePath)) {
-      console.warn('[useProject] legacy import rejected non-.liveplay path:', sourcePath);
-      return false;
-    }
-    return hydrateProjectFrom(
-      server => server.importLegacyProjectFromPath(sourcePath, destinationPath),
-    );
-  };
-
   // Stream paged items from the server into currentProject.items. Yields
   // to the renderer between pages via requestAnimationFrame so the
   // playlist paints incrementally rather than blocking on one giant tick.
   // Safe to call multiple times — bails if currentProject becomes null.
-  async function streamItemPages(server: any, totalHint: number, hydration: ProjectHydrationLoad): Promise<boolean> {
+  async function streamItemPages(
+    server: any, totalHint: number, hydration: ProjectHydrationLoad, signal?: AbortSignal,
+  ): Promise<boolean> {
     const project = hydration.project;
     const isCurrent = () => _projectHydration.current() === hydration && currentProject.value === project;
     let complete = false;
@@ -839,15 +819,15 @@ export const useProject = () => {
     try {
       while (true) {
         // Abort if another openProject started, or the project was closed.
-        if (!isCurrent()) return false;
+        if (signal?.aborted || !isCurrent()) return false;
         let page: { offset: number; limit: number; total: number; items: any[] };
-        try { page = await server.fetchProjectItemsPage(offset, PAGE); }
+        try { page = await server.fetchProjectItemsPage(offset, PAGE, signal); }
         catch (error) {
           failure = error;
           console.warn('[useProject] item page fetch failed:', error);
           return false;
         }
-        if (!isCurrent()) return false;
+        if (signal?.aborted || !isCurrent()) return false;
         if (!Array.isArray(page.items)) {
           failure = new Error('Server returned an invalid project page');
           return false;
@@ -898,7 +878,7 @@ export const useProject = () => {
           }
         });
       }
-      if (!isCurrent()) return false;
+      if (signal?.aborted || !isCurrent()) return false;
       // One-time repair for projects corrupted by an earlier bug where a
       // cart-only item leaked into the playlist tree (the same uuid ended up
       // in BOTH `cartOnlyItems` and the root `items`, so it rendered twice —
@@ -936,7 +916,7 @@ export const useProject = () => {
       // push (O(n²)) and is what made large projects feel like they
       // hung for several seconds after opening.
       refreshItemsBaselineAfterHydrate();
-      if (!isCurrent()) return false;
+      if (signal?.aborted || !isCurrent()) return false;
       installItemsWatcherFn();
       complete = true;
       return true;
@@ -957,15 +937,19 @@ export const useProject = () => {
     const hadIdentity = currentProject.value !== null || projectFilePathRef.value !== '';
     _uninstallItemsWatcherFn?.();
     currentProject.value = null;
+    repairNotice.value = null;
     selectedItem.value = null;
     selectedItems.value.clear();
     selectionAnchorUuid = null;
     propertiesPanelOpen.value = false;
     activeCues.value.clear();
     projectFilePathRef.value = '';
+    serverProjectSessionId.value = '';
     reportOpenProjectPath('');
     previewItemUuid.value = '';
     previewCueId.value = '';
+    previewStateRevision.value = -1;
+    previewStateSession.value = '';
     audioLoadingProgress.value = {
       ready: true,
       loading: false,
@@ -974,7 +958,6 @@ export const useProject = () => {
       failedCount: 0,
       failures: [],
     };
-    _importProcessingPendingUuids.clear();
     _waveformCache.clear();
     useCartItems().clearCartOnlyItems();
     hasUnsavedChanges.value = false;
@@ -990,6 +973,7 @@ export const useProject = () => {
     if (!header || typeof header !== 'object') return false;
     if (header.hasOpenProject !== true) {
       clearLocalProjectMirror();
+      serverProjectSessionId.value = typeof header.server?.projectSessionId === 'string' ? header.server.projectSessionId : '';
       return false;
     }
 
@@ -1001,6 +985,16 @@ export const useProject = () => {
       return false;
     }
     projectFilePathRef.value = nextProjectPath;
+    serverProjectSessionId.value = typeof header.server?.projectSessionId === 'string' ? header.server.projectSessionId : '';
+    const serverUrl = useLiveplayServer().serverUrl;
+    if (header.needsRepair === true) {
+      repairNotice.value = {
+        serverUrl, session: serverProjectSessionId.value,
+        issues: Array.isArray(header.repairIssues) ? header.repairIssues.filter((issue: unknown) => typeof issue === 'string') : [],
+        saving: false, failed: false,
+      };
+    } else if (header.needsRepair === false || repairNotice.value?.serverUrl !== serverUrl ||
+      repairNotice.value?.session !== serverProjectSessionId.value) repairNotice.value = null;
     reportOpenProjectPath(nextProjectPath);
 
     const project: Project = {
@@ -1109,14 +1103,19 @@ export const useProject = () => {
       // in-memory project, and unsaved edits exist nowhere else.
       const unsaved = hasUnsavedChanges.value ? buildDocumentSnapshot() : null;
 
-      if (path) await server.loadProjectFromPath(path);
+      const currentHeader = await server.fetchProjectHeader();
+      let expectedSessionId = currentHeader?.server?.projectSessionId;
+      if (path) {
+        const loaded = await server.loadProjectFromPath(path, expectedSessionId);
+        expectedSessionId = loaded?.server?.projectSessionId;
+      }
       // Overlay the client's document when the file is stale (unsaved edits) or
       // when there's no file at all — a project that has never been written to
       // disk has only this copy.
       if (unsaved || !path) {
         const doc = unsaved ?? buildDocumentSnapshot();
         if (!doc) return false;
-        await server.replaceProjectDocument(doc);
+        await server.replaceProjectDocument(doc, expectedSessionId);
       }
 
       // Tear the items deep-watcher down before re-hydrating, the same way
@@ -1159,6 +1158,8 @@ export const useProject = () => {
     const server = useLiveplayServer();
     const path = projectFilePathRef.value;
     const epoch = projectEpoch.value;
+    const session = serverProjectSessionId.value;
+    const serverUrl = server.serverUrl;
     if (!isNativeProjectPath(path) || !server.connected ||
         sessionLost.value || recoveringProject.value) return false;
     if (!await _projectHydration.wait(project) || opts?.signal?.aborted) return false;
@@ -1196,7 +1197,10 @@ export const useProject = () => {
           projectFilePathRef.value,
           projectEpoch.value,
         )) return false;
-        const response = await server.saveProjectTo(path, docSnapshot, opts?.signal);
+        if (server.serverUrl !== serverUrl || server.projectSessionId !== session) return false;
+        const response = await server.saveProjectTo(path, docSnapshot, opts?.signal, session);
+        if (response?.ok && server.serverUrl === serverUrl && server.projectSessionId === session &&
+          repairNotice.value?.session === session) repairNotice.value = null;
         return !!response?.ok;
       },
     };
@@ -1232,6 +1236,7 @@ export const useProject = () => {
   // unload its in-memory document so we land back on the welcome screen
   // (where the user can pick New or Open).
   const closeProject = async () => {
+    const closingSession = serverProjectSessionId.value;
     clearLocalProjectMirror();
     // Ask the server to drop its in-memory project too. If we don't do this,
     // tryRejoinExistingProject() on the welcome screen would immediately
@@ -1239,7 +1244,7 @@ export const useProject = () => {
     try {
       const server = useLiveplayServer();
       if (server.connected) {
-        await server.closeProjectOnServer();
+        await server.closeProjectOnServer(closingSession);
       }
     } catch (e) {
       console.warn('[useProject] closeProjectOnServer failed:', e);
@@ -1260,12 +1265,6 @@ export const useProject = () => {
   const addItem = (item: AudioItem | GroupItem, parentIndex?: number[]) => {
     if (!currentProject.value) return;
 
-    // If this is a brand-new audio item (no waveform yet), mark it so the
-    // waveform_ready handler can run enabled import processing once.
-    if (item.type === 'audio' && !(item as AudioItem).waveform) {
-      _importProcessingPendingUuids.add(item.uuid);
-    }
-
     if (parentIndex && parentIndex.length > 0) {
       const parent = findItemByIndex(parentIndex);
       if (parent && parent.type === 'group') {
@@ -1276,12 +1275,6 @@ export const useProject = () => {
       currentProject.value.items.push(item);
       updateIndices(currentProject.value.items);
     }
-  };
-
-  // Allow external callers (e.g. CartSlot) to mark a UUID for one-shot
-  // import processing when its waveform arrives.
-  const markPendingImportProcessing = (uuid: string) => {
-    _importProcessingPendingUuids.add(uuid);
   };
 
   // Remove an item
@@ -1486,7 +1479,10 @@ export const useProject = () => {
     if (Array.isArray(r)) return r.map(_deepToRaw);
     const out: Record<string, any> = {};
     for (const k of Object.keys(r)) {
-      if (k === 'waveform') continue;
+      if (k === 'waveform') {
+        cacheWaveform(r.uuid, r.waveform);
+        continue;
+      }
       out[k] = _deepToRaw(r[k]);
     }
     return out;
@@ -1544,9 +1540,8 @@ export const useProject = () => {
     // Helper that finds an item anywhere in the items tree.
     const findItemAndParent = (
       uuid: string,
+      roots: any[][] = [currentProject.value?.items ?? [], currentProject.value?.cartOnlyItems ?? []],
     ): { item: any; parent: any[] | null } | null => {
-      const p = currentProject.value;
-      if (!p) return null;
       const search = (arr: any[], parent: any[] | null): any => {
         for (const it of arr) {
           if (it.uuid === uuid) return { item: it, parent: parent ?? arr };
@@ -1557,22 +1552,102 @@ export const useProject = () => {
         }
         return null;
       };
-      return search(p.items, p.items);
+      for (const root of roots) {
+        const hit = search(root, root);
+        if (hit) return hit;
+      }
+      return null;
+    };
+
+    // Full snapshots can repeat old values for fields the operator has since edited locally.
+    const mergeServerFields = (local: any, baseline: any, incoming: any) => {
+      const merged = { ...local };
+      for (const [key, value] of Object.entries(incoming)) {
+        const pending = baseline != null && Object.hasOwn(baseline, key)
+          && stableJson(local?.[key]) !== stableJson(baseline[key]);
+        if (!pending || stableJson(value) !== stableJson(baseline[key])) merged[key] = value;
+      }
+      return merged;
+    };
+
+    // A granular acknowledgement advances only its fields, leaving other local edits pending.
+    const acknowledgeDocPatchBaseline = (patch: any) => {
+      const roots = [lastItems ?? [], lastCartOnly ?? []];
+      switch (patch?.op) {
+        case 'item_added': {
+          if (!patch.item || findItemAndParent(patch.uuid, roots)) return;
+          const target = patch.cartOnly ? (lastCartOnly ??= []) : patch.parentUuid
+            ? findItemAndParent(patch.parentUuid, roots)?.item?.children : (lastItems ??= []);
+          if (Array.isArray(target)) target.push(itemsToJSON(patch.item));
+          if (!patch.cartOnly) updateIndices(lastItems ?? []);
+          break;
+        }
+        case 'item_updated': {
+          const hit = findItemAndParent(patch.uuid, roots);
+          if (hit) Object.assign(hit.item, itemsToJSON(patch.patch ?? {}));
+          break;
+        }
+        case 'item_removed': {
+          const hit = findItemAndParent(patch.uuid, roots);
+          if (hit?.parent) hit.parent.splice(hit.parent.indexOf(hit.item), 1);
+          lastCartOnly = (lastCartOnly ?? []).filter((item: any) => item.uuid !== patch.uuid);
+          updateIndices(lastItems ?? []);
+          break;
+        }
+        case 'items_reordered': {
+          const target = patch.parentUuid
+            ? findItemAndParent(patch.parentUuid, roots)?.item?.children : lastItems;
+          if (!Array.isArray(target)) return;
+          const uuids: string[] = Array.isArray(patch.uuids) ? patch.uuids : [];
+          const rank = new Map(uuids.map((uuid, i) => [uuid, i]));
+          target.sort((a: any, b: any) => (rank.get(a.uuid) ?? uuids.length) - (rank.get(b.uuid) ?? uuids.length));
+          updateIndices(lastItems ?? []);
+          break;
+        }
+        case 'cart_slot_set':
+        case 'cart_slot_cleared': {
+          if (typeof patch.slot !== 'number' || (patch.op === 'cart_slot_set' && !patch.itemUuid)) return;
+          lastCart = (lastCart ?? []).filter((entry: any) => entry.slot !== patch.slot);
+          if (patch.op === 'cart_slot_set' && patch.itemUuid)
+            lastCart.push({ slot: patch.slot, itemUuid: patch.itemUuid, index: [-1, patch.slot] });
+          break;
+        }
+        case 'theme_patched':
+          if (patch.theme && typeof patch.theme === 'object') lastTheme = { ...lastTheme, ...patch.theme };
+          break;
+        case 'settings_patched':
+          if (patch.settings && typeof patch.settings === 'object') lastSettings = { ...lastSettings, ...patch.settings };
+          break;
+      }
     };
 
     const applyDocPatch = (patch: any) => {
       const p = currentProject.value;
       if (!p) return;
       const op = patch?.op;
-      // Own PATCH acknowledgements can arrive after a newer local edit. Ignore
-      // them before hydration suppression starts: toggling isHydrating would
-      // recapture the newer edit as a synced baseline and swallow its PATCH.
+      // Own acknowledgements already have their sent snapshot in the baseline;
+      // applying a delayed echo would overwrite a newer local edit.
       if (op === 'item_updated' && itemPatchIdentity.owns(patch.clientMutationId)) return;
-      // All patch application happens under isHydrating so the local
-      // diff-watcher doesn't echo these back to the server as fresh edits.
-      isHydrating.value = true;
       try {
         switch (op) {
+          case 'media_changed': {
+            const session = serverProjectSessionId.value;
+            if (patch.project_session_id !== session) break;
+            void server().fetchProjectProgress().then((progress: ServerAudioReadiness) => {
+              if (currentProject.value === p && serverProjectSessionId.value === session)
+                audioLoadingProgress.value = progress;
+            }).catch((e: unknown) => console.warn('[useProject] media readiness refresh failed:', e));
+            if (!patch.reloaded) break;
+            const target = findItemByUuid(patch.item_uuid);
+            if (!target || target.type !== 'audio') break;
+            delete (target as any).waveform;
+            _waveformCache.delete(patch.item_uuid);
+            server().invalidateWaveformCache();
+            triggerWaveformUpdate();
+            void server().requestWaveformGeneration(patch.path, patch.item_uuid, true, patch.file_revision)
+              .catch((e: unknown) => console.warn('[useProject] changed-media analysis failed:', e));
+            break;
+          }
           case 'item_added': {
             if (patch.item?.waveform) patch.item.waveform = markRaw(patch.item.waveform);
             // The item may have arrived without peaks (server strips them, and
@@ -1621,7 +1696,8 @@ export const useProject = () => {
             // touch the local waveform — keep whatever we already have.
             const incoming = { ...(patch.patch ?? {}) };
             if ('waveform' in incoming) delete incoming.waveform;
-            Object.assign(hit.item, incoming);
+            const baseline = findItemAndParent(patch.uuid, [lastItems ?? [], lastCartOnly ?? []])?.item;
+            Object.assign(hit.item, mergeServerFields(hit.item, baseline, incoming));
             // Defensive: if this item somehow has no peaks anymore, restore
             // them from the session cache.
             restoreWaveform(hit.item);
@@ -1685,17 +1761,18 @@ export const useProject = () => {
           }
           case 'theme_patched': {
             if (patch.theme && typeof patch.theme === 'object') {
-              p.theme = { ...p.theme, ...patch.theme };
+              p.theme = mergeServerFields(p.theme, lastTheme, patch.theme);
             }
             break;
           }
           case 'settings_patched': {
             if (patch.settings && typeof patch.settings === 'object') {
-              (p as any).settings = { ...(p as any).settings, ...patch.settings };
+              (p as any).settings = mergeServerFields((p as any).settings, lastSettings, patch.settings);
             }
             break;
           }
           case 'waveform_ready': {
+            if (patch.project_session_id && patch.project_session_id !== serverProjectSessionId.value) break;
             const target = findItemByUuid(patch.item_uuid);
             if (target && target.type === 'audio') {
               const duration: number = (patch.duration_ms ?? 0) / 1000;
@@ -1703,18 +1780,7 @@ export const useProject = () => {
               const built = buildWaveformFromChannels(patch.channels, duration, patch);
               const peaks: number[] = built?.peaks ?? [];
               if (peaks.length > 0) {
-                // Distinguish a brand-new item's FIRST waveform from a
-                // REGENERATION of an item we've already seen peaks for this
-                // session. A regen fires whenever something re-requests the
-                // waveform (e.g. a re-sync that transiently dropped the local
-                // peaks — which is exactly what auto-trim / auto-volume trigger).
-                // On a regen we must ONLY refresh the peak data — never touch the
-                // user's duration / in-out points / volume — otherwise the edit
-                // snaps back the instant the waveform returns (the "~1s revert"
-                // bug). We key off the session waveform cache rather than the
-                // live item, because the live item's `waveform` may have just
-                // been transiently dropped (which is what caused the re-request);
-                // the cache is only cleared on item removal / project change.
+                // Analysis refreshes the display; authored gain and trim stay unchanged.
                 const hadWaveform = _waveformCache.has(patch.item_uuid);
 
                 (target as any).waveform = markRaw(built!);
@@ -1725,143 +1791,10 @@ export const useProject = () => {
                 if (!hadWaveform && duration > 0) {
                   // First waveform for this item this session: initialise duration.
                   (target as any).duration = duration;
-                  // Only initialise outPoint for a genuinely brand-new item.
-                  // `_waveformCache` is in-memory only and starts empty on every
-                  // reload, so `!hadWaveform` is ALSO true for an existing,
-                  // already-trimmed item whose waveform just happens to be the
-                  // first this fresh session has seen — without this check that
-                  // reload would stomp its real, already-hydrated outPoint back
-                  // to full duration the instant the waveform arrives (in-point
-                  // is never touched here, which is why only out-points were
-                  // reverting). The item's own outPoint — hydrated from the
-                  // project file before this patch ever arrives — is the
-                  // persistent signal the session cache can't provide.
-                  if (!(target as any).outPoint) {
-                    (target as any).outPoint = duration;
-                  }
+                  const baseline = findItemAndParent(patch.item_uuid, [lastItems ?? [], lastCartOnly ?? []])?.item;
+                  if (baseline) baseline.duration = duration;
                 }
 
-                // Import processing only runs for items added in this session
-                // and only on their first waveform; a regeneration never
-                // touches user edits.
-                if (_importProcessingPendingUuids.has(patch.item_uuid)) {
-                  _importProcessingPendingUuids.delete(patch.item_uuid);
-                  if (!hadWaveform) {
-                    const settings = (currentProject.value as any)?.settings;
-                    const levels = settings?.outputTargetLevels;
-                    const loudnessTargetLufs =
-                      typeof levels?.loudnessTargetLufs === 'number'
-                        ? levels.loudnessTargetLufs
-                        : typeof levels?.autoVolumeTargetDb === 'number'
-                          ? levels.autoVolumeTargetDb
-                          : settings?.outputTarget
-                            ? Number.NaN
-                            : -23;
-                    const limiterCeilingDb =
-                      typeof levels?.limiterCeilingDb === 'number'
-                        ? levels.limiterCeilingDb
-                        : settings?.outputTarget
-                          ? Number.NaN
-                          : -1;
-                    const trimmed = settings?.autoTrimSilenceOnImport === true
-                      ? trimSilence(target as AudioItem)
-                      : false;
-                    let processingChanged = trimmed;
-
-                    const matchLoudness = settings?.autoMatchLoudnessOnImport === true;
-                    const reduceTruePeaks = settings?.autoReduceTruePeaksOnImport !== false;
-                    if (!trimmed) {
-                      if (matchLoudness) {
-                        processingChanged = applyLoudnessMatch(
-                          target as AudioItem,
-                          built,
-                          loudnessTargetLufs,
-                          limiterCeilingDb,
-                        ) || processingChanged;
-                      }
-                      if (reduceTruePeaks) {
-                        processingChanged = applyTruePeakCeiling(
-                          target as AudioItem,
-                          built,
-                          limiterCeilingDb,
-                        ) || processingChanged;
-                      }
-                    } else if (matchLoudness || reduceTruePeaks) {
-                      const requestedInPoint = (target as AudioItem).inPoint;
-                      const requestedOutPoint = (target as AudioItem).outPoint;
-                      const requestedVolume = (target as AudioItem).volume;
-                      const mediaPath = (target as AudioItem).mediaServerPath
-                        || resolveProjectPath((target as AudioItem).mediaPath);
-                      if (mediaPath) {
-                        void server().fetchWaveformByPath(mediaPath, 1000, {
-                          startMs: requestedInPoint * 1000,
-                          endMs: requestedOutPoint * 1000,
-                        }).then((analysis) => {
-                          const current = findItemByUuid(patch.item_uuid);
-                          if (!current || current.type !== 'audio' ||
-                              current.inPoint !== requestedInPoint ||
-                              current.outPoint !== requestedOutPoint ||
-                              current.volume !== requestedVolume) {
-                            return;
-                          }
-                          let changed = false;
-                          if (matchLoudness) {
-                            changed = applyLoudnessMatch(
-                              current,
-                              analysis,
-                              loudnessTargetLufs,
-                              limiterCeilingDb,
-                            );
-                          }
-                          if (reduceTruePeaks) {
-                            changed = applyTruePeakCeiling(
-                              current,
-                              analysis,
-                              limiterCeilingDb,
-                            ) || changed;
-                          }
-                          if (changed) {
-                            void _syncItemsDiffFn().catch(error =>
-                              console.warn('[useProject] import processing item sync failed:', error)
-                            );
-                            void saveProject();
-                          }
-                        }).catch((e: Error) => {
-                          console.warn(`[import] analysis failed for ${target.displayName}:`, e);
-                          if (!reduceTruePeaks) return;
-                          const current = findItemByUuid(patch.item_uuid);
-                          if (!current || current.type !== 'audio' ||
-                              current.inPoint !== requestedInPoint ||
-                              current.outPoint !== requestedOutPoint ||
-                              current.volume !== requestedVolume) {
-                            return;
-                          }
-                          // ponytail: whole-file fallback may over-attenuate a
-                          // trimmed cue; retry the range if import retry UI lands.
-                          if (applyTruePeakCeiling(current, built, limiterCeilingDb)) {
-                            void _syncItemsDiffFn().catch(error =>
-                              console.warn('[useProject] true-peak item sync failed:', error)
-                            );
-                            void saveProject();
-                          }
-                        });
-                      }
-                    }
-                    // Re-anchor the import-default start-next marker to the
-                    // final (possibly trimmed) out point.
-                    anchorStartNextMarker(target as AudioItem);
-                    if (processingChanged) {
-                      // The outer microtask yields to applyDocPatch's hydration
-                      // reset; the inner one then syncs the deliberate edit.
-                      queueMicrotask(() => queueMicrotask(() => {
-                        void _syncItemsDiffFn().catch(error =>
-                          console.warn('[useProject] waveform item sync failed:', error)
-                        );
-                        void saveProject();
-                      }));
-                    }
-                  }
-                }
                 triggerWaveformUpdate();
               }
             }
@@ -1874,17 +1807,15 @@ export const useProject = () => {
             // Handled in useAudioEngine.onDocPatch — server-authoritative.
             break;
           case 'master_gain_changed':
-          case 'custom_action_http':
+          case 'custom_action_result':
             // Handled in useAudioEngine.onDocPatch.
             break;
           case 'preview_started': {
-            previewItemUuid.value = patch.itemUuid || '';
-            previewCueId.value = patch.cueId || '';
+            applyPreviewState(patch);
             break;
           }
           case 'preview_stopped': {
-            previewItemUuid.value = '';
-            previewCueId.value = '';
+            applyPreviewState({ ...patch, itemUuid: '', cueId: '' });
             break;
           }
           case 'project_changed': {
@@ -1925,9 +1856,7 @@ export const useProject = () => {
           }
         }
       } finally {
-        // Defer the flag reset by a microtask so any reactive watchers
-        // running this tick still see hydrating=true.
-        queueMicrotask(() => { isHydrating.value = false; });
+        acknowledgeDocPatchBaseline(patch);
       }
     };
 
@@ -1937,8 +1866,7 @@ export const useProject = () => {
     // transport + master gain + next-item are handled in useAudioEngine.
     server().onPlaybackSnapshot((snap: any) => {
       const prev = snap?.preview ?? {};
-      previewItemUuid.value = prev.item_uuid || '';
-      previewCueId.value = prev.cue_id || '';
+      applyPreviewState({ ...prev, itemUuid: prev.item_uuid, cueId: prev.cue_id }, true);
     });
 
     // ---- Theme ----
@@ -2060,6 +1988,14 @@ export const useProject = () => {
       if (!srv.connected) return;
       const p = currentProject.value;
       if (!p) return;
+      const path = projectFilePathRef.value;
+      const epoch = projectEpoch.value;
+      const endpoint = srv.serverUrl;
+      const token = srv.effectiveAccessToken;
+      const isCurrent = () => srv.connected && srv.serverUrl === endpoint && srv.effectiveAccessToken === token
+        && !sessionLost.value && !recoveringProject.value && projectHydrationStatus.value === 'ready'
+        && isCurrentSaveIdentity(p, path, epoch, currentProject.value, projectFilePathRef.value, projectEpoch.value);
+      if (!isCurrent()) return;
       const nextItems    = itemsToJSON(p.items)         ?? [];
       const nextCartOnly = itemsToJSON(p.cartOnlyItems) ?? [];
 
@@ -2083,18 +2019,24 @@ export const useProject = () => {
         const before = prev.get(uuid);
         if (!before) continue;
         if (before.parentUuid === parentUuid && before.cartOnly === cartOnly) continue;
+        if (!isCurrent()) return;
         try { await srv.removeProjectItem(uuid); } catch {}
+        if (!isCurrent()) return;
         try { await srv.addProjectItem(item, parentUuid, cartOnly); } catch {}
       }
 
       // 2. Removes: items present in prev but gone from curr.
       for (const [uuid] of prev) {
-        if (!curr.has(uuid)) { try { await srv.removeProjectItem(uuid); } catch {} }
+        if (!curr.has(uuid)) {
+          if (!isCurrent()) return;
+          try { await srv.removeProjectItem(uuid); } catch {}
+        }
       }
 
       // 3. Adds: items in curr that weren't in prev (and aren't cross-parent moves).
       for (const [uuid, { item, parentUuid, cartOnly }] of curr) {
         if (prev.has(uuid)) continue;
+        if (!isCurrent()) return;
         try { await srv.addProjectItem(item, parentUuid, cartOnly); } catch {}
       }
 
@@ -2119,6 +2061,7 @@ export const useProject = () => {
         const beforeCompare = withoutChildren(before.item);
         const nowCompare    = withoutChildren(item);
         if (stableJson(beforeCompare) === stableJson(nowCompare)) continue;
+        if (!isCurrent()) return;
         const clientMutationId = itemPatchIdentity.next();
         try {
           await srv.updateProjectItem(uuid, nowCompare, clientMutationId);
@@ -2154,6 +2097,7 @@ export const useProject = () => {
 
         if (stableJson(prevCommon) !== stableJson(currCommon)) {
           // Send the full current order for this parent (server ignores unknown uuids).
+          if (!isCurrent()) return;
           try { await srv.reorderProjectItems(currOrder, parentUuid); } catch {}
         }
       }
@@ -2185,8 +2129,21 @@ export const useProject = () => {
     }, { deep: true });
   }
 
-  const confirmRepair = () => { _repairPromiseResolve?.(true);  _repairPromiseResolve = null; };
-  const cancelRepair  = () => { _repairPromiseResolve?.(false); _repairPromiseResolve = null; };
+  const saveRepairedProject = async () => {
+    const notice = projectRepair.value;
+    const server = useLiveplayServer();
+    if (!notice || notice.saving || server.cueStartsBlocked) return;
+    notice.saving = true;
+    notice.failed = false;
+    try {
+      notice.failed = !await saveProject({ force: true });
+    } catch (error) {
+      console.error('Error saving repaired show:', error);
+      notice.failed = true;
+    } finally {
+      notice.saving = false;
+    }
+  };
 
   // Guard an action that can discard current project state (New / Open /
   // Close / update install). Resolves true when there are no pending edits.
@@ -2194,20 +2151,34 @@ export const useProject = () => {
   // choice: "save" force-saves first, "discard" proceeds without saving,
   // "cancel" aborts. This also catches an autosave failure, which marks the
   // project dirty even when autosave is on.
-  const confirmUnsavedChanges = (): Promise<boolean> => {
+  const confirmUnsavedChanges = (reason: 'project' | 'quit' = 'project'): Promise<boolean> => {
+    if (_unsavedPromiseResolve) {
+      unsavedDialogBlocked.value = true;
+      return Promise.resolve(false);
+    }
     if (!hasUnsavedChanges.value) return Promise.resolve(true);
-    unsavedDialogVisible.value = true;
+    const project = currentProject.value;
     return new Promise<boolean>((resolve) => {
       _unsavedPromiseResolve = async (choice) => {
+        if (!unsavedDialogVisible.value) return;
         unsavedDialogVisible.value = false;
-        _unsavedPromiseResolve = null;
-        if (choice === 'cancel') { resolve(false); return; }
-        if (choice === 'save') {
-          const saved = await saveProject({ force: true });
-          if (!saved) { resolve(false); return; }
+        try {
+          if (choice === 'cancel' || currentProject.value !== project) return resolve(false);
+          if (choice === 'save') {
+            const saved = await saveProject({ force: true });
+            if (!saved) return resolve(false);
+          }
+          resolve(currentProject.value === project);
+        } catch (error) {
+          console.error('[useProject] save before leaving failed:', error);
+          resolve(false);
+        } finally {
+          _unsavedPromiseResolve = null;
+          unsavedDialogBlocked.value = false;
         }
-        resolve(true);
       };
+      unsavedDialogReason.value = reason;
+      unsavedDialogVisible.value = true;
     });
   };
   const unsavedSave    = () => _unsavedPromiseResolve?.('save');
@@ -2249,7 +2220,6 @@ export const useProject = () => {
     resolveProjectPath,
     createNewProject,
     openProject,
-    importLegacyProject,
     tryRejoinExistingProject,
     resumeProjectOnServer,
     saveProject,
@@ -2265,7 +2235,6 @@ export const useProject = () => {
     setAutoSave,
     closeProject,
     addItem,
-    markPendingImportProcessing,
     removeItem,
     findItemByUuid,
     findItemByIndex,
@@ -2280,11 +2249,11 @@ export const useProject = () => {
     previewCueId,
     startPreview,
     stopPreview,
-    repairDialogVisible,
-    repairDialogIssues,
-    confirmRepair,
-    cancelRepair,
+    projectRepair,
+    saveRepairedProject,
     unsavedDialogVisible,
+    unsavedDialogReason,
+    unsavedDialogBlocked,
     confirmUnsavedChanges,
     unsavedSave,
     unsavedDiscard,

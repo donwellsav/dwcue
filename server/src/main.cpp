@@ -871,6 +871,46 @@ int main(int argc, char** argv) {
     auto backup  = std::make_unique<core::BackupManager>(*project);
     backup->start();
 
+    // ------------------------------------------------------------------
+    // Crash-resume: if a previous instance crashed with an open project,
+    // reload it now. We wait for audio loading to finish before playing.
+    // ------------------------------------------------------------------
+    struct PendingResume {
+        std::string item_uuid;
+        double      position_sec = 0.0;
+        std::chrono::steady_clock::time_point retry_after;
+        int         attempts = 0;
+        std::uint64_t intent_revision = 0;
+    };
+    std::optional<PendingResume> pending_resume;
+
+    if (crash_resume) {
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        const auto resume_fspath = util::utf8_to_path(crash_resume->project_file);
+        if (fs::exists(resume_fspath, ec)) {
+            Logger::info("Crash-resume: loading project '{}'", crash_resume->project_file);
+            if (project->load(resume_fspath)) {
+                if (!crash_resume->item_uuid.empty()) {
+                    pending_resume = PendingResume{
+                        crash_resume->item_uuid,
+                        crash_resume->position_sec,
+                        std::chrono::steady_clock::now() + std::chrono::seconds{3},
+                        0,
+                        project->playback_intent_revision()
+                    };
+                    Logger::info("Crash-resume: will play item '{}' at {:.1f}s once audio loads.",
+                                 crash_resume->item_uuid, crash_resume->position_sec);
+                }
+            } else {
+                Logger::warn("Crash-resume: failed to load '{}'", crash_resume->project_file);
+            }
+        } else {
+            Logger::warn("Crash-resume: project file no longer exists: '{}'",
+                         crash_resume->project_file);
+        }
+    }
+
     net::ControlServerConfig server_cfg;
     server_cfg.bind_address = opts.bind_addr;
     server_cfg.port         = static_cast<std::uint16_t>(opts.port);
@@ -902,44 +942,6 @@ int main(int argc, char** argv) {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Crash-resume: if a previous instance crashed with an open project,
-    // reload it now. We wait for audio loading to finish before playing.
-    // ------------------------------------------------------------------
-    struct PendingResume {
-        std::string item_uuid;
-        double      position_sec = 0.0;
-        std::chrono::steady_clock::time_point retry_after;
-        int         attempts = 0;
-    };
-    std::optional<PendingResume> pending_resume;
-
-    if (crash_resume) {
-        namespace fs = std::filesystem;
-        std::error_code ec;
-        const auto resume_fspath = util::utf8_to_path(crash_resume->project_file);
-        if (fs::exists(resume_fspath, ec)) {
-            Logger::info("Crash-resume: loading project '{}'", crash_resume->project_file);
-            if (project->load(resume_fspath)) {
-                if (!crash_resume->item_uuid.empty()) {
-                    pending_resume = PendingResume{
-                        crash_resume->item_uuid,
-                        crash_resume->position_sec,
-                        std::chrono::steady_clock::now() + std::chrono::seconds{3},
-                        0
-                    };
-                    Logger::info("Crash-resume: will play item '{}' at {:.1f}s once audio loads.",
-                                 crash_resume->item_uuid, crash_resume->position_sec);
-                }
-            } else {
-                Logger::warn("Crash-resume: failed to load '{}'", crash_resume->project_file);
-            }
-        } else {
-            Logger::warn("Crash-resume: project file no longer exists: '{}'",
-                         crash_resume->project_file);
-        }
-    }
-
     // Heartbeat loop. Every 30 s we tick a debug line so operators can confirm
     // the process is alive over long sessions. SIGINT/SIGTERM flips g_running.
     using clock = std::chrono::steady_clock;
@@ -962,20 +964,17 @@ int main(int argc, char** argv) {
         }
 
         // ---- crash-resume: play item once audio has fully loaded ------------
+        if (pending_resume && pending_resume->intent_revision != project->playback_intent_revision()) {
+            Logger::info("Crash-resume: cancelled by newer transport or project intent.");
+            pending_resume.reset();
+        }
         if (pending_resume) {
             const bool audio_ready = !project->audio_loading();
             if (audio_ready && now >= pending_resume->retry_after) {
                 Logger::info("Crash-resume: playing item '{}'", pending_resume->item_uuid);
-                if (project->play_item(pending_resume->item_uuid)) {
-                    // Seek to the saved position (best-effort — item may be
-                    // shorter than the saved position if the file changed).
-                    if (auto cue_id = project->item_to_cue_id(pending_resume->item_uuid)) {
-                        if (auto pi = engine->find_cue(*cue_id)) {
-                            if (pending_resume->position_sec > 1.0)
-                                pi->seek_seconds(pending_resume->position_sec);
-                        }
-                    }
-                }
+                (void)project->resume_item(pending_resume->item_uuid,
+                                           pending_resume->position_sec,
+                                           pending_resume->intent_revision);
                 pending_resume.reset();
             } else if (!audio_ready) {
                 ++pending_resume->attempts;
@@ -993,12 +992,7 @@ int main(int argc, char** argv) {
         // ---- update crash-handler resume state every ~2 s ------------------
         if (std::chrono::duration_cast<std::chrono::milliseconds>(
                 now - last_resume_snap).count() >= 2000) {
-            const auto snap = project->current_playback_snapshot();
-            if (!snap.project_file.empty()) {
-                update_crash_resume_state(snap.project_file,
-                                          snap.item_uuid,
-                                          snap.position_sec);
-            }
+            project->publish_crash_resume_state();
             last_resume_snap = now;
         }
 
