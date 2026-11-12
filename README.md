@@ -1,8 +1,8 @@
 # DonWells Cue
 
-DonWells Cue **2.6.20** keeps Stop All available during imports, file selection and show recovery. Healthy cues can load and take GO while another file is stalled. After Stop All, a ready backup can start while the old decoder or edit is still waiting.
+DonWells Cue **2.6.21** gives One Shots the same Play/Stop controls in Edit and Show Mode. Number keys **1–9** and **0** trigger the first ten slots by default. Use **Enter** to set the selected cue as Up Next and **Space** to run it after the engine confirms the target.
 
-New and Open preserve the running show when a request fails or expires. Spotify imports skip repeated and unavailable tracks and keep successful results. Use `.dwcue` show files and `.dwcuepack` archives. The [workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification, remaining engineering work and the deferred line-level audio and 1080p HDMI checks.
+**V** toggles Video Output. **G** captures its picture and **Shift+G** captures a selected display for standby. **Settings → Shortcuts** holds keyboard and MIDI controls. Warnings appear in the header beside the steady silence countdown. The [workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification and the deferred line-level audio and 1080p HDMI checks.
 
 **DonWells Cue is a free, open-source app for playing back audio and video in live shows.** If you run sound for theatre, conferences, houses of worship, AV installs, or any live event, DonWells Cue lets you line up your music, sound effects and stings ahead of time and fire them off reliably on the night — from a laptop, a touchscreen, or even a separate stage-side machine you control over the network.
 
@@ -10,7 +10,7 @@ You build a **show** as a list of cues plus a grid of one-touch buttons, then tr
 
 This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. Published macOS packages are Developer ID signed, notarized, and package-validated.
 
-> The current source builds **v2.6.20**. Match the installed About version to the release notes before rehearsal.
+> The current source builds **v2.6.21**. Match the installed About version to the release notes before rehearsal.
 
 > **Operating a show?** Use the [operator manual (PDF)](docs/operators-manual.pdf) or its [Markdown source](docs/operators-manual.md). Those instructions track the current source. The client and server READMEs linked later are developer references, not show-day instructions.
 
@@ -353,7 +353,7 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.20**. Find published artefacts and checksums on the release page.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.21**. Find published artefacts and checksums on the release page.
 
 ### Triggering a release
 

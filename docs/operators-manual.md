@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
-**Version:** 2.6.20 development
-**Source revision:** 100247ab6b139d0d1810e8c61d46d960cd74a6f2
-**Native engine baseline:** f14629d954a0ab6c312f4f37e4eec9b101cf84ea
-**Edition:** 12 November 2026 · English · Development operator edition
+**Version:** 2.6.21
+**Source revision:** 889abd569da10a32d6cd0edb75b029b436e5cf42
+**Native engine baseline:** 889abd569da10a32d6cd0edb75b029b436e5cf42
+**Edition:** 12 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This development edition covers direct One Shot playback, standby still capture, the Shortcuts tab, and the header warnings added after the public **2.6.20** release. Match your installer to its release notes before rehearsal.
+This edition covers **2.6.21**, including direct One Shot playback, standby still capture, the Shortcuts tab, and header warning settings. Match your installer to its release notes before rehearsal.
 
 The interface captures use generated tones, the native engine's virtual NULL output, and fixture locale, display and MIDI information. **docs/manual-assets/captures.json** records each capture's date, source revision and hash. Equipment photographs remain illustrative.
 
@@ -925,7 +925,7 @@ With Video Output focused, Escape also exits its fullscreen mode. In Level Check
 
 ### About this edition
 
-This edition covers the development source listed on the cover. It uses the **2.6.20** native engine baseline. The interface captures use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
+This edition covers the **2.6.21** source listed on the cover. The interface captures use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
 
 The playback checkpoint **2f372c2** passed native 13/13, isolated API 61/61, client 229/229, typecheck and RT/live safety checks. Audio-output and project-runtime suites also pass AddressSanitizer; leak detection is disabled. Native checks include six simulated ten-minute secondary-clock runs with continuous generated audio and no buffer faults or resyncs inside the tested envelope. Physical alignment and the earlier intermittency remain unproven; more extreme drift/jitter can trigger recovery.
 
