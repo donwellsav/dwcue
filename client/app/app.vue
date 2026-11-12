@@ -140,7 +140,7 @@
     />
 
     <Teleport to="body">
-      <div v-if="showNewShowDialog" class="name-dialog-backdrop" :data-theme="theme" @click.self="cancelNewShowDialog">
+      <div v-if="showNewShowDialog && !(creatingNewShow && isLoading)" class="name-dialog-backdrop" :data-theme="theme" @click.self="cancelNewShowDialog">
         <form
           class="name-dialog new-show-dialog"
           role="dialog"
@@ -171,6 +171,7 @@
               </button>
             </div>
           </div>
+          <p v-if="newShowError" class="new-show-error" role="alert">{{ newShowError }}</p>
           <div class="name-dialog__actions">
             <button type="button" class="name-dialog__btn" :disabled="creatingNewShow" @click="cancelNewShowDialog">{{ t('common.cancel') }}</button>
             <button type="submit" class="name-dialog__btn name-dialog__btn--primary" :disabled="!canCreateNewShow || creatingNewShow">{{ t('project.createShow') }}</button>
@@ -326,12 +327,14 @@ const newShowNameInput = ref<HTMLInputElement | null>(null);
 const newShowBrowseButton = ref<HTMLButtonElement | null>(null);
 const newShowDialogReturnFocus = ref<HTMLElement | null>(null);
 const creatingNewShow = ref(false);
+const newShowError = ref<string | null>(null);
 const canCreateNewShow = computed(() => !!newShowName.value.trim() && !!newShowLocation.value.trim());
 
 function showNewProjectDialog(fallbackFolder: string) {
   if (projectFileDialogOpen.value || isLoading.value || unsavedDialogVisible.value) return;
   projectPickerFallback.value = fallbackFolder;
   newShowName.value = '';
+  newShowError.value = null;
   newShowLocation.value = newShowLocations.lastFolder.value ?? fallbackFolder;
   newShowDialogReturnFocus.value = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   showNewShowDialog.value = true;
@@ -370,11 +373,14 @@ async function createNewShow() {
   const folder = newShowLocation.value.trim();
   if (!name || !folder || creatingNewShow.value) return;
   creatingNewShow.value = true;
+  newShowError.value = null;
   try {
     const created = await runExclusivePendingAction('project-file-change', 'create', async () => {
       if (!await confirmUnsavedChanges()) return false;
+      const server = useLiveplayServer();
+      server.clearLastError();
       const ok = await createNewProject(name, folder);
-      if (!ok) useLiveplayServer().lastError = t('project.createFailed');
+      if (!ok) newShowError.value = server.lastError ?? t('project.createFailed');
       return ok;
     });
     if (created) showNewShowDialog.value = false;
@@ -1250,6 +1256,12 @@ onMounted(() => {
 .name-dialog__input:focus { border-color: var(--color-accent); }
 
 .new-show-dialog { width: min(520px, 92vw); }
+
+.new-show-error {
+  margin: 0;
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
 
 .new-show-field {
   display: grid;

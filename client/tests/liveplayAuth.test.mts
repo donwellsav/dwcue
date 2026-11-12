@@ -443,6 +443,7 @@ test('project REST calls carry the bound session while chained creation uses its
   const calls: Array<{ path: string; session: string | null; mutation: string | null }> = [];
   const openRequests: unknown[] = [];
   let supportsOpenDeadline = true;
+  let supportsCreateDeadline = false;
   globalThis.fetch = async (input, init) => {
     const url = new URL(String(input));
     const headers = new Headers(init?.headers);
@@ -451,6 +452,7 @@ test('project REST calls carry the bound session while chained creation uses its
     return new Response(JSON.stringify(url.pathname === '/api/cues' || url.pathname === '/api/mixers' ? [] : {
       ok: true, hasOpenProject: true, name: 'Other', items: [], cartItems: [], cartOnlyItems: [], settings: {}, theme: {},
       ...(supportsOpenDeadline && url.searchParams.has('open_deadline') ? { openDeadlineMs: 123456 } : {}),
+      ...(supportsCreateDeadline ? { createDeadlineSupported: true } : {}),
       server: { projectFilePath: '/other.dwcue', projectSessionId: 'other-response-session', mediaRoot: '/other/media', audioLoading: false, audioLoaded: 0, audioTotal: 0 },
     }), { status: 200 });
   };
@@ -467,6 +469,10 @@ test('project REST calls carry the bound session while chained creation uses its
     await server.fetchProjectItemsPage();
     await server.loadProjectFromPath('/next.dwcue');
     assert.deepEqual(openRequests, [{ path: '/next.dwcue', openDeadlineMs: 123456 }]);
+    await assert.rejects(server.loadProjectDocument({ name: 'New' }, '/new.dwcue'), /Update the engine/);
+    supportsCreateDeadline = true;
+    await server.loadProjectDocument({ name: 'New' }, '/new.dwcue');
+    assert.deepEqual(openRequests.at(-1), { create: { path: '/new.dwcue', document: { name: 'New' } }, openDeadlineMs: 123456 });
     await server.closeProjectOnServer('bound-show-session');
     await server.repairProject();
     await server.fetchProjectHeader();
@@ -474,8 +480,8 @@ test('project REST calls carry the bound session while chained creation uses its
     await server.replaceProjectDocument({ name: 'New', items: [] }, 'creation-session');
     await server.saveProjectTo('/new.dwcue', { name: 'New', items: [] }, undefined, 'creation-session');
     const scoped = calls.filter(call => call.path.startsWith('/api/project/') && call.path !== '/api/project/header');
-    assert.equal(scoped.length, 14);
-    assert.deepEqual(scoped.map(call => call.session), Array(12).fill('bound-show-session').concat(['creation-session', 'creation-session']));
+    assert.equal(scoped.length, 15);
+    assert.deepEqual(scoped.map(call => call.session), Array(13).fill('bound-show-session').concat(['creation-session', 'creation-session']));
     assert.equal(scoped[0].mutation, 'owner:7', 'session tagging preserves the item mutation echo identity');
     server.projectSessionId = 'newer-show-session';
     await server.closeProjectOnServer('captured-closing-session');
@@ -485,7 +491,7 @@ test('project REST calls carry the bound session while chained creation uses its
     assert.equal(calls.length, sent, 'an explicitly unbound close sends no request');
     supportsOpenDeadline = false;
     await assert.rejects(server.loadProjectFromPath('/older.dwcue'), /Update the engine/);
-    assert.equal(openRequests.length, 1, 'an older engine must not receive an unbounded Open');
+    assert.equal(openRequests.length, 2, 'an older engine must not receive an unbounded show switch');
   } finally {
     server.clearLastError();
     globalThis.fetch = originalFetch;

@@ -14,12 +14,14 @@ const accessToken = 'integration-test-token-1234';
 
 test('project session preconditions reject delayed edits after switching or reopening a show', { timeout: 30000 }, async t => {
   const folder = await mkdtemp(path.join(os.tmpdir(), 'dwcue-project-session-'));
+  const writeGate = path.join(folder, 'new-show-write.gate');
   const port = await unusedPort();
   const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(serverBinary, ['--bind', '127.0.0.1', '--port', String(port)], {
     cwd: folder,
     env: { ...process.env, LIVEPLAY_STATE_DIR: path.join(folder, 'state'),
-      LIVEPLAY_ACCESS_TOKEN: accessToken, LIVEPLAY_ALLOWED_ORIGINS: baseUrl },
+      LIVEPLAY_ACCESS_TOKEN: accessToken, LIVEPLAY_ALLOWED_ORIGINS: baseUrl,
+      DWCUE_TEST_NEW_SHOW_WRITE_GATE: writeGate },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let diagnostics = '';
@@ -168,14 +170,24 @@ test('project session preconditions reject delayed edits after switching or reop
         method: 'POST', body: JSON.stringify(body),
         headers: { 'X-DWCUE-Project-Session': before.session },
       });
+      const lease = async () => {
+        const response = await request(baseUrl, '/api/project/header?open_deadline=1');
+        assert.equal(response.status, 200);
+        const { openDeadlineMs, createDeadlineSupported } = await response.json();
+        assert.ok(Number.isSafeInteger(openDeadlineMs) && openDeadlineMs > 0);
+        assert.equal(createDeadlineSupported, true);
+        return openDeadlineMs;
+      };
+      const openDeadlineMs = await lease();
       for (const [route, body, status] of [
         ['load', { path: broken }, 400],
         ['load', { path: unrelated }, 400],
         ['load', { path: path.join(folder, 'Missing.dwcue') }, 400],
         ['load', { path: legacy }, 400],
         ['import-legacy', { path: legacy }, 404],
-        ['load', { create: { document: newShow, path: path.join(folder, 'missing', 'New.dwcue') } }, 500],
-        ['load', { create: { document: newShow, path: p } }, 409],
+        ['load', { create: { document: newShow, path: createPath } }, 400],
+        ['load', { create: { document: newShow, path: path.join(folder, 'missing', 'New.dwcue') }, openDeadlineMs }, 500],
+        ['load', { create: { document: newShow, path: p }, openDeadlineMs }, 409],
       ]) {
         const result = await change(route, body);
         assert.equal(result.status, status, await result.text());
@@ -200,13 +212,6 @@ test('project session preconditions reject delayed edits after switching or reop
       assert.match(await uploadRefused.text(), /filename must use \.dwcuepack/);
       assert.deepEqual(await current(), before);
       assert.deepEqual(await playing(), ['show-bed']);
-      const lease = async () => {
-        const response = await request(baseUrl, '/api/project/header?open_deadline=1');
-        assert.equal(response.status, 200);
-        const { openDeadlineMs } = await response.json();
-        assert.ok(Number.isSafeInteger(openDeadlineMs) && openDeadlineMs > 0);
-        return openDeadlineMs;
-      };
       await writeFile(q, JSON.stringify(newShow));
       const expired = await change('load', { path: q, openDeadlineMs: 0 });
       assert.equal(expired.status, 410, await expired.text());
@@ -239,7 +244,44 @@ test('project session preconditions reject delayed edits after switching or reop
         assert.deepEqual(await playing(), ['show-bed']);
       }
 
-      const created = await change('load', { create: { document: newShow, path: createPath } });
+      const create = { document: newShow, path: createPath };
+      const expiredCreate = await change('load', { create, openDeadlineMs: 0 });
+      assert.equal(expiredCreate.status, 412, await expiredCreate.text());
+      await assert.rejects(readFile(createPath), { code: 'ENOENT' });
+      assert.deepEqual(await current(), before);
+      assert.deepEqual(await playing(), ['show-bed']);
+
+      const latePath = path.join(folder, 'Late.dwcue');
+      const waitForWrite = async () => {
+        for (let attempt = 0; attempt < 80; ++attempt) {
+          if (await readFile(writeGate + '.entered').then(() => true, () => false)) return;
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
+        assert.fail('the engine did not enter the held New Show write');
+      };
+      await writeFile(writeGate, '');
+      const pendingCreate = change('load', {
+        create: { ...create, path: latePath }, openDeadlineMs: await lease() - 24_000,
+      });
+      try {
+        await waitForWrite();
+        assert.deepEqual(await playing(), ['show-bed']);
+        const stop = await request(baseUrl, '/api/transport/stop_all', {
+          method: 'POST', body: JSON.stringify({ fade_ms: 0 }),
+        });
+        assert.equal(stop.status, 200, await stop.text());
+        assert.deepEqual(await playing(), []);
+        assert.deepEqual(await current(), before);
+        await new Promise(resolve => setTimeout(resolve, 1100));
+      } finally { await rm(writeGate, { force: true }); }
+      const savedLate = await pendingCreate;
+      assert.equal(savedLate.status, 410, await savedLate.clone().text());
+      assert.ok((await savedLate.json()).error.endsWith(latePath));
+      assert.equal(JSON.parse(await readFile(latePath, 'utf8')).name, 'New');
+      assert.deepEqual(await current(), before);
+      assert.deepEqual(await playing(), []);
+
+      const created = await change('load', { create, openDeadlineMs: await lease() });
       assert.equal(created.status, 200, await created.clone().text());
       const header = await created.json();
       assert.equal(header.server.projectFilePath, createPath);
@@ -247,10 +289,29 @@ test('project session preconditions reject delayed edits after switching or reop
       assert.equal(JSON.parse(await readFile(createPath, 'utf8')).name, 'New');
       assert.deepEqual(await playing(), []);
       const fresh = await request(baseUrl, '/api/project/load', {
-        method: 'POST', body: JSON.stringify({ path: q, openDeadlineMs: await lease() }),
+        method: 'POST', body: JSON.stringify({ path: latePath, openDeadlineMs: await lease() }),
       });
       assert.equal(fresh.status, 200, await fresh.clone().text());
-      assert.equal((await fresh.json()).server.projectFilePath, q);
+      const reopened = (await fresh.json()).server;
+      assert.equal(reopened.projectFilePath, latePath);
+
+      const supersededPath = path.join(folder, 'Superseded.dwcue');
+      await rm(writeGate + '.entered');
+      await writeFile(writeGate, '');
+      const superseded = request(baseUrl, '/api/project/load', {
+        method: 'POST',
+        body: JSON.stringify({ create: { ...create, path: supersededPath }, openDeadlineMs: await lease() }),
+        headers: { 'X-DWCUE-Project-Session': reopened.projectSessionId },
+      });
+      let replacement;
+      try {
+        await waitForWrite();
+        replacement = await load(q);
+      } finally { await rm(writeGate, { force: true }); }
+      const savedSuperseded = await superseded;
+      assert.equal(savedSuperseded.status, 410, await savedSuperseded.text());
+      assert.equal(JSON.parse(await readFile(supersededPath, 'utf8')).name, 'New');
+      assert.equal((await current()).session, replacement.server.projectSessionId);
     });
     await t.test('a repaired show stays usable and reports its repairs until the file is saved', async () => {
       const file = path.join(folder, 'Repair.dwcue');

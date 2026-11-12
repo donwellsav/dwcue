@@ -3488,6 +3488,7 @@ void ControlServer::install_routes() {
             if (req.url_params.get("open_deadline")) {
                 hdr["openDeadlineMs"] = std::chrono::duration_cast<std::chrono::milliseconds>(
                     (std::chrono::steady_clock::now() + kOpenLifetime).time_since_epoch()).count();
+                hdr["createDeadlineSupported"] = true;
             }
             Logger::api_response("Client ({}) <- Server ({}) : GET /api/project/header OK — '{}' ({} items)",
                                  req.remote_ip_address, impl_->server_addr,
@@ -3534,8 +3535,24 @@ void ControlServer::install_routes() {
             if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
             try {
                 auto j = json::parse(req.body);
+                auto deadline = std::chrono::steady_clock::time_point::max();
+                if (const auto expires = j.find("openDeadlineMs"); expires != j.end()) {
+                    const auto latest = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        (std::chrono::steady_clock::now() + kOpenLifetime).time_since_epoch()).count();
+                    if (!expires->is_number_unsigned() || expires->get<std::uint64_t>() > static_cast<std::uint64_t>(latest))
+                        return json_err(400, "invalid show switch deadline");
+                    deadline = std::chrono::steady_clock::time_point{
+                        std::chrono::milliseconds{expires->get<std::int64_t>()}};
+                }
                 if (const auto create = j.find("create"); create != j.end()) {
-                    const auto path = liveplay::util::utf8_to_path(create->at("path").get<std::string>());
+                    if (deadline == std::chrono::steady_clock::time_point::max())
+                        return json_err(400, "New Show requires a switch deadline");
+                    if (std::chrono::steady_clock::now() >= deadline)
+                        return json_err(412, "New Show expired before writing the file");
+                    const auto session = state_.project_session_id();
+                    project_lock.unlock();
+                    const auto path_string = create->at("path").get<std::string>();
+                    const auto path = liveplay::util::utf8_to_path(path_string);
                     if (!path.is_absolute() || !core::project_file::is_native_project(path))
                         return json_err(400, "new show requires an absolute .dwcue path");
                     core::project_file::PreparedDocument prepared;
@@ -3543,25 +3560,33 @@ void ControlServer::install_routes() {
                     if (!core::project_file::prepare_client_document(
                             create->at("document"), path.parent_path(), prepared, error))
                         return json_err(400, error);
-                    // Persist before replacing the live document, including for same-name shows.
+                    // Persist outside project ownership, then check the original show before switching.
                     std::error_code write_error;
+#ifdef LIVEPLAY_TEST_HOOKS
+                    if (const char* gate = std::getenv("DWCUE_TEST_NEW_SHOW_WRITE_GATE");
+                        gate && fs::exists(gate)) {
+                        std::ofstream{std::string{gate} + ".entered"};
+                        const auto release = std::chrono::steady_clock::now() + std::chrono::seconds{3};
+                        while (fs::exists(gate) && std::chrono::steady_clock::now() < release)
+                            std::this_thread::sleep_for(std::chrono::milliseconds{5});
+                    }
+#endif
                     if (!core::project_file::write_new_canonical_project(path, prepared.document, write_error)) {
                         if (write_error == std::errc::file_exists)
                             return json_err(409, "a show already exists at the chosen path");
                         return json_err(500, "could not save the new show: " + write_error.message());
                     }
-                    if (!state_.load_from_json(prepared.document, path))
+                    const auto saved_without_open = [&] {
+                        return json_err(410, "the new show was saved without opening: " + path_string);
+                    };
+                    if (std::chrono::steady_clock::now() >= deadline) return saved_without_open();
+                    project_lock = state_.lock_project_session(session);
+                    if (!project_lock.owns_lock()) return saved_without_open();
+                    if (!state_.load_from_json(prepared.document, path, deadline)) {
+                        if (std::chrono::steady_clock::now() >= deadline) return saved_without_open();
                         return json_err(400, "the new show was saved but could not be opened");
-                } else if (j.contains("path")) {
-                    auto deadline = std::chrono::steady_clock::time_point::max();
-                    if (const auto expires = j.find("openDeadlineMs"); expires != j.end()) {
-                        const auto latest = std::chrono::duration_cast<std::chrono::milliseconds>(
-                            (std::chrono::steady_clock::now() + kOpenLifetime).time_since_epoch()).count();
-                        if (!expires->is_number_unsigned() || expires->get<std::uint64_t>() > static_cast<std::uint64_t>(latest))
-                            return json_err(400, "invalid Open deadline");
-                        deadline = std::chrono::steady_clock::time_point{
-                            std::chrono::milliseconds{expires->get<std::int64_t>()}};
                     }
+                } else if (j.contains("path")) {
                     const std::string path_str = j["path"].get<std::string>();
                     Logger::api_request("Client ({}) -> Server ({}) : POST /api/project/load path='{}'",
                                         req.remote_ip_address, impl_->server_addr, path_str);

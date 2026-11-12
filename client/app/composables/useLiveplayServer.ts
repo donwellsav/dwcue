@@ -693,46 +693,60 @@ function createClient() {
   async function fetchProjectProgress() {
     return rest<ServerAudioReadiness>('/api/project/progress');
   }
-  async function loadProjectFromPath(path: string, expectedSessionId?: string) {
+  async function loadProjectWithDeadline(
+    request: { path: string } | { create: { path: string; document: unknown } },
+    expectedSessionId?: string,
+  ) {
+    const createPath = 'create' in request ? request.create.path : undefined;
+    const action = createPath === undefined ? 'Open' : 'New Show';
     const endpoint = httpBase.value;
     const token = effectiveAccessToken.value;
     const session = expectedSessionId ?? (projectSessionId.value || undefined);
-    const lease = await rest<{ openDeadlineMs?: number; server?: { projectSessionId?: string } }>(
+    const lease = await rest<{ openDeadlineMs?: number; createDeadlineSupported?: boolean; server?: { projectSessionId?: string } }>(
       '/api/project/header?open_deadline=1', { cache: 'no-store' },
     );
-    if (httpBase.value !== endpoint || effectiveAccessToken.value !== token)
-      throw new Error('Server changed while opening the show. Try again.');
-    if (!Number.isSafeInteger(lease?.openDeadlineMs)) {
-      lastError.value = 'Update the engine to use safe Open from this controller.';
+    if (httpBase.value !== endpoint || effectiveAccessToken.value !== token) {
+      lastError.value = 'Server changed during the show request. Try again.';
+      throw new Error(lastError.value);
+    }
+    if (!Number.isSafeInteger(lease?.openDeadlineMs) ||
+        (createPath !== undefined && lease.createDeadlineSupported !== true)) {
+      lastError.value = `Update the engine to use safe ${action} from this controller.`;
       throw new Error(lastError.value);
     }
     const boundSession = session ?? (lease.server?.projectSessionId || undefined);
     try {
-      const header = await rest<any>('/api/project/load', {
+      return await rest<any>('/api/project/load', {
         method: 'POST',
         headers: boundSession === undefined ? undefined : { 'X-DWCUE-Project-Session': boundSession },
-        body: JSON.stringify({ path, openDeadlineMs: lease.openDeadlineMs }),
+        body: JSON.stringify({ ...request, openDeadlineMs: lease.openDeadlineMs }),
       });
-      void fetchCues().catch(() => {});
-      void fetchMixerChannels().catch(() => {});
-      return header;
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('410 ')) {
-        lastError.value = 'Open expired before the engine switched shows.';
+        lastError.value = createPath === undefined
+          ? 'Open expired before the engine switched shows.'
+          : `New show saved at ${createPath}. Use Open Project when you are ready.`;
+      } else if (createPath !== undefined && error instanceof Error && error.message.startsWith('412 ')) {
+        lastError.value = 'New Show expired before writing the file. You can try again.';
       } else if (error instanceof Error && ['TimeoutError', 'TypeError', 'AbortError'].includes(error.name) &&
           httpBase.value === endpoint && effectiveAccessToken.value === token) {
         // A lost response can follow an already accepted switch. Rejoin the engine's show.
         forceReconnect();
+        if (createPath !== undefined) {
+          lastError.value = `New Show did not confirm completion. If the file appears at ${createPath}, use Open Project.`;
+        }
       }
       throw error;
     }
   }
+  async function loadProjectFromPath(path: string, expectedSessionId?: string) {
+    const header = await loadProjectWithDeadline({ path }, expectedSessionId);
+    void fetchCues().catch(() => {});
+    void fetchMixerChannels().catch(() => {});
+    return header;
+  }
   async function loadProjectDocument(document: any, createPath: string) {
-    return rest<any>('/api/project/load', {
-      method: 'POST',
-      // Older servers reject this shape instead of loading an unsaved show.
-      body: JSON.stringify({ create: { path: createPath, document } }),
-    });
+    return loadProjectWithDeadline({ create: { path: createPath, document } });
   }
   async function saveProjectTo(path?: string, document?: any, signal?: AbortSignal, expectedSessionId?: string) {
     // Authoritative-save: when the caller provides the latest document, send
