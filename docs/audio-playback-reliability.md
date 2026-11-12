@@ -1,6 +1,6 @@
 # Audio import and live playback reliability
 
-**5 November release check:** v2.6.18 rechecks engine state after the renderer captures the device wake counter. A regression holds the renderer at a full software output ring and sends the shutdown wake before letting it continue. The [workplan](superpowers/plans/2026-11-03-live-show-reliability.md) records later source fixes and the remaining filesystem, sequential-publication and driver lifetime limits.
+**5 November release check:** v2.6.18 rechecks engine state after the renderer captures the device wake counter. A regression holds the renderer at a full software output ring and sends the shutdown wake before letting it continue. The [workplan](superpowers/plans/2026-11-03-live-show-reliability.md) records later source fixes and remaining project-file I/O, Program preparation and driver lifetime work.
 
 The 4 November software checkpoint `2f372c2` added owned file preparation and cleanup, cancellable publication, independent device status and recovery, and ordered managed-engine operations. The initial 3 November repairs are recorded in `2ea5984` and `a9a86a3`.
 

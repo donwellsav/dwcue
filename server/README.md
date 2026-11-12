@@ -748,4 +748,6 @@ A separate worker prepares System Default, configured Program and LTC after medi
 
 One owned revision sweep checks loaded media without waiting on the queued loader. Changed results apply only to the current document and cue. Playlist loads probe a relative path against its absolute fallback outside document ownership. Preview and media requests recheck the reference after the probe. Adding a cue queues its own media and any group children.
 
-The workplan tracks healthy-file publication, storage waits during project-file Open/Save, independent Program preparation and engine startup/shutdown. A stuck native open can still occupy the shared device lifecycle lock or delay server shutdown until the driver returns. OS thread exhaustion may retain synchronous cleanup as a fallback.
+Queued loads use two worker slots. Whole-show loads use the existing CPU-based limit with at least two slots. Repeated references to the same preferred path share one slot in each loader. Each completed cue publishes against its current identity, so it can take GO while an unrelated file is still pending. The show remains in loading state until current work settles. Several simultaneous stalls can fill the available slots.
+
+The workplan tracks storage waits during project-file Open/Save, independent Program preparation and engine startup/shutdown. A stuck native open can still occupy the shared device lifecycle lock or delay server shutdown until the driver returns. OS thread exhaustion may retain synchronous cleanup as a fallback.
