@@ -1,6 +1,6 @@
 # Execution ledger — plan: /Users/muzikfirst/Documents/donwellscue/dwcue/docs/superpowers/plans/2026-11-03-live-show-reliability.md
 
-Current status: the tested T47a/T47b1-3, T48a, T49a-b and T50a-c repairs are committed locally; current application source is `2f372c21e6111a5dc91f532da97fc98b98ccf279`. Final native 13/13, API 61/61, client 229/229, typecheck, RT/live/gain and affected ASan 2/2 pass. The current-source manual is regenerated and visually checked. Parent T47b/T48/T49/T50 completion is not claimed: first-open project routing, filesystem/revision probes, healthy sibling publication and unrelated Program preparation serialization remain prioritized in the plan. Baseline `dfcbf42` and T46 playback guarantees remain mandatory. Physical/deployment acceptance remains deferred.
+4 November checkpoint: the tested T47a/T47b1-3, T48a, T49a-b and T50a-c repairs were committed locally at `2f372c21e6111a5dc91f532da97fc98b98ccf279`. Native 13/13, API 61/61, client 229/229, typecheck, RT/live/gain and affected ASan 2/2 passed. The manual for that checkpoint was regenerated and visually checked. See the [workplan](2026-11-03-live-show-reliability.md) for subsequent fixes and remaining work. Physical/deployment acceptance remains deferred.
 
 
 2026-11-03: execution started on `fix/live-show-audit`, based on `82505580ccb6ae86ccb71e28264b6d4436641419` plus the intentional prior uncommitted fixes. All earlier work retained.

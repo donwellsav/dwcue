@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.19
-**Source revision:** 8a0660dc05fc8d51bf77c6184352f8a0c3513909
-**Native engine baseline:** 8a0660dc05fc8d51bf77c6184352f8a0c3513909
+**Source revision:** ba43d55b7fcae9e05ac5e015c9d34faf3dcab9a9
+**Native engine baseline:** ba43d55b7fcae9e05ac5e015c9d34faf3dcab9a9
 **Edition:** 12 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition covers the DonWells Cue **2.6.19** source at **8a0660d**. It includes the November playback, recovery and import repairs. Match your installer to its release notes before rehearsal.
+This edition covers the DonWells Cue **2.6.19** source at **ba43d55**. It includes the November playback, recovery and import repairs. Match your installer to its release notes before rehearsal.
 
 Interface images retain their 3 November capture date, original source revisions and hashes. The instructions describe the current archive and import recovery controls. The captures use generated tones, the native engine's virtual NULL output, and fixture locale, display and MIDI information. Capture details are recorded in **docs/manual-assets/captures.json**. Equipment photographs remain illustrative.
 
@@ -241,7 +241,7 @@ The waveform's action menu separates **Loudness (LUFS)** from **Reduce peaks (dB
 
 These actions write cue gain, not a rewritten media file. **Trim Silence** adjusts the cue region around digital silence with padding; quiet breaths, ambience and tails are retained rather than treated as a loudness target. Review the resulting Volume and In/Out values and rehearse the entrance and exit.
 
-Stop All remains available during slow seek, trim, loop and cue-removal decoder work. An accepted edit stays saved, a queued seek retains the latest requested position, and a stopped cue cannot restart or advance when storage returns. Program edits and preparation remain serialized, so another GO may wait for an unfinished Program edit; let the edit settle before proceeding.
+Stop All remains available during slow seek, trim, loop and cue-removal decoder work. After Stop All, arm a ready backup on a different cue and press GO. If the controller reconnects, wait for it to verify the show. An accepted edit stays saved, a queued seek retains the latest requested position, and canceled playback cannot restart or advance when storage returns.
 
 ### Choose the end behavior deliberately
 
@@ -416,6 +416,8 @@ Pause/Resume holds or resumes an active cue. Stop uses its configured stop behav
 ### Finish a loop without changing the saved show
 
 Use **Cue to Continue** to finish the active loop pass and advance. It resolves the saved item/index destination or next sibling; with no valid target, the pass ends without another cue. The saved End Behavior stays Loop.
+
+If Cue to Continue stalls, use **Stop All**. The controller reconnects if the command is still awaiting acknowledgment. After it verifies the show, arm a ready backup and press GO. The canceled command cannot change a later playback of the loop.
 
 Stop, replay, removal, media replacement, Stop All or project switch cancels that one-pass continuation. A later replay uses the authored ending. **Toggle Loop** instead edits the project’s End Behavior between Loop and Nothing; it does not restore a prior ending. Autosave saves this edit; otherwise it remains dirty. Choose Cue to Continue for a one-pass release.
 
@@ -910,7 +912,7 @@ With Video Output focused, Escape also exits its fullscreen mode. In Level Check
 
 ### About this edition
 
-This edition covers the DonWells Cue **2.6.19** source at **8a0660d**. The 22 captures retain their 3 November provenance. They use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
+This edition covers the DonWells Cue **2.6.19** source at **ba43d55**. The 22 captures retain their 3 November provenance. They use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
 
 The playback checkpoint **2f372c2** passed native 13/13, isolated API 61/61, client 229/229, typecheck and RT/live safety checks. Audio-output and project-runtime suites also pass AddressSanitizer; leak detection is disabled. Native checks include six simulated ten-minute secondary-clock runs with continuous generated audio and no buffer faults or resyncs inside the tested envelope. Physical alignment and the earlier intermittency remain unproven; more extreme drift/jitter can trigger recovery.
 
