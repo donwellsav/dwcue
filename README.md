@@ -1,6 +1,8 @@
 # DonWells Cue
 
-DonWells Cue **2.6.19** fixes Spotify playlist review and keeps the operator app accessible when identifying displays on macOS. The [workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification, remaining engineering work and the deferred line-level audio and 1080p HDMI acceptance checks.
+DonWells Cue **2.6.20** keeps Stop All available during imports, file selection and show recovery. Healthy cues can load and take GO while another file is stalled. After Stop All, a ready backup can start while the old decoder or edit is still waiting.
+
+New and Open preserve the running show when a request fails or expires. Spotify imports skip repeated and unavailable tracks and keep successful results. Use `.dwcue` show files and `.dwcuepack` archives. The [workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification, remaining engineering work and the deferred line-level audio and 1080p HDMI checks.
 
 **DonWells Cue is a free, open-source app for playing back audio and video in live shows.** If you run sound for theatre, conferences, houses of worship, AV installs, or any live event, DonWells Cue lets you line up your music, sound effects and stings ahead of time and fire them off reliably on the night — from a laptop, a touchscreen, or even a separate stage-side machine you control over the network.
 
@@ -8,7 +10,7 @@ You build a **show** as a list of cues plus a grid of one-touch buttons, then tr
 
 This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. Published macOS packages are Developer ID signed, notarized, and package-validated.
 
-> **Current source:** package metadata is **v2.6.19**. Match the installed About version to the release notes before rehearsal.
+> The current source builds **v2.6.20**. Match the installed About version to the release notes before rehearsal.
 
 > **Operating a show?** Use the [operator manual (PDF)](docs/operators-manual.pdf) or its [Markdown source](docs/operators-manual.md). Those instructions track the current source. The client and server READMEs linked later are developer references, not show-day instructions.
 
@@ -351,11 +353,11 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.19**. Find published artefacts and checksums on the release page.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.20**. Find published artefacts and checksums on the release page.
 
 ### Triggering a release
 
-1. Bump the version in the root `package.json` (use `npm run bump -- patch|minor|major`, which propagates to `client/package.json`).
+1. Use `npm run bump -- patch|minor|major` to update the root, client and server versions. Match the root and workspace versions in `package-lock.json` and update the operator manual.
 2. Push the release branch and open a pull request; after review, merge it to `main`.
 3. The `build-release` workflow detects the version change and runs the platform matrix:
    - **Windows x64** (MSVC, WASAPI)

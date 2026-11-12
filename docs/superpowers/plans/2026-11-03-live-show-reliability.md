@@ -34,6 +34,8 @@
 
 **v2.6.19 follow-up:** `60086ef` and `530661d` repair Spotify review startup, speed and track order. `48ebe0b` keeps the macOS operator app accessible during display identification. The software checks include the real 200-track metadata review and a fullscreen label check on the built-in Mac display.
 
+**v2.6.20 release candidate:** Source `f14629d` passed all 13 native suites, 65 API tests and the client checks. The Apple Silicon DMG verified and the packaged app connected to its bundled engine with an isolated profile. The website build passed desktop and mobile checks for the download selectors and matching operator manual. Physical PA and projector acceptance remains open.
+
 - [x] Stop All stays available in the local media, Spotify, YouTube and archive progress dialogs. Software checks cover click and keyboard activation, visibility after scrolling, and dispatch of the normal Stop All command.
 - [x] A failed last-folder history write leaves the native picker choice usable. The regression checks all five picker routes, their path authorization, and cancellation with a simulated read-only history file.
 - [x] New, Open, and Open Recent keep the current show through cancellation or refusal. New saves an unused `.dwcue` file before switching. The headless client test covers both cancel paths, invalid native and legacy files, a missing recent file, a conflicting New Show name, and a successful open. The isolated server suite passes 55 software tests, including continuity of a playing cue through rejected requests.
