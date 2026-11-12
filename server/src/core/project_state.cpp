@@ -1623,26 +1623,39 @@ void ProjectState::set_cue_ltc(const audio::CueId& id, bool enabled, int fps_ind
 // LTC device routing — called from outside the mutex so ensure_device_routing
 // (which acquires the mutex itself) can safely do its work.
 // ---------------------------------------------------------------------------
-void ProjectState::apply_ltc_device_routing() {
-    std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
+void ProjectState::apply_ltc_device_routing(
+    const audio::CueId& only, std::unique_lock<std::recursive_mutex>* playback_lock) {
+    std::unique_lock lifecycle_lock{playback_lifecycle_mutex_, std::defer_lock};
+    if (!playback_lock) lifecycle_lock.lock();
+    const auto intent = playback_intent_revision_;
+    const auto generation = document_generation_;
+    const auto selected_device = [&]() -> std::string {
+        const auto settings = document_.find("settings");
+        if (settings != document_.end() && settings->is_object()) {
+            const auto device = settings->find("ltcDevice");
+            if (device != settings->end() && device->is_string()) return device->get<std::string>();
+        }
+        return {};
+    };
     // 1. Under a brief lock, gather: the configured LTC device name and the
     //    list of LTC-enabled cues with their LTC channel index.
     std::string ltc_device;
     std::vector<std::pair<audio::CueId, audio::ChannelIndex>> ltc_routes;
     {
         std::lock_guard lock{mutex_};
-        if (document_.contains("settings") && document_["settings"].is_object()) {
-            const auto& s = document_["settings"];
-            if (s.contains("ltcDevice") && s["ltcDevice"].is_string())
-                ltc_device = s["ltcDevice"].get<std::string>();
-        }
-        for (auto& [uuid, cue_id] : item_uuid_to_cue_) {
+        ltc_device = selected_device();
+        const auto collect = [&](const audio::CueId& cue_id) {
             auto pi = engine_.find_cue(cue_id);
-            if (!pi || !pi->ltc_enabled()) continue;
+            if (!pi || !pi->ltc_enabled()) return;
             // The LTC synthetic channel is always the last source channel.
             const auto ltc_ch = static_cast<audio::ChannelIndex>(
                 pi->file_channel_count());
             ltc_routes.push_back({cue_id, ltc_ch});
+        };
+        if (only.empty()) {
+            for (const auto& [_, cue_id] : item_uuid_to_cue_) collect(cue_id);
+        } else {
+            collect(only);
         }
     }
 
@@ -1651,9 +1664,16 @@ void ProjectState::apply_ltc_device_routing() {
     // 2. Ensure the LTC device is open and has a mixer (acquires/releases mutex
     //    internally — safe because we're not holding mutex_ here).
     const auto ltc_mixer = ltc_device.empty() ? audio::MixerChannelId{}
-                                               : ensure_device_routing(ltc_device);
+                                               : ensure_device_routing(ltc_device, playback_lock);
+    if (playback_lock) {
+        if (intent != playback_intent_revision_ || generation != document_generation_) return;
+        std::lock_guard lock{mutex_};
+        if (ltc_device != selected_device()) return;
+        const auto cue = engine_.find_cue(only);
+        if (!cue || !cue->ltc_enabled()) return;
+    }
     if (!ltc_device.empty() && ltc_mixer.empty()) {
-        (void)reject_output_selection(ltc_device);
+        (void)reject_output_selection(ltc_device, only.empty() ? std::string{} : cue_to_item_uuid(only).value_or(""));
         return;
     }
 
@@ -3190,7 +3210,10 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
                 route_cue_to_mixer(target_cue, mixer);
             }
         }
-        apply_ltc_device_routing();
+        if (playback->ltc_enabled()) {
+            apply_ltc_device_routing(target_cue, &lifecycle_lock);
+            if (!current() || (device_override.empty() && requested_output != default_output())) return false;
+        }
     }
 
     if (preparing) return true;

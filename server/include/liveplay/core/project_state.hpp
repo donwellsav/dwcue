@@ -479,7 +479,8 @@ public:
     // project's configured ltcDevice mixer. Safe to call at any time without
     // holding mutex_ — it acquires the lock internally as needed and delegates
     // engine operations to independently-locked engine APIs.
-    void apply_ltc_device_routing();
+    void apply_ltc_device_routing(const audio::CueId& only = {},
+                                  std::unique_lock<std::recursive_mutex>* playback_lock = nullptr);
 
     // Re-route all cues that have no per-item deviceOverride to the project's
     // configured defaultOutputDevice mixer. Called when defaultOutputDevice

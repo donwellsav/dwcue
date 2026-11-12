@@ -435,6 +435,64 @@ void test_stop_all_during_system_default_open() {
     context->callbacks.onDeviceInit = init;
 }
 
+void test_stop_all_during_ltc_device_start() {
+    auto* context = null_preview_context();
+    static const auto start = context->callbacks.onDeviceStart;
+    static std::atomic<bool> hold{false}, entered{false}, fail{false};
+    context->callbacks.onDeviceStart = [](ma_device* device) {
+        if (hold.load()) {
+            entered.store(true);
+            while (hold.load()) std::this_thread::sleep_for(1ms);
+        }
+        return fail.load() ? MA_ERROR : start(device);
+    };
+    const auto wav = make_wav(8'192, 480'000);
+    liveplay::audio::AudioEngine engine;
+    engine.device_test_context_ = context;
+    liveplay::core::ProjectState state(engine);
+    check(state.replace_full_document(document(json::array({
+        audio("ltc-bed", wav), audio("ltc-backup", wav),
+        audio("ltc-cold", wav, {{"ltcEnabled", true}, {"duckingBehavior", {{"mode", "no-ducking"}}}}),
+    }))) && wait_ready(state) && state.trigger_item("ltc-bed"), "LTC open: Program and timecode media ready");
+    {
+        std::lock_guard lock{state.mutex_};
+        state.document_["settings"]["ltcDevice"] = "NULL Playback Device";
+    }
+    const auto backup = engine.find_cue(*state.item_to_cue_id("ltc-backup"));
+    check(backup && backup->prime(2.0), "LTC open: independent backup primed");
+    hold.store(true);
+    auto opening = std::async(std::launch::async, [&] { return state.trigger_item("ltc-cold"); });
+    for (int i = 0; i < 1000 && !entered.load(); ++i) std::this_thread::sleep_for(2ms);
+    check(entered.load(), "LTC open: GO reached native timecode output start");
+    auto controls = std::async(std::launch::async, [&] {
+        state.stop_all_cues(0);
+        return !on_air(state, engine, "ltc-bed") && state.set_next_item_override("ltc-backup") &&
+            state.go() == "ltc-backup" && state.state_summary().is_object();
+    });
+    check(controls.wait_for(250ms) == std::future_status::ready, "LTC open: Stop All and non-LTC backup GO before device returns");
+    hold.store(false);
+    check(!opening.get() && controls.get() && on_air(state, engine, "ltc-backup") &&
+              !on_air(state, engine, "ltc-cold") && state.device_routings_.empty() && engine.devices_.empty(),
+          "LTC open: canceled result cannot route or play");
+
+    std::atomic<bool> warned{false};
+    state.set_ui_state_broadcaster([&](const json& event) {
+        if (event.value("code", "") == "output_device_unavailable" && event.value("device", "") == "NULL Playback Device")
+            warned.store(true);
+    });
+    fail.store(true);
+    const auto accepted = state.trigger_item("ltc-cold");
+    fail.store(false);
+    check(accepted && warned.load() && on_air(state, engine, "ltc-cold") && on_air(state, engine, "ltc-backup"),
+          "LTC open: failure warns and preserves Program audio");
+    state.set_ui_state_broadcaster({});
+    state.stop_all_cues(0);
+    check(state.trigger_item("ltc-cold") && state.device_routings_.size() == 1,
+          "LTC open: deliberate retry restores timecode");
+    state.stop_all_cues(0);
+    context->callbacks.onDeviceStart = start;
+}
+
 void test_stop_all_during_preview_retirement() {
     const auto wav = make_wav(8'192);
     for (const int mode : {0, 1, 2, 3}) {
@@ -2449,6 +2507,7 @@ int main() try {
     test_stop_all_during_cue_retirement(wav);
     test_stop_all_during_program_device_start();
     test_stop_all_during_system_default_open();
+    test_stop_all_during_ltc_device_start();
     test_stop_all_during_preview_retirement();
     test_cancelled_preview_preparation();
     test_busy_decoder_preserves_sibling_progress();
