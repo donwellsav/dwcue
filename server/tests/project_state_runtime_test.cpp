@@ -2459,7 +2459,6 @@ void test_unchanged_mirror_keeps_controls(const std::filesystem::path& wav) {
 }
 
 void test_completed_loader_worker_retires() {
-    if (std::thread::hardware_concurrency() < 3) return; // This case needs two concurrent bulk slots.
     const auto held = make_wav(8'230), healthy = make_wav(8'231);
     const auto gate = held.string() + ".worker-lifetime-gate";
     std::ofstream{gate} << held; set_loader_gate(gate, "DWCUE_TEST_METADATA_GATE");
@@ -2648,6 +2647,78 @@ void test_position_aware_recovery(const std::filesystem::path& wav) {
     state.stop_all_cues(0);
 }
 
+void test_healthy_loader_siblings() {
+    const auto held_file = make_wav(16'384), healthy_file = make_wav(8'192);
+    for (int mode = 0; mode < 3; ++mode) {
+        const bool queued = mode == 0, fallback = mode == 2;
+        const auto gate = fixture_dir() / ("loader-sibling-" + std::to_string(mode) + ".gate");
+        const auto missing = fixture_dir() / "unavailable-relative-source.wav";
+        const auto hook = fallback ? "DWCUE_TEST_PATH_PROBE_GATE" : "DWCUE_TEST_LOADER_GATE";
+        std::ofstream{gate} << (fallback ? missing : held_file);
+        set_loader_gate(gate, hook);
+
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        auto first = audio("sibling-held", held_file);
+        if (fallback) first["mediaPath"] = missing.filename().string();
+        auto duplicate = first;
+        duplicate["uuid"] = "sibling-held-again";
+        auto show = document(json::array({first, duplicate}));
+        show["folderPath"] = fixture_dir().string();
+        for (int i = 0; i < 20; ++i)
+            show["items"].push_back(audio("sibling-" + std::to_string(i), healthy_file));
+        if (queued) state.add_item(first);
+        else check(state.load_from_json(show), "Sibling loader: whole show accepted");
+        check(wait_gate_entered(gate), "Sibling loader: source reached held decoder or fallback lookup");
+        if (queued) for (std::size_t i = 1; i < show["items"].size(); ++i) state.add_item(show["items"][i]);
+
+        const auto deadline = std::chrono::steady_clock::now() + 750ms;
+        json progress;
+        do {
+            progress = state.audio_readiness();
+            if (progress["fileRevisions"].size() == 20 && (!queued || progress.value("pendingCount", 0) == 2)) break;
+            std::this_thread::sleep_for(5ms);
+        } while (std::chrono::steady_clock::now() < deadline);
+        check(progress["fileRevisions"].size() == 20 && progress.value("loading", false) &&
+                  !progress.value("ready", true) && !progress["fileRevisions"].contains("sibling-held"),
+              "Sibling loader: all healthy cues publish while the show and stalled file remain pending");
+        check(!state.trigger_item("sibling-held"), "Sibling loader: pending cue refuses playback");
+        check(state.set_next_item_override("sibling-19") && state.go() == "sibling-19",
+              "Sibling loader: explicit GO starts healthy audio before the stall releases");
+        const auto id = state.item_to_cue_id("sibling-19");
+        const auto cue = id ? engine.find_cue(*id) : nullptr;
+        std::array<float, 256> samples{};
+        float* channels[]{samples.data()};
+        if (cue) { cue->service_read_ahead(1); cue->render_block(channels, 1, 256); }
+        check(std::abs(samples[0] - 0.25f) < 1e-6f, "Sibling loader: healthy GO renders the original PCM");
+        state.stop_all_cues(0);
+
+        if (fallback) {
+            state.reset();
+            state.add_item(audio("sibling-held", healthy_file));
+            check(wait_ready(state), "Sibling loader: replacement with the same UUID is ready before release");
+        } else if (!queued) {
+            const json relink{{"mediaServerPath", healthy_file.string()}};
+            check(state.update_item("sibling-held", relink) && state.update_item("sibling-held-again", relink) && wait_ready(state),
+                  "Sibling loader: relink clears obsolete batch work before the old decoder returns");
+        }
+        const auto completed = liveplay::core::completed_load_workers_for_test();
+        std::filesystem::remove(gate);
+        clear_loader_gate(hook);
+        for (int i = 0; i < 400 && liveplay::core::completed_load_workers_for_test() == completed; ++i)
+            std::this_thread::sleep_for(5ms);
+        check(liveplay::core::completed_load_workers_for_test() > completed,
+              "Sibling loader: the released native worker exits");
+        check(wait_ready(state) && !on_air(state, engine, "sibling-held") && !on_air(state, engine, "sibling-19"),
+              "Sibling loader: release settles readiness without replay or automatic advancement");
+        const auto resolved = state.item_to_cue_id("sibling-held");
+        const auto current = resolved ? engine.find_cue(*resolved) : nullptr;
+        check(current && current->desc().file_path == (queued ? held_file : healthy_file),
+              "Sibling loader: late work cannot replace the current cue");
+        std::filesystem::remove(gate.string() + ".entered");
+    }
+}
+
 void test_held_path_resolution(const std::filesystem::path& wav) {
     constexpr auto hook = "DWCUE_TEST_PATH_PROBE_GATE";
     const auto sibling = make_wav(8194);
@@ -2706,6 +2777,11 @@ void test_held_path_resolution(const std::filesystem::path& wav) {
     const auto fallback_cue = engine.find_cue(fallback);
     check(fallback_cue && fallback_cue->desc().file_path == wav && state.resolve_item_path("absolute-fallback") == wav,
           "Media paths: the absolute file is used when the relative file is missing");
+    check(state.trigger_item("absolute-fallback"), "Media paths: fallback cue plays");
+    check(state.replace_full_document(state.full_document(), false) && wait_ready(state) &&
+              state.item_to_cue_id("absolute-fallback") == fallback && on_air(state, engine, "absolute-fallback"),
+          "Media paths: verifying the same fallback keeps its running decoder");
+    state.stop_all_cues(0);
 }
 
 void test_held_media_revision(const std::filesystem::path& wav) {
@@ -2814,6 +2890,7 @@ int main() try {
     test_changed_media_readiness();
     test_held_media_revision(wav);
     test_held_path_resolution(wav);
+    test_healthy_loader_siblings();
     test_stop_all_during_project_boundaries(wav);
     test_stop_all_during_decoder_read(wav);
     test_starvation_holds_show(wav);

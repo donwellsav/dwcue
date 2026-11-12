@@ -882,7 +882,7 @@ private:
     // Apply one document item's engine-visible properties (gain, fades,
     // out point, LTC) to its PlaybackItem during loader publication.
     // Caller must hold mutex_.
-    void apply_item_properties_locked(const json& item, const audio::CueId& cue);
+    void apply_item_properties_locked(const json& item, const std::shared_ptr<audio::PlaybackItem>& cue);
 
     // Playback commands only inspect the pending set and published engine cue;
     // decoder completion is never awaited by a transport request.

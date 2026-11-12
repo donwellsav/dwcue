@@ -518,16 +518,22 @@ struct LoadedAudio {
     std::shared_ptr<audio::PlaybackItem> item;
     meta::AudioFileMetadata metadata;
     std::filesystem::path path;
+    bool reused = false;
 };
 std::future<LoadedAudio> prepare_audio_load(audio::PlaybackItemDesc desc, json properties, bool prime,
-                                            std::filesystem::path fallback = {}) {
+                                            std::filesystem::path fallback = {},
+                                            std::filesystem::path reusable_path = {}) {
     std::promise<LoadedAudio> result;
     auto task = result.get_future();
     std::thread([desc = std::move(desc), properties = std::move(properties), prime, fallback = std::move(fallback),
-                 result = std::move(result)]() mutable {
+                 reusable_path = std::move(reusable_path), result = std::move(result)]() mutable {
         std::shared_ptr<audio::PlaybackItem> item;
         try {
             auto path = resolve_media_path({desc.file_path, std::move(fallback)});
+            if (!reusable_path.empty() && detail::same_media_identity(path, reusable_path)) {
+                result.set_value({nullptr, {}, std::move(path), true});
+                return;
+            }
             desc.file_path = path;
             item = std::shared_ptr<audio::PlaybackItem>(new audio::PlaybackItem(std::move(desc)), [](auto* retiring) {
                 // Discarded results must not close a native decoder on a control thread.
@@ -661,6 +667,22 @@ audio::CueId ProjectState::begin_item_load_locked(const std::string& uuid,
 }
 
 void ProjectState::loader_loop() {
+    // shortcut: two queued jobs let one stalled source coexist with healthy imports.
+    constexpr std::size_t capacity = 2;
+    struct Loading {
+        LoadRequest request;
+        std::future<LoadedAudio> task;
+    };
+    std::vector<Loading> in_flight;
+    in_flight.reserve(capacity);
+    const auto next_available = [&] {
+        // Repeated cues for one source must leave a slot for a different file.
+        return std::find_if(load_queue_.begin(), load_queue_.end(), [&](const LoadRequest& request) {
+            return std::none_of(in_flight.begin(), in_flight.end(), [&](const Loading& load) {
+                return request.paths.preferred == load.request.paths.preferred;
+            });
+        });
+    };
     auto next_revision_scan = std::chrono::steady_clock::now() + std::chrono::seconds{1};
     auto next_revision_check = next_revision_scan;
     std::future<MediaRevisionCandidates> revision_scan;
@@ -701,44 +723,62 @@ void ProjectState::loader_loop() {
             next_revision_check = revision_scan.valid()
                 ? now + std::chrono::milliseconds{100} : next_revision_scan;
         }
-        LoadRequest req;
+        const auto wake_at = in_flight.empty() ? next_revision_check
+            : std::min(next_revision_check, std::chrono::steady_clock::now() + std::chrono::milliseconds{2});
         {
             std::unique_lock qlock{loader_mutex_};
-            loader_cv_.wait_until(qlock, next_revision_check, [this] {
-                return loaders_stop_ || !load_queue_.empty();
+            loader_cv_.wait_until(qlock, wake_at, [&] {
+                return loaders_stop_ || (in_flight.size() < capacity && next_available() != load_queue_.end());
             });
-            // On shutdown, drop whatever is still queued: those cues are about
-            // to be torn down anyway, and the process shouldn't wait on them.
             if (loaders_stop_) return;
-            if (load_queue_.empty()) continue;
-            req = std::move(load_queue_.front());
-            load_queue_.pop_front();
+        }
+        LoadRequest req;
+        std::future<LoadedAudio> task;
+        {
+            std::lock_guard lock{mutex_};
+            std::lock_guard qlock{loader_mutex_};
+            const auto stale = [&](const LoadRequest& request) {
+                const auto wanted = item_uuid_to_cue_.find(request.uuid);
+                const auto pending = pending_load_uuids_.find(request.uuid);
+                if (wanted != item_uuid_to_cue_.end() && wanted->second == request.cue_id &&
+                    pending != pending_load_uuids_.end() && pending->second == request.cue_id) return false;
+                if (pending != pending_load_uuids_.end() && pending->second == request.cue_id)
+                    pending_load_uuids_.erase(pending);
+                return true;
+            };
+            std::erase_if(in_flight, [&](const Loading& load) { return stale(load.request); });
+            while (!load_queue_.empty() && stale(load_queue_.front())) load_queue_.pop_front();
+            const auto ready = std::find_if(in_flight.begin(), in_flight.end(), [](const Loading& load) {
+                return load.task.wait_for(std::chrono::seconds{0}) == std::future_status::ready;
+            });
+            if (ready != in_flight.end()) {
+                req = std::move(ready->request);
+                task = std::move(ready->task);
+                in_flight.erase(ready);
+            } else if (in_flight.size() < capacity) {
+                auto next = next_available();
+                while (next != load_queue_.end() && stale(*next)) {
+                    load_queue_.erase(next);
+                    next = next_available();
+                }
+                if (next == load_queue_.end()) continue;
+                req = std::move(*next);
+                load_queue_.erase(next);
+            } else continue;
         }
 
         // Guard the whole task — an exception escaping here would terminate the
         // process, and a decode touches the filesystem (network shares, removable
         // media) where anything can go wrong.
         try {
-            audio::PlaybackItemDesc desc;
-            desc.id = req.cue_id; desc.file_path = req.paths.preferred;
-            desc.mix_sample_rate = engine_.config().mix_sample_rate;
-            desc.render_block = engine_.config().render_block;
-            auto task = prepare_audio_load(std::move(desc), req.properties, req.prime, std::move(req.paths.fallback));
-            bool abandoned = false;
-            while (task.wait_for(std::chrono::milliseconds{2}) != std::future_status::ready) {
-                std::lock_guard lock{mutex_};
-                const auto wanted = item_uuid_to_cue_.find(req.uuid);
-                std::lock_guard qlock{loader_mutex_};
-                if (loaders_stop_) return;
-                const auto current = pending_load_uuids_.find(req.uuid);
-                if (wanted == item_uuid_to_cue_.end() || wanted->second != req.cue_id ||
-                    current == pending_load_uuids_.end() || current->second != req.cue_id) { abandoned = true; break; }
-            }
-            if (abandoned) {
-                std::lock_guard qlock{loader_mutex_};
-                const auto current = pending_load_uuids_.find(req.uuid);
-                if (current != pending_load_uuids_.end() && current->second == req.cue_id)
-                    pending_load_uuids_.erase(current);
+            if (!task.valid()) {
+                audio::PlaybackItemDesc desc;
+                desc.id = req.cue_id; desc.file_path = req.paths.preferred;
+                desc.mix_sample_rate = engine_.config().mix_sample_rate;
+                desc.render_block = engine_.config().render_block;
+                task = prepare_audio_load(std::move(desc), std::move(req.properties), req.prime,
+                                          std::move(req.paths.fallback));
+                in_flight.push_back({std::move(req), std::move(task)});
                 continue;
             }
             const auto loaded = task.get();
@@ -770,7 +810,6 @@ void ProjectState::loader_loop() {
                                      req.uuid, util::path_to_utf8(loaded.path));
                     }
                 } else {
-                    engine_.adopt_cue(loaded.item);
                     audio_load_failures_.erase(req.uuid);
                     auto cm_it = cues_.find(req.cue_id.value);
                     if (cm_it != cues_.end()) {
@@ -791,7 +830,8 @@ void ProjectState::loader_loop() {
                             item_snap = it2;
                     });
                     if (item_snap.is_object())
-                        apply_item_properties_locked(item_snap, req.cue_id);
+                        apply_item_properties_locked(item_snap, loaded.item);
+                    engine_.adopt_cue(loaded.item);
                     queue_loaded_routing(document_generation_, false);
                     publish = true;
                 }
@@ -996,7 +1036,14 @@ void ProjectState::start_async_mirror() {
             std::unordered_map<std::string, detail::MediaPaths> candidates;
             std::unordered_map<std::string, json> item_snaps;
             std::unordered_set<std::string> cart_uuids;
-            std::unordered_map<std::string, std::filesystem::path> actually_wanted;
+            struct MirrorLoad {
+                std::string uuid;
+                audio::CueId previous;
+                std::filesystem::path reusable_path;
+                audio::CueId cue_id;
+                std::future<LoadedAudio> task;
+            };
+            std::deque<MirrorLoad> jobs;
             std::size_t unresolved_media = 0;
             {
                 std::lock_guard lock{mutex_};
@@ -1040,153 +1087,136 @@ void ProjectState::start_async_mirror() {
                         ++it;
                     }
                 }
-
+                for (const auto& [uuid, paths] : candidates) {
+                    if (paths.preferred.empty()) continue;
+                    const auto existing = item_uuid_to_cue_.find(uuid);
+                    if (existing == item_uuid_to_cue_.end()) {
+                        jobs.push_back({uuid, {}, {}, {}, {}});
+                    } else if (!paths.fallback.empty() && paths.preferred != paths.fallback &&
+                               engine_.find_cue(existing->second)) {
+                        jobs.push_back({uuid, existing->second, cues_.at(existing->second.value).file_path, {}, {}});
+                    }
+                    // A queued placeholder owns its own lookup and publication.
+                }
             }
 
-            const auto resolve_paths = [](const auto& paths_by_uuid) {
-                std::unordered_map<std::string, std::filesystem::path> resolved;
-                for (const auto& [uuid, paths] : paths_by_uuid)
-                    if (!paths.preferred.empty()) resolved.emplace(uuid, resolve_media_path(paths));
-                return resolved;
+            // Each worker resolves and prepares one source. A ready result frees its slot immediately.
+            load_progress_total_.store(jobs.size() + unresolved_media, std::memory_order_release);
+            const unsigned hw = std::thread::hardware_concurrency();
+            const std::size_t concurrency = hw > 2 ? hw - 1 : 2;
+            Logger::info("ProjectState: async-mirroring {} items ({} workers).", jobs.size(), concurrency);
+            std::vector<MirrorLoad> in_flight;
+            in_flight.reserve(std::min(concurrency, jobs.size()));
+            std::unordered_set<std::string> published;
+            const auto completed = [](const MirrorLoad& job) {
+                return job.task.wait_for(std::chrono::seconds{0}) == std::future_status::ready;
             };
-            std::unordered_map<std::string, std::filesystem::path> wanted;
-            if (std::any_of(candidates.begin(), candidates.end(), [](const auto& candidate) {
-                return !candidate.second.fallback.empty();
-            })) {
-                std::packaged_task<decltype(wanted)()> resolve{[paths = candidates, resolve_paths] { return resolve_paths(paths); }};
-                auto result = resolve.get_future();
-                std::thread(std::move(resolve)).detach();
-                while (result.wait_for(std::chrono::milliseconds{2}) != std::future_status::ready)
+            auto next_identity_check = std::chrono::steady_clock::now();
+            while (!jobs.empty() || !in_flight.empty()) {
+                if (mirror_cancel_.load(std::memory_order_acquire)) return;
+                while (in_flight.size() < concurrency && !jobs.empty()) {
                     if (mirror_cancel_.load(std::memory_order_acquire)) return;
-                wanted = result.get();
-            } else {
-                wanted = resolve_paths(candidates);
+                    const auto next = std::find_if(jobs.begin(), jobs.end(), [&](const MirrorLoad& candidate) {
+                        const auto& preferred = candidates.at(candidate.uuid).preferred;
+                        return std::none_of(in_flight.begin(), in_flight.end(), [&](const MirrorLoad& load) {
+                            return candidates.at(load.uuid).preferred == preferred;
+                        });
+                    });
+                    if (next == jobs.end()) break;
+                    auto job = std::move(*next);
+                    jobs.erase(next);
+                    const auto& paths = candidates.at(job.uuid);
+                    audio::PlaybackItemDesc desc;
+                    desc.id = job.cue_id = engine_.new_cue_id();
+                    desc.file_path = paths.preferred;
+                    desc.mix_sample_rate = engine_.config().mix_sample_rate;
+                    desc.render_block = engine_.config().render_block;
+                    try {
+                        job.task = prepare_audio_load(std::move(desc), std::move(item_snaps.at(job.uuid)),
+                            cart_uuids.contains(job.uuid), paths.fallback, std::move(job.reusable_path));
+                    } catch (...) {
+                        std::promise<LoadedAudio> failure;
+                        job.task = failure.get_future();
+                        failure.set_exception(std::current_exception());
+                    }
+                    in_flight.push_back(std::move(job));
+                }
+                const auto now = std::chrono::steady_clock::now();
+                if (now < next_identity_check && std::none_of(in_flight.begin(), in_flight.end(), completed)) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds{2});
+                    continue;
+                }
+                next_identity_check = now + std::chrono::milliseconds{100};
+                std::lock_guard lock{mutex_};
+                if (document_generation_ != mirror_generation || mirror_cancel_.load(std::memory_order_acquire)) return;
+                const auto folder = document_.value("folderPath", std::string{});
+                std::unordered_map<std::string, json*> current_items;
+                for_each_item(document_, [&](json& item, const std::string&) {
+                    if (item.value("type", std::string{}) == "audio")
+                        current_items.emplace(item.value("uuid", std::string{}), &item);
+                });
+                for (auto it = in_flight.begin(); it != in_flight.end();) {
+                    const auto doc_item = current_items.find(it->uuid);
+                    const auto& paths = candidates.at(it->uuid);
+                    const auto current = item_uuid_to_cue_.find(it->uuid);
+                    const auto current_id = current == item_uuid_to_cue_.end() ? audio::CueId{} : current->second;
+                    // A newer media edit or queued import owns publication for this UUID.
+                    if (doc_item == current_items.end() || current_id != it->previous ||
+                        media_paths(*doc_item->second, folder) != paths) {
+                        it = in_flight.erase(it);
+                        load_progress_total_.fetch_sub(1, std::memory_order_release);
+                        continue;
+                    }
+                    if (!completed(*it)) { ++it; continue; }
+                    auto job = std::move(*it);
+                    it = in_flight.erase(it);
+
+                    try {
+                        const auto loaded = job.task.get();
+                        if (!loaded.reused) {
+                            if (!job.previous.empty()) {
+                                engine_.unload_cue(job.previous);
+                                cues_.erase(job.previous.value);
+                                item_uuid_to_cue_.erase(current);
+                            }
+                            if (!loaded.item) {
+                                audio_load_failures_[job.uuid] = {"decoder_init_failed", util::path_to_utf8(loaded.path)};
+                                Logger::warn("ProjectState: load failed uuid='{}'", job.uuid);
+                                continue;
+                            }
+                            CueMeta meta;
+                            meta.id = job.cue_id;
+                            meta.file_path = loaded.path;
+                            const auto& md = loaded.metadata;
+                            meta.display_name = md.title.empty() ? util::path_to_utf8(loaded.path.filename()) : md.title;
+                            meta.artist = md.artist;
+                            meta.title = md.title;
+                            meta.duration_seconds = static_cast<double>(md.duration.count()) / 1000.0;
+                            cues_.emplace(job.cue_id.value, std::move(meta));
+                            apply_item_properties_locked(*doc_item->second, loaded.item);
+                            engine_.adopt_cue(loaded.item);
+                            item_uuid_to_cue_.emplace(job.uuid, job.cue_id);
+                            audio_load_failures_.erase(job.uuid);
+                            published.insert(job.cue_id.value);
+                        }
+                        load_progress_loaded_.fetch_add(1, std::memory_order_release);
+                    } catch (const std::exception& e) {
+                        Logger::warn("ProjectState: load failed uuid='{}': {}", job.uuid, e.what());
+                        if (engine_.find_cue(job.cue_id)) engine_.unload_cue(job.cue_id);
+                        cues_.erase(job.cue_id.value);
+                        const auto failed = item_uuid_to_cue_.find(job.uuid);
+                        if (failed != item_uuid_to_cue_.end() && failed->second == job.cue_id)
+                            item_uuid_to_cue_.erase(failed);
+                        audio_load_failures_[job.uuid] = {"load_exception", util::path_to_utf8(paths.preferred)};
+                    }
+                }
             }
 
+            // Reused cues keep their buffers. New cues already have the latest properties.
+            std::vector<std::pair<std::string, std::shared_ptr<audio::PlaybackItem>>> native_properties;
             {
                 std::lock_guard lock{mutex_};
                 if (document_generation_ != mirror_generation || mirror_cancel_.load(std::memory_order_acquire)) return;
-                const auto current_paths = media_paths_by_uuid(document_);
-                for (const auto& [uuid, path] : wanted) {
-                    const auto current = current_paths.find(uuid);
-                    if (current == current_paths.end() || current->second != candidates.at(uuid)) continue;
-                    auto item_it = item_uuid_to_cue_.find(uuid);
-                    bool needs_load = item_it == item_uuid_to_cue_.end();
-                    if (!needs_load) {
-                        const auto cue_it = cues_.find(item_it->second.value);
-                        needs_load = cue_it == cues_.end() ||
-                            !detail::same_media_identity(cue_it->second.file_path,
-                                                         path);
-                        if (needs_load) {
-                            engine_.unload_cue(item_it->second);
-                            cues_.erase(item_it->second.value);
-                            item_uuid_to_cue_.erase(item_it);
-                        }
-                    }
-                    if (needs_load) actually_wanted.emplace(uuid, path);
-                }
-            }
-
-            // Phase 2: parallel decoder init. NO project mutex — load_cue_no_route
-            // only takes the engine's own internal lock. /api/project,
-            // /api/cues, /api/project/progress all stay responsive while
-            // we're here. The OS file I/O is what dominates anyway.
-            load_progress_total_.store(
-                actually_wanted.size() + unresolved_media, std::memory_order_release);
-            load_progress_loaded_.store(0, std::memory_order_release);
-
-            const unsigned hw = std::thread::hardware_concurrency();
-            const std::size_t concurrency = (hw <= 1) ? 1u : static_cast<std::size_t>(hw - 1);
-            Logger::info("ProjectState: async-mirroring {} items ({} workers).",
-                         actually_wanted.size(), concurrency);
-
-            struct Loaded {
-                std::future<LoadedAudio> task;
-                std::string uuid;
-                std::filesystem::path path;
-                audio::CueId cue_id;
-                meta::AudioFileMetadata metadata;
-                std::shared_ptr<audio::PlaybackItem> item;
-            };
-            std::vector<Loaded> in_flight;
-            std::vector<Loaded> done;
-            done.reserve(actually_wanted.size());
-            auto drain_one = [&]() {
-                if (in_flight.empty()) return true;
-                while (in_flight.front().task.wait_for(std::chrono::milliseconds{2}) != std::future_status::ready)
-                    if (mirror_cancel_.load(std::memory_order_acquire)) return false;
-                auto loaded = std::move(in_flight.front());
-                in_flight.erase(in_flight.begin());
-                auto result = loaded.task.get();
-                loaded.item = std::move(result.item);
-                loaded.metadata = std::move(result.metadata);
-                if (loaded.item) load_progress_loaded_.fetch_add(1, std::memory_order_release);
-                else loaded.cue_id = {};
-                done.push_back(std::move(loaded));
-                return true;
-            };
-            for (auto& [uuid, path] : actually_wanted) {
-                if (mirror_cancel_.load(std::memory_order_acquire)) return;
-                if (in_flight.size() >= concurrency && !drain_one()) return;
-                audio::PlaybackItemDesc desc;
-                desc.id = engine_.new_cue_id(); desc.file_path = path;
-                desc.mix_sample_rate = engine_.config().mix_sample_rate;
-                desc.render_block = engine_.config().render_block;
-                const auto id = desc.id;
-                in_flight.push_back({prepare_audio_load(std::move(desc), item_snaps.at(uuid), cart_uuids.contains(uuid)),
-                    uuid, path, id, {}, {}});
-            }
-            while (!in_flight.empty()) if (!drain_one()) return;
-            if (mirror_cancel_.load(std::memory_order_acquire)) return;
-
-            std::vector<std::pair<std::string, std::shared_ptr<audio::PlaybackItem>>> native_properties;
-            // Phase 3: register results + metadata under lock. Cheap because
-            // the heavy I/O is already done — this is just hashtable inserts
-            // and a single routing rebuild.
-            {
-                std::lock_guard lock{mutex_};
-                if (document_generation_ != mirror_generation) return;
-                const auto current_wanted = media_paths_by_uuid(document_);
-
-                for (auto& loaded : done) {
-                    const auto expected = current_wanted.find(loaded.uuid);
-                    const bool identity_matches =
-                        expected != current_wanted.end() &&
-                        expected->second == candidates.at(loaded.uuid);
-                    if (!identity_matches) {
-                        continue;
-                    }
-                    if (loaded.cue_id.empty()) {
-                        audio_load_failures_[loaded.uuid] = {
-                            "decoder_init_failed", util::path_to_utf8(loaded.path)};
-                        Logger::warn("ProjectState: load failed uuid='{}'",
-                                     loaded.uuid);
-                        continue;
-                    }
-                    // A single-item load may have won while this decoder was in
-                    // flight. Never overwrite it or leak the losing engine cue.
-                    if (item_uuid_to_cue_.find(loaded.uuid) !=
-                        item_uuid_to_cue_.end()) {
-                        continue;
-                    }
-                    engine_.adopt_cue(loaded.item);
-                    audio_load_failures_.erase(loaded.uuid);
-                    item_uuid_to_cue_.emplace(loaded.uuid, loaded.cue_id);
-
-                    CueMeta meta;
-                    meta.id           = loaded.cue_id;
-                    meta.file_path    = loaded.path;
-                    const auto& md    = loaded.metadata;
-                    meta.display_name = md.title.empty()
-                                          ? util::path_to_utf8(loaded.path.filename())
-                                          : md.title;
-                    meta.artist       = md.artist;
-                    meta.title        = md.title;
-                    meta.duration_seconds =
-                        static_cast<double>(md.duration.count()) / 1000.0;
-                    cues_.emplace(loaded.cue_id.value, std::move(meta));
-                }
-
 #ifdef LIVEPLAY_TEST_HOOKS
                 if (const char* marker = std::getenv("DWCUE_TEST_MIRROR_PROPERTIES_MARKER"); marker && *marker)
                     std::ofstream{std::string{marker} + ".entered"} << mirror_generation;
@@ -1195,7 +1225,7 @@ void ProjectState::start_async_mirror() {
                     if (item.value("type", std::string{}) != "audio") return;
                     const auto uuid = item.value("uuid", std::string{});
                     const auto found = item_uuid_to_cue_.find(uuid);
-                    if (found == item_uuid_to_cue_.end()) return;
+                    if (found == item_uuid_to_cue_.end() || published.contains(found->second.value)) return;
                     if (auto cue = engine_.find_cue(found->second)) {
                         apply_audio_item_levels(item, cue);
                         native_properties.emplace_back(uuid, std::move(cue));
@@ -1437,21 +1467,17 @@ std::vector<audio::CueId> ProjectState::retire_missing_item_cues_locked() {
 
 // ---------------------------------------------------------------------------
 // Push one document item's engine-visible properties onto its PlaybackItem.
-// Caller holds mutex_. No-op when the cue isn't in the engine (yet) — that is
-// the normal state for an item whose background decode is still in flight; the
-// loader calls this again once the cue exists.
+// Caller holds mutex_. The loader still owns the stopped cue exclusively.
 // ---------------------------------------------------------------------------
 void ProjectState::apply_item_properties_locked(const json& item,
-                                                const audio::CueId& cue_id) {
-    auto cue = engine_.find_cue(cue_id);
-    if (!cue) return;
+                                                const std::shared_ptr<audio::PlaybackItem>& cue) {
     apply_audio_item_properties(item, cue);
     const bool ltc_on = item.value("ltcEnabled", false);
     const std::string tc_str = item.value("ltcStartTimecode", std::string{"00:00:00:00"});
     const int fps_idx = item.value("ltcFrameRate", 4);
     if (ltc_on) {
         const auto offset = parse_smpte_timecode_to_ns(tc_str, fps_idx);
-        auto cm_it = cues_.find(cue_id.value);
+        auto cm_it = cues_.find(cue->id().value);
         if (cm_it != cues_.end()) {
             cm_it->second.ltc_enabled          = true;
             cm_it->second.ltc_frame_rate_index = fps_idx;
