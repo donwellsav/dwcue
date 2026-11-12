@@ -303,7 +303,7 @@ watch(hasAssignedOneShots, (assigned) => {
 const cartFullscreen = ref(false);
 const cartDetached = ref(false);
 const cartVisible = computed(() => !cartClosed.value && !cartDetached.value);
-const { mount: mountHotkeys, unmount: unmountHotkeys } = useCartHotkeys(() => cartVisible.value);
+const { mount: mountHotkeys, unmount: unmountHotkeys } = useCartHotkeys();
 const outputConsoleMinDb = -60;
 const outputConsoleMaxDb = 40;
 const limiterCeilingDragPixelsPerStep = 6;

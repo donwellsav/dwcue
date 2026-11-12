@@ -145,7 +145,7 @@ export interface CartSlotKeyBinding {
 export interface OneShotSettings {
   order: number;
   retrigger: 'restart' | 'ignore';
-  hotkey?: CartSlotKeyBinding;
+  hotkey?: CartSlotKeyBinding | null; // Omitted uses the slot default. Null disables it.
   // Set when a playlist cue was copied into an independent One Shot. This is
   // only an origin reference for the Properties toggle; playback stays local.
   sourceUuid?: string;
@@ -164,6 +164,7 @@ export type PlaybackKeyAction =
   | 'stop-all'
   | 'select-up'
   | 'select-down'
+  | 'set-up-next'
   | 'play-selected'
   | 'play-next';
 
@@ -460,5 +461,5 @@ export const DEFAULT_PLAYBACK_KEYS: Partial<Record<PlaybackKeyAction, CartSlotKe
   'stop-all':      { key: 'Escape',    ctrlKey: false, shiftKey: false, altKey: false },
   'select-up':     { key: 'ArrowUp',   ctrlKey: false, shiftKey: false, altKey: false },
   'select-down':   { key: 'ArrowDown', ctrlKey: false, shiftKey: false, altKey: false },
-  'play-selected': { key: 'Enter',     ctrlKey: false, shiftKey: false, altKey: false },
+  'set-up-next':   { key: 'Enter',     ctrlKey: false, shiftKey: false, altKey: false },
 };

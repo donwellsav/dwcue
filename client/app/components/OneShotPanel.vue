@@ -44,6 +44,7 @@
           v-if="item"
           :item="item"
           :position="index"
+          :hotkey="keyMappings[index]"
           @request-import="openImport(index)"
           @remove="removeOneShot(item, index)"
         />
@@ -125,7 +126,7 @@ const {
 const { cartOnlyItems, addCartOnlyItem, removeCartOnlyItem } = useCartItems();
 const { uiMode, cartGridLayouts, oneShotFontScale } = useUiMode();
 const { t } = useLocalization();
-const { mount: mountHotkeys, unmount: unmountHotkeys } = useCartHotkeys();
+const { keyMappings, mount: mountHotkeys, unmount: unmountHotkeys } = useCartHotkeys();
 const { mount: mountMidi, unmount: unmountMidi } = useMidiController();
 const server = useLiveplayServer();
 const { isDetached, identity: detachedIdentity, mutate } = useDetachedOneShotMutation();

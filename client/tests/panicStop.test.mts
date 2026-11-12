@@ -8,6 +8,7 @@ import * as Vue from 'vue';
 import ts from 'typescript';
 import { runExclusivePendingAction } from '../app/utils/acknowledgedAction.ts';
 import { DEFAULT_PLAYBACK_KEYS } from '../app/types/project.ts';
+import { bindingsMatch, eventToBinding } from '../app/composables/useCartHotkeys.ts';
 
 function elementSource(component: string, tag: string, className?: string): string {
   const filename = new URL(`../app/components/${component}.vue`, import.meta.url);
@@ -114,10 +115,7 @@ test('the configured Stop All shortcut works during recovery and project loading
   const start = source.indexOf('  const trapKeydown =');
   const end = source.indexOf('  window.addEventListener', start);
   assert.ok(start >= 0 && end > start);
-  const hotkeys = readFileSync(new URL('../app/composables/useCartHotkeys.ts', import.meta.url), 'utf8');
-  const compare = hotkeys.slice(hotkeys.indexOf('const bindingsMatch ='), hotkeys.indexOf('export const isReservedCombo'));
-  const binding = hotkeys.slice(hotkeys.indexOf('const eventToBinding ='), hotkeys.indexOf('// Playback action metadata'));
-  const code = ts.transpileModule(`${compare}\n${binding}\n${source.slice(start, end)}`, {
+  const code = ts.transpileModule(source.slice(start, end), {
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const calls: unknown[][] = [];
@@ -129,8 +127,8 @@ test('the configured Stop All shortcut works during recovery and project loading
     stopAll: (...args: unknown[]) => calls.push(args),
   };
   const currentProject = { value: { playbackKeys: {} as Record<string, unknown> } };
-  const trap = Function('server', 'projectLoading', 'currentProject', 'DEFAULT_PLAYBACK_KEYS',
-    `${code}\nreturn trapKeydown;`)(server, projectLoading, currentProject, DEFAULT_PLAYBACK_KEYS);
+  const trap = Function('server', 'projectLoading', 'currentProject', 'DEFAULT_PLAYBACK_KEYS', 'bindingsMatch', 'eventToBinding',
+    `${code}\nreturn trapKeydown;`)(server, projectLoading, currentProject, DEFAULT_PLAYBACK_KEYS, bindingsMatch, eventToBinding);
   const press = (key: string, opts = {}) => {
     let swallowed = false;
     trap({ key, target: { closest: () => null }, ctrlKey: false, metaKey: false, shiftKey: false,
@@ -180,7 +178,6 @@ function loadHandleKeydown(dependencies: Record<string, unknown>) {
   const factorySource = `
     function buildHandleKeydown(dependencies: Record<string, any>) {
       const {
-        allowOtherShortcuts = () => true,
         currentProject,
         projectHydrationStatus,
         dispatchPlaybackAction,
@@ -234,12 +231,10 @@ test('Stop All shortcut reaches the server-global action without an open project
   assert.deepEqual(actions, ['stop-all', 'stop-all']);
 });
 
-test('Stop All stays available with One Shots hidden without enabling other shortcuts', () => {
+test('workspace shortcuts keep Stop All, repeat suppression, and text focus behavior', () => {
   const actions: string[] = [];
-  let panelVisible = false;
   let typing = false;
   const handleKeydown = loadHandleKeydown({
-    allowOtherShortcuts: () => panelVisible,
     currentProject: { value: {} },
     projectHydrationStatus: { value: 'ready' },
     dispatchPlaybackAction: (action: string) => actions.push(action),
@@ -255,21 +250,21 @@ test('Stop All stays available with One Shots hidden without enabling other shor
   });
 
   press(' ');
-  press('z');
+  press('1');
   press('F9');
   press('F9', { repeat: true });
   press('F9', { defaultPrevented: true });
   typing = true;
   press('F9');
-  assert.deepEqual(actions, ['stop-all']);
+  press('1');
+  assert.deepEqual(actions, ['play-next', 'one-shot', 'stop-all']);
   press('F9', { forwarded: true });
 
   typing = false;
-  panelVisible = true;
   press(' ');
-  press('z');
+  press('1');
   press('F9');
-  assert.deepEqual(actions, ['stop-all', 'stop-all', 'play-next', 'one-shot', 'stop-all']);
+  assert.deepEqual(actions, ['play-next', 'one-shot', 'stop-all', 'stop-all', 'play-next', 'one-shot', 'stop-all']);
 });
 
 function transpileFactory(source: string, factoryName: string): (...args: any[]) => any {

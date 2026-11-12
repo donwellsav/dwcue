@@ -195,8 +195,7 @@ const applyFields = (item: AudioItem, fields: OneShotMutableFields): void => {
     else item.oneShot!.autoDisarm = false;
   }
   if ('hotkey' in fields) {
-    if (fields.hotkey) item.oneShot!.hotkey = structuredClone(fields.hotkey);
-    else delete item.oneShot!.hotkey;
+    item.oneShot!.hotkey = fields.hotkey ? structuredClone(fields.hotkey) : null;
   }
   if ('playbackMode' in fields && fields.playbackMode !== getOneShotPlaybackMode(item)) {
     setOneShotPlaybackMode(item, fields.playbackMode!);

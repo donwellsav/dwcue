@@ -922,6 +922,7 @@
     "selectUp": "Select Up",
     "selectDown": "Select Down",
     "playSelected": "Play Selected",
+    "setUpNext": "Set Selected as Up Next",
     "masterVolume": "Global Master Volume",
     "midiDevice": "MIDI Device",
     "allDevices": "All Devices",

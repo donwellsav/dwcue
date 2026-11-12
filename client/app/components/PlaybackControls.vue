@@ -31,7 +31,7 @@
       class="control-btn play-next-btn"
       :class="{ 'has-next': !!effectiveNextUuid }"
       @click="handlePlayNext"
-      :disabled="!projectControlsReady || !effectiveNextUuid"
+      :disabled="!projectControlsReady || !effectiveNextUuid || setNextItemPending"
       :title="playNextTooltip"
     >
       <span class="material-symbols-rounded" aria-hidden="true">fast_forward</span>

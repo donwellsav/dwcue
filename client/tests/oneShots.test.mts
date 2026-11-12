@@ -12,6 +12,8 @@ import {
   removeOneShotDesignation,
 } from '../app/utils/oneShots.ts';
 import { createOneShotArmPolicy } from '../app/composables/useOneShotArm.ts';
+import { resolveKeyboardBindings } from '../app/composables/useCartHotkeys.ts';
+import type { AudioItem } from '../app/types/project.ts';
 
 const audio = (uuid: string, order?: number) => ({
   uuid,
@@ -61,22 +63,55 @@ test('new designation uses safe quick-play defaults', () => {
   assert.deepEqual((item as any).oneShot, { order: 4, retrigger: 'restart' });
   assert.deepEqual(item.endBehavior, { action: 'nothing' });
   assert.deepEqual(item.startBehavior, { action: 'nothing' });
-  assert.deepEqual(item.duckingBehavior, { mode: 'duck-others', duckLevel: 0.1 });
+  assert.deepEqual(item.duckingBehavior, { mode: 'stop-all' });
+  assert.equal(item.playFade, 0.1);
+  assert.equal(item.stopFade, 0.5);
+  assert.equal(item.fadeOutDuration, 0.5);
 });
 
 test('playlist cues copy into independent One Shots without sharing behavior', () => {
   const source = audio('playlist-source');
+  Object.assign(source, { crossFade: 3, startNextEnabled: true });
   const clone = cloneAsIndependentOneShot(source as any, 'one-shot-copy', 3);
 
   assert.equal(clone.uuid, 'one-shot-copy');
   assert.deepEqual(clone.index, [-1, 3]);
   assert.equal(clone.oneShot?.sourceUuid, 'playlist-source');
-  assert.deepEqual(clone.duckingBehavior, { mode: 'duck-others', duckLevel: 0.1 });
+  assert.deepEqual(clone.duckingBehavior, { mode: 'stop-all' });
+  assert.equal(clone.playFade, 0.1);
+  assert.equal(clone.stopFade, 0.5);
+  assert.equal(clone.crossFade, 0);
+  assert.equal(clone.startNextEnabled, false);
+  assert.equal(source.crossFade, 3);
+  assert.equal(source.playFade, 0);
   assert.deepEqual(clone.startBehavior, { action: 'nothing' });
   assert.deepEqual(clone.endBehavior, { action: 'nothing' });
   clone.displayName = 'Independent name';
   assert.equal(source.displayName, 'playlist-source');
   assert.equal((source as any).oneShot, undefined);
+});
+
+test('digits follow slot position and saved keyboard assignments take precedence', () => {
+  const slots: (AudioItem | null)[] = Array.from({ length: 11 }, (_, index) => audio(String(index), index));
+  const { keyMappings, playbackMappings } = resolveKeyboardBindings(slots);
+  assert.deepEqual(Object.values(keyMappings).map(binding => binding.key), [...'1234567890']);
+  assert.equal(playbackMappings['set-up-next']?.key, 'Enter');
+  assert.equal(playbackMappings['play-selected'], undefined);
+  assert.equal(playbackMappings['play-next']?.key, ' ');
+
+  const key = (value: string) => ({ key: value, ctrlKey: false, shiftKey: false, altKey: false });
+  slots[0] = null;
+  slots[2]!.oneShot!.hotkey = null;
+  slots[10]!.oneShot!.hotkey = key('2');
+  const saved = resolveKeyboardBindings(slots, { 'stop-all': key('4'), 'play-selected': key('Enter') });
+  for (const index of [0, 1, 2, 3]) assert.equal(saved.keyMappings[index], undefined);
+  assert.equal(saved.keyMappings[9].key, '0');
+  assert.equal(saved.keyMappings[10].key, '2');
+  assert.equal(saved.playbackMappings['stop-all']?.key, '4');
+  assert.equal(saved.playbackMappings['play-selected']?.key, 'Enter');
+  assert.equal(saved.playbackMappings['set-up-next'], undefined);
+  slots[10]!.oneShot!.hotkey = key('Enter');
+  assert.equal(resolveKeyboardBindings(slots).playbackMappings['set-up-next'], undefined);
 });
 
 test('One Shot copies into the playlist without consuming the source cell', () => {

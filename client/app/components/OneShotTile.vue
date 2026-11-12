@@ -227,7 +227,7 @@
 
 <script setup lang="ts">
 import { useDetachedOneShotMutation } from '~/composables/useDetachedOneShotMutation';
-import type { AudioItem } from '~/types/project';
+import type { AudioItem, CartSlotKeyBinding } from '~/types/project';
 import type { OneShotMutableFields } from '~/types/oneShotMutation';
 import {
   getOneShotEndMode,
@@ -240,7 +240,7 @@ import {
 import { eventToBinding, formatKeyLabel, isReservedCombo } from '~/composables/useCartHotkeys';
 import { oneShotFireActionKey, runAcknowledgedAction } from '~/utils/acknowledgedAction';
 
-const props = defineProps<{ item: AudioItem; position: number }>();
+const props = defineProps<{ item: AudioItem; position: number; hotkey?: CartSlotKeyBinding }>();
 const emit = defineEmits<{
   (event: 'request-import'): void;
   (event: 'remove'): void;
@@ -294,8 +294,7 @@ const duckDb = computed(() => {
   const level = props.item.duckingBehavior.duckLevel ?? 0.1;
   return level > 0 ? Math.max(-60, 20 * Math.log10(level)) : -60;
 });
-const hotkeyLabel = computed(() => props.item.oneShot?.hotkey
-  ? formatKeyLabel(props.item.oneShot.hotkey) : '');
+const hotkeyLabel = computed(() => props.hotkey ? formatKeyLabel(props.hotkey) : '');
 const transportLabel = computed(() => isPlaying.value
   ? t('oneShots.stopNamed', { name: props.item.displayName })
   : t('oneShots.playNamed', { name: props.item.displayName }));
@@ -466,7 +465,7 @@ const startHotkeyCapture = () => {
 };
 
 const clearHotkey = () => {
-  if (props.item.oneShot) delete props.item.oneShot.hotkey;
+  if (props.item.oneShot) props.item.oneShot.hotkey = null;
   capturingHotkey.value = false;
   persist({ hotkey: null });
 };

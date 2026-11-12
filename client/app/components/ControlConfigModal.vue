@@ -271,7 +271,7 @@ const getPlaybackKeyLabel = (action: PlaybackKeyAction): string => {
 const clearSlotBinding = (slotIndex: number) => {
   const item = oneShotSlots.value[slotIndex];
   if (!item?.oneShot) return;
-  delete item.oneShot.hotkey;
+  item.oneShot.hotkey = null;
   saveProject();
 };
 
