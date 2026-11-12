@@ -109,7 +109,7 @@ const { t } = useLocalization();
 const upstreamContributors = Object.values(contributorsJson.contributors);
 
 // Get app version
-const appVersion = ref('2.6.20');
+const appVersion = ref('2.6.21');
 onMounted(async () => {
   if (import.meta.client && window.electronAPI?.getAppVersion) {
     appVersion.value = await window.electronAPI.getAppVersion();
