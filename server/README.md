@@ -742,4 +742,6 @@ Named Program and group output opens release the routing and playback lifecycle 
 
 Program and Play All use the same first-open protection for System Default. Play All checks Main before dispatch, and a failed open leaves the armed target and active audio intact. Concurrent Main setup retains one reference. Program GO applies LTC routing only to the cue it is preparing. Diagnostic setup releases playback ownership during media preparation and device startup. Stop, a newer play intent, or project replacement discards an obsolete diagnostic before publication.
 
-The workplan tracks remaining first-open paths in device settings and loader coordinators, plus filesystem resolution and healthy-file publication. A canceled OS operation retains its owner and resources until it returns. OS thread exhaustion may retain synchronous cleanup as a fallback.
+The initial open for a project Program or LTC selection or a cue override releases project and playback ownership. Stop All and superseding project edits can reject the late result and release its device reference. The controller keeps the acknowledged selection while the request waits and saves after acceptance.
+
+The workplan tracks remaining first-open paths in loader coordinators and routing reapplied during settings changes, plus filesystem resolution and healthy-file publication. A canceled OS operation retains its owner and resources until it returns. OS thread exhaustion may retain synchronous cleanup as a fallback.
