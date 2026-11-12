@@ -754,6 +754,10 @@
                 <span class="material-symbols-rounded" aria-hidden="true">keyboard</span>
                 <span>{{ t('settings.showShortcutsBar') }}</span>
               </button>
+              <button type="button" class="help-link help-link--button" @click="emit('open-shortcuts')">
+                <span class="material-symbols-rounded" aria-hidden="true">tune</span>
+                <span>{{ t('settings.helpShortcuts') }}</span>
+              </button>
               <label class="settings-label">
                 <span class="material-symbols-rounded" aria-hidden="true">keyboard</span>
                 {{ t('settings.helpShortcutsTitle') }}
@@ -764,10 +768,6 @@
                   <span class="shortcut-summary-key">{{ playbackKeyLabel(action.id) || '—' }}</span>
                 </div>
               </div>
-              <button type="button" class="help-link help-link--button" @click="emit('open-shortcuts')">
-                <span class="material-symbols-rounded" aria-hidden="true">keyboard</span>
-                <span>{{ t('settings.helpShortcuts') }}</span>
-              </button>
             </section>
           </template>
 
@@ -1487,18 +1487,18 @@ function close() {
 .settings-tabs {
   display: flex;
   flex-shrink: 0;
+  flex-wrap: wrap;
   gap: 2px;
-  padding: 0 20px;
+  padding: 0 12px;
   border-bottom: 1px solid var(--color-border);
   background-color: var(--color-surface);
-  overflow-x: auto;
 }
 .tab-btn {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm, 8px);
+  gap: 6px;
   min-height: 36px;
-  padding: 6px var(--spacing-md, 12px);
+  padding: 6px 8px;
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
