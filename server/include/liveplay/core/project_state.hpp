@@ -446,7 +446,9 @@ public:
     // selected audio device if needed and creates a
     // dedicated mixer + two master channels routed to it. Returns the
     // mixer id, or empty on failure (device not found).
-    audio::MixerChannelId ensure_device_routing(const std::string& device_name);
+    audio::MixerChannelId ensure_device_routing(
+        const std::string& device_name,
+        std::unique_lock<std::recursive_mutex>* lifecycle_lock = nullptr);
     // Release per-project override mixers/master pairs/device references.
     // Owns ProjectState locking; call without mutex_.
     void release_device_routings();
@@ -620,6 +622,7 @@ private:
     // Serializes route creation with project-boundary release across mirror,
     // settings, and transport callers. Always acquire before mutex_.
     std::mutex device_routing_mutex_;
+    std::uint64_t device_routing_generation_ = 0; // guarded by device_routing_mutex_
     // Next free master channel pair when allocating new device routings.
     // Default device occupies 0/1; preview occupies 30/31; overrides start
     // at 2 and increment by 2.
@@ -627,7 +630,8 @@ private:
     audio::MixerChannelId ensure_device_routing_impl(
         const std::string& routing_key,
         const std::string& device_name,
-        std::optional<audio::DeviceId> required_open_device);
+        std::optional<audio::DeviceId> required_open_device,
+        std::unique_lock<std::recursive_mutex>* lifecycle_lock = nullptr);
     bool reject_output_selection(const std::string& selection,
                                  const std::string& item_uuid = {});
     void clear_diagnostic_cues() noexcept;

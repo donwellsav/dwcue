@@ -272,6 +272,96 @@ ma_context* null_preview_context() {
     return &context;
 }
 
+void test_stop_all_during_program_device_start() {
+    auto* context = null_preview_context();
+    static const auto start = context->callbacks.onDeviceStart;
+    static std::atomic<bool> hold{false}, entered{false}, fail{false};
+    context->callbacks.onDeviceStart = [](ma_device* device) {
+        if (hold.load()) {
+            entered.store(true);
+            while (hold.load()) std::this_thread::sleep_for(1ms);
+        }
+        return fail.load() ? MA_ERROR : start(device);
+    };
+    const auto wav = make_wav(8'192, 480'000);
+    for (const bool group : {false, true}) {
+        liveplay::audio::AudioEngine engine;
+        engine.device_test_context_ = context;
+        liveplay::core::ProjectState state(engine);
+        const auto routed = audio("cold-output", wav, {
+            {"deviceOverride", "NULL Playback Device"}, {"duckingBehavior", {{"mode", "no-ducking"}}},
+        });
+        const auto target = group ? "cold-group" : "cold-output";
+        const auto cue = group
+            ? json{{"uuid", target}, {"type", "group"}, {"startBehavior", {{"action", "play-all"}}},
+                   {"children", json::array({routed, audio("group-sibling", wav,
+                        {{"duckingBehavior", {{"mode", "no-ducking"}}}})})}}
+            : routed;
+        check(state.replace_full_document(document(json::array({
+            audio("running-bed", wav), cue, audio("backup-cue", wav),
+        }))) && wait_ready(state), "first open: Program, group and backup media are ready");
+        check(state.trigger_item("running-bed") && state.set_next_item_override(target),
+              "first open: bed playing and cold output armed");
+        const auto backup = engine.find_cue(*state.item_to_cue_id("backup-cue"));
+        check(backup && backup->prime(2.0), "first open: backup cue prepared");
+
+        const auto hold_open = [&] {
+            entered.store(false);
+            hold.store(true);
+            auto opening = std::async(std::launch::async, [&] { return state.go(); });
+            for (int i = 0; i < 1000 && !entered.load(); ++i) std::this_thread::sleep_for(2ms);
+            check(entered.load(), "first open: GO entered native null-backend start");
+            return opening;
+        };
+        auto opening = hold_open();
+        auto controls = std::async(std::launch::async, [&] {
+            state.stop_all_cues(0);
+            return !on_air(state, engine, "running-bed") &&
+                state.set_next_item_override("backup-cue") && state.go() == "backup-cue" &&
+                state.state_summary().is_object() && on_air(state, engine, "backup-cue");
+        });
+        check(controls.wait_for(250ms) == std::future_status::ready,
+              "first open: Stop All, prepared backup GO and status finish before device returns");
+        hold.store(false);
+        check(opening.get().empty() && controls.get(), "first open: Stop All cancels the held GO");
+        check(!on_air(state, engine, "cold-output") && !on_air(state, engine, "group-sibling") &&
+                  on_air(state, engine, "backup-cue") && state.device_routings_.empty() && engine.devices_.empty(),
+              "first open: no late playback or route; backup stays on air");
+        std::array<float, 256> left{}, right{};
+        float* channels[]{left.data(), right.data()};
+        backup->render_block(channels, 2, 256);
+        check(left[0] > 0.2f, "first open: backup GO renders original PCM");
+
+        std::atomic<bool> warned{false};
+        state.set_ui_state_broadcaster([&](const json& event) {
+            if (event.value("code", "") == "output_device_unavailable" &&
+                event.value("device", "") == "NULL Playback Device") warned.store(true);
+        });
+        fail.store(true);
+        const auto failed = state.set_next_item_override(target) && state.go().empty();
+        fail.store(false);
+        check(failed && warned.load() && state.next_item_override() == target &&
+                  on_air(state, engine, "backup-cue") && state.device_routings_.empty(),
+              "first open: native failure names the output and keeps the backup playing");
+        check(state.set_next_item_override(target) && state.go() == target &&
+                  on_air(state, engine, "cold-output") && state.device_routings_.size() == 1 &&
+                  engine.devices_.size() == 1 && engine.devices_.front()->open_references.value() == 1,
+              "first open: deliberate retry opens one shared route and reference");
+        state.stop_all_cues(0);
+        state.set_ui_state_broadcaster({});
+        state.release_device_routings();
+        check(state.set_next_item_override(target), "first open: cue armed for reset test");
+        auto discarded = hold_open();
+        auto reset = std::async(std::launch::async, [&] { state.reset(); });
+        check(reset.wait_for(250ms) == std::future_status::ready,
+              "first open: reset finishes while device start is held");
+        hold.store(false);
+        reset.get();
+        check(discarded.get().empty() && state.device_routings_.empty() && engine.devices_.empty(),
+              "first open: reset discards late route and releases its reference");
+    }
+}
+
 void test_stop_all_during_preview_retirement() {
     const auto wav = make_wav(8'192);
     for (const int mode : {0, 1, 2, 3}) {
@@ -2284,6 +2374,7 @@ int main() try {
     test_owned_loader_destruction();
     test_loading_metadata_preserves_controls(wav);
     test_stop_all_during_cue_retirement(wav);
+    test_stop_all_during_program_device_start();
     test_stop_all_during_preview_retirement();
     test_cancelled_preview_preparation();
     test_busy_decoder_preserves_sibling_progress();

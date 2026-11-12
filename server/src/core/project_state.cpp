@@ -2941,6 +2941,7 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
     // Pending loader work is refused; cold decoder work releases lifecycle ownership below.
     if (!item_ready_to_play(uuid)) return false;
     const auto intent = playback_intent_revision_;
+    const auto generation = document_generation_;
     const bool preparing = phase == ItemPlayPhase::Prepare || phase == ItemPlayPhase::Validate;
     const bool recovering = phase == ItemPlayPhase::Recovery;
     if (!preparing) cancel_prepared_follows(uuid);
@@ -3132,8 +3133,17 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
         !std::isfinite(out_point) || out_point < 0.0 || (out_point > 0.0 && out_point <= in_point) ||
         (file_duration > 0.0 && play_start >= std::min(effective_end, file_duration))) return reject_preparation();
     if (phase == ItemPlayPhase::Validate) return true;
+    const auto current = [&] {
+        if (intent != playback_intent_revision_ || generation != document_generation_ ||
+            item_to_cue_id(uuid) != std::optional<audio::CueId>{target_cue}) return false;
+        bool unchanged = false;
+        std::lock_guard lock{mutex_};
+        for_each_item(document_, [&](json& item, const std::string&) {
+            if (item.value("uuid", std::string{}) == uuid) unchanged = item == item_snapshot;
+        });
+        return unchanged;
+    };
     if (phase != ItemPlayPhase::AlreadyStarted) {
-        const auto generation = document_generation_;
         lifecycle_lock.unlock();
         std::unique_lock preparation_lock{playback_preparation_mutex_};
         lifecycle_lock.lock();
@@ -3145,34 +3155,26 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
         playback->set_loop(end_behavior_action == "loop", in_point);
         const bool primed = playback->prime(2.0, play_start);
         lifecycle_lock.lock();
-        if (intent != playback_intent_revision_ || generation != document_generation_ ||
-            item_to_cue_id(uuid) != std::optional<audio::CueId>{target_cue}) return false;
-        bool unchanged = false;
-        {
-            std::lock_guard lock{mutex_};
-            for_each_item(document_, [&](json& item, const std::string&) {
-                if (item.value("uuid", std::string{}) == uuid) unchanged = item == item_snapshot;
-            });
-        }
-        if (!unchanged) return false;
+        if (!current()) return false;
         if (!primed) return reject_preparation();
     }
     // Resolve the requested audience output before ducking/stopping another
     // cue. A failed selection must leave the current show playing as it was.
     // AlreadyStarted keeps its prepared topology continuously connected.
     if (phase != ItemPlayPhase::AlreadyStarted) {
-        std::string default_device;
-        if (device_override.empty()) {
+        const auto default_output = [&] {
             std::lock_guard lock{mutex_};
-            if (document_.contains("settings") && document_["settings"].is_object()) {
-                const auto& settings = document_["settings"];
-                if (settings.contains("defaultOutputDevice") && settings["defaultOutputDevice"].is_string())
-                    default_device = settings["defaultOutputDevice"].get<std::string>();
+            const auto settings = document_.find("settings");
+            if (settings != document_.end() && settings->is_object()) {
+                const auto output = settings->find("defaultOutputDevice");
+                if (output != settings->end() && output->is_string()) return output->get<std::string>();
             }
-        }
-        const auto& requested_output = device_override.empty() ? default_device : device_override;
+            return std::string{};
+        };
+        const auto requested_output = device_override.empty() ? default_output() : device_override;
         if (!requested_output.empty()) {
-            const auto mixer = ensure_device_routing(requested_output);
+            const auto mixer = ensure_device_routing(requested_output, &lifecycle_lock);
+            if (!current() || (device_override.empty() && requested_output != default_output())) return false;
             if (mixer.empty()) return reject_output_selection(requested_output, uuid);
             route_cue_to_mixer(target_cue, mixer);
         } else {
@@ -3974,6 +3976,7 @@ bool ProjectState::trigger_item_impl(std::unique_lock<std::recursive_mutex>& lif
     bool already_started) {
     static thread_local unsigned group_dispatch_depth = 0;
     const auto intent = playback_intent_revision_;
+    const auto generation = document_generation_;
   // Guard the whole body: a malformed item field must never throw uncaught
   // into the network layer. (#5)
   try {
@@ -3986,6 +3989,8 @@ bool ProjectState::trigger_item_impl(std::unique_lock<std::recursive_mutex>& lif
     std::string group_end_action;
     std::string group_end_target;
     std::vector<int> group_end_index;
+    json routed_group;
+    json default_output_selection;
     {
         std::lock_guard lock{mutex_};
         json* found = nullptr;
@@ -4010,8 +4015,10 @@ bool ProjectState::trigger_item_impl(std::unique_lock<std::recursive_mutex>& lif
             std::string default_output;
             if (document_.contains("settings") && document_["settings"].is_object()) {
                 const auto output = document_["settings"].find("defaultOutputDevice");
-                if (output != document_["settings"].end() && output->is_string())
-                    default_output = output->get<std::string>();
+                if (output != document_["settings"].end()) {
+                    default_output_selection = *output;
+                    if (output->is_string()) default_output = output->get<std::string>();
+                }
             }
             if (found->contains("startBehavior") &&
                 (*found)["startBehavior"].is_object()) {
@@ -4063,6 +4070,9 @@ bool ProjectState::trigger_item_impl(std::unique_lock<std::recursive_mutex>& lif
             };
             collect_descendants((*found)["children"]);
             collect_selected(*found);
+            if (std::any_of(selected_leaves.begin(), selected_leaves.end(),
+                            [](const auto& leaf) { return !leaf.second.empty(); }))
+                routed_group = *found;
             if (found->contains("endBehavior") && (*found)["endBehavior"].is_object()) {
                 const auto& end = (*found)["endBehavior"];
                 group_end_action = end.value("action", std::string{"nothing"});
@@ -4094,8 +4104,11 @@ bool ProjectState::trigger_item_impl(std::unique_lock<std::recursive_mutex>& lif
 
         for (const auto& [leaf, output] : selected_leaves) {
             if (!play_item_impl(lifecycle_lock, leaf, fade_in_override_sec, exclude_from_ducking, -1.0, ItemPlayPhase::Validate)) return false;
-            if (!output.empty() && ensure_device_routing(output).empty())
-                return reject_output_selection(output, leaf);
+            if (!output.empty()) {
+                const auto mixer = ensure_device_routing(output, &lifecycle_lock);
+                if (intent != playback_intent_revision_ || generation != document_generation_) return false;
+                if (mixer.empty()) return reject_output_selection(output, leaf);
+            }
             const auto id = item_to_cue_id(leaf);
             const auto cue = id ? engine_.find_cue(*id) : nullptr;
             if (!cue) return false;
@@ -4103,6 +4116,18 @@ bool ProjectState::trigger_item_impl(std::unique_lock<std::recursive_mutex>& lif
                 !cue->prepared_start_ready(cue->playback_revision()) &&
                 !play_item_impl(lifecycle_lock, leaf, fade_in_override_sec, exclude_from_ducking, -1.0, ItemPlayPhase::Prepare))
                 return false;
+        }
+        if (!routed_group.is_null()) {
+            std::lock_guard lock{mutex_};
+            const auto settings = document_.find("settings");
+            if ((settings != document_.end() && settings->is_object()
+                    ? settings->value("defaultOutputDevice", json{}) : json{}) != default_output_selection)
+                return false;
+            bool unchanged = false;
+            for_each_item(document_, [&](json& item, const std::string&) {
+                if (item.value("uuid", std::string{}) == uuid) unchanged = item == routed_group;
+            });
+            if (!unchanged) return false;
         }
         if (group_dispatch_depth == 0) cancel_group_runs_for_item(uuid, preserved_generations);
         struct GroupDispatchGuard {
@@ -4159,6 +4184,7 @@ bool ProjectState::trigger_item_impl(std::unique_lock<std::recursive_mutex>& lif
 // ---------------------------------------------------------------------------
 void ProjectState::release_device_routings() {
     std::lock_guard routing_lock{device_routing_mutex_};
+    ++device_routing_generation_;
     std::vector<DeviceRouting> stale;
     {
         std::lock_guard lock{mutex_};
@@ -4177,7 +4203,8 @@ void ProjectState::release_device_routings() {
 }
 
 audio::MixerChannelId
-ProjectState::ensure_device_routing(const std::string& device_name) {
+ProjectState::ensure_device_routing(const std::string& device_name,
+                                    std::unique_lock<std::recursive_mutex>* lifecycle_lock) {
     const auto devices = engine_.enumerate_devices();
     const auto selected = detail::resolve_output_device(device_name, devices);
     if (!selected) {
@@ -4185,7 +4212,7 @@ ProjectState::ensure_device_routing(const std::string& device_name) {
         return {};
     }
     return ensure_device_routing_impl(selected->display_name, selected->display_name,
-        selected->is_open ? std::optional{selected->id} : std::nullopt);
+        selected->is_open ? std::optional{selected->id} : std::nullopt, lifecycle_lock);
 }
 
 bool ProjectState::reject_output_selection(const std::string& selection,
@@ -4203,8 +4230,9 @@ bool ProjectState::reject_output_selection(const std::string& selection,
 audio::MixerChannelId ProjectState::ensure_device_routing_impl(
     const std::string& routing_key,
     const std::string& device_name,
-    std::optional<audio::DeviceId> required_open_device) {
-    std::lock_guard routing_lock{device_routing_mutex_};
+    std::optional<audio::DeviceId> required_open_device,
+    std::unique_lock<std::recursive_mutex>* lifecycle_lock) {
+    std::unique_lock routing_lock{device_routing_mutex_};
     if (routing_key.empty() || device_name.empty()) return {};
     {
         std::lock_guard lock{mutex_};
@@ -4219,8 +4247,27 @@ audio::MixerChannelId ProjectState::ensure_device_routing_impl(
 
     // Device-name matching is intentionally delegated to the engine only
     // after callers that require exact matching have resolved a catalog entry.
-    const auto dev = engine_.open_device_by_name(
-        required_open_device ? required_open_device->value : device_name, 2);
+    const auto routing_generation = device_routing_generation_;
+    const auto playback_intent = lifecycle_lock ? playback_intent_revision_ : 0;
+    const auto document_generation = lifecycle_lock ? document_generation_ : 0;
+    routing_lock.unlock();
+    if (lifecycle_lock) lifecycle_lock->unlock();
+    audio::DeviceId dev;
+    try {
+        dev = engine_.open_device_by_name(
+            required_open_device ? required_open_device->value : device_name, 2);
+    } catch (...) {
+        if (lifecycle_lock) lifecycle_lock->lock();
+        throw;
+    }
+    if (lifecycle_lock) lifecycle_lock->lock();
+    routing_lock.lock();
+    if (routing_generation != device_routing_generation_ ||
+        (lifecycle_lock && (playback_intent != playback_intent_revision_ ||
+                            document_generation != document_generation_))) {
+        if (!dev.empty()) engine_.close_device(dev);
+        return {};
+    }
     if (dev.empty()) {
         Logger::warn("ensure_device_routing: could not open '{}'", device_name);
         return {};
