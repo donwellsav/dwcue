@@ -458,7 +458,7 @@ public:
     // any prior item-to-mixer routes for this cue (so the cue plays through
     // exactly one device's mixer).
     void route_cue_to_mixer(const audio::CueId& cue,
-                            const audio::MixerChannelId& mixer);
+                            const audio::MixerChannelId& mixer, bool keep_ltc = false);
 
     // ---- Preview --------------------------------------------------------
     // Play an item through the configured preview device (project
@@ -481,12 +481,14 @@ public:
     // holding mutex_ — it acquires the lock internally as needed and delegates
     // engine operations to independently-locked engine APIs.
     void apply_ltc_device_routing(const audio::CueId& only = {},
-                                  std::unique_lock<std::recursive_mutex>* playback_lock = nullptr);
+                                  std::unique_lock<std::recursive_mutex>* playback_lock = nullptr,
+                                  std::optional<audio::MixerChannelId> prepared = std::nullopt);
 
     // Re-route all cues that have no per-item deviceOverride to the project's
     // configured defaultOutputDevice mixer. Called when defaultOutputDevice
     // changes in settings (including during playback).
-    void apply_default_device_routing();
+    void apply_default_device_routing(std::unique_lock<std::recursive_mutex>& playback_lock,
+                                      const audio::MixerChannelId& prepared = {});
 
     // Stop any active preview and reset preview state so the next call to
     // start_preview() picks up the updated previewDevice setting.
@@ -627,6 +629,7 @@ private:
     std::uint64_t device_routing_generation_ = 0; // guarded by device_routing_mutex_
 #ifdef LIVEPLAY_TEST_NO_DEVICE_ROUTING
     bool test_program_main_routing_ = false;
+    bool test_loader_main_routing_ = false;
 #endif
     // Next free master channel pair when allocating new device routings.
     // Default device occupies 0/1; preview occupies 30/31; overrides start
@@ -641,7 +644,8 @@ private:
     bool reject_output_selection(const std::string& selection,
                                  const std::string& item_uuid = {});
     audio::MixerChannelId ensure_program_main(std::unique_lock<std::recursive_mutex>& lifecycle_lock,
-                                             const std::function<bool()>& current);
+                                             const std::function<bool()>& current,
+                                             bool route_unassigned = false);
     audio::DeviceId open_output_for_edit(
         const std::string& name, std::unique_lock<std::recursive_mutex>& lifecycle_lock,
         std::unique_lock<std::recursive_mutex>* project_lock, const std::function<bool()>& current,
@@ -863,6 +867,8 @@ private:
 
     // Loader thread body: decode queued items and publish them.
     void loader_loop();
+    void queue_loaded_routing(std::uint64_t generation, bool apply_program);
+    void loaded_routing_loop();
     void refresh_media_revisions();
     void stop_loaders();
 
@@ -889,6 +895,14 @@ private:
     std::condition_variable         loader_cv_;         // work available
     std::thread                     loader_thread_;
     bool                            loaders_stop_ = false;
+    struct LoadedRoutingRequest {
+        std::uint64_t generation;
+        std::uint64_t stop;
+        bool apply_program;
+    };
+    std::optional<LoadedRoutingRequest> loaded_routing_; // guarded by loader_mutex_
+    std::condition_variable            loaded_routing_cv_;
+    std::thread                        loaded_routing_thread_;
 
     // Walk the items tree calling `visit(item_json, parent_uuid)` for each.
     static void for_each_item(json& doc,

@@ -570,11 +570,11 @@ ProjectState::ProjectState(audio::AudioEngine& engine) : engine_(engine) {
     start_sequencer();
     // Background decoder for single-item adds/media swaps (#43).
     loader_thread_ = std::thread([this] { loader_loop(); });
+    loaded_routing_thread_ = std::thread([this] { loaded_routing_loop(); });
 }
 
 ProjectState::~ProjectState() {
     stop_sequencer();
-    stop_loaders();
     // Native tasks own their data; only their short publication coordinator is joined.
     {
         std::lock_guard lock{mirror_mutex_};
@@ -582,6 +582,7 @@ ProjectState::~ProjectState() {
         if (load_thread_.joinable()) load_thread_.join();
         loading_audio_.store(false, std::memory_order_release);
     }
+    stop_loaders();
     clear_diagnostic_cues();
 
     // Tear down preview infrastructure on shutdown so the audio device gets
@@ -748,17 +749,12 @@ void ProjectState::loader_loop() {
                     });
                     if (item_snap.is_object())
                         apply_item_properties_locked(item_snap, req.cue_id);
+                    queue_loaded_routing(document_generation_, false);
                     publish = true;
                 }
             }
 
             if (publish) {
-                // Routing needs no ProjectState lock; apply_ltc_device_routing()
-                // takes mutex_ itself, so it must run unlocked.
-#ifndef LIVEPLAY_TEST_NO_DEVICE_ROUTING
-                engine_.ensure_default_routing();
-#endif
-                apply_ltc_device_routing();
                 Logger::info("ProjectState: loaded item uuid='{}' cue='{}'",
                              req.uuid, req.cue_id.value);
                 if (req.media_changed) {
@@ -813,13 +809,61 @@ void ProjectState::loader_loop() {
     }
 }
 
+void ProjectState::queue_loaded_routing(std::uint64_t generation, bool apply_program) {
+    std::lock_guard lock{loader_mutex_};
+    if (loaders_stop_ || (loaded_routing_ && loaded_routing_->generation > generation)) return;
+    const auto stop = stop_revision();
+    if (loaded_routing_ && loaded_routing_->generation == generation && loaded_routing_->stop == stop)
+        apply_program |= loaded_routing_->apply_program;
+    loaded_routing_ = LoadedRoutingRequest{generation, stop, apply_program};
+    loaded_routing_cv_.notify_one();
+}
+
+void ProjectState::loaded_routing_loop() {
+    for (;;) {
+        LoadedRoutingRequest request;
+        {
+            std::unique_lock lock{loader_mutex_};
+            loaded_routing_cv_.wait(lock, [&] { return loaders_stop_ || loaded_routing_.has_value(); });
+            if (loaders_stop_) return;
+            request = *loaded_routing_;
+            loaded_routing_.reset();
+        }
+        try {
+            std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
+            const auto intent = playback_intent_revision_;
+            const auto current = [&] {
+                return request.generation == document_generation_ && request.stop == stop_revision() &&
+                       intent == playback_intent_revision_;
+            };
+            if (!current()) continue;
+            {
+                std::lock_guard lock{mutex_};
+                if (item_uuid_to_cue_.empty()) continue;
+            }
+            // shortcut: cold output opens share the driver lock; keep one coalesced
+            // routing worker until device startup can be isolated per backend.
+#ifdef LIVEPLAY_TEST_NO_DEVICE_ROUTING
+            if (test_loader_main_routing_)
+#endif
+                ensure_program_main(lifecycle_lock, current, true);
+            if (current() && request.apply_program) apply_default_device_routing(lifecycle_lock);
+            if (current()) apply_ltc_device_routing({}, &lifecycle_lock);
+        } catch (const std::exception& e) {
+            Logger::warn("Loaded audio routing failed: {}", e.what());
+        }
+    }
+}
+
 void ProjectState::stop_loaders() {
     {
         std::lock_guard qlock{loader_mutex_};
         loaders_stop_ = true;
     }
     loader_cv_.notify_all();
+    loaded_routing_cv_.notify_all();
     if (loader_thread_.joinable()) loader_thread_.join();
+    if (loaded_routing_thread_.joinable()) loaded_routing_thread_.join();
     // No coordinator can publish after this join.
     {
         std::lock_guard qlock{loader_mutex_};
@@ -916,10 +960,6 @@ void ProjectState::start_async_mirror() {
             std::unordered_map<std::string, std::filesystem::path> wanted;
             std::unordered_map<std::string, json> item_snaps;
             std::unordered_set<std::string> cart_uuids;
-            // LTC: per-item settings snapshotted here, device opened between Phase 2/3.
-            struct LtcItemSnap { bool enabled; std::string timecode; int fps_index; };
-            std::unordered_map<std::string, LtcItemSnap> ltc_snaps;
-            std::string ltc_device_name;
             std::unordered_map<std::string, std::filesystem::path> actually_wanted;
             std::size_t unresolved_media = 0;
             {
@@ -942,12 +982,6 @@ void ProjectState::start_async_mirror() {
                             "missing_media_path", std::string{}};
                         ++unresolved_media;
                     }
-                    // Snapshot LTC settings for this item.
-                    ltc_snaps[uuid] = LtcItemSnap{
-                        item.value("ltcEnabled",        false),
-                        item.value("ltcStartTimecode",  std::string{"00:00:00:00"}),
-                        item.value("ltcFrameRate",       4),
-                    };
                 });
                 if (doc.contains("cartItems") && doc["cartItems"].is_array()) {
                     for (const auto& c : doc["cartItems"]) {
@@ -956,12 +990,6 @@ void ProjectState::start_async_mirror() {
                             if (!u.empty()) cart_uuids.insert(u);
                         }
                     }
-                }
-                // Snapshot the project-level LTC output device name.
-                if (doc.contains("settings") && doc["settings"].is_object()) {
-                    const auto& s = doc["settings"];
-                    if (s.contains("ltcDevice") && s["ltcDevice"].is_string())
-                        ltc_device_name = s["ltcDevice"].get<std::string>();
                 }
 
                 // Unload missing cues
@@ -1047,18 +1075,6 @@ void ProjectState::start_async_mirror() {
             }
             while (!in_flight.empty()) if (!drain_one()) return;
             if (mirror_cancel_.load(std::memory_order_acquire)) return;
-
-            // Phase 2.5: ensure the LTC output device is open and has a mixer
-            // allocated BEFORE we take the mutex again in Phase 3. Doing it here
-            // (no lock held) avoids a deadlock because ensure_device_routing()
-            // acquires mutex_ internally.
-            {
-                bool any_ltc_enabled = false;
-                for (auto& [_, ls] : ltc_snaps)
-                    if (ls.enabled) { any_ltc_enabled = true; break; }
-                if (any_ltc_enabled && !ltc_device_name.empty())
-                    ensure_device_routing(ltc_device_name);
-            }
 
             std::vector<std::pair<std::string, std::shared_ptr<audio::PlaybackItem>>> native_properties;
             // Phase 3: register results + metadata under lock. Cheap because
@@ -1173,23 +1189,12 @@ void ProjectState::start_async_mirror() {
                     }
                 }
             }
-            if (mirror_cancel_.load(std::memory_order_acquire)) return;
-#ifndef LIVEPLAY_TEST_NO_DEVICE_ROUTING
-            engine_.ensure_default_routing();
-#endif
-            apply_ltc_device_routing();
-
             // New One Shots are primed by owned file tasks; reused cues keep their live buffers.
         } catch (const std::exception& e) {
             Logger::error("async mirror threw: {}", e.what());
         }
-        // Honour the project's default output device: re-pin every non-override
-        // cue from Main (the OS default device, where ensure_default_routing()
-        // above parked them) to the selected device. Previously this ran only
-        // when the user changed the setting, so on load the project's chosen
-        // device was ignored until re-selected. (#30)
-        apply_default_device_routing();
         loading_audio_.store(false, std::memory_order_release);
+        if (!mirror_cancel_.load(std::memory_order_acquire)) queue_loaded_routing(mirror_generation, true);
     });
 }
 
@@ -1621,7 +1626,8 @@ void ProjectState::set_cue_ltc(const audio::CueId& id, bool enabled, int fps_ind
 // (which acquires the mutex itself) can safely do its work.
 // ---------------------------------------------------------------------------
 void ProjectState::apply_ltc_device_routing(
-    const audio::CueId& only, std::unique_lock<std::recursive_mutex>* playback_lock) {
+    const audio::CueId& only, std::unique_lock<std::recursive_mutex>* playback_lock,
+    std::optional<audio::MixerChannelId> prepared) {
     std::unique_lock lifecycle_lock{playback_lifecycle_mutex_, std::defer_lock};
     if (!playback_lock) lifecycle_lock.lock();
     const auto intent = playback_intent_revision_;
@@ -1660,14 +1666,12 @@ void ProjectState::apply_ltc_device_routing(
 
     // 2. Ensure the LTC device is open and has a mixer (acquires/releases mutex
     //    internally — safe because we're not holding mutex_ here).
-    const auto ltc_mixer = ltc_device.empty() ? audio::MixerChannelId{}
-                                               : ensure_device_routing(ltc_device, playback_lock);
+    const auto ltc_mixer = prepared ? *prepared : ltc_device.empty() ? audio::MixerChannelId{}
+        : ensure_device_routing(ltc_device, playback_lock);
     if (playback_lock) {
         if (intent != playback_intent_revision_ || generation != document_generation_) return;
         std::lock_guard lock{mutex_};
         if (ltc_device != selected_device()) return;
-        const auto cue = engine_.find_cue(only);
-        if (!cue || !cue->ltc_enabled()) return;
     }
     if (!ltc_device.empty() && ltc_mixer.empty()) {
         (void)reject_output_selection(ltc_device, only.empty() ? std::string{} : cue_to_item_uuid(only).value_or(""));
@@ -1676,28 +1680,28 @@ void ProjectState::apply_ltc_device_routing(
 
     // 3. Route each LTC channel to the LTC device mixer (engine ops; no mutex
     //    needed — the engine has its own independent synchronisation).
-    for (auto& [cue_id, ltc_ch] : ltc_routes)
-        engine_.set_item_source_mixer(cue_id, ltc_ch, ltc_mixer);
+    for (const auto& [cue_id, ltc_ch] : ltc_routes) {
+        if (const auto cue = engine_.find_cue(cue_id); cue && cue->ltc_enabled())
+            engine_.set_item_source_mixer(cue_id, ltc_ch, ltc_mixer);
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Default output device routing — re-route all cues that have no per-item
-// deviceOverride to the newly selected defaultOutputDevice. Called from
-// patch_settings() whenever that key changes. Pattern mirrors
-// apply_ltc_device_routing(): gather data under lock, then do engine ops
-// outside the lock so ensure_device_routing() can safely acquire mutex_.
+// deviceOverride to the configured defaultOutputDevice. Settings supplies
+// its validated mixer. Only background preparation needs to open a device.
 // ---------------------------------------------------------------------------
-void ProjectState::apply_default_device_routing() {
-    std::string device_name;
+void ProjectState::apply_default_device_routing(
+    std::unique_lock<std::recursive_mutex>& playback_lock, const audio::MixerChannelId& prepared) {
+    const auto selected_device = [&]() -> std::string {
+        const auto settings = document_.find("settings");
+        if (settings == document_.end() || !settings->is_object()) return {};
+        const auto device = settings->find("defaultOutputDevice");
+        return device != settings->end() && device->is_string() ? device->get<std::string>() : std::string{};
+    };
     std::vector<audio::CueId> non_override_cues;
-    {
-        std::lock_guard lock{mutex_};
-        if (document_.contains("settings") && document_["settings"].is_object()) {
-            const auto& s = document_["settings"];
-            if (s.contains("defaultOutputDevice") && s["defaultOutputDevice"].is_string())
-                device_name = s["defaultOutputDevice"].get<std::string>();
-        }
-        if (device_name.empty()) return;
+    const auto collect_cues = [&] {
+        non_override_cues.clear();
         for_each_item(document_, [&](json& item, const std::string&) {
             const std::string uuid = item.value("uuid", std::string{});
             if (uuid.empty()) return;
@@ -1707,17 +1711,27 @@ void ProjectState::apply_default_device_routing() {
             auto it = item_uuid_to_cue_.find(uuid);
             if (it != item_uuid_to_cue_.end()) non_override_cues.push_back(it->second);
         });
+    };
+    std::string device_name;
+    {
+        std::lock_guard lock{mutex_};
+        device_name = selected_device();
+        if (device_name.empty()) return;
+        collect_cues();
     }
     if (non_override_cues.empty()) return;
-
-    const auto mixer = ensure_device_routing(device_name);
+    auto mixer = prepared;
+    if (mixer.empty()) {
+        const auto intent = playback_intent_revision_;
+        const auto generation = document_generation_;
+        mixer = ensure_device_routing(device_name, &playback_lock);
+        if (intent != playback_intent_revision_ || generation != document_generation_) return;
+        std::lock_guard lock{mutex_};
+        if (device_name != selected_device()) return;
+        collect_cues();
+    }
     if (mixer.empty()) { (void)reject_output_selection(device_name); return; }
-    for (const auto& cue_id : non_override_cues) route_cue_to_mixer(cue_id, mixer);
-
-    // route_cue_to_mixer() clears every source route (incl. the LTC synthetic
-    // channel), so re-establish LTC device routing for any LTC-enabled cues we
-    // just re-pinned to the default device.
-    apply_ltc_device_routing();
+    for (const auto& cue_id : non_override_cues) route_cue_to_mixer(cue_id, mixer, true);
 
     Logger::info("apply_default_device_routing: routed {} cue(s) to '{}'",
                  non_override_cues.size(), device_name);
@@ -2132,8 +2146,6 @@ bool ProjectState::replace_full_document(const json& doc, bool new_session) {
     // decode for large projects. start_async_mirror() takes mutex_ itself,
     // so it must run after the lock above is released.
     start_async_mirror();
-    // Route LTC channels to the LTC device (also acquires mutex_ internally).
-    apply_ltc_device_routing();
     return true;
 }
 
@@ -2262,10 +2274,6 @@ audio::CueId ProjectState::add_item(const json& item, const std::string& parent_
         auto it = item_uuid_to_cue_.find(uuid);
         if (it != item_uuid_to_cue_.end()) result = it->second;
     }
-    // Route any LTC-enabled items to the LTC device (after releasing mutex_).
-    // The loader repeats this once the decode lands — this call covers items
-    // that were already loaded.
-    apply_ltc_device_routing();
     return result;
 }
 
@@ -4289,7 +4297,8 @@ bool ProjectState::reject_output_selection(const std::string& selection,
 }
 
 audio::MixerChannelId ProjectState::ensure_program_main(
-    std::unique_lock<std::recursive_mutex>& lifecycle_lock, const std::function<bool()>& current) {
+    std::unique_lock<std::recursive_mutex>& lifecycle_lock, const std::function<bool()>& current,
+    bool route_unassigned) {
     return engine_.ensure_main_output([&]() -> audio::DeviceId {
         lifecycle_lock.unlock();
         audio::DeviceId device;
@@ -4303,7 +4312,7 @@ audio::MixerChannelId ProjectState::ensure_program_main(
         if (current()) return device;
         if (!device.empty()) engine_.close_device(device);
         return {};
-    });
+    }, route_unassigned);
 }
 
 audio::DeviceId ProjectState::open_output_for_edit(
@@ -4445,7 +4454,7 @@ audio::MixerChannelId ProjectState::ensure_device_routing_impl(
     return mixer;
 }
 void ProjectState::route_cue_to_mixer(const audio::CueId& cue,
-                                      const audio::MixerChannelId& mixer) {
+                                      const audio::MixerChannelId& mixer, bool keep_ltc) {
     auto pi = engine_.find_cue(cue);
     if (!pi) return;
     // The LTC synthetic channel is always the LAST source channel — it must
@@ -4453,14 +4462,14 @@ void ProjectState::route_cue_to_mixer(const audio::CueId& cue,
     // apply_ltc_device_routing()). Only the real audio channels route here.
     const auto audio_count = pi->file_channel_count();
 
-    // Drop ALL prior item-to-mixer routes for this cue — including the engine's
+    // Drop prior Program routes for this cue — including the engine's
     // auto-created "Main" mixer, which ProjectState does NOT track by id. The
     // previous implementation only unrouted from mixers we knew about (mixers_
     // + device_routings_), so a cue pinned to a specific output device stayed
     // routed to Main → the platform-default device as well and played out of
-    // both. (The LTC synthetic channel is re-established by the
-    // apply_ltc_device_routing() call that follows routing in play_item.)
-    engine_.unroute_item_from_all_mixers(cue);
+    // both. Settings changes keep the independent LTC feed connected.
+    engine_.unroute_item_from_all_mixers(cue, keep_ltc && pi->ltc_enabled()
+        ? std::optional{static_cast<audio::ChannelIndex>(audio_count)} : std::nullopt);
 
     for (audio::ChannelIndex c = 0; c < audio_count; ++c) {
         const auto gains = pi->stereo_mix_gains(c);
@@ -4779,6 +4788,7 @@ bool ProjectState::patch_settings(
         return edit == settings_intent_revision_ && generation == document_generation_ &&
             stopped == stop_revision() && session == project_session_id();
     };
+    audio::MixerChannelId program_mixer, ltc_mixer;
     for (const char* key : {"defaultOutputDevice", "previewDevice", "ltcDevice"}) {
         const auto selection = patch.find(key);
         if (selection == patch.end() || selection->is_null()) continue;
@@ -4798,6 +4808,7 @@ bool ProjectState::patch_settings(
                 });
             if (!current()) return false;
             if (mixer.empty()) return reject_output_selection(requested);
+            (std::string_view{key} == "ltcDevice" ? ltc_mixer : program_mixer) = mixer;
         }
         *selection = selected->display_name;
     }
@@ -4865,8 +4876,8 @@ bool ProjectState::patch_settings(
         }
     }
     // Re-apply device routing when device selections change mid-playback.
-    if (ltc_device_changed)     apply_ltc_device_routing();
-    if (default_device_changed) apply_default_device_routing();
+    if (ltc_device_changed)     apply_ltc_device_routing({}, &lifecycle_lock, ltc_mixer);
+    if (default_device_changed && !program_mixer.empty()) apply_default_device_routing(lifecycle_lock, program_mixer);
     if (preview_device_changed) apply_preview_device_change(lifecycle_lock);
     // Apply true-peak limiter ceiling for the chosen output platform.
     if (output_target_changed || limiter_ceiling_changed)

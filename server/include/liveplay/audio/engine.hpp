@@ -326,7 +326,8 @@ public:
     void ensure_default_routing_for_cue(const CueId& cue);
     // Establish Main without changing cue sends. The opener runs only when
     // Main needs a device and runs without the engine mutex.
-    MixerChannelId ensure_main_output(const std::function<DeviceId()>& open);
+    MixerChannelId ensure_main_output(const std::function<DeviceId()>& open,
+                                      bool route_unassigned = false);
 
     // ---- Mixer channels --------------------------------------------------
     MixerChannelId create_mixer_channel(std::string display_name);
@@ -359,7 +360,8 @@ public:
     // layer doesn't track by id). Used when re-pinning a cue exclusively to a
     // specific output device so it can't keep bleeding onto Main → the default
     // device. No-op if the cue has no routes.
-    void unroute_item_from_all_mixers(const CueId& cue);
+    void unroute_item_from_all_mixers(const CueId& cue,
+                                     std::optional<ChannelIndex> keep_source = std::nullopt);
 
     // `lane` selects which mixer strip lane feeds this master channel
     // (0 = L, 1 = R). kAllMixerLanes sums every lane into the master —

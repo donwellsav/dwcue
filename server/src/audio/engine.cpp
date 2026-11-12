@@ -1225,8 +1225,8 @@ void AudioEngine::ensure_default_routing_for_cue(const CueId& cue) {
     ensure_default_routing_impl(cue);
 }
 
-MixerChannelId AudioEngine::ensure_main_output(const std::function<DeviceId()>& open) {
-    return ensure_default_routing_impl(CueId{}, open);
+MixerChannelId AudioEngine::ensure_main_output(const std::function<DeviceId()>& open, bool route_unassigned) {
+    return ensure_default_routing_impl(route_unassigned ? std::nullopt : std::optional{CueId{}}, open);
 }
 
 MixerChannelId AudioEngine::ensure_default_routing_impl(
@@ -1250,6 +1250,7 @@ MixerChannelId AudioEngine::ensure_default_routing_impl(
         lock.unlock();
         const auto opened = open ? open() : open_default_device(2);
         lock.lock();
+        if (open && opened.empty()) return {};
         chosen_device = main_device();
         if (chosen_device.empty() && find_device_locked(opened)) chosen_device = opened;
         else redundant_reference = opened;
@@ -1433,12 +1434,16 @@ void AudioEngine::unroute_item_source_from_mixer(const CueId& cue,
     rebuild_topology_locked();
 }
 
-void AudioEngine::unroute_item_from_all_mixers(const CueId& cue) {
+void AudioEngine::unroute_item_from_all_mixers(const CueId& cue,
+                                               std::optional<ChannelIndex> keep_source) {
     std::lock_guard lock{mutex_};
     auto it = pending_.item_sources.find(cue.value);
     if (it == pending_.item_sources.end()) return;
     bool changed = false;
-    for (auto& sends : it->second.by_source_channel) {
+    auto& routes = it->second.by_source_channel;
+    for (std::size_t source = 0; source < routes.size(); ++source) {
+        if (keep_source && source == *keep_source) continue;
+        auto& sends = routes[source];
         if (!sends.empty()) { sends.clear(); changed = true; }
     }
     if (changed) rebuild_topology_locked();

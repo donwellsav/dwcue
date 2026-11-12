@@ -493,6 +493,115 @@ void test_stop_all_during_ltc_device_start() {
     context->callbacks.onDeviceStart = start;
 }
 
+void test_loader_output_wait() {
+    auto* context = null_preview_context();
+    static const auto start = context->callbacks.onDeviceStart;
+    static std::atomic<bool> hold{false}, entered{false};
+    context->callbacks.onDeviceStart = [](ma_device* device) {
+        if (hold.load()) {
+            entered.store(true);
+            while (hold.load()) std::this_thread::sleep_for(1ms);
+        }
+        return start(device);
+    };
+    const auto wav = make_wav(8'192);
+    for (const char* key : {"ltcDevice", "defaultOutputDevice", "queued LTC", "System Default"}) {
+        const bool queued = std::string_view{key} == "queued LTC";
+        const bool main = std::string_view{key} == "System Default";
+        const bool ltc = queued || std::string_view{key} == "ltcDevice";
+        liveplay::audio::AudioEngine engine;
+        engine.device_test_context_ = context;
+        auto owned_state = std::make_unique<liveplay::core::ProjectState>(engine);
+        auto& state = *owned_state;
+        state.test_loader_main_routing_ = main;
+        auto source = document(json::array());
+        const auto cold = audio("loader-cold", wav, {{"ltcEnabled", ltc}});
+        if (queued) {
+            check(state.replace_full_document(source) && wait_ready(state), "Loader output: empty show ready");
+            std::lock_guard lock{state.mutex_};
+            state.document_["settings"]["ltcDevice"] = "NULL Playback Device";
+        } else {
+            if (!main) source["settings"][key] = "NULL Playback Device";
+            source["items"].push_back(cold);
+        }
+        entered.store(false);
+        hold.store(true);
+        auto opening = std::async(std::launch::async, [&] {
+            return queued ? !state.add_item(cold).empty()
+                          : state.load_from_json(source, fixture_dir() / "loader-output.dwcue");
+        });
+        for (int i = 0; i < 1000 && !entered.load(); ++i) std::this_thread::sleep_for(2ms);
+        check(entered.load(), "Loader output: reached native device start");
+        auto controls = std::async(std::launch::async, [&] {
+            state.stop_all_cues(0);
+            return !state.add_item(audio("loader-sibling", wav)).empty() && wait_ready(state);
+        });
+        const bool ready = controls.wait_for(350ms) == std::future_status::ready;
+        const bool independent = ready && controls.get();
+        check(independent, "Loader output: Stop All and healthy media stay ready during device start");
+        auto replace = std::async(std::launch::async, [&] {
+            if (queued) state.reset();
+            const auto replacement = main ? json::array() : json::array({audio("loader-replacement", wav)});
+            return state.load_from_json(document(replacement), fixture_dir() / "replacement-output.dwcue") && wait_ready(state);
+        });
+        check(replace.wait_for(350ms) == std::future_status::ready,
+              "Loader output: a replacement show loads before the old device returns");
+        hold.store(false);
+        check(opening.get() && replace.get(), "Loader output: both project requests settled");
+        if (controls.valid()) (void)controls.get();
+        check(!state.item_to_cue_id("loader-cold") && (main || state.trigger_item("loader-replacement")),
+              "Loader output: replacement can play without old routing");
+        state.stop_all_cues(0);
+        owned_state.reset();
+        check(engine.devices_.empty(), "Loader output: late open reference is released");
+    }
+    context->callbacks.onDeviceStart = start;
+}
+
+void test_program_reroute_preserves_ltc() {
+    const auto wav = make_wav(8'192);
+    liveplay::audio::AudioEngine engine;
+    engine.device_test_context_ = null_preview_context();
+    liveplay::core::ProjectState state(engine);
+    auto source = document(json::array({audio("routing-ltc", wav, {{"ltcEnabled", true}})}));
+    source["settings"]["ltcDevice"] = "NULL Playback Device";
+    check(state.load_from_json(source, fixture_dir() / "routing-ltc.dwcue") && wait_ready(state),
+          "Settings reroute: LTC media is ready");
+    const auto cue = *state.item_to_cue_id("routing-ltc");
+    liveplay::audio::MixerChannelId warmed;
+    for (int i = 0; i < 400 && warmed.empty(); ++i) {
+        {
+            std::lock_guard lock{engine.mutex_};
+            const auto routes = engine.pending_.item_sources.find(cue.value);
+            if (routes != engine.pending_.item_sources.end()) {
+                const auto& channels = routes->second.by_source_channel;
+                if (channels.size() > 1 && !channels.back().empty()) warmed = channels.back().front().mixer;
+            }
+        }
+        if (warmed.empty()) std::this_thread::sleep_for(5ms);
+    }
+    check(!warmed.empty() && state.trigger_item("routing-ltc"), "Settings reroute: background LTC setup succeeded");
+    {
+        std::lock_guard lock{state.mutex_};
+        state.document_["settings"]["ltcDevice"] = "Unavailable LTC selection";
+    }
+    std::atomic<bool> warned{false};
+    state.set_ui_state_broadcaster([&](const json& event) {
+        if (event.value("code", "") == "output_device_unavailable") warned.store(true);
+    });
+    check(state.patch_settings({{"defaultOutputDevice", "NULL Playback Device"}}),
+          "Settings reroute: Program accepts its prepared output");
+    {
+        std::lock_guard lock{engine.mutex_};
+        const auto& channels = engine.pending_.item_sources.at(cue.value).by_source_channel;
+        check(!warned.load() && !channels.front().empty() && channels.front().front().mixer == warmed &&
+                  channels.size() > 1 && channels.back().size() == 1 && channels.back().front().mixer == warmed,
+              "Settings reroute: Program changes without clearing or reopening LTC");
+    }
+    state.set_ui_state_broadcaster({});
+    state.stop_all_cues(0);
+}
+
 void test_stop_all_during_diagnostic_output_start() {
     auto* context = null_preview_context();
     static const auto start = context->callbacks.onDeviceStart;
@@ -2620,6 +2729,8 @@ int main() try {
     test_stop_all_during_program_device_start();
     test_stop_all_during_system_default_open();
     test_stop_all_during_ltc_device_start();
+    test_loader_output_wait();
+    test_program_reroute_preserves_ltc();
     test_stop_all_during_diagnostic_output_start();
     test_stop_all_during_output_settings_open();
     test_stop_all_during_preview_retirement();
