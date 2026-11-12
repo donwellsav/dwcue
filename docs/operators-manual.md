@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.19
-**Source revision:** a04de3292efd96abb72dd349274ebdf0a99e9d26
-**Native engine baseline:** a04de3292efd96abb72dd349274ebdf0a99e9d26
-**Edition:** 11 November 2026 · English · Current-source operator edition
+**Source revision:** 9031ba33fea9f0806575d3a44be235f71f6b29d7
+**Native engine baseline:** 9031ba33fea9f0806575d3a44be235f71f6b29d7
+**Edition:** 12 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition covers the DonWells Cue **2.6.19** source at **a04de32**. It includes the November playback, recovery and import repairs. Match your installer to its release notes before rehearsal.
+This edition covers the DonWells Cue **2.6.19** source at **9031ba3**. It includes the November playback, recovery and import repairs. Match your installer to its release notes before rehearsal.
 
 Interface images retain their 3 November capture date, original source revisions and hashes. The instructions describe the current archive and import recovery controls. The captures use generated tones, the native engine's virtual NULL output, and fixture locale, display and MIDI information. Capture details are recorded in **docs/manual-assets/captures.json**. Equipment photographs remain illustrative.
 
@@ -326,7 +326,7 @@ Open **Settings** and choose **Audio Device** for the show. Check the device nam
 
 A cue may specify a different **Properties → Output → Output device**. An explicit cue override can explain why one cue is silent on the expected Main output while other cues work. Audit overrides when preparing the backup machine, rather than assuming the project's main selection overrides every cue.
 
-If GO waits while opening a cue's selected Program output, use **Stop All**. When the controller has verified the show again, arm a prepared backup cue on an available output and press GO. The canceled cue stays stopped when the driver returns. If the output fails to open, the warning names the device. Confirm the route before retrying the cue.
+If GO waits while opening a named Program output or **System Default**, use **Stop All**. When the controller has verified the show again, arm a prepared backup cue on an available output and press GO. The canceled cue stays stopped when the driver returns. If the output fails to open, the warning names the device and the armed cue remains available for a deliberate retry.
 
 The engine supports more advanced routing through its API, but the current desktop app does not mount a routing-matrix editor. The current operator-visible routing detail is the project device selection and a cue's **Properties → Output** override.
 
@@ -378,6 +378,8 @@ A limiter reduces digital peaks; it does not protect against an inappropriate ac
 LTC is an audio-encoded synchronization signal for other equipment. It can be loud and unpleasant if routed to audience speakers. Set **Settings → LTC Device**, then enable **Properties → Output → Output LTC Timecode** only on cues that require it. Select the frame rate and start timecode to match the receiving system.
 
 The engine supports 24, 25, 29.97 non-drop, 29.97 drop-frame, and 30 frames per second. The receiving device must use the same convention; drop-frame and non-drop are not interchangeable labels. Confirm lock and the starting timecode with the receiving operator during rehearsal, including what happens on stop, seek, replay, and a loop.
+
+If an LTC output fails to open, the app names the unavailable device and Program audio can still start. If LTC startup stalls, **Stop All** cancels the waiting start so you can use a backup cue that does not require that device.
 
 Keep the LTC destination separate from the audience audio path. Do not enable timecode on a cue merely because the checkbox is available. Record the device assignment and frame rate on the show handover sheet.
 
@@ -538,6 +540,8 @@ With only one display or no dedicated assignment, the app uses a normal preview 
 - **Expected visible outcome:** The physical destination shows the labelled card within the expected bounds; AV Sync is visible and audible only through the intended Program path.
 - **Common mistake:** Assuming AV Sync is silent or routed to Preview.
 - **Recovery:** Press **Stop All** to stop the tone, switch the card off and on only when a restart is intended, then correct the selected Audio Device before retesting.
+
+**Stop All** also cancels an AV Sync test that is still waiting for its audio device. When the driver returns, the canceled test stays off.
 
 ### What the audience sees
 
@@ -904,7 +908,7 @@ With Video Output focused, Escape also exits its fullscreen mode. In Level Check
 
 ### About this edition
 
-This edition covers the DonWells Cue **2.6.19** source at **a04de32**. The 22 captures retain their 3 November provenance. They use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
+This edition covers the DonWells Cue **2.6.19** source at **9031ba3**. The 22 captures retain their 3 November provenance. They use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
 
 The playback checkpoint **2f372c2** passed native 13/13, isolated API 61/61, client 229/229, typecheck and RT/live safety checks. Audio-output and project-runtime suites also pass AddressSanitizer; leak detection is disabled. Native checks include six simulated ten-minute secondary-clock runs with continuous generated audio and no buffer faults or resyncs inside the tested envelope. Physical alignment and the earlier intermittency remain unproven; more extreme drift/jitter can trigger recovery.
 
