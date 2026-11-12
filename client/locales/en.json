@@ -717,8 +717,12 @@
     "githubRepo": "GitHub Repository",
     "developerName": "Thomas Doukinitsas",
     "contributors": "Contributors",
+    "forkContributor": "Sole contributor to DonWells Cue",
+    "upstreamContributors": "LivePlay contributors",
+    "upstreamTranslation": "LivePlay translation credit",
     "license": "AGPL-3.0-only License",
     "licenseText": "DonWells Cue is free software, licensed under the GNU Affero General Public License version 3.0 (AGPL-3.0-only).",
+    "distributionText": "You may redistribute this software under that license. The software comes without warranty to the extent permitted by law.",
     "sourceText": "The complete corresponding source code is available at github.com/donwellsav/dwcue."
   },
   "connectionLost": {

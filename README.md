@@ -419,4 +419,6 @@ File issues at [github.com/donwellsav/dwcue/issues](https://github.com/donwellsa
 
 ## License
 
+Don Wells is the sole contributor to DonWells Cue, a modified fork of [LivePlay](https://github.com/tdoukinitsas/liveplay) dating to July 2026. Original LivePlay software © Thomas Doukinitsas and contributors.
+
 [**AGPL-3.0-only**](LICENCE.txt). Third-party dependencies retain their own licences (miniaudio: public domain / MIT-0; Crow: BSD-3; TagLib: LGPL-2.1+; nlohmann/json: MIT).

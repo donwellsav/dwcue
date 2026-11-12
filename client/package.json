@@ -65,7 +65,7 @@
   "build": {
     "appId": "com.donwells.cue",
     "productName": "DonWells Cue",
-    "copyright": "Copyright © 2026 DonWells. Original software © Thomas Doukinitsas and contributors.",
+    "copyright": "Copyright © 2026 Don Wells. Original LivePlay software © Thomas Doukinitsas and contributors.",
     "artifactName": "DonWells-Cue-${version}-${arch}.${ext}",
     "directories": {
       "output": "dist-electron"
@@ -80,6 +80,10 @@
       {
         "from": "../docs/operators-manual.pdf",
         "to": "help/operators-manual.pdf"
+      },
+      {
+        "from": "../LICENCE.txt",
+        "to": "licenses/AGPL-3.0.txt"
       }
     ],
     "asarUnpack": [

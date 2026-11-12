@@ -5931,8 +5931,13 @@ if (!gotTheLock) {
     app.setAboutPanelOptions({
       applicationName: 'DonWells Cue',
       applicationVersion: app.getVersion(),
-      copyright: `© ${new Date().getFullYear()} Don Wells — dwcue.com`,
-      credits: 'Free software under AGPL-3.0-only — source: github.com/donwellsav/dwcue',
+      copyright: '© 2026 Don Wells',
+      credits: [
+        'Don Wells is the sole contributor to DonWells Cue.',
+        'Forked from LivePlay in July 2026. Original LivePlay software © Thomas Doukinitsas and contributors.',
+        'Redistribution is permitted under AGPL-3.0-only. The software comes without warranty to the extent permitted by law.',
+        'License and source: https://github.com/donwellsav/dwcue',
+      ].join('\n'),
     });
 
     createWindow();
