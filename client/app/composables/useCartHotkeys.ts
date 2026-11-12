@@ -1,7 +1,6 @@
-import type { CartSlotKeyBinding, PlaybackKeyAction, AudioItem } from '~/types/project';
-import { DEFAULT_PLAYBACK_KEYS } from '~/types/project';
-import { buildOneShotSlots } from '~/utils/oneShots';
-import { oneShotFireActionKey, runAcknowledgedAction } from '~/utils/acknowledgedAction';
+import type { CartSlotKeyBinding, PlaybackKeyAction, AudioItem, Project } from '~/types/project';
+import { DEFAULT_PLAYBACK_KEYS } from '../types/project';
+import { buildOneShotSlots } from '../utils/oneShots';
 
 const RESERVED_COMBOS: CartSlotKeyBinding[] = [
   { key: 's', ctrlKey: true,  shiftKey: false, altKey: false },
@@ -47,8 +46,7 @@ export const eventToBinding = (e: KeyboardEvent): CartSlotKeyBinding => ({
   altKey: e.altKey,
 });
 
-// Playback action metadata (order mirrors MIDI_ACTIONS). Shared by the
-// shortcuts editor and the read-only shortcuts summary on the Help tab.
+// Shared by the shortcut editor and Settings summary.
 export const PLAYBACK_ACTIONS: { id: PlaybackKeyAction; labelKey: string }[] = [
   { id: 'play-next',     labelKey: 'controls.playNext'     },
   { id: 'pause-resume',  labelKey: 'controls.pauseResume'  },
@@ -58,35 +56,83 @@ export const PLAYBACK_ACTIONS: { id: PlaybackKeyAction; labelKey: string }[] = [
   { id: 'stop-all',      labelKey: 'controls.stopAll'      },
   { id: 'select-up',     labelKey: 'controls.selectUp'     },
   { id: 'select-down',   labelKey: 'controls.selectDown'   },
+  { id: 'set-up-next',   labelKey: 'controls.setUpNext'    },
+  { id: 'toggle-video-output', labelKey: 'controls.toggleVideoOutput' },
+  { id: 'capture-video-standby', labelKey: 'controls.captureVideoStandby' },
+  { id: 'capture-display-standby', labelKey: 'controls.captureDisplayStandby' },
   { id: 'play-selected', labelKey: 'controls.playSelected' },
 ];
 
-export const useCartHotkeys = (allowOtherShortcuts = () => true) => {
+export const resolveKeyboardBindings = (
+  slots: readonly (AudioItem | null)[],
+  savedPlayback: Project['playbackKeys'] = {},
+) => {
+  const keyMappings: Record<number, CartSlotKeyBinding> = Object.fromEntries(
+    slots.flatMap((item, index) => item?.oneShot?.hotkey ? [[index, item.oneShot.hotkey]] : []),
+  );
+  const playbackMappings: Partial<Record<PlaybackKeyAction, CartSlotKeyBinding | null>> = {
+    ...DEFAULT_PLAYBACK_KEYS, ...savedPlayback,
+  };
+  // A new default must yield to a key the operator already assigned.
+  const assigned = [...Object.values(keyMappings), ...Object.values(savedPlayback)];
+  for (const action of ['set-up-next', 'toggle-video-output', 'capture-video-standby', 'capture-display-standby'] as const) {
+    const defaultKey = DEFAULT_PLAYBACK_KEYS[action];
+    if (savedPlayback[action] === undefined && defaultKey
+        && assigned.some(binding => binding && bindingsMatch(binding, defaultKey))) {
+      delete playbackMappings[action];
+    }
+  }
+
+  const occupied = [...Object.values(keyMappings), ...Object.values(playbackMappings)];
+  for (const [index, key] of Array.from('1234567890').entries()) {
+    const oneShot = slots[index]?.oneShot;
+    if (!oneShot || oneShot.hotkey !== undefined) continue;
+    const binding = { key, ctrlKey: false, shiftKey: false, altKey: false };
+    if (!occupied.some(other => other && bindingsMatch(other, binding))) keyMappings[index] = binding;
+  }
+  return { keyMappings, playbackMappings };
+};
+
+let togglingVideoOutput = false;
+
+export const useVideoOutputToggle = () => {
+  const { showHeaderWarning } = useHeaderWarnings();
+  const { t } = useLocalization();
+  return async () => {
+    const api = window.electronAPI?.videoOutput;
+    if (!api || togglingVideoOutput) return false;
+    togglingVideoOutput = true;
+    try {
+      const status = await api.status();
+      if (status.enabled || status.open) await api.close();
+      else await api.open();
+      return true;
+    } catch {
+      showHeaderWarning(t('headerWarnings.videoToggleFailed'), 'urgent');
+      return false;
+    } finally {
+      togglingVideoOutput = false;
+    }
+  };
+};
+
+export const useCartHotkeys = () => {
   const { currentProject, projectHydrationStatus, selectedItem, selectedItems, saveProject, getAllItemsFlat, toggleItemSelection, findItemByUuid } = useProject();
   const { cartOnlyItems } = useCartItems();
-  const { fireBlocked, afterFire } = useOneShotArm();
-  const { playCue, playNext, pauseCue, resumeCue, stopAllCues, activeCues, queueLoopContinuation, jumpCue } = useAudioEngine();
+  const { oneShotPlaybackReady, playOneShot } = useOneShotPlayback();
+  const toggleVideoOutput = useVideoOutputToggle();
+  const { captureStandby } = useVideoStandbyCapture();
+  const { playCue, playNext, setNextItem, pauseCue, resumeCue, stopAllCues, activeCues, queueLoopContinuation, jumpCue } = useAudioEngine();
 
   const oneShotSlots = computed(() => buildOneShotSlots(
     currentProject.value?.items ?? [],
     Array.from(cartOnlyItems.value.values()),
   ));
-  // Keep the ordinal-keyed shape used by the existing Controls screen and
-  // saved MIDI action ids, but source every binding from the canonical cue.
-  const keyMappings = computed<Record<number, CartSlotKeyBinding>>(() =>
-    Object.fromEntries(oneShotSlots.value.flatMap((item, index) =>
-      item?.oneShot?.hotkey ? [[index, item.oneShot.hotkey]] : []
-    ))
-  );
-
-  const playbackMappings = computed<Partial<Record<PlaybackKeyAction, CartSlotKeyBinding | null>>>(() => {
-    const saved = currentProject.value?.playbackKeys ?? {};
-    const result: Partial<Record<PlaybackKeyAction, CartSlotKeyBinding | null>> = { ...DEFAULT_PLAYBACK_KEYS };
-    for (const [action, binding] of Object.entries(saved)) {
-      result[action as PlaybackKeyAction] = binding;
-    }
-    return result;
-  });
+  const bindings = computed(() => resolveKeyboardBindings(
+    oneShotSlots.value, currentProject.value?.playbackKeys ?? {},
+  ));
+  const keyMappings = computed(() => bindings.value.keyMappings);
+  const playbackMappings = computed(() => bindings.value.playbackMappings);
 
   const isTextInputFocused = (): boolean => {
     const el = document.activeElement;
@@ -121,15 +167,7 @@ export const useCartHotkeys = (allowOtherShortcuts = () => true) => {
 
   const triggerSlot = async (slotIndex: number) => {
     const item = oneShotSlots.value[slotIndex];
-    if (!item) return;
-    if (activeCues.value.has(item.uuid) && item.oneShot?.retrigger === 'ignore') return;
-    // Re-safe only after the server confirms that this cell actually fired.
-    if (fireBlocked(item)) return false;
-    return runAcknowledgedAction(
-      oneShotFireActionKey(item.uuid),
-      () => playCue(item),
-      () => afterFire(item),
-    );
+    if (item) return playOneShot(item);
   };
 
   const findSlotForEvent = (e: KeyboardEvent): number => {
@@ -193,6 +231,9 @@ export const useCartHotkeys = (allowOtherShortcuts = () => true) => {
     }
 
     if (action === 'stop-all') return stopAllCues();
+    if (action === 'toggle-video-output') return toggleVideoOutput();
+    if (action === 'capture-video-standby') return captureStandby('output');
+    if (action === 'capture-display-standby') return captureStandby('display');
 
     if (action === 'select-up' || action === 'select-down') {
       const project = currentProject.value;
@@ -214,6 +255,12 @@ export const useCartHotkeys = (allowOtherShortcuts = () => true) => {
       return;
     }
 
+    if (action === 'set-up-next') {
+      const item = selectedItem.value;
+      if (!item || (item.type === 'audio' && (item as AudioItem).oneShot)) return false;
+      return setNextItem(item.uuid);
+    }
+
     if (action === 'play-selected') {
       const uuid = Array.from(selectedItems.value).pop();
       if (!uuid) return;
@@ -233,10 +280,9 @@ export const useCartHotkeys = (allowOtherShortcuts = () => true) => {
     // Stop All is a server-global panic action: native diagnostics and orphaned
     // cues can remain active without a project document or local activeCue.
     const playbackAction = findPlaybackActionForEvent(e);
-    if (playbackAction !== 'stop-all' &&
-        (!allowOtherShortcuts() || !currentProject.value || projectHydrationStatus.value !== 'ready')) return;
-
     if (playbackAction) {
+      if (playbackAction !== 'stop-all' &&
+          (!currentProject.value || projectHydrationStatus.value !== 'ready')) return;
       e.preventDefault();
       e.stopPropagation();
       if (e.repeat && playbackAction !== 'select-up' && playbackAction !== 'select-down') return;
@@ -245,6 +291,7 @@ export const useCartHotkeys = (allowOtherShortcuts = () => true) => {
     }
 
     // Cart slot hotkeys
+    if (!currentProject.value || !oneShotPlaybackReady.value) return;
     const slotIndex = findSlotForEvent(e);
     if (slotIndex >= 0) {
       e.preventDefault();

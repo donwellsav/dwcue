@@ -1,6 +1,6 @@
 {
   "name": "donwells-cue",
-  "version": "2.6.20",
+  "version": "2.6.21",
   "description": "Audio cue playback application for live events",
   "homepage": "https://github.com/donwellsav/dwcue",
   "repository": {
@@ -20,7 +20,7 @@
     "test:one-shots": "nuxt prepare && vite-node tests/oneShots.test.mts && vite-node tests/oneShotMutation.test.mts && vite-node tests/oneShotImport.test.mts",
     "test:youtube-import": "nuxt prepare && vite-node tests/youtubeImport.test.mts",
     "test:video-output": "nuxt prepare && vite-node tests/videoOutputController.test.mts && vite-node tests/videoConfidence.test.mts && node --test tests/videoOutputShortcuts.test.cjs tests/testCardConfig.test.cjs tests/testCardPlayback.test.cjs",
-    "test:playback-safety": "nuxt prepare && vite-node tests/projectIdentity.test.mts && vite-node tests/acknowledgedAction.test.mts && vite-node tests/projectSettingsPersistence.test.mts && vite-node tests/propertiesTrimPersistence.test.mts && vite-node tests/panicStop.test.mts && vite-node tests/projectHydration.test.mts && vite-node tests/projectOpenGuard.test.mts",
+    "test:playback-safety": "nuxt prepare && vite-node tests/projectIdentity.test.mts && vite-node tests/acknowledgedAction.test.mts && vite-node tests/projectSettingsPersistence.test.mts && vite-node tests/propertiesTrimPersistence.test.mts && vite-node tests/panicStop.test.mts && vite-node tests/projectHydration.test.mts && vite-node tests/projectOpenGuard.test.mts && vite-node tests/headerWarnings.test.mts",
     "test:local-auth": "nuxt prepare && vite-node tests/liveplayAuth.test.mts && node --test tests/managedWebSocketOrigin.test.cjs tests/managedServerLifecycle.test.cjs",
     "test:file-formats": "node --check electron/project-file-formats.js && node --check electron/main.js && node --check electron/preload.js && vite-node tests/projectFileFormats.test.mts && vite-node tests/filePickerLocations.test.mts",
     "test:operator-manual": "node --test tests/operatorManual.test.cjs",
@@ -65,7 +65,7 @@
   "build": {
     "appId": "com.donwells.cue",
     "productName": "DonWells Cue",
-    "copyright": "Copyright © 2026 DonWells. Original software © Thomas Doukinitsas and contributors.",
+    "copyright": "Copyright © 2026 Don Wells. Original LivePlay software © Thomas Doukinitsas and contributors.",
     "artifactName": "DonWells-Cue-${version}-${arch}.${ext}",
     "directories": {
       "output": "dist-electron"
@@ -80,6 +80,10 @@
       {
         "from": "../docs/operators-manual.pdf",
         "to": "help/operators-manual.pdf"
+      },
+      {
+        "from": "../LICENCE.txt",
+        "to": "licenses/AGPL-3.0.txt"
       }
     ],
     "asarUnpack": [

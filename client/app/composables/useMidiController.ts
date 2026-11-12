@@ -1,6 +1,5 @@
 import { CART_SLOT_COUNT_LIMITS, type AudioItem } from '~/types/project';
 import { buildOneShotSlots } from '~/utils/oneShots';
-import { oneShotFireActionKey, runAcknowledgedAction } from '~/utils/acknowledgedAction';
 
 // MIDI binding: identifies a specific control on a MIDI device
 export interface MidiBinding {
@@ -115,7 +114,7 @@ export const useMidiController = () => {
   const { selectedItem, selectedItems, saveProject, currentProject, projectHydrationStatus, getAllItemsFlat, toggleItemSelection, findItemByUuid: findProjectItem } = useProject();
   const { sessionLost } = useConnectionGuard();
   const { cartOnlyItems } = useCartItems();
-  const { fireBlocked, afterFire } = useOneShotArm();
+  const { playOneShot } = useOneShotPlayback();
   const oneShotSlots = computed(() => buildOneShotSlots(
     currentProject.value?.items ?? [],
     Array.from(cartOnlyItems.value.values()),
@@ -145,20 +144,14 @@ export const useMidiController = () => {
    * Dispatch a discrete action.
    */
   const dispatchDiscrete = async (actionId: MidiActionId) => {
-    if (actionId !== 'stop-all' && (sessionLost.value || projectHydrationStatus.value !== 'ready')) return false;
+    if (actionId !== 'stop-all' && sessionLost.value) return false;
     if (actionId.startsWith('trigger-slot-')) {
       const slot = parseInt(actionId.replace('trigger-slot-', ''), 10);
       const item = oneShotSlots.value[slot];
-      if (!item) return;
-      if (activeCues.value.has(item.uuid) && item.oneShot?.retrigger === 'ignore') return;
-      // Re-safe only after the server confirms that this cell actually fired.
-      if (fireBlocked(item)) return false;
-      return runAcknowledgedAction(
-        oneShotFireActionKey(item.uuid),
-        () => playCue(item),
-        () => afterFire(item),
-      );
+      if (item) return playOneShot(item);
+      return;
     }
+    if (actionId !== 'stop-all' && projectHydrationStatus.value !== 'ready') return false;
 
     if (actionId === 'pause-resume') {
       // Same logic as keyboard Space — prefer active cue over selectedItem

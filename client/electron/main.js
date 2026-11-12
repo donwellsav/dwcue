@@ -1,4 +1,4 @@
-const { app, BrowserWindow, View, ipcMain, dialog, shell, Menu, session, screen, powerSaveBlocker, webContents } = require('electron');
+const { app, BrowserWindow, View, ipcMain, dialog, shell, Menu, session, screen, desktopCapturer, powerSaveBlocker, webContents } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -30,7 +30,8 @@ const os = require('node:os');
 const { createTestCardConfig, AUDIO_SYNC_RATES } = require('./test-card-config');
 const { cleanupConnectionFor, TestCardPlayback } = require('./test-card-playback');
 const { managedWebSocketHeaders } = require('./managed-websocket-origin');
-const { createOneShotMutationBroker, validateIdentity } = require('./one-shot-mutation-broker');
+const { createOneShotMutationBroker, validateIdentity, sameIdentity } = require('./one-shot-mutation-broker');
+const { createStandbyCaptureStore, findCaptureCue, captureImageUrl } = require('./video-standby-capture');
 const { createAppLifecycleActions, createWillQuitHandler } = require('./terminal-action');
 const { createOperatorManual } = require('./operator-manual');
 const {
@@ -1177,9 +1178,22 @@ const appLifecycleActions = createAppLifecycleActions({
   confirmQuit: () => { quitConfirmed = true; },
 });
 
+function sendMainHeaderWarning(message) {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  const contents = mainWindow.webContents;
+  if (contents.isDestroyed() || contents.isLoadingMainFrame()) return false;
+  try {
+    contents.send('header-warning', message);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function showTerminalActionFailure(error) {
   const rawDetail = error instanceof Error ? error.message : String(error);
   const detail = rawDetail.slice(0, 2000);
+  if (sendMainHeaderWarning(`DonWells Cue could not close safely. ${detail}`)) return;
   dialog.showErrorBox(
     'DonWells Cue could not close safely',
     'The requested action was cancelled because shutdown cleanup did not finish. '
@@ -1926,6 +1940,7 @@ let quitConfirmed = false;
 let currentProject = null;
 let currentProjectData = null; // Full project data synced between Electron windows
 let currentProjectIdentity = null; // Separate ownership fence; never merged into project documents
+let currentCaptureSession = null;
 let fileToOpen = null; // Store file path if app is opened with a file
 let stateViewerWindow = null; // Debug state viewer window
 let cartPlayerWindow = null;  // Detached cart player window
@@ -1941,6 +1956,7 @@ const isDevMode = process.argv.includes('--dev') || !app.isPackaged;
 const operatorManual = createOperatorManual({
   onFocus: () => createMenu(currentLocale, isDevMode),
   onClosed: () => createMenu(currentLocale, isDevMode),
+  onOpenError: sendMainHeaderWarning,
 });
 app.on('browser-window-focus', (_event, window) => {
   if (!operatorManual.owns(window.webContents)) createMenu(currentLocale, isDevMode);
@@ -2243,6 +2259,8 @@ let videoOutputRestarting = false;
 let videoOutputPictureHealth = null;
 const videoOutputDiagnostics = [];
 let videoOutputFrameTimer = null;
+const videoStandbyCaptures = createStandbyCaptureStore();
+let capturingVideoStandby = false;
 let displayIdentifierWindows = [];
 let displayIdentifierTimer = null;
 const videoOutputWindowsPreservingSession = new WeakSet();
@@ -2384,6 +2402,8 @@ function readVideoOutputConfig() {
     const parsed = JSON.parse(fs.readFileSync(videoOutputConfigPath(), 'utf-8'));
     return {
       displayId: typeof parsed.displayId === 'string' ? parsed.displayId : null,
+      captureDisplayId: typeof parsed.captureDisplayId === 'string' ? parsed.captureDisplayId : null,
+      captureTarget: parsed.captureTarget === 'cue' ? 'cue' : 'session',
       // Resolution+label hint for re-attach when the OS hands out a new display
       // id after a reconnect. Ambiguous for two identical projectors — the id
       // stays the primary key; the fingerprint is only a fallback hint.
@@ -2392,15 +2412,18 @@ function readVideoOutputConfig() {
       testCardConfig: createTestCardConfig(parsed.testCardConfig),
     };
   } catch {
-    return { displayId: null, displayFingerprint: null, testCardConfig: createTestCardConfig() };
+    return { displayId: null, displayFingerprint: null, captureDisplayId: null,
+      captureTarget: 'session', testCardConfig: createTestCardConfig() };
   }
 }
 
 function writeVideoOutputConfig(cfg) {
   try {
     fs.writeFileSync(videoOutputConfigPath(), JSON.stringify(cfg, null, 2));
+    return true;
   } catch (e) {
     console.error('[video-output] failed to persist config:', e);
+    return false;
   }
 }
 
@@ -2460,6 +2483,8 @@ function videoOutputStatus() {
     enabled: videoOutputSessionEnabled,
     open: videoOutputWindow !== null && !videoOutputWindow.isDestroyed(),
     displayId: cfg.displayId,
+    captureDisplayId: cfg.captureDisplayId,
+    captureTarget: cfg.captureTarget,
     targetId: target ? String(target.id) : null,
     targetLabel: target ? (target.label || `Display ${target.id}`) : null,
     displays,
@@ -2977,6 +3002,106 @@ ipcMain.handle('video-output:list-displays', (event) => {
 ipcMain.handle('video-output:identify-displays', (event) => {
   requireTrustedIpc(event);
   return identifyVideoOutputDisplays();
+});
+
+function requireCaptureOwner(event) {
+  requireTrustedIpc(event);
+  if (event.sender !== mainWindow?.webContents) {
+    throw new Error('Standby capture requires the main workspace.');
+  }
+}
+
+function notifyStandbyCaptureChanged() {
+  const output = videoOutputWindow;
+  if (output && !output.isDestroyed() && !output.webContents.isDestroyed()) {
+    output.webContents.send('video-output:standby-capture-changed');
+  }
+}
+
+function requireCaptureTarget(event, target) {
+  requireCaptureOwner(event);
+  requireBoundedIpcObject(target, 'capture target', 64 * 1024);
+  validateIdentity(target?.identity);
+  const sessionId = requireIpcString(target.sessionId, 'sessionId', 256);
+  if (!sameIdentity(target.identity, currentProjectIdentity) || sessionId !== currentCaptureSession) {
+    throw new Error('The active show changed. Try again in the current show.');
+  }
+  if (target.itemUuid === null) return null;
+  const uuid = requireIpcString(target.itemUuid, 'itemUuid', 256);
+  const cue = findCaptureCue(currentProjectData, uuid);
+  if (!cue) throw new Error('Select a media cue in the current show.');
+  return cue;
+}
+
+ipcMain.handle('video-output:set-capture-settings', (event, displayId, target) => {
+  requireCaptureOwner(event);
+  if (target !== 'session' && target !== 'cue') throw new TypeError('Invalid standby capture destination.');
+  const config = readVideoOutputConfig();
+  if (displayId !== null) requireIpcString(displayId, 'displayId', 64);
+  if (displayId !== config.captureDisplayId && displayId !== null &&
+      !videoOutputDisplays().some(display => display.id === displayId)) {
+    throw new Error('The selected capture display is unavailable.');
+  }
+  config.captureDisplayId = displayId;
+  config.captureTarget = target;
+  if (!writeVideoOutputConfig(config)) throw new Error('Could not save standby capture settings.');
+  return broadcastVideoOutputStatus();
+});
+
+ipcMain.handle('video-output:capture-standby', async (event, source, target) => {
+  const cue = requireCaptureTarget(event, target);
+  if (cue?.imagePath) throw new Error('The selected cue already has an assigned image.');
+  if (capturingVideoStandby) throw new Error('A standby capture is already in progress.');
+  const media = cue?.mediaServerPath || cue?.mediaPath;
+  let image;
+  capturingVideoStandby = true;
+  try {
+    if (source === 'output') {
+      const output = videoOutputWindow;
+      const ready = () => output && videoOutputWindow === output && !output.isDestroyed() &&
+        !output.webContents.isDestroyed() && videoOutputRendererReady &&
+        videoOutputRendererResponsive && !videoOutputRecoveryRequired;
+      if (!ready()) throw new Error('Open Video Output and wait for its picture before capturing.');
+      image = await output.webContents.capturePage();
+      if (!ready()) throw new Error('Video Output changed during capture. Try again.');
+    } else if (source === 'display') {
+      const { captureDisplayId } = readVideoOutputConfig();
+      const available = () => videoOutputDisplays().some(display => display.id === captureDisplayId);
+      if (!captureDisplayId || !available()) throw new Error('Choose an available capture display in Video Output settings.');
+      const sources = await desktopCapturer.getSources({
+        types: ['screen'], thumbnailSize: { width: 1920, height: 1080 },
+      });
+      if (!available() || readVideoOutputConfig().captureDisplayId !== captureDisplayId) {
+        throw new Error('The selected capture display changed. Try again.');
+      }
+      image = sources.find(entry => entry.display_id === captureDisplayId)?.thumbnail;
+    } else {
+      throw new TypeError('Invalid standby capture source.');
+    }
+    const current = requireCaptureTarget(event, target);
+    if (current?.imagePath || (current?.mediaServerPath || current?.mediaPath) !== media) {
+      throw new Error('The selected cue changed during capture. Try again.');
+    }
+    videoStandbyCaptures.put(target.sessionId, target.itemUuid, media, captureImageUrl(image));
+    notifyStandbyCaptureChanged();
+  } finally {
+    capturingVideoStandby = false;
+  }
+});
+
+ipcMain.handle('video-output:clear-standby-capture', (event, target) => {
+  requireCaptureTarget(event, target);
+  if (capturingVideoStandby) throw new Error('Wait for the standby capture to finish before clearing it.');
+  videoStandbyCaptures.remove(target.sessionId, target.itemUuid);
+  notifyStandbyCaptureChanged();
+});
+
+ipcMain.handle('video-output:get-standby-capture', (event, sessionId, uuid, media) => {
+  requireVideoOutputIpc(event);
+  requireIpcString(sessionId, 'sessionId', 256);
+  if (uuid !== null) requireIpcString(uuid, 'itemUuid', 256);
+  if (media !== null) requireIpcString(media, 'media', 32768);
+  return videoStandbyCaptures.read(sessionId, uuid, media ?? undefined);
 });
 
 ipcMain.handle('video-output:set-display', (event, displayId) => {
@@ -4155,7 +4280,7 @@ ipcMain.handle('set-current-project', async (event, projectPath) => {
 
 // Receive full project data from the primary renderer. Ownership identity stays
 // separate from the document so existing API consumers continue to see plain project data.
-ipcMain.on('sync-project-data', (event, projectData, identity) => {
+ipcMain.on('sync-project-data', (event, projectData, identity, captureSession = null) => {
   try {
     requireTrustedIpc(event);
     if (event.sender !== mainWindow?.webContents) {
@@ -4167,11 +4292,18 @@ ipcMain.on('sync-project-data', (event, projectData, identity) => {
     } else {
       validateIdentity(identity);
     }
+    if (captureSession !== null) requireIpcString(captureSession, 'captureSession', 256);
   } catch (error) {
     console.warn('[sync-project-data] rejected payload:', error.message);
     return;
   }
 
+  const nextCaptureSession = projectData ? captureSession : null;
+  if (nextCaptureSession !== currentCaptureSession || (identity && !sameIdentity(identity, currentProjectIdentity))) {
+    videoStandbyCaptures.reset();
+    notifyStandbyCaptureChanged();
+  }
+  currentCaptureSession = nextCaptureSession;
   currentProjectData = projectData;
   currentProjectIdentity = identity;
   // Keep the menu's "Export Project" / similar items in sync with whether
@@ -5931,8 +6063,13 @@ if (!gotTheLock) {
     app.setAboutPanelOptions({
       applicationName: 'DonWells Cue',
       applicationVersion: app.getVersion(),
-      copyright: `© ${new Date().getFullYear()} Don Wells — dwcue.com`,
-      credits: 'Free software under AGPL-3.0-only — source: github.com/donwellsav/dwcue',
+      copyright: '© 2026 Don Wells',
+      credits: [
+        'Don Wells is the sole contributor to DonWells Cue.',
+        'Forked from LivePlay in July 2026. Original LivePlay software © Thomas Doukinitsas and contributors.',
+        'Redistribution is permitted under AGPL-3.0-only. The software comes without warranty to the extent permitted by law.',
+        'License and source: https://github.com/donwellsav/dwcue',
+      ].join('\n'),
     });
 
     createWindow();

@@ -335,7 +335,7 @@ const openOperatorManual = () => { void window.electronAPI.openOperatorManual();
 const serverUrlDisplay = computed(() => server.serverUrl ?? 'http://127.0.0.1:4480');
 
 // Get app version
-const appVersion = ref('2.6.20');
+const appVersion = ref('2.6.21');
 onMounted(async () => {
   if (import.meta.client && (window as any).electronAPI?.getAppVersion) {
     appVersion.value = await (window as any).electronAPI.getAppVersion();

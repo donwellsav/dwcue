@@ -490,7 +490,7 @@ export const useAudioEngine = () => {
   // starts, so a rejected GO never loses the operator's armed override.
   const playNext = (): Promise<boolean> => runPendingAction(
     'transport:go',
-    () => server.go(),
+    () => setNextItemPending.value ? Promise.resolve(false) : server.go(),
   );
 
   const stopCue = (uuid: string): Promise<boolean> => {

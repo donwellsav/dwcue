@@ -21,24 +21,22 @@
     <div class="about-info">
       <div class="info-section">
         <p class="developer">
-          © {{ new Date().getFullYear() }}
+          © 2026
           <a
             href="https://dwcue.com"
             class="translator-link"
             @click.prevent="openExternal('https://dwcue.com')"
           ><strong>Don Wells</strong></a>
+          · {{ t('about.forkContributor') }}
         </p>
         <p class="original-credit">
-          Original software © Thomas Doukinitsas and contributors.
-        </p>
-        <p class="original-credit">
-          {{ t('testCard.cardType') }}:
-          <a href="https://github.com/Alteka/Kards" class="translator-link"
-             @click.prevent="openExternal('https://github.com/Alteka/Kards')">Alteka Kards</a>
-          · GPL-3.0-only
+          Forked from
+          <a href="https://github.com/tdoukinitsas/liveplay" class="translator-link"
+             @click.prevent="openExternal('https://github.com/tdoukinitsas/liveplay')">LivePlay</a>
+          in July 2026. Original LivePlay software © Thomas Doukinitsas and contributors.
         </p>
         <p class="translator" v-if="t('translationContributor.name')">
-          <strong>{{ t('translationContributor.title') }}: </strong>
+          <strong>{{ t('about.upstreamTranslation') }}: </strong>
           <a
             :href="formatContributorLink(t('translationContributor.contributeLink'))"
             class="translator-link"
@@ -47,20 +45,27 @@
             {{ t('translationContributor.name') }}
           </a>
         </p>
-        <p class="translator" v-if="contributors.length">
-          <strong>{{ t('about.contributors') }}: </strong>
-          <template v-for="(contributor, index) in contributors" :key="contributor.name">
+        <p class="translator">
+          <strong>{{ t('about.upstreamContributors') }}: </strong>
+          <template v-for="(contributor, index) in upstreamContributors" :key="contributor.name">
             <a
               :href="contributor.link"
               class="translator-link"
               @click.prevent="openExternal(contributor.link)"
-            >{{ contributor.name }}</a><template v-if="index < contributors.length - 1">, </template>
+            >{{ contributor.name }}</a><template v-if="index < upstreamContributors.length - 1">, </template>
           </template>
+        </p>
+        <p class="original-credit">
+          {{ t('testCard.cardType') }}:
+          <a href="https://github.com/Alteka/Kards" class="translator-link"
+             @click.prevent="openExternal('https://github.com/Alteka/Kards')">Alteka Kards</a>
+          · GPL-3.0-only
         </p>
         <!-- AGPL-3.0-only compliance: state the license and where the
              complete corresponding source lives. The clickable affordances
              are in the links section right below. -->
         <p class="license-note">{{ t('about.licenseText') }}</p>
+        <p class="license-note">{{ t('about.distributionText') }}</p>
         <p class="license-note">{{ t('about.sourceText') }}</p>
       </div>
 
@@ -89,7 +94,7 @@
           @click.prevent="openExternal('https://www.gnu.org/licenses/agpl-3.0.en.html')"
         >
           <span class="material-symbols-rounded">description</span>
-          <span>AGPL-3.0-only License</span>
+          <span>{{ t('about.license') }}</span>
         </a>
       </div>
     </div>
@@ -101,12 +106,10 @@ import contributorsJson from '~~/assets/json/contributors.json';
 
 const { t } = useLocalization();
 
-const contributors = computed(() =>
-  Object.values(contributorsJson.contributors) as { name: string; link: string }[]
-);
+const upstreamContributors = Object.values(contributorsJson.contributors);
 
 // Get app version
-const appVersion = ref('2.6.20');
+const appVersion = ref('2.6.21');
 onMounted(async () => {
   if (import.meta.client && window.electronAPI?.getAppVersion) {
     appVersion.value = await window.electronAPI.getAppVersion();

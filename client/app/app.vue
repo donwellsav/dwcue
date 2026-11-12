@@ -15,6 +15,7 @@
             class="cart-brand-logo"
           />
           <span class="cart-brand-wordmark">DONWELLS CUE</span>
+          <div id="cart-header-warnings" class="cart-header-warnings"></div>
           <span class="cart-brand-url">dwcue.com</span>
         </header>
         <template v-if="currentProject && detachedProjectIdentity">
@@ -46,6 +47,8 @@
 
     <!-- Normal mode -->
     <template v-else>
+      <div v-if="!currentProject || projectHydrationStatus === 'failed'"
+        id="startup-header-warnings" class="startup-header-warnings"></div>
       <WelcomeScreen
         v-if="!currentProject"
         ref="welcomeScreen"
@@ -98,10 +101,6 @@
       @install-on-exit="handleUpdateInstallOnExit"
     />
 
-    <Transition name="update-toast">
-      <div v-if="unsavedDialogBlocked && !unsavedDialogVisible" class="update-toast" role="status">{{ t('unsavedModal.waitForSave') }}</div>
-      <div v-else-if="upToDateToast" class="update-toast">{{ upToDateToast }}</div>
-    </Transition>
     
     <!-- Progress Modal for Import/Export -->
     <ProgressModal
@@ -262,7 +261,9 @@
       @close="importServerPickerOpen = false"
     />
     </template>
-    <ServerAlert />
+    <ServerAlert v-if="!isVideoOutputWindow" :target="isCartWindow ? '#cart-header-warnings'
+      : currentProject && projectHydrationStatus !== 'failed' ? '#project-header-warnings'
+        : '#startup-header-warnings'" />
   </div>
 </template>
 
@@ -276,7 +277,7 @@ import type { OneShotMutationIdentity, OneShotMutationRequest, OneShotMutationRe
 import { sameOneShotMutationIdentity } from '~/types/oneShotMutation';
 import { createProjectOpenGuard } from '~/utils/projectOpenGuard';
 import { runExclusivePendingAction } from '~/utils/acknowledgedAction';
-import { applyOneShotMutation, enforceOneShotDisarmFences } from '~/utils/oneShotMutation';
+import { applyOneShotMutation } from '~/utils/oneShotMutation';
 
 const {
   currentProject, projectEpoch, saveProject, createNewProject, openProject, confirmUnsavedChanges,
@@ -295,6 +296,16 @@ import AudioLoadProgress from './components/AudioLoadProgress.vue';
 import LocationChoiceModal from './components/LocationChoiceModal.vue';
 import ServerFilePickerModal from './components/ServerFilePickerModal.vue';
 const { currentLocale, setLocale, getDirection, t } = useLocalization();
+const { showHeaderWarning } = useHeaderWarnings();
+let stopHeaderWarnings: (() => void) | undefined;
+onMounted(() => {
+  if (isCartWindow || isVideoOutputWindow) return;
+  stopHeaderWarnings = window.electronAPI?.onHeaderWarning?.((message) => showHeaderWarning(message, 'urgent'));
+});
+onBeforeUnmount(() => stopHeaderWarnings?.());
+watch(() => unsavedDialogBlocked.value && !unsavedDialogVisible.value, (waiting) => {
+  if (waiting) showHeaderWarning(t('unsavedModal.waitForSave'));
+});
 
 const openProjectGuard = createProjectOpenGuard({
   confirmUnsavedChanges,
@@ -488,9 +499,6 @@ const updateInfo = ref({
   releaseNotes: '',
   releaseDate: '',
 });
-// Transient "you're up to date" confirmation for the manual Help-menu check.
-const upToDateToast = ref('');
-let upToDateToastTimer: number | null = null;
 let installOnExitRequested = false;
 
 const accentColors = [
@@ -507,7 +515,6 @@ const detachedProjectIdentity = useState<OneShotMutationIdentity | null>(
   'oneShots.detachedProjectIdentity', () => null,
 );
 const detachedProjectError = useState<string>('oneShots.detachedMutationError', () => '');
-const detachedDisarmFences = useState<Set<string>>('oneShots.detachedDisarmFences', () => new Set());
 let rejectedDetachedIdentity: OneShotMutationIdentity | null = null;
 
 function applyCartWindowProjectData(envelope: OneShotProjectEnvelope | null) {
@@ -527,11 +534,6 @@ function applyCartWindowProjectData(envelope: OneShotProjectEnvelope | null) {
   if (currentIdentity?.ownerSessionId === identity.ownerSessionId
     && currentIdentity.projectPath === identity.projectPath
     && identity.projectEpoch < currentIdentity.projectEpoch) return;
-  enforceOneShotDisarmFences(
-    projectData,
-    projectData.cartOnlyItems ?? [],
-    detachedDisarmFences.value,
-  );
   detachedProjectIdentity.value = identity;
   detachedProjectError.value = '';
   clearCartOnlyItems();
@@ -683,7 +685,7 @@ onMounted(() => {
     // Update flow. The modal is deferred while Show Mode is active — never
     // interrupt a running show — and shown as soon as the operator exits
     // back to edit mode. A check that finds nothing (manual Help-menu check)
-    // gets a transient "up to date" toast instead of silence.
+    // gets confirmation in the header.
     interface UpdateAvailableInfo {
       currentVersion: string;
       newVersion: string;
@@ -711,9 +713,7 @@ onMounted(() => {
       if (mode !== 'playback') presentUpdateInfo();
     });
     window.electronAPI.onUpdateUpToDate((_event, info) => {
-      upToDateToast.value = t('update.upToDate', { version: info.version });
-      if (upToDateToastTimer) clearTimeout(upToDateToastTimer);
-      upToDateToastTimer = window.setTimeout(() => { upToDateToast.value = ''; }, 4000);
+      showHeaderWarning(t('update.upToDate', { version: info.version }));
     });
     window.electronAPI.onMenuCheckForUpdates(() => {
       void window.electronAPI.checkForUpdates();
@@ -1078,29 +1078,16 @@ onMounted(() => {
   border-color: var(--color-text-primary);
 }
 
-.update-toast {
+.startup-header-warnings {
   position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: var(--spacing-sm) var(--spacing-lg);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-lg);
-  color: var(--color-text-primary);
-  z-index: var(--z-modal);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  inset-block-start: var(--spacing-sm);
+  inset-inline-start: var(--workspace-gutter);
+  max-inline-size: calc(100% - 2 * var(--workspace-gutter));
+  z-index: var(--z-dropdown);
 }
 
-.update-toast-enter-active,
-.update-toast-leave-active {
-  transition: opacity 0.25s ease, transform 0.25s ease;
-}
-
-.update-toast-enter-from,
-.update-toast-leave-to {
-  opacity: 0;
-  transform: translateX(-50%) translateY(8px);
+.cart-header-warnings {
+  min-width: 0;
 }
 
 .close-dialog {

@@ -132,7 +132,7 @@ async function flush() {
   await nextTick();
 }
 
-function createHarness(initialProject: unknown, connected = true) {
+function createHarness(initialProject: unknown, connected = true, captureApi = {}) {
   const cueStateHandlers = new Set<(value: unknown) => void>();
   const meterHandlers = new Set<(value: any) => void>();
   const snapshotHandlers = new Set<(value: unknown) => void>();
@@ -175,6 +175,7 @@ function createHarness(initialProject: unknown, connected = true) {
       setTimeout,
       electronAPI: {
         videoOutput: {
+          ...captureApi,
           reportPlaybackError(payload: { itemUuid: string | null; message: string } | null) {
             reports.push(payload);
           },
@@ -217,6 +218,28 @@ function createHarness(initialProject: unknown, connected = true) {
     },
   };
 }
+
+test('session capture fills gaps while assigned cue art wins and cue switches clear old stills', async () => {
+  const still = (value: string) => 'data:image/jpeg;base64,' + value;
+  const h = createHarness({
+    ...project([audioItem('authored', { imagePath: 'images/manual.png' }), audioItem('captured')]),
+    server: { projectSessionId: 'show' },
+  }, true, {
+    getStandbyCapture: async (session: string, uuid: string | null) => {
+      assert.equal(session, 'show');
+      return { standby: still('session'), cue: uuid ? still(uuid) : null };
+    },
+  });
+  await flush();
+  assert.equal(h.controller.standbySrc.value, still('session'));
+  h.emitCue(snapshotCue('captured', 'cue1', 1));
+  await flush();
+  assert.equal(h.controller.cueImageSrc.value, still('captured'));
+  h.emitCue(snapshotCue('authored', 'cue2', 2));
+  await flush();
+  assert.match(h.controller.cueImageSrc.value ?? '', /manual\.png/);
+  h.stop();
+});
 
 function snapshotCue(
   itemUuid: string,

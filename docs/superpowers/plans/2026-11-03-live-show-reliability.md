@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Preserve existing intentional uncommitted fixes, imported source level/full timing, explicit normalization, attenuation-only peak safety and final-output limiting.
-- Preserve manual GO/armed-target refusal semantics, automatic Nothing behavior, Preview isolation, One Shot arming, authored duck/fade behavior and detached-server ownership.
+- Preserve manual GO/armed-target refusal semantics, automatic Nothing behavior, Preview isolation, authored duck/fade behavior and detached-server ownership.
 - No automatic replay/advance as a side effect of a UI recovery fix. Stop and disarm remain available where a connection permits them.
 - No dependency upgrade, new framework, blanket transcoding, all-show RAM preload, navigation redesign or new background service.
 - Write the smallest behavioral regression first, watch its relevant failure, then make the shared correction and run the affected suite.
@@ -35,6 +35,11 @@
 **v2.6.19 follow-up:** `60086ef` and `530661d` repair Spotify review startup, speed and track order. `48ebe0b` keeps the macOS operator app accessible during display identification. The software checks include the real 200-track metadata review and a fullscreen label check on the built-in Mac display.
 
 **v2.6.20 release candidate:** Source `f14629d` passed all 13 native suites, 65 API tests and the client checks. The Apple Silicon DMG verified and the packaged app connected to its bundled engine with an isolated profile. The website build passed desktop and mobile checks for the download selectors and matching operator manual. Physical PA and projector acceptance remains open.
+
+- [x] **Keyboard cueing and One Shot defaults** in `7305c9b`. Enter sets the selected playlist cue as Up Next. Press Space after the engine confirms the target. Number keys 1 through 0 default to slots 1 through 10. Newly created One Shots use Replace Program with 0.1-second fade-in and 0.5-second fade-out. Software checks covered the workflow with the bank hidden, a held Up Next acknowledgment and Stop All.
+- [x] **Header warnings and Video Output shortcut** in `f0b9781`. Passive notices use the same header as the steady silence countdown. Red urgent notices take priority over yellow advisories. The 5/3/2/1-second durations and 30/15-second thresholds are adjustable per device in Settings. Audio reconnect and video restart remain available after the text expires. V toggles Video Output by default and saved assignments take precedence. Software checks covered all timing bands, priority, stationary countdown, persistence, recovery buttons, Stop All, text focus and forwarded input.
+- [x] **Standby stills and Shortcuts tab** in `164c7c8`. G captures Video Output and Shift+G captures the selected display. Capture destinations are the selected cue or the session standby. The confidence thumbnail targets the selected cue. Native-handler tests use fixture images and cover display selection, cue art precedence, late result refusal and current-output ownership. Headless UI checks cover the capture controls and Stop All. The OS permission prompt and physical display capture remain to be exercised on show hardware.
+- [x] **Direct One Shot controls in both modes** in `bdcc79a`. Play/Stop, 1–0 and MIDI work without a separate arm step. The detached bank uses the primary window's show snapshot for readiness. Headless checks with an isolated native engine cover attached and detached triggers, synthetic MIDI, retrigger Ignore, Stop All and owner loss.
 
 - [x] Stop All stays available in the local media, Spotify, YouTube and archive progress dialogs. Software checks cover click and keyboard activation, visibility after scrolling, and dispatch of the normal Stop All command.
 - [x] A failed last-folder history write leaves the native picker choice usable. The regression checks all five picker routes, their path authorization, and cancellation with a simulated read-only history file.

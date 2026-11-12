@@ -1049,8 +1049,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   border: 4px solid transparent;
   border-radius: var(--border-radius-sm);
 
-  /* Blink rates mirror the ProjectHeader silence-warning banner so the border
-     and banner pulse in sync (yellow ≤30s, orange ≤10s, red ≤5s). */
+  /* Increase the pulse rate as this cue approaches its end. */
   &.warning-border--yellow {
     border-color: rgb(255, 193, 7);
     animation: warning-border-flash 2s ease-in-out infinite;

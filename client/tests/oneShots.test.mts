@@ -11,7 +11,10 @@ import {
   nextOneShotOrder,
   removeOneShotDesignation,
 } from '../app/utils/oneShots.ts';
-import { createOneShotArmPolicy } from '../app/composables/useOneShotArm.ts';
+import { computed, ref } from 'vue';
+import { useOneShotPlayback } from '../app/composables/useOneShotPlayback.ts';
+import { resolveKeyboardBindings } from '../app/composables/useCartHotkeys.ts';
+import type { AudioItem } from '../app/types/project.ts';
 
 const audio = (uuid: string, order?: number) => ({
   uuid,
@@ -61,22 +64,58 @@ test('new designation uses safe quick-play defaults', () => {
   assert.deepEqual((item as any).oneShot, { order: 4, retrigger: 'restart' });
   assert.deepEqual(item.endBehavior, { action: 'nothing' });
   assert.deepEqual(item.startBehavior, { action: 'nothing' });
-  assert.deepEqual(item.duckingBehavior, { mode: 'duck-others', duckLevel: 0.1 });
+  assert.deepEqual(item.duckingBehavior, { mode: 'stop-all' });
+  assert.equal(item.playFade, 0.1);
+  assert.equal(item.stopFade, 0.5);
+  assert.equal(item.fadeOutDuration, 0.5);
 });
 
 test('playlist cues copy into independent One Shots without sharing behavior', () => {
   const source = audio('playlist-source');
+  Object.assign(source, { crossFade: 3, startNextEnabled: true });
   const clone = cloneAsIndependentOneShot(source as any, 'one-shot-copy', 3);
 
   assert.equal(clone.uuid, 'one-shot-copy');
   assert.deepEqual(clone.index, [-1, 3]);
   assert.equal(clone.oneShot?.sourceUuid, 'playlist-source');
-  assert.deepEqual(clone.duckingBehavior, { mode: 'duck-others', duckLevel: 0.1 });
+  assert.deepEqual(clone.duckingBehavior, { mode: 'stop-all' });
+  assert.equal(clone.playFade, 0.1);
+  assert.equal(clone.stopFade, 0.5);
+  assert.equal(clone.crossFade, 0);
+  assert.equal(clone.startNextEnabled, false);
+  assert.equal(source.crossFade, 3);
+  assert.equal(source.playFade, 0);
   assert.deepEqual(clone.startBehavior, { action: 'nothing' });
   assert.deepEqual(clone.endBehavior, { action: 'nothing' });
   clone.displayName = 'Independent name';
   assert.equal(source.displayName, 'playlist-source');
   assert.equal((source as any).oneShot, undefined);
+});
+
+test('digits follow slot position and saved keyboard assignments take precedence', () => {
+  const slots: (AudioItem | null)[] = Array.from({ length: 11 }, (_, index) => audio(String(index), index));
+  const { keyMappings, playbackMappings } = resolveKeyboardBindings(slots);
+  assert.deepEqual(Object.values(keyMappings).map(binding => binding.key), [...'1234567890']);
+  assert.equal(playbackMappings['set-up-next']?.key, 'Enter');
+  assert.equal(playbackMappings['play-selected'], undefined);
+  assert.equal(playbackMappings['play-next']?.key, ' ');
+  assert.equal(playbackMappings['toggle-video-output']?.key, 'v');
+
+  const key = (value: string) => ({ key: value, ctrlKey: false, shiftKey: false, altKey: false });
+  slots[0] = null;
+  slots[2]!.oneShot!.hotkey = null;
+  slots[10]!.oneShot!.hotkey = key('2');
+  const saved = resolveKeyboardBindings(slots, { 'stop-all': key('4'), 'play-selected': key('Enter') });
+  for (const index of [0, 1, 2, 3]) assert.equal(saved.keyMappings[index], undefined);
+  assert.equal(saved.keyMappings[9].key, '0');
+  assert.equal(saved.keyMappings[10].key, '2');
+  assert.equal(saved.playbackMappings['stop-all']?.key, '4');
+  assert.equal(saved.playbackMappings['play-selected']?.key, 'Enter');
+  assert.equal(saved.playbackMappings['set-up-next'], undefined);
+  slots[10]!.oneShot!.hotkey = key('Enter');
+  assert.equal(resolveKeyboardBindings(slots).playbackMappings['set-up-next'], undefined);
+  slots[10]!.oneShot!.hotkey = key('v');
+  assert.equal(resolveKeyboardBindings(slots).playbackMappings['toggle-video-output'], undefined);
 });
 
 test('One Shot copies into the playlist without consuming the source cell', () => {
@@ -133,32 +172,42 @@ test('removing One Shot designation never deletes or rewrites the cue', () => {
   assert.deepEqual(item, expected);
 });
 
-test('arming is exclusive to Show Mode across every One Shot trigger path', () => {
-  let showMode = false;
-  const policy = createOneShotArmPolicy(() => showMode);
-  const item = audio('mode-policy', 0) as any;
+test('One Shots use primary or detached show readiness, with no arm requirement', async () => {
+  const hydration = ref('loading');
+  const identity = ref<object | null>(null);
+  const activeCues = ref(new Map());
+  const item = audio('sting', 0) as AudioItem;
+  let detached = false;
+  const starts: string[] = [];
+  Object.assign(globalThis, {
+    computed,
+    useProject: () => ({ projectHydrationStatus: hydration }),
+    useDetachedOneShotMutation: () => ({ isDetached: detached, identity }),
+    useAudioEngine: () => ({ activeCues, playCue: async (cue: AudioItem) => {
+      starts.push(cue.uuid);
+      return true;
+    } }),
+  });
+  const primary = useOneShotPlayback();
+  assert.equal(await primary.playOneShot(item), false);
+  hydration.value = 'ready';
+  assert.equal(await primary.playOneShot(item), true, 'an unarmed cue fires directly');
+  item.oneShot!.armed = true;
+  item.oneShot!.autoDisarm = true;
+  assert.equal(await primary.playOneShot(item), true);
+  assert.equal(item.oneShot!.armed, true, 'legacy metadata is untouched');
 
-  assert.equal(policy.isArmed(item), false);
-  assert.equal(policy.fireBlocked(item), false, 'regular-mode click, hotkey, and MIDI triggers play directly');
-  assert.equal(policy.setArmed(item, true), false, 'regular mode cannot arm a cell');
-  assert.equal(item.oneShot?.armed, undefined);
-
-  showMode = true;
-  assert.equal(policy.fireBlocked(item), true, 'Show Mode blocks an unarmed cell');
-  assert.equal(policy.setArmed(item, true), true);
-  assert.equal(policy.isArmed(item), true);
-  assert.equal(policy.fireBlocked(item), false, 'Show Mode allows an armed cell');
-  assert.equal(policy.afterFire(item), true, 'default auto-disarm clears the arm after a confirmed fire');
-  assert.equal(item.oneShot?.armed, undefined);
-
-  assert.equal(policy.setArmed(item, true), true);
-  if (item.oneShot) item.oneShot.autoDisarm = false;
-  assert.equal(policy.afterFire(item), false, 'disabled auto-disarm preserves the Show Mode arm');
-  assert.equal(item.oneShot?.armed, true);
-
-  showMode = false;
-  assert.equal(policy.isArmed(item), false, 'persisted Show Mode state is not regular-mode state');
-  assert.equal(policy.fireBlocked(item), false);
-  assert.equal(policy.afterFire(item), false, 'regular-mode triggers never mutate the arm');
-  assert.equal(item.oneShot?.armed, true);
+  detached = true;
+  hydration.value = 'failed';
+  const bank = useOneShotPlayback();
+  assert.equal(await bank.playOneShot(item), false, 'the detached bank needs a current owner');
+  identity.value = {};
+  assert.equal(await bank.playOneShot(item), true);
+  item.oneShot!.retrigger = 'ignore';
+  activeCues.value.set(item.uuid, {});
+  assert.equal(await bank.playOneShot(item), false);
+  identity.value = null;
+  activeCues.value.clear();
+  assert.equal(await bank.playOneShot(item), false);
+  assert.deepEqual(starts, ['sting', 'sting', 'sting']);
 });

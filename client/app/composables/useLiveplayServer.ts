@@ -23,6 +23,7 @@
 // =====================================================================
 import { reactive, ref, shallowRef, computed } from 'vue';
 import { sameOneShotMutationIdentity, type OneShotMutationIdentity } from '../types/oneShotMutation';
+import type { HeaderWarning } from '../utils/headerWarnings';
 import type {
   CueId,
   DeviceId,
@@ -132,7 +133,11 @@ function createClient() {
   // ---- Reactive state -----------------------------------------------
   const connected     = ref(false);
   const reconnecting  = ref(false);
-  const lastError     = ref<string | null>(null);
+  const lastErrorEvent = shallowRef<HeaderWarning | null>(null);
+  const lastError = computed<string | null>({
+    get: () => lastErrorEvent.value?.message ?? null,
+    set: (message) => { lastErrorEvent.value = message ? { message, severity: 'urgent' } : null; },
+  });
   const stopAllStatus = ref<'pending' | 'confirmed' | 'unconfirmed' | null>(null);
   const stopAllUnconfirmed = 'Stop All unconfirmed. Check the server connection.';
   const transportConfirmationMs = 2500;
@@ -472,7 +477,8 @@ function createClient() {
           break;
         }
         case 'playback_error': {
-          if (payload.code === 'output_device_unavailable' && typeof payload.message === 'string') {
+          if ((payload.code === 'output_device_unavailable' || payload.code === 'cue_prepare_failed')
+              && typeof payload.message === 'string') {
             lastError.value = payload.message;
             const start = pendingCommands.get(unacknowledgedStart);
             if (start && payload.item_uuid) start.outputWarning = payload.message;
@@ -482,7 +488,10 @@ function createClient() {
             const target = typeof payload.target_uuid === 'string' && payload.target_uuid
               ? ` (target ${payload.target_uuid})`
               : '';
-            lastError.value = `${payload.message}${target}. The source cue is still playing.`;
+            lastErrorEvent.value = {
+              message: `${payload.message}${target}. The source cue is still playing.`,
+              severity: 'advisory',
+            };
             break;
           }
           const cueId = typeof payload.cue_id === 'string' ? payload.cue_id : '';
@@ -1474,6 +1483,7 @@ function createClient() {
     cueStartsBlocked,
     failedReconnectAttempts,
     lastError,
+    lastErrorEvent,
     stopAllStatus,
     cues,
     mixerChannels,

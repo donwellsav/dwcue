@@ -153,10 +153,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onUpdateDownloadProgress: (callback) => ipcRenderer.on('update-download-progress', callback),
   onUpdateDownloaded: (callback) => ipcRenderer.on('update-downloaded', callback),
   onUpdateError: (callback) => ipcRenderer.on('update-error', callback),
+  onHeaderWarning: (callback) => replaceIpcListener('header-warning', (_event, message) => callback(message)),
   onMenuCheckForUpdates: (callback) => ipcRenderer.on('menu-check-for-updates', callback),
 
   // Project data sync between the primary and detached One Shots windows.
-  syncProjectData: (data, identity) => ipcRenderer.send('sync-project-data', data, identity),
+  syncProjectData: (data, identity, ...captureSession) =>
+    ipcRenderer.send('sync-project-data', data, identity, ...captureSession),
   
   // File association routing for canonical shows/archives and explicit legacy imports.
   // Push: main → renderer for warm-start / macOS open-file events.
@@ -273,6 +275,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     listDisplays: ()           => ipcRenderer.invoke('video-output:list-displays'),
     identifyDisplays: ()       => ipcRenderer.invoke('video-output:identify-displays'),
     setDisplay:   (displayId)  => ipcRenderer.invoke('video-output:set-display', displayId),
+    setCaptureSettings: (displayId, target) => ipcRenderer.invoke('video-output:set-capture-settings', displayId, target),
+    captureStandby: (source, target) => ipcRenderer.invoke('video-output:capture-standby', source, target),
+    clearStandbyCapture: (target) => ipcRenderer.invoke('video-output:clear-standby-capture', target),
+    getStandbyCapture: (sessionId, uuid, media) =>
+      ipcRenderer.invoke('video-output:get-standby-capture', sessionId, uuid, media),
+    onStandbyCaptureChanged: (callback) => {
+      const listener = () => callback();
+      ipcRenderer.on('video-output:standby-capture-changed', listener);
+      return () => ipcRenderer.removeListener('video-output:standby-capture-changed', listener);
+    },
     setTestCard:  (show)       => ipcRenderer.invoke('video-output:test-card', show),
     setTestCardConfig: (config) => ipcRenderer.invoke('video-output:test-card-config', config),
     setTestCardConnection: (connection) => ipcRenderer.invoke('video-output:test-card-connection', connection),

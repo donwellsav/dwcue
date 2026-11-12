@@ -145,12 +145,11 @@ export interface CartSlotKeyBinding {
 export interface OneShotSettings {
   order: number;
   retrigger: 'restart' | 'ignore';
-  hotkey?: CartSlotKeyBinding;
+  hotkey?: CartSlotKeyBinding | null; // Omitted uses the slot default. Null disables it.
   // Set when a playlist cue was copied into an independent One Shot. This is
   // only an origin reference for the Properties toggle; playback stays local.
   sourceUuid?: string;
-  // Per-cell show-mode safety: only fires while armed. Auto-disarm (default
-  // on) clears armed after each fire; disable per cell in the tile settings.
+  // Legacy saved fields. Playback ignores these.
   armed?: boolean;
   autoDisarm?: boolean;
 }
@@ -164,6 +163,10 @@ export type PlaybackKeyAction =
   | 'stop-all'
   | 'select-up'
   | 'select-down'
+  | 'set-up-next'
+  | 'toggle-video-output'
+  | 'capture-video-standby'
+  | 'capture-display-standby'
   | 'play-selected'
   | 'play-next';
 
@@ -460,5 +463,8 @@ export const DEFAULT_PLAYBACK_KEYS: Partial<Record<PlaybackKeyAction, CartSlotKe
   'stop-all':      { key: 'Escape',    ctrlKey: false, shiftKey: false, altKey: false },
   'select-up':     { key: 'ArrowUp',   ctrlKey: false, shiftKey: false, altKey: false },
   'select-down':   { key: 'ArrowDown', ctrlKey: false, shiftKey: false, altKey: false },
-  'play-selected': { key: 'Enter',     ctrlKey: false, shiftKey: false, altKey: false },
+  'set-up-next':   { key: 'Enter',     ctrlKey: false, shiftKey: false, altKey: false },
+  'toggle-video-output': { key: 'v',   ctrlKey: false, shiftKey: false, altKey: false },
+  'capture-video-standby': { key: 'g', ctrlKey: false, shiftKey: false, altKey: false },
+  'capture-display-standby': { key: 'g', ctrlKey: false, shiftKey: true, altKey: false },
 };

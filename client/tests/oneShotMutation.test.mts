@@ -39,7 +39,7 @@ test('applies every allowed detached field and rejects arbitrary patch keys', ()
     kind: 'set-fields', itemUuid: 'standalone', payload: { fields: {
       displayName: 'Updated', color: '#112233', volume: 0.5, playFade: 2, stopFade: 3,
       duckLevel: 0.2, duckFadeIn: 0.3, duckFadeOut: 0.4, deviceOverride: 'out-2',
-      retrigger: 'ignore', autoDisarm: false, hotkey: { key: 'F1' },
+      retrigger: 'ignore', hotkey: { key: 'F1' },
       playbackMode: 'replace', endMode: 'loop',
     } },
   }));
@@ -50,9 +50,14 @@ test('applies every allowed detached field and rejects arbitrary patch keys', ()
     mode: 'stop-all', duckLevel: 0.2, duckFadeIn: 0.3, duckFadeOut: 0.4,
   });
   assert.equal(state.standalone.oneShot?.retrigger, 'ignore');
-  assert.equal(state.standalone.oneShot?.autoDisarm, false);
+  assert.equal(state.standalone.oneShot?.armed, true, 'existing project metadata is preserved');
   assert.deepEqual(state.standalone.oneShot?.hotkey, { key: 'F1' });
   assert.equal(state.standalone.endBehavior.action, 'loop');
+  const cleared = applyOneShotMutation(state, request({
+    kind: 'set-fields', itemUuid: 'standalone', payload: { fields: { hotkey: null } },
+  }));
+  assert.equal(cleared.accepted, true);
+  assert.equal(JSON.parse(JSON.stringify(state.standalone)).oneShot.hotkey, null);
   const rejected = applyOneShotMutation(state, request({
     kind: 'set-fields', itemUuid: 'standalone',
     payload: { fields: { server: { projectFilePath: '/evil' } } },
@@ -60,14 +65,8 @@ test('applies every allowed detached field and rejects arbitrary patch keys', ()
   assert.equal(rejected.accepted, false);
 });
 
-test('arms, disarms all, moves, removes, and replaces topology', () => {
+test('moves, removes, and replaces topology', () => {
   const state = document();
-  applyOneShotMutation(state, request({ kind: 'set-armed', itemUuid: 'standalone', payload: { armed: false } }));
-  assert.equal(state.standalone.oneShot?.armed, undefined);
-  applyOneShotMutation(state, request({ kind: 'set-armed', itemUuid: 'standalone', payload: { armed: true } }));
-  applyOneShotMutation(state, request({ kind: 'disarm-all', payload: {} }));
-  assert.equal(state.playlist.oneShot?.armed, undefined);
-  assert.equal(state.standalone.oneShot?.armed, undefined);
   applyOneShotMutation(state, request({
     kind: 'move-slot', itemUuid: 'standalone', payload: { sourceSlot: 1, targetSlot: 0 },
   }));
@@ -191,8 +190,8 @@ test('detached requests are serialized and stale completions are rejected', asyn
       return new Promise(resolve => pending.push({ request: mutation, resolve }));
     },
   }, () => identity);
-  const first = client({ kind: 'set-armed', itemUuid: 'standalone', payload: { armed: false } });
-  const second = client({ kind: 'set-armed', itemUuid: 'standalone', payload: { armed: true } });
+  const first = client({ kind: 'set-fields', itemUuid: 'standalone', payload: { fields: { retrigger: 'ignore' } } });
+  const second = client({ kind: 'set-fields', itemUuid: 'standalone', payload: { fields: { retrigger: 'restart' } } });
   await Promise.resolve();
   assert.equal(pending.length, 1);
   pending[0]!.resolve({

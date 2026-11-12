@@ -6,7 +6,6 @@
       'is-playing': isPlaying,
       'is-paused': isPaused,
       'show-mode': showMode,
-      'is-armed': armed,
       'is-menu-open': menuOpen || removeOpen,
       'is-dragging': isDragging,
     }"
@@ -18,14 +17,6 @@
     <canvas ref="waveformCanvas" class="one-shot-waveform" aria-hidden="true"></canvas>
     <span class="one-shot-color-rail" aria-hidden="true"></span>
     <span v-if="isPlaying" class="one-shot-progress" :style="progressStyle" aria-hidden="true"></span>
-    <button
-      v-if="showMode"
-      type="button"
-      class="one-shot-trigger-surface"
-      :aria-label="triggerLabel"
-      @click="handleTrigger"
-    ></button>
-
     <div class="one-shot-topline">
       <b class="one-shot-index">{{ position + 1 }}</b>
       <span v-if="isPaused" class="one-shot-runtime-state is-paused" :title="t('status.paused')">{{ t('status.paused') }}</span>
@@ -39,26 +30,16 @@
     <div class="one-shot-bottomline">
       <div class="one-shot-actions">
         <button
-          v-if="!showMode || isPlaying"
           type="button"
           class="one-shot-control one-shot-transport"
           :class="{ 'is-stop': isPlaying }"
           :aria-label="transportLabel"
           :title="transportLabel"
           @click.stop="handleTransport"
+          @keydown.enter.space.stop
         >
           <span class="material-symbols-rounded" aria-hidden="true">{{ isPlaying ? 'stop' : 'play_arrow' }}</span>
         </button>
-        <button
-          v-if="showMode"
-          type="button"
-          class="one-shot-control one-shot-arm-toggle"
-          :class="{ 'is-armed': armed }"
-          :aria-pressed="armed"
-          :aria-label="armed ? t('oneShots.disarmCell', { name: item.displayName }) : t('oneShots.armCell', { name: item.displayName })"
-          :title="armed ? t('oneShots.disarmCell', { name: item.displayName }) : t('oneShots.armCell', { name: item.displayName })"
-          @click.stop="toggleArmed"
-        >{{ armed ? 'ARMED' : 'UNARMED' }}</button>
         <button
           v-if="!showMode"
           type="button"
@@ -127,14 +108,6 @@
             <option value="restart">{{ t('oneShots.restart') }}</option>
             <option value="ignore">{{ t('oneShots.ignore') }}</option>
           </select>
-        </label>
-        <label class="popover-field popover-field--checkbox">
-          <input
-            type="checkbox"
-            :checked="item.oneShot?.autoDisarm !== false"
-            @change="onAutoDisarmChange"
-          />
-          <span>{{ t('oneShots.autoDisarm') }}</span>
         </label>
 
         <label class="popover-field">
@@ -227,7 +200,7 @@
 
 <script setup lang="ts">
 import { useDetachedOneShotMutation } from '~/composables/useDetachedOneShotMutation';
-import type { AudioItem } from '~/types/project';
+import type { AudioItem, CartSlotKeyBinding } from '~/types/project';
 import type { OneShotMutableFields } from '~/types/oneShotMutation';
 import {
   getOneShotEndMode,
@@ -238,9 +211,8 @@ import {
   type OneShotPlaybackMode,
 } from '~/utils/oneShots';
 import { eventToBinding, formatKeyLabel, isReservedCombo } from '~/composables/useCartHotkeys';
-import { oneShotFireActionKey, runAcknowledgedAction } from '~/utils/acknowledgedAction';
 
-const props = defineProps<{ item: AudioItem; position: number }>();
+const props = defineProps<{ item: AudioItem; position: number; hotkey?: CartSlotKeyBinding }>();
 const emit = defineEmits<{
   (event: 'request-import'): void;
   (event: 'remove'): void;
@@ -260,28 +232,13 @@ let resizeObserver: ResizeObserver | null = null;
 const { uiMode } = useUiMode();
 const { t } = useLocalization();
 const { saveProject, openItemProperties } = useProject();
-const { activeCues, playCue, stopCue } = useAudioEngine();
+const { activeCues, stopCue } = useAudioEngine();
+const { playOneShot } = useOneShotPlayback();
 const { updateBinding } = useCartHotkeys();
 const server = useLiveplayServer();
-const { isDetached, error: detachedMutationError, mutate, releaseDisarmFence } = useDetachedOneShotMutation();
+const { isDetached, error: detachedMutationError, mutate } = useDetachedOneShotMutation();
 
 const showMode = computed(() => uiMode.value === 'playback');
-const { isArmed, setArmed, fireBlocked, afterFire } = useOneShotArm();
-const armed = computed(() => isArmed(props.item));
-const toggleArmed = async () => {
-  const nextArmed = !armed.value;
-  if (isDetached) {
-    const result = await mutate({
-      kind: 'set-armed', itemUuid: props.item.uuid, payload: { armed: nextArmed },
-    });
-    if (result?.accepted) {
-      if (nextArmed) releaseDisarmFence(props.item.uuid);
-      setArmed(props.item, nextArmed);
-    }
-    return;
-  }
-  if (setArmed(props.item, nextArmed)) void saveProject();
-};
 const activeCue = computed(() => activeCues.value.get(props.item.uuid));
 // Map membership remains the active/stop contract; pause is a visual sub-state.
 const isPlaying = computed(() => !!activeCue.value);
@@ -294,14 +251,10 @@ const duckDb = computed(() => {
   const level = props.item.duckingBehavior.duckLevel ?? 0.1;
   return level > 0 ? Math.max(-60, 20 * Math.log10(level)) : -60;
 });
-const hotkeyLabel = computed(() => props.item.oneShot?.hotkey
-  ? formatKeyLabel(props.item.oneShot.hotkey) : '');
+const hotkeyLabel = computed(() => props.hotkey ? formatKeyLabel(props.hotkey) : '');
 const transportLabel = computed(() => isPlaying.value
   ? t('oneShots.stopNamed', { name: props.item.displayName })
   : t('oneShots.playNamed', { name: props.item.displayName }));
-const triggerLabel = computed(() => isPlaying.value && props.item.oneShot?.retrigger === 'ignore'
-  ? t('oneShots.playingIgnored', { name: props.item.displayName })
-  : t('oneShots.triggerNamed', { name: props.item.displayName }));
 const tileStyle = computed(() => ({ '--one-shot-color': props.item.color || '#315FCF' }));
 const progressStyle = computed(() => {
   const cue = activeCue.value;
@@ -321,34 +274,14 @@ const persist = (fields: OneShotMutableFields) => {
   if (isDetached) void mutate({ kind: 'set-fields', itemUuid: props.item.uuid, payload: { fields } });
   else void saveProject();
 };
-const onAutoDisarmChange = (event: Event) => {
-  if (!props.item.oneShot) return;
-  const enabled = (event.target as HTMLInputElement).checked;
-  if (enabled) delete props.item.oneShot.autoDisarm;
-  else props.item.oneShot.autoDisarm = false;
-  persist({ autoDisarm: enabled });
-};
 
 const requestImport = () => {
   menuOpen.value = false;
   emit('request-import');
 };
 
-const handleTrigger = async () => {
-  if (isPlaying.value && props.item.oneShot?.retrigger === 'ignore') return;
-  // Show-mode arm gate: only re-safe after confirmed playback.
-  if (fireBlocked(props.item)) return false;
-  return runAcknowledgedAction(
-    oneShotFireActionKey(props.item.uuid),
-    () => playCue(props.item),
-    () => afterFire(props.item),
-  );
-};
-
 const handleTransport = () => {
-  // Stop is never gated. The play branch only exists in edit mode (in show
-  // mode this button is stop-only), so the per-cell arm gate does not apply.
-  return isPlaying.value ? stopCue(props.item.uuid) : playCue(props.item);
+  return isPlaying.value ? stopCue(props.item.uuid) : playOneShot(props.item);
 };
 
 const handleDragStart = (event: DragEvent) => {
@@ -466,7 +399,7 @@ const startHotkeyCapture = () => {
 };
 
 const clearHotkey = () => {
-  if (props.item.oneShot) delete props.item.oneShot.hotkey;
+  if (props.item.oneShot) props.item.oneShot.hotkey = null;
   capturingHotkey.value = false;
   persist({ hotkey: null });
 };
@@ -594,30 +527,7 @@ onUnmounted(() => {
 .one-shot-tile.show-mode {
   grid-template-rows: 22px minmax(0, 1fr) 36px;
   padding: 7px 8px 7px 11px;
-  cursor: pointer;
-}
-
-.one-shot-tile.show-mode:hover,
-.one-shot-tile.show-mode:has(.one-shot-trigger-surface:focus-visible) {
-  border-color: var(--color-border-strong);
-  background: var(--color-surface-hover);
-  outline: none;
-}
-
-.one-shot-trigger-surface {
-  position: absolute;
-  z-index: 1;
-  inset: 0;
-  padding: 0;
-  border: 0;
-  border-radius: inherit;
-  background: transparent;
-  cursor: pointer;
-}
-
-.one-shot-trigger-surface:focus-visible {
-  outline: 2px solid var(--color-focus, var(--color-accent));
-  outline-offset: -3px;
+  cursor: default;
 }
 
 .one-shot-tile.is-playing {
@@ -820,51 +730,6 @@ onUnmounted(() => {
   font-size: 19px;
   font-variation-settings: 'FILL' 0, 'wght' 520, 'GRAD' 0, 'opsz' 20;
 }
-/* Per-cell arm stays independent from playback: amber marks an armed pad, */
-/* green marks confirmed playback, and red is reserved for Stop/fault.     */
-/* Disarmed idle pads remain fully legible in Show Mode.                   */
-.popover-field--checkbox {
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-}
-
-.popover-field--checkbox input {
-  margin: 0;
-}
-
-.one-shot-arm-toggle {
-  min-width: 0;
-  padding-inline: 6px;
-  overflow: hidden;
-  color: var(--color-text-primary);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: .04em;
-  line-height: 1.4;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.one-shot-arm-toggle:hover { background: var(--color-surface-hover); }
-
-.one-shot-arm-toggle.is-armed {
-  border-color: color-mix(in srgb, var(--state-up-next) 64%, transparent);
-  background: color-mix(in srgb, var(--state-up-next) 14%, transparent);
-  color: var(--state-up-next);
-}
-
-.one-shot-tile.show-mode.is-armed:not(.is-playing) {
-  border-color: var(--state-up-next);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--state-up-next) 46%, transparent);
-}
-
-.one-shot-tile.show-mode:not(.is-armed):not(.is-playing) {
-  opacity: 0.82;
-}
-
 .show-mode .one-shot-actions { width: 100%; grid-auto-columns: minmax(0, 1fr); }
 .show-mode .one-shot-control { width: 34px; height: 34px; }
 .show-mode .one-shot-actions .one-shot-control { width: 100%; }

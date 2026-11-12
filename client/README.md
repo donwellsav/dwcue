@@ -175,12 +175,13 @@ For upgrade compatibility, Electron's managed backend intentionally keeps the ex
 
 The Video Output window is deliberately **session-only** even though its display assignment is machine-specific:
 
-- `<userData>/video-output.json` persists only `displayId` and `displayFingerprint`. Legacy `enabled` values are ignored.
+- `<userData>/video-output.json` persists display assignment, test card preferences and the standby capture display and destination. Legacy `enabled` values are ignored.
 - Every app launch starts with the output closed. `video-output:open` arms it for the current process; an operator close disarms it, while an internal display-watchdog recreation preserves the current session.
 - The display selector works while the output is closed. `video-output:identify-displays` creates click-through, always-on-top number cards on every connected screen for five seconds.
 - A valid independently addressable display gets a frameless fullscreen window. An unassigned or single-display setup gets a normal 960×540 preview window instead of a fullscreen takeover.
 - The output's native context menu exposes fullscreen, test-card and **Exit Video Output** actions. On Windows the real output remains `closable` so Alt+F4 is always an escape hatch. The idle base and failure cover are black; there is no separate operator blackout control: no blackout/fade-to-black IPC command exists.
 - Confidence capture allows one readback in flight per output generation and ignores late completions. Picture health also uses presented-frame and native-clock progress; fresh screenshots alone do not establish motion. Renderer crashes and hangs latch a native black cover over the existing audience window and report the reason while preserving operator control. **Restart Output** is an explicit operator action; the cover stays until the replacement view reports ready. Ordinary cue changes do not take focus. Retired window events cannot release a replacement's resources.
+- Explicit standby captures use the current output window or the exact selected display. Electron keeps them in memory for the active show and rejects late results from a replaced show or cue. Only the audience renderer can read captures. Assigned cue images have priority. Keyboard bindings are under **Settings → Shortcuts**.
 
 The passive output can own keyboard focus, especially on Windows. Its Electron
 `before-input-event` handler therefore forwards application-level keys to the control
@@ -205,7 +206,7 @@ All composables are Vue `setup()`-time helpers, typed in TypeScript.
 | `useLiveMeters`        | Subscribes to the `meters` WS frame and exposes per-cue / per-mixer / per-master reactive refs at the server's default 30 Hz cadence. Drives `LiveMeterBar` and `StereoMeter`. |
 | `useProject`           | Paged hydration, Retry/rejoin, project CRUD and sync. It enforces the no-partial-save barrier and clears document/path on remote close; serialized revision/identity fences ensure only the latest persisted revision becomes clean. |
 | `useAudioEngine`       | Transport facade. **Cue to Continue** is runtime-only for one playback instance: it never rewrites `endBehavior`, and Stop, remove, replay, Stop All, media replacement, or project switch cancels it. |
-| `useCartItems`         | The One Shots grid model (slot → cue mapping, per-cell arm state). An arm is consumed only after accepted play; repeated identical arming is coalesced. Storage keeps the legacy cart shape for compatibility. |
+| `useCartItems`         | The One Shots grid model and slot-to-cue mapping. Storage keeps the existing cart shape. |
 | `useCartHotkeys`       | Configurable keyboard shortcuts → One Shot triggers. See `ControlConfigModal.vue` for the current UI. |
 | `useMidiController`    | Web MIDI bindings → One Shot triggers and transport. Master Volume targets the server's Global Master—not output channel 0. See `ControlConfigModal.vue`. |
 | `useStateViewer`       | Feeds the live diagnostics popup window (project doc + connection + server status). |
@@ -224,7 +225,7 @@ The component tree is intentionally flat — every SFC lives directly in [`app/c
 - `MainWorkspace.vue` — top-level layout once a project is loaded.
 - `PlaybackControls.vue`, `ActiveCueItem.vue` — top-of-screen GO transport and named **Play Next** target. **Set As Next** waits for the authoritative `next_item_set` echo (including empty-string clear), and GO clears it only after accepted play; failures remain ready for retry.
 - `PlaylistView.vue`, `PlaylistItem.vue` — recursive playlist tree.
-- `OneShotPanel.vue`, `OneShotTile.vue` — 1–64 cell quick-play grid with per-cell ARMED/UNARMED gating. An unused panel starts collapsed unless the user explicitly makes it visible; the detached window retains legacy cart-player IPC names while routing edits through the primary-owned mutation broker. Duck Level, Attack and Release are server-consumed, generation-fenced settings.
+- `OneShotPanel.vue`, `OneShotTile.vue` — 1–64 cell quick-play grid with direct Play/Stop in both modes. The detached window routes edits through the primary-owned mutation broker. Click, keyboard and MIDI share the same One Shot start path. Duck Level, Attack and Release are server-consumed, generation-fenced settings.
 - `PropertiesPanel.vue` — properties for the selected item (gain, fades, working Start/End Behaviors, ducking, output device and LTC).
 - `WaveformCanvas.vue` — canvas-rendered waveform fetched from `GET /api/waveform/<cueId>`.
 - `WaveformTrimmer.vue` — interactive in/out trimming + normalise.

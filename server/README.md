@@ -253,7 +253,7 @@ Stopping a Paused cue clears it immediately while remaining silent. Pause also f
 ### Sequencer trigger invariants
 
 - **Cue to Continue** arms a one-pass, runtime-only continuation for the cue's current playback instance. It temporarily supersedes saved Loop, Start Next, crossfade/stop-fade, and end-behaviour advance; at natural end it starts the resolved target. Stop, remove, replay, Stop All, media replacement, or project switch cancels the arm, so replay falls back to the saved behaviour. `cue_to_continue` is never serialized.
-- A manual **Play Next** override changes only when the server accepts a valid UUID or an explicit empty clear. GO consumes it only when playback is accepted; failed or not-yet-loaded targets remain armed. One Shot arming follows the same accepted-play rule.
+- A manual **Play Next** override changes only when the server accepts a valid UUID or an explicit empty clear. GO consumes it only when playback is accepted. Failed or not-yet-loaded targets remain armed.
 - Repeated identical arming is coalesced without another state broadcast. Successful GO clears its override; failed GO leaves it intact.
 - Each play receives a server-side generation fence. Replay, stop, removal, media replacement, and project changes invalidate older generations so a copied terminal action from an earlier playback instance cannot advance or otherwise affect the new one.
 - Pause holds timed actions and auto-follow until Resume. Crossfade and Start Next resolve all supported destinations before committing the source fade; failed destinations leave the follow retryable until EOF and report an error if they still cannot start.

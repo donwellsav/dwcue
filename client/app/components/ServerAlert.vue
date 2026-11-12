@@ -1,55 +1,44 @@
 <template>
-  <div v-if="!isVideoOutputWindow" class="server-alert-stack">
-    <div v-if="audioDevice" class="server-alert server-alert--warning" role="alert">
-      <span class="material-symbols-rounded" aria-hidden="true">timer_off</span>
-      <span>{{ audioHealthMessage }}</span>
+  <Teleport defer :to="target">
+    <div v-if="warning || audioDevice || videoStatus?.recoveryRequired" class="header-warning-group">
+      <span
+        v-if="warning"
+        class="header-warning-text"
+        :class="{ 'header-warning-text--urgent': warning.severity === 'urgent' }"
+        :role="warning.severity === 'urgent' ? 'alert' : 'status'"
+        :title="warning.message"
+      >{{ warning.message }}</span>
       <button
-        v-if="!pendingRecovery"
+        v-if="audioDevice"
         type="button"
-        class="server-alert__action"
-        :disabled="recoveryRequesting"
+        class="header-warning-action"
+        :aria-label="t('headerWarnings.retryAudio')"
+        :title="`${t('headerWarnings.retryAudio')} · ${audioHealthMessage}`"
+        :disabled="recoveryRequesting || !!pendingRecovery"
         @click="retryAudioOutput"
       >
-        {{ recoveryRequesting ? t('common.loading') : t('connectionLost.reconnect') }}
+        <span class="material-symbols-rounded" aria-hidden="true">{{ pendingRecovery ? 'hourglass_empty' : 'volume_off' }}</span>
       </button>
-      <span v-else class="server-alert__waiting" aria-hidden="true">•••</span>
-    </div>
-
-    <div v-if="videoPlaybackError" class="server-alert" role="alert">
-      <span class="material-symbols-rounded" aria-hidden="true">videocam_off</span>
-      <span>
-        <strong>{{ t('settings.tabVideoOutput') }} · {{ t('common.error') }}</strong>
-        — {{ videoPlaybackError.message }}
-      </span>
       <button
         v-if="videoStatus?.recoveryRequired"
         type="button"
-        class="server-alert__action"
+        class="header-warning-action"
+        :aria-label="t('settings.videoOutputRestart')"
+        :title="`${t('settings.videoOutputRestart')} · ${videoErrorMessage}`"
         :disabled="videoStatus.restarting"
         @click="restartVideoOutput"
-      >{{ t('settings.videoOutputRestart') }}</button>
+      ><span class="material-symbols-rounded" aria-hidden="true">videocam_off</span></button>
     </div>
-
-    <div v-if="server.connected && server.lastError" class="server-alert" role="alert">
-      <span class="material-symbols-rounded" aria-hidden="true">error</span>
-      <span>{{ server.lastError }}</span>
-      <button
-        type="button"
-        class="server-alert__dismiss"
-        :aria-label="t('actions.close')"
-        @click="server.clearLastError()"
-      >×</button>
-    </div>
-  </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
 import { recoveryResultForRequest } from '~/types/server';
 
+defineProps<{ target: string }>();
 const server = useLiveplayServer();
 const { t } = useLocalization();
-const isVideoOutputWindow = computed(() => import.meta.client &&
-  new URLSearchParams(window.location.search).get('videoOutput') === '1');
+const { warning, showHeaderWarning } = useHeaderWarnings();
 const videoStatus = ref<VideoOutputStatus | null>(null);
 type RecoveryTarget = { id: string; name: string };
 const pendingRecovery = ref<(RecoveryTarget & { requestId: number }) | null>(null);
@@ -79,9 +68,17 @@ const audioHealthMessage = computed(() => {
   }
   return t('audioHealth.stalled', { name: device.display_name });
 });
-const videoPlaybackError = computed(() => {
-  const error = videoStatus.value?.testCardError;
-  return error ? { itemUuid: null, message: error } : videoStatus.value?.playbackError ?? null;
+const videoErrorMessage = computed(() => videoStatus.value?.testCardError
+  || videoStatus.value?.playbackError?.message || '');
+
+watch(() => server.connected ? server.lastErrorEvent : null, (event) => {
+  if (event) showHeaderWarning(event.message, event.severity);
+}, { immediate: true });
+watch(audioHealthMessage, (message) => {
+  if (message) showHeaderWarning(message, pendingRecovery.value ? 'advisory' : 'urgent');
+}, { immediate: true });
+watch(videoErrorMessage, (message) => {
+  if (message) showHeaderWarning(`${t('settings.tabVideoOutput')} · ${message}`, 'urgent');
 });
 
 watch(
@@ -132,7 +129,6 @@ async function restartVideoOutput() {
 }
 
 onMounted(() => {
-  if (isVideoOutputWindow.value) return;
   const api = window.electronAPI?.videoOutput;
   if (!api) return;
   void api.status().then((status) => { videoStatus.value = status; }).catch(() => {});
@@ -146,73 +142,55 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.server-alert-stack {
-  position: fixed;
-  z-index: 9800;
-  left: 50%;
-  bottom: 20px;
-  transform: translateX(-50%);
-  display: grid;
-  gap: 8px;
-  width: min(680px, calc(100vw - 32px));
-}
-
-.server-alert {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+.header-warning-group {
+  display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  color: var(--color-text-primary);
-  background: var(--color-surface);
-  border: 1px solid var(--color-danger, #da1e28);
-  border-radius: var(--border-radius-md);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
-  font-size: 13px;
+  gap: var(--spacing-xs);
+  min-width: 0;
 }
 
-.server-alert--warning {
-  border-color: var(--color-warning, #f1c21b);
+.header-warning-text {
+  min-width: 0;
+  max-width: 40ch;
+  height: 18px;
+  padding-inline: var(--spacing-xs);
+  border: 1px solid currentColor;
+  border-radius: var(--control-radius);
+  color: var(--state-up-next);
+  background: var(--color-surface-raised);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.server-alert > .material-symbols-rounded {
-  color: var(--color-danger, #da1e28);
+.header-warning-text--urgent {
+  color: var(--color-danger);
 }
 
-.server-alert--warning > .material-symbols-rounded {
-  color: var(--color-warning, #f1c21b);
+.header-warning-action {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 18px;
+  border: 1px solid currentColor;
+  border-radius: var(--control-radius);
+  background: var(--color-surface-raised);
+  color: var(--color-danger);
 }
 
-.server-alert button {
-  min-height: 28px;
-  color: var(--color-text-secondary);
-  background: transparent;
-  border: 0;
-  border-radius: var(--border-radius-sm);
-  cursor: pointer;
+.header-warning-action .material-symbols-rounded {
+  font-size: 14px;
 }
 
-.server-alert button:hover:not(:disabled) {
-  color: var(--color-text-primary);
+.header-warning-action:hover:not(:disabled) {
   background: var(--color-surface-hover);
 }
 
-.server-alert__action {
-  padding: 4px 8px;
-  border: 1px solid var(--color-border) !important;
-  font: inherit;
-  font-weight: 600;
-}
-
-.server-alert__dismiss {
-  width: 28px;
-  padding: 0;
-  font-size: 20px;
-}
-
-.server-alert__waiting {
+.header-warning-action:disabled {
   color: var(--color-text-secondary);
-  font-family: var(--font-mono);
-  letter-spacing: 0.08em;
 }
 </style>

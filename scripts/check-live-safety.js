@@ -1873,8 +1873,8 @@ assert.match(
 );
 assert.match(
   projectHeader,
-  /warningMaxWidthPx = ref<number \| null>\(null\)[\s\S]*Math\.max\(0, rightEdge - warningLeftPx\.value - PLACEMENT_MARGIN\)[\s\S]*\.silence-warning\s*\{[\s\S]{0,500}overflow:\s*hidden;[\s\S]{0,80}text-overflow:\s*ellipsis;/,
-  'the silence-warning fallback must not overlap the fixed header controls',
+  /class="header-titles">[\s\S]*class="silence-warning"[\s\S]*class="project-name"[\s\S]*\.silence-warning__label\s*\{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;/,
+  'the silence warning must stay above the project name and fit beside the header controls',
 );
 assert.match(
   playlistView,
@@ -2469,7 +2469,14 @@ const transpiledUiMode = ts.transpileModule(
   { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
 ).outputText.replaceAll('import.meta.client', 'false');
 const uiModeRuntime = { exports: {} };
-Function('exports', 'module', transpiledUiMode)(uiModeRuntime.exports, uiModeRuntime);
+const headerWarningsRuntime = {};
+Function('exports', ts.transpileModule(read('client/app/utils/headerWarnings.ts'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText)(headerWarningsRuntime);
+Function('exports', 'module', 'require', transpiledUiMode)(uiModeRuntime.exports, uiModeRuntime, (specifier) => {
+  assert.equal(specifier, '../utils/headerWarnings');
+  return headerWarningsRuntime;
+});
 assert.deepEqual(uiModeRuntime.exports.normalizeCartGridLayouts({
   attachedRegular: { rows: 0, columns: 17, minHeight: 1 },
   attachedShow: { minHeight: 1 },
@@ -2488,8 +2495,8 @@ assert.match(
 );
 assert.match(
   oneShotTile,
-  /class="one-shot-bottomline"[\s\S]{0,100}class="one-shot-actions"[\s\S]*v-if="showMode"[\s\S]{0,100}class="one-shot-control one-shot-arm-toggle"[\s\S]*\.one-shot-topline\s*\{[\s\S]{0,180}grid-template-columns:\s*16px minmax\(0, 1fr\) minmax\(0, 28px\) 42px;[\s\S]{0,100}grid-template-areas:\s*'index state hotkey time';/,
-  'One Shot metadata must stay separate from the Show Mode arm control in the bottom action strip',
+  /class="one-shot-bottomline"[\s\S]{0,100}class="one-shot-actions"\s*>\s*<button\s+type="button"\s+class="one-shot-control one-shot-transport"[\s\S]{0,280}@click\.stop="handleTransport"/,
+  'One Shots must use the same Play/Stop button in the bottom action strip in both modes',
 );
 assert.match(
   oneShotTile,
@@ -2545,8 +2552,13 @@ assert.match(
 );
 assert.match(
   projectHeader,
-  /resizeObserver\.observe\(headerRef\.value\)[\s\S]{0,160}resizeObserver\.observe\(leftRef\.value\)[\s\S]{0,160}resizeObserver\.observe\(rightRef\.value\)/,
-  'silence-warning placement must react to internal header content changes',
+  /\.silence-warning__seconds\s*\{[^}]*inline-size:\s*2ch;[^}]*font-variant-numeric:\s*tabular-nums;/,
+  'the silence warning must reserve the same space for one or two digits',
+);
+assert.doesNotMatch(
+  projectHeader,
+  /\.silence-warning[^\n{]*\{[^}]*(?:animation(?:-[\w-]+)?|position)\s*:/,
+  'the silence warning must stay in the header layout with a steady appearance',
 );
 assert.doesNotMatch(
   oneShotPanel,

@@ -17,7 +17,6 @@ export type OneShotMutableFields = {
   duckFadeOut?: number;
   deviceOverride?: string | null;
   retrigger?: 'restart' | 'ignore';
-  autoDisarm?: boolean;
   hotkey?: CartSlotKeyBinding | null;
   playbackMode?: 'overlay' | 'duck' | 'replace';
   endMode?: 'stop' | 'loop';
@@ -30,8 +29,6 @@ interface MutationBase {
 
 export type OneShotMutationRequest = MutationBase & (
   | { kind: 'set-fields'; itemUuid: string; payload: { fields: OneShotMutableFields } }
-  | { kind: 'set-armed'; itemUuid: string; payload: { armed: boolean } }
-  | { kind: 'disarm-all'; payload: Record<string, never> }
   | { kind: 'move-slot'; itemUuid: string; payload: { sourceSlot: number; targetSlot: number } }
   | { kind: 'remove-slot'; itemUuid: string; payload: Record<string, never> }
   | { kind: 'replace-slot'; itemUuid?: string; payload: { slot: number; item: AudioItem } }

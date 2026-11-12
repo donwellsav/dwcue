@@ -2181,7 +2181,7 @@ void ControlServer::install_routes() {
             return json_ok(json({{"ok", true}, {"itemUuid", uuid}}));
         });
 
-    // Trigger the selected item (the client's Enter / "Play Selected" key).
+    // Trigger the selected item (the client's assignable "Play Selected" action).
     CROW_ROUTE(app, "/api/transport/play_selected")
         .methods(crow::HTTPMethod::Post)
         ([this]{
