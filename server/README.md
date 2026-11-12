@@ -454,12 +454,15 @@ Plays an item on `settings.previewDevice` without routing through the live mixer
 | `GET /api/project/header`       | — | lightweight header `{ name, itemCount, theme, settings, cart, hasOpenProject, needsRepair, repairIssues, … }` | Repair details belong to the active show and remain in the header until it is saved. |
 | `GET /api/project/items?offset=0&limit=100` | — | `{ "offset": int, "limit": int, "total": int, "items": [...] }` | `limit` clamps to [1,1000]. Top-level items only (groups carry their children inline). |
 | `GET /api/project/progress`     | — | `{ "ready": bool, "loading": bool, "loaded": int, "total": int, "failedCount": int, "failures": [...] }` | Cheap poll for playback readiness and missing/unreadable media. |
-| `POST /api/project/load`        | `{ "path": "/abs/file.dwcue" }` *or* `{ "document": { … } }` | header object, augmented with `needsRepair`/`repairIssues` if the document was auto-repaired on load | broadcasts `project_changed`. `400` if neither field is present or load fails. |
+| `POST /api/project/load`        | `{ "path": "/abs/file.dwcue", "openDeadlineMs": 123 }` or `{ "document": { … } }` | header object, augmented with `needsRepair`/`repairIssues` if the document was auto-repaired on load | Broadcasts `project_changed` on success. The controller requests a fresh engine-clock deadline before Open. |
+| `POST /api/project/load`        | `{ "create": { "path": "/abs/new.dwcue", "document": { … } }, "openDeadlineMs": 123 }` | header object on save and switch | New Show requires the deadline and creates the file exclusively. `412` for expiry before writing. `410` with the saved path when expiry or a different show session prevents the switch. |
 | `POST /api/project/close`       | — | `{ "closed": true }` | broadcasts `project_changed`; clients clear both their project document and remembered path |
 | `PUT /api/project/document`     | full project JSON document | header object | Replaces the entire in-memory document. Broadcasts `project_changed`. |
 | `POST /api/project/save`        | `{ "path": "/abs/file.dwcue" (optional), "document": { … } (optional) }` | `{ "ok": true, "path": "…" }` | Serialized snapshot + atomic sibling-temp publication to the supplied canonical path or current path. `400` if neither is set; failure leaves the previous file and project identity unchanged. |
 | `POST /api/project/repair`      | — | `{ "repaired": bool, "issues": [string], "saved": bool }` | Forces a re-save of the (already auto-repaired on load) in-memory document. |
 Project load returns its header while media readiness continues asynchronously; callers use `/api/project/progress` and per-item errors rather than blocking all transport. Play/GO reject an unready selected target without consuming the operator override. Group Play All performs its all-or-nothing readiness preflight, while Stop All/Panic stay callable regardless of loader failures.
+
+Get `/api/project/header?open_deadline=1` immediately before a switch request. Use the returned `openDeadlineMs` as-is and bind the request to the expected show using `X-DWCUE-Project-Session`. The controller requires `createDeadlineSupported: true` before sending New Show. If an older controller calls New Show without a deadline, the engine rejects the request before writing.
 
 #### Project items
 

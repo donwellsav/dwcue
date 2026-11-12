@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.19
-**Source revision:** ba945ffdf7da63fcefd96b96c34bcbdb42892b3a
-**Native engine baseline:** ba945ffdf7da63fcefd96b96c34bcbdb42892b3a
+**Source revision:** aa280710ebe146b17fd29a94b8497df60f955339
+**Native engine baseline:** aa280710ebe146b17fd29a94b8497df60f955339
 **Edition:** 11 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition covers the DonWells Cue **2.6.19** source at **ba945ff**. It includes the November playback, recovery and import repairs. Match your installer to its release notes before rehearsal.
+This edition covers the DonWells Cue **2.6.19** source at **aa28071**. It includes the November playback, recovery and import repairs. Match your installer to its release notes before rehearsal.
 
 Interface images retain their 3 November capture date, original source revisions and hashes. The instructions describe the current archive and import recovery controls. The captures use generated tones, the native engine's virtual NULL output, and fixture locale, display and MIDI information. Capture details are recorded in **docs/manual-assets/captures.json**. Equipment photographs remain illustrative.
 
@@ -78,6 +78,8 @@ On launch, the desktop normally starts its managed local server automatically. T
 ![New Show form with a practice name and disposable destination selected.](manual-assets/new-show-current.png)
 
 **Expected result:** After the new file is saved, the workspace opens with the new show name and an empty playlist. Canceling or a failed write leaves any current show playing. If the selected name already exists in that folder, choose a different name or folder.
+
+While New Show waits for storage, use **Stop All** in the loading panel if needed. If the deadline passes before the engine accepts the switch, the current show stays active. When a late save is confirmed, the form shows the saved `.dwcue` path. Close the form and use **File → Open Project** when you are ready. If the reply is lost, let the controller verify the active show and check for the file before retrying.
 
 DonWells Cue creates `<show name>.dwcue` and `media/` in the selected folder; portable exports use `.dwcuepack`. Keep that folder dedicated to the show. A remote picker uses the engine computer. See chapter 11 for archive import and non-overwrite safeguards.
 
@@ -900,7 +902,7 @@ With Video Output focused, Escape also exits its fullscreen mode. In Level Check
 
 ### About this edition
 
-This edition covers the DonWells Cue **2.6.19** source at **ba945ff**. The 22 captures retain their 3 November provenance. They use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
+This edition covers the DonWells Cue **2.6.19** source at **aa28071**. The 22 captures retain their 3 November provenance. They use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
 
 The playback checkpoint **2f372c2** passed native 13/13, isolated API 61/61, client 229/229, typecheck and RT/live safety checks. Audio-output and project-runtime suites also pass AddressSanitizer; leak detection is disabled. Native checks include six simulated ten-minute secondary-clock runs with continuous generated audio and no buffer faults or resyncs inside the tested envelope. Physical alignment and the earlier intermittency remain unproven; more extreme drift/jitter can trigger recovery.
 
