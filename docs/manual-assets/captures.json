@@ -2,7 +2,7 @@
   "application": "DonWells Cue",
   "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
   "packageVersion": "2.6.17",
-  "edition": "12 November 2026 operator manual for DonWells Cue 2.6.20 with original 3 November capture provenance",
+  "edition": "12 November 2026 development operator manual at 7305c9b with original 3 November capture provenance",
   "images": [
     {
       "file": "welcome-current.png",

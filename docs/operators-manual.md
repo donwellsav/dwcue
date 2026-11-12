@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
-**Version:** 2.6.20
-**Source revision:** f14629d954a0ab6c312f4f37e4eec9b101cf84ea
+**Version:** 2.6.20 development
+**Source revision:** 7305c9bdabc5f9c508ea616afeb35012f033b3cf
 **Native engine baseline:** f14629d954a0ab6c312f4f37e4eec9b101cf84ea
-**Edition:** 12 November 2026 · English · Current-source operator edition
+**Edition:** 12 November 2026 · English · Development operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition covers the DonWells Cue **2.6.20** source at **f14629d**. It includes the November playback, recovery and import repairs. Match your installer to its release notes before rehearsal.
+This edition covers development source **7305c9b**. It includes the keyboard and One Shot defaults added after the public **2.6.20** release. Match your installer to its release notes before rehearsal.
 
 Interface images retain their 3 November capture date, original source revisions and hashes. The instructions describe the current archive and import recovery controls. The captures use generated tones, the native engine's virtual NULL output, and fixture locale, display and MIDI information. Capture details are recorded in **docs/manual-assets/captures.json**. Equipment photographs remain illustrative.
 
@@ -130,7 +130,7 @@ Rehearse at the actual display size and app zoom. Keep the next cue name and act
 
 ### Selection is not arming
 
-Selection and arming are independent: arrow keys and Properties can refer to a different cue from **Up Next**. Use **Set As Next** for an explicit GO target; pressing it again on that row requests clearing the override. Wait for the acknowledged name beside **Play Next**.
+Selection and arming are independent. Move through the playlist with **Up/Down**, then press **Enter** to set the selected cue as **Up Next**. Wait for its name beside **Play Next**, then press **Space** to run it. The row's **Set As Next** button also sets an explicit GO target. Pressing that button again on the armed row requests clearing the override.
 
 Automatic Up Next defaults on. Opening prepares the first playable item; stopping a cue with **End Behavior: Nothing** prepares its next sibling. A natural end at the top-level list’s end can wrap to the first item. Preparation waits for a deliberate GO unless an authored automatic action applies. An explicit override takes precedence.
 
@@ -407,7 +407,7 @@ Keep the LTC destination separate from the audience audio path. Do not enable ti
 - **Common mistake:** Double-pressing because the first request takes time to acknowledge.
 - **Recovery:** Do not press again blindly. Read active state and any refusal; use the rehearsed Stop All/console response if wrong material is active, otherwise resolve the refusal and make one deliberate retry.
 
-The default GO key is **Space**. **Enter** is Play Selected, a separate action. Check the project's shortcut assignments before operating; do not transfer keyboard habits from another show without checking them. A click is only a request until the engine acknowledges it. Decoder preparation does not freeze GO: an unready start is refused visibly, the armed target is retained, and Stop All/Panic remain live. Resolve the reported cause, then retry once.
+The default GO key is **Space**. **Enter** sets the selected playlist cue as **Up Next**. While the engine is confirming the new target, GO is unavailable. Press Space after the target name appears and **Play Next** is available. Check the project's shortcut assignments before operating. An unready start is refused visibly, the armed target is retained, and Stop All/Panic remain live. Resolve the reported cause, then retry once.
 
 ### Active-cue controls
 
@@ -455,7 +455,7 @@ Open a tile's settings and review these choices before assigning its control key
 | Auto-disarm after fire | Require a new arm after a successful fire; enabled by default. |
 | Output | Use the project default or a deliberately selected separate device. |
 
-New One Shots start with Ending Stop, retrigger Restart, and Duck Program behavior at approximately −20 dB program level. Check imported or copied settings rather than assuming every cell matches that initial configuration. **Duck Time** and **Release Time** author the runtime attack and recovery. Overlapping duck owners use the strongest absolute Program Level, and restoration follows the surviving owners before returning each cue to its recomputed base gain. Rehearse the actual envelope and the case where one overlapping One Shot ends before another.
+New One Shots start with **Replace Program**, a **0.1-second fade-in**, a **0.5-second fade-out**, Ending Stop, and retrigger Restart. Saved cues retain their playback and fade settings. When you choose Duck Program, **Duck Time** and **Release Time** set the attack and recovery. Overlapping duck owners use the strongest absolute Program Level, and restoration follows the surviving owners before returning each cue to its recomputed base gain. Rehearse the actual envelope and the case where one overlapping One Shot ends before another.
 
 ### Arm, fire, and stop
 
@@ -479,19 +479,19 @@ The bank can **Detach** into a separate window and **Attach** again. Rehearse fo
 
 Open **Shortcuts → Customize Shortcuts…** and use the **Keyboard** tab. Select a playback action or configured One Shot and press the desired key. The app reports reserved combinations or conflicts; resolve those deliberately rather than creating ambiguous show controls. Individual tile settings also provide **Keyboard Shortcut**, **Assign shortcut**, and **Clear shortcut**.
 
-![Keyboard configuration with the current playback-action bindings.](manual-assets/shortcuts-current.png)
+![Keyboard configuration from the 3 November capture, before the Enter and number-key defaults changed.](manual-assets/shortcuts-current.png)
 
 **Procedure — hand over a keyboard-controlled show**
 
 - **Prerequisites:** Audio is stopped or protected and the outgoing operator can identify all non-default assignments.
-- **Actions:** Open the Keyboard tab, compare GO, Stop All, Pause/Resume, Play Selected, loop actions, and One Shot keys with the handover sheet. Close the dialog, focus the workspace, and test only during rehearsal.
+- **Actions:** Open the Keyboard tab and compare GO, Set Selected as Up Next, Stop All, Pause/Resume, loop actions, and One Shot keys with the handover sheet. Close the dialog, focus the workspace, and test during rehearsal.
 - **Expected visible outcome:** Each tested key invokes exactly the labelled action once.
 - **Common mistake:** Testing Space or Escape while a text field or Video Output has focus and generalizing from that result.
 - **Recovery:** Stop safely, close editors, restore workspace focus, check conflicts, and repeat the controlled test.
 
-Playback assignments belong to the project. No One Shot has a default key. The baseline defaults are Space for Play Next, P for Pause/Resume, Escape for Stop All, Up/Down for selection, and Enter for Play Selected. Toggle Loop, Cue to Continue, and Jump Cue are initially unbound. F1 is a separate Play Selected audio action, not a help key in this app.
+Keyboard assignments belong to the project. One Shot slots **1 through 9** default to their matching number keys, and **0** fires slot **10**. Saved assignments take precedence. **Clear shortcut** disables a tile's key. **Reset to Defaults** on the Keyboard tab restores the defaults. Playback defaults are Space for GO, P for Pause/Resume, Escape for Stop All, Up/Down for selection, and Enter for Set Selected as Up Next. Toggle Loop, Cue to Continue, Jump Cue, and the configurable Play Selected action start unbound. **F1** directly plays the selected audio cue.
 
-The Stop All shortcut works from the main workspace with One Shots visible, hidden or detached. In the shortcut editor, Escape cancels assignment or closes the editor.
+The main workspace accepts playback and One Shot shortcuts with the bank visible, hidden, or detached. In the shortcut editor, Escape cancels assignment or closes the editor.
 
 Text fields normally own typing, so a playback letter does not fire while you are editing a name. Close editors and dialogs before the next cue call. Keyboard/MIDI Pause/Resume and Toggle Loop target the first active cue, otherwise the selected audio cue; use the specific cue's visible control if several cues are active and you need certainty about the target.
 
@@ -886,11 +886,11 @@ These are source defaults, not a promise about a project's customized assignment
 | P | Pause/Resume the first active cue; with none active, starts the selected audio if inactive |
 | Escape | Stop All Cues using the configured global fade |
 | Up / Down arrows | Move playlist selection |
-| Enter | Play Selected audio |
+| Enter | Set the selected playlist cue as Up Next |
 | F1 | Separate Play Selected audio action |
 | Toggle Loop | No default binding. If assigned, sets End Behavior to Loop or Nothing: a project edit, not a one-pass release |
 | Cue to Continue / Jump Cue | No default binding; use the appropriate live control or assign deliberately |
-| One Shot keys | No default binding |
+| 1 through 9, then 0 | Fire One Shot slots 1 through 10. Show Mode requires the slot to be armed. |
 | Cmd/Ctrl+S | Save Project |
 | Cmd/Ctrl+O | Open Project |
 | Cmd/Ctrl+N | New Project |
