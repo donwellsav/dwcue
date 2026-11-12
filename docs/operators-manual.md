@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.19
-**Source revision:** 8052ab021c26ebea53f80f2b3043ed299789acb3
-**Native engine baseline:** 8052ab021c26ebea53f80f2b3043ed299789acb3
+**Source revision:** f6c425694d159ccc0b34e7ab3cfcad9122ddf5e8
+**Native engine baseline:** f6c425694d159ccc0b34e7ab3cfcad9122ddf5e8
 **Edition:** 12 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition covers the DonWells Cue **2.6.19** source at **8052ab0**. It includes the November playback, recovery and import repairs. Match your installer to its release notes before rehearsal.
+This edition covers the DonWells Cue **2.6.19** source at **f6c4256**. It includes the November playback, recovery and import repairs. Match your installer to its release notes before rehearsal.
 
 Interface images retain their 3 November capture date, original source revisions and hashes. The instructions describe the current archive and import recovery controls. The captures use generated tones, the native engine's virtual NULL output, and fixture locale, display and MIDI information. Capture details are recorded in **docs/manual-assets/captures.json**. Equipment photographs remain illustrative.
 
@@ -784,7 +784,7 @@ First protect the audience using the rehearsed stop/mute procedure. Then identif
 | --- | --- |
 | GO does nothing; target stays armed | Read the displayed refusal, then check connection, media readiness/errors, and the acknowledged target before one deliberate retry. An unready decoder does not block Stop All/Panic, and a rejected start preserves the armed target. |
 | Playing cue is silent or time stalls | Brief gaps may recover. After **250 ms** of missing decoded audio, the cue stops with an error and holds sequencing. Retry explicitly after storage recovers; a pending failed read is refused. Check source/drive, trims, levels and engine output/patch. |
-| Import remains loading after a file/storage fault | Use an already-prepared backup cue. File preparation cancellation no longer joins native file calls, but healthy files in a queued/bulk import may still await a stalled sibling. Do not assume an unfinished import is ready for GO. |
+| Import remains loading after a file/storage fault | Use **Stop All** if needed and choose an already-prepared backup cue. A background file-change check leaves new imports available. Files in the same load queue or batch may still wait for a stalled source. Relink a failed source or reopen the show to retry it. |
 | A cue refuses GO or a trim/LTC edit while configuration is busy | Keep the current show or use a prepared backup. Retry the affected command once configuration finishes. A refused native edit leaves its saved value unchanged; independent level/fade edits and Stop All remain available in this publication case. |
 | A sting stops the bed | Check Playback Replace Program or cue Ducking Stop All Other Cues. Use Overlay/No Ducking or a rehearsed Duck Program setting when the bed must continue. |
 | Preview is heard in the house | Stop Preview and verify the actual Preview Device and physical patch. Sharing Main's physical output is not private monitoring. |
@@ -910,11 +910,11 @@ With Video Output focused, Escape also exits its fullscreen mode. In Level Check
 
 ### About this edition
 
-This edition covers the DonWells Cue **2.6.19** source at **48105b3**. The 22 captures retain their 3 November provenance. They use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
+This edition covers the DonWells Cue **2.6.19** source at **f6c4256**. The 22 captures retain their 3 November provenance. They use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
 
 The playback checkpoint **2f372c2** passed native 13/13, isolated API 61/61, client 229/229, typecheck and RT/live safety checks. Audio-output and project-runtime suites also pass AddressSanitizer; leak detection is disabled. Native checks include six simulated ten-minute secondary-clock runs with continuous generated audio and no buffer faults or resyncs inside the tested envelope. Physical alignment and the earlier intermittency remain unproven; more extreme drift/jitter can trigger recovery.
 
-Held-operation tests cover loader, metadata, priming, property publication, cue/device cleanup and renderer shutdown. Seven managed-engine tests use a fake OS. First-open routing, filesystem/revision checks, healthy-file publication and unrelated Program preparation remain open workplan items. Cancellation does not force an OS call to return.
+Held-operation tests cover loader, path lookup, revision checks, metadata, priming, property publication, cue/device cleanup and renderer shutdown. Seven managed-engine tests use a fake OS. The workplan tracks remaining sibling-load delays, Program preparation and native driver lifetime. A stalled OS call may continue after cancellation.
 
 An earlier ten-minute muted Chromium run passed 481 mixed SD/1080p rounds and recorded frame drops; it was not repeated for this repair. Generated clips and synthetic clocks do not establish show stability, native soundtrack sync or physical HDMI performance. LTC waveform tests also do not establish external receiver lock.
 

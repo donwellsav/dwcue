@@ -746,4 +746,6 @@ The initial open for a project Program or LTC selection or a cue override releas
 
 A separate worker prepares System Default, configured Program and LTC after media publication. Open, Close and the single-item loader can finish while native startup waits. Stop All or a show change discards a late route and releases its device reference. Settings reuses the validated mixer and keeps the current LTC feed when Program changes.
 
-The workplan tracks filesystem resolution, healthy-file publication, independent Program preparation and engine startup/shutdown. A stuck native open can still occupy the shared device lifecycle lock or delay server shutdown until the driver returns. OS thread exhaustion may retain synchronous cleanup as a fallback.
+One owned revision sweep checks loaded media without waiting on the queued loader. Changed results apply only to the current document and cue. Playlist loads probe a relative path against its absolute fallback outside document ownership. Preview and media requests recheck the reference after the probe. Adding a cue queues its own media and any group children.
+
+The workplan tracks healthy-file publication, storage waits during project-file Open/Save, independent Program preparation and engine startup/shutdown. A stuck native open can still occupy the shared device lifecycle lock or delay server shutdown until the driver returns. OS thread exhaustion may retain synchronous cleanup as a fallback.
