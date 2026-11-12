@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.20 development
-**Source revision:** 7305c9bdabc5f9c508ea616afeb35012f033b3cf
+**Source revision:** f0b9781e34966fdb479066731e9c93729fdb5eb7
 **Native engine baseline:** f14629d954a0ab6c312f4f37e4eec9b101cf84ea
 **Edition:** 12 November 2026 · English · Development operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition covers development source **7305c9b**. It includes the keyboard and One Shot defaults added after the public **2.6.20** release. Match your installer to its release notes before rehearsal.
+This edition covers development source **f0b9781**. It includes the keyboard and One Shot defaults and the header warnings added after the public **2.6.20** release. Match your installer to its release notes before rehearsal.
 
 Interface images retain their 3 November capture date, original source revisions and hashes. The instructions describe the current archive and import recovery controls. The captures use generated tones, the native engine's virtual NULL output, and fixture locale, display and MIDI information. Capture details are recorded in **docs/manual-assets/captures.json**. Equipment photographs remain illustrative.
 
@@ -347,7 +347,7 @@ If Preview is not configured, its cue-row control opens Project Settings. Previe
 
 ### Respond to an audio-output warning
 
-A missing or stalled audio callback can report a device warning even while cue controls remain available. Confirm the intended interface and cable, then use the warning's **Retry now** for that output. This restarts the device stream in place while retaining its routes and cue identities. Acceptance of the request is not the same as a recovered output: wait for the warning to clear after callbacks return, then verify the physical destination before another GO. Explicit Stop and current recovery choices still take precedence over pending playback recovery.
+A missing or stalled audio callback shows a red header warning even while cue controls remain available. Confirm the intended interface and cable, then use the header's **Reconnect audio output** button. The button remains available after the warning text expires. Reconnecting restarts the device stream in place and retains its routes and cue identities. Wait for the recovery indicator to clear after callbacks return, then verify the physical destination before another GO. Explicit Stop and current recovery choices still take precedence over pending playback recovery.
 
 Secondary devices follow the master clock using continuous correction. The software resync repairs preserve fractional sample timing and balance queue headroom; they do not establish physical alignment between independently clocked interfaces. Record and investigate recurring buffer/device warnings during rehearsal. Prefer one verified program interface when the show does not require several, and calibrate any required independent outputs at their actual line-level destinations.
 
@@ -428,6 +428,12 @@ Stop, replay, removal, media replacement, Stop All or project switch cancels tha
 A failed GO retains its armed target. Resolve missing/unready media, decoder errors, connection problems or an unavailable target before one deliberate retry. Selection and Set As Next change that target only after acknowledgment. A refused Play All preflight starts none of its selected subtree; inspect every selected child’s readiness. A failed automatic child or nested-group follow also holds enclosing group endings: correct the target, confirm Up Next, then press GO deliberately.
 
 For overlapping playback, check Ducking. If the wrong material is audible, use the rehearsed stop or console-mute procedure before investigating.
+
+### Header warnings
+
+The steady **Silence in** countdown stays above the project name. Transient messages appear beside it. Red urgent warnings take priority over yellow advisories. Audio and video recovery buttons stay available while their outputs need attention.
+
+In **Settings → User Interface → Header warning timing**, set the four durations and two countdown thresholds for this device. Defaults are **5 seconds** without a countdown, **3 seconds** above 30 seconds remaining, **2 seconds** from 15 through 30 seconds, and **1 second** below 15 seconds. A timing change applies to the next message.
 
 ### At the interval and at the end
 
@@ -522,7 +528,7 @@ Cue Basic Info displays **API Trigger URL · POST** with a copy control. An exte
 
 Video Output belongs to the desktop client, not to the headless engine. The recommended arrangement keeps the audio engine and video-rendering desktop on the same machine. If you use a remote engine, the picture still appears on the desktop client's display/HDMI and the media is streamed over the network; include that network in rehearsal and failure planning.
 
-Use **Video Output** in the toolbar or **Settings → Video Output**. Assign the intended display and verify its identity against the physical projector, switcher, or monitor. The app remembers the display assignment on that computer, but the output window starts closed on every application launch. Open and check it for each session.
+Use **V** or the toolbar's **Video Output** button to open or close the output window. Assign the intended display under **Settings → Video Output** and verify its identity against the physical projector, switcher, or monitor. The app remembers the display assignment on that computer, and the output window starts closed on each application launch. Open and check it for each session.
 
 ![Video Output settings with the output closed, test-card options.](manual-assets/video-settings-current.png)
 
@@ -559,7 +565,7 @@ Use H.264 or HEVC media for this source edition. ProRes and other production cod
 
 ### Recover a frozen or failed video output
 
-Use **Settings → Video Output** to read output status. Renderer crashes and hangs latch a native black cover over the existing audience window while the operator controls remain available. Choose **Restart Output** once; the cover stays until the replacement view is ready. The replacement follows the current native cue state, so check the active cue rather than firing GO again to restart the picture. **Copy Output Diagnostics** captures current output information for investigation.
+Use **Settings → Video Output** to read output status. Renderer crashes and hangs latch a native black cover over the existing audience window while the operator controls remain available. Choose **Restart Output** in the header or in Video Output settings. The cover stays until the replacement view is ready. The replacement follows the current native cue state. Check the active cue before another GO. **Copy Output Diagnostics** captures current output information for investigation.
 
 ![Output status and recovery controls in Video Output settings. Restart Output is disabled while the output is closed.](manual-assets/video-recovery-current.png)
 
@@ -887,6 +893,7 @@ These are source defaults, not a promise about a project's customized assignment
 | Escape | Stop All Cues using the configured global fade |
 | Up / Down arrows | Move playlist selection |
 | Enter | Set the selected playlist cue as Up Next |
+| V | Open or close the Video Output window |
 | F1 | Separate Play Selected audio action |
 | Toggle Loop | No default binding. If assigned, sets End Behavior to Loop or Nothing: a project edit, not a one-pass release |
 | Cue to Continue / Jump Cue | No default binding; use the appropriate live control or assign deliberately |
