@@ -651,13 +651,45 @@ audio::CueId ProjectState::begin_item_load_locked(const std::string& uuid,
 }
 
 void ProjectState::loader_loop() {
-    auto next_revision_check = std::chrono::steady_clock::now() + std::chrono::seconds{1};
+    auto next_revision_scan = std::chrono::steady_clock::now() + std::chrono::seconds{1};
+    auto next_revision_check = next_revision_scan;
+    std::future<MediaRevisionCandidates> revision_scan;
+    std::uint64_t scan_generation{};
     for (;;) {
-        if (std::chrono::steady_clock::now() >= next_revision_check) {
-            try { refresh_media_revisions(); }
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= next_revision_check) {
+            try {
+                if (revision_scan.valid() && revision_scan.wait_for(std::chrono::seconds{0}) == std::future_status::ready)
+                    publish_media_revisions(scan_generation, revision_scan.get());
+                if (!revision_scan.valid() && now >= next_revision_scan) {
+                    next_revision_scan = now + std::chrono::seconds{1};
+                    MediaRevisionCandidates items;
+                    {
+                        std::lock_guard lock{mutex_};
+                        scan_generation = document_generation_;
+                        if (!loading_audio_.load(std::memory_order_acquire))
+                            for (const auto& [uuid, id] : item_uuid_to_cue_)
+                                if (auto item = engine_.find_cue(id)) items.emplace_back(uuid, item);
+                    }
+                    if (!items.empty()) {
+                        // shortcut: one serial sweep; use independent probes if a stalled file must not delay other revision checks.
+                        std::packaged_task<MediaRevisionCandidates()> scan{[items = std::move(items)]() mutable {
+                            std::erase_if(items, [](const auto& candidate) {
+                                const auto item = candidate.second.lock();
+                                return !item || !item->refresh_source_revision();
+                            });
+                            return std::move(items);
+                        }};
+                        auto result = scan.get_future();
+                        std::thread(std::move(scan)).detach();
+                        revision_scan = std::move(result);
+                    }
+                }
+            }
             catch (const std::exception& e) { Logger::warn("Media revision check failed: {}", e.what()); }
             catch (...) { Logger::warn("Media revision check failed (unknown error)"); }
-            next_revision_check = std::chrono::steady_clock::now() + std::chrono::seconds{1};
+            next_revision_check = revision_scan.valid()
+                ? now + std::chrono::milliseconds{100} : next_revision_scan;
         }
         LoadRequest req;
         {
@@ -872,18 +904,11 @@ void ProjectState::stop_loaders() {
     }
 }
 
-void ProjectState::refresh_media_revisions() {
-    if (loading_audio_.load(std::memory_order_acquire)) return;
-    std::vector<std::pair<std::string, std::shared_ptr<audio::PlaybackItem>>> items;
-    {
-        std::lock_guard lock{mutex_};
-        for (const auto& [uuid, id] : item_uuid_to_cue_)
-            if (auto item = engine_.find_cue(id)) items.emplace_back(uuid, std::move(item));
-    }
-    // shortcut: metadata checks share the existing loader; use native watchers if sweeps become slow.
-    for (const auto& [uuid, item] : items) {
+void ProjectState::publish_media_revisions(std::uint64_t generation, const MediaRevisionCandidates& changed) {
+    for (const auto& [uuid, candidate] : changed) {
+        const auto item = candidate.lock();
+        if (!item) continue;
         const bool already_changed = item->source_changed();
-        if (!item->refresh_source_revision()) continue; // No project/lifecycle lock during filesystem I/O.
         std::unique_lock operation_lock{project_operation_mutex_, std::try_to_lock};
         if (!operation_lock.owns_lock()) continue;
         std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
@@ -891,7 +916,7 @@ void ProjectState::refresh_media_revisions() {
         {
             std::lock_guard lock{mutex_};
             const auto current = item_uuid_to_cue_.find(uuid);
-            if (current == item_uuid_to_cue_.end() || current->second != item->id() ||
+            if (generation != document_generation_ || current == item_uuid_to_cue_.end() || current->second != item->id() ||
                 loading_audio_.load(std::memory_order_acquire)) continue;
             item->invalidate_source();
             if (item->stats().transport == audio::TransportState::Stopped) {

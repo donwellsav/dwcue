@@ -869,7 +869,8 @@ private:
     void loader_loop();
     void queue_loaded_routing(std::uint64_t generation, bool apply_program);
     void loaded_routing_loop();
-    void refresh_media_revisions();
+    using MediaRevisionCandidates = std::vector<std::pair<std::string, std::weak_ptr<audio::PlaybackItem>>>;
+    void publish_media_revisions(std::uint64_t generation, const MediaRevisionCandidates& changed);
     void stop_loaders();
 
     // Apply one document item's engine-visible properties (gain, fades,

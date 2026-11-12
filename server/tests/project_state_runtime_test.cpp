@@ -2648,6 +2648,38 @@ void test_position_aware_recovery(const std::filesystem::path& wav) {
     state.stop_all_cues(0);
 }
 
+void test_held_media_revision(const std::filesystem::path& wav) {
+    const auto gate = fixture_dir() / "media-revision.gate";
+    constexpr auto hook = "DWCUE_TEST_REVISION_GATE";
+    auto engine = std::make_unique<liveplay::audio::AudioEngine>();
+    auto state = std::make_unique<liveplay::core::ProjectState>(*engine);
+    state->replace_full_document(document(json::array({audio("revision-held", wav)})));
+    check(wait_ready(*state) && state->trigger_item("revision-held"), "Held revision: original cue ready and on air");
+    std::ofstream{gate} << wav;
+    set_loader_gate(gate, hook);
+    check(wait_gate_entered(gate), "Held revision: filesystem revision probe reached the gate");
+    const auto sibling = make_wav(8193);
+    auto controls = std::async(std::launch::async, [&] {
+        state->stop_all_cues(0);
+        return !on_air(*state, *engine, "revision-held") && state->full_document().is_object() &&
+            !state->add_item(audio("revision-sibling", sibling)).empty() && wait_ready(*state) &&
+            state->trigger_item("revision-sibling");
+    });
+    const bool responsive = controls.wait_for(350ms) == std::future_status::ready;
+    check(responsive && controls.get(), "Held revision: Stop All, document access, and healthy import and playback finish");
+    if (!responsive) {
+        std::filesystem::remove(gate);
+        (void)controls.get();
+    }
+    auto close = std::async(std::launch::async, [&] { state.reset(); engine.reset(); });
+    check(close.wait_for(350ms) == std::future_status::ready && responsive,
+          "Held revision: project and engine can be destroyed before the probe returns");
+    std::filesystem::remove(gate);
+    close.get();
+    clear_loader_gate(hook);
+    std::filesystem::remove(gate.string() + ".entered");
+}
+
 void test_changed_media_readiness() {
     const auto folder = fixture_dir() / "revision";
     std::filesystem::create_directories(folder);
@@ -2720,6 +2752,7 @@ int main() try {
     test_unchanged_mirror_keeps_controls(wav);
     test_position_aware_recovery(wav);
     test_changed_media_readiness();
+    test_held_media_revision(wav);
     test_stop_all_during_project_boundaries(wav);
     test_stop_all_during_decoder_read(wav);
     test_starvation_holds_show(wav);

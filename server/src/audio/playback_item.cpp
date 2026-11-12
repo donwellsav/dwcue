@@ -226,6 +226,18 @@ bool PlaybackItem::refresh_source_revision() {
     const auto expected = source_revision();
     // Special/live sources have no regular-file revision to compare.
     if (expected.empty()) return false;
+#ifdef LIVEPLAY_TEST_HOOKS
+    if (const char* value = std::getenv("DWCUE_TEST_REVISION_GATE"); value && *value) {
+        const std::filesystem::path gate{value};
+        std::filesystem::path target;
+        std::ifstream{gate} >> target;
+        std::error_code error;
+        if (target == desc_.file_path && std::filesystem::exists(gate, error)) {
+            std::ofstream{gate.string() + ".entered"} << desc_.id.value;
+            while (std::filesystem::exists(gate, error)) std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        }
+    }
+#endif
     const auto current = util::file_revision(desc_.file_path);
     if (source_revision() != expected) return false;
     const bool changed = !current || current->token != expected;
