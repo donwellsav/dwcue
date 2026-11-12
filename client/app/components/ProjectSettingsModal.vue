@@ -194,6 +194,26 @@
 
           <!-- ================= User Interface ================= -->
           <template v-else-if="activeTab === 'ui'">
+            <section class="settings-field">
+              <div class="settings-label">{{ t('headerWarnings.settingsTitle') }}</div>
+              <p class="settings-help">{{ t('headerWarnings.settingsHelp') }}</p>
+              <div class="header-warning-settings">
+                <label v-for="(bounds, field) in HEADER_WARNING_TIMING" :key="field" class="settings-field">
+                  <span class="settings-label">{{ t(`headerWarnings.${field}`) }}</span>
+                  <input
+                    type="number"
+                    class="settings-input"
+                    required
+                    :min="bounds.min"
+                    :max="bounds.max"
+                    :step="bounds.step"
+                    :value="headerWarningTiming[field]"
+                    @change="onHeaderWarningTimingChange(field, $event)"
+                  />
+                </label>
+              </div>
+              <p v-if="headerWarningTimingError" class="settings-error" role="alert">{{ headerWarningTimingError }}</p>
+            </section>
 
             <!-- Per-device application language -->
             <section class="settings-field">
@@ -755,6 +775,7 @@ import {
   type PlaylistRowMode,
 } from '~/composables/useUiMode';
 import { normalizeIndexDisplayStart } from '~/utils/indexDisplay';
+import { HEADER_WARNING_TIMING, type HeaderWarningTiming } from '~/utils/headerWarnings';
 import AboutContent from './AboutContent.vue';
 import { PLAYBACK_ACTIONS, formatKeyLabel, useCartHotkeys } from '~/composables/useCartHotkeys';
 import type { PlaybackKeyAction } from '~/types/project';
@@ -797,6 +818,7 @@ const {
   uiFontScale,
   oneShotFontScale,
   cartGridLayouts,
+  headerWarningTiming,
   setRegularPlaylistRowHeight,
   setShowPlaylistRowHeight,
   setFolderPlaylistRowHeight,
@@ -804,7 +826,21 @@ const {
   setUiFontScale,
   setOneShotFontScale,
   setCartGridLayout,
+  setHeaderWarningTiming,
 } = useUiMode();
+
+const headerWarningTimingError = ref('');
+function onHeaderWarningTimingChange(field: keyof HeaderWarningTiming, event: Event) {
+  const input = event.target as HTMLInputElement;
+  const next = { ...headerWarningTiming.value, [field]: input.valueAsNumber };
+  if (!input.validity.valid || next.lowerThreshold >= next.upperThreshold) {
+    input.value = String(headerWarningTiming.value[field]);
+    headerWarningTimingError.value = t('headerWarnings.invalidTiming');
+    return;
+  }
+  headerWarningTimingError.value = '';
+  setHeaderWarningTiming(next);
+}
 
 const cartGridProfileOptions = computed<Array<{ id: CartGridProfile; label: string }>>(() => [
   { id: 'attachedRegular', label: t('settings.cartLayoutAttachedRegular') },
@@ -1438,6 +1474,11 @@ function close() {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+.header-warning-settings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
 }
 .settings-label {
   display: flex;

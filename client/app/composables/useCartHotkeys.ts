@@ -58,6 +58,7 @@ export const PLAYBACK_ACTIONS: { id: PlaybackKeyAction; labelKey: string }[] = [
   { id: 'select-up',     labelKey: 'controls.selectUp'     },
   { id: 'select-down',   labelKey: 'controls.selectDown'   },
   { id: 'set-up-next',   labelKey: 'controls.setUpNext'    },
+  { id: 'toggle-video-output', labelKey: 'controls.toggleVideoOutput' },
   { id: 'play-selected', labelKey: 'controls.playSelected' },
 ];
 
@@ -73,10 +74,12 @@ export const resolveKeyboardBindings = (
   };
   // A new default must yield to a key the operator already assigned.
   const assigned = [...Object.values(keyMappings), ...Object.values(savedPlayback)];
-  const armKey = DEFAULT_PLAYBACK_KEYS['set-up-next'];
-  if (savedPlayback['set-up-next'] === undefined && armKey
-      && assigned.some(binding => binding && bindingsMatch(binding, armKey))) {
-    delete playbackMappings['set-up-next'];
+  for (const action of ['set-up-next', 'toggle-video-output'] as const) {
+    const defaultKey = DEFAULT_PLAYBACK_KEYS[action];
+    if (savedPlayback[action] === undefined && defaultKey
+        && assigned.some(binding => binding && bindingsMatch(binding, defaultKey))) {
+      delete playbackMappings[action];
+    }
   }
 
   const occupied = [...Object.values(keyMappings), ...Object.values(playbackMappings)];
@@ -89,10 +92,34 @@ export const resolveKeyboardBindings = (
   return { keyMappings, playbackMappings };
 };
 
+let togglingVideoOutput = false;
+
+export const useVideoOutputToggle = () => {
+  const { showHeaderWarning } = useHeaderWarnings();
+  const { t } = useLocalization();
+  return async () => {
+    const api = window.electronAPI?.videoOutput;
+    if (!api || togglingVideoOutput) return false;
+    togglingVideoOutput = true;
+    try {
+      const status = await api.status();
+      if (status.enabled || status.open) await api.close();
+      else await api.open();
+      return true;
+    } catch {
+      showHeaderWarning(t('headerWarnings.videoToggleFailed'), 'urgent');
+      return false;
+    } finally {
+      togglingVideoOutput = false;
+    }
+  };
+};
+
 export const useCartHotkeys = () => {
   const { currentProject, projectHydrationStatus, selectedItem, selectedItems, saveProject, getAllItemsFlat, toggleItemSelection, findItemByUuid } = useProject();
   const { cartOnlyItems } = useCartItems();
   const { fireBlocked, afterFire } = useOneShotArm();
+  const toggleVideoOutput = useVideoOutputToggle();
   const { playCue, playNext, setNextItem, pauseCue, resumeCue, stopAllCues, activeCues, queueLoopContinuation, jumpCue } = useAudioEngine();
 
   const oneShotSlots = computed(() => buildOneShotSlots(
@@ -210,6 +237,7 @@ export const useCartHotkeys = () => {
     }
 
     if (action === 'stop-all') return stopAllCues();
+    if (action === 'toggle-video-output') return toggleVideoOutput();
 
     if (action === 'select-up' || action === 'select-down') {
       const project = currentProject.value;

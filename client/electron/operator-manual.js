@@ -123,7 +123,7 @@ function clampDocumentBounds(value, contentSize) {
   return { x, y, width: right - x, height: bottom - y };
 }
 
-function createOperatorManual({ onFocus = () => {}, onClosed = () => {} } = {}) {
+function createOperatorManual({ onFocus = () => {}, onClosed = () => {}, onOpenError = () => false } = {}) {
   const { app, BrowserWindow, dialog, ipcMain, shell, WebContentsView } = require('electron');
   const assets = resolveOperatorManualPaths({
     isPackaged: app.isPackaged,
@@ -233,11 +233,13 @@ function createOperatorManual({ onFocus = () => {}, onClosed = () => {} } = {}) 
   });
 
   async function showOpenError(parent, error) {
+    const detail = error instanceof Error ? error.message.slice(0, 1000) : String(error).slice(0, 1000);
+    if (onOpenError(`The operator manual could not be opened. ${detail}`)) return;
     const options = {
       type: 'error',
       title: 'Operator Manual',
       message: 'The operator manual could not be opened.',
-      detail: error instanceof Error ? error.message.slice(0, 1000) : String(error).slice(0, 1000),
+      detail,
       buttons: ['OK'],
       defaultId: 0,
       noLink: true,

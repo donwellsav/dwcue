@@ -725,6 +725,19 @@
     "distributionText": "You may redistribute this software under that license. The software comes without warranty to the extent permitted by law.",
     "sourceText": "The complete corresponding source code is available at github.com/donwellsav/dwcue."
   },
+  "headerWarnings": {
+    "settingsTitle": "Header warning timing",
+    "settingsHelp": "Values are in seconds. Changes apply to the next notice on this device.",
+    "noCountdown": "Duration with no silence countdown",
+    "longCountdown": "Duration above the upper threshold",
+    "shortCountdown": "Duration between the thresholds",
+    "urgentCountdown": "Duration below the lower threshold",
+    "upperThreshold": "Upper countdown threshold",
+    "lowerThreshold": "Lower countdown threshold",
+    "invalidTiming": "Enter a valid number and keep the lower threshold below the upper threshold.",
+    "retryAudio": "Reconnect audio output",
+    "videoToggleFailed": "Video Output could not be toggled. Check the display and try again."
+  },
   "connectionLost": {
     "title": "Connection lost",
     "message": "The connection to the DonWells Cue server at {url} has been lost.",
@@ -923,6 +936,7 @@
     "selectDown": "Select Down",
     "playSelected": "Play Selected",
     "setUpNext": "Set Selected as Up Next",
+    "toggleVideoOutput": "Toggle Video Output",
     "masterVolume": "Global Master Volume",
     "midiDevice": "MIDI Device",
     "allDevices": "All Devices",

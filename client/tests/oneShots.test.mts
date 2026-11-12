@@ -98,6 +98,7 @@ test('digits follow slot position and saved keyboard assignments take precedence
   assert.equal(playbackMappings['set-up-next']?.key, 'Enter');
   assert.equal(playbackMappings['play-selected'], undefined);
   assert.equal(playbackMappings['play-next']?.key, ' ');
+  assert.equal(playbackMappings['toggle-video-output']?.key, 'v');
 
   const key = (value: string) => ({ key: value, ctrlKey: false, shiftKey: false, altKey: false });
   slots[0] = null;
@@ -112,6 +113,8 @@ test('digits follow slot position and saved keyboard assignments take precedence
   assert.equal(saved.playbackMappings['set-up-next'], undefined);
   slots[10]!.oneShot!.hotkey = key('Enter');
   assert.equal(resolveKeyboardBindings(slots).playbackMappings['set-up-next'], undefined);
+  slots[10]!.oneShot!.hotkey = key('v');
+  assert.equal(resolveKeyboardBindings(slots).playbackMappings['toggle-video-output'], undefined);
 });
 
 test('One Shot copies into the playlist without consuming the source cell', () => {

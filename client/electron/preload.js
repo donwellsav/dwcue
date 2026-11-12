@@ -153,6 +153,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onUpdateDownloadProgress: (callback) => ipcRenderer.on('update-download-progress', callback),
   onUpdateDownloaded: (callback) => ipcRenderer.on('update-downloaded', callback),
   onUpdateError: (callback) => ipcRenderer.on('update-error', callback),
+  onHeaderWarning: (callback) => replaceIpcListener('header-warning', (_event, message) => callback(message)),
   onMenuCheckForUpdates: (callback) => ipcRenderer.on('menu-check-for-updates', callback),
 
   // Project data sync between the primary and detached One Shots windows.

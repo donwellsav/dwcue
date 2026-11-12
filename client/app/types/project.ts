@@ -165,6 +165,7 @@ export type PlaybackKeyAction =
   | 'select-up'
   | 'select-down'
   | 'set-up-next'
+  | 'toggle-video-output'
   | 'play-selected'
   | 'play-next';
 
@@ -462,4 +463,5 @@ export const DEFAULT_PLAYBACK_KEYS: Partial<Record<PlaybackKeyAction, CartSlotKe
   'select-up':     { key: 'ArrowUp',   ctrlKey: false, shiftKey: false, altKey: false },
   'select-down':   { key: 'ArrowDown', ctrlKey: false, shiftKey: false, altKey: false },
   'set-up-next':   { key: 'Enter',     ctrlKey: false, shiftKey: false, altKey: false },
+  'toggle-video-output': { key: 'v',   ctrlKey: false, shiftKey: false, altKey: false },
 };

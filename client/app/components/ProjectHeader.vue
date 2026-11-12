@@ -7,16 +7,19 @@
         class="header-logo"
       />
       <div class="header-titles">
-        <div
-          v-if="silenceSeconds !== null"
-          class="silence-warning"
-          :title="`${t('project.silenceWarning')} ${silenceSeconds} ${t('project.seconds')}`"
-        >
-          <span class="silence-warning__label">{{ t('project.silenceWarning') }}</span>
-          <bdi class="silence-warning__seconds">{{ silenceSeconds }}</bdi>
-          <span>{{ t('project.seconds') }}</span>
+        <div class="header-warning-line">
+          <div
+            v-if="silenceSeconds !== null"
+            class="silence-warning"
+            :title="`${t('project.silenceWarning')} ${silenceSeconds} ${t('project.seconds')}`"
+          >
+            <span class="silence-warning__label">{{ t('project.silenceWarning') }}</span>
+            <bdi class="silence-warning__seconds">{{ silenceSeconds }}</bdi>
+            <span>{{ t('project.seconds') }}</span>
+          </div>
+          <span v-else-if="!warning" class="brand-wordmark">{{ t('app.name') }}</span>
+          <div id="project-header-warnings" class="header-warning-slot"></div>
         </div>
-        <span v-else class="brand-wordmark">{{ t('app.name') }}</span>
         <h2
           class="project-name"
           :title="currentProject?.name || t('project.noProject')"
@@ -119,12 +122,14 @@
 import ProjectSettingsModal from './ProjectSettingsModal.vue';
 import Btn from './Btn.vue';
 import VideoConfidenceChip from './VideoConfidenceChip.vue';
+import { useVideoOutputToggle } from '~/composables/useCartHotkeys';
 import { countdownColorForSeconds, type AudioItem } from '~/types/project';
 
 const { currentProject, findItemByUuid, findItemByIndex, autoSaveEnabled, hasUnsavedChanges, setAutoSave } = useProject();
 const { t } = useLocalization();
 const { activeCues } = useAudioEngine();
 const { uiMode, toggleUiMode } = useUiMode();
+const { warning, silenceRemaining } = useHeaderWarnings();
 
 const showControlConfig = useState('showControlConfig', () => false);
 const showShortcutsBar = useState('showShortcutsBar', () => true);
@@ -167,6 +172,8 @@ const silenceWarning = ref<number | null>(null);
 const silenceSeconds = computed(() => silenceWarning.value === null
   ? null
   : Math.max(0, Math.ceil(silenceWarning.value)));
+watch(silenceSeconds, (seconds) => { silenceRemaining.value = seconds; }, { flush: 'sync' });
+onUnmounted(() => { silenceRemaining.value = null; });
 
 const checkForSilence = () => {
   // The user can opt out of the silence warning entirely in project settings.
@@ -306,12 +313,7 @@ const ltcTimecode = computed<string | null>(() => {
 const videoOutputOpen = ref(false);
 let stopVideoStatus: (() => void) | null = null;
 
-const toggleVideoOutput = () => {
-  const api = (window as any).electronAPI?.videoOutput;
-  if (!api) return;
-  if (videoOutputOpen.value) void api.close();
-  else void api.open();
-};
+const toggleVideoOutput = useVideoOutputToggle();
 
 // Level Check: soundcheck walk through each cue's loudest window on the
 // PROGRAM output (the external mixer must see it — preview routes elsewhere).
@@ -385,8 +387,24 @@ onMounted(() => {
   min-width: 0;
 }
 
+.header-warning-line {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  height: 18px;
+}
+
+.header-warning-slot {
+  min-width: 0;
+}
+
+.header-warning-slot:empty {
+  display: none;
+}
+
 .brand-wordmark,
 .silence-warning {
+  flex: none;
   display: flex;
   align-items: center;
   align-self: flex-start;

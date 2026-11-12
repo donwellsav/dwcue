@@ -1177,9 +1177,22 @@ const appLifecycleActions = createAppLifecycleActions({
   confirmQuit: () => { quitConfirmed = true; },
 });
 
+function sendMainHeaderWarning(message) {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  const contents = mainWindow.webContents;
+  if (contents.isDestroyed() || contents.isLoadingMainFrame()) return false;
+  try {
+    contents.send('header-warning', message);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function showTerminalActionFailure(error) {
   const rawDetail = error instanceof Error ? error.message : String(error);
   const detail = rawDetail.slice(0, 2000);
+  if (sendMainHeaderWarning(`DonWells Cue could not close safely. ${detail}`)) return;
   dialog.showErrorBox(
     'DonWells Cue could not close safely',
     'The requested action was cancelled because shutdown cleanup did not finish. '
@@ -1941,6 +1954,7 @@ const isDevMode = process.argv.includes('--dev') || !app.isPackaged;
 const operatorManual = createOperatorManual({
   onFocus: () => createMenu(currentLocale, isDevMode),
   onClosed: () => createMenu(currentLocale, isDevMode),
+  onOpenError: sendMainHeaderWarning,
 });
 app.on('browser-window-focus', (_event, window) => {
   if (!operatorManual.owns(window.webContents)) createMenu(currentLocale, isDevMode);

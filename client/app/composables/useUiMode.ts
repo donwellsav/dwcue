@@ -9,6 +9,8 @@
 // the same time, and each device should remember its own preference.
 // =====================================================================
 
+import { normalizeHeaderWarningTiming } from '../utils/headerWarnings';
+
 export type UiMode = 'edit' | 'playback';
 
 export type CartGridLayout = {
@@ -144,10 +146,16 @@ const WAVEFORM_OPACITY_KEY = 'liveplay-playlist-waveform-opacity';
 const UI_FONT_SCALE_KEY = 'liveplay-ui-font-scale';
 const ONE_SHOT_FONT_SCALE_KEY = 'liveplay-one-shot-font-scale';
 const CART_GRID_LAYOUTS_KEY = 'liveplay-cart-grid-layouts-v1';
+const HEADER_WARNING_TIMING_KEY = 'dwcue-header-warning-timing';
 
 const parseCartGridLayouts = (value: string | null): CartGridLayouts => {
   if (!value) return normalizeCartGridLayouts(null);
   try { return normalizeCartGridLayouts(JSON.parse(value)); } catch { return normalizeCartGridLayouts(null); }
+};
+
+const parseHeaderWarningTiming = (value: string | null) => {
+  try { return normalizeHeaderWarningTiming(value && JSON.parse(value)); }
+  catch { return normalizeHeaderWarningTiming(null); }
 };
 
 // Guards the one-time localStorage read so multiple components calling
@@ -184,6 +192,7 @@ export const useUiMode = () => {
     'useUiMode.cartGridLayouts',
     () => normalizeCartGridLayouts(null),
   );
+  const headerWarningTiming = useState('headerWarningTiming', () => normalizeHeaderWarningTiming(null));
 
   if (import.meta.client && !_hydrated) {
     _hydrated = true;
@@ -212,6 +221,7 @@ export const useUiMode = () => {
         localStorage.getItem(ONE_SHOT_FONT_SCALE_KEY),
       );
       cartGridLayouts.value = parseCartGridLayouts(localStorage.getItem(CART_GRID_LAYOUTS_KEY));
+      headerWarningTiming.value = parseHeaderWarningTiming(localStorage.getItem(HEADER_WARNING_TIMING_KEY));
     } catch {
       // localStorage unavailable (e.g. private browsing) — fall back to 'edit'.
     }
@@ -239,6 +249,8 @@ export const useUiMode = () => {
           oneShotFontScale.value = normalizeOneShotFontScale(e.newValue);
         } else if (e.key === CART_GRID_LAYOUTS_KEY) {
           cartGridLayouts.value = parseCartGridLayouts(e.newValue);
+        } else if (e.key === HEADER_WARNING_TIMING_KEY) {
+          headerWarningTiming.value = parseHeaderWarningTiming(e.newValue);
         }
       });
     } catch {
@@ -333,6 +345,12 @@ export const useUiMode = () => {
   };
 
   const enterPlaybackMode = () => setUiMode('playback');
+  const setHeaderWarningTiming = (value: unknown) => {
+    headerWarningTiming.value = normalizeHeaderWarningTiming(value);
+    if (import.meta.client) {
+      try { localStorage.setItem(HEADER_WARNING_TIMING_KEY, JSON.stringify(headerWarningTiming.value)); } catch {}
+    }
+  };
   const exitPlaybackMode = () => setUiMode('edit');
   const toggleUiMode = () => setUiMode(uiMode.value === 'playback' ? 'edit' : 'playback');
 
@@ -345,6 +363,7 @@ export const useUiMode = () => {
     uiFontScale,
     oneShotFontScale,
     cartGridLayouts,
+    headerWarningTiming,
     setUiMode,
     setRegularPlaylistRowHeight,
     setShowPlaylistRowHeight,
@@ -353,6 +372,7 @@ export const useUiMode = () => {
     setUiFontScale,
     setOneShotFontScale,
     setCartGridLayout,
+    setHeaderWarningTiming,
     enterPlaybackMode,
     exitPlaybackMode,
     toggleUiMode,

@@ -2469,7 +2469,14 @@ const transpiledUiMode = ts.transpileModule(
   { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
 ).outputText.replaceAll('import.meta.client', 'false');
 const uiModeRuntime = { exports: {} };
-Function('exports', 'module', transpiledUiMode)(uiModeRuntime.exports, uiModeRuntime);
+const headerWarningsRuntime = {};
+Function('exports', ts.transpileModule(read('client/app/utils/headerWarnings.ts'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText)(headerWarningsRuntime);
+Function('exports', 'module', 'require', transpiledUiMode)(uiModeRuntime.exports, uiModeRuntime, (specifier) => {
+  assert.equal(specifier, '../utils/headerWarnings');
+  return headerWarningsRuntime;
+});
 assert.deepEqual(uiModeRuntime.exports.normalizeCartGridLayouts({
   attachedRegular: { rows: 0, columns: 17, minHeight: 1 },
   attachedShow: { minHeight: 1 },

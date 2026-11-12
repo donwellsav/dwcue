@@ -186,6 +186,7 @@ declare global {
       getAppVersion: () => Promise<string>;
       onUpdateAvailable: (callback: (event: any, info: { currentVersion: string; newVersion: string; releaseNotes?: string; releaseDate?: string }) => void) => void;
       onUpdateUpToDate: (callback: (event: any, info: { version: string }) => void) => void;
+      onHeaderWarning: (callback: (message: string) => void) => () => void;
       onUpdateDownloadProgress: (callback: (event: any, progress: { percent: number; transferred: number; total: number }) => void) => void;
       onUpdateDownloaded: (callback: (event: any, info: { version: string }) => void) => void;
       onUpdateError: (callback: (event: any, error: string) => void) => void;
