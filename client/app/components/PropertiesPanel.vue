@@ -215,6 +215,7 @@
           <label>{{ t('properties.deviceOverride') }}</label>
           <select
             :value="audioDeviceOverride"
+            :disabled="deviceOverrideEditPending"
             @change="onDeviceOverrideChange"
           >
             <option value="">{{ t('settings.useProjectDefault') }}</option>
@@ -556,6 +557,7 @@ const audioDeviceOverride = computed(() => {
   const selected = (audioItem.value as any)?.deviceOverride || '';
   return devicesList.value.find(device => device.id === selected)?.display_name ?? selected;
 });
+const deviceOverrideEditPending = ref(false);
 
 // API endpoint that triggers playback of the selected item. Points at the
 // audio server's transport route (routed through ProjectState so ducking,
@@ -564,15 +566,29 @@ const apiTriggerUrl = computed(() => {
   const base = (_server.serverUrl ?? 'http://127.0.0.1:4480').replace(/\/+$/, '');
   return `${base}/api/project/items/${selectedItem.value?.uuid}/play`;
 });
-const onDeviceOverrideChange = (e: Event) => {
-  const v = (e.target as HTMLSelectElement).value;
-  const it = audioItem.value as any;
-  if (!v) {
-    delete it.deviceOverride;
-  } else {
-    it.deviceOverride = v;
+const onDeviceOverrideChange = async (e: Event) => {
+  const input = e.target as HTMLSelectElement;
+  const value = input.value;
+  const project = currentProject.value;
+  const item = audioItem.value;
+  input.value = audioDeviceOverride.value;
+  if (!project || !item || deviceOverrideEditPending.value) return;
+  const previous = item.deviceOverride;
+  deviceOverrideEditPending.value = true;
+  try {
+    await _server.updateProjectItem(item.uuid, { deviceOverride: value || null }, crypto.randomUUID());
+    if (currentProject.value !== project) return;
+    if (item.deviceOverride === previous) {
+      if (value) item.deviceOverride = value;
+      else delete item.deviceOverride;
+    }
+    await endItemBatch();
+    if (currentProject.value === project) await persistPropertyChanges();
+  } catch {
+    if (currentProject.value === project) _server.lastError = t('properties.deviceOverrideFailed');
+  } finally {
+    deviceOverrideEditPending.value = false;
   }
-  handleSave();
 };
 
 // LTC helpers

@@ -1100,6 +1100,7 @@ function applyPatch(patch: Record<string, any>): Promise<PatchResult> {
     if (!project || currentProject.value !== project) return 'saved';
 
     const settings = (project.settings ?? {});
+    const outputEdit = ['defaultOutputDevice', 'previewDevice', 'ltcDevice'].some(key => key in patch);
     const previousSettings = new Map<string, PreviousSetting>();
     settingsError.value = '';
     for (const key of Object.keys(patch)) {
@@ -1108,7 +1109,7 @@ function applyPatch(patch: Record<string, any>): Promise<PatchResult> {
         value: settings[key],
       });
     }
-    project.settings = { ...settings, ...patch };
+    if (!outputEdit) project.settings = { ...settings, ...patch };
 
     try {
       await server.patchSettings(patch);
@@ -1116,12 +1117,14 @@ function applyPatch(patch: Record<string, any>): Promise<PatchResult> {
       console.warn('[ProjectSettings] patch failed:', error);
       if (currentProject.value !== project) return 'saved';
 
-      const restored = { ...(project.settings ?? {}) };
-      for (const [key, previous] of previousSettings) {
-        if (previous.exists) restored[key] = previous.value;
-        else delete restored[key];
+      if (!outputEdit) {
+        const restored = { ...(project.settings ?? {}) };
+        for (const [key, previous] of previousSettings) {
+          if (previous.exists) restored[key] = previous.value;
+          else delete restored[key];
+        }
+        project.settings = restored;
       }
-      project.settings = restored;
       settingsError.value = describeSettingsError(error);
       return 'failed';
     }
@@ -1129,6 +1132,13 @@ function applyPatch(patch: Record<string, any>): Promise<PatchResult> {
     // The server accepted this project's live change. Never save whichever
     // project happens to become current while that acknowledgement is pending.
     if (currentProject.value !== project) return 'saved';
+    if (outputEdit) {
+      const applied = { ...(project.settings ?? {}) };
+      for (const [key, previous] of previousSettings) {
+        if (applied[key] === previous.value) applied[key] = patch[key];
+      }
+      project.settings = applied;
+    }
     try {
       const saved = await saveProject();
       if (currentProject.value !== project) return 'saved';
@@ -1221,15 +1231,21 @@ function removeCountdownBand(index: number) {
 }
 
 async function onAudioDeviceChange(e: Event) {
-  const v = (e.target as HTMLSelectElement).value;
+  const input = e.target as HTMLSelectElement;
+  const v = input.value;
+  input.value = audioDeviceId.value;
   await applyPatch({ defaultOutputDevice: v || null });
 }
 async function onPreviewDeviceChange(e: Event) {
-  const v = (e.target as HTMLSelectElement).value;
+  const input = e.target as HTMLSelectElement;
+  const v = input.value;
+  input.value = previewDeviceId.value;
   await applyPatch({ previewDevice: v || null });
 }
 async function onLtcDeviceChange(e: Event) {
-  const v = (e.target as HTMLSelectElement).value;
+  const input = e.target as HTMLSelectElement;
+  const v = input.value;
+  input.value = ltcDeviceId.value;
   await applyPatch({ ltcDevice: v || null });
 }
 async function onOutputTargetChange(e: Event) {

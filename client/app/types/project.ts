@@ -30,6 +30,7 @@ export interface AudioItem extends BaseItem {
   inPoint: number; // in seconds
   outPoint: number; // in seconds
   volume: number; // 0-2 (1 is normal, >1 is louder, <1 is quieter)
+  deviceOverride?: string | null;
   endBehavior: EndBehavior;
   startBehavior: StartBehavior;
   customActions: CustomAction[];

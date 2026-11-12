@@ -597,6 +597,7 @@
     "playback": "Playback",
     "output": "Output",
     "deviceOverride": "Output device",
+    "deviceOverrideFailed": "The cue’s output device could not be changed. Check the selection and try again.",
     "deviceOverrideHelp": "Override the project's default output for this cue. Leave on 'Use project default' to follow the project setting.",
     "ducking": "Ducking",
     "duckLevel": "Duck Level",
