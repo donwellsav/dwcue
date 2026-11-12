@@ -1441,67 +1441,57 @@ DiagnosticCueResult ProjectState::add_av_sync_diagnostic_cue(
     const std::filesystem::path& file,
     const std::string& output_device_id,
     std::filesystem::path owned_file) {
-    std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
+    std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
+    const auto intent = playback_intent_revision_;
+    const auto generation = document_generation_;
 
     const std::string requested_device =
         output_device_id.empty() ? "default" : output_device_id;
-    std::string route_device_name;
-    std::string route_key;
-    std::optional<audio::DeviceId> required_open_device;
-    bool use_os_default = false;
-
-    if (requested_device == "default") {
-        {
-            std::lock_guard lock{mutex_};
-            if (document_.contains("settings")) {
-                const auto& settings = document_["settings"];
-                if (settings.contains("defaultOutputDevice") &&
-                    settings["defaultOutputDevice"].is_string()) {
-                    route_device_name = settings["defaultOutputDevice"].get<std::string>();
-                }
-            }
+    const auto default_output = [&]() -> std::string {
+        std::lock_guard lock{mutex_};
+        const auto settings = document_.find("settings");
+        if (settings != document_.end() && settings->is_object()) {
+            const auto output = settings->find("defaultOutputDevice");
+            if (output != settings->end() && output->is_string()) return output->get<std::string>();
         }
-        use_os_default = route_device_name.empty();
-    } else {
-        route_device_name = requested_device;
-    }
-    if (!use_os_default) {
-        const auto devices = engine_.enumerate_devices();
-        const auto selected = detail::resolve_output_device(route_device_name, devices);
-        if (!selected) return {{}, "output_device_id must exactly match an available, unambiguous device; reselect an output device"};
-        route_device_name = selected->display_name;
-        route_key = selected->is_open ? "opened:" + selected->id.value : selected->display_name;
-        if (selected->is_open) required_open_device = selected->id;
-    }
+        return {};
+    };
+    const bool follows_default = requested_device == "default";
+    const auto selection = follows_default ? default_output() : requested_device;
+    const auto current = [&] {
+        return intent == playback_intent_revision_ && generation == document_generation_ &&
+            (!follows_default || default_output() == selection);
+    };
 
     audio::CueId cue_id;
+    const auto reject = [&](std::string error) -> DiagnosticCueResult {
+        if (lifecycle_lock.owns_lock()) lifecycle_lock.unlock();
+        auto retiring = owned_file.empty() ? nullptr : engine_.find_cue(cue_id);
+        if (!cue_id.empty()) engine_.unload_cue(cue_id);
+        remove_owned_diagnostic_file(std::move(retiring), std::move(owned_file));
+        return {{}, std::move(error)};
+    };
     try {
+        lifecycle_lock.unlock();
+        std::string route_device_name;
+        std::string route_key;
+        std::optional<audio::DeviceId> required_open_device;
+        if (!selection.empty()) {
+            const auto devices = engine_.enumerate_devices();
+            const auto selected = detail::resolve_output_device(selection, devices);
+            if (!selected) return reject("output_device_id must exactly match an available, unambiguous device; reselect an output device");
+            route_device_name = selected->display_name;
+            route_key = selected->is_open ? "opened:" + selected->id.value : selected->display_name;
+            if (selected->is_open) required_open_device = selected->id;
+        }
         cue_id = engine_.load_cue_no_route(file);
-        if (cue_id.empty()) return {{}, "file could not be decoded"};
+        if (cue_id.empty()) return reject("file could not be decoded");
 
         const auto cue = engine_.find_cue(cue_id);
-        if (!cue) {
-            engine_.unload_cue(cue_id);
-            return {{}, "file could not be decoded"};
-        }
+        if (!cue) return reject("file could not be decoded");
         cue->set_out_point_seconds(0.0);
         cue->set_loop(true, 0.0);
-        if (!cue->prime(2.0, 0.0)) {
-            engine_.unload_cue(cue_id);
-            return {{}, "file could not be primed"};
-        }
-
-        if (use_os_default) {
-            engine_.ensure_default_routing_for_cue(cue_id);
-        } else {
-            const auto mixer = ensure_device_routing_impl(
-                route_key, route_device_name, required_open_device);
-            if (mixer.empty()) {
-                engine_.unload_cue(cue_id);
-                return {{}, "output device could not be routed"};
-            }
-            route_cue_to_mixer(cue_id, mixer);
-        }
+        if (!cue->prime(2.0, 0.0)) return reject("file could not be primed");
 
         const auto md = meta::read_metadata(file);
         CueMeta cue_meta;
@@ -1512,6 +1502,15 @@ DiagnosticCueResult ProjectState::add_av_sync_diagnostic_cue(
         cue_meta.title = md.title;
         cue_meta.duration_seconds = static_cast<double>(md.duration.count()) / 1000.0;
 
+        lifecycle_lock.lock();
+        if (!current()) return reject("diagnostic setup was canceled");
+        const auto mixer = selection.empty()
+            ? ensure_program_main(lifecycle_lock, current)
+            : ensure_device_routing_impl(route_key, route_device_name, required_open_device, &lifecycle_lock);
+        if (!current()) return reject("diagnostic setup was canceled");
+        if (mixer.empty()) return reject("output device '" +
+            (selection.empty() ? std::string{"System Default"} : route_device_name) + "' could not be routed");
+        route_cue_to_mixer(cue_id, mixer);
         {
             std::lock_guard lock{mutex_};
             cues_.emplace(cue_id.value, std::move(cue_meta));
@@ -1519,11 +1518,9 @@ DiagnosticCueResult ProjectState::add_av_sync_diagnostic_cue(
         }
         return {cue_id, {}};
     } catch (const std::exception& e) {
-        if (!cue_id.empty()) engine_.unload_cue(cue_id);
-        return {{}, e.what()};
+        return reject(e.what());
     } catch (...) {
-        if (!cue_id.empty()) engine_.unload_cue(cue_id);
-        return {{}, "diagnostic cue setup failed"};
+        return reject("diagnostic cue setup failed");
     }
 }
 

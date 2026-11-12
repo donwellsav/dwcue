@@ -1958,6 +1958,8 @@ void ControlServer::install_routes() {
 
                 const auto result = state_.add_av_sync_diagnostic_cue(
                     file_path, output_device_id, staged_upload.path);
+                // The diagnostic owns staged upload cleanup on success and refusal.
+                staged_upload.path.clear();
                 if (result.cue_id.empty()) return json_err(400, result.error);
 
                 const auto cue = state_.find_cue(result.cue_id);
@@ -1965,7 +1967,6 @@ void ControlServer::install_routes() {
                     state_.remove_cue(result.cue_id);
                     return json_err(500, "diagnostic cue registration failed");
                 }
-                staged_upload.path.clear();
                 return json_ok(cue_to_json(*cue, engine_));
             } catch (const std::exception& e) {
                 return json_err(400, e.what());

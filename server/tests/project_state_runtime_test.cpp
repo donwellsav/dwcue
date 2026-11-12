@@ -493,6 +493,62 @@ void test_stop_all_during_ltc_device_start() {
     context->callbacks.onDeviceStart = start;
 }
 
+void test_stop_all_during_diagnostic_output_start() {
+    auto* context = null_preview_context();
+    static const auto start = context->callbacks.onDeviceStart;
+    static std::atomic<bool> hold{false}, entered{false};
+    context->callbacks.onDeviceStart = [](ma_device* device) {
+        if (hold.load()) {
+            entered.store(true);
+            while (hold.load()) std::this_thread::sleep_for(1ms);
+        }
+        return start(device);
+    };
+    const auto wav = make_wav(8'192, 480'000);
+    for (const char* selection : {"default", "NULL Playback Device"}) {
+        liveplay::audio::AudioEngine engine;
+        engine.device_test_context_ = context;
+        liveplay::core::ProjectState state(engine);
+        check(state.replace_full_document(document(json::array({
+            audio("diagnostic-bed", wav), audio("diagnostic-backup", wav),
+        }))) && wait_ready(state) && state.trigger_item("diagnostic-bed"), "Diagnostic open: Program media ready");
+        const auto backup = engine.find_cue(*state.item_to_cue_id("diagnostic-backup"));
+        check(backup && backup->prime(2.0), "Diagnostic open: backup primed");
+        const auto owned = std::string_view{selection} == "default" ? make_wav(8'192, 480'000) : std::filesystem::path{};
+        const auto& file = owned.empty() ? wav : owned;
+        entered.store(false);
+        hold.store(true);
+        auto opening = std::async(std::launch::async, [&] { return state.add_av_sync_diagnostic_cue(file, selection, owned); });
+        for (int i = 0; i < 1000 && !entered.load(); ++i) std::this_thread::sleep_for(2ms);
+        check(entered.load(), "Diagnostic open: actual software device startup is held");
+        auto controls = std::async(std::launch::async, [&] {
+            state.stop_all_cues(0);
+            return !on_air(state, engine, "diagnostic-bed") &&
+                state.set_next_item_override("diagnostic-backup") && state.go() == "diagnostic-backup" &&
+                state.state_summary().is_object();
+        });
+        check(controls.wait_for(250ms) == std::future_status::ready,
+              "Diagnostic open: Stop All and backup GO finish before startup returns");
+        hold.store(false);
+        const auto discarded = opening.get();
+        check(controls.get() && discarded.cue_id.empty() && state.diagnostic_cues_.empty() &&
+                  engine.items_.size() == 2 && engine.devices_.empty() && on_air(state, engine, "diagnostic-backup"),
+              "Diagnostic open: late startup leaves no diagnostic cue, route or reference");
+        for (int i = 0; i < 200 && !owned.empty() && std::filesystem::exists(owned); ++i)
+            std::this_thread::sleep_for(5ms);
+        check(owned.empty() ? std::filesystem::exists(file) : !std::filesystem::exists(owned),
+              "Diagnostic open: cancellation deletes only the uploaded file after decoder close");
+        const auto retried = state.add_av_sync_diagnostic_cue(wav, selection);
+        const auto diagnostic = engine.find_cue(retried.cue_id);
+        check(diagnostic && diagnostic->stats().transport == liveplay::audio::TransportState::Stopped &&
+                  on_air(state, engine, "diagnostic-backup"),
+              "Diagnostic open: deliberate retry prepares the stopped diagnostic alongside Program");
+        state.remove_cue(retried.cue_id);
+        state.stop_all_cues(0);
+    }
+    context->callbacks.onDeviceStart = start;
+}
+
 void test_stop_all_during_preview_retirement() {
     const auto wav = make_wav(8'192);
     for (const int mode : {0, 1, 2, 3}) {
@@ -2508,6 +2564,7 @@ int main() try {
     test_stop_all_during_program_device_start();
     test_stop_all_during_system_default_open();
     test_stop_all_during_ltc_device_start();
+    test_stop_all_during_diagnostic_output_start();
     test_stop_all_during_preview_retirement();
     test_cancelled_preview_preparation();
     test_busy_decoder_preserves_sibling_progress();

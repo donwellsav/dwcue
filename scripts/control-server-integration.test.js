@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const { constants } = require('node:fs');
-const { mkdir, mkdtemp, open, readFile, rename, rm, utimes, writeFile } = require('node:fs/promises');
+const { mkdir, mkdtemp, open, readFile, rename, rm, stat, utimes, writeFile } = require('node:fs/promises');
 const http = require('node:http');
 const net = require('node:net');
 const os = require('node:os');
@@ -1433,6 +1433,15 @@ test('AV-sync diagnostics allocate transient looping cues and release owned uplo
     assert.equal(deleted.status, 200);
     assert.equal((await request(baseUrl, `/api/cues/${encodeURIComponent(first.id)}`)).status, 404);
 
+    // Device/cue withdrawal acknowledges before the decoder-owned file is retired.
+    const waitForOwnedFileRemoval = async file => {
+      for (let attempt = 0; attempt < 100; ++attempt) {
+        try { await stat(file); }
+        catch (error) { if (error.code === 'ENOENT') return; throw error; }
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      assert.fail('the retired diagnostic upload still exists');
+    };
     const webmBytes = await readFile(path.join(root, 'client', 'public', 'assets', 'testcards', 'audiosync', '24.webm'));
     const uploadResponse = await uploadWebm(webmBytes);
     const uploadText = await uploadResponse.text();
@@ -1442,7 +1451,7 @@ test('AV-sync diagnostics allocate transient looping cues and release owned uplo
     assert.equal((await request(baseUrl, `/api/cues/${encodeURIComponent(uploaded.id)}`, {
       method: 'DELETE',
     })).status, 200);
-    await assert.rejects(readFile(uploaded.file_path), { code: 'ENOENT' });
+    await waitForOwnedFileRemoval(uploaded.file_path);
 
     const resetUploadResponse = await uploadWebm(webmBytes);
     const resetUploadText = await resetUploadResponse.text();
@@ -1451,7 +1460,7 @@ test('AV-sync diagnostics allocate transient looping cues and release owned uplo
     assert.equal((await request(baseUrl, '/api/project/close', { method: 'POST' })).status, 200);
     assert.equal((await request(baseUrl, `/api/cues/${encodeURIComponent(resetUpload.id)}`)).status, 404);
     assert.equal((await request(baseUrl, `/api/cues/${encodeURIComponent(second.id)}`)).status, 404);
-    await assert.rejects(readFile(resetUpload.file_path), { code: 'ENOENT' });
+    await waitForOwnedFileRemoval(resetUpload.file_path);
     assert.deepEqual(await readFile(audioPath), audioBytes, 'server deleted caller-owned JSON media');
     stream.socket.close();
   } catch (error) {
