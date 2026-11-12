@@ -397,6 +397,20 @@ test('deduplicates server state, rotates managed credentials, and fences stale s
   assert.equal(await primaryPlay, true);
   assert.equal(server.lastError, sequenceWarning, 'successful primary acknowledgement cleared the secondary-action warning');
 
+  const unavailable = server.go();
+  const unavailableFrame = JSON.parse(rotatedSocket.sent.at(-1) ?? '{}');
+  const outputWarning = "Output device 'USB Playback' is unavailable or ambiguous. Reselect an output device.";
+  rotatedSocket.receive({
+    type: 'playback_error', code: 'output_device_unavailable',
+    item_uuid: 'routed-item', device: 'USB Playback', message: outputWarning,
+  });
+  rotatedSocket.receive({
+    type: 'command_ack', command_id: unavailableFrame.command_id, ok: false,
+    error: 'nothing armed to GO to',
+  });
+  assert.equal(await unavailable, false);
+  assert.equal(server.lastError, outputWarning, 'failed GO keeps the named output warning visible');
+
   const lostAckResult = server.setNextItem('item-9');
   rotatedSocket.receive({ type: 'doc_patch', op: 'next_item_set', itemUuid: 'item-9' });
   assert.deepEqual(docPatches.at(-1), {
@@ -515,6 +529,8 @@ test('Stop All uses authenticated HTTP with or without a WebSocket', async () =>
   const server = useLiveplayServer();
   const originalFetch = globalThis.fetch;
   const requests: Array<{ body: unknown; authorization: string | null; session: string | null }> = [];
+  const currentProject = nuxtState.get('currentProject')!;
+  const originalProject = currentProject.value;
   let accepted = true;
   let revision = 0;
   globalThis.fetch = async (input, init) => {
@@ -558,7 +574,30 @@ test('Stop All uses authenticated HTTP with or without a WebSocket', async () =>
     assert.equal(command.stop_revision, 2, 'an older meter frame cannot undo the HTTP stop revision');
     socket.receive({ type: 'command_ack', command_id: command.command_id, ok: true });
     assert.equal(await start, true);
+    assert.equal(sockets.at(-1), socket, 'a confirmed GO leaves its socket in place');
+
+    currentProject.value = { folderPath: '/show' };
+    const heldGo = server.go();
+    const heldFrame = JSON.parse(socket.sent.at(-1)!);
+    const lateMessage = socket.onmessage;
+    assert.equal(await server.stopAll(0), true);
+    const replacement = sockets.at(-1)!;
+    assert.notEqual(replacement, socket, 'confirmed Stop All replaces a socket with an unacknowledged start');
+    assert.equal(await heldGo, false, 'the old GO releases its local pending action');
+    lateMessage?.({ data: JSON.stringify({ type: 'command_ack', command_id: heldFrame.command_id, ok: false }) });
+    replacement.readyState = FakeWebSocket.OPEN;
+    replacement.onopen?.({});
+    assert.equal(await server.go(), false, 'backup GO waits for show verification');
+    server.showVerification = null;
+    assert.equal(await server.go(), false, 'backup GO waits for the replacement socket stop revision');
+    replacement.receive({ type: 'meters', stop_revision: 3 });
+    const backupGo = server.go();
+    const backupFrame = JSON.parse(replacement.sent.at(-1)!);
+    assert.equal(backupFrame.stop_revision, 3);
+    replacement.receive({ type: 'command_ack', command_id: backupFrame.command_id, ok: true });
+    assert.equal(await backupGo, true);
   } finally {
+    currentProject.value = originalProject;
     server.destroy();
     globalThis.fetch = originalFetch;
   }

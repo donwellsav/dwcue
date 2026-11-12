@@ -138,6 +138,8 @@ function createClient() {
   const transportConfirmationMs = 2500;
   let stopAllRequest = 0;
   let stopRevision = 0;
+  let unacknowledgedStart = '';
+  const awaitingStopRevision = ref(false);
   const cues          = ref<ServerCue[]>([]);
   const mixerChannels = ref<ServerMixerChannel[]>([]);
   const devices       = ref<ServerDeviceInfo[]>([]);
@@ -197,6 +199,7 @@ function createClient() {
   const pendingCommands = new Map<string, {
     timer: ReturnType<typeof setTimeout>;
     resolve: (ok: boolean) => void;
+    outputWarning?: string;
   }>();
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectDelay = 1500;         // start higher; backs off to 10 s
@@ -215,7 +218,8 @@ function createClient() {
   // freeze every control that would otherwise mutate unreachable state.
   const connectionLost = ref(false);
   const showVerification = ref<'checking' | 'failed' | null>(null);
-  const cueStartsBlocked = computed(() => connectionLost.value || showVerification.value !== null || sessionLost.value);
+  const cueStartsBlocked = computed(() =>
+    connectionLost.value || showVerification.value !== null || sessionLost.value || awaitingStopRevision.value);
   let socketLifetime: AbortController | null = null;
   // Grace period before we shout about it. A WS bounce that heals inside this
   // window is invisible to the operator; anything longer gets the modal.
@@ -284,6 +288,7 @@ function createClient() {
       socket = new WebSocket(wsUrl.value);
       ws = socket;
       stopRevision = 0;
+      unacknowledgedStart = '';
     } catch (e) {
       lastError.value = String(e);
       // eslint-disable-next-line no-console
@@ -370,6 +375,7 @@ function createClient() {
       if (!payload || typeof payload !== 'object' || !payload.type) return;
       if (Number.isSafeInteger(payload.stop_revision)) {
         stopRevision = Math.max(stopRevision, payload.stop_revision);
+        awaitingStopRevision.value = false;
       }
 
       switch (payload.type) {
@@ -452,16 +458,23 @@ function createClient() {
           break;
         case 'command_ack': {
           const commandId = typeof payload.command_id === 'string' ? payload.command_id : '';
+          if (commandId === unacknowledgedStart) unacknowledgedStart = '';
           const pending = pendingCommands.get(commandId);
           if (!pending) break;
           clearTimeout(pending.timer);
           pendingCommands.delete(commandId);
           const ok = payload.ok === true;
-          if (!ok) lastError.value = String(payload.error || 'Server rejected the command.');
+          if (!ok) lastError.value = pending.outputWarning ?? String(payload.error || 'Server rejected the command.');
           pending.resolve(ok);
           break;
         }
         case 'playback_error': {
+          if (payload.code === 'output_device_unavailable' && typeof payload.message === 'string') {
+            lastError.value = payload.message;
+            const start = pendingCommands.get(unacknowledgedStart);
+            if (start && payload.item_uuid) start.outputWarning = payload.message;
+            break;
+          }
           if (payload.code === 'sequence_target_invalid' && typeof payload.message === 'string') {
             const target = typeof payload.target_uuid === 'string' && payload.target_uuid
               ? ` (target ${payload.target_uuid})`
@@ -489,6 +502,7 @@ function createClient() {
     socketLifetime = null;
     ++stopAllRequest;
     stopAllStatus.value = null;
+    awaitingStopRevision.value = false;
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
@@ -527,6 +541,7 @@ function createClient() {
     }
 
     const commandId = crypto.randomUUID();
+    if (startsCue) unacknowledgedStart = commandId;
     const body = JSON.stringify({
       ...payload, command_id: commandId, ...(startsCue ? { stop_revision: stopRevision } : {}),
     });
@@ -556,6 +571,7 @@ function createClient() {
     const socket = ws;
     stopAllStatus.value = 'pending';
     let confirmed = false;
+    let replaceSocket = false;
     try {
       // The socket can be open while an earlier GO is holding its handler.
       const result = await rest<{ ok: boolean; stop_revision?: number }>('/api/transport/stop_all', {
@@ -567,11 +583,18 @@ function createClient() {
       if (confirmed && ws === socket && typeof result.stop_revision === 'number' &&
           Number.isSafeInteger(result.stop_revision)) {
         stopRevision = Math.max(stopRevision, result.stop_revision);
+        replaceSocket = !!unacknowledgedStart;
       }
     } catch (error) {
       console.warn('[liveplay] Stop All confirmation failed:', error);
     }
     if (request === stopAllRequest) {
+      if (replaceSocket) {
+        // The canceled start can still occupy this socket until the driver returns.
+        failPendingCommands('Stop All canceled the pending cue start.');
+        forceReconnect();
+        awaitingStopRevision.value = true;
+      }
       stopAllStatus.value = confirmed ? 'confirmed' : 'unconfirmed';
       if (!confirmed) lastError.value = stopAllUnconfirmed;
       else if (lastError.value === stopAllUnconfirmed) lastError.value = null;
