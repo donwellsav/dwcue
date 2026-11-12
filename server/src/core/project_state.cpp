@@ -97,8 +97,7 @@ inline std::string read_last_modified(const json& doc) {
 // form is absent or missing. That makes moved projects — and legacy v1 projects
 // (relative mediaPath, but a folderPath baked to the old location) — resolve
 // correctly, while still honouring genuine out-of-folder references.
-inline std::filesystem::path resolve_media_path(const json& item,
-                                                const std::string& folder) {
+detail::MediaPaths media_paths(const json& item, const std::string& folder) {
     std::string relative;
     if (item.contains("mediaPath") && item["mediaPath"].is_string()) {
         const std::string media_path = item["mediaPath"].get<std::string>();
@@ -115,20 +114,27 @@ inline std::filesystem::path resolve_media_path(const json& item,
     if (item.contains("mediaServerPath") && item["mediaServerPath"].is_string())
         server = item["mediaServerPath"].get<std::string>();
 
+    if (relative.empty()) return {util::utf8_to_path(server), {}};
+    return {util::utf8_to_path(relative), util::utf8_to_path(server)};
+}
+
+std::filesystem::path resolve_media_path(const detail::MediaPaths& paths) {
+    if (paths.fallback.empty() || paths.preferred == paths.fallback) return paths.preferred;
     std::error_code ec;
-    if (!relative.empty()) {
-        const auto rel_path = util::utf8_to_path(relative);
-        if (std::filesystem::exists(rel_path, ec)) return rel_path;
+#ifdef LIVEPLAY_TEST_HOOKS
+    if (const char* value = std::getenv("DWCUE_TEST_PATH_PROBE_GATE"); value && *value) {
+        const std::filesystem::path gate{value};
+        std::filesystem::path target;
+        std::ifstream{gate} >> target;
+        if (target == paths.preferred && std::filesystem::exists(gate, ec)) {
+            std::ofstream{gate.string() + ".entered"} << paths.preferred;
+            while (std::filesystem::exists(gate, ec)) std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        }
     }
-    if (!server.empty()) {
-        const auto srv_path = util::utf8_to_path(server);
-        if (std::filesystem::exists(srv_path, ec)) return srv_path;
-    }
-    // Neither file exists. Return the portable relative form when we have one
-    // (so the item still carries a sensible path to relocate later); otherwise
-    // the absolute one.
-    if (!relative.empty()) return util::utf8_to_path(relative);
-    return server.empty() ? std::filesystem::path{} : util::utf8_to_path(server);
+#endif
+    if (!std::filesystem::exists(paths.preferred, ec) && std::filesystem::exists(paths.fallback, ec))
+        return paths.fallback;
+    return paths.preferred;
 }
 
 // Rewrite every audio item to reference its media RELATIVE to the project
@@ -166,7 +172,7 @@ inline void relativize_media_paths(json& doc) {
     const std::function<void(json&)> visit = [&](json& item) {
         if (!item.is_object()) return;
         if (item.value("type", std::string{}) == "audio") {
-            const auto resolved = resolve_media_path(item, folder);
+            const auto resolved = resolve_media_path(media_paths(item, folder));
             if (!resolved.empty()) {
                 std::error_code ec2;
                 const auto resolved_canon = std::filesystem::weakly_canonical(resolved, ec2);
@@ -511,14 +517,18 @@ std::atomic<std::size_t> completed_load_workers{0};
 struct LoadedAudio {
     std::shared_ptr<audio::PlaybackItem> item;
     meta::AudioFileMetadata metadata;
+    std::filesystem::path path;
 };
-std::future<LoadedAudio> prepare_audio_load(audio::PlaybackItemDesc desc, json properties, bool prime) {
+std::future<LoadedAudio> prepare_audio_load(audio::PlaybackItemDesc desc, json properties, bool prime,
+                                            std::filesystem::path fallback = {}) {
     std::promise<LoadedAudio> result;
     auto task = result.get_future();
-    std::thread([desc = std::move(desc), properties = std::move(properties), prime,
+    std::thread([desc = std::move(desc), properties = std::move(properties), prime, fallback = std::move(fallback),
                  result = std::move(result)]() mutable {
         std::shared_ptr<audio::PlaybackItem> item;
         try {
+            auto path = resolve_media_path({desc.file_path, std::move(fallback)});
+            desc.file_path = path;
             item = std::shared_ptr<audio::PlaybackItem>(new audio::PlaybackItem(std::move(desc)), [](auto* retiring) {
                 // Discarded results must not close a native decoder on a control thread.
                 try { std::thread([retiring] { delete retiring; }).detach(); }
@@ -531,8 +541,8 @@ std::future<LoadedAudio> prepare_audio_load(audio::PlaybackItemDesc desc, json p
                 auto metadata = meta::read_metadata(item->desc().file_path);
                 apply_audio_item_properties(properties, item);
                 if (prime) item->prime(2.0);
-                result.set_value({item, std::move(metadata)});
-            } else result.set_value({});
+                result.set_value({item, std::move(metadata), std::move(path)});
+            } else result.set_value({nullptr, {}, std::move(path)});
         } catch (...) { result.set_exception(std::current_exception()); }
 #ifdef LIVEPLAY_TEST_HOOKS
         completed_load_workers.fetch_add(1, std::memory_order_release);
@@ -613,10 +623,10 @@ ProjectState::~ProjectState() {
 // mutex_ again only for the cheap publish step.
 // ---------------------------------------------------------------------------
 audio::CueId ProjectState::begin_item_load_locked(const std::string& uuid,
-                                                  const std::filesystem::path& path,
+                                                  detail::MediaPaths paths,
                                                   const json& item, bool media_changed) {
     if (uuid.empty()) return {};
-    if (path.empty()) {
+    if (paths.preferred.empty()) {
         audio_load_failures_[uuid] = {"missing_media_path", std::string{}};
         return {};
     }
@@ -629,10 +639,10 @@ audio::CueId ProjectState::begin_item_load_locked(const std::string& uuid,
     // something sane if the item is fired before the load lands.
     CueMeta meta;
     meta.id        = cue_id;
-    meta.file_path = path;
+    meta.file_path = paths.preferred;
     meta.display_name = item.value("displayName", std::string{});
     if (meta.display_name.empty())
-        meta.display_name = util::path_to_utf8(path.filename());
+        meta.display_name = util::path_to_utf8(paths.preferred.filename());
     meta.duration_seconds = json_get_or(item, "duration", 0.0);
     cues_.emplace(cue_id.value, std::move(meta));
     item_uuid_to_cue_[uuid] = cue_id;
@@ -643,7 +653,7 @@ audio::CueId ProjectState::begin_item_load_locked(const std::string& uuid,
         if (!prime && document_.contains("cartItems") && document_["cartItems"].is_array())
             for (const auto& cart : document_["cartItems"])
                 if (cart.is_object() && cart.value("itemUuid", std::string{}) == uuid) { prime = true; break; }
-        load_queue_.push_back(LoadRequest{uuid, cue_id, path, media_changed, item, prime});
+        load_queue_.push_back(LoadRequest{uuid, cue_id, std::move(paths), media_changed, item, prime});
         pending_load_uuids_.insert_or_assign(uuid, cue_id);
     }
     loader_cv_.notify_one();
@@ -710,10 +720,10 @@ void ProjectState::loader_loop() {
         // media) where anything can go wrong.
         try {
             audio::PlaybackItemDesc desc;
-            desc.id = req.cue_id; desc.file_path = req.path;
+            desc.id = req.cue_id; desc.file_path = req.paths.preferred;
             desc.mix_sample_rate = engine_.config().mix_sample_rate;
             desc.render_block = engine_.config().render_block;
-            auto task = prepare_audio_load(std::move(desc), req.properties, req.prime);
+            auto task = prepare_audio_load(std::move(desc), req.properties, req.prime, std::move(req.paths.fallback));
             bool abandoned = false;
             while (task.wait_for(std::chrono::milliseconds{2}) != std::future_status::ready) {
                 std::lock_guard lock{mutex_};
@@ -755,9 +765,9 @@ void ProjectState::loader_loop() {
                         // item reads as "not loaded" rather than silently dead.
                         item_uuid_to_cue_.erase(req.uuid);
                         audio_load_failures_[req.uuid] = {
-                            "decoder_init_failed", util::path_to_utf8(req.path)};
+                            "decoder_init_failed", util::path_to_utf8(loaded.path)};
                         Logger::warn("ProjectState: failed to load item uuid='{}' ('{}')",
-                                     req.uuid, util::path_to_utf8(req.path));
+                                     req.uuid, util::path_to_utf8(loaded.path));
                     }
                 } else {
                     engine_.adopt_cue(loaded.item);
@@ -765,6 +775,7 @@ void ProjectState::loader_loop() {
                     auto cm_it = cues_.find(req.cue_id.value);
                     if (cm_it != cues_.end()) {
                         auto& meta = cm_it->second;
+                        meta.file_path = loaded.path;
                         if (!md.title.empty()) meta.display_name = md.title;
                         meta.artist = md.artist;
                         meta.title  = md.title;
@@ -801,7 +812,7 @@ void ProjectState::loader_loop() {
                     }
                     const auto item = engine_.find_cue(req.cue_id);
                     if (cb && item) cb(json{{"type", "doc_patch"}, {"op", "media_changed"},
-                        {"item_uuid", req.uuid}, {"reloaded", true}, {"path", util::path_to_utf8(req.path)},
+                        {"item_uuid", req.uuid}, {"reloaded", true}, {"path", util::path_to_utf8(loaded.path)},
                         {"file_revision", item->source_revision()}, {"project_session_id", session}});
                 }
             }
@@ -813,7 +824,7 @@ void ProjectState::loader_loop() {
                     cues_.erase(req.cue_id.value);
                     item_uuid_to_cue_.erase(it);
                     audio_load_failures_[req.uuid] = {
-                        "load_exception", util::path_to_utf8(req.path)};
+                        "load_exception", util::path_to_utf8(req.paths.preferred)};
                 }
             }
             Logger::error("ProjectState loader: uuid='{}' threw: {}", req.uuid, e.what());
@@ -825,7 +836,7 @@ void ProjectState::loader_loop() {
                     cues_.erase(req.cue_id.value);
                     item_uuid_to_cue_.erase(it);
                     audio_load_failures_[req.uuid] = {
-                        "load_exception", util::path_to_utf8(req.path)};
+                        "load_exception", util::path_to_utf8(req.paths.preferred)};
                 }
             }
             Logger::error("ProjectState loader: uuid='{}' threw (unknown).", req.uuid);
@@ -932,7 +943,7 @@ void ProjectState::publish_media_revisions(std::uint64_t generation, const Media
                 if (!snapshot.is_object()) continue;
                 engine_.unload_cue(item->id());
                 cues_.erase(item->id().value);
-                begin_item_load_locked(uuid, item->desc().file_path, snapshot, true);
+                begin_item_load_locked(uuid, {item->desc().file_path, {}}, snapshot, true);
             } else if (!already_changed) cb = ui_state_broadcaster_;
         }
         if (cb) cb(json{{"type", "doc_patch"}, {"op", "media_changed"},
@@ -982,15 +993,17 @@ void ProjectState::start_async_mirror() {
     load_thread_ = std::thread([this, mirror_generation] {
         try {
             // Phase 1: snapshot what we need to load under a brief lock.
-            std::unordered_map<std::string, std::filesystem::path> wanted;
+            std::unordered_map<std::string, detail::MediaPaths> candidates;
             std::unordered_map<std::string, json> item_snaps;
             std::unordered_set<std::string> cart_uuids;
             std::unordered_map<std::string, std::filesystem::path> actually_wanted;
             std::size_t unresolved_media = 0;
             {
                 std::lock_guard lock{mutex_};
+                if (document_generation_ != mirror_generation || mirror_cancel_.load(std::memory_order_acquire)) return;
                 json& doc = document_;
                 audio_load_failures_.clear();
+                candidates = media_paths_by_uuid(doc);
                 for_each_item(doc, [&](json& item, const std::string&) {
                     if (item.value("type", std::string{}) != "audio") return;
                     const std::string uuid = item.value("uuid", std::string{});
@@ -998,11 +1011,7 @@ void ProjectState::start_async_mirror() {
                     item_snaps.emplace(uuid, item);
                     if (item.contains("oneShot") && item["oneShot"].is_object())
                         cart_uuids.insert(uuid);
-                    auto path = resolve_media_path(
-                        item, doc.value("folderPath", std::string{}));
-                    if (!path.empty()) {
-                        wanted.emplace(uuid, std::move(path));
-                    } else {
+                    if (candidates.at(uuid).preferred.empty()) {
                         audio_load_failures_[uuid] = {
                             "missing_media_path", std::string{}};
                         ++unresolved_media;
@@ -1017,9 +1026,13 @@ void ProjectState::start_async_mirror() {
                     }
                 }
 
-                // Unload missing cues
+                // Withdraw cues whose files are no longer referenced before probing storage.
                 for (auto it = item_uuid_to_cue_.begin(); it != item_uuid_to_cue_.end();) {
-                    if (wanted.find(it->first) == wanted.end()) {
+                    const auto wanted = candidates.find(it->first);
+                    const auto cue = cues_.find(it->second.value);
+                    if (wanted == candidates.end() || wanted->second.preferred.empty() || cue == cues_.end() ||
+                        (!detail::same_media_identity(cue->second.file_path, wanted->second.preferred) &&
+                         !detail::same_media_identity(cue->second.file_path, wanted->second.fallback))) {
                         engine_.unload_cue(it->second);
                         cues_.erase(it->second.value);
                         it = item_uuid_to_cue_.erase(it);
@@ -1028,10 +1041,35 @@ void ProjectState::start_async_mirror() {
                     }
                 }
 
-                // UUID alone is not media identity: a dirty reconnect overlay
-                // can retain the UUID while changing mediaPath. Reuse only a
-                // decoder whose resolved path still matches the document.
+            }
+
+            const auto resolve_paths = [](const auto& paths_by_uuid) {
+                std::unordered_map<std::string, std::filesystem::path> resolved;
+                for (const auto& [uuid, paths] : paths_by_uuid)
+                    if (!paths.preferred.empty()) resolved.emplace(uuid, resolve_media_path(paths));
+                return resolved;
+            };
+            std::unordered_map<std::string, std::filesystem::path> wanted;
+            if (std::any_of(candidates.begin(), candidates.end(), [](const auto& candidate) {
+                return !candidate.second.fallback.empty();
+            })) {
+                std::packaged_task<decltype(wanted)()> resolve{[paths = candidates, resolve_paths] { return resolve_paths(paths); }};
+                auto result = resolve.get_future();
+                std::thread(std::move(resolve)).detach();
+                while (result.wait_for(std::chrono::milliseconds{2}) != std::future_status::ready)
+                    if (mirror_cancel_.load(std::memory_order_acquire)) return;
+                wanted = result.get();
+            } else {
+                wanted = resolve_paths(candidates);
+            }
+
+            {
+                std::lock_guard lock{mutex_};
+                if (document_generation_ != mirror_generation || mirror_cancel_.load(std::memory_order_acquire)) return;
+                const auto current_paths = media_paths_by_uuid(document_);
                 for (const auto& [uuid, path] : wanted) {
+                    const auto current = current_paths.find(uuid);
+                    if (current == current_paths.end() || current->second != candidates.at(uuid)) continue;
                     auto item_it = item_uuid_to_cue_.find(uuid);
                     bool needs_load = item_it == item_uuid_to_cue_.end();
                     if (!needs_load) {
@@ -1107,24 +1145,14 @@ void ProjectState::start_async_mirror() {
             // and a single routing rebuild.
             {
                 std::lock_guard lock{mutex_};
-                std::unordered_map<std::string, std::filesystem::path>
-                    current_wanted;
-                if (document_generation_ == mirror_generation) {
-                    for_each_item(document_, [&](json& item, const std::string&) {
-                        if (item.value("type", std::string{}) != "audio") return;
-                        const auto uuid = item.value("uuid", std::string{});
-                        if (uuid.empty()) return;
-                        const auto path = resolve_media_path(
-                            item, document_.value("folderPath", std::string{}));
-                        if (!path.empty()) current_wanted.emplace(uuid, path);
-                    });
-                }
+                if (document_generation_ != mirror_generation) return;
+                const auto current_wanted = media_paths_by_uuid(document_);
 
                 for (auto& loaded : done) {
                     const auto expected = current_wanted.find(loaded.uuid);
                     const bool identity_matches =
                         expected != current_wanted.end() &&
-                        detail::same_media_identity(expected->second, loaded.path);
+                        expected->second == candidates.at(loaded.uuid);
                     if (!identity_matches) {
                         continue;
                     }
@@ -1370,6 +1398,17 @@ void ProjectState::for_each_item(json& doc,
             if (it.is_object()) visit(it, "");
         }
     }
+}
+
+std::unordered_map<std::string, detail::MediaPaths> ProjectState::media_paths_by_uuid(json& doc) {
+    std::unordered_map<std::string, detail::MediaPaths> paths;
+    const auto folder = doc.value("folderPath", std::string{});
+    for_each_item(doc, [&](json& item, const std::string&) {
+        if (item.value("type", std::string{}) != "audio") return;
+        const auto uuid = item.value("uuid", std::string{});
+        if (!uuid.empty()) paths.emplace(uuid, media_paths(item, folder));
+    });
+    return paths;
 }
 
 // ---------------------------------------------------------------------------
@@ -2121,25 +2160,26 @@ bool ProjectState::replace_full_document(const json& doc, bool new_session) {
     std::vector<SequencedItem> invalidated_items;
     {
         std::lock_guard lock{mutex_};
-        const auto collect_media = [](json& candidate) {
-            std::unordered_map<std::string, std::filesystem::path> paths;
-            const auto folder = candidate.value("folderPath", std::string{});
-            for_each_item(candidate, [&](json& item, const std::string&) {
-                if (item.value("type", std::string{}) != "audio") return;
-                const auto uuid = item.value("uuid", std::string{});
-                if (!uuid.empty())
-                    paths.emplace(uuid, resolve_media_path(item, folder));
-            });
-            return paths;
-        };
-        const auto old_media = collect_media(document_);
-        const auto new_media = collect_media(migrated);
-        for (const auto& [uuid, old_path] : old_media) {
+        const auto old_media = media_paths_by_uuid(document_);
+        const auto new_media = media_paths_by_uuid(migrated);
+        for (const auto& [uuid, old_paths] : old_media) {
             const auto replacement = new_media.find(uuid);
-            if (replacement == new_media.end() ||
-                !detail::same_media_identity(old_path, replacement->second)) {
-                invalidated_playbacks.insert(uuid);
+            if (replacement != new_media.end() && replacement->second == old_paths) continue;
+            if (const auto current = item_uuid_to_cue_.find(uuid); current != item_uuid_to_cue_.end()) {
+                const auto cue = engine_.find_cue(current->second);
+                if (cue && replacement != new_media.end()) {
+                    const auto& path = cue->desc().file_path;
+                    const auto& paths = replacement->second;
+                    // Keep the current decoder when it can still satisfy the new reference.
+                    if (detail::same_media_identity(path, paths.preferred) ||
+                        detail::same_media_identity(path, paths.fallback)) continue;
+                }
+                if (!cue) {
+                    cues_.erase(current->second.value);
+                    item_uuid_to_cue_.erase(current);
+                }
             }
+            invalidated_playbacks.insert(uuid);
         }
         document_ = std::move(migrated);
         ++document_generation_;
@@ -2281,20 +2321,15 @@ audio::CueId ProjectState::add_item(const json& item, const std::string& parent_
                 document_["items"].push_back(item);
             }
         }
-        // Queue the audio load(s) for what we just inserted instead of decoding
-        // inline: mirror_items_to_engine_locked() decodes while holding mutex_,
-        // so adding one big or network-mounted file stalled every other request
-        // for the whole decode (#43). Walking the document (rather than just the
-        // new node) covers a group's children too, and picks up any earlier item
-        // that still has no cue — the same set the mirror would have loaded.
-        for_each_item(document_, [&](json& it, const std::string&) {
+        // Queue this import and its children. The mirror owns existing items,
+        // and retrying one of them here can put a stalled path ahead of the import.
+        json inserted{{"items", json::array({item})}};
+        for_each_item(inserted, [&](json& it, const std::string&) {
             if (it.value("type", std::string{}) != "audio") return;
             const std::string u = it.value("uuid", std::string{});
             if (u.empty()) return;
             if (item_uuid_to_cue_.find(u) != item_uuid_to_cue_.end()) return;
-            auto path = resolve_media_path(
-                it, document_.value("folderPath", std::string{}));
-            begin_item_load_locked(u, path, it);
+            begin_item_load_locked(u, media_paths(it, document_.value("folderPath", std::string{})), it);
         });
         auto it = item_uuid_to_cue_.find(uuid);
         if (it != item_uuid_to_cue_.end()) result = it->second;
@@ -2444,9 +2479,7 @@ bool ProjectState::update_item(const std::string& uuid, const json& patch_in,
                 cues_.erase(old->second.value);
                 item_uuid_to_cue_.erase(old);
             }
-            auto path = resolve_media_path(
-                *updated_item, document_.value("folderPath", std::string{}));
-            begin_item_load_locked(uuid, path, *updated_item);
+            begin_item_load_locked(uuid, media_paths(*updated_item, document_.value("folderPath", std::string{})), *updated_item);
         } else if (touched && media_path_changed) {
             retiring_cues = retire_missing_item_cues_locked();
         } else if (touched && updated_item) {
@@ -2723,21 +2756,24 @@ bool ProjectState::reorder_items(const std::vector<std::string>& uuids,
 
 std::optional<std::filesystem::path>
 ProjectState::resolve_item_path(const std::string& uuid) const {
-    std::lock_guard lock{mutex_};
-    std::optional<std::filesystem::path> out;
-    // Walk a copy-free view: we're const, so for_each_item takes a non-const
-    // json — work around with a const_cast since we only read inside the
-    // lambda. The lambda mutates nothing.
-    json& doc_ref = const_cast<json&>(document_);
-    for_each_item(doc_ref,
-        [&](json& item, const std::string& /*parent*/) {
-            if (out) return;
-            if (item.value("uuid", std::string{}) != uuid) return;
-            auto path = resolve_media_path(
-                item, doc_ref.value("folderPath", std::string{}));
-            if (!path.empty()) out = std::move(path);
+    const auto snapshot = [&] {
+        detail::MediaPaths paths;
+        for_each_item(const_cast<json&>(document_), [&](json& item, const std::string&) {
+            if (item.value("uuid", std::string{}) == uuid)
+                paths = media_paths(item, document_.value("folderPath", std::string{}));
         });
-    return out;
+        return paths;
+    };
+    std::unique_lock lock{mutex_};
+    const auto paths = snapshot();
+    if (paths.preferred.empty()) return std::nullopt;
+    if (paths.fallback.empty() || paths.preferred == paths.fallback) return paths.preferred;
+    const auto generation = document_generation_;
+    lock.unlock();
+    const auto path = resolve_media_path(paths);
+    lock.lock();
+    if (generation != document_generation_ || paths != snapshot()) return std::nullopt;
+    return path;
 }
 std::optional<long long>
 ProjectState::item_trigger_seq(const std::string& uuid) const {
@@ -4529,8 +4565,8 @@ bool ProjectState::start_preview(const std::string& item_uuid, json* result) {
     const auto intent = ++preview_intent_revision_;
     const auto generation = document_generation_;
 
-    // 1. Resolve the source file path under the lock.
-    std::filesystem::path file_path;
+    // 1. Snapshot the source reference before probing storage.
+    detail::MediaPaths paths;
     double in_point = 0.0;
     double out_point = 0.0;
     bool loop = false;
@@ -4544,9 +4580,7 @@ bool ProjectState::start_preview(const std::string& item_uuid, json* result) {
             [&](json& it, const std::string&) {
                 if (it.value("uuid", std::string{}) != item_uuid) return;
                 item_snapshot = it;
-                auto p = resolve_media_path(
-                    it, document_.value("folderPath", std::string{}));
-                if (!p.empty()) file_path = std::move(p);
+                paths = media_paths(it, document_.value("folderPath", std::string{}));
                 in_point = it.value("inPoint", 0.0);
                 out_point = it.value("outPoint", 0.0);
                 loop = it.contains("endBehavior") && it["endBehavior"].is_object()
@@ -4561,16 +4595,13 @@ bool ProjectState::start_preview(const std::string& item_uuid, json* result) {
             }
         }
     }
-    if (file_path.empty()) {
-        Logger::warn("preview: item '{}' has no resolvable file path", item_uuid);
-        return false;
-    }
     const auto current = [&] {
         if (intent != preview_intent_revision_ || generation != document_generation_) return false;
         std::lock_guard lock{mutex_};
         bool unchanged = false;
         for_each_item(document_, [&](json& item, const std::string&) {
-            if (item.value("uuid", std::string{}) == item_uuid) unchanged = item == item_snapshot;
+            if (item.value("uuid", std::string{}) == item_uuid)
+                unchanged = item == item_snapshot && paths == media_paths(item, document_.value("folderPath", std::string{}));
         });
         const auto settings = document_.find("settings");
         const json selected = settings != document_.end() && settings->is_object()
@@ -4578,6 +4609,11 @@ bool ProjectState::start_preview(const std::string& item_uuid, json* result) {
         return unchanged && selected == preview_setting;
     };
     lifecycle_lock.unlock();
+    const auto file_path = resolve_media_path(paths);
+    if (file_path.empty()) {
+        Logger::warn("preview: item '{}' has no resolvable file path", item_uuid);
+        return false;
+    }
     std::unique_lock preparation_lock{preview_preparation_mutex_};
     lifecycle_lock.lock();
     if (!current()) return false;

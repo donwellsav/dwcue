@@ -3348,20 +3348,20 @@ void ControlServer::install_routes() {
             try {
                 const char* item_uuid = req.url_params.get("item_uuid");
                 const char* path_param = req.url_params.get("path");
+                const auto* expected_session = req.url_params.get("project_session_id");
+                const auto session = state_.project_session_id();
+                if (expected_session && *expected_session && session != expected_session)
+                    return json_err(409, "project session changed; reload media");
                 fs::path file_path;
-                {
-                    const auto* expected_session = req.url_params.get("project_session_id");
-                    auto project_lock = state_.lock_project_session(expected_session ? expected_session : "");
-                    if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload media");
-                    if (item_uuid && *item_uuid) {
-                        const auto resolved = state_.resolve_item_path(item_uuid);
-                        if (!resolved) return json_err(404, "media item not found");
-                        file_path = *resolved;
-                    } else if (path_param && *path_param) {
-                        file_path = liveplay::util::utf8_to_path(std::string{path_param});
-                    } else {
-                        return json_err(400, "missing ?item_uuid= or ?path=");
-                    }
+                if (item_uuid && *item_uuid) {
+                    const auto resolved = state_.resolve_item_path(item_uuid);
+                    if (session != state_.project_session_id()) return json_err(409, "project session changed; reload media");
+                    if (!resolved) return json_err(404, "media item not found");
+                    file_path = *resolved;
+                } else if (path_param && *path_param) {
+                    file_path = liveplay::util::utf8_to_path(std::string{path_param});
+                } else {
+                    return json_err(400, "missing ?item_uuid= or ?path=");
                 }
 
                 const auto revision = util::file_revision(file_path);

@@ -110,6 +110,12 @@ private:
     return lhs.lexically_normal() == rhs.lexically_normal();
 }
 
+struct MediaPaths {
+    std::filesystem::path preferred;
+    std::filesystem::path fallback;
+    bool operator==(const MediaPaths&) const = default;
+};
+
 } // namespace detail
 
 struct CueMeta {
@@ -862,7 +868,7 @@ private:
     // unless `path` is empty). `item` is the document node, used for the
     // placeholder's display name / duration and re-read when the load lands.
     audio::CueId begin_item_load_locked(const std::string& uuid,
-                                        const std::filesystem::path& path,
+                                        detail::MediaPaths paths,
                                         const json& item, bool media_changed = false);
 
     // Loader thread body: decode queued items and publish them.
@@ -885,7 +891,7 @@ private:
     struct LoadRequest {
         std::string           uuid;
         audio::CueId          cue_id;
-        std::filesystem::path path;
+        detail::MediaPaths    paths;
         bool                  media_changed = false;
         json                  properties;
         bool                  prime = false;
@@ -909,6 +915,7 @@ private:
     static void for_each_item(json& doc,
                               const std::function<void(json& /*item*/,
                                                        const std::string& /*parent_uuid*/)>& visit);
+    static std::unordered_map<std::string, detail::MediaPaths> media_paths_by_uuid(json& doc);
 
     // Return the uuid of the item that should play *after* `current_uuid`,
     // based on its endBehavior. Empty string if there isn't a deterministic

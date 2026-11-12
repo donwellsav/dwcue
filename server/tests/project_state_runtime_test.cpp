@@ -2648,6 +2648,66 @@ void test_position_aware_recovery(const std::filesystem::path& wav) {
     state.stop_all_cues(0);
 }
 
+void test_held_path_resolution(const std::filesystem::path& wav) {
+    constexpr auto hook = "DWCUE_TEST_PATH_PROBE_GATE";
+    const auto sibling = make_wav(8194);
+    for (const bool queued : {false, true}) {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        const auto gate = fixture_dir() / (queued ? "queued-path.gate" : "bulk-path.gate");
+        auto source = document(json::array());
+        source["folderPath"] = fixture_dir().string();
+        const auto media = audio("held-path", wav, {{"mediaPath", "path-that-does-not-exist.wav"}});
+        if (queued) check(state.load_from_json(source) && wait_ready(state), "Held path: empty show ready");
+        else source["items"].push_back(media);
+        std::ofstream{gate} << (fixture_dir() / "path-that-does-not-exist.wav");
+        set_loader_gate(gate, hook);
+        auto open = std::async(std::launch::async, [&] {
+            return queued ? !state.add_item(media).empty() : state.load_from_json(source);
+        });
+        check(wait_gate_entered(gate), "Held path: relative fallback lookup reached the gate");
+        auto controls = std::async(std::launch::async, [&] {
+            state.stop_all_cues(0);
+            if (!state.full_document().is_object()) return false;
+            if (queued) return true;
+            const auto id = state.add_item(audio("healthy-path", sibling));
+            for (int i = 0; i < 60 && !engine.find_cue(id); ++i) std::this_thread::sleep_for(5ms);
+            return static_cast<bool>(engine.find_cue(id));
+        });
+        const bool responsive = controls.wait_for(400ms) == std::future_status::ready && controls.get();
+        check(responsive,
+              "Held path: Stop All, document access, and independent queued media stay available");
+        auto replace = std::async(std::launch::async, [&] {
+            return state.load_from_json(document(json::array({audio("held-path", sibling)}))) && wait_ready(state);
+        });
+        check(replace.wait_for(400ms) == std::future_status::ready,
+              "Held path: a replacement show can use the same UUID before lookup returns");
+        std::filesystem::remove(gate);
+        if (controls.valid()) (void)controls.get();
+        check(open.get() && replace.get(), "Held path: requests complete after release");
+        clear_loader_gate(hook);
+        std::filesystem::remove(gate.string() + ".entered");
+        const auto id = state.item_to_cue_id("held-path");
+        const auto cue = id ? engine.find_cue(*id) : nullptr;
+        check(cue && cue->desc().file_path == sibling, "Held path: the old fallback never replaces the current file");
+    }
+
+    liveplay::audio::AudioEngine engine;
+    liveplay::core::ProjectState state(engine);
+    auto source = document(json::array({audio("relative-first", wav, {{"mediaPath", sibling.filename().string()}})}));
+    source["folderPath"] = fixture_dir().string();
+    check(state.load_from_json(source) && wait_ready(state), "Media paths: whole-show relative source is ready");
+    const auto relative = state.item_to_cue_id("relative-first");
+    const auto relative_cue = relative ? engine.find_cue(*relative) : nullptr;
+    check(relative_cue && relative_cue->desc().file_path == sibling && state.resolve_item_path("relative-first") == sibling,
+          "Media paths: the relative file wins when both files exist");
+    const auto fallback = state.add_item(audio("absolute-fallback", wav, {{"mediaPath", "path-that-does-not-exist.wav"}}));
+    check(wait_ready(state), "Media paths: queued absolute fallback is ready");
+    const auto fallback_cue = engine.find_cue(fallback);
+    check(fallback_cue && fallback_cue->desc().file_path == wav && state.resolve_item_path("absolute-fallback") == wav,
+          "Media paths: the absolute file is used when the relative file is missing");
+}
+
 void test_held_media_revision(const std::filesystem::path& wav) {
     const auto gate = fixture_dir() / "media-revision.gate";
     constexpr auto hook = "DWCUE_TEST_REVISION_GATE";
@@ -2753,6 +2813,7 @@ int main() try {
     test_position_aware_recovery(wav);
     test_changed_media_readiness();
     test_held_media_revision(wav);
+    test_held_path_resolution(wav);
     test_stop_all_during_project_boundaries(wav);
     test_stop_all_during_decoder_read(wav);
     test_starvation_holds_show(wav);
