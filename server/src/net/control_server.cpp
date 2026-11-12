@@ -4086,7 +4086,10 @@ void ControlServer::install_routes() {
                     req.get_header_value("X-DWCUE-Mutation-ID");
                 Logger::api_request("Client ({}) -> Server ({}) : PATCH /api/project/items/{}",
                                     req.remote_ip_address, impl_->server_addr, uuid);
-                if (!state_.update_item(uuid, patch)) {
+                if (!state_.update_item(uuid, patch, &project_lock)) {
+                    const auto expected = req.get_header_value("X-DWCUE-Project-Session");
+                    if (!expected.empty() && expected != state_.project_session_id())
+                        return json_err(409, "project session changed; reload before editing");
                     Logger::warn("PATCH /api/project/items/{} — item not found", uuid);
                     return json_err(404, "item not found");
                 }

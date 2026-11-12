@@ -2269,9 +2269,10 @@ audio::CueId ProjectState::add_item(const json& item, const std::string& parent_
     return result;
 }
 
-bool ProjectState::update_item(const std::string& uuid, const json& patch_in) {
+bool ProjectState::update_item(const std::string& uuid, const json& patch_in,
+                               std::unique_lock<std::recursive_mutex>* project_lock) {
     if (!patch_in.is_object()) return false;
-    std::lock_guard preparation_lock{playback_preparation_mutex_};
+    std::unique_lock preparation_lock{playback_preparation_mutex_};
     std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
     json patch = patch_in;
     if (const auto selection = patch.find("deviceOverride"); selection != patch.end()) {
@@ -2279,9 +2280,33 @@ bool ProjectState::update_item(const std::string& uuid, const json& patch_in) {
         if (selection->is_string() && !selection->get_ref<const std::string&>().empty()) {
             const auto devices = engine_.enumerate_devices();
             const auto selected = detail::resolve_output_device(selection->get_ref<const std::string&>(), devices);
-            if (!selected || !detail::resolve_output_device(selected->display_name, devices) ||
-                ensure_device_routing(selection->get_ref<const std::string&>()).empty())
+            if (!selected || !detail::resolve_output_device(selected->display_name, devices))
                 return reject_output_selection(selection->get<std::string>(), uuid);
+            const auto item = [&] {
+                std::lock_guard lock{mutex_};
+                json snapshot;
+                for_each_item(document_, [&](json& candidate, const std::string&) {
+                    if (candidate.value("uuid", std::string{}) == uuid) snapshot = candidate;
+                });
+                return snapshot;
+            };
+            const auto previous = item();
+            if (previous.is_null()) return false;
+            const auto generation = document_generation_;
+            const auto stopped = stop_revision();
+            const auto session = project_session_id();
+            const auto current = [&] {
+                return generation == document_generation_ && stopped == stop_revision() &&
+                    session == project_session_id() && item() == previous;
+            };
+            const auto opened = selected->is_open ? std::optional{selected->id} : std::nullopt;
+            const auto mixer = ensure_device_routing_impl(selected->display_name, selected->display_name,
+                opened, nullptr, [&] {
+                    return open_output_for_edit(opened ? opened->value : selected->display_name,
+                        lifecycle_lock, project_lock, current, &preparation_lock);
+                });
+            if (!current()) return false;
+            if (mixer.empty()) return reject_output_selection(selection->get<std::string>(), uuid);
             *selection = selected->display_name;
         }
     }
@@ -4281,6 +4306,23 @@ audio::MixerChannelId ProjectState::ensure_program_main(
     });
 }
 
+audio::DeviceId ProjectState::open_output_for_edit(
+    const std::string& name, std::unique_lock<std::recursive_mutex>& lifecycle_lock,
+    std::unique_lock<std::recursive_mutex>* project_lock, const std::function<bool()>& current,
+    std::unique_lock<std::mutex>* preparation_lock) {
+    lifecycle_lock.unlock();
+    if (preparation_lock) preparation_lock->unlock();
+    if (project_lock) project_lock->unlock();
+    const auto device = engine_.open_device_by_name(name, 2);
+    // Restore project, preparation and playback ownership in their normal order.
+    if (project_lock) project_lock->lock();
+    if (preparation_lock) preparation_lock->lock();
+    lifecycle_lock.lock();
+    if (current()) return device;
+    if (!device.empty()) engine_.close_device(device);
+    return {};
+}
+
 audio::MixerChannelId ProjectState::ensure_device_routing_impl(
     const std::string& routing_key,
     const std::string& device_name,
@@ -4750,16 +4792,9 @@ bool ProjectState::patch_settings(
         if (std::string_view{key} != "previewDevice") {
             const auto opened = selected->is_open ? std::optional{selected->id} : std::nullopt;
             const auto mixer = ensure_device_routing_impl(selected->display_name, selected->display_name,
-                opened, nullptr, [&]() -> audio::DeviceId {
-                    lifecycle_lock.unlock();
-                    if (project_lock) project_lock->unlock();
-                    const auto device = engine_.open_device_by_name(
-                        opened ? opened->value : selected->display_name, 2);
-                    if (project_lock) project_lock->lock();
-                    lifecycle_lock.lock();
-                    if (current()) return device;
-                    if (!device.empty()) engine_.close_device(device);
-                    return {};
+                opened, nullptr, [&] {
+                    return open_output_for_edit(opened ? opened->value : selected->display_name,
+                        lifecycle_lock, project_lock, current);
                 });
             if (!current()) return false;
             if (mixer.empty()) return reject_output_selection(requested);

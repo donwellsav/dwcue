@@ -561,7 +561,8 @@ void test_stop_all_during_output_settings_open() {
         return start(device);
     };
     const auto wav = make_wav(8'192, 480'000);
-    for (const char* key : {"defaultOutputDevice", "ltcDevice"}) {
+    for (const char* key : {"defaultOutputDevice", "ltcDevice", "deviceOverride"}) {
+        const bool cue_edit = std::string_view{key} == "deviceOverride";
         liveplay::audio::AudioEngine engine;
         engine.device_test_context_ = context;
         liveplay::core::ProjectState state(engine);
@@ -574,6 +575,7 @@ void test_stop_all_during_output_settings_open() {
         hold.store(true);
         auto opening = std::async(std::launch::async, [&] {
             auto project_lock = state.lock_project_session(state.project_session_id());
+            if (cue_edit) return state.update_item("settings-bed", {{key, "NULL Playback Device"}}, &project_lock);
             return state.patch_settings({{key, "NULL Playback Device"}}, &project_lock);
         });
         for (int i = 0; i < 1000 && !entered.load(); ++i) std::this_thread::sleep_for(2ms);
@@ -587,11 +589,16 @@ void test_stop_all_during_output_settings_open() {
         check(controls.wait_for(250ms) == std::future_status::ready,
               "Output settings: Stop All, project access and backup GO before startup returns");
         hold.store(false);
+        const auto selected = [&] {
+            auto doc = state.full_document();
+            return cue_edit ? doc["items"][0][key] : doc["settings"][key];
+        };
         check(!opening.get() && controls.get() && on_air(state, engine, "settings-backup") &&
-                  state.full_document()["settings"][key].is_null() && engine.devices_.empty(),
+                  selected().is_null() && engine.devices_.empty(),
               "Output settings: canceled edit keeps the selected output and releases the late reference");
-        check(state.patch_settings({{key, "NULL Playback Device"}}) &&
-                  state.full_document()["settings"][key] == "NULL Playback Device",
+        const bool retried = cue_edit ? state.update_item("settings-bed", {{key, "NULL Playback Device"}})
+                                      : state.patch_settings({{key, "NULL Playback Device"}});
+        check(retried && selected() == "NULL Playback Device",
               "Output settings: deliberate retry commits the selected device");
         state.stop_all_cues(0);
     }

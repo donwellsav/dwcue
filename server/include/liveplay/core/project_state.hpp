@@ -273,7 +273,8 @@ public:
     // decode (and only that one), so an immediate play after add still works.
     audio::CueId add_item(const json& item, const std::string& parent_uuid = "",
                           bool cart_only = false);
-    bool         update_item(const std::string& uuid, const json& patch);
+    bool         update_item(const std::string& uuid, const json& patch,
+                             std::unique_lock<std::recursive_mutex>* project_lock = nullptr);
     bool         remove_item(const std::string& uuid);
 
     // Reorder a top-level / inside-group sequence. `uuids` is the desired
@@ -641,6 +642,10 @@ private:
                                  const std::string& item_uuid = {});
     audio::MixerChannelId ensure_program_main(std::unique_lock<std::recursive_mutex>& lifecycle_lock,
                                              const std::function<bool()>& current);
+    audio::DeviceId open_output_for_edit(
+        const std::string& name, std::unique_lock<std::recursive_mutex>& lifecycle_lock,
+        std::unique_lock<std::recursive_mutex>* project_lock, const std::function<bool()>& current,
+        std::unique_lock<std::mutex>* preparation_lock = nullptr);
     void clear_diagnostic_cues() noexcept;
 
     // Preview state. The preview infrastructure is opened lazily on first
