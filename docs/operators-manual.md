@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.19
-**Source revision:** 48105b30d80b60f92d835e069aa59c34f458d309
-**Native engine baseline:** 48105b30d80b60f92d835e069aa59c34f458d309
+**Source revision:** 8052ab021c26ebea53f80f2b3043ed299789acb3
+**Native engine baseline:** 8052ab021c26ebea53f80f2b3043ed299789acb3
 **Edition:** 12 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition covers the DonWells Cue **2.6.19** source at **48105b3**. It includes the November playback, recovery and import repairs. Match your installer to its release notes before rehearsal.
+This edition covers the DonWells Cue **2.6.19** source at **8052ab0**. It includes the November playback, recovery and import repairs. Match your installer to its release notes before rehearsal.
 
 Interface images retain their 3 November capture date, original source revisions and hashes. The instructions describe the current archive and import recovery controls. The captures use generated tones, the native engine's virtual NULL output, and fixture locale, display and MIDI information. Capture details are recorded in **docs/manual-assets/captures.json**. Equipment photographs remain illustrative.
 
@@ -325,6 +325,8 @@ Open **Settings** and choose **Audio Device** for the show. Check the device nam
 - **Recovery:** Stop audio. Trace cue override, project device, application output, interface channel, cable, console patch, mute, and destination in that order.
 
 A cue may specify a different **Properties → Output → Output device**. Verify overrides when preparing the backup machine. The previous selection stays in place until the engine accepts the change. Use **Stop All** to cancel an edit waiting for a device to open.
+
+Media can show as ready while the engine prepares its audio outputs. If a driver stalls during that preparation, you can still use **Stop All**, close or open a show, and import healthy media. Play a test cue through each required Program and LTC destination before doors.
 
 If GO waits while opening a named Program output or **System Default**, use **Stop All**. When the controller has verified the show again, arm a prepared backup cue on an available output and press GO. The canceled cue stays stopped when the driver returns. If the output fails to open, the warning names the device and the armed cue remains available for a deliberate retry.
 

@@ -744,4 +744,6 @@ Program and Play All use the same first-open protection for System Default. Play
 
 The initial open for a project Program or LTC selection or a cue override releases project and playback ownership. Stop All and superseding project edits can reject the late result and release its device reference. The controller keeps the acknowledged selection while the request waits and saves after acceptance.
 
-The workplan tracks remaining first-open paths in loader coordinators and routing reapplied during settings changes, plus filesystem resolution and healthy-file publication. A canceled OS operation retains its owner and resources until it returns. OS thread exhaustion may retain synchronous cleanup as a fallback.
+A separate worker prepares System Default, configured Program and LTC after media publication. Open, Close and the single-item loader can finish while native startup waits. Stop All or a show change discards a late route and releases its device reference. Settings reuses the validated mixer and keeps the current LTC feed when Program changes.
+
+The workplan tracks filesystem resolution, healthy-file publication, independent Program preparation and engine startup/shutdown. A stuck native open can still occupy the shared device lifecycle lock or delay server shutdown until the driver returns. OS thread exhaustion may retain synchronous cleanup as a fallback.
