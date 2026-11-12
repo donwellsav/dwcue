@@ -1873,8 +1873,8 @@ assert.match(
 );
 assert.match(
   projectHeader,
-  /warningMaxWidthPx = ref<number \| null>\(null\)[\s\S]*Math\.max\(0, rightEdge - warningLeftPx\.value - PLACEMENT_MARGIN\)[\s\S]*\.silence-warning\s*\{[\s\S]{0,500}overflow:\s*hidden;[\s\S]{0,80}text-overflow:\s*ellipsis;/,
-  'the silence-warning fallback must not overlap the fixed header controls',
+  /class="header-titles">[\s\S]*class="silence-warning"[\s\S]*class="project-name"[\s\S]*\.silence-warning__label\s*\{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;/,
+  'the silence warning must stay above the project name and fit beside the header controls',
 );
 assert.match(
   playlistView,
@@ -2545,8 +2545,13 @@ assert.match(
 );
 assert.match(
   projectHeader,
-  /resizeObserver\.observe\(headerRef\.value\)[\s\S]{0,160}resizeObserver\.observe\(leftRef\.value\)[\s\S]{0,160}resizeObserver\.observe\(rightRef\.value\)/,
-  'silence-warning placement must react to internal header content changes',
+  /\.silence-warning__seconds\s*\{[^}]*inline-size:\s*2ch;[^}]*font-variant-numeric:\s*tabular-nums;/,
+  'the silence warning must reserve the same space for one or two digits',
+);
+assert.doesNotMatch(
+  projectHeader,
+  /\.silence-warning[^\n{]*\{[^}]*(?:animation(?:-[\w-]+)?|position)\s*:/,
+  'the silence warning must stay in the header layout with a steady appearance',
 );
 assert.doesNotMatch(
   oneShotPanel,

@@ -1,20 +1,24 @@
 <template>
-  <div ref="headerRef" class="project-header">
-    <div ref="leftRef" class="header-left">
+  <div class="project-header">
+    <div class="header-left">
       <img
-        ref="logoRef"
         :src="isDark ? './assets/icons/SVG/app_icon_darkmode@web.svg' : './assets/icons/SVG/app_icon_lightmode@web.svg'"
         alt="DonWells Cue"
         class="header-logo"
       />
       <div class="header-titles">
-        <span
-          class="brand-wordmark"
-          :class="{ 'brand-wordmark--hidden': hideTitle }"
-        >{{ t('app.name') }}</span>
+        <div
+          v-if="silenceSeconds !== null"
+          class="silence-warning"
+          :title="`${t('project.silenceWarning')} ${silenceSeconds} ${t('project.seconds')}`"
+        >
+          <span class="silence-warning__label">{{ t('project.silenceWarning') }}</span>
+          <bdi class="silence-warning__seconds">{{ silenceSeconds }}</bdi>
+          <span>{{ t('project.seconds') }}</span>
+        </div>
+        <span v-else class="brand-wordmark">{{ t('app.name') }}</span>
         <h2
           class="project-name"
-          :class="{ 'project-name--hidden': hideTitle }"
           :title="currentProject?.name || t('project.noProject')"
         >{{ currentProject?.name || t('project.noProject') }}</h2>
       </div>
@@ -24,17 +28,7 @@
       >{{ t('project.unsavedChanges') }}</span>
     </div>
 
-    <div
-      v-if="silenceWarning"
-      ref="warningRef"
-      class="silence-warning"
-      :class="[silenceWarningClass, { 'silence-warning--left': warningMode === 'left' }]"
-      :style="warningStyle"
-    >
-      {{ t('project.silenceWarning') }} {{ Math.ceil(silenceWarning) }} {{ t('project.seconds') }}
-    </div>
-
-    <div ref="rightRef" class="header-right">
+    <div class="header-right">
       <!-- Appears the moment the socket drops; spins for as long as we retry. -->
       <ConnectionStatusPill />
 
@@ -170,90 +164,9 @@ const timeLeftColor = computed(() => countdownColorForSeconds(
 // ---- Silence warning -------------------------------------------------------
 
 const silenceWarning = ref<number | null>(null);
-
-const silenceWarningClass = computed(() => {
-  if (!silenceWarning.value) return '';
-  const seconds = silenceWarning.value;
-  if (seconds <= 5) return 'flash-fast';
-  if (seconds <= 10) return 'flash-medium';
-  if (seconds <= 30) return 'flash-slow';
-  return 'warning-yellow';
-});
-
-// ---- Silence-warning placement --------------------------------------------
-// The warning sits centred over the header, but the header's right side now
-// carries buttons + clocks. We adapt:
-//   1. center : enough room → keep it centred over the whole header.
-//   2. gap    : centred banner would overlap the left/right blocks → centre it
-//               in the free gap between the title area and the buttons/clocks.
-//   3. left   : it still won't fit in the gap → align it left and let it take
-//               the project title's place (the logo stays put).
-const headerRef  = ref<HTMLElement | null>(null);
-const leftRef    = ref<HTMLElement | null>(null);
-const logoRef    = ref<HTMLElement | null>(null);
-const rightRef   = ref<HTMLElement | null>(null);
-const warningRef = ref<HTMLElement | null>(null);
-
-const warningMode = ref<'center' | 'gap' | 'left'>('center');
-const warningLeftPx = ref(0);
-const warningMaxWidthPx = ref<number | null>(null);
-const hideTitle = computed(() => !!silenceWarning.value && warningMode.value === 'left');
-
-const warningStyle = computed(() => ({
-  left: `${warningLeftPx.value}px`,
-  maxWidth: warningMaxWidthPx.value === null ? undefined : `${warningMaxWidthPx.value}px`,
-  transform: warningMode.value === 'left' ? 'translateX(0)' : 'translateX(-50%)',
-}));
-
-const PLACEMENT_MARGIN = 12; // breathing room kept from neighbouring blocks
-
-function recomputeWarningPlacement() {
-  const header = headerRef.value;
-  const warning = warningRef.value;
-  const left = leftRef.value;
-  const logo = logoRef.value;
-  const right = rightRef.value;
-  if (!header || !warning || !left || !logo || !right) return;
-
-  const headerRect = header.getBoundingClientRect();
-  // Geometry is measured with the title always occupying space, so the chosen
-  // mode never oscillates: in "left" mode the title is only made invisible, it
-  // keeps its layout box.
-  const leftEdge  = left.getBoundingClientRect().right - headerRect.left;
-  const rightEdge = right.getBoundingClientRect().left - headerRect.left;
-  const logoEdge  = logo.getBoundingClientRect().right - headerRect.left;
-  const w = warning.offsetWidth;
-  const center = headerRect.width / 2;
-
-  // 1. Centred over the whole header without touching either block?
-  if (center - w / 2 >= leftEdge + PLACEMENT_MARGIN &&
-      center + w / 2 <= rightEdge - PLACEMENT_MARGIN) {
-    warningMode.value = 'center';
-    warningMaxWidthPx.value = null;
-    warningLeftPx.value = center;
-    return;
-  }
-
-  // 2. Centred within the free gap between the two blocks?
-  const gapAvail = (rightEdge - leftEdge) - 2 * PLACEMENT_MARGIN;
-  if (w <= gapAvail) {
-    warningMode.value = 'gap';
-    warningMaxWidthPx.value = null;
-    warningLeftPx.value = (leftEdge + rightEdge) / 2;
-    return;
-  }
-
-  // 3. Fall back to left-aligned, taking the title's place (logo stays).
-  warningMode.value = 'left';
-  warningLeftPx.value = logoEdge + PLACEMENT_MARGIN;
-  warningMaxWidthPx.value = Math.max(0, rightEdge - warningLeftPx.value - PLACEMENT_MARGIN);
-}
-
-// Recompute whenever the displayed text changes (digit count shifts width) or
-// the header is resized.
-watch(() => [silenceWarning.value, isDark.value], () => {
-  nextTick(recomputeWarningPlacement);
-});
+const silenceSeconds = computed(() => silenceWarning.value === null
+  ? null
+  : Math.max(0, Math.ceil(silenceWarning.value)));
 
 const checkForSilence = () => {
   // The user can opt out of the silence warning entirely in project settings.
@@ -429,20 +342,9 @@ onMounted(() => {
   const clockInterval = setInterval(updateClock, 1000);
   const silenceInterval = setInterval(checkForSilence, 100);
 
-  // Re-place the silence banner whenever the header geometry changes
-  // (window resize, sidebar toggles, clock width shifts, …).
-  let resizeObserver: ResizeObserver | null = null;
-  if (typeof ResizeObserver !== 'undefined') {
-    resizeObserver = new ResizeObserver(() => recomputeWarningPlacement());
-    if (headerRef.value) resizeObserver.observe(headerRef.value);
-    if (leftRef.value) resizeObserver.observe(leftRef.value);
-    if (rightRef.value) resizeObserver.observe(rightRef.value);
-  }
-
   onUnmounted(() => {
     clearInterval(clockInterval);
     clearInterval(silenceInterval);
-    if (resizeObserver) resizeObserver.disconnect();
   });
 });
 </script>
@@ -472,15 +374,26 @@ onMounted(() => {
   width: 30px;
   height: 30px;
   object-fit: contain;
+  flex-shrink: 0;
 }
 
-/* Brand lockup: product wordmark sits over the project name so the header
-   carries DonWells identity at all times, not just the icon. */
+/* The warning and wordmark share one line above the project name. */
 .header-titles {
   display: flex;
   flex-direction: column;
   justify-content: center;
   min-width: 0;
+}
+
+.brand-wordmark,
+.silence-warning {
+  display: flex;
+  align-items: center;
+  align-self: flex-start;
+  box-sizing: border-box;
+  max-width: 100%;
+  height: 18px;
+  white-space: nowrap;
 }
 
 .brand-wordmark {
@@ -489,12 +402,7 @@ onMounted(() => {
   letter-spacing: 0.16em;
   text-transform: uppercase;
   line-height: 1.1;
-  white-space: nowrap;
   color: var(--color-text-secondary);
-}
-
-.brand-wordmark--hidden {
-  display: none;
 }
 
 .project-name {
@@ -694,43 +602,26 @@ onMounted(() => {
 }
 
 .silence-warning {
-  position: absolute;
-  padding: var(--spacing-xs) var(--spacing-lg);
-  border: 2px solid var(--state-up-next);
+  gap: var(--spacing-xs);
+  padding-inline: var(--spacing-xs);
+  border: 1px solid var(--state-up-next);
   border-radius: var(--control-radius);
   background-color: var(--color-surface-raised);
   font-weight: 700;
-  font-size: 14px;
-  color: var(--color-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  z-index: 10;
-}
-
-.silence-warning--left {
-  padding-left: var(--spacing-md);
-  padding-right: var(--spacing-md);
-}
-
-.project-name--hidden {
-  visibility: hidden;
-}
-
-.silence-warning.warning-yellow,
-.silence-warning.flash-slow {
-  border-color: var(--state-up-next);
+  font-size: 12px;
   color: var(--state-up-next);
 }
 
-.silence-warning.flash-medium {
-  border-color: rgb(245, 109, 31);
-  color: color-mix(in srgb, rgb(245, 109, 31) 72%, var(--color-text-primary));
+.silence-warning__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.silence-warning.flash-fast {
-  border-color: var(--color-danger);
-  color: var(--color-danger);
+.silence-warning__seconds {
+  flex: none;
+  inline-size: 2ch;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 @media (max-width: 1320px) {
