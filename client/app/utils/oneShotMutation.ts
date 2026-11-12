@@ -15,7 +15,7 @@ export interface OneShotMutationDocument {
 
 const fieldNames: Record<keyof OneShotMutableFields, true> = {
   displayName: true, color: true, volume: true, playFade: true, stopFade: true, duckLevel: true,
-  duckFadeIn: true, duckFadeOut: true, deviceOverride: true, retrigger: true, autoDisarm: true,
+  duckFadeIn: true, duckFadeOut: true, deviceOverride: true, retrigger: true,
   hotkey: true, playbackMode: true, endMode: true,
 };
 const finiteBetween = (value: unknown, min: number, max: number): value is number =>
@@ -134,7 +134,6 @@ const validateFields = (value: unknown): value is OneShotMutableFields => {
       case 'duckFadeIn': case 'duckFadeOut': return finiteBetween(field, 0, 10);
       case 'deviceOverride': return field === null || (typeof field === 'string' && field.length <= 512);
       case 'retrigger': return field === 'restart' || field === 'ignore';
-      case 'autoDisarm': return typeof field === 'boolean';
       case 'hotkey': return validHotkey(field);
       case 'playbackMode': return field === 'overlay' || field === 'duck' || field === 'replace';
       case 'endMode': return field === 'stop' || field === 'loop';
@@ -190,10 +189,6 @@ const applyFields = (item: AudioItem, fields: OneShotMutableFields): void => {
     else delete routedItem.deviceOverride;
   }
   if ('retrigger' in fields) item.oneShot!.retrigger = fields.retrigger!;
-  if ('autoDisarm' in fields) {
-    if (fields.autoDisarm) delete item.oneShot!.autoDisarm;
-    else item.oneShot!.autoDisarm = false;
-  }
   if ('hotkey' in fields) {
     item.oneShot!.hotkey = fields.hotkey ? structuredClone(fields.hotkey) : null;
   }
@@ -210,18 +205,6 @@ export const applyOneShotMutation = (
   request: OneShotMutationRequest,
 ): { accepted: boolean; error?: string } => {
   if (!plainObject(request.payload)) return { accepted: false, error: 'Invalid mutation payload.' };
-  if (request.kind === 'disarm-all') {
-    if (Object.keys(request.payload).length !== 0) return { accepted: false, error: 'Invalid disarm payload.' };
-    for (const item of [...document.project.items, ...document.cartOnlyItems.values()]) {
-      const visit = (candidate: AudioItem | GroupItem) => {
-        if (candidate.type === 'group') candidate.children.forEach(visit);
-        else if (candidate.oneShot?.armed) delete candidate.oneShot.armed;
-      };
-      visit(item);
-    }
-    return { accepted: true };
-  }
-
   if (request.kind === 'replace-slot') {
     const { slot, item: replacement } = request.payload;
     if (Object.keys(request.payload).some(key => key !== 'slot' && key !== 'item')
@@ -249,13 +232,6 @@ export const applyOneShotMutation = (
       }
       applyFields(item, request.payload.fields);
       return { accepted: true };
-    case 'set-armed':
-      if (Object.keys(request.payload).some(key => key !== 'armed') || typeof request.payload.armed !== 'boolean') {
-        return { accepted: false, error: 'Invalid arm payload.' };
-      }
-      if (request.payload.armed) item.oneShot!.armed = true;
-      else delete item.oneShot!.armed;
-      return { accepted: true };
     case 'move-slot': {
       const { sourceSlot, targetSlot } = request.payload;
       if (Object.keys(request.payload).some(key => key !== 'sourceSlot' && key !== 'targetSlot')
@@ -272,22 +248,6 @@ export const applyOneShotMutation = (
       else delete item.oneShot;
       return { accepted: true };
   }
-};
-
-export const enforceOneShotDisarmFences = (
-  project: Project,
-  cartOnlyItems: Iterable<AudioItem>,
-  fences: ReadonlySet<string>,
-): void => {
-  const visit = (item: AudioItem | GroupItem): void => {
-    if (item.type === 'group') {
-      item.children.forEach(visit);
-    } else if (fences.has(item.uuid) && item.oneShot?.armed) {
-      delete item.oneShot.armed;
-    }
-  };
-  project.items.forEach(visit);
-  for (const item of cartOnlyItems) visit(item);
 };
 
 export interface DetachedMutationBridge {

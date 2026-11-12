@@ -6,7 +6,6 @@ let client: DetachedOneShotMutationClient | null = null;
 
 export const useDetachedOneShotMutation = () => {
   const identity = useState<OneShotMutationIdentity | null>('oneShots.detachedProjectIdentity', () => null);
-  const disarmFences = useState<Set<string>>('oneShots.detachedDisarmFences', () => new Set());
   const error = useState<string>('oneShots.detachedMutationError', () => '');
   const isDetached = import.meta.client
     && new URLSearchParams(window.location.search).get('cartWindow') === '1';
@@ -36,9 +35,5 @@ export const useDetachedOneShotMutation = () => {
     return result;
   };
 
-  return {
-    isDetached, identity, error, mutate,
-    fenceDisarmed(uuid: string) { disarmFences.value.add(uuid); },
-    releaseDisarmFence(uuid: string) { disarmFences.value.delete(uuid); },
-  };
+  return { isDetached, identity, error, mutate };
 };

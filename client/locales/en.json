@@ -531,13 +531,8 @@
     "openProperties": "Open Full Properties",
     "playNamed": "Play {name}",
     "stopNamed": "Stop {name}",
-    "triggerNamed": "Trigger {name}",
-    "playingIgnored": "{name} is already playing; retrigger is set to Ignore",
     "designation": "Add to One Shots",
-    "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue.",
-    "armCell": "Arm {name}",
-    "disarmCell": "Disarm {name}",
-    "autoDisarm": "Auto-disarm after fire"
+    "designationHelp": "Creates an independent quick-play copy. Later One Shot edits do not change the playlist cue."
   },
   "behaviors": {
     "startPlayNext": "Start: Play Next",

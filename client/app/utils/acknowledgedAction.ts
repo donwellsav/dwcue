@@ -47,16 +47,3 @@ export const runExclusivePendingAction = (
   exclusivePendingActions.set(family, { intent, promise: guarded });
   return guarded;
 };
-
-export const oneShotFireActionKey = (itemUuid: string): string =>
-  `one-shot-fire:${itemUuid}`;
-
-export const runAcknowledgedAction = (
-  key: string,
-  command: () => Promise<boolean>,
-  onSuccess: () => void,
-): Promise<boolean> => runPendingAction(key, async () => {
-  const accepted = await command();
-  if (accepted) onSuccess();
-  return accepted;
-});

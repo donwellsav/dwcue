@@ -2495,8 +2495,8 @@ assert.match(
 );
 assert.match(
   oneShotTile,
-  /class="one-shot-bottomline"[\s\S]{0,100}class="one-shot-actions"[\s\S]*v-if="showMode"[\s\S]{0,100}class="one-shot-control one-shot-arm-toggle"[\s\S]*\.one-shot-topline\s*\{[\s\S]{0,180}grid-template-columns:\s*16px minmax\(0, 1fr\) minmax\(0, 28px\) 42px;[\s\S]{0,100}grid-template-areas:\s*'index state hotkey time';/,
-  'One Shot metadata must stay separate from the Show Mode arm control in the bottom action strip',
+  /class="one-shot-bottomline"[\s\S]{0,100}class="one-shot-actions"\s*>\s*<button\s+type="button"\s+class="one-shot-control one-shot-transport"[\s\S]{0,280}@click\.stop="handleTransport"/,
+  'One Shots must use the same Play/Stop button in the bottom action strip in both modes',
 );
 assert.match(
   oneShotTile,

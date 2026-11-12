@@ -180,6 +180,7 @@ function loadHandleKeydown(dependencies: Record<string, unknown>) {
       const {
         currentProject,
         projectHydrationStatus,
+        oneShotPlaybackReady = { get value() { return projectHydrationStatus.value === 'ready'; } },
         dispatchPlaybackAction,
         findPlaybackActionForEvent,
         findSlotForEvent,

@@ -2,8 +2,6 @@
 
 const MUTATION_KINDS = new Set([
   'set-fields',
-  'set-armed',
-  'disarm-all',
   'move-slot',
   'remove-slot',
   'replace-slot',
@@ -66,7 +64,7 @@ function validateRequest(request) {
       && (typeof request.itemUuid !== 'string' || request.itemUuid.length === 0 || request.itemUuid.length > 256)) {
     throw new TypeError('request.itemUuid is invalid');
   }
-  if (request.kind !== 'disarm-all' && request.kind !== 'replace-slot' && request.itemUuid === undefined) {
+  if (request.kind !== 'replace-slot' && request.itemUuid === undefined) {
     throw new TypeError(`request.itemUuid is required for ${request.kind}`);
   }
   return request;

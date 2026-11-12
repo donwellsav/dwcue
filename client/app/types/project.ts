@@ -149,8 +149,7 @@ export interface OneShotSettings {
   // Set when a playlist cue was copied into an independent One Shot. This is
   // only an origin reference for the Properties toggle; playback stays local.
   sourceUuid?: string;
-  // Per-cell show-mode safety: only fires while armed. Auto-disarm (default
-  // on) clears armed after each fire; disable per cell in the tile settings.
+  // Legacy saved fields. Playback ignores these.
   armed?: boolean;
   autoDisarm?: boolean;
 }

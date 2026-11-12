@@ -1,7 +1,6 @@
 import type { CartSlotKeyBinding, PlaybackKeyAction, AudioItem, Project } from '~/types/project';
 import { DEFAULT_PLAYBACK_KEYS } from '../types/project';
 import { buildOneShotSlots } from '../utils/oneShots';
-import { oneShotFireActionKey, runAcknowledgedAction } from '../utils/acknowledgedAction';
 
 const RESERVED_COMBOS: CartSlotKeyBinding[] = [
   { key: 's', ctrlKey: true,  shiftKey: false, altKey: false },
@@ -120,7 +119,7 @@ export const useVideoOutputToggle = () => {
 export const useCartHotkeys = () => {
   const { currentProject, projectHydrationStatus, selectedItem, selectedItems, saveProject, getAllItemsFlat, toggleItemSelection, findItemByUuid } = useProject();
   const { cartOnlyItems } = useCartItems();
-  const { fireBlocked, afterFire } = useOneShotArm();
+  const { oneShotPlaybackReady, playOneShot } = useOneShotPlayback();
   const toggleVideoOutput = useVideoOutputToggle();
   const { captureStandby } = useVideoStandbyCapture();
   const { playCue, playNext, setNextItem, pauseCue, resumeCue, stopAllCues, activeCues, queueLoopContinuation, jumpCue } = useAudioEngine();
@@ -168,15 +167,7 @@ export const useCartHotkeys = () => {
 
   const triggerSlot = async (slotIndex: number) => {
     const item = oneShotSlots.value[slotIndex];
-    if (!item) return;
-    if (activeCues.value.has(item.uuid) && item.oneShot?.retrigger === 'ignore') return;
-    // Re-safe only after the server confirms that this cell actually fired.
-    if (fireBlocked(item)) return false;
-    return runAcknowledgedAction(
-      oneShotFireActionKey(item.uuid),
-      () => playCue(item),
-      () => afterFire(item),
-    );
+    if (item) return playOneShot(item);
   };
 
   const findSlotForEvent = (e: KeyboardEvent): number => {
@@ -289,10 +280,9 @@ export const useCartHotkeys = () => {
     // Stop All is a server-global panic action: native diagnostics and orphaned
     // cues can remain active without a project document or local activeCue.
     const playbackAction = findPlaybackActionForEvent(e);
-    if (playbackAction !== 'stop-all' &&
-        (!currentProject.value || projectHydrationStatus.value !== 'ready')) return;
-
     if (playbackAction) {
+      if (playbackAction !== 'stop-all' &&
+          (!currentProject.value || projectHydrationStatus.value !== 'ready')) return;
       e.preventDefault();
       e.stopPropagation();
       if (e.repeat && playbackAction !== 'select-up' && playbackAction !== 'select-down') return;
@@ -301,6 +291,7 @@ export const useCartHotkeys = () => {
     }
 
     // Cart slot hotkeys
+    if (!currentProject.value || !oneShotPlaybackReady.value) return;
     const slotIndex = findSlotForEvent(e);
     if (slotIndex >= 0) {
       e.preventDefault();

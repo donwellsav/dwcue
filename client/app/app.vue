@@ -277,7 +277,7 @@ import type { OneShotMutationIdentity, OneShotMutationRequest, OneShotMutationRe
 import { sameOneShotMutationIdentity } from '~/types/oneShotMutation';
 import { createProjectOpenGuard } from '~/utils/projectOpenGuard';
 import { runExclusivePendingAction } from '~/utils/acknowledgedAction';
-import { applyOneShotMutation, enforceOneShotDisarmFences } from '~/utils/oneShotMutation';
+import { applyOneShotMutation } from '~/utils/oneShotMutation';
 
 const {
   currentProject, projectEpoch, saveProject, createNewProject, openProject, confirmUnsavedChanges,
@@ -515,7 +515,6 @@ const detachedProjectIdentity = useState<OneShotMutationIdentity | null>(
   'oneShots.detachedProjectIdentity', () => null,
 );
 const detachedProjectError = useState<string>('oneShots.detachedMutationError', () => '');
-const detachedDisarmFences = useState<Set<string>>('oneShots.detachedDisarmFences', () => new Set());
 let rejectedDetachedIdentity: OneShotMutationIdentity | null = null;
 
 function applyCartWindowProjectData(envelope: OneShotProjectEnvelope | null) {
@@ -535,11 +534,6 @@ function applyCartWindowProjectData(envelope: OneShotProjectEnvelope | null) {
   if (currentIdentity?.ownerSessionId === identity.ownerSessionId
     && currentIdentity.projectPath === identity.projectPath
     && identity.projectEpoch < currentIdentity.projectEpoch) return;
-  enforceOneShotDisarmFences(
-    projectData,
-    projectData.cartOnlyItems ?? [],
-    detachedDisarmFences.value,
-  );
   detachedProjectIdentity.value = identity;
   detachedProjectError.value = '';
   clearCartOnlyItems();

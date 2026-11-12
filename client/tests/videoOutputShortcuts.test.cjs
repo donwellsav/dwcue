@@ -692,9 +692,9 @@ const mutationIdentity = {
 const mutationRequest = {
   requestId: 'request-1',
   identity: mutationIdentity,
-  kind: 'set-armed',
+  kind: 'set-fields',
   itemUuid: 'item-1',
-  payload: { armed: true },
+  payload: { fields: { retrigger: 'ignore' } },
 };
 
 test('preload exposes only the typed mutation broker and separate project identity', async () => {

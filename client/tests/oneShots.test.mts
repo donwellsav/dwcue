@@ -11,7 +11,8 @@ import {
   nextOneShotOrder,
   removeOneShotDesignation,
 } from '../app/utils/oneShots.ts';
-import { createOneShotArmPolicy } from '../app/composables/useOneShotArm.ts';
+import { computed, ref } from 'vue';
+import { useOneShotPlayback } from '../app/composables/useOneShotPlayback.ts';
 import { resolveKeyboardBindings } from '../app/composables/useCartHotkeys.ts';
 import type { AudioItem } from '../app/types/project.ts';
 
@@ -171,32 +172,42 @@ test('removing One Shot designation never deletes or rewrites the cue', () => {
   assert.deepEqual(item, expected);
 });
 
-test('arming is exclusive to Show Mode across every One Shot trigger path', () => {
-  let showMode = false;
-  const policy = createOneShotArmPolicy(() => showMode);
-  const item = audio('mode-policy', 0) as any;
+test('One Shots use primary or detached show readiness, with no arm requirement', async () => {
+  const hydration = ref('loading');
+  const identity = ref<object | null>(null);
+  const activeCues = ref(new Map());
+  const item = audio('sting', 0) as AudioItem;
+  let detached = false;
+  const starts: string[] = [];
+  Object.assign(globalThis, {
+    computed,
+    useProject: () => ({ projectHydrationStatus: hydration }),
+    useDetachedOneShotMutation: () => ({ isDetached: detached, identity }),
+    useAudioEngine: () => ({ activeCues, playCue: async (cue: AudioItem) => {
+      starts.push(cue.uuid);
+      return true;
+    } }),
+  });
+  const primary = useOneShotPlayback();
+  assert.equal(await primary.playOneShot(item), false);
+  hydration.value = 'ready';
+  assert.equal(await primary.playOneShot(item), true, 'an unarmed cue fires directly');
+  item.oneShot!.armed = true;
+  item.oneShot!.autoDisarm = true;
+  assert.equal(await primary.playOneShot(item), true);
+  assert.equal(item.oneShot!.armed, true, 'legacy metadata is untouched');
 
-  assert.equal(policy.isArmed(item), false);
-  assert.equal(policy.fireBlocked(item), false, 'regular-mode click, hotkey, and MIDI triggers play directly');
-  assert.equal(policy.setArmed(item, true), false, 'regular mode cannot arm a cell');
-  assert.equal(item.oneShot?.armed, undefined);
-
-  showMode = true;
-  assert.equal(policy.fireBlocked(item), true, 'Show Mode blocks an unarmed cell');
-  assert.equal(policy.setArmed(item, true), true);
-  assert.equal(policy.isArmed(item), true);
-  assert.equal(policy.fireBlocked(item), false, 'Show Mode allows an armed cell');
-  assert.equal(policy.afterFire(item), true, 'default auto-disarm clears the arm after a confirmed fire');
-  assert.equal(item.oneShot?.armed, undefined);
-
-  assert.equal(policy.setArmed(item, true), true);
-  if (item.oneShot) item.oneShot.autoDisarm = false;
-  assert.equal(policy.afterFire(item), false, 'disabled auto-disarm preserves the Show Mode arm');
-  assert.equal(item.oneShot?.armed, true);
-
-  showMode = false;
-  assert.equal(policy.isArmed(item), false, 'persisted Show Mode state is not regular-mode state');
-  assert.equal(policy.fireBlocked(item), false);
-  assert.equal(policy.afterFire(item), false, 'regular-mode triggers never mutate the arm');
-  assert.equal(item.oneShot?.armed, true);
+  detached = true;
+  hydration.value = 'failed';
+  const bank = useOneShotPlayback();
+  assert.equal(await bank.playOneShot(item), false, 'the detached bank needs a current owner');
+  identity.value = {};
+  assert.equal(await bank.playOneShot(item), true);
+  item.oneShot!.retrigger = 'ignore';
+  activeCues.value.set(item.uuid, {});
+  assert.equal(await bank.playOneShot(item), false);
+  identity.value = null;
+  activeCues.value.clear();
+  assert.equal(await bank.playOneShot(item), false);
+  assert.deepEqual(starts, ['sting', 'sting', 'sting']);
 });
