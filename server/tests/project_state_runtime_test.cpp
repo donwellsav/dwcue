@@ -549,6 +549,55 @@ void test_stop_all_during_diagnostic_output_start() {
     context->callbacks.onDeviceStart = start;
 }
 
+void test_stop_all_during_output_settings_open() {
+    auto* context = null_preview_context();
+    static const auto start = context->callbacks.onDeviceStart;
+    static std::atomic<bool> hold{false}, entered{false};
+    context->callbacks.onDeviceStart = [](ma_device* device) {
+        if (hold.load()) {
+            entered.store(true);
+            while (hold.load()) std::this_thread::sleep_for(1ms);
+        }
+        return start(device);
+    };
+    const auto wav = make_wav(8'192, 480'000);
+    for (const char* key : {"defaultOutputDevice", "ltcDevice"}) {
+        liveplay::audio::AudioEngine engine;
+        engine.device_test_context_ = context;
+        liveplay::core::ProjectState state(engine);
+        check(state.replace_full_document(document(json::array({
+            audio("settings-bed", wav), audio("settings-backup", wav),
+        }))) && wait_ready(state) && state.trigger_item("settings-bed"), "Output settings: Program media ready");
+        const auto backup = engine.find_cue(*state.item_to_cue_id("settings-backup"));
+        check(backup && backup->prime(2.0), "Output settings: backup primed");
+        entered.store(false);
+        hold.store(true);
+        auto opening = std::async(std::launch::async, [&] {
+            auto project_lock = state.lock_project_session(state.project_session_id());
+            return state.patch_settings({{key, "NULL Playback Device"}}, &project_lock);
+        });
+        for (int i = 0; i < 1000 && !entered.load(); ++i) std::this_thread::sleep_for(2ms);
+        check(entered.load(), "Output settings: native output start is held");
+        auto controls = std::async(std::launch::async, [&] {
+            state.stop_all_cues(0);
+            auto project_lock = state.lock_project_session(state.project_session_id());
+            return project_lock.owns_lock() && !on_air(state, engine, "settings-bed") &&
+                state.set_next_item_override("settings-backup") && state.go() == "settings-backup";
+        });
+        check(controls.wait_for(250ms) == std::future_status::ready,
+              "Output settings: Stop All, project access and backup GO before startup returns");
+        hold.store(false);
+        check(!opening.get() && controls.get() && on_air(state, engine, "settings-backup") &&
+                  state.full_document()["settings"][key].is_null() && engine.devices_.empty(),
+              "Output settings: canceled edit keeps the selected output and releases the late reference");
+        check(state.patch_settings({{key, "NULL Playback Device"}}) &&
+                  state.full_document()["settings"][key] == "NULL Playback Device",
+              "Output settings: deliberate retry commits the selected device");
+        state.stop_all_cues(0);
+    }
+    context->callbacks.onDeviceStart = start;
+}
+
 void test_stop_all_during_preview_retirement() {
     const auto wav = make_wav(8'192);
     for (const int mode : {0, 1, 2, 3}) {
@@ -2565,6 +2614,7 @@ int main() try {
     test_stop_all_during_system_default_open();
     test_stop_all_during_ltc_device_start();
     test_stop_all_during_diagnostic_output_start();
+    test_stop_all_during_output_settings_open();
     test_stop_all_during_preview_retirement();
     test_cancelled_preview_preparation();
     test_busy_decoder_preserves_sibling_progress();

@@ -4285,7 +4285,8 @@ audio::MixerChannelId ProjectState::ensure_device_routing_impl(
     const std::string& routing_key,
     const std::string& device_name,
     std::optional<audio::DeviceId> required_open_device,
-    std::unique_lock<std::recursive_mutex>* lifecycle_lock) {
+    std::unique_lock<std::recursive_mutex>* lifecycle_lock,
+    const std::function<audio::DeviceId()>& open) {
     std::unique_lock routing_lock{device_routing_mutex_};
     if (routing_key.empty() || device_name.empty()) return {};
     {
@@ -4308,7 +4309,7 @@ audio::MixerChannelId ProjectState::ensure_device_routing_impl(
     if (lifecycle_lock) lifecycle_lock->unlock();
     audio::DeviceId dev;
     try {
-        dev = engine_.open_device_by_name(
+        dev = open ? open() : engine_.open_device_by_name(
             required_open_device ? required_open_device->value : device_name, 2);
     } catch (...) {
         if (lifecycle_lock) lifecycle_lock->lock();
@@ -4711,7 +4712,8 @@ bool ProjectState::patch_theme(const json& patch) {
     return true;
 }
 
-bool ProjectState::patch_settings(const json& patch_in) {
+bool ProjectState::patch_settings(
+    const json& patch_in, std::unique_lock<std::recursive_mutex>* project_lock) {
     if (!patch_in.is_object()) return false;
     std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
     json patch = patch_in;
@@ -4727,6 +4729,14 @@ bool ProjectState::patch_settings(const json& patch_in) {
         const auto slots = count->get<std::int64_t>();
         if (slots < 1 || slots > 64) return false;
     }
+    const auto edit = ++settings_intent_revision_;
+    const auto generation = document_generation_;
+    const auto stopped = stop_revision();
+    const auto session = project_session_id();
+    const auto current = [&] {
+        return edit == settings_intent_revision_ && generation == document_generation_ &&
+            stopped == stop_revision() && session == project_session_id();
+    };
     for (const char* key : {"defaultOutputDevice", "previewDevice", "ltcDevice"}) {
         const auto selection = patch.find(key);
         if (selection == patch.end() || selection->is_null()) continue;
@@ -4735,9 +4745,25 @@ bool ProjectState::patch_settings(const json& patch_in) {
         if (requested.empty()) continue;
         const auto devices = engine_.enumerate_devices();
         const auto selected = detail::resolve_output_device(requested, devices);
-        if (!selected || !detail::resolve_output_device(selected->display_name, devices) ||
-            (std::string_view{key} != "previewDevice" && ensure_device_routing(requested).empty()))
+        if (!selected || !detail::resolve_output_device(selected->display_name, devices))
             return reject_output_selection(requested);
+        if (std::string_view{key} != "previewDevice") {
+            const auto opened = selected->is_open ? std::optional{selected->id} : std::nullopt;
+            const auto mixer = ensure_device_routing_impl(selected->display_name, selected->display_name,
+                opened, nullptr, [&]() -> audio::DeviceId {
+                    lifecycle_lock.unlock();
+                    if (project_lock) project_lock->unlock();
+                    const auto device = engine_.open_device_by_name(
+                        opened ? opened->value : selected->display_name, 2);
+                    if (project_lock) project_lock->lock();
+                    lifecycle_lock.lock();
+                    if (current()) return device;
+                    if (!device.empty()) engine_.close_device(device);
+                    return {};
+                });
+            if (!current()) return false;
+            if (mixer.empty()) return reject_output_selection(requested);
+        }
         *selection = selected->display_name;
     }
     if (patch.contains("defaultOutputDevice") || patch.contains("previewDevice"))

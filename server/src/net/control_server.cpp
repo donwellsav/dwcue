@@ -4428,8 +4428,12 @@ void ControlServer::install_routes() {
                 auto patch = json::parse(req.body);
                 Logger::api_request("Client ({}) -> Server ({}) : PATCH /api/project/settings",
                                     req.remote_ip_address, impl_->server_addr);
-                if (!state_.patch_settings(patch))
-                    return json_err(400, "invalid project settings");
+                if (!state_.patch_settings(patch, &project_lock)) {
+                    const auto expected = req.get_header_value("X-DWCUE-Project-Session");
+                    if (!expected.empty() && expected != state_.project_session_id())
+                        return json_err(409, "project session changed; reload before editing");
+                    return json_err(400, "project settings could not be applied");
+                }
                 auto settings = state_.full_document()["settings"];
                 Logger::api_response("Client ({}) <- Server ({}) : PATCH /api/project/settings OK",
                                      req.remote_ip_address, impl_->server_addr);

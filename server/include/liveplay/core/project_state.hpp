@@ -498,7 +498,7 @@ public:
     // Theme + project settings patches. Each accepts a JSON object that's
     // shallow-merged into the corresponding section.
     bool patch_theme(const json& patch);
-    bool patch_settings(const json& patch);
+    bool patch_settings(const json& patch, std::unique_lock<std::recursive_mutex>* project_lock = nullptr);
 
     // ---- Introspection ---------------------------------------------------
     std::vector<CueMeta> list_cues() const;
@@ -635,7 +635,8 @@ private:
         const std::string& routing_key,
         const std::string& device_name,
         std::optional<audio::DeviceId> required_open_device,
-        std::unique_lock<std::recursive_mutex>* lifecycle_lock = nullptr);
+        std::unique_lock<std::recursive_mutex>* lifecycle_lock = nullptr,
+        const std::function<audio::DeviceId()>& open = {});
     bool reject_output_selection(const std::string& selection,
                                  const std::string& item_uuid = {});
     audio::MixerChannelId ensure_program_main(std::unique_lock<std::recursive_mutex>& lifecycle_lock,
@@ -731,6 +732,7 @@ private:
     // Audition storage must not delay preparation of the next Program cue.
     std::mutex                  preview_preparation_mutex_;
     std::uint64_t                playback_intent_revision_ = 0;
+    std::uint64_t                settings_intent_revision_ = 0;
     // HTTP Stop All can overtake cue starts still waiting in a WebSocket.
     std::atomic<std::uint64_t>    stop_revision_{0};
     // Serializes snapshot through atomic replace. mutex_ remains brief and is
