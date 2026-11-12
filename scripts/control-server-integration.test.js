@@ -1231,6 +1231,14 @@ test('native media, recovery correlation, and authoritative trigger order stay c
       'latched decoder delayed command dispatch');
     assert.equal(await readFile(loaderGate, 'utf8'), gateContents,
       'Stop All incorrectly waited for or released decoder latch');
+    const staleContinue = latchStream.next(message =>
+      message.type === 'command_ack' && message.command_id === 'old-continue');
+    latchStream.socket.send(JSON.stringify({
+      type: 'cue_to_continue', item_uuid: 'older-trigger', command_id: 'old-continue', stop_revision: 0,
+    }));
+    const expired = await staleContinue;
+    assert.equal(expired.ok, false);
+    assert.match(expired.error, /expired after Stop All/);
     await rm(loaderGate, { force: true });
     latchStream.socket.close();
     let readiness;

@@ -139,6 +139,7 @@ function createClient() {
   let stopAllRequest = 0;
   let stopRevision = 0;
   let unacknowledgedStart = '';
+  let unacknowledgedContinue = '';
   const awaitingStopRevision = ref(false);
   const cues          = ref<ServerCue[]>([]);
   const mixerChannels = ref<ServerMixerChannel[]>([]);
@@ -289,6 +290,7 @@ function createClient() {
       ws = socket;
       stopRevision = 0;
       unacknowledgedStart = '';
+      unacknowledgedContinue = '';
     } catch (e) {
       lastError.value = String(e);
       // eslint-disable-next-line no-console
@@ -459,6 +461,7 @@ function createClient() {
         case 'command_ack': {
           const commandId = typeof payload.command_id === 'string' ? payload.command_id : '';
           if (commandId === unacknowledgedStart) unacknowledgedStart = '';
+          if (commandId === unacknowledgedContinue) unacknowledgedContinue = '';
           const pending = pendingCommands.get(commandId);
           if (!pending) break;
           clearTimeout(pending.timer);
@@ -522,8 +525,9 @@ function createClient() {
 
   function wsSend(payload: Record<string, unknown>, requireAck = false): Promise<boolean> {
     const startsCue = payload.type === 'go' || payload.type === 'play' || payload.type === 'resume';
-    if ((startsCue && stopAllStatus.value === 'pending') ||
-        (cueStartsBlocked.value && (startsCue || payload.type === 'cue_to_continue' || payload.type === 'set_next_item'))) {
+    const continuesCue = payload.type === 'cue_to_continue';
+    if (((startsCue || continuesCue) && stopAllStatus.value === 'pending') ||
+        (cueStartsBlocked.value && (startsCue || continuesCue || payload.type === 'set_next_item'))) {
       return Promise.resolve(false);
     }
     if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -542,8 +546,9 @@ function createClient() {
 
     const commandId = crypto.randomUUID();
     if (startsCue) unacknowledgedStart = commandId;
+    if (continuesCue) unacknowledgedContinue = commandId;
     const body = JSON.stringify({
-      ...payload, command_id: commandId, ...(startsCue ? { stop_revision: stopRevision } : {}),
+      ...payload, command_id: commandId, ...(startsCue || continuesCue ? { stop_revision: stopRevision } : {}),
     });
     return new Promise<boolean>((resolve) => {
       const timer = setTimeout(() => {
@@ -583,15 +588,15 @@ function createClient() {
       if (confirmed && ws === socket && typeof result.stop_revision === 'number' &&
           Number.isSafeInteger(result.stop_revision)) {
         stopRevision = Math.max(stopRevision, result.stop_revision);
-        replaceSocket = !!unacknowledgedStart;
+        replaceSocket = !!(unacknowledgedStart || unacknowledgedContinue);
       }
     } catch (error) {
       console.warn('[liveplay] Stop All confirmation failed:', error);
     }
     if (request === stopAllRequest) {
       if (replaceSocket) {
-        // The canceled start can still occupy this socket until the driver returns.
-        failPendingCommands('Stop All canceled the pending cue start.');
+        // The canceled command can still occupy this socket until native work returns.
+        failPendingCommands('Stop All canceled the pending cue command.');
         forceReconnect();
         awaitingStopRevision.value = true;
       }

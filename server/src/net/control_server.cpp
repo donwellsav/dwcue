@@ -1498,13 +1498,15 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
 
     try {
         std::optional<std::uint64_t> expected_stop_revision;
-        if (type == "go" || type == "play" || type == "resume") {
+        if (type == "go" || type == "play" || type == "resume" || type == "cue_to_continue") {
             if (const auto revision = j.find("stop_revision"); revision != j.end()) {
                 if (!revision->is_number_unsigned())
                     return command_error("stop_revision must be a non-negative integer");
                 expected_stop_revision = revision->get<std::uint64_t>();
                 if (*expected_stop_revision != state.stop_revision())
-                    return command_error("Cue start expired after Stop All. Check the cue and try again.");
+                    return command_error(type == "cue_to_continue"
+                        ? "Cue to Continue expired after Stop All."
+                        : "Cue start expired after Stop All. Check the cue and try again.");
             }
         }
         if (type == "play") {
@@ -1632,7 +1634,7 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
             const std::string uuid = j.value("item_uuid", std::string{});
             if (uuid.empty())
                 return command_error("cue_to_continue: missing item_uuid");
-            if (!state.cue_to_continue(uuid))
+            if (!state.cue_to_continue(uuid, expected_stop_revision))
                 return command_error("cue_to_continue: item cannot be cued");
             Logger::playback("CUE TO CONTINUE: {}", item_playback_info(uuid, state));
         }

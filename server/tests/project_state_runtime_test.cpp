@@ -897,6 +897,8 @@ void test_stop_all_during_live_edits() {
         check(state.trigger_item("edit-bed"), "live document edit: unrelated Program bed starts");
         const auto source = engine.find_cue(*state.item_to_cue_id("edit-source"));
         const auto bed = engine.find_cue(*state.item_to_cue_id("edit-bed"));
+        const auto target = engine.find_cue(*state.item_to_cue_id("edit-target"));
+        check(target->prime(2.0), "live document edit: backup cue is prepared");
         std::array<float, 256> left{}, right{}; float* channels[]{left.data(), right.data()};
         source->render_block(channels, 2, 256);
         check(bed->render_block(channels, 2, 256) == 256 && left[0] > 0.2f,
@@ -936,6 +938,7 @@ void test_stop_all_during_live_edits() {
         auto snapshot = std::async(std::launch::async, [&] { return state.full_document(); });
         check(snapshot.wait_for(250ms) == std::future_status::ready,
               "live document edit: document reads remain available during storage wait");
+        const auto previous_stop_revision = state.stop_revision();
         auto stop = std::async(std::launch::async, [&] { state.stop_all_cues(0); });
         check(stop.wait_for(250ms) == std::future_status::ready &&
                   source->stats().transport == liveplay::audio::TransportState::Stopped &&
@@ -943,14 +946,25 @@ void test_stop_all_during_live_edits() {
                   bed->stats().transport == liveplay::audio::TransportState::Stopped &&
                   bed->render_block(channels, 2, 256) == 0,
               "live document edit: Stop All acknowledges and silences Program before storage release");
+        auto backup_go = std::async(std::launch::async, [&] {
+            return state.set_next_item_override("edit-target") &&
+                state.go(state.stop_revision()) == "edit-target";
+        });
+        const bool backup_ready = backup_go.wait_for(250ms) == std::future_status::ready;
+        check(backup_ready && on_air(state, engine, "edit-target"),
+              "live document edit: backup GO starts before the stalled edit returns");
+        if (backup_ready)
+            check(target->render_block(channels, 2, 256) == 256 && left[0] > 0.2f,
+                  "live document edit: backup delivers PCM while the old decoder is held");
         if (decoder_hold.owns_lock()) decoder_hold.unlock();
         release.set_value(); check(edit.get(), "live document edit: accepted command completes");
+        check(backup_go.get(), "live document edit: backup GO is accepted");
         stop.get(); const auto saved = snapshot.get();
         if (mode != 2 && mode < 4) backend->vtable = original;
         seek = {};
         std::this_thread::sleep_for(120ms);
-        check(!on_air(state, engine, "edit-source") && !on_air(state, engine, "edit-target"),
-              "live document edit: cancelled playback/continuation cannot return or advance");
+        check(!on_air(state, engine, "edit-source") && on_air(state, engine, "edit-target"),
+              "live document edit: late edit cannot restart the old cue or interrupt the backup");
         check(mode == 4 || mode == 6 ? saved["items"].size() == 2 :
                   mode == 5 ? saved["items"][0]["type"] == "video" :
                   mode == 3 ? saved["items"][0]["endBehavior"]["action"] == "loop" :
@@ -960,6 +974,12 @@ void test_stop_all_during_live_edits() {
               "live document edit: accepted authored change persists; Continue is runtime-only");
         check(wait_ready(state) && state.trigger_item(mode >= 4 ? "edit-target" : "edit-source"),
               "live document edit: deliberate replay still starts");
+        if (mode == 3) {
+            check(!state.cue_to_continue("edit-source", previous_stop_revision),
+                  "live document edit: stale Continue cannot change a replayed loop");
+            check(state.cue_to_continue("edit-source", state.stop_revision()),
+                  "live document edit: current Continue still arms the replayed loop");
+        }
         state.stop_all_cues(0);
     }
 }
@@ -985,7 +1005,7 @@ void test_stop_all_during_cold_go(const std::filesystem::path& wav) {
          {"duckingBehavior", {{"mode", "no-ducking"}}}});
     const bool grouped = mode == 4 || mode == 5 || mode == 7;
     const std::string target = grouped ? "stall-group" : "stall-next";
-    auto items = json::array({audio("stall-bed", wav), grouped ? group : next_item});
+    auto items = json::array({audio("stall-bed", wav), grouped ? group : next_item, audio("stall-backup", wav)});
     if (mode == 7) items.push_back(next_item);
     state.replace_full_document(document(items));
     check(wait_ready(state), "cold GO stall: media ready"); close_devices(engine);
@@ -993,6 +1013,8 @@ void test_stop_all_during_cold_go(const std::filesystem::path& wav) {
           "cold GO stall: program plays and next cue is armed");
     const auto bed = engine.find_cue(*state.item_to_cue_id("stall-bed"));
     const auto next = engine.find_cue(*state.item_to_cue_id("stall-next"));
+    const auto backup = engine.find_cue(*state.item_to_cue_id("stall-backup"));
+    check(backup->prime(2.0), "cold GO stall: backup cue is prepared");
     if (mode == 9) next->set_out_point_seconds(0.0);
     if (mode >= 8) check(next->prime(2.0, 0.0), "cold GO stall: startup PCM already primed");
     std::promise<void> entered, release;
@@ -1034,9 +1056,17 @@ void test_stop_all_during_cold_go(const std::filesystem::path& wav) {
     check(stop.wait_for(250ms) == std::future_status::ready &&
               bed->stats().transport == liveplay::audio::TransportState::Stopped,
           "cold GO stall: Stop All completes and silences program before storage release");
+    auto backup_go = std::async(std::launch::async, [&] {
+        return (mode != 0 || !state.trigger_item("stall-next")) && state.set_next_item_override("stall-backup") &&
+            state.go(state.stop_revision()) == "stall-backup";
+    });
+    check(backup_go.wait_for(250ms) == std::future_status::ready && on_air(state, engine, "stall-backup"),
+          "cold GO stall: backup GO starts before the stalled decoder returns");
     release.set_value();
     const auto result = go.get();
     stop.get();
+    check(backup_go.get() && on_air(state, engine, "stall-backup"),
+          "cold GO stall: the backup stays on air after the old request finishes");
     backend->vtable = original_vtable;
     stalled_read = {}; stalled_seek = {};
     check(!result && !on_air(state, engine, "stall-next") && !on_air(state, engine, "stall-sibling"),
@@ -1047,6 +1077,51 @@ void test_stop_all_during_cold_go(const std::filesystem::path& wav) {
     state.stop_all_cues(0);
    }
   }
+}
+
+void test_cancelled_follow_keeps_backup(const std::filesystem::path& wav) {
+    const auto target_path = make_wav(16'384);
+    constexpr auto hook = "DWCUE_TEST_DECODER_READ_GATE";
+    for (const bool group : {false, true}) {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        const json follow{{"action", "goto-item"}, {"targetUuid", "cold-follow"}};
+        auto source = audio("ending-source", wav, {{"outPoint", 0.02},
+            {"endBehavior", group ? json{{"action", "nothing"}} : follow}});
+        if (group) source = {{"uuid", "ending-group"}, {"type", "group"},
+            {"children", json::array({source})}, {"endBehavior", follow}};
+        state.replace_full_document(document(json::array({source,
+            audio("cold-follow", target_path, {{"inPoint", 0.25}}), audio("follow-backup", wav)})));
+        check(wait_ready(state) && state.trigger_item(group ? "ending-group" : "ending-source"),
+              "Canceled follow: source starts");
+        const auto backup = engine.find_cue(*state.item_to_cue_id("follow-backup"));
+        check(backup->prime(2.0), "Canceled follow: backup is prepared");
+        const auto gate = fixture_dir() / (group ? "group-follow.gate" : "cue-follow.gate");
+        std::ofstream{gate} << target_path;
+        set_loader_gate(gate, hook);
+        std::atomic<bool> warned{false};
+        state.set_ui_state_broadcaster([&](const json& event) {
+            if (event.value("code", "") == "sequence_target_invalid") warned.store(true);
+        });
+        render_to_end(state, engine, "ending-source");
+        check(wait_gate_entered(gate), "Canceled follow: EOF target reached the held decoder");
+        auto recovery = std::async(std::launch::async, [&] {
+            state.stop_all_cues(0);
+            return state.set_next_item_override("follow-backup") && state.go(state.stop_revision()) == "follow-backup";
+        });
+        check(recovery.wait_for(250ms) == std::future_status::ready,
+              "Canceled follow: Stop All and backup GO finish before the follow returns");
+        std::filesystem::remove(gate);
+        clear_loader_gate(hook);
+        check(recovery.get(), "Canceled follow: backup GO was accepted");
+        std::this_thread::sleep_for(160ms);
+        check(on_air(state, engine, "follow-backup") && !on_air(state, engine, "cold-follow") &&
+                  state.next_item_override().empty() && !warned.load(),
+              "Canceled follow: late EOF work cannot play, rearm, or report a stale failure");
+        state.set_ui_state_broadcaster({});
+        state.stop_all_cues(0);
+        std::filesystem::remove(gate.string() + ".entered");
+    }
 }
 
 void test_rejected_document_preserves_show(const std::filesystem::path& wav) {
@@ -2909,6 +2984,7 @@ int main() try {
     test_busy_decoder_preserves_sibling_progress();
     test_stop_all_during_live_edits();
     test_stop_all_during_cold_go(wav);
+    test_cancelled_follow_keeps_backup(wav);
     test_rejected_document_preserves_show(wav);
     test_rejected_nested_document_preserves_show(wav);
     test_open_expires_while_waiting_to_switch(wav);

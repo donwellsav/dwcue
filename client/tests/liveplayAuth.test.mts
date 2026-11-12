@@ -596,6 +596,26 @@ test('Stop All uses authenticated HTTP with or without a WebSocket', async () =>
     assert.equal(backupFrame.stop_revision, 3);
     replacement.receive({ type: 'command_ack', command_id: backupFrame.command_id, ok: true });
     assert.equal(await backupGo, true);
+
+    const heldContinue = server.cueToContinue('looping-item');
+    const continueFrame = JSON.parse(replacement.sent.at(-1)!);
+    assert.equal(continueFrame.type, 'cue_to_continue');
+    assert.equal(await server.stopAll(0), true);
+    const continueRecovery = sockets.at(-1)!;
+    assert.notEqual(continueRecovery, replacement, 'a pending Continue can also hold the old socket');
+    assert.equal(continueFrame.stop_revision, 3);
+    assert.equal(await heldContinue, false);
+    continueRecovery.readyState = FakeWebSocket.OPEN;
+    continueRecovery.onopen?.({});
+    assert.equal(await server.go(), false);
+    server.showVerification = null;
+    assert.equal(await server.go(), false);
+    continueRecovery.receive({ type: 'meters', stop_revision: 4 });
+    const nextGo = server.go();
+    const nextGoFrame = JSON.parse(continueRecovery.sent.at(-1)!);
+    assert.equal(nextGoFrame.stop_revision, 4);
+    continueRecovery.receive({ type: 'command_ack', command_id: nextGoFrame.command_id, ok: true });
+    assert.equal(await nextGo, true);
   } finally {
     currentProject.value = originalProject;
     server.destroy();

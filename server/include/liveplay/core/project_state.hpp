@@ -336,7 +336,8 @@ public:
     // advance once. This is runtime-only: the project document's endBehavior is
     // never modified, and replaying the item restores its saved loop behavior.
     // Returns false when uuid is not an active, sequenced loop or is already armed.
-    bool cue_to_continue(const std::string& uuid);
+    bool cue_to_continue(const std::string& uuid,
+                         std::optional<std::uint64_t> expected_stop_revision = std::nullopt);
 
     // Stop every cue for the global "Stop All" command. When `fade_ms` is
     // provided it is used directly; when omitted the project-wide
@@ -742,7 +743,7 @@ private:
     // (especially Stop All) to acquire playback_lifecycle_mutex_ during waits.
     std::recursive_mutex         project_operation_mutex_;
     std::recursive_mutex         playback_lifecycle_mutex_;
-    // Decoder preparation serializes separately so Stop All never waits for it.
+    // Serializes edits and show switches. GO uses only the target's source ownership.
     std::mutex                  playback_preparation_mutex_;
     // Audition storage must not delay preparation of the next Program cue.
     std::mutex                  preview_preparation_mutex_;
