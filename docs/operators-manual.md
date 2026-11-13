@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.21 development
-**Source revision:** 0b1b7bad54a980c830ba23d2a5ab50af82dfeb36
-**Native engine baseline:** 889abd569da10a32d6cd0edb75b029b436e5cf42
+**Source revision:** 41d1305675e541921d8f75ec315bfb3fd1af15f3
+**Native engine baseline:** c8c198b81e3f41705fac2216ded625e8713b1c2f
 **Edition:** 13 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This development edition includes the lower Settings, Properties, and media import panels, plus the update notices, shortcuts, and warning changes made after **2.6.21**. Match your installer to its release notes before rehearsal.
+This development edition includes the lower Settings, Properties, media import, and show archive panels, plus the update notices, shortcuts, and warning changes made after **2.6.21**. Match your installer to its release notes before rehearsal.
 
 The interface captures use generated tones, the native engine's virtual NULL output, and fixture locale, display and MIDI information. **docs/manual-assets/captures.json** records each capture's date, source revision and hash. Equipment photographs remain illustrative.
 
@@ -157,7 +157,7 @@ In **Browse Server**, double-click folders to open them. Click files to select; 
 
 Remote operation separates the two computers: **From This Computer** transfers files from the controller, while **Browse Server** selects files already accessible to the engine. Do not enter a controller-only path into the server browser and expect it to exist remotely.
 
-If an individual file fails to upload, the remaining uploads continue. Review the failed filenames and use **Retry Failed** for those files. Reopen **Import Media** to return to the upload results for this show.
+The panel shows the current file, batch count, and **Cancel import** during verification. If an individual file fails to upload, the remaining uploads continue. Review the failed filenames and use **Retry Failed** for those files. Reopen **Import Media** to return to the results for this show.
 
 ### Copy or link deliberately
 
@@ -199,12 +199,12 @@ YouTube and Spotify import controls are available in Edit Mode. They depend on e
 
 **Import from YouTube** and **Spotify** open in the lower panel. Close the panel or switch to Settings or Properties to make room for the playlist during a job. Reopen the same import to check its progress, results, or retry actions. Use the job’s **Cancel** button to stop the import. **Stop All Cues** controls playback independently.
 
-Paste a Spotify link or short share link, then choose **Review tracks** to retrieve usable tracks in playlist order. The review reports entries skipped because their Spotify track IDs are missing or invalid. Large playlists can take several minutes to review. Check the returned count and your selections, then wait for each selected download and import result. Resolve unavailable, unmatched or failed entries before taking the cues. Avoid adding the same downloaded result to the playlist twice.
+Paste a Spotify link or short share link, then choose **Review tracks** to retrieve usable tracks in playlist order. The review reports entries skipped because their Spotify track IDs are missing or invalid. Large playlists can take several minutes to review. The track list scrolls beside the download controls. Use **Change Link** to return to the URL field. During a download, the panel shows the current phase, count, and **Cancel**. Resolve unavailable, unmatched or failed entries before taking the cues. **Technical details** shows the downloader's message if review fails.
 
 The app normally saves the Spotify destination and retry information. If it warns that it could not save them, you can continue with the selected folder and retry within the current app session. Restore write access before relying on that information after restarting the app. If cue setup settings reach the engine but cannot be saved, they stay active. Correct the storage problem and save again.
 
 
-Cancelling a YouTube import during tool preparation prevents the downloader from starting afterward. Tool or media-folder failures report an error so you can correct the cause and retry. Confirm whether a local file already exists before repeating an import.
+The YouTube download queue shows each item's phase, progress, and actions. Completed items stay in the queue with **Open Folder** until dismissed or the show changes. Cancelling during tool preparation prevents the downloader from starting afterward. Tool or media-folder failures report an error so you can correct the cause and retry.
 
 ## 5. Build cues and transitions
 
@@ -665,22 +665,22 @@ The server makes background copies of the existing disk project every 10 minutes
 ### Export a portable show
 
 1. Stop the rehearsal at a known point and save the intended project changes.
-2. Use **File → Export Project…**. Export performs a forced save before packaging; resolve any save failure rather than continuing with an assumed current archive.
-3. Choose the destination. With a remote server, **Save on Server** writes there and **Download Here** brings the archive to the controller.
-4. Keep the resulting **.dwcuepack** archive with its version/date clearly identified.
+2. Use **File → Export Project…**. The lower panel shows the destination browser. Navigate to a folder and select **Save Here**.
+3. With a remote engine, the browser shows the engine's files. Use **Download Here** to choose a path on the controller in the operating system's save window.
+4. Wait for **Archive saved to** before using the resulting **.dwcuepack**. Export saves the show before packaging. Resolve any save failure before retrying.
 5. Import it into a separate rehearsal location and verify cues, media readiness, images, and playback with the original source paths unavailable.
 
 > **CAUTION — Export packages the project folder.** Keep the show in a dedicated folder. Do not choose a folder containing credentials, unrelated documents, personal media, or application data and assume export will include only the files shown in the playlist. Externally linked media also needs a deliberate portability check.
 
 Device assignments, physical patching, local MIDI mappings, and video display identity need checking on the destination machine. A successful archive extraction is not a substitute for that check.
 
-Use **Return to Show** during an archive import or export to restore the workspace controls while the transfer finishes. The progress card stays available, including **Stop All Cues**.
+The playlist, **GO**, and **Stop All Cues** stay available during browsing and transfers. Closing the lower panel leaves the job running. Reopen the same File menu action to see progress or the saved path.
 
 ### Import a show or archive and inspect repairs
 
 Use **File → Import Project…** for a portable `.dwcuepack` containing exactly one root `.dwcue` show. DonWells Cue refuses upstream LivePlay `.liveplay` shows and `.lpa` archives. Previously converted `.dwcue` shows open through **File → Open Project**.
 
-In remote operation, choose **Browse Server** for a server-resident archive or **From This Computer** to upload it. Select a fresh extraction directory on the audio-server computer. Keep the progress dialog open to let the app open the extracted show when import finishes. If you return to the show or change projects during extraction, the finished card shows the saved location. Select **Open** when you are ready to switch shows.
+In the lower panel, select the archive and choose **Choose Archive**. With a remote engine, **From This Computer** opens the operating system's file chooser for an archive on the controller. Choose an empty folder on the audio-engine computer and select **Extract Here**. The panel shows the extracted location when it finishes. Select **Open** when you are ready to switch shows.
 
 Extraction refuses unsafe entries and destination collisions rather than silently overwriting an existing show. If import reports a collision, choose a clean destination; do not delete the working show just to force an import. Wait for import and audio readiness, then listen to representative cues and inspect the important transitions.
 
