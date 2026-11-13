@@ -1683,7 +1683,7 @@ assert.match(
 );
 assert.match(
   spotifyModal,
-  /v-if="progressState\?\.playlistName"[\s\S]{0,180}v-if="progressState\?\.message && isActive"[\s\S]*resultState\?\.projectFolderPath[\s\S]*openResultFolder/,
+  /v-if="!reviewState && progressState\?\.playlistName"[\s\S]{0,180}v-if="progressState\?\.message && isActive"[\s\S]*resultState\?\.projectFolderPath[\s\S]*openResultFolder/,
   'Spotify progress must keep the collection, current operation, result path, and reveal action visible',
 );
 assert.match(

@@ -1,7 +1,8 @@
 <template>
-  <form v-if="open" v-show="visible" class="workspace-import-body spotify-import" @submit.prevent="handleSubmit">
-    <div class="import-column">
-      <label class="field">
+  <form v-if="open" v-show="visible" class="workspace-import-body spotify-import"
+    :class="{ 'has-review': reviewState && !isActive, 'is-busy': isBusy }" @submit.prevent="handleSubmit">
+    <div class="import-column spotify-controls">
+      <label v-if="!isBusy && !resultState && !reviewState" class="field">
         <span class="field-label">{{ t('spotifyImport.urlLabel') }}</span>
         <input
           ref="urlInput"
@@ -14,12 +15,11 @@
         >
       </label>
 
-      <p class="hint selectable">{{ t('spotifyImport.hint') }}</p>
-      <p class="hint selectable">{{ t('importAudio.preserveAudio') }}</p>
+      <p v-if="!isBusy && !reviewState && !resultState" class="hint selectable">{{ t('spotifyImport.hint') }}</p>
       <p v-if="preferencesWarning" class="settings-save-error selectable" role="status">
         {{ t('spotifyImport.preferencesSaveFailed') }}
       </p>
-      <div class="actions">
+      <div v-if="!isBusy" class="actions">
         <template v-if="resultState && !isActive">
           <button
             v-if="pendingRecoveryCount"
@@ -53,31 +53,17 @@
             </button>
           </template>
         </template>
-        <template v-else>
-          <button type="submit" class="btn primary" :disabled="!canStart">
-            <span class="material-symbols-rounded" aria-hidden="true">library_add</span>
-            <span>{{ isReviewing
-              ? t('spotifyImport.reviewing')
-              : isActive
-                ? t('spotifyImport.downloading')
-                : reviewState
-                  ? t('spotifyImport.downloadSelected', { count: selectedTrackIds.length })
-                  : t('spotifyImport.reviewTracks') }}</span>
-          </button>
-          <button
-            v-if="isBusy"
-            type="button"
-            class="btn"
-            :disabled="isCancelling"
-            @click="cancelDownload"
-          >
-            <span class="material-symbols-rounded" aria-hidden="true">close</span>
-            <span>{{ isCancelling ? t('spotifyImport.cancelling') : t('common.cancel') }}</span>
-          </button>
-        </template>
+        <button v-else type="submit" class="btn primary" :disabled="!canStart">
+          <span class="material-symbols-rounded" aria-hidden="true">library_add</span>
+          <span>{{ reviewState ? t('spotifyImport.downloadSelected', { count: selectedTrackIds.length })
+            : t('spotifyImport.reviewTracks') }}</span>
+        </button>
+        <button v-if="reviewState && !resultState" type="button" class="btn" @click="clearReview">
+          {{ t('spotifyImport.changeLink') }}
+        </button>
       </div>
       <div
-        v-if="progressState || resultState || errorMessage"
+        v-if="isBusy || progressState || resultState || errorMessage"
         class="status-card"
         :class="{
           'has-result': !!resultState,
@@ -93,7 +79,7 @@
         >
           <div class="selectable">
             <p class="status-label">{{ statusText }}</p>
-            <p v-if="progressState?.playlistName" class="status-detail">{{ progressState.playlistName }}</p>
+            <p v-if="!reviewState && progressState?.playlistName" class="status-detail">{{ progressState.playlistName }}</p>
             <p v-if="progressState?.message && isActive" class="status-detail">{{ progressState.message }}</p>
             <p v-if="pendingRecoveryCount" class="status-detail">
               {{ t('spotifyImport.resumeExplanation', { count: pendingRecoveryCount }) }}
@@ -104,25 +90,25 @@
             <p v-if="importFailedTrackCount" class="status-error" role="alert">
               {{ t('spotifyImport.importFailureExplanation', { count: importFailedTrackCount }) }}
             </p>
-            <p v-if="resultState?.projectFolderPath" class="status-detail">{{ resultState.projectFolderPath }}</p>
+            <p v-if="resultState?.projectFolderPath" class="status-detail destination-path" :title="resultState.projectFolderPath">{{ resultState.projectFolderPath }}</p>
+            <p v-else-if="isActive && destinationParentPath" class="status-detail destination-path" :title="destinationParentPath">{{ destinationParentPath }}</p>
           </div>
-          <p v-if="countText" class="status-count selectable">{{ countText }}</p>
+          <div class="status-actions">
+            <p v-if="countText" class="status-count selectable">{{ countText }}</p>
+            <button v-if="isBusy" type="button" class="btn compact" :disabled="isCancelling" @click="cancelDownload">
+              {{ isCancelling ? t('spotifyImport.cancelling') : t('common.cancel') }}
+            </button>
+          </div>
         </div>
 
-        <div
+        <progress
+          v-if="isBusy || resultState"
           class="progress-bar"
-          role="progressbar"
           :aria-label="resultState ? t('spotifyImport.resultLabel') : t('spotifyImport.progressLabel')"
-          aria-valuemin="0"
-          aria-valuemax="100"
-          :aria-valuenow="progressValue"
+          max="100"
+          :value.attr="progressValue"
           :aria-valuetext="countText || statusText"
-        >
-          <div
-            class="progress-fill"
-            :style="{ transform: `scaleX(${progressPercent / 100})` }"
-          />
-        </div>
+        />
 
         <p v-if="errorMessage" class="status-error selectable" role="alert">{{ errorMessage }}</p>
         <details v-if="technicalMessage" class="status-technical selectable">
@@ -139,7 +125,8 @@
           <span>{{ t('spotifyImport.openFolder') }}</span>
         </button>
       </div>
-      <section v-if="reviewState" class="track-review" :aria-label="t('spotifyImport.reviewTitle')">
+    </div>
+    <section v-if="reviewState && !isActive" class="track-review" :aria-label="t('spotifyImport.reviewTitle')">
         <div class="review-heading">
           <div class="selectable">
             <h3>{{ reviewState.playlistName }}</h3>
@@ -166,7 +153,7 @@
             <label :class="{ 'has-cover': !!track.coverUrl }">
               <input
                 type="checkbox"
-                :checked="selectedTrackIds.includes(track.id)"
+                :checked="selectedIds.has(track.id)"
                 :disabled="isBusy"
                 @change="toggleTrack(track.id)"
               >
@@ -191,29 +178,25 @@
             </button>
           </li>
         </ul>
-      </section>
-    </div>
-    <section class="import-plan" aria-labelledby="spotify-import-plan">
+    </section>
+    <section v-if="!isBusy && !resultState" class="import-plan" aria-labelledby="spotify-import-plan">
       <h3 id="spotify-import-plan">{{ t('spotifyImport.importPlan') }}</h3>
       <dl class="plan-list">
-        <div class="plan-row">
+        <div v-if="!reviewState" class="plan-row">
           <dt>{{ t('spotifyImport.source') }}</dt>
           <dd>{{ sourceTypeText }}</dd>
         </div>
         <div class="plan-row">
           <dt>{{ t('spotifyImport.audioFormat') }}</dt>
           <dd>
-            <label class="inline-option">
-              <span class="sr-only">{{ t('spotifyImport.audioBitrate') }}</span>
-              <select v-model="audioBitrate" :disabled="isBusy">
-                <option value="320k">{{ t('spotifyImport.audioBitrate320') }}</option>
-                <option value="256k">{{ t('spotifyImport.audioBitrate256') }}</option>
-                <option value="192k">{{ t('spotifyImport.audioBitrate192') }}</option>
-              </select>
-            </label>
+            <select v-model="audioBitrate" :aria-label="t('spotifyImport.audioBitrate')">
+              <option value="320k">{{ t('spotifyImport.audioBitrate320') }}</option>
+              <option value="256k">{{ t('spotifyImport.audioBitrate256') }}</option>
+              <option value="192k">{{ t('spotifyImport.audioBitrate192') }}</option>
+            </select>
           </dd>
         </div>
-        <div class="plan-row">
+        <div v-if="!reviewState" class="plan-row">
           <dt>{{ t('spotifyImport.searchSources') }}</dt>
           <dd>{{ t('spotifyImport.searchSourcesValue') }}</dd>
         </div>
@@ -240,7 +223,7 @@
         </div>
       </dl>
 
-      <p class="plan-note">{{ t('spotifyImport.createsDescription') }}</p>
+      <p v-if="!reviewState" class="plan-note">{{ t('spotifyImport.createsDescription') }}</p>
 
       <div class="processing-summary">
         <p class="processing-title">{{ t('spotifyImport.cueSetup') }}</p>
@@ -453,8 +436,9 @@ const normalizedUrl = computed(() => normalizeSpotifyUrl(spotifyUrl.value));
 const canStart = computed(() => !!props.projectFolderPath && !!normalizedUrl.value &&
   !isBusy.value && !isChoosingDestination.value &&
   (!reviewState.value || selectedTrackIds.value.length > 0));
+const selectedIds = computed(() => new Set(selectedTrackIds.value));
 const selectedDuration = computed(() => reviewState.value?.tracks
-  .filter(track => selectedTrackIds.value.includes(track.id))
+  .filter(track => selectedIds.value.has(track.id))
   .reduce((sum, track) => sum + track.duration, 0) ?? 0);
 const failedTrackCount = computed(() => resultState.value?.failedTrackIds.length ?? 0);
 const importFailedTrackCount = computed(() => resultState.value?.failedTrackIds
@@ -482,22 +466,14 @@ const cueProcessingSettings = computed(() => {
   };
 });
 
-const progressPercent = computed(() => {
-  const source = resultState.value ?? progressState.value;
-  if (!source?.total) return progressState.value ? 8 : 0;
-  const percent = (source.completed / source.total) * 100;
-  return resultState.value
-    ? Math.max(0, Math.min(100, percent))
-    : Math.max(8, Math.min(100, percent));
-});
-
 const progressValue = computed(() => {
-  const source = resultState.value ?? progressState.value;
-  return source?.total ? Math.round(progressPercent.value) : undefined;
+  const source = isActive.value ? progressState.value : resultState.value;
+  return source?.total ? Math.round(source.completed / source.total * 100) : undefined;
 });
 
 const statusText = computed(() => {
-  if (resultState.value) {
+  if (isReviewing.value) return t('spotifyImport.reviewing');
+  if (!isActive.value && resultState.value) {
     if (resultState.value.completed > 0) {
       return t('spotifyImport.tracksReady', { completed: resultState.value.completed });
     }
@@ -535,9 +511,9 @@ const statusText = computed(() => {
 });
 
 const countText = computed(() => {
-  const source = resultState.value ?? progressState.value;
+  const source = isActive.value ? progressState.value : resultState.value;
   if (!source?.total) return '';
-  if (resultState.value) {
+  if (!isActive.value && resultState.value) {
     if (importFailedTrackCount.value) {
       return t('spotifyImport.resultCountWithErrors', {
         completed: resultState.value.completed,
@@ -813,6 +789,13 @@ async function reviewSpotify() {
 
 function selectAllTracks() {
   selectedTrackIds.value = reviewState.value?.tracks.map(track => track.id) ?? [];
+}
+function clearReview() {
+  reviewState.value = null;
+  selectedTrackIds.value = [];
+  errorMessage.value = '';
+  technicalMessage.value = '';
+  void nextTick(() => urlInput.value?.focus());
 }
 function toggleTrack(id: string) {
   selectedTrackIds.value = selectedTrackIds.value.includes(id)
@@ -1251,6 +1234,20 @@ function resetState() {
 </script>
 
 <style scoped lang="scss">
+.has-review {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.has-review .track-review {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.has-review .import-plan { grid-column: 1; }
+.has-review .processing-title { display: none; }
+.has-review .processing-control--select { grid-column: auto; }
+.is-busy .spotify-controls { grid-column: 1 / -1; }
+
 .import-column {
   display: grid;
   gap: var(--spacing-xs);
@@ -1411,12 +1408,13 @@ input {
   justify-content: space-between;
 
   select {
-    min-width: min(240px, 55%);
+    min-width: 0;
+    max-width: 100%;
     border: 1px solid var(--color-border);
     border-radius: 6px;
     background: var(--color-background);
     color: var(--color-text-primary);
-    padding: 6px 28px 6px 8px;
+    padding: 2px 8px;
     font: inherit;
   }
 }
@@ -1430,6 +1428,10 @@ input {
 
 .track-review {
   padding: var(--spacing-xs) var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-height: clamp(150px, 30vh, 260px);
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
   background: var(--color-background);
@@ -1439,7 +1441,8 @@ input {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--spacing-xs);
+  flex-wrap: wrap;
   margin-bottom: var(--spacing-xs);
 
   h3, p { margin: 0; }
@@ -1450,6 +1453,9 @@ input {
 .review-actions { display: flex; gap: 6px; }
 
 .track-list {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
   margin: 0;
   padding: 0;
   border-top: 1px solid var(--color-border);
@@ -1471,12 +1477,12 @@ input {
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 9px;
-    padding: 7px 6px;
+    padding: 4px 6px;
     cursor: pointer;
   }
-  label.has-cover { grid-template-columns: auto 36px minmax(0, 1fr) auto; }
+  label.has-cover { grid-template-columns: auto 32px minmax(0, 1fr) auto; }
   input { width: auto; margin: 0; padding: 0; }
-  img { width: 36px; height: 36px; border-radius: 3px; object-fit: cover; }
+  img { width: 32px; height: 32px; border-radius: 3px; object-fit: cover; }
   .track-info { min-width: 0; display: grid; gap: 2px; }
   .track-info > strong,
   .track-info > span,
@@ -1514,8 +1520,23 @@ input {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+
+  > div:first-child { min-width: 0; }
 }
 
+.status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+}
+
+.destination-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .status-label,
 .status-detail,
 .status-count,
@@ -1547,9 +1568,7 @@ input {
   border-color: color-mix(in srgb, var(--color-success) 45%, var(--color-border));
   background: color-mix(in srgb, var(--color-success) 7%, var(--color-surface-raised));
 
-  .progress-fill {
-    background: var(--color-success);
-  }
+  .progress-bar { accent-color: var(--color-success); }
 }
 
 .status-card.has-import-errors {
@@ -1573,30 +1592,22 @@ input {
 }
 
 .progress-bar {
-  height: 6px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-border) 70%, transparent);
-}
-
-.progress-fill {
   width: 100%;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--color-accent);
-  transform-origin: left center;
-  transition: transform 140ms ease;
+  height: 6px;
+  accent-color: var(--color-accent);
 }
 
 .actions {
-  position: sticky;
-  top: 0;
-  z-index: 1;
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-xs);
   padding-block: 2px;
   background: var(--color-background);
+}
+
+@container (max-width: 780px) {
+  .has-review { grid-template-columns: minmax(0, 1fr); }
+  .has-review .track-review { grid-column: 1; grid-row: auto; }
 }
 
 .btn {

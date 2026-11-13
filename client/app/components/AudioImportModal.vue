@@ -8,7 +8,11 @@
           <button class="x" :aria-label="t('actions.close')" :disabled="busy || pickingLocal" @click="close">✕</button>
         </header>
 
-        <div class="import-source">
+        <section v-if="busy && progress" class="import-progress" role="status">
+          <span>{{ t('importAudio.progress', progress) }}</span>
+          <button type="button" class="btn small" @click="emit('cancel')">{{ t('importAudio.cancelImport') }}</button>
+        </section>
+        <div v-show="!docked || !busy" class="import-source">
         <!-- Source mode toggle. Only rendered when the server is on a
              different machine; otherwise "upload" makes no sense and we
              skip the tabs entirely. -->
@@ -114,7 +118,7 @@
         <p class="hint">{{ t('importAudio.preserveAudio') }}</p>
         </div>
 
-        <component :is="docked ? 'section' : 'details'" class="import-advanced">
+        <component v-show="!docked || !busy" :is="docked ? 'section' : 'details'" class="import-advanced">
           <h3 v-if="docked">{{ t('importAudio.planTitle') }}</h3>
           <summary v-else>{{ t('importAudio.advanced') }}</summary>
           <section v-if="tab === 'server'" class="import-options" :aria-label="t('importAudio.fileHandling')">
@@ -168,11 +172,6 @@
             </dl>
           </section>
         </component>
-
-        <section v-if="busy && progress" class="import-progress" role="status" aria-live="polite">
-          <span>{{ t('importAudio.progress', progress) }}</span>
-          <button type="button" class="btn small" @click="emit('cancel')">{{ t('importAudio.cancelImport') }}</button>
-        </section>
 
         <section v-if="result" class="import-results" aria-live="polite">
           <div class="result-heading">
@@ -727,6 +726,9 @@ function formatBytes(n: number): string {
   .pane, .import-source, .plan-grid { gap: var(--spacing-xs); }
   .pane > p { margin: 0; }
   .import-progress, .import-results { grid-column: 1 / -1; }
+  .import-progress span { overflow-wrap: anywhere; }
+  .import-progress .btn { flex-shrink: 0; }
+  .import-results ul { max-height: clamp(120px, 26vh, 240px); overflow: auto; overscroll-behavior: contain; }
   .import-results li { grid-template-columns: 58px minmax(0, 1fr) auto; }
   .import-results .result-details { white-space: normal; }
   .import-results .result-reason { overflow-wrap: anywhere; }

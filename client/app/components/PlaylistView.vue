@@ -51,7 +51,6 @@
         :project-folder-path="currentProject?.folderPath ?? ''"
         :project-epoch="projectEpoch"
         :import-files="importFromServerPaths"
-        @close="closeImport('youtube')"
       />
       <SpotifyImportModal
         :key="`spotify-${projectEpoch}`"

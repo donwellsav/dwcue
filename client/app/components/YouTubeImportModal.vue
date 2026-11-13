@@ -1,5 +1,6 @@
 <template>
-  <div v-if="isOpen" v-show="visible" class="workspace-import-body youtube-import">
+  <div v-if="isOpen" v-show="visible" class="workspace-import-body youtube-import"
+    :class="{ 'has-downloads': downloadQueue.length > 0 }">
     <div class="import-column">
       <!-- Search Bar -->
       <div class="search-section">
@@ -47,7 +48,7 @@
             :class="{ selected: selectedVideo?.id === video.id }"
             @click="selectedVideo = video"
           >
-            <img :src="video.thumbnail" :alt="video.title" class="video-thumbnail" />
+            <img v-if="video.thumbnail" :src="video.thumbnail" alt="" class="video-thumbnail" />
             <div class="video-info">
               <div class="video-title-line">
                 <h3 class="video-title">{{ video.title }}</h3>
@@ -77,7 +78,7 @@
       </div>
     </div>
     <div v-if="selectedVideo || downloadQueue.length" class="import-column">
-      <section v-if="selectedVideo" class="import-plan" :aria-labelledby="planTitleId">
+      <section v-if="selectedVideo && !downloadQueue.length" class="import-plan" :aria-labelledby="planTitleId">
         <div class="plan-heading">
           <h3 :id="planTitleId">{{ t('youtube.importPlan') }}</h3>
           <label class="add-to-playlist-option">
@@ -121,7 +122,18 @@
         </div>
       </section>
       <div v-if="downloadQueue.length > 0" class="download-queue">
-        <h3>{{ t('youtube.downloadQueue') }}</h3>
+        <div class="plan-heading">
+          <h3>{{ t('youtube.downloadQueue') }}</h3>
+          <select v-model="outputMode" :aria-label="t('youtube.outputFormat')">
+            <option value="source">{{ t('youtube.outputFormatSource') }}</option>
+            <option value="mp3">{{ t('youtube.outputFormatMp3V0') }}</option>
+            <option value="video">{{ t('youtube.outputFormatVideo') }}</option>
+          </select>
+          <label class="add-to-playlist-option">
+            <input v-model="addDownloadedAudio" type="checkbox">
+            <span>{{ t('youtube.addDownloadedAudio') }}</span>
+          </label>
+        </div>
         <div class="queue-list">
           <div v-for="download in downloadQueue" :key="download.jobId" class="queue-item">
             <div class="queue-info">
@@ -184,6 +196,10 @@
               <span class="material-symbols-rounded" aria-hidden="true">refresh</span>
               <span>{{ t('youtube.retry') }}</span>
             </button>
+            <button v-if="download.status === 'completed'" type="button" class="action-btn"
+              :aria-label="t('actions.close')" @click="downloadQueue = downloadQueue.filter(item => item !== download)">
+              <span class="material-symbols-rounded" aria-hidden="true">close</span>
+            </button>
           </div>
         </div>
       </div>
@@ -245,10 +261,6 @@ const props = defineProps<{
     signal?: AbortSignal,
     options?: ImportBatchOptions,
   ) => Promise<ImportBatchResult>;
-}>();
-
-const emit = defineEmits<{
-  close: [];
 }>();
 
 const searchQuery = ref('');
@@ -407,13 +419,6 @@ const downloadVideo = async (video: YouTubeVideo) => {
 
       item.status = 'completed';
       item.importError = '';
-
-      // Auto-close once every queued download has landed successfully. Any
-      // errored item keeps the modal open so the failure stays visible.
-      if (downloadQueue.value.length > 0
-          && downloadQueue.value.every(d => !isActiveDownload(d) && d.status !== 'error')) {
-        void closeModal();
-      }
     }
   } catch (error: any) {
     const item = downloadQueue.value.find(d => d.jobId === downloadItem.jobId);
@@ -578,17 +583,6 @@ function extractYouTubeVideoId(value: string): string {
     return /^[A-Za-z0-9_-]{6,32}$/.test(id) ? id : '';
   } catch { return ''; }
 }
-
-const closeModal = async () => {
-  closing = true;
-  await cancelActiveDownloads();
-  emit('close');
-  // Reset state
-  searchQuery.value = '';
-  searchResults.value = [];
-  hasSearched.value = false;
-  selectedVideo.value = null;
-};
 
 const cancelActiveDownloads = () => Promise.allSettled(
   downloadQueue.value.filter(isActiveDownload).map(cancelDownload),
@@ -792,6 +786,9 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
+  max-height: clamp(115px, 24vh, 230px);
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .video-item {
@@ -904,8 +901,28 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
+.download-queue .plan-heading {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs) var(--spacing-sm);
+}
+
+.download-queue select {
+  height: var(--settings-control-height);
+  min-width: 0;
+  max-width: 100%;
+  padding: 0 var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  background: var(--color-background);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: normal;
+}
+
 .download-queue h3 {
-  margin: 0 0 var(--spacing-xs);
+  margin: 0;
   font-size: 14px;
   color: var(--color-text-primary);
 }
@@ -914,6 +931,9 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
+  max-height: clamp(124px, 26vh, 240px);
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .queue-item {
@@ -965,7 +985,8 @@ onBeforeUnmount(() => {
 }
 
 .progress-bar {
-  width: 200px;
+  flex: 0 1 140px;
+  min-width: 36px;
   height: 6px;
   background: var(--color-border);
   border-radius: 3px;
@@ -996,7 +1017,11 @@ select:focus-visible {
   outline-offset: 2px;
 }
 
-@container (max-width: 900px) {
+@container (max-width: 720px) {
+  .has-downloads > .import-column:last-child { grid-row: 1; }
+}
+
+@container (max-width: 940px) {
   .plan-heading, .queue-item {
     flex-wrap: wrap;
   }
