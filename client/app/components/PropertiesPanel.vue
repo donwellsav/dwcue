@@ -1,16 +1,5 @@
 <template>
-  <div class="properties-panel" :style="{ height: `${panelHeight}px` }">
-    <div
-      class="properties-resize-handle"
-      role="separator"
-      aria-orientation="horizontal"
-      :aria-label="t('properties.title')"
-      aria-valuemin="240"
-      :aria-valuenow="panelHeight"
-      tabindex="0"
-      @pointerdown="startPanelResize"
-      @keydown="handlePanelResizeKey"
-    ></div>
+  <div class="properties-panel">
     <div class="properties-header workspace-panel-header">
       <h3 class="workspace-panel-header__title">{{ selectedItems.size > 1 ? t('properties.multipleItemsSelected', { count: selectedItems.size }) : (t('properties.title') + ': ' + (selectedItem?.displayName || '')) }}</h3>
       <div class="properties-tabs" role="tablist">
@@ -424,43 +413,9 @@ const {
 const { t } = useLocalization();
 const { uiMode } = useUiMode();
 const { cartOnlyItems, addCartOnlyItem, removeCartOnlyItem } = useCartItems();
-const panelHeight = useState<number>('PropertiesPanel.height', () => 320);
 const propertySaveFailed = ref(false);
 const propertySavePending = ref(false);
 let propertySaveAttempt = 0;
-
-const clampPanelHeight = (height: number) => Math.max(
-  240,
-  Math.min(import.meta.client ? window.innerHeight - 180 : 640, height),
-);
-
-const startPanelResize = (event: PointerEvent) => {
-  if (event.button !== 0 || !event.isPrimary) return;
-  const handle = event.currentTarget as HTMLElement;
-  const startY = event.clientY;
-  const startHeight = panelHeight.value;
-  event.preventDefault();
-  handle.setPointerCapture(event.pointerId);
-  const move = (moveEvent: PointerEvent) => {
-    panelHeight.value = clampPanelHeight(startHeight + startY - moveEvent.clientY);
-  };
-  const finish = () => {
-    handle.removeEventListener('pointermove', move);
-    handle.removeEventListener('pointerup', finish);
-    handle.removeEventListener('pointercancel', finish);
-  };
-  handle.addEventListener('pointermove', move);
-  handle.addEventListener('pointerup', finish);
-  handle.addEventListener('pointercancel', finish);
-};
-
-const handlePanelResizeKey = (event: KeyboardEvent) => {
-  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
-  event.preventDefault();
-  panelHeight.value = clampPanelHeight(
-    panelHeight.value + (event.key === 'ArrowUp' ? 16 : -16),
-  );
-};
 
 const audioItem = computed(() => selectedItem.value as AudioItem);
 
@@ -1240,46 +1195,13 @@ const formatTime = (seconds: number): string => {
 <style scoped>
 .properties-panel {
   position: relative;
-  flex: 0 0 auto;
+  flex: 1;
+  min-height: 0;
   border-top: 1px solid var(--color-border);
   background-color: var(--color-background);
   display: flex;
   flex-direction: column;
   box-shadow: inset 0 1px color-mix(in srgb, var(--color-text-primary) 4%, transparent);
-}
-
-.properties-resize-handle {
-  position: absolute;
-  z-index: 2;
-  top: -4px;
-  right: 0;
-  left: 0;
-  height: 8px;
-  cursor: ns-resize;
-  touch-action: none;
-}
-
-.properties-resize-handle::after {
-  content: '';
-  position: absolute;
-  top: 3px;
-  right: 45%;
-  left: 45%;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--color-border-strong);
-  opacity: 0;
-  transition: opacity var(--transition-fast);
-}
-
-.properties-resize-handle:hover::after,
-.properties-resize-handle:focus-visible::after {
-  opacity: 1;
-}
-
-.properties-resize-handle:focus-visible {
-  outline: 2px solid var(--color-focus-ring);
-  outline-offset: -2px;
 }
 
 .properties-header {
@@ -1380,7 +1302,7 @@ const formatTime = (seconds: number): string => {
   flex: 1;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: var(--spacing-md);
+  padding: var(--spacing-sm) var(--workspace-gutter);
   min-height: 0;
 }
 
@@ -1389,7 +1311,6 @@ const formatTime = (seconds: number): string => {
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(188px, 1fr);
   gap: var(--spacing-sm);
-  overflow-y: hidden;
 }
 
 .properties-content:has(.basic-panel) {
@@ -1402,7 +1323,7 @@ const formatTime = (seconds: number): string => {
 .tab-panel {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: var(--spacing-md);
+  gap: var(--spacing-sm);
   align-content: flex-start;
   min-height: min-content;
   width: 100%;

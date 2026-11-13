@@ -649,8 +649,8 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /<div class="workspace-content">[\s\S]*<div id="preview-lower-panel" class="preview-lower-panel"[\s\S]*\.preview-lower-panel\s*\{[\s\S]*flex:\s*0 0 112px;[\s\S]*\.preview-lower-panel:empty\s*\{[\s\S]*display:\s*none;/,
-  'the Preview target must be a fixed lower panel beneath the track workspace and collapse when unused',
+  /class="workspace-content"[\s\S]*<div id="preview-lower-panel" class="preview-lower-panel"[\s\S]*\.preview-lower-panel\s*\{[^}]*flex:\s*0 0 auto;[\s\S]*\.preview-lower-panel:empty\s*\{[\s\S]*display:\s*none;/,
+  'the Preview target must fit its controls and collapse when unused',
 );
 assert.match(
   playbackControls,
@@ -694,13 +694,18 @@ assert.match(
 );
 assert.match(
   mainWorkspace + playbackControls + propertiesPanel + waveformTrimmer,
-  /selectedItem\.uuid === previewItemUuid[\s\S]*handleOpenPreviewProperties[\s\S]*openItemProperties\(previewItemUuid\.value\)[\s\S]*:preview-mode="uiMode === 'playback'"[\s\S]*class="audition-transport"[\s\S]*handleCanvasPointerDown[\s\S]*previewMode[\s\S]*startPreview\(props\.audioItem\.uuid\)/,
+  /selectedItem\.value\.uuid === previewItemUuid\.value[\s\S]*handleOpenPreviewProperties[\s\S]*openItemProperties\(previewItemUuid\.value\)[\s\S]*:preview-mode="uiMode === 'playback'"[\s\S]*class="audition-transport"[\s\S]*handleCanvasPointerDown[\s\S]*previewMode[\s\S]*startPreview\(props\.audioItem\.uuid\)/,
   'Show Mode Preview must open the same cue in Properties and reuse its safe preview path for audition transport and playhead scrubbing',
 );
 assert.match(
-  propertiesPanel,
-  /height: `\$\{panelHeight\}px`[\s\S]*class="properties-resize-handle"[\s\S]*role="separator"[\s\S]*@pointerdown="startPanelResize"[\s\S]*@keydown="handlePanelResizeKey"/,
-  'Properties must remain vertically resizable by pointer and keyboard without replacing editor controls',
+  mainWorkspace,
+  /height: `\$\{panelHeight\}px`[\s\S]*class="lower-panel-resize-handle"[\s\S]*role="separator"[\s\S]*@pointerdown="startPanelResize"[\s\S]*@keydown="handlePanelResizeKey"/,
+  'Settings and Properties must share the pointer and keyboard resize control',
+);
+assert.match(
+  mainWorkspace,
+  /\.workspace-content\s*\{[^}]*min-height:\s*calc\(var\(--panel-header-height\) \+ var\(--reserved-playlist-row-height\)[^}]*\}[\s\S]*\.lower-workspace-panel\s*\{[^}]*flex:\s*0 1 auto;/,
+  'the lower panel must give up space before the playlist loses a cue row',
 );
 assert.match(
   waveformTrimmer,
@@ -1837,13 +1842,13 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /<ShortcutsBar \/>[\s\S]*<ProjectSettingsModal :open="showProjectSettings"[\s\S]*<PropertiesPanel[\s\S]*v-if="!showProjectSettings/,
+  /<ShortcutsBar :compact="showProjectSettings \|\| !!showCueProperties" \/>[\s\S]*<ProjectSettingsModal :open="showProjectSettings"[\s\S]*<PropertiesPanel v-if="showCueProperties"[\s\S]*const showCueProperties = computed\(\(\) => !showProjectSettings/,
   'Settings and cue Properties must share the lower workspace without stacking',
 );
 assert.match(
   projectSettingsModal,
-  /class="project-settings-panel"[\s\S]*class="workspace-panel-header settings-header"[\s\S]*<ControlConfigModal v-if="activeTab === 'shortcuts'" \/>[\s\S]*\.project-settings-panel\s*\{[^}]*height:\s*min\(320px, 42vh\)/,
-  'Settings must keep its own bounded height and host the same shortcuts editor',
+  /class="project-settings-panel"[\s\S]*class="workspace-panel-header settings-header"[\s\S]*<ControlConfigModal v-if="activeTab === 'shortcuts'" \/>[\s\S]*\.project-settings-panel\s*\{[^}]*flex:\s*1;/,
+  'Settings must fit the resizable workspace panel and host the same shortcuts editor',
 );
 assert.doesNotMatch(
   projectSettingsModal + controlConfig,

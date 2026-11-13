@@ -1414,8 +1414,7 @@ function close() {
 
 <style scoped>
 .project-settings-panel {
-  flex: 0 0 auto;
-  height: min(320px, 42vh);
+  flex: 1;
   min-height: 0;
   border-top: 1px solid var(--color-border);
   background: var(--color-background);
@@ -1493,8 +1492,8 @@ function close() {
   align-items: start;
   flex: 1;
   min-height: 0;
-  padding: var(--spacing-md);
-  gap: var(--spacing-md);
+  padding: var(--spacing-sm) var(--workspace-gutter);
+  gap: var(--spacing-sm);
   overflow-y: auto;
 }
 
@@ -1549,7 +1548,7 @@ function close() {
 }
 
 .settings-content .settings-field:not(label) {
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-sm);
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
   background: var(--color-surface);
@@ -1584,8 +1583,11 @@ function close() {
 }
 .header-warning-settings {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr));
+  gap: var(--spacing-xs) var(--spacing-sm);
+}
+.header-warning-settings .settings-field {
+  justify-content: end;
 }
 .settings-label {
   display: flex;

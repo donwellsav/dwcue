@@ -9,7 +9,7 @@
     <PlaybackControls />
     <LevelCheckBar />
 
-    <div class="workspace-content">
+    <div ref="workspaceContent" class="workspace-content" :style="{ '--reserved-playlist-row-height': `${reservedPlaylistRowHeight}px` }">
       <aside
         v-if="monitorAssigned"
         class="monitor-console output-console"
@@ -196,12 +196,20 @@
 
     <div id="preview-lower-panel" class="preview-lower-panel" aria-live="polite"></div>
 
-    <ShortcutsBar />
+    <ShortcutsBar :compact="showProjectSettings || !!showCueProperties" />
     
-    <ProjectSettingsModal :open="showProjectSettings" @close="showProjectSettings = false" />
-    <PropertiesPanel
-      v-if="!showProjectSettings && propertiesPanelOpen && selectedItem && (uiMode !== 'playback' || selectedItem.uuid === previewItemUuid)"
-    />
+    <div v-show="showProjectSettings || showCueProperties" ref="lowerPanel" class="lower-workspace-panel"
+      :style="{ height: `${panelHeight}px` }">
+      <div class="lower-panel-resize-handle" role="separator" aria-orientation="horizontal"
+        :aria-label="showProjectSettings ? t('settings.title') : t('properties.title')"
+        :aria-valuemin="MIN_PANEL_HEIGHT" :aria-valuemax="panelMaxHeight"
+        :aria-valuenow="visiblePanelHeight || panelHeight" tabindex="0"
+        @pointerdown="startPanelResize" @pointermove="movePanelResize"
+        @lostpointercapture="panelDrag = null" @keydown="handlePanelResizeKey"
+      ></div>
+      <ProjectSettingsModal :open="showProjectSettings" @close="showProjectSettings = false" />
+      <PropertiesPanel v-if="showCueProperties" />
+    </div>
 
     <ProgressModal
       :visible="progressModal.visible"
@@ -269,9 +277,62 @@ const {
 const { cartOnlyItems } = useCartItems();
 const { t } = useLocalization();
 const server = useLiveplayServer();
-const { uiMode } = useUiMode();
+const { uiMode, uiFontScale, regularPlaylistRowHeight, showPlaylistRowHeight, folderPlaylistRowHeight } = useUiMode();
 const { levels: outputTargetLevels } = useOutputTarget();
 const showProjectSettings = useState('showProjectSettings', () => false);
+const showCueProperties = computed(() => !showProjectSettings.value && propertiesPanelOpen.value && selectedItem.value &&
+  (uiMode.value !== 'playback' || selectedItem.value.uuid === previewItemUuid.value));
+const reservedPlaylistRowHeight = computed(() => Math.max(folderPlaylistRowHeight.value,
+  uiMode.value === 'playback' ? showPlaylistRowHeight.value : regularPlaylistRowHeight.value));
+
+const MIN_PANEL_HEIGHT = 120;
+const MAX_PANEL_HEIGHT = 640;
+const settingsHeight = useState('ProjectSettingsPanel.height', () => 240);
+const propertiesHeight = useState('PropertiesPanel.height', () => 320);
+const panelHeight = computed(() => showProjectSettings.value ? settingsHeight.value : propertiesHeight.value);
+const workspaceContent = ref<HTMLElement | null>(null);
+const lowerPanel = ref<HTMLElement | null>(null);
+const visiblePanelHeight = ref(0);
+const panelMaxHeight = ref(MAX_PANEL_HEIGHT);
+let panelObserver: ResizeObserver | undefined;
+let panelDrag: { pointerId: number; startY: number; height: number; max: number } | null = null;
+
+function availablePanelHeight() {
+  const content = workspaceContent.value;
+  if (!content) return MAX_PANEL_HEIGHT;
+  const reserved = parseFloat(getComputedStyle(content).minHeight);
+  return Math.min(MAX_PANEL_HEIGHT, Math.max(MIN_PANEL_HEIGHT,
+    (lowerPanel.value?.offsetHeight ?? panelHeight.value) + content.offsetHeight - reserved));
+}
+
+function setPanelHeight(height: number, max: number) {
+  const size = showProjectSettings.value ? settingsHeight : propertiesHeight;
+  size.value = Math.round(Math.max(MIN_PANEL_HEIGHT, Math.min(max, height)));
+}
+
+function startPanelResize(event: PointerEvent) {
+  if (event.button !== 0 || !event.isPrimary) return;
+  const handle = event.currentTarget as HTMLElement;
+  event.preventDefault();
+  handle.focus({ preventScroll: true });
+  handle.setPointerCapture(event.pointerId);
+  panelDrag = {
+    pointerId: event.pointerId, startY: event.clientY,
+    height: lowerPanel.value?.offsetHeight ?? panelHeight.value, max: availablePanelHeight(),
+  };
+}
+
+function movePanelResize(event: PointerEvent) {
+  if (panelDrag?.pointerId !== event.pointerId) return;
+  setPanelHeight(panelDrag.height + (panelDrag.startY - event.clientY) * 100 / uiFontScale.value, panelDrag.max);
+}
+
+function handlePanelResizeKey(event: KeyboardEvent) {
+  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+  event.preventDefault();
+  const height = lowerPanel.value?.offsetHeight ?? panelHeight.value;
+  setPanelHeight(height + (event.key === 'ArrowUp' ? 16 : -16), availablePanelHeight());
+}
 
 
 // Progress modal state
@@ -832,11 +893,18 @@ onMounted(() => {
   if (import.meta.client) {
     mountHotkeys();
     window.addEventListener('keydown', handleKeydown);
+    panelObserver = new ResizeObserver(() => {
+      visiblePanelHeight.value = lowerPanel.value?.offsetHeight ?? 0;
+      if (visiblePanelHeight.value) panelMaxHeight.value = availablePanelHeight();
+    });
+    if (lowerPanel.value) panelObserver.observe(lowerPanel.value);
+    if (workspaceContent.value) panelObserver.observe(workspaceContent.value);
   }
 });
 
 onUnmounted(() => {
   if (import.meta.client) {
+    panelObserver?.disconnect();
     unmountHotkeys();
     window.removeEventListener('keydown', handleKeydown);
   }
@@ -860,7 +928,8 @@ onUnmounted(() => {
 }
 
 .workspace-content {
-  flex: 1;
+  flex: 1 1 0;
+  min-height: calc(var(--panel-header-height) + var(--reserved-playlist-row-height) + 2 * var(--workspace-gutter));
   display: flex;
   overflow: hidden;
   position: relative;
@@ -868,10 +937,9 @@ onUnmounted(() => {
 }
 
 .preview-lower-panel {
-  flex: 0 0 112px;
-  height: 112px;
+  flex: 0 0 auto;
   box-sizing: border-box;
-  padding: var(--workspace-gutter);
+  padding: var(--spacing-xs) var(--workspace-gutter);
   overflow: hidden;
   background: var(--color-surface);
   border-top: 1px solid var(--color-border);
@@ -881,9 +949,36 @@ onUnmounted(() => {
   display: none;
 }
 
-// Keep room for a playlist row when Preview and Settings are both open.
-.preview-lower-panel:not(:empty) ~ .project-settings-panel {
-  max-height: calc(100% - 450px);
+.lower-workspace-panel {
+  position: relative;
+  flex: 0 1 auto;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+}
+
+.lower-panel-resize-handle {
+  position: absolute;
+  z-index: 2;
+  inset: -6px calc(50% - 48px) auto;
+  height: 12px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.lower-panel-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  left: calc(50% - 24px);
+  width: 48px;
+  height: 2px;
+  background: var(--color-border-strong);
+}
+
+.lower-panel-resize-handle:hover::after,
+.lower-panel-resize-handle:focus-visible::after {
+  background: var(--color-accent);
 }
 
 .workspace-panels {
@@ -934,7 +1029,7 @@ onUnmounted(() => {
   gap: var(--spacing-sm);
   min-height: 0;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: auto;
   padding: var(--spacing-sm);
   background: var(--color-background);
   box-shadow: none;
@@ -1119,6 +1214,7 @@ onUnmounted(() => {
   position: relative;
   display: flex;
   flex: 0 0 var(--output-strip-width);
+  min-height: 144px;
   align-items: stretch;
   border-radius: var(--control-radius);
   box-shadow: none;

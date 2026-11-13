@@ -541,7 +541,7 @@ onUnmounted(() => {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-xs) var(--workspace-gutter);
 }
 
 .category-header,
@@ -556,7 +556,7 @@ onUnmounted(() => {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--color-text-secondary);
-  padding: var(--spacing-xs) 0;
+  padding: 2px 0;
 }
 
 /* Shared action row (both tabs) */
@@ -584,6 +584,8 @@ onUnmounted(() => {
 
 .keyboard-action-row {
   grid-template-columns: minmax(0, 1fr) minmax(0, 136px) minmax(48px, max-content);
+  min-height: 30px;
+  padding-block: 2px;
 }
 
 .action-label {

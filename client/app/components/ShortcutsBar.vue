@@ -5,9 +5,9 @@
     role="complementary"
     :aria-label="t('settings.helpShortcutsTitle')"
   >
-    <span class="shortcuts-bar__title">{{ t('settings.helpShortcutsTitle') }}</span>
+    <span v-if="!compact" class="shortcuts-bar__title">{{ t('settings.helpShortcutsTitle') }}</span>
     <div class="shortcuts-bar__items">
-      <span v-for="action in PLAYBACK_ACTIONS" :key="action.id" class="shortcuts-bar__item">
+      <span v-for="action in displayedActions" :key="action.id" class="shortcuts-bar__item">
         <span class="shortcuts-bar__action">{{ t(action.labelKey) }}</span>
         <kbd class="shortcuts-bar__key">{{ playbackKeyLabel(action.id) || '—' }}</kbd>
       </span>
@@ -36,6 +36,11 @@
 // full editor is available under Settings → Shortcuts and from Customize.
 import { PLAYBACK_ACTIONS, useCartHotkeys } from '~/composables/useCartHotkeys';
 
+const props = defineProps<{ compact: boolean }>();
+const transportActions = PLAYBACK_ACTIONS.filter(({ id }) =>
+  ['play-next', 'stop-all', 'pause-resume', 'set-up-next'].includes(id));
+const displayedActions = computed(() => props.compact ? transportActions : PLAYBACK_ACTIONS);
+
 const { t } = useLocalization();
 const { playbackKeyLabel } = useCartHotkeys();
 
@@ -53,8 +58,8 @@ const openEditor = () => {
 .shortcuts-bar {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md);
-  padding: 4px var(--spacing-md);
+  gap: var(--spacing-sm);
+  padding: 2px var(--workspace-gutter);
   border-top: 1px solid var(--color-border);
   background: var(--color-surface);
   flex: 0 0 auto;
