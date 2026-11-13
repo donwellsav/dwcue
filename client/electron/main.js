@@ -4746,7 +4746,8 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
     event.sender.once(eventName, cancelOnRendererExit);
   }
 
-  let stdout = '';
+  let reviewDir = '';
+  let rawTracks;
   let embedReview = null;
   try {
     try {
@@ -4759,7 +4760,9 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
       console.warn('[spotify] embed preflight unavailable; falling back to spotDL:', error.message);
     }
 
-    if (!embedReview?.rawTracks) {
+    if (embedReview?.rawTracks) {
+      rawTracks = embedReview.rawTracks;
+    } else {
       const setupResult = await Promise.race([
         Promise.all([setupSpotDl(), setupFfmpeg()])
           .then((value) => ({ value }), (error) => ({ error })),
@@ -4771,10 +4774,14 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
       if (!spotDlReady || !spotDlPath) throw new Error('Spotify downloader is unavailable');
       if (!ffmpegReady || !ffmpegPath) throw new Error('FFmpeg is unavailable for Spotify review');
       const metadataUrl = embedReview?.playlistUrl || url;
-      stdout = await new Promise((resolve, reject) => {
+      reviewDir = await fs.promises.mkdtemp(path.join(app.getPath('temp'), 'dwcue-spotify-review-'));
+      if (job.cancelled) throw new Error('Spotify review cancelled');
+      const metadataFile = path.join(reviewDir, 'tracks.spotdl');
+      const outputLimit = 32 * 1024 * 1024;
+      await new Promise((resolve, reject) => {
         // Review only needs metadata. Skip the YouTube Music connection check and lyrics lookups.
         const child = spawn(spotDlPath, [
-          'save', metadataUrl, '--save-file', '-', '--ffmpeg', ffmpegPath,
+          'save', metadataUrl, '--save-file', metadataFile, '--ffmpeg', ffmpegPath,
           '--threads', '8', '--audio', 'youtube', '--lyrics',
         ], {
           windowsHide: true,
@@ -4787,15 +4794,15 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
         let bytes = 0;
         let settled = false;
         let timeout;
-        const finish = (error, value) => {
+        const finish = (error) => {
           if (settled) return;
           settled = true;
           clearTimeout(timeout);
-          error ? reject(error) : resolve(value);
+          error ? reject(error) : resolve();
         };
         const append = (chunk, stderr = false) => {
           bytes += chunk.length;
-          if (bytes > 32 * 1024 * 1024) {
+          if (bytes > outputLimit) {
             terminateSpotifyChild(child);
             finish(new Error('Spotify review output was too large'));
             return;
@@ -4810,7 +4817,7 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
           job.child = null;
           if (job.cancelled) finish(new Error('Spotify review cancelled'));
           else if (code !== 0) finish(new Error(summarizeSpotDlError(output, errors, code)));
-          else finish(null, output);
+          else finish();
         });
         timeout = setTimeout(() => {
           terminateSpotifyChild(child);
@@ -4818,8 +4825,22 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
         }, 300000);
         timeout.unref();
       });
+      try {
+        const info = await fs.promises.stat(metadataFile);
+        if (!info.isFile()) throw new Error('Spotify review output is not a file');
+        if (info.size > outputLimit) throw new Error('Spotify review output was too large');
+        rawTracks = JSON.parse(await fs.promises.readFile(metadataFile, 'utf8'));
+      } catch (error) {
+        if (error.code === 'ENOENT') throw new Error('Spotify returned no track list');
+        if (error instanceof SyntaxError) throw new Error('Spotify returned an unreadable track list');
+        throw error;
+      }
+      if (job.cancelled) throw new Error('Spotify review cancelled');
     }
   } finally {
+    if (reviewDir) await fs.promises.rm(reviewDir, { recursive: true, force: true }).catch(error => {
+      console.warn('[spotify] Could not remove review files:', error.message);
+    });
     for (const eventName of ['destroyed', 'render-process-gone', 'did-start-navigation']) {
       event.sender.removeListener(eventName, cancelOnRendererExit);
     }
@@ -4827,13 +4848,6 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
     job.resolveDone();
   }
 
-  const clean = stdout.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '').trim();
-  const rawTracks = embedReview?.rawTracks || (() => {
-    const start = clean.indexOf('[');
-    const end = clean.lastIndexOf(']');
-    if (start < 0 || end <= start) throw new Error('Spotify returned no track list');
-    return JSON.parse(clean.slice(start, end + 1));
-  })();
   if (!Array.isArray(rawTracks)) {
     throw new Error('Spotify returned an invalid track list');
   }

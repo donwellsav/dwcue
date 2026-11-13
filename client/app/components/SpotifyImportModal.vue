@@ -803,7 +803,8 @@ async function reviewSpotify() {
     reviewState.value = await api.preflightSpotify(jobId, normalizedUrl.value);
     selectedTrackIds.value = reviewState.value.tracks.map(track => track.id);
   } catch (error: any) {
-    errorMessage.value = error?.message || t('spotifyImport.reviewFailed');
+    errorMessage.value = t(isCancelling.value ? 'spotifyImport.cancelled' : 'spotifyImport.reviewFailed');
+    technicalMessage.value = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '') : '';
   } finally {
     if (reviewJobId.value === jobId) reviewJobId.value = '';
     isReviewing.value = false;
