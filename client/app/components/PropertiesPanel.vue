@@ -724,6 +724,10 @@ const endBehaviorTargetIndex = computed(() => {
 const handleEndBehaviorIndexChange = (e: Event) => {
   const input = e.target as HTMLInputElement;
   const parsed = parseItemIndexInput(input.value);
+  if (input.value.trim() && parsed.length === 0) {
+    input.value = formatItemIndex(endBehaviorTargetIndex.value);
+    return;
+  }
   // Reflect the normalised path back into the field so the user sees the
   // canonical comma form (e.g. typing "1.10" shows "1,10").
   input.value = formatItemIndex(parsed);
@@ -779,6 +783,10 @@ const startBehaviorTargetIndex = computed(() => {
 const handleStartBehaviorIndexChange = (e: Event) => {
   const input = e.target as HTMLInputElement;
   const parsed = parseItemIndexInput(input.value);
+  if (input.value.trim() && parsed.length === 0) {
+    input.value = formatItemIndex(startBehaviorTargetIndex.value);
+    return;
+  }
   input.value = formatItemIndex(parsed);
   if (selectedItem.value?.type === 'audio') {
     if (parsed.length > 0) audioItem.value.startBehavior.targetIndex = parsed;

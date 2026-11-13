@@ -246,7 +246,7 @@
               <input
                 type="number"
                 class="settings-input"
-                min="0"
+                min="1"
                 step="1"
                 :value="indexDisplayStart"
                 @change="onIndexDisplayStartChange"
@@ -847,7 +847,7 @@ const playbackKeyLabel = (action: PlaybackKeyAction): string => {
   const binding = playbackMappings.value[action];
   return binding ? formatKeyLabel(binding) : '';
 };
-const { currentProject, saveProject } = useProject();
+const { currentProject, indexDisplayStart, saveProject } = useProject();
 const {
   regularPlaylistRowHeight,
   showPlaylistRowHeight,
@@ -931,7 +931,6 @@ const cycleTrackColors = computed(() =>
 const disableLimiter           = computed(() => !!(currentProject.value as any)?.settings?.disableLimiter);
 const disableSilenceWarning    = computed(() => !!(currentProject.value as any)?.settings?.disableSilenceWarning);
 const defaultTransitionMode    = computed(() => (currentProject.value as any)?.settings?.defaultTransitionMode || 'crossfade');
-const indexDisplayStart        = computed(() => normalizeIndexDisplayStart((currentProject.value as any)?.settings?.indexDisplayStart));
 // Defaults ON (undefined → true) so legacy projects and new projects both
 // arm the next item as "Up Next" for cues without an end behaviour. (#28)
 const autoCueNextWithoutEndBehavior = computed(() => (currentProject.value as any)?.settings?.autoCueNextWithoutEndBehavior !== false);
