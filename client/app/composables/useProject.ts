@@ -90,6 +90,7 @@ type ProjectHydrationLoad = ReturnType<typeof _projectHydration.begin>;
 const _ownerSessionId = globalThis.crypto?.randomUUID?.()
   ?? 'dwcue-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
 let _hydrationRequestRevision = 0;
+let _openOverlayRevision = 0;
 const _hydrationRetry = createProjectHydrationRetry();
 
 const createItemPatchMutationIdentity = (clientId: string) => {
@@ -705,7 +706,9 @@ export const useProject = () => {
   // project, we drop straight into MainWorkspace instead of showing
   // New/Open. Returns true if a project was rejoined.
   const tryRejoinExistingProject = async (existingHeader?: any, signal?: AbortSignal): Promise<boolean> => {
-    if (signal?.aborted) return false;
+    // A welcome probe must yield to an explicit Open or New. Reconnect
+    // verification supplies its own server header and can still proceed.
+    if (signal?.aborted || (isLoading.value && !existingHeader)) return false;
     const requestRevision = ++_hydrationRequestRevision;
     _hydrationRetry.set(() => tryRejoinExistingProject());
     try {
@@ -750,6 +753,7 @@ export const useProject = () => {
     loadHeader: (server: any) => Promise<any>,
   ): Promise<boolean> => {
     const requestRevision = ++_hydrationRequestRevision;
+    const overlayRevision = ++_openOverlayRevision;
     if (projectHydrationStatus.value !== 'failed') {
       _hydrationRetry.set(() => hydrateProjectFrom(loadHeader));
     }
@@ -791,7 +795,7 @@ export const useProject = () => {
       console.error('Error opening project:', error);
       return false;
     } finally {
-      if (requestRevision === _hydrationRequestRevision) isLoading.value = false;
+      if (overlayRevision === _openOverlayRevision) isLoading.value = false;
     }
   };
 
@@ -933,6 +937,8 @@ export const useProject = () => {
   // empty for streamItemPages() to populate.
   const clearLocalProjectMirror = () => {
     ++_hydrationRequestRevision;
+    ++_openOverlayRevision;
+    isLoading.value = false;
     _projectHydration.invalidate();
     const hadIdentity = currentProject.value !== null || projectFilePathRef.value !== '';
     _uninstallItemsWatcherFn?.();
