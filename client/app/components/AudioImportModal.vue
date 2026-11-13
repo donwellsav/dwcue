@@ -1,13 +1,14 @@
 <template>
-  <Teleport to="body">
-    <div v-if="open" class="modal-backdrop" @click.self="close">
-      <div class="modal">
-        <header>
+  <Teleport to="body" :disabled="docked">
+    <div v-if="open" v-show="visible !== false" :class="{ 'modal-backdrop': !docked }" @click.self="!docked && close()">
+      <div class="import-media" :class="docked ? 'workspace-import-body' : 'modal'">
+        <header v-if="!docked">
           <h2>{{ t('importAudio.title') }}</h2>
           <Btn type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
           <button class="x" :aria-label="t('actions.close')" :disabled="busy || pickingLocal" @click="close">✕</button>
         </header>
 
+        <div class="import-source">
         <!-- Source mode toggle. Only rendered when the server is on a
              different machine; otherwise "upload" makes no sense and we
              skip the tabs entirely. -->
@@ -31,6 +32,7 @@
                 {{ pickingLocal ? t('importAudio.verifying') : t('importAudio.chooseFiles') }}
               </button>
             </div>
+            <p v-if="localPickerError" class="picker-error" role="alert">{{ localPickerError }}</p>
             <ul v-if="localPicked.length" class="uploaded">
               <li v-for="(p, i) in localPicked"
                   :key="p"
@@ -110,9 +112,11 @@
         </section>
 
         <p class="hint">{{ t('importAudio.preserveAudio') }}</p>
+        </div>
 
-        <details class="import-advanced">
-          <summary>{{ t('importAudio.advanced') }}</summary>
+        <component :is="docked ? 'section' : 'details'" class="import-advanced">
+          <h3 v-if="docked">{{ t('importAudio.planTitle') }}</h3>
+          <summary v-else>{{ t('importAudio.advanced') }}</summary>
           <section v-if="tab === 'server'" class="import-options" :aria-label="t('importAudio.fileHandling')">
             <label>
               <span>{{ t('importAudio.fileHandling') }}</span>
@@ -134,7 +138,7 @@
 
           <section class="import-plan" :aria-label="t('importAudio.planTitle')">
             <div class="plan-heading">
-              <h3>{{ t('importAudio.planTitle') }}</h3>
+              <h3 v-if="!docked">{{ t('importAudio.planTitle') }}</h3>
               <span v-if="knownSelectionCount !== null" class="plan-count">
                 {{ t('importAudio.selectedCount', { count: knownSelectionCount }) }}
               </span>
@@ -163,7 +167,7 @@
               </div>
             </dl>
           </section>
-        </details>
+        </component>
 
         <section v-if="busy && progress" class="import-progress" role="status" aria-live="polite">
           <span>{{ t('importAudio.progress', progress) }}</span>
@@ -245,6 +249,8 @@ interface ImportResult {
 
 const props = defineProps<{
   open: boolean;
+  docked?: boolean;
+  visible?: boolean;
   busy?: boolean;
   result?: ImportResult | null;
   progress?: { current: number; total: number; name: string } | null;
@@ -321,6 +327,7 @@ const lastImportSource = ref<ImportSource>('local');
 const hasElectron = !!(globalThis as any).electronAPI?.selectAudioFiles;
 const localPicked  = ref<string[]>([]);
 const selectedLocal = ref<string[]>([]);
+const localPickerError = ref('');
 const localAnchor   = { i: -1 };
 const pickingLocal = ref(false);
 const knownSelectionCount = computed<number | null>(() => {
@@ -435,6 +442,7 @@ async function pickLocal() {
   if (!api?.selectAudioFiles || pickingLocal.value) return;
   const project = currentProject.value;
   pickingLocal.value = true;
+  localPickerError.value = '';
   try {
     const paths: string[] | null = await api.selectAudioFiles();
     if (paths?.length && props.open && currentProject.value === project) {
@@ -444,6 +452,10 @@ async function pickLocal() {
           selectedLocal.value.push(p);   // pre-select newly picked files
         }
       }
+    }
+  } catch (error) {
+    if (props.open && currentProject.value === project) {
+      localPickerError.value = error instanceof Error ? error.message : String(error);
     }
   } finally {
     pickingLocal.value = false;
@@ -554,6 +566,15 @@ function formatBytes(n: number): string {
     &:hover { background: var(--color-surface-hover); color: var(--color-text-primary); }
   }
 
+}
+
+.import-source {
+  display: grid;
+  gap: var(--spacing-sm);
+  min-width: 0;
+}
+
+.import-media {
   .tabs {
     display: flex; gap: 4px;
     border-bottom: 1px solid var(--color-border);
@@ -614,6 +635,7 @@ function formatBytes(n: number): string {
   .row { display: flex; gap: 10px; align-items: center; }
   .file-input { display: none; }
   .status { font-size: 12px; color: var(--color-text-secondary); }
+  .picker-error { margin: 0; color: var(--color-danger); overflow-wrap: anywhere; }
 
   .uploaded {
     list-style: none; margin: 0; padding: 0;
@@ -687,5 +709,26 @@ function formatBytes(n: number): string {
     .result-details { color: var(--color-text-tertiary); font-size: 10px; white-space: nowrap; }
     .result-reason { grid-column: 2 / -1; color: var(--color-text-secondary); font-size: 10px; line-height: 1.35; }
   }
+}
+
+.workspace-import-body {
+  .import-advanced > h3 {
+    margin: 0;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface);
+    font-size: var(--type-metadata-size);
+  }
+  .import-advanced { border-radius: 0; }
+  .import-options { padding: 0; border: 0; }
+  .import-options select { min-height: var(--settings-control-height); }
+  .import-plan { padding-top: var(--spacing-xs); }
+  .plan-heading:empty { display: none; }
+  .pane, .import-source, .plan-grid { gap: var(--spacing-xs); }
+  .pane > p { margin: 0; }
+  .import-progress, .import-results { grid-column: 1 / -1; }
+  .import-results li { grid-template-columns: 58px minmax(0, 1fr) auto; }
+  .import-results .result-details { white-space: normal; }
+  .import-results .result-reason { overflow-wrap: anywhere; }
 }
 </style>

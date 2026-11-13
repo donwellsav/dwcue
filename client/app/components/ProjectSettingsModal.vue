@@ -1,5 +1,5 @@
 <template>
-  <section v-if="open" class="project-settings-panel" :aria-label="t('settings.title')" @keydown="onPanelKeydown">
+  <section v-if="open" class="project-settings-panel" :aria-label="t('settings.title')">
         <header class="workspace-panel-header settings-header">
           <h2 class="workspace-panel-header__title">{{ t('settings.title') }}</h2>
           <nav class="settings-tabs" :aria-label="t('settings.title')">
@@ -689,7 +689,6 @@ import {
   type CartGridProfile,
   type PlaylistRowMode,
 } from '~/composables/useUiMode';
-import { bindingsMatch, eventToBinding, useCartHotkeys } from '~/composables/useCartHotkeys';
 import { normalizeIndexDisplayStart } from '~/utils/indexDisplay';
 import { HEADER_WARNING_TIMING, type HeaderWarningTiming } from '~/utils/headerWarnings';
 import AboutContent from './AboutContent.vue';
@@ -700,8 +699,6 @@ import { createTestCardConfig, type TestCardConfig } from '../../electron/test-c
 const props = defineProps<{ open: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 const { update } = useAppUpdate();
-const { playbackMappings } = useCartHotkeys();
-const { stopAllCues } = useAudioEngine();
 
 const { t, currentLocale, setLocale, availableLocales } = useLocalization();
 const server = useLiveplayServer();
@@ -1296,20 +1293,6 @@ function onCartGridLayoutChange(
   input.value = String(cartGridLayouts.value[profile][field]);
 }
 
-function onPanelKeydown(event: KeyboardEvent) {
-  if (event.defaultPrevented) return;
-  const stop = playbackMappings.value['stop-all'];
-  if (stop && bindingsMatch(stop, eventToBinding(event))) {
-    event.preventDefault();
-    event.stopPropagation();
-    if (!event.repeat) void stopAllCues();
-    return;
-  }
-  const target = event.target as HTMLElement | null;
-  if (target?.closest?.('select') ||
-      (['Enter', ' '].includes(event.key) && target?.closest?.('button, a[href], summary'))) event.stopPropagation();
-}
-
 function close() {
   emit('close');
 }
@@ -1317,9 +1300,6 @@ function close() {
 
 <style scoped>
 .project-settings-panel {
-  --settings-width: 1560px;
-  --settings-row-height: 28px;
-  --settings-control-height: 24px;
   flex: 1;
   min-height: 0;
   border-top: 1px solid var(--color-border);

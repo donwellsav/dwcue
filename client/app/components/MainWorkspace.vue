@@ -77,7 +77,7 @@
           @pointerdown="startResize"
         ></div>
 
-        <div v-if="!cartFullscreen || cartDetached" class="playlist-section">
+        <div v-show="!cartFullscreen || cartDetached" class="playlist-section">
           <div class="playlist-panel">
             <PlaylistView>
               <template #header-leading>
@@ -196,12 +196,13 @@
 
     <div id="preview-lower-panel" class="preview-lower-panel" aria-live="polite"></div>
 
-    <ShortcutsBar :compact="showProjectSettings || !!showCueProperties" />
-    
-    <div v-show="showProjectSettings || showCueProperties" ref="lowerPanel" class="lower-workspace-panel"
-      :style="{ height: panelHeight === null ? 'auto' : `${panelHeight}px` }">
+    <ShortcutsBar :compact="lowerPanelOpen" />
+
+    <div v-show="lowerPanelOpen" ref="lowerPanel" class="lower-workspace-panel"
+      :style="{ height: panelHeight === null ? 'auto' : `${panelHeight}px` }"
+      @keydown="handlePanelKeydown">
       <div class="lower-panel-resize-handle" role="separator" aria-orientation="horizontal"
-        :aria-label="showProjectSettings ? t('settings.title') : t('properties.title')"
+        :aria-label="showProjectSettings ? t('settings.title') : importPanelTitle || t('properties.title')"
         :aria-valuemin="MIN_PANEL_HEIGHT" :aria-valuemax="panelMaxHeight"
         :aria-valuenow="visiblePanelHeight || panelHeight || MIN_PANEL_HEIGHT" tabindex="0"
         @pointerdown="startPanelResize" @pointermove="movePanelResize"
@@ -209,6 +210,15 @@
       ></div>
       <ProjectSettingsModal :open="showProjectSettings" @close="showProjectSettings = false" />
       <PropertiesPanel v-if="showCueProperties" />
+      <section v-show="visibleImportPanel" class="workspace-import" :aria-label="importPanelTitle">
+        <header class="workspace-panel-header">
+          <h2 class="workspace-panel-header__title">{{ importPanelTitle }}</h2>
+          <button type="button" class="workspace-import-close" :aria-label="t('actions.close')" @click="workspaceImportPanel = null">
+            <span class="material-symbols-rounded" aria-hidden="true">close</span>
+          </button>
+        </header>
+        <div id="workspace-import-host" class="workspace-import-host"></div>
+      </section>
     </div>
 
     <ProgressModal
@@ -255,12 +265,14 @@ import ProjectSettingsModal from './ProjectSettingsModal.vue';
 import ServerFilePickerModal from './ServerFilePickerModal.vue';
 import StereoMeter from './StereoMeter.vue';
 import VolumeSlider from './VolumeSlider.vue';
+import { bindingsMatch, eventToBinding } from '~/composables/useCartHotkeys';
 import { flattenOneShots } from '~/utils/oneShots';
 
 const {
   selectedItem,
   selectedItems,
   propertiesPanelOpen,
+  workspaceImportPanel,
   previewItemUuid,
   saveProject,
   closeProject,
@@ -280,16 +292,26 @@ const server = useLiveplayServer();
 const { uiMode, uiFontScale, regularPlaylistRowHeight, showPlaylistRowHeight, folderPlaylistRowHeight } = useUiMode();
 const { levels: outputTargetLevels } = useOutputTarget();
 const showProjectSettings = useState('showProjectSettings', () => false);
-const showCueProperties = computed(() => !showProjectSettings.value && propertiesPanelOpen.value && selectedItem.value &&
+const visibleImportPanel = computed(() => !showProjectSettings.value && uiMode.value !== 'playback' ? workspaceImportPanel.value : null);
+const importPanelTitle = computed(() => {
+  if (visibleImportPanel.value === 'media') return t('importAudio.title');
+  if (visibleImportPanel.value === 'youtube') return t('youtube.importFromYouTube');
+  if (visibleImportPanel.value === 'spotify') return t('spotifyImport.title');
+  return '';
+});
+const showCueProperties = computed(() => !showProjectSettings.value && !visibleImportPanel.value && propertiesPanelOpen.value && selectedItem.value &&
   (uiMode.value !== 'playback' || selectedItem.value.uuid === previewItemUuid.value));
+const lowerPanelOpen = computed(() => showProjectSettings.value || !!visibleImportPanel.value || !!showCueProperties.value);
 const reservedPlaylistRowHeight = computed(() => Math.max(folderPlaylistRowHeight.value,
   uiMode.value === 'playback' ? showPlaylistRowHeight.value : regularPlaylistRowHeight.value));
 
 const MIN_PANEL_HEIGHT = 120;
 const MAX_PANEL_HEIGHT = 640;
 const settingsHeight = useState<number | null>('ProjectSettingsPanel.height', () => null);
-const propertiesHeight = useState('PropertiesPanel.height', () => 320);
-const panelHeight = computed(() => showProjectSettings.value ? settingsHeight.value : propertiesHeight.value);
+const propertiesHeight = useState<number | null>('PropertiesPanel.height', () => null);
+const importHeight = useState<number | null>('ImportPanel.height', () => null);
+const panelHeight = computed(() => showProjectSettings.value ? settingsHeight.value
+  : visibleImportPanel.value ? importHeight.value : propertiesHeight.value);
 const workspaceContent = ref<HTMLElement | null>(null);
 const lowerPanel = ref<HTMLElement | null>(null);
 const visiblePanelHeight = ref(0);
@@ -306,7 +328,7 @@ function availablePanelHeight() {
 }
 
 function setPanelHeight(height: number, max: number) {
-  const size = showProjectSettings.value ? settingsHeight : propertiesHeight;
+  const size = showProjectSettings.value ? settingsHeight : visibleImportPanel.value ? importHeight : propertiesHeight;
   size.value = Math.round(Math.max(MIN_PANEL_HEIGHT, Math.min(max, height)));
 }
 
@@ -330,6 +352,7 @@ function movePanelResize(event: PointerEvent) {
 function handlePanelResizeKey(event: KeyboardEvent) {
   if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
   event.preventDefault();
+  event.stopPropagation();
   const height = lowerPanel.value?.offsetHeight ?? MIN_PANEL_HEIGHT;
   setPanelHeight(height + (event.key === 'ArrowUp' ? 16 : -16), availablePanelHeight());
 }
@@ -367,7 +390,8 @@ watch(hasAssignedOneShots, (assigned) => {
 const cartFullscreen = ref(false);
 const cartDetached = ref(false);
 const cartVisible = computed(() => !cartClosed.value && !cartDetached.value);
-const { mount: mountHotkeys, unmount: unmountHotkeys } = useCartHotkeys();
+const { mount: mountHotkeys, unmount: unmountHotkeys, playbackMappings } = useCartHotkeys();
+const { stopAllCues } = useAudioEngine();
 const outputConsoleMinDb = -60;
 const outputConsoleMaxDb = 40;
 const limiterCeilingDragPixelsPerStep = 6;
@@ -833,6 +857,22 @@ const isForwardedFromVideoOutput = (e: KeyboardEvent): boolean =>
   (e as KeyboardEvent & { dwcueForwardedFromVideoOutput?: boolean })
     .dwcueForwardedFromVideoOutput === true;
 
+function handlePanelKeydown(event: KeyboardEvent) {
+  if (event.defaultPrevented) return;
+  const stop = playbackMappings.value['stop-all'];
+  const typing = isTextInputFocused() && event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey;
+  if (!typing && stop && bindingsMatch(stop, eventToBinding(event))) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) void stopAllCues();
+    return;
+  }
+  const target = event.target as HTMLElement | null;
+  if (target?.closest?.('select') ||
+      ['Delete', 'Backspace'].includes(event.key) ||
+      (['Enter', ' '].includes(event.key) && target?.closest?.('button, a[href], summary'))) event.stopPropagation();
+}
+
 const handleKeydown = (e: KeyboardEvent) => {
   if (e.defaultPrevented || projectHydrationStatus.value !== 'ready') return;
   // Save on F1 key (alternative to big play button)
@@ -877,7 +917,7 @@ const handleKeydown = (e: KeyboardEvent) => {
     if (uuids.length > 0) duplicateItems(uuids);
   } else if (key === 'c') {
     if (!isForwardedFromVideoOutput(e) && (window.getSelection()?.isCollapsed === false ||
-        (showProjectSettings.value && (e.target as HTMLElement | null)?.closest?.('.project-settings-panel')))) return;
+        (e.target as HTMLElement | null)?.closest?.('.lower-workspace-panel'))) return;
     const uuids = Array.from(selectedItems.value);
     if (uuids.length > 0) {
       e.preventDefault();
@@ -956,6 +996,40 @@ onUnmounted(() => {
   max-height: 640px;
   display: flex;
   flex-direction: column;
+}
+
+.workspace-import {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-background);
+}
+
+.workspace-import-close {
+  display: grid;
+  place-items: center;
+  width: var(--panel-control-height);
+  height: var(--panel-control-height);
+  padding: 0;
+  border: 0;
+  border-radius: var(--control-radius);
+  background: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.workspace-import-close:hover {
+  background: var(--color-surface-hover);
+}
+
+.workspace-import-host {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  container-type: inline-size;
 }
 
 .lower-panel-resize-handle {

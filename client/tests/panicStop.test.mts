@@ -54,8 +54,6 @@ test('Stop All remains clickable when no project-backed cue is active', () => {
 test('Stop All sends the normal command from transfer, file selection and loading dialogs', () => {
   const dialogs = [
     ['AudioImportModal', 'header'],
-    ['SpotifyImportModal', 'header'],
-    ['YouTubeImportModal', 'div', 'modal-header'],
     ['ProgressModal', 'div', 'modal-content'],
     ['ServerFilePickerModal', 'header', 'toolbar'],
     ['LocationChoiceModal', 'div', 'lc-footer'],
@@ -72,16 +70,14 @@ test('Stop All sends the normal command from transfer, file selection and loadin
     const region = render({
       $slots: {},
       t: (key: string) => key,
-      busy: true, isBusy: true, visible: true, background: false, percentage: 50, attempts: 0, actionError: '', verifying: false,
+      docked: false, busy: true, visible: true, background: false, percentage: 50, attempts: 0, actionError: '', verifying: false,
       titleId: 'import-test', title: 'Working', message: 'Working', isDark: true, subtitle: '',
-      pickingLocal: true, isChoosingDestination: true,
+      pickingLocal: true,
       historyBack: [], canGoUp: false, pathDraft: '', goBack() {}, goUp() {}, navigate() {}, cancelLabel: 'Cancel',
       server: { stopAll: (...args: unknown[]) => { stopCalls.push(args); } },
       onReconnect() {}, onRestart() {}, onExit() {},
       close: () => assert.fail('Stop All must not close the import'),
       cancel: () => assert.fail('Stop All must not cancel file selection'),
-      handleClose: () => assert.fail('Stop All must not close the import'),
-      closeModal: () => assert.fail('Stop All must not close the import'),
     }, []);
     const button = region.children.find((child: Vue.VNode) => child.props?.text === 'controls.stopAll');
     assert.ok(button, `${component} must show Stop All during its operation`);
@@ -90,6 +86,28 @@ test('Stop All sends the normal command from transfer, file selection and loadin
     button.props.onClick();
     assert.deepEqual(stopCalls, [[]], `${component} must let the server apply the configured Stop All fade`);
   }
+});
+
+test('Stop All works while an import text field has focus', () => {
+  const source = readFileSync(new URL('../app/components/MainWorkspace.vue', import.meta.url), 'utf8');
+  const handler = source.slice(source.indexOf('function handlePanelKeydown('), source.indexOf('const handleKeydown ='));
+  const code = ts.transpileModule(handler, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const playbackMappings = { value: { 'stop-all': DEFAULT_PLAYBACK_KEYS['stop-all'] } };
+  let stopped = 0;
+  const keydown = Function('playbackMappings', 'bindingsMatch', 'eventToBinding', 'isTextInputFocused', 'stopAllCues',
+    `${code}\nreturn handlePanelKeydown;`)(playbackMappings, bindingsMatch, eventToBinding, () => true, () => { stopped++; });
+  const press = (key: string, repeat = false) => {
+    const event = { key, repeat, defaultPrevented: false, stopped: false,
+      target: { closest: () => null }, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false,
+      preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; } };
+    keydown(event);
+    return event;
+  };
+  assert.equal(press('Escape').stopped, true);
+  press('Escape', true);
+  playbackMappings.value['stop-all'] = { key: 'k', ctrlKey: false, shiftKey: false, altKey: false };
+  assert.equal(press('k').defaultPrevented, false, 'a plain-letter binding must not interrupt typing');
+  assert.equal(stopped, 1);
 });
 
 test('Stop All remains available inside the recovery prompt while a recovery choice is pending', () => {

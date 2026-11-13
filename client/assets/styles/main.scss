@@ -101,6 +101,9 @@ button > .material-symbols-rounded {
   --properties-panel-height: 320px;
   --panel-header-height: 44px;
   --panel-control-height: 34px;
+  --settings-width: 1560px;
+  --settings-row-height: 28px;
+  --settings-control-height: 24px;
   --resize-handle-width: 1px;
   // PlaylistView removes an 8px gutter on each side before row queries run.
   // Keep the inner row one pixel clear of its 560px compact breakpoint.
@@ -246,6 +249,21 @@ body {
   align-items: center;
   gap: var(--workspace-gutter);
   min-width: 0;
+}
+
+.workspace-import-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  width: min(100%, var(--settings-width));
+  padding: var(--spacing-xs) var(--workspace-gutter);
+  gap: var(--spacing-sm);
+}
+
+@container (max-width: 720px) {
+  .workspace-import-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 // Editable fields stay selectable everywhere (belt and braces with the

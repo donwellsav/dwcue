@@ -1,17 +1,16 @@
 <template>
   <div class="properties-panel">
     <div class="properties-header workspace-panel-header">
-      <h3 class="workspace-panel-header__title">{{ selectedItems.size > 1 ? t('properties.multipleItemsSelected', { count: selectedItems.size }) : (t('properties.title') + ': ' + (selectedItem?.displayName || '')) }}</h3>
-      <div class="properties-tabs" role="tablist">
+      <h3 class="workspace-panel-header__title" :title="selectedItem?.displayName">{{ selectedItems.size > 1 ? t('properties.multipleItemsSelected', { count: selectedItems.size }) : (t('properties.title') + ': ' + (selectedItem?.displayName || '')) }}</h3>
+      <div class="properties-tabs" :aria-label="t('properties.title')">
         <button
           v-for="tab in availableTabs"
           :key="tab.id"
           :class="['tab-btn', { active: activeTab === tab.id }]"
-          role="tab"
-          :aria-selected="activeTab === tab.id"
+          :aria-pressed="activeTab === tab.id"
           @click="activeTab = tab.id"
         >
-          <span class="material-symbols-rounded">{{ tab.icon }}</span>
+          <span class="material-symbols-rounded" aria-hidden="true">{{ tab.icon }}</span>
           <span>{{ tab.label }}</span>
         </button>
       </div>
@@ -19,134 +18,135 @@
         <span class="material-symbols-rounded">close</span>
       </button>
     </div>
-    
-    <div class="properties-content">
+
+    <div class="properties-content" :class="{ 'properties-content--audio': selectedItem.type === 'audio' }">
       <!-- Basic Info Tab -->
       <div v-if="activeTab === 'basic'" class="tab-panel basic-panel">
-        <div class="property-field">
-          <label>{{ t('properties.displayName') }}</label>
-          <input 
-            v-model="selectedItem.displayName" 
-            type="text" 
-            @change="handleSave"
-          />
-        </div>
-
-        <div v-if="hasSelectedAudioItems" class="property-field one-shot-designation">
-          <label class="one-shot-designation__toggle">
-            <input
-              type="checkbox"
-              :checked="oneShotEnabled"
-              @change="handleOneShotDesignationChange"
+        <section class="property-column">
+          <h4>{{ t('properties.basicInfo') }}</h4>
+          <div class="property-field">
+            <label for="cue-property-displayName">{{ t('properties.displayName') }}</label>
+            <input id="cue-property-displayName"
+              v-model="selectedItem.displayName"
+              type="text"
+              @change="handleSave"
             />
-            <span>{{ t('oneShots.designation') }}</span>
-          </label>
-          <p class="property-help">{{ t('oneShots.designationHelp') }}</p>
-        </div>
-
-        <div v-if="selectedItem.type === 'audio'" class="property-field">
-          <label>{{ t('properties.file') }}</label>
-          <div class="input-with-btn">
-            <input :value="audioItem.mediaFileName" readonly />
-            <button class="icon-btn" :disabled="isReplacingMedia" :title="t('properties.replaceMedia')" @click="handleReplaceMedia">
-              <span class="material-symbols-rounded">swap_horiz</span>
+          </div>
+          <div class="property-field">
+            <label for="cue-property-index">{{ t('properties.index') }}</label>
+            <input id="cue-property-index" :value="formatItemIndex(selectedItem.index)" readonly />
+          </div>
+          <div v-if="selectedItem.type === 'audio'" class="property-field">
+            <label for="cue-property-duration">{{ t('properties.duration') }}</label>
+            <input id="cue-property-duration" :value="formatTime(audioItem.duration)" readonly />
+          </div>
+          <div class="property-field">
+            <span class="property-label">{{ t('properties.color') }}</span>
+            <div class="color-picker">
+              <button
+                v-for="color in PRESET_COLORS"
+                :key="color"
+                class="color-btn"
+                :style="{ backgroundColor: color }"
+                :class="{ active: selectedItem.color === color }"
+                :aria-pressed="selectedItem.color === color"
+                :aria-label="`${t('properties.color')} ${color}`"
+                @click="() => { selectedItem.color = color; handleSave(); }"
+              ></button>
+            </div>
+          </div>
+          <div v-if="hasSelectedAudioItems" class="property-field">
+            <button
+              type="button"
+              class="action-btn-small color-cycle"
+              @click="handleCycleSelectedColors"
+            >
+              {{ t('properties.cycleSelectedColors') }}
             </button>
           </div>
-        </div>
-
-        <div v-if="selectedItem.type === 'audio'" class="property-field">
-          <label>{{ t('properties.duration') }}</label>
-          <input :value="formatTime(audioItem.duration)" readonly />
-        </div>
-
-        <!-- Per-cue still image: shown on the video output while this cue
-             plays (sits above the global standby image, below video). -->
-        <div v-if="selectedItem.type === 'audio'" class="property-field">
-          <label>{{ t('properties.cueImage') }}</label>
-          <div class="input-with-btn">
-            <input
-              :value="audioItem.imagePath || ''"
-              readonly
-              :placeholder="t('properties.cueImageNone')"
-            />
-            <button
-              class="icon-btn"
-              :title="t('properties.cueImageChoose')"
-              @click="cueImagePickerOpen = true"
-            >
-              <span class="material-symbols-rounded">image</span>
-            </button>
-            <button
-              v-if="audioItem.imagePath"
-              class="icon-btn"
-              :title="t('properties.cueImageClear')"
-              @click="handleClearCueImage"
-            >
-              <span class="material-symbols-rounded">close</span>
+        </section>
+        <section v-if="selectedItem.type === 'audio'" class="property-column">
+          <h4>{{ t('properties.media') }}</h4>
+          <div class="property-field">
+            <label for="cue-property-file">{{ t('properties.file') }}</label>
+            <div class="input-with-btn">
+              <input id="cue-property-file" :value="audioItem.mediaFileName" readonly />
+              <button class="icon-btn" :disabled="isReplacingMedia" :title="t('properties.replaceMedia')" @click="handleReplaceMedia">
+                <span class="material-symbols-rounded">swap_horiz</span>
+              </button>
+            </div>
+          </div>
+          <div class="property-field">
+            <label for="cue-property-cueImage">{{ t('properties.cueImage') }}</label>
+            <div class="input-with-btn">
+              <input id="cue-property-cueImage"
+                :value="audioItem.imagePath || ''"
+                readonly
+                :placeholder="t('properties.cueImageNone')"
+              />
+              <button
+                class="icon-btn"
+                :title="t('properties.cueImageChoose')"
+                @click="cueImagePickerOpen = true"
+              >
+                <span class="material-symbols-rounded">image</span>
+              </button>
+              <button
+                v-if="audioItem.imagePath"
+                class="icon-btn"
+                :title="t('properties.cueImageClear')"
+                @click="handleClearCueImage"
+              >
+                <span class="material-symbols-rounded">close</span>
+              </button>
+            </div>
+          </div>
+          <div class="property-field">
+            <label for="cue-property-waveform">{{ t('properties.waveform') }}</label>
+            <button id="cue-property-waveform" class="icon-btn regen-btn" :disabled="isRegenerating" @click="handleRegenerateWaveform">
+              <span class="material-symbols-rounded" :class="{ spinning: isRegenerating }">refresh</span>
+              <span>{{ isRegenerating ? t('properties.regeneratingWaveform') : t('properties.regenerateWaveform') }}</span>
             </button>
           </div>
           <p class="property-help">{{ t('properties.cueImageHelp') }}</p>
-        </div>
-        
-        <div class="property-field">
-          <label>{{ t('properties.color') }}</label>
-          <div class="color-picker">
-            <button
-              v-for="color in PRESET_COLORS"
-              :key="color"
-              class="color-btn"
-              :style="{ backgroundColor: color }"
-              :class="{ active: selectedItem.color === color }"
-              @click="() => { selectedItem.color = color; handleSave(); }"
-            ></button>
-          </div>
-          <button
-            v-if="hasSelectedAudioItems"
-            type="button"
-            class="action-btn-small"
-            @click="handleCycleSelectedColors"
-          >
-            {{ t('properties.cycleSelectedColors') }}
-          </button>
-        </div>
-        
-        <div class="property-field">
-          <label>{{ t('properties.uuid') }}</label>
-          <div class="input-with-btn">
-            <input :value="selectedItem.uuid" readonly />
-            <button class="icon-btn" @click="copyToClipboard(selectedItem.uuid)">
-              <span class="material-symbols-rounded">content_copy</span>
-            </button>
-          </div>
-          <p v-if="replaceMediaStatus" class="property-help" :class="{ 'property-help--error': replaceMediaError }">
+          <p v-if="replaceMediaStatus" class="property-help" :class="{ 'property-help--error': replaceMediaError }" role="status">
             {{ replaceMediaStatus }}
           </p>
-        </div>
-        
-        <div class="property-field">
-          <label>{{ t('properties.index') }}</label>
-          <input :value="formatItemIndex(selectedItem.index)" readonly />
-        </div>
-        
-        <div class="property-field" v-if="selectedItem.type === 'audio'">
-          <label>{{ t('properties.apiTriggerUrl') }} · POST</label>
-          <div class="input-with-btn">
-            <input :value="apiTriggerUrl" readonly />
-            <button class="icon-btn" @click="copyToClipboard(apiTriggerUrl)">
-              <span class="material-symbols-rounded">content_copy</span>
-            </button>
+        </section>
+        <section class="property-column">
+          <h4>{{ t('properties.identifiers') }}</h4>
+          <div class="property-field">
+            <label for="cue-property-uuid">{{ t('properties.uuid') }}</label>
+            <div class="input-with-btn">
+              <input id="cue-property-uuid" :value="selectedItem.uuid" readonly />
+              <button class="icon-btn" :aria-label="t('properties.copyIdentifier', { name: t('properties.uuid') })" @click="copyToClipboard(selectedItem.uuid)">
+                <span class="material-symbols-rounded">content_copy</span>
+              </button>
+            </div>
           </div>
-        </div>
-
-        <div v-if="selectedItem.type === 'audio'" class="property-field">
-          <label>{{ t('properties.waveform') }}</label>
-          <button class="icon-btn regen-btn" :disabled="isRegenerating" @click="handleRegenerateWaveform">
-            <span class="material-symbols-rounded" :class="{ spinning: isRegenerating }">refresh</span>
-            <span>{{ isRegenerating ? t('properties.regeneratingWaveform') : t('properties.regenerateWaveform') }}</span>
-          </button>
-        </div>
+          <div class="property-field" v-if="selectedItem.type === 'audio'">
+            <label for="cue-property-apiTriggerUrl">{{ t('properties.apiTriggerUrl') }} · POST</label>
+            <div class="input-with-btn">
+              <input id="cue-property-apiTriggerUrl" :value="apiTriggerUrl" readonly />
+              <button class="icon-btn" :aria-label="t('properties.copyIdentifier', { name: t('properties.apiTriggerUrl') })" @click="copyToClipboard(apiTriggerUrl)">
+                <span class="material-symbols-rounded">content_copy</span>
+              </button>
+            </div>
+          </div>
+          <div v-if="hasSelectedAudioItems" class="property-field">
+            <label class="one-shot-designation__toggle">
+              <input
+                type="checkbox"
+                :checked="oneShotEnabled"
+                @change="handleOneShotDesignationChange"
+              />
+              <span>{{ t('oneShots.designation') }}</span>
+            </label>
+          </div>
+          <p v-if="hasSelectedAudioItems" class="property-help">{{ t('oneShots.designationHelp') }}</p>
+        </section>
       </div>
-      
+
       <!-- Playback Tab -->
       <div v-if="activeTab === 'playback' && selectedItem.type === 'audio'" class="tab-panel playback-panel">
         <WaveformTrimmer
@@ -197,176 +197,177 @@
         id="properties-transport-host"
         class="properties-playback-info"
       ></div>
-      
-      <!-- Output Tab -->
-      <div v-if="activeTab === 'output' && selectedItem.type === 'audio'" class="tab-panel">
-        <div class="property-field">
-          <label>{{ t('properties.deviceOverride') }}</label>
-          <select
-            :value="audioDeviceOverride"
-            :disabled="deviceOverrideEditPending"
-            @change="onDeviceOverrideChange"
-          >
-            <option value="">{{ t('settings.useProjectDefault') }}</option>
-            <option
-              v-for="d in devicesList"
-              :key="d.id"
-              :value="d.display_name"
+
+      <div v-if="activeTab === 'output' && selectedItem.type === 'audio'" class="tab-panel output-panel">
+        <section class="property-column">
+          <h4>{{ t('properties.output') }}</h4>
+          <div class="property-field">
+            <label for="cue-output-device">{{ t('properties.deviceOverride') }}</label>
+            <select id="cue-output-device"
+              :value="audioDeviceOverride"
+              :disabled="deviceOverrideEditPending"
+              @change="onDeviceOverrideChange"
             >
-              {{ d.display_name }}{{ d.is_default ? ' (' + t('common.default') + ')' : '' }}
-            </option>
-          </select>
+              <option value="">{{ t('settings.useProjectDefault') }}</option>
+              <option
+                v-for="d in devicesList"
+                :key="d.id"
+                :value="d.display_name"
+              >
+                {{ d.display_name }}{{ d.is_default ? ' (' + t('common.default') + ')' : '' }}
+              </option>
+            </select>
+          </div>
           <p class="property-help">{{ t('properties.deviceOverrideHelp') }}</p>
-        </div>
-
-        <!-- LTC Output Section -->
-        <div class="property-field" :class="{ 'field-disabled': !ltcDeviceConfigured }">
-          <label class="ltc-checkbox-label">
-            <CueSymbol name="ltc" />
-            <input
-              type="checkbox"
-              :checked="(audioItem.ltcEnabled ?? false) && ltcDeviceConfigured"
-              :disabled="!ltcDeviceConfigured"
-              @change="onLtcEnabledChange"
+        </section>
+        <section class="property-column">
+          <h4>{{ t('properties.timecode') }}</h4>
+          <div class="property-field" :class="{ 'field-disabled': !ltcDeviceConfigured }">
+            <label class="ltc-checkbox-label">
+              <CueSymbol name="ltc" />
+              <input
+                type="checkbox"
+                :checked="(audioItem.ltcEnabled ?? false) && ltcDeviceConfigured"
+                :disabled="!ltcDeviceConfigured"
+                @change="onLtcEnabledChange"
+              />
+              {{ t('properties.ltcOutputTimecode') }}
+            </label>
+          </div>
+          <div class="property-field" :class="{ 'field-disabled': !(audioItem.ltcEnabled ?? false) }">
+            <label for="cue-output-timecode">{{ t('properties.ltcStartTimecode') }}</label>
+            <input id="cue-output-timecode"
+              type="text"
+              :value="audioItem.ltcStartTimecode ?? '00:00:00:00'"
+              :disabled="!(audioItem.ltcEnabled ?? false)"
+              :class="{ invalid: !ltcTimecodeValid }"
+              placeholder="HH:MM:SS:FF"
+              maxlength="11"
+              @change="onLtcTimecodeChange"
             />
-            {{ t('properties.ltcOutputTimecode') }}
-          </label>
-          <p class="property-help">
-            {{ ltcDeviceConfigured
-                ? t('properties.ltcOutputTimecodeHelp')
-                : (t('properties.ltcRequiresDevice') || 'Select an LTC output device in Project Settings to enable timecode output.') }}
-          </p>
-        </div>
-
-        <div class="property-field" :class="{ 'field-disabled': !(audioItem.ltcEnabled ?? false) }">
-          <label>{{ t('properties.ltcStartTimecode') }}</label>
-          <input
-            type="text"
-            :value="audioItem.ltcStartTimecode ?? '00:00:00:00'"
-            :disabled="!(audioItem.ltcEnabled ?? false)"
-            :class="{ invalid: !ltcTimecodeValid }"
-            placeholder="HH:MM:SS:FF"
-            maxlength="11"
-            @change="onLtcTimecodeChange"
-          />
-          <p v-if="!ltcTimecodeValid" class="property-help property-help--error">
-            {{ t('properties.ltcTimecodeFormat') }}
-          </p>
-        </div>
-
-        <div class="property-field" :class="{ 'field-disabled': !(audioItem.ltcEnabled ?? false) }">
-          <label>{{ t('properties.ltcFrameRate') }}</label>
-          <select
-            :value="audioItem.ltcFrameRate ?? 4"
-            :disabled="!(audioItem.ltcEnabled ?? false)"
-            @change="onLtcFrameRateChange"
-          >
-            <option v-for="opt in ltcFrameRateOptions" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </option>
-          </select>
-        </div>
+            <p v-if="!ltcTimecodeValid" class="property-help property-help--error">
+              {{ t('properties.ltcTimecodeFormat') }}
+            </p>
+          </div>
+          <div class="property-field" :class="{ 'field-disabled': !(audioItem.ltcEnabled ?? false) }">
+            <label for="cue-output-rate">{{ t('properties.ltcFrameRate') }}</label>
+            <select id="cue-output-rate"
+              :value="audioItem.ltcFrameRate ?? 4"
+              :disabled="!(audioItem.ltcEnabled ?? false)"
+              @change="onLtcFrameRateChange"
+            >
+              <option v-for="opt in ltcFrameRateOptions" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
+          </div>
+          <p class="property-help">{{ t(ltcDeviceConfigured ? 'properties.ltcOutputTimecodeHelp' : 'properties.ltcRequiresDevice') }}</p>
+        </section>
       </div>
 
-      <div
-        v-if="activeTab === 'basic' && selectedItem.type === 'audio'"
-        class="tab-panel playback-behavior playback-behavior--ducking"
-      >
-        <div class="property-field">
-          <label>{{ t('properties.ducking') }}</label>
-          <select v-model="audioItem.duckingBehavior.mode" @change="handleSave">
-            <option value="stop-all">{{ t('duckingBehavior.stopAll') }}</option>
-            <option value="no-ducking">{{ t('duckingBehavior.noDucking') }}</option>
-            <option value="duck-others">{{ t('duckingBehavior.duckOthers') }}</option>
-          </select>
-        </div>
-        
-        <div class="property-field" v-if="audioItem.duckingBehavior.mode === 'duck-others'">
-          <label>{{ t('properties.duckLevel') }} ({{ duckLevelDB.toFixed(1) }} dB)</label>
-          <input 
-            v-model.number="duckLevelDB" 
-            type="range" 
-            class="app-range"
-            min="-60" 
-            max="0" 
-            step="0.5"
-            @change="handleSave"
-          />
-          <div class="db-range-labels">
-            <span>-60 dB</span>
-            <span>0 dB</span>
+      <section v-if="selectedItem.type === 'audio' ? activeTab === 'basic' : activeTab === 'startBehavior' || activeTab === 'endBehavior'"
+        class="property-column cue-behaviors">
+        <h4>{{ t('settings.cueingSection') }}</h4>
+        <div
+          v-if="activeTab === 'basic' && selectedItem.type === 'audio'"
+          class="playback-behavior playback-behavior--ducking"
+        >
+          <div class="property-field">
+            <label for="cue-property-ducking">{{ t('properties.ducking') }}</label>
+            <select id="cue-property-ducking" v-model="audioItem.duckingBehavior.mode" @change="handleSave">
+              <option value="stop-all">{{ t('duckingBehavior.stopAll') }}</option>
+              <option value="no-ducking">{{ t('duckingBehavior.noDucking') }}</option>
+              <option value="duck-others">{{ t('duckingBehavior.duckOthers') }}</option>
+            </select>
+          </div>
+
+          <div class="property-field" v-if="audioItem.duckingBehavior.mode === 'duck-others'">
+            <label for="cue-property-duckLevel">{{ t('properties.duckLevel') }} ({{ duckLevelDB.toFixed(1) }} dB)</label>
+            <input id="cue-property-duckLevel"
+              v-model.number="duckLevelDB"
+              type="range"
+              class="app-range"
+              min="-60"
+              max="0"
+              step="0.5"
+              @change="handleSave"
+            />
+            <div class="db-range-labels">
+              <span>-60 dB</span>
+              <span>0 dB</span>
+            </div>
           </div>
         </div>
-      </div>
-      
-      <div
-        v-if="(activeTab === 'basic' && selectedItem.type === 'audio') || (activeTab === 'startBehavior' && selectedItem.type === 'group')"
-        class="tab-panel playback-behavior playback-behavior--start"
-      >
-        <div class="property-field">
-          <label>{{ selectedItem.type === 'audio' ? t('properties.startBehavior') : t('properties.action') }}</label>
-          <select v-model="startBehaviorAction" @change="handleSave">
-            <option v-if="selectedItem.type === 'audio'" value="nothing">{{ t('startBehavior.nothing') }}</option>
-            <option v-if="selectedItem.type === 'audio'" value="play-next">{{ t('startBehavior.playNext') }}</option>
-            <option v-if="selectedItem.type === 'audio'" value="play-item">{{ t('startBehavior.playItem') }}</option>
-            <option v-if="selectedItem.type === 'audio'" value="play-index">{{ t('startBehavior.playIndex') }}</option>
-            <option v-if="selectedItem.type === 'group'" value="play-first">{{ t('startBehavior.playFirst') }}</option>
-            <option v-if="selectedItem.type === 'group'" value="play-all">{{ t('startBehavior.playAll') }}</option>
-          </select>
-        </div>
-        
-        <div class="property-field" v-if="startBehaviorAction === 'play-item'">
-          <label>{{ t('properties.targetUuid') }}</label>
-          <input 
-            v-model="startBehaviorTargetUuid"
-            type="text"
-            @change="handleSave"
-          />
-        </div>
-        
-        <div class="property-field" v-if="startBehaviorAction === 'play-index'">
-          <label>{{ t('properties.targetIndex') }}</label>
-          <input 
-            :value="formatItemIndex(startBehaviorTargetIndex)"
-            @change="handleStartBehaviorIndexChange"
-            type="text"
-          />
-        </div>
-      </div>
 
-      <div
-        v-if="(activeTab === 'basic' && selectedItem.type === 'audio') || (activeTab === 'endBehavior' && selectedItem.type === 'group')"
-        class="tab-panel playback-behavior playback-behavior--end"
-      >
-        <div class="property-field">
-          <label>{{ selectedItem.type === 'audio' ? t('properties.endBehavior') : t('properties.action') }}</label>
-          <select v-model="endBehaviorAction" @change="handleSave">
-            <option value="nothing">{{ t('endBehavior.nothing') }}</option>
-            <option value="next">{{ t('endBehavior.next') }}</option>
-            <option value="goto-item">{{ t('endBehavior.gotoItem') }}</option>
-            <option value="goto-index">{{ t('endBehavior.gotoIndex') }}</option>
-            <option v-if="selectedItem.type === 'audio'" value="loop">{{ t('endBehavior.loop') }}</option>
-          </select>
+        <div
+          v-if="(activeTab === 'basic' && selectedItem.type === 'audio') || (activeTab === 'startBehavior' && selectedItem.type === 'group')"
+          class="playback-behavior playback-behavior--start"
+        >
+          <div class="property-field">
+            <label for="cue-property-startBehavior">{{ selectedItem.type === 'audio' ? t('properties.startBehavior') : t('properties.action') }}</label>
+            <select id="cue-property-startBehavior" v-model="startBehaviorAction" @change="handleSave">
+              <option v-if="selectedItem.type === 'audio'" value="nothing">{{ t('startBehavior.nothing') }}</option>
+              <option v-if="selectedItem.type === 'audio'" value="play-next">{{ t('startBehavior.playNext') }}</option>
+              <option v-if="selectedItem.type === 'audio'" value="play-item">{{ t('startBehavior.playItem') }}</option>
+              <option v-if="selectedItem.type === 'audio'" value="play-index">{{ t('startBehavior.playIndex') }}</option>
+              <option v-if="selectedItem.type === 'group'" value="play-first">{{ t('startBehavior.playFirst') }}</option>
+              <option v-if="selectedItem.type === 'group'" value="play-all">{{ t('startBehavior.playAll') }}</option>
+            </select>
+          </div>
+
+          <div class="property-field" v-if="startBehaviorAction === 'play-item'">
+            <label for="cue-start-Uuid">{{ t('properties.targetUuid') }}</label>
+            <input id="cue-start-Uuid"
+              v-model="startBehaviorTargetUuid"
+              type="text"
+              @change="handleSave"
+            />
+          </div>
+
+          <div class="property-field" v-if="startBehaviorAction === 'play-index'">
+            <label for="cue-start-Index">{{ t('properties.targetIndex') }}</label>
+            <input id="cue-start-Index"
+              :value="formatItemIndex(startBehaviorTargetIndex)"
+              @change="handleStartBehaviorIndexChange"
+              type="text"
+            />
+          </div>
         </div>
-        
-        <div class="property-field" v-if="endBehaviorAction === 'goto-item'">
-          <label>{{ t('properties.targetUuid') }}</label>
-          <input 
-            v-model="endBehaviorTargetUuid"
-            type="text"
-            @change="handleSave"
-          />
+
+        <div
+          v-if="(activeTab === 'basic' && selectedItem.type === 'audio') || (activeTab === 'endBehavior' && selectedItem.type === 'group')"
+          class="playback-behavior playback-behavior--end"
+        >
+          <div class="property-field">
+            <label for="cue-property-endBehavior">{{ selectedItem.type === 'audio' ? t('properties.endBehavior') : t('properties.action') }}</label>
+            <select id="cue-property-endBehavior" v-model="endBehaviorAction" @change="handleSave">
+              <option value="nothing">{{ t('endBehavior.nothing') }}</option>
+              <option value="next">{{ t('endBehavior.next') }}</option>
+              <option value="goto-item">{{ t('endBehavior.gotoItem') }}</option>
+              <option value="goto-index">{{ t('endBehavior.gotoIndex') }}</option>
+              <option v-if="selectedItem.type === 'audio'" value="loop">{{ t('endBehavior.loop') }}</option>
+            </select>
+          </div>
+
+          <div class="property-field" v-if="endBehaviorAction === 'goto-item'">
+            <label for="cue-end-Uuid">{{ t('properties.targetUuid') }}</label>
+            <input id="cue-end-Uuid"
+              v-model="endBehaviorTargetUuid"
+              type="text"
+              @change="handleSave"
+            />
+          </div>
+
+          <div class="property-field" v-if="endBehaviorAction === 'goto-index'">
+            <label for="cue-end-Index">{{ t('properties.targetIndex') }}</label>
+            <input id="cue-end-Index"
+              :value="formatItemIndex(endBehaviorTargetIndex)"
+              @change="handleEndBehaviorIndexChange"
+              type="text"
+            />
+          </div>
         </div>
-        
-        <div class="property-field" v-if="endBehaviorAction === 'goto-index'">
-          <label>{{ t('properties.targetIndex') }}</label>
-          <input 
-            :value="formatItemIndex(endBehaviorTargetIndex)"
-            @change="handleEndBehaviorIndexChange"
-            type="text"
-          />
-        </div>
-      </div>
+      </section>
     </div>
 
     <ServerFilePickerModal
@@ -772,20 +773,20 @@ watch(selectedItem, (newItem, oldItem) => {
   if (newItem) {
     // Only reset tab if it's a different item (not just property updates)
     const isDifferentItem = !oldItem || newItem.uuid !== oldItem.uuid;
-    
+
     if (isDifferentItem) {
       propertySaveAttempt += 1;
       propertySaveFailed.value = false;
       propertySavePending.value = false;
       isInitializing.value = true;
       originalSnapshot.value = JSON.parse(JSON.stringify(newItem));
-      
+
       // Keep the current section when possible; fall back when the new item
       // does not support it (for example, Playback on a group).
       if (!oldItem || !availableTabs.value.some(tab => tab.id === activeTab.value)) {
         activeTab.value = 'basic';
       }
-      
+
       setTimeout(() => {
         isInitializing.value = false;
       }, 0);
@@ -837,7 +838,7 @@ const handleSave = async () => {
   if (items.length > 1 && originalSnapshot.value && selectedItem.value) {
     const current = selectedItem.value;
     const original = originalSnapshot.value;
-    
+
     items.forEach(item => {
       // Only update properties that have changed
       if (current.displayName !== original.displayName) {
@@ -846,13 +847,13 @@ const handleSave = async () => {
       if (current.color !== original.color) {
         item.color = current.color;
       }
-      
+
       // Copy type-specific properties only if they changed
       if (item.type === 'audio' && current.type === 'audio') {
         const sourceAudio = current as AudioItem;
         const originalAudio = original as AudioItem;
         const targetAudio = item as AudioItem;
-        
+
         if (sourceAudio.volume !== originalAudio.volume) {
           targetAudio.volume = sourceAudio.volume;
         }
@@ -875,7 +876,7 @@ const handleSave = async () => {
         const sourceGroup = current as GroupItem;
         const originalGroup = original as GroupItem;
         const targetGroup = item as GroupItem;
-        
+
         if (JSON.stringify(sourceGroup.startBehavior) !== JSON.stringify(originalGroup.startBehavior)) {
           targetGroup.startBehavior = { ...sourceGroup.startBehavior };
         }
@@ -884,7 +885,7 @@ const handleSave = async () => {
         }
       }
     });
-    
+
   }
 
   // Always refresh the diff baseline to the primary item's current state —
@@ -923,22 +924,22 @@ const handleNormalize = async (
   normalizeTarget: number,
 ) => {
   let items = getSelectedItems();
-  
+
   // Fallback to selectedItem if no items in selectedItems set (shouldn't happen now, but safe)
   if (items.length === 0 && selectedItem.value) {
     items = [selectedItem.value];
   }
-  
+
   const effectiveTarget = Math.max(-60, Math.min(0, normalizeTarget));
   if (!Number.isFinite(effectiveTarget)) return;
-  
+
   let normalizedCount = 0;
-  
+
   for (const item of items) {
     if (item.type !== 'audio') continue;
-    
+
     const audioItem = item as AudioItem;
-    
+
     const duration = Math.max(0, audioItem.duration || audioItem.waveform?.duration || 0);
     const inPoint = Math.max(0, audioItem.inPoint || 0);
     const outPoint = audioItem.outPoint > 0 ? audioItem.outPoint : duration;
@@ -983,7 +984,7 @@ const handleNormalize = async (
       normalizedCount++;
     }
   }
-  
+
   if (normalizedCount > 0) {
     await saveProject();
     console.log(mode === 'truePeak'
@@ -995,12 +996,12 @@ const handleNormalize = async (
 // Handle trim silence: trim ALL selected audio items individually
 const handleTrimSilence = async () => {
   let items = getSelectedItems();
-  
+
   // Fallback to selectedItem if no items in selectedItems set (shouldn't happen now, but safe)
   if (items.length === 0 && selectedItem.value) {
     items = [selectedItem.value];
   }
-  
+
   let trimmedCount = 0;
   items.forEach(item => {
     if (item.type === 'audio' && trimSilence(item as AudioItem)) trimmedCount++;
@@ -1195,6 +1196,7 @@ const formatTime = (seconds: number): string => {
 <style scoped>
 .properties-panel {
   position: relative;
+  container-type: inline-size;
   flex: 1;
   min-height: 0;
   border-top: 1px solid var(--color-border);
@@ -1206,7 +1208,7 @@ const formatTime = (seconds: number): string => {
 
 .properties-header {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto var(--panel-control-height);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) var(--panel-control-height);
   justify-content: stretch;
   gap: var(--spacing-sm);
 }
@@ -1227,7 +1229,7 @@ const formatTime = (seconds: number): string => {
   border: none;
   cursor: pointer;
   color: var(--color-text);
-  
+
   &:hover {
     background-color: var(--color-surface-hover);
   }
@@ -1236,7 +1238,7 @@ const formatTime = (seconds: number): string => {
     outline: 2px solid var(--color-focus-ring);
     outline-offset: 1px;
   }
-  
+
   .material-symbols-rounded {
     font-size: 20px;
     color: var(--color-text);
@@ -1245,9 +1247,10 @@ const formatTime = (seconds: number): string => {
 
 /* Tab Navigation */
 .properties-tabs {
-  display: flex;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(104px, 1fr);
   align-self: stretch;
-  justify-self: start;
   min-width: 0;
   gap: 2px;
   padding: 0;
@@ -1264,7 +1267,7 @@ const formatTime = (seconds: number): string => {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  flex: 0 0 auto;
+  justify-content: center;
   height: 100%;
   padding: 0 var(--spacing-sm);
   background: none;
@@ -1279,17 +1282,17 @@ const formatTime = (seconds: number): string => {
     color var(--transition-fast),
     background-color var(--transition-fast),
     border-color var(--transition-fast);
-  
+
   .material-symbols-rounded {
     font-size: 18px;
     color: inherit;
   }
-  
+
   &:hover {
     color: var(--color-text-primary);
     background-color: var(--color-surface-hover);
   }
-  
+
   &.active {
     color: var(--color-accent);
     background-color: var(--color-accent-soft);
@@ -1297,138 +1300,122 @@ const formatTime = (seconds: number): string => {
   }
 }
 
-/* Tab Content */
 .properties-content {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-content: start;
+  width: min(100%, var(--settings-width));
   flex: 1;
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding: var(--spacing-sm) var(--workspace-gutter);
   min-height: 0;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--workspace-gutter);
+  overflow: auto;
 }
 
 .properties-content:has(.playback-panel) {
-  display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(188px, 1fr);
-  gap: var(--spacing-sm);
-}
-
-.properties-content:has(.basic-panel) {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--spacing-md);
-  align-content: start;
-}
-
-.tab-panel {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: var(--spacing-sm);
-  align-content: flex-start;
-  min-height: min-content;
-  width: 100%;
+  grid-template-rows: minmax(min-content, 1fr);
+  align-content: stretch;
 }
 
 .playback-panel {
-  display: block;
-  grid-column: 1 / -1;
-  grid-row: 1;
-  height: auto;
-  min-height: 188px;
-  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .properties-playback-info {
   display: flex;
-  grid-column: 1 / -1;
-  grid-row: 2;
   align-items: center;
   min-width: 0;
   padding-top: var(--spacing-xs);
   border-top: 1px solid var(--color-border);
 }
 
-.basic-panel {
-  grid-column: 1 / -1;
+.basic-panel, .output-panel {
+  display: contents;
 }
 
-.properties-content:has(.basic-panel) .playback-behavior {
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  flex-direction: column;
-  flex-wrap: nowrap;
-  align-items: stretch;
-  gap: var(--spacing-xs);
-  padding-top: var(--spacing-xs);
-  border-top: 1px solid var(--color-border);
+.output-panel > .property-column {
+  grid-column: span 2;
 }
 
-.properties-content:has(.basic-panel) .playback-behavior--ducking {
-  grid-column: 1;
-}
-
-.properties-content:has(.basic-panel) .playback-behavior--start {
-  grid-column: 2;
-}
-
-.properties-content:has(.basic-panel) .playback-behavior--end {
-  grid-column: 3;
-}
-
-.properties-content:has(.basic-panel) .playback-behavior .property-field {
+.property-column {
   display: grid;
-  grid-template-columns: minmax(88px, max-content) minmax(120px, 1fr);
-  align-items: center;
-  justify-content: stretch;
-  flex: 0 0 auto;
+  align-content: start;
+  row-gap: 0;
   min-width: 0;
-  gap: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
-.properties-content:has(.basic-panel) .playback-behavior label {
-  color: var(--color-text-primary);
-  font-weight: 600;
-  white-space: nowrap;
+.properties-content--audio .property-column {
+  grid-row: span 6;
+  grid-template-rows: subgrid;
 }
 
-.properties-content:has(.basic-panel) .playback-behavior select {
-  justify-self: start;
-  width: auto;
-  max-width: 100%;
+.property-column h4 {
+  display: flex;
+  align-items: center;
+  min-height: var(--settings-row-height);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--type-panel-title-size);
 }
 
-.properties-content:has(.basic-panel) .playback-behavior input:not([type='range']) {
-  width: 100%;
+.playback-behavior {
+  display: contents;
 }
 
-.properties-content:has(.basic-panel) .playback-behavior .db-range-labels {
-  grid-column: 2;
-  margin-top: 0;
-  font-size: 12px;
-  line-height: 1;
+.property-column .property-field {
+  border-top: 1px solid var(--color-border);
 }
 
 .property-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xs);
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  align-content: start;
+  align-items: center;
+  gap: 0 var(--spacing-xs);
+  min-height: var(--settings-row-height);
   min-width: 0;
-  width: 100%;
-  color: var(--color-text-secondary);
+  padding: 1px var(--spacing-sm) 2px;
 }
 
-.property-field label {
+.property-field > .property-help,
+.property-field > .one-shot-designation__toggle,
+.property-field > .ltc-checkbox-label {
+  grid-column: 1 / -1;
+}
+
+.property-field:has(.color-picker) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container (max-width: 940px) {
+  .properties-content:not(:has(.playback-panel)) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .output-panel > .property-column { grid-column: span 1; }
+  .properties-content--audio .property-column {
+    grid-row: auto;
+    grid-template-rows: none;
+  }
+}
+
+@container (max-width: 560px) {
+  .properties-content:not(:has(.playback-panel)) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .properties-header { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) var(--panel-control-height); }
+  .properties-tabs { grid-auto-columns: minmax(72px, 1fr); }
+  .tab-btn .material-symbols-rounded { display: none; }
+}
+
+.property-field label,
+.property-label {
   color: var(--color-text-primary);
   font-size: var(--type-metadata-size);
   font-weight: 600;
-}
-
-.one-shot-designation {
-  padding: var(--spacing-sm) var(--spacing-md);
-  border: 1px solid var(--color-border);
-  border-radius: var(--control-radius);
-  background: var(--color-control);
 }
 
 .one-shot-designation__toggle {
@@ -1445,23 +1432,24 @@ const formatTime = (seconds: number): string => {
   accent-color: var(--color-accent);
 }
 
-.property-field input,
+.property-field input:not([type='checkbox'], [type='range']),
 .property-field select {
   width: 100%;
-  padding: var(--spacing-sm);
+  min-width: 0;
+  padding: 0 var(--spacing-xs);
   background-color: var(--color-control);
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
   color: var(--color-text);
-  min-height: var(--panel-control-height);
+  min-height: var(--settings-control-height);
   font-size: var(--type-metadata-size);
-  
+
   &:focus {
     outline: none;
     border-color: var(--color-accent);
     box-shadow: 0 0 0 2px var(--color-focus-ring);
   }
-  
+
   &[readonly] {
     color: var(--color-text-secondary);
     cursor: default;
@@ -1471,16 +1459,17 @@ const formatTime = (seconds: number): string => {
 .input-with-btn {
   display: flex;
   gap: var(--spacing-xs);
-  
+
   input {
     flex: 1;
+    text-overflow: ellipsis;
   }
 }
 
 .icon-btn {
-  width: var(--panel-control-height);
-  min-width: var(--panel-control-height);
-  height: var(--panel-control-height);
+  width: var(--settings-control-height);
+  min-width: var(--settings-control-height);
+  min-height: var(--settings-control-height);
   padding: 0;
   background: var(--color-control);
   border: 1px solid var(--color-border);
@@ -1509,11 +1498,11 @@ const formatTime = (seconds: number): string => {
 }
 
 .regen-btn {
-  width: max-content;
+  width: 100%;
   min-width: 0;
   gap: var(--spacing-xs);
   font-size: var(--type-metadata-size);
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: 0 var(--spacing-xs);
 
   .spinning {
     animation: spin 1s linear infinite;
@@ -1522,56 +1511,47 @@ const formatTime = (seconds: number): string => {
 
 .color-picker {
   display: grid;
-  grid-template-columns: repeat(8, 28px);
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(7, minmax(0, 24px));
   gap: var(--spacing-xs);
+  padding-block: 2px;
 }
 
 .color-btn {
-  width: 28px;
-  height: 28px;
+  width: 100%;
+  min-height: 22px;
   aspect-ratio: 1;
   border-radius: var(--border-radius-sm);
   border: 2px solid transparent;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-  
+
   &:hover {
     border-color: var(--color-border-strong);
   }
-  
+
   &.active {
     border-color: var(--color-text-primary);
     box-shadow: 0 0 0 2px var(--color-background);
   }
 }
 
-.uuid-field,
-.file-field {
-  display: flex;
-  gap: var(--spacing-xs);
-}
-
-.uuid-field input,
-.file-field input {
-  flex: 1;
-  min-width: 0;
-}
-
-.copy-btn,
 .action-btn-small {
-  min-height: var(--panel-control-height);
+  min-height: var(--settings-control-height);
   padding: 0 var(--spacing-md);
   background-color: var(--color-control);
   border: 1px solid var(--color-border);
   border-radius: var(--border-radius-sm);
-  white-space: nowrap;
-  
+  color: var(--color-text-primary);
   &:hover {
     background-color: var(--color-surface-hover);
     border-color: var(--color-accent);
   }
 }
 
+.color-cycle { grid-column: 1 / -1; justify-self: start; }
+
 .db-range-labels {
+  grid-column: 2;
   display: flex;
   justify-content: space-between;
   font-size: 12px;
@@ -1615,7 +1595,12 @@ const formatTime = (seconds: number): string => {
 .property-help {
   font-size: 12px;
   color: var(--color-text-secondary);
-  margin-top: 2px;
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.property-column > .property-help {
+  padding-inline: var(--spacing-sm);
 }
 
 .property-help--error {
@@ -1641,6 +1626,8 @@ const formatTime = (seconds: number): string => {
 }
 
 .trim-save-retry {
+  width: auto;
+  flex: 0 0 auto;
   margin-left: auto;
   color: var(--color-text-primary);
 }

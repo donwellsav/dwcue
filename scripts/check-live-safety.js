@@ -589,7 +589,7 @@ assert.doesNotMatch(
 );
 assert.match(
   mainWorkspace,
-  /v-if="!cartFullscreen \|\| cartDetached" class="playlist-section"/,
+  /v-show="!cartFullscreen \|\| cartDetached" class="playlist-section"/,
   'detaching a fullscreen cart must reveal the playlist',
 );
 assert.match(
@@ -700,12 +700,12 @@ assert.match(
 assert.match(
   mainWorkspace,
   /class="lower-workspace-panel"[\s\S]*:style="\{ height: [^"]+panelHeight[^"]+\}"[\s\S]*class="lower-panel-resize-handle"[\s\S]*role="separator"[\s\S]*@pointerdown="startPanelResize"[\s\S]*@keydown="handlePanelResizeKey"/,
-  'Settings and Properties must share the pointer and keyboard resize control',
+  'Settings, Properties, and imports must share the pointer and keyboard resize control',
 );
 assert.match(
   mainWorkspace,
-  /settingsHeight = useState<number \| null>\('ProjectSettingsPanel.height', \(\) => null\);[\s\S]*panelHeight = computed\(\(\) => showProjectSettings\.value \? settingsHeight\.value : propertiesHeight\.value\);/,
-  'Settings must fit its contents until the operator resizes it',
+  /settingsHeight = useState<number \| null>\('ProjectSettingsPanel.height', \(\) => null\);[\s\S]*panelHeight = computed\(\(\) => showProjectSettings\.value \? settingsHeight\.value\s*: visibleImportPanel\.value \? importHeight\.value : propertiesHeight\.value\);/,
+  'each lower panel must fit its contents until the operator resizes it',
 );
 assert.match(
   mainWorkspace,
@@ -1694,7 +1694,7 @@ assert.match(
 );
 assert.match(
   spotifyModal,
-  /const projectFolderPath = props\.projectFolderPath[\s\S]*const projectEpoch = props\.projectEpoch[\s\S]*props\.projectFolderPath !== projectFolderPath[\s\S]*props\.projectEpoch !== projectEpoch/,
+  /const projectFolderPath = props\.projectFolderPath[\s\S]*const projectEpoch = props\.projectEpoch[\s\S]*props\.projectFolderPath !== projectFolderPath[\s\S]*currentEpoch\.value !== projectEpoch/,
   'a Spotify job must stay bound to the project generation that started it',
 );
 const oneShotPanel = read('client/app/components/OneShotPanel.vue');
@@ -1847,8 +1847,8 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /<ShortcutsBar :compact="showProjectSettings \|\| !!showCueProperties" \/>[\s\S]*<ProjectSettingsModal :open="showProjectSettings"[\s\S]*<PropertiesPanel v-if="showCueProperties"[\s\S]*const showCueProperties = computed\(\(\) => !showProjectSettings/,
-  'Settings and cue Properties must share the lower workspace without stacking',
+  /<ShortcutsBar :compact="lowerPanelOpen" \/>[\s\S]*<ProjectSettingsModal :open="showProjectSettings"[\s\S]*<PropertiesPanel v-if="showCueProperties"[\s\S]*id="workspace-import-host"[\s\S]*const showCueProperties = computed\(\(\) => !showProjectSettings\.value && !visibleImportPanel\.value/,
+  'Settings, cue Properties, and imports must share the lower workspace without stacking',
 );
 assert.match(
   projectSettingsModal,
@@ -2297,11 +2297,13 @@ assert.match(
 
 const spotifyImportModal = read('client/app/components/SpotifyImportModal.vue');
 const youtubeImportModal = read('client/app/components/YouTubeImportModal.vue');
-assert.match(
-  spotifyImportModal,
-  /class="icon-btn"[\s\S]*:aria-label="t\('actions\.close'\)"/,
-  'the Spotify dialog close button must expose an accessible name',
-);
+assert.match(mainWorkspace, /class="workspace-import-close" :aria-label="t\('actions\.close'\)"/,
+  'the shared import close button must expose an accessible name');
+assert.match(playlistView,
+  /<Teleport defer to="#workspace-import-host">\s*<YouTubeImportModal[\s\S]*:visible="workspaceImportPanel === 'youtube'"\s*:is-open="importOpen.youtube"[\s\S]*<SpotifyImportModal[\s\S]*:visible="workspaceImportPanel === 'spotify'"\s*:open="importOpen.spotify"[\s\S]*<AudioImportModal [^>]*docked/,
+  'hiding an import must preserve its job and selection inside the shared workspace');
+assert.doesNotMatch(spotifyImportModal + youtubeImportModal, /aria-modal|--dialog-backdrop|<Teleport to="body"/,
+  'online imports must not block the playlist or transport with a modal');
 
 const electronMain = read('client/electron/main.js');
 const electronPreload = read('client/electron/preload.js');
@@ -2614,9 +2616,7 @@ for (const file of [
   'ServerFilePickerModal.vue',
   'ServerSettingsModal.vue',
   'SessionRecoveryModal.vue',
-  'SpotifyImportModal.vue',
   'UnsavedChangesModal.vue',
-  'YouTubeImportModal.vue',
 ].map(file => `client/app/components/${file}`).concat('client/app/app.vue')) {
   const dialog = read(file);
   for (const token of ['backdrop', 'surface', 'radius', 'shadow']) {
