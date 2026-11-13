@@ -767,7 +767,7 @@ test('preload exposes only the typed mutation broker and separate project identi
   assert.deepEqual(sends.at(-1), ['one-shot-mutation:complete', result]);
 });
 
-test('detached One Shots mutations correlate a primary persisted result', async () => {
+test('detached QuickPlays mutations correlate a primary persisted result', async () => {
   const cart = mutationContents();
   const primary = mutationContents();
   const broker = createOneShotMutationBroker({
@@ -793,7 +793,7 @@ test('mutation broker rejects invalid senders, kinds, stale results, and duplica
     setTimer: callback => { fireTimeout = callback; return 1; },
     clearTimer() {},
   });
-  assert.throws(() => broker.request({}, mutationRequest), /not the detached One Shots window/);
+  assert.throws(() => broker.request({}, mutationRequest), /not the detached QuickPlays window/);
   assert.throws(() => broker.request(cart, { ...mutationRequest, kind: 'arbitrary-patch' }), /kind is invalid/);
   assert.throws(() => broker.request(cart, {
     ...mutationRequest,

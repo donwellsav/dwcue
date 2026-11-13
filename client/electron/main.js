@@ -2168,7 +2168,7 @@ function createWindow() {
   createMenu('en', isDevMode);
 }
 
-// Create detached One Shots window (IPC/query names stay backward compatible).
+// Create detached QuickPlays window (IPC/query names stay backward compatible).
 function createCartPlayerWindow() {
   if (cartPlayerWindow) {
     cartPlayerWindow.focus();
@@ -2180,7 +2180,7 @@ function createCartPlayerWindow() {
     height: 700,
     minWidth: 380,
     minHeight: 400,
-    title: 'DonWells Cue - One Shots',
+    title: 'DonWells Cue - QuickPlays',
     icon: path.join(__dirname, '../assets/icons/2x/app_icon_darkmode@2x.png'),
     webPreferences: {
       nodeIntegration: false,
