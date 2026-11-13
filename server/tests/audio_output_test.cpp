@@ -133,7 +133,8 @@ void test_initial_device_start_keeps_controls() {
     gate.hold_uninit.store(mode != 0);
     gate.fail_start.store(mode == 2);
     auto open = std::async(std::launch::async, [&] { return engine.open_default_device(); });
-    check(gate.wait_entered(), "actual null-backend start/duplicate/failure cleanup reaches held native call");
+    const bool entered = gate.wait_entered();
+    check(entered, "actual null-backend start/duplicate/failure cleanup reaches held native call");
     auto controls = std::async(std::launch::async, [&] {
         engine.stop_all(); engine.set_master_ceiling_db(-6.0f);
         return !engine.find_cue(CueId{"missing"});
@@ -153,6 +154,10 @@ void test_initial_device_start_keeps_controls() {
     const auto id = open.get();
     check(controls.get() && (mode == 2 ? id.empty() : !id.empty()),
           "native return preserves successful opens and failed-start refusal");
+    if (mode != 0 && entered) {
+        // Native uninit still reads the fixture's context after its gated callback returns.
+        std::lock_guard lifecycle_lock{*engine.device_lifecycle_mutex_};
+    }
     if (!id.empty()) {
         const auto device = engine.devices_.front();
         check(mode != 1 || (id == original && reuse.get() == original &&
