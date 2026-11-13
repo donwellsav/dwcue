@@ -853,6 +853,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     videoEl,
     getPictureHealth,
     videoSrc,
+    videoReady,
     onVideoLoadedMetadata,
     onVideoCanPlay,
     onVideoError,

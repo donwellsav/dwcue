@@ -2,39 +2,41 @@
      Test-card animation is explicit; the ordinary idle surface stays black. -->
 <template>
   <div class="video-output" aria-hidden="true">
-    <div class="layer layer-black" />
-    <img v-if="standbySrc" class="layer layer-media" :src="standbySrc" alt="" draggable="false">
-    <img v-if="cueImageSrc" class="layer layer-media" :src="cueImageSrc" alt="" draggable="false">
+    <div class="video-output-frame">
+      <img v-if="standbySrc" class="layer layer-media" :src="standbySrc" alt="" draggable="false">
+      <img v-if="cueImageSrc" :key="cueImageSrc" class="layer layer-media" :src="cueImageSrc" alt="" draggable="false"
+        @load="($event.currentTarget as HTMLImageElement).classList.add('layer-opaque')">
 
-    <!-- The target must exist before Teleport resolves an updated destination. -->
-    <KardsTestCard
-      v-if="testCard"
-      class="layer"
-      :config="config"
-      :display-frequency="status?.testCardInfo.displayFrequency ?? 0"
-      :network="status?.testCardInfo.network ?? []"
-      :audio-description="status?.testCardPlayback?.description ?? 'Program output'"
-    >
-      <template #audio-sync><div id="test-card-video-target" /></template>
-    </KardsTestCard>
+      <!-- The target must exist before Teleport resolves an updated destination. -->
+      <KardsTestCard
+        v-if="testCard"
+        class="layer"
+        :config="config"
+        :display-frequency="status?.testCardInfo.displayFrequency ?? 0"
+        :network="status?.testCardInfo.network ?? []"
+        :audio-description="status?.testCardPlayback?.description ?? 'Program output'"
+      >
+        <template #audio-sync><div id="test-card-video-target" /></template>
+      </KardsTestCard>
 
-    <!-- Move, rather than recreate, the same muted video into Kards' original
-         AV Sync rectangle. Native audio remains the only audio/clock source. -->
-    <Teleport defer :disabled="!showAudioSyncCard" :to="showAudioSyncCard ? '#test-card-video-target' : 'body'">
-      <video
-        v-show="showVideo && (!testCard || (showAudioSyncCard && diagnosticSource !== null))"
-        ref="videoEl"
-        :class="showAudioSyncCard ? 'vt' : 'layer layer-media'"
-        :src="videoSrc ?? undefined"
-        muted
-        playsinline
-        preload="auto"
-        disablepictureinpicture
-        @loadedmetadata="onVideoLoadedMetadata"
-        @canplay="onVideoCanPlay"
-        @error="onVideoError"
-      />
-    </Teleport>
+      <!-- Move, rather than recreate, the same muted video into Kards' original
+           AV Sync rectangle. Native audio remains the only audio/clock source. -->
+      <Teleport defer :disabled="!showAudioSyncCard" :to="showAudioSyncCard ? '#test-card-video-target' : 'body'">
+        <video
+          v-show="showVideo && (!testCard || (showAudioSyncCard && diagnosticSource !== null))"
+          ref="videoEl"
+          :class="showAudioSyncCard ? 'vt' : ['layer layer-media', { 'layer-opaque': videoReady }]"
+          :src="videoSrc ?? undefined"
+          muted
+          playsinline
+          preload="auto"
+          disablepictureinpicture
+          @loadedmetadata="onVideoLoadedMetadata"
+          @canplay="onVideoCanPlay"
+          @error="onVideoError"
+        />
+      </Teleport>
+    </div>
   </div>
 </template>
 
@@ -49,7 +51,7 @@ const testCard = computed(() => status.value?.testCard === true);
 const showAudioSyncCard = computed(() => testCard.value && config.value.cardType === 'audioSync');
 const diagnosticSource = computed(() => showAudioSyncCard.value ? status.value?.testCardPlayback ?? null : null);
 const {
-  videoEl, videoSrc, showVideo, cueImageSrc, standbySrc,
+  videoEl, videoSrc, videoReady, showVideo, cueImageSrc, standbySrc,
   onVideoLoadedMetadata, onVideoCanPlay, onVideoError,
   getPictureHealth,
 } = useVideoOutput(diagnosticSource);
@@ -125,13 +127,22 @@ onBeforeUnmount(() => {
 .video-output {
   position: fixed;
   inset: 0;
+  display: grid;
+  place-items: center;
   background: #000;
   cursor: none;
   user-select: none;
   overflow: hidden;
   -webkit-app-region: no-drag;
 }
+.video-output-frame {
+  position: relative;
+  width: min(100vw, calc(100vh * 16 / 9));
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+}
 .layer { position: absolute; inset: 0; }
-.layer-black { background: #000; }
-.layer-media { width: 100%; height: 100%; object-fit: contain; }
+.layer-media { width: 100%; height: 100%; }
+.layer-media, video { object-fit: contain; }
+.layer-opaque { background: #000; }
 </style>

@@ -41,7 +41,7 @@ test('mounted audience view reports DOM readiness without waiting for an animati
   assert.equal(ready, 1, 'the native cover must not wait on hidden-window animation');
 });
 
-test('standby capture uses only the selected source and rejects stale shows and authored art', async () => {
+test('standby capture uses the 16:9 output or selected screen and rejects stale captures', async () => {
   const handlers = new Map();
   const sender = {};
   const identity = { projectPath: '/show.dwcue', projectEpoch: 1, ownerSessionId: 'owner' };
@@ -52,8 +52,13 @@ test('standby capture uses only the selected source and rejects stale shows and 
     toPNG: () => Buffer.from(value),
     toJPEG: () => Buffer.from(value),
   });
-  const output = { isDestroyed: () => false, webContents: {
-    isDestroyed: () => false, send() {}, capturePage: async () => still('output'),
+  let outputSize = [1920, 1080];
+  let captureRect;
+  const output = { isDestroyed: () => false, getContentSize: () => outputSize, webContents: {
+    isDestroyed: () => false, send() {}, capturePage: async (rect) => {
+      captureRect = { ...rect };
+      return still('output');
+    },
   } };
   const sourceStart = mainSource.indexOf('function requireCaptureOwner(');
   const sourceEnd = mainSource.indexOf("ipcMain.handle('video-output:set-display'", sourceStart);
@@ -91,6 +96,16 @@ test('standby capture uses only the selected source and rejects stale shows and 
     handlers.get('video-output:get-standby-capture')({ sender: output.webContents }, session, cue.uuid, media);
   await capture('display', null);
   await capture('output', cue.uuid);
+  assert.deepEqual(captureRect, { x: 0, y: 0, width: 1920, height: 1080 });
+  outputSize = [1600, 1200];
+  await capture('output', cue.uuid);
+  assert.deepEqual(captureRect, { x: 0, y: 150, width: 1600, height: 900 });
+  outputSize = [2560, 1080];
+  await capture('output', cue.uuid);
+  assert.deepEqual(captureRect, { x: 320, y: 0, width: 1920, height: 1080 });
+  outputSize = [961, 540];
+  await capture('output', cue.uuid);
+  assert.deepEqual(captureRect, { x: 0, y: 0, width: 961, height: 540 });
   assert.equal(read('session').standby, 'data:image/png;base64,' + Buffer.from('selected screen').toString('base64'));
   assert.equal(read('session').cue, 'data:image/png;base64,' + Buffer.from('output').toString('base64'));
   assert.equal(read('session', 'media/replacement.wav').cue, null);
@@ -102,6 +117,13 @@ test('standby capture uses only the selected source and rejects stale shows and 
   delete cue.imagePath;
   context.desktopCapturer.getSources = async () => [{ display_id: 'wrong', thumbnail: still('wrong') }];
   await assert.rejects(capture('display', null), /screen recording permission/);
+  const resizing = deferred();
+  output.webContents.capturePage = () => resizing.promise;
+  const resizedCapture = capture('output', null);
+  outputSize = [1920, 1200];
+  resizing.resolve(still('resized'));
+  await assert.rejects(resizedCapture, /Video Output changed/);
+  assert.equal(read('session').standby, 'data:image/png;base64,' + Buffer.from('selected screen').toString('base64'));
   const pending = deferred();
   output.webContents.capturePage = () => pending.promise;
   const inFlight = capture('output', null);

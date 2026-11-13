@@ -2775,7 +2775,7 @@ function createVideoOutputWindow() {
   } else {
     // Preview mode: single-display (or unassigned) machines get a normal
     // window instead of a hostile fullscreen black takeover.
-    Object.assign(options, { width: 960, height: 540, minWidth: 320, minHeight: 180 });
+    Object.assign(options, { useContentSize: true, width: 960, height: 540, minWidth: 320, minHeight: 180 });
   }
 
   const outputWindow = new BrowserWindow(options);
@@ -3051,8 +3051,16 @@ ipcMain.handle('video-output:capture-standby', async (event, source, target) => 
         !output.webContents.isDestroyed() && videoOutputRendererReady &&
         videoOutputRendererResponsive && !videoOutputRecoveryRequired;
       if (!ready()) throw new Error('Open Video Output and wait for its picture before capturing.');
-      image = await output.webContents.capturePage();
+      const [width, height] = output.getContentSize();
+      // Match the centered 16:9 frame in VideoOutputView, rounding out to retain its edges.
+      const x = Math.floor(Math.max(0, (width - height * 16 / 9) / 2));
+      const y = Math.floor(Math.max(0, (height - width * 9 / 16) / 2));
+      image = await output.webContents.capturePage({ x, y, width: width - 2 * x, height: height - 2 * y });
       if (!ready()) throw new Error('Video Output changed during capture. Try again.');
+      const [currentWidth, currentHeight] = output.getContentSize();
+      if (currentWidth !== width || currentHeight !== height) {
+        throw new Error('Video Output changed during capture. Try again.');
+      }
     } else if (source === 'display') {
       const { captureDisplayId } = readVideoOutputConfig();
       const available = () => videoOutputDisplays().some(display => display.id === captureDisplayId);
