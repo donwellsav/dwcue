@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.21 development
-**Source revision:** e51dd3d9a36916da3a4f59ddc362181888c2fd2d
+**Source revision:** 85b2573d1a6645ad0f220e8fe385089b5aa16ee7
 **Native engine baseline:** 889abd569da10a32d6cd0edb75b029b436e5cf42
 **Edition:** 12 November 2026 · English · Current-source operator edition
 
@@ -126,7 +126,7 @@ An empty One Shots bank is collapsed by default. Choose **Show One Shots** to re
 
 Switch to **Show Mode** for performance after preparation is complete. It simplifies the interface and emphasizes transport and large cue controls. GO and assigned controls remain live. The One Shot Play/Stop button and keyboard and MIDI triggers work the same way in both modes. Use Edit Mode to change the bank.
 
-Rehearse at the actual display size and app zoom. Settings and shortcut editing open below the playlist, with the transport controls still available. Cue Properties uses the same space. **Customize Shortcuts…** in the reference bar opens **Settings → Shortcuts**.
+Rehearse at the actual display size and app zoom. Settings and shortcut editing open below the playlist, with the transport controls still available. Cue Properties uses the same space. Use the tabs in the panel header to switch sections. Each tab opens at the top, and its contents scroll independently of the playlist. **Customize Shortcuts…** in the reference bar opens **Settings → Shortcuts**.
 
 ![Show Mode with the One Shots bank open and the default number keys visible.](manual-assets/show-mode.png)
 

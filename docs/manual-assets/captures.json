@@ -195,7 +195,7 @@
       "file": "audio-settings-current.png",
       "view": "Audio Routing in the lower workspace panel.",
       "version": "2.6.21 development",
-      "sourceRevision": "e51dd3d9a36916da3a4f59ddc362181888c2fd2d",
+      "sourceRevision": "85b2573d1a6645ad0f220e8fe385089b5aa16ee7",
       "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
       "capturedOn": "2026-11-12",
       "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
@@ -203,7 +203,7 @@
         1400,
         352
       ],
-      "sha256": "c89ebb10d4dd54133723e069826e9d513b8607647118044f0eda74d793b72a52",
+      "sha256": "985aad1a395b8cbd4db8feb967e0d5d8316f4b94183ec50b121b31fa3adca53c",
       "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
       "captureMethod": "Playwright screenshot of the rendered Settings panel at its actual CSS pixel size.",
       "presentation": "Panel crop without callouts or altered UI values."
@@ -297,7 +297,7 @@
       "file": "shortcuts-current.png",
       "view": "The Keyboard tab in docked Settings, with the reference bar toggle.",
       "version": "2.6.21 development",
-      "sourceRevision": "e51dd3d9a36916da3a4f59ddc362181888c2fd2d",
+      "sourceRevision": "85b2573d1a6645ad0f220e8fe385089b5aa16ee7",
       "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
       "capturedOn": "2026-11-12",
       "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
@@ -305,7 +305,7 @@
         1400,
         880
       ],
-      "sha256": "3f6f202c0a92cd76422cab38ee7a0af21c30ad1715a36d1a54aebda2b11facfd",
+      "sha256": "c69a0496380d9cddba3a108d994e4e12def15ba6bbb6abb87ef1bd71db759f73",
       "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
       "captureMethod": "Playwright screenshot of the full workspace at its actual CSS pixel size.",
       "presentation": "Uncropped workspace with the Shortcuts tab open, without callouts or altered UI values."
@@ -314,7 +314,7 @@
       "file": "midi-current.png",
       "view": "The MIDI tab in docked Settings with no detected hardware.",
       "version": "2.6.21 development",
-      "sourceRevision": "e51dd3d9a36916da3a4f59ddc362181888c2fd2d",
+      "sourceRevision": "85b2573d1a6645ad0f220e8fe385089b5aa16ee7",
       "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
       "capturedOn": "2026-11-12",
       "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
@@ -322,7 +322,7 @@
         1400,
         352
       ],
-      "sha256": "2bd68a40ad79d4d66e0a89a9068bf6fc3dd7e70bd25597e7dc51aaa21cfafebe",
+      "sha256": "7e6b668650dd0d24ccdd25d3c9085a6ce65771fb2983f0a32ddebf39a733a2a4",
       "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
       "captureMethod": "Playwright screenshot of the rendered Settings panel at its actual CSS pixel size.",
       "presentation": "Panel crop without callouts or altered UI values."
@@ -331,7 +331,7 @@
       "file": "video-settings-current.png",
       "view": "Video Output tab with the output closed.",
       "version": "2.6.21 development",
-      "sourceRevision": "e51dd3d9a36916da3a4f59ddc362181888c2fd2d",
+      "sourceRevision": "85b2573d1a6645ad0f220e8fe385089b5aa16ee7",
       "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
       "capturedOn": "2026-11-12",
       "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
@@ -339,7 +339,7 @@
         1400,
         352
       ],
-      "sha256": "001821fa94d2d901bbf4c07919d1ef662daa69385d83a19d727b1a4da4ff0761",
+      "sha256": "9934a63b76f5827862a2cbd9a112a9a63cfa6d5b9cb32cb84361a3271856b3e6",
       "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
       "captureMethod": "Playwright screenshot of the rendered Settings panel at its actual CSS pixel size.",
       "presentation": "Panel crop without callouts or altered UI values."
