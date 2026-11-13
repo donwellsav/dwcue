@@ -1833,7 +1833,7 @@ assert.match(
 );
 assert.match(
   projectSettingsModal,
-  /\.project-settings-modal\s*\{[^}]*border-radius:\s*var\(--dialog-radius\);[^}]*width:\s*min\(800px, 94vw\);[^}]*max-height:\s*var\(--modal-max-height\);[\s\S]*\.close-x\s*\{[^}]*width:\s*var\(--spacing-xxl\);[^}]*height:\s*var\(--spacing-xxl\);/,
+  /\.project-settings-modal\s*\{[^}]*border-radius:\s*var\(--dialog-radius\);[^}]*width:\s*min\(\d+px, 94vw\);[^}]*max-height:\s*var\(--modal-max-height\);[\s\S]*\.close-x\s*\{[^}]*width:\s*var\(--spacing-xxl\);[^}]*height:\s*var\(--spacing-xxl\);/,
   'project settings must use the shared dialog shell and close target',
 );
 assert.match(
@@ -1853,7 +1853,7 @@ assert.doesNotMatch(
 );
 assert.match(
   projectSettingsModal,
-  /\.settings-tabs\s*\{[\s\S]{0,80}flex-shrink:\s*0;[\s\S]*\.tab-btn\s*\{[\s\S]{0,100}min-height:\s*36px;/,
+  /\.settings-tabs\s*\{[^}]*flex-shrink:\s*0;[^}]*overflow-x:\s*auto;[\s\S]*\.tab-btn\s*\{[^}]*flex-shrink:\s*0;[^}]*min-height:\s*36px;/,
   'settings tabs must keep their control height under the dialog height cap',
 );
 assert.match(

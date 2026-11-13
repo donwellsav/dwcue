@@ -1445,7 +1445,7 @@ function close() {
   /* This dialog packs dense grids (countdown bands, audio routing) that
      wrap and force scrolling at the shared 560px token width — give it
      real room; small confirm dialogs keep using --modal-width. */
-  width: min(800px, 94vw);
+  width: min(920px, 94vw);
   max-height: var(--modal-max-height);
   overflow: hidden;
   display: flex;
@@ -1486,7 +1486,7 @@ function close() {
 .settings-tabs {
   display: flex;
   flex-shrink: 0;
-  flex-wrap: wrap;
+  overflow-x: auto;
   gap: 2px;
   padding: 0 12px;
   border-bottom: 1px solid var(--color-border);
@@ -1494,6 +1494,7 @@ function close() {
 }
 .tab-btn {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 6px;
   min-height: 36px;

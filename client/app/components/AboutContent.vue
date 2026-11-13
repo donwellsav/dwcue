@@ -20,15 +20,7 @@
 
     <div class="about-info">
       <div class="info-section">
-        <p class="developer">
-          © 2026
-          <a
-            href="https://dwcue.com"
-            class="translator-link"
-            @click.prevent="openExternal('https://dwcue.com')"
-          ><strong>Don Wells</strong></a>
-          · {{ t('about.forkContributor') }}
-        </p>
+        <p class="developer">© 2026 Don Wells</p>
         <p class="original-credit">
           Forked from
           <a href="https://github.com/tdoukinitsas/liveplay" class="translator-link"
@@ -182,10 +174,6 @@ const openExternal = (url: string) => {
   margin: 0;
   color: var(--color-text-primary);
   font-size: 14px;
-
-  strong {
-    font-weight: 600;
-  }
 }
 
 .translator-link {
