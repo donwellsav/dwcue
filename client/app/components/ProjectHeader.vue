@@ -6,25 +6,22 @@
         alt="DonWells Cue"
         class="header-logo"
       />
-      <div class="header-titles">
-        <span class="brand-wordmark">{{ t('app.name') }}</span>
-        <div class="header-name-line">
-          <h2
-            class="project-name"
-            :title="currentProject?.name || t('project.noProject')"
-          >{{ currentProject?.name || t('project.noProject') }}</h2>
-          <div class="header-warning-line">
-            <div
-              v-if="silenceSeconds !== null"
-              class="silence-warning"
-              :title="`${t('project.silenceWarning')} ${silenceSeconds} ${t('project.seconds')}`"
-            >
-              <span class="silence-warning__label">{{ t('project.silenceWarning') }}</span>
-              <bdi class="silence-warning__seconds">{{ silenceSeconds }}</bdi>
-              <span class="silence-warning__label">{{ t('project.seconds') }}</span>
-            </div>
-            <div id="project-header-warnings" class="header-warning-slot"></div>
+      <div class="header-name-line">
+        <h2
+          class="project-name"
+          :title="currentProject?.name || t('project.noProject')"
+        >{{ currentProject?.name || t('project.noProject') }}</h2>
+        <div class="header-warning-line">
+          <div
+            v-if="silenceSeconds !== null"
+            class="silence-warning"
+            :title="`${t('project.silenceWarning')} ${silenceSeconds} ${t('project.seconds')}`"
+          >
+            <span class="silence-warning__label">{{ t('project.silenceWarning') }}</span>
+            <bdi class="silence-warning__seconds">{{ silenceSeconds }}</bdi>
+            <span class="silence-warning__label">{{ t('project.seconds') }}</span>
           </div>
+          <div id="project-header-warnings" class="header-warning-slot"></div>
         </div>
       </div>
       <span
@@ -380,24 +377,13 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-.header-titles {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  flex: 1;
-  min-width: 0;
-}
-
 .header-name-line,
 .header-warning-line {
   display: flex;
   align-items: center;
+  flex: 1;
   gap: var(--spacing-xs);
   min-width: 0;
-}
-
-.header-warning-line {
-  flex: 1;
 }
 
 .header-warning-slot {
@@ -406,27 +392,6 @@ onMounted(() => {
 
 .header-warning-slot:empty {
   display: none;
-}
-
-.brand-wordmark,
-.silence-warning {
-  flex: none;
-  display: flex;
-  align-items: center;
-  align-self: flex-start;
-  box-sizing: border-box;
-  max-width: 100%;
-  height: 18px;
-  white-space: nowrap;
-}
-
-.brand-wordmark {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  line-height: 1.1;
-  color: var(--color-text-secondary);
 }
 
 .project-name {
@@ -627,14 +592,19 @@ onMounted(() => {
 }
 
 .silence-warning {
+  flex: none;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
   max-width: calc(100% - 60px);
+  white-space: nowrap;
   gap: var(--spacing-xs);
-  padding-inline: var(--spacing-xs);
-  border: 1px solid var(--state-up-next);
+  padding: var(--spacing-xs) var(--spacing-lg);
+  border: 2px solid var(--state-up-next);
   border-radius: var(--control-radius);
   background-color: var(--color-surface-raised);
   font-weight: 700;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--state-up-next);
 }
 
