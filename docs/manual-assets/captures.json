@@ -193,20 +193,20 @@
     },
     {
       "file": "audio-settings-current.png",
-      "view": "Audio Routing settings showing the isolated NULL software output. Choose the actual show interface on the performance computer.",
-      "version": "2.6.17",
-      "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "nativeSourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "capturedOn": "2026-11-03",
+      "view": "Audio Routing in the lower workspace panel.",
+      "version": "2.6.21 development",
+      "sourceRevision": "e51dd3d9a36916da3a4f59ddc362181888c2fd2d",
+      "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
+      "capturedOn": "2026-11-12",
       "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
       "dimensions": [
-        610,
-        558
+        1400,
+        352
       ],
-      "sha256": "c36ef89ee0136321853bc3defb50f8bafe68af2992c29f126eae633d22b69d36",
-      "fixture": "Disposable Conference rehearsal with generated WAV tones. Native engine uses NULL software output inside audio-service-denial sandbox; no user media, live app or physical outputs.",
-      "captureMethod": "Playwright screenshot of the actual rendered panel at saved CSS pixel dimensions; viewport and accessible panel-height controls used for readable detail.",
-      "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
+      "sha256": "c89ebb10d4dd54133723e069826e9d513b8607647118044f0eda74d793b72a52",
+      "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
+      "captureMethod": "Playwright screenshot of the rendered Settings panel at its actual CSS pixel size.",
+      "presentation": "Panel crop without callouts or altered UI values."
     },
     {
       "file": "output-routing-current.png",
@@ -295,54 +295,54 @@
     },
     {
       "file": "shortcuts-current.png",
-      "view": "The Shortcuts tab in Settings with the reference bar toggle and Customize Shortcuts button.",
+      "view": "The Keyboard tab in docked Settings, with the reference bar toggle.",
       "version": "2.6.21 development",
-      "sourceRevision": "f1118045780d9a55e6ef13c90e0ccd0eb5fc1a32",
+      "sourceRevision": "e51dd3d9a36916da3a4f59ddc362181888c2fd2d",
       "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
       "capturedOn": "2026-11-12",
       "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
       "dimensions": [
-        720,
-        716
+        1400,
+        880
       ],
-      "sha256": "0303e82e20e563c7ed881f887953c59b707f6b81cb238089380cb9b3e073c605",
+      "sha256": "3f6f202c0a92cd76422cab38ee7a0af21c30ad1715a36d1a54aebda2b11facfd",
       "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
-      "captureMethod": "Playwright screenshot of the rendered page or panel at its actual CSS pixel size.",
-      "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
+      "captureMethod": "Playwright screenshot of the full workspace at its actual CSS pixel size.",
+      "presentation": "Uncropped workspace with the Shortcuts tab open, without callouts or altered UI values."
     },
     {
       "file": "midi-current.png",
-      "view": "MIDI configuration with fixture MIDI access and no detected hardware; assign and rehearse physical controls separately.",
-      "version": "2.6.17",
-      "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "nativeSourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "capturedOn": "2026-11-03",
+      "view": "The MIDI tab in docked Settings with no detected hardware.",
+      "version": "2.6.21 development",
+      "sourceRevision": "e51dd3d9a36916da3a4f59ddc362181888c2fd2d",
+      "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
+      "capturedOn": "2026-11-12",
       "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
       "dimensions": [
-        504,
-        678
+        1400,
+        352
       ],
-      "sha256": "01888be175ab9cda7970506f4b9704c41bba274da74e3d75a1d48dd24c0bdb19",
-      "fixture": "Disposable Conference rehearsal with generated WAV tones. Native engine uses NULL software output inside audio-service-denial sandbox; no user media, live app or physical outputs.",
-      "captureMethod": "Playwright screenshot of the actual rendered page or control panel; no UI controls redrawn.",
-      "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
+      "sha256": "2bd68a40ad79d4d66e0a89a9068bf6fc3dd7e70bd25597e7dc51aaa21cfafebe",
+      "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
+      "captureMethod": "Playwright screenshot of the rendered Settings panel at its actual CSS pixel size.",
+      "presentation": "Panel crop without callouts or altered UI values."
     },
     {
       "file": "video-settings-current.png",
-      "view": "Video Output settings with the output closed, test-card options.",
-      "version": "2.6.17",
-      "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "nativeSourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "capturedOn": "2026-11-03",
+      "view": "Video Output tab with the output closed.",
+      "version": "2.6.21 development",
+      "sourceRevision": "e51dd3d9a36916da3a4f59ddc362181888c2fd2d",
+      "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
+      "capturedOn": "2026-11-12",
       "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
       "dimensions": [
-        720,
-        810
+        1400,
+        352
       ],
-      "sha256": "26ffa6353aa51c24ff8a2cd2c58897745cd95d3b2e790138a91157f533f18124",
-      "fixture": "Disposable Conference rehearsal with generated WAV tones. Native engine uses NULL software output inside audio-service-denial sandbox; no user media, live app or physical outputs.",
-      "captureMethod": "Playwright screenshot of the actual rendered page or control panel; no UI controls redrawn.",
-      "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
+      "sha256": "001821fa94d2d901bbf4c07919d1ef662daa69385d83a19d727b1a4da4ff0761",
+      "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
+      "captureMethod": "Playwright screenshot of the rendered Settings panel at its actual CSS pixel size.",
+      "presentation": "Panel crop without callouts or altered UI values."
     },
     {
       "file": "server-connection-current.png",
@@ -393,7 +393,7 @@
       "originalSha256": "979b0c8ea5df2809b1f885bed6948091d02e4dbb1b39409947a5601d9891216a",
       "derivativeDimensions": "1064x430 (unaltered download)",
       "derivativeSha256": "979b0c8ea5df2809b1f885bed6948091d02e4dbb1b39409947a5601d9891216a",
-      "attribution": "Photo: Musicproducer, \u201cProfessional sound card fireface uc back side with connectors,\u201d Wikimedia Commons, CC BY-SA 4.0."
+      "attribution": "Photo: Musicproducer, “Professional sound card fireface uc back side with connectors,” Wikimedia Commons, CC BY-SA 4.0."
     },
     {
       "asset": "docs/manual-assets/stage-operator-photo.jpg",
@@ -408,7 +408,7 @@
       "originalSha256": "26e7b33f8ffa75464e9e16769365adad6f817219a7581430c4b2b0e4f85fa158",
       "derivativeDimensions": "1800x1200 (aspect ratio preserved)",
       "derivativeSha256": "6fd772e754e05c75acad468f6726e155903a2813faff4d6b5f352e508c02b677",
-      "attribution": "Photo: unknown author via Pxhere, \u201cBehringer X32 Digital Mixer in operation - angled,\u201d Wikimedia Commons, CC0 1.0."
+      "attribution": "Photo: unknown author via Pxhere, “Behringer X32 Digital Mixer in operation - angled,” Wikimedia Commons, CC0 1.0."
     }
   ],
   "diagrams": {

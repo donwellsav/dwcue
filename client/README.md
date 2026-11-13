@@ -327,10 +327,10 @@ The v2.6.12 release introduced updater support. v2.6.13 continues the same GitHu
 
 Behaviour:
 
-- **Startup check** — a silent check runs a few seconds after the window appears (packaged builds only). If an update exists, the renderer defers showing `UpdateModal.vue` while Show Mode is active, so a running show is never interrupted.
-- **Manual check** — Help → **Check for Updates…** (hidden in dev builds). "Update available" opens the modal; "up to date" shows a transient toast.
-- **Install** — ask-first (`autoDownload = false`, `autoInstallOnAppQuit = false`): the user downloads, then chooses **Install Now** (relaunch after install) or **Install on Exit** (install during quit without relaunching). Both paths pass the unsaved-changes guard and stop the managed audio server before replacing app files.
-- **Linux** — only the AppImage build self-updates. deb/rpm installs surface the update but the modal's primary action routes to dwcue.com/downloads instead of an in-place install (dpkg/rpm can't replace a running package).
+- **Startup check** runs after the packaged renderer registers its update listeners. A newer version triggers a five-second header advisory and a persistent **Update Available** link to **Settings → About**.
+- **Manual check** is available in About and from **Help → Check for Updates…** in packaged builds. The header reports the result.
+- **Download and install** require separate choices (`autoDownload = false`, `autoInstallOnAppQuit = false`). **Install Now** requires playback and Preview to be stopped and Show Mode closed. **Install on Exit** installs during quit without relaunching. Both install paths use the unsaved-changes guard and stop the managed engine before replacing app files.
+- **Linux** AppImage builds can self-update. For deb/rpm installs, About links to the DonWells Cue downloads page.
 
 The updater fetches `latest.yml` (Windows) / `latest-mac.yml` (macOS) / `latest-linux.yml` (Linux) from the latest GitHub release. The release job recomputes every manifest checksum from the published bytes and **merges the two per-arch macOS manifests into one `latest-mac.yml`** (electron-updater always requests that name; `MacUpdater` picks the arm64/x64 file itself at download time). See the [release workflow](../.github/workflows/build-release.yml).
 

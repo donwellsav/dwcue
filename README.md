@@ -2,7 +2,7 @@
 
 DonWells Cue **2.6.21** gives One Shots the same Play/Stop controls in Edit and Show Mode. Number keys **1–9** and **0** trigger the first ten slots by default. Use **Enter** to set the selected cue as Up Next and **Space** to run it after the engine confirms the target.
 
-**V** toggles Video Output. **G** captures its picture and **Shift+G** captures a selected display for standby. **Settings → Shortcuts** holds keyboard and MIDI controls. Warnings appear in the header beside the steady silence countdown. The [workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification and the deferred line-level audio and 1080p HDMI checks.
+**V** toggles Video Output. **G** captures its picture and **Shift+G** captures a selected display for standby. Settings opens below the playlist, with keyboard and MIDI controls under **Shortcuts** and updates under **About**. Header warnings temporarily replace the show name. The [workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification and the deferred line-level audio and 1080p HDMI checks.
 
 **DonWells Cue is a free, open-source app for playing back audio and video in live shows.** If you run sound for theatre, conferences, houses of worship, AV installs, or any live event, DonWells Cue lets you line up your music, sound effects and stings ahead of time and fire them off reliably on the night — from a laptop, a touchscreen, or even a separate stage-side machine you control over the network.
 

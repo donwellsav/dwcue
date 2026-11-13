@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.21 development
-**Source revision:** f1118045780d9a55e6ef13c90e0ccd0eb5fc1a32
+**Source revision:** e51dd3d9a36916da3a4f59ddc362181888c2fd2d
 **Native engine baseline:** 889abd569da10a32d6cd0edb75b029b436e5cf42
 **Edition:** 12 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This development edition includes the playlist numbering, shortcut, clipboard and warning layout fixes made after **2.6.21**. Match your installer to its release notes before rehearsal.
+This development edition includes the lower Settings panel, update notices, shortcut defaults, and warning placement changes made after **2.6.21**. Match your installer to its release notes before rehearsal.
 
 The interface captures use generated tones, the native engine's virtual NULL output, and fixture locale, display and MIDI information. **docs/manual-assets/captures.json** records each capture's date, source revision and hash. Equipment photographs remain illustrative.
 
@@ -52,6 +52,8 @@ This manual uses the English labels. Change language through **Settings → User
 ### Install and prepare the computer
 
 Get the installer for your operating system and architecture from the [official releases page](https://github.com/donwellsav/dwcue/releases). Check its release notes against this manual's source edition. Do not update the app, operating system, audio driver, or show files immediately before a performance without rehearsal.
+
+When a newer release is available, the desktop app shows a five-second startup notice and leaves an **Update Available** indicator. Open **Settings → About** to check for updates or choose **Download Update**. Packages that require manual installation offer the download page. After download, stop playback and Preview and exit Show Mode to use **Install Now**, or choose **Install on Exit** for the next app quit. Download and installation each require an operator action.
 
 Connect the audio interface before opening the show. Confirm the correct outputs at the sound console, start with a conservative listening level, connect mains power, and disable sleep for the performance using the operating system's controls. Prevent notification sounds from reaching the audience. Keep a separate copy of the show and its media on reliable storage.
 
@@ -124,7 +126,7 @@ An empty One Shots bank is collapsed by default. Choose **Show One Shots** to re
 
 Switch to **Show Mode** for performance after preparation is complete. It simplifies the interface and emphasizes transport and large cue controls. GO and assigned controls remain live. The One Shot Play/Stop button and keyboard and MIDI triggers work the same way in both modes. Use Edit Mode to change the bank.
 
-Rehearse at the actual display size and app zoom. Keep the next cue name and active-cue controls visible. If a panel or dialog obscures transport, close it before the next call. The **Shortcuts** display is useful during training; check **Customize Shortcuts…** when taking over somebody else's show.
+Rehearse at the actual display size and app zoom. Settings and shortcut editing open below the playlist, with the transport controls still available. Cue Properties uses the same space. **Customize Shortcuts…** in the reference bar opens **Settings → Shortcuts**.
 
 ![Show Mode with the One Shots bank open and the default number keys visible.](manual-assets/show-mode.png)
 
@@ -314,7 +316,7 @@ Open **Settings** and choose **Audio Device** for the show. Check the device nam
 
 ![Rear-panel audio-interface connector reference. Use it to discuss labelled outputs, cable seating, and strain relief; the photograph does not certify pinout, signal continuity, gain, or a particular show setup.](manual-assets/audio-connector-photo.jpg)
 
-![Audio Routing settings showing the isolated NULL software output. Choose the actual show interface on the performance computer.](manual-assets/audio-settings-current.png)
+![The docked Audio Routing tab. Choose the actual show interface on the performance computer.](manual-assets/audio-settings-current.png)
 
 **Procedure — prove the Main route end to end**
 
@@ -421,7 +423,7 @@ If Cue to Continue stalls, use **Stop All**. The controller reconnects if the co
 
 Stop, replay, removal, media replacement, Stop All or project switch cancels that one-pass continuation. A later replay uses the authored ending. **Toggle Loop** instead edits the project’s End Behavior between Loop and Nothing; it does not restore a prior ending. Autosave saves this edit; otherwise it remains dirty. Choose Cue to Continue for a one-pass release.
 
-**Jump Cue** stops the current cue and advances immediately. Rehearse its target and audible transition. Neither Jump Cue nor Cue to Continue has a default key; use the visible control or assign a shortcut.
+**Jump Cue** stops the current cue and advances immediately. Rehearse its target and audible transition. **J** defaults to Jump Cue and **C** to Cue to Continue.
 
 ### When the expected cue does not start
 
@@ -431,7 +433,7 @@ For overlapping playback, check Ducking. If the wrong material is audible, use t
 
 ### Header warnings
 
-The steady **Silence in** countdown stays beside the session name. Transient messages appear in the same row. Red urgent warnings take priority over yellow advisories. Audio and video recovery buttons stay available while their outputs need attention.
+Header warnings temporarily replace the show name. The steady **Silence in** countdown stays in that slot when another warning appears beside it. The show name returns when the warnings clear. Red urgent warnings take priority over yellow advisories. Audio and video recovery buttons stay available while their outputs need attention.
 
 In **Settings → User Interface → Header warning timing**, set the four durations and two countdown thresholds for this device. Defaults are **5 seconds** without a countdown, **3 seconds** above 30 seconds remaining, **2 seconds** from 15 through 30 seconds, and **1 second** below 15 seconds. A timing change applies to the next message.
 
@@ -480,21 +482,21 @@ The bank can **Detach** into a separate window and **Attach** again. Rehearse fo
 
 ### Assign and verify keyboard shortcuts
 
-Open **Settings → Shortcuts → Customize Shortcuts…** and use the **Keyboard** tab. Select a playback action or configured One Shot and press the desired key. Resolve any reserved combinations or conflicts before rehearsal. **Show shortcuts bar** toggles the reference along the bottom of the workspace. Individual tile settings also provide **Keyboard Shortcut**, **Assign shortcut**, and **Clear shortcut**.
+Open **Settings → Shortcuts** and use the **Keyboard** tab. Select a playback action or configured One Shot and press the desired key. Resolve any reserved combinations or conflicts before rehearsal. **Show shortcuts bar** toggles the reference, including **One Shots (defaults)** with **1–9, 0**. Individual tile settings also provide **Keyboard Shortcut**, **Assign shortcut**, and **Clear shortcut**.
 
-![The Shortcuts tab in Settings with its reference bar toggle and Customize Shortcuts button.](manual-assets/shortcuts-current.png)
+![Keyboard bindings in the docked Shortcuts tab.](manual-assets/shortcuts-current.png)
 
 **Procedure — hand over a keyboard-controlled show**
 
 - **Prerequisites:** Audio is stopped or protected and the outgoing operator can identify all non-default assignments.
-- **Actions:** Open the Keyboard tab and compare GO, Set Selected as Up Next, Stop All, Pause/Resume, loop actions, and One Shot keys with the handover sheet. Close the dialog, focus the workspace, and test during rehearsal.
+- **Actions:** Open the Keyboard tab and compare GO, Set Selected as Up Next, Stop All, Pause/Resume, loop actions, and One Shot keys with the handover sheet. Focus the workspace and test during rehearsal.
 - **Expected visible outcome:** Each tested key invokes exactly the labelled action once.
 - **Common mistake:** Testing Space or Escape while a text field or Video Output has focus and generalizing from that result.
 - **Recovery:** Stop safely, close editors, restore workspace focus, check conflicts, and repeat the controlled test.
 
-Keyboard assignments belong to the project. One Shot slots **1 through 9** default to their matching number keys, and **0** fires slot **10**. Saved assignments take precedence. **Clear shortcut** disables a tile's key. **Reset to Defaults** on the Keyboard tab restores the defaults. Use **Enter** to set the selected cue as Up Next, **Space** to fire it, **Shift+Enter** to play the selected cue immediately, and **L** to toggle Loop. Cue to Continue and Jump Cue start unbound. **F1** also plays the selected audio cue.
+Keyboard assignments belong to the project. One Shot slots **1 through 9** default to their matching number keys, and **0** fires slot **10**. Saved assignments take precedence. **Clear shortcut** disables a tile's key. **Reset to Defaults** on the Keyboard tab restores the defaults. Use **Enter** to set the selected cue as Up Next, **Space** to fire it, **Shift+Enter** to play the selected cue immediately, and **L** to toggle Loop. **P** and **Shift+Space** both pause or resume. **C** cues the active loop to continue and **J** jumps to the next cue. **F1** also plays the selected audio cue.
 
-The main workspace accepts playback and One Shot shortcuts with the bank visible, hidden, or detached. In the shortcut editor, Escape cancels assignment or closes the editor.
+The main workspace accepts playback and One Shot shortcuts with the bank visible, hidden, or detached. The mapped **Stop All** works even while the shortcut editor is learning a keyboard or MIDI assignment.
 
 Text fields normally own typing, so a playback letter does not fire while you are editing a name. Close editors and dialogs before the next cue call. Keyboard/MIDI Pause/Resume and Toggle Loop target the first active cue, otherwise the selected audio cue; use the specific cue's visible control if several cues are active and you need certainty about the target.
 
@@ -529,7 +531,7 @@ Video Output belongs to the desktop client, not to the headless engine. The reco
 
 Use **V** or the toolbar's **Video Output** button to open or close the output window. Assign the intended display under **Settings → Video Output** and verify its identity against the physical projector, switcher, or monitor. The app remembers the display assignment on that computer, and the output window starts closed on each application launch. Open and check it for each session.
 
-![Video Output settings with the output closed, test-card options.](manual-assets/video-settings-current.png)
+![The docked Video Output tab with the output closed.](manual-assets/video-settings-current.png)
 
 **Procedure — open and identify the audience output**
 
@@ -895,7 +897,7 @@ These are source defaults, not a promise about a project's customized assignment
 | Control | Default action |
 | --- | --- |
 | Space | Play Next / GO |
-| P | Pause/Resume the first active cue; with none active, starts the selected audio if inactive |
+| P or Shift+Space | Pause/Resume the first active cue. With none active, starts the selected audio if inactive |
 | Escape | Stop All Cues using the configured global fade |
 | Up / Down arrows | Move playlist selection |
 | Enter | Set the selected playlist cue as Up Next |
@@ -905,7 +907,8 @@ These are source defaults, not a promise about a project's customized assignment
 | G | Capture Video Output as a standby still |
 | Shift+G | Capture the display selected in Video Output settings |
 | F1 | Separate Play Selected audio action |
-| Cue to Continue / Jump Cue | No default binding; use the appropriate live control or assign deliberately |
+| C | Cue to Continue at the end of the active loop pass |
+| J | Jump Cue immediately |
 | 1 through 9, then 0 | Fire One Shot slots 1 through 10 in either mode |
 | Cmd/Ctrl+S | Save Project |
 | Cmd/Ctrl+O | Open Project |
