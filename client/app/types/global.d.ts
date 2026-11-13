@@ -179,7 +179,7 @@ declare global {
       getSystemLocale: () => Promise<string>;
       getAvailableLocales: () => Promise<Array<{ code: string; name: string; direction: string }>>;
       getLocaleData: (localeCode: string) => Promise<any>;
-      checkForUpdates: () => Promise<{ success: boolean; updateInfo?: any; error?: string }>;
+      checkForUpdates: (silent?: boolean) => Promise<{ success: boolean; updateInfo?: any; error?: string }>;
       downloadUpdate: () => Promise<{ success: boolean; error?: string }>;
       installUpdate: () => Promise<boolean>;
       getUpdateInstallSupported: () => Promise<boolean>;

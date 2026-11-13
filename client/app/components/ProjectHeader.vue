@@ -8,6 +8,7 @@
       />
       <div class="header-name-line">
         <h2
+          v-if="silenceSeconds === null && !warning"
           class="project-name"
           :title="currentProject?.name || t('project.noProject')"
         >{{ currentProject?.name || t('project.noProject') }}</h2>
@@ -34,7 +35,10 @@
       <!-- Appears the moment the socket drops; spins for as long as we retry. -->
       <ConnectionStatusPill />
 
-      <Btn :text="t('settings.title')" @click="showProjectSettings = true" />
+      <Btn :text="t('settings.title')" :aria-expanded="showProjectSettings"
+        @click="showProjectSettings = !showProjectSettings" />
+      <Btn v-if="update.version" class="update-indicator" :text="t('update.updateAvailable')"
+        @click="settingsTab = 'about'; showProjectSettings = true" />
       <Btn
         :text="t('settings.tabVideoOutput')"
         symbol="video-output"
@@ -105,19 +109,9 @@
     </div>
   </div>
 
-  <ControlConfigModal
-    v-if="showControlConfig"
-    @close="showControlConfig = false"
-  />
-  <ProjectSettingsModal
-    :open="showProjectSettings"
-    @close="showProjectSettings = false"
-    @open-shortcuts="showProjectSettings = false; showControlConfig = true"
-  />
 </template>
 
 <script setup lang="ts">
-import ProjectSettingsModal from './ProjectSettingsModal.vue';
 import Btn from './Btn.vue';
 import VideoConfidenceChip from './VideoConfidenceChip.vue';
 import { useVideoOutputToggle } from '~/composables/useCartHotkeys';
@@ -127,9 +121,10 @@ const { currentProject, findItemByUuid, findItemByIndex, autoSaveEnabled, hasUns
 const { t } = useLocalization();
 const { activeCues } = useAudioEngine();
 const { uiMode, toggleUiMode } = useUiMode();
-const { silenceRemaining } = useHeaderWarnings();
+const { warning, silenceRemaining } = useHeaderWarnings();
 
-const showControlConfig = useState('showControlConfig', () => false);
+const { update } = useAppUpdate();
+const settingsTab = useState('projectSettingsTab', () => 'audio');
 const showProjectSettings = useState('showProjectSettings', () => false);
 
 const isDark = computed(() => currentProject.value?.theme.mode === 'dark');
@@ -400,8 +395,9 @@ onMounted(() => {
   letter-spacing: -0.01em;
   color: var(--color-text-primary);
   margin: 0;
-  flex: none;
-  max-width: min(40%, 420px, max(4rem, calc(100% - 264px)));
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(420px, 100%);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -429,6 +425,10 @@ onMounted(() => {
 .header-right :deep(.video-toggle--active),
 .header-right :deep(.level-check-toggle--active) {
   color: var(--color-accent);
+}
+
+.header-right :deep(.update-indicator) {
+  color: var(--state-up-next);
 }
 
 .header-right :deep(.btn:hover:not(:disabled)),

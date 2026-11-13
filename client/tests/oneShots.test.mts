@@ -94,13 +94,17 @@ test('playlist cues copy into independent One Shots without sharing behavior', (
 
 test('digits follow slot position and saved keyboard assignments take precedence', () => {
   const slots: (AudioItem | null)[] = Array.from({ length: 11 }, (_, index) => audio(String(index), index));
-  const { keyMappings, playbackMappings } = resolveKeyboardBindings(slots);
+  const { keyMappings, playbackMappings, pauseAlternate } = resolveKeyboardBindings(slots);
   assert.deepEqual(Object.values(keyMappings).map(binding => binding.key), [...'1234567890']);
   assert.equal(playbackMappings['set-up-next']?.key, 'Enter');
   assert.equal(playbackMappings['set-up-next']?.shiftKey, false);
   assert.equal(playbackMappings['play-selected']?.key, 'Enter');
   assert.equal(playbackMappings['play-selected']?.shiftKey, true);
   assert.equal(playbackMappings['toggle-loop']?.key, 'l');
+  assert.equal(playbackMappings['jump-cue']?.key, 'j');
+  assert.equal(playbackMappings['cue-to-continue']?.key, 'c');
+  assert.equal(playbackMappings['pause-resume']?.key, 'p');
+  assert.deepEqual(pauseAlternate, { key: ' ', ctrlKey: false, shiftKey: true, altKey: false });
   assert.equal(playbackMappings['play-next']?.key, ' ');
   assert.equal(playbackMappings['toggle-video-output']?.key, 'v');
 
@@ -127,6 +131,13 @@ test('digits follow slot position and saved keyboard assignments take precedence
   assert.equal(shifted.playbackMappings['set-up-next']?.key, 'Enter');
   assert.equal(shifted.playbackMappings['toggle-loop'], null);
   assert.equal(resolveKeyboardBindings(slots, { 'jump-cue': key('l') }).playbackMappings['toggle-loop'], undefined);
+  assert.equal(resolveKeyboardBindings(slots, { 'pause-resume': null }).pauseAlternate, null);
+  assert.equal(resolveKeyboardBindings(slots, { 'stop-all': pauseAlternate }).pauseAlternate, null);
+  slots[10]!.oneShot!.hotkey = pauseAlternate;
+  assert.equal(resolveKeyboardBindings(slots).pauseAlternate, null);
+  slots[10]!.oneShot!.hotkey = key('j');
+  assert.equal(resolveKeyboardBindings(slots).playbackMappings['jump-cue'], undefined);
+  assert.equal(resolveKeyboardBindings(slots, { 'select-up': key('c') }).playbackMappings['cue-to-continue'], undefined);
 });
 
 test('One Shot copies into the playlist without consuming the source cell', () => {

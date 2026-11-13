@@ -56,6 +56,7 @@
         :project-file-dialog-open="projectFileDialogOpen"
         @new-project="showNewProjectDialog"
         @open-project="showOpenProjectPicker"
+        @open-about="openAbout"
       />
       <div v-else-if="projectHydrationStatus === 'failed'" class="project-hydration-error" role="alert">
         <strong>{{ t('projectHydration.failed') }}</strong>
@@ -88,19 +89,6 @@
     
     <!-- About Modal -->
     <AboutModal v-if="showAboutModal" @close="showAboutModal = false" />
-    
-    <!-- Update Modal -->
-    <UpdateModal
-      v-if="showUpdateModal"
-      :current-version="updateInfo.currentVersion"
-      :new-version="updateInfo.newVersion"
-      :release-notes="updateInfo.releaseNotes"
-      :release-date="updateInfo.releaseDate"
-      @close="showUpdateModal = false"
-      @install="handleUpdateInstall"
-      @install-on-exit="handleUpdateInstallOnExit"
-    />
-
     
     <!-- Progress Modal for Import/Export -->
     <ProgressModal
@@ -437,7 +425,7 @@ const theme = useState('theme', () => 'dark');
 // Global interface text scale (Settings → Interface font size). The app's
 // styles are px-based, so the lever is `zoom` on the root — it scales text
 // and chrome uniformly without touching hundreds of px rules.
-const { uiFontScale, uiMode } = useUiMode();
+const { uiFontScale } = useUiMode();
 
 watch(theme, (value) => {
   if (import.meta.client) document.documentElement.dataset.theme = value;
@@ -491,15 +479,24 @@ const displayAccent = (color?: string) =>
 // About modal
 const showAboutModal = ref(false);
 
-// Update modal
-const showUpdateModal = ref(false);
-const updateInfo = ref({
-  currentVersion: '',
-  newVersion: '',
-  releaseNotes: '',
-  releaseDate: '',
+const { update, checkForAppUpdate } = useAppUpdate();
+let announcedUpdate = '';
+watch(() => [update.version, t('update.headerAvailable', { version: update.version })] as const, ([version, message]) => {
+  if (!version || version === announcedUpdate || message === 'update.headerAvailable') return;
+  announcedUpdate = version;
+  showHeaderWarning(message, 'advisory', 5);
 });
-let installOnExitRequested = false;
+const showProjectSettings = useState('showProjectSettings', () => false);
+const settingsTab = useState('projectSettingsTab', () => 'audio');
+
+function openAbout() {
+  if (currentProject.value && projectHydrationStatus.value !== 'failed') {
+    settingsTab.value = 'about';
+    showProjectSettings.value = true;
+  } else {
+    showAboutModal.value = true;
+  }
+}
 
 const accentColors = [
   '#315fcf', '#3c6fe0', '#5a83e8', // DonWells cobalt
@@ -599,7 +596,7 @@ onMounted(() => {
     // shortcuts after any mouse click. Keyboard activation has detail === 0
     // and is left alone, so Tab+Space navigation still works.
     window.addEventListener('click', (e: MouseEvent) => {
-      if (e.detail === 0) return;
+      if (e.detail === 0 || (e.target as HTMLElement | null)?.closest?.('.binding-button')) return;
       const el = (e.target as HTMLElement | null)?.closest?.('button, [role="button"], a[href], summary') as HTMLElement | null;
       if (el && typeof el.blur === 'function') el.blur();
     }, true);
@@ -656,9 +653,7 @@ onMounted(() => {
       setLocale(locale);
     });
     
-    window.electronAPI.onMenuShowAbout(() => {
-      showAboutModal.value = true;
-    });
+    window.electronAPI.onMenuShowAbout(openAbout);
 
     window.electronAPI.onMenuNewProject(() => {
       if (currentProject.value) showNewProjectDialog(currentProject.value.folderPath);
@@ -682,43 +677,30 @@ onMounted(() => {
       startImportFlow();
     });
 
-    // Update flow. The modal is deferred while Show Mode is active — never
-    // interrupt a running show — and shown as soon as the operator exits
-    // back to edit mode. A check that finds nothing (manual Help-menu check)
-    // gets confirmation in the header.
-    interface UpdateAvailableInfo {
-      currentVersion: string;
-      newVersion: string;
-      releaseNotes?: string;
-      releaseDate?: string;
-    }
-    let pendingUpdateInfo: UpdateAvailableInfo | null = null;
-    const presentUpdateInfo = () => {
-      if (uiMode.value === 'playback') return; // defer during a show
-      if (!pendingUpdateInfo) return;
-      updateInfo.value = {
-        currentVersion: pendingUpdateInfo.currentVersion,
-        newVersion: pendingUpdateInfo.newVersion,
-        releaseNotes: pendingUpdateInfo.releaseNotes ?? '',
-        releaseDate: pendingUpdateInfo.releaseDate ?? '',
-      };
-      pendingUpdateInfo = null;
-      showUpdateModal.value = true;
-    };
-    window.electronAPI.onUpdateAvailable((_event, info) => {
-      pendingUpdateInfo = info;
-      presentUpdateInfo();
+    const api = window.electronAPI;
+    void api.getUpdateInstallSupported?.().then(supported => { update.installSupported = supported; }).catch(() => {});
+    api.onUpdateAvailable?.((_event, info) => {
+      if (update.version === info.newVersion || update.downloading || update.downloaded) return;
+      update.version = info.newVersion;
+      update.downloaded = false;
+      update.installOnExit = false;
+      update.error = '';
     });
-    watch(uiMode, (mode) => {
-      if (mode !== 'playback') presentUpdateInfo();
-    });
-    window.electronAPI.onUpdateUpToDate((_event, info) => {
+    api.onUpdateUpToDate?.((_event, info) => {
+      if (!update.downloading && !update.downloaded) update.version = '';
       showHeaderWarning(t('update.upToDate', { version: info.version }));
     });
-    window.electronAPI.onMenuCheckForUpdates(() => {
-      void window.electronAPI.checkForUpdates();
+    api.onUpdateDownloadProgress?.((_event, progress) => { update.percent = progress.percent; });
+    api.onUpdateDownloaded?.((_event, info) => {
+      if (info.version === update.version) update.downloaded = true;
     });
-    
+    api.onUpdateError?.((_event, error) => {
+      if (update.checking || update.downloading || update.downloaded) update.error = error;
+    });
+    api.onMenuCheckForUpdates?.(() => { void checkForAppUpdate(); });
+    // Register the listeners before asking Electron to check the release feed.
+    void api.checkForUpdates?.(true).catch(() => {});
+
     // Cold and warm file associations share the same native format routing.
     window.electronAPI.onOpenFileAssociation((_event: any, data: { filePath: string; kind: ProjectFileKind }) => {
       void routePendingFile(data);
@@ -784,12 +766,13 @@ async function runQuitFlow() {
   try {
     // Step 1 — unsaved changes (including a failed autosave).
     if (!await confirmUnsavedChanges('quit')) return;
-    if (installOnExitRequested) {
+    if (update.installOnExit) {
       const accepted = await api?.app?.confirmQuit?.({
         installUpdate: true,
         runAfterInstall: false,
       });
-      if (accepted) installOnExitRequested = false;
+      if (accepted) update.installOnExit = false;
+      else showHeaderWarning(t('update.installFailed'), 'urgent');
       return;
     }
 
@@ -814,23 +797,6 @@ async function runQuitFlow() {
     quitFlowActive = false;
   }
 }
-// An update install is a quit action too: run the same unsaved-changes guard
-// before handing control to electron-updater. A failed forced save aborts.
-async function handleUpdateInstall() {
-  if (!import.meta.client || !window.electronAPI) return;
-  if (!(await confirmUnsavedChanges())) return;
-  const accepted = await window.electronAPI.installUpdate();
-  if (!accepted) {
-    console.warn('[update] install request was not accepted');
-  }
-}
-
-const handleUpdateInstallOnExit = () => {
-  installOnExitRequested = true;
-  showUpdateModal.value = false;
-};
-
-
 const changeAccentColor = (color: string) => {
   if (currentProject.value) {
     currentProject.value.theme.accentColor = color;

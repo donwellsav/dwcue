@@ -198,8 +198,9 @@
 
     <ShortcutsBar />
     
+    <ProjectSettingsModal :open="showProjectSettings" @close="showProjectSettings = false" />
     <PropertiesPanel
-      v-if="propertiesPanelOpen && selectedItem && (uiMode !== 'playback' || selectedItem.uuid === previewItemUuid)"
+      v-if="!showProjectSettings && propertiesPanelOpen && selectedItem && (uiMode !== 'playback' || selectedItem.uuid === previewItemUuid)"
     />
 
     <ProgressModal
@@ -242,6 +243,7 @@
 <script setup lang="ts">
 import LevelCheckBar from './LevelCheckBar.vue';
 import LocationChoiceModal from './LocationChoiceModal.vue';
+import ProjectSettingsModal from './ProjectSettingsModal.vue';
 import ServerFilePickerModal from './ServerFilePickerModal.vue';
 import StereoMeter from './StereoMeter.vue';
 import VolumeSlider from './VolumeSlider.vue';
@@ -813,8 +815,8 @@ const handleKeydown = (e: KeyboardEvent) => {
     const uuids = Array.from(selectedItems.value);
     if (uuids.length > 0) duplicateItems(uuids);
   } else if (key === 'c') {
-    if (showProjectSettings.value ||
-        (!isForwardedFromVideoOutput(e) && window.getSelection()?.isCollapsed === false)) return;
+    if (!isForwardedFromVideoOutput(e) && (window.getSelection()?.isCollapsed === false ||
+        (showProjectSettings.value && (e.target as HTMLElement | null)?.closest?.('.project-settings-panel')))) return;
     const uuids = Array.from(selectedItems.value);
     if (uuids.length > 0) {
       e.preventDefault();

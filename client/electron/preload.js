@@ -143,7 +143,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getLocaleData: (localeCode) => ipcRenderer.invoke('get-locale-data', localeCode),
 
   // Auto-updater
-  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  checkForUpdates: (silent = false) => ipcRenderer.invoke('check-for-updates', silent),
   downloadUpdate: () => ipcRenderer.invoke('download-update'),
   installUpdate: () => ipcRenderer.invoke('install-update'),
   getUpdateInstallSupported: () => ipcRenderer.invoke('get-update-install-supported'),

@@ -461,6 +461,8 @@ export const DEFAULT_PLAYBACK_KEYS: Partial<Record<PlaybackKeyAction, CartSlotKe
   'play-next':     { key: ' ',         ctrlKey: false, shiftKey: false, altKey: false },
   'pause-resume':  { key: 'p',         ctrlKey: false, shiftKey: false, altKey: false },
   'toggle-loop':   { key: 'l',         ctrlKey: false, shiftKey: false, altKey: false },
+  'jump-cue':      { key: 'j',         ctrlKey: false, shiftKey: false, altKey: false },
+  'cue-to-continue': { key: 'c',      ctrlKey: false, shiftKey: false, altKey: false },
   'stop-all':      { key: 'Escape',    ctrlKey: false, shiftKey: false, altKey: false },
   'select-up':     { key: 'ArrowUp',   ctrlKey: false, shiftKey: false, altKey: false },
   'select-down':   { key: 'ArrowDown', ctrlKey: false, shiftKey: false, altKey: false },

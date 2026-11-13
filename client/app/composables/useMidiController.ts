@@ -294,8 +294,9 @@ export const useMidiController = () => {
     const binding: MidiBinding = { channel: parsed.channel, type: parsed.type as MidiBinding['type'], number: parsed.number };
     lastMidiMessage.value = binding;
 
-    // MIDI Learn mode: capture this message
-    if (learning.value !== null) {
+    // A mapped panic input must still reach Stop All during MIDI Learn.
+    const stopBinding = config.value.bindings['stop-all'];
+    if (learning.value !== null && !(stopBinding && bindingsMatch(stopBinding, binding))) {
       if (onLearnCapture) {
         onLearnCapture(binding);
       }
@@ -304,6 +305,7 @@ export const useMidiController = () => {
 
     // Look up binding in config
     for (const [actionId, configured] of Object.entries(config.value.bindings)) {
+      if (learning.value !== null && actionId !== 'stop-all') continue;
       if (bindingsMatch(configured, binding)) {
         if (useLiveplayServer().cueStartsBlocked && actionId !== 'stop-all') return;
         const action = MIDI_ACTIONS.find(a => a.id === actionId);

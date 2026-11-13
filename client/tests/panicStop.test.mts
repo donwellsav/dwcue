@@ -275,7 +275,7 @@ function transpileFactory(source: string, factoryName: string): (...args: any[])
   return Function(`${compiled}; return ${factoryName};`)();
 }
 
-test('cue copy yields to selected text and to Project Settings', () => {
+test('cue copy yields to selected text and focused Project Settings', () => {
   const source = parseSfc(readFileSync(new URL('../app/components/MainWorkspace.vue', import.meta.url), 'utf8'))
     .descriptor.scriptSetup!.content;
   const start = source.indexOf('const handleKeydown =');
@@ -297,20 +297,21 @@ test('cue copy yields to selected text and to Project Settings', () => {
   const settings = { value: true };
   const copies: string[][] = [];
   const handler = makeHandler({ getSelection: () => selection }, settings, (items: string[]) => copies.push(items));
-  const copy = () => {
+  const copy = (insideSettings = false) => {
     let prevented = false;
-    handler({ key: 'c', metaKey: true, preventDefault: () => { prevented = true; } });
+    handler({ key: 'c', metaKey: true, target: { closest: () => insideSettings }, preventDefault: () => { prevented = true; } });
     return prevented;
   };
   assert.equal(copy(), false);
   selection.isCollapsed = true;
-  assert.equal(copy(), false);
+  assert.equal(copy(true), false);
+  assert.equal(copy(), true, 'opening Settings must leave the playlist copy shortcut available');
   settings.value = false;
   selection.isCollapsed = false;
   assert.equal(copy(), false);
   selection.isCollapsed = true;
   assert.equal(copy(), true);
-  assert.deepEqual(copies, [['selected-cue']]);
+  assert.deepEqual(copies, [['selected-cue'], ['selected-cue']]);
 });
 
 function midiRecoveryHarness() {
@@ -391,8 +392,10 @@ test('MIDI Stop and Learn remain available during recovery', () => {
   assert.deepEqual(midi.calls, ['stop', 'stop']);
   midi.learning.value = 'play-next';
   midi.send(0x90, 60, 127);
+  midi.send(0x90, 61, 0);
+  midi.send(0x90, 61, 127);
   assert.deepEqual(midi.learned, [{ channel: 0, type: 'note', number: 60 }]);
-  assert.deepEqual(midi.calls, ['stop', 'stop']);
+  assert.deepEqual(midi.calls, ['stop', 'stop', 'stop']);
 });
 
 test('held keys fire discrete actions once while selection arrows can repeat', () => {

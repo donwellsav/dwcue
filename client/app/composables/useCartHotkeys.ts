@@ -75,7 +75,7 @@ export const resolveKeyboardBindings = (
   };
   // A new default must yield to a key the operator already assigned.
   const assigned = [...Object.values(keyMappings), ...Object.values(savedPlayback)];
-  for (const action of ['set-up-next', 'play-selected', 'toggle-loop', 'toggle-video-output', 'capture-video-standby', 'capture-display-standby'] as const) {
+  for (const action of ['set-up-next', 'play-selected', 'toggle-loop', 'jump-cue', 'cue-to-continue', 'toggle-video-output', 'capture-video-standby', 'capture-display-standby'] as const) {
     const defaultKey = DEFAULT_PLAYBACK_KEYS[action];
     if (savedPlayback[action] === undefined && defaultKey
         && assigned.some(binding => binding && bindingsMatch(binding, defaultKey))) {
@@ -84,13 +84,16 @@ export const resolveKeyboardBindings = (
   }
 
   const occupied = [...Object.values(keyMappings), ...Object.values(playbackMappings)];
+  const shiftSpace = { key: ' ', ctrlKey: false, shiftKey: true, altKey: false };
+  const pauseAlternate = playbackMappings['pause-resume'] &&
+    !occupied.some(binding => binding && bindingsMatch(binding, shiftSpace)) ? shiftSpace : null;
   for (const [index, key] of Array.from('1234567890').entries()) {
     const oneShot = slots[index]?.oneShot;
     if (!oneShot || oneShot.hotkey !== undefined) continue;
     const binding = { key, ctrlKey: false, shiftKey: false, altKey: false };
     if (!occupied.some(other => other && bindingsMatch(other, binding))) keyMappings[index] = binding;
   }
-  return { keyMappings, playbackMappings };
+  return { keyMappings, playbackMappings, pauseAlternate };
 };
 
 let togglingVideoOutput = false;
@@ -133,6 +136,11 @@ export const useCartHotkeys = () => {
   ));
   const keyMappings = computed(() => bindings.value.keyMappings);
   const playbackMappings = computed(() => bindings.value.playbackMappings);
+  const playbackKeyLabel = (action: PlaybackKeyAction): string => {
+    const primary = playbackMappings.value[action];
+    const alternate = action === 'pause-resume' ? bindings.value.pauseAlternate : null;
+    return [primary, alternate].filter(binding => binding != null).map(formatKeyLabel).join(' / ');
+  };
 
   const isTextInputFocused = (): boolean => {
     const el = document.activeElement;
@@ -191,6 +199,8 @@ export const useCartHotkeys = () => {
     for (const [action, binding] of Object.entries(mappings) as [PlaybackKeyAction, CartSlotKeyBinding | null][]) {
       if (binding && bindingsMatch(binding, pressed)) return action;
     }
+    const alternate = bindings.value.pauseAlternate;
+    if (alternate && bindingsMatch(alternate, pressed)) return 'pause-resume';
     return null;
   };
 
@@ -370,6 +380,7 @@ export const useCartHotkeys = () => {
   return {
     keyMappings,
     playbackMappings,
+    playbackKeyLabel,
     triggerSlot,
     mount,
     unmount,

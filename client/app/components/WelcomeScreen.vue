@@ -268,6 +268,9 @@ ref="localModeButton"
         class="link-button"
         @click="openOperatorManual"
       >{{ t('menu.operatorManual') }}</button>
+      <button v-if="update.version" type="button" class="link-button" @click="emit('openAbout')">
+        {{ t('update.updateAvailable') }}
+      </button>
     </div>
 
   </div>
@@ -281,9 +284,11 @@ const props = defineProps<{
 const emit = defineEmits<{
   newProject: [fallbackFolder: string];
   openProject: [fallbackFolder: string];
+  openAbout: [];
 }>();
 const { tryRejoinExistingProject } = useProject();
 const { t } = useLocalization();
+const { update } = useAppUpdate();
 const server = useLiveplayServer();
 
 // Three-stage flow: mode picker → (optional remote address) → project picker.

@@ -1256,7 +1256,7 @@ assert.match(
 
 const electron = read('client/electron/main.js');
 const audioImportModal = read('client/app/components/AudioImportModal.vue');
-const updateModal = read('client/app/components/UpdateModal.vue');
+const aboutContent = read('client/app/components/AboutContent.vue');
 const cspHashStart = electron.indexOf('function cspHashesForInlineScripts');
 const cspHashEnd = electron.indexOf(
   '\n}\n\nfunction configureSessionSecurity', cspHashStart) + 2;
@@ -1478,7 +1478,7 @@ assert.doesNotMatch(
   'DonWells Cue must never install or advertise upstream LivePlay updates',
 );
 assert.doesNotMatch(
-  updateModal,
+  aboutContent,
   /isManualUpdate|downloadUrl|github\.io\/liveplay/,
   'the update UI must not fall back to upstream LivePlay downloads',
 );
@@ -1498,7 +1498,7 @@ assert.match(
 );
 assert.match(
   electron,
-  /check-for-updates[\s\S]{0,400}if \(!DWCUE_UPDATES_CONFIGURED\)/,
+  /ipcMain.handle\('check-for-updates'[\s\S]{0,400}if \(!DWCUE_UPDATES_CONFIGURED/,
   'the manual update check must fail closed when updates are disabled',
 );
 assert.match(
@@ -1521,6 +1521,10 @@ assert.match(
   /autoUpdater\.autoInstallOnAppQuit = false/,
   'updates must wait for an explicit install-on-now or install-on-exit choice',
 );
+assert.match(updateInstallation, /if \([^\n]*!downloadedUpdateVersion\) return false;/,
+  'install requests without a staged update must leave the engine running');
+assert.match(appVue, /showHeaderWarning\(message, 'advisory', 5\)/,
+  'startup update notices belong in the header for five seconds');
 assert.match(
   electron,
   /async function installDownloadedUpdate\([\s\S]{0,900}const shouldRunAfterInstall = runAfterInstall !== false[\s\S]{0,500}autoUpdater\.autoRunAppAfterInstall = shouldRunAfterInstall[\s\S]{0,180}autoUpdater\.quitAndInstall\(!shouldRunAfterInstall, shouldRunAfterInstall\)/,
@@ -1832,14 +1836,19 @@ assert.match(
   'settings dialogs must share one shell geometry',
 );
 assert.match(
-  projectSettingsModal,
-  /\.project-settings-modal\s*\{[^}]*border-radius:\s*var\(--dialog-radius\);[^}]*width:\s*min\(\d+px, 94vw\);[^}]*max-height:\s*var\(--modal-max-height\);[\s\S]*\.close-x\s*\{[^}]*width:\s*var\(--spacing-xxl\);[^}]*height:\s*var\(--spacing-xxl\);/,
-  'project settings must use the shared dialog shell and close target',
+  mainWorkspace,
+  /<ShortcutsBar \/>[\s\S]*<ProjectSettingsModal :open="showProjectSettings"[\s\S]*<PropertiesPanel[\s\S]*v-if="!showProjectSettings/,
+  'Settings and cue Properties must share the lower workspace without stacking',
 );
 assert.match(
-  controlConfig,
-  /\.control-config-panel\s*\{[\s\S]{0,180}border-radius:\s*var\(--dialog-radius\);[\s\S]{0,100}width:\s*min\(var\(--modal-width\), 92vw\);[\s\S]{0,80}max-height:\s*var\(--modal-max-height\);[\s\S]*\.config-header\s*\{[\s\S]{0,180}padding:\s*var\(--dialog-header-padding\);[\s\S]{0,80}border-bottom:\s*1px solid var\(--color-border\);[\s\S]*\.tab-bar\s*\{[\s\S]{0,80}flex-shrink:\s*0;[\s\S]{0,80}gap:\s*2px;[\s\S]*\.tab-btn\s*\{[\s\S]{0,80}min-height:\s*36px;[\s\S]*\.reset-btn,[\s\S]*\.done-btn\s*\{[\s\S]{0,120}padding:\s*var\(--spacing-sm\) var\(--spacing-lg\);/,
-  'shortcuts must use the same dialog header, tabs, and action rail as settings',
+  projectSettingsModal,
+  /class="project-settings-panel"[\s\S]*class="workspace-panel-header"[\s\S]*<ControlConfigModal v-if="activeTab === 'shortcuts'" \/>[\s\S]*\.project-settings-panel\s*\{[^}]*height:\s*min\(320px, 42vh\)/,
+  'Settings must keep its own bounded height and host the same shortcuts editor',
+);
+assert.doesNotMatch(
+  projectSettingsModal + controlConfig,
+  /(?:project-settings-backdrop|control-config-overlay)/,
+  'Settings and Shortcuts must not use a full-window backdrop',
 );
 assert.match(
   controlConfig,
@@ -1873,8 +1882,8 @@ assert.match(
 );
 assert.match(
   projectHeader,
-  /class="header-name-line">\s*<h2\s+class="project-name"[\s\S]*?<\/h2>\s*<div class="header-warning-line">[\s\S]*?class="silence-warning"[\s\S]*?id="project-header-warnings"/,
-  'the silence warning and transient notices must share the session-name row',
+  /class="header-name-line">\s*<h2\s+v-if="silenceSeconds === null && !warning"\s+class="project-name"[\s\S]*?<\/h2>\s*<div class="header-warning-line">[\s\S]*?class="silence-warning"[\s\S]*?id="project-header-warnings"/,
+  'the title slot must yield to the steady countdown and transient notices',
 );
 assert.match(
   playlistView,
@@ -2260,7 +2269,7 @@ assert.equal(
 );
 assert.match(
   appVue,
-  /if \(installOnExitRequested\)[\s\S]{0,260}runAfterInstall: false/,
+  /if \(update\.installOnExit\)[\s\S]{0,260}runAfterInstall: false/,
   'Install on Exit must pass the no-relaunch mode through the quit IPC',
 );
 
@@ -2581,20 +2590,17 @@ for (const file of [
   'AudioImportModal.vue',
   'CartHotkeyConfig.vue',
   'ConnectionLostModal.vue',
-  'ControlConfigModal.vue',
   'DeleteSelectionModal.vue',
   'LoadingOverlay.vue',
   'LocationChoiceModal.vue',
   'ProgressModal.vue',
   'ProjectSelectionModal.vue',
-  'ProjectSettingsModal.vue',
   'QuitConfirmModal.vue',
   'ServerFilePickerModal.vue',
   'ServerSettingsModal.vue',
   'SessionRecoveryModal.vue',
   'SpotifyImportModal.vue',
   'UnsavedChangesModal.vue',
-  'UpdateModal.vue',
   'YouTubeImportModal.vue',
 ].map(file => `client/app/components/${file}`).concat('client/app/app.vue')) {
   const dialog = read(file);

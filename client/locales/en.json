@@ -474,6 +474,7 @@
     "hide": "Hide One Shots"
   },
   "oneShots": {
+    "defaultShortcuts": "One Shots (defaults)",
     "detachedNoPrimary": "The main project window is unavailable.",
     "detachedStale": "This One Shots window is out of date. Reopen it from the main window.",
     "detachedRejected": "The change was not accepted by the main window.",
@@ -860,6 +861,14 @@
   },
   "update": {
     "updateAvailable": "Update Available",
+    "headerAvailable": "Update available · v{version}",
+    "download": "Download Update",
+    "checking": "Checking for updates…",
+    "checkFailed": "Could not check for updates.",
+    "installFailed": "Could not install the update. Try again after the show.",
+    "stopBeforeInstall": "Stop playback and leave Show Mode before installing.",
+    "cancelInstallOnExit": "Cancel Install on Exit",
+    "installScheduled": "Update will install when you quit the app.",
     "currentVersion": "Current Version",
     "newVersion": "New Version",
     "whatsNew": "What's New",

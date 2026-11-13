@@ -18,6 +18,31 @@
       </div>
     </div>
 
+    <section v-if="canCheckForUpdates" class="about-updates" :aria-label="t('update.updateAvailable')">
+      <div class="about-update-actions">
+        <strong v-if="update.version">{{ t('update.headerAvailable', { version: update.version }) }}</strong>
+        <Btn v-if="update.version && !update.downloaded && !update.downloading && update.installSupported"
+          :text="t('update.download')" :disabled="update.checking" @click="downloadUpdate" />
+        <Btn v-if="update.version && !update.installSupported" :text="t('update.goToDownloadPage')"
+          @click="openExternal('https://dwcue.com/downloads')" />
+        <template v-if="update.downloaded">
+          <Btn :text="t('update.installNow')" :disabled="!canInstallNow || installing"
+            @click="installUpdate" />
+          <Btn :text="t(update.installOnExit ? 'update.cancelInstallOnExit' : 'update.installOnExit')"
+            @click="update.installOnExit = !update.installOnExit" />
+        </template>
+        <Btn :text="t(update.checking ? 'update.checking' : 'menu.checkForUpdates')"
+          :disabled="update.checking || update.downloading" @click="checkForAppUpdate" />
+      </div>
+      <div v-if="update.downloading" class="about-update-actions">
+        <progress :value="update.percent" max="100" :aria-label="t('update.downloading')"></progress>
+        <span>{{ t('update.downloading') }} {{ Math.round(update.percent) }}%</span>
+      </div>
+      <p v-if="update.downloaded && !canInstallNow">{{ t('update.stopBeforeInstall') }}</p>
+      <p v-if="update.installOnExit" role="status">{{ t('update.installScheduled') }}</p>
+      <p v-if="update.error" role="status">{{ update.error }}</p>
+    </section>
+
     <div class="about-info">
       <div class="info-section">
         <p class="developer">© 2026 Don Wells</p>
@@ -75,6 +100,44 @@
 
 <script setup lang="ts">
 const { t } = useLocalization();
+
+const { update, checkForAppUpdate } = useAppUpdate();
+const { activeCues, previewItemUuid, confirmUnsavedChanges } = useProject();
+const { uiMode } = useUiMode();
+const canCheckForUpdates = import.meta.client && typeof window.electronAPI?.checkForUpdates === 'function';
+const canInstallNow = computed(() => uiMode.value !== 'playback' && activeCues.value.size === 0 && !previewItemUuid.value);
+const installing = ref(false);
+
+async function downloadUpdate() {
+  const api = window.electronAPI;
+  if (!update.version || !update.installSupported || update.checking || update.downloading || update.downloaded) return;
+  update.downloading = true;
+  update.percent = 0;
+  update.error = '';
+  try {
+    const result = await api.downloadUpdate();
+    if (!result.success) throw new Error(result.error || t('update.downloadFailed'));
+    update.downloaded = true;
+  } catch (error) {
+    update.error = error instanceof Error ? error.message : t('update.downloadFailed');
+  } finally {
+    update.downloading = false;
+  }
+}
+
+async function installUpdate() {
+  if (!update.downloaded || !canInstallNow.value || installing.value) return;
+  installing.value = true;
+  update.error = '';
+  try {
+    if (await confirmUnsavedChanges() && canInstallNow.value &&
+        !await window.electronAPI.installUpdate()) update.error = t('update.installFailed');
+  } catch (error) {
+    update.error = error instanceof Error ? error.message : t('update.installFailed');
+  } finally {
+    installing.value = false;
+  }
+}
 
 // Get app version
 const appVersion = ref('2.6.21');
@@ -144,6 +207,25 @@ const openExternal = (url: string) => {
   color: var(--color-text-secondary);
   margin: 0;
   line-height: 1.4;
+}
+
+.about-updates {
+  padding: var(--spacing-sm) 0;
+  margin-bottom: var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+}
+.about-update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.about-update-actions strong {
+  color: var(--state-up-next);
+}
+.about-updates p {
+  margin: var(--spacing-sm) 0 0;
 }
 
 .about-info {

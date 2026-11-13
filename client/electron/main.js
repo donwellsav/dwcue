@@ -2015,11 +2015,12 @@ let manualCheckPending = false;
 // instead of throwing from quitAndInstall. Keep the close veto armed only
 // while an install attempt is actually live.
 let updateInstallAttemptActive = false;
+let downloadedUpdateVersion = '';
 // A downloaded update must not replace the app while the detached audio
 // server still owns files from the current installation (especially the old
 // Windows executable). Both Install Now and Install on Exit use this helper.
 async function installDownloadedUpdate({ runAfterInstall = true } = {}) {
-  if (!DWCUE_UPDATES_CONFIGURED || !updatesInstallSupported) return false;
+  if (!DWCUE_UPDATES_CONFIGURED || !updatesInstallSupported || !downloadedUpdateVersion) return false;
   try {
     await prepareForTerminalAction();
     const serverStopped = await stopLiveplayServer();
@@ -2092,6 +2093,7 @@ autoUpdater.on('download-progress', (progressObj) => {
 });
 
 autoUpdater.on('update-downloaded', (info) => {
+  downloadedUpdateVersion = info.version;
   console.log('Update downloaded:', info.version);
   if (mainWindow) {
     mainWindow.webContents.send('update-downloaded', {
@@ -2141,20 +2143,7 @@ function createWindow() {
     console.error('Failed to load:', errorCode, errorDescription);
   });
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
-    
-    // Silent startup check against the pinned GitHub feed. The renderer
-    // defers showing the update modal while Show Mode is active.
-    if (!isDevMode && DWCUE_UPDATES_CONFIGURED) {
-      // Wait a bit for the window to fully load before checking updates
-      setTimeout(() => {
-        autoUpdater.checkForUpdates().catch(err => {
-          console.error('Failed to check for updates:', err);
-        });
-      }, 3000);
-    }
-  });
+  mainWindow.once('ready-to-show', () => mainWindow.show());
 
   // Veto the first close so the renderer can run its quit-confirmation
   // flow (unsaved changes → optionally shut the local audio server down).
@@ -4168,14 +4157,13 @@ ipcMain.handle('update-menu-language', async (event, locale) => {
 
 // Auto-updater IPC handlers. The feed is configured above (setFeedURL pins
 // donwellsav/dwcue); these only run the flow.
-ipcMain.handle('check-for-updates', async (event) => {
+ipcMain.handle('check-for-updates', async (event, silent = false) => {
   requireTrustedIpc(event);
-  if (!DWCUE_UPDATES_CONFIGURED) {
+  if (!DWCUE_UPDATES_CONFIGURED || (silent === true && isDevMode)) {
     return { success: false, error: 'Updates are not configured for this build.' };
   }
   try {
-    console.log('Manual update check requested');
-    manualCheckPending = true;
+    if (silent !== true) manualCheckPending = true;
     const result = await autoUpdater.checkForUpdates();
     // update-available / update-not-available events carry the renderer
     // notification; this return also reports which update was found (null

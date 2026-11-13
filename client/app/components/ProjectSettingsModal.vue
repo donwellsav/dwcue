@@ -1,34 +1,28 @@
 <template>
-  <!-- Note: NOT inside <Teleport> — Vue scoped styles don't reach teleported
-       nodes, which would leave the modal unstyled in production builds. -->
-  <div v-if="open" class="project-settings-backdrop" @click.self="close">
-    <div class="project-settings-modal">
-        <header class="modal-header">
-          <h2>{{ t('settings.title') }}</h2>
-          <button
-            type="button"
-            class="close-x"
-            :aria-label="t('actions.close')"
-            :title="t('actions.close')"
-            @click="close"
-          >✕</button>
-        </header>
-
-        <!-- Tab Navigation (styled to match the Properties panel) -->
-        <div class="settings-tabs">
+  <section v-if="open" class="project-settings-panel" :aria-label="t('settings.title')" @keydown="onPanelKeydown">
+        <header class="workspace-panel-header">
+          <h2 class="workspace-panel-header__title">{{ t('settings.title') }}</h2>
+          <div class="settings-tabs">
           <button
             v-for="tab in tabs"
             :key="tab.id"
             :class="['tab-btn', { active: activeTab === tab.id }]"
+            :aria-pressed="activeTab === tab.id"
             @click="activeTab = tab.id"
           >
             <CueSymbol v-if="tab.symbol" :name="tab.symbol" />
             <span v-else class="material-symbols-rounded" aria-hidden="true">{{ tab.icon }}</span>
             <span>{{ tab.label }}</span>
+            <span v-if="tab.id === 'about' && update.version" class="update-dot" :aria-label="t('update.updateAvailable')"></span>
           </button>
-        </div>
+          </div>
+          <button type="button" class="close-x" :aria-label="t('actions.close')" @click="close">
+            <span class="material-symbols-rounded" aria-hidden="true">close</span>
+          </button>
+        </header>
 
-        <div class="modal-body">
+        <ControlConfigModal v-if="activeTab === 'shortcuts'" />
+        <div v-else class="modal-body">
           <p v-if="settingsError" class="settings-error" role="alert">
             {{ settingsError }}
           </p>
@@ -747,40 +741,11 @@
             </section>
           </template>
 
-          <template v-else-if="activeTab === 'shortcuts'">
-            <section class="settings-field">
-              <button type="button" class="help-link help-link--button"
-                :aria-pressed="showShortcutsBar" @click="showShortcutsBar = !showShortcutsBar">
-                <span class="material-symbols-rounded" aria-hidden="true">keyboard</span>
-                <span>{{ t('settings.showShortcutsBar') }}</span>
-              </button>
-              <button type="button" class="help-link help-link--button" @click="emit('open-shortcuts')">
-                <span class="material-symbols-rounded" aria-hidden="true">tune</span>
-                <span>{{ t('settings.helpShortcuts') }}</span>
-              </button>
-              <label class="settings-label">
-                <span class="material-symbols-rounded" aria-hidden="true">keyboard</span>
-                {{ t('settings.helpShortcutsTitle') }}
-              </label>
-              <div class="shortcut-summary">
-                <div v-for="action in PLAYBACK_ACTIONS" :key="action.id" class="shortcut-summary-row">
-                  <span class="shortcut-summary-action">{{ t(action.labelKey) }}</span>
-                  <span class="shortcut-summary-key">{{ playbackKeyLabel(action.id) || '—' }}</span>
-                </div>
-              </div>
-            </section>
-          </template>
-
           <!-- ================= About ================= -->
           <template v-else-if="activeTab === 'about'">
             <AboutContent />
           </template>
         </div>
-
-      <footer class="modal-footer">
-        <button class="modal-btn" @click="close">{{ t('settings.close') }}</button>
-      </footer>
-    </div>
 
     <ServerFilePickerModal
       :open="voStandbyPickerOpen"
@@ -791,7 +756,7 @@
       @pick="onVideoOutputStandbyPicked"
       @close="voStandbyPickerOpen = false"
     />
-  </div>
+  </section>
 </template>
 
 <script setup lang="ts">
@@ -812,16 +777,19 @@ import {
   type CartGridProfile,
   type PlaylistRowMode,
 } from '~/composables/useUiMode';
+import { bindingsMatch, eventToBinding, useCartHotkeys } from '~/composables/useCartHotkeys';
 import { normalizeIndexDisplayStart } from '~/utils/indexDisplay';
 import { HEADER_WARNING_TIMING, type HeaderWarningTiming } from '~/utils/headerWarnings';
 import AboutContent from './AboutContent.vue';
-import { PLAYBACK_ACTIONS, formatKeyLabel, useCartHotkeys } from '~/composables/useCartHotkeys';
-import type { PlaybackKeyAction } from '~/types/project';
+import ControlConfigModal from './ControlConfigModal.vue';
 import TestCardControls from './TestCardControls.vue';
 import { createTestCardConfig, type TestCardConfig } from '../../electron/test-card-config.mjs';
 
 const props = defineProps<{ open: boolean }>();
-const emit  = defineEmits<{ (e: 'close'): void; (e: 'open-shortcuts'): void }>();
+const emit = defineEmits<{ close: [] }>();
+const { update } = useAppUpdate();
+const { playbackMappings } = useCartHotkeys();
+const { stopAllCues } = useAudioEngine();
 
 const { t, currentLocale, setLocale, availableLocales } = useLocalization();
 const server = useLiveplayServer();
@@ -841,12 +809,6 @@ const onLocaleChange = (event: Event) => {
   }
 };
 
-// Read-only shortcut summary for the Help tab — same data the editor binds.
-const { playbackMappings } = useCartHotkeys();
-const playbackKeyLabel = (action: PlaybackKeyAction): string => {
-  const binding = playbackMappings.value[action];
-  return binding ? formatKeyLabel(binding) : '';
-};
 const { currentProject, indexDisplayStart, saveProject } = useProject();
 const {
   regularPlaylistRowHeight,
@@ -903,7 +865,7 @@ interface SettingsTab {
   symbol?: 'video-output';
 }
 
-const activeTab = ref<SettingsTabId>('audio');
+const activeTab = useState<SettingsTabId>('projectSettingsTab', () => 'audio');
 const tabs = computed<SettingsTab[]>(() => [
   { id: 'audio', icon: 'graphic_eq', label: t('settings.tabAudioRouting') },
   { id: 'playback', icon: 'play_circle', label: t('settings.tabPlaybackBehaviour') },
@@ -915,7 +877,6 @@ const tabs = computed<SettingsTab[]>(() => [
   { id: 'help', icon: 'menu_book', label: t('settings.tabHelp') },
   { id: 'about', icon: 'info', label: t('settings.tabAbout') },
 ]);
-const showShortcutsBar = useState('showShortcutsBar', () => true);
 
 // The settings live on the project document; we read them from there and
 // patch via the server endpoint.
@@ -1422,50 +1383,39 @@ function onCartGridLayoutChange(
   input.value = String(cartGridLayouts.value[profile][field]);
 }
 
+function onPanelKeydown(event: KeyboardEvent) {
+  if (event.defaultPrevented) return;
+  const stop = playbackMappings.value['stop-all'];
+  if (stop && bindingsMatch(stop, eventToBinding(event))) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) void stopAllCues();
+    return;
+  }
+  const target = event.target as HTMLElement | null;
+  if (target?.closest?.('select') ||
+      (['Enter', ' '].includes(event.key) && target?.closest?.('button, a[href]'))) event.stopPropagation();
+}
+
 function close() {
   emit('close');
 }
 </script>
 
 <style scoped>
-.project-settings-backdrop {
-  position: fixed;
-  inset: 0;
-  background: var(--dialog-backdrop);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.project-settings-modal {
-  background: var(--dialog-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--dialog-radius);
-  /* This dialog packs dense grids (countdown bands, audio routing) that
-     wrap and force scrolling at the shared 560px token width — give it
-     real room; small confirm dialogs keep using --modal-width. */
-  width: min(920px, 94vw);
-  max-height: var(--modal-max-height);
-  overflow: hidden;
+.project-settings-panel {
+  flex: 0 0 auto;
+  height: min(320px, 42vh);
+  min-height: 0;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-background);
   display: flex;
   flex-direction: column;
-  box-shadow: var(--dialog-shadow);
   color: var(--color-text-primary);
 }
 
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--dialog-header-padding);
-  border-bottom: 1px solid var(--color-border);
-}
-.modal-header h2 {
-  margin: 0;
-  font-size: 18px;
-}
 .close-x {
+  flex-shrink: 0;
   display: grid;
   place-items: center;
   width: var(--spacing-xxl);
@@ -1486,11 +1436,10 @@ function close() {
 .settings-tabs {
   display: flex;
   flex-shrink: 0;
+  max-width: calc(100% - 100px);
+  margin-inline-start: auto;
   overflow-x: auto;
   gap: 2px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--color-border);
-  background-color: var(--color-surface);
 }
 .tab-btn {
   display: flex;
@@ -1524,6 +1473,7 @@ function close() {
 }
 
 .modal-body {
+  min-height: 0;
   padding: 16px 20px;
   display: flex;
   flex-direction: column;
@@ -1858,39 +1808,13 @@ function close() {
   font-size: 20px;
 }
 
-.shortcut-summary {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-md);
-  overflow: hidden;
-  margin-bottom: var(--spacing-xs);
+.update-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--state-up-next);
 }
 
-.shortcut-summary-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 7px 12px;
-  font-size: 13px;
-}
-
-.shortcut-summary-row:nth-child(odd) {
-  background: var(--color-background);
-}
-
-.shortcut-summary-key {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--color-text-secondary);
-}
-
-.modal-footer {
-  padding: 12px 20px;
-  border-top: 1px solid var(--color-border);
-  display: flex;
-  justify-content: flex-end;
-}
 .modal-btn {
   background: var(--color-surface);
   border: 1px solid var(--color-border);

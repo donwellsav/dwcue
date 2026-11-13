@@ -207,6 +207,7 @@ export const useProject = () => {
   // the panel open on every click. The panel is only opened explicitly via
   // openItemProperties() (the gear button).
   const propertiesPanelOpen = useState<boolean>('propertiesPanelOpen', () => false);
+  const showProjectSettings = useState('showProjectSettings', () => false);
   // NB: activeCues is owned by useAudioEngine (it's the server projection).
   // useProject only clears it on closeProject; we re-use the same useState key.
   const activeCues = useState<Map<string, any>>('activeCues', () => new Map());
@@ -451,6 +452,7 @@ export const useProject = () => {
         selectedItems.value.clear();
         selectedItems.value.add(uuid);
       }
+      showProjectSettings.value = false;
       propertiesPanelOpen.value = true;
     }
   };
@@ -948,6 +950,7 @@ export const useProject = () => {
     selectedItems.value.clear();
     selectionAnchorUuid = null;
     propertiesPanelOpen.value = false;
+    showProjectSettings.value = false;
     activeCues.value.clear();
     projectFilePathRef.value = '';
     serverProjectSessionId.value = '';

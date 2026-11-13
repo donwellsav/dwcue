@@ -1,17 +1,10 @@
 <template>
-  <div class="control-config-overlay" @click.self="$emit('close')">
-    <div class="control-config-panel">
-      <div class="config-header">
-        <div class="header-left">
-          <h3>{{ t('controls.title') }}</h3>
-        </div>
-        <button class="close-btn" @click="$emit('close')">&times;</button>
-      </div>
-
+  <section class="control-config-panel" :aria-label="t('controls.title')" @keydown.capture="handleKeydown">
       <div class="tab-bar">
         <button
           class="tab-btn"
           :class="{ active: activeTab === 'keyboard' }"
+          :aria-pressed="activeTab === 'keyboard'"
           @click="activeTab = 'keyboard'"
         >
           <span class="tab-icon">&#x2328;</span> {{ t('controls.tabKeyboard') }}
@@ -19,9 +12,17 @@
         <button
           class="tab-btn"
           :class="{ active: activeTab === 'midi' }"
+          :aria-pressed="activeTab === 'midi'"
           @click="activeTab = 'midi'"
         >
           <span class="tab-icon material-symbols-rounded">piano</span> {{ t('controls.tabMidi') }}
+        </button>
+        <label class="shortcut-bar-toggle">
+          <input v-model="showShortcutsBar" type="checkbox" />
+          {{ t('settings.showShortcutsBar') }}
+        </label>
+        <button class="reset-btn" @click="handleReset">
+          {{ activeTab === 'keyboard' ? t('controls.resetKeyboard') : t('controls.resetMidi') }}
         </button>
       </div>
 
@@ -37,18 +38,20 @@
             capturing: capturingKeyAction === action.id,
             conflict: keyConflictAction === action.id || keyConflictSlotForAction === action.id
           }"
-          @click="startCaptureAction(action.id)"
         >
           <span class="action-label">{{ t(action.labelKey) }}</span>
-          <span class="action-binding">
+          <button type="button" class="action-binding binding-button"
+            :aria-label="t(action.labelKey)"
+            @click="startCaptureAction(action.id, $event)"
+            @blur="cancelKeyCapture">
             <template v-if="capturingKeyAction === action.id">
               {{ t('controls.pressAnyKey') }}
             </template>
-            <template v-else-if="getPlaybackKeyLabel(action.id)">
-              {{ getPlaybackKeyLabel(action.id) }}
+            <template v-else-if="playbackKeyLabel(action.id)">
+              {{ playbackKeyLabel(action.id) }}
             </template>
             <template v-else>—</template>
-          </span>
+          </button>
           <button
             v-if="getPlaybackBinding(action.id)"
             class="clear-key-btn"
@@ -67,10 +70,12 @@
             capturing: capturingSlot === entry.slotIndex,
             conflict: conflictSlot === entry.slotIndex
           }"
-          @click="startCaptureSlot(entry.slotIndex)"
         >
           <span class="action-label">{{ t('controls.oneShot', { n: entry.slotIndex + 1 }) }}</span>
-          <span class="action-binding">
+          <button type="button" class="action-binding binding-button"
+            :aria-label="t('controls.oneShot', { n: entry.slotIndex + 1 })"
+            @click="startCaptureSlot(entry.slotIndex, $event)"
+            @blur="cancelKeyCapture">
             <template v-if="capturingSlot === entry.slotIndex">
               {{ t('controls.pressAnyKey') }}
             </template>
@@ -78,7 +83,7 @@
               {{ getSlotKeyLabel(entry.slotIndex) }}
             </template>
             <template v-else>—</template>
-          </span>
+          </button>
           <button
             v-if="keyMappings[entry.slotIndex]"
             class="clear-key-btn"
@@ -159,13 +164,6 @@
         </template>
       </div>
 
-      <div class="config-footer">
-        <button class="reset-btn" @click="handleReset">
-          {{ activeTab === 'keyboard' ? t('controls.resetKeyboard') : t('controls.resetMidi') }}
-        </button>
-        <button class="done-btn" @click="$emit('close')">{{ t('controls.close') }}</button>
-      </div>
-
       <!-- MIDI Conflict dialog -->
       <div v-if="midiConflictInfo" class="conflict-overlay" @click.self="midiConflictInfo = null">
         <div class="conflict-dialog">
@@ -176,12 +174,11 @@
           </div>
         </div>
       </div>
-    </div>
-  </div>
+  </section>
 </template>
 
 <script setup lang="ts">
-import { formatKeyLabel, eventToBinding, isReservedCombo, PLAYBACK_ACTIONS } from '~/composables/useCartHotkeys';
+import { formatKeyLabel, eventToBinding, bindingsMatch, isReservedCombo, PLAYBACK_ACTIONS } from '~/composables/useCartHotkeys';
 import {
   MIDI_ACTIONS,
   formatMidiBinding,
@@ -192,14 +189,14 @@ import {
 import type { PlaybackKeyAction, CartSlotKeyBinding } from '~/types/project';
 import { buildOneShotSlots } from '~/utils/oneShots';
 
-const emit = defineEmits<{ close: [] }>();
-
 const { t } = useLocalization();
+const showShortcutsBar = useState('showShortcutsBar', () => true);
 
 // Keyboard state
 const {
   keyMappings,
   playbackMappings,
+  playbackKeyLabel,
   updateBinding: updateKeyBinding,
   updatePlaybackBinding,
   resetToDefaults,
@@ -263,11 +260,6 @@ const getPlaybackBinding = (action: PlaybackKeyAction): CartSlotKeyBinding | nul
   return playbackMappings.value[action] ?? null;
 };
 
-const getPlaybackKeyLabel = (action: PlaybackKeyAction): string => {
-  const binding = getPlaybackBinding(action);
-  return binding ? formatKeyLabel(binding) : '';
-};
-
 const clearSlotBinding = (slotIndex: number) => {
   const item = oneShotSlots.value[slotIndex];
   if (!item?.oneShot) return;
@@ -280,7 +272,8 @@ const clearPlaybackBinding = (action: PlaybackKeyAction) => {
   saveProject();
 };
 
-const startCaptureSlot = (slotIndex: number) => {
+const startCaptureSlot = (slotIndex: number, event: MouseEvent) => {
+  (event.currentTarget as HTMLElement).focus();
   capturingSlot.value = slotIndex;
   capturingKeyAction.value = null;
   keyErrorMessage.value = null;
@@ -291,7 +284,8 @@ const startCaptureSlot = (slotIndex: number) => {
   keyConflictSlotForAction.value = null;
 };
 
-const startCaptureAction = (action: PlaybackKeyAction) => {
+const startCaptureAction = (action: PlaybackKeyAction, event: MouseEvent) => {
+  (event.currentTarget as HTMLElement).focus();
   capturingKeyAction.value = action;
   capturingSlot.value = null;
   keyErrorMessage.value = null;
@@ -302,33 +296,34 @@ const startCaptureAction = (action: PlaybackKeyAction) => {
   keyConflictSlotForAction.value = null;
 };
 
+const cancelKeyCapture = () => {
+  capturingSlot.value = null;
+  capturingKeyAction.value = null;
+  keyErrorMessage.value = null;
+  keyErrorSlot.value = null;
+  keyErrorActionId.value = null;
+};
+
 const handleKeydown = (e: KeyboardEvent) => {
-  if (e.key === 'Escape') {
-    e.preventDefault();
-    if (capturingSlot.value !== null || capturingKeyAction.value !== null) {
-      capturingSlot.value = null;
-      capturingKeyAction.value = null;
-      keyErrorMessage.value = null;
-      keyErrorSlot.value = null;
-      keyErrorActionId.value = null;
-      return;
-    }
-    if (learning.value) {
-      stopLearn();
-      return;
-    }
-    emit('close');
+  if (e.defaultPrevented) return;
+  const binding = eventToBinding(e);
+  const stop = playbackMappings.value['stop-all'];
+  if (stop && bindingsMatch(stop, binding)) {
+    // Keep panic available even while the editor has a key assignment armed.
+    cancelKeyCapture();
     return;
   }
-
-  if (activeTab.value !== 'keyboard') return;
-  if (capturingSlot.value === null && capturingKeyAction.value === null) return;
-  if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
+  if (activeTab.value !== 'keyboard' || (capturingSlot.value === null && capturingKeyAction.value === null)) return;
+  if (e.key === 'Escape') {
+    cancelKeyCapture();
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
+  if (['Control', 'Shift', 'Alt', 'Meta', 'Tab'].includes(e.key)) return;
 
   e.preventDefault();
   e.stopPropagation();
-
-  const binding = eventToBinding(e);
 
   if (isReservedCombo(binding)) {
     keyErrorMessage.value = t('controls.reserved');
@@ -472,83 +467,29 @@ const handleReset = () => {
   }
 };
 
-onMounted(() => {
-  window.addEventListener('keydown', handleKeydown, true);
+watch(activeTab, () => {
+  cancelKeyCapture();
+  if (learning.value) stopLearn();
+  midiConflictInfo.value = null;
 });
-
 onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeydown, true);
   if (learning.value) stopLearn();
 });
 </script>
 
 <style scoped>
-.control-config-overlay {
-  position: fixed;
-  inset: 0;
-  background: var(--dialog-backdrop);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
 .control-config-panel {
-  background: var(--dialog-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--dialog-radius);
-  width: min(var(--modal-width), 92vw);
-  max-height: var(--modal-max-height);
-  overflow: hidden;
   display: flex;
+  flex: 1;
   flex-direction: column;
-  box-shadow: var(--dialog-shadow);
+  min-height: 0;
   position: relative;
-}
-
-.config-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--dialog-header-padding);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.header-left {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.config-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.close-btn {
-  display: grid;
-  place-items: center;
-  width: var(--spacing-xxl);
-  height: var(--spacing-xxl);
-  padding: 0;
-  background: none;
-  border: none;
-  border-radius: var(--control-radius);
-  font-size: 18px;
-  cursor: pointer;
-  color: var(--color-text-secondary);
-  line-height: 1;
-}
-
-.close-btn:hover {
-  color: var(--color-text-primary);
 }
 
 /* Tabs */
 .tab-bar {
   display: flex;
+  align-items: center;
   flex-shrink: 0;
   gap: 2px;
   padding: 0 20px;
@@ -558,6 +499,7 @@ onUnmounted(() => {
 }
 
 .tab-btn {
+  flex-shrink: 0;
   min-height: 36px;
   padding: 6px var(--spacing-md);
   font-size: 13px;
@@ -589,6 +531,7 @@ onUnmounted(() => {
 /* Body */
 .config-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 8px 0;
 }
@@ -743,19 +686,21 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-/* Footer */
-.config-footer {
+.shortcut-bar-toggle {
   display: flex;
-  justify-content: space-between;
-  padding: 12px 20px;
-  border-top: 1px solid var(--color-border);
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-inline: auto var(--spacing-md);
+  padding-inline-start: var(--spacing-md);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
-.reset-btn,
-.done-btn {
-  padding: var(--spacing-sm) var(--spacing-lg);
+.reset-btn {
+  padding: var(--spacing-xs) var(--spacing-sm);
   border-radius: var(--control-radius);
-  font-size: 14px;
+  font-size: 12px;
+  white-space: nowrap;
   cursor: pointer;
   border: 1px solid var(--color-border);
   background: var(--color-background);
@@ -763,16 +708,19 @@ onUnmounted(() => {
   transition: background-color 0.15s;
 }
 
-.reset-btn:hover,
-.done-btn:hover { background: var(--color-surface-hover); }
+.reset-btn:hover { background: var(--color-surface-hover); }
 
-.done-btn {
-  background: var(--color-accent, #3b82f6);
-  color: white;
-  border-color: transparent;
+.binding-button {
+  width: fit-content;
+  min-width: 80px;
+  text-align: left;
+  color: inherit;
+  background: var(--color-control);
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  cursor: pointer;
 }
-
-.done-btn:hover { opacity: 0.9; }
 
 /* Conflict dialog */
 .conflict-overlay {

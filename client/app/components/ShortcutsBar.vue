@@ -11,6 +11,10 @@
         <span class="shortcuts-bar__action">{{ t(action.labelKey) }}</span>
         <kbd class="shortcuts-bar__key">{{ playbackKeyLabel(action.id) || '—' }}</kbd>
       </span>
+      <span class="shortcuts-bar__item">
+        <span class="shortcuts-bar__action">{{ t('oneShots.defaultShortcuts') }}</span>
+        <kbd class="shortcuts-bar__key">1–9, 0</kbd>
+      </span>
     </div>
     <button type="button" class="shortcuts-bar__edit" @click="openEditor">
       {{ t('settings.helpShortcuts') }}
@@ -30,22 +34,18 @@
 // Compact shortcut reference pinned to the bottom of the workspace, in both
 // edit and show mode — operators should never have to guess the keys. The
 // full editor is available under Settings → Shortcuts and from Customize.
-import { PLAYBACK_ACTIONS, formatKeyLabel, useCartHotkeys } from '~/composables/useCartHotkeys';
-import type { PlaybackKeyAction } from '~/types/project';
+import { PLAYBACK_ACTIONS, useCartHotkeys } from '~/composables/useCartHotkeys';
 
 const { t } = useLocalization();
-const { playbackMappings } = useCartHotkeys();
+const { playbackKeyLabel } = useCartHotkeys();
 
 const open = useState('showShortcutsBar', () => true);
-const showControlConfig = useState('showControlConfig', () => false);
-
-const playbackKeyLabel = (action: PlaybackKeyAction): string => {
-  const binding = playbackMappings.value[action];
-  return binding ? formatKeyLabel(binding) : '';
-};
+const showProjectSettings = useState('showProjectSettings', () => false);
+const settingsTab = useState('projectSettingsTab', () => 'audio');
 
 const openEditor = () => {
-  showControlConfig.value = true;
+  settingsTab.value = 'shortcuts';
+  showProjectSettings.value = true;
 };
 </script>
 
