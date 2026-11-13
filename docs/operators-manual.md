@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.21 development
-**Source revision:** f98184f1f57126e526393b89a178e64a0f98e8c9
+**Source revision:** f73d19ecfdf5e4c8b090dcce9e2f3f502d11960d
 **Native engine baseline:** 889abd569da10a32d6cd0edb75b029b436e5cf42
 **Edition:** 12 November 2026 · English · Current-source operator edition
 
@@ -126,7 +126,7 @@ An empty One Shots bank is collapsed by default. Choose **Show One Shots** to re
 
 Switch to **Show Mode** for performance after preparation is complete. It simplifies the interface and emphasizes transport and large cue controls. GO and assigned controls remain live. The One Shot Play/Stop button and keyboard and MIDI triggers work the same way in both modes. Use Edit Mode to change the bank.
 
-Rehearse at the actual display size and app zoom. Settings and Cue Properties share the lower panel. **User Interface** and **Video Output** fit their controls into the available space until you set the Settings height. Drag the top grip down for more playlist room or up for more controls. You can also focus the grip and use **Up/Down**. Settings and Properties each remember their adjusted height while the app is open. GO and Stop All stay at the top, and the shortcut bar shows a compact reference while either panel is open. **Customize Shortcuts…** opens the full editor.
+Rehearse at the actual display size and app zoom. Settings and Cue Properties share the lower panel. Settings sizes each tab to its controls until you adjust the dock height. Drag the top grip down for more playlist room or up for more controls. You can also focus the grip and use **Up/Down**. Settings and Properties each remember their adjusted height while the app is open. GO and Stop All stay at the top, and the shortcut bar shows a compact reference while either panel is open. **Customize Shortcuts…** opens the full editor.
 
 ![Show Mode with the One Shots bank open and the default number keys visible.](manual-assets/show-mode.png)
 
@@ -482,7 +482,7 @@ The bank can **Detach** into a separate window and **Attach** again. Rehearse fo
 
 ### Assign and verify keyboard shortcuts
 
-Open **Settings → Shortcuts**, select a binding, and press the desired key. For a MIDI controller, open **Settings → MIDI** and use **Learn** beside the action. Resolve any reserved combinations or conflicts before rehearsal. **Show shortcuts bar** toggles the reference, including **One Shots (defaults)** with **1–9, 0**. Individual tile settings also provide **Keyboard Shortcut**, **Assign shortcut**, and **Clear shortcut**.
+Open **Settings → Shortcuts**, select a binding, and press the desired key. For a MIDI controller, open **Settings → MIDI** and use **Learn** beside the action. Use the **×** button beside a binding to clear it. Resolve any reserved combinations or conflicts before rehearsal. **Show shortcuts bar** toggles the reference, including **One Shots (defaults)** with **1–9, 0**. Individual tile settings also provide **Keyboard Shortcut**, **Assign shortcut**, and **Clear shortcut**.
 
 ![Keyboard bindings in the docked Shortcuts tab.](manual-assets/shortcuts-current.png)
 
@@ -568,7 +568,7 @@ Use H.264 or HEVC media for this source edition. ProRes and other production cod
 
 - Press **G** or choose **Capture output** in **Settings → Video Output** to save the current picture from the output window.
 - Choose a **Capture display** in **Settings → Video Output**, then press **Shift+G** or choose **Capture display** to save the selected screen. The capture display can be different from the audience display. Grant screen capture permission if the operating system asks.
-- Set **Capture destination** to **Session standby** for a shared fallback or **Selected cue** for a specific cue. To capture Video Output for a specific cue in one step, select it and click the confidence thumbnail in the header.
+- Set **Destination** to **Session standby** for a shared fallback or **Selected cue** for a specific cue. To capture Video Output for a specific cue in one step, select it and click the confidence thumbnail in the header.
 - Capture again to replace the still at that destination. **Clear still** removes the capture for the chosen destination. Assigned cue images always take priority. Use a saved Cue image or Standby image for artwork that must survive closing or reloading the show.
 
 ### Recover a frozen or failed video output

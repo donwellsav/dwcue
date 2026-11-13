@@ -195,15 +195,15 @@
       "file": "audio-settings-current.png",
       "view": "Audio Routing with the program, Preview and LTC devices and the output target.",
       "version": "2.6.21 development",
-      "sourceRevision": "a3256ade342f732fda0142010f68a6c6e779c1d5",
+      "sourceRevision": "f73d19ecfdf5e4c8b090dcce9e2f3f502d11960d",
       "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
-      "capturedOn": "2026-11-12",
+      "capturedOn": "2026-11-13",
       "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
       "dimensions": [
         1200,
-        370
+        156
       ],
-      "sha256": "44f6feaa03acdd133635362c17398c9bcb3dcf3c8c10cf8aea34fc44b77d1ceb",
+      "sha256": "60975f734f5b700cebe07a6957e352a38de8792538e1af51faa5815ce0997ff4",
       "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
       "captureMethod": "Playwright screenshot of the actual rendered Settings panel or section.",
       "presentation": "Panel crop without callouts or altered UI values."
@@ -297,15 +297,15 @@
       "file": "shortcuts-current.png",
       "view": "Keyboard shortcuts and configured One Shots in a single Settings tab.",
       "version": "2.6.21 development",
-      "sourceRevision": "a3256ade342f732fda0142010f68a6c6e779c1d5",
+      "sourceRevision": "f73d19ecfdf5e4c8b090dcce9e2f3f502d11960d",
       "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
-      "capturedOn": "2026-11-12",
+      "capturedOn": "2026-11-13",
       "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
       "dimensions": [
         1200,
-        370
+        279
       ],
-      "sha256": "c61a9598d0168196b9f988a545ce81d1ca853687e7d41f3ea6fa0e6d0761001c",
+      "sha256": "e6e898a67af36e586224336eb58975d43defe506321991c97b2fd1d42cc741d8",
       "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
       "captureMethod": "Playwright screenshot of the actual rendered Settings panel or section.",
       "presentation": "Panel crop without callouts or altered UI values."
@@ -314,15 +314,15 @@
       "file": "midi-current.png",
       "view": "MIDI bindings, device selection and the volume multiplier in one Settings tab.",
       "version": "2.6.21 development",
-      "sourceRevision": "a3256ade342f732fda0142010f68a6c6e779c1d5",
+      "sourceRevision": "f73d19ecfdf5e4c8b090dcce9e2f3f502d11960d",
       "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
-      "capturedOn": "2026-11-12",
+      "capturedOn": "2026-11-13",
       "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
       "dimensions": [
         1200,
-        370
+        246
       ],
-      "sha256": "4cbb41b494f77e2e1d6a56148f0879adb6d1a59014b4e0258a7810790765790a",
+      "sha256": "795676e5ca3781f7e2a78445341b33e2ff9d2e7d708847c615bd903ec139ed01",
       "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
       "captureMethod": "Playwright screenshot of the actual rendered Settings panel or section.",
       "presentation": "Panel crop without callouts or altered UI values."
@@ -331,15 +331,15 @@
       "file": "video-settings-current.png",
       "view": "Content-sized Video Output tab with display, standby capture and test card controls aligned.",
       "version": "2.6.21 development",
-      "sourceRevision": "f98184f1f57126e526393b89a178e64a0f98e8c9",
+      "sourceRevision": "f73d19ecfdf5e4c8b090dcce9e2f3f502d11960d",
       "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
-      "capturedOn": "2026-11-12",
+      "capturedOn": "2026-11-13",
       "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
       "dimensions": [
         1200,
-        277
+        257
       ],
-      "sha256": "c29385b88b020a03c31733b96dd7d9c566b44ad1a59090a2f98b3c2c0dafd174",
+      "sha256": "c239cbd28e6d2ea830488edb723c0431ec81b99d6346b6b4fd52428d960340a3",
       "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
       "captureMethod": "Playwright screenshot of the actual rendered Settings panel or section.",
       "presentation": "Panel crop without callouts or altered UI values."
@@ -365,15 +365,15 @@
       "file": "video-recovery-current.png",
       "view": "Output status with Restart Output disabled and Copy diagnostics available.",
       "version": "2.6.21 development",
-      "sourceRevision": "f98184f1f57126e526393b89a178e64a0f98e8c9",
+      "sourceRevision": "f73d19ecfdf5e4c8b090dcce9e2f3f502d11960d",
       "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
-      "capturedOn": "2026-11-12",
+      "capturedOn": "2026-11-13",
       "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
       "dimensions": [
-        259,
-        57
+        288,
+        48
       ],
-      "sha256": "7b33ce4b61ae73246edb88e5e4c635cf1977c9a4384baf6f08ad998cb779d4bc",
+      "sha256": "04adb06a325d4c0bfbf8f11f1772a1be0e19490aa6ae4942f08301c492e36566",
       "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
       "captureMethod": "Playwright screenshot of the actual rendered Settings panel or section.",
       "presentation": "Panel crop without callouts or altered UI values."
