@@ -16,6 +16,35 @@ const propertiesScript = (): string => {
   return script;
 };
 
+test('Properties reads engine defaults for cues with omitted behaviors without changing the cue', () => {
+  const script = propertiesScript();
+  const source = script.slice(script.indexOf('// Computed properties for behavior fields'),
+    script.indexOf('// Store a snapshot'));
+  const code = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const item = reactive<Record<string, any>>({ type: 'audio' });
+  const selection = ref(item);
+  const fields = Function('computed', 'selectedItem', 'audioItem', 'groupItem',
+    `${code}\nreturn { duckingMode, duckLevelDB, startBehaviorAction, endBehaviorAction };`)(
+    computed, selection, selection, selection,
+  );
+  assert.equal(fields.duckingMode.value, 'stop-all');
+  assert.equal(fields.startBehaviorAction.value, 'nothing');
+  assert.equal(fields.endBehaviorAction.value, 'nothing');
+  assert.equal(fields.duckLevelDB.value, 20 * Math.log10(0.2));
+  assert.deepEqual(item, { type: 'audio' });
+  fields.duckingMode.value = 'duck-others';
+  fields.duckLevelDB.value = -20;
+  fields.startBehaviorAction.value = 'play-index';
+  fields.endBehaviorAction.value = 'goto-item';
+  assert.deepEqual(item.duckingBehavior, { mode: 'duck-others', duckLevel: 0.1 });
+  assert.deepEqual(item.startBehavior, { action: 'play-index' });
+  assert.deepEqual(item.endBehavior, { action: 'goto-item' });
+  selection.value = { type: 'group' };
+  assert.equal(fields.startBehaviorAction.value, 'play-first');
+  assert.equal(fields.endBehaviorAction.value, 'nothing');
+  assert.deepEqual(selection.value, { type: 'group' });
+});
+
 const playbackControlsScript = (): string => {
   const filename = new URL('../app/components/PlaybackControls.vue', import.meta.url);
   const source = readFileSync(filename, 'utf8');

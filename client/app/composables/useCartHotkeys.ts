@@ -219,7 +219,7 @@ export const useCartHotkeys = () => {
     if (action === 'toggle-loop') {
       const item = getTargetItem();
       if (!item) return;
-      if (item.endBehavior.action === 'loop') {
+      if (item.endBehavior?.action === 'loop') {
         item.endBehavior = { action: 'nothing' };
       } else {
         item.endBehavior = { action: 'loop' };

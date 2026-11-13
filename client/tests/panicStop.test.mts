@@ -708,6 +708,8 @@ test('Up Next follows playlist order when active cues arrived in reverse order',
   activeCues.value = new Map([['a', {}]]);
   currentProject.value.items[0].endBehavior.action = 'nothing';
   assert.equal(next.value, 'b');
+  Reflect.deleteProperty(currentProject.value.items[0], 'endBehavior');
+  assert.equal(next.value, 'b');
   currentProject.value.settings.autoCueNextWithoutEndBehavior = false;
   assert.equal(next.value, null);
 });

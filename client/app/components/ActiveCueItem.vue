@@ -166,7 +166,7 @@ const audioItem = computed<AudioItem | null>(() => {
   return item && item.type === 'audio' ? (item as AudioItem) : null;
 });
 
-const isLooping = computed(() => audioItem.value?.endBehavior.action === 'loop');
+const isLooping = computed(() => audioItem.value?.endBehavior?.action === 'loop');
 
 // Start Next marker (absolute file time) from the project item, if armed.
 const startNextTime = computed<number | null>(() => {

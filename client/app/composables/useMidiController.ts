@@ -197,7 +197,7 @@ export const useMidiController = () => {
         targetItem = selectedItem.value as AudioItem;
       }
       if (!targetItem) return;
-      if (targetItem.endBehavior.action === 'loop') {
+      if (targetItem.endBehavior?.action === 'loop') {
         targetItem.endBehavior = { action: 'nothing' };
       } else {
         targetItem.endBehavior = { action: 'loop' };

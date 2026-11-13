@@ -274,14 +274,14 @@
         >
           <div class="property-field">
             <label for="cue-property-ducking">{{ t('properties.ducking') }}</label>
-            <select id="cue-property-ducking" v-model="audioItem.duckingBehavior.mode" @change="handleSave">
+            <select id="cue-property-ducking" v-model="duckingMode" @change="handleSave">
               <option value="stop-all">{{ t('duckingBehavior.stopAll') }}</option>
               <option value="no-ducking">{{ t('duckingBehavior.noDucking') }}</option>
               <option value="duck-others">{{ t('duckingBehavior.duckOthers') }}</option>
             </select>
           </div>
 
-          <div class="property-field" v-if="audioItem.duckingBehavior.mode === 'duck-others'">
+          <div class="property-field" v-if="duckingMode === 'duck-others'">
             <label for="cue-property-duckLevel">{{ t('properties.duckLevel') }} ({{ duckLevelDB.toFixed(1) }} dB)</label>
             <input id="cue-property-duckLevel"
               v-model.number="duckLevelDB"
@@ -635,17 +635,17 @@ const availableTabs = computed(() => {
 const endBehaviorAction = computed({
   get: () => {
     if (selectedItem.value?.type === 'audio') {
-      return audioItem.value.endBehavior.action;
+      return audioItem.value.endBehavior?.action ?? 'nothing';
     } else if (selectedItem.value?.type === 'group') {
-      return groupItem.value.endBehavior.action;
+      return groupItem.value.endBehavior?.action ?? 'nothing';
     }
     return 'nothing';
   },
   set: (value) => {
     if (selectedItem.value?.type === 'audio') {
-      audioItem.value.endBehavior.action = value as any;
+      audioItem.value.endBehavior = { ...audioItem.value.endBehavior, action: value };
     } else if (selectedItem.value?.type === 'group') {
-      groupItem.value.endBehavior.action = value as any;
+      groupItem.value.endBehavior = { ...groupItem.value.endBehavior, action: value };
     }
   }
 });
@@ -700,17 +700,17 @@ const handleEndBehaviorIndexChange = (e: Event) => {
 const startBehaviorAction = computed({
   get: () => {
     if (selectedItem.value?.type === 'audio') {
-      return audioItem.value.startBehavior.action;
+      return audioItem.value.startBehavior?.action ?? 'nothing';
     } else if (selectedItem.value?.type === 'group') {
-      return groupItem.value.startBehavior.action;
+      return groupItem.value.startBehavior?.action ?? 'play-first';
     }
     return 'nothing';
   },
   set: (value) => {
     if (selectedItem.value?.type === 'audio') {
-      audioItem.value.startBehavior.action = value as any;
+      audioItem.value.startBehavior = { ...audioItem.value.startBehavior, action: value as AudioItem['startBehavior']['action'] };
     } else if (selectedItem.value?.type === 'group') {
-      groupItem.value.startBehavior.action = value as any;
+      groupItem.value.startBehavior = { ...groupItem.value.startBehavior, action: value as GroupItem['startBehavior']['action'] };
     }
   }
 });
@@ -751,16 +751,23 @@ const handleStartBehaviorIndexChange = (e: Event) => {
   handleSave();
 };
 
-// Duck level in dB
+const duckingMode = computed({
+  get: () => audioItem.value.duckingBehavior?.mode ?? 'stop-all',
+  set: (mode: AudioItem['duckingBehavior']['mode']) => {
+    audioItem.value.duckingBehavior = { ...audioItem.value.duckingBehavior, mode };
+  },
+});
+
+// Match the engine's fallback for a cue with no authored duck level.
 const duckLevelDB = computed({
   get: () => {
-    const linear = audioItem.value.duckingBehavior.duckLevel;
+    const linear = audioItem.value.duckingBehavior?.duckLevel ?? 0.2;
     if (linear <= 0) return -60;
     return 20 * Math.log10(linear);
   },
   set: (db: number) => {
     const linear = db <= -60 ? 0 : Math.pow(10, db / 20);
-    audioItem.value.duckingBehavior.duckLevel = linear;
+    audioItem.value.duckingBehavior = { ...audioItem.value.duckingBehavior, mode: duckingMode.value, duckLevel: linear };
   }
 });
 
