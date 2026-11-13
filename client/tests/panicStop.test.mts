@@ -275,6 +275,44 @@ function transpileFactory(source: string, factoryName: string): (...args: any[])
   return Function(`${compiled}; return ${factoryName};`)();
 }
 
+test('cue copy yields to selected text and to Project Settings', () => {
+  const source = parseSfc(readFileSync(new URL('../app/components/MainWorkspace.vue', import.meta.url), 'utf8'))
+    .descriptor.scriptSetup!.content;
+  const start = source.indexOf('const handleKeydown =');
+  const end = source.indexOf('onMounted(', start);
+  assert.ok(start >= 0 && end > start);
+  const makeHandler = transpileFactory(`
+    function makeHandler(window, showProjectSettings, copyItemsToClipboard) {
+      const projectHydrationStatus = { value: 'ready' };
+      const currentProject = { value: {} };
+      const uiMode = { value: 'edit' };
+      const selectedItems = { value: new Set(['selected-cue']) };
+      const isForwardedFromVideoOutput = () => false;
+      const isTextInputFocused = () => false;
+      ${source.slice(start, end)}
+      return handleKeydown;
+    }
+  `, 'makeHandler');
+  const selection = { isCollapsed: false };
+  const settings = { value: true };
+  const copies: string[][] = [];
+  const handler = makeHandler({ getSelection: () => selection }, settings, (items: string[]) => copies.push(items));
+  const copy = () => {
+    let prevented = false;
+    handler({ key: 'c', metaKey: true, preventDefault: () => { prevented = true; } });
+    return prevented;
+  };
+  assert.equal(copy(), false);
+  selection.isCollapsed = true;
+  assert.equal(copy(), false);
+  settings.value = false;
+  selection.isCollapsed = false;
+  assert.equal(copy(), false);
+  selection.isCollapsed = true;
+  assert.equal(copy(), true);
+  assert.deepEqual(copies, [['selected-cue']]);
+});
+
 function midiRecoveryHarness() {
   const source = readFileSync(new URL('../app/composables/useMidiController.ts', import.meta.url), 'utf8');
   const slice = (start: string, end: string) => {

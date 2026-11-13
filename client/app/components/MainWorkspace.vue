@@ -269,6 +269,7 @@ const { t } = useLocalization();
 const server = useLiveplayServer();
 const { uiMode } = useUiMode();
 const { levels: outputTargetLevels } = useOutputTarget();
+const showProjectSettings = useState('showProjectSettings', () => false);
 
 
 // Progress modal state
@@ -812,6 +813,8 @@ const handleKeydown = (e: KeyboardEvent) => {
     const uuids = Array.from(selectedItems.value);
     if (uuids.length > 0) duplicateItems(uuids);
   } else if (key === 'c') {
+    if (showProjectSettings.value ||
+        (!isForwardedFromVideoOutput(e) && window.getSelection()?.isCollapsed === false)) return;
     const uuids = Array.from(selectedItems.value);
     if (uuids.length > 0) {
       e.preventDefault();
