@@ -186,7 +186,6 @@ assert.match(
   'the new-project prompt must expose native dialog semantics',
 );
 const playlistItem = read('client/app/components/PlaylistItem.vue');
-const locationChoiceModal = read('client/app/components/LocationChoiceModal.vue');
 const quitConfirmModal = read('client/app/components/QuitConfirmModal.vue');
 const deleteSelectionModal = read('client/app/components/DeleteSelectionModal.vue');
 const waveformTrimmer = read('client/app/components/WaveformTrimmer.vue');
@@ -2250,12 +2249,10 @@ assert.doesNotMatch(
   /onTriggerItem|onStopItem|onTriggerCartSlot|onStopAllCues|onApiUpdateItem|onApiUpdateCartItem|sendApiResponse/,
   'workspace startup must not call retired preload APIs',
 );
-assert.match(workspace, /downloadArchiveToFile\(result\.downloadToken, opts\.downloadTo\)/,
+assert.match(appVue, /downloadArchiveToFile\(result\.downloadToken, opts\.downloadTo\)/,
   'remote archive exports must bypass renderer memory');
-assert.match(workspace, /catch \(e\)[\s\S]*server\.lastError = `Export failed:/,
-  'archive export failures must be visible to the operator');
 assert.match(
-  workspace,
+  appVue,
   /runExport[\s\S]*await saveProject\(\{ force: true \}\)[\s\S]*exportProjectArchive/,
   'project export must persist the authoritative document before zipping disk state',
 );
@@ -2267,21 +2264,17 @@ assert.match(
 );
 assert.match(
   appVue,
-  /pendingArchiveClientPath[\s\S]*importProjectArchiveFromClientPath/,
+  /runImport\(source: \{ path: string; client: boolean \}[\s\S]*importProjectArchiveFromClientPath\(source\.path/,
   'remote archive imports must preserve a file path until chunked upload',
 );
-const archiveImportStart = appVue.indexOf('async function onImportServerPickerPick');
-const archiveImportEnd = appVue.indexOf(
-  '\n}\n\nasync function openImportedArchive', archiveImportStart,
-);
-assert.ok(archiveImportStart >= 0 && archiveImportEnd > archiveImportStart,
-  'app must define the archive import handler');
-const archiveImport = appVue.slice(archiveImportStart, archiveImportEnd);
-assert.equal(
-  (archiveImport.match(/server\.lastError = t\('importProgress\.openFailed'\);/g) ?? []).length,
-  3,
-  'unsupported, empty and failed archive imports must show the localized operator error',
-);
+assert.match(appVue, /defer to="#workspace-import-host"[\s\S]*class="archive-panel"[\s\S]*<progress[\s\S]*<ServerFilePickerModal [^>]*docked/,
+  'archive destination, progress and results must share the lower workspace');
+assert.doesNotMatch(appVue + workspace, /<(?:LocationChoiceModal|ProgressModal|ProjectSelectionModal)/,
+  'archive operations must not mount the old blocking dialogs');
+assert.match(appVue, /function showArchiveFailure[\s\S]*phase: 'failed', message[\s\S]*showHeaderWarning\(message, 'urgent'\)/,
+  'archive failures must appear in the dock and header');
+assert.equal((appVue.match(/openImportedArchive\(/g) ?? []).length, 2,
+  'an archive may open only from the operator action in its receipt');
 assert.match(
   appVue,
   /if \(update\.installOnExit\)[\s\S]{0,260}runAfterInstall: false/,
@@ -2460,9 +2453,9 @@ assert.match(
   'keyboard and MIDI configuration must follow the configured One Shot cells',
 );
 assert.match(
-  `${locationChoiceModal}\n${quitConfirmModal}`,
-  /\.lc-modal\s*\{[\s\S]{0,220}border-radius:\s*var\(--dialog-radius\);[\s\S]{0,100}width:\s*min\(var\(--modal-width, 560px\), 92vw\);[\s\S]{0,80}padding:\s*var\(--dialog-padding\);[\s\S]*\.qm-modal\s*\{[\s\S]{0,220}border-radius:\s*var\(--dialog-radius\);[\s\S]{0,100}width:\s*min\(var\(--modal-width, 560px\), 92vw\);[\s\S]{0,80}padding:\s*var\(--dialog-padding\);/,
-  'confirmation and location dialogs must share the main modal shell geometry',
+  quitConfirmModal,
+  /\.qm-modal\s*\{[\s\S]{0,220}border-radius:\s*var\(--dialog-radius\);[\s\S]{0,100}width:\s*min\(var\(--modal-width, 560px\), 92vw\);[\s\S]{0,80}padding:\s*var\(--dialog-padding\);/,
+  'quit confirmation must use the main modal shell geometry',
 );
 assert.match(
   midiController,
@@ -2609,9 +2602,6 @@ for (const file of [
   'ConnectionLostModal.vue',
   'DeleteSelectionModal.vue',
   'LoadingOverlay.vue',
-  'LocationChoiceModal.vue',
-  'ProgressModal.vue',
-  'ProjectSelectionModal.vue',
   'QuitConfirmModal.vue',
   'ServerFilePickerModal.vue',
   'ServerSettingsModal.vue',

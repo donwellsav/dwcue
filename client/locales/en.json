@@ -326,6 +326,7 @@
   },
   "common": {
     "default": "default",
+    "back": "Back",
     "loading": "Loading…",
     "error": "Error",
     "cancel": "Cancel"
@@ -1063,6 +1064,26 @@
     "chooseSourceMessage": "Where is the project archive? You can pick one already on the server, or upload one from this computer.",
     "fromServer": "Browse Server",
     "fromThisComputer": "From This Computer"
+  },
+  "archive": {
+    "chooseSource": "Select a .dwcuepack show archive.",
+    "chooseArchive": "Choose Archive",
+    "extractHere": "Extract Here",
+    "saveHere": "Save Here",
+    "exportDestination": "Choose a folder for {name}",
+    "importDestination": "Choose an empty folder for {name}",
+    "noSubfolders": "No subfolders",
+    "waitingForEngine": "Waiting for the audio engine…",
+    "savingShow": "Saving the show…",
+    "uploading": "Uploading and extracting",
+    "retry": "Try Again",
+    "another": "Start Another",
+    "unsupported": "Choose a .dwcuepack archive.",
+    "saveFailed": "Save the show successfully before exporting.",
+    "showChanged": "The active show changed. Start the export again.",
+    "downloadUnavailable": "The archive download is unavailable.",
+    "exportFailed": "Export failed. {error}",
+    "importFailed": "Import failed. {error}"
   },
   "filePicker": {
     "unavailableFolder": "Previously used folder is unavailable: {path}. Showing an available starting location.",

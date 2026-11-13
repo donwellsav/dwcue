@@ -1,6 +1,6 @@
 <template>
-  <Teleport to="body">
-    <div v-if="open" class="picker-backdrop" @click.self="cancel">
+  <Teleport to="body" :disabled="docked">
+    <div v-if="open" :class="docked ? 'picker-dock' : 'picker-backdrop'" @click.self="!docked && cancel()">
       <div class="picker">
         <!-- Top toolbar: navigation + breadcrumb path -->
         <header class="toolbar">
@@ -9,17 +9,19 @@
           <input
             class="path-input"
             v-model="pathDraft"
-            @keydown.enter="navigate(pathDraft)"
+            aria-label="Folder path"
+            @keydown.enter.prevent="navigate(pathDraft)"
             placeholder="Type a path and press Enter"
           />
           <button class="nav-btn neutral" @click="navigate('')" title="Computer / drives">
-            <span class="material-symbols-rounded">computer</span>
+            <span class="material-symbols-rounded" aria-hidden="true">computer</span>
           </button>
-          <Btn type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
+          <slot name="actions" />
+          <Btn v-if="!docked" type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
         </header>
 
         <!-- Breadcrumb -->
-        <div v-if="!isRoot && currentPath" class="breadcrumb">
+        <div v-if="!docked && !isRoot && currentPath" class="breadcrumb">
           <span v-for="(seg, idx) in breadcrumbs" :key="idx">
             <button class="crumb" @click="navigate(seg.path)">{{ seg.name }}</button>
             <span v-if="idx < breadcrumbs.length - 1" class="crumb-sep">›</span>
@@ -40,20 +42,22 @@
             <div v-if="error" class="status error">{{ error }}</div>
             <div v-else-if="loading" class="status">Loading…</div>
             <ul v-else class="entries">
-              <li v-for="entry in sortedEntries"
-                  :key="entry.full_path"
-                  class="entry"
+              <li v-for="entry in sortedEntries" :key="entry.full_path">
+                <button type="button" class="entry"
                   :class="[entry.kind, { selected: selected === entry.full_path }]"
+                  :aria-pressed="selected === entry.full_path" :title="entry.name"
                   @click="onEntryClick(entry)"
-                  @dblclick="onEntryActivate(entry)">
-                <span class="icon material-symbols-rounded">{{ iconNameFor(entry) }}</span>
-                <span class="name">{{ entry.name }}</span>
-                <span v-if="entry.kind === 'file' && entry.size != null" class="size">
-                  {{ formatBytes(entry.size) }}
-                </span>
+                  @dblclick="onEntryActivate(entry)"
+                  @keydown.enter.prevent.stop="onEntryActivate(entry)">
+                  <span class="icon material-symbols-rounded" aria-hidden="true">{{ iconNameFor(entry) }}</span>
+                  <span class="name">{{ entry.name }}</span>
+                  <span v-if="entry.kind === 'file' && entry.size != null" class="size">
+                    {{ formatBytes(entry.size) }}
+                  </span>
+                </button>
               </li>
               <li v-if="sortedEntries.length === 0" class="empty">
-                <em>{{ filterLabel }} — no matching items in this folder.</em>
+                <em>{{ docked && mode === 'directory' ? t('archive.noSubfolders') : `${filterLabel} — no matching items in this folder.` }}</em>
               </li>
             </ul>
           </div>
@@ -61,7 +65,7 @@
 
         <!-- Bottom bar: selection + filter + action buttons -->
         <footer class="footer">
-          <div v-if="mode === 'file'" class="filename-row">
+          <div v-if="!docked && mode === 'file'" class="filename-row">
             <label>File:&nbsp;</label>
             <input class="filename" v-model="filenameDraft" placeholder="(select a file above)" />
           </div>
@@ -80,7 +84,7 @@
             <button class="btn small" @click="cancelNewFolder">Cancel</button>
           </div>
           <div class="filter-row">
-            <select v-if="mode === 'file'" v-model="filter" @change="reload" class="filter">
+            <select v-if="mode === 'file' && filterOptions.length > 1" v-model="filter" @change="reload" class="filter">
               <option v-if="filterOptions.includes('audio')" value="audio">Audio files</option>
               <option v-for="opt in filterOptions.filter(o => o !== 'audio' && o !== 'all')"
                       :key="opt" :value="opt">{{ filterDisplay(opt) }}</option>
@@ -97,9 +101,9 @@
               New folder
             </button>
             <span class="spacer"></span>
-            <button class="btn" @click="cancel">Cancel</button>
+            <button class="btn" @click="cancel">{{ cancelLabel || t('common.cancel') }}</button>
             <button class="btn primary" :disabled="!canConfirm" @click="confirm">
-              {{ mode === 'directory' ? 'Select folder' : 'Open' }}
+              {{ confirmLabel || (mode === 'directory' ? 'Select folder' : 'Open') }}
             </button>
           </div>
         </footer>
@@ -149,6 +153,9 @@ const props = withDefaults(defineProps<{
   startPath?:         string;
   fallbackStartPath?: string;
   locationContext?:   string;
+  docked?:            boolean;
+  cancelLabel?:       string;
+  confirmLabel?:      string;
 }>(), {
   mode:          'file',
   filter:        'audio',
@@ -217,7 +224,8 @@ const breadcrumbs = computed(() => {
 });
 
 const sortedEntries = computed(() => {
-  const list = listing.value?.entries ?? [];
+  const entries = listing.value?.entries ?? [];
+  const list = props.docked && props.mode === 'directory' ? entries.filter(entry => entry.kind !== 'file') : entries;
   // Home first, then drives, directories, files. Alpha within each group.
   const rank: Record<string, number> = { home: 0, drive: 1, dir: 2, file: 3 };
   return [...list].sort((a, b) => {
@@ -275,8 +283,10 @@ function fileFor(fullPath: string): ServerFsEntry | undefined {
 async function navigate(path: string, recordHistory = true, fallbackPath?: string): Promise<boolean> {
   const revision = ++navigationRevision;
   const endpoint = String(server.serverUrl);
+  const credential = server.effectiveAccessToken;
   const previousPath = listing.value?.path;
-  const isCurrent = () => revision === navigationRevision && props.open && endpoint === String(server.serverUrl);
+  const isCurrent = () => revision === navigationRevision && props.open &&
+    endpoint === String(server.serverUrl) && credential === server.effectiveAccessToken;
   loading.value = true;
   error.value = null;
   notice.value = null;
@@ -342,7 +352,8 @@ function confirm() {
   if (!canConfirm.value) return;
   if (props.mode === 'directory') {
     // Prefer an explicit folder selection; fall back to the current folder.
-    const chosen = (selected.value && fileFor(selected.value)?.kind === 'dir')
+    const entry = fileFor(selected.value);
+    const chosen = entry && entry.kind !== 'file'
       ? selected.value
       : currentPath.value;
     pickerLocations.rememberFolder(chosen);
@@ -397,7 +408,7 @@ function cancelNewFolder() {
 // ---------------------------------------------------------------------------
 // Open / close lifecycle
 // ---------------------------------------------------------------------------
-watch([() => props.open, () => String(server.serverUrl), () => props.mode, () => props.filter,
+watch([() => props.open, () => String(server.serverUrl), () => server.effectiveAccessToken, () => props.mode, () => props.filter,
   () => props.startPath, () => props.fallbackStartPath, () => props.locationContext], () => {
   navigationRevision++;
   loading.value = false;
@@ -435,6 +446,33 @@ watch([() => props.open, () => String(server.serverUrl), () => props.mode, () =>
   font-size: 13px;
   overflow: hidden;
   box-shadow: var(--dialog-shadow);
+}
+.picker-dock {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+
+  .picker {
+    width: 100%;
+    height: auto;
+    min-height: 168px;
+    background: var(--color-background);
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .toolbar,
+  .footer {
+    padding: var(--spacing-xs) var(--workspace-gutter);
+  }
+  .toolbar .nav-btn,
+  .filter-row .btn {
+    min-height: var(--settings-row-height);
+    padding-block: 2px;
+  }
+  .entry {
+    min-height: var(--settings-row-height);
+    padding: 2px var(--workspace-gutter);
+  }
 }
 .toolbar {
   display: flex; gap: var(--spacing-sm); padding: var(--spacing-md);
@@ -483,7 +521,10 @@ watch([() => props.open, () => String(server.serverUrl), () => props.mode, () =>
 .entry {
   display: grid; grid-template-columns: 28px 1fr auto;
   gap: 8px; align-items: center; padding: 6px 14px;
-  cursor: pointer; border-bottom: 1px solid var(--color-border);
+  width: 100%; text-align: start; color: inherit; font: inherit;
+  background: transparent; border: 0; border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
+  &:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
   &:hover { background: var(--color-surface-hover); }
   // Drives & folders: white icons. Selectable files: accent icon, white name.
   .icon { text-align: center; color: var(--color-text-primary); }

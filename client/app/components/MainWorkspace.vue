@@ -217,52 +217,16 @@
             <span class="material-symbols-rounded" aria-hidden="true">close</span>
           </button>
         </header>
-        <div id="workspace-import-host" class="workspace-import-host"></div>
+        <div id="workspace-import-host" ref="importHost" class="workspace-import-host"
+          :class="{ 'workspace-import-host--archive': visibleImportPanel?.startsWith('archive-') }"></div>
       </section>
     </div>
-
-    <ProgressModal
-      :visible="progressModal.visible"
-      :title="progressModal.title"
-      :message="progressModal.message"
-      :percentage="progressModal.percentage"
-      :background="progressModal.background"
-      @background="progressModal.background = true"
-    >
-      <Btn v-if="progressModal.percentage === 100" type="button" :text="t('actions.close')" @click="progressModal.visible = false" />
-    </ProgressModal>
-
-    <!-- Export: server vs client choice (only shown for remote servers). -->
-    <LocationChoiceModal
-      :visible="exportChoiceVisible"
-      :title="t('exportProject.chooseLocationTitle')"
-      :message="t('exportProject.chooseLocationMessage')"
-      :server-label="t('exportProject.saveOnServer')"
-      :client-label="t('exportProject.downloadHere')"
-      :cancel-label="t('common.cancel')"
-      @pick="onExportChoice"
-      @cancel="exportChoiceVisible = false"
-    />
-
-    <!-- Server file picker (directory mode) for "save on server" path. -->
-    <ServerFilePickerModal
-      :open="exportServerPickerOpen"
-      mode="directory"
-      filter="all"
-      :filter-options="['all']"
-      :fallback-start-path="currentProject?.folderPath ?? ''"
-      location-context="archive-export"
-      @pick="onExportServerPath"
-      @close="exportServerPickerOpen = false"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
 import LevelCheckBar from './LevelCheckBar.vue';
-import LocationChoiceModal from './LocationChoiceModal.vue';
 import ProjectSettingsModal from './ProjectSettingsModal.vue';
-import ServerFilePickerModal from './ServerFilePickerModal.vue';
 import StereoMeter from './StereoMeter.vue';
 import VolumeSlider from './VolumeSlider.vue';
 import { bindingsMatch, eventToBinding } from '~/composables/useCartHotkeys';
@@ -292,11 +256,16 @@ const server = useLiveplayServer();
 const { uiMode, uiFontScale, regularPlaylistRowHeight, showPlaylistRowHeight, folderPlaylistRowHeight } = useUiMode();
 const { levels: outputTargetLevels } = useOutputTarget();
 const showProjectSettings = useState('showProjectSettings', () => false);
-const visibleImportPanel = computed(() => !showProjectSettings.value && uiMode.value !== 'playback' ? workspaceImportPanel.value : null);
+const visibleImportPanel = computed(() => {
+  const panel = workspaceImportPanel.value;
+  return !showProjectSettings.value && (uiMode.value !== 'playback' || panel?.startsWith('archive-')) ? panel : null;
+});
 const importPanelTitle = computed(() => {
   if (visibleImportPanel.value === 'media') return t('importAudio.title');
   if (visibleImportPanel.value === 'youtube') return t('youtube.importFromYouTube');
   if (visibleImportPanel.value === 'spotify') return t('spotifyImport.title');
+  if (visibleImportPanel.value === 'archive-import') return t('importProject.chooseSourceTitle');
+  if (visibleImportPanel.value === 'archive-export') return t('exportProject.chooseLocationTitle');
   return '';
 });
 const showCueProperties = computed(() => !showProjectSettings.value && !visibleImportPanel.value && propertiesPanelOpen.value && selectedItem.value &&
@@ -314,6 +283,10 @@ const panelHeight = computed(() => showProjectSettings.value ? settingsHeight.va
   : visibleImportPanel.value ? importHeight.value : propertiesHeight.value);
 const workspaceContent = ref<HTMLElement | null>(null);
 const lowerPanel = ref<HTMLElement | null>(null);
+const importHost = ref<HTMLElement | null>(null);
+watch(visibleImportPanel, () => {
+  if (importHost.value) importHost.value.scrollTop = 0;
+}, { flush: 'post' });
 const visiblePanelHeight = ref(0);
 const panelMaxHeight = ref(MAX_PANEL_HEIGHT);
 let panelObserver: ResizeObserver | undefined;
@@ -357,16 +330,6 @@ function handlePanelResizeKey(event: KeyboardEvent) {
   setPanelHeight(height + (event.key === 'ArrowUp' ? 16 : -16), availablePanelHeight());
 }
 
-
-// Progress modal state
-const progressModal = ref({
-  visible: false,
-  background: false,
-  title: '',
-  message: '',
-  percentage: 0
-});
-const exportBusy = ref(false);
 
 // Resizable cart width
 const cartWidth = ref(300);
@@ -677,10 +640,6 @@ if (import.meta.client && window.electronAPI) {
     saveProject({ force: true });
   });
 
-  window.electronAPI.onMenuExportProject(() => {
-    startExportFlow();
-  });
-
   window.electronAPI.onMenuCloseProject(async () => {
     if (!(await confirmUnsavedChanges())) return;
     void closeProject();
@@ -700,102 +659,6 @@ if (import.meta.client && window.electronAPI) {
     cartDetached.value = false;
   });
 
-}
-
-// ---------------------------------------------------------------------------
-// Export project flow (dual-dialog when the server is on another machine).
-// ---------------------------------------------------------------------------
-// When server runs locally, jump straight to a server-side directory picker.
-// Otherwise, ask the user where to save: on the server, or back to this
-// computer (via a one-shot download token). This replaces the old purely-
-// Electron archiver path, which only worked when the project files were
-// reachable from this machine.
-const exportChoiceVisible   = ref(false);
-const exportServerPickerOpen = ref(false);
-
-async function startExportFlow() {
-  if (!currentProject.value || exportBusy.value) return;
-  if (server.isLocalServer) {
-    // Local: skip the choice modal and go straight to the server picker
-    // (the "server" here is this same computer, so this matches the user's
-    // expectation of a familiar OS-style directory chooser).
-    exportServerPickerOpen.value = true;
-  } else {
-    exportChoiceVisible.value = true;
-  }
-}
-
-async function onExportChoice(choice: 'server' | 'client') {
-  exportChoiceVisible.value = false;
-  if (!currentProject.value) return;
-
-  if (choice === 'server') {
-    exportServerPickerOpen.value = true;
-    return;
-  }
-
-  // client → server packages to its temp dir, returns a token, we download
-  // the blob and save it via Electron's native save dialog.
-  await exportToClientDownload();
-}
-
-async function onExportServerPath(serverDir: string) {
-  exportServerPickerOpen.value = false;
-  if (!serverDir || !currentProject.value) return;
-  const project = currentProject.value;
-  const outPath = serverDir.replace(/[\/]+$/, '') + '/' + project.name + '.dwcuepack';
-  await runExport({ outputPath: outPath });
-}
-
-async function exportToClientDownload() {
-  if (!currentProject.value) return;
-  const project = currentProject.value;
-  const serverUrl = server.serverUrl;
-  const defaultName = project.name + '.dwcuepack';
-  // Pick the local destination FIRST so a cancelled save dialog doesn't
-  // leave a stray archive sitting in the server's temp directory.
-  const localDest = await window.electronAPI.showSaveArchiveDialog(defaultName);
-  if (!localDest || currentProject.value !== project || server.serverUrl !== serverUrl) return;
-  await runExport({ outputPath: '', downloadTo: localDest });
-}
-
-async function runExport(opts: { outputPath: string; downloadTo?: string }) {
-  if (!currentProject.value || exportBusy.value) return;
-  const project = currentProject.value;
-  const serverUrl = server.serverUrl;
-  const session = server.projectSessionId;
-  exportBusy.value = true;
-  progressModal.value = {
-    visible: true,
-    background: false,
-    title: t('exportProgress.title'),
-    message: t('exportProgress.message') + ' ' + project.name + '.dwcuepack…',
-    percentage: 30,
-  };
-  try {
-    if (!(await saveProject({ force: true }))) {
-      throw new Error('Project must be saved before it can be exported');
-    }
-    if (currentProject.value !== project || server.serverUrl !== serverUrl || server.projectSessionId !== session)
-      throw new Error('Show changed before export. Start the export again.');
-    const result = await server.exportProjectArchive(
-      project.folderPath, project.name, opts.outputPath);
-    if (opts.downloadTo) {
-      if (!result.downloadToken || server.serverUrl !== serverUrl) throw new Error('Archive download is unavailable.');
-      progressModal.value.percentage = 60;
-      progressModal.value.message =
-        t('exportProgress.downloading') + ' ' + project.name + '.dwcuepack…';
-      await server.downloadArchiveToFile(result.downloadToken, opts.downloadTo);
-    }
-    progressModal.value.message = t('exportProgress.saved', { path: opts.downloadTo || result.archivePath });
-    progressModal.value.percentage = 100;
-  } catch (e) {
-    console.error('Export failed:', e);
-    server.lastError = `Export failed: ${e instanceof Error ? e.message : String(e)}`;
-  } finally {
-    exportBusy.value = false;
-    progressModal.value.visible = progressModal.value.background && progressModal.value.percentage === 100;
-  }
 }
 
 // Keep the main process HTTP API server up-to-date with the full project state.
@@ -1030,6 +893,11 @@ onUnmounted(() => {
   overflow: auto;
   overscroll-behavior: contain;
   container-type: inline-size;
+}
+
+.workspace-import-host--archive {
+  display: flex;
+  flex-direction: column;
 }
 
 .lower-panel-resize-handle {

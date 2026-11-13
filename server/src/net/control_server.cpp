@@ -3688,7 +3688,14 @@ void ControlServer::install_routes() {
                 if (!fs::exists(src) || !fs::is_directory(src)) {
                     return json_err(400, "folderPath does not exist or is not a directory");
                 }
-                const fs::path active_project = state_.project_file_path();
+                fs::path active_project;
+                {
+                    auto project_lock = state_.lock_project_session(
+                        req.get_header_value("X-DWCUE-Project-Session"));
+                    if (!project_lock.owns_lock())
+                        return json_err(409, "project session changed; restart the export");
+                    active_project = state_.project_file_path();
+                }
                 if (active_project.empty() ||
                     !core::project_file::is_native_project(active_project)) {
                     return json_err(400, "no canonical .dwcue project is open");

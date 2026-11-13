@@ -51,12 +51,10 @@ test('Stop All remains clickable when no project-backed cue is active', () => {
   assert.equal(panicCalls, 1);
 });
 
-test('Stop All sends the normal command from transfer, file selection and loading dialogs', () => {
+test('Stop All sends the normal command from remaining blocking dialogs', () => {
   const dialogs = [
     ['AudioImportModal', 'header'],
-    ['ProgressModal', 'div', 'modal-content'],
     ['ServerFilePickerModal', 'header', 'toolbar'],
-    ['LocationChoiceModal', 'div', 'lc-footer'],
     ['ConnectionLostModal', 'div', 'clm-dialog'],
     ['LoadingOverlay', 'div', 'loading-panel'],
   ];

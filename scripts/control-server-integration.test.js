@@ -60,6 +60,7 @@ test('project session preconditions reject delayed edits after switching or reop
     ['PATCH', '/api/project/settings', { autoSave: false }],
     ['PUT', '/api/project/document', project('late-replacement')],
     ['POST', '/api/project/save', { path: p, document: project('late-save') }],
+    ['POST', '/api/project/export', { folderPath: path.dirname(p), outputPath: path.join(path.dirname(p), 'Test.dwcuepack') }],
     ['POST', '/api/project/close', {}],
     ['POST', '/api/project/repair', {}],
     ['POST', '/api/project/load', { path: p }],

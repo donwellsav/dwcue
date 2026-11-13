@@ -852,7 +852,7 @@ function createClient() {
   //  * outputPath empty → archive staged in server temp dir; response carries
   //    a one-shot download token streamed directly to a local file.
   async function exportProjectArchive(folderPath: string, projectName?: string,
-                                      outputPath?: string) {
+                                      outputPath?: string, expectedSessionId?: string) {
     return rest<{
       archivePath: string;
       size: number;
@@ -860,6 +860,8 @@ function createClient() {
       downloadFilename?: string;
     }>('/api/project/export', {
       method: 'POST',
+      headers: expectedSessionId ? { 'X-DWCUE-Project-Session': expectedSessionId } : undefined,
+      signal: AbortSignal.timeout(60 * 60 * 1000),
       body: JSON.stringify({
         folderPath,
         projectName: projectName ?? '',

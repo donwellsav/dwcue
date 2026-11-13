@@ -208,7 +208,9 @@ export const useProject = () => {
   // openItemProperties() (the gear button).
   const propertiesPanelOpen = useState<boolean>('propertiesPanelOpen', () => false);
   const showProjectSettings = useState('showProjectSettings', () => false);
-  const workspaceImportPanel = useState<'media' | 'youtube' | 'spotify' | null>('workspaceImportPanel', () => null);
+  const workspaceImportPanel = useState<'media' | 'youtube' | 'spotify' | 'archive-import' | 'archive-export' | null>(
+    'workspaceImportPanel', () => null,
+  );
   // NB: activeCues is owned by useAudioEngine (it's the server projection).
   // useProject only clears it on closeProject; we re-use the same useState key.
   const activeCues = useState<Map<string, any>>('activeCues', () => new Map());
