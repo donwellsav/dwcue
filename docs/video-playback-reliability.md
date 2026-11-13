@@ -10,6 +10,8 @@ The 3 November source was checkpointed in `2ea5984` and `a9a86a3` (package metad
 
 **Packaged review:** `3b69f60` adds operator-applied canvas presets, custom dimensions, and proportional frame scaling. The Apple Silicon bundle cold-opened the landscape sample with 23 cues ready. The decoded 1080p pattern reached all four edges and its center circle retained its proportions. An emulated 4:3 viewport kept the centered frame and black bars. The same output applied a custom canvas, wide stage and opt-in portrait framing, capped a 720p canvas on a Retina preview, retained the cap across reopen, and restored the Full HD default. These checks measure app rendering in software. The operating system owns HDMI timing and physical acceptance remains in T24.
 
+**Pre-show video check:** `8832230` checks each video cue's In point in a hidden Chromium renderer, one at a time. It uses the existing Cue server media route and reports results in the dock and on the affected cues. A timeout ends the run to avoid adding more storage work. Run `node --test scripts/video-preflight.test.cjs` on a desktop host for the actual decode, timeout, and cancellation checks. The packaged macOS check also verified grouped cues, QuickPlays, replacement invalidation, and native GO and Stop All delivery during a held media request. The check samples the In point. Full-clip playback and physical output remain rehearsal checks.
+
 ## Confirmed failure paths
 
 | Failure | Evidence | Repair |

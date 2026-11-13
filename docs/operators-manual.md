@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.21 development
-**Source revision:** 3b69f60eab3ef8d16be081f722d08dd3a578bcd2
+**Source revision:** 8832230d835e6c6e7b63a43649790a44d97c8151
 **Native engine baseline:** b96070379c7305bbb3af6e95d2d869aa9f9fe13b
 **Edition:** 13 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This development edition covers the docked workspace, 20 default QuickPlay shortcuts, and adjustable picture framing added after **2.6.21**. Match your installer to its release notes before rehearsal.
+This development edition covers the docked workspace, 20 default QuickPlay shortcuts, adjustable picture framing, and the pre-show video check. Match your installer to its release notes before rehearsal.
 
 The interface captures use practice media and software audio output. **docs/manual-assets/captures.json** records each capture's date, source revision and hash. Equipment photographs remain illustrative.
 
@@ -566,6 +566,14 @@ Use H.264 or HEVC media for this source edition. ProRes and other production cod
 
 > **CAUTION — A fallback can hide a video failure.** If video cannot load or decode, the output can fall through to a cue image, standby image, or black without a blocking show alert. A healthy audio cue does not prove the picture is playing. Watch the actual destination during rehearsal.
 
+### Check videos before the show
+
+1. With playback and Preview stopped, open **Settings → Video Output** and choose **Check Videos**. The check silently loads a picture at each video cue's **In** point. It includes cues inside groups and video QuickPlays. Video Output can stay closed.
+2. Read the count and cue names in the dock. Cues that need attention are marked **VIDEO !** on the playlist or QuickPlay tile. For a missing or unreadable clip, check the media location and replace or restore the file. For a decode failure, verify the source or use a compatible copy, then run **Check Videos** again.
+3. Use **Cancel Check** to end the scan. Playback, Stop All, or leaving the panel also ends it. If a clip times out, the scan flags it and ends the run. The status shows how many cues were checked.
+
+The check is advisory and keeps the playlist and transport available. Run it again after editing a video cue or replacing its file. A pass covers the picture at the In point. Rehearse the entire clip, its soundtrack, and the physical display chain on the show machine.
+
 ### Set picture framing
 
 In **Settings → Video Output → Picture framing**, choose a **Canvas**, **Scaling**, and **Frame size**, then select **Apply framing**. Changes take effect in the open Video Output window. The choices are saved on this machine.
@@ -869,6 +877,7 @@ Share a minimal sample only with permission. Remove tokens, personal paths, priv
 - [ ] Correct GO target is visible; shortcuts checked against this project.
 - [ ] Required QuickPlays and their Play/Stop, keyboard and MIDI controls checked.
 - [ ] MIDI mappings checked on this machine; unused controllers disconnected or filtered.
+- [ ] **Check Videos** completed and flagged cues resolved before rehearsal.
 - [ ] Video Output opened, display verified, and first frame/standby/fallback checked.
 - [ ] Independent audio emergency-silence and video-blackout procedures agreed.
 - [ ] Mains power, sleep policy, notifications, cables, and spare media ready.
