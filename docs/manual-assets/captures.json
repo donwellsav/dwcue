@@ -329,17 +329,17 @@
     },
     {
       "file": "video-settings-current.png",
-      "view": "Output display, standby capture and test card controls side by side.",
+      "view": "Content-sized Video Output tab with display, standby capture and test card controls aligned.",
       "version": "2.6.21 development",
-      "sourceRevision": "a3256ade342f732fda0142010f68a6c6e779c1d5",
+      "sourceRevision": "f98184f1f57126e526393b89a178e64a0f98e8c9",
       "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
       "capturedOn": "2026-11-12",
       "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
       "dimensions": [
         1200,
-        370
+        277
       ],
-      "sha256": "e431020fb9c0277bcd4b75c1791674b6096bf0194e667a3ad717a7b863e87b14",
+      "sha256": "c29385b88b020a03c31733b96dd7d9c566b44ad1a59090a2f98b3c2c0dafd174",
       "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
       "captureMethod": "Playwright screenshot of the actual rendered Settings panel or section.",
       "presentation": "Panel crop without callouts or altered UI values."
@@ -363,17 +363,17 @@
     },
     {
       "file": "video-recovery-current.png",
-      "view": "Output status with Restart Output disabled and Copy Output Diagnostics available.",
+      "view": "Output status with Restart Output disabled and Copy diagnostics available.",
       "version": "2.6.21 development",
-      "sourceRevision": "a3256ade342f732fda0142010f68a6c6e779c1d5",
+      "sourceRevision": "f98184f1f57126e526393b89a178e64a0f98e8c9",
       "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
       "capturedOn": "2026-11-12",
       "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
       "dimensions": [
-        280,
-        75
+        259,
+        57
       ],
-      "sha256": "475ab8029445cf07a47f02952201c0ee7bcc4425c0ab507e5f6b9bf9af556f60",
+      "sha256": "7b33ce4b61ae73246edb88e5e4c635cf1977c9a4384baf6f08ad998cb779d4bc",
       "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
       "captureMethod": "Playwright screenshot of the actual rendered Settings panel or section.",
       "presentation": "Panel crop without callouts or altered UI values."

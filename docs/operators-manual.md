@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.21 development
-**Source revision:** a3256ade342f732fda0142010f68a6c6e779c1d5
+**Source revision:** f98184f1f57126e526393b89a178e64a0f98e8c9
 **Native engine baseline:** 889abd569da10a32d6cd0edb75b029b436e5cf42
 **Edition:** 12 November 2026 · English · Current-source operator edition
 
@@ -126,7 +126,7 @@ An empty One Shots bank is collapsed by default. Choose **Show One Shots** to re
 
 Switch to **Show Mode** for performance after preparation is complete. It simplifies the interface and emphasizes transport and large cue controls. GO and assigned controls remain live. The One Shot Play/Stop button and keyboard and MIDI triggers work the same way in both modes. Use Edit Mode to change the bank.
 
-Rehearse at the actual display size and app zoom. Settings and Cue Properties share the lower panel. Drag the grip at its top edge down for more playlist room, or up to see more controls. You can also focus the grip and use **Up/Down**. Each panel remembers its own height while the app is open. GO and Stop All stay at the top, and the shortcut bar shows a compact reference while either panel is open. **Customize Shortcuts…** opens the full editor.
+Rehearse at the actual display size and app zoom. Settings and Cue Properties share the lower panel. **User Interface** and **Video Output** fit their controls into the available space until you set the Settings height. Drag the top grip down for more playlist room or up for more controls. You can also focus the grip and use **Up/Down**. Settings and Properties each remember their adjusted height while the app is open. GO and Stop All stay at the top, and the shortcut bar shows a compact reference while either panel is open. **Customize Shortcuts…** opens the full editor.
 
 ![Show Mode with the One Shots bank open and the default number keys visible.](manual-assets/show-mode.png)
 
@@ -573,7 +573,7 @@ Use H.264 or HEVC media for this source edition. ProRes and other production cod
 
 ### Recover a frozen or failed video output
 
-Use **Settings → Video Output** to read output status. Renderer crashes and hangs latch a native black cover over the existing audience window while the operator controls remain available. Choose **Restart Output** in the header or in Video Output settings. The cover stays until the replacement view is ready. The replacement follows the current native cue state. Check the active cue before another GO. **Copy Output Diagnostics** captures current output information for investigation.
+Use **Settings → Video Output** to read output status. Renderer crashes and hangs latch a native black cover over the existing audience window while the operator controls remain available. Choose **Restart Output** in the header or in Video Output settings. The cover stays until the replacement view is ready. The replacement follows the current native cue state. Check the active cue before another GO. **Copy diagnostics** captures current output information for investigation.
 
 ![Output status and recovery controls in Video Output settings. Restart Output is disabled while the output is closed.](manual-assets/video-recovery-current.png)
 
