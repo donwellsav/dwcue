@@ -57,8 +57,8 @@ client/
 │   │   ├── useProject.ts        project CRUD as exposed by the server
 │   │   ├── useAudioEngine.ts    transport facade (play / stop / fade / seek / ducking)
 │   │   ├── useCartItems.ts      one-shot grid state (legacy cart storage facade)
-│   │   ├── useCartHotkeys.ts    keyboard hotkey bindings → One Shot triggers
-│   │   ├── useMidiController.ts Web MIDI → One Shot triggers
+│   │   ├── useCartHotkeys.ts    keyboard hotkey bindings → QuickPlay triggers
+│   │   ├── useMidiController.ts Web MIDI → QuickPlay triggers
 │   │   ├── useStateViewer.ts    feeds the diagnostics popup window
 │   │   └── useLocalization.ts   21-language i18n + RTL handling
 │   ├── plugins/                 Nuxt plugins (liveplay-server.client.ts connects on boot)
@@ -127,7 +127,7 @@ Key IPC channels (non-exhaustive):
 | `update-menu-language` / `get-system-locale` / `get-available-locales` / `get-locale-data` | Dynamic menu localisation. |
 | `help:open-operator-manual` | Opens or focuses the bundled offline operator manual from a trusted app renderer. |
 | `open-folder` / `open-external` / `app:relaunch` / `app:exit` | OS integration. |
-| `open-cart-player-window` / `cart-player-window-attach` / `sync-project-data` | Second-window One Shots surface; the cart-player channel names remain for compatibility. |
+| `open-cart-player-window` / `cart-player-window-attach` / `sync-project-data` | Second-window QuickPlays surface; the cart-player channel names remain for compatibility. |
 | `one-shot-mutation:*` | Identity-fenced detached-window mutation broker; only the primary renderer validates, applies and persists requests. |
 | `video-output:open` / `close` / `status` | Session-only Video Output lifecycle and status. |
 | `video-output:list-displays` / `identify-displays` / `set-display` | Enumerate, identify and persist the machine's assigned physical output. |
@@ -151,7 +151,7 @@ New shows and normal saves use the native `.dwcue` JSON document. Portable expor
 - Browser origins must exactly match `LIVEPLAY_ALLOWED_ORIGINS`. Source development uses `http://localhost:3000`, not an arbitrary loopback origin. Packaged Electron's opaque `Origin: null` is accepted, but it still requires the token.
 - On boot, the [`app/plugins/liveplay-server.client.ts`](app/plugins/liveplay-server.client.ts) plugin connects. Project hydration streams the current server header and pages. A failed page leaves an explicit read-only workspace with **Retry** and Stop All; Retry rejoins the server's current document rather than reopening the prior file path. If a changed server project meets dirty local edits, `ConnectionLostModal` requires **Use server project** (discard local/adopt server) or **Restore local project** (replace server/keep local dirty) instead of overwriting either side silently.
 - A close-side `project_changed` clears both the renderer's project document and its remembered path. Saves wait for complete hydration and are serialized, revision-fenced and identity-fenced. Toggling Autosave in either direction force-saves the current document plus preference; subsequent edits save while enabled and only mark dirty while disabled. The unsaved badge is conditional on Autosave being off, so enabling hides it even when that forced save fails, while `hasUnsavedChanges` remains true. Save As changes the path only after the server publishes successfully.
-- The detached One Shots window receives plain DTO copies of project data, identity and mutations. Each request carries `projectPath`, `projectEpoch` and `ownerSessionId`; Electron serializes it, and the primary renderer alone validates the current identity, applies the mutation and returns separate `accepted` / `persisted` status. A stale project or owner cannot mutate the newly opened show. Detached mutation failures are surfaced in that window's loaded panel and item popover.
+- The detached QuickPlays window receives plain DTO copies of project data, identity and mutations. Each request carries `projectPath`, `projectEpoch` and `ownerSessionId`; Electron serializes it, and the primary renderer alone validates the current identity, applies the mutation and returns separate `accepted` / `persisted` status. A stale project or owner cannot mutate the newly opened show. Detached mutation failures are surfaced in that window's loaded panel and item popover.
 - REST calls return promises; WebSocket frames update reactive refs. Outbound frames are mostly transport commands (`play`, `stop`, `seek`) that take a fast WS path; project mutations use `PATCH /api/project/...` so the server can echo a `doc_patch` to all connected clients.
 
 For the full REST and WebSocket surface, see [`server/README.md`](../server/README.md#control-surface).
@@ -206,12 +206,12 @@ All composables are Vue `setup()`-time helpers, typed in TypeScript.
 | `useLiveMeters`        | Subscribes to the `meters` WS frame and exposes per-cue / per-mixer / per-master reactive refs at the server's default 30 Hz cadence. Drives `LiveMeterBar` and `StereoMeter`. |
 | `useProject`           | Paged hydration, Retry/rejoin, project CRUD and sync. It enforces the no-partial-save barrier and clears document/path on remote close; serialized revision/identity fences ensure only the latest persisted revision becomes clean. |
 | `useAudioEngine`       | Transport facade. **Cue to Continue** is runtime-only for one playback instance: it never rewrites `endBehavior`, and Stop, remove, replay, Stop All, media replacement, or project switch cancels it. |
-| `useCartItems`         | The One Shots grid model and slot-to-cue mapping. Storage keeps the existing cart shape. |
-| `useCartHotkeys`       | Configurable keyboard shortcuts → One Shot triggers. See `ControlConfigModal.vue` for the current UI. |
-| `useMidiController`    | Web MIDI bindings → One Shot triggers and transport. Master Volume targets the server's Global Master—not output channel 0. See `ControlConfigModal.vue`. |
+| `useCartItems`         | The QuickPlays grid model and slot-to-cue mapping. Storage keeps the existing cart shape. |
+| `useCartHotkeys`       | Configurable QuickPlay shortcuts. The number row defaults to slots 1–10 and Shift plus the number row to slots 11–20. See `ControlConfigModal.vue` for the editor. |
+| `useMidiController`    | Web MIDI bindings → QuickPlay triggers and transport. Master Volume targets the server's Global Master—not output channel 0. See `ControlConfigModal.vue`. |
 | `useStateViewer`       | Feeds the live diagnostics popup window (project doc + connection + server status). |
 | `useLocalization`      | i18n (21 languages, RTL). See [Localisation](#localisation-21-languages-rtl). |
-| `useUiMode`            | UI preferences singleton: theme, waveform opacity, playlist track heights, UI font scale (80–110 %, CSS `zoom` on `#app`, excluded in the video output window) and One Shot text scale (70–130 %). |
+| `useUiMode`            | UI preferences singleton: theme, waveform opacity, playlist track heights, UI font scale (80–110 %, CSS `zoom` on `#app`, excluded in the video output window) and QuickPlay text scale (70–130 %). |
 
 **Rule of thumb**: components don't import `useLiveplayServer` directly unless they're presenting a low-level diagnostic. They use one of the facades above so the surface stays small and testable.
 
@@ -225,7 +225,7 @@ The component tree is intentionally flat — every SFC lives directly in [`app/c
 - `MainWorkspace.vue` — top-level layout once a project is loaded.
 - `PlaybackControls.vue`, `ActiveCueItem.vue` — top-of-screen GO transport and named **Play Next** target. **Set As Next** waits for the authoritative `next_item_set` echo (including empty-string clear), and GO clears it only after accepted play; failures remain ready for retry.
 - `PlaylistView.vue`, `PlaylistItem.vue` — recursive playlist tree.
-- `OneShotPanel.vue`, `OneShotTile.vue` — 1–64 cell quick-play grid with direct Play/Stop in both modes. The detached window routes edits through the primary-owned mutation broker. Click, keyboard and MIDI share the same One Shot start path. Duck Level, Attack and Release are server-consumed, generation-fenced settings.
+- `OneShotPanel.vue`, `OneShotTile.vue` — QuickPlays grid with at least 20 slots and direct Play/Stop in both modes. The detached window routes edits through the primary-owned mutation broker. Click, keyboard and MIDI share the same QuickPlay start path. Duck Level, Attack and Release are server-consumed, generation-fenced settings.
 - `PropertiesPanel.vue` — properties for the selected item (gain, fades, working Start/End Behaviors, ducking, output device and LTC).
 - `WaveformCanvas.vue` — canvas-rendered waveform fetched from `GET /api/waveform/<cueId>`.
 - `WaveformTrimmer.vue` — interactive in/out trimming + normalise.
@@ -316,7 +316,7 @@ Custom accent colours are set at runtime:
 document.documentElement.style.setProperty('--color-accent-custom', '#0066FF');
 ```
 
-Theme mode + accent colour are persisted on the project, not per-user — every operator opening the same project sees the same look. The UI lives in `ProjectSettingsModal.vue`.
+Theme mode + accent colour are persisted on the project, not per-user — every operator opening the same project sees the same look. The View menu changes theme and accent. Docked Settings uses unstyled Reka UI tabs with the existing console tokens. Production builds include Vite’s third-party license report in the renderer assets.
 
 ---
 
