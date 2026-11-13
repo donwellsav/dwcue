@@ -3069,12 +3069,15 @@ ipcMain.handle('video-output:capture-standby', async (event, source, target) => 
       const available = () => videoOutputDisplays().some(display => display.id === captureDisplayId);
       if (!captureDisplayId || !available()) throw new Error('Choose an available capture display in Video Output settings.');
       const sources = await desktopCapturer.getSources({
-        types: ['screen'], thumbnailSize: { width: 1920, height: 1080 },
+        types: ['screen'], thumbnailSize: { width: 3840, height: 2160 },
       });
       if (!available() || readVideoOutputConfig().captureDisplayId !== captureDisplayId) {
         throw new Error('The selected capture display changed. Try again.');
       }
       image = sources.find(entry => entry.display_id === captureDisplayId)?.thumbnail;
+      if (!image || image.isEmpty()) {
+        throw new Error('No picture was captured from the selected display. Check screen recording permission and try again.');
+      }
     } else {
       throw new TypeError('Invalid standby capture source.');
     }

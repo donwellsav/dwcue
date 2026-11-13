@@ -49,6 +49,7 @@ test('standby capture uses only the selected source and rejects stale shows and 
   const still = value => ({
     isEmpty: () => false,
     getSize: () => ({ width: 1920, height: 1080 }),
+    toPNG: () => Buffer.from(value),
     toJPEG: () => Buffer.from(value),
   });
   const output = { isDestroyed: () => false, webContents: {
@@ -70,10 +71,14 @@ test('standby capture uses only the selected source and rejects stale shows and 
     videoOutputRecoveryRequired: false, capturingVideoStandby: false,
     readVideoOutputConfig: () => ({ captureDisplayId: '42' }),
     videoOutputDisplays: () => [{ id: '42' }],
-    desktopCapturer: { getSources: async () => [
-      { display_id: 'other', thumbnail: still('wrong screen') },
-      { display_id: '42', thumbnail: still('selected screen') },
-    ] },
+    desktopCapturer: { getSources: async ({ thumbnailSize }) => {
+      assert.equal(thumbnailSize.width, 3840);
+      assert.equal(thumbnailSize.height, 2160);
+      return [
+        { display_id: 'other', thumbnail: still('wrong screen') },
+        { display_id: '42', thumbnail: still('selected screen') },
+      ];
+    } },
   };
   vm.runInNewContext([
     productionFunctionSource('requireVideoOutputIpc'), productionFunctionSource('requireIpcString'),
@@ -86,8 +91,8 @@ test('standby capture uses only the selected source and rejects stale shows and 
     handlers.get('video-output:get-standby-capture')({ sender: output.webContents }, session, cue.uuid, media);
   await capture('display', null);
   await capture('output', cue.uuid);
-  assert.equal(read('session').standby, 'data:image/jpeg;base64,' + Buffer.from('selected screen').toString('base64'));
-  assert.equal(read('session').cue, 'data:image/jpeg;base64,' + Buffer.from('output').toString('base64'));
+  assert.equal(read('session').standby, 'data:image/png;base64,' + Buffer.from('selected screen').toString('base64'));
+  assert.equal(read('session').cue, 'data:image/png;base64,' + Buffer.from('output').toString('base64'));
   assert.equal(read('session', 'media/replacement.wav').cue, null);
   assert.equal(read('other-session').standby, null);
   await assert.rejects(capture('output', null, { sender: output.webContents }), /main workspace/);
@@ -96,7 +101,7 @@ test('standby capture uses only the selected source and rejects stale shows and 
   await assert.rejects(capture('output', cue.uuid), /assigned image/);
   delete cue.imagePath;
   context.desktopCapturer.getSources = async () => [{ display_id: 'wrong', thumbnail: still('wrong') }];
-  await assert.rejects(capture('display', null), /No picture was captured/);
+  await assert.rejects(capture('display', null), /screen recording permission/);
   const pending = deferred();
   output.webContents.capturePage = () => pending.promise;
   const inFlight = capture('output', null);
@@ -105,6 +110,26 @@ test('standby capture uses only the selected source and rejects stale shows and 
   await assert.rejects(inFlight, /active show changed/);
   handlers.get('video-output:clear-standby-capture')({ sender }, { identity, sessionId: 'another show', itemUuid: null });
   assert.equal(read('another show').standby, null);
+});
+
+test('standby stills preserve slide detail and keep large photo captures bounded', () => {
+  const { captureImageUrl } = require('../electron/video-standby-capture');
+  const image = {
+    isEmpty: () => false,
+    getSize: () => ({ width: 3840, height: 2160 }),
+    resize(options) {
+      assert.deepEqual(options, { width: 1920, height: 1080, quality: 'best' });
+      return this;
+    },
+    toPNG: () => Buffer.from('slide'),
+    toJPEG(quality) {
+      assert.equal(quality, 94);
+      return Buffer.from('photo');
+    },
+  };
+  assert.match(captureImageUrl(image), /^data:image\/png;/);
+  image.toPNG = () => Buffer.alloc(1024 * 1024 + 1);
+  assert.match(captureImageUrl(image), /^data:image\/jpeg;/);
 });
 
 function deferred() {
