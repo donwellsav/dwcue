@@ -25,6 +25,8 @@
 
     <div class="one-shot-body">
       <div class="one-shot-title" :title="item.displayName">{{ item.displayName }}</div>
+      <span v-if="item.hasVideo && videoCheckIssue" class="one-shot-video-issue" role="img"
+        :title="t(`videoCheck.${videoCheckIssue}`)" :aria-label="t(`videoCheck.${videoCheckIssue}`)">VIDEO !</span>
       <span v-if="isPlaying" class="one-shot-runtime-state" :class="{ 'is-paused': isPaused }">
         {{ t(isPaused ? 'status.paused' : 'status.playing') }}
       </span>
@@ -234,6 +236,8 @@ let resizeObserver: ResizeObserver | null = null;
 
 const { uiMode } = useUiMode();
 const { t } = useLocalization();
+const videoCheckIssues = useVideoPreflightIssues();
+const videoCheckIssue = computed(() => videoCheckIssues.value.get(props.item.uuid));
 const { saveProject, openItemProperties } = useProject();
 const { activeCues, stopCue } = useAudioEngine();
 const { playOneShot } = useOneShotPlayback();
@@ -616,6 +620,11 @@ onUnmounted(() => {
 
 .one-shot-runtime-state.is-paused {
   color: var(--color-text-secondary);
+}
+
+.one-shot-video-issue {
+  color: var(--color-danger);
+  font: 700 calc(11px * var(--one-shot-font-scale, 1)) / 1.2 var(--font-mono);
 }
 
 .one-shot-hotkey {

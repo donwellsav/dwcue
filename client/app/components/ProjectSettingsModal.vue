@@ -476,6 +476,23 @@
           </template>
           <!-- ================= Video Output ================= -->
           <template v-else-if="activeTab === 'video'">
+            <div v-if="canCheckVideo" class="settings-rows video-check">
+              <section class="settings-field test-card-heading video-check-header">
+                <h3>{{ t('videoCheck.title') }}</h3>
+                <p class="settings-help" role="status">{{ videoCheckMessage }}</p>
+                <button type="button" class="modal-btn"
+                  :disabled="videoCheckPhase !== 'running' && (!videoCheckReady || videoCheckTransportActive || videoCheckBusy)"
+                  @click="videoCheckPhase === 'running' ? cancelVideoCheck() : startVideoCheck()">
+                  {{ t(videoCheckPhase === 'running' ? 'videoCheck.cancel' : 'videoCheck.start') }}
+                </button>
+              </section>
+              <ul v-if="videoCheckFindings.length" class="video-check-findings" :aria-label="t('videoCheck.findings')">
+                <li v-for="finding in videoCheckFindings" :key="finding.uuid">
+                  <strong>{{ finding.label }}{{ finding.label ? ' · ' : '' }}{{ finding.name }}</strong>
+                  <span>{{ t(`videoCheck.${finding.reason}`) }}</span>
+                </li>
+              </ul>
+            </div>
             <div class="settings-rows">
               <h3 class="settings-section-title">
                 <label for="settings-output-display">{{ t('settings.videoOutputDisplay') }}</label>
@@ -826,6 +843,12 @@ interface SettingsTab {
 }
 
 const activeTab = useState<SettingsTabId>('projectSettingsTab', () => 'audio');
+const canCheckVideo = import.meta.client && !!window.electronAPI?.videoOutput?.checkFrame;
+const {
+  busy: videoCheckBusy, phase: videoCheckPhase, ready: videoCheckReady,
+  transportActive: videoCheckTransportActive, findings: videoCheckFindings, message: videoCheckMessage,
+  start: startVideoCheck, cancel: cancelVideoCheck,
+} = useVideoPreflight(computed(() => props.open && activeTab.value === 'video'));
 const tabs = computed<SettingsTab[]>(() => [
   { id: 'audio', icon: 'graphic_eq', label: t('settings.tabAudioRouting') },
   { id: 'playback', icon: 'play_circle', label: t('settings.tabPlaybackBehaviour') },
@@ -1518,6 +1541,28 @@ function close() {
 }
 
 .settings-test-card { grid-column: span 2; }
+
+.video-check { grid-column: 1 / -1; }
+.settings-rows > .video-check-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--spacing-sm);
+}
+.video-check-findings {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--type-metadata-size);
+}
+.video-check-findings li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--spacing-sm);
+  padding: 4px var(--spacing-sm);
+  overflow-wrap: anywhere;
+}
+.video-check-findings li + li { border-top: 1px solid var(--color-border); }
+.video-check-findings li > span { color: var(--color-danger); }
 
 .settings-content--help {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));

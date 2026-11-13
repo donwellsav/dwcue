@@ -33,6 +33,7 @@ const { managedWebSocketHeaders } = require('./managed-websocket-origin');
 const { createOneShotMutationBroker, validateIdentity, sameIdentity } = require('./one-shot-mutation-broker');
 const { createStandbyCaptureStore, findCaptureCue, captureImageUrl } = require('./video-standby-capture');
 const { DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameCaptureRect } = require('./video-output-framing.mjs');
+const { checkVideoFrame } = require('./video-frame-check');
 const { createAppLifecycleActions, createWillQuitHandler } = require('./terminal-action');
 const { createOperatorManual } = require('./operator-manual');
 const {
@@ -3036,6 +3037,72 @@ ipcMain.handle('video-output:set-framing', (event, value) => {
   return broadcastVideoOutputStatus();
 });
 
+let videoFrameProbe = null;
+
+function requireVideoCheckOwner(event) {
+  requireTrustedIpc(event);
+  if (event.sender !== mainWindow?.webContents || !event.senderFrame || event.senderFrame !== event.sender.mainFrame) {
+    throw new Error('Video checks require the main workspace.');
+  }
+}
+
+ipcMain.on('video-output:cancel-frame-check', (event, checkId) => {
+  if (event.sender !== mainWindow?.webContents || !event.senderFrame || event.senderFrame !== event.sender.mainFrame) return;
+  if (videoFrameProbe?.id === checkId) videoFrameProbe.controller.abort();
+});
+
+ipcMain.handle('video-output:check-frame', async (event, request) => {
+  requireVideoCheckOwner(event);
+  requireBoundedIpcObject(request, 'video check', 64 * 1024);
+  const id = requireIpcString(request?.id, 'checkId', 64);
+  const sessionId = requireIpcString(request.sessionId, 'sessionId', 256);
+  const uuid = requireIpcString(request.uuid, 'itemUuid', 256);
+  const fileRevision = request.fileRevision === null ? null
+    : requireIpcString(request.fileRevision, 'fileRevision', 1024);
+  const { inPoint, accessToken } = request;
+  if (!Number.isFinite(inPoint) || inPoint < 0) throw new TypeError('Invalid video cue in point.');
+  if (typeof accessToken !== 'string' || accessToken.length > 8192 || /[\0\r\n]/.test(accessToken)) {
+    throw new TypeError('Invalid server credential.');
+  }
+  const serverUrl = new URL(requireIpcString(request.serverUrl, 'serverUrl', 2048));
+  const config = readLiveplayConfig();
+  const configuredUrl = new URL(config.mode === 'remote'
+    ? config.remoteUrl : `http://127.0.0.1:${config.localPort}`);
+  const base = serverUrl.href.replace(/\/+$/, '');
+  if (!['http:', 'https:'].includes(serverUrl.protocol) || serverUrl.username || serverUrl.password ||
+    serverUrl.search || serverUrl.hash || base !== configuredUrl.href.replace(/\/+$/, '')) {
+    throw new Error('Video checks must use the selected Cue server.');
+  }
+  if (sessionId !== currentCaptureSession || !findCaptureCue(currentProjectData, uuid)?.hasVideo) {
+    throw new Error('The video cue is no longer in the current show.');
+  }
+  if (videoFrameProbe) throw new Error('A video check is already running.');
+
+  const params = new URLSearchParams({ item_uuid: uuid, project_session_id: sessionId });
+  if (fileRevision) params.set('file_revision', fileRevision);
+  if (accessToken) params.set('access_token', accessToken);
+  const owner = event.sender;
+  const controller = new AbortController();
+  videoFrameProbe = { id, controller };
+  const cancel = () => controller.abort();
+  const onNavigate = details => {
+    if (details.isMainFrame && !details.isSameDocument) cancel();
+  };
+  owner.once('destroyed', cancel);
+  owner.once('render-process-gone', cancel);
+  owner.on('did-start-navigation', onNavigate);
+  try {
+    return await checkVideoFrame(`${base}/api/media?${params}`, inPoint, controller.signal);
+  } finally {
+    videoFrameProbe = null;
+    if (!owner.isDestroyed()) {
+      owner.removeListener('destroyed', cancel);
+      owner.removeListener('render-process-gone', cancel);
+      owner.removeListener('did-start-navigation', onNavigate);
+    }
+  }
+});
+
 ipcMain.handle('video-output:set-capture-settings', (event, displayId, target) => {
   requireCaptureOwner(event);
   if (target !== 'session' && target !== 'cue') throw new TypeError('Invalid standby capture destination.');
@@ -4314,6 +4381,7 @@ ipcMain.on('sync-project-data', (event, projectData, identity, captureSession = 
 
   const nextCaptureSession = projectData ? captureSession : null;
   if (nextCaptureSession !== currentCaptureSession || (identity && !sameIdentity(identity, currentProjectIdentity))) {
+    videoFrameProbe?.controller.abort();
     videoStandbyCaptures.reset();
     notifyStandbyCaptureChanged();
   }

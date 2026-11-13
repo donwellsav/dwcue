@@ -299,7 +299,7 @@ assert.match(
 );
 assert.equal((playlistItem.match(/class="status-pill up-next"/g) ?? []).length, 0, 'the separate Up Next status pill must be removed');
 assert.equal((playlistItem.match(/v-if="item\.endBehavior\?\.action === 'next'"/g) ?? []).length, 0, 'the obsolete end-next icon must be removed');
-assert.match(playlistItem, /class="video-badge-icon"[\s\S]{0,240}>VIDEO<\/span>/, 'video cues must use a readable VIDEO text badge');
+assert.match(playlistItem, /class="video-badge-icon"[\s\S]{0,600}>\{\{ videoCheckIssue \? 'VIDEO !' : 'VIDEO' \}\}<\/span>/, 'video cues must use a readable VIDEO text badge');
 assert.doesNotMatch(playlistItem, /class="material-symbols-rounded video-badge-icon"|>movie<\/span>/, 'video cues must not use the old movie glyph');
 assert.match(playlistItem, /class="set-next-action"[\s\S]{0,700}:label="t\('status\.upNext'\)"[\s\S]{0,700}:hover-label="[^"]+"/, 'the next control must combine its fixed Up Next label with the Play Next hover label');
 assert.match(

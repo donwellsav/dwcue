@@ -139,6 +139,7 @@ function createClient() {
     set: (message) => { lastErrorEvent.value = message ? { message, severity: 'urgent' } : null; },
   });
   const stopAllStatus = ref<'pending' | 'confirmed' | 'unconfirmed' | null>(null);
+  const transportActivity = ref(0);
   const stopAllUnconfirmed = 'Stop All unconfirmed. Check the server connection.';
   const transportConfirmationMs = 2500;
   let stopAllRequest = 0;
@@ -547,6 +548,7 @@ function createClient() {
       console.warn('[liveplay] WS send rejected (readyState=' + state + '):', payload);
       return Promise.resolve(false);
     }
+    if (startsCue) transportActivity.value++;
 
     if (!requireAck) {
       ws.send(JSON.stringify(payload));
@@ -581,6 +583,7 @@ function createClient() {
   // (settings.stopAllFadeMs, default 1000 ms). Pass a number (incl. 0 for an
   // instant panic) to override it for this call.
   async function stopAll(fadeMs?: number): Promise<boolean> {
+    transportActivity.value++;
     const request = ++stopAllRequest;
     const socket = ws;
     stopAllStatus.value = 'pending';
@@ -727,8 +730,8 @@ function createClient() {
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : undefined,
     });
   }
-  async function fetchProjectProgress() {
-    return rest<ServerAudioReadiness>('/api/project/progress');
+  async function fetchProjectProgress(signal?: AbortSignal) {
+    return rest<ServerAudioReadiness>('/api/project/progress', { signal });
   }
   async function loadProjectWithDeadline(
     request: { path: string } | { create: { path: string; document: unknown } },
@@ -1065,6 +1068,7 @@ function createClient() {
 
   // Preview (DJ-style pre-listening on settings.previewDevice).
   async function startPreview(itemUuid: string) {
+    transportActivity.value++;
     return rest<any>('/api/preview', {
       method: 'POST',
       body: JSON.stringify({ itemUuid }),
@@ -1487,6 +1491,7 @@ function createClient() {
     lastError,
     lastErrorEvent,
     stopAllStatus,
+    transportActivity,
     cues,
     mixerChannels,
     devices,

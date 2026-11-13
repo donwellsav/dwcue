@@ -84,7 +84,7 @@ test('standby capture follows the saved frame or selected screen and rejects sta
     ...captureHelpers, videoStandbyCaptures: captureHelpers.createStandbyCaptureStore(128),
     DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameCaptureRect,
     screen: { getDisplayMatching: () => ({ scaleFactor }) },
-    ipcMain: { handle: (name, handler) => handlers.set(name, handler) },
+    ipcMain: { handle: (name, handler) => handlers.set(name, handler), on() {} },
     mainWindow: { webContents: sender }, requireTrustedIpc() {},
     ...require('../electron/one-shot-mutation-broker'),
     currentProjectIdentity: identity, currentCaptureSession: 'session',

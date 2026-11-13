@@ -181,12 +181,13 @@
         <span
           v-if="item.type === 'audio' && item.hasVideo"
           class="video-badge-icon"
-          :title="t('playlist.videoCue')"
+          :class="{ 'video-badge-icon--failed': videoCheckIssue }"
+          :title="videoCheckIssue ? t(`videoCheck.${videoCheckIssue}`) : t('playlist.videoCue')"
           role="img"
-          :aria-label="t('playlist.videoCue')"
+          :aria-label="videoCheckIssue ? t(`videoCheck.${videoCheckIssue}`) : t('playlist.videoCue')"
           draggable="false"
           @click.stop
-        >VIDEO</span>
+        >{{ videoCheckIssue ? 'VIDEO !' : 'VIDEO' }}</span>
 
         <div class="item-transport">
           <ActionButton
@@ -285,6 +286,8 @@ const formatMarkerTime = (seconds: number): string => {
 const { levels: outputTargetLevels } = useOutputTarget();
 const { playCue, stopCue, seekCue, activeCues, activeGroups, triggerGroup, nextItemOverrideUuid, autoNextItemUuid, setNextItemPending, setNextItem } = useAudioEngine();
 const { t } = useLocalization();
+const videoCheckIssues = useVideoPreflightIssues();
+const videoCheckIssue = computed(() => videoCheckIssues.value.get(props.item.uuid));
 const { uiMode } = useUiMode();
 
 // Show Mode strips edit affordances (preview/edit/delete + drag) and scales the
@@ -1358,6 +1361,10 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   flex-shrink: 0;
   cursor: default;
   line-height: 1;
+}
+.video-badge-icon--failed {
+  background: color-mix(in srgb, var(--color-danger) 20%, var(--color-control));
+  border-color: var(--color-danger);
 }
 
 .item-state {

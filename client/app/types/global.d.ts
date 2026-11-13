@@ -243,6 +243,11 @@ declare global {
         identifyDisplays: () => Promise<VideoOutputDisplay[]>;
         setDisplay: (displayId: string | null) => Promise<VideoOutputStatus>;
         setFraming: (framing: VideoFraming) => Promise<VideoOutputStatus>;
+        checkFrame: (request: {
+          id: string; serverUrl: string; accessToken: string; sessionId: string;
+          uuid: string; fileRevision: string | null; inPoint: number;
+        }) => Promise<VideoFrameCheckResult | 'canceled'>;
+        cancelFrameCheck: (id: string) => void;
         setCaptureSettings: (displayId: string | null, target: VideoStandbyDestination) => Promise<VideoOutputStatus>;
         captureStandby: (source: 'output' | 'display', target: VideoStandbyTarget) => Promise<void>;
         clearStandbyCapture: (target: VideoStandbyTarget) => Promise<void>;
@@ -259,6 +264,7 @@ declare global {
       };
     };
   }
+  type VideoFrameCheckResult = 'ok' | 'unreadable' | 'decode' | 'no-frame' | 'in-point' | 'timeout' | 'probe-error';
   interface VideoOutputShortcut {
     key: string;
     code: string;
