@@ -893,7 +893,7 @@ assert.match(
 );
 assert.match(
   projectSettingsModal,
-  /countdownColorBands[\s\S]*type="number"[\s\S]*type="color"[\s\S]*removeCountdownBand[\s\S]*addCountdownBand[\s\S]*saveProject/,
+  /addCountdownBand[\s\S]*countdownColorBands[\s\S]*type="number"[\s\S]*type="color"[\s\S]*removeCountdownBand[\s\S]*saveProject/,
   'countdown colour thresholds must be editable, addable, removable, and saved with the project',
 );
 assert.match(

@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.21 development
-**Source revision:** 044e0cb3c5f9a791897221e4e25b3737d5ce50bf
+**Source revision:** 458177f68c6f1766a2d080b323eade41f5ff7639
 **Native engine baseline:** 889abd569da10a32d6cd0edb75b029b436e5cf42
 **Edition:** 12 November 2026 · English · Current-source operator edition
 
@@ -34,7 +34,7 @@ The Video Output window is a separate picture renderer on the desktop computer. 
 
 ### Language and terminology
 
-This manual uses the English labels. Change language through **Settings → User Interface → Language** or the desktop **View → Language** menu. That preference belongs to the device, not to the show. The app includes 21 languages and right-to-left layouts for Arabic, Persian, and Urdu.
+This manual uses the English labels. Change language through **Settings → User Interface → Playlist → Language** or the desktop **View → Language** menu. That preference belongs to the device, not to the show. The app includes 21 languages and right-to-left layouts for Arabic, Persian, and Urdu.
 
 | Term | Meaning in this manual |
 | --- | --- |
@@ -208,7 +208,7 @@ Cancelling a YouTube import during tool preparation prevents the downloader from
 
 ### Name, inspect, and arrange
 
-Use descriptive **Display Name** values that match the show caller's language. Use cue names as well as color to identify cues. The **UUID** identifies the cue, and the displayed **Index** reflects its position in the playlist. New playlists and shows saved with a zero start display cue **1** first. **Settings → User Interface** supports a higher starting number if your cue sheet uses one. Enter the displayed number when assigning a **Go to Index** target. A numbering change preserves existing saved targets and cue order.
+Use descriptive **Display Name** values that match the show caller's language. Use cue names as well as color to identify cues. The **UUID** identifies the cue, and the displayed **Index** reflects its position in the playlist. New playlists and shows saved with a zero start display cue **1** first. **Settings → User Interface → Playlist** supports a higher starting number if your cue sheet uses one. Enter the displayed number when assigning a **Go to Index** target. A numbering change preserves existing saved targets and cue order.
 
 Drag cues into the required order and use **Add Group** where a folder-like structure makes the show easier to navigate. Save and rehearse after rearranging any sequence with jumps, groups, or automatic transitions. A correct-looking playlist does not prove that every transition points where you intend.
 
@@ -435,7 +435,7 @@ For overlapping playback, check Ducking. If the wrong material is audible, use t
 
 Header warnings temporarily replace the show name. The steady **Silence in** countdown stays in that slot when another warning appears beside it. The show name returns when the warnings clear. Red urgent warnings take priority over yellow advisories. Audio and video recovery buttons stay available while their outputs need attention.
 
-In **Settings → User Interface → Header warning timing**, set the four durations and two countdown thresholds for this device. Defaults are **5 seconds** without a countdown, **3 seconds** above 30 seconds remaining, **2 seconds** from 15 through 30 seconds, and **1 second** below 15 seconds. A timing change applies to the next message.
+In **Settings → User Interface → Warnings**, set the four durations and two countdown thresholds for this device. Defaults are **5 seconds** without a countdown, **3 seconds** above 30 seconds remaining, **2 seconds** from 15 through 30 seconds, and **1 second** below 15 seconds. A timing change applies to the next message.
 
 ### At the interval and at the end
 
@@ -482,7 +482,7 @@ The bank can **Detach** into a separate window and **Attach** again. Rehearse fo
 
 ### Assign and verify keyboard shortcuts
 
-Open **Settings → Shortcuts** and use the **Keyboard** tab. Select a playback action or configured One Shot and press the desired key. Resolve any reserved combinations or conflicts before rehearsal. **Show shortcuts bar** toggles the reference, including **One Shots (defaults)** with **1–9, 0**. Individual tile settings also provide **Keyboard Shortcut**, **Assign shortcut**, and **Clear shortcut**.
+Open **Settings → Shortcuts → Keyboard**. Choose **Playback**, **One Shots**, or **Video Output**, select a binding, and press the desired key. Under **MIDI**, choose **Playback**, **One Shots**, or **Volume**, then use **Learn** beside the action. Resolve any reserved combinations or conflicts before rehearsal. **Show shortcuts bar** toggles the reference, including **One Shots (defaults)** with **1–9, 0**. Individual tile settings also provide **Keyboard Shortcut**, **Assign shortcut**, and **Clear shortcut**.
 
 ![Keyboard bindings in the docked Shortcuts tab.](manual-assets/shortcuts-current.png)
 
@@ -529,14 +529,14 @@ Cue Basic Info displays **API Trigger URL · POST** with a copy control. An exte
 
 Video Output belongs to the desktop client, not to the headless engine. The recommended arrangement keeps the audio engine and video-rendering desktop on the same machine. If you use a remote engine, the picture still appears on the desktop client's display/HDMI and the media is streamed over the network; include that network in rehearsal and failure planning.
 
-Use **V** or the toolbar's **Video Output** button to open or close the output window. Assign the intended display under **Settings → Video Output** and verify its identity against the physical projector, switcher, or monitor. The app remembers the display assignment on that computer, and the output window starts closed on each application launch. Open and check it for each session.
+Use **V** or the toolbar's **Video Output** button to open or close the output window. Assign the intended display under **Settings → Video Output → Display** and verify its identity against the physical projector, switcher, or monitor. The app remembers the display assignment on that computer, and the output window starts closed on each application launch. Open and check it for each session.
 
 ![The docked Video Output tab with the output closed.](manual-assets/video-settings-current.png)
 
 **Procedure — open and identify the audience output**
 
 - **Prerequisites:** Operator and audience displays are extended rather than mirrored, the switcher/projector operator is ready, and no private desktop content is exposed.
-- **Actions:** Open **Settings → Video Output**, choose **Identify displays**, match the number at the physical destination, select that **Output display**, and enable **Open video output for this session**. Read **Output status**.
+- **Actions:** Open **Settings → Video Output → Display**, choose **Identify displays**, match the number at the physical destination, select that **Output display**, and enable **Open video output for this session**. Read **Output status**.
 - **Expected visible outcome:** The numbered labels clear after five seconds. Settings stays available while they are shown. After you enable output, it reports live on the intended display and the destination operator confirms the same image.
 - **Common mistake:** Treating the single-display preview window as the assigned fullscreen output.
 - **Recovery:** Disable the session output, correct mirroring/cabling/assignment, identify again, then reopen and verify at the physical destination.
@@ -547,7 +547,7 @@ With only one display or no dedicated assignment, the app uses a normal preview 
 **Procedure — line up picture and optional AV Sync**
 
 - **Prerequisites:** The audience feed is safe to show a test pattern and, for AV Sync, the selected DonWells Cue Program output may safely carry the native tone.
-- **Actions:** Choose **Show test card**, confirm identity/resolution/framing at the destination, and adjust the venue video chain. If the production needs it, select **AV Sync** and the intended Audio Device, run the tone only with audio staff ready, then switch the card off.
+- **Actions:** Open **Settings → Video Output → Test card**, choose **Show test card**, confirm identity/resolution/framing at the destination, and adjust the venue video chain. If the production needs it, select **AV Sync** and the intended Audio Device, run the tone only with audio staff ready, then switch the card off.
 - **Expected visible outcome:** The physical destination shows the labelled card within the expected bounds; AV Sync is visible and audible only through the intended Program path.
 - **Common mistake:** Assuming AV Sync is silent or routed to Preview.
 - **Recovery:** Press **Stop All** to stop the tone, switch the card off and on only when a restart is intended, then correct the selected Audio Device before retesting.
@@ -558,7 +558,7 @@ With only one display or no dedicated assignment, the app uses a normal preview 
 
 The output shows one picture at a time. A newer sounding cue takes over the picture; this is a cut, not a layered video mix or a guaranteed dissolve. Video is contained in the output area with letterboxing rather than cropped. The background is opaque black.
 
-When a cue has no usable video, the output uses the first available layer in this order. Assigned **Cue image**, captured cue still, captured session standby, saved **Standby image**, then black. Set a Cue image in the cue's Basic Info and a saved standby image in **Settings → Video Output**. The native audio engine drives the soundtrack. Preview/headphone playback stays off the audience output.
+When a cue has no usable video, the output uses the first available layer in this order. Assigned **Cue image**, captured cue still, captured session standby, saved **Standby image**, then black. Set a Cue image in the cue's Basic Info and a saved standby image in **Settings → Video Output → Standby & capture**. The native audio engine drives the soundtrack. Preview/headphone playback stays off the audience output.
 
 Use H.264 or HEVC media for this source edition. ProRes and other production codecs are not supported by the documented video path. Container extension alone is not a codec guarantee. Test every video on the exact show machine, including its soundtrack, opening frame, end behavior, aspect ratio, and transitions between audio-only and video cues.
 
@@ -566,14 +566,14 @@ Use H.264 or HEVC media for this source edition. ProRes and other production cod
 
 ### Capture a standby still
 
-- Press **G** or choose **Capture Video Output** in **Settings → Video Output** to save the current picture from the output window.
-- Choose a **Capture display** in **Settings → Video Output**, then press **Shift+G** or choose **Capture Display** to save the selected screen. The capture display can be different from the audience display. Grant screen capture permission if the operating system asks.
+- Press **G** or choose **Capture Video Output** in **Settings → Video Output → Standby & capture** to save the current picture from the output window.
+- Choose a **Capture display** in **Settings → Video Output → Standby & capture**, then press **Shift+G** or choose **Capture Display** to save the selected screen. The capture display can be different from the audience display. Grant screen capture permission if the operating system asks.
 - Set **Capture destination** to **Session standby** for a shared fallback or **Selected cue** for a specific cue. To capture Video Output for a specific cue in one step, select it and click the confidence thumbnail in the header.
 - Capture again to replace the still at that destination. **Clear captured still** removes the capture for the chosen destination. Assigned cue images always take priority. Use a saved Cue image or Standby image for artwork that must survive closing or reloading the show.
 
 ### Recover a frozen or failed video output
 
-Use **Settings → Video Output** to read output status. Renderer crashes and hangs latch a native black cover over the existing audience window while the operator controls remain available. Choose **Restart Output** in the header or in Video Output settings. The cover stays until the replacement view is ready. The replacement follows the current native cue state. Check the active cue before another GO. **Copy Output Diagnostics** captures current output information for investigation.
+Use **Settings → Video Output → Display** to read output status. Renderer crashes and hangs latch a native black cover over the existing audience window while the operator controls remain available. Choose **Restart Output** in the header or in Video Output settings. The cover stays until the replacement view is ready. The replacement follows the current native cue state. Check the active cue before another GO. **Copy Output Diagnostics** captures current output information for investigation.
 
 ![Output status and recovery controls in Video Output settings. Restart Output is disabled while the output is closed.](manual-assets/video-recovery-current.png)
 
