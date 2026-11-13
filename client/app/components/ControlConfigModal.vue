@@ -7,7 +7,7 @@
           :aria-pressed="activeTab === 'keyboard'"
           @click="activeTab = 'keyboard'"
         >
-          <span class="tab-icon">&#x2328;</span> {{ t('controls.tabKeyboard') }}
+          <span class="tab-icon material-symbols-rounded" aria-hidden="true">keyboard</span> {{ t('controls.tabKeyboard') }}
         </button>
         <button
           class="tab-btn"
@@ -15,7 +15,7 @@
           :aria-pressed="activeTab === 'midi'"
           @click="activeTab = 'midi'"
         >
-          <span class="tab-icon material-symbols-rounded">piano</span> {{ t('controls.tabMidi') }}
+          <span class="tab-icon material-symbols-rounded" aria-hidden="true">piano</span> {{ t('controls.tabMidi') }}
         </button>
         <label class="shortcut-bar-toggle">
           <input v-model="showShortcutsBar" type="checkbox" />
@@ -29,7 +29,7 @@
       <!-- Keyboard tab -->
       <div v-if="activeTab === 'keyboard'" class="config-body">
         <!-- Playback section -->
-        <div class="category-header">{{ t('controls.sectionPlayback') }}</div>
+        <h3 class="category-header">{{ t('controls.sectionPlayback') }}</h3>
         <div
           v-for="action in PLAYBACK_ACTIONS"
           :key="action.id"
@@ -55,13 +55,14 @@
           <button
             v-if="getPlaybackBinding(action.id)"
             class="clear-key-btn"
+            :aria-label="`${t('controls.clear')} · ${t(action.labelKey)}`"
             @click.stop="clearPlaybackBinding(action.id)"
           >{{ t('controls.clear') }}</button>
           <span v-if="keyErrorActionId === action.id && keyErrorMessage" class="error-msg">{{ keyErrorMessage }}</span>
         </div>
 
         <!-- One Shots section -->
-        <div class="category-header">{{ t('controls.sectionOneShots') }}</div>
+        <h3 v-if="configuredOneShots.length" class="category-header">{{ t('controls.sectionOneShots') }}</h3>
         <div
           v-for="entry in configuredOneShots"
           :key="entry.item.uuid"
@@ -87,6 +88,7 @@
           <button
             v-if="keyMappings[entry.slotIndex]"
             class="clear-key-btn"
+            :aria-label="`${t('controls.clear')} · ${t('controls.oneShot', { n: entry.slotIndex + 1 })}`"
             @click.stop="clearSlotBinding(entry.slotIndex)"
           >{{ t('controls.clear') }}</button>
           <span v-if="keyErrorMessage && keyErrorSlot === entry.slotIndex" class="error-msg">{{ keyErrorMessage }}</span>
@@ -97,8 +99,9 @@
       <div v-if="activeTab === 'midi'" class="config-body">
         <!-- Device selector -->
         <div class="device-row">
-          <label class="device-label">{{ t('controls.midiDevice') }}</label>
+          <label for="shortcut-midi-device" class="device-label">{{ t('controls.midiDevice') }}</label>
           <select
+            id="shortcut-midi-device"
             class="device-select"
             :value="preferredDevice ?? ''"
             @change="handleDeviceChange"
@@ -110,7 +113,7 @@
         </div>
 
         <template v-for="category in midiCategories" :key="category">
-          <div class="category-header">{{ t(categoryLabelKey(category)) }}</div>
+          <h3 class="category-header">{{ t(categoryLabelKey(category)) }}</h3>
           <div
             v-for="action in midiActionsByCategory(category)"
             :key="action.id"
@@ -492,7 +495,7 @@ onUnmounted(() => {
   align-items: center;
   flex-shrink: 0;
   gap: 2px;
-  padding: 0 20px;
+  padding: 0 var(--spacing-md);
   border-bottom: 1px solid var(--color-border);
   background-color: var(--color-surface);
   overflow-x: auto;
@@ -500,25 +503,25 @@ onUnmounted(() => {
 
 .tab-btn {
   flex-shrink: 0;
-  min-height: 36px;
-  padding: 6px var(--spacing-md);
+  min-height: var(--panel-control-height);
+  padding: var(--spacing-xs) var(--spacing-sm);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
   color: var(--color-text-secondary);
   cursor: pointer;
-  transition: all 0.2s;
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
 }
 
-.tab-btn:hover { color: var(--color-text-primary); }
+.tab-btn:hover { background: var(--color-surface-hover); }
 .tab-btn.active {
   color: var(--color-accent);
-  border-bottom-color: var(--color-accent, #3b82f6);
+  background: var(--color-accent-soft);
+  border-bottom-color: var(--color-accent);
 }
 
 .tab-icon {
@@ -530,42 +533,58 @@ onUnmounted(() => {
 
 /* Body */
 .config-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr));
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: var(--spacing-xs) var(--spacing-sm);
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 8px 0;
+  padding: var(--spacing-sm) var(--spacing-md);
 }
 
-/* Category headers */
+.category-header,
+.device-row,
+.multiplier-hint {
+  grid-column: 1 / -1;
+}
+
 .category-header {
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--color-text-secondary);
-  padding: 12px 20px 4px;
+  padding: var(--spacing-xs) 0;
 }
 
 /* Shared action row (both tabs) */
 .action-row {
   display: grid;
-  grid-template-columns: 130px minmax(80px, 1fr) 108px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 105px) 100px;
   align-items: center;
-  gap: 8px;
-  padding: 6px 20px;
+  gap: var(--spacing-xs);
+  min-width: 0;
+  min-height: var(--panel-control-height);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  background: var(--color-surface);
   transition: background-color 0.1s;
 }
 
 .action-row:hover { background: var(--color-surface-hover); }
 .action-row.capturing,
-.keyboard-action-row.capturing {
-  background: rgba(59, 130, 246, 0.1);
-  cursor: text;
+.action-row.learning {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
 }
-.action-row.conflict { background: rgba(239, 68, 68, 0.1); }
-.action-row.learning { background: rgba(59, 130, 246, 0.1); }
+.action-row.conflict { border-color: var(--color-danger); }
 
-.keyboard-action-row { cursor: pointer; }
+.keyboard-action-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 136px) minmax(48px, max-content);
+}
 
 .action-label {
   grid-column: 1;
@@ -583,14 +602,15 @@ onUnmounted(() => {
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
   padding: 2px 8px;
-  min-width: 80px;
+  min-width: 0;
+  overflow-wrap: anywhere;
   text-align: center;
 }
 
 .error-msg {
   grid-column: 2 / -1;
   font-size: 11px;
-  color: #ef4444;
+  color: var(--color-danger);
   flex-shrink: 0;
   max-width: none;
 }
@@ -648,7 +668,6 @@ onUnmounted(() => {
 .multiplier-hint {
   font-size: 11px;
   color: var(--color-text-secondary);
-  padding: 0 20px 8px;
   margin: 0;
 }
 
@@ -656,10 +675,8 @@ onUnmounted(() => {
 .device-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 20px 8px;
-  border-bottom: 1px solid var(--color-border);
-  margin-bottom: 4px;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
 }
 
 .device-label {
@@ -670,7 +687,7 @@ onUnmounted(() => {
 }
 
 .device-select {
-  flex: 1;
+  width: min(100%, 260px);
   font-size: 12px;
   padding: 4px 8px;
   border-radius: var(--control-radius);
@@ -711,15 +728,21 @@ onUnmounted(() => {
 .reset-btn:hover { background: var(--color-surface-hover); }
 
 .binding-button {
-  width: fit-content;
-  min-width: 80px;
-  text-align: left;
-  color: inherit;
   background: var(--color-control);
-  border: 1px solid var(--color-border);
-  border-radius: var(--control-radius);
   padding: var(--spacing-xs) var(--spacing-sm);
   cursor: pointer;
+}
+
+.binding-button:hover {
+  border-color: var(--color-accent);
+}
+
+.binding-button:focus-visible,
+.learn-btn:focus-visible,
+.clear-btn:focus-visible,
+.clear-key-btn:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
 }
 
 /* Conflict dialog */

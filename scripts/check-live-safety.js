@@ -1842,7 +1842,7 @@ assert.match(
 );
 assert.match(
   projectSettingsModal,
-  /class="project-settings-panel"[\s\S]*class="workspace-panel-header"[\s\S]*<ControlConfigModal v-if="activeTab === 'shortcuts'" \/>[\s\S]*\.project-settings-panel\s*\{[^}]*height:\s*min\(320px, 42vh\)/,
+  /class="project-settings-panel"[\s\S]*class="workspace-panel-header settings-header"[\s\S]*<ControlConfigModal v-if="activeTab === 'shortcuts'" \/>[\s\S]*\.project-settings-panel\s*\{[^}]*height:\s*min\(320px, 42vh\)/,
   'Settings must keep its own bounded height and host the same shortcuts editor',
 );
 assert.doesNotMatch(
@@ -1852,8 +1852,8 @@ assert.doesNotMatch(
 );
 assert.match(
   controlConfig,
-  /\.action-row\s*\{[\s\S]{0,100}display:\s*grid;[\s\S]{0,100}grid-template-columns:\s*130px minmax\(80px, 1fr\) 108px;[\s\S]*\.action-label\s*\{[\s\S]{0,60}grid-column:\s*1;[\s\S]*\.action-binding\s*\{[\s\S]{0,60}grid-column:\s*2;[\s\S]*\.action-buttons\s*\{[\s\S]{0,60}grid-column:\s*3;[\s\S]*\.clear-key-btn\s*\{[\s\S]{0,60}grid-column:\s*3;/,
-  'shortcut bindings must keep one column width whether or not an action button is present',
+  /\.config-body\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit,[^;]*;[\s\S]*\.action-label\s*\{\s*grid-column:\s*1;[\s\S]*\.action-binding\s*\{\s*grid-column:\s*2;[\s\S]*\.clear-key-btn\s*\{\s*grid-column:\s*3;/,
+  'each shortcut must keep its label, binding and Clear action together',
 );
 assert.doesNotMatch(
   `${controlConfig}\n${projectSettingsModal}\n${propertiesPanel}`,
@@ -1862,8 +1862,8 @@ assert.doesNotMatch(
 );
 assert.match(
   projectSettingsModal,
-  /\.settings-tabs\s*\{[^}]*flex-shrink:\s*0;[^}]*overflow-x:\s*auto;[\s\S]*\.tab-btn\s*\{[^}]*flex-shrink:\s*0;[^}]*min-height:\s*36px;/,
-  'settings tabs must keep their control height under the dialog height cap',
+  /\.settings-tabs\s*\{[^}]*align-self:\s*stretch;[^}]*overflow-x:\s*auto;[\s\S]*\.tab-btn\s*\{[^}]*flex-shrink:\s*0;/,
+  'settings tabs must keep their label widths and scroll within the header',
 );
 assert.match(
   playbackControls,

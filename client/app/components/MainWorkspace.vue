@@ -881,6 +881,11 @@ onUnmounted(() => {
   display: none;
 }
 
+// Keep room for a playlist row when Preview and Settings are both open.
+.preview-lower-panel:not(:empty) ~ .project-settings-panel {
+  max-height: calc(100% - 450px);
+}
+
 .workspace-panels {
   flex: 1;
   min-width: 0;

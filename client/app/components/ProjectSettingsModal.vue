@@ -1,8 +1,8 @@
 <template>
   <section v-if="open" class="project-settings-panel" :aria-label="t('settings.title')" @keydown="onPanelKeydown">
-        <header class="workspace-panel-header">
+        <header class="workspace-panel-header settings-header">
           <h2 class="workspace-panel-header__title">{{ t('settings.title') }}</h2>
-          <div class="settings-tabs">
+          <nav class="settings-tabs" :aria-label="t('settings.title')">
           <button
             v-for="tab in tabs"
             :key="tab.id"
@@ -15,14 +15,14 @@
             <span>{{ tab.label }}</span>
             <span v-if="tab.id === 'about' && update.version" class="update-dot" :aria-label="t('update.updateAvailable')"></span>
           </button>
-          </div>
+          </nav>
           <button type="button" class="close-x" :aria-label="t('actions.close')" @click="close">
             <span class="material-symbols-rounded" aria-hidden="true">close</span>
           </button>
         </header>
 
         <ControlConfigModal v-if="activeTab === 'shortcuts'" />
-        <div v-else class="modal-body">
+        <div v-else :key="activeTab" :class="['settings-content', `settings-content--${activeTab}`]">
           <p v-if="settingsError" class="settings-error" role="alert">
             {{ settingsError }}
           </p>
@@ -30,11 +30,12 @@
           <template v-if="activeTab === 'audio'">
             <!-- Audio device (default for cue playback) -->
             <section class="settings-field">
-              <label class="settings-label">
+              <label class="settings-label" for="settings-audio-device">
                 <span class="material-symbols-rounded" aria-hidden="true">speaker</span>
                 {{ t('settings.audioDevice') }}
               </label>
               <select
+                id="settings-audio-device"
                 class="settings-select"
                 :value="audioDeviceId"
                 @change="onAudioDeviceChange"
@@ -49,11 +50,12 @@
 
             <!-- Preview stores the stable hardware name; opened-device ids are session-scoped. -->
             <section class="settings-field">
-              <label class="settings-label">
+              <label class="settings-label" for="settings-preview-device">
                 <CueSymbol name="preview" />
                 {{ t('settings.previewDevice') }}
               </label>
               <select
+                id="settings-preview-device"
                 class="settings-select"
                 :value="previewDeviceId"
                 @change="onPreviewDeviceChange"
@@ -68,11 +70,12 @@
 
             <!-- LTC device (timecode output) -->
             <section class="settings-field">
-              <label class="settings-label">
+              <label class="settings-label" for="settings-ltc-device">
                 <CueSymbol name="ltc" />
                 {{ t('settings.ltcDevice') }}
               </label>
               <select
+                id="settings-ltc-device"
                 class="settings-select"
                 :value="ltcDeviceId"
                 @change="onLtcDeviceChange"
@@ -155,10 +158,6 @@
               <p class="settings-help">{{ t('settings.stopAllFadeHelp') }}</p>
             </section>
 
-            <section class="settings-field">
-              <p class="settings-help">{{ t('importAudio.preserveAudio') }}</p>
-            </section>
-
             <!-- Disable true-peak limiter -->
             <section class="settings-field">
               <label class="settings-label settings-label--checkbox">
@@ -184,483 +183,523 @@
               </label>
               <p class="settings-help">{{ t('settings.disableSilenceWarningHelp') }}</p>
             </section>
+            <p class="settings-help settings-wide">{{ t('importAudio.preserveAudio') }}</p>
           </template>
 
           <!-- ================= User Interface ================= -->
           <template v-else-if="activeTab === 'ui'">
-            <section class="settings-field">
-              <div class="settings-label">{{ t('headerWarnings.settingsTitle') }}</div>
-              <p class="settings-help">{{ t('headerWarnings.settingsHelp') }}</p>
-              <div class="header-warning-settings">
-                <label v-for="(bounds, field) in HEADER_WARNING_TIMING" :key="field" class="settings-field">
-                  <span class="settings-label">{{ t(`headerWarnings.${field}`) }}</span>
-                  <input
-                    type="number"
-                    class="settings-input"
-                    required
-                    :min="bounds.min"
-                    :max="bounds.max"
-                    :step="bounds.step"
-                    :value="headerWarningTiming[field]"
-                    @change="onHeaderWarningTimingChange(field, $event)"
-                  />
+            <div class="settings-group">
+              <!-- Per-device application language -->
+              <section class="settings-field">
+                <label class="settings-label" for="app-language">
+                  <span class="material-symbols-rounded" aria-hidden="true">language</span>
+                  {{ t('menu.language') }}
                 </label>
-              </div>
-              <p v-if="headerWarningTimingError" class="settings-error" role="alert">{{ headerWarningTimingError }}</p>
-            </section>
-
-            <!-- Per-device application language -->
-            <section class="settings-field">
-              <label class="settings-label" for="app-language">
-                <span class="material-symbols-rounded" aria-hidden="true">language</span>
-                {{ t('menu.language') }}
-              </label>
-              <select
-                id="app-language"
-                class="settings-select"
-                :value="currentLocale"
-                @change="onLocaleChange"
-              >
-                <option
-                  v-for="locale in availableLocales"
-                  :key="locale.code"
-                  :value="locale.code"
+                <select
+                  id="app-language"
+                  class="settings-select"
+                  :value="currentLocale"
+                  @change="onLocaleChange"
                 >
-                  {{ locale.name }}
-                </option>
-              </select>
-            </section>
+                  <option
+                    v-for="locale in availableLocales"
+                    :key="locale.code"
+                    :value="locale.code"
+                  >
+                    {{ locale.name }}
+                  </option>
+                </select>
+              </section>
 
-            <!-- Playlist numbering -->
-            <section class="settings-field">
-              <label class="settings-label">
-                <span class="material-symbols-rounded" aria-hidden="true">format_list_numbered</span>
-                {{ t('settings.indexDisplayStart') }}
-              </label>
-              <input
-                type="number"
-                class="settings-input"
-                min="1"
-                step="1"
-                :value="indexDisplayStart"
-                @change="onIndexDisplayStartChange"
-              />
-              <p class="settings-help">{{ t('settings.indexDisplayStartHelp') }}</p>
-            </section>
-
-            <!-- Per-device playlist density -->
-            <section class="settings-field">
-              <div class="settings-label">
-                <span class="material-symbols-rounded" aria-hidden="true">density_medium</span>
-                {{ t('settings.playlistTrackHeight') }}
-              </div>
-              <div class="track-height-control">
-                <label for="regular-playlist-row-height">{{ t('settings.regularModeTrackHeight') }}</label>
+              <!-- Playlist numbering -->
+              <section class="settings-field">
+                <label class="settings-label">
+                  <span class="material-symbols-rounded" aria-hidden="true">format_list_numbered</span>
+                  {{ t('settings.indexDisplayStart') }}
+                </label>
                 <input
-                  id="regular-playlist-row-height"
-                  type="range"
-                  :min="PLAYLIST_ROW_HEIGHTS.regular.min"
-                  :max="PLAYLIST_ROW_HEIGHTS.regular.max"
-                  step="2"
-                  :value="regularPlaylistRowHeight"
-                  @input="onPlaylistRowHeightInput('regular', $event)"
-                />
-                <output for="regular-playlist-row-height">{{ regularPlaylistRowHeight }} px</output>
-              </div>
-              <div class="track-height-control">
-                <label for="show-playlist-row-height">{{ t('settings.showModeTrackHeight') }}</label>
-                <input
-                  id="show-playlist-row-height"
-                  type="range"
-                  :min="PLAYLIST_ROW_HEIGHTS.show.min"
-                  :max="PLAYLIST_ROW_HEIGHTS.show.max"
-                  step="2"
-                  :value="showPlaylistRowHeight"
-                  @input="onPlaylistRowHeightInput('show', $event)"
-                />
-                <output for="show-playlist-row-height">{{ showPlaylistRowHeight }} px</output>
-              </div>
-              <div class="track-height-control">
-                <label for="folder-playlist-row-height">{{ t('settings.folderHeaderTrackHeight') }}</label>
-                <input
-                  id="folder-playlist-row-height"
-                  type="range"
-                  :min="PLAYLIST_ROW_HEIGHTS.folder.min"
-                  :max="PLAYLIST_ROW_HEIGHTS.folder.max"
-                  step="2"
-                  :value="folderPlaylistRowHeight"
-                  @input="onPlaylistRowHeightInput('folder', $event)"
-                />
-                <output for="folder-playlist-row-height">{{ folderPlaylistRowHeight }} px</output>
-              </div>
-              <p class="settings-help">{{ t('settings.playlistTrackHeightHelp') }}</p>
-            </section>
-
-            <section class="settings-field">
-              <div class="settings-label">
-                <span class="material-symbols-rounded" aria-hidden="true">waterfall_chart</span>
-                {{ t('settings.playlistWaveforms') }}
-              </div>
-              <div class="track-height-control">
-                <label for="playlist-waveform-opacity">{{ t('settings.waveformOpacity') }}</label>
-                <input
-                  id="playlist-waveform-opacity"
-                  type="range"
-                  :min="WAVEFORM_OPACITY.min"
-                  :max="WAVEFORM_OPACITY.max"
+                  type="number"
+                  class="settings-input"
+                  min="1"
                   step="1"
-                  :value="waveformOpacity"
-                  @input="onWaveformOpacityInput"
+                  :value="indexDisplayStart"
+                  @change="onIndexDisplayStartChange"
                 />
-                <output for="playlist-waveform-opacity">{{ waveformOpacity }}%</output>
-              </div>
-              <p class="settings-help">{{ t('settings.waveformOpacityHelp') }}</p>
-            </section>
-            <section class="settings-field">
-              <div class="settings-label">
-                <span class="material-symbols-rounded" aria-hidden="true">format_size</span>
-                {{ t('settings.interfaceFontSize') }}
-              </div>
-              <div class="track-height-control">
-                <label for="ui-font-scale">{{ t('settings.interfaceFontSize') }}</label>
-                <input
-                  id="ui-font-scale"
-                  type="range"
-                  :min="UI_FONT_SCALE.min"
-                  :max="UI_FONT_SCALE.max"
-                  step="5"
-                  :value="uiFontScale"
-                  @input="onUiFontScaleInput"
-                />
-                <output for="ui-font-scale">{{ uiFontScale }}%</output>
-              </div>
-              <p class="settings-help">{{ t('settings.interfaceFontSizeHelp') }}</p>
-            </section>
+                <p class="settings-help">{{ t('settings.indexDisplayStartHelp') }}</p>
+              </section>
 
-            <section class="settings-field">
-              <div class="settings-label">
-                <span class="material-symbols-rounded" aria-hidden="true">text_fields</span>
-                {{ t('settings.oneShotFontSize') }}
-              </div>
-              <div class="track-height-control">
-                <label for="one-shot-font-scale">{{ t('settings.oneShotFontSize') }}</label>
-                <input
-                  id="one-shot-font-scale"
-                  type="range"
-                  :min="ONE_SHOT_FONT_SCALE.min"
-                  :max="ONE_SHOT_FONT_SCALE.max"
-                  step="5"
-                  :value="oneShotFontScale"
-                  @input="onOneShotFontScaleInput"
-                />
-                <output for="one-shot-font-scale">{{ oneShotFontScale }}%</output>
-              </div>
-              <p class="settings-help">{{ t('settings.oneShotFontSizeHelp') }}</p>
-            </section>
+              <!-- Per-device playlist density -->
+              <section class="settings-field">
+                <div class="settings-label">
+                  <span class="material-symbols-rounded" aria-hidden="true">density_medium</span>
+                  {{ t('settings.playlistTrackHeight') }}
+                </div>
+                <div class="track-height-control">
+                  <label for="regular-playlist-row-height">{{ t('settings.regularModeTrackHeight') }}</label>
+                  <input
+                    id="regular-playlist-row-height"
+                    type="range"
+                    :min="PLAYLIST_ROW_HEIGHTS.regular.min"
+                    :max="PLAYLIST_ROW_HEIGHTS.regular.max"
+                    step="2"
+                    :value="regularPlaylistRowHeight"
+                    @input="onPlaylistRowHeightInput('regular', $event)"
+                  />
+                  <output for="regular-playlist-row-height">{{ regularPlaylistRowHeight }} px</output>
+                </div>
+                <div class="track-height-control">
+                  <label for="show-playlist-row-height">{{ t('settings.showModeTrackHeight') }}</label>
+                  <input
+                    id="show-playlist-row-height"
+                    type="range"
+                    :min="PLAYLIST_ROW_HEIGHTS.show.min"
+                    :max="PLAYLIST_ROW_HEIGHTS.show.max"
+                    step="2"
+                    :value="showPlaylistRowHeight"
+                    @input="onPlaylistRowHeightInput('show', $event)"
+                  />
+                  <output for="show-playlist-row-height">{{ showPlaylistRowHeight }} px</output>
+                </div>
+                <div class="track-height-control">
+                  <label for="folder-playlist-row-height">{{ t('settings.folderHeaderTrackHeight') }}</label>
+                  <input
+                    id="folder-playlist-row-height"
+                    type="range"
+                    :min="PLAYLIST_ROW_HEIGHTS.folder.min"
+                    :max="PLAYLIST_ROW_HEIGHTS.folder.max"
+                    step="2"
+                    :value="folderPlaylistRowHeight"
+                    @input="onPlaylistRowHeightInput('folder', $event)"
+                  />
+                  <output for="folder-playlist-row-height">{{ folderPlaylistRowHeight }} px</output>
+                </div>
+                <p class="settings-help">{{ t('settings.playlistTrackHeightHelp') }}</p>
+              </section>
 
-            <section class="settings-field">
-              <label class="settings-label settings-label--checkbox">
-                <input
-                  type="checkbox"
-                  :checked="cycleTrackColors"
-                  @change="onCycleTrackColorsChange"
-                />
-                {{ t('settings.cycleTrackColors') }}
-              </label>
-              <p class="settings-help">{{ t('settings.cycleTrackColorsHelp') }}</p>
-            </section>
+              <section class="settings-field">
+                <div class="settings-label">
+                  <span class="material-symbols-rounded" aria-hidden="true">waterfall_chart</span>
+                  {{ t('settings.playlistWaveforms') }}
+                </div>
+                <div class="track-height-control">
+                  <label for="playlist-waveform-opacity">{{ t('settings.waveformOpacity') }}</label>
+                  <input
+                    id="playlist-waveform-opacity"
+                    type="range"
+                    :min="WAVEFORM_OPACITY.min"
+                    :max="WAVEFORM_OPACITY.max"
+                    step="1"
+                    :value="waveformOpacity"
+                    @input="onWaveformOpacityInput"
+                  />
+                  <output for="playlist-waveform-opacity">{{ waveformOpacity }}%</output>
+                </div>
+                <p class="settings-help">{{ t('settings.waveformOpacityHelp') }}</p>
+              </section>
+              <section class="settings-field">
+                <div class="settings-label">
+                  <span class="material-symbols-rounded" aria-hidden="true">format_size</span>
+                  {{ t('settings.interfaceFontSize') }}
+                </div>
+                <div class="track-height-control">
+                  <label for="ui-font-scale">{{ t('settings.interfaceFontSize') }}</label>
+                  <input
+                    id="ui-font-scale"
+                    type="range"
+                    :min="UI_FONT_SCALE.min"
+                    :max="UI_FONT_SCALE.max"
+                    step="5"
+                    :value="uiFontScale"
+                    @input="onUiFontScaleInput"
+                  />
+                  <output for="ui-font-scale">{{ uiFontScale }}%</output>
+                </div>
+                <p class="settings-help">{{ t('settings.interfaceFontSizeHelp') }}</p>
+              </section>
 
-            <section class="settings-field">
-              <div class="settings-label">
-                <span class="material-symbols-rounded" aria-hidden="true">grid_view</span>
-                {{ t('settings.cartPlayerLayout') }}
-              </div>
-              <div class="cart-layout-grid">
-                <div class="cart-layout-grid__header">{{ t('settings.cartLayout') }}</div>
-                <div class="cart-layout-grid__header">{{ t('settings.minimumCardHeight') }}</div>
-                <div class="cart-layout-grid__header">{{ t('settings.visibleRows') }}</div>
-                <div class="cart-layout-grid__header">{{ t('settings.columns') }}</div>
-                <template v-for="profile in cartGridProfileOptions" :key="profile.id">
-                  <div class="cart-layout-grid__profile">{{ profile.label }}</div>
-                  <label class="cart-layout-grid__value">
+              <section class="settings-field">
+                <div class="settings-label">
+                  <span class="material-symbols-rounded" aria-hidden="true">text_fields</span>
+                  {{ t('settings.oneShotFontSize') }}
+                </div>
+                <div class="track-height-control">
+                  <label for="one-shot-font-scale">{{ t('settings.oneShotFontSize') }}</label>
+                  <input
+                    id="one-shot-font-scale"
+                    type="range"
+                    :min="ONE_SHOT_FONT_SCALE.min"
+                    :max="ONE_SHOT_FONT_SCALE.max"
+                    step="5"
+                    :value="oneShotFontScale"
+                    @input="onOneShotFontScaleInput"
+                  />
+                  <output for="one-shot-font-scale">{{ oneShotFontScale }}%</output>
+                </div>
+                <p class="settings-help">{{ t('settings.oneShotFontSizeHelp') }}</p>
+              </section>
+
+              <section class="settings-field">
+                <label class="settings-label settings-label--checkbox">
+                  <input
+                    type="checkbox"
+                    :checked="cycleTrackColors"
+                    @change="onCycleTrackColorsChange"
+                  />
+                  {{ t('settings.cycleTrackColors') }}
+                </label>
+                <p class="settings-help">{{ t('settings.cycleTrackColorsHelp') }}</p>
+              </section>
+
+              <section class="settings-field">
+                <div class="settings-label">
+                  <span class="material-symbols-rounded" aria-hidden="true">grid_view</span>
+                  {{ t('settings.cartPlayerLayout') }}
+                </div>
+                <div class="cart-layout-grid">
+                  <div class="cart-layout-grid__header">{{ t('settings.cartLayout') }}</div>
+                  <div class="cart-layout-grid__header">{{ t('settings.minimumCardHeight') }}</div>
+                  <div class="cart-layout-grid__header">{{ t('settings.visibleRows') }}</div>
+                  <div class="cart-layout-grid__header">{{ t('settings.columns') }}</div>
+                  <template v-for="profile in cartGridProfileOptions" :key="profile.id">
+                    <div class="cart-layout-grid__profile">{{ profile.label }}</div>
+                    <label class="cart-layout-grid__value">
+                      <input
+                        type="number"
+                        class="settings-input cart-layout-input"
+                        :min="CART_GRID_PROFILES[profile.id].minHeight"
+                        :max="CART_GRID_PROFILES[profile.id].maxHeight"
+                        step="2"
+                        :value="cartGridLayouts[profile.id].minHeight"
+                        :aria-label="`${profile.label}, ${t('settings.minimumCardHeight')}`"
+                        @change="onCartGridLayoutChange(profile.id, 'minHeight', $event)"
+                      />
+                      <span aria-hidden="true">px</span>
+                    </label>
                     <input
                       type="number"
                       class="settings-input cart-layout-input"
-                      :min="CART_GRID_PROFILES[profile.id].minHeight"
-                      :max="CART_GRID_PROFILES[profile.id].maxHeight"
-                      step="2"
-                      :value="cartGridLayouts[profile.id].minHeight"
-                      :aria-label="`${profile.label}, ${t('settings.minimumCardHeight')}`"
-                      @change="onCartGridLayoutChange(profile.id, 'minHeight', $event)"
-                    />
-                    <span aria-hidden="true">px</span>
-                  </label>
-                  <input
-                    type="number"
-                    class="settings-input cart-layout-input"
-                    :min="CART_GRID_LIMITS.rows.min"
-                    :max="CART_GRID_LIMITS.rows.max"
-                    step="1"
-                    :value="cartGridLayouts[profile.id].rows"
-                    :aria-label="`${profile.label}, ${t('settings.visibleRows')}`"
-                    @change="onCartGridLayoutChange(profile.id, 'rows', $event)"
-                  />
-                  <input
-                    type="number"
-                    class="settings-input cart-layout-input"
-                    :min="CART_GRID_LIMITS.columns.min"
-                    :max="CART_GRID_LIMITS.columns.max"
-                    step="1"
-                    :value="cartGridLayouts[profile.id].columns"
-                    :aria-label="`${profile.label}, ${t('settings.columns')}`"
-                    @change="onCartGridLayoutChange(profile.id, 'columns', $event)"
-                  />
-                </template>
-              </div>
-              <p class="settings-help">{{ t('settings.cartPlayerLayoutHelp') }}</p>
-            </section>
-            
-            <!-- Meter Display Mode -->
-            <section class="settings-field">
-              <label class="settings-label">
-                <span class="material-symbols-rounded" aria-hidden="true">bar_chart</span>
-                {{ t('settings.meterMode') }}
-              </label>
-              <select
-                class="settings-select"
-                :value="meterMode"
-                @change="onMeterModeChange"
-              >
-                <option value="LUFS">{{ t('settings.meterModeLufs') }}</option>
-                <option value="dBFS">{{ t('settings.meterModeDbfs') }}</option>
-                <option value="dBTP">{{ t('settings.meterModeDbtp') }}</option>
-                <option value="RMS">{{ t('settings.meterModeRms') }}</option>
-              </select>
-              <p class="settings-help">{{ t('settings.meterModeHelp') }}</p>
-            </section>
-
-            <!-- Meter Ballistics -->
-            <section class="settings-field">
-              <label class="settings-label">
-                <span class="material-symbols-rounded" aria-hidden="true">speed</span>
-                {{ t('settings.meterBallistics') }}
-              </label>
-              <select
-                class="settings-select"
-                :value="meterBallistics"
-                @change="onMeterBallisticsChange"
-              >
-                <option value="digital-ppm">{{ t('settings.meterBallisticsDigitalPpm') }}</option>
-                <option value="ppm-i">{{ t('settings.meterBallisticsPpmI') }}</option>
-                <option value="ppm-ii">{{ t('settings.meterBallisticsPpmII') }}</option>
-                <option value="vu">{{ t('settings.meterBallisticsVu') }}</option>
-                <option value="instant">{{ t('settings.meterBallisticsInstant') }}</option>
-              </select>
-              <p class="settings-help">{{ t('settings.meterBallisticsHelp') }}</p>
-            </section>
-
-            <!-- Time Left countdown colours -->
-            <section class="settings-field">
-              <div class="settings-label">
-                <span class="material-symbols-rounded" aria-hidden="true">timer</span>
-                {{ t('settings.countdownColors') }}
-              </div>
-              <p class="settings-help">{{ t('settings.countdownColorsHelp') }}</p>
-
-              <div class="countdown-band-editor">
-                <div class="countdown-band-grid countdown-band-grid--header">
-                  <span>{{ t('settings.countdownRange') }}</span>
-                  <span>{{ t('settings.countdownStartsAt') }}</span>
-                  <span>{{ t('settings.countdownColor') }}</span>
-                  <span></span>
-                </div>
-                <div
-                  v-for="(band, index) in countdownColorBands"
-                  :key="band.startSeconds"
-                  class="countdown-band-grid countdown-band-grid--row"
-                >
-                  <span class="countdown-band-range">
-                    <span
-                      class="countdown-band-dot"
-                      :style="{ backgroundColor: band.color }"
-                      aria-hidden="true"
-                    ></span>
-                    {{ countdownBandRange(index) }}
-                  </span>
-
-                  <label class="countdown-band-start">
-                    <input
-                      v-if="band.startSeconds > 0"
-                      type="number"
-                      min="1"
+                      :min="CART_GRID_LIMITS.rows.min"
+                      :max="CART_GRID_LIMITS.rows.max"
                       step="1"
-                      :value="band.startSeconds"
-                      :aria-label="t('settings.countdownStartsAtFor', { range: countdownBandRange(index) })"
-                      @change="onCountdownBandStartChange(index, $event)"
+                      :value="cartGridLayouts[profile.id].rows"
+                      :aria-label="`${profile.label}, ${t('settings.visibleRows')}`"
+                      @change="onCartGridLayoutChange(profile.id, 'rows', $event)"
                     />
-                    <span v-else class="countdown-band-fixed">0</span>
-                    <span>s</span>
-                  </label>
-
-                  <label class="countdown-band-color">
                     <input
-                      type="color"
-                      :value="band.color"
-                      :aria-label="t('settings.countdownColorFor', { range: countdownBandRange(index) })"
-                      @change="onCountdownBandColorChange(index, $event)"
+                      type="number"
+                      class="settings-input cart-layout-input"
+                      :min="CART_GRID_LIMITS.columns.min"
+                      :max="CART_GRID_LIMITS.columns.max"
+                      step="1"
+                      :value="cartGridLayouts[profile.id].columns"
+                      :aria-label="`${profile.label}, ${t('settings.columns')}`"
+                      @change="onCartGridLayoutChange(profile.id, 'columns', $event)"
                     />
-                    <span>{{ band.color }}</span>
-                  </label>
-
-                  <button
-                    v-if="band.startSeconds > 0"
-                    type="button"
-                    class="countdown-band-remove"
-                    :aria-label="t('settings.countdownRemoveFor', { range: countdownBandRange(index) })"
-                    :title="t('settings.countdownRemoveFor', { range: countdownBandRange(index) })"
-                    @click="removeCountdownBand(index)"
-                  >
-                    <span class="material-symbols-rounded" aria-hidden="true">remove</span>
-                  </button>
-                  <span v-else></span>
+                  </template>
                 </div>
-              </div>
+                <p class="settings-help">{{ t('settings.cartPlayerLayoutHelp') }}</p>
+              </section>
 
-              <p v-if="countdownBandError" class="settings-error" role="alert">
-                {{ countdownBandError }}
-              </p>
-              <button type="button" class="modal-btn countdown-band-add" @click="addCountdownBand">
-                <span class="material-symbols-rounded" aria-hidden="true">add</span>
-                {{ t('settings.countdownAddBand') }}
-              </button>
-            </section>
+              <!-- Meter Display Mode -->
+              <section class="settings-field">
+                <label class="settings-label">
+                  <span class="material-symbols-rounded" aria-hidden="true">bar_chart</span>
+                  {{ t('settings.meterMode') }}
+                </label>
+                <select
+                  class="settings-select"
+                  :value="meterMode"
+                  @change="onMeterModeChange"
+                >
+                  <option value="LUFS">{{ t('settings.meterModeLufs') }}</option>
+                  <option value="dBFS">{{ t('settings.meterModeDbfs') }}</option>
+                  <option value="dBTP">{{ t('settings.meterModeDbtp') }}</option>
+                  <option value="RMS">{{ t('settings.meterModeRms') }}</option>
+                </select>
+                <p class="settings-help">{{ t('settings.meterModeHelp') }}</p>
+              </section>
 
-            <!-- Keep the currently-playing item centred in the list -->
-            <section class="settings-field">
-              <label class="settings-label settings-label--checkbox">
-                <input
-                  type="checkbox"
-                  :checked="scrollToPlaying"
-                  @change="onScrollToPlayingChange"
-                />
-                {{ t('settings.scrollToPlaying') }}
-              </label>
-              <p class="settings-help">{{ t('settings.scrollToPlayingHelp') }}</p>
-            </section>
+              <!-- Meter Ballistics -->
+              <section class="settings-field">
+                <label class="settings-label">
+                  <span class="material-symbols-rounded" aria-hidden="true">speed</span>
+                  {{ t('settings.meterBallistics') }}
+                </label>
+                <select
+                  class="settings-select"
+                  :value="meterBallistics"
+                  @change="onMeterBallisticsChange"
+                >
+                  <option value="digital-ppm">{{ t('settings.meterBallisticsDigitalPpm') }}</option>
+                  <option value="ppm-i">{{ t('settings.meterBallisticsPpmI') }}</option>
+                  <option value="ppm-ii">{{ t('settings.meterBallisticsPpmII') }}</option>
+                  <option value="vu">{{ t('settings.meterBallisticsVu') }}</option>
+                  <option value="instant">{{ t('settings.meterBallisticsInstant') }}</option>
+                </select>
+                <p class="settings-help">{{ t('settings.meterBallisticsHelp') }}</p>
+              </section>
+
+              <!-- Keep the currently-playing item centred in the list -->
+              <section class="settings-field">
+                <label class="settings-label settings-label--checkbox">
+                  <input
+                    type="checkbox"
+                    :checked="scrollToPlaying"
+                    @change="onScrollToPlayingChange"
+                  />
+                  {{ t('settings.scrollToPlaying') }}
+                </label>
+                <p class="settings-help">{{ t('settings.scrollToPlayingHelp') }}</p>
+              </section>
+            </div>
+            <div class="settings-group">
+              <section class="settings-field">
+                <div class="settings-label">{{ t('headerWarnings.settingsTitle') }}</div>
+                <p class="settings-help">{{ t('headerWarnings.settingsHelp') }}</p>
+                <div class="header-warning-settings">
+                  <label v-for="(bounds, field) in HEADER_WARNING_TIMING" :key="field" class="settings-field">
+                    <span class="settings-label">{{ t(`headerWarnings.${field}`) }}</span>
+                    <input
+                      type="number"
+                      class="settings-input"
+                      required
+                      :min="bounds.min"
+                      :max="bounds.max"
+                      :step="bounds.step"
+                      :value="headerWarningTiming[field]"
+                      @change="onHeaderWarningTimingChange(field, $event)"
+                    />
+                  </label>
+                </div>
+                <p v-if="headerWarningTimingError" class="settings-error" role="alert">{{ headerWarningTimingError }}</p>
+              </section>
+
+              <!-- Time Left countdown colours -->
+              <section class="settings-field">
+                <div class="settings-label">
+                  <span class="material-symbols-rounded" aria-hidden="true">timer</span>
+                  {{ t('settings.countdownColors') }}
+                </div>
+                <p class="settings-help">{{ t('settings.countdownColorsHelp') }}</p>
+
+                <div class="countdown-band-editor">
+                  <div class="countdown-band-grid countdown-band-grid--header">
+                    <span>{{ t('settings.countdownRange') }}</span>
+                    <span>{{ t('settings.countdownStartsAt') }}</span>
+                    <span>{{ t('settings.countdownColor') }}</span>
+                    <span></span>
+                  </div>
+                  <div
+                    v-for="(band, index) in countdownColorBands"
+                    :key="band.startSeconds"
+                    class="countdown-band-grid countdown-band-grid--row"
+                  >
+                    <span class="countdown-band-range">
+                      <span
+                        class="countdown-band-dot"
+                        :style="{ backgroundColor: band.color }"
+                        aria-hidden="true"
+                      ></span>
+                      {{ countdownBandRange(index) }}
+                    </span>
+
+                    <label class="countdown-band-start">
+                      <input
+                        v-if="band.startSeconds > 0"
+                        type="number"
+                        min="1"
+                        step="1"
+                        :value="band.startSeconds"
+                        :aria-label="t('settings.countdownStartsAtFor', { range: countdownBandRange(index) })"
+                        @change="onCountdownBandStartChange(index, $event)"
+                      />
+                      <span v-else class="countdown-band-fixed">0</span>
+                      <span>s</span>
+                    </label>
+
+                    <label class="countdown-band-color">
+                      <input
+                        type="color"
+                        :value="band.color"
+                        :aria-label="t('settings.countdownColorFor', { range: countdownBandRange(index) })"
+                        @change="onCountdownBandColorChange(index, $event)"
+                      />
+                      <span>{{ band.color }}</span>
+                    </label>
+
+                    <button
+                      v-if="band.startSeconds > 0"
+                      type="button"
+                      class="countdown-band-remove"
+                      :aria-label="t('settings.countdownRemoveFor', { range: countdownBandRange(index) })"
+                      :title="t('settings.countdownRemoveFor', { range: countdownBandRange(index) })"
+                      @click="removeCountdownBand(index)"
+                    >
+                      <span class="material-symbols-rounded" aria-hidden="true">remove</span>
+                    </button>
+                    <span v-else></span>
+                  </div>
+                </div>
+
+                <p v-if="countdownBandError" class="settings-error" role="alert">
+                  {{ countdownBandError }}
+                </p>
+                <button type="button" class="modal-btn countdown-band-add" @click="addCountdownBand">
+                  <span class="material-symbols-rounded" aria-hidden="true">add</span>
+                  {{ t('settings.countdownAddBand') }}
+                </button>
+              </section>
+            </div>
           </template>
           <!-- ================= Video Output ================= -->
           <template v-else-if="activeTab === 'video'">
-            <!-- Enable/arm the output window. Machine-level, immediate. -->
-            <section class="settings-field">
-              <label class="settings-label settings-label--checkbox">
-                <input
-                  type="checkbox"
-                  :checked="voEnabled"
-                  @change="onVideoOutputEnableChange"
-                />
-                {{ t('settings.videoOutputEnable') }}
-              </label>
-              <p class="settings-help">{{ t('settings.videoOutputEnableHelp') }}</p>
-            </section>
+            <div class="settings-group">
+              <!-- Enable/arm the output window. Machine-level, immediate. -->
+              <section class="settings-field">
+                <label class="settings-label settings-label--checkbox">
+                  <input
+                    type="checkbox"
+                    :checked="voEnabled"
+                    @change="onVideoOutputEnableChange"
+                  />
+                  {{ t('settings.videoOutputEnable') }}
+                </label>
+                <p class="settings-help">{{ t('settings.videoOutputEnableHelp') }}</p>
+              </section>
 
-            <!-- Which physical display feeds the switcher/projector -->
-            <section class="settings-field">
-              <label class="settings-label">
-                <span class="material-symbols-rounded" aria-hidden="true">monitor</span>
-                {{ t('settings.videoOutputDisplay') }}
-              </label>
-              <div class="video-output-display-row">
-                <select
-                  class="settings-select"
-                  :value="voStatus?.displayId ?? ''"
-                  @change="onVideoOutputDisplayChange"
+              <!-- Live status line: where the output is, or why it isn't -->
+              <section class="settings-field">
+                <div class="settings-label">
+                  <span class="material-symbols-rounded" aria-hidden="true">info</span>
+                  {{ t('settings.videoOutputStatus') }}
+                </div>
+                <p class="settings-help video-output-status" :class="{ 'video-output-status--warn': !!voWarningText }">
+                  {{ voWarningText || voStatusText }}
+                </p>
+                <p
+                  v-if="voStatus?.playbackError"
+                  class="settings-help video-output-playback-error"
+                  role="alert"
                 >
-                  <option :value="''">{{ t('settings.videoOutputNoDisplay') }}</option>
+                  <strong>{{ t('common.error') }}:</strong>
+                  {{ voStatus.playbackError.message }}
+                </p>
+                <p class="settings-help">{{ t('settings.videoOutputMachineNote') }}</p>
+                <div class="video-output-standby">
+                  <button
+                    type="button"
+                    class="modal-btn"
+                    :disabled="!voStatus?.open || voStatus.restarting"
+                    @click="onVideoOutputRestart"
+                  >{{ t('settings.videoOutputRestart') }}</button>
+                  <button type="button" class="modal-btn" @click="onVideoOutputCopyDiagnostics">
+                    {{ t('settings.videoOutputCopyDiagnostics') }}
+                  </button>
+                </div>
+                <p v-if="voDiagnosticsCopied" class="settings-help" role="status">{{ t('settings.videoOutputDiagnosticsCopied') }}</p>
+              </section>
+
+              <!-- Test card for the switcher/projector end of the chain -->
+              <section class="settings-field">
+                <label class="settings-label settings-label--checkbox">
+                  <input
+                    type="checkbox"
+                    :checked="voStatus?.testCard === true"
+                    :disabled="!voStatus?.open"
+                    @change="onVideoOutputTestCardChange"
+                  />
+                  {{ t('settings.videoOutputTestCard') }}
+                </label>
+                <p class="settings-help">{{ t('settings.videoOutputTestCardHelp') }}</p>
+              </section>
+            </div>
+            <div class="settings-group">
+              <!-- Which physical display feeds the switcher/projector -->
+              <section class="settings-field">
+                <label class="settings-label" for="settings-output-display">
+                  <span class="material-symbols-rounded" aria-hidden="true">monitor</span>
+                  {{ t('settings.videoOutputDisplay') }}
+                </label>
+                <div class="video-output-display-row">
+                  <select
+                    id="settings-output-display"
+                    class="settings-select"
+                    :value="voStatus?.displayId ?? ''"
+                    @change="onVideoOutputDisplayChange"
+                  >
+                    <option :value="''">{{ t('settings.videoOutputNoDisplay') }}</option>
+                    <option v-for="d in voDisplays" :key="d.id" :value="d.id">
+                      {{ d.index }} — {{ d.label }} — {{ d.width }}×{{ d.height }}{{ d.primary ? ' (' + t('common.default') + ')' : '' }}
+                    </option>
+                  </select>
+                  <button type="button" class="modal-btn video-output-identify" @click="onVideoOutputIdentifyDisplays">
+                    <span class="material-symbols-rounded" aria-hidden="true">screenshot_monitor</span>
+                    {{ t('settings.videoOutputIdentifyDisplays') }}
+                  </button>
+                </div>
+                <p class="settings-help">{{ t('settings.videoOutputDisplayHelp') }}</p>
+              </section>
+
+              <!-- Global standby image: shown whenever no cue is supplying
+                   picture (below per-cue images and video in the layer stack).
+                   Project-level (unlike arm/display, which stay machine-level). -->
+              <section class="settings-field">
+                <div class="settings-label">
+                  <span class="material-symbols-rounded" aria-hidden="true">image</span>
+                  {{ t('settings.videoOutputStandbyImage') }}
+                </div>
+                <div class="video-output-standby">
+                  <span class="video-output-standby-path" :title="voStandbyImage">
+                    {{ voStandbyImage || t('settings.videoOutputStandbyNone') }}
+                  </span>
+                  <button type="button" class="modal-btn" @click="voStandbyPickerOpen = true">
+                    {{ t('settings.videoOutputStandbyChoose') }}
+                  </button>
+                  <button
+                    v-if="voStandbyImage"
+                    type="button"
+                    class="modal-btn"
+                    @click="onVideoOutputStandbyClear"
+                  >
+                    {{ t('settings.videoOutputStandbyClear') }}
+                  </button>
+                </div>
+                <p class="settings-help">{{ t('settings.videoOutputStandbyImageHelp') }}</p>
+              </section>
+
+              <section v-if="voStatus" class="settings-field">
+                <label for="capture-display" class="settings-label">{{ t('standbyCapture.display') }}</label>
+                <select id="capture-display" class="settings-select" :value="voStatus.captureDisplayId ?? ''"
+                  :disabled="captureSettingsPending || standbyCapturePending"
+                  @change="onCaptureSettingsChange($event, 'display')">
+                  <option value="">{{ t('standbyCapture.chooseDisplay') }}</option>
+                  <option v-if="voStatus.captureDisplayId && !voDisplays.some(d => d.id === voStatus?.captureDisplayId)"
+                    :value="voStatus.captureDisplayId" disabled>{{ t('standbyCapture.missingDisplay') }}</option>
                   <option v-for="d in voDisplays" :key="d.id" :value="d.id">
-                    {{ d.index }} — {{ d.label }} — {{ d.width }}×{{ d.height }}{{ d.primary ? ' (' + t('common.default') + ')' : '' }}
+                    {{ d.index }} · {{ d.label }} ({{ d.width }} × {{ d.height }})
                   </option>
                 </select>
-                <button type="button" class="modal-btn video-output-identify" @click="onVideoOutputIdentifyDisplays">
-                  <span class="material-symbols-rounded" aria-hidden="true">screenshot_monitor</span>
-                  {{ t('settings.videoOutputIdentifyDisplays') }}
-                </button>
-              </div>
-              <p class="settings-help">{{ t('settings.videoOutputDisplayHelp') }}</p>
-            </section>
+                <label for="capture-destination" class="settings-label">{{ t('standbyCapture.destination') }}</label>
+                <select id="capture-destination" class="settings-select" :value="voStatus.captureTarget ?? 'session'"
+                  :disabled="captureSettingsPending || standbyCapturePending"
+                  @change="onCaptureSettingsChange($event, 'target')">
+                  <option value="session">{{ t('standbyCapture.session') }}</option>
+                  <option value="cue">{{ t('standbyCapture.cue') }}</option>
+                </select>
+                <div class="video-output-standby">
+                  <button type="button" class="modal-btn" :disabled="standbyCapturePending || !voStatus.open"
+                    @click="captureStandby('output', voStatus.captureTarget)">{{ t('controls.captureVideoStandby') }}</button>
+                  <button type="button" class="modal-btn"
+                    :disabled="standbyCapturePending || !voDisplays.some(d => d.id === voStatus?.captureDisplayId)"
+                    @click="captureStandby('display', voStatus.captureTarget)">{{ t('controls.captureDisplayStandby') }}</button>
+                  <button type="button" class="modal-btn" :disabled="standbyCapturePending"
+                    @click="captureStandby('clear', voStatus.captureTarget)">{{ t('standbyCapture.clear') }}</button>
+                </div>
+                <p class="settings-help">{{ t('standbyCapture.help') }}</p>
+              </section>
+            </div>
 
-            <!-- Global standby image: shown whenever no cue is supplying
-                 picture (below per-cue images and video in the layer stack).
-                 Project-level (unlike arm/display, which stay machine-level). -->
-            <section class="settings-field">
-              <div class="settings-label">
-                <span class="material-symbols-rounded" aria-hidden="true">image</span>
-                {{ t('settings.videoOutputStandbyImage') }}
-              </div>
-              <div class="video-output-standby">
-                <span class="video-output-standby-path" :title="voStandbyImage">
-                  {{ voStandbyImage || t('settings.videoOutputStandbyNone') }}
-                </span>
-                <button type="button" class="modal-btn" @click="voStandbyPickerOpen = true">
-                  {{ t('settings.videoOutputStandbyChoose') }}
-                </button>
-                <button
-                  v-if="voStandbyImage"
-                  type="button"
-                  class="modal-btn"
-                  @click="onVideoOutputStandbyClear"
-                >
-                  {{ t('settings.videoOutputStandbyClear') }}
-                </button>
-              </div>
-              <p class="settings-help">{{ t('settings.videoOutputStandbyImageHelp') }}</p>
-            </section>
-
-            <section v-if="voStatus" class="settings-field">
-              <label for="capture-display" class="settings-label">{{ t('standbyCapture.display') }}</label>
-              <select id="capture-display" class="settings-select" :value="voStatus.captureDisplayId ?? ''"
-                :disabled="captureSettingsPending || standbyCapturePending"
-                @change="onCaptureSettingsChange($event, 'display')">
-                <option value="">{{ t('standbyCapture.chooseDisplay') }}</option>
-                <option v-if="voStatus.captureDisplayId && !voDisplays.some(d => d.id === voStatus?.captureDisplayId)"
-                  :value="voStatus.captureDisplayId" disabled>{{ t('standbyCapture.missingDisplay') }}</option>
-                <option v-for="d in voDisplays" :key="d.id" :value="d.id">
-                  {{ d.index }} · {{ d.label }} ({{ d.width }} × {{ d.height }})
-                </option>
-              </select>
-              <label for="capture-destination" class="settings-label">{{ t('standbyCapture.destination') }}</label>
-              <select id="capture-destination" class="settings-select" :value="voStatus.captureTarget ?? 'session'"
-                :disabled="captureSettingsPending || standbyCapturePending"
-                @change="onCaptureSettingsChange($event, 'target')">
-                <option value="session">{{ t('standbyCapture.session') }}</option>
-                <option value="cue">{{ t('standbyCapture.cue') }}</option>
-              </select>
-              <div class="video-output-standby">
-                <button type="button" class="modal-btn" :disabled="standbyCapturePending || !voStatus.open"
-                  @click="captureStandby('output', voStatus.captureTarget)">{{ t('controls.captureVideoStandby') }}</button>
-                <button type="button" class="modal-btn"
-                  :disabled="standbyCapturePending || !voDisplays.some(d => d.id === voStatus?.captureDisplayId)"
-                  @click="captureStandby('display', voStatus.captureTarget)">{{ t('controls.captureDisplayStandby') }}</button>
-                <button type="button" class="modal-btn" :disabled="standbyCapturePending"
-                  @click="captureStandby('clear', voStatus.captureTarget)">{{ t('standbyCapture.clear') }}</button>
-              </div>
-              <p class="settings-help">{{ t('standbyCapture.help') }}</p>
-            </section>
-
-            <!-- Test card for the switcher/projector end of the chain -->
-            <section class="settings-field">
-              <label class="settings-label settings-label--checkbox">
-                <input
-                  type="checkbox"
-                  :checked="voStatus?.testCard === true"
-                  :disabled="!voStatus?.open"
-                  @change="onVideoOutputTestCardChange"
-                />
-                {{ t('settings.videoOutputTestCard') }}
-              </label>
-              <p class="settings-help">{{ t('settings.videoOutputTestCardHelp') }}</p>
-            </section>
-
-            <section class="settings-field settings-field--test-card-controls">
+            <section class="settings-field settings-wide">
               <TestCardControls
                 :config="voTestCardConfig"
                 :disabled="!voStatus"
@@ -676,35 +715,6 @@
               </p>
             </section>
 
-            <!-- Live status line: where the output is, or why it isn't -->
-            <section class="settings-field">
-              <div class="settings-label">
-                <span class="material-symbols-rounded" aria-hidden="true">info</span>
-                {{ t('settings.videoOutputStatus') }}
-              </div>
-              <p class="settings-help video-output-status" :class="{ 'video-output-status--warn': !!voWarningText }">
-                {{ voWarningText || voStatusText }}
-              </p>
-              <p
-                v-if="voStatus?.playbackError"
-                class="settings-help video-output-playback-error"
-                role="alert"
-              >
-                <strong>{{ t('common.error') }}:</strong>
-                {{ voStatus.playbackError.message }}
-              </p>
-              <p class="settings-help">{{ t('settings.videoOutputMachineNote') }}</p>
-              <button
-                type="button"
-                class="modal-btn"
-                :disabled="!voStatus?.open || voStatus.restarting"
-                @click="onVideoOutputRestart"
-              >{{ t('settings.videoOutputRestart') }}</button>
-              <button type="button" class="modal-btn" @click="onVideoOutputCopyDiagnostics">
-                {{ t('settings.videoOutputCopyDiagnostics') }}
-              </button>
-              <p v-if="voDiagnosticsCopied" class="settings-help" role="status">{{ t('settings.videoOutputDiagnosticsCopied') }}</p>
-            </section>
           </template>
 
           <!-- ================= Help ================= -->
@@ -1412,14 +1422,20 @@ function close() {
   display: flex;
   flex-direction: column;
   color: var(--color-text-primary);
+  container-type: inline-size;
+}
+
+.settings-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) var(--panel-control-height);
+  gap: var(--spacing-md);
 }
 
 .close-x {
-  flex-shrink: 0;
   display: grid;
   place-items: center;
-  width: var(--spacing-xxl);
-  height: var(--spacing-xxl);
+  width: var(--panel-control-height);
+  height: var(--panel-control-height);
   padding: 0;
   background: none;
   border: none;
@@ -1429,34 +1445,31 @@ function close() {
   cursor: pointer;
 }
 .close-x:hover {
-  color: var(--color-text-primary);
+  background: var(--color-surface-hover);
 }
 
-/* Tab Navigation — matches PropertiesPanel.vue .properties-tabs / .tab-btn */
 .settings-tabs {
   display: flex;
-  flex-shrink: 0;
-  max-width: calc(100% - 100px);
-  margin-inline-start: auto;
+  align-self: stretch;
+  min-width: 0;
   overflow-x: auto;
+  scrollbar-width: none;
   gap: 2px;
 }
 .tab-btn {
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 6px 8px;
+  gap: var(--spacing-sm);
+  padding: 0 var(--spacing-sm);
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
   cursor: pointer;
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   white-space: nowrap;
-  transition: all 0.2s;
 }
 .tab-btn .material-symbols-rounded,
 .tab-btn :deep(.cue-symbol) {
@@ -1469,22 +1482,105 @@ function close() {
 }
 .tab-btn.active {
   color: var(--color-accent);
+  background: var(--color-accent-soft);
   border-bottom-color: var(--color-accent);
 }
 
-.modal-body {
+.settings-content {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  align-items: start;
+  flex: 1;
   min-height: 0;
-  padding: 16px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
+  padding: var(--spacing-md);
+  gap: var(--spacing-md);
   overflow-y: auto;
+}
+
+.settings-content--audio {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+}
+
+.settings-content--playback {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.settings-content--audio > .settings-field {
+  align-self: stretch;
+}
+
+.settings-content--audio .settings-label {
+  min-height: 22px;
+}
+
+.settings-content--audio .material-symbols-rounded,
+.settings-content--audio :deep(.cue-symbol) {
+  font-size: 20px;
+}
+
+.settings-content--about,
+.settings-content--help {
+  display: block;
+}
+
+.settings-content--about :deep(.about-header) {
+  gap: var(--spacing-sm);
+  margin-bottom: 0;
+  padding-bottom: var(--spacing-sm);
+}
+
+.settings-content--about :deep(.about-logo) {
+  width: 40px;
+  height: 40px;
+}
+
+.settings-content--about :deep(.about-title) {
+  font-size: 22px;
+}
+
+.settings-content--about :deep(.about-subtitle) {
+  font-size: 13px;
+}
+
+.settings-content > .settings-error,
+.settings-wide {
+  grid-column: 1 / -1;
+}
+
+.settings-content .settings-field:not(label) {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  background: var(--color-surface);
+}
+
+.settings-group {
+  display: grid;
+  min-width: 0;
+  gap: var(--spacing-sm);
+}
+
+.settings-content--help > .settings-field {
+  width: fit-content;
+}
+
+@container (max-width: 900px) {
+  .settings-content--playback {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-content--ui,
+  .settings-content--video {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .settings-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  min-width: 0;
+  gap: var(--spacing-xs);
 }
 .header-warning-settings {
   display: grid;
@@ -1496,8 +1592,8 @@ function close() {
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: var(--color-text-secondary);
-  font-weight: 500;
+  color: var(--color-text-primary);
+  font-weight: 600;
 }
 .settings-label :deep(.cue-symbol) {
   font-size: 20px;
@@ -1505,12 +1601,14 @@ function close() {
 .settings-select,
 .settings-input {
   width: 100%;
-  padding: 10px 12px;
-  background: var(--color-surface);
+  min-width: 0;
+  min-height: var(--panel-control-height);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--color-background);
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
-  border-radius: 6px;
-  font-size: 14px;
+  border-radius: var(--control-radius);
+  font-size: 13px;
 }
 .settings-select:focus,
 .settings-input:focus {
@@ -1555,6 +1653,7 @@ function close() {
 .video-output-standby {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .video-output-standby-path {
@@ -1775,7 +1874,7 @@ function close() {
 
 .help-links {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: var(--spacing-xs);
 }
 
@@ -1791,7 +1890,7 @@ function close() {
   text-decoration: none;
   font-size: 14px;
   text-align: left;
-  width: 100%;
+  max-width: 100%;
   box-sizing: border-box;
   font-family: inherit;
   cursor: pointer;
