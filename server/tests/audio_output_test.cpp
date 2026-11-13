@@ -146,6 +146,9 @@ void test_initial_device_start_keeps_controls() {
         check(reuse.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready,
               "already opened runtime device can be acquired during duplicate cleanup");
     }
+    if (mode != 0)
+        check(open.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready,
+              "duplicate or failed start returns while its owned cleanup is held");
     gate.hold_start.store(false); gate.hold_uninit.store(false);
     const auto id = open.get();
     check(controls.get() && (mode == 2 ? id.empty() : !id.empty()),
@@ -237,7 +240,20 @@ void test_device_catalog_survives_native_stall() {
     check(responsive, "device catalog: enumeration/status never waits behind a hung native operation");
     std::vector<DeviceInfo> devices;
     if (responsive) { devices = status.get(); engine.reset(); }
+    // The old engine still owns a blocked uninit. A new open must return a bounded failure.
+    AudioEngine replacement;
+    replacement.device_test_context_ = &gate.context;
+    auto reopen = std::async(std::launch::async, [&] { return replacement.open_default_device(); });
+    const bool open_refused = reopen.wait_for(std::chrono::seconds{1}) == std::future_status::ready;
+    check(open_refused, "device catalog: cold open returns while uninit is held");
     gate.hold_uninit.store(false);
+    const auto reopened = reopen.get();
+    check(!open_refused || reopened.empty(), "device catalog: no init overlaps the held uninit");
+    if (!reopened.empty()) {
+        const auto replacement_device = replacement.snapshot_devices()->front();
+        replacement.close_device(reopened);
+        while (!replacement_device->cleanup_done.load()) std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
     if (!responsive) { devices = status.get(); engine.reset(); }
     check(std::none_of(devices.begin(), devices.end(), [](const auto& info) { return info.is_open; }),
           "device catalog: current withdrawal overrides cached native availability");

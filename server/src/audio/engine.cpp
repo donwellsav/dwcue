@@ -32,8 +32,10 @@ namespace liveplay::audio {
 
 namespace {
 
-std::shared_ptr<std::mutex> native_device_mutex() {
-    static const auto mutex = std::make_shared<std::mutex>();
+constexpr auto kDeviceBusyWait = std::chrono::milliseconds{500};
+
+std::shared_ptr<std::timed_mutex> native_device_mutex() {
+    static const auto mutex = std::make_shared<std::timed_mutex>();
     return mutex;
 }
 
@@ -367,7 +369,7 @@ void AudioEngine::rebuild_topology_locked() {
 // Devices
 // ---------------------------------------------------------------------------
 void AudioEngine::refresh_device_catalog(const std::shared_ptr<DeviceCatalog>& catalog,
-    const std::shared_ptr<std::mutex>& lifecycle, ma_context* test_context) {
+    const std::shared_ptr<std::timed_mutex>& lifecycle, ma_context* test_context) {
     std::vector<NativeDeviceInfo> devices;
     bool complete = false;
     try {
@@ -781,7 +783,6 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
             return existing->id;
         }
     }
-    std::lock_guard lifecycle_lock{*device_lifecycle_mutex_};
     auto dev = std::make_shared<Device>();
     dev->id           = DeviceId{gen_uuid_like()};
     dev->channels     = output_channels;
@@ -836,6 +837,13 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
 #ifdef LIVEPLAY_TEST_HOOKS
     device_context = device_test_context_;
 #endif
+
+    std::unique_lock lifecycle_lock{*device_lifecycle_mutex_, std::defer_lock};
+    if (!lifecycle_lock.try_lock_for(kDeviceBusyWait)) {
+        Logger::warn("Audio device initialization or cleanup is busy; could not open '{}'.", dev->display_name);
+        ma_pcm_rb_uninit(dev->ring.get());
+        return {};
+    }
 
     // A saved display name wins over a prefix sibling (USB 1 vs USB 10).
     // Legacy callers retain the case-insensitive substring fallback. Empty
@@ -893,28 +901,50 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
     // Resolve the native device first: "default" and an explicit device name
     // can address the same hardware, which a request-string comparison misses.
     // Opening it twice produces doubled/echoing audio.
-    DeviceId duplicate;
+    const auto backend = dev->ma_dev->pContext->backend;
+    const auto native_id = dev->ma_dev->playback.id;
+    const auto matches_start = [&](const auto& start) {
+        return start.first == backend && ma_device_id_equal(&start.second, &native_id);
+    };
     bool identity_pending = false;
+    const auto acquire_duplicate_locked = [&]() -> DeviceId {
+        const auto existing = std::find_if(devices_.begin(), devices_.end(), [&](const auto& candidate) {
+            if (candidate->closing.load(std::memory_order_acquire) || !candidate->ma_dev) return false;
+            std::unique_lock native_lock{candidate->native_mutex, std::try_to_lock};
+            if (!native_lock.owns_lock()) { identity_pending = true; return false; }
+            return candidate->ma_dev->pContext->backend == backend &&
+                ma_device_id_equal(&candidate->ma_dev->playback.id, &native_id) != MA_FALSE;
+        });
+        if (existing == devices_.end()) return {};
+        (*existing)->open_references.acquire();
+        return (*existing)->id;
+    };
+    const auto starting_locked = [&] {
+        return std::any_of(starting_devices_.begin(), starting_devices_.end(), matches_start);
+    };
     {
-        std::lock_guard lock{mutex_};
-        const auto existing = std::find_if(
-            devices_.begin(), devices_.end(),
-            [&](const std::shared_ptr<Device>& candidate) {
-                if (candidate->closing.load(std::memory_order_acquire) || !candidate->ma_dev) return false;
-                std::unique_lock native_lock{candidate->native_mutex, std::try_to_lock};
-                if (!native_lock.owns_lock()) { identity_pending = true; return false; }
-                return ma_device_id_equal(&candidate->ma_dev->playback.id, &dev->ma_dev->playback.id) != MA_FALSE;
-            });
-        if (existing != devices_.end()) {
-            (*existing)->open_references.acquire();
-            duplicate = (*existing)->id;
+        std::unique_lock lock{mutex_};
+        const auto duplicate = acquire_duplicate_locked();
+        if (!duplicate.empty() || identity_pending || starting_locked()) {
+            lock.unlock();
+            lifecycle_lock.unlock();
+            retire_device(dev);
+            if (!duplicate.empty() || identity_pending) return duplicate;
+            lock.lock();
+            if (device_started_.wait_for(lock, kDeviceBusyWait, [&] { return !starting_locked(); }))
+                return acquire_duplicate_locked();
+            return {};
         }
+        starting_devices_.emplace_back(backend, native_id);
     }
-    if (!duplicate.empty() || identity_pending) {
-        ma_device_uninit(dev->ma_dev.get());
-        ma_pcm_rb_uninit(dev->ring.get());
-        return duplicate;
-    }
+    const auto finish_start = [&](const ma_device_id*) {
+        std::lock_guard lock{mutex_};
+        std::erase_if(starting_devices_, matches_start);
+        device_started_.notify_all();
+    };
+    const std::unique_ptr<const ma_device_id, decltype(finish_start)> reservation{&native_id, finish_start};
+    // Release the lifecycle lock before entering the device's own start call.
+    lifecycle_lock.unlock();
 
     dev->scratch.assign(cfg_.render_block * output_channels, 0.0f);
     dev->output_mono.assign(cfg_.render_block, 0.0f);
@@ -936,8 +966,8 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
     }
     if (ma_device_start(dev->ma_dev.get()) != MA_SUCCESS) {
         Logger::error("ma_device_start failed for '{}'", dev->display_name);
-        ma_device_uninit(dev->ma_dev.get());
-        ma_pcm_rb_uninit(dev->ring.get());
+        dev->closing.store(true, std::memory_order_release);
+        retire_device(dev);
         return {};
     }
     dev->started.store(true, std::memory_order_release);
@@ -987,6 +1017,13 @@ void AudioEngine::close_device(const DeviceId& id) {
             if (dest && dest->device == id) dest.reset();
         rebuild_topology_locked();
     }
+    retire_device(closing);
+    callback_state_->consumption_counter.fetch_add(1, std::memory_order_release);
+    callback_state_->consumption_counter.notify_all();
+    Logger::info("Retired audio device '{}'", closing->display_name);
+}
+
+void AudioEngine::retire_device(const std::shared_ptr<Device>& closing) {
     // Native work holds no engine/project ownership and cannot outlive its buffers.
     const auto retire = [closing, lifecycle = device_lifecycle_mutex_] {
         std::lock_guard native_lock{closing->native_mutex};
@@ -1010,9 +1047,6 @@ void AudioEngine::close_device(const DeviceId& id) {
         Logger::error("Device retirement worker failed: {}", error.what());
         retire();
     }
-    callback_state_->consumption_counter.fetch_add(1, std::memory_order_release);
-    callback_state_->consumption_counter.notify_all();
-    Logger::info("Retired audio device '{}'", closing->display_name);
 }
 
 std::optional<std::uint64_t> AudioEngine::request_device_recovery(

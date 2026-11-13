@@ -927,8 +927,7 @@ void ProjectState::loaded_routing_loop() {
                        intent == playback_intent_revision_;
             };
             if (!current()) continue;
-            // shortcut: cold output opens share the driver lock; keep one coalesced
-            // routing worker until device startup can be isolated per backend.
+            // shortcut: background routing is sequential; deliberate GO prepares its own output.
             if (request.apply_main) {
 #ifdef LIVEPLAY_TEST_NO_DEVICE_ROUTING
                 if (test_loader_main_routing_)

@@ -261,7 +261,7 @@ public:
     DeviceId open_default_device(ChannelCount output_channels = 2);
 
     // Acquire an already-open runtime id, or open an exact display name with
-    // a legacy substring fallback. Returns an empty DeviceId on failure.
+    // a legacy substring fallback. Returns an empty DeviceId on failure or busy initialization.
     DeviceId open_device_by_name(const std::string& name_substring,
                                  ChannelCount output_channels = 2);
 
@@ -523,7 +523,7 @@ private:
     std::unique_ptr<std::atomic<float>[]>         output_channel_gains_;
     // miniaudio device init/uninit mutates backend-global state on some
     // platforms. Retained across engine lifetimes by unfinished native jobs.
-    std::shared_ptr<std::mutex>                   device_lifecycle_mutex_;
+    std::shared_ptr<std::timed_mutex>             device_lifecycle_mutex_;
 #ifdef LIVEPLAY_TEST_HOOKS
     ma_context*                                  device_test_context_ = nullptr;
 #endif
@@ -539,6 +539,8 @@ private:
     // on RT; rebuilds reclaim completed records after all readers let go.
     std::vector<std::shared_ptr<PreparedFollow>> prepared_follows_;
     DeviceList                                   devices_;
+    std::vector<std::pair<ma_backend, ma_device_id>> starting_devices_; // Guarded by mutex_.
+    std::condition_variable                      device_started_;
     // Closed devices remain owned until all snapshot readers have drained.
     DeviceList                                   retired_devices_;
     detail::AtomicSharedPtr<const DeviceList>     device_snapshot_{};
@@ -628,7 +630,8 @@ private:
     void render_one_block(const Topology& topo);
     static void decode_loop(const std::shared_ptr<DecodeState>& state);
     static void refresh_device_catalog(const std::shared_ptr<DeviceCatalog>& catalog,
-        const std::shared_ptr<std::mutex>& lifecycle, ma_context* test_context);
+        const std::shared_ptr<std::timed_mutex>& lifecycle, ma_context* test_context);
+    void retire_device(const std::shared_ptr<Device>& device);
     void device_watchdog_loop();
     static void recover_device(const std::shared_ptr<Device>& device, std::uint64_t generation) noexcept;
     bool reset_device_if_requested(Device& device) noexcept;

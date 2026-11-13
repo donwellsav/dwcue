@@ -435,6 +435,120 @@ void test_stop_all_during_system_default_open() {
     context->callbacks.onDeviceInit = init;
 }
 
+void test_cold_outputs_keep_transport_available() {
+    using namespace liveplay::audio;
+    static ma_context context{};
+    static const auto initialized = [] {
+        const auto backend = ma_backend_null;
+        return ma_context_init(&backend, 1, nullptr, &context) == MA_SUCCESS;
+    }();
+    if (!initialized) std::abort();
+    static const auto original = context.callbacks;
+    static std::atomic<bool> hold_start{false}, hold_init{false}, entered{false};
+    static std::atomic<int> held_starts{0};
+    context.callbacks.onContextEnumerateDevices = [](ma_context* ctx, ma_enum_devices_callback_proc cb, void* data) {
+        ma_device_info info{};
+        std::snprintf(info.name, sizeof(info.name), "Held Output");
+        info.isDefault = MA_TRUE;
+        if (cb(ctx, ma_device_type_playback, &info, data)) {
+            info.id.nullbackend = 1;
+            info.isDefault = MA_FALSE;
+            std::snprintf(info.name, sizeof(info.name), "Backup Output");
+            cb(ctx, ma_device_type_playback, &info, data);
+        }
+        return MA_SUCCESS;
+    };
+    context.callbacks.onContextGetDeviceInfo = [](ma_context* ctx, ma_device_type type,
+                                                  const ma_device_id* id, ma_device_info* info) {
+        const auto result = original.onContextGetDeviceInfo(ctx, type, nullptr, info);
+        if (id) info->id = *id;
+        std::snprintf(info->name, sizeof(info->name), "%s", id && id->nullbackend ? "Backup Output" : "Held Output");
+        return result;
+    };
+    context.callbacks.onDeviceInit = [](ma_device* dev, const ma_device_config* config,
+                                       ma_device_descriptor* playback, ma_device_descriptor* capture) {
+        if (config->playback.pDeviceID && config->playback.pDeviceID->nullbackend == 0 && hold_init.load()) {
+            entered.store(true);
+            while (hold_init.load()) std::this_thread::sleep_for(1ms);
+        }
+        return original.onDeviceInit(dev, config, playback, capture);
+    };
+    context.callbacks.onDeviceStart = [](ma_device* dev) {
+        if (dev->playback.id.nullbackend == 0) {
+            ++held_starts;
+            if (hold_start.load()) {
+                entered.store(true);
+                while (hold_start.load()) std::this_thread::sleep_for(1ms);
+            }
+        }
+        return original.onDeviceStart(dev);
+    };
+
+    const auto wav = make_wav(8'192, 480'000);
+    for (const bool init : {false, true}) {
+        AudioEngine engine;
+        engine.device_test_context_ = &context;
+        liveplay::core::ProjectState state(engine);
+        check(engine.start(false) && engine.enumerate_devices().size() == 2, "cold outputs: distinct software outputs available");
+        check(state.replace_full_document(document(json::array({audio("bed", wav),
+            audio("held", wav, {{"deviceOverride", "Held Output"}}),
+            audio("backup", wav, {{"deviceOverride", "Backup Output"}}),
+        }))) && wait_ready(state) && state.trigger_item("bed"), "cold outputs: cues ready with a bed playing");
+
+        auto& hold = init ? hold_init : hold_start;
+        entered.store(false);
+        held_starts.store(0);
+        hold.store(true);
+        state.set_next_item_override("held");
+        auto held_go = std::async(std::launch::async, [&] { return state.go(); });
+        for (int i = 0; i < 1000 && !entered.load(); ++i) std::this_thread::sleep_for(2ms);
+        check(entered.load(), "cold outputs: GO reached the selected native call");
+        std::future<DeviceId> same_output;
+        if (!init) same_output = std::async(std::launch::async, [&] { return engine.open_default_device(); });
+
+        auto stop = std::async(std::launch::async, [&] { state.stop_all_cues(0); });
+        check(stop.wait_for(250ms) == std::future_status::ready && !on_air(state, engine, "bed"),
+              "cold outputs: Stop All is independent of the held output");
+        auto backup_go = std::async(std::launch::async, [&] {
+            state.set_next_item_override("backup");
+            return state.go();
+        });
+        const bool completed = backup_go.wait_for(1s) == std::future_status::ready;
+        check(completed, "cold outputs: backup GO responds before the other driver returns");
+        if (completed) {
+            const auto result = backup_go.get();
+            if (init) {
+                check(result.empty() && state.next_item_override() == "backup",
+                      "cold outputs: busy native init refuses the start and preserves Up Next");
+            } else {
+                check(result == "backup" && on_air(state, engine, "backup"), "cold outputs: a distinct cold output takes GO");
+                for (int i = 0; i < 40 && engine.read_master_meter(2).peak_max_db < -15.0f; ++i)
+                    std::this_thread::sleep_for(5ms);
+                check(engine.read_master_meter(2).peak_max_db > -15.0f, "cold outputs: backup output receives PCM while startup is held");
+            }
+        }
+        if (same_output.valid() && same_output.wait_for(1s) == std::future_status::ready) {
+            const auto id = same_output.get();
+            check(id.empty() && held_starts.load() == 1,
+                  "cold outputs: a default alias cannot start a second stream on the held device");
+            if (!id.empty()) engine.close_device(id);
+        } else if (!init) {
+            check(false, "cold outputs: a request for the same hardware settles while startup is held");
+        }
+        hold.store(false);
+        if (same_output.valid()) {
+            const auto id = same_output.get();
+            if (!id.empty()) engine.close_device(id);
+        }
+        stop.get();
+        if (backup_go.valid()) (void)backup_go.get();
+        check(held_go.get().empty() && !on_air(state, engine, "held"), "cold outputs: canceled GO cannot start late");
+        if (init && completed) check(state.go() == "backup", "cold outputs: deliberate retry opens the backup");
+        state.stop_all_cues(0);
+        state.release_device_routings();
+    }
+}
+
 void test_stop_all_during_ltc_device_start() {
     auto* context = null_preview_context();
     static const auto start = context->callbacks.onDeviceStart;
@@ -3053,6 +3167,7 @@ int main() try {
     test_stop_all_during_cue_retirement(wav);
     test_stop_all_during_program_device_start();
     test_stop_all_during_system_default_open();
+    test_cold_outputs_keep_transport_available();
     test_stop_all_during_ltc_device_start();
     test_stop_all_during_ltc_edit();
     test_loader_output_wait();
