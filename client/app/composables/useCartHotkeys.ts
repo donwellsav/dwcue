@@ -46,6 +46,10 @@ export const eventToBinding = (e: KeyboardEvent): CartSlotKeyBinding => ({
   altKey: e.altKey,
 });
 
+const QUICK_PLAY_DIGITS = '1234567890';
+const SHIFTED_DIGITS = '!@#$%^&*()';
+export const QUICK_PLAY_DEFAULT_SLOTS = QUICK_PLAY_DIGITS.length * 2;
+
 // Shared by the shortcut editor and Settings summary.
 export const PLAYBACK_ACTIONS: { id: PlaybackKeyAction; labelKey: string }[] = [
   { id: 'play-next',     labelKey: 'controls.playNext'     },
@@ -87,11 +91,16 @@ export const resolveKeyboardBindings = (
   const shiftSpace = { key: ' ', ctrlKey: false, shiftKey: true, altKey: false };
   const pauseAlternate = playbackMappings['pause-resume'] &&
     !occupied.some(binding => binding && bindingsMatch(binding, shiftSpace)) ? shiftSpace : null;
-  for (const [index, key] of Array.from('1234567890').entries()) {
+  for (let index = 0; index < QUICK_PLAY_DEFAULT_SLOTS; ++index) {
     const oneShot = slots[index]?.oneShot;
     if (!oneShot || oneShot.hotkey !== undefined) continue;
-    const binding = { key, ctrlKey: false, shiftKey: false, altKey: false };
-    if (!occupied.some(other => other && bindingsMatch(other, binding))) keyMappings[index] = binding;
+    const digit = index % QUICK_PLAY_DIGITS.length;
+    const binding = { key: QUICK_PLAY_DIGITS[digit], ctrlKey: false,
+      shiftKey: index >= QUICK_PLAY_DIGITS.length, altKey: false };
+    const legacy = binding.shiftKey ? { ...binding, key: SHIFTED_DIGITS[digit] } : null;
+    if (!occupied.some(other => other && (bindingsMatch(other, binding) || (legacy && bindingsMatch(other, legacy))))) {
+      keyMappings[index] = binding;
+    }
   }
   return { keyMappings, playbackMappings, pauseAlternate };
 };
@@ -180,15 +189,17 @@ export const useCartHotkeys = () => {
 
   const findSlotForEvent = (e: KeyboardEvent): number => {
     const mappings = keyMappings.value;
+    const pressed = eventToBinding(e);
     for (const [slotStr, binding] of Object.entries(mappings)) {
-      if (
-        e.key.toLowerCase() === binding.key.toLowerCase()
-        && (e.ctrlKey || e.metaKey) === binding.ctrlKey
-        && e.shiftKey === binding.shiftKey
-        && e.altKey   === binding.altKey
-      ) {
-        return parseInt(slotStr, 10);
-      }
+      if (bindingsMatch(binding, pressed)) return Number(slotStr);
+    }
+    // Shift changes the produced character on many layouts. Saved bindings use it first.
+    if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && /^Digit[0-9]$/.test(e.code)) {
+      const digit = e.code[5];
+      const index = QUICK_PLAY_DIGITS.indexOf(digit) + QUICK_PLAY_DIGITS.length;
+      const binding = mappings[index];
+      if (binding && oneShotSlots.value[index]?.oneShot?.hotkey === undefined &&
+          bindingsMatch(binding, { ...pressed, key: digit })) return index;
     }
     return -1;
   };

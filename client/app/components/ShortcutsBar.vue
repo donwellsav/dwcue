@@ -14,6 +14,7 @@
       <span class="shortcuts-bar__item">
         <span class="shortcuts-bar__action">{{ t('oneShots.defaultShortcuts') }}</span>
         <kbd class="shortcuts-bar__key">1–9, 0</kbd>
+        <kbd class="shortcuts-bar__key">Shift+1–9, Shift+0</kbd>
       </span>
     </div>
     <button type="button" class="shortcuts-bar__edit" @click="openEditor">

@@ -108,6 +108,7 @@ import {
   markAsOneShot,
   removeOneShotDesignation,
 } from '~/utils/oneShots';
+import { QUICK_PLAY_DEFAULT_SLOTS } from '~/composables/useCartHotkeys';
 import AudioImportModal from './AudioImportModal.vue';
 import Btn from './Btn.vue';
 
@@ -145,7 +146,7 @@ const oneShotSlots = computed(() => {
   const slots = buildOneShotSlots(
     currentProject.value?.items ?? [],
     standaloneItems.value,
-    layout.rows * layout.columns,
+    Math.max(QUICK_PLAY_DEFAULT_SLOTS, layout.rows * layout.columns),
   );
   const roundedLength = Math.min(
     MAX_ONE_SHOT_SLOTS,

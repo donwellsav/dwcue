@@ -93,9 +93,12 @@ test('playlist cues copy into independent One Shots without sharing behavior', (
 });
 
 test('digits follow slot position and saved keyboard assignments take precedence', () => {
-  const slots: (AudioItem | null)[] = Array.from({ length: 11 }, (_, index) => audio(String(index), index));
+  const slots: (AudioItem | null)[] = Array.from({ length: 21 }, (_, index) => audio(String(index), index));
   const { keyMappings, playbackMappings, pauseAlternate } = resolveKeyboardBindings(slots);
-  assert.deepEqual(Object.values(keyMappings).map(binding => binding.key), [...'1234567890']);
+  assert.deepEqual(Object.values(keyMappings).map(binding => binding.key), [...'12345678901234567890']);
+  assert.deepEqual(Object.values(keyMappings).map(binding => binding.shiftKey),
+    [...Array(10).fill(false), ...Array(10).fill(true)]);
+  assert.equal(keyMappings[20], undefined);
   assert.equal(playbackMappings['set-up-next']?.key, 'Enter');
   assert.equal(playbackMappings['set-up-next']?.shiftKey, false);
   assert.equal(playbackMappings['play-selected']?.key, 'Enter');
@@ -119,6 +122,8 @@ test('digits follow slot position and saved keyboard assignments take precedence
   assert.equal(saved.playbackMappings['stop-all']?.key, '4');
   assert.equal(saved.playbackMappings['play-selected']?.key, 'Enter');
   assert.equal(saved.playbackMappings['set-up-next'], undefined);
+  const shiftedDigit = { ...key('0'), shiftKey: true };
+  assert.equal(resolveKeyboardBindings(slots, { 'stop-all': shiftedDigit }).keyMappings[19], undefined);
   slots[10]!.oneShot!.hotkey = key('Enter');
   assert.equal(resolveKeyboardBindings(slots).playbackMappings['set-up-next'], undefined);
   slots[10]!.oneShot!.hotkey = key('v');

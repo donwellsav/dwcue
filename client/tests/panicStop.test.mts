@@ -8,7 +8,7 @@ import * as Vue from 'vue';
 import ts from 'typescript';
 import { runExclusivePendingAction } from '../app/utils/acknowledgedAction.ts';
 import { DEFAULT_PLAYBACK_KEYS } from '../app/types/project.ts';
-import { bindingsMatch, eventToBinding } from '../app/composables/useCartHotkeys.ts';
+import { bindingsMatch, eventToBinding, resolveKeyboardBindings } from '../app/composables/useCartHotkeys.ts';
 
 function elementSource(component: string, tag: string, className?: string): string {
   const filename = new URL(`../app/components/${component}.vue`, import.meta.url);
@@ -282,6 +282,52 @@ test('workspace shortcuts keep Stop All, repeat suppression, and text focus beha
   press('1');
   press('F9');
   assert.deepEqual(actions, ['play-next', 'one-shot', 'stop-all', 'stop-all', 'play-next', 'one-shot', 'stop-all']);
+});
+
+test('QuickPlay number-row shortcuts work with shifted symbols and respect text focus', () => {
+  const filename = new URL('../app/composables/useCartHotkeys.ts', import.meta.url);
+  const source = readFileSync(filename, 'utf8');
+  const start = source.indexOf('  const findSlotForEvent =');
+  const end = source.indexOf('  const findPlaybackActionForEvent =', start);
+  assert.ok(start >= 0 && end > start);
+  const code = ts.transpileModule(source.slice(start, end), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const slots = Array.from({ length: 20 }, () => ({ oneShot: {} } as any));
+  const keyMappings = { value: resolveKeyboardBindings(slots).keyMappings };
+  const findSlotForEvent = Function('keyMappings', 'oneShotSlots', 'eventToBinding', 'bindingsMatch',
+    'QUICK_PLAY_DIGITS', `${code}\nreturn findSlotForEvent;`)(
+    keyMappings, { value: slots }, eventToBinding, bindingsMatch, '1234567890');
+  const played: number[] = [];
+  let typing = false;
+  const handle = loadHandleKeydown({
+    currentProject: { value: {} }, projectHydrationStatus: { value: 'ready' },
+    findPlaybackActionForEvent: () => null, findSlotForEvent,
+    isTextInputFocused: () => typing,
+    isForwardedFromVideoOutput: (event: { forwarded?: boolean }) => event.forwarded === true,
+    triggerSlot: (index: number) => played.push(index),
+  });
+  const press = (key: string, code: string, overrides = {}) => handle({
+    key, code, shiftKey: true, ctrlKey: false, altKey: false, metaKey: false,
+    preventDefault() {}, stopPropagation() {}, ...overrides,
+  });
+
+  press('1', 'Digit1', { shiftKey: false });
+  press('!', 'Digit1');
+  press('@', 'Digit2');
+  press(')', 'Digit0');
+  press('!', 'Digit1', { repeat: true });
+  typing = true;
+  press('!', 'Digit1');
+  press(')', 'Digit0', { forwarded: true });
+  assert.deepEqual(played, [0, 10, 11, 19, 19]);
+
+  typing = false;
+  keyMappings.value = resolveKeyboardBindings(slots, { 'stop-all': {
+    key: '!', ctrlKey: false, shiftKey: true, altKey: false,
+  } }).keyMappings;
+  press('!', 'Digit1');
+  assert.equal(played.length, 5, 'a saved shifted symbol takes precedence over the slot default');
 });
 
 function transpileFactory(source: string, factoryName: string): (...args: any[]) => any {
