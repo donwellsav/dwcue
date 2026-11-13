@@ -35,26 +35,6 @@
              @click.prevent="openExternal('https://github.com/tdoukinitsas/liveplay')">LivePlay</a>
           in July 2026. Original LivePlay software © Thomas Doukinitsas and contributors.
         </p>
-        <p class="translator" v-if="t('translationContributor.name')">
-          <strong>{{ t('about.upstreamTranslation') }}: </strong>
-          <a
-            :href="formatContributorLink(t('translationContributor.contributeLink'))"
-            class="translator-link"
-            @click.prevent="handleContributorLinkClick(t('translationContributor.contributeLink'))"
-          >
-            {{ t('translationContributor.name') }}
-          </a>
-        </p>
-        <p class="translator">
-          <strong>{{ t('about.upstreamContributors') }}: </strong>
-          <template v-for="(contributor, index) in upstreamContributors" :key="contributor.name">
-            <a
-              :href="contributor.link"
-              class="translator-link"
-              @click.prevent="openExternal(contributor.link)"
-            >{{ contributor.name }}</a><template v-if="index < upstreamContributors.length - 1">, </template>
-          </template>
-        </p>
         <p class="original-credit">
           {{ t('testCard.cardType') }}:
           <a href="https://github.com/Alteka/Kards" class="translator-link"
@@ -102,11 +82,7 @@
 </template>
 
 <script setup lang="ts">
-import contributorsJson from '~~/assets/json/contributors.json';
-
 const { t } = useLocalization();
-
-const upstreamContributors = Object.values(contributorsJson.contributors);
 
 // Get app version
 const appVersion = ref('2.6.21');
@@ -126,39 +102,6 @@ const openExternal = (url: string) => {
   }
 };
 
-// Format contributor link to handle different types (website, email, phone)
-const formatContributorLink = (link: string): string => {
-  if (!link) return '#';
-
-  // If it's an email
-  if (link.includes('@') && !link.startsWith('mailto:')) {
-    return `mailto:${link}`;
-  }
-
-  // If it's a phone number (starts with + or contains only numbers and spaces/dashes)
-  if (link.match(/^[\+\d\s\-\(\)]+$/)) {
-    return `tel:${link.replace(/\s/g, '')}`;
-  }
-
-  // If it's a URL without protocol, add https://
-  if (!link.startsWith('http://') && !link.startsWith('https://') && !link.startsWith('mailto:') && !link.startsWith('tel:')) {
-    return `https://${link}`;
-  }
-
-  return link;
-};
-
-// Handle contributor link click
-const handleContributorLinkClick = (link: string) => {
-  const formattedLink = formatContributorLink(link);
-
-  // For email or tel links, use default behavior, otherwise use openExternal
-  if (formattedLink.startsWith('mailto:') || formattedLink.startsWith('tel:')) {
-    window.location.href = formattedLink;
-  } else {
-    openExternal(formattedLink);
-  }
-};
 </script>
 
 <style scoped lang="scss">
@@ -236,16 +179,6 @@ const handleContributorLinkClick = (link: string) => {
 }
 
 .developer {
-  margin: 0;
-  color: var(--color-text-primary);
-  font-size: 14px;
-
-  strong {
-    font-weight: 600;
-  }
-}
-
-.translator {
   margin: 0;
   color: var(--color-text-primary);
   font-size: 14px;
