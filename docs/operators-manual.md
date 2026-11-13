@@ -1,15 +1,15 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.21 development
-**Source revision:** 33baacfaa26096de295860e1028586ec736ddd73
+**Source revision:** 3b69f60eab3ef8d16be081f722d08dd3a578bcd2
 **Native engine baseline:** b96070379c7305bbb3af6e95d2d869aa9f9fe13b
 **Edition:** 13 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This development edition includes the lower Settings, Properties, media import, and show archive panels, plus the update notices, shortcuts, and warning changes made after **2.6.21**. Match your installer to its release notes before rehearsal.
+This development edition covers the docked workspace, 20 default QuickPlay shortcuts, and adjustable picture framing added after **2.6.21**. Match your installer to its release notes before rehearsal.
 
-The interface captures use generated tones, the native engine's virtual NULL output, and fixture locale, display and MIDI information. **docs/manual-assets/captures.json** records each capture's date, source revision and hash. Older captures show the former One Shots label. Equipment photographs remain illustrative.
+The interface captures use practice media and software audio output. **docs/manual-assets/captures.json** records each capture's date, source revision and hash. Equipment photographs remain illustrative.
 
 ## 1. Read this before the show
 
@@ -470,7 +470,7 @@ New QuickPlays start with **Replace Program**, a **0.1-second fade-in**, a **0.5
 
 In either mode, press the tile's **Play** button, its shortcut, or its MIDI control to fire directly. The button changes to **Stop** when playback is active. Use the number row for slots **1–10** and hold **Shift** for slots **11–20**.
 
-![An idle QuickPlay in Show Mode with its Play button and number key.](manual-assets/one-shot-show-mode.png)
+![QuickPlay 11 in Show Mode with its Play button and Shift+1 shortcut.](manual-assets/one-shot-show-mode.png)
 
 **Procedure — rehearse a QuickPlay**
 
@@ -558,7 +558,7 @@ With only one display or no dedicated assignment, the app uses a normal preview 
 
 ### What the audience sees
 
-The output shows one picture at a time and cuts to the newest sounding cue. The picture uses a centered **16:9** frame that fills a 1920 × 1080 display edge to edge. Other display shapes have black bars around the frame. Video and stills scale proportionally so the entire source stays visible. The app uses the display mode selected in the operating system.
+The output shows one picture at a time and cuts to the newest sounding cue. **Full HD**, **Fit to display**, and **100%** are the default picture settings. A 16:9 cue fills a 1920 × 1080 output edge to edge. Video and stills retain their proportions and show the entire source. Black fills any space around the picture.
 
 When a cue has no usable video, the output uses the first available layer in this order. Assigned **Cue image**, captured cue still, captured session standby, saved **Standby image**, then black. Set a Cue image in the cue's Basic Info and a saved standby image in **Settings → Video Output**. The native audio engine drives the soundtrack. Preview/headphone playback stays off the audience output.
 
@@ -566,9 +566,29 @@ Use H.264 or HEVC media for this source edition. ProRes and other production cod
 
 > **CAUTION — A fallback can hide a video failure.** If video cannot load or decode, the output can fall through to a cue image, standby image, or black without a blocking show alert. A healthy audio cue does not prove the picture is playing. Watch the actual destination during rehearsal.
 
+### Set picture framing
+
+In **Settings → Video Output → Picture framing**, choose a **Canvas**, **Scaling**, and **Frame size**, then select **Apply framing**. Changes take effect in the open Video Output window. The choices are saved on this machine.
+
+![Picture framing defaults in the docked Video Output settings.](manual-assets/video-framing-current.png)
+
+| Canvas | Dimensions | Shape |
+| --- | --- | --- |
+| Full HD (default), HD, UHD | 1920 × 1080, 1280 × 720, 3840 × 2160 | 16:9 |
+| WUXGA, WXGA | 1920 × 1200, 1280 × 800 | 16:10 |
+| XGA | 1024 × 768 | 4:3 |
+| DCI 4K | 4096 × 2160 | 256:135 |
+| Wide stage | 3840 × 1080 | 32:9 |
+| Portrait signage | 1080 × 1920 | 9:16 |
+| Custom dimensions | 64–16384 px for each side | Width divided by height |
+
+**Fit to display** makes the canvas as large as the window allows. **Cap at canvas size** limits the canvas to the selected dimensions in display pixels and shrinks it to fit a smaller window. **Frame size** scales the result from 25% to 100% around the center. Use custom dimensions for the active raster supplied by the LED or signage technician. Both scaling modes preserve media proportions.
+
+Set the HDMI resolution, refresh rate, and display rotation in the operating system. Confirm the received signal at the switcher or display. For a standard projector or TV, rehearse at Full HD with Fit to display at 100%. Check that the corner markers and edges of a framing pattern are visible and its circle is round.
+
 ### Capture a standby still
 
-- Press **G** or choose **Capture output** in **Settings → Video Output** to save the current picture from the 16:9 frame. Bars outside that frame are excluded.
+- Press **G** or choose **Capture output** in **Settings → Video Output** to save the current picture from the configured canvas. Bars outside that canvas are excluded.
 - Choose a **Capture display** in **Settings → Video Output**, then press **Shift+G** or choose **Capture display** to save the selected screen. The capture display can be different from the audience display. Grant screen capture permission if the operating system asks.
 - Set **Destination** to **Session standby** for a shared fallback or **Selected cue** for a specific cue. To capture Video Output for a specific cue in one step, select it and click the confidence thumbnail in the header.
 - Capture again to replace the still at that destination. **Clear still** removes the capture for the chosen destination. Assigned cue images always take priority. Use a saved Cue image or Standby image for artwork that must survive closing or reloading the show.

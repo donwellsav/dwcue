@@ -16,7 +16,7 @@ This is the active DonWells Cue repository. Build targets are configured for **W
 
 Current-source desktop builds also bundle the English manual offline: open **Help → Operator Manual (English)**, the welcome-screen manual button, or **Settings → Help**. The separate reader has document search, clickable contents and chapter bookmarks, page thumbnails, zoom, and native PDF print/download controls.
 
-![DonWells Cue showing the playlist, QuickPlays grid, and output metering](client/public/screenshots/donwells_cue_main.jpg)
+![DonWells Cue showing the playlist, QuickPlays grid, and output metering](docs/manual-assets/edit-workspace.png)
 
 The screenshots in this README are representative captures and may lag the newest UI; treat the running app as the source of truth. The standalone website keeps its own copied screenshot set.
 
@@ -53,7 +53,7 @@ Video cues are ordinary audio cues whose media file also carries a picture (H.26
 
 - **Open it for each session** from the toolbar **Video Output** button or Project Settings → **Video Output**. The app always launches with Video Output closed; it remembers the assigned display but never reopens the output automatically.
 - **Identify the physical screens** before assigning one: click **Identify displays** to show a large number, OS display name and resolution on every connected screen for five seconds. You can choose the display while the output is closed. If no independent display is assigned, DonWells Cue opens a normal preview window rather than taking over the control screen with fullscreen black.
-- **16:9 picture** — matching media fills a 16:9 display. Video and stills scale proportionally, with black bars where the source or display has a different shape.
+- **Picture framing** — 16:9 Full HD is the default. **Settings → Video Output** offers common HD, UHD, projector, stage and signage sizes, plus custom dimensions. Fit to display or cap the frame at its selected size and scale it proportionally. Choose the HDMI resolution and refresh rate in the operating system.
 - **Recover from the output itself** by right-clicking it. The context menu can enter or leave fullscreen, show the test card, or **Exit Video Output**. On Windows, **Alt+F4** also closes only the Video Output window; **Esc** leaves fullscreen. Closing it disarms the output for the rest of the session until you open it again.
 - **Keep using shortcuts** even if the Video Output window owns keyboard focus. DonWells Cue forwards application and QuickPlay shortcuts to the control window while preserving operating-system and native app shortcuts such as Windows Alt+F4 and the normal Ctrl/Cmd file commands.
 - **Standby stills** — press **G** to capture Video Output or **Shift+G** to capture the display chosen in **Settings → Video Output**. Capture for the selected cue or use a session-wide fallback. Clicking the confidence thumbnail captures Video Output for the selected cue. The picture falls back through assigned cue art, captured cue art, captured session standby, saved project standby and black.

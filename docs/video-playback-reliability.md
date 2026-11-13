@@ -8,6 +8,8 @@ The 3 November source was checkpointed in `2ea5984` and `a9a86a3` (package metad
 
 **13 November software checkpoint:** `33baacf` centers the audience picture in a 16:9 frame. Chromium verified edge-to-edge 1080p video and proportionally fitted portrait clips and stills. The isolated Electron check captured just that frame from 16:9, 4:3, and ultrawide windows. The frame uses CSS layout and the existing decoder. Full-window native black coverage remains available during renderer recovery.
 
+**Packaged review:** `3b69f60` adds operator-applied canvas presets, custom dimensions, and proportional frame scaling. The Apple Silicon bundle cold-opened the landscape sample with 23 cues ready. The decoded 1080p pattern reached all four edges and its center circle retained its proportions. An emulated 4:3 viewport kept the centered frame and black bars. The same output applied a custom canvas, wide stage and opt-in portrait framing, capped a 720p canvas on a Retina preview, retained the cap across reopen, and restored the Full HD default. These checks measure app rendering in software. The operating system owns HDMI timing and physical acceptance remains in T24.
+
 ## Confirmed failure paths
 
 | Failure | Evidence | Repair |

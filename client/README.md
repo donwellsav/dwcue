@@ -175,13 +175,14 @@ For upgrade compatibility, Electron's managed backend intentionally keeps the ex
 
 The Video Output window is deliberately **session-only** even though its display assignment is machine-specific:
 
-- `<userData>/video-output.json` persists display assignment, test card preferences and the standby capture display and destination. Legacy `enabled` values are ignored.
+- `<userData>/video-output.json` persists display assignment, picture framing, test card preferences and the standby capture display and destination. Legacy `enabled` values are ignored. Existing settings without framing default to Full HD at 100% Fit to display.
 - Every app launch starts with the output closed. `video-output:open` arms it for the current process; an operator close disarms it, while an internal display-watchdog recreation preserves the current session.
 - The display selector works while the output is closed. `video-output:identify-displays` creates click-through, always-on-top number cards on every connected screen for five seconds.
 - A valid independently addressable display gets a frameless fullscreen window. An unassigned or single-display setup gets a normal 960×540 preview window instead of a fullscreen takeover.
 - The output's native context menu exposes fullscreen, test-card and **Exit Video Output** actions. On Windows the real output remains `closable` so Alt+F4 is always an escape hatch. The idle base and failure cover are black; there is no separate operator blackout control: no blackout/fade-to-black IPC command exists.
 - Confidence capture allows one readback in flight per output generation and ignores late completions. Picture health also uses presented-frame and native-clock progress; fresh screenshots alone do not establish motion. Renderer crashes and hangs latch a native black cover over the existing audience window and report the reason while preserving operator control. **Restart Output** is an explicit operator action; the cover stays until the replacement view reports ready. Ordinary cue changes do not take focus. Retired window events cannot release a replacement's resources.
-- Explicit standby captures use the current output window or the exact selected display. Electron keeps them in memory for the active show and rejects late results from a replaced show or cue. Only the audience renderer can read captures. Assigned cue images have priority. Keyboard bindings are under **Settings → Shortcuts**.
+- Picture framing applies on explicit operator action, using the existing decoder and CSS layout. The app fits media proportionally inside a centered canvas. HDMI timing follows the system display mode.
+- Explicit standby captures use the current picture frame or the exact selected display. Electron keeps them in memory for the active show and rejects results if the output framing, show, or cue changes during readback. Only the audience renderer can read captures. Assigned cue images have priority. Keyboard bindings are under **Settings → Shortcuts**.
 
 The passive output can own keyboard focus, especially on Windows. Its Electron
 `before-input-event` handler therefore forwards application-level keys to the control
