@@ -539,3 +539,9 @@ Not performed: physical PA/HDMI/LTC/MIDI, real driver stall/termination or hotpl
 ## 5 November v2.6.18 release follow-up
 
 T50d reproduced the Windows shutdown ordering in a software fixture. Stop published its wake while the renderer was held before the counter read. With the old code, a full output ring stranded Stop until a second wake. Commit `4e5855a` checks the run state after capturing the counter. The forced ordering and all 13 local native suites passed in 43.34 seconds. All 61 isolated API tests passed in 38.85 seconds. Decoder-isolation tests also drained 64 audible blocks at device cadence while twelve other decoder calls were held. Physical acceptance remains in T24.
+
+## 13 November — Cue LTC edit
+
+T49d in `fd0178d`. A held native NULL-device start reproduced an LTC edit waiting with the project, preparation and transport locks held. The edit now reuses a ready route or queues an LTC open on the existing routing worker. While the driver was held, the session-bound edit returned, Stop All stopped the active cue, and backup GO rendered its original PCM. On release, the canceled open retired without publishing a route or restarting the edited cue. Deliberate GO opened the destination again, and a later edit used the ready route immediately.
+
+The native suite passed 13/13 and the isolated control API suite passed 60/60 with macOS audio service access denied. Audio real-time and live safety checks passed. T50 engine startup and shutdown during driver hangs, shared cold-device startup, and physical LTC receiver acceptance remain open.

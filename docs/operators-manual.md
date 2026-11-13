@@ -1,8 +1,8 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.21 development
-**Source revision:** 41d1305675e541921d8f75ec315bfb3fd1af15f3
-**Native engine baseline:** c8c198b81e3f41705fac2216ded625e8713b1c2f
+**Source revision:** fd0178def826a684fd5dd134b5d2f7573f58c6ad
+**Native engine baseline:** fd0178def826a684fd5dd134b5d2f7573f58c6ad
 **Edition:** 13 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
@@ -385,7 +385,7 @@ LTC is an audio-encoded synchronization signal for other equipment. It can be lo
 
 The engine supports 24, 25, 29.97 non-drop, 29.97 drop-frame, and 30 frames per second. The receiving device must use the same convention; drop-frame and non-drop are not interchangeable labels. Confirm lock and the starting timecode with the receiving operator during rehearsal, including what happens on stop, seek, replay, and a loop.
 
-If an LTC output fails to open, the app names the unavailable device and Program audio can still start. If LTC startup stalls, **Stop All** cancels the waiting start so you can use a backup cue that does not require that device.
+An LTC edit takes effect immediately when the output is ready. If the driver needs to open the output, the edit stays in the show while the engine opens it in the background. If startup stalls during an edit or cue start, use **Stop All**, then **GO** on a ready backup that uses a working output. The edited cue keeps its timecode settings for a deliberate retry. If the output fails to open, the app names the device and Program audio can still start.
 
 Keep the LTC destination separate from the audience audio path. Do not enable timecode on a cue merely because the checkbox is available. Record the device assignment and frame rate on the show handover sheet.
 

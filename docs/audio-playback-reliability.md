@@ -167,6 +167,8 @@ Device init/uninit remain serialized as required by the installed miniaudio 0.11
 
 Managed recovery retains startup process identity through readiness failure, refuses duplicate engines and unverified signals, bounds Windows taskkill to three seconds, and verifies actual process exit. Start/Stop/Restart/configuration/reattachment are ordered. The existing client-only Restart remains distinct from Restart engine.
 
+Cue LTC edits reuse an available mixer immediately. A cold output opens on the existing routing worker, outside the edit's locks. A held NULL-device start verifies that the edit acknowledges, Stop All stops the active cue, and backup GO renders PCM while the driver waits. A late open canceled by Stop All or a newer playback intent releases its device reference. The edit stays in the show for the next deliberate GO.
+
 The native gates hold actual decoder/metadata/backend operations; the manager uses the real implementation with a fake OS. Full current results are recorded in the execution ledger. No new physical, platform, installed-app or long-video-soak acceptance is implied.
 
-Still open: project routing callers around first native open, filesystem resolution/revision sweeps, healthy queued/bulk publication behind a blocked sibling, and unrelated Program preparation serialization. Native calls retain resources until return; OS thread exhaustion can fall back to synchronous cue/device cleanup. These remain prioritized repairs, not completed isolation guarantees.
+Still open are engine startup and process shutdown during a driver hang, shared serialization between cold device opens, and disk waits during explicit project Open/Save and direct cue registration. Native calls retain resources until return. OS thread exhaustion can fall back to synchronous cue or device cleanup.
