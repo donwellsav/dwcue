@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.21 development
-**Source revision:** f73d19ecfdf5e4c8b090dcce9e2f3f502d11960d
+**Source revision:** 0b1b7bad54a980c830ba23d2a5ab50af82dfeb36
 **Native engine baseline:** 889abd569da10a32d6cd0edb75b029b436e5cf42
-**Edition:** 12 November 2026 · English · Current-source operator edition
+**Edition:** 13 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This development edition includes the lower Settings panel, update notices, shortcut defaults, and warning placement changes made after **2.6.21**. Match your installer to its release notes before rehearsal.
+This development edition includes the lower Settings, Properties, and media import panels, plus the update notices, shortcuts, and warning changes made after **2.6.21**. Match your installer to its release notes before rehearsal.
 
 The interface captures use generated tones, the native engine's virtual NULL output, and fixture locale, display and MIDI information. **docs/manual-assets/captures.json** records each capture's date, source revision and hash. Equipment photographs remain illustrative.
 
@@ -108,7 +108,7 @@ Use Edit Mode to import, organize, and configure the show. The top bar contains 
 
 ![Current Edit Mode with the playlist, acknowledged Up Next target, Basic Info and output console.](manual-assets/edit-workspace.png)
 
-![Basic Info for House-open, including cue identity, ducking and start/end behavior.](manual-assets/cue-basic-current.png)
+![Basic Info with aligned cue details, media, identifiers, and cueing controls.](manual-assets/cue-basic-current.png)
 
 **Procedure — inspect a cue without firing it**
 
@@ -126,7 +126,7 @@ An empty One Shots bank is collapsed by default. Choose **Show One Shots** to re
 
 Switch to **Show Mode** for performance after preparation is complete. It simplifies the interface and emphasizes transport and large cue controls. GO and assigned controls remain live. The One Shot Play/Stop button and keyboard and MIDI triggers work the same way in both modes. Use Edit Mode to change the bank.
 
-Rehearse at the actual display size and app zoom. Settings and Cue Properties share the lower panel. Settings sizes each tab to its controls until you adjust the dock height. Drag the top grip down for more playlist room or up for more controls. You can also focus the grip and use **Up/Down**. Settings and Properties each remember their adjusted height while the app is open. GO and Stop All stay at the top, and the shortcut bar shows a compact reference while either panel is open. **Customize Shortcuts…** opens the full editor.
+Rehearse at the actual display size and app zoom. Settings, Properties, and playlist imports share the lower panel. Each panel fits its contents until you resize it. Drag the top grip down for more playlist room or up for more controls. You can also focus the grip and use **Up/Down**. Settings, Properties, and imports keep their own adjusted heights while the app is open. GO and Stop All stay at the top, and the shortcut bar shows a compact reference while the lower panel is open. **Customize Shortcuts…** opens the full editor.
 
 ![Show Mode with the One Shots bank open and the default number keys visible.](manual-assets/show-mode.png)
 
@@ -145,15 +145,15 @@ Accepted GO consumes an override and refused GO retains it. Check readiness, err
 
 ### Local files first
 
-Open **Import Media**. In local mode the primary action is **Choose files…**. **Browse Server** and **Advanced options** are collapsed until needed. The server browser remains useful when media is already on the engine computer, including a same-machine setup.
+Open **Import Media** from the playlist to use the lower panel. In local mode the primary action is **Choose files…**. The **Import plan** shows file handling and duplicate settings beside the file selection. Expand **Browse Server** for media already on the engine computer.
 
-The desktop media chooser opens in a separate window. Bring the operator window forward to use **Stop All Cues** while the chooser remains open. In the app’s file and folder picker, use **Stop All Cues** in the toolbar. Stopping cues uses the show’s configured fade and keeps the file selection open.
+The desktop media chooser opens in a separate window. Bring the operator window forward to use the playlist, GO, and **Stop All Cues** while the chooser remains open. Other in-app file and folder dialogs provide **Stop All Cues** in their toolbars. Stopping cues uses the show’s configured fade and keeps the file selection open.
 
 ![Import Media with local file selection and the source-level/full-duration preservation notice.](manual-assets/import-media.png)
 
 In **Browse Server**, double-click folders to open them. Click files to select; use Shift or Ctrl/Cmd-click for multiple files, then **Import selected**. The file list distinguishes recognizable media, unsupported file types, and files whose type still needs verification. An extension or icon is not proof of decodability; wait for the import result.
 
-![Browse Server showing the three generated practice WAV files.](manual-assets/server-picker-current.png)
+![The server browser inside the Import Media panel.](manual-assets/server-picker-current.png)
 
 Remote operation separates the two computers: **From This Computer** transfers files from the controller, while **Browse Server** selects files already accessible to the engine. Do not enter a controller-only path into the server browser and expect it to exist remotely.
 
@@ -161,14 +161,14 @@ If an individual file fails to upload, the remaining uploads continue. Review th
 
 ### Copy or link deliberately
 
-The import dialog starts with **Copy into project media** and **Reuse existing copy** when opened. Check the choices under **Advanced options** if your workflow needs something else.
+The import plan starts with **Copy into project media** and **Reuse existing copy**. Choose different options in the plan when needed.
 
-![Advanced import options for copying/linking, duplicate handling and new-cue settings. Audio processing is explicit after import.](manual-assets/import-options-current.png)
+![A staged media file and the copy, link, and duplicate options.](manual-assets/import-options-current.png)
 
 **Procedure — import media that will travel with the show**
 
 - **Prerequisites:** The show is saved in a dedicated folder and the source files are authorized, stable, and available for audition.
-- **Actions:** Choose **Import Media → Choose files…**, select the sources, open **Advanced options**, select **Copy into project media**, and choose the intended duplicate policy. Start the import and wait for every result.
+- **Actions:** Choose **Import Media → Choose files…**, select the sources, then confirm **Copy into project media** and the duplicate policy in the **Import plan**. Start the import and wait for every result.
 - **Expected visible outcome:** Each wanted file reports a successful import and appears as a cue; the project media folder contains the copied source.
 - **Common mistake:** Choosing a link to save time, then moving only the `.dwcue` file to another machine.
 - **Recovery:** Re-import with copying enabled or replace the cue media, save, export a `.dwcuepack`, and rehearse with the original source volume unavailable.
@@ -197,6 +197,8 @@ Wait for the source copy/download to finish and for media readiness before takin
 
 YouTube and Spotify import controls are available in Edit Mode. They depend on external services and downloader availability. Prepare and verify these imports before the show, not on a live cue call. Use only material you are authorized to obtain and perform; an import feature does not supply a public-performance licence. Once imported, rehearse from the local show media rather than relying on a working internet connection at the venue.
 
+**Import from YouTube** and **Spotify** open in the lower panel. Close the panel or switch to Settings or Properties to make room for the playlist during a job. Reopen the same import to check its progress, results, or retry actions. Use the job’s **Cancel** button to stop the import. **Stop All Cues** controls playback independently.
+
 Paste a Spotify link or short share link, then choose **Review tracks** to retrieve usable tracks in playlist order. The review reports entries skipped because their Spotify track IDs are missing or invalid. Large playlists can take several minutes to review. Check the returned count and your selections, then wait for each selected download and import result. Resolve unavailable, unmatched or failed entries before taking the cues. Avoid adding the same downloaded result to the playlist twice.
 
 The app normally saves the Spotify destination and retry information. If it warns that it could not save them, you can continue with the selected folder and retry within the current app session. Restore write access before relying on that information after restarting the app. If cue setup settings reach the engine but cannot be saved, they stay active. Correct the storage problem and save again.
@@ -216,7 +218,7 @@ Replacing a cue's file keeps its cue identity but reloads the corresponding medi
 
 ### Trims, fades, and normalization
 
-Open **Properties → Playback** for the waveform and timing controls. Set **In Point** and **Out Point** around the part you want to use. Listen to the entrance and exit; a visually quiet waveform may contain room tone, a breath, or an intentional pause. Leave enough material for any fade or transition you configure.
+Open **Properties → Playback** for the waveform and the aligned **Cue Timing**, **Fade Settings**, and **Transitions** columns. Set **In Point** and **Out Point** around the part you want to use. Listen to the entrance and exit; a visually quiet waveform may contain room tone, a breath, or an intentional pause. Leave enough material for any fade or transition you configure.
 
 ![Playback controls and waveform for the generated practice cue; In/Out and explicit preparation controls are visible.](manual-assets/cue-playback-current.png)
 
@@ -334,7 +336,7 @@ If GO waits while opening a named Program output or **System Default**, use **St
 
 The engine supports more advanced routing through its API, but the current desktop app does not mount a routing-matrix editor. The current operator-visible routing detail is the project device selection and a cue's **Properties → Output** override.
 
-![Cue Output controls, including device override, channel and LTC routing.](manual-assets/output-routing-current.png)
+![Cue Output controls for the device override and LTC timecode.](manual-assets/output-routing-current.png)
 
 ### Configure Preview before using headphones
 
