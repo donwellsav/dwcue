@@ -1,6 +1,6 @@
 # DonWells Cue
 
-DonWells Cue **2.6.21** gives the quick-play bank the same Play/Stop controls in Edit and Show Mode. Current development builds label the bank **QuickPlays**. The number row triggers slots **1–10**, and holding **Shift** triggers **11–20**. Use **Enter** to set the selected cue as Up Next and **Space** to run it after the engine confirms the target.
+DonWells Cue **2.6.22** gives **QuickPlays** the same Play/Stop controls in Edit and Show Mode. The number row triggers slots **1–10**, and holding **Shift** triggers **11–20**. Use **Enter** to set the selected cue as Up Next and **Space** to run it after the engine confirms the target.
 
 **V** toggles Video Output. **G** captures its picture and **Shift+G** captures a selected display for standby. Settings opens below the playlist, with separate **Shortcuts** and **MIDI** tabs and updates under **About**. Header warnings temporarily replace the show name. The [workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification and the deferred line-level audio and 1080p HDMI checks.
 
@@ -10,7 +10,7 @@ You build a **show** as a list of cues plus a grid of one-touch buttons, then tr
 
 This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. Published macOS packages are Developer ID signed, notarized, and package-validated.
 
-> The current source builds **v2.6.21**. Match the installed About version to the release notes before rehearsal.
+> The current source builds **v2.6.22**. Match the installed About version to the release notes before rehearsal.
 
 > **Operating a show?** Use the [operator manual (PDF)](docs/operators-manual.pdf) or its [Markdown source](docs/operators-manual.md). Those instructions track the current source. The client and server READMEs linked later are developer references, not show-day instructions.
 
@@ -354,7 +354,7 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.21**. Find published artefacts and checksums on the release page.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.22**. Find published artefacts and checksums on the release page.
 
 ### Triggering a release
 
