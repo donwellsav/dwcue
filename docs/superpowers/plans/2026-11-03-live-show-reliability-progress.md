@@ -544,4 +544,12 @@ T50d reproduced the Windows shutdown ordering in a software fixture. Stop publis
 
 T49d in `fd0178d`. A held native NULL-device start reproduced an LTC edit waiting with the project, preparation and transport locks held. The edit now reuses a ready route or queues an LTC open on the existing routing worker. While the driver was held, the session-bound edit returned, Stop All stopped the active cue, and backup GO rendered its original PCM. On release, the canceled open retired without publishing a route or restarting the edited cue. Deliberate GO opened the destination again, and a later edit used the ready route immediately.
 
-The native suite passed 13/13 and the isolated control API suite passed 60/60 with macOS audio service access denied. Audio real-time and live safety checks passed. T50 engine startup and shutdown during driver hangs, shared cold-device startup, and physical LTC receiver acceptance remain open.
+The native suite passed 13/13 and the isolated control API suite passed 60/60 with macOS audio service access denied. Audio real-time and live safety checks passed. The engine process follow-up is below. Shared cold-device startup and physical LTC receiver acceptance remain open.
+
+## 13 November — Engine startup and shutdown
+
+T50e in `4b4f180`. A file gate holds the real miniaudio NULL backend inside device start. The old server never answered health or Stop All. The control listener now binds before default output preparation, which uses the existing routing worker. While the gate was held, health and Stop All answered and an older native show opened. Releasing the gate brought Main online while playback stayed stopped. Crash recovery intent checks also passed.
+
+T50f in `e2ddeb9`. With the startup fix alone, SIGINT left the process alive beyond the test's four-second deadline. A watchdog now allows about 1.5 seconds for cleanup after observing a stop signal, then exits the process if it is still running. With the driver held, the process exited with failure status and a fresh engine answered health on the same port with a new PID. The healthy replacement exited successfully on SIGTERM and removed its own pidfile. Forced exit leaves identity verification to the existing manager. It can wait briefly for a possible crash replacement before an explicit restart.
+
+The rebuilt macOS binary passed 13/13 native suites and 69/69 isolated server integration checks with audio service access denied. All seven fake-OS managed lifecycle checks, audio real-time safety and live safety passed. Hardware, packaged-app acceptance and native Windows and Linux execution remain untested. Shared cold-device serialization remains in T49.

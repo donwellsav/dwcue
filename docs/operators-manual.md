@@ -1,8 +1,8 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.21 development
-**Source revision:** fd0178def826a684fd5dd134b5d2f7573f58c6ad
-**Native engine baseline:** fd0178def826a684fd5dd134b5d2f7573f58c6ad
+**Source revision:** e2ddeb9bee233ad631273bd5647fa4a9fdb90410
+**Native engine baseline:** e2ddeb9bee233ad631273bd5647fa4a9fdb90410
 **Edition:** 13 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
@@ -732,7 +732,7 @@ When a network controller loses contact, do not assume the audience has silence.
 
 In the **Connection lost** overlay, **Restart** relaunches only the client; it leaves the audio engine and Program running. To restart the managed local audio process, use **Server Settings -> Restart engine** in Local mode. Coordinate that interruption with the show team and verify the returned project, active cue, position and output before GO. A remote engine requires its own operator's recovery procedure.
 
-Managed Start, Stop and Restart actions run in order. If an old local engine is still present but cannot be verified or stopped, the app refuses another launch. A running process or an open device does not establish usable audio. Correct the storage/driver fault, retain the diagnostic and use the rehearsed backup rather than repeatedly issuing Restart.
+The local controller can connect and use Stop All while the default audio output starts. Confirm Program sound during soundcheck. Save the show before restarting the engine. If driver cleanup stalls during an intentional stop, the engine attempts to exit after about 1.5 seconds. The app verifies the old engine has exited before launching another.
 
 ### Choose the correct recovery direction
 
@@ -827,7 +827,7 @@ Perform this only during soundcheck with the console operator ready. Normal cue 
 
 Record app build/source, OS, engine computer, local/remote mode, device and cue names, visible state and triggering actions. Note playhead/meter movement and whether sound/picture reached the destination.
 
-There is no general Diagnostics window. Use connection status, Server Settings, device selection and persistent server logs. **Restart engine** affects playback and can still wait for file/driver cleanup; coordinate with the show operator first.
+Use connection status, Server Settings, device selection and persistent server logs. **Restart engine** interrupts playback. If the system still holds the previous engine, use the rehearsed backup and resolve the device fault before trying again.
 
 For upgrade compatibility, the managed desktop engine intentionally continues to use the legacy-named **LivePlay** data directory; the app does not copy, move, or rename that profile at startup. On macOS, its engine log is normally **~/Library/Application Support/LivePlay/logs/dwcue-server.log**. Fatal reports are under its **crash-logs** folder. The normal log rotates to **dwcue-server.log.1** at about 10 MiB. Standalone-server state is separate: on macOS it defaults to **~/Library/Application Support/DonWells Cue/server**, on Windows to **%LOCALAPPDATA%\DonWells Cue\server**, and on Linux to **$XDG_STATE_HOME/dwcue** or **~/.local/state/dwcue**.
 

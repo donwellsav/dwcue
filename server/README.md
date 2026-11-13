@@ -179,7 +179,7 @@ In LAN mode, the boot banner shows the reachable URL:
     LAN reach  http://192.168.1.42:4480
 ```
 
-`Ctrl+C` (SIGINT / Ctrl-Break / WM_CLOSE on Windows) triggers a clean shutdown — devices closed, threads joined, project flushed if dirty.
+`Ctrl+C` requests a clean shutdown. The server also handles SIGTERM and Windows console Close and Ctrl+Break. If cleanup remains blocked about 1.5 seconds after the watchdog observes the request, the watchdog exits the process with failure status. Use the normal save command to persist show edits before stopping the engine.
 
 ---
 
@@ -748,8 +748,10 @@ The initial open for a project Program or LTC selection or a cue override releas
 
 A separate worker prepares System Default, configured Program and LTC after media publication. Open, Close and the single-item loader can finish while native startup waits. Stop All or a show change discards a late route and releases its device reference. Settings reuses the validated mixer and keeps the current LTC feed when Program changes.
 
+At engine startup the listener binds before that worker opens System Default. Health and Stop All are available during a driver wait. During intentional shutdown, normal cleanup removes the owned pidfile. A deadline exit can leave it behind, so a managed restart still verifies the process is gone before replacing it.
+
 One owned revision sweep checks loaded media without waiting on the queued loader. Changed results apply only to the current document and cue. Playlist loads probe a relative path against its absolute fallback outside document ownership. Preview and media requests recheck the reference after the probe. Adding a cue queues its own media and any group children.
 
 Queued loads use two worker slots. Whole-show loads use the existing CPU-based limit with at least two slots. Repeated references to the same preferred path share one slot in each loader. Each completed cue publishes against its current identity, so it can take GO while an unrelated file is still pending. The show remains in loading state until current work settles. Several simultaneous stalls can fill the available slots.
 
-The workplan tracks storage waits during project-file Open/Save, cold LTC routing edits and engine startup/shutdown. A stuck native open can still occupy the shared device lifecycle lock or delay server shutdown until the driver returns. OS thread exhaustion may retain synchronous cleanup as a fallback.
+The workplan tracks project-file Open/Save, direct cue registration and shared serialization between cold device opens. OS thread exhaustion may retain synchronous cleanup as a fallback. Pending kernel I/O can delay Windows process exit. [Microsoft's TerminateProcess reference](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-terminateprocess)

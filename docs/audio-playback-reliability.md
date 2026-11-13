@@ -1,6 +1,6 @@
 # Audio import and live playback reliability
 
-**5 November release check:** v2.6.18 rechecks engine state after the renderer captures the device wake counter. A regression holds the renderer at a full software output ring and sends the shutdown wake before letting it continue. The [workplan](superpowers/plans/2026-11-03-live-show-reliability.md) records later source fixes and remaining project-file I/O, LTC routing edits and driver lifetime work.
+**5 November release check:** v2.6.18 rechecks engine state after the renderer captures the device wake counter. A regression holds the renderer at a full software output ring and sends the shutdown wake before letting it continue. The [workplan](superpowers/plans/2026-11-03-live-show-reliability.md) records later LTC and engine lifecycle fixes and the remaining device and storage work.
 
 The 4 November software checkpoint `2f372c2` added owned file preparation and cleanup, cancellable publication, independent device status and recovery, and ordered managed-engine operations. The initial 3 November repairs are recorded in `2ea5984` and `a9a86a3`.
 
@@ -169,6 +169,8 @@ Managed recovery retains startup process identity through readiness failure, ref
 
 Cue LTC edits reuse an available mixer immediately. A cold output opens on the existing routing worker, outside the edit's locks. A held NULL-device start verifies that the edit acknowledges, Stop All stops the active cue, and backup GO renders PCM while the driver waits. A late open canceled by Stop All or a newer playback intent releases its device reference. The edit stays in the show for the next deliberate GO.
 
+At server startup, the control listener binds before the routing worker prepares System Default. A held device start leaves health, project access and Stop All available. Audio playback needs a working output. On intentional shutdown, a watchdog gives normal cleanup about 1.5 seconds before terminating the server process. The software regression verifies exit while the driver is still held, restart on the same port and normal cleanup by the replacement. The managed app checks actual exit before starting another engine.
+
 The native gates hold actual decoder/metadata/backend operations; the manager uses the real implementation with a fake OS. Full current results are recorded in the execution ledger. No new physical, platform, installed-app or long-video-soak acceptance is implied.
 
-Still open are engine startup and process shutdown during a driver hang, shared serialization between cold device opens, and disk waits during explicit project Open/Save and direct cue registration. Native calls retain resources until return. OS thread exhaustion can fall back to synchronous cue or device cleanup.
+Cold device opens still share a native lock. Disk waits during explicit project Open/Save and direct cue registration also remain open. In-flight native work owns its resources while the process is live. OS thread exhaustion can fall back to synchronous cue or device cleanup. Pending kernel I/O can delay Windows process exit. [Microsoft's TerminateProcess reference](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-terminateprocess)
