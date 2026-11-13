@@ -1873,8 +1873,8 @@ assert.match(
 );
 assert.match(
   projectHeader,
-  /class="header-titles">[\s\S]*class="silence-warning"[\s\S]*class="project-name"[\s\S]*\.silence-warning__label\s*\{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;/,
-  'the silence warning must stay above the project name and fit beside the header controls',
+  /class="header-name-line">\s*<h2\s+class="project-name"[\s\S]*?<\/h2>\s*<div class="header-warning-line">[\s\S]*?class="silence-warning"[\s\S]*?id="project-header-warnings"/,
+  'the silence warning and transient notices must share the session-name row',
 );
 assert.match(
   playlistView,

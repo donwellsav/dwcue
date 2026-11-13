@@ -7,23 +7,25 @@
         class="header-logo"
       />
       <div class="header-titles">
-        <div class="header-warning-line">
-          <div
-            v-if="silenceSeconds !== null"
-            class="silence-warning"
-            :title="`${t('project.silenceWarning')} ${silenceSeconds} ${t('project.seconds')}`"
-          >
-            <span class="silence-warning__label">{{ t('project.silenceWarning') }}</span>
-            <bdi class="silence-warning__seconds">{{ silenceSeconds }}</bdi>
-            <span>{{ t('project.seconds') }}</span>
+        <span class="brand-wordmark">{{ t('app.name') }}</span>
+        <div class="header-name-line">
+          <h2
+            class="project-name"
+            :title="currentProject?.name || t('project.noProject')"
+          >{{ currentProject?.name || t('project.noProject') }}</h2>
+          <div class="header-warning-line">
+            <div
+              v-if="silenceSeconds !== null"
+              class="silence-warning"
+              :title="`${t('project.silenceWarning')} ${silenceSeconds} ${t('project.seconds')}`"
+            >
+              <span class="silence-warning__label">{{ t('project.silenceWarning') }}</span>
+              <bdi class="silence-warning__seconds">{{ silenceSeconds }}</bdi>
+              <span class="silence-warning__label">{{ t('project.seconds') }}</span>
+            </div>
+            <div id="project-header-warnings" class="header-warning-slot"></div>
           </div>
-          <span v-else-if="!warning" class="brand-wordmark">{{ t('app.name') }}</span>
-          <div id="project-header-warnings" class="header-warning-slot"></div>
         </div>
-        <h2
-          class="project-name"
-          :title="currentProject?.name || t('project.noProject')"
-        >{{ currentProject?.name || t('project.noProject') }}</h2>
       </div>
       <span
         v-if="currentProject && !autoSaveEnabled && hasUnsavedChanges"
@@ -128,7 +130,7 @@ const { currentProject, findItemByUuid, findItemByIndex, autoSaveEnabled, hasUns
 const { t } = useLocalization();
 const { activeCues } = useAudioEngine();
 const { uiMode, toggleUiMode } = useUiMode();
-const { warning, silenceRemaining } = useHeaderWarnings();
+const { silenceRemaining } = useHeaderWarnings();
 
 const showControlConfig = useState('showControlConfig', () => false);
 const showProjectSettings = useState('showProjectSettings', () => false);
@@ -355,6 +357,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--spacing-sm);
   flex: 0 0 var(--app-header-height);
   height: var(--app-header-height);
   padding: var(--spacing-xs) var(--workspace-gutter);
@@ -365,7 +368,7 @@ onMounted(() => {
 .header-left {
   display: flex;
   align-items: center;
-  flex: 0 1 auto;
+  flex: 1;
   min-width: 0;
   gap: var(--spacing-sm);
 }
@@ -377,19 +380,24 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-/* The warning and wordmark share one line above the project name. */
 .header-titles {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  flex: 1;
   min-width: 0;
 }
 
+.header-name-line,
 .header-warning-line {
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
-  height: 18px;
+  min-width: 0;
+}
+
+.header-warning-line {
+  flex: 1;
 }
 
 .header-warning-slot {
@@ -427,7 +435,8 @@ onMounted(() => {
   letter-spacing: -0.01em;
   color: var(--color-text-primary);
   margin: 0;
-  max-width: clamp(140px, 24vw, 420px);
+  flex: none;
+  max-width: min(40%, 420px, max(4rem, calc(100% - 264px)));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -618,6 +627,7 @@ onMounted(() => {
 }
 
 .silence-warning {
+  max-width: calc(100% - 60px);
   gap: var(--spacing-xs);
   padding-inline: var(--spacing-xs);
   border: 1px solid var(--state-up-next);
