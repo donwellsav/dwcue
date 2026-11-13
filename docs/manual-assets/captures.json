@@ -296,16 +296,16 @@
     {
       "file": "shortcuts-current.png",
       "view": "The Shortcuts tab in Settings with the reference bar toggle and Customize Shortcuts button.",
-      "version": "2.6.20 development",
-      "sourceRevision": "100247ab6b139d0d1810e8c61d46d960cd74a6f2",
-      "nativeSourceRevision": "f14629d954a0ab6c312f4f37e4eec9b101cf84ea",
+      "version": "2.6.21 development",
+      "sourceRevision": "f1118045780d9a55e6ef13c90e0ccd0eb5fc1a32",
+      "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
       "capturedOn": "2026-11-12",
       "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
       "dimensions": [
         720,
-        648
+        716
       ],
-      "sha256": "c3578b006ee178ba4e566b666e2b81ce3cbf258f4d66e7f929092c5075fc3f70",
+      "sha256": "0303e82e20e563c7ed881f887953c59b707f6b81cb238089380cb9b3e073c605",
       "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
       "captureMethod": "Playwright screenshot of the rendered page or panel at its actual CSS pixel size.",
       "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."

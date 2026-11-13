@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
-**Version:** 2.6.21
-**Source revision:** 889abd569da10a32d6cd0edb75b029b436e5cf42
+**Version:** 2.6.21 development
+**Source revision:** f1118045780d9a55e6ef13c90e0ccd0eb5fc1a32
 **Native engine baseline:** 889abd569da10a32d6cd0edb75b029b436e5cf42
 **Edition:** 12 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition covers **2.6.21**, including direct One Shot playback, standby still capture, the Shortcuts tab, and header warning settings. Match your installer to its release notes before rehearsal.
+This development edition includes the playlist numbering, shortcut, clipboard and warning layout fixes made after **2.6.21**. Match your installer to its release notes before rehearsal.
 
 The interface captures use generated tones, the native engine's virtual NULL output, and fixture locale, display and MIDI information. **docs/manual-assets/captures.json** records each capture's date, source revision and hash. Equipment photographs remain illustrative.
 
@@ -206,7 +206,7 @@ Cancelling a YouTube import during tool preparation prevents the downloader from
 
 ### Name, inspect, and arrange
 
-Use descriptive **Display Name** values that match the show caller's language. Color can group related material, but do not make color the only cue identifier. The internal **UUID** identifies the cue; **Index** reflects its place in the current hierarchy and can change when you reorder. When assigning a **Go to Index** target, use the index shown by the app, not a printed cue number from another system.
+Use descriptive **Display Name** values that match the show caller's language. Use cue names as well as color to identify cues. The **UUID** identifies the cue, and the displayed **Index** reflects its position in the playlist. New playlists and shows saved with a zero start display cue **1** first. **Settings → User Interface** supports a higher starting number if your cue sheet uses one. Enter the displayed number when assigning a **Go to Index** target. A numbering change preserves existing saved targets and cue order.
 
 Drag cues into the required order and use **Add Group** where a folder-like structure makes the show easier to navigate. Save and rehearse after rearranging any sequence with jumps, groups, or automatic transitions. A correct-looking playlist does not prove that every transition points where you intend.
 
@@ -431,7 +431,7 @@ For overlapping playback, check Ducking. If the wrong material is audible, use t
 
 ### Header warnings
 
-The steady **Silence in** countdown stays above the project name. Transient messages appear beside it. Red urgent warnings take priority over yellow advisories. Audio and video recovery buttons stay available while their outputs need attention.
+The steady **Silence in** countdown stays beside the session name. Transient messages appear in the same row. Red urgent warnings take priority over yellow advisories. Audio and video recovery buttons stay available while their outputs need attention.
 
 In **Settings → User Interface → Header warning timing**, set the four durations and two countdown thresholds for this device. Defaults are **5 seconds** without a countdown, **3 seconds** above 30 seconds remaining, **2 seconds** from 15 through 30 seconds, and **1 second** below 15 seconds. A timing change applies to the next message.
 
@@ -492,11 +492,13 @@ Open **Settings → Shortcuts → Customize Shortcuts…** and use the **Keyboar
 - **Common mistake:** Testing Space or Escape while a text field or Video Output has focus and generalizing from that result.
 - **Recovery:** Stop safely, close editors, restore workspace focus, check conflicts, and repeat the controlled test.
 
-Keyboard assignments belong to the project. One Shot slots **1 through 9** default to their matching number keys, and **0** fires slot **10**. Saved assignments take precedence. **Clear shortcut** disables a tile's key. **Reset to Defaults** on the Keyboard tab restores the defaults. Playback defaults are Space for GO, P for Pause/Resume, Escape for Stop All, Up/Down for selection, and Enter for Set Selected as Up Next. Toggle Loop, Cue to Continue, Jump Cue, and the configurable Play Selected action start unbound. **F1** directly plays the selected audio cue.
+Keyboard assignments belong to the project. One Shot slots **1 through 9** default to their matching number keys, and **0** fires slot **10**. Saved assignments take precedence. **Clear shortcut** disables a tile's key. **Reset to Defaults** on the Keyboard tab restores the defaults. Use **Enter** to set the selected cue as Up Next, **Space** to fire it, **Shift+Enter** to play the selected cue immediately, and **L** to toggle Loop. Cue to Continue and Jump Cue start unbound. **F1** also plays the selected audio cue.
 
 The main workspace accepts playback and One Shot shortcuts with the bank visible, hidden, or detached. In the shortcut editor, Escape cancels assignment or closes the editor.
 
 Text fields normally own typing, so a playback letter does not fire while you are editing a name. Close editors and dialogs before the next cue call. Keyboard/MIDI Pause/Resume and Toggle Loop target the first active cue, otherwise the selected audio cue; use the specific cue's visible control if several cues are active and you need certainty about the target.
+
+**Cmd/Ctrl+C** copies highlighted text when you select it, including About credits. To copy a cue, select its playlist row and press **Cmd/Ctrl+C** in the workspace.
 
 > **SAFETY — Pause/Resume can start audio.** With no active cue, keyboard or MIDI Pause/Resume starts the selected audio cue if it is inactive. It is not a universal silence command. Mapped Toggle Loop also edits authored project behavior, subject to Autosave/Save; use Cue to Continue for a runtime-only loop release.
 
@@ -897,11 +899,12 @@ These are source defaults, not a promise about a project's customized assignment
 | Escape | Stop All Cues using the configured global fade |
 | Up / Down arrows | Move playlist selection |
 | Enter | Set the selected playlist cue as Up Next |
+| Shift+Enter | Play the selected audio cue immediately |
+| L | Toggle the target cue's saved End Behavior between Loop and Nothing |
 | V | Open or close the Video Output window |
 | G | Capture Video Output as a standby still |
 | Shift+G | Capture the display selected in Video Output settings |
 | F1 | Separate Play Selected audio action |
-| Toggle Loop | No default binding. If assigned, sets End Behavior to Loop or Nothing: a project edit, not a one-pass release |
 | Cue to Continue / Jump Cue | No default binding; use the appropriate live control or assign deliberately |
 | 1 through 9, then 0 | Fire One Shot slots 1 through 10 in either mode |
 | Cmd/Ctrl+S | Save Project |
