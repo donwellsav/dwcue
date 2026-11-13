@@ -17,6 +17,10 @@
         >
           <span class="tab-icon material-symbols-rounded" aria-hidden="true">piano</span> {{ t('controls.tabMidi') }}
         </button>
+        <button v-for="group in bindingGroups" :key="group.id" type="button" class="group-btn"
+          :aria-pressed="activeGroup === group.id" @click="bindingGroup = group.id">
+          {{ t(group.labelKey) }}
+        </button>
         <label class="shortcut-bar-toggle">
           <input v-model="showShortcutsBar" type="checkbox" />
           {{ t('settings.showShortcutsBar') }}
@@ -27,11 +31,10 @@
       </div>
 
       <!-- Keyboard tab -->
-      <div v-if="activeTab === 'keyboard'" class="config-body">
+      <div v-if="activeTab === 'keyboard'" :key="activeGroup" class="config-body">
         <!-- Playback section -->
-        <h3 class="category-header">{{ t('controls.sectionPlayback') }}</h3>
         <div
-          v-for="action in PLAYBACK_ACTIONS"
+          v-for="action in keyboardActions"
           :key="action.id"
           class="action-row keyboard-action-row"
           :class="{
@@ -62,9 +65,8 @@
         </div>
 
         <!-- One Shots section -->
-        <h3 v-if="configuredOneShots.length" class="category-header">{{ t('controls.sectionOneShots') }}</h3>
         <div
-          v-for="entry in configuredOneShots"
+          v-for="entry in activeGroup === 'One Shots' ? configuredOneShots : []"
           :key="entry.item.uuid"
           class="action-row keyboard-action-row"
           :class="{
@@ -96,8 +98,7 @@
       </div>
 
       <!-- MIDI tab -->
-      <div v-if="activeTab === 'midi'" class="config-body">
-        <!-- Device selector -->
+      <div v-else :key="'midi-' + activeGroup" class="config-body config-body--midi">
         <div class="device-row">
           <label for="shortcut-midi-device" class="device-label">{{ t('controls.midiDevice') }}</label>
           <select
@@ -111,59 +112,34 @@
           </select>
           <span v-if="connectedDevices.length === 0" class="no-device-hint">{{ t('controls.noDevices') }}</span>
         </div>
-
-        <template v-for="category in midiCategories" :key="category">
-          <h3 class="category-header">{{ t(categoryLabelKey(category)) }}</h3>
-          <div
-            v-for="action in midiActionsByCategory(category)"
-            :key="action.id"
-            class="action-row"
-            :class="{ learning: learning === action.id }"
-          >
-            <span class="action-label">{{ action.n !== undefined ? t(action.labelKey, { n: action.n }) : t(action.labelKey) }}</span>
-            <span class="action-binding">
-              <template v-if="learning === action.id">
-                {{ t('controls.waitingForInput') }}
-              </template>
-              <template v-else-if="getMidiBinding(action.id)">
-                {{ formatMidiBindingLabel(action.id) }}
-              </template>
-              <template v-else>—</template>
-            </span>
-            <div class="action-buttons">
-              <button
-                class="learn-btn"
-                :class="{ active: learning === action.id }"
-                @click="toggleLearn(action.id)"
-              >
-                {{ learning === action.id ? t('controls.cancel') : t('controls.learn') }}
-              </button>
-              <button
-                v-if="getMidiBinding(action.id)"
-                class="clear-btn"
-                @click="handleMidiClear(action.id)"
-              >
-                {{ t('controls.clear') }}
-              </button>
-            </div>
+        <div v-for="action in midiActions" :key="action.id" class="action-row midi-action-row"
+          :class="{ learning: learning === action.id }">
+          <span class="action-label">{{ t(action.labelKey, { n: action.n }) }}</span>
+          <span v-if="learning === action.id || getMidiBinding(action.id)" class="midi-binding"
+            :title="formatMidiBindingLabel(action.id)" aria-live="polite">
+            {{ learning === action.id ? t('controls.waitingForInput') : formatMidiBindingLabel(action.id) }}
+          </span>
+          <div class="action-buttons">
+            <button type="button" class="learn-btn" :class="{ active: learning === action.id }"
+              :aria-label="`${learning === action.id ? t('controls.cancel') : t('controls.learn')} · ${t(action.labelKey, { n: action.n })}`"
+              @click="toggleLearn(action.id)">
+              {{ learning === action.id ? t('controls.cancel') : t('controls.learn') }}
+            </button>
+            <button v-if="getMidiBinding(action.id)" type="button" class="clear-btn"
+              :aria-label="`${t('controls.clear')} · ${t(action.labelKey, { n: action.n })}`"
+              @click="handleMidiClear(action.id)">
+              {{ t('controls.clear') }}
+            </button>
           </div>
+        </div>
 
-          <!-- Master-volume step multiplier (incremental control) -->
-          <template v-if="category === 'Volume'">
-            <div class="action-row">
-              <span class="action-label">{{ t('controls.volumeMultiplier') }}</span>
-              <input
-                class="multiplier-input"
-                type="number"
-                min="0.1"
-                max="60"
-                step="0.1"
-                :value="masterVolumeMultiplier"
-                @change="onMultiplierChange"
-              />
-            </div>
-            <p class="multiplier-hint">{{ t('controls.volumeMultiplierHint') }}</p>
-          </template>
+        <template v-if="activeGroup === 'Volume'">
+          <label class="action-row midi-action-row">
+            <span class="action-label">{{ t('controls.volumeMultiplier') }}</span>
+            <input class="multiplier-input" type="number" min="0.1" max="60" step="0.1"
+              :value="masterVolumeMultiplier" @change="onMultiplierChange" />
+          </label>
+          <p class="multiplier-hint">{{ t('controls.volumeMultiplierHint') }}</p>
         </template>
       </div>
 
@@ -392,25 +368,29 @@ const handleKeydown = (e: KeyboardEvent) => {
 
 // --- MIDI helpers ---
 
-const midiCategories = computed(() => {
-  const cats: string[] = [];
-  for (const action of MIDI_ACTIONS) {
-    if (!cats.includes(action.category)) cats.push(action.category);
-  }
-  return cats;
+const bindingGroup = ref('Playback');
+const bindingGroups = computed(() => [
+  { id: 'Playback', labelKey: 'controls.sectionPlayback' },
+  ...(configuredOneShots.value.length ? [{ id: 'One Shots', labelKey: 'controls.sectionOneShots' }] : []),
+  ...(activeTab.value === 'midi'
+    ? [{ id: 'Volume', labelKey: 'controls.sectionVolume' }]
+    : [{ id: 'Video', labelKey: 'settings.tabVideoOutput' }]),
+]);
+const activeGroup = computed(() => bindingGroups.value.some(group => group.id === bindingGroup.value)
+  ? bindingGroup.value : 'Playback');
+const keyboardActions = computed(() => {
+  if (activeGroup.value === 'One Shots') return [];
+  return PLAYBACK_ACTIONS.filter(action => {
+    const video = action.id === 'toggle-video-output' || action.id.startsWith('capture-');
+    return video === (activeGroup.value === 'Video');
+  });
 });
-
-const categoryLabelKey = (category: string): string => {
-  if (category === 'One Shots' || category === 'Cart Slots') return 'controls.sectionOneShots';
-  if (category === 'Playback')   return 'controls.sectionPlayback';
-  if (category === 'Volume')     return 'controls.sectionVolume';
-  return category;
-};
-
-const midiActionsByCategory = (category: string) =>
-  MIDI_ACTIONS.filter(a => a.category === category && (
-    a.n === undefined || !!oneShotSlots.value[a.n - 1]
-  ));
+const midiActions = computed(() => {
+  const actions = MIDI_ACTIONS.filter(action => action.category === activeGroup.value
+    && (action.n === undefined || !!oneShotSlots.value[action.n - 1]));
+  const priority = (id: MidiActionId) => id === 'play-next' ? 0 : id === 'stop-all' ? 1 : 2;
+  return actions.sort((a, b) => priority(a.id) - priority(b.id));
+});
 
 const getMidiBinding = (actionId: string): MidiBinding | undefined =>
   midiConfig.value.bindings[actionId];
@@ -470,7 +450,7 @@ const handleReset = () => {
   }
 };
 
-watch(activeTab, () => {
+watch([activeTab, activeGroup], () => {
   cancelKeyCapture();
   if (learning.value) stopLearn();
   midiConflictInfo.value = null;
@@ -534,40 +514,53 @@ onUnmounted(() => {
 /* Body */
 .config-body {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 252px), 1fr));
   grid-auto-rows: max-content;
   align-content: start;
   gap: var(--spacing-xs) var(--spacing-sm);
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  width: min(100%, 1140px);
   padding: var(--spacing-xs) var(--workspace-gutter);
 }
 
-.category-header,
-.device-row,
-.multiplier-hint {
-  grid-column: 1 / -1;
+.config-body--midi {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr));
+  width: min(100%, 900px);
 }
 
-.category-header {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+.group-btn {
+  min-height: 26px;
+  flex-shrink: 0;
+  padding: 2px var(--spacing-sm);
+  border: 1px solid transparent;
+  border-radius: var(--control-radius);
   color: var(--color-text-secondary);
-  padding: 2px 0;
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
 }
 
-/* Shared action row (both tabs) */
+.tab-btn + .group-btn {
+  margin-inline-start: var(--spacing-sm);
+}
+
+.group-btn[aria-pressed="true"] {
+  border-color: var(--color-border);
+  color: var(--color-text-primary);
+  background: var(--color-accent-soft);
+}
+
+.group-btn:hover { background: var(--color-surface-hover); }
+
 .action-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 105px) 100px;
   align-items: center;
   gap: var(--spacing-xs);
   min-width: 0;
-  min-height: var(--panel-control-height);
-  padding: var(--spacing-xs) var(--spacing-sm);
+  min-height: 30px;
+  padding: 2px var(--spacing-sm);
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
   background: var(--color-surface);
@@ -583,9 +576,24 @@ onUnmounted(() => {
 .action-row.conflict { border-color: var(--color-danger); }
 
 .keyboard-action-row {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 136px) minmax(48px, max-content);
-  min-height: 30px;
-  padding-block: 2px;
+  grid-template-columns: minmax(0, 1fr) minmax(94px, 0.95fr) auto;
+}
+
+.midi-action-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.midi-action-row .action-buttons {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.midi-binding {
+  grid-column: 1 / -1;
+  min-width: 0;
+  font: 11px var(--font-mono);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
 }
 
 .action-label {
@@ -668,6 +676,7 @@ onUnmounted(() => {
 }
 
 .multiplier-hint {
+  grid-column: 1 / -1;
   font-size: 11px;
   color: var(--color-text-secondary);
   margin: 0;
@@ -675,9 +684,10 @@ onUnmounted(() => {
 
 /* Device selector row */
 .device-row {
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-xs);
   flex-wrap: wrap;
 }
 
@@ -689,7 +699,7 @@ onUnmounted(() => {
 }
 
 .device-select {
-  width: min(100%, 260px);
+  width: min(100%, 176px);
   font-size: 12px;
   padding: 4px 8px;
   border-radius: var(--control-radius);
@@ -701,15 +711,14 @@ onUnmounted(() => {
 
 .no-device-hint {
   font-size: 11px;
-  color: var(--color-text-disabled);
-  flex-shrink: 0;
+  color: var(--color-text-secondary);
 }
 
 .shortcut-bar-toggle {
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
-  margin-inline: auto var(--spacing-md);
+  margin-inline: var(--spacing-md) var(--spacing-xs);
   padding-inline-start: var(--spacing-md);
   font-size: 12px;
   white-space: nowrap;
@@ -731,7 +740,8 @@ onUnmounted(() => {
 
 .binding-button {
   background: var(--color-control);
-  padding: var(--spacing-xs) var(--spacing-sm);
+  padding: 2px 4px;
+  overflow-wrap: normal;
   cursor: pointer;
 }
 

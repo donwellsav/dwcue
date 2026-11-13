@@ -2444,7 +2444,7 @@ assert.match(
 );
 assert.match(
   controlConfig,
-  /v-for="entry in configuredOneShots"[\s\S]*entry\.slotIndex[\s\S]*buildOneShotSlots[\s\S]*const configuredOneShots/,
+  /v-for="entry in activeGroup === 'One Shots' \? configuredOneShots : \[\]"[\s\S]*entry\.slotIndex[\s\S]*buildOneShotSlots[\s\S]*const configuredOneShots/,
   'keyboard and MIDI configuration must follow the configured One Shot cells',
 );
 assert.match(

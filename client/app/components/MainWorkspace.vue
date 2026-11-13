@@ -287,7 +287,7 @@ const reservedPlaylistRowHeight = computed(() => Math.max(folderPlaylistRowHeigh
 
 const MIN_PANEL_HEIGHT = 120;
 const MAX_PANEL_HEIGHT = 640;
-const settingsHeight = useState('ProjectSettingsPanel.height', () => 240);
+const settingsHeight = useState('ProjectSettingsPanel.height', () => 256);
 const propertiesHeight = useState('PropertiesPanel.height', () => 320);
 const panelHeight = computed(() => showProjectSettings.value ? settingsHeight.value : propertiesHeight.value);
 const workspaceContent = ref<HTMLElement | null>(null);

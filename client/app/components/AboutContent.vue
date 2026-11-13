@@ -1,97 +1,80 @@
 <template>
-  <!-- Shared About content: shown standalone in AboutModal (Help menu) and
-       embedded as the About tab in Project Settings. Keep credits, license
-       text and links in this ONE place so the two surfaces never drift. -->
   <div class="about-content">
-    <div class="about-header">
-      <img
-        :src="isDark ? './assets/icons/SVG/app_icon_darkmode@web.svg' : './assets/icons/SVG/app_icon_lightmode@web.svg'"
-        alt="DonWells Cue"
-        class="about-logo"
-      />
-      <div class="about-text">
-        <h1 class="about-title">
-          DonWells Cue
-          <span class="version-badge">v{{ appVersion }}</span>
-        </h1>
-        <p class="about-subtitle">{{ t('welcome.subtitle') }}</p>
+    <div class="about-overview">
+      <div class="about-identity">
+        <img
+          :src="isDark ? './assets/icons/SVG/app_icon_darkmode@web.svg' : './assets/icons/SVG/app_icon_lightmode@web.svg'"
+          alt=""
+          class="about-logo"
+        />
+        <div>
+          <h3 class="about-title">DonWells Cue <span class="version-badge">v{{ appVersion }}</span></h3>
+          <p class="about-copyright">© 2026 Don Wells</p>
+        </div>
       </div>
+
+      <section v-if="canCheckForUpdates" class="about-updates" :aria-label="t('update.updateAvailable')">
+        <div class="about-update-actions">
+          <strong v-if="update.version">{{ t('update.headerAvailable', { version: update.version }) }}</strong>
+          <Btn v-if="update.version && !update.downloaded && !update.downloading && update.installSupported"
+            :text="t('update.download')" :disabled="update.checking" @click="downloadUpdate" />
+          <Btn v-if="update.version && !update.installSupported" :text="t('update.goToDownloadPage')"
+            @click="openExternal('https://dwcue.com/downloads')" />
+          <template v-if="update.downloaded">
+            <Btn :text="t('update.installNow')" :disabled="!canInstallNow || installing"
+              @click="installUpdate" />
+            <Btn :text="t(update.installOnExit ? 'update.cancelInstallOnExit' : 'update.installOnExit')"
+              @click="update.installOnExit = !update.installOnExit" />
+          </template>
+          <Btn :text="t(update.checking ? 'update.checking' : 'menu.checkForUpdates')"
+            :disabled="update.checking || update.downloading" @click="checkForAppUpdate" />
+        </div>
+        <div v-if="update.downloading" class="about-progress">
+          <progress :value="update.percent" max="100" :aria-label="t('update.downloading')"></progress>
+          <span>{{ t('update.downloading') }} {{ Math.round(update.percent) }}%</span>
+        </div>
+        <p v-if="update.downloaded && !canInstallNow">{{ t('update.stopBeforeInstall') }}</p>
+        <p v-if="update.installOnExit" role="status">{{ t('update.installScheduled') }}</p>
+        <p v-if="update.error" role="status">{{ update.error }}</p>
+      </section>
     </div>
 
-    <section v-if="canCheckForUpdates" class="about-updates" :aria-label="t('update.updateAvailable')">
-      <div class="about-update-actions">
-        <strong v-if="update.version">{{ t('update.headerAvailable', { version: update.version }) }}</strong>
-        <Btn v-if="update.version && !update.downloaded && !update.downloading && update.installSupported"
-          :text="t('update.download')" :disabled="update.checking" @click="downloadUpdate" />
-        <Btn v-if="update.version && !update.installSupported" :text="t('update.goToDownloadPage')"
-          @click="openExternal('https://dwcue.com/downloads')" />
-        <template v-if="update.downloaded">
-          <Btn :text="t('update.installNow')" :disabled="!canInstallNow || installing"
-            @click="installUpdate" />
-          <Btn :text="t(update.installOnExit ? 'update.cancelInstallOnExit' : 'update.installOnExit')"
-            @click="update.installOnExit = !update.installOnExit" />
-        </template>
-        <Btn :text="t(update.checking ? 'update.checking' : 'menu.checkForUpdates')"
-          :disabled="update.checking || update.downloading" @click="checkForAppUpdate" />
-      </div>
-      <div v-if="update.downloading" class="about-update-actions">
-        <progress :value="update.percent" max="100" :aria-label="t('update.downloading')"></progress>
-        <span>{{ t('update.downloading') }} {{ Math.round(update.percent) }}%</span>
-      </div>
-      <p v-if="update.downloaded && !canInstallNow">{{ t('update.stopBeforeInstall') }}</p>
-      <p v-if="update.installOnExit" role="status">{{ t('update.installScheduled') }}</p>
-      <p v-if="update.error" role="status">{{ update.error }}</p>
-    </section>
+    <div class="about-resources">
+      <details class="about-details">
+        <summary>{{ t('about.creditsAndLicense') }}</summary>
+        <div class="about-notices">
+          <p>
+            Forked from
+            <a href="https://github.com/tdoukinitsas/liveplay"
+               @click.prevent="openExternal('https://github.com/tdoukinitsas/liveplay')">LivePlay</a>
+            in July 2026. Original LivePlay software © Thomas Doukinitsas and contributors.
+          </p>
+          <p>
+            {{ t('testCard.cardType') }}:
+            <a href="https://github.com/Alteka/Kards"
+               @click.prevent="openExternal('https://github.com/Alteka/Kards')">Alteka Kards</a>
+            · GPL-3.0-only
+          </p>
+          <p>{{ t('about.licenseText') }}</p>
+          <p>{{ t('about.distributionText') }}</p>
+          <p>{{ t('about.sourceText') }}</p>
+        </div>
+      </details>
 
-    <div class="about-info">
-      <div class="info-section">
-        <p class="developer">© 2026 Don Wells</p>
-        <p class="original-credit">
-          Forked from
-          <a href="https://github.com/tdoukinitsas/liveplay" class="translator-link"
-             @click.prevent="openExternal('https://github.com/tdoukinitsas/liveplay')">LivePlay</a>
-          in July 2026. Original LivePlay software © Thomas Doukinitsas and contributors.
-        </p>
-        <p class="original-credit">
-          {{ t('testCard.cardType') }}:
-          <a href="https://github.com/Alteka/Kards" class="translator-link"
-             @click.prevent="openExternal('https://github.com/Alteka/Kards')">Alteka Kards</a>
-          · GPL-3.0-only
-        </p>
-        <!-- AGPL-3.0-only compliance: state the license and where the
-             complete corresponding source lives. The clickable affordances
-             are in the links section right below. -->
-        <p class="license-note">{{ t('about.licenseText') }}</p>
-        <p class="license-note">{{ t('about.distributionText') }}</p>
-        <p class="license-note">{{ t('about.sourceText') }}</p>
-      </div>
-
-      <div class="info-section links">
-        <a
-          href="https://dwcue.com"
-          class="info-link"
-          @click.prevent="openExternal('https://dwcue.com')"
-        >
-          <span class="material-symbols-rounded">language</span>
-          <span>dwcue.com</span>
+      <div class="about-links">
+        <a href="https://dwcue.com" @click.prevent="openExternal('https://dwcue.com')">
+          <span class="material-symbols-rounded" aria-hidden="true">language</span>
+          dwcue.com
         </a>
-
-        <a
-          href="https://github.com/donwellsav/dwcue"
-          class="info-link"
-          @click.prevent="openExternal('https://github.com/donwellsav/dwcue')"
-        >
-          <span class="material-symbols-rounded">code</span>
-          <span>{{ t('about.githubRepo') }}</span>
+        <a href="https://github.com/donwellsav/dwcue"
+           @click.prevent="openExternal('https://github.com/donwellsav/dwcue')">
+          <span class="material-symbols-rounded" aria-hidden="true">code</span>
+          {{ t('about.githubRepo') }}
         </a>
-
-        <a
-          href="https://www.gnu.org/licenses/agpl-3.0.en.html"
-          class="info-link"
-          @click.prevent="openExternal('https://www.gnu.org/licenses/agpl-3.0.en.html')"
-        >
-          <span class="material-symbols-rounded">description</span>
-          <span>{{ t('about.license') }}</span>
+        <a href="https://www.gnu.org/licenses/agpl-3.0.en.html"
+           @click.prevent="openExternal('https://www.gnu.org/licenses/agpl-3.0.en.html')">
+          <span class="material-symbols-rounded" aria-hidden="true">description</span>
+          {{ t('about.license') }}
         </a>
       </div>
     </div>
@@ -159,141 +142,141 @@ const openExternal = (url: string) => {
 
 </script>
 
-<style scoped lang="scss">
-.about-header {
+<style scoped>
+.about-content {
+  max-width: 960px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  background: var(--color-surface);
+}
+
+.about-overview,
+.about-resources {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs) var(--spacing-md);
+  padding: var(--spacing-xs) var(--spacing-sm);
+}
+
+.about-overview {
+  align-items: center;
+}
+
+.about-identity {
   display: flex;
   align-items: center;
-  gap: var(--spacing-lg);
-  margin-bottom: var(--spacing-xl);
-  padding-bottom: var(--spacing-xl);
-  border-bottom: 1px solid var(--color-border);
+  gap: var(--spacing-sm);
 }
 
 .about-logo {
-  width: 64px;
-  height: 64px;
-  object-fit: contain;
+  width: 36px;
+  height: 36px;
   flex-shrink: 0;
 }
 
-.about-text {
-  flex: 1;
-  min-width: 0;
-}
-
 .about-title {
-  font-size: 36px;
-  font-weight: 600;
-  margin: 0 0 var(--spacing-xs) 0;
-  color: var(--color-text-primary);
-  letter-spacing: -1px;
-  line-height: 1;
-  display: flex;
-  align-items: baseline;
-  gap: var(--spacing-sm);
-  flex-wrap: wrap;
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.2;
 }
 
 .version-badge {
-  font-size: 14px;
-  font-weight: 400;
+  margin-inline-start: var(--spacing-xs);
   color: var(--color-text-secondary);
-  opacity: 0.6;
-  letter-spacing: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
 }
 
-.about-subtitle {
-  font-size: 16px;
+.about-copyright,
+.about-updates p,
+.about-notices p {
   color: var(--color-text-secondary);
-  margin: 0;
+  font-size: 12px;
   line-height: 1.4;
 }
 
 .about-updates {
-  padding: var(--spacing-sm) 0;
-  margin-bottom: var(--spacing-lg);
-  border-bottom: 1px solid var(--color-border);
-  font-size: 13px;
+  min-width: 0;
+  max-width: 100%;
+  font-size: 12px;
 }
-.about-update-actions {
+
+.about-update-actions,
+.about-progress,
+.about-links {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-xs) var(--spacing-sm);
 }
+
 .about-update-actions strong {
   color: var(--state-up-next);
 }
+
+.about-progress,
 .about-updates p {
-  margin: var(--spacing-sm) 0 0;
+  margin-block-start: var(--spacing-xs);
 }
 
-.about-info {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-lg);
+.about-updates p {
+  overflow-wrap: anywhere;
 }
 
-.original-credit {
-  color: var(--color-text-secondary);
+.about-progress progress {
+  accent-color: var(--color-accent);
+}
+
+.about-resources {
+  border-top: 1px solid var(--color-border);
   font-size: 12px;
 }
 
-.license-note {
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  margin: 0;
-  line-height: 1.5;
+.about-details {
+  flex: 1 1 180px;
+  min-width: 0;
 }
 
-.info-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-}
-
-.developer {
-  margin: 0;
+.about-details summary,
+.about-links a {
+  border-radius: var(--control-radius);
   color: var(--color-text-primary);
-  font-size: 14px;
+  padding: var(--spacing-xs);
+  cursor: pointer;
 }
 
-.translator-link {
-  color: var(--color-accent);
-  text-decoration: none;
-  transition: opacity var(--transition-fast);
-
-  &:hover {
-    opacity: 0.7;
-    text-decoration: underline;
-  }
+.about-details summary {
+  width: fit-content;
+  font-weight: 600;
 }
 
-.links {
-  gap: var(--spacing-xs);
-}
-
-.info-link {
-  display: flex;
+.about-links a {
+  display: inline-flex;
   align-items: center;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-md);
-  background-color: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-md);
-  color: var(--color-text-primary);
+  gap: var(--spacing-xs);
   text-decoration: none;
-  font-size: 14px;
-  transition: all var(--transition-fast);
+}
 
-  &:hover {
-    background-color: var(--color-surface-hover);
-    border-color: var(--color-accent);
-    color: var(--color-accent);
-  }
+.about-links .material-symbols-rounded {
+  font-size: 16px;
+}
 
-  .material-symbols-rounded {
-    font-size: 20px;
-  }
+.about-details summary:hover,
+.about-links a:hover {
+  background: var(--color-surface-hover);
+}
+
+.about-notices {
+  display: grid;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs);
+  max-width: 65ch;
+}
+
+.about-notices a {
+  color: var(--color-accent);
 }
 </style>

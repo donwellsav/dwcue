@@ -6,6 +6,7 @@
           <button
             v-for="tab in tabs"
             :key="tab.id"
+            type="button"
             :class="['tab-btn', { active: activeTab === tab.id }]"
             :aria-pressed="activeTab === tab.id"
             @click="activeTab = tab.id"
@@ -21,8 +22,15 @@
           </button>
         </header>
 
+        <nav v-if="settingsSections.length" class="settings-sections" :aria-label="tabs.find(tab => tab.id === activeTab)?.label">
+          <button v-for="section in settingsSections" :key="section.id" type="button" class="tab-btn"
+            :class="{ active: settingsSection === section.id }" :aria-pressed="settingsSection === section.id"
+            @click="settingsSection = section.id">
+            {{ t(section.labelKey) }}
+          </button>
+        </nav>
         <ControlConfigModal v-if="activeTab === 'shortcuts'" />
-        <div v-else :key="activeTab" :class="['settings-content', `settings-content--${activeTab}`]">
+        <div v-else :key="activeTab + settingsSection" :class="['settings-content', `settings-content--${activeTab}`, `settings-section--${settingsSection}`]">
           <p v-if="settingsError" class="settings-error" role="alert">
             {{ settingsError }}
           </p>
@@ -90,12 +98,12 @@
 
             <!-- Output Target (loudness platform standard) -->
             <section class="settings-field">
-              <label class="settings-label">
+              <label class="settings-label" for="settings-output-target">
                 <span class="material-symbols-rounded" aria-hidden="true">tune</span>
                 {{ t('settings.outputTarget') }}
               </label>
               <select
-                class="settings-select"
+                id="settings-output-target" class="settings-select"
                 :value="outputTarget"
                 @change="onOutputTargetChange"
               >
@@ -111,124 +119,79 @@
 
           <!-- ================= Playback Behaviour ================= -->
           <template v-else-if="activeTab === 'playback'">
-            <!-- Default transition mode -->
-            <section class="settings-field">
-              <label class="settings-label">
-                <span class="material-symbols-rounded" aria-hidden="true">swap_horiz</span>
-                {{ t('settings.transitionMode') }}
-              </label>
-              <select
-                class="settings-select"
-                :value="defaultTransitionMode"
-                @change="onDefaultTransitionModeChange"
-              >
-                <option value="crossfade">{{ t('settings.transitionModeCrossfade') }}</option>
-                <option value="start-next">{{ t('settings.transitionModeStartNext') }}</option>
-              </select>
-              <p class="settings-help">{{ t('settings.transitionModeHelp') }}</p>
-            </section>
-
-            <!-- Auto-cue next item without end behaviour (#28) -->
-            <section class="settings-field">
-              <label class="settings-label settings-label--checkbox">
+            <div class="settings-group settings-rows">
+              <h3 class="settings-section-title">{{ t('settings.cueingSection') }}</h3>
+              <section class="settings-field">
+                <label class="settings-label" for="settings-transition">
+                  <span class="material-symbols-rounded" aria-hidden="true">swap_horiz</span>
+                  {{ t('settings.transitionMode') }}
+                </label>
+                <select
+                  id="settings-transition" class="settings-select"
+                  :value="defaultTransitionMode"
+                  @change="onDefaultTransitionModeChange"
+                >
+                  <option value="crossfade">{{ t('settings.transitionModeCrossfade') }}</option>
+                  <option value="start-next">{{ t('settings.transitionModeStartNext') }}</option>
+                </select>
+                <p class="settings-help">{{ t('settings.transitionModeHelp') }}</p>
+              </section>
+              <section class="settings-field">
+                <label class="settings-label settings-label--checkbox">
+                  <input
+                    type="checkbox"
+                    :checked="autoCueNextWithoutEndBehavior"
+                    @change="onAutoCueNextChange"
+                  />
+                  {{ t('settings.autoCueNext') }}
+                </label>
+                <p class="settings-help">{{ t('settings.autoCueNextHelp') }}</p>
+              </section>
+            </div>
+            <div class="settings-group settings-rows">
+              <h3 class="settings-section-title">{{ t('settings.safetySection') }}</h3>
+              <section class="settings-field">
+                <label class="settings-label" for="settings-stop-fade">
+                  <span class="material-symbols-rounded" aria-hidden="true">stop_circle</span>
+                  {{ t('settings.stopAllFade') }}
+                </label>
                 <input
-                  type="checkbox"
-                  :checked="autoCueNextWithoutEndBehavior"
-                  @change="onAutoCueNextChange"
+                  type="number"
+                  id="settings-stop-fade" class="settings-input"
+                  min="0"
+                  step="0.1"
+                  :value="stopAllFadeSeconds"
+                  @change="onStopAllFadeChange"
                 />
-                {{ t('settings.autoCueNext') }}
-              </label>
-              <p class="settings-help">{{ t('settings.autoCueNextHelp') }}</p>
-            </section>
-
-            <!-- Project-wide Stop All fade-out time -->
-            <section class="settings-field">
-              <label class="settings-label">
-                <span class="material-symbols-rounded" aria-hidden="true">stop_circle</span>
-                {{ t('settings.stopAllFade') }}
-              </label>
-              <input
-                type="number"
-                class="settings-input"
-                min="0"
-                step="0.1"
-                :value="stopAllFadeSeconds"
-                @change="onStopAllFadeChange"
-              />
-              <p class="settings-help">{{ t('settings.stopAllFadeHelp') }}</p>
-            </section>
-
-            <!-- Disable true-peak limiter -->
-            <section class="settings-field">
-              <label class="settings-label settings-label--checkbox">
-                <input
-                  type="checkbox"
-                  :checked="disableLimiter"
-                  @change="onDisableLimiterChange"
-                />
-                {{ t('settings.disableLimiter') }}
-              </label>
-              <p class="settings-help">{{ t('settings.disableLimiterHelp') }}</p>
-            </section>
-
-            <!-- Disable silence warning -->
-            <section class="settings-field">
-              <label class="settings-label settings-label--checkbox">
-                <input
-                  type="checkbox"
-                  :checked="disableSilenceWarning"
-                  @change="onDisableSilenceWarningChange"
-                />
-                {{ t('settings.disableSilenceWarning') }}
-              </label>
-              <p class="settings-help">{{ t('settings.disableSilenceWarningHelp') }}</p>
-            </section>
-            <p class="settings-help settings-wide">{{ t('importAudio.preserveAudio') }}</p>
+                <p class="settings-help">{{ t('settings.stopAllFadeHelp') }}</p>
+              </section>
+              <section class="settings-field">
+                <label class="settings-label settings-label--checkbox">
+                  <input
+                    type="checkbox"
+                    :checked="disableLimiter"
+                    @change="onDisableLimiterChange"
+                  />
+                  {{ t('settings.disableLimiter') }}
+                </label>
+                <p class="settings-help">{{ t('settings.disableLimiterHelp') }}</p>
+              </section>
+              <section class="settings-field">
+                <label class="settings-label settings-label--checkbox">
+                  <input
+                    type="checkbox"
+                    :checked="disableSilenceWarning"
+                    @change="onDisableSilenceWarningChange"
+                  />
+                  {{ t('settings.disableSilenceWarning') }}
+                </label>
+              </section>
+            </div>
           </template>
 
           <!-- ================= User Interface ================= -->
           <template v-else-if="activeTab === 'ui'">
-            <div class="settings-group">
-              <!-- Per-device application language -->
-              <section class="settings-field">
-                <label class="settings-label" for="app-language">
-                  <span class="material-symbols-rounded" aria-hidden="true">language</span>
-                  {{ t('menu.language') }}
-                </label>
-                <select
-                  id="app-language"
-                  class="settings-select"
-                  :value="currentLocale"
-                  @change="onLocaleChange"
-                >
-                  <option
-                    v-for="locale in availableLocales"
-                    :key="locale.code"
-                    :value="locale.code"
-                  >
-                    {{ locale.name }}
-                  </option>
-                </select>
-              </section>
-
-              <!-- Playlist numbering -->
-              <section class="settings-field">
-                <label class="settings-label">
-                  <span class="material-symbols-rounded" aria-hidden="true">format_list_numbered</span>
-                  {{ t('settings.indexDisplayStart') }}
-                </label>
-                <input
-                  type="number"
-                  class="settings-input"
-                  min="1"
-                  step="1"
-                  :value="indexDisplayStart"
-                  @change="onIndexDisplayStartChange"
-                />
-                <p class="settings-help">{{ t('settings.indexDisplayStartHelp') }}</p>
-              </section>
-
-              <!-- Per-device playlist density -->
+            <div v-if="settingsSection === 'playlist'" class="settings-group settings-rows">
               <section class="settings-field">
                 <div class="settings-label">
                   <span class="material-symbols-rounded" aria-hidden="true">density_medium</span>
@@ -273,34 +236,10 @@
                   />
                   <output for="folder-playlist-row-height">{{ folderPlaylistRowHeight }} px</output>
                 </div>
-                <p class="settings-help">{{ t('settings.playlistTrackHeightHelp') }}</p>
               </section>
-
+            </div>
+            <div v-if="settingsSection === 'playlist'" class="settings-group settings-rows">
               <section class="settings-field">
-                <div class="settings-label">
-                  <span class="material-symbols-rounded" aria-hidden="true">waterfall_chart</span>
-                  {{ t('settings.playlistWaveforms') }}
-                </div>
-                <div class="track-height-control">
-                  <label for="playlist-waveform-opacity">{{ t('settings.waveformOpacity') }}</label>
-                  <input
-                    id="playlist-waveform-opacity"
-                    type="range"
-                    :min="WAVEFORM_OPACITY.min"
-                    :max="WAVEFORM_OPACITY.max"
-                    step="1"
-                    :value="waveformOpacity"
-                    @input="onWaveformOpacityInput"
-                  />
-                  <output for="playlist-waveform-opacity">{{ waveformOpacity }}%</output>
-                </div>
-                <p class="settings-help">{{ t('settings.waveformOpacityHelp') }}</p>
-              </section>
-              <section class="settings-field">
-                <div class="settings-label">
-                  <span class="material-symbols-rounded" aria-hidden="true">format_size</span>
-                  {{ t('settings.interfaceFontSize') }}
-                </div>
                 <div class="track-height-control">
                   <label for="ui-font-scale">{{ t('settings.interfaceFontSize') }}</label>
                   <input
@@ -314,14 +253,82 @@
                   />
                   <output for="ui-font-scale">{{ uiFontScale }}%</output>
                 </div>
-                <p class="settings-help">{{ t('settings.interfaceFontSizeHelp') }}</p>
               </section>
-
               <section class="settings-field">
-                <div class="settings-label">
-                  <span class="material-symbols-rounded" aria-hidden="true">text_fields</span>
-                  {{ t('settings.oneShotFontSize') }}
+                <label class="settings-label" for="app-language">
+                  <span class="material-symbols-rounded" aria-hidden="true">language</span>
+                  {{ t('menu.language') }}
+                </label>
+                <select
+                  id="app-language"
+                  class="settings-select"
+                  :value="currentLocale"
+                  @change="onLocaleChange"
+                >
+                  <option
+                    v-for="locale in availableLocales"
+                    :key="locale.code"
+                    :value="locale.code"
+                  >
+                    {{ locale.name }}
+                  </option>
+                </select>
+              </section>
+              <section class="settings-field">
+                <label class="settings-label" for="settings-index-start">
+                  <span class="material-symbols-rounded" aria-hidden="true">format_list_numbered</span>
+                  {{ t('settings.indexDisplayStart') }}
+                </label>
+                <input
+                  type="number"
+                  id="settings-index-start" class="settings-input"
+                  min="1"
+                  step="1"
+                  :value="indexDisplayStart"
+                  @change="onIndexDisplayStartChange"
+                />
+                <p class="settings-help">{{ t('settings.indexDisplayStartHelp') }}</p>
+              </section>
+            </div>
+            <div v-if="settingsSection === 'playlist'" class="settings-group settings-rows">
+              <section class="settings-field">
+                <div class="track-height-control">
+                  <label for="playlist-waveform-opacity">{{ t('settings.playlistWaveforms') }}</label>
+                  <input
+                    id="playlist-waveform-opacity"
+                    type="range"
+                    :min="WAVEFORM_OPACITY.min"
+                    :max="WAVEFORM_OPACITY.max"
+                    step="1"
+                    :value="waveformOpacity"
+                    @input="onWaveformOpacityInput"
+                  />
+                  <output for="playlist-waveform-opacity">{{ waveformOpacity }}%</output>
                 </div>
+              </section>
+              <section class="settings-field">
+                <label class="settings-label settings-label--checkbox">
+                  <input
+                    type="checkbox"
+                    :checked="scrollToPlaying"
+                    @change="onScrollToPlayingChange"
+                  />
+                  {{ t('settings.scrollToPlaying') }}
+                </label>
+              </section>
+              <section class="settings-field">
+                <label class="settings-label settings-label--checkbox">
+                  <input
+                    type="checkbox"
+                    :checked="cycleTrackColors"
+                    @change="onCycleTrackColorsChange"
+                  />
+                  {{ t('settings.cycleTrackColors') }}
+                </label>
+              </section>
+            </div>
+            <div v-if="settingsSection === 'one-shots'" class="settings-group settings-rows">
+              <section class="settings-field">
                 <div class="track-height-control">
                   <label for="one-shot-font-scale">{{ t('settings.oneShotFontSize') }}</label>
                   <input
@@ -337,19 +344,8 @@
                 </div>
                 <p class="settings-help">{{ t('settings.oneShotFontSizeHelp') }}</p>
               </section>
-
-              <section class="settings-field">
-                <label class="settings-label settings-label--checkbox">
-                  <input
-                    type="checkbox"
-                    :checked="cycleTrackColors"
-                    @change="onCycleTrackColorsChange"
-                  />
-                  {{ t('settings.cycleTrackColors') }}
-                </label>
-                <p class="settings-help">{{ t('settings.cycleTrackColorsHelp') }}</p>
-              </section>
-
+            </div>
+            <div v-if="settingsSection === 'one-shots'" class="settings-group settings-rows">
               <section class="settings-field">
                 <div class="settings-label">
                   <span class="material-symbols-rounded" aria-hidden="true">grid_view</span>
@@ -397,17 +393,16 @@
                     />
                   </template>
                 </div>
-                <p class="settings-help">{{ t('settings.cartPlayerLayoutHelp') }}</p>
               </section>
-
-              <!-- Meter Display Mode -->
+            </div>
+            <div v-if="settingsSection === 'meters'" class="settings-group settings-rows">
               <section class="settings-field">
-                <label class="settings-label">
+                <label class="settings-label" for="settings-meter-display">
                   <span class="material-symbols-rounded" aria-hidden="true">bar_chart</span>
                   {{ t('settings.meterMode') }}
                 </label>
                 <select
-                  class="settings-select"
+                  id="settings-meter-display" class="settings-select"
                   :value="meterMode"
                   @change="onMeterModeChange"
                 >
@@ -418,15 +413,13 @@
                 </select>
                 <p class="settings-help">{{ t('settings.meterModeHelp') }}</p>
               </section>
-
-              <!-- Meter Ballistics -->
               <section class="settings-field">
-                <label class="settings-label">
+                <label class="settings-label" for="settings-meter-ballistics">
                   <span class="material-symbols-rounded" aria-hidden="true">speed</span>
                   {{ t('settings.meterBallistics') }}
                 </label>
                 <select
-                  class="settings-select"
+                  id="settings-meter-ballistics" class="settings-select"
                   :value="meterBallistics"
                   @change="onMeterBallisticsChange"
                 >
@@ -438,21 +431,8 @@
                 </select>
                 <p class="settings-help">{{ t('settings.meterBallisticsHelp') }}</p>
               </section>
-
-              <!-- Keep the currently-playing item centred in the list -->
-              <section class="settings-field">
-                <label class="settings-label settings-label--checkbox">
-                  <input
-                    type="checkbox"
-                    :checked="scrollToPlaying"
-                    @change="onScrollToPlayingChange"
-                  />
-                  {{ t('settings.scrollToPlaying') }}
-                </label>
-                <p class="settings-help">{{ t('settings.scrollToPlayingHelp') }}</p>
-              </section>
             </div>
-            <div class="settings-group">
+            <div v-if="settingsSection === 'warnings'" class="settings-group settings-rows">
               <section class="settings-field">
                 <div class="settings-label">{{ t('headerWarnings.settingsTitle') }}</div>
                 <p class="settings-help">{{ t('headerWarnings.settingsHelp') }}</p>
@@ -473,14 +453,19 @@
                 </div>
                 <p v-if="headerWarningTimingError" class="settings-error" role="alert">{{ headerWarningTimingError }}</p>
               </section>
-
-              <!-- Time Left countdown colours -->
+            </div>
+            <div v-if="settingsSection === 'warnings'" class="settings-group settings-rows">
               <section class="settings-field">
-                <div class="settings-label">
-                  <span class="material-symbols-rounded" aria-hidden="true">timer</span>
-                  {{ t('settings.countdownColors') }}
+                <div class="countdown-band-heading">
+                  <div class="settings-label">
+                    <span class="material-symbols-rounded" aria-hidden="true">timer</span>
+                    {{ t('settings.countdownColors') }}
+                  </div>
+                  <button type="button" class="modal-btn countdown-band-add" @click="addCountdownBand">
+                    <span class="material-symbols-rounded" aria-hidden="true">add</span>
+                    {{ t('settings.countdownAddBand') }}
+                  </button>
                 </div>
-                <p class="settings-help">{{ t('settings.countdownColorsHelp') }}</p>
 
                 <div class="countdown-band-editor">
                   <div class="countdown-band-grid countdown-band-grid--header">
@@ -544,77 +529,12 @@
                 <p v-if="countdownBandError" class="settings-error" role="alert">
                   {{ countdownBandError }}
                 </p>
-                <button type="button" class="modal-btn countdown-band-add" @click="addCountdownBand">
-                  <span class="material-symbols-rounded" aria-hidden="true">add</span>
-                  {{ t('settings.countdownAddBand') }}
-                </button>
               </section>
             </div>
           </template>
           <!-- ================= Video Output ================= -->
           <template v-else-if="activeTab === 'video'">
-            <div class="settings-group">
-              <!-- Enable/arm the output window. Machine-level, immediate. -->
-              <section class="settings-field">
-                <label class="settings-label settings-label--checkbox">
-                  <input
-                    type="checkbox"
-                    :checked="voEnabled"
-                    @change="onVideoOutputEnableChange"
-                  />
-                  {{ t('settings.videoOutputEnable') }}
-                </label>
-                <p class="settings-help">{{ t('settings.videoOutputEnableHelp') }}</p>
-              </section>
-
-              <!-- Live status line: where the output is, or why it isn't -->
-              <section class="settings-field">
-                <div class="settings-label">
-                  <span class="material-symbols-rounded" aria-hidden="true">info</span>
-                  {{ t('settings.videoOutputStatus') }}
-                </div>
-                <p class="settings-help video-output-status" :class="{ 'video-output-status--warn': !!voWarningText }">
-                  {{ voWarningText || voStatusText }}
-                </p>
-                <p
-                  v-if="voStatus?.playbackError"
-                  class="settings-help video-output-playback-error"
-                  role="alert"
-                >
-                  <strong>{{ t('common.error') }}:</strong>
-                  {{ voStatus.playbackError.message }}
-                </p>
-                <p class="settings-help">{{ t('settings.videoOutputMachineNote') }}</p>
-                <div class="video-output-standby">
-                  <button
-                    type="button"
-                    class="modal-btn"
-                    :disabled="!voStatus?.open || voStatus.restarting"
-                    @click="onVideoOutputRestart"
-                  >{{ t('settings.videoOutputRestart') }}</button>
-                  <button type="button" class="modal-btn" @click="onVideoOutputCopyDiagnostics">
-                    {{ t('settings.videoOutputCopyDiagnostics') }}
-                  </button>
-                </div>
-                <p v-if="voDiagnosticsCopied" class="settings-help" role="status">{{ t('settings.videoOutputDiagnosticsCopied') }}</p>
-              </section>
-
-              <!-- Test card for the switcher/projector end of the chain -->
-              <section class="settings-field">
-                <label class="settings-label settings-label--checkbox">
-                  <input
-                    type="checkbox"
-                    :checked="voStatus?.testCard === true"
-                    :disabled="!voStatus?.open"
-                    @change="onVideoOutputTestCardChange"
-                  />
-                  {{ t('settings.videoOutputTestCard') }}
-                </label>
-                <p class="settings-help">{{ t('settings.videoOutputTestCardHelp') }}</p>
-              </section>
-            </div>
-            <div class="settings-group">
-              <!-- Which physical display feeds the switcher/projector -->
+            <div v-if="settingsSection === 'display'" class="settings-group settings-rows">
               <section class="settings-field">
                 <label class="settings-label" for="settings-output-display">
                   <span class="material-symbols-rounded" aria-hidden="true">monitor</span>
@@ -637,13 +557,51 @@
                     {{ t('settings.videoOutputIdentifyDisplays') }}
                   </button>
                 </div>
-                <p class="settings-help">{{ t('settings.videoOutputDisplayHelp') }}</p>
               </section>
-
-              <!-- Global standby image: shown whenever no cue is supplying
-                   picture (below per-cue images and video in the layer stack).
-                   Project-level (unlike arm/display, which stay machine-level). -->
               <section class="settings-field">
+                <label class="settings-label settings-label--checkbox">
+                  <input
+                    type="checkbox"
+                    :checked="voEnabled"
+                    @change="onVideoOutputEnableChange"
+                  />
+                  {{ t('settings.videoOutputEnable') }}
+                </label>
+              </section>
+            </div>
+            <div v-if="settingsSection === 'display'" class="settings-group settings-rows">
+              <section class="settings-field">
+                <div class="settings-label">
+                  <span class="material-symbols-rounded" aria-hidden="true">info</span>
+                  {{ t('settings.videoOutputStatus') }}
+                </div>
+                <p class="settings-help video-output-status" :class="{ 'video-output-status--warn': !!voWarningText }">
+                  {{ voWarningText || voStatusText }}
+                </p>
+                <p
+                  v-if="voStatus?.playbackError"
+                  class="settings-help video-output-playback-error"
+                  role="alert"
+                >
+                  <strong>{{ t('common.error') }}:</strong>
+                  {{ voStatus.playbackError.message }}
+                </p>
+                <div class="video-output-standby">
+                  <button
+                    type="button"
+                    class="modal-btn"
+                    :disabled="!voStatus?.open || voStatus.restarting"
+                    @click="onVideoOutputRestart"
+                  >{{ t('settings.videoOutputRestart') }}</button>
+                  <button type="button" class="modal-btn" @click="onVideoOutputCopyDiagnostics">
+                    {{ t('settings.videoOutputCopyDiagnostics') }}
+                  </button>
+                </div>
+                <p v-if="voDiagnosticsCopied" class="settings-help" role="status">{{ t('settings.videoOutputDiagnosticsCopied') }}</p>
+              </section>
+            </div>
+            <div v-if="settingsSection === 'capture'" class="settings-group settings-rows">
+              <section class="settings-field video-standby-field">
                 <div class="settings-label">
                   <span class="material-symbols-rounded" aria-hidden="true">image</span>
                   {{ t('settings.videoOutputStandbyImage') }}
@@ -664,10 +622,10 @@
                     {{ t('settings.videoOutputStandbyClear') }}
                   </button>
                 </div>
-                <p class="settings-help">{{ t('settings.videoOutputStandbyImageHelp') }}</p>
               </section>
-
-              <section v-if="voStatus" class="settings-field">
+            </div>
+            <div v-if="settingsSection === 'capture' && voStatus" class="settings-group settings-rows">
+              <section class="settings-field video-capture">
                 <label for="capture-display" class="settings-label">{{ t('standbyCapture.display') }}</label>
                 <select id="capture-display" class="settings-select" :value="voStatus.captureDisplayId ?? ''"
                   :disabled="captureSettingsPending || standbyCapturePending"
@@ -686,6 +644,8 @@
                   <option value="session">{{ t('standbyCapture.session') }}</option>
                   <option value="cue">{{ t('standbyCapture.cue') }}</option>
                 </select>
+              </section>
+              <section class="settings-field">
                 <div class="video-output-standby">
                   <button type="button" class="modal-btn" :disabled="standbyCapturePending || !voStatus.open"
                     @click="captureStandby('output', voStatus.captureTarget)">{{ t('controls.captureVideoStandby') }}</button>
@@ -698,23 +658,34 @@
                 <p class="settings-help">{{ t('standbyCapture.help') }}</p>
               </section>
             </div>
-
-            <section class="settings-field settings-wide">
-              <TestCardControls
-                :config="voTestCardConfig"
-                :disabled="!voStatus"
-                @change="onVideoOutputTestCardConfigChange"
-              />
-              <p
-                v-if="voStatus?.testCardError"
-                class="settings-help video-output-playback-error"
-                role="alert"
-              >
-                <strong>{{ t('common.error') }}:</strong>
-                {{ voStatus.testCardError }}
-              </p>
-            </section>
-
+            <div v-if="settingsSection === 'test-card'" class="settings-group settings-rows">
+              <section class="settings-field">
+                <label class="settings-label settings-label--checkbox">
+                  <input
+                    type="checkbox"
+                    :checked="voStatus?.testCard === true"
+                    :disabled="!voStatus?.open"
+                    @change="onVideoOutputTestCardChange"
+                  />
+                  {{ t('settings.videoOutputTestCard') }}
+                </label>
+              </section>
+              <section class="settings-field">
+                <TestCardControls
+                  :config="voTestCardConfig"
+                  :disabled="!voStatus"
+                  @change="onVideoOutputTestCardConfigChange"
+                />
+                <p
+                  v-if="voStatus?.testCardError"
+                  class="settings-help video-output-playback-error"
+                  role="alert"
+                >
+                  <strong>{{ t('common.error') }}:</strong>
+                  {{ voStatus.testCardError }}
+                </p>
+              </section>
+            </div>
           </template>
 
           <!-- ================= Help ================= -->
@@ -876,6 +847,29 @@ interface SettingsTab {
 }
 
 const activeTab = useState<SettingsTabId>('projectSettingsTab', () => 'audio');
+const interfaceSection = ref('playlist');
+const videoSection = ref('display');
+const settingsSection = computed({
+  get: () => activeTab.value === 'video' ? videoSection.value : activeTab.value === 'ui' ? interfaceSection.value : '',
+  set: (id: string) => {
+    if (activeTab.value === 'video') videoSection.value = id;
+    if (activeTab.value === 'ui') interfaceSection.value = id;
+  },
+});
+const settingsSections = computed(() => {
+  if (activeTab.value === 'ui') return [
+    { id: 'playlist', labelKey: 'playlist.title' },
+    { id: 'one-shots', labelKey: 'oneShots.title' },
+    { id: 'meters', labelKey: 'settings.metersSection' },
+    { id: 'warnings', labelKey: 'settings.warningsSection' },
+  ];
+  if (activeTab.value === 'video') return [
+    { id: 'display', labelKey: 'settings.displaySection' },
+    { id: 'capture', labelKey: 'settings.captureSection' },
+    { id: 'test-card', labelKey: 'settings.testCardSection' },
+  ];
+  return [];
+});
 const tabs = computed<SettingsTab[]>(() => [
   { id: 'audio', icon: 'graphic_eq', label: t('settings.tabAudioRouting') },
   { id: 'playback', icon: 'play_circle', label: t('settings.tabPlaybackBehaviour') },
@@ -1404,7 +1398,7 @@ function onPanelKeydown(event: KeyboardEvent) {
   }
   const target = event.target as HTMLElement | null;
   if (target?.closest?.('select') ||
-      (['Enter', ' '].includes(event.key) && target?.closest?.('button, a[href]'))) event.stopPropagation();
+      (['Enter', ' '].includes(event.key) && target?.closest?.('button, a[href], summary'))) event.stopPropagation();
 }
 
 function close() {
@@ -1476,7 +1470,6 @@ function close() {
   color: inherit;
 }
 .tab-btn:hover {
-  color: var(--color-text-primary);
   background-color: var(--color-surface-hover);
 }
 .tab-btn.active {
@@ -1485,9 +1478,23 @@ function close() {
   border-bottom-color: var(--color-accent);
 }
 
+.settings-sections {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+  overflow-x: auto;
+  padding-inline: var(--workspace-gutter);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings-sections .tab-btn {
+  min-height: 28px;
+  font-size: 12px;
+}
+
 .settings-content {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 450px));
   align-content: start;
   align-items: start;
   flex: 1;
@@ -1497,25 +1504,12 @@ function close() {
   overflow-y: auto;
 }
 
-.settings-content--audio {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
-}
-
-.settings-content--playback {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
 .settings-content--audio > .settings-field {
   align-self: stretch;
 }
 
-.settings-content--audio .settings-label {
-  min-height: 22px;
-}
-
-.settings-content--audio .material-symbols-rounded,
-.settings-content--audio :deep(.cue-symbol) {
-  font-size: 20px;
+.settings-section--playlist {
+  grid-template-columns: repeat(3, minmax(0, 340px));
 }
 
 .settings-content--about,
@@ -1523,31 +1517,13 @@ function close() {
   display: block;
 }
 
-.settings-content--about :deep(.about-header) {
-  gap: var(--spacing-sm);
-  margin-bottom: 0;
-  padding-bottom: var(--spacing-sm);
-}
-
-.settings-content--about :deep(.about-logo) {
-  width: 40px;
-  height: 40px;
-}
-
-.settings-content--about :deep(.about-title) {
-  font-size: 22px;
-}
-
-.settings-content--about :deep(.about-subtitle) {
-  font-size: 13px;
-}
-
 .settings-content > .settings-error,
-.settings-wide {
+.settings-section--test-card > .settings-group {
   grid-column: 1 / -1;
 }
 
-.settings-content .settings-field:not(label) {
+.settings-content .settings-field:not(label),
+.settings-rows {
   padding: var(--spacing-sm);
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
@@ -1557,21 +1533,78 @@ function close() {
 .settings-group {
   display: grid;
   min-width: 0;
-  gap: var(--spacing-sm);
+}
+
+.settings-section-title {
+  margin: 0;
+  padding: 0 var(--spacing-sm) var(--spacing-xs);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.settings-rows {
+  padding: var(--spacing-xs) 0;
+}
+
+.settings-content .settings-rows > .settings-field {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 3px var(--spacing-sm);
+}
+
+.settings-content .settings-rows > .settings-field + .settings-field {
+  border-top: 1px solid var(--color-border);
+}
+
+.settings-content--audio > .settings-field,
+.settings-rows > .settings-field:has(> .settings-select, > .settings-input) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, max-content);
+  column-gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.settings-field > .settings-help {
+  grid-column: 1 / -1;
+}
+
+.settings-field > .settings-select {
+  width: min(100%, 15rem);
+}
+
+.settings-field > .settings-input {
+  width: 5rem;
 }
 
 .settings-content--help > .settings-field {
   width: fit-content;
+  max-width: 100%;
+}
+
+.settings-content .video-capture {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, max-content);
+  align-items: center;
+  column-gap: var(--spacing-sm);
+}
+
+.settings-content .video-standby-field {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--spacing-sm);
 }
 
 @container (max-width: 900px) {
-  .settings-content--playback {
+  .settings-section--playlist {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
 
-  .settings-content--ui,
-  .settings-content--video {
-    grid-template-columns: minmax(0, 1fr);
+@container (max-width: 740px) {
+  .settings-content {
+    grid-template-columns: minmax(0, 490px);
   }
 }
 
@@ -1583,11 +1616,14 @@ function close() {
 }
 .header-warning-settings {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 118px), 1fr));
   gap: var(--spacing-xs) var(--spacing-sm);
 }
 .header-warning-settings .settings-field {
   justify-content: end;
+}
+.header-warning-settings .settings-input {
+  width: 4.5rem;
 }
 .settings-label {
   display: flex;
@@ -1604,8 +1640,8 @@ function close() {
 .settings-input {
   width: 100%;
   min-width: 0;
-  min-height: var(--panel-control-height);
-  padding: var(--spacing-xs) var(--spacing-sm);
+  min-height: 28px;
+  padding: 3px var(--spacing-sm);
   background: var(--color-background);
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
@@ -1671,14 +1707,18 @@ function close() {
 
 .track-height-control {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) minmax(160px, 2fr) 52px;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(58px, 1fr) 44px;
+  gap: 6px;
   align-items: center;
   color: var(--color-text-primary);
   font-size: 13px;
 }
 .track-height-control input[type="range"] {
   width: 100%;
+  min-width: 0;
+  height: 24px;
+  margin: 0;
+  padding: 0;
   accent-color: var(--color-accent);
 }
 .track-height-control output {
@@ -1689,12 +1729,12 @@ function close() {
 }
 .cart-layout-grid {
   display: grid;
-  grid-template-columns: minmax(136px, 1.5fr) minmax(92px, 1fr) 72px 72px;
-  gap: 6px 8px;
+  grid-template-columns: minmax(0, 1fr) minmax(65px, max-content) 76px 65px;
+  gap: 2px 6px;
   align-items: center;
-  padding: 8px;
+  padding: 4px 6px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: var(--control-radius);
   background: var(--color-surface);
 }
 .cart-slot-count {
@@ -1726,9 +1766,10 @@ function close() {
   font-size: 10px;
 }
 .cart-layout-input {
-  height: 32px;
+  height: 24px;
+  min-height: 24px;
   min-width: 0;
-  padding: 5px 7px;
+  padding: 2px 4px;
   font-family: var(--font-mono);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
@@ -1747,10 +1788,10 @@ function close() {
 }
 .countdown-band-grid {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) 78px 126px 34px;
+  grid-template-columns: minmax(0, 1fr) 65px 105px 26px;
   gap: 8px;
   align-items: center;
-  padding: 8px 10px;
+  padding: 2px 6px;
 }
 .countdown-band-grid--header {
   background: var(--color-surface);
@@ -1759,7 +1800,7 @@ function close() {
   font-weight: 600;
 }
 .countdown-band-grid--row {
-  min-height: 50px;
+  min-height: 28px;
   border-top: 1px solid var(--color-border);
 }
 .countdown-band-range,
@@ -1783,9 +1824,9 @@ function close() {
 }
 .countdown-band-start input,
 .countdown-band-fixed {
-  width: 54px;
-  height: 32px;
-  padding: 6px 8px;
+  width: 48px;
+  height: 24px;
+  padding: 2px 4px;
   background: var(--color-control);
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
@@ -1799,8 +1840,8 @@ function close() {
   color: var(--color-text-secondary);
 }
 .countdown-band-color input[type="color"] {
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 24px;
   flex: 0 0 auto;
   padding: 2px;
   background: var(--color-control);
@@ -1818,8 +1859,8 @@ function close() {
 .countdown-band-remove {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 26px;
+  height: 24px;
   background: transparent;
   color: var(--color-text-secondary);
   border: 1px solid var(--color-border);
@@ -1835,6 +1876,13 @@ function close() {
 .countdown-band-color input:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
+}
+.countdown-band-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-xs);
 }
 .countdown-band-add {
   align-self: flex-start;
@@ -1858,14 +1906,16 @@ function close() {
 }
 .settings-label--checkbox {
   flex-direction: row;
-  gap: 10px;
-  font-size: 14px;
+  gap: 8px;
+  font-size: 13px;
   color: var(--color-text-primary);
   cursor: pointer;
 }
 .settings-label--checkbox input[type="checkbox"] {
   width: 16px;
   height: 16px;
+  flex: 0 0 auto;
+  margin: 0;
   cursor: pointer;
   accent-color: var(--color-accent);
 }
@@ -1921,9 +1971,10 @@ function close() {
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
   color: var(--color-text-primary);
-  padding: var(--spacing-sm) var(--spacing-lg);
+  min-height: 28px;
+  padding: 3px var(--spacing-sm);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 12px;
 }
 .modal-btn:hover {
   background: var(--color-surface-hover);

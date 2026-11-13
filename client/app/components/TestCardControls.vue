@@ -2,7 +2,7 @@
   <div class="test-card-controls">
     <fieldset class="test-card-fieldset" :disabled="disabled">
       <legend>{{ t('testCard.cardType') }}</legend>
-      <label class="test-card-control test-card-control--wide">
+      <label class="test-card-control test-card-preset">
         <span>{{ t('testCard.preset') }}</span>
         <select class="test-card-select" :value="selectedPresetId" @change="onPresetChange">
           <option v-for="preset in TEST_CARD_PRESETS" :key="preset.id" :value="preset.id">
@@ -592,14 +592,15 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
 
 <style>
 .test-card-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+  align-items: start;
+  gap: 6px 8px;
 }
 .test-card-fieldset {
   min-width: 0;
   margin: 0;
-  padding: 12px;
+  padding: 6px 8px;
   border: 1px solid var(--color-border);
   border-radius: var(--border-radius-md);
 }
@@ -611,12 +612,12 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
 }
 .test-card-grid {
   display: grid;
-  gap: 10px 12px;
+  gap: 4px 8px;
   align-items: end;
 }
 .test-card-grid + .test-card-grid,
 .test-card-subheading + .test-card-grid {
-  margin-top: 10px;
+  margin-top: 5px;
 }
 .test-card-grid--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .test-card-grid--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -632,9 +633,16 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
   flex-direction: column;
   gap: 5px;
 }
+.test-card-preset {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.test-card-preset select { max-width: 13rem; }
 .test-card-control--wide { grid-column: span 2; }
 .test-card-check {
-  min-height: 34px;
+  min-height: 26px;
   align-items: center;
   gap: 7px;
 }
@@ -649,7 +657,7 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
 .test-card-select {
   min-width: 0;
   width: 100%;
-  height: 34px;
+  height: 28px;
   box-sizing: border-box;
   padding: 0 9px;
   background: var(--color-control);
@@ -743,6 +751,13 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
   .test-card-grid--two,
   .test-card-grid--three,
   .test-card-grid--four { grid-template-columns: 1fr; }
-  .test-card-control--wide { grid-column: auto; }
+  .test-card-preset {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.test-card-preset select { max-width: 13rem; }
+.test-card-control--wide { grid-column: auto; }
 }
 </style>
