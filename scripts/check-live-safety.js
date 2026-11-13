@@ -1847,7 +1847,7 @@ assert.match(
 );
 assert.match(
   projectSettingsModal,
-  /class="project-settings-panel"[\s\S]*class="workspace-panel-header settings-header"[\s\S]*<ControlConfigModal v-if="activeTab === 'shortcuts'" \/>[\s\S]*\.project-settings-panel\s*\{[^}]*flex:\s*1;/,
+  /class="project-settings-panel"[\s\S]*class="workspace-panel-header settings-header"[\s\S]*<ControlConfigModal v-if="activeTab === 'shortcuts' \|\| activeTab === 'midi'"[\s\S]*?\/>[\s\S]*\.project-settings-panel\s*\{[^}]*flex:\s*1;/,
   'Settings must fit the resizable workspace panel and host the same shortcuts editor',
 );
 assert.doesNotMatch(
@@ -2439,12 +2439,12 @@ assert.match(
 );
 assert.match(
   projectSettingsModal,
-  /cartPlayerLayout[\s\S]*minimumCardHeight[\s\S]*visibleRows[\s\S]*columns[\s\S]*cartGridProfileOptions[\s\S]*attachedRegular[\s\S]*attachedShow[\s\S]*detachedRegular[\s\S]*detachedShow[\s\S]*onCartGridLayoutChange[\s\S]*input\.value\.trim\(\)[\s\S]*setCartGridLayout/,
+  /cart-layout-grid[\s\S]*minimumCardHeight[\s\S]*visibleRows[\s\S]*columns[\s\S]*cartGridProfileOptions[\s\S]*attachedRegular[\s\S]*attachedShow[\s\S]*detachedRegular[\s\S]*detachedShow[\s\S]*onCartGridLayoutChange[\s\S]*input\.value\.trim\(\)[\s\S]*setCartGridLayout/,
   'settings must expose height, visible rows, and columns for all four One Shot layout profiles',
 );
 assert.match(
   controlConfig,
-  /v-for="entry in activeGroup === 'One Shots' \? configuredOneShots : \[\]"[\s\S]*entry\.slotIndex[\s\S]*buildOneShotSlots[\s\S]*const configuredOneShots/,
+  /v-for="entry in configuredOneShots"[\s\S]*entry\.slotIndex[\s\S]*buildOneShotSlots[\s\S]*const configuredOneShots/,
   'keyboard and MIDI configuration must follow the configured One Shot cells',
 );
 assert.match(

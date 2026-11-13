@@ -1,40 +1,33 @@
 <template>
   <section class="control-config-panel" :aria-label="t('controls.title')" @keydown.capture="handleKeydown">
-      <div class="tab-bar">
-        <button
-          class="tab-btn"
-          :class="{ active: activeTab === 'keyboard' }"
-          :aria-pressed="activeTab === 'keyboard'"
-          @click="activeTab = 'keyboard'"
-        >
-          <span class="tab-icon material-symbols-rounded" aria-hidden="true">keyboard</span> {{ t('controls.tabKeyboard') }}
-        </button>
-        <button
-          class="tab-btn"
-          :class="{ active: activeTab === 'midi' }"
-          :aria-pressed="activeTab === 'midi'"
-          @click="activeTab = 'midi'"
-        >
-          <span class="tab-icon material-symbols-rounded" aria-hidden="true">piano</span> {{ t('controls.tabMidi') }}
-        </button>
-        <button v-for="group in bindingGroups" :key="group.id" type="button" class="group-btn"
-          :aria-pressed="activeGroup === group.id" @click="bindingGroup = group.id">
-          {{ t(group.labelKey) }}
-        </button>
+      <div class="config-toolbar">
+        <div v-if="mode === 'midi'" class="device-row">
+          <label for="shortcut-midi-device" class="device-label">{{ t('controls.midiDevice') }}</label>
+          <select
+            id="shortcut-midi-device"
+            class="device-select"
+            :value="preferredDevice ?? ''"
+            @change="handleDeviceChange"
+          >
+            <option value="">{{ t('controls.allDevices') }}</option>
+            <option v-for="dev in connectedDevices" :key="dev" :value="dev">{{ dev }}</option>
+          </select>
+          <span v-if="connectedDevices.length === 0" class="no-device-hint">{{ t('controls.noDevices') }}</span>
+        </div>
         <label class="shortcut-bar-toggle">
           <input v-model="showShortcutsBar" type="checkbox" />
           {{ t('settings.showShortcutsBar') }}
         </label>
         <button class="reset-btn" @click="handleReset">
-          {{ activeTab === 'keyboard' ? t('controls.resetKeyboard') : t('controls.resetMidi') }}
+          {{ mode === 'keyboard' ? t('controls.resetKeyboard') : t('controls.resetMidi') }}
         </button>
       </div>
 
       <!-- Keyboard tab -->
-      <div v-if="activeTab === 'keyboard'" :key="activeGroup" class="config-body">
+      <div v-if="mode === 'keyboard'" class="config-body">
         <!-- Playback section -->
         <div
-          v-for="action in keyboardActions"
+          v-for="action in PLAYBACK_ACTIONS"
           :key="action.id"
           class="action-row keyboard-action-row"
           :class="{
@@ -64,9 +57,9 @@
           <span v-if="keyErrorActionId === action.id && keyErrorMessage" class="error-msg">{{ keyErrorMessage }}</span>
         </div>
 
-        <!-- One Shots section -->
+        <h3 v-if="configuredOneShots.length" class="binding-heading">{{ t('controls.sectionOneShots') }}</h3>
         <div
-          v-for="entry in activeGroup === 'One Shots' ? configuredOneShots : []"
+          v-for="entry in configuredOneShots"
           :key="entry.item.uuid"
           class="action-row keyboard-action-row"
           :class="{
@@ -98,48 +91,35 @@
       </div>
 
       <!-- MIDI tab -->
-      <div v-else :key="'midi-' + activeGroup" class="config-body config-body--midi">
-        <div class="device-row">
-          <label for="shortcut-midi-device" class="device-label">{{ t('controls.midiDevice') }}</label>
-          <select
-            id="shortcut-midi-device"
-            class="device-select"
-            :value="preferredDevice ?? ''"
-            @change="handleDeviceChange"
-          >
-            <option value="">{{ t('controls.allDevices') }}</option>
-            <option v-for="dev in connectedDevices" :key="dev" :value="dev">{{ dev }}</option>
-          </select>
-          <span v-if="connectedDevices.length === 0" class="no-device-hint">{{ t('controls.noDevices') }}</span>
-        </div>
-        <div v-for="action in midiActions" :key="action.id" class="action-row midi-action-row"
-          :class="{ learning: learning === action.id }">
-          <span class="action-label">{{ t(action.labelKey, { n: action.n }) }}</span>
-          <span v-if="learning === action.id || getMidiBinding(action.id)" class="midi-binding"
-            :title="formatMidiBindingLabel(action.id)" aria-live="polite">
-            {{ learning === action.id ? t('controls.waitingForInput') : formatMidiBindingLabel(action.id) }}
-          </span>
-          <div class="action-buttons">
-            <button type="button" class="learn-btn" :class="{ active: learning === action.id }"
-              :aria-label="`${learning === action.id ? t('controls.cancel') : t('controls.learn')} · ${t(action.labelKey, { n: action.n })}`"
-              @click="toggleLearn(action.id)">
-              {{ learning === action.id ? t('controls.cancel') : t('controls.learn') }}
-            </button>
-            <button v-if="getMidiBinding(action.id)" type="button" class="clear-btn"
-              :aria-label="`${t('controls.clear')} · ${t(action.labelKey, { n: action.n })}`"
-              @click="handleMidiClear(action.id)">
-              {{ t('controls.clear') }}
-            </button>
+      <div v-else class="config-body">
+        <template v-for="group in midiGroups" :key="group.id">
+          <h3 v-if="group.id === 'One Shots'" class="binding-heading">{{ t('controls.sectionOneShots') }}</h3>
+          <div v-for="action in group.actions" :key="action.id" class="action-row midi-action-row"
+            :class="{ learning: learning === action.id }">
+            <span class="action-label">{{ t(action.labelKey, { n: action.n }) }}</span>
+            <span v-if="learning === action.id || getMidiBinding(action.id)" class="midi-binding"
+              :title="formatMidiBindingLabel(action.id)" aria-live="polite">
+              {{ learning === action.id ? t('controls.waitingForInput') : formatMidiBindingLabel(action.id) }}
+            </span>
+            <div class="action-buttons">
+              <button type="button" class="learn-btn" :class="{ active: learning === action.id }"
+                :aria-label="`${learning === action.id ? t('controls.cancel') : t('controls.learn')} · ${t(action.labelKey, { n: action.n })}`"
+                @click="toggleLearn(action.id)">
+                {{ learning === action.id ? t('controls.cancel') : t('controls.learn') }}
+              </button>
+              <button v-if="getMidiBinding(action.id)" type="button" class="clear-btn"
+                :aria-label="`${t('controls.clear')} · ${t(action.labelKey, { n: action.n })}`"
+                @click="handleMidiClear(action.id)">
+                {{ t('controls.clear') }}
+              </button>
+            </div>
           </div>
-        </div>
 
-        <template v-if="activeGroup === 'Volume'">
-          <label class="action-row midi-action-row">
+          <label v-if="group.id === 'Volume'" class="action-row midi-action-row">
             <span class="action-label">{{ t('controls.volumeMultiplier') }}</span>
-            <input class="multiplier-input" type="number" min="0.1" max="60" step="0.1"
+            <input class="multiplier-input" type="number" :title="t('controls.volumeMultiplierHint')" min="0.1" max="60" step="0.1"
               :value="masterVolumeMultiplier" @change="onMultiplierChange" />
           </label>
-          <p class="multiplier-hint">{{ t('controls.volumeMultiplierHint') }}</p>
         </template>
       </div>
 
@@ -226,7 +206,7 @@ const onMultiplierChange = (e: Event) => {
 };
 
 const midiConflictInfo = ref<{ actionId: MidiActionId; binding: MidiBinding; conflictAction: string } | null>(null);
-const activeTab = ref<'keyboard' | 'midi'>('keyboard');
+const { mode } = defineProps<{ mode: 'keyboard' | 'midi' }>();
 
 // --- Keyboard helpers ---
 
@@ -292,7 +272,7 @@ const handleKeydown = (e: KeyboardEvent) => {
     cancelKeyCapture();
     return;
   }
-  if (activeTab.value !== 'keyboard' || (capturingSlot.value === null && capturingKeyAction.value === null)) return;
+  if (mode !== 'keyboard' || (capturingSlot.value === null && capturingKeyAction.value === null)) return;
   if (e.key === 'Escape') {
     cancelKeyCapture();
     e.preventDefault();
@@ -368,28 +348,14 @@ const handleKeydown = (e: KeyboardEvent) => {
 
 // --- MIDI helpers ---
 
-const bindingGroup = ref('Playback');
-const bindingGroups = computed(() => [
-  { id: 'Playback', labelKey: 'controls.sectionPlayback' },
-  ...(configuredOneShots.value.length ? [{ id: 'One Shots', labelKey: 'controls.sectionOneShots' }] : []),
-  ...(activeTab.value === 'midi'
-    ? [{ id: 'Volume', labelKey: 'controls.sectionVolume' }]
-    : [{ id: 'Video', labelKey: 'settings.tabVideoOutput' }]),
-]);
-const activeGroup = computed(() => bindingGroups.value.some(group => group.id === bindingGroup.value)
-  ? bindingGroup.value : 'Playback');
-const keyboardActions = computed(() => {
-  if (activeGroup.value === 'One Shots') return [];
-  return PLAYBACK_ACTIONS.filter(action => {
-    const video = action.id === 'toggle-video-output' || action.id.startsWith('capture-');
-    return video === (activeGroup.value === 'Video');
-  });
-});
-const midiActions = computed(() => {
-  const actions = MIDI_ACTIONS.filter(action => action.category === activeGroup.value
-    && (action.n === undefined || !!oneShotSlots.value[action.n - 1]));
+const midiGroups = computed(() => {
   const priority = (id: MidiActionId) => id === 'play-next' ? 0 : id === 'stop-all' ? 1 : 2;
-  return actions.sort((a, b) => priority(a.id) - priority(b.id));
+  return ['Playback', 'Volume', 'One Shots'].map(id => ({
+    id,
+    actions: MIDI_ACTIONS.filter(action => action.category === id
+      && (action.n === undefined || !!oneShotSlots.value[action.n - 1]))
+      .sort((a, b) => priority(a.id) - priority(b.id)),
+  })).filter(group => group.actions.length);
 });
 
 const getMidiBinding = (actionId: string): MidiBinding | undefined =>
@@ -441,7 +407,7 @@ const handleDeviceChange = (e: Event) => {
 // --- Shared ---
 
 const handleReset = () => {
-  if (activeTab.value === 'keyboard') {
+  if (mode === 'keyboard') {
     resetToDefaults();
     resetPlaybackToDefaults();
     saveProject();
@@ -450,7 +416,7 @@ const handleReset = () => {
   }
 };
 
-watch([activeTab, activeGroup], () => {
+watch(() => mode, () => {
   cancelKeyCapture();
   if (learning.value) stopLearn();
   midiConflictInfo.value = null;
@@ -469,46 +435,15 @@ onUnmounted(() => {
   position: relative;
 }
 
-/* Tabs */
-.tab-bar {
+.config-toolbar {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  gap: 2px;
-  padding: 0 var(--spacing-md);
-  border-bottom: 1px solid var(--color-border);
-  background-color: var(--color-surface);
-  overflow-x: auto;
-}
-
-.tab-btn {
-  flex-shrink: 0;
-  min-height: var(--panel-control-height);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  font-size: 13px;
-  font-weight: 600;
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
+  flex-wrap: wrap;
   gap: var(--spacing-sm);
-}
-
-.tab-btn:hover { background: var(--color-surface-hover); }
-.tab-btn.active {
-  color: var(--color-accent);
-  background: var(--color-accent-soft);
-  border-bottom-color: var(--color-accent);
-}
-
-.tab-icon {
-  font-size: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  padding: 3px var(--workspace-gutter);
+  min-height: 33px;
+  border-bottom: 1px solid var(--color-border);
 }
 
 /* Body */
@@ -517,52 +452,28 @@ onUnmounted(() => {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 252px), 1fr));
   grid-auto-rows: max-content;
   align-content: start;
-  gap: var(--spacing-xs) var(--spacing-sm);
+  gap: 1px var(--spacing-sm);
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  width: min(100%, 1140px);
+  width: min(100%, 1280px);
   padding: var(--spacing-xs) var(--workspace-gutter);
 }
 
-.config-body--midi {
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr));
-  width: min(100%, 900px);
-}
-
-.group-btn {
-  min-height: 26px;
-  flex-shrink: 0;
-  padding: 2px var(--spacing-sm);
-  border: 1px solid transparent;
-  border-radius: var(--control-radius);
-  color: var(--color-text-secondary);
-  background: transparent;
+.binding-heading {
+  grid-column: 1 / -1;
+  padding: 5px 0 2px;
   font-size: 12px;
-  cursor: pointer;
 }
-
-.tab-btn + .group-btn {
-  margin-inline-start: var(--spacing-sm);
-}
-
-.group-btn[aria-pressed="true"] {
-  border-color: var(--color-border);
-  color: var(--color-text-primary);
-  background: var(--color-accent-soft);
-}
-
-.group-btn:hover { background: var(--color-surface-hover); }
 
 .action-row {
   display: grid;
   align-items: center;
   gap: var(--spacing-xs);
   min-width: 0;
-  min-height: 30px;
+  min-height: 27px;
   padding: 2px var(--spacing-sm);
-  border: 1px solid var(--color-border);
-  border-radius: var(--control-radius);
+  border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
   transition: background-color 0.1s;
 }
@@ -576,7 +487,7 @@ onUnmounted(() => {
 .action-row.conflict { border-color: var(--color-danger); }
 
 .keyboard-action-row {
-  grid-template-columns: minmax(0, 1fr) minmax(94px, 0.95fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(85px, 0.8fr) auto;
 }
 
 .midi-action-row {
@@ -675,20 +586,14 @@ onUnmounted(() => {
   color: var(--color-text-primary);
 }
 
-.multiplier-hint {
-  grid-column: 1 / -1;
-  font-size: 11px;
-  color: var(--color-text-secondary);
-  margin: 0;
-}
 
 /* Device selector row */
 .device-row {
-  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
   flex-wrap: wrap;
+  max-width: 100%;
 }
 
 .device-label {
@@ -699,7 +604,7 @@ onUnmounted(() => {
 }
 
 .device-select {
-  width: min(100%, 176px);
+  width: clamp(100px, 13vw, 176px);
   font-size: 12px;
   padding: 4px 8px;
   border-radius: var(--control-radius);
@@ -718,11 +623,11 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
-  margin-inline: var(--spacing-md) var(--spacing-xs);
-  padding-inline-start: var(--spacing-md);
   font-size: 12px;
   white-space: nowrap;
 }
+
+.shortcut-bar-toggle input { margin: 0; }
 
 .reset-btn {
   padding: var(--spacing-xs) var(--spacing-sm);

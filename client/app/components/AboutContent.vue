@@ -40,26 +40,23 @@
     </div>
 
     <div class="about-resources">
-      <details class="about-details">
-        <summary>{{ t('about.creditsAndLicense') }}</summary>
-        <div class="about-notices">
-          <p>
-            Forked from
-            <a href="https://github.com/tdoukinitsas/liveplay"
-               @click.prevent="openExternal('https://github.com/tdoukinitsas/liveplay')">LivePlay</a>
-            in July 2026. Original LivePlay software © Thomas Doukinitsas and contributors.
-          </p>
-          <p>
-            {{ t('testCard.cardType') }}:
-            <a href="https://github.com/Alteka/Kards"
-               @click.prevent="openExternal('https://github.com/Alteka/Kards')">Alteka Kards</a>
-            · GPL-3.0-only
-          </p>
-          <p>{{ t('about.licenseText') }}</p>
-          <p>{{ t('about.distributionText') }}</p>
-          <p>{{ t('about.sourceText') }}</p>
-        </div>
-      </details>
+      <div class="about-notices">
+        <p>
+          Forked from
+          <a href="https://github.com/tdoukinitsas/liveplay"
+             @click.prevent="openExternal('https://github.com/tdoukinitsas/liveplay')">LivePlay</a>
+          in July 2026. Original LivePlay software © Thomas Doukinitsas and contributors.
+        </p>
+        <p>
+          {{ t('testCard.cardType') }}:
+          <a href="https://github.com/Alteka/Kards"
+             @click.prevent="openExternal('https://github.com/Alteka/Kards')">Alteka Kards</a>
+          · GPL-3.0-only
+        </p>
+        <p>{{ t('about.licenseText') }}</p>
+        <p>{{ t('about.distributionText') }}</p>
+        <p>{{ t('about.sourceText') }}</p>
+      </div>
 
       <div class="about-links">
         <a href="https://dwcue.com" @click.prevent="openExternal('https://dwcue.com')">
@@ -144,9 +141,8 @@ const openExternal = (url: string) => {
 
 <style scoped>
 .about-content {
-  max-width: 960px;
+  max-width: 1120px;
   border: 1px solid var(--color-border);
-  border-radius: var(--control-radius);
   background: var(--color-surface);
 }
 
@@ -235,22 +231,9 @@ const openExternal = (url: string) => {
   font-size: 12px;
 }
 
-.about-details {
-  flex: 1 1 180px;
-  min-width: 0;
-}
-
-.about-details summary,
 .about-links a {
-  border-radius: var(--control-radius);
   color: var(--color-text-primary);
   padding: var(--spacing-xs);
-  cursor: pointer;
-}
-
-.about-details summary {
-  width: fit-content;
-  font-weight: 600;
 }
 
 .about-links a {
@@ -260,11 +243,14 @@ const openExternal = (url: string) => {
   text-decoration: none;
 }
 
+.about-links {
+  align-content: start;
+}
+
 .about-links .material-symbols-rounded {
   font-size: 16px;
 }
 
-.about-details summary:hover,
 .about-links a:hover {
   background: var(--color-surface-hover);
 }
@@ -272,8 +258,9 @@ const openExternal = (url: string) => {
 .about-notices {
   display: grid;
   gap: var(--spacing-xs);
-  padding: var(--spacing-xs);
-  max-width: 65ch;
+  flex: 1 1 570px;
+  min-width: 0;
+  padding-block: var(--spacing-xs);
 }
 
 .about-notices a {

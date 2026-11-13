@@ -12,7 +12,7 @@
       </label>
 
       <div class="test-card-grid test-card-grid--three">
-        <label class="test-card-control">
+        <label class="test-card-control test-card-name">
           <span>{{ t('testCard.name') }}</span>
           <input :value="config.name" type="text" maxlength="120" @input="updateName">
         </label>
@@ -62,7 +62,7 @@
           @change="onImagePicked($event, 'logo')"
         >
       </div>
-      <p class="test-card-help">{{ t('testCard.logoHelp') }}</p>
+      <p v-if="config.alteka.showLogo" class="test-card-help">{{ t('testCard.logoHelp') }}</p>
     </fieldset>
 
     <fieldset v-if="config.cardType === 'bars'" class="test-card-fieldset" :disabled="disabled">
@@ -287,7 +287,7 @@
           @change="onImagePicked($event, 'mask')"
         >
       </div>
-      <p class="test-card-help">{{ t('testCard.maskHelp') }}</p>
+      <p v-if="config.mask.image" class="test-card-help">{{ t('testCard.maskHelp') }}</p>
       <p v-if="imageError" class="test-card-error" role="alert">{{ imageError }}</p>
     </fieldset>
   </div>
@@ -345,9 +345,9 @@ const ColorControl = defineComponent({
         h('input', {
           type: 'color',
           value: componentProps.value,
+          title: componentProps.value,
           onInput: (event: Event) => componentEmit('change', (event.target as HTMLInputElement).value),
         }),
-        h('code', componentProps.value),
       ]),
     ]);
   },
@@ -593,22 +593,23 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
 <style>
 .test-card-controls {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
   gap: 6px 8px;
 }
 .test-card-fieldset {
   min-width: 0;
   margin: 0;
-  padding: 6px 8px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-md);
+  padding: 4px 0;
+  border: 0;
+  border-top: 1px solid var(--color-border);
 }
 .test-card-fieldset > legend {
-  padding: 0 6px;
+  padding: 0 4px 0 0;
   color: var(--color-text-primary);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 650;
+  line-height: 1.35;
 }
 .test-card-grid {
   display: grid;
@@ -622,6 +623,7 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
 .test-card-grid--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .test-card-grid--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .test-card-grid--four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.test-card-grid--four:has(.test-card-color) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .test-card-control,
 .test-card-check {
   display: flex;
@@ -641,14 +643,17 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
 }
 .test-card-preset select { max-width: 13rem; }
 .test-card-control--wide { grid-column: span 2; }
+.test-card-color { flex-direction: row; align-items: center; justify-content: space-between; }
+.test-card-name { grid-column: 1 / -1; flex-direction: row; align-items: center; }
 .test-card-check {
-  min-height: 26px;
+  min-height: 24px;
   align-items: center;
   gap: 7px;
 }
 .test-card-check input {
   width: 16px;
   height: 16px;
+  flex: none;
   margin: 0;
   accent-color: var(--color-accent);
 }
@@ -657,7 +662,7 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
 .test-card-select {
   min-width: 0;
   width: 100%;
-  height: 28px;
+  height: 26px;
   box-sizing: border-box;
   padding: 0 9px;
   background: var(--color-control);
@@ -675,16 +680,13 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
   gap: 8px;
 }
 .test-card-color-row input[type='color'] {
-  width: 36px;
-  height: 34px;
+  width: 28px;
+  height: 26px;
+  flex: none;
   padding: 2px;
   background: var(--color-control);
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
-}
-.test-card-color-row code {
-  color: var(--color-text-secondary);
-  font-size: 11px;
 }
 .test-card-number-row input { flex: 1; }
 .test-card-image-row { flex-wrap: wrap; }
@@ -707,8 +709,8 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
   white-space: nowrap;
 }
 .test-card-button {
-  min-height: 32px;
-  padding: 5px 10px;
+  min-height: 28px;
+  padding: 3px 8px;
   background: var(--color-surface);
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
@@ -744,6 +746,7 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
 .test-card-error { color: var(--color-danger); }
 .test-card-fieldset:disabled { opacity: .58; }
 @media (max-width: 720px) {
+  .test-card-controls { grid-template-columns: minmax(0, 1fr); }
   .test-card-grid--three,
   .test-card-grid--four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -751,13 +754,6 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
   .test-card-grid--two,
   .test-card-grid--three,
   .test-card-grid--four { grid-template-columns: 1fr; }
-  .test-card-preset {
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-.test-card-preset select { max-width: 13rem; }
-.test-card-control--wide { grid-column: auto; }
+  .test-card-control--wide { grid-column: auto; }
 }
 </style>
