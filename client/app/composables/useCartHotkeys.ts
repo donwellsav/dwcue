@@ -75,7 +75,7 @@ export const resolveKeyboardBindings = (
   };
   // A new default must yield to a key the operator already assigned.
   const assigned = [...Object.values(keyMappings), ...Object.values(savedPlayback)];
-  for (const action of ['set-up-next', 'toggle-video-output', 'capture-video-standby', 'capture-display-standby'] as const) {
+  for (const action of ['set-up-next', 'play-selected', 'toggle-loop', 'toggle-video-output', 'capture-video-standby', 'capture-display-standby'] as const) {
     const defaultKey = DEFAULT_PLAYBACK_KEYS[action];
     if (savedPlayback[action] === undefined && defaultKey
         && assigned.some(binding => binding && bindingsMatch(binding, defaultKey))) {

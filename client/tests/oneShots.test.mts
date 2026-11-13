@@ -97,7 +97,10 @@ test('digits follow slot position and saved keyboard assignments take precedence
   const { keyMappings, playbackMappings } = resolveKeyboardBindings(slots);
   assert.deepEqual(Object.values(keyMappings).map(binding => binding.key), [...'1234567890']);
   assert.equal(playbackMappings['set-up-next']?.key, 'Enter');
-  assert.equal(playbackMappings['play-selected'], undefined);
+  assert.equal(playbackMappings['set-up-next']?.shiftKey, false);
+  assert.equal(playbackMappings['play-selected']?.key, 'Enter');
+  assert.equal(playbackMappings['play-selected']?.shiftKey, true);
+  assert.equal(playbackMappings['toggle-loop']?.key, 'l');
   assert.equal(playbackMappings['play-next']?.key, ' ');
   assert.equal(playbackMappings['toggle-video-output']?.key, 'v');
 
@@ -116,6 +119,14 @@ test('digits follow slot position and saved keyboard assignments take precedence
   assert.equal(resolveKeyboardBindings(slots).playbackMappings['set-up-next'], undefined);
   slots[10]!.oneShot!.hotkey = key('v');
   assert.equal(resolveKeyboardBindings(slots).playbackMappings['toggle-video-output'], undefined);
+  slots[10]!.oneShot!.hotkey = key('L');
+  assert.equal(resolveKeyboardBindings(slots).playbackMappings['toggle-loop'], undefined);
+  slots[10]!.oneShot!.hotkey = { ...key('Enter'), shiftKey: true };
+  const shifted = resolveKeyboardBindings(slots, { 'toggle-loop': null });
+  assert.equal(shifted.playbackMappings['play-selected'], undefined);
+  assert.equal(shifted.playbackMappings['set-up-next']?.key, 'Enter');
+  assert.equal(shifted.playbackMappings['toggle-loop'], null);
+  assert.equal(resolveKeyboardBindings(slots, { 'jump-cue': key('l') }).playbackMappings['toggle-loop'], undefined);
 });
 
 test('One Shot copies into the playlist without consuming the source cell', () => {

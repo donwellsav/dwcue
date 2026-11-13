@@ -460,10 +460,12 @@ export const DEFAULT_CART_SLOT_KEYS: Record<number, CartSlotKeyBinding> = {};
 export const DEFAULT_PLAYBACK_KEYS: Partial<Record<PlaybackKeyAction, CartSlotKeyBinding>> = {
   'play-next':     { key: ' ',         ctrlKey: false, shiftKey: false, altKey: false },
   'pause-resume':  { key: 'p',         ctrlKey: false, shiftKey: false, altKey: false },
+  'toggle-loop':   { key: 'l',         ctrlKey: false, shiftKey: false, altKey: false },
   'stop-all':      { key: 'Escape',    ctrlKey: false, shiftKey: false, altKey: false },
   'select-up':     { key: 'ArrowUp',   ctrlKey: false, shiftKey: false, altKey: false },
   'select-down':   { key: 'ArrowDown', ctrlKey: false, shiftKey: false, altKey: false },
   'set-up-next':   { key: 'Enter',     ctrlKey: false, shiftKey: false, altKey: false },
+  'play-selected': { key: 'Enter',     ctrlKey: false, shiftKey: true,  altKey: false },
   'toggle-video-output': { key: 'v',   ctrlKey: false, shiftKey: false, altKey: false },
   'capture-video-standby': { key: 'g', ctrlKey: false, shiftKey: false, altKey: false },
   'capture-display-standby': { key: 'g', ctrlKey: false, shiftKey: true, altKey: false },
