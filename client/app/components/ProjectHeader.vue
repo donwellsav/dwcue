@@ -451,7 +451,7 @@ onMounted(() => {
   white-space: nowrap;
   flex-shrink: 0;
   background-color: var(--state-up-next);
-  color: black;
+  color: var(--state-up-next-text);
 }
 
 /* Autosave toggle switch */

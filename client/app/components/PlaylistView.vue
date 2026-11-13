@@ -7,11 +7,16 @@
       </div>
       <!-- Import / add-group are edit actions — hidden in Show Mode. -->
       <div v-if="!showMode" class="playlist-actions">
-        <Btn icon="audio_file" :text="t('playlist.importAudio')" :disabled="!currentProject" @click="handleImport" />
-        <Btn v-if="importReviewAvailable" :text="t('importAudio.resultsTitle')" @click="handleImport" />
-        <Btn v-if="canOnlineImport" icon="youtube_activity" :text="t('youtube.importFromYouTube')" @click="openImport('youtube')" />
-        <Btn v-if="canOnlineImport" icon="library_music" :text="t('spotifyImport.button')" @click="openImport('spotify')" />
-        <Btn icon="folder" :text="t('playlist.addGroup')" :disabled="!currentProject" @click="handleAddGroup" />
+        <Btn icon="audio_file" :text="t('playlist.importAudio')" :title="t('playlist.importAudio')"
+          :aria-label="t('playlist.importAudio')" :disabled="!currentProject" @click="handleImport" />
+        <Btn v-if="importReviewAvailable" icon="list_alt" :text="t('importAudio.resultsTitle')"
+          :title="t('importAudio.resultsTitle')" :aria-label="t('importAudio.resultsTitle')" @click="handleImport" />
+        <Btn v-if="canOnlineImport" icon="youtube_activity" :text="t('youtube.importFromYouTube')"
+          :title="t('youtube.importFromYouTube')" :aria-label="t('youtube.importFromYouTube')" @click="openImport('youtube')" />
+        <Btn v-if="canOnlineImport" icon="library_music" :text="t('spotifyImport.button')"
+          :title="t('spotifyImport.button')" :aria-label="t('spotifyImport.button')" @click="openImport('spotify')" />
+        <Btn icon="folder" :text="t('playlist.addGroup')" :title="t('playlist.addGroup')"
+          :aria-label="t('playlist.addGroup')" :disabled="!currentProject" @click="handleAddGroup" />
       </div>
     </div>
     
@@ -1232,6 +1237,7 @@ const handleDrop = async (e: DragEvent) => {
   height: 100%;
   display: flex;
   flex-direction: column;
+  container-type: inline-size;
   background-color: var(--color-background);
 }
 
@@ -1241,16 +1247,31 @@ const handleDrop = async (e: DragEvent) => {
 
 .playlist-actions {
   display: flex;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   align-items: center;
   min-width: 0;
-  margin-left: auto;
+  margin-inline-start: auto;
   gap: var(--spacing-sm);
   overflow-x: auto;
 }
 
 .playlist-header .workspace-panel-header__leading {
   flex: 0 0 auto;
+}
+
+@container (max-width: 580px) {
+  .playlist-actions {
+    gap: var(--spacing-xs);
+  }
+
+  .playlist-actions :deep(.btn) {
+    flex: 0 0 var(--panel-control-height);
+    justify-content: center;
+    padding: 0;
+  }
+
+  .playlist-actions :deep(.btn__text),
+  .playlist-header :deep(.cart-toggle__label) { display: none; }
 }
 
 .playlist-header,

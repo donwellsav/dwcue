@@ -662,7 +662,7 @@ const handlePlayNext = async () => {
 .play-next-btn.has-next {
   background-color: var(--state-up-next);
   border-color: var(--state-up-next);
-  color: #171b25;
+  color: var(--state-up-next-text);
 }
 
 .play-next-btn.has-next:hover:not(:disabled) {
@@ -706,7 +706,7 @@ const handlePlayNext = async () => {
   font-weight: 700;
   letter-spacing: 0.08em;
   line-height: 1;
-  opacity: 0.76;
+  opacity: 0.9;
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -997,7 +997,7 @@ const handlePlayNext = async () => {
 .preview-set-next-btn.active {
   background-color: var(--state-up-next);
   border-color: var(--state-up-next);
-  color: #171b25;
+  color: var(--state-up-next-text);
 }
 
 .preview-stop-btn {

@@ -1,30 +1,34 @@
 <template>
-  <section v-if="open" class="project-settings-panel" :aria-label="t('settings.title')">
+  <TabsRoot v-if="open" v-model="activeTab" as="section" activation-mode="manual"
+    :dir="getDirection() === 'rtl' ? 'rtl' : 'ltr'" class="project-settings-panel" :aria-label="t('settings.title')">
         <header class="workspace-panel-header settings-header">
           <h2 class="workspace-panel-header__title">{{ t('settings.title') }}</h2>
-          <nav class="settings-tabs" :aria-label="t('settings.title')">
-            <button
+          <TabsList class="settings-tabs" :aria-label="t('settings.title')">
+            <TabsTrigger
               v-for="tab in tabs"
               :key="tab.id"
-              type="button"
-              :class="['tab-btn', { active: activeTab === tab.id }]"
-              :aria-pressed="activeTab === tab.id"
+              :value="tab.id"
+              class="tab-btn"
+              :title="tab.label"
+              :aria-label="tab.id === 'about' && update.version ? `${tab.label}, ${t('update.updateAvailable')}` : undefined"
               @click="activeTab = tab.id"
             >
               <CueSymbol v-if="tab.symbol" :name="tab.symbol" />
               <span v-else class="material-symbols-rounded" aria-hidden="true">{{ tab.icon }}</span>
-              <span>{{ tab.label }}</span>
-              <span v-if="tab.id === 'about' && update.version" class="update-dot" :aria-label="t('update.updateAvailable')"></span>
-            </button>
-          </nav>
+              <span class="settings-tab-label">{{ tab.label }}</span>
+              <span v-if="tab.id === 'about' && update.version" class="update-dot" aria-hidden="true"></span>
+            </TabsTrigger>
+          </TabsList>
           <button type="button" class="close-x" :aria-label="t('actions.close')" @click="close">
             <span class="material-symbols-rounded" aria-hidden="true">close</span>
           </button>
         </header>
 
+    <TabsContent v-for="tab in tabs" :key="tab.id" :value="tab.id" class="settings-tabpanel">
+      <template v-if="tab.id === activeTab">
         <ControlConfigModal v-if="activeTab === 'shortcuts' || activeTab === 'midi'"
           :mode="activeTab === 'midi' ? 'midi' : 'keyboard'" />
-        <div v-else :key="activeTab" :class="['settings-content', `settings-content--${activeTab}`]">
+        <div v-else :class="['settings-content', `settings-content--${activeTab}`]">
           <p v-if="settingsError" class="settings-error" role="alert">
             {{ settingsError }}
           </p>
@@ -658,6 +662,8 @@
             <AboutContent class="about-content--docked" />
           </template>
         </div>
+      </template>
+    </TabsContent>
 
     <ServerFilePickerModal
       :open="voStandbyPickerOpen"
@@ -668,10 +674,11 @@
       @pick="onVideoOutputStandbyPicked"
       @close="voStandbyPickerOpen = false"
     />
-  </section>
+  </TabsRoot>
 </template>
 
 <script setup lang="ts">
+import { TabsContent, TabsList, TabsRoot, TabsTrigger } from 'reka-ui';
 import { useOutputTarget } from '~/composables/useOutputTarget';
 import {
   DEFAULT_COUNTDOWN_COLOR_BANDS,
@@ -700,7 +707,7 @@ const props = defineProps<{ open: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 const { update } = useAppUpdate();
 
-const { t, currentLocale, setLocale, availableLocales } = useLocalization();
+const { t, currentLocale, setLocale, availableLocales, getDirection } = useLocalization();
 const server = useLiveplayServer();
 
 const openExternal = (url: string) => {
@@ -1337,38 +1344,47 @@ function close() {
 .settings-tabs {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(112px, 1fr);
+  grid-auto-columns: minmax(0, 1fr);
   align-self: stretch;
   min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-  gap: 2px;
+  max-width: var(--settings-width);
+  border-inline-start: 1px solid var(--color-border);
 }
 .tab-btn {
   display: flex;
   align-items: center;
   justify-content: center;
+  min-width: 0;
   gap: var(--spacing-xs);
   padding: 0 var(--spacing-sm);
   background: none;
   border: none;
+  border-inline-end: 1px solid var(--color-border);
   border-bottom: 2px solid transparent;
   cursor: pointer;
   color: var(--color-text-primary);
-  font-size: 13px;
+  font-size: var(--type-metadata-size);
   font-weight: 600;
-  line-height: 1.25;
+  line-height: 1.15;
+}
+.settings-tab-label {
+  min-width: 0;
+  display: -webkit-box;
+  overflow: hidden;
   overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 .tab-btn .material-symbols-rounded,
 .tab-btn :deep(.cue-symbol) {
   font-size: 18px;
+  flex-shrink: 0;
   color: inherit;
 }
 .tab-btn:hover {
   background-color: var(--color-surface-hover);
 }
-.tab-btn.active {
+.tab-btn[data-state='active'] {
   color: var(--color-accent);
   background: var(--color-accent-soft);
   border-bottom-color: var(--color-accent);
@@ -1380,6 +1396,14 @@ function close() {
   .tab-btn .material-symbols-rounded,
   .tab-btn :deep(.cue-symbol) { display: none; }
 }
+
+.settings-tabpanel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.settings-tabpanel[hidden] { display: none; }
 
 .settings-content {
   display: grid;

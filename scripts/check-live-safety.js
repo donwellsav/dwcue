@@ -548,8 +548,8 @@ assert.ok(
 );
 assert.match(
   mainWorkspace,
-  /const newWidth = e\.clientX - rect\.left;[\s\S]*newWidth < snapThreshold[\s\S]*cartClosed\.value = true[\s\S]*newWidth > rect\.width - snapThreshold[\s\S]*cartFullscreen\.value = true/,
-  'the left-side cart splitter must close leftward and expand rightward',
+  /const newWidth = fromStart \/ zoom;[\s\S]*newWidth < snapThreshold[\s\S]*cartClosed\.value = true[\s\S]*newWidth > container\.offsetWidth - snapThreshold[\s\S]*cartFullscreen\.value = true/,
+  'the QuickPlays splitter must snap closed at the start and expanded at the end',
 );
 assert.match(
   mainWorkspace,
@@ -558,7 +558,7 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /&\.collapsed-left\s*\{[\s\S]*left:\s*0;[\s\S]*top:\s*var\(--panel-header-height\);/,
+  /&\.collapsed-left\s*\{[\s\S]*inset-inline-start:\s*0;[\s\S]*top:\s*var\(--panel-header-height\);/,
   'the closed-cart resize edge must start below the fixed header toggle',
 );
 assert.match(
@@ -1736,18 +1736,23 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /\.cart-section\s*\{[\s\S]{0,80}flex:\s*0 0 auto;/,
-  'the cart must keep the exact width supplied by its splitter',
+  /\.cart-section\s*\{[^}]*flex:\s*0 0 auto;[^}]*max-width:\s*var\(--cart-max-width\);/,
+  'the splitter width must respect the workspace bound',
 );
 assert.match(
   mainWorkspace,
-  /getPropertyValue\('--resize-handle-width'\)[\s\S]{0,180}getPropertyValue\('--playlist-split-min-width'\)[\s\S]{0,140}const maxWidth = Math\.max\(0, rect\.width - handleWidth - minPlaylistWidth\);[\s\S]{0,80}const minWidth = Math\.min\(300, maxWidth\);[\s\S]*cartWidth\.value = Math\.round\(Math\.max\(minWidth, Math\.min\(maxWidth, newWidth\)\)\);/,
-  'cart resizing must preserve the mode-specific usable playlist width',
+  /const zoom = rect\.width \/ container\.offsetWidth \|\| 1;[\s\S]{0,260}const newWidth = fromStart \/ zoom;[\s\S]*cartWidth\.value = Math\.round\(newWidth\);/,
+  'the splitter must track the pointer at the current interface scale',
 );
 assert.match(
   mainWorkspace,
-  /\.main-workspace\.show-mode\s*\{[\s\S]{0,240}--playlist-split-min-width:\s*637px;[\s\S]*\.playlist-section\s*\{[\s\S]{0,140}min-width:\s*var\(--playlist-split-min-width\);[\s\S]*\.cart-section\s*\{[\s\S]{0,180}max-width:\s*calc\(100% - var\(--playlist-split-min-width\) - var\(--resize-handle-width\)\);[\s\S]{0,140}&\.cart-section--fullscreen\s*\{[\s\S]{0,80}max-width:\s*none;/,
+  /\.main-workspace\.show-mode\s*\{[\s\S]{0,240}--playlist-split-min-width:\s*637px;[\s\S]*\.playlist-section\s*\{[\s\S]{0,140}min-width:\s*var\(--playlist-split-min-width\);[\s\S]*\.cart-section\s*\{[^}]*--cart-max-width:\s*calc\(100% - var\(--playlist-split-min-width\) - var\(--resize-handle-width\)\);[^}]*&\.cart-section--fullscreen\s*\{[^}]*max-width:\s*none;/,
   'the split view must stay usable while fullscreen cart remains unconstrained',
+);
+assert.match(
+  mainWorkspace,
+  /@container \(max-width: 940px\)\s*\{\s*\.playlist-section\s*\{\s*min-width:\s*0;\s*\}\s*\.cart-section:not\(\.cart-section--fullscreen\)\s*\{\s*--cart-max-width:\s*min\(32%, 280px\);/,
+  'the narrow QuickPlays bank must share workspace width with the playlist',
 );
 assert.match(
   mainWorkspace,
@@ -1871,8 +1876,8 @@ assert.doesNotMatch(
 );
 assert.match(
   projectSettingsModal,
-  /\.settings-tabs\s*\{[^}]*grid-auto-columns:\s*minmax\(112px, 1fr\);[^}]*align-self:\s*stretch;[^}]*overflow-x:\s*auto;/,
-  'settings tabs must use equal widths and fit within the header',
+  /\.settings-tabs\s*\{[^}]*grid-auto-columns:\s*minmax\(0, 1fr\);[^}]*align-self:\s*stretch;[^}]*min-width:\s*0;/,
+  'settings tabs must share the available header width',
 );
 assert.match(
   projectSettingsModal,
@@ -1891,7 +1896,7 @@ assert.match(
 );
 assert.match(
   playlistView,
-  /\.playlist-actions\s*\{[\s\S]{0,160}flex:\s*0 0 auto;[\s\S]{0,120}margin-left:\s*auto;[\s\S]{0,120}overflow-x:\s*auto;[\s\S]*\.playlist-header \.workspace-panel-header__leading\s*\{[\s\S]{0,80}flex:\s*0 0 auto;/,
+  /\.playlist-actions\s*\{[\s\S]{0,160}flex:\s*0 1 auto;[\s\S]{0,120}margin-inline-start:\s*auto;[\s\S]{0,120}overflow-x:\s*auto;[\s\S]*\.playlist-header \.workspace-panel-header__leading\s*\{[\s\S]{0,80}flex:\s*0 0 auto;/,
   'playlist actions must stay bounded by the shared header at every supported width',
 );
 assert.match(
@@ -2015,8 +2020,8 @@ assert.match(
 );
 assert.match(
   actionButton,
-  /\.action-btn--playlist\.set-next-action:not\(\.action-btn--active\)\s*\{[\s\S]*border-color:\s*rgba\(255, 255, 255, 0\.9\)[\s\S]*\.action-label-default\s*\{[\s\S]*display:\s*none;[\s\S]*:hover \.action-label-hover\s*\{[\s\S]*display:\s*inline;[\s\S]*:hover \.material-symbols-rounded\s*\{[\s\S]*display:\s*none;/,
-  'inactive Up Next must keep its white border, icon-only idle state, and text-only Play Next hover state',
+  /\.action-btn--playlist\.set-next-action:not\(\.action-btn--active\)\s*\{[^}]*color:\s*var\(--color-text-secondary\);[\s\S]*\.action-label-default\s*\{[\s\S]*display:\s*none;[\s\S]*:hover \.action-label-hover\s*\{[\s\S]*display:\s*inline;[\s\S]*:hover \.material-symbols-rounded\s*\{[\s\S]*display:\s*none;/,
+  'inactive Up Next must be legible in both themes and keep its icon and hover label',
 );
 assert.match(
   playlistItem,
@@ -2403,7 +2408,7 @@ assert.match(
 );
 assert.match(
   oneShotPanel,
-  /props\.isDetachedWindow[\s\S]*'detachedShow'[\s\S]*'detachedRegular'[\s\S]*'attachedShow'[\s\S]*'attachedRegular'[\s\S]*const contentMinHeight = Math\.ceil\(104 \+ 35 \* oneShotFontScale\.value \/ 100\);[\s\S]{0,100}const minHeight = Math\.max\(layout\.minHeight, contentMinHeight\);[\s\S]{0,220}--one-shot-columns[\s\S]*--one-shot-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--one-shot-columns, 2\), minmax\(128px, 1fr\)\)[\s\S]{0,160}grid-auto-rows:\s*var\(--one-shot-row-height, 106px\)[\s\S]{0,240}overflow-x:\s*auto;[\s\S]{0,80}overflow-y:\s*auto;/,
+  /props\.isDetachedWindow[\s\S]*'detachedShow'[\s\S]*'detachedRegular'[\s\S]*'attachedShow'[\s\S]*'attachedRegular'[\s\S]*const contentMinHeight = Math\.ceil\(80 \+ 48 \* oneShotFontScale\.value \/ 100\);[\s\S]{0,100}const minHeight = Math\.max\(layout\.minHeight, contentMinHeight\);[\s\S]{0,220}--one-shot-columns[\s\S]*--one-shot-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--one-shot-columns, 2\), minmax\(128px, 1fr\)\)[\s\S]{0,160}grid-auto-rows:\s*var\(--one-shot-row-height, 106px\)[\s\S]{0,240}overflow-x:\s*auto;[\s\S]{0,80}overflow-y:\s*auto;/,
   'One Shots must preserve exact profile columns while reserving a measured safe width and font-scaled two-line row height',
 );
 assert.doesNotMatch(
@@ -2524,8 +2529,8 @@ assert.match(
 );
 assert.match(
   oneShotPanel,
-  /one-shot-header[\s\S]{0,300}v-if="!showMode"[\s\S]{0,120}t\('oneShots\.hint'\)/,
-  'the One Shots header must reserve its import guidance for editable regular mode',
+  /one-shot-header workspace-panel-header" :title="showMode \? undefined : t\('oneShots\.hint'\)"/,
+  'QuickPlays import guidance must remain available in Edit Mode',
 );
 assert.match(
   oneShotPanel,

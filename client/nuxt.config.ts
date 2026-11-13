@@ -49,6 +49,7 @@ export default defineNuxtConfig({
       }
     },
     build: {
+      license: { fileName: '_nuxt/third-party-licenses.md' },
       commonjsOptions: {
         // test-card-config is deliberately shared with Electron main. Include
         // this local CommonJS module so renderer imports use the same validator.

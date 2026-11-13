@@ -86,19 +86,21 @@ test('Stop All sends the normal command from remaining blocking dialogs', () => 
   }
 });
 
-test('Stop All works while an import text field has focus', () => {
+test('Stop All works in import fields and takes priority over docked tab navigation', () => {
   const source = readFileSync(new URL('../app/components/MainWorkspace.vue', import.meta.url), 'utf8');
   const handler = source.slice(source.indexOf('function handlePanelKeydown('), source.indexOf('const handleKeydown ='));
   const code = ts.transpileModule(handler, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   const playbackMappings = { value: { 'stop-all': DEFAULT_PLAYBACK_KEYS['stop-all'] } };
   let stopped = 0;
+  let typing = true;
   const keydown = Function('playbackMappings', 'bindingsMatch', 'eventToBinding', 'isTextInputFocused', 'stopAllCues',
-    `${code}\nreturn handlePanelKeydown;`)(playbackMappings, bindingsMatch, eventToBinding, () => true, () => { stopped++; });
-  const press = (key: string, repeat = false) => {
+    `${code}\nreturn handlePanelKeydown;`)(playbackMappings, bindingsMatch, eventToBinding, () => typing, () => { stopped++; });
+  const press = (key: string, repeat = false, onTab = false) => {
     const event = { key, repeat, defaultPrevented: false, stopped: false,
-      target: { closest: () => null }, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false,
+      target: { closest: (selector: string) => onTab && selector === '[role="tab"]' ? {} : null },
+      ctrlKey: false, metaKey: false, shiftKey: false, altKey: false,
       preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; } };
-    keydown(event);
+    keydown(event, onTab);
     return event;
   };
   assert.equal(press('Escape').stopped, true);
@@ -106,6 +108,11 @@ test('Stop All works while an import text field has focus', () => {
   playbackMappings.value['stop-all'] = { key: 'k', ctrlKey: false, shiftKey: false, altKey: false };
   assert.equal(press('k').defaultPrevented, false, 'a plain-letter binding must not interrupt typing');
   assert.equal(stopped, 1);
+  typing = false;
+  playbackMappings.value['stop-all'] = { key: 'ArrowRight', ctrlKey: false, shiftKey: false, altKey: false };
+  assert.equal(press('ArrowLeft', false, true).stopped, false, 'unmapped arrows should reach the tab list');
+  assert.equal(press('ArrowRight', false, true).stopped, true, 'Stop All must run in capture before the tabs');
+  assert.equal(stopped, 2);
 });
 
 test('Stop All remains available inside the recovery prompt while a recovery choice is pending', () => {

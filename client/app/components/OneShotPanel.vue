@@ -1,26 +1,29 @@
 <template>
   <section class="one-shot-panel" :class="{ 'show-mode': showMode }" :style="{ '--one-shot-font-scale': String(oneShotFontScale / 100) }" aria-labelledby="one-shot-title">
-    <header class="one-shot-header workspace-panel-header">
+    <header class="one-shot-header workspace-panel-header" :title="showMode ? undefined : t('oneShots.hint')">
       <div class="workspace-panel-header__leading">
         <slot name="header-leading" />
         <CueSymbol name="one-shots" class="one-shot-header__symbol" aria-hidden="true" />
-        <div class="one-shot-header__copy">
-          <h2 id="one-shot-title" class="workspace-panel-header__title">{{ t('oneShots.title') }}</h2>
-          <span v-if="!showMode" class="one-shot-header__hint">{{ t('oneShots.hint') }}</span>
-        </div>
+        <h2 id="one-shot-title" class="workspace-panel-header__title">{{ t('oneShots.title') }}</h2>
       </div>
       <div class="one-shot-header__actions">
         <Btn
           v-if="!isDetachedWindow"
+          class="one-shot-header__window-control"
           icon="open_in_new"
           :text="t('oneShots.detach')"
+          :title="t('oneShots.detach')"
+          :aria-label="t('oneShots.detach')"
           :disabled="!currentProject"
           @click="handleDetach"
         />
         <Btn
           v-else
+          class="one-shot-header__window-control"
           icon="picture_in_picture_alt"
           :text="t('oneShots.attach')"
+          :title="t('oneShots.attach')"
+          :aria-label="t('oneShots.attach')"
           @click="handleAttach"
         />
       </div>
@@ -58,12 +61,9 @@
         >
           <span class="one-shot-empty-cell__number">{{ index + 1 }}</span>
           <span class="material-symbols-rounded one-shot-empty-cell__icon" aria-hidden="true">add</span>
-          <strong>{{ t('oneShots.import') }}</strong>
-          <span>{{ t('oneShots.dropHint') }}</span>
         </button>
         <div v-else class="one-shot-empty-cell show-mode" aria-hidden="true">
           <span class="one-shot-empty-cell__number">{{ index + 1 }}</span>
-          <span class="material-symbols-rounded one-shot-empty-cell__icon">bolt</span>
         </div>
 
         <div v-if="busySlot === index" class="one-shot-slot__busy" role="status">
@@ -159,9 +159,8 @@ const oneShotGridStyle = computed(() => {
   const layout = gridLayout.value;
   const rowPercent = 100 / layout.rows;
   const rowGapOffset = GRID_GAP_PX * (layout.rows - 1) / layout.rows;
-  // Reserve metadata, two scaled title lines, and the transport footer even
-  // when the configured minimum is smaller than the controls can contain.
-  const contentMinHeight = Math.ceil(104 + 35 * oneShotFontScale.value / 100);
+  // Allow the metadata row, two title lines, status, and the Show Mode controls.
+  const contentMinHeight = Math.ceil(80 + 48 * oneShotFontScale.value / 100);
   const minHeight = Math.max(layout.minHeight, contentMinHeight);
   return {
     '--one-shot-columns': String(layout.columns),
@@ -477,6 +476,7 @@ onUnmounted(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  container-type: inline-size;
   background: var(--color-background);
 }
 
@@ -487,24 +487,8 @@ onUnmounted(() => {
   color: var(--color-text-primary);
 }
 
-.one-shot-header__copy {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.one-shot-header__hint {
-  overflow: hidden;
-  color: var(--color-text-tertiary);
-  font-size: var(--type-status-size);
-  line-height: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .one-shot-header__actions {
-  margin-left: auto;
+  margin-inline-start: auto;
   flex: 0 0 auto;
 }
 
@@ -524,6 +508,24 @@ onUnmounted(() => {
   scrollbar-gutter: stable;
 }
 
+@container (max-width: 280px) {
+  .one-shot-header__symbol { display: none; }
+}
+
+@container (max-width: 270px) {
+  .one-shot-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+@container (max-width: 200px) {
+  .one-shot-header__window-control {
+    justify-content: center;
+    width: var(--panel-control-height);
+    padding: 0;
+  }
+
+  .one-shot-header__window-control :deep(.btn__text) { display: none; }
+}
+
 .one-shot-slot {
   position: relative;
   min-width: 0;
@@ -531,7 +533,6 @@ onUnmounted(() => {
   isolation: isolate;
   overflow: hidden;
   border-radius: var(--border-radius-sm);
-  container-type: inline-size;
 }
 
 .one-shot-slot > :deep(.one-shot-tile) {
@@ -566,6 +567,8 @@ onUnmounted(() => {
 button.one-shot-empty-cell {
   cursor: pointer;
 }
+
+button.one-shot-empty-cell .one-shot-empty-cell__icon { color: var(--color-accent); }
 
 button.one-shot-empty-cell:hover,
 button.one-shot-empty-cell:focus-visible {
@@ -613,16 +616,6 @@ button.one-shot-empty-cell:hover .one-shot-empty-cell__icon,
 button.one-shot-empty-cell:focus-visible .one-shot-empty-cell__icon {
   border-color: color-mix(in srgb, var(--color-accent) 56%, var(--color-border-strong));
   background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-raised));
-}
-
-.one-shot-empty-cell strong {
-  color: var(--color-text-primary);
-  font-size: 13px;
-}
-
-.one-shot-empty-cell > span:last-child:not(.one-shot-empty-cell__icon) {
-  color: var(--color-text-tertiary);
-  font-size: 11px;
 }
 
 .one-shot-slot__busy,

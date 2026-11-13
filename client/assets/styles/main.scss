@@ -141,6 +141,7 @@ button > .material-symbols-rounded {
 
   --state-playing: var(--color-success);
   --state-up-next: var(--color-warning);
+  --state-up-next-text: #171b25;
   --state-preview: var(--color-accent);
 }
 
@@ -163,6 +164,7 @@ button > .material-symbols-rounded {
   --color-danger: #b62f3e;
   --color-success: #186d4c;
   --color-warning: #8c6416;
+  --state-up-next-text: var(--color-text-on-accent);
 }
 
 // Neutral chrome shares the #16161d hue; colour is reserved for cue data and

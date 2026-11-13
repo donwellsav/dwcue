@@ -64,7 +64,7 @@
                 aria-controls="cart-player-panel"
                 @click="toggleCart"
               >
-                <CueSymbol name="one-shots" />
+                <span class="material-symbols-rounded cart-toggle__collapse" aria-hidden="true">chevron_left</span>
               </button>
             </template>
           </OneShotPanel>
@@ -200,6 +200,7 @@
 
     <div v-show="lowerPanelOpen" ref="lowerPanel" class="lower-workspace-panel"
       :style="{ height: panelHeight === null ? 'auto' : `${panelHeight}px` }"
+      @keydown.capture="handlePanelKeydown($event, true)"
       @keydown="handlePanelKeydown">
       <div class="lower-panel-resize-handle" role="separator" aria-orientation="horizontal"
         :aria-label="showProjectSettings ? t('settings.title') : importPanelTitle || t('properties.title')"
@@ -580,32 +581,26 @@ const startResize = (e: PointerEvent) => {
   const handleMouseMove = (e: PointerEvent) => {
     if (!isResizing.value) return;
 
-    const container = document.querySelector('.workspace-panels');
+    const container = document.querySelector<HTMLElement>('.workspace-panels');
     if (!container) return;
 
     const rect = container.getBoundingClientRect();
-    const newWidth = e.clientX - rect.left;
+    const zoom = rect.width / container.offsetWidth || 1;
+    const fromStart = getComputedStyle(container).direction === 'rtl' ? rect.right - e.clientX : e.clientX - rect.left;
+    const newWidth = fromStart / zoom;
 
     // Snap zones
     const snapThreshold = 100; // pixels from edge to trigger snap
-    const handleWidth = Number.parseFloat(
-      getComputedStyle(container).getPropertyValue('--resize-handle-width'),
-    ) || 1;
-    const minPlaylistWidth = Number.parseFloat(
-      getComputedStyle(container).getPropertyValue('--playlist-split-min-width'),
-    ) || 577;
-    const maxWidth = Math.max(0, rect.width - handleWidth - minPlaylistWidth);
-    const minWidth = Math.min(300, maxWidth);
     
-    // Check for close snap (dragging very close to left edge)
+    // Snap closed at the bank's outer edge.
     if (newWidth < snapThreshold) {
       cartClosed.value = true;
       cartFullscreen.value = false;
       return;
     }
     
-    // Check for fullscreen snap (dragging very close to right edge)
-    if (newWidth > rect.width - snapThreshold) {
+    // Expand the bank at the opposite edge.
+    if (newWidth > container.offsetWidth - snapThreshold) {
       cartFullscreen.value = true;
       cartClosed.value = false;
       return;
@@ -614,7 +609,7 @@ const startResize = (e: PointerEvent) => {
     // Normal resize
     cartClosed.value = false;
     cartFullscreen.value = false;
-    cartWidth.value = Math.round(Math.max(minWidth, Math.min(maxWidth, newWidth)));
+    cartWidth.value = Math.round(newWidth);
   };
   
   const handleMouseUp = () => {
@@ -720,8 +715,11 @@ const isForwardedFromVideoOutput = (e: KeyboardEvent): boolean =>
   (e as KeyboardEvent & { dwcueForwardedFromVideoOutput?: boolean })
     .dwcueForwardedFromVideoOutput === true;
 
-function handlePanelKeydown(event: KeyboardEvent) {
+function handlePanelKeydown(event: KeyboardEvent, beforeTabNavigation = false) {
   if (event.defaultPrevented) return;
+  const target = event.target as HTMLElement | null;
+  // A remapped Stop All must reach transport before tab navigation consumes it.
+  if (beforeTabNavigation && !target?.closest?.('[role="tab"]')) return;
   const stop = playbackMappings.value['stop-all'];
   const typing = isTextInputFocused() && event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey;
   if (!typing && stop && bindingsMatch(stop, eventToBinding(event))) {
@@ -730,7 +728,7 @@ function handlePanelKeydown(event: KeyboardEvent) {
     if (!event.repeat) void stopAllCues();
     return;
   }
-  const target = event.target as HTMLElement | null;
+  if (beforeTabNavigation) return;
   if (target?.closest?.('select') ||
       ['Delete', 'Backspace'].includes(event.key) ||
       (['Enter', ' '].includes(event.key) && target?.closest?.('button, a[href], summary'))) event.stopPropagation();
@@ -934,7 +932,6 @@ onUnmounted(() => {
 }
 
 .playlist-section {
-  /* Keep sticky group headers below the narrow One Shots drawer. */
   isolation: isolate;
   flex: 1 1 0;
   width: auto;
@@ -1218,9 +1215,8 @@ onUnmounted(() => {
   }
 
   &.collapsed-left {
-    /* When cart is closed, show handle at left edge */
     position: absolute;
-    left: 0;
+    inset-inline-start: 0;
     top: var(--panel-header-height);
     bottom: 0;
     width: 8px;
@@ -1230,15 +1226,15 @@ onUnmounted(() => {
        inward — growing outward too would swallow taps on the panel behind it. */
     @media (any-pointer: coarse) {
       &::before {
-        left: 0;
-        right: -16px;
+        inset-inline-start: 0;
+        inset-inline-end: -16px;
       }
     }
 
     &::after {
       content: '';
       position: absolute;
-      left: 0;
+      inset-inline-start: 0;
       top: 0;
       bottom: 0;
       width: 1px;
@@ -1255,9 +1251,8 @@ onUnmounted(() => {
   }
   
   &.collapsed-right {
-    /* When cart is fullscreen, show handle at right edge */
     position: absolute;
-    right: 0;
+    inset-inline-end: 0;
     top: var(--panel-header-height);
     bottom: 0;
     width: 8px;
@@ -1265,15 +1260,15 @@ onUnmounted(() => {
 
     @media (any-pointer: coarse) {
       &::before {
-        left: -16px;
-        right: 0;
+        inset-inline-start: -16px;
+        inset-inline-end: 0;
       }
     }
 
     &::after {
       content: '';
       position: absolute;
-      right: 0;
+      inset-inline-end: 0;
       top: 0;
       bottom: 0;
       width: 1px;
@@ -1338,9 +1333,13 @@ onUnmounted(() => {
   }
 }
 
+.cart-toggle__collapse:dir(rtl) { transform: scaleX(-1); }
+
 .cart-section {
+  --cart-max-width: calc(100% - var(--playlist-split-min-width) - var(--resize-handle-width));
   flex: 0 0 auto;
-  max-width: calc(100% - var(--playlist-split-min-width) - var(--resize-handle-width));
+  min-width: min(220px, var(--cart-max-width));
+  max-width: var(--cart-max-width);
   overflow: hidden;
 
   &.cart-section--fullscreen {
@@ -1348,24 +1347,15 @@ onUnmounted(() => {
   }
 }
 
-/* Narrow windows: the playlist's fixed minimum (637px in show mode) plus the
-   side consoles can leave the cart section a zero-width "open" strip. Below
-   the fit threshold the panel becomes an overlay drawer instead of being
-   squeezed to nothing. Inline width is set from JS, hence !important. */
-@container (max-width: 925px) {
-  .cart-section:not(.cart-section--fullscreen) {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: min(320px, 85%) !important;
-    max-width: none;
-    z-index: 20;
-    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.45);
+/* Let the existing compact cue rows reflow before either panel loses its controls. */
+@container (max-width: 940px) {
+  .playlist-section {
+    min-width: 0;
   }
 
-  .resize-handle:not(.collapsed-left):not(.collapsed-right) {
-    display: none;
+  .cart-section:not(.cart-section--fullscreen) {
+    --cart-max-width: min(32%, 280px);
+    min-width: min(170px, var(--cart-max-width));
   }
 }
 </style>

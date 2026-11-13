@@ -77,7 +77,7 @@
             class="set-next-action"
             icon="fast_forward"
             :highlight-color="item.type === 'group' ? 'var(--folder-next-action)' : 'var(--state-up-next)'"
-            active-text-color="black"
+            active-text-color="var(--state-up-next-text)"
             :is-active="isManuallyQueued"
             :disabled="setNextItemPending"
             context="Playlist"
@@ -1113,17 +1113,6 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   cursor: pointer;
 }
 
-.item-content::before {
-  content: '';
-  position: absolute;
-  inset: 3px 4px;
-  border-radius: var(--border-radius-sm);
-  background: rgba(0, 0, 0, 0.24);
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.55);
-  pointer-events: none;
-  z-index: 0;
-}
-
 .playlist-item:not(.show-mode) > .item-content {
   cursor: grab;
 }
@@ -1241,12 +1230,9 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--color-text-primary);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 1), 0 0 5px rgba(0, 0, 0, 0.95), 0 2px 8px rgba(0, 0, 0, 0.75);
 }
 
-/* Give the playlist's identity, timing, and indicator content real control
-   cells. These opaque cells provide the contrast; text shadows are only a
-   secondary detail when a waveform is visible underneath. */
+/* Opaque cells keep cue text legible at any waveform opacity. */
 .item-index,
 .item-icon,
 .item-name,
@@ -1258,7 +1244,6 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   background-color: color-mix(in srgb, var(--color-control) 92%, var(--color-background));
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
 }
 
 .item-index {
@@ -1311,21 +1296,6 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   padding: 3px;
 }
 
-.item-index,
-.item-icon .material-symbols-rounded,
-.peak-warning-icon,
-.video-badge-icon,
-.behavior-icon,
-.expand-btn .material-symbols-rounded {
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 1), 0 0 4px rgba(0, 0, 0, 0.9), 0 2px 6px rgba(0, 0, 0, 0.7);
-}
-
-.item-content :deep(.action-btn--playlist .material-symbols-rounded),
-.item-content :deep(.action-btn--playlist .cue-symbol) {
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.95)) drop-shadow(0 0 4px rgba(0, 0, 0, 0.65));
-}
-
-
 .playlist-item.is-audio .item-index,
 .playlist-item.is-audio .item-duration,
 .playlist-item.is-audio .behavior-icon {
@@ -1344,7 +1314,6 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 .playlist-item.is-audio > .item-content :deep(.action-btn--playlist) {
   background-color: var(--color-control);
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.035), 0 1px 3px rgba(0, 0, 0, 0.55);
 }
 
 .playlist-item.is-audio .peak-warning-icon {
@@ -1411,7 +1380,6 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   color: var(--color-text-primary);
   margin: 0;
   white-space: nowrap;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 1), 0 0 5px rgba(0, 0, 0, 0.95), 0 2px 8px rgba(0, 0, 0, 0.75);
   /* Fixed-width, right-aligned column so the leading "-" shown during the
      playing countdown widens the text without shoving the flags around, and
      so the duration lines up vertically from row to row. */
@@ -1547,20 +1515,19 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   transform: translateX(10px);
 }
 
-/* Keep every control available when the resizable playlist is narrow. The
-   identity lane absorbs remaining width while transient state and transport
-   controls stay content-sized on the second console row. */
+/* Keep identity and status above the controls when both side rails are open. */
 @container (max-width: 560px) {
   .item-left {
-    grid-template-columns: 34px minmax(0, 1fr) max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
+    grid-template-columns: 34px minmax(0, 1fr) 68px max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
     grid-template-areas:
-      'expand identity video actions transport duration arm'
-      'state state state state transport duration arm';
+      'expand identity identity identity state video'
+      '. . actions transport duration arm';
+    column-gap: var(--spacing-xs);
     row-gap: var(--spacing-xs);
   }
 
-  .item-state {
-    min-height: 32px;
+  .item-actions {
+    width: 68px;
   }
 }
 
@@ -1692,11 +1659,11 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 
 @container (max-width: 620px) {
   .playlist-item.show-mode .item-left {
-    grid-template-columns: 44px minmax(0, 1fr) max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
+    grid-template-columns: 44px minmax(0, 1fr) var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
     grid-template-areas:
-      'expand identity video actions transport duration arm'
-      'state state state state transport duration arm';
-    row-gap: var(--spacing-sm);
+      'expand identity identity video'
+      'state transport duration arm';
+    gap: var(--spacing-xs);
   }
 }
 </style>

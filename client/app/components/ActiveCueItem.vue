@@ -267,7 +267,10 @@ const formatTime = (seconds: number): string => {
 .active-cue-item::before {
   content: '';
   position: absolute;
-  inset: 0 auto 0 0;
+  inset-block: 0;
+  inset-inline-start: 0;
+  border-start-start-radius: inherit;
+  border-end-start-radius: inherit;
   width: 3px;
   background-color: var(--state-playing);
   pointer-events: none;
@@ -311,8 +314,8 @@ const formatTime = (seconds: number): string => {
   display: flex;
   align-items: stretch;
   flex: 0 0 30px;
-  padding-left: var(--spacing-xs);
-  border-left: 1px solid var(--color-border);
+  padding-inline-start: var(--spacing-xs);
+  border-inline-start: 1px solid var(--color-border);
 }
 
 .cue-header {
@@ -326,8 +329,8 @@ const formatTime = (seconds: number): string => {
 .cue-actions {
   display: flex;
   flex: 0 0 auto;
-  gap: 4px;
-  margin-left: var(--spacing-sm);
+  gap: var(--spacing-xs);
+  margin-inline-start: var(--spacing-sm);
 }
 
 .cue-name {
@@ -432,7 +435,9 @@ const formatTime = (seconds: number): string => {
 
 .time-info > :last-child {
   grid-column: 3;
-  text-align: right;
+  text-align: end;
+  color: var(--color-text-primary);
+  font-weight: 600;
 }
 
 .time-info > .segue-countdown {
