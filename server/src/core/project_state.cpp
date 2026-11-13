@@ -892,6 +892,11 @@ void ProjectState::loader_loop() {
     }
 }
 
+void ProjectState::prepare_startup_output() {
+    std::lock_guard lock{mutex_};
+    queue_loaded_routing(document_generation_, /*apply_program=*/false);
+}
+
 void ProjectState::queue_loaded_routing(std::uint64_t generation, bool apply_program, bool apply_main) {
     std::lock_guard lock{loader_mutex_};
     if (loaders_stop_ || (loaded_routing_ && loaded_routing_->generation > generation)) return;
@@ -922,10 +927,6 @@ void ProjectState::loaded_routing_loop() {
                        intent == playback_intent_revision_;
             };
             if (!current()) continue;
-            {
-                std::lock_guard lock{mutex_};
-                if (item_uuid_to_cue_.empty()) continue;
-            }
             // shortcut: cold output opens share the driver lock; keep one coalesced
             // routing worker until device startup can be isolated per backend.
             if (request.apply_main) {
@@ -5322,11 +5323,10 @@ RepairInfo ProjectState::repair_project() {
 }
 
 void ProjectState::apply_to_engine_locked() {
-    // 1) Load every cue's file into the engine. We accept that this can fail
-    //    for missing files; the entry stays in the project for the user to
-    //    relocate later.
+    // 1) Register cue files without waiting for Main while holding the project
+    //    lock. Missing files stay in the project for the operator to relocate.
     for (auto& [_, c] : cues_) {
-        const auto id = engine_.load_cue(c.file_path, c.id);
+        const auto id = engine_.load_cue_no_route(c.file_path, c.id);
         if (!id.empty()) {
             // Cache the lookup once and null-check it — find_cue can return
             // null (e.g. the load raced with an unload) and the previous code
@@ -5374,6 +5374,7 @@ void ProjectState::apply_to_engine_locked() {
             engine_.assign_master_to_device(a.master_channel, a.device, a.hw_channel);
         }
     }
+    if (!cues_.empty()) queue_loaded_routing(document_generation_, /*apply_program=*/false);
 }
 
 // ---------------------------------------------------------------------------

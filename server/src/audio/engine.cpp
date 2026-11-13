@@ -11,6 +11,10 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#ifdef LIVEPLAY_TEST_HOOKS
+#  include <cstdlib>
+#  include <fstream>
+#endif
 #include <random>
 #include <string>
 
@@ -32,6 +36,29 @@ std::shared_ptr<std::mutex> native_device_mutex() {
     static const auto mutex = std::make_shared<std::mutex>();
     return mutex;
 }
+
+#ifdef LIVEPLAY_TEST_HOOKS
+ma_context* gated_null_device_context() {
+    static ma_context context{};
+    static const auto initialized = [] {
+        const auto backend = ma_backend_null;
+        if (ma_context_init(&backend, 1, nullptr, &context) != MA_SUCCESS) return false;
+        static const auto start = context.callbacks.onDeviceStart;
+        context.callbacks.onDeviceStart = [](ma_device* device) {
+            const std::filesystem::path gate{std::getenv("DWCUE_TEST_DEVICE_START_GATE")};
+            std::error_code error;
+            if (std::filesystem::exists(gate, error)) {
+                std::ofstream{gate.string() + ".entered"} << "starting\n";
+                while (std::filesystem::exists(gate, error))
+                    std::this_thread::sleep_for(std::chrono::milliseconds{2});
+            }
+            return start(device);
+        };
+        return true;
+    }();
+    return initialized ? &context : nullptr;
+}
+#endif
 
 inline float db_to_lin(float db) noexcept {
     if (db <= -120.0f) return 0.0f;
@@ -89,6 +116,10 @@ AudioEngine::Device::~Device() {
 }
 
 AudioEngine::AudioEngine(EngineConfig cfg) : cfg_(cfg), device_lifecycle_mutex_(native_device_mutex()) {
+#ifdef LIVEPLAY_TEST_HOOKS
+    if (const auto* gate = std::getenv("DWCUE_TEST_DEVICE_START_GATE"); gate && *gate)
+        device_test_context_ = gated_null_device_context();
+#endif
     if (cfg_.master_channels == 0) cfg_.master_channels = kDefaultMasterChannels;
     if (cfg_.render_block    == 0) cfg_.render_block    = kDefaultRenderBlock;
     if (cfg_.mix_sample_rate == 0) cfg_.mix_sample_rate = kDefaultMixSampleRate;
@@ -133,7 +164,7 @@ AudioEngine::~AudioEngine() {
     }
 }
 
-bool AudioEngine::start() {
+bool AudioEngine::start(bool open_default_output) {
     if (running_.exchange(true)) return true;
     callback_state_->run_generation.fetch_add(1, std::memory_order_acq_rel);
     callback_state_->active.store(true, std::memory_order_release);
@@ -157,7 +188,7 @@ bool AudioEngine::start() {
 
         // Bring up the default routing so a freshly-loaded cue can be heard
         // without any explicit routing API calls from the client.
-        ensure_default_routing();
+        if (open_default_output) ensure_default_routing();
         {
             std::lock_guard lock{decode_state_->wait_mutex};
             decode_state_->active.store(true, std::memory_order_release);

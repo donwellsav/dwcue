@@ -840,7 +840,7 @@ int main(int argc, char** argv) {
     // Audio engine (Milestone 2)
     // ------------------------------------------------------------------
     auto engine = std::make_unique<audio::AudioEngine>();
-    if (!engine->start()) {
+    if (!engine->start(/*open_default_output=*/false)) {
         Logger::error("Audio engine failed to start.");
         remove_owned_pidfile();
         return 1;
@@ -854,7 +854,7 @@ int main(int argc, char** argv) {
     // over REST so the client can pick).
     auto devices = engine->enumerate_devices();
     if (devices.empty()) {
-        Logger::warn("No audio output devices detected.");
+        Logger::warn("No audio output devices reported at startup.");
     } else {
         Logger::info("Detected {} playback device(s):", devices.size());
         for (auto& d : devices) {
@@ -928,6 +928,7 @@ int main(int argc, char** argv) {
     // A contender may have replaced the early hand-off pidfile before losing
     // the bind race. Once bound, republish the only generation that can serve.
     write_pidfile();
+    project->prepare_startup_output();
 
     // ------------------------------------------------------------------
     // LAN auto-discovery beacon — best-effort, non-fatal if it can't bind.

@@ -239,6 +239,9 @@ public:
     std::string project_session_id() const;
     std::unique_lock<std::recursive_mutex> lock_project_session(const std::string& expected);
 
+    // Prepare the system output on the routing worker once controls can connect.
+    void prepare_startup_output();
+
     // Clear everything and rewind the AudioEngine to an empty graph.
     void reset();
 

@@ -480,6 +480,70 @@ test('waveform caches and analysis identify the current file revision', { timeou
   });
 });
 
+test('held default audio startup leaves the server usable', { timeout: 15000 }, async t => {
+  const folder = await mkdtemp(path.join(os.tmpdir(), 'dwcue-driver-lifecycle-'));
+  const gate = path.join(folder, 'audio-start.gate');
+  const pidfile = path.join(folder, 'server.lock');
+  const port = await unusedPort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  await writeFile(gate, '');
+  const child = spawn(serverBinary, ['--bind', '127.0.0.1', '--port', String(port), '--pidfile', pidfile], {
+    cwd: folder,
+    env: { ...process.env, LIVEPLAY_STATE_DIR: path.join(folder, 'state'),
+      LIVEPLAY_ACCESS_TOKEN: accessToken, LIVEPLAY_ALLOWED_ORIGINS: baseUrl,
+      DWCUE_TEST_DEVICE_START_GATE: gate },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let diagnostics = '';
+  child.stdout.on('data', chunk => { diagnostics += chunk; });
+  child.stderr.on('data', chunk => { diagnostics += chunk; });
+  t.after(async () => {
+    await rm(gate, { force: true });
+    await stopServer(child);
+    await rm(folder, { recursive: true, force: true });
+  });
+
+  try {
+    const reached = async () => readFile(gate + '.entered', 'utf8').catch(() => '');
+    for (let i = 0; i < 150 && !(await reached()); ++i)
+      await new Promise(resolve => setTimeout(resolve, 20));
+    assert.match(await reached(), /starting/, 'the software driver is held in start');
+    await waitForServer(baseUrl, child);
+    const health = await (await request(baseUrl, '/api/health')).json();
+    assert.equal(health.pid, child.pid);
+    const stopped = await request(baseUrl, '/api/transport/stop_all', {
+      method: 'POST', body: JSON.stringify({ fade_ms: 0 }),
+    });
+    assert.equal(stopped.status, 200, await stopped.text());
+    const summary = await (await request(baseUrl, '/api/state/summary')).json();
+    assert.deepEqual(summary.playing, []);
+
+    const media = path.join(folder, 'silence.wav');
+    const show = path.join(folder, 'native-routing.dwcue');
+    await writeFile(media, silentWav());
+    await writeFile(show, JSON.stringify({ schema_version: 2, project_name: 'Native routing',
+      cues: [{ id: 'legacy-cue', file_path: media }] }));
+    const loaded = await request(baseUrl, '/api/project/load', {
+      method: 'POST', body: JSON.stringify({ path: show }),
+    });
+    assert.equal(loaded.status, 200, await loaded.text());
+    const cue = await request(baseUrl, '/api/cues/legacy-cue');
+    assert.equal(cue.status, 200, await cue.text());
+    const devices = async () => (await request(baseUrl, '/api/devices')).json();
+    assert.ok((await devices()).every(device => !device.is_open),
+      'the output has not been published while the driver is held');
+    await rm(gate);
+    const outputReady = async () => (await devices()).some(device => device.runtime_state === 'running');
+    for (let i = 0; i < 100 && !(await outputReady()); ++i)
+      await new Promise(resolve => setTimeout(resolve, 20));
+    assert.ok(await outputReady(), 'Main starts when the driver returns');
+    assert.deepEqual((await (await request(baseUrl, '/api/state/summary')).json()).playing, []);
+  } catch (error) {
+    error.message += `\nNative server diagnostics:\n${diagnostics}`;
+    throw error;
+  }
+});
+
 test('crash recovery respects newer intent and resumes without repeating crossed actions', { timeout: 45000 }, async t => {
   for (const action of ['none', 'stop', 'panic', 'play', 'close', 'replace', 'load', 'automation']) {
     await t.test(action, async t => {

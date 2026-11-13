@@ -246,7 +246,7 @@ public:
     AudioEngine& operator=(const AudioEngine&) = delete;
 
     // ---- Lifecycle -------------------------------------------------------
-    bool start();
+    bool start(bool open_default_output = true);
     void stop();
     bool is_running() const noexcept {
         return running_.load(std::memory_order_acquire);
