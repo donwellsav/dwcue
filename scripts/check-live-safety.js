@@ -704,8 +704,8 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /settingsHeight = useState<number \| null>\('ProjectSettingsPanel.height', \(\) => null\);[\s\S]*return settingsHeight\.value \?\? \(\['ui', 'video'\]\.includes\(settingsTab\.value\) \? undefined : 300\);/,
-  'User Interface and Video Output must fit their contents until the operator resizes Settings',
+  /settingsHeight = useState<number \| null>\('ProjectSettingsPanel.height', \(\) => null\);[\s\S]*panelHeight = computed\(\(\) => showProjectSettings\.value \? settingsHeight\.value : propertiesHeight\.value\);/,
+  'Settings must fit its contents until the operator resizes it',
 );
 assert.match(
   mainWorkspace,
@@ -1862,7 +1862,7 @@ assert.doesNotMatch(
 );
 assert.match(
   controlConfig,
-  /\.config-body\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit,[^;]*;[\s\S]*\.action-label\s*\{\s*grid-column:\s*1;[\s\S]*\.action-binding\s*\{\s*grid-column:\s*2;[\s\S]*\.clear-key-btn\s*\{\s*grid-column:\s*3;/,
+  /\.config-body\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\);[\s\S]*\.action-label\s*\{\s*grid-column:\s*1;[\s\S]*\.action-binding\s*\{\s*grid-column:\s*2;[\s\S]*\.clear-key-btn\s*\{\s*grid-column:\s*3;/,
   'each shortcut must keep its label, binding and Clear action together',
 );
 assert.doesNotMatch(
@@ -1872,8 +1872,13 @@ assert.doesNotMatch(
 );
 assert.match(
   projectSettingsModal,
-  /\.settings-tabs\s*\{[^}]*align-self:\s*stretch;[^}]*overflow-x:\s*auto;[\s\S]*\.tab-btn\s*\{[^}]*flex-shrink:\s*0;/,
-  'settings tabs must keep their label widths and scroll within the header',
+  /\.settings-tabs\s*\{[^}]*grid-auto-columns:\s*minmax\(112px, 1fr\);[^}]*align-self:\s*stretch;[^}]*overflow-x:\s*auto;/,
+  'settings tabs must use equal widths and fit within the header',
+);
+assert.match(
+  projectSettingsModal,
+  /\.settings-content\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\);[\s\S]*\.settings-content--playback > \.settings-rows\s*\{[^}]*grid-template-rows:\s*subgrid;/,
+  'settings columns must share a grid and Playback Behaviour must align its corresponding rows',
 );
 assert.match(
   playbackControls,

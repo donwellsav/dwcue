@@ -153,18 +153,18 @@
                 />
                 <p class="settings-help">{{ t('settings.stopAllFadeHelp') }}</p>
               </section>
-              <section class="settings-field">
-                <label class="settings-label settings-label--checkbox">
-                  <input
-                    type="checkbox"
-                    :checked="disableLimiter"
-                    @change="onDisableLimiterChange"
-                  />
-                  {{ t('settings.disableLimiter') }}
-                </label>
-                <p class="settings-help">{{ t('settings.disableLimiterHelp') }}</p>
-              </section>
-              <section class="settings-field">
+              <section class="settings-field playback-switches">
+                <div class="settings-field">
+                  <label class="settings-label settings-label--checkbox">
+                    <input
+                      type="checkbox"
+                      :checked="disableLimiter"
+                      @change="onDisableLimiterChange"
+                    />
+                    {{ t('settings.disableLimiter') }}
+                  </label>
+                  <p class="settings-help">{{ t('settings.disableLimiterHelp') }}</p>
+                </div>
                 <label class="settings-label settings-label--checkbox">
                   <input
                     type="checkbox"
@@ -181,20 +181,18 @@
           <template v-else-if="activeTab === 'ui'">
             <div class="settings-rows">
               <h3 class="settings-section-title">{{ t('settings.appearanceSection') }}</h3>
-              <section class="settings-field">
-                <div class="track-height-control">
-                  <label for="ui-font-scale">{{ t('settings.interfaceFontSize') }}</label>
-                  <input
-                    id="ui-font-scale"
-                    type="range"
-                    :min="UI_FONT_SCALE.min"
-                    :max="UI_FONT_SCALE.max"
-                    step="5"
-                    :value="uiFontScale"
-                    @input="onUiFontScaleInput"
-                  />
-                  <output for="ui-font-scale">{{ uiFontScale }}%</output>
-                </div>
+              <section class="settings-field track-height-control">
+                <label for="ui-font-scale">{{ t('settings.interfaceFontSize') }}</label>
+                <input
+                  id="ui-font-scale"
+                  type="range"
+                  :min="UI_FONT_SCALE.min"
+                  :max="UI_FONT_SCALE.max"
+                  step="5"
+                  :value="uiFontScale"
+                  @input="onUiFontScaleInput"
+                />
+                <output for="ui-font-scale">{{ uiFontScale }}%</output>
               </section>
               <section class="settings-field">
                 <label class="settings-label" for="app-language">
@@ -263,61 +261,57 @@
             </div>
             <div class="settings-rows">
               <h3 class="settings-section-title">{{ t('playlist.title') }}</h3>
-              <section class="settings-field">
-                <div class="track-height-control">
-                  <label for="regular-playlist-row-height">{{ t('settings.regularModeTrackHeight') }}</label>
-                  <input
-                    id="regular-playlist-row-height"
-                    type="range"
-                    :min="PLAYLIST_ROW_HEIGHTS.regular.min"
-                    :max="PLAYLIST_ROW_HEIGHTS.regular.max"
-                    step="2"
-                    :value="regularPlaylistRowHeight"
-                    @input="onPlaylistRowHeightInput('regular', $event)"
-                  />
-                  <output for="regular-playlist-row-height">{{ regularPlaylistRowHeight }} px</output>
-                </div>
-                <div class="track-height-control">
-                  <label for="show-playlist-row-height">{{ t('settings.showModeTrackHeight') }}</label>
-                  <input
-                    id="show-playlist-row-height"
-                    type="range"
-                    :min="PLAYLIST_ROW_HEIGHTS.show.min"
-                    :max="PLAYLIST_ROW_HEIGHTS.show.max"
-                    step="2"
-                    :value="showPlaylistRowHeight"
-                    @input="onPlaylistRowHeightInput('show', $event)"
-                  />
-                  <output for="show-playlist-row-height">{{ showPlaylistRowHeight }} px</output>
-                </div>
-                <div class="track-height-control">
-                  <label for="folder-playlist-row-height">{{ t('settings.folderHeaderTrackHeight') }}</label>
-                  <input
-                    id="folder-playlist-row-height"
-                    type="range"
-                    :min="PLAYLIST_ROW_HEIGHTS.folder.min"
-                    :max="PLAYLIST_ROW_HEIGHTS.folder.max"
-                    step="2"
-                    :value="folderPlaylistRowHeight"
-                    @input="onPlaylistRowHeightInput('folder', $event)"
-                  />
-                  <output for="folder-playlist-row-height">{{ folderPlaylistRowHeight }} px</output>
-                </div>
+              <section class="settings-field track-height-control">
+                <label for="regular-playlist-row-height">{{ t('settings.regularModeTrackHeight') }}</label>
+                <input
+                  id="regular-playlist-row-height"
+                  type="range"
+                  :min="PLAYLIST_ROW_HEIGHTS.regular.min"
+                  :max="PLAYLIST_ROW_HEIGHTS.regular.max"
+                  step="2"
+                  :value="regularPlaylistRowHeight"
+                  @input="onPlaylistRowHeightInput('regular', $event)"
+                />
+                <output for="regular-playlist-row-height">{{ regularPlaylistRowHeight }} px</output>
               </section>
-              <section class="settings-field">
-                <div class="track-height-control">
-                  <label for="playlist-waveform-opacity">{{ t('settings.playlistWaveforms') }}</label>
-                  <input
-                    id="playlist-waveform-opacity"
-                    type="range"
-                    :min="WAVEFORM_OPACITY.min"
-                    :max="WAVEFORM_OPACITY.max"
-                    step="1"
-                    :value="waveformOpacity"
-                    @input="onWaveformOpacityInput"
-                  />
-                  <output for="playlist-waveform-opacity">{{ waveformOpacity }}%</output>
-                </div>
+              <section class="settings-field track-height-control">
+                <label for="show-playlist-row-height">{{ t('settings.showModeTrackHeight') }}</label>
+                <input
+                  id="show-playlist-row-height"
+                  type="range"
+                  :min="PLAYLIST_ROW_HEIGHTS.show.min"
+                  :max="PLAYLIST_ROW_HEIGHTS.show.max"
+                  step="2"
+                  :value="showPlaylistRowHeight"
+                  @input="onPlaylistRowHeightInput('show', $event)"
+                />
+                <output for="show-playlist-row-height">{{ showPlaylistRowHeight }} px</output>
+              </section>
+              <section class="settings-field track-height-control">
+                <label for="folder-playlist-row-height">{{ t('settings.folderHeaderTrackHeight') }}</label>
+                <input
+                  id="folder-playlist-row-height"
+                  type="range"
+                  :min="PLAYLIST_ROW_HEIGHTS.folder.min"
+                  :max="PLAYLIST_ROW_HEIGHTS.folder.max"
+                  step="2"
+                  :value="folderPlaylistRowHeight"
+                  @input="onPlaylistRowHeightInput('folder', $event)"
+                />
+                <output for="folder-playlist-row-height">{{ folderPlaylistRowHeight }} px</output>
+              </section>
+              <section class="settings-field track-height-control">
+                <label for="playlist-waveform-opacity">{{ t('settings.playlistWaveforms') }}</label>
+                <input
+                  id="playlist-waveform-opacity"
+                  type="range"
+                  :min="WAVEFORM_OPACITY.min"
+                  :max="WAVEFORM_OPACITY.max"
+                  step="1"
+                  :value="waveformOpacity"
+                  @input="onWaveformOpacityInput"
+                />
+                <output for="playlist-waveform-opacity">{{ waveformOpacity }}%</output>
               </section>
               <section class="settings-field">
                 <label class="settings-label settings-label--checkbox">
@@ -342,25 +336,23 @@
             </div>
             <div class="settings-rows">
               <h3 class="settings-section-title">{{ t('oneShots.title') }}</h3>
-              <section class="settings-field">
-                <div class="track-height-control">
-                  <label for="one-shot-font-scale">{{ t('settings.oneShotFontSize') }}</label>
-                  <input
-                    id="one-shot-font-scale"
-                    type="range"
-                    :min="ONE_SHOT_FONT_SCALE.min"
-                    :max="ONE_SHOT_FONT_SCALE.max"
-                    step="5"
-                    :value="oneShotFontScale"
-                    @input="onOneShotFontScaleInput"
-                  />
-                  <output for="one-shot-font-scale">{{ oneShotFontScale }}%</output>
-                </div>
+              <section class="settings-field track-height-control">
+                <label for="one-shot-font-scale">{{ t('settings.oneShotFontSize') }}</label>
+                <input
+                  id="one-shot-font-scale"
+                  type="range"
+                  :min="ONE_SHOT_FONT_SCALE.min"
+                  :max="ONE_SHOT_FONT_SCALE.max"
+                  step="5"
+                  :value="oneShotFontScale"
+                  @input="onOneShotFontScaleInput"
+                />
+                <output for="one-shot-font-scale">{{ oneShotFontScale }}%</output>
               </section>
               <section class="settings-field">
                 <div class="cart-layout-grid">
                   <div class="cart-layout-grid__header">{{ t('settings.cartLayout') }}</div>
-                  <div class="cart-layout-grid__header">{{ t('settings.minimumCardHeight') }} (px)</div>
+                  <div class="cart-layout-grid__header">{{ t('settings.minimumCardHeight') }}</div>
                   <div class="cart-layout-grid__header">{{ t('settings.visibleRows') }}</div>
                   <div class="cart-layout-grid__header">{{ t('settings.columns') }}</div>
                   <template v-for="profile in cartGridProfileOptions" :key="profile.id">
@@ -419,10 +411,9 @@
                 </div>
                 <p v-if="headerWarningTimingError" class="settings-error" role="alert">{{ headerWarningTimingError }}</p>
               </section>
-            </div>
-            <div class="settings-rows">
-              <div class="settings-section-title countdown-band-heading">
+              <div class="settings-section-title countdown-band-grid countdown-band-heading">
                 <h3>{{ t('settings.countdownColors') }}</h3>
+                <span class="settings-unit">{{ t('settings.countdownStartsAt') }} (s)</span>
                 <button type="button" class="modal-btn countdown-band-add"
                   :aria-label="t('settings.countdownAddBand')" :title="t('settings.countdownAddBand')"
                   @click="addCountdownBand">
@@ -431,12 +422,6 @@
               </div>
               <section class="settings-field">
                 <div class="countdown-band-editor">
-                  <div class="countdown-band-grid countdown-band-grid--header">
-                    <span>{{ t('settings.countdownRange') }}</span>
-                    <span>{{ t('settings.countdownStartsAt') }} (s)</span>
-                    <span>{{ t('settings.countdownColor') }}</span>
-                    <span></span>
-                  </div>
                   <div
                     v-for="(band, index) in countdownColorBands"
                     :key="band.startSeconds"
@@ -571,26 +556,30 @@
                   </button>
                 </div>
               </section>
-              <section v-if="voStatus" class="settings-field video-capture">
-                <label for="capture-display" class="settings-label">{{ t('standbyCapture.display') }}</label>
-                <select id="capture-display" class="settings-select" :value="voStatus.captureDisplayId ?? ''"
-                  :disabled="captureSettingsPending || standbyCapturePending"
-                  @change="onCaptureSettingsChange($event, 'display')">
-                  <option value="">{{ t('standbyCapture.chooseDisplay') }}</option>
-                  <option v-if="voStatus.captureDisplayId && !voDisplays.some(d => d.id === voStatus?.captureDisplayId)"
-                    :value="voStatus.captureDisplayId" disabled>{{ t('standbyCapture.missingDisplay') }}</option>
-                  <option v-for="d in voDisplays" :key="d.id" :value="d.id">
-                    {{ d.index }} · {{ d.label }} ({{ d.width }} × {{ d.height }})
-                  </option>
-                </select>
-                <label for="capture-destination" class="settings-label">{{ t('standbyCapture.destination') }}</label>
-                <select id="capture-destination" class="settings-select" :value="voStatus.captureTarget ?? 'session'"
-                  :disabled="captureSettingsPending || standbyCapturePending"
-                  @change="onCaptureSettingsChange($event, 'target')">
-                  <option value="session">{{ t('standbyCapture.session') }}</option>
-                  <option value="cue">{{ t('standbyCapture.cue') }}</option>
-                </select>
-              </section>
+              <template v-if="voStatus">
+                <section class="settings-field video-capture">
+                  <label for="capture-display" class="settings-label">{{ t('standbyCapture.display') }}</label>
+                  <select id="capture-display" class="settings-select" :value="voStatus.captureDisplayId ?? ''"
+                    :disabled="captureSettingsPending || standbyCapturePending"
+                    @change="onCaptureSettingsChange($event, 'display')">
+                    <option value="">{{ t('standbyCapture.chooseDisplay') }}</option>
+                    <option v-if="voStatus.captureDisplayId && !voDisplays.some(d => d.id === voStatus?.captureDisplayId)"
+                      :value="voStatus.captureDisplayId" disabled>{{ t('standbyCapture.missingDisplay') }}</option>
+                    <option v-for="d in voDisplays" :key="d.id" :value="d.id">
+                      {{ d.index }} · {{ d.label }} ({{ d.width }} × {{ d.height }})
+                    </option>
+                  </select>
+                </section>
+                <section class="settings-field video-capture">
+                  <label for="capture-destination" class="settings-label">{{ t('standbyCapture.destination') }}</label>
+                  <select id="capture-destination" class="settings-select" :value="voStatus.captureTarget ?? 'session'"
+                    :disabled="captureSettingsPending || standbyCapturePending"
+                    @change="onCaptureSettingsChange($event, 'target')">
+                    <option value="session">{{ t('standbyCapture.session') }}</option>
+                    <option value="cue">{{ t('standbyCapture.cue') }}</option>
+                  </select>
+                </section>
+              </template>
               <section v-if="voStatus" class="settings-field">
                 <div class="video-output-standby">
                   <button type="button" class="modal-btn" :disabled="standbyCapturePending || !voStatus.open"
@@ -637,41 +626,36 @@
 
           <!-- ================= Help ================= -->
           <template v-else-if="activeTab === 'help'">
-            <section class="settings-field">
-              <p class="settings-help settings-help-intro">{{ t('settings.helpIntro') }}</p>
-              <div class="help-links">
-                <button
-                  v-if="canOpenOperatorManual"
-                  type="button"
-                  class="help-link help-link--button"
-                  @click="openOperatorManual"
-                >
-                  <span class="material-symbols-rounded" aria-hidden="true">menu_book</span>
-                  <span>{{ t('menu.operatorManual') }}</span>
-                </button>
-                <a
-                  href="https://dwcue.com"
-                  class="help-link"
-                  @click.prevent="openExternal('https://dwcue.com')"
-                >
-                  <span class="material-symbols-rounded" aria-hidden="true">language</span>
-                  <span>{{ t('settings.helpDocs') }}</span>
-                </a>
-                <a
-                  href="https://github.com/donwellsav/dwcue/issues"
-                  class="help-link"
-                  @click.prevent="openExternal('https://github.com/donwellsav/dwcue/issues')"
-                >
-                  <span class="material-symbols-rounded" aria-hidden="true">bug_report</span>
-                  <span>{{ t('settings.helpIssues') }}</span>
-                </a>
-              </div>
-            </section>
+            <button
+              v-if="canOpenOperatorManual"
+              type="button"
+              class="help-link help-link--button"
+              @click="openOperatorManual"
+            >
+              <span class="material-symbols-rounded" aria-hidden="true">menu_book</span>
+              <span>{{ t('menu.operatorManual') }}</span>
+            </button>
+            <a
+              href="https://dwcue.com"
+              class="help-link"
+              @click.prevent="openExternal('https://dwcue.com')"
+            >
+              <span class="material-symbols-rounded" aria-hidden="true">language</span>
+              <span>{{ t('settings.helpDocs') }}</span>
+            </a>
+            <a
+              href="https://github.com/donwellsav/dwcue/issues"
+              class="help-link"
+              @click.prevent="openExternal('https://github.com/donwellsav/dwcue/issues')"
+            >
+              <span class="material-symbols-rounded" aria-hidden="true">bug_report</span>
+              <span>{{ t('settings.helpIssues') }}</span>
+            </a>
           </template>
 
           <!-- ================= About ================= -->
           <template v-else-if="activeTab === 'about'">
-            <AboutContent />
+            <AboutContent class="about-content--docked" />
           </template>
         </div>
 
@@ -1333,6 +1317,9 @@ function close() {
 
 <style scoped>
 .project-settings-panel {
+  --settings-width: 1560px;
+  --settings-row-height: 28px;
+  --settings-control-height: 24px;
   flex: 1;
   min-height: 0;
   border-top: 1px solid var(--color-border);
@@ -1368,7 +1355,9 @@ function close() {
 }
 
 .settings-tabs {
-  display: flex;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(112px, 1fr);
   align-self: stretch;
   min-width: 0;
   overflow-x: auto;
@@ -1377,9 +1366,9 @@ function close() {
 }
 .tab-btn {
   display: flex;
-  flex-shrink: 0;
   align-items: center;
-  gap: var(--spacing-sm);
+  justify-content: center;
+  gap: var(--spacing-xs);
   padding: 0 var(--spacing-sm);
   background: none;
   border: none;
@@ -1388,7 +1377,8 @@ function close() {
   color: var(--color-text-primary);
   font-size: 13px;
   font-weight: 600;
-  white-space: nowrap;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 .tab-btn .material-symbols-rounded,
 .tab-btn :deep(.cue-symbol) {
@@ -1405,30 +1395,46 @@ function close() {
 }
 .tab-btn:focus-visible { outline-offset: -3px; }
 
+@container (max-width: 1180px) {
+  .tab-btn { padding-inline: var(--spacing-xs); }
+  .tab-btn .material-symbols-rounded,
+  .tab-btn :deep(.cue-symbol) { display: none; }
+}
+
 .settings-content {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 560px));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: min(100%, var(--settings-width));
   align-content: start;
-  align-items: start;
   flex: 1;
   min-height: 0;
-  padding: var(--spacing-sm) var(--workspace-gutter);
+  padding: var(--spacing-xs) var(--workspace-gutter);
   gap: var(--spacing-sm);
   overflow-y: auto;
 }
 
-.settings-content--audio > .settings-field {
-  align-self: stretch;
+.settings-content--playback {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  row-gap: 0;
 }
 
-.settings-content--ui,
-.settings-content--video {
-  max-width: 1560px;
-  grid-template-columns: minmax(0, 1.04fr) minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 0.88fr) minmax(0, 0.84fr);
+.settings-content--playback > .settings-rows {
+  display: grid;
+  grid-row: span 3;
+  grid-template-rows: subgrid;
 }
 
-.settings-content--video {
-  grid-template-columns: minmax(0, 0.88fr) minmax(0, 1.06fr) minmax(0, 2fr);
+.settings-rows > .playback-switches {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  align-content: center;
+}
+
+.settings-test-card { grid-column: span 2; }
+
+.settings-content--help {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
 }
 
 .settings-unit {
@@ -1436,10 +1442,7 @@ function close() {
   font-weight: 400;
 }
 
-.settings-content--about,
-.settings-content--help {
-  display: block;
-}
+.settings-content--about { display: block; }
 
 .settings-content > .settings-error {
   grid-column: 1 / -1;
@@ -1457,13 +1460,14 @@ function close() {
 }
 
 .settings-section-title,
-.settings-rows > .test-card-heading {
+.settings-rows > .test-card-heading,
+.settings-content--audio > .settings-field > .settings-label {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
   column-gap: 4px;
   align-content: center;
-  min-height: 27px;
+  min-height: var(--settings-row-height);
   margin: 0;
   padding: 3px var(--spacing-sm);
   border-bottom: 1px solid var(--color-border);
@@ -1474,8 +1478,7 @@ function close() {
 
 .settings-rows > .settings-section-title:not(:first-child) { border-top: 1px solid var(--color-border); }
 
-.settings-rows > .test-card-heading,
-.settings-rows > .countdown-band-heading {
+.settings-rows > .test-card-heading {
   align-items: center;
   justify-content: space-between;
   flex-direction: row;
@@ -1489,13 +1492,20 @@ function close() {
   line-height: inherit;
 }
 
-.settings-rows > .settings-field {
-  padding: 3px var(--spacing-sm);
+.settings-rows > .settings-field:not(.test-card-heading) {
+  justify-content: center;
+  min-height: var(--settings-row-height);
+  padding: 1px var(--spacing-sm);
+  line-height: 1.25;
 }
 
-.settings-content--ui .settings-rows > .settings-field,
-.settings-content--video .settings-rows > .settings-field:not(.test-card-heading) {
-  padding-block: 2px;
+.settings-content--playback .settings-rows > .settings-field {
+  min-height: 50px;
+  padding-block: 3px;
+}
+
+.settings-rows > .settings-field:has(> :is(.cart-layout-grid, .header-warning-settings, .countdown-band-editor)) {
+  padding-block: 0;
 }
 
 .settings-rows > .settings-field + .settings-field {
@@ -1504,24 +1514,36 @@ function close() {
 
 .settings-rows > .test-card-heading + .settings-field { border-top: 0; }
 
-.settings-content--audio > .settings-field,
 .settings-rows > .settings-field:has(> .settings-select, > .settings-input) {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, max-content);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 45%);
   column-gap: var(--spacing-sm);
   align-items: center;
 }
 
-.settings-field > .settings-help {
-  grid-column: 1 / -1;
+.settings-content--audio > .settings-field {
+  display: grid;
+  grid-row: span 3;
+  grid-template-rows: subgrid;
+  gap: 0;
+  padding: 0;
 }
 
-.settings-field > .settings-select {
-  width: min(100%, 15rem);
+.settings-content--audio > .settings-field > .settings-select {
+  width: calc(100% - 2 * var(--spacing-sm));
+  margin: var(--spacing-xs) var(--spacing-sm) 0;
 }
 
-.settings-content--ui .settings-field > .settings-select {
-  width: clamp(0px, 10vw, 9rem);
+.settings-content--audio > .settings-field > .settings-help {
+  grid-column: auto;
+  padding: var(--spacing-xs) var(--spacing-sm);
+}
+
+.settings-field > .settings-help { grid-column: 1 / -1; }
+
+.settings-content--playback .settings-field > :is(.settings-input, .settings-select) {
+  max-width: 180px;
+  justify-self: end;
 }
 
 .settings-content--ui .track-height-control {
@@ -1529,20 +1551,10 @@ function close() {
   line-height: 1.25;
 }
 
-.settings-field > .settings-input {
-  width: 5rem;
-}
+.settings-content--ui .settings-field > .settings-input { text-align: center; }
 
-.settings-content--help > .settings-field {
-  width: fit-content;
-  max-width: 100%;
-}
-
-.settings-content .video-capture {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, max-content);
-  align-items: center;
-  column-gap: var(--spacing-sm);
+.settings-rows > .settings-field.video-capture {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 56%);
 }
 
 .settings-content .video-standby-field {
@@ -1552,21 +1564,15 @@ function close() {
   column-gap: var(--spacing-sm);
 }
 
-@container (max-width: 1040px) {
-  .settings-content--ui { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
-
 @container (max-width: 900px) {
-  .settings-content--ui,
-  .settings-content--video {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .settings-test-card { grid-column: 1 / -1; }
+  .settings-content:not(.settings-content--help) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @container (max-width: 740px) {
-  .settings-content { grid-template-columns: minmax(0, 1fr); }
+  .settings-content:not(.settings-content--help) { grid-template-columns: minmax(0, 1fr); }
+  .settings-content--playback { gap: var(--spacing-sm); }
+  .settings-content--playback > .settings-rows { display: block; grid-row: auto; }
+  .settings-test-card { grid-column: auto; }
 }
 
 .settings-field {
@@ -1575,11 +1581,17 @@ function close() {
   min-width: 0;
   gap: var(--spacing-xs);
 }
-.header-warning-settings { display: grid; gap: 2px; }
+.header-warning-settings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 var(--spacing-xs);
+}
 .header-warning-settings .settings-field {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
+  min-height: var(--settings-row-height);
+  gap: 2px;
 }
 .header-warning-settings .settings-label {
   font-size: 12px;
@@ -1588,8 +1600,7 @@ function close() {
 }
 .header-warning-settings .settings-input {
   width: 44px;
-  min-height: 24px;
-  padding-inline: 4px;
+  padding-inline: 3px;
 }
 .settings-label {
   display: flex;
@@ -1603,7 +1614,7 @@ function close() {
 .settings-input {
   width: 100%;
   min-width: 0;
-  min-height: 26px;
+  min-height: var(--settings-control-height);
   padding: 2px var(--spacing-sm);
   background: var(--color-background);
   color: var(--color-text-primary);
@@ -1656,6 +1667,7 @@ function close() {
   flex-wrap: wrap;
   gap: 4px;
 }
+.video-output-standby > .modal-btn { min-width: 0; }
 .video-output-standby-path {
   flex: 1 1 52px;
   min-width: 0;
@@ -1675,10 +1687,11 @@ function close() {
   color: var(--color-text-primary);
   font-size: 13px;
 }
+.settings-field.track-height-control { align-items: center; }
 .track-height-control input[type="range"] {
   width: 100%;
   min-width: 0;
-  height: 24px;
+  height: var(--settings-control-height);
   margin: 0;
   padding: 0;
   accent-color: var(--color-accent);
@@ -1692,10 +1705,10 @@ function close() {
 }
 .cart-layout-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 60px 40px 44px;
-  gap: 2px 4px;
+  grid-template-columns: minmax(0, 1fr) repeat(3, 46px);
+  grid-auto-rows: minmax(var(--settings-row-height), auto);
+  gap: 0 4px;
   align-items: center;
-  padding: 2px 0;
   line-height: 1.25;
 }
 .cart-layout-grid__header {
@@ -1709,8 +1722,7 @@ function close() {
   font-weight: 500;
 }
 .cart-layout-input {
-  height: 24px;
-  min-height: 24px;
+  height: var(--settings-control-height);
   min-width: 0;
   padding: 2px;
   font-family: var(--font-mono);
@@ -1730,24 +1742,28 @@ function close() {
   gap: 4px;
   align-items: center;
 }
-.countdown-band-grid--header {
-  color: var(--color-text-secondary);
+.settings-rows > .countdown-band-heading {
+  display: grid;
+  align-items: center;
+  padding-block: 1px;
+}
+.countdown-band-heading .settings-unit {
+  text-align: center;
   font-size: 11px;
-  font-weight: 600;
-  line-height: 1.3;
-  padding-bottom: 2px;
 }
 .countdown-band-grid--row {
+  min-height: var(--settings-row-height);
   padding: 1px 0;
-  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
 }
+.countdown-band-grid--row:last-child { border-color: transparent; }
 .countdown-band-range {
   font-size: 12px;
   line-height: 1.25;
   color: var(--color-text-primary);
 }
 .countdown-band-start {
-  min-height: 24px;
+  min-height: var(--settings-control-height);
   padding-inline: 4px;
   text-align: center;
 }
@@ -1759,7 +1775,7 @@ function close() {
 }
 .countdown-band-color {
   width: 28px;
-  height: 24px;
+  height: var(--settings-control-height);
   padding: 2px;
   background: var(--color-control);
   border: 1px solid var(--color-border);
@@ -1770,7 +1786,7 @@ function close() {
   display: grid;
   place-items: center;
   width: 24px;
-  height: 24px;
+  height: var(--settings-control-height);
   background: transparent;
   color: var(--color-text-secondary);
   border: 1px solid var(--color-border);
@@ -1788,10 +1804,11 @@ function close() {
   outline-offset: 2px;
 }
 .countdown-band-heading .countdown-band-add {
+  grid-column: 4;
   display: grid;
   place-items: center;
   width: 24px;
-  min-height: 24px;
+  min-height: var(--settings-control-height);
   padding: 0;
 }
 .countdown-band-add .material-symbols-rounded {
@@ -1813,27 +1830,18 @@ function close() {
   accent-color: var(--color-accent);
 }
 
-.settings-help-intro {
-  margin-top: 0;
-}
-
-.help-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-xs);
-}
-
 .help-link {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-md);
-  background-color: var(--color-background);
+  min-height: var(--settings-row-height);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background-color: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-md);
+  border-radius: var(--control-radius);
   color: var(--color-text-primary);
   text-decoration: none;
-  font-size: 14px;
+  font-size: 13px;
   text-align: left;
   max-width: 100%;
   box-sizing: border-box;
@@ -1864,7 +1872,7 @@ function close() {
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
   color: var(--color-text-primary);
-  min-height: 28px;
+  min-height: var(--settings-control-height);
   padding: 3px var(--spacing-sm);
   cursor: pointer;
   font-size: 12px;

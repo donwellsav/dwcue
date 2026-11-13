@@ -645,7 +645,7 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
 .test-card-color { flex-direction: row; align-items: center; justify-content: space-between; }
 .test-card-name { flex-direction: row; align-items: center; }
 .test-card-check {
-  min-height: 24px;
+  min-height: var(--settings-control-height);
   align-items: center;
   gap: 5px;
 }
@@ -661,7 +661,7 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
 .test-card-select {
   min-width: 0;
   width: 100%;
-  height: 26px;
+  height: var(--settings-control-height);
   box-sizing: border-box;
   padding: 0 6px;
   background: var(--color-control);
@@ -680,7 +680,7 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
 }
 .test-card-color-row input[type='color'] {
   width: 28px;
-  height: 26px;
+  height: var(--settings-control-height);
   flex: none;
   padding: 2px;
   background: var(--color-control);
@@ -708,7 +708,7 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
   white-space: nowrap;
 }
 .test-card-button {
-  min-height: 28px;
+  min-height: var(--settings-control-height);
   padding: 3px 8px;
   background: var(--color-surface);
   color: var(--color-text-primary);

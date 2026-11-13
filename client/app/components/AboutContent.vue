@@ -266,4 +266,26 @@ const openExternal = (url: string) => {
 .about-notices a {
   color: var(--color-accent);
 }
+
+.about-content--docked { max-width: none; }
+
+.about-content--docked .about-resources {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+  gap: var(--spacing-sm);
+}
+
+.about-content--docked .about-links {
+  display: grid;
+  gap: 0;
+}
+
+.about-content--docked .about-links a {
+  min-height: var(--settings-row-height);
+  border-bottom: 1px solid var(--color-border);
+}
+
+@container (max-width: 740px) {
+  .about-content--docked .about-resources { grid-template-columns: minmax(0, 1fr); }
+}
 </style>

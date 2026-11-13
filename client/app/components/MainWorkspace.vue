@@ -199,7 +199,7 @@
     <ShortcutsBar :compact="showProjectSettings || !!showCueProperties" />
     
     <div v-show="showProjectSettings || showCueProperties" ref="lowerPanel" class="lower-workspace-panel"
-      :style="{ height: panelHeight === undefined ? 'auto' : `${panelHeight}px` }">
+      :style="{ height: panelHeight === null ? 'auto' : `${panelHeight}px` }">
       <div class="lower-panel-resize-handle" role="separator" aria-orientation="horizontal"
         :aria-label="showProjectSettings ? t('settings.title') : t('properties.title')"
         :aria-valuemin="MIN_PANEL_HEIGHT" :aria-valuemax="panelMaxHeight"
@@ -289,11 +289,7 @@ const MIN_PANEL_HEIGHT = 120;
 const MAX_PANEL_HEIGHT = 640;
 const settingsHeight = useState<number | null>('ProjectSettingsPanel.height', () => null);
 const propertiesHeight = useState('PropertiesPanel.height', () => 320);
-const settingsTab = useState('projectSettingsTab', () => 'audio');
-const panelHeight = computed(() => {
-  if (!showProjectSettings.value) return propertiesHeight.value;
-  return settingsHeight.value ?? (['ui', 'video'].includes(settingsTab.value) ? undefined : 300);
-});
+const panelHeight = computed(() => showProjectSettings.value ? settingsHeight.value : propertiesHeight.value);
 const workspaceContent = ref<HTMLElement | null>(null);
 const lowerPanel = ref<HTMLElement | null>(null);
 const visiblePanelHeight = ref(0);

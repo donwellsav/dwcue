@@ -50,10 +50,12 @@
           </button>
           <button
             v-if="getPlaybackBinding(action.id)"
+            type="button"
             class="clear-key-btn"
             :aria-label="`${t('controls.clear')} · ${t(action.labelKey)}`"
+            :title="t('controls.clear')"
             @click.stop="clearPlaybackBinding(action.id)"
-          >{{ t('controls.clear') }}</button>
+          ><span class="material-symbols-rounded" aria-hidden="true">close</span></button>
           <span v-if="keyErrorActionId === action.id && keyErrorMessage" class="error-msg">{{ keyErrorMessage }}</span>
         </div>
 
@@ -82,10 +84,12 @@
           </button>
           <button
             v-if="keyMappings[entry.slotIndex]"
+            type="button"
             class="clear-key-btn"
             :aria-label="`${t('controls.clear')} · ${t('controls.oneShot', { n: entry.slotIndex + 1 })}`"
+            :title="t('controls.clear')"
             @click.stop="clearSlotBinding(entry.slotIndex)"
-          >{{ t('controls.clear') }}</button>
+          ><span class="material-symbols-rounded" aria-hidden="true">close</span></button>
           <span v-if="keyErrorMessage && keyErrorSlot === entry.slotIndex" class="error-msg">{{ keyErrorMessage }}</span>
         </div>
       </div>
@@ -109,8 +113,9 @@
               </button>
               <button v-if="getMidiBinding(action.id)" type="button" class="clear-btn"
                 :aria-label="`${t('controls.clear')} · ${t(action.labelKey, { n: action.n })}`"
+                :title="t('controls.clear')"
                 @click="handleMidiClear(action.id)">
-                {{ t('controls.clear') }}
+                <span class="material-symbols-rounded" aria-hidden="true">close</span>
               </button>
             </div>
           </div>
@@ -449,21 +454,25 @@ onUnmounted(() => {
 /* Body */
 .config-body {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 252px), 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-auto-rows: max-content;
   align-content: start;
   gap: 1px var(--spacing-sm);
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  width: min(100%, 1280px);
+  width: min(100%, var(--settings-width));
   padding: var(--spacing-xs) var(--workspace-gutter);
 }
 
 .binding-heading {
   grid-column: 1 / -1;
-  padding: 5px 0 2px;
+  display: flex;
+  align-items: center;
+  min-height: var(--settings-row-height);
+  padding-inline: var(--spacing-sm);
   font-size: 12px;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .action-row {
@@ -471,8 +480,9 @@ onUnmounted(() => {
   align-items: center;
   gap: var(--spacing-xs);
   min-width: 0;
-  min-height: 27px;
-  padding: 2px var(--spacing-sm);
+  min-height: 32px;
+  padding: 1px var(--spacing-sm);
+  line-height: 1.1;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
   transition: background-color 0.1s;
@@ -487,11 +497,11 @@ onUnmounted(() => {
 .action-row.conflict { border-color: var(--color-danger); }
 
 .keyboard-action-row {
-  grid-template-columns: minmax(0, 1fr) minmax(85px, 0.8fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(114px, 0.8fr) var(--settings-control-height);
 }
 
 .midi-action-row {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) 82px;
 }
 
 .midi-action-row .action-buttons {
@@ -511,12 +521,14 @@ onUnmounted(() => {
   grid-column: 1;
   font-size: 13px;
   color: var(--color-text-primary);
+  overflow-wrap: anywhere;
 }
 
 .action-binding {
   grid-column: 2;
   font-family: var(--font-mono);
   font-size: 12px;
+  line-height: 1.15;
   font-weight: 600;
   color: var(--color-text-primary);
   background: var(--color-background);
@@ -524,6 +536,7 @@ onUnmounted(() => {
   border-radius: var(--control-radius);
   padding: 2px 8px;
   min-width: 0;
+  min-height: var(--settings-control-height);
   overflow-wrap: anywhere;
   text-align: center;
 }
@@ -539,17 +552,19 @@ onUnmounted(() => {
 /* MIDI / keyboard action buttons */
 .action-buttons {
   grid-column: 3;
-  display: flex;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--settings-control-height);
   gap: 4px;
-  flex-shrink: 0;
 }
 
 .learn-btn,
 .clear-btn,
 .clear-key-btn {
   font-size: 11px;
-  padding: 3px 8px;
+  min-height: var(--settings-control-height);
+  padding: 2px 5px;
+  min-width: 0;
+  overflow-wrap: anywhere;
   border-radius: var(--control-radius);
   border: 1px solid var(--color-border);
   background: var(--color-background);
@@ -561,8 +576,17 @@ onUnmounted(() => {
 
 .clear-key-btn {
   grid-column: 3;
-  justify-self: end;
 }
+
+.clear-btn,
+.clear-key-btn {
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.clear-btn .material-symbols-rounded,
+.clear-key-btn .material-symbols-rounded { font-size: 16px; }
 
 .learn-btn:hover,
 .clear-btn:hover,
@@ -577,9 +601,10 @@ onUnmounted(() => {
 /* Master-volume multiplier input */
 .multiplier-input {
   grid-column: 2;
-  width: 80px;
+  width: 100%;
+  min-height: var(--settings-control-height);
   font-size: 12px;
-  padding: 4px 8px;
+  padding: 2px 8px;
   border-radius: var(--control-radius);
   border: 1px solid var(--color-border);
   background: var(--color-background);
@@ -606,7 +631,8 @@ onUnmounted(() => {
 .device-select {
   width: clamp(100px, 13vw, 176px);
   font-size: 12px;
-  padding: 4px 8px;
+  min-height: var(--settings-control-height);
+  padding: 2px 8px;
   border-radius: var(--control-radius);
   border: 1px solid var(--color-border);
   background: var(--color-background);
@@ -630,7 +656,8 @@ onUnmounted(() => {
 .shortcut-bar-toggle input { margin: 0; }
 
 .reset-btn {
-  padding: var(--spacing-xs) var(--spacing-sm);
+  min-height: var(--settings-control-height);
+  padding: 2px var(--spacing-sm);
   border-radius: var(--control-radius);
   font-size: 12px;
   white-space: nowrap;
@@ -645,13 +672,21 @@ onUnmounted(() => {
 
 .binding-button {
   background: var(--color-control);
-  padding: 2px 4px;
-  overflow-wrap: normal;
+  padding: 2px;
+  overflow-wrap: anywhere;
   cursor: pointer;
 }
 
 .binding-button:hover {
   border-color: var(--color-accent);
+}
+
+@container (max-width: 900px) {
+  .config-body { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@container (max-width: 560px) {
+  .config-body { grid-template-columns: minmax(0, 1fr); }
 }
 
 .binding-button:focus-visible,
