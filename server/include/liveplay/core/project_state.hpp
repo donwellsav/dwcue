@@ -453,7 +453,8 @@ public:
     // Resolve a unique catalog name or current opened-device id. Opens the
     // selected audio device if needed and creates a
     // dedicated mixer + two master channels routed to it. Returns the
-    // mixer id, or empty on failure (device not found).
+    // mixer id, or empty when unavailable. Without a lifecycle lock, only
+    // reuse an existing route.
     audio::MixerChannelId ensure_device_routing(
         const std::string& device_name,
         std::unique_lock<std::recursive_mutex>* lifecycle_lock = nullptr);
@@ -484,9 +485,9 @@ public:
     audio::CueId current_preview_cue_id() const;
 
     // Route every LTC-enabled cue's synthetic LTC source channel to the
-    // project's configured ltcDevice mixer. Safe to call at any time without
-    // holding mutex_ — it acquires the lock internally as needed and delegates
-    // engine operations to independently-locked engine APIs.
+    // project's configured ltcDevice mixer. Calls without a playback lock
+    // use the existing mixer immediately or queue cold routing. Call without
+    // holding mutex_.
     void apply_ltc_device_routing(const audio::CueId& only = {},
                                   std::unique_lock<std::recursive_mutex>* playback_lock = nullptr,
                                   std::optional<audio::MixerChannelId> prepared = std::nullopt);
@@ -874,7 +875,7 @@ private:
 
     // Loader thread body: decode queued items and publish them.
     void loader_loop();
-    void queue_loaded_routing(std::uint64_t generation, bool apply_program);
+    void queue_loaded_routing(std::uint64_t generation, bool apply_program, bool apply_main = true);
     void loaded_routing_loop();
     using MediaRevisionCandidates = std::vector<std::pair<std::string, std::weak_ptr<audio::PlaybackItem>>>;
     void publish_media_revisions(std::uint64_t generation, const MediaRevisionCandidates& changed);
@@ -907,6 +908,7 @@ private:
         std::uint64_t generation;
         std::uint64_t stop;
         bool apply_program;
+        bool apply_main;
     };
     std::optional<LoadedRoutingRequest> loaded_routing_; // guarded by loader_mutex_
     std::condition_variable            loaded_routing_cv_;

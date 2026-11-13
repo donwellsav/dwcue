@@ -493,6 +493,85 @@ void test_stop_all_during_ltc_device_start() {
     context->callbacks.onDeviceStart = start;
 }
 
+void test_stop_all_during_ltc_edit() {
+    auto* context = null_preview_context();
+    static const auto start = context->callbacks.onDeviceStart;
+    static std::atomic<bool> hold{false}, entered{false};
+    context->callbacks.onDeviceStart = [](ma_device* device) {
+        if (hold.load()) {
+            entered.store(true);
+            while (hold.load()) std::this_thread::sleep_for(1ms);
+        }
+        return start(device);
+    };
+    const auto wav = make_wav(8'192, 480'000);
+    liveplay::audio::AudioEngine engine;
+    engine.device_test_context_ = context;
+    liveplay::core::ProjectState state(engine);
+    check(state.replace_full_document(document(json::array({
+        audio("ltc-edit", wav), audio("ltc-edit-backup", wav), audio("ltc-edit-warm", wav),
+    }))) && wait_ready(state) && state.trigger_item("ltc-edit"), "LTC edit: Program and backup media ready");
+    {
+        std::lock_guard lock{state.mutex_};
+        state.document_["settings"]["ltcDevice"] = "NULL Playback Device";
+    }
+    const auto backup = engine.find_cue(*state.item_to_cue_id("ltc-edit-backup"));
+    check(backup && backup->prime(2.0), "LTC edit: independent backup primed");
+    hold.store(true);
+    auto edit = std::async(std::launch::async, [&] {
+        auto lock = state.lock_project_session(state.project_session_id());
+        return state.update_item("ltc-edit", {{"ltcEnabled", true}}, &lock);
+    });
+    for (int i = 0; i < 1000 && !entered.load(); ++i) std::this_thread::sleep_for(2ms);
+    check(entered.load(), "LTC edit: native output startup is held");
+    check(edit.wait_for(250ms) == std::future_status::ready,
+          "LTC edit: edit acknowledges before the driver returns");
+    auto controls = std::async(std::launch::async, [&] {
+        state.stop_all_cues(0);
+        auto lock = state.lock_project_session(state.project_session_id());
+        if (!lock.owns_lock() || on_air(state, engine, "ltc-edit") ||
+            !state.set_next_item_override("ltc-edit-backup") || state.go() != "ltc-edit-backup") return false;
+        std::array<float, 256> left{}, right{};
+        float* channels[]{left.data(), right.data()};
+        return backup && backup->render_block(channels, 2, 256) == 256 && left[0] > 0.2f;
+    });
+    check(controls.wait_for(250ms) == std::future_status::ready,
+          "LTC edit: Stop All and backup GO render PCM before startup returns");
+    hold.store(false);
+    const auto accepted = edit.get();
+    const auto independent = controls.get();
+    check(accepted && independent && state.full_document()["items"][0]["ltcEnabled"] == true,
+          "LTC edit: accepted timecode setting remains in the show");
+    const auto retired = [&] {
+        std::lock_guard lock{engine.mutex_};
+        return !engine.retired_devices_.empty() && engine.devices_.empty();
+    };
+    for (int i = 0; i < 400 && !retired(); ++i) std::this_thread::sleep_for(5ms);
+    bool no_routes;
+    {
+        std::lock_guard lock{state.mutex_};
+        no_routes = state.device_routings_.empty();
+    }
+    check(retired() && no_routes && on_air(state, engine, "ltc-edit-backup") && !on_air(state, engine, "ltc-edit"),
+          "LTC edit: canceled startup leaves no device or route and cannot replay the cue");
+
+    check(state.set_next_item_override("ltc-edit") && state.go() == "ltc-edit" &&
+              state.device_routings_.size() == 1,
+          "LTC edit: deliberate GO opens the retained timecode destination");
+    check(state.update_item("ltc-edit-warm", {{"ltcEnabled", true}}), "LTC edit: warm destination accepts another cue edit");
+    const auto warm = state.item_to_cue_id("ltc-edit-warm");
+    {
+        std::lock_guard lock{engine.mutex_};
+        const auto routes = engine.pending_.item_sources.find(warm->value);
+        check(routes != engine.pending_.item_sources.end() && routes->second.by_source_channel.size() == 2 &&
+                  routes->second.by_source_channel.back().size() == 1 &&
+                  routes->second.by_source_channel.back().front().mixer == state.device_routings_.begin()->second.mixer,
+              "LTC edit: warm destination routes timecode immediately");
+    }
+    state.stop_all_cues(0);
+    context->callbacks.onDeviceStart = start;
+}
+
 void test_loader_output_wait() {
     auto* context = null_preview_context();
     static const auto start = context->callbacks.onDeviceStart;
@@ -2975,6 +3054,7 @@ int main() try {
     test_stop_all_during_program_device_start();
     test_stop_all_during_system_default_open();
     test_stop_all_during_ltc_device_start();
+    test_stop_all_during_ltc_edit();
     test_loader_output_wait();
     test_program_reroute_preserves_ltc();
     test_stop_all_during_diagnostic_output_start();
