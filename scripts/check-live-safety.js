@@ -699,8 +699,13 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /height: `\$\{panelHeight\}px`[\s\S]*class="lower-panel-resize-handle"[\s\S]*role="separator"[\s\S]*@pointerdown="startPanelResize"[\s\S]*@keydown="handlePanelResizeKey"/,
+  /class="lower-workspace-panel"[\s\S]*:style="\{ height: [^"]+panelHeight[^"]+\}"[\s\S]*class="lower-panel-resize-handle"[\s\S]*role="separator"[\s\S]*@pointerdown="startPanelResize"[\s\S]*@keydown="handlePanelResizeKey"/,
   'Settings and Properties must share the pointer and keyboard resize control',
+);
+assert.match(
+  mainWorkspace,
+  /settingsHeight = useState<number \| null>\('ProjectSettingsPanel.height', \(\) => null\);[\s\S]*return settingsHeight\.value \?\? \(\['ui', 'video'\]\.includes\(settingsTab\.value\) \? undefined : 300\);/,
+  'User Interface and Video Output must fit their contents until the operator resizes Settings',
 );
 assert.match(
   mainWorkspace,

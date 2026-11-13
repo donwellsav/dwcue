@@ -360,24 +360,21 @@
               <section class="settings-field">
                 <div class="cart-layout-grid">
                   <div class="cart-layout-grid__header">{{ t('settings.cartLayout') }}</div>
-                  <div class="cart-layout-grid__header">{{ t('settings.minimumCardHeight') }}</div>
+                  <div class="cart-layout-grid__header">{{ t('settings.minimumCardHeight') }} (px)</div>
                   <div class="cart-layout-grid__header">{{ t('settings.visibleRows') }}</div>
                   <div class="cart-layout-grid__header">{{ t('settings.columns') }}</div>
                   <template v-for="profile in cartGridProfileOptions" :key="profile.id">
                     <div class="cart-layout-grid__profile">{{ profile.label }}</div>
-                    <label class="cart-layout-grid__value">
-                      <input
-                        type="number"
-                        class="settings-input cart-layout-input"
-                        :min="CART_GRID_PROFILES[profile.id].minHeight"
-                        :max="CART_GRID_PROFILES[profile.id].maxHeight"
-                        step="2"
-                        :value="cartGridLayouts[profile.id].minHeight"
-                        :aria-label="`${profile.label}, ${t('settings.minimumCardHeight')}`"
-                        @change="onCartGridLayoutChange(profile.id, 'minHeight', $event)"
-                      />
-                      <span aria-hidden="true">px</span>
-                    </label>
+                    <input
+                      type="number"
+                      class="settings-input cart-layout-input"
+                      :min="CART_GRID_PROFILES[profile.id].minHeight"
+                      :max="CART_GRID_PROFILES[profile.id].maxHeight"
+                      step="2"
+                      :value="cartGridLayouts[profile.id].minHeight"
+                      :aria-label="`${profile.label}, ${t('settings.minimumCardHeight')}`"
+                      @change="onCartGridLayoutChange(profile.id, 'minHeight', $event)"
+                    />
                     <input
                       type="number"
                       class="settings-input cart-layout-input"
@@ -422,19 +419,21 @@
                 </div>
                 <p v-if="headerWarningTimingError" class="settings-error" role="alert">{{ headerWarningTimingError }}</p>
               </section>
+            </div>
+            <div class="settings-rows">
+              <div class="settings-section-title countdown-band-heading">
+                <h3>{{ t('settings.countdownColors') }}</h3>
+                <button type="button" class="modal-btn countdown-band-add"
+                  :aria-label="t('settings.countdownAddBand')" :title="t('settings.countdownAddBand')"
+                  @click="addCountdownBand">
+                  <span class="material-symbols-rounded" aria-hidden="true">add</span>
+                </button>
+              </div>
               <section class="settings-field">
-                <div class="countdown-band-heading">
-                  <h4>{{ t('settings.countdownColors') }}</h4>
-                  <button type="button" class="modal-btn countdown-band-add" @click="addCountdownBand">
-                    <span class="material-symbols-rounded" aria-hidden="true">add</span>
-                    {{ t('settings.countdownAddBand') }}
-                  </button>
-                </div>
-
                 <div class="countdown-band-editor">
                   <div class="countdown-band-grid countdown-band-grid--header">
                     <span>{{ t('settings.countdownRange') }}</span>
-                    <span>{{ t('settings.countdownStartsAt') }}</span>
+                    <span>{{ t('settings.countdownStartsAt') }} (s)</span>
                     <span>{{ t('settings.countdownColor') }}</span>
                     <span></span>
                   </div>
@@ -443,38 +442,28 @@
                     :key="band.startSeconds"
                     class="countdown-band-grid countdown-band-grid--row"
                   >
-                    <span class="countdown-band-range">
-                      <span
-                        class="countdown-band-dot"
-                        :style="{ backgroundColor: band.color }"
-                        aria-hidden="true"
-                      ></span>
-                      {{ countdownBandRange(index) }}
-                    </span>
+                    <span class="countdown-band-range">{{ countdownBandRange(index) }}</span>
 
-                    <label class="countdown-band-start">
-                      <input
-                        v-if="band.startSeconds > 0"
-                        type="number"
-                        min="1"
-                        step="1"
-                        :value="band.startSeconds"
-                        :aria-label="t('settings.countdownStartsAtFor', { range: countdownBandRange(index) })"
-                        @change="onCountdownBandStartChange(index, $event)"
-                      />
-                      <span v-else class="countdown-band-fixed">0</span>
-                      <span>s</span>
-                    </label>
+                    <input
+                      v-if="band.startSeconds > 0"
+                      class="settings-input countdown-band-start"
+                      type="number"
+                      min="1"
+                      step="1"
+                      :value="band.startSeconds"
+                      :aria-label="t('settings.countdownStartsAtFor', { range: countdownBandRange(index) })"
+                      @change="onCountdownBandStartChange(index, $event)"
+                    />
+                    <span v-else class="countdown-band-start countdown-band-fixed">0</span>
 
-                    <label class="countdown-band-color">
-                      <input
-                        type="color"
-                        :value="band.color"
-                        :aria-label="t('settings.countdownColorFor', { range: countdownBandRange(index) })"
-                        @change="onCountdownBandColorChange(index, $event)"
-                      />
-                      <span>{{ band.color }}</span>
-                    </label>
+                    <input
+                      class="countdown-band-color"
+                      type="color"
+                      :value="band.color"
+                      :title="band.color"
+                      :aria-label="t('settings.countdownColorFor', { range: countdownBandRange(index) })"
+                      @change="onCountdownBandColorChange(index, $event)"
+                    />
 
                     <button
                       v-if="band.startSeconds > 0"
@@ -531,12 +520,12 @@
                 </label>
               </section>
               <section class="settings-field">
-                <div class="settings-label">
-                  {{ t('settings.videoOutputStatus') }}
+                <div class="video-output-status-row">
+                  <span class="settings-label">{{ t('settings.videoOutputStatus') }}</span>
+                  <p class="settings-help video-output-status" :class="{ 'video-output-status--warn': !!voWarningText }">
+                    {{ voWarningText || voStatusText }}
+                  </p>
                 </div>
-                <p class="settings-help video-output-status" :class="{ 'video-output-status--warn': !!voWarningText }">
-                  {{ voWarningText || voStatusText }}
-                </p>
                 <p
                   v-if="voStatus?.playbackError"
                   class="settings-help video-output-playback-error"
@@ -1434,12 +1423,12 @@ function close() {
 
 .settings-content--ui,
 .settings-content--video {
-  max-width: 1400px;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 0.92fr) minmax(0, 1.13fr) minmax(0, 1.15fr);
+  max-width: 1560px;
+  grid-template-columns: minmax(0, 1.04fr) minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 0.88fr) minmax(0, 0.84fr);
 }
 
 .settings-content--video {
-  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1fr) minmax(0, 2fr);
+  grid-template-columns: minmax(0, 0.88fr) minmax(0, 1.06fr) minmax(0, 2fr);
 }
 
 .settings-unit {
@@ -1485,13 +1474,16 @@ function close() {
 
 .settings-rows > .settings-section-title:not(:first-child) { border-top: 1px solid var(--color-border); }
 
-.settings-rows > .test-card-heading {
+.settings-rows > .test-card-heading,
+.settings-rows > .countdown-band-heading {
   align-items: center;
   justify-content: space-between;
   flex-direction: row;
+  padding-block: 1px;
 }
 
 .test-card-heading h3,
+.countdown-band-heading h3,
 .test-card-heading .settings-label {
   font-size: inherit;
   line-height: inherit;
@@ -1499,6 +1491,11 @@ function close() {
 
 .settings-rows > .settings-field {
   padding: 3px var(--spacing-sm);
+}
+
+.settings-content--ui .settings-rows > .settings-field,
+.settings-content--video .settings-rows > .settings-field:not(.test-card-heading) {
+  padding-block: 2px;
 }
 
 .settings-rows > .settings-field + .settings-field {
@@ -1528,7 +1525,8 @@ function close() {
 }
 
 .settings-content--ui .track-height-control {
-  grid-template-columns: minmax(0, 1fr) minmax(46px, 0.8fr) 40px;
+  grid-template-columns: minmax(0, 1fr) minmax(40px, 0.8fr) 44px;
+  line-height: 1.25;
 }
 
 .settings-field > .settings-input {
@@ -1554,6 +1552,10 @@ function close() {
   column-gap: var(--spacing-sm);
 }
 
+@container (max-width: 1040px) {
+  .settings-content--ui { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
 @container (max-width: 900px) {
   .settings-content--ui,
   .settings-content--video {
@@ -1573,11 +1575,7 @@ function close() {
   min-width: 0;
   gap: var(--spacing-xs);
 }
-.header-warning-settings {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 2px 6px;
-}
+.header-warning-settings { display: grid; gap: 2px; }
 .header-warning-settings .settings-field {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1586,9 +1584,12 @@ function close() {
 .header-warning-settings .settings-label {
   font-size: 12px;
   font-weight: 400;
+  line-height: 1.25;
 }
 .header-warning-settings .settings-input {
-  width: 3rem;
+  width: 44px;
+  min-height: 24px;
+  padding-inline: 4px;
 }
 .settings-label {
   display: flex;
@@ -1620,9 +1621,15 @@ function close() {
   font-size: 12px;
   color: var(--color-text-secondary);
 }
+.video-output-status-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px var(--spacing-sm);
+}
 .video-output-status {
-  font-size: 13px;
   color: var(--color-text-primary);
+  overflow-wrap: anywhere;
 }
 .video-output-status--warn {
   color: var(--color-warning, #f1c21b);
@@ -1641,11 +1648,13 @@ function close() {
   gap: 4px;
   align-items: stretch;
 }
+.video-output-display-row .modal-btn,
+.video-output-standby .modal-btn { padding-inline: 6px; }
 .video-output-standby {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 4px;
 }
 .video-output-standby-path {
   flex: 1 1 52px;
@@ -1679,40 +1688,31 @@ function close() {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   text-align: right;
+  white-space: nowrap;
 }
 .cart-layout-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(52px, max-content) 43px 45px;
-  gap: 2px 6px;
+  grid-template-columns: minmax(0, 1fr) 60px 40px 44px;
+  gap: 2px 4px;
   align-items: center;
   padding: 2px 0;
-  border-top: 1px solid var(--color-border);
+  line-height: 1.25;
 }
 .cart-layout-grid__header {
-  color: var(--color-text-tertiary);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
 }
 .cart-layout-grid__profile {
   color: var(--color-text-primary);
   font-size: 12px;
-  font-weight: 600;
-}
-.cart-layout-grid__value {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--color-text-tertiary);
-  font-family: var(--font-mono);
-  font-size: 10px;
+  font-weight: 500;
 }
 .cart-layout-input {
   height: 24px;
   min-height: 24px;
   min-width: 0;
-  padding: 2px 4px;
+  padding: 2px;
   font-family: var(--font-mono);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
@@ -1724,83 +1724,52 @@ function close() {
   color: var(--color-danger);
 }
 
-.countdown-band-editor {
-  border-top: 1px solid var(--color-border);
-}
 .countdown-band-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 58px 81px 26px;
-  gap: 5px;
+  grid-template-columns: minmax(0, 1fr) 42px 29px 24px;
+  gap: 4px;
   align-items: center;
-  padding: 2px 0;
 }
 .countdown-band-grid--header {
-  background: var(--color-surface);
   color: var(--color-text-secondary);
   font-size: 11px;
   font-weight: 600;
+  line-height: 1.3;
+  padding-bottom: 2px;
 }
 .countdown-band-grid--row {
-  min-height: 28px;
+  padding: 1px 0;
   border-top: 1px solid var(--color-border);
-}
-.countdown-band-range,
-.countdown-band-start,
-.countdown-band-color {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
 }
 .countdown-band-range {
   font-size: 12px;
+  line-height: 1.25;
   color: var(--color-text-primary);
 }
-.countdown-band-dot {
-  width: 10px;
-  height: 10px;
-  flex: 0 0 auto;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  border-radius: 50%;
-}
-.countdown-band-start input,
-.countdown-band-fixed {
-  width: 48px;
-  height: 24px;
-  padding: 2px 4px;
-  background: var(--color-control);
-  color: var(--color-text-primary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--control-radius);
-  font: inherit;
-  text-align: right;
+.countdown-band-start {
+  min-height: 24px;
+  padding-inline: 4px;
+  text-align: center;
 }
 .countdown-band-fixed {
   display: grid;
-  place-items: center end;
+  place-items: center;
+  font-size: 13px;
   color: var(--color-text-secondary);
 }
-.countdown-band-color input[type="color"] {
-  width: 26px;
+.countdown-band-color {
+  width: 28px;
   height: 24px;
-  flex: 0 0 auto;
   padding: 2px;
   background: var(--color-control);
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
   cursor: pointer;
 }
-.countdown-band-color span {
-  overflow: hidden;
-  color: var(--color-text-secondary);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  text-overflow: ellipsis;
-}
 .countdown-band-remove {
   display: grid;
   place-items: center;
-  width: 26px;
+  width: 24px;
   height: 24px;
   background: transparent;
   color: var(--color-text-secondary);
@@ -1813,38 +1782,20 @@ function close() {
   border-color: var(--color-danger);
 }
 .countdown-band-remove:focus-visible,
-.countdown-band-start input:focus-visible,
-.countdown-band-color input:focus-visible {
+.countdown-band-start:focus-visible,
+.countdown-band-color:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
-.countdown-band-heading {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--spacing-xs);
-}
-.countdown-band-heading h4 { font-size: 12px; }
-.countdown-band-add {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.countdown-band-heading .countdown-band-add {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  min-height: 24px;
+  padding: 0;
 }
 .countdown-band-add .material-symbols-rounded {
   font-size: 18px;
-}
-@media (max-width: 480px) {
-  .countdown-band-grid {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 34px;
-  }
-  .countdown-band-grid--header {
-    display: none;
-  }
-  .countdown-band-range {
-    grid-column: 1 / -1;
-  }
 }
 .settings-label--checkbox {
   flex-direction: row;

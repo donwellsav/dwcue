@@ -199,11 +199,11 @@
     <ShortcutsBar :compact="showProjectSettings || !!showCueProperties" />
     
     <div v-show="showProjectSettings || showCueProperties" ref="lowerPanel" class="lower-workspace-panel"
-      :style="{ height: `${panelHeight}px` }">
+      :style="{ height: panelHeight === undefined ? 'auto' : `${panelHeight}px` }">
       <div class="lower-panel-resize-handle" role="separator" aria-orientation="horizontal"
         :aria-label="showProjectSettings ? t('settings.title') : t('properties.title')"
         :aria-valuemin="MIN_PANEL_HEIGHT" :aria-valuemax="panelMaxHeight"
-        :aria-valuenow="visiblePanelHeight || panelHeight" tabindex="0"
+        :aria-valuenow="visiblePanelHeight || panelHeight || MIN_PANEL_HEIGHT" tabindex="0"
         @pointerdown="startPanelResize" @pointermove="movePanelResize"
         @lostpointercapture="panelDrag = null" @keydown="handlePanelResizeKey"
       ></div>
@@ -287,9 +287,13 @@ const reservedPlaylistRowHeight = computed(() => Math.max(folderPlaylistRowHeigh
 
 const MIN_PANEL_HEIGHT = 120;
 const MAX_PANEL_HEIGHT = 640;
-const settingsHeight = useState('ProjectSettingsPanel.height', () => 300);
+const settingsHeight = useState<number | null>('ProjectSettingsPanel.height', () => null);
 const propertiesHeight = useState('PropertiesPanel.height', () => 320);
-const panelHeight = computed(() => showProjectSettings.value ? settingsHeight.value : propertiesHeight.value);
+const settingsTab = useState('projectSettingsTab', () => 'audio');
+const panelHeight = computed(() => {
+  if (!showProjectSettings.value) return propertiesHeight.value;
+  return settingsHeight.value ?? (['ui', 'video'].includes(settingsTab.value) ? undefined : 300);
+});
 const workspaceContent = ref<HTMLElement | null>(null);
 const lowerPanel = ref<HTMLElement | null>(null);
 const visiblePanelHeight = ref(0);
@@ -302,7 +306,7 @@ function availablePanelHeight() {
   if (!content) return MAX_PANEL_HEIGHT;
   const reserved = parseFloat(getComputedStyle(content).minHeight);
   return Math.min(MAX_PANEL_HEIGHT, Math.max(MIN_PANEL_HEIGHT,
-    (lowerPanel.value?.offsetHeight ?? panelHeight.value) + content.offsetHeight - reserved));
+    (lowerPanel.value?.offsetHeight ?? MIN_PANEL_HEIGHT) + content.offsetHeight - reserved));
 }
 
 function setPanelHeight(height: number, max: number) {
@@ -318,7 +322,7 @@ function startPanelResize(event: PointerEvent) {
   handle.setPointerCapture(event.pointerId);
   panelDrag = {
     pointerId: event.pointerId, startY: event.clientY,
-    height: lowerPanel.value?.offsetHeight ?? panelHeight.value, max: availablePanelHeight(),
+    height: lowerPanel.value?.offsetHeight ?? MIN_PANEL_HEIGHT, max: availablePanelHeight(),
   };
 }
 
@@ -330,7 +334,7 @@ function movePanelResize(event: PointerEvent) {
 function handlePanelResizeKey(event: KeyboardEvent) {
   if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
   event.preventDefault();
-  const height = lowerPanel.value?.offsetHeight ?? panelHeight.value;
+  const height = lowerPanel.value?.offsetHeight ?? MIN_PANEL_HEIGHT;
   setPanelHeight(height + (event.key === 'ArrowUp' ? 16 : -16), availablePanelHeight());
 }
 
@@ -953,6 +957,7 @@ onUnmounted(() => {
   position: relative;
   flex: 0 1 auto;
   min-height: 120px;
+  max-height: 640px;
   display: flex;
   flex-direction: column;
 }

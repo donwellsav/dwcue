@@ -2,20 +2,19 @@
   <div class="test-card-controls">
     <fieldset class="test-card-fieldset" :disabled="disabled">
       <legend>{{ t('testCard.cardType') }}</legend>
-      <label class="test-card-control test-card-preset">
-        <span>{{ t('testCard.preset') }}</span>
-        <select class="test-card-select" :value="selectedPresetId" @change="onPresetChange">
+      <div class="test-card-grid test-card-grid--two">
+        <select class="test-card-select test-card-preset" :aria-label="t('testCard.preset')"
+          :value="selectedPresetId" @change="onPresetChange">
           <option v-for="preset in TEST_CARD_PRESETS" :key="preset.id" :value="preset.id">
             {{ t(`testCard.presets.${preset.id}`) }}
           </option>
         </select>
-      </label>
-
-      <div class="test-card-grid test-card-grid--three">
         <label class="test-card-control test-card-name">
           <span>{{ t('testCard.name') }}</span>
           <input :value="config.name" type="text" maxlength="120" @input="updateName">
         </label>
+      </div>
+      <div class="test-card-checks">
         <CheckControl :label="t('testCard.showInfo')" :checked="config.showInfo" @change="update({ showInfo: $event })" />
         <CheckControl
           :label="t('testCard.motion')"
@@ -221,7 +220,7 @@
 
     <fieldset class="test-card-fieldset" :disabled="disabled">
       <legend>{{ t('testCard.outputOptions') }}</legend>
-      <div class="test-card-grid test-card-grid--three">
+      <div class="test-card-checks">
         <CheckControl :label="t('testCard.windowed')" :checked="config.windowed" @change="setWindowed" />
         <CheckControl
           :label="t('testCard.fillOutput')"
@@ -595,12 +594,12 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
-  gap: 6px 8px;
+  gap: 2px 8px;
 }
 .test-card-fieldset {
   min-width: 0;
   margin: 0;
-  padding: 4px 0;
+  padding: 2px 0;
   border: 0;
   border-top: 1px solid var(--color-border);
 }
@@ -613,12 +612,18 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
 }
 .test-card-grid {
   display: grid;
-  gap: 4px 8px;
+  gap: 2px 6px;
   align-items: end;
 }
 .test-card-grid + .test-card-grid,
+.test-card-grid + .test-card-checks,
 .test-card-subheading + .test-card-grid {
-  margin-top: 5px;
+  margin-top: 3px;
+}
+.test-card-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
 }
 .test-card-grid--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .test-card-grid--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -629,26 +634,20 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
   display: flex;
   color: var(--color-text-primary);
   font-size: 12px;
+  line-height: 1.25;
 }
 .test-card-control {
   min-width: 0;
   flex-direction: column;
   gap: 5px;
 }
-.test-card-preset {
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-.test-card-preset select { max-width: 13rem; }
 .test-card-control--wide { grid-column: span 2; }
 .test-card-color { flex-direction: row; align-items: center; justify-content: space-between; }
-.test-card-name { grid-column: 1 / -1; flex-direction: row; align-items: center; }
+.test-card-name { flex-direction: row; align-items: center; }
 .test-card-check {
   min-height: 24px;
   align-items: center;
-  gap: 7px;
+  gap: 5px;
 }
 .test-card-check input {
   width: 16px;
@@ -664,7 +663,7 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
   width: 100%;
   height: 26px;
   box-sizing: border-box;
-  padding: 0 9px;
+  padding: 0 6px;
   background: var(--color-control);
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
@@ -689,7 +688,7 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
   border-radius: var(--control-radius);
 }
 .test-card-number-row input { flex: 1; }
-.test-card-image-row { flex-wrap: wrap; }
+.test-card-image-row { flex-wrap: wrap; gap: 4px; }
 .test-card-logo-preview,
 .test-card-mask-preview {
   display: block;
