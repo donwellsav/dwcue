@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
-**Version:** 2.6.21 development
-**Source revision:** 8832230d835e6c6e7b63a43649790a44d97c8151
+**Version:** 2.6.22
+**Source revision:** 6333f515c7b4cb3f07bf46dbb461fe2ce4ccd102
 **Native engine baseline:** b96070379c7305bbb3af6e95d2d869aa9f9fe13b
 **Edition:** 13 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This development edition covers the docked workspace, 20 default QuickPlay shortcuts, adjustable picture framing, and the pre-show video check. Match your installer to its release notes before rehearsal.
+This edition covers the docked workspace, 20 default QuickPlay shortcuts, adjustable picture framing, and the pre-show video check. Match your installer to its release notes before rehearsal.
 
 The interface captures use practice media and software audio output. **docs/manual-assets/captures.json** records each capture's date, source revision and hash. Equipment photographs remain illustrative.
 
@@ -963,7 +963,7 @@ With Video Output focused, Escape also exits its fullscreen mode. In Level Check
 
 ### About this edition
 
-This edition covers the **2.6.21** source listed on the cover. The interface captures use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
+This edition covers the **2.6.22** source listed on the cover. The interface captures use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
 
 The playback checkpoint **2f372c2** passed native 13/13, isolated API 61/61, client 229/229, typecheck and RT/live safety checks. Audio-output and project-runtime suites also pass AddressSanitizer; leak detection is disabled. Native checks include six simulated ten-minute secondary-clock runs with continuous generated audio and no buffer faults or resyncs inside the tested envelope. Physical alignment and the earlier intermittency remain unproven; more extreme drift/jitter can trigger recovery.
 
