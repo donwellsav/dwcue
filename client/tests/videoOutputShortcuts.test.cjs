@@ -11,6 +11,7 @@ const {
   toRendererShortcut,
 } = require('../electron/video-output-shortcuts');
 const { buildVideoOutputContextTemplate } = require('../electron/video-output-context-menu');
+const { DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameCaptureRect } = require('../electron/video-output-framing.mjs');
 const { createOneShotMutationBroker } = require('../electron/one-shot-mutation-broker');
 const { createAppLifecycleActions, createWillQuitHandler } = require('../electron/terminal-action');
 const mainSource = readFileSync(require.resolve('../electron/main.js'), 'utf8');
@@ -32,7 +33,7 @@ test('mounted audience view reports DOM readiness without waiting for an animati
     onMounted: callback => { mounted = callback; },
     window: { electronAPI: { videoOutput: api }, addEventListener() {} },
     offStatus: null, healthTimer: null,
-    refreshStatus: async () => {}, syncConnection() {}, onKeydown() {}, onDblClick() {},
+    refreshStatus: async () => {}, syncConnection() {}, onKeydown() {}, onDblClick() {}, updatePixelScale() {},
     nextTick: async () => { committed = true; },
     requestAnimationFrame() {}, // A minimized/covered renderer may never receive it.
     setInterval: () => 1,
@@ -41,7 +42,19 @@ test('mounted audience view reports DOM readiness without waiting for an animati
   assert.equal(ready, 1, 'the native cover must not wait on hidden-window animation');
 });
 
-test('standby capture uses the 16:9 output or selected screen and rejects stale captures', async () => {
+test('output framing fits the selected canvas without forcing an HDMI mode', () => {
+  assert.deepEqual(DEFAULT_VIDEO_FRAMING, { width: 1920, height: 1080, scale: 100, scaling: 'fit' });
+  const portrait = { ...DEFAULT_VIDEO_FRAMING, width: 1080, height: 1920 };
+  assert.deepEqual(readVideoFraming(portrait), portrait);
+  assert.equal(readVideoFraming({ ...portrait, width: 0 }), null);
+  assert.equal(readVideoFraming({ ...portrait, scaling: 'stretch' }), null);
+  assert.equal(readVideoFraming({ ...portrait, scale: 110 }), null);
+  assert.deepEqual(videoFrameCaptureRect(1920, 1080, portrait, 1), { x: 656, y: 0, width: 608, height: 1080 });
+  const limited = { ...DEFAULT_VIDEO_FRAMING, scale: 50, scaling: 'limit' };
+  assert.deepEqual(videoFrameCaptureRect(1920, 1080, limited, 2), { x: 720, y: 405, width: 480, height: 270 });
+});
+
+test('standby capture follows the saved frame or selected screen and rejects stale captures', async () => {
   const handlers = new Map();
   const sender = {};
   const identity = { projectPath: '/show.dwcue', projectEpoch: 1, ownerSessionId: 'owner' };
@@ -53,8 +66,10 @@ test('standby capture uses the 16:9 output or selected screen and rejects stale 
     toJPEG: () => Buffer.from(value),
   });
   let outputSize = [1920, 1080];
+  let framing = DEFAULT_VIDEO_FRAMING;
+  let scaleFactor = 1;
   let captureRect;
-  const output = { isDestroyed: () => false, getContentSize: () => outputSize, webContents: {
+  const output = { isDestroyed: () => false, getContentSize: () => outputSize, getBounds: () => ({}), webContents: {
     isDestroyed: () => false, send() {}, capturePage: async (rect) => {
       captureRect = { ...rect };
       return still('output');
@@ -67,6 +82,8 @@ test('standby capture uses the 16:9 output or selected screen and rejects stale 
   const context = {
     Buffer,
     ...captureHelpers, videoStandbyCaptures: captureHelpers.createStandbyCaptureStore(128),
+    DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameCaptureRect,
+    screen: { getDisplayMatching: () => ({ scaleFactor }) },
     ipcMain: { handle: (name, handler) => handlers.set(name, handler) },
     mainWindow: { webContents: sender }, requireTrustedIpc() {},
     ...require('../electron/one-shot-mutation-broker'),
@@ -74,7 +91,9 @@ test('standby capture uses the 16:9 output or selected screen and rejects stale 
     currentProjectData: { items: [{ type: 'group', children: [cue] }] },
     videoOutputWindow: output, videoOutputRendererReady: true, videoOutputRendererResponsive: true,
     videoOutputRecoveryRequired: false, capturingVideoStandby: false,
-    readVideoOutputConfig: () => ({ captureDisplayId: '42' }),
+    readVideoOutputConfig: () => ({ captureDisplayId: '42', framing }),
+    writeVideoOutputConfig: (config) => { framing = config.framing; return true; },
+    broadcastVideoOutputStatus: () => ({ framing }),
     videoOutputDisplays: () => [{ id: '42' }],
     desktopCapturer: { getSources: async ({ thumbnailSize }) => {
       assert.equal(thumbnailSize.width, 3840);
@@ -106,6 +125,15 @@ test('standby capture uses the 16:9 output or selected screen and rejects stale 
   outputSize = [961, 540];
   await capture('output', cue.uuid);
   assert.deepEqual(captureRect, { x: 0, y: 0, width: 961, height: 540 });
+  const setFraming = handlers.get('video-output:set-framing');
+  assert.throws(() => setFraming({ sender }, { width: 0 }), /Invalid picture framing/);
+  assert.throws(() => setFraming({ sender: output.webContents }, DEFAULT_VIDEO_FRAMING), /main workspace/);
+  const custom = { width: 1920, height: 1200, scale: 80, scaling: 'limit' };
+  assert.deepEqual({ ...setFraming({ sender }, custom).framing }, custom);
+  outputSize = [1920, 1080];
+  scaleFactor = 2;
+  await capture('output', cue.uuid);
+  assert.deepEqual(captureRect, { x: 576, y: 300, width: 768, height: 480 });
   assert.equal(read('session').standby, 'data:image/png;base64,' + Buffer.from('selected screen').toString('base64'));
   assert.equal(read('session').cue, 'data:image/png;base64,' + Buffer.from('output').toString('base64'));
   assert.equal(read('session', 'media/replacement.wav').cue, null);
@@ -124,6 +152,12 @@ test('standby capture uses the 16:9 output or selected screen and rejects stale 
   resizing.resolve(still('resized'));
   await assert.rejects(resizedCapture, /Video Output changed/);
   assert.equal(read('session').standby, 'data:image/png;base64,' + Buffer.from('selected screen').toString('base64'));
+  const reframing = deferred();
+  output.webContents.capturePage = () => reframing.promise;
+  const reframedCapture = capture('output', null);
+  setFraming({ sender }, DEFAULT_VIDEO_FRAMING);
+  reframing.resolve(still('reframed'));
+  await assert.rejects(reframedCapture, /Video Output changed/);
   const pending = deferred();
   output.webContents.capturePage = () => pending.promise;
   const inFlight = capture('output', null);

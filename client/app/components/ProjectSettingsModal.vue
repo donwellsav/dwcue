@@ -536,6 +536,49 @@
                 </div>
                 <p v-if="voDiagnosticsCopied" class="settings-help" role="status">{{ t('settings.videoOutputDiagnosticsCopied') }}</p>
               </section>
+              <h3 class="settings-section-title">{{ t('settings.videoFraming.title') }}</h3>
+              <section class="settings-field video-framing">
+                <div class="video-framing-row">
+                  <label for="video-frame-preset" class="settings-label">{{ t('settings.videoFraming.preset') }}</label>
+                  <select id="video-frame-preset" class="settings-select" v-model="voFramePreset"
+                    :disabled="!voStatus || voFramingPending" @change="selectVideoFramePreset">
+                    <option v-for="preset in VIDEO_FRAME_PRESETS" :key="preset.id" :value="preset.id">
+                      {{ t(`settings.videoFraming.${preset.id}`) }} · {{ preset.width }}×{{ preset.height }}
+                    </option>
+                    <option value="custom">{{ t('settings.videoFraming.custom') }}</option>
+                  </select>
+                </div>
+                <div v-if="voFramePreset === 'custom'" class="video-framing-dimensions">
+                  <label class="settings-field">
+                    <span class="settings-label">{{ t('settings.videoFraming.width') }}</span>
+                    <input v-model.number="voFraming.width" type="number" class="settings-input"
+                      :min="VIDEO_FRAME_LIMITS.minDimension" :max="VIDEO_FRAME_LIMITS.maxDimension" step="1" :disabled="voFramingPending">
+                  </label>
+                  <label class="settings-field">
+                    <span class="settings-label">{{ t('settings.videoFraming.height') }}</span>
+                    <input v-model.number="voFraming.height" type="number" class="settings-input"
+                      :min="VIDEO_FRAME_LIMITS.minDimension" :max="VIDEO_FRAME_LIMITS.maxDimension" step="1" :disabled="voFramingPending">
+                  </label>
+                </div>
+                <div class="video-framing-row">
+                  <label for="video-frame-scaling" class="settings-label">{{ t('settings.videoFraming.scaling') }}</label>
+                  <select id="video-frame-scaling" v-model="voFraming.scaling" class="settings-select" :disabled="!voStatus || voFramingPending">
+                    <option value="fit">{{ t('settings.videoFraming.fit') }}</option>
+                    <option value="limit">{{ t('settings.videoFraming.limit') }}</option>
+                  </select>
+                </div>
+                <div class="video-framing-row">
+                  <label for="video-frame-scale" class="settings-label">{{ t('settings.videoFraming.size') }}</label>
+                  <div class="video-framing-size">
+                    <input id="video-frame-scale" v-model.number="voFraming.scale" type="number" class="settings-input"
+                      :min="VIDEO_FRAME_LIMITS.minScale" :max="VIDEO_FRAME_LIMITS.maxScale" step="1" :disabled="!voStatus || voFramingPending">
+                    <span aria-hidden="true">%</span>
+                    <button type="button" class="modal-btn" :disabled="!voStatus || voFramingPending || !voFramingDirty"
+                      @click="applyVideoFraming">{{ t('settings.videoFraming.apply') }}</button>
+                  </div>
+                </div>
+                <p class="settings-help">{{ t('settings.videoFraming.help') }}</p>
+              </section>
             </div>
             <div class="settings-rows">
               <h3 class="settings-section-title">{{ t('settings.captureSection') }}</h3>
@@ -702,6 +745,7 @@ import AboutContent from './AboutContent.vue';
 import ControlConfigModal from './ControlConfigModal.vue';
 import TestCardControls from './TestCardControls.vue';
 import { createTestCardConfig, type TestCardConfig } from '../../electron/test-card-config.mjs';
+import { DEFAULT_VIDEO_FRAMING, VIDEO_FRAME_PRESETS, VIDEO_FRAME_LIMITS, readVideoFraming } from '../../electron/video-output-framing.mjs';
 
 const props = defineProps<{ open: boolean }>();
 const emit = defineEmits<{ close: [] }>();
@@ -851,6 +895,14 @@ watch(() => props.open, async (v) => {
 // status; the onStatus push keeps this panel live while it is open.
 // ---------------------------------------------------------------------------
 const voStatus = ref<VideoOutputStatus | null>(null);
+const voFraming = ref({ ...DEFAULT_VIDEO_FRAMING });
+const voFramePreset = ref('1080p');
+const voFramingPending = ref(false);
+const voFramingDirty = computed(() => {
+  const saved = voStatus.value?.framing ?? DEFAULT_VIDEO_FRAMING;
+  const draft = voFraming.value;
+  return saved.width !== draft.width || saved.height !== draft.height || saved.scale !== draft.scale || saved.scaling !== draft.scaling;
+});
 const { captureStandby, standbyCapturePending } = useVideoStandbyCapture();
 const captureSettingsPending = ref(false);
 const voDiagnosticsCopied = ref(false);
@@ -884,12 +936,42 @@ let voHasLocalTestCardConfigIntent = false;
 let voPendingTestCardConfig: TestCardConfig | null = null;
 
 function receiveVideoOutputStatus(status: VideoOutputStatus, forceConfig = false): void {
+  const saved = voStatus.value?.framing ?? DEFAULT_VIDEO_FRAMING;
+  const incoming = status.framing ?? DEFAULT_VIDEO_FRAMING;
+  if (forceConfig || (!voFramingDirty.value && JSON.stringify(saved) !== JSON.stringify(incoming))) {
+    voFraming.value = { ...incoming };
+    voFramePreset.value = VIDEO_FRAME_PRESETS.find(preset => preset.width === voFraming.value.width
+      && preset.height === voFraming.value.height)?.id ?? 'custom';
+  }
   voStatus.value = status;
   if (voTestCardConfigWriting) return;
   if (forceConfig || !voHasLocalTestCardConfigIntent) {
     voTestCardConfig.value = createTestCardConfig(status.testCardConfig);
     if (forceConfig) voHasLocalTestCardConfigIntent = false;
   }
+}
+
+function selectVideoFramePreset(): void {
+  const preset = VIDEO_FRAME_PRESETS.find(entry => entry.id === voFramePreset.value);
+  if (preset) {
+    voFraming.value.width = preset.width;
+    voFraming.value.height = preset.height;
+  }
+}
+
+async function applyVideoFraming(): Promise<void> {
+  const api = window.electronAPI?.videoOutput;
+  if (!api?.setFraming || voFramingPending.value) return;
+  const framing = readVideoFraming(voFraming.value);
+  if (!framing) {
+    settingsError.value = t('settings.videoFraming.invalid');
+    return;
+  }
+  voFramingPending.value = true;
+  settingsError.value = '';
+  try { receiveVideoOutputStatus(await api.setFraming(framing), true); }
+  catch (error) { settingsError.value = describeSettingsError(error); }
+  finally { voFramingPending.value = false; }
 }
 
 async function onVideoOutputEnableChange(event: Event) {
@@ -1665,6 +1747,16 @@ function close() {
 }
 .video-output-display-row .modal-btn,
 .video-output-standby .modal-btn { padding-inline: 6px; }
+.video-framing-row,
+.video-framing-dimensions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 62%);
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+.video-framing-dimensions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.video-framing-size { display: flex; align-items: center; gap: var(--spacing-xs); }
+.video-framing-size .modal-btn { flex-shrink: 0; }
 .video-output-standby {
   display: flex;
   align-items: center;

@@ -32,6 +32,7 @@ const { cleanupConnectionFor, TestCardPlayback } = require('./test-card-playback
 const { managedWebSocketHeaders } = require('./managed-websocket-origin');
 const { createOneShotMutationBroker, validateIdentity, sameIdentity } = require('./one-shot-mutation-broker');
 const { createStandbyCaptureStore, findCaptureCue, captureImageUrl } = require('./video-standby-capture');
+const { DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameCaptureRect } = require('./video-output-framing.mjs');
 const { createAppLifecycleActions, createWillQuitHandler } = require('./terminal-action');
 const { createOperatorManual } = require('./operator-manual');
 const {
@@ -2393,6 +2394,7 @@ function readVideoOutputConfig() {
       displayId: typeof parsed.displayId === 'string' ? parsed.displayId : null,
       captureDisplayId: typeof parsed.captureDisplayId === 'string' ? parsed.captureDisplayId : null,
       captureTarget: parsed.captureTarget === 'cue' ? 'cue' : 'session',
+      framing: readVideoFraming(parsed.framing) ?? DEFAULT_VIDEO_FRAMING,
       // Resolution+label hint for re-attach when the OS hands out a new display
       // id after a reconnect. Ambiguous for two identical projectors — the id
       // stays the primary key; the fingerprint is only a fallback hint.
@@ -2402,7 +2404,7 @@ function readVideoOutputConfig() {
     };
   } catch {
     return { displayId: null, displayFingerprint: null, captureDisplayId: null,
-      captureTarget: 'session', testCardConfig: createTestCardConfig() };
+      captureTarget: 'session', framing: DEFAULT_VIDEO_FRAMING, testCardConfig: createTestCardConfig() };
   }
 }
 
@@ -2474,6 +2476,7 @@ function videoOutputStatus() {
     displayId: cfg.displayId,
     captureDisplayId: cfg.captureDisplayId,
     captureTarget: cfg.captureTarget,
+    framing: cfg.framing,
     targetId: target ? String(target.id) : null,
     targetLabel: target ? (target.label || `Display ${target.id}`) : null,
     displays,
@@ -3022,6 +3025,17 @@ function requireCaptureTarget(event, target) {
   return cue;
 }
 
+ipcMain.handle('video-output:set-framing', (event, value) => {
+  requireTrustedIpc(event);
+  if (event.sender !== mainWindow?.webContents) throw new Error('Picture framing requires the main workspace.');
+  const framing = readVideoFraming(value);
+  if (!framing) throw new TypeError('Invalid picture framing.');
+  const config = readVideoOutputConfig();
+  config.framing = framing;
+  if (!writeVideoOutputConfig(config)) throw new Error('Could not save picture framing.');
+  return broadcastVideoOutputStatus();
+});
+
 ipcMain.handle('video-output:set-capture-settings', (event, displayId, target) => {
   requireCaptureOwner(event);
   if (target !== 'session' && target !== 'cue') throw new TypeError('Invalid standby capture destination.');
@@ -3052,13 +3066,14 @@ ipcMain.handle('video-output:capture-standby', async (event, source, target) => 
         videoOutputRendererResponsive && !videoOutputRecoveryRequired;
       if (!ready()) throw new Error('Open Video Output and wait for its picture before capturing.');
       const [width, height] = output.getContentSize();
-      // Match the centered 16:9 frame in VideoOutputView, rounding out to retain its edges.
-      const x = Math.floor(Math.max(0, (width - height * 16 / 9) / 2));
-      const y = Math.floor(Math.max(0, (height - width * 9 / 16) / 2));
-      image = await output.webContents.capturePage({ x, y, width: width - 2 * x, height: height - 2 * y });
+      const framing = readVideoOutputConfig().framing;
+      const { scaleFactor } = screen.getDisplayMatching(output.getBounds());
+      image = await output.webContents.capturePage(videoFrameCaptureRect(width, height, framing, scaleFactor));
       if (!ready()) throw new Error('Video Output changed during capture. Try again.');
       const [currentWidth, currentHeight] = output.getContentSize();
-      if (currentWidth !== width || currentHeight !== height) {
+      if (currentWidth !== width || currentHeight !== height
+          || screen.getDisplayMatching(output.getBounds()).scaleFactor !== scaleFactor
+          || JSON.stringify(readVideoOutputConfig().framing) !== JSON.stringify(framing)) {
         throw new Error('Video Output changed during capture. Try again.');
       }
     } else if (source === 'display') {

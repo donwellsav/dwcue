@@ -275,6 +275,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     listDisplays: ()           => ipcRenderer.invoke('video-output:list-displays'),
     identifyDisplays: ()       => ipcRenderer.invoke('video-output:identify-displays'),
     setDisplay:   (displayId)  => ipcRenderer.invoke('video-output:set-display', displayId),
+    setFraming:   (framing)    => ipcRenderer.invoke('video-output:set-framing', framing),
     setCaptureSettings: (displayId, target) => ipcRenderer.invoke('video-output:set-capture-settings', displayId, target),
     captureStandby: (source, target) => ipcRenderer.invoke('video-output:capture-standby', source, target),
     clearStandbyCapture: (target) => ipcRenderer.invoke('video-output:clear-standby-capture', target),

@@ -2,7 +2,7 @@
      Test-card animation is explicit; the ordinary idle surface stays black. -->
 <template>
   <div class="video-output" aria-hidden="true">
-    <div class="video-output-frame">
+    <div class="video-output-frame" :style="frameStyle">
       <img v-if="standbySrc" class="layer layer-media" :src="standbySrc" alt="" draggable="false">
       <img v-if="cueImageSrc" :key="cueImageSrc" class="layer layer-media" :src="cueImageSrc" alt="" draggable="false"
         @load="($event.currentTarget as HTMLImageElement).classList.add('layer-opaque')">
@@ -43,9 +43,19 @@
 <script setup lang="ts">
 import KardsTestCard from './testcards/KardsTestCard.vue';
 import { createTestCardConfig } from '../../electron/test-card-config.mjs';
+import { DEFAULT_VIDEO_FRAMING, videoFrameLayout } from '../../electron/video-output-framing.mjs';
 
 const server = useLiveplayServer();
 const status = shallowRef<VideoOutputStatus | null>(null);
+const pixelScale = ref(1);
+const frameStyle = computed(() => {
+  const { aspect, fraction, maxWidth } = videoFrameLayout(status.value?.framing ?? DEFAULT_VIDEO_FRAMING, pixelScale.value);
+  return {
+    aspectRatio: String(aspect),
+    width: `min(${100 * fraction}vw, ${100 * fraction * aspect}vh)`,
+    maxWidth: Number.isFinite(maxWidth) ? `${maxWidth * fraction}px` : undefined,
+  };
+});
 const config = computed(() => status.value?.testCardConfig ?? createTestCardConfig());
 const testCard = computed(() => status.value?.testCard === true);
 const showAudioSyncCard = computed(() => testCard.value && config.value.cardType === 'audioSync');
@@ -97,8 +107,13 @@ function onKeydown(event: KeyboardEvent) {
 function onDblClick() {
   void window.electronAPI?.videoOutput?.toggleFullscreen();
 }
+function updatePixelScale() {
+  pixelScale.value = window.devicePixelRatio || 1;
+}
 
 onMounted(async () => {
+  updatePixelScale();
+  window.addEventListener('resize', updatePixelScale);
   const api = window.electronAPI?.videoOutput;
   if (!api) return;
   offStatus = api.onStatus((next) => { statusRevision += 1; status.value = next; });
@@ -115,6 +130,7 @@ onBeforeUnmount(() => {
   clearInterval(infoTimer);
   clearInterval(healthTimer);
   offStatus?.();
+  window.removeEventListener('resize', updatePixelScale);
   window.removeEventListener('keydown', onKeydown);
   window.removeEventListener('dblclick', onDblClick);
   void window.electronAPI?.videoOutput?.setTestCardConnection(null).catch(() => {
@@ -137,8 +153,6 @@ onBeforeUnmount(() => {
 }
 .video-output-frame {
   position: relative;
-  width: min(100vw, calc(100vh * 16 / 9));
-  aspect-ratio: 16 / 9;
   overflow: hidden;
 }
 .layer { position: absolute; inset: 0; }

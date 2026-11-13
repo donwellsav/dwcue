@@ -1,5 +1,6 @@
 export {};
 import type { TestCardConfig } from '../../electron/test-card-config';
+import type { VideoFraming } from '../../electron/video-output-framing.mjs';
 import type {
   OneShotMutationIdentity,
   OneShotMutationRequest,
@@ -241,6 +242,7 @@ declare global {
         listDisplays: () => Promise<VideoOutputDisplay[]>;
         identifyDisplays: () => Promise<VideoOutputDisplay[]>;
         setDisplay: (displayId: string | null) => Promise<VideoOutputStatus>;
+        setFraming: (framing: VideoFraming) => Promise<VideoOutputStatus>;
         setCaptureSettings: (displayId: string | null, target: VideoStandbyDestination) => Promise<VideoOutputStatus>;
         captureStandby: (source: 'output' | 'display', target: VideoStandbyTarget) => Promise<void>;
         clearStandbyCapture: (target: VideoStandbyTarget) => Promise<void>;
@@ -293,6 +295,7 @@ declare global {
     displayId: string | null;
     captureDisplayId: string | null;
     captureTarget: VideoStandbyDestination;
+    framing: VideoFraming;
     targetId: string | null;
     targetLabel: string | null;
     displays: VideoOutputDisplay[];
