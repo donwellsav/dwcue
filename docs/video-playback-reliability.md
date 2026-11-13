@@ -6,6 +6,8 @@ Initial investigation: 2026-11-03 against the working tree based on `82505580ccb
 
 The 3 November source was checkpointed in `2ea5984` and `a9a86a3` (package metadata 2.6.17). The later T20/T21/T26–T29 repairs ship with v2.6.18. A failure keeps the audience window under a black cover, **Restart Output** remains operator-controlled, and picture health follows decoded presentation and native-clock progress. Unrelated metadata, cue and Preview events leave the current picture's position alone. Physical HDMI and the cause of the earlier full-app frame drops remain open.
 
+**13 November software checkpoint:** `33baacf` centers the audience picture in a 16:9 frame. Chromium verified edge-to-edge 1080p video and proportionally fitted portrait clips and stills. The isolated Electron check captured just that frame from 16:9, 4:3, and ultrawide windows. The frame uses CSS layout and the existing decoder. Full-window native black coverage remains available during renderer recovery.
+
 ## Confirmed failure paths
 
 | Failure | Evidence | Repair |

@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.21 development
-**Source revision:** bbe27c48f05e0a3de3b0a0b339c9ef9d76bac900
+**Source revision:** 33baacfaa26096de295860e1028586ec736ddd73
 **Native engine baseline:** b96070379c7305bbb3af6e95d2d869aa9f9fe13b
 **Edition:** 13 November 2026 · English · Current-source operator edition
 
@@ -558,7 +558,7 @@ With only one display or no dedicated assignment, the app uses a normal preview 
 
 ### What the audience sees
 
-The output shows one picture at a time. A newer sounding cue takes over the picture; this is a cut, not a layered video mix or a guaranteed dissolve. Video is contained in the output area with letterboxing rather than cropped. The background is opaque black.
+The output shows one picture at a time and cuts to the newest sounding cue. The picture uses a centered **16:9** frame that fills a 1920 × 1080 display edge to edge. Other display shapes have black bars around the frame. Video and stills scale proportionally so the entire source stays visible. The app uses the display mode selected in the operating system.
 
 When a cue has no usable video, the output uses the first available layer in this order. Assigned **Cue image**, captured cue still, captured session standby, saved **Standby image**, then black. Set a Cue image in the cue's Basic Info and a saved standby image in **Settings → Video Output**. The native audio engine drives the soundtrack. Preview/headphone playback stays off the audience output.
 
@@ -568,7 +568,7 @@ Use H.264 or HEVC media for this source edition. ProRes and other production cod
 
 ### Capture a standby still
 
-- Press **G** or choose **Capture output** in **Settings → Video Output** to save the current picture from the output window.
+- Press **G** or choose **Capture output** in **Settings → Video Output** to save the current picture from the 16:9 frame. Bars outside that frame are excluded.
 - Choose a **Capture display** in **Settings → Video Output**, then press **Shift+G** or choose **Capture display** to save the selected screen. The capture display can be different from the audience display. Grant screen capture permission if the operating system asks.
 - Set **Destination** to **Session standby** for a shared fallback or **Selected cue** for a specific cue. To capture Video Output for a specific cue in one step, select it and click the confidence thumbnail in the header.
 - Capture again to replace the still at that destination. **Clear still** removes the capture for the chosen destination. Assigned cue images always take priority. Use a saved Cue image or Standby image for artwork that must survive closing or reloading the show.
