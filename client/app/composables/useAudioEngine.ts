@@ -81,6 +81,8 @@ export const useAudioEngine = () => {
   const { currentProject, findItemByUuid, findItemByIndex, getAllItemsFlat } = useProject();
   const { cartOnlyItems } = useCartItems();
   const server = useLiveplayServer();
+  const { showHeaderWarning } = useHeaderWarnings();
+  const { t } = useLocalization();
 
   // ---- Reactive state ------------------------------------------------
   const activeCues   = useState<Map<string, ActiveCueView>>('activeCues',  () => new Map());
@@ -176,7 +178,14 @@ export const useAudioEngine = () => {
     if (!item?.uuid) return Promise.resolve(false);
     return runPendingAction(
       'transport:continue:' + item.uuid,
-      () => server.cueToContinue(item.uuid),
+      async () => {
+        if (item.oneShot && setNextItemPending.value) return false;
+        const accepted = await server.cueToContinue(item.uuid);
+        if (accepted && item.oneShot) {
+          showHeaderWarning(t('oneShots.followPlayNextArmed'));
+        }
+        return accepted;
+      },
     );
   };
 

@@ -729,6 +729,7 @@ private:
         // Runtime-only Cue to Continue state. The resolved target is captured
         // when the operator arms the current pass; it is never serialized.
         bool                     continue_armed       = false;
+        bool                     continue_to_play_next = false;
         std::string              continue_target_uuid;
         std::vector<DuckedEntry> ducked;
         double                   duck_release_sec = 1.0;
@@ -954,6 +955,7 @@ private:
     // groups), or empty if the playlist has no audio items. Caller must hold
     // mutex_. Used by the server-side "Up Next" arming.
     std::string first_playable_item_uuid_locked(const json* scope = nullptr) const;
+    std::string play_next_playlist_target(const std::string& source_uuid);
     json* playlist_siblings_locked(const std::string& parent_uuid);
 
     // Every playlist item uuid in the client's flat selection order: each node

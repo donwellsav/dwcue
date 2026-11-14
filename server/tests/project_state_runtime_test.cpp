@@ -146,7 +146,7 @@ void render_to_end(liveplay::core::ProjectState& state,
     if (!wait_for_on_air(state, engine, uuid)) return;
     std::array<float, 256> left{}, right{};
     float* channels[]{left.data(), right.data()};
-    for (int i = 0; i < limit && on_air(state, engine, uuid); ++i) {
+    for (int i = 0; i < limit && item->stats().transport != liveplay::audio::TransportState::Stopped; ++i) {
         item->service_read_ahead(1);
         item->render_block(channels, 2, 256);
     }
@@ -2420,6 +2420,33 @@ void test_shuffle_items(const std::filesystem::path& wav) {
     state.stop_all_cues(0);
 }
 
+void test_quick_play_continuation(const std::filesystem::path& wav) {
+    for (const auto ending : {"nothing", "loop", "goto-item"}) {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        auto show = document(json::array({audio("first", wav), audio("late", wav)}));
+        show["cartOnlyItems"] = json::array({audio("quick-play", wav, {
+            {"oneShot", {{"order", 0}}}, {"endBehavior", {{"action", ending}, {"targetUuid", "first"}}},
+            {"outPoint", 0.08}, {"stopFade", 0.01},
+        })});
+        check(state.load_from_json(show) && wait_ready(state), "QuickPlay follow: project and media load");
+        close_devices(engine);
+        check(state.set_next_item_override("") && state.trigger_item("quick-play") &&
+              !state.cue_to_continue("quick-play"), "QuickPlay follow: needs a playlist target");
+        check(state.set_next_item_override("first") && state.cue_to_continue("quick-play") &&
+              state.set_next_item_override("late") && on_air(state, engine, "quick-play") &&
+              !on_air(state, engine, "first") && !on_air(state, engine, "late"),
+              "QuickPlay follow: arming and changing Up Next do not interrupt playback");
+        render_to_end(state, engine, "quick-play");
+        for (int i = 0; i < 500 && !on_air(state, engine, "late"); ++i)
+            std::this_thread::sleep_for(2ms);
+        check(on_air(state, engine, "late") && !on_air(state, engine, "first") &&
+              state.full_document()["cartOnlyItems"][0]["endBehavior"]["action"] == ending,
+              "QuickPlay follow: natural ending starts the latest Up Next without altering the authored ending");
+        state.stop_all_cues(0);
+    }
+}
+
 void test_group_levels() {
     const auto wav = make_wav(8192);
     liveplay::audio::AudioEngine engine;
@@ -3427,6 +3454,7 @@ int main() try {
     test_failed_follow_requires_go(wav);
     test_failed_group_follow_requires_go(wav);
     test_shuffle_items(wav);
+    test_quick_play_continuation(wav);
     test_group_levels();
     test_music_backup(wav);
     test_manual_go_parity(wav);

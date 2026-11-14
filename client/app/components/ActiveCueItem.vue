@@ -42,12 +42,13 @@
             <span class="material-symbols-rounded" aria-hidden="true">play_arrow</span>
           </button>
           <button
-            v-if="isLooping"
+            v-if="isLooping || isQuickPlay"
             type="button"
             class="action-btn continue-btn"
+            :disabled="isQuickPlay && !quickPlayNextReady"
             @click="handleContinue"
-            :title="t('actions.cueToContinue')"
-            :aria-label="t('actions.cueToContinue')"
+            :title="continueLabel"
+            :aria-label="continueLabel"
           >
             <span class="material-symbols-rounded" aria-hidden="true">skip_next</span>
           </button>
@@ -155,7 +156,8 @@ const props = defineProps<{
   cue: ActiveCueState;
 }>();
 
-const { stopCue, pauseCue, resumeCue, seekCue, queueLoopContinuation, jumpCue } = useAudioEngine();
+const { stopCue, pauseCue, resumeCue, seekCue, queueLoopContinuation, jumpCue,
+  nextItemOverrideUuid, autoNextItemUuid, setNextItemPending } = useAudioEngine();
 const { t } = useLocalization();
 const { findItemByUuid } = useProject();
 
@@ -167,6 +169,14 @@ const audioItem = computed<AudioItem | null>(() => {
 });
 
 const isLooping = computed(() => audioItem.value?.endBehavior?.action === 'loop');
+const isQuickPlay = computed(() => !!audioItem.value?.oneShot);
+const quickPlayNextReady = computed(() => {
+  const uuid = nextItemOverrideUuid.value ?? autoNextItemUuid.value;
+  return !!uuid && uuid !== props.cue.uuid && !setNextItemPending.value;
+});
+const continueLabel = computed(() => t(!isQuickPlay.value
+  ? 'actions.cueToContinue'
+  : quickPlayNextReady.value ? 'oneShots.followPlayNext' : 'oneShots.followPlayNextNeedsCue'));
 
 // Start Next marker (absolute file time) from the project item, if armed.
 const startNextTime = computed<number | null>(() => {
