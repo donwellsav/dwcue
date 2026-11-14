@@ -580,6 +580,7 @@ private:
 
     // uuid → engine cue id, for audio items currently loaded.
     std::unordered_map<std::string, audio::CueId> item_uuid_to_cue_;
+    std::unordered_map<std::string, float> group_gains_;
     // Runtime-only diagnostic cue id -> uploaded temp file. An empty path
     // identifies a server-local file that this state does not own.
     std::unordered_map<std::string, std::filesystem::path> diagnostic_cues_;
@@ -897,6 +898,9 @@ private:
     // out point, LTC) to its PlaybackItem during loader publication.
     // Caller must hold mutex_.
     void apply_item_properties_locked(const json& item, const std::shared_ptr<audio::PlaybackItem>& cue);
+    float group_gain_locked(const std::string& uuid) const;
+    void cache_group_gains_locked(const json& items, float parent_gain);
+    void refresh_group_gains_locked();
 
     // Playback commands only inspect the pending set and published engine cue;
     // decoder completion is never awaited by a transport request.

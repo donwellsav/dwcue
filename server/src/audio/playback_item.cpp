@@ -540,6 +540,12 @@ void PlaybackItem::set_gain_db(float db) noexcept {
         gain_current_linear_.store(lin, std::memory_order_release);
     }
 }
+void PlaybackItem::set_group_gain_linear(float linear) noexcept {
+    group_gain_target_.store(linear, std::memory_order_release);
+    if (transport_.load(std::memory_order_acquire) == TransportState::Stopped)
+        group_gain_current_.store(linear, std::memory_order_release);
+}
+
 void PlaybackItem::set_duck_gain_linear(
     float linear, std::chrono::milliseconds duration, bool active) noexcept {
     linear = std::clamp(linear, 0.0f, 1.0f);
@@ -1311,15 +1317,20 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
     // smoother but per-block linear is inaudible at the fade durations we use
     // and saves CPU.
     if (frames_read > 0) {
+        const auto group_target = group_gain_target_.load(std::memory_order_acquire);
+        const auto group_start = group_gain_current_.load(std::memory_order_relaxed);
+        group_gain_current_.store(group_target, std::memory_order_release);
+        const auto output_start = output_gain_now * group_start;
+        const auto output_end = output_gain_end * group_target;
         for (ChannelCount c = 0;
              c < std::min<ChannelCount>(out_channel_count, file_channels);
              ++c) {
             Sample* buf = out_channel_buffers[c];
             const std::size_t n = static_cast<std::size_t>(frames_read);
             if (n == 0) continue;
-            const float dg = (output_gain_end - output_gain_now) /
+            const float dg = (output_end - output_start) /
                 static_cast<float>(std::max<std::size_t>(n, 1));
-            float g = output_gain_now;
+            float g = output_start;
             for (std::size_t i = 0; i < n; ++i) {
                 buf[i] *= g;
                 g += dg;

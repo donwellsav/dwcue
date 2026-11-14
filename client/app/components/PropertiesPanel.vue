@@ -36,6 +36,17 @@
             <label for="cue-property-index">{{ t('properties.index') }}</label>
             <input id="cue-property-index" :value="formatItemIndex(selectedItem.index)" readonly />
           </div>
+          <div v-if="selectedItem.type === 'group'" class="property-field group-level">
+            <label for="group-level">{{ t('properties.groupLevel') }}</label>
+            <div class="group-level-control">
+              <input id="group-level" class="app-range" type="range" min="-60" max="0" step="0.5"
+                :value="groupLevel" :aria-valuetext="groupLevelLabel"
+                :disabled="projectHydrationStatus !== 'ready'"
+                @input="groupItem.groupGainDb = Number(($event.target as HTMLInputElement).value)"
+                @change="handleSave" />
+              <output for="group-level">{{ groupLevelLabel }}</output>
+            </div>
+          </div>
           <div v-if="selectedItem.type === 'group'" class="property-field">
             <label for="group-property-uuid">{{ t('properties.uuid') }}</label>
             <div class="input-with-btn">
@@ -627,6 +638,11 @@ const onLtcFrameRateChange = (e: Event) => {
   handleSave();
 };
 const groupItem = computed(() => selectedItem.value as GroupItem);
+const groupLevel = computed(() => {
+  const db = groupItem.value.groupGainDb;
+  return typeof db === 'number' && Number.isFinite(db) ? Math.min(0, Math.max(-60, db)) : 0;
+});
+const groupLevelLabel = computed(() => `${groupLevel.value.toFixed(1)} dB`);
 const groupBackupOptions = computed(() => {
   const source = groupItem.value?.index;
   if (!source?.length) return [];
@@ -1360,6 +1376,15 @@ const formatTime = (seconds: number): string => {
   width: min(100%, 1120px);
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
+
+.group-level-control {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.group-level-control input { flex: 1; min-width: 0; }
+.group-level-control output { min-width: 7ch; text-align: end; font-variant-numeric: tabular-nums; }
 
 .properties-content:has(.playback-panel) {
   grid-template-columns: minmax(0, 1fr);

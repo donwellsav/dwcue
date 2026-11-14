@@ -640,6 +640,7 @@
     "startNextTitle": "Start Next: {time}"
   },
   "properties": {
+    "groupLevel": "Group level",
     "title": "Properties",
     "multipleItemsSelected": "{count} items selected",
     "peakCeilingWarning": "This cue's measured true peak, after cue gain, exceeds the output ceiling. The limiter caps playback peaks when enabled; it does not set cue gain.",

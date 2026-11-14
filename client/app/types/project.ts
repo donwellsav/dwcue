@@ -86,6 +86,7 @@ export interface GroupItem extends BaseItem {
   startBehavior: GroupStartBehavior;
   endBehavior: EndBehavior;
   keepMusicGoing?: boolean;
+  groupGainDb?: number;
   backupMusicGroup?: string | null;
   isExpanded: boolean; // UI state
 }

@@ -1457,6 +1457,7 @@ void ProjectState::reset() {
     mixer_routes_.clear();
     master_assignments_.clear();
     item_uuid_to_cue_.clear();
+    group_gains_.clear();
     audio_load_failures_.clear();
     // The selection and the trigger-order stamps belong to the project that is
     // going away; carrying them into the next one would leave control surfaces
@@ -1575,6 +1576,7 @@ std::vector<audio::CueId> ProjectState::retire_missing_item_cues_locked() {
 void ProjectState::apply_item_properties_locked(const json& item,
                                                 const std::shared_ptr<audio::PlaybackItem>& cue) {
     apply_audio_item_properties(item, cue);
+    cue->set_group_gain_linear(group_gain_locked(item.value("uuid", std::string{})));
     const bool ltc_on = item.value("ltcEnabled", false);
     const std::string tc_str = item.value("ltcStartTimecode", std::string{"00:00:00:00"});
     const int fps_idx = item.value("ltcFrameRate", 4);
@@ -1588,6 +1590,43 @@ void ProjectState::apply_item_properties_locked(const json& item,
             cm_it->second.ltc_start_timecode   = tc_str;
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+float ProjectState::group_gain_locked(const std::string& uuid) const {
+    const auto level = group_gains_.find(uuid);
+    return level == group_gains_.end() ? 1.0f : level->second;
+}
+
+void ProjectState::cache_group_gains_locked(const json& items, float parent_gain) {
+    if (!items.is_array()) return;
+    for (const auto& item : items) {
+        const auto type = json_get_or(item, "type", std::string{});
+        const auto uuid = json_get_or(item, "uuid", std::string{});
+        if (type == "group") {
+            const auto saved_db = json_get_or(item, "groupGainDb", 0.0);
+            const auto db = std::isfinite(saved_db) ? static_cast<float>(std::clamp(saved_db, -60.0, 0.0)) : 0.0f;
+            const float gain = parent_gain * audio::db_to_linear_precise(db);
+            if (gain != 1.0f) group_gains_.insert_or_assign(uuid, gain);
+            if (item.contains("children")) cache_group_gains_locked(item["children"], gain);
+        } else if (type == "audio" && parent_gain != 1.0f) {
+            group_gains_.insert_or_assign(uuid, parent_gain);
+        }
+    }
+}
+
+void ProjectState::refresh_group_gains_locked() {
+    const auto previous = std::move(group_gains_);
+    group_gains_.clear();
+    if (document_.contains("items")) cache_group_gains_locked(document_["items"], 1.0f);
+    for (const auto& [uuid, id] : item_uuid_to_cue_) {
+        const auto old = previous.find(uuid);
+        const auto gain = group_gain_locked(uuid);
+        if (gain != (old == previous.end() ? 1.0f : old->second))
+            if (auto cue = engine_.find_cue(id)) cue->set_group_gain_linear(gain);
+    }
+    if (auto preview = engine_.find_cue(preview_cue_))
+        preview->set_group_gain_linear(group_gain_locked(preview_item_uuid_));
 }
 
 // ---------------------------------------------------------------------------
@@ -2314,6 +2353,7 @@ bool ProjectState::replace_full_document(const json& doc, bool new_session) {
             invalidated_playbacks.insert(uuid);
         }
         document_ = std::move(migrated);
+        refresh_group_gains_locked();
         ++document_generation_;
         if (new_session) {
             project_session_id_ = engine_.new_cue_id().value;
@@ -2418,6 +2458,7 @@ audio::CueId ProjectState::add_item(const json& item, const std::string& parent_
             return it != item_uuid_to_cue_.end() ? it->second : audio::CueId{};
         }
 
+        float parent_gain = 1.0f;
         if (cart_only) {
             // Cart-bound cue: lives in the separate cartOnlyItems array so it
             // is mirrored to the engine (cart hotkeys can trigger it) without
@@ -2444,6 +2485,7 @@ audio::CueId ProjectState::add_item(const json& item, const std::string& parent_
                             it["children"] = json::array();
                         }
                         it["children"].push_back(item);
+                        parent_gain = group_gain_locked(parent_uuid);
                         found = true;
                     }
                 });
@@ -2456,6 +2498,7 @@ audio::CueId ProjectState::add_item(const json& item, const std::string& parent_
         // Queue this import and its children. The mirror owns existing items,
         // and retrying one of them here can put a stalled path ahead of the import.
         json inserted{{"items", json::array({item})}};
+        if (!cart_only) cache_group_gains_locked(inserted["items"], parent_gain);
         for_each_item(inserted, [&](json& it, const std::string&) {
             if (it.value("type", std::string{}) != "audio") return;
             const std::string u = it.value("uuid", std::string{});
@@ -2472,6 +2515,11 @@ audio::CueId ProjectState::add_item(const json& item, const std::string& parent_
 bool ProjectState::update_item(const std::string& uuid, const json& patch_in,
                                std::unique_lock<std::recursive_mutex>* project_lock) {
     if (!patch_in.is_object()) return false;
+    if (const auto level = patch_in.find("groupGainDb"); level != patch_in.end()) {
+        if (!level->is_number()) return false;
+        const auto db = level->get<double>();
+        if (!std::isfinite(db) || db < -60.0 || db > 0.0) return false;
+    }
     std::unique_lock preparation_lock{playback_preparation_mutex_};
     std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
     json patch = patch_in;
@@ -2598,6 +2646,8 @@ bool ProjectState::update_item(const std::string& uuid, const json& patch_in,
                 updated_item = &it;
             });
 
+        if (touched && (patch.contains("groupGainDb") || patch.contains("children") || patch.contains("type")))
+            refresh_group_gains_locked();
         if (touched && media_path_changed && updated_item &&
             updated_item->value("type", std::string{}) == "audio") {
             // The media file behind this item changed: retire the old cue and
@@ -2804,7 +2854,10 @@ bool ProjectState::remove_item(const std::string& uuid) {
                                      }),
                       arr.end());
         }
-        if (removed) retiring_cues = retire_missing_item_cues_locked();
+        if (removed) {
+            retiring_cues = retire_missing_item_cues_locked();
+            refresh_group_gains_locked();
+        }
     }
     if (removed) {
         std::vector<SequencedItem> removed_items;
@@ -5013,14 +5066,14 @@ bool ProjectState::start_preview(const std::string& item_uuid, json* result) {
         engine_.unload_cue(cue_id);
         return false;
     }
-    engine_.play(cue_id);
-
     {
         std::lock_guard lock{mutex_};
+        pi->set_group_gain_linear(group_gain_locked(item_uuid));
         preview_cue_       = cue_id;
         preview_item_uuid_ = item_uuid;
         ++preview_state_revision_;
     }
+    engine_.play(cue_id);
     if (result) *result = preview_state();
     Logger::info("preview: started for item '{}' on '{}'", item_uuid, preview_device_name);
     return true;
@@ -5492,6 +5545,7 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
             project_session_id_ = engine_.new_cue_id().value;
             project_file_path_ = project_path;
             document_ = std::move(client_document->document);
+            refresh_group_gains_locked();
             project_name_ = document_.value("name", std::string{"Untitled"});
             update_media_root_from_folder_locked();
             pending_repair_info_ = std::move(repair);
@@ -5514,6 +5568,7 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
     std::lock_guard lock{mutex_};
     for (auto& [_, id] : item_uuid_to_cue_) engine_.unload_cue(id);
     item_uuid_to_cue_.clear();
+    group_gains_.clear();
     cues_ = std::move(loaded_cues);
     mixers_ = std::move(loaded_mixers);
     item_routes_ = std::move(loaded_item_routes);
@@ -5595,6 +5650,7 @@ RepairInfo ProjectState::repair_project() {
     if (info.repaired) {
         std::lock_guard lock{mutex_};
         document_ = std::move(doc);
+        refresh_group_gains_locked();
         Logger::info("ProjectState::repair_project: {} issue(s) repaired.", info.issues.size());
     }
     return info;

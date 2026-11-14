@@ -2420,6 +2420,45 @@ void test_shuffle_items(const std::filesystem::path& wav) {
     state.stop_all_cues(0);
 }
 
+void test_group_levels() {
+    const auto wav = make_wav(8192);
+    liveplay::audio::AudioEngine engine;
+    liveplay::core::ProjectState state(engine);
+    const auto cue = [&](const std::string& uuid, double volume = 1.0) {
+        return audio(uuid, wav, {{"volume", volume}, {"duckingBehavior", {{"mode", "no-ducking"}}}});
+    };
+    const json nested{{"uuid", "nested"}, {"type", "group"}, {"groupGainDb", -6.0},
+                      {"children", json::array({cue("bed", 0.5)})}};
+    const json group{{"uuid", "music"}, {"type", "group"}, {"groupGainDb", -6.0},
+                     {"children", json::array({nested})}};
+    check(state.load_from_json(document(json::array({group, cue("walk-on")}))) &&
+          wait_ready(state), "group level: show opens");
+    close_devices(engine);
+    const auto level = [&](const char* uuid) {
+        const auto item = engine.find_cue(*state.item_to_cue_id(uuid));
+        std::array<float, 256> left{}, right{};
+        float* outputs[]{left.data(), right.data()};
+        item->service_read_ahead(1);
+        item->render_block(outputs, 2, left.size());
+        return left[127];
+    };
+    check(state.trigger_item("bed") && state.trigger_item("walk-on"), "group level: both cues start");
+    check(std::abs(level("bed") - 0.125 * std::pow(10.0, -12.0 / 20.0)) < 0.001 &&
+          std::abs(level("walk-on") - 0.25) < 0.001,
+          "group level: nested attenuation combines with cue gain and leaves unrelated playback alone");
+    const auto pass = state.item_trigger_seq("bed");
+    check(state.update_item("music", {{"groupGainDb", -12.0}}) &&
+          !state.update_item("music", {{"groupGainDb", 3.0}}), "group level: valid attenuation only");
+    (void)level("bed");
+    check(std::abs(level("bed") - 0.125 * std::pow(10.0, -18.0 / 20.0)) < 0.001 &&
+          state.item_trigger_seq("bed") == pass && std::abs(level("walk-on") - 0.25) < 0.001,
+          "group level: a live fader edit ramps the same pass without touching another cue");
+    check(!state.add_item(cue("new-bed"), "nested").empty() && wait_ready(state) && state.trigger_item("new-bed") &&
+          std::abs(level("new-bed") - 0.25 * std::pow(10.0, -18.0 / 20.0)) < 0.001,
+          "group level: new group children inherit the current attenuation");
+    state.stop_all_cues(0);
+}
+
 void test_music_backup(const std::filesystem::path& wav) {
     for (const auto mode : {"off", "intentional-stop", "root", "folder", "group-ending", "busy-target",
                            "stalled-read", "ready-target", "normal-next", "stop-all", "already-air"}) {
@@ -3388,6 +3427,7 @@ int main() try {
     test_failed_follow_requires_go(wav);
     test_failed_group_follow_requires_go(wav);
     test_shuffle_items(wav);
+    test_group_levels();
     test_music_backup(wav);
     test_manual_go_parity(wav);
     test_replacement_cancels_ownership();
