@@ -199,7 +199,7 @@
     <ShortcutsBar :compact="lowerPanelOpen" />
 
     <div v-show="lowerPanelOpen" ref="lowerPanel" class="lower-workspace-panel"
-      :style="{ height: panelHeight === null ? 'auto' : `${panelHeight}px` }"
+      :style="{ height: panelHeight === null ? 'auto' : `${panelHeight}px`, maxHeight: `${MAX_PANEL_HEIGHT_PERCENT}%` }"
       @keydown.capture="handlePanelKeydown($event, true)"
       @keydown="handlePanelKeydown">
       <div class="lower-panel-resize-handle" role="separator" aria-orientation="horizontal"
@@ -282,7 +282,7 @@ const reservedPlaylistRowHeight = computed(() => Math.max(folderPlaylistRowHeigh
   uiMode.value === 'playback' ? showPlaylistRowHeight.value : regularPlaylistRowHeight.value));
 
 const MIN_PANEL_HEIGHT = 120;
-const MAX_PANEL_HEIGHT = 640;
+const MAX_PANEL_HEIGHT_PERCENT = 60;
 const settingsHeight = useState<number | null>('ProjectSettingsPanel.height', () => null);
 const propertiesHeight = useState<number | null>('PropertiesPanel.height', () => null);
 const importHeight = useState<number | null>('ImportPanel.height', () => null);
@@ -295,16 +295,18 @@ watch(visibleImportPanel, () => {
   if (importHost.value) importHost.value.scrollTop = 0;
 }, { flush: 'post' });
 const visiblePanelHeight = ref(0);
-const panelMaxHeight = ref(MAX_PANEL_HEIGHT);
+const panelMaxHeight = ref(MIN_PANEL_HEIGHT);
 let panelObserver: ResizeObserver | undefined;
 let panelDrag: { pointerId: number; startY: number; height: number; max: number } | null = null;
 
 function availablePanelHeight() {
   const content = workspaceContent.value;
-  if (!content) return MAX_PANEL_HEIGHT;
+  const panel = lowerPanel.value;
+  if (!content || !panel?.parentElement) return MIN_PANEL_HEIGHT;
   const reserved = parseFloat(getComputedStyle(content).minHeight);
-  return Math.min(MAX_PANEL_HEIGHT, Math.max(MIN_PANEL_HEIGHT,
-    (lowerPanel.value?.offsetHeight ?? MIN_PANEL_HEIGHT) + content.offsetHeight - reserved));
+  return Math.max(MIN_PANEL_HEIGHT, Math.floor(Math.min(
+    panel.parentElement.clientHeight * MAX_PANEL_HEIGHT_PERCENT / 100,
+    panel.offsetHeight + content.offsetHeight - reserved)));
 }
 
 function setPanelHeight(height: number, max: number) {
@@ -869,7 +871,6 @@ onUnmounted(() => {
   position: relative;
   flex: 0 1 auto;
   min-height: 120px;
-  max-height: 640px;
   display: flex;
   flex-direction: column;
 }

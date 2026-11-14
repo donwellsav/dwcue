@@ -1244,10 +1244,13 @@ const formatTime = (seconds: number): string => {
 }
 
 .properties-header {
+  order: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) var(--panel-control-height);
   justify-content: stretch;
   gap: var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
+  border-bottom: 0;
 }
 
 .properties-panel--group .properties-header {

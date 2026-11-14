@@ -171,18 +171,18 @@
                 />
                 <p class="settings-help">{{ t('settings.stopAllFadeHelp') }}</p>
               </section>
-              <section class="settings-field playback-switches">
-                <div class="settings-field">
-                  <label class="settings-label settings-label--checkbox">
-                    <input
-                      type="checkbox"
-                      :checked="disableLimiter"
-                      @change="onDisableLimiterChange"
-                    />
-                    {{ t('settings.disableLimiter') }}
-                  </label>
-                  <p class="settings-help">{{ t('settings.disableLimiterHelp') }}</p>
-                </div>
+              <section class="settings-field">
+                <label class="settings-label settings-label--checkbox">
+                  <input
+                    type="checkbox"
+                    :checked="disableLimiter"
+                    @change="onDisableLimiterChange"
+                  />
+                  {{ t('settings.disableLimiter') }}
+                </label>
+                <p class="settings-help">{{ t('settings.disableLimiterHelp') }}</p>
+              </section>
+              <section class="settings-field">
                 <label class="settings-label settings-label--checkbox">
                   <input
                     type="checkbox"
@@ -1456,10 +1456,13 @@ function close() {
 }
 
 .settings-header {
+  order: 1;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) var(--panel-control-height);
   gap: var(--spacing-md);
   padding-block: 0;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 0;
 }
 
 .close-x {
@@ -1562,15 +1565,8 @@ function close() {
 
 .settings-content--playback > .settings-rows {
   display: grid;
-  grid-row: span 3;
+  grid-row: span 4;
   grid-template-rows: subgrid;
-}
-
-.settings-rows > .playback-switches {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
-  align-content: center;
 }
 
 .settings-test-card { grid-column: span 2; }
