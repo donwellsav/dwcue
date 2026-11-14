@@ -30,6 +30,8 @@ interface Deferred<T> {
 interface MockVideo {
   currentTime: number;
   currentSrc: string;
+  readyState: number;
+  seeking: boolean;
   videoWidth: number;
   videoHeight: number;
   paused: boolean;
@@ -91,6 +93,8 @@ function videoElement(): MockVideo {
   return {
     currentTime: 0,
     currentSrc: '',
+    readyState: 4,
+    seeking: false,
     videoWidth: 640,
     videoHeight: 360,
     paused: true,
@@ -693,6 +697,95 @@ test('first canplay still aligns to the latest native position after delayed dec
     await flush();
     assert.equal(h.element.currentTime, .25);
     assert.equal(h.element.paused, false);
+  } finally { h.stop(); }
+});
+
+test('keeps the outgoing picture across an automatic stop until the new video submits a frame', async () => {
+  const h = createHarness(project([
+    {
+      ...audioItem('outgoing', { hasVideo: true, outPoint: 0 }),
+      duration: 32,
+      endBehavior: { action: 'next' },
+    },
+    audioItem('incoming', { hasVideo: true }),
+  ]));
+  const drawn: string[] = [];
+  const canvas = {
+    width: 0, height: 0,
+    getContext: () => ({ drawImage: (element: MockVideo) => drawn.push(element.currentSrc) }),
+  } as unknown as HTMLCanvasElement;
+  try {
+    await flush();
+    if (h.controller.heldFrameEl) h.controller.heldFrameEl.value = canvas;
+    h.emitCue(snapshotCue('outgoing', 'cue-a', 1, 31.9));
+    h.element.currentSrc = h.controller.videoSrc.value!;
+    h.controller.onVideoCanPlay();
+    h.element.fireVideoFrame(10, { mediaTime: 31.9, presentedFrames: 955 });
+    const outgoingSrc = h.element.currentSrc;
+
+    h.emitCue(snapshotCue('outgoing', 'cue-a', 1, 32, 0));
+    await flush();
+    assert.equal(h.controller.showHeldFrame?.value, true, 'the stopped edge must keep the outgoing frame');
+    assert.deepEqual(drawn, [outgoingSrc]);
+
+    h.emitCue(snapshotCue('incoming', 'cue-b', 2, .05));
+    h.element.currentSrc = h.controller.videoSrc.value!;
+    h.controller.onVideoCanPlay();
+    assert.equal(h.controller.showHeldFrame.value, true, 'canplay does not replace the held picture');
+    h.emitMeters({ items: [{ cue_id: 'cue-b', transport: 1, playhead_seconds: .25 }] });
+    assert.equal(h.element.currentTime, .05, 'let the incoming frame land before chasing the clock');
+    h.element.fireVideoFrame(20, { mediaTime: .05, presentedFrames: 1 });
+    assert.equal(h.controller.showHeldFrame.value, false, 'the new source can replace it once it submits a frame');
+    h.emitCue(snapshotCue('incoming', 'cue-b', 2, 0, 0));
+    assert.equal(h.controller.showVideo.value, false);
+  } finally { h.stop(); }
+});
+
+test('Stop All and an incoming decoder failure can always clear the held picture', async () => {
+  const h = createHarness(project([
+    audioItem('from', { hasVideo: true }),
+    audioItem('to', { hasVideo: true }),
+  ]));
+  try {
+    await flush();
+    h.controller.heldFrameEl.value = {
+      width: 0, height: 0, getContext: () => ({ drawImage() {} }),
+    } as unknown as HTMLCanvasElement;
+    h.emitMeters({ stop_revision: 2, items: [] });
+    h.emitCue(snapshotCue('from', 'cue-a', 1, 1));
+    h.controller.onVideoCanPlay();
+    h.element.fireVideoFrame(10, { mediaTime: 1, presentedFrames: 1 });
+    h.emitCue(snapshotCue('to', 'cue-b', 2));
+    assert.equal(h.controller.showHeldFrame.value, true);
+    h.emitMeters({ stop_revision: 3, items: [] });
+    assert.equal(h.controller.showHeldFrame.value, false);
+
+    h.emitCue(snapshotCue('from', 'cue-a', 3, 1));
+    h.controller.onVideoCanPlay();
+    h.element.fireVideoFrame(20, { mediaTime: 1, presentedFrames: 1 });
+    h.emitCue(snapshotCue('to', 'cue-b', 4));
+    assert.equal(h.controller.showHeldFrame.value, true);
+    h.controller.onVideoError();
+    assert.equal(h.controller.showHeldFrame.value, false);
+    assert.deepEqual(h.reports.at(-1), { itemUuid: 'to', message: 'Video playback could not be decoded.' });
+  } finally { h.stop(); }
+});
+
+test('native position updates do not restart a pending video seek', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]));
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    h.element.fireVideoFrame(10, { mediaTime: 1, presentedFrames: 1 });
+    h.emitMeters({ items: [{ cue_id: 'cue', transport: 1, playhead_seconds: 2 }] });
+    assert.equal(h.element.currentTime, 2);
+    h.element.seeking = true;
+    h.emitMeters({ items: [{ cue_id: 'cue', transport: 1, playhead_seconds: 2.2 }] });
+    assert.equal(h.element.currentTime, 2);
+    h.element.seeking = false;
+    h.emitMeters({ items: [{ cue_id: 'cue', transport: 1, playhead_seconds: 2.25 }] });
+    assert.equal(h.element.currentTime, 2.25);
   } finally { h.stop(); }
 });
 

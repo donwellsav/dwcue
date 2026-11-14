@@ -188,6 +188,7 @@ export interface MasterMeterFrame {
 
 export interface MetersBroadcast {
   type: 'meters';
+  stop_revision?: number;
   items: ItemMeterFrame[];
   mixer_channels: MixerMeterFrame[];
   master_channels: MasterMeterFrame[];
