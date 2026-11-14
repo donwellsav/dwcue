@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body" :disabled="docked">
-    <div v-if="open" v-show="visible !== false" :class="{ 'modal-backdrop': !docked }" @click.self="!docked && close()">
+    <div v-if="open" v-show="visible !== false" :class="docked ? 'docked-import' : 'modal-backdrop'" @click.self="!docked && close()">
       <div class="import-media" :class="docked ? 'workspace-import-body' : 'modal'">
         <header v-if="!docked">
           <h2>{{ t('importAudio.title') }}</h2>
@@ -12,19 +12,21 @@
           <span>{{ t('importAudio.progress', progress) }}</span>
           <button type="button" class="btn small" @click="emit('cancel')">{{ t('importAudio.cancelImport') }}</button>
         </section>
-        <div v-show="!docked || !busy" class="import-source">
         <!-- Source mode toggle. Only rendered when the server is on a
              different machine; otherwise "upload" makes no sense and we
              skip the tabs entirely. -->
-        <div v-if="!server.isLocalServer" class="tabs">
-          <button class="tab" :class="{ active: tab === 'upload' }" @click="tab = 'upload'">
+        <div v-if="!server.isLocalServer" v-show="!docked || !busy" class="tabs">
+          <button type="button" class="tab" :class="{ active: tab === 'upload' }"
+            :aria-pressed="tab === 'upload'" @click="tab = 'upload'">
             {{ t('importProject.fromThisComputer') }}
           </button>
-          <button class="tab" :class="{ active: tab === 'server' }" @click="tab = 'server'">
+          <button type="button" class="tab" :class="{ active: tab === 'server' }"
+            :aria-pressed="tab === 'server'" @click="tab = 'server'">
             {{ t('importProject.fromServer') }}
           </button>
         </div>
 
+        <div v-show="!docked || !busy" class="import-source">
         <!-- Local installs lead with the native picker. Server browsing stays
              available without making operators navigate a filesystem first. -->
         <section v-if="tab === 'server'" class="pane">
@@ -710,7 +712,25 @@ function formatBytes(n: number): string {
   }
 }
 
+.docked-import:has(.tabs) {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  .workspace-import-body { flex: 1; }
+}
+
 .workspace-import-body {
+  .tabs {
+    order: 1;
+    grid-column: 1 / -1;
+    align-self: end;
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    background: var(--color-surface);
+    border-top: 1px solid var(--color-border);
+    border-bottom: 0;
+  }
   .import-advanced > h3 {
     margin: 0;
     padding: var(--spacing-xs) var(--spacing-sm);
