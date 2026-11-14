@@ -105,8 +105,7 @@ button > .material-symbols-rounded {
   --settings-row-height: 28px;
   --settings-control-height: 24px;
   --resize-handle-width: 1px;
-  // PlaylistView removes an 8px gutter on each side before row queries run.
-  // Keep the inner row one pixel clear of its 560px compact breakpoint.
+  // Leave room for the playlist controls when QuickPlays are resized.
   --playlist-split-min-width: 577px;
   --output-strip-width: 192px;
   --output-console-width: calc(

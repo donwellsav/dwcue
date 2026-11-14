@@ -240,9 +240,8 @@
         <!-- Keep transport beside the clock, with Play Next in the far-right
              arm lane; preview remains beside the cue number and edit/delete
              stay hidden in Show Mode. -->
-        <div class="item-actions">
+        <div v-if="!showMode" class="item-actions">
           <ActionButton
-            v-if="!showMode"
             class="edit-action"
             icon="settings"
             highlight-color="var(--color-accent)"
@@ -251,7 +250,6 @@
             :title="t('actions.edit')"
           />
           <ActionButton
-            v-if="!showMode"
             class="delete-action"
             icon="delete"
             highlight-color="var(--color-danger)"
@@ -1312,9 +1310,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .item-name {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
+  display: block;
+  align-content: center;
   min-height: 26px;
   height: var(--cue-cell-height);
   width: fit-content;
@@ -1584,23 +1581,6 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   transform: translateX(min(10px, calc(2px + var(--folder-column-gap, var(--spacing-sm)))));
 }
 
-/* Keep identity and status above the controls when both side rails are open. */
-@container (max-width: 560px) {
-  .item-left {
-    --folder-column-gap: var(--spacing-xs);
-    grid-template-columns: 34px minmax(0, 1fr) 68px max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
-    grid-template-areas:
-      'expand identity identity identity state video'
-      '. . actions transport duration arm';
-    column-gap: var(--spacing-xs);
-    row-gap: var(--spacing-xs);
-  }
-
-  .item-actions {
-    width: 68px;
-  }
-}
-
 /* ------------------------------------------------------------------ */
 /* Show Mode — larger, touch-friendly rows. Same operator information, */
 /* bigger hit areas: taller rows, stable number/time lanes, and chunky */
@@ -1609,6 +1589,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 /* ------------------------------------------------------------------ */
 .playlist-item.show-mode {
   --current-playlist-row-height: var(--show-playlist-row-height, 68px);
+  --cue-leading-width: 44px;
 
   .item-content {
     padding: 6px var(--spacing-md);
@@ -1661,6 +1642,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
+    height: auto;
     line-height: 1.12;
     white-space: normal;
   }
@@ -1726,13 +1708,28 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 }
 
-@container (max-width: 620px) {
-  .playlist-item.show-mode .item-left {
-    grid-template-columns: 44px minmax(0, 1fr) var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
+/* Keep a full title lane when the side panels leave less room for the playlist. */
+@container (max-width: 700px) {
+  .playlist-item > .item-content .item-left {
+    --folder-column-gap: var(--spacing-xs);
+    grid-template-columns: var(--cue-leading-width, 34px) minmax(0, 1fr) max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
     grid-template-areas:
-      'expand identity identity video'
-      'state transport duration arm';
+      'expand identity identity identity identity state video'
+      '. . shuffle actions transport duration arm';
     gap: var(--spacing-xs);
+  }
+
+  .group-shuffle-action { grid-area: shuffle; }
+  .video-badge-icon { justify-self: end; }
+
+  .item-state,
+  .behavior-indicators {
+    flex-wrap: wrap;
+  }
+
+  .behavior-indicators {
+    max-width: 100%;
+    justify-content: flex-end;
   }
 }
 </style>

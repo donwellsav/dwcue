@@ -170,6 +170,16 @@ onBeforeUnmount(() => {
   color: var(--color-danger);
 }
 
+#project-header-warnings .header-warning-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .header-warning-action {
   flex: none;
   display: grid;

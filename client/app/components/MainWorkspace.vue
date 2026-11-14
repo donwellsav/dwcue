@@ -285,8 +285,9 @@ const editableSelectedItem = computed(() => {
 const showCueProperties = computed(() =>
   !showProjectSettings.value && !visibleImportPanel.value && propertiesPanelOpen.value && !!editableSelectedItem.value);
 const lowerPanelOpen = computed(() => showProjectSettings.value || !!visibleImportPanel.value || !!showCueProperties.value);
+// Leave room for both lines of a compact cue when the lower panel is maximized.
 const reservedPlaylistRowHeight = computed(() => Math.max(folderPlaylistRowHeight.value,
-  uiMode.value === 'playback' ? showPlaylistRowHeight.value : regularPlaylistRowHeight.value));
+  uiMode.value === 'playback' ? Math.max(showPlaylistRowHeight.value, 108) : Math.max(regularPlaylistRowHeight.value, 84)));
 
 const MIN_PANEL_HEIGHT = 120;
 const MAX_PANEL_HEIGHT_PERCENT = 60;
@@ -847,8 +848,7 @@ onUnmounted(() => {
 }
 
 .main-workspace.show-mode {
-  // PlaylistView contributes 16px of horizontal gutters; 637px leaves the
-  // row container at 621px, safely above its 620px compact breakpoint.
+  // Leave room for Show Mode's larger playlist controls beside QuickPlays.
   --playlist-split-min-width: 637px;
 }
 

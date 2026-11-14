@@ -430,7 +430,7 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /--current-playlist-row-height:\s*var\(--playlist-row-height, 44px\)[\s\S]*scroll-margin-top:\s*var\(--current-playlist-row-height\)[\s\S]*--current-playlist-row-height:\s*var\(--folder-playlist-row-height, 60px\)[\s\S]*min-height:\s*var\(--current-playlist-row-height\)[\s\S]*--current-playlist-row-height:\s*var\(--show-playlist-row-height, 68px\)[\s\S]*@container \(max-width: 620px\)/,
+  /--current-playlist-row-height:\s*var\(--playlist-row-height, 44px\)[\s\S]*scroll-margin-top:\s*var\(--current-playlist-row-height\)[\s\S]*--current-playlist-row-height:\s*var\(--folder-playlist-row-height, 60px\)[\s\S]*min-height:\s*var\(--current-playlist-row-height\)[\s\S]*--current-playlist-row-height:\s*var\(--show-playlist-row-height, 68px\)[\s\S]*@container \(max-width: 700px\)/,
   'regular, Show Mode, and folder row heights must control geometry while preserving usable title space',
 );
 assert.match(
@@ -1719,7 +1719,7 @@ assert.match(
 );
 assert.match(
   projectHeader,
-  /flex:\s*0 0 var\(--app-header-height\);[\s\S]{0,100}height:\s*var\(--app-header-height\);[\s\S]*\.header-right\s*\{[\s\S]{0,160}gap:\s*6px;[\s\S]*\.autosave-toggle\s*\{[\s\S]{0,260}min-height:\s*32px;[\s\S]{0,180}padding:\s*4px var\(--spacing-sm\);/,
+  /min-height:\s*var\(--app-header-height\);[\s\S]*\.header-right\s*\{[^}]*gap:\s*6px;[\s\S]*\.autosave-toggle\s*\{[\s\S]{0,260}min-height:\s*32px;[\s\S]{0,180}padding:\s*4px var\(--spacing-sm\);/,
   'header controls must use a compact aligned rhythm inside a band tall enough for the clocks',
 );
 assert.match(
@@ -1924,7 +1924,7 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.group-children\s*\{[\s\S]{0,180}gap:\s*2px;[\s\S]{0,100}padding-top:\s*2px;[\s\S]*@container \(max-width: 560px\)/,
+  /\.group-children\s*\{[\s\S]{0,180}gap:\s*2px;[\s\S]{0,100}padding-top:\s*2px;/,
   'folder children must keep the same row rhythm and only wrap when the wide grid no longer fits',
 );
 assert.match(
@@ -1944,8 +1944,8 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.item-left\s*\{[\s\S]{0,100}grid-template-columns:\s*34px minmax\(0, 1fr\)[\s\S]*@container \(max-width: 560px\)\s*\{[\s\S]{0,100}\.item-left\s*\{[\s\S]{0,100}grid-template-columns:\s*34px minmax\(0, 1fr\)/,
-  'Regular Mode disclosure hitboxes must end before the dynamic identity lane at every width',
+  /@container \(max-width: 700px\)\s*\{\s*\.playlist-item > \.item-content \.item-left\s*\{[^}]*grid-template-columns:\s*var\(--cue-leading-width, 34px\) minmax\(0, 1fr\)[^}]*'expand identity identity identity identity state video'\s*'\. \. shuffle actions transport duration arm'/,
+  'the compact cue layout must retain a disclosure lane and give the title its own line above transport',
 );
 assert.match(
   playlistItem,
