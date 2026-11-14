@@ -815,10 +815,48 @@ test('trigger_seq chooses newest-fired program cue while stop and preview preser
   assert.equal(harness.controller.showVideo.value, true, 'stopping newest falls back to the older audio/video cue');
   assert.equal(new URL(harness.controller.videoSrc.value!).searchParams.get('item_uuid'), 'older-video');
 
-  harness.emitPatch({ op: 'preview_started', itemUuid: 'preview-video' });
+  harness.emitPatch({ op: 'preview_started', itemUuid: 'preview-video', cueId: 'preview-cue' });
   harness.emitCue(snapshotCue('preview-video', 'preview-cue', 100, 0, 1));
   assert.equal(new URL(harness.controller.videoSrc.value!).searchParams.get('item_uuid'), 'older-video');
   harness.stop();
+});
+
+test('auditioning the same playlist item never removes its Program picture', async () => {
+  const h = createHarness(project([
+    audioItem('outgoing', { hasVideo: true }),
+    audioItem('incoming', { hasVideo: true }),
+  ]));
+  const program = snapshotCue('incoming', 'program-cue', 2, 0.5);
+  const preview = snapshotCue('incoming', 'preview-cue', 99, 8);
+  try {
+    await flush();
+    h.emitCue(snapshotCue('outgoing', 'outgoing-cue', 1, 2));
+    h.emitPatch({ op: 'preview_started', itemUuid: 'incoming', cueId: 'preview-cue', revision: 1 });
+    h.emitCue(snapshotCue('outgoing', 'outgoing-cue', 1, 20, 0));
+    h.emitCue(program);
+    assert.equal(h.controller.showVideo.value, true, 'automatic follow can take an item already in Preview');
+    assert.equal(new URL(h.controller.videoSrc.value!).searchParams.get('item_uuid'), 'incoming');
+    h.controller.onVideoCanPlay();
+    assert.equal(h.element.currentTime, 0.5);
+    h.emitCue(preview);
+    h.emitPatch({ op: 'preview_started', itemUuid: 'incoming', cueId: 'preview-cue', revision: 2 });
+    h.emitMeters({ items: [{ cue_id: 'preview-cue', transport: 1, playhead_seconds: 9 }] });
+    assert.equal(h.controller.showVideo.value, true, 'starting Preview cannot remove an on-air copy');
+    assert.equal(h.element.currentTime, 0.5, 'Preview cannot seek the Program picture');
+
+    h.server.connected = false;
+    await flush();
+    h.server.connected = true;
+    await flush();
+    h.emitSnapshot({
+      cues: [program, preview],
+      preview: { item_uuid: 'incoming', cue_id: 'preview-cue', revision: 2 },
+    });
+    assert.equal(h.controller.showVideo.value, true, 'reconnect keeps the Program copy of the auditioned item');
+    assert.equal(h.element.currentTime, 0.5);
+    h.emitCue({ ...program, transport: 0 });
+    assert.equal(h.controller.showVideo.value, false, 'Preview stays off the audience feed after Program stops');
+  } finally { h.stop(); }
 });
 
 for (const op of ['preview_stopped', 'preview_started']) {
@@ -841,7 +879,7 @@ test('a new server snapshot resets Preview ordering and refuses an older server 
   const h = createHarness(project([audioItem('program', { hasVideo: true }), audioItem('preview', { hasVideo: true })]));
   try {
     await flush(); h.emitCue(snapshotCue('program', 'program-cue', 1));
-    h.emitPatch({ op: 'preview_started', itemUuid: 'preview', revision: 50, project_session_id: 'old-server' });
+    h.emitPatch({ op: 'preview_started', itemUuid: 'preview', cueId: 'old-preview-cue', revision: 50, project_session_id: 'old-server' });
     h.emitSnapshot({ cues: [snapshotCue('program', 'program-cue', 1)], preview: {
       item_uuid: 'preview', cue_id: 'preview-cue', revision: 1, project_session_id: 'new-server' } });
     h.emitPatch({ op: 'preview_stopped', revision: 51, project_session_id: 'old-server' });

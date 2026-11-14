@@ -151,7 +151,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   const activeItemUuid = ref<string | null>(null);
   const activeCueId = ref<string | null>(null);
   const activeTransport = ref(TRANSPORT_STOPPED);
-  const previewItemUuid = ref<string | null>(null);
+  let previewCueId: string | null = null;
   let previewStateRevision = -1;
   let previewStateSession = '';
   const nextItemUuid = ref<string | null>(null);
@@ -637,11 +637,10 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   const offCueState = server.onCueState((raw: unknown) => {
     if (acceptDiagnosticState(raw)) return;
     const state = readActiveCue(raw);
-    if (!state) return;
+    if (!state || (previewCueId !== null && state.cueId === previewCueId)) return;
     acceptNextSnapshot = false;
     highestTriggerSeqSeen = Math.max(highestTriggerSeqSeen, state.triggerSeq);
 
-    if (state.itemUuid === previewItemUuid.value) return;
     if (state.transport === TRANSPORT_STOPPED) {
       const stoppedAt = state.itemUuid === activeItemUuid.value && state.triggerSeq === activeTriggerSeq
         ? state.playheadSeconds : undefined;
@@ -769,7 +768,8 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     if ((!session || session === previewStateSession) && revision < previewStateRevision) return false;
     previewStateSession = session;
     previewStateRevision = revision;
-    previewItemUuid.value = readString(state?.itemUuid);
+    // Preview loads a separate engine cue, even when Program plays the same playlist item.
+    previewCueId = readString(state?.cueId);
     return true;
   }
 
@@ -781,14 +781,14 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     const preview = snapshot.preview && typeof snapshot.preview === 'object'
       ? snapshot.preview as Record<string, unknown>
       : null;
-    applyPreviewState(preview ? { ...preview, itemUuid: preview.item_uuid } : null, true);
+    applyPreviewState(preview ? { ...preview, cueId: preview.cue_id ?? preview.cueId } : null, true);
 
     const candidates: ActiveCue[] = [];
     for (const entry of Array.isArray(snapshot.cues) ? snapshot.cues : []) {
       if (acceptDiagnosticState(entry)) continue;
       const active = readActiveCue(entry);
       if (!active || active.transport === TRANSPORT_STOPPED
-        || active.itemUuid === previewItemUuid.value) continue;
+        || (previewCueId !== null && active.cueId === previewCueId)) continue;
       candidates.push(active);
     }
     const newestSequence = candidates.reduce(
@@ -821,7 +821,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
           doc.value = null;
           activeCues.clear();
           nextItemUuid.value = null;
-          previewItemUuid.value = null;
+          previewCueId = null;
           previewStateRevision = -1;
           previewStateSession = '';
           highestTriggerSeqSeen = -1;
@@ -845,16 +845,13 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
           break;
         case 'preview_started': {
           if (!applyPreviewState(patch)) return;
-          if (previewItemUuid.value) {
-            for (const [key, active] of activeCues) {
-              if (active.itemUuid === previewItemUuid.value) activeCues.delete(key);
-            }
+          if (previewCueId && activeCues.delete(`cue:${previewCueId}`)) {
             renderNewestActive(false);
           }
           break;
         }
         case 'preview_stopped':
-          applyPreviewState({ ...patch, itemUuid: '' });
+          applyPreviewState({ ...patch, cueId: '' });
           break;
         default:
           break;
