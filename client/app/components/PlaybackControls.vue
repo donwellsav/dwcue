@@ -29,20 +29,21 @@
     <button
       type="button"
       class="control-btn play-next-btn"
-      :class="{ 'has-next': !!effectiveNextUuid }"
+      :class="{ 'has-next': canPlayNext }"
       @click="handlePlayNext"
-      :disabled="!projectControlsReady || !effectiveNextUuid || setNextItemPending"
-      :title="effectiveNextItem ? `${playNextTooltip}\n${effectiveNextName}\n${effectiveNextContext}` : playNextTooltip"
+      :disabled="!canPlayNext"
+      :aria-busy="setNextItemPending"
+      :title="canPlayNext && effectiveNextItem ? `${playNextTooltip}\n${effectiveNextName}\n${effectiveNextContext}` : effectiveNextName"
     >
       <span class="material-symbols-rounded" aria-hidden="true">fast_forward</span>
       <span class="play-next-label">
         <span class="play-next-target">{{ effectiveNextName }}</span>
-        <span class="play-next-meta">
+        <span v-if="canPlayNext" class="play-next-meta">
           <span>{{ t('controls.playNext') }}</span>
           <span v-if="effectiveNextIndex" class="play-next-detail">{{ effectiveNextIndex }}</span>
           <span v-if="effectiveNextDuration" class="play-next-detail">{{ effectiveNextDuration }}</span>
         </span>
-        <span v-if="effectiveNextContext" class="play-next-context" aria-hidden="true">{{ effectiveNextContext }}</span>
+        <span v-if="canPlayNext && effectiveNextContext" class="play-next-context" aria-hidden="true">{{ effectiveNextContext }}</span>
       </span>
     </button>
 
@@ -540,6 +541,7 @@ async function handleSetPreviewStartNext() {
 }
 
 const effectiveNextUuid = computed(() => nextItemOverrideUuid.value ?? autoNextItemUuid.value);
+const canPlayNext = computed(() => projectControlsReady.value && !!effectiveNextUuid.value && !setNextItemPending.value);
 
 const playNextTooltip = computed(() => {
   const binding = playbackMappings.value['play-next'];
@@ -555,7 +557,11 @@ const stopAllTooltip = computed(() => {
 const effectiveNextItem = computed(() => effectiveNextUuid.value
   ? findItemByUuid(effectiveNextUuid.value)
   : null);
-const effectiveNextName = computed(() => effectiveNextItem.value?.displayName || '-');
+const effectiveNextName = computed(() => {
+  if (setNextItemPending.value) return t('controls.settingUpNext');
+  if (!effectiveNextUuid.value) return t('controls.noCueQueued');
+  return effectiveNextItem.value?.displayName || t('controls.playNext');
+});
 const effectiveNextIndex = computed(() => formatItemIndex(effectiveNextItem.value?.index));
 const effectiveNextContext = computed(() => {
   const item = effectiveNextItem.value;
@@ -672,6 +678,10 @@ const handlePlayNext = async () => {
   color: var(--color-text-secondary);
   container: play-next / inline-size;
   padding-block: var(--spacing-xs);
+}
+
+.play-next-btn:disabled {
+  opacity: 1;
 }
 
 .playback-controls.show-mode .play-next-btn {

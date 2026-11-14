@@ -1038,6 +1038,8 @@
     "selectDown": "Select Down",
     "playSelected": "Play Selected",
     "setUpNext": "Set Selected as Up Next",
+    "settingUpNext": "Setting Up Next…",
+    "noCueQueued": "No cue queued",
     "toggleVideoOutput": "Toggle Video Output",
     "captureVideoStandby": "Capture Video Output",
     "captureDisplayStandby": "Capture Display",

@@ -75,7 +75,7 @@
         <div class="item-arm">
           <ActionButton
             class="set-next-action"
-            icon="fast_forward"
+            :icon="isQueuedNext ? undefined : 'fast_forward'"
             :highlight-color="item.type === 'group' ? 'var(--folder-next-action)' : 'var(--state-up-next)'"
             active-text-color="var(--state-up-next-text)"
             :is-active="isManuallyQueued"
@@ -83,9 +83,10 @@
             context="Playlist"
             @click.stop="handleSetAsNext"
             :label="t('status.upNext')"
-            :hover-label="isManuallyQueued ? t('status.upNext') : t('controls.playNext')"
-            :title="isManuallyQueued ? t('status.upNext') : t('controls.playNext')"
-            :aria-label="isManuallyQueued ? t('status.upNext') : t('controls.playNext')"
+            :hover-label="isQueuedNext ? undefined : t('controls.playNext')"
+            :title="isManuallyQueued ? t('status.upNext') : t('actions.setAsNext')"
+            :aria-label="isQueuedNext ? t('status.upNext') : t('actions.setAsNext')"
+            :aria-current="isQueuedNext ? 'true' : undefined"
             :aria-pressed="isManuallyQueued"
           />
         </div>
@@ -362,7 +363,7 @@ const isPlaying = computed(() => activeCues.value.has(props.item.uuid));
 const isPaused = computed(() =>
   props.item.type === 'audio' && activeCues.value.get(props.item.uuid)?.isPaused === true,
 );
-// Manual override — drives the button highlight and toggle behaviour
+// The stored override drives the filled button and toggle behaviour.
 const isManuallyQueued = computed(() => nextItemOverrideUuid.value === props.item.uuid);
 // Effective "up next" — manual override wins; falls back to auto-derived from end behavior
 const isQueuedNext = computed(() => {
@@ -1517,8 +1518,11 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 
-.item-left :deep(.set-next-action.action-btn--active .material-symbols-rounded) {
-  display: none;
+.item-left :deep(.set-next-action[aria-current='true']:not(.action-btn--active)) {
+  border-color: var(--state-up-next);
+  color: var(--color-text-primary);
+
+  .action-label-default { display: inline; }
 }
 
 .preview-action { grid-area: expand; }
