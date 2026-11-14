@@ -1,8 +1,8 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.22 development
-**Source revision:** bc3fee61f364ccb81d4e81b2c1bf2c0b2a6cb6d3
-**Native engine baseline:** 355b93aecaee0320bfb960fd8342fdc01417fc52
+**Source revision:** 71a9e1046de0bf3511f30a0bebdd94716c091e2d
+**Native engine baseline:** 71a9e1046de0bf3511f30a0bebdd94716c091e2d
 **Edition:** 14 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
@@ -578,6 +578,8 @@ The output shows one picture at a time and cuts to the newest sounding cue. **Fu
 
 When a cue has no usable video, the output uses the first available layer in this order. Assigned **Cue image**, captured cue still, captured session standby, saved **Standby image**, then black. Set a Cue image in the cue's Basic Info and a saved standby image in **Settings → Video Output**. The native audio engine drives the soundtrack. Preview/headphone playback stays off the audience output.
 
+At an automatic **Play Next** ending, the output follows the cue that actually starts. A video cue shows its picture once decoding is ready. An audio-only cue uses its still or the standby layer. Rehearse through the full ending of each video and check both kinds of handoff.
+
 Use H.264 or HEVC media for this source edition. ProRes and other production codecs are not supported by the documented video path. Container extension alone is not a codec guarantee. Test every video on the exact show machine, including its soundtrack, opening frame, end behavior, aspect ratio, and transitions between audio-only and video cues.
 
 > **CAUTION — A fallback can hide a video failure.** If video cannot load or decode, the output can fall through to a cue image, standby image, or black without a blocking show alert. A healthy audio cue does not prove the picture is playing. Watch the actual destination during rehearsal.
@@ -854,7 +856,7 @@ First protect the audience using the rehearsed stop/mute procedure. Then identif
 | A group does not leave its last cue | Check the group's End Behavior and destination, then confirm that the selected descendant run completed rather than being manually stopped or cancelled. Stale child completion cannot fire the group ending after cancellation. |
 | QuickPlay does not fire | Check the keyboard/MIDI mapping, retrigger Ignore, connection and media readiness. Use the tile's Stop button to stop playback. |
 | MIDI volume appears to move the wrong stage | Confirm the mapping is Master Volume and make one small directional movement after its reference value. It changes separate engine state and does not move the visible main Master output fader or other output faders; verify the audible result only through the rehearsed destination. |
-| Video is black or shows a still image | Confirm Video Output is open, the correct display is assigned, the cue has supported video, and the actual decoder is playing. Fallback images can hide a media failure. |
+| Video is black or shows a still image | Check the active cue and Video Output status. An audio-only cue may be using its still or standby. If a video is playing audio and the picture stays black, use **Copy Output Diagnostics** before restarting the output. |
 | The server appears in discovery but will not connect | UDP discovery does not prove TCP reachability or authentication. Verify address, control port, firewall, and current token. |
 | Changes are missing after a restart | Check which copy was opened, whether the last save succeeded, Autosave state, and available disk backups. Unsaved edits are not in a disk-only backup. |
 | A moved show reports missing media | Restore the whole project folder, check external linked paths and mounted volumes, or replace the missing file in cue Properties and recheck its trims. |
