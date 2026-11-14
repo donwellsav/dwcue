@@ -1857,10 +1857,10 @@ void render_engine(liveplay::audio::AudioEngine& engine, int blocks) {
 
 void test_terminal_custom_actions(const std::filesystem::path& wav) {
     for (const bool prepared : {false, true}) {
-        liveplay::audio::AudioEngine engine;
-        liveplay::core::ProjectState state(engine);
         std::mutex received_mutex;
         std::vector<std::string> received;
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
         state.set_external_action_handler([&](const json& action) {
             std::lock_guard lock{received_mutex};
             received.push_back(action.value("marker", ""));
@@ -1878,10 +1878,20 @@ void test_terminal_custom_actions(const std::filesystem::path& wav) {
         engine.create_mixer_channel("Terminal test");
         if (prepared) engine.running_.store(true);
         check(state.trigger_item("terminal-source"), "terminal actions: source starts");
-        if (prepared) check(static_cast<bool>(wait_prepared_follow(engine, *state.item_to_cue_id("terminal-target"))),
-                            "terminal actions: exact follow prepared");
+        const auto follow = prepared
+            ? wait_prepared_follow(engine, *state.item_to_cue_id("terminal-target"))
+            : nullptr;
         render_engine(engine, 4);
-        std::this_thread::sleep_for(150ms);
+        if (prepared) check(follow && follow->status.load() == liveplay::audio::PreparedFollow::State::Fired,
+                            "terminal actions: exact follow fires during rendering");
+        const auto finished = [&] {
+            return prepared ? state.item_trigger_seq("terminal-target").has_value()
+                            : state.next_item_override() == "terminal-target";
+        };
+        const auto deadline = std::chrono::steady_clock::now() + 2s;
+        while (!finished() && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(5ms);
+        check(finished(), "terminal actions: sequencer completes the end action");
         {
             std::lock_guard lock{received_mutex};
             check(received == std::vector<std::string>{"near", "edge"}, prepared
