@@ -2883,18 +2883,27 @@ bool ProjectState::reorder_items(const std::vector<std::string>& uuids,
 json ProjectState::shuffle_items(const std::vector<std::string>& before,
                                  const std::string& parent_uuid) {
     std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
+    const bool whole_playlist = parent_uuid.empty();
+    std::unordered_set<std::string> in_use;
     {
         std::lock_guard lock{sequencer_mutex_};
-        if (!sequenced_items_.empty() || !group_runs_.empty()) return {{"status", "playing"}};
+        if (whole_playlist && (!sequenced_items_.empty() || !group_runs_.empty()))
+            return {{"status", "playing"}};
+        for (const auto& item : sequenced_items_) {
+            in_use.insert(item.uuid);
+            if (item.prepared_follow) in_use.insert(item.prepared_target_uuid);
+        }
     }
     std::optional<std::string> rearm;
     auto order = before;
     {
         std::lock_guard lock{mutex_};
-        for (const auto& [_, id] : item_uuid_to_cue_) {
+        for (const auto& [uuid, id] : item_uuid_to_cue_) {
             const auto cue = engine_.find_cue(id);
-            if (cue && cue->stats().transport != audio::TransportState::Stopped)
-                return {{"status", "playing"}};
+            if (cue && cue->stats().transport != audio::TransportState::Stopped) {
+                if (whole_playlist) return {{"status", "playing"}};
+                in_use.insert(uuid);
+            }
         }
         auto* target = playlist_siblings_locked(parent_uuid);
         if (!target || before.size() != target->size()) return {{"status", "changed"}};
@@ -2903,9 +2912,24 @@ json ProjectState::shuffle_items(const std::vector<std::string>& before,
                 return {{"status", "changed"}};
         }
 
+        std::vector<bool> fixed(before.size());
+        // Keep the played prefix and committed handoff together. Moving either
+        // across the current cue could replay a cue or skip it on the next advance.
+        const auto branch_in_use = [&](const auto& self, const json& item) -> bool {
+            if (in_use.contains(item.value("uuid", std::string{}))) return true;
+            const auto children = item.find("children");
+            return children != item.end() && children->is_array() &&
+                std::any_of(children->begin(), children->end(), [&](const json& child) {
+                    return child.is_object() && self(self, child);
+                });
+        };
+        std::size_t fixed_prefix = in_use.empty() ? 0 : before.size();
+        while (fixed_prefix > 0 && !branch_in_use(branch_in_use, (*target)[fixed_prefix - 1]))
+            --fixed_prefix;
+        std::fill_n(fixed.begin(), fixed_prefix, true);
+
         // A position-based action follows its cue number. Leave its branch
         // in place at this level so the shuffle can't change what it fires.
-        std::vector<bool> fixed(before.size());
         const auto hold_target = [&](const json& path) {
             if (!path.is_array() || !std::all_of(path.begin(), path.end(), [](const json& n) {
                 return n.is_number_integer() && n >= 0 && n <= std::numeric_limits<int>::max();
@@ -2947,14 +2971,16 @@ json ProjectState::shuffle_items(const std::vector<std::string>& before,
         std::vector<std::size_t> positions;
         for (std::size_t i = 0; i < fixed.size(); ++i)
             if (!fixed[i]) positions.push_back(i);
-        if (positions.size() < 2) return {{"status", before.size() < 2 ? "tooFew" : "linked"}};
+        if (positions.size() < 2)
+            return {{"status", before.size() < 2 ? "tooFew" : fixed_prefix > 0 ? "upcoming" : "linked"}};
 
         auto permutation = positions;
         static thread_local std::mt19937 rng{std::random_device{}()};
         std::shuffle(permutation.begin(), permutation.end(), rng);
         if (permutation == positions) std::swap(permutation[0], permutation[1]);
 
-        const bool was_initial = !next_item_override_manual_ && !next_item_override_.empty() &&
+        const bool was_initial = in_use.empty() && !next_item_for_go_only_ &&
+                                 !next_item_override_manual_ && !next_item_override_.empty() &&
                                  next_item_override_ == first_playable_item_uuid_locked(target);
         json moved = json::array();
         moved.get_ref<json::array_t&>().reserve(permutation.size());
@@ -2963,8 +2989,8 @@ json ProjectState::shuffle_items(const std::vector<std::string>& before,
         for (std::size_t i = 0; i < positions.size(); ++i)
             (*target)[positions[i]] = std::move(moved[i]);
         if (was_initial) rearm = first_playable_item_uuid_locked(target);
-        // Reject pending starts whose target was chosen from the old order.
-        ++playback_intent_revision_;
+        // Only a whole-playlist reorder invalidates a pending start elsewhere.
+        if (whole_playlist) ++playback_intent_revision_;
     }
     if (rearm) (void)set_next_item_override(*rearm, /*manual=*/false);
     prepare_music_backups();

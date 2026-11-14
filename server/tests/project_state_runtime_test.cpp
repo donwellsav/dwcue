@@ -2378,7 +2378,7 @@ void test_shuffle_items(const std::filesystem::path& wav) {
     liveplay::audio::AudioEngine engine;
     liveplay::core::ProjectState state(engine);
     auto group = json{{"uuid", "music"}, {"type", "group"}, {"children", json::array({
-        audio("one", wav), audio("two", wav), audio("three", wav),
+        audio("one", wav), audio("two", wav), audio("three", wav), audio("four", wav),
     })}};
     auto show = document(json::array({group, audio("opener", wav, {
         {"endBehavior", {{"action", "goto-index"}, {"targetIndex", {0, 0}}}},
@@ -2387,22 +2387,36 @@ void test_shuffle_items(const std::filesystem::path& wav) {
     check(wait_ready(state), "shuffle: media ready"); close_devices(engine);
     const auto cue_before = state.item_to_cue_id("one");
     check(state.set_next_item_override("three"), "shuffle: explicit Up Next armed");
-    const auto inside = state.shuffle_items({"one", "two", "three"}, "music");
+    const std::vector<std::string> original{"one", "two", "three", "four"};
+    const auto inside = state.shuffle_items(original, "music");
     check(inside.value("status", "") == std::string{"ok"} &&
-          inside.at("uuids") == json::array({"one", "three", "two"}) &&
+          inside.at("uuids") != original &&
           state.item_uuid_by_index({0, 0}) == "one" && state.next_item_override() == "three",
           "shuffle: numbered target stays fixed, order changes, explicit Up Next survives");
+    const auto order = inside.at("uuids").get<std::vector<std::string>>();
     const auto root = state.shuffle_items({"music", "opener", "closer"}, "");
     check(root.value("status", "") == std::string{"ok"} &&
           root.at("uuids") == json::array({"music", "closer", "opener"}) &&
-          state.item_uuid_by_index({0, 1}) == "three" &&
+          state.item_uuid_by_index({0, 1}) == order.at(1) &&
           cue_before.has_value() && state.item_to_cue_id("one") == cue_before,
           "shuffle: nested group moves only as a unit and keeps loaded cue IDs");
     check(state.shuffle_items({"music", "opener", "closer"}, "").value("status", "") == std::string{"changed"},
           "shuffle: stale order cannot overwrite a newer edit");
-    check(state.go() == "three" &&
-          state.shuffle_items({"one", "three", "two"}, "music").value("status", "") == std::string{"playing"},
-          "shuffle: GO starts the shown cue and active playback rejects shuffle");
+    check(state.set_next_item_override(order[1]) && state.go() == order[1] &&
+          state.set_next_item_override(order[2]), "shuffle: starts a group child and arms a later cue");
+    const auto live_intent = state.playback_intent_revision();
+    const auto live_pass = state.item_trigger_seq(order[1]);
+    const auto live = state.shuffle_items(order, "music");
+    const std::vector<std::string> updated{order[0], order[1], order[3], order[2]};
+    check(live.value("status", "") == std::string{"ok"} && live.at("uuids") == updated &&
+          on_air(state, engine, order[1]) && state.item_trigger_seq(order[1]) == live_pass &&
+          state.playback_intent_revision() == live_intent && state.next_item_override() == order[2],
+          "shuffle: changes the upcoming group order while preserving the active pass and manual Up Next");
+    check(state.shuffle_items({"music", "closer", "opener"}, "").value("status", "") == std::string{"playing"},
+          "shuffle: whole playlist still requires stopped playback");
+    check(state.go() == order[2] &&
+          state.shuffle_items(updated, "music").value("status", "") == std::string{"upcoming"},
+          "shuffle: manual GO survives the new order and a group ending stays in place");
     state.stop_all_cues(0);
 }
 
