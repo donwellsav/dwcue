@@ -1899,7 +1899,7 @@ assert.match(
 );
 assert.match(
   playlistView,
-  /\.playlist-actions\s*\{[\s\S]{0,160}flex:\s*0 1 auto;[\s\S]{0,120}margin-inline-start:\s*auto;[\s\S]{0,120}overflow-x:\s*auto;[\s\S]*\.playlist-header \.workspace-panel-header__leading\s*\{[\s\S]{0,80}flex:\s*0 0 auto;/,
+  /\.playlist-actions\s*\{[^}]*flex:\s*1 1 auto;[^}]*overflow-x:\s*auto;[^}]*container:\s*playlist-actions \/ inline-size;[\s\S]*@container playlist-actions \(max-width: 640px\)/,
   'playlist actions must stay bounded by the shared header at every supported width',
 );
 assert.match(

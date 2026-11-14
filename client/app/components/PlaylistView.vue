@@ -1294,12 +1294,13 @@ const handleDrop = async (e: DragEvent) => {
 
 .playlist-actions {
   display: flex;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   align-items: center;
+  justify-content: safe flex-end;
   min-width: 0;
-  margin-inline-start: auto;
   gap: var(--spacing-sm);
   overflow-x: auto;
+  container: playlist-actions / inline-size;
 }
 
 .playlist-header .workspace-panel-header__leading {
@@ -1321,18 +1322,17 @@ const handleDrop = async (e: DragEvent) => {
   color: var(--state-playing);
 }
 
-@container (max-width: 580px) {
-  .playlist-actions {
-    gap: var(--spacing-xs);
-  }
-
+@container playlist-actions (max-width: 640px) {
   .playlist-actions :deep(.btn) {
     flex: 0 0 var(--panel-control-height);
     justify-content: center;
     padding: 0;
   }
 
-  .playlist-actions :deep(.btn__text),
+  .playlist-actions :deep(.btn__text) { display: none; }
+}
+
+@container (max-width: 580px) {
   .playlist-header :deep(.cart-toggle__label) { display: none; }
 }
 
