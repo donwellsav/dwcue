@@ -196,7 +196,7 @@
 
     <div id="preview-lower-panel" class="preview-lower-panel" aria-live="polite"></div>
 
-    <ShortcutsBar :compact="lowerPanelOpen" />
+    <ShortcutsBar />
 
     <div v-show="lowerPanelOpen" ref="lowerPanel" class="lower-workspace-panel"
       :style="{ height: panelHeight === null ? 'auto' : `${panelHeight}px`, maxHeight: `${MAX_PANEL_HEIGHT_PERCENT}%` }"
