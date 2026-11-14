@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
-**Version:** 2.6.22 development
-**Source revision:** 1ff7f8a4f697b840136e4c852073bc62773c0878
-**Native engine baseline:** 71a9e1046de0bf3511f30a0bebdd94716c091e2d
-**Edition:** 14 November 2026 · English · Current-source operator edition
+**Version:** 2.6.23
+**Source revision:** f732f4f9847c48ced8ce6019ecd9a64e3021af9a
+**Native engine baseline:** f732f4f9847c48ced8ce6019ecd9a64e3021af9a
+**Edition:** 14 November 2026 · English · Operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition covers the docked workspace, QuickPlays, playlist shuffle, backup music, adjustable picture framing, and the pre-show video check. Match your installer to its release notes before rehearsal.
+This edition covers playlist and group shuffle, optional backup music, QuickPlays shortcuts, operator tooltips, and video-to-video handoffs. It also includes picture framing and the pre-show video check.
 
 The interface captures use practice media and software audio output. **docs/manual-assets/captures.json** records each capture's date, source revision and hash. Equipment photographs remain illustrative.
 
@@ -55,7 +55,7 @@ This manual uses the English labels. Change language through **Settings → User
 
 Get the installer for your operating system and architecture from the [official releases page](https://github.com/donwellsav/dwcue/releases). Check its release notes against this manual's source edition. Do not update the app, operating system, audio driver, or show files immediately before a performance without rehearsal.
 
-When a newer release is available, the desktop app shows a five-second startup notice and leaves an **Update Available** indicator. Open **Settings → About** to check for updates or choose **Download Update**. Packages that require manual installation offer the download page. After download, stop playback and Preview and exit Show Mode to use **Install Now**, or choose **Install on Exit** for the next app quit. Download and installation each require an operator action.
+When a newer release is available, the desktop app shows a five-second header notice and leaves an **Update Available** indicator. Open **Settings → About** to check for updates or choose **Download Update**. On the welcome screen, choose **Update Available** or use **Help → Check for Updates**. macOS, Windows, and Linux AppImage builds can install in place. DEB and RPM builds open the downloads page. After download, stop playback and Preview and exit Show Mode to use **Install Now**. Choose **Install on Exit** to apply the update on the next app quit. Download and installation each require an operator action.
 
 Connect the audio interface before opening the show. Confirm the correct outputs at the sound console, start with a conservative listening level, connect mains power, and disable sleep for the performance using the operating system's controls. Prevent notification sounds from reaching the audience. Keep a separate copy of the show and its media on reliable storage.
 
@@ -973,7 +973,7 @@ These are source defaults, not a promise about a project's customized assignment
 
 With Video Output focused, Escape also exits its fullscreen mode. In Level Check, R / [ / ] / Q have the temporary meanings described in chapter 12. MIDI bindings belong to the machine; keyboard playback assignments belong to the project.
 
-### Current-source boundaries
+### Operating boundaries
 
 - Group Play First / Play All preflights and owns the selected descendant run; a refusal starts no children, and an accepted group's End Behavior runs exactly once on normal completion.
 - Audio Start Behavior Play Next / Play Item / Play Index and timed Start Next actions execute through the engine; cycles and overlapping structural starts still require rehearsal.
@@ -985,7 +985,7 @@ With Video Output focused, Escape also exits its fullscreen mode. In Level Check
 
 ### About this edition
 
-This development edition covers the source listed on the cover. The Settings and Properties shortcuts are for the next build after **2.6.22**. The interface captures use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
+This edition covers DonWells Cue **2.6.23**. The interface captures use generated media, a software audio output, and fixture display, MIDI and locale methods. Each capture's source revision is recorded in **docs/manual-assets/captures.json**.
 
 The playback checkpoint **2f372c2** passed native 13/13, isolated API 61/61, client 229/229, typecheck and RT/live safety checks. Audio-output and project-runtime suites also pass AddressSanitizer; leak detection is disabled. Native checks include six simulated ten-minute secondary-clock runs with continuous generated audio and no buffer faults or resyncs inside the tested envelope. Physical alignment and the earlier intermittency remain unproven; more extreme drift/jitter can trigger recovery.
 
