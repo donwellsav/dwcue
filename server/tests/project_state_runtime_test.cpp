@@ -2462,9 +2462,9 @@ void test_music_backup(const std::filesystem::path& wav) {
         else render_to_end(state, engine, "music-out");
         const bool expect_backup = scenario == "root" || group_scope || busy_target;
         if (expect_backup) (void)wait_for_on_air(state, engine, "music-backup");
-        check(on_air(state, engine, "music-backup") == expect_backup &&
-              notice.load() == expect_backup && !unavailable.load() &&
-              (!(ready_target || normal_next) || on_air(state, engine, "operator-next")), mode);
+        check((!(ready_target || normal_next) || wait_for_on_air(state, engine, "operator-next")) &&
+              on_air(state, engine, "music-backup") == expect_backup &&
+              notice.load() == expect_backup && !unavailable.load(), mode);
         if (busy_target) {
             held.unlock();
             check(state.next_item_override() == "operator-next", "music backup: pending choice stays Up Next");
