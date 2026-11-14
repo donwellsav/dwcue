@@ -489,7 +489,14 @@ void test_cold_outputs_keep_transport_available() {
         AudioEngine engine;
         engine.device_test_context_ = &context;
         liveplay::core::ProjectState state(engine);
-        check(engine.start(false) && engine.enumerate_devices().size() == 2, "cold outputs: distinct software outputs available");
+        check(engine.start(false), "cold outputs: headless engine started");
+        (void)engine.enumerate_devices();
+        auto& catalog = *engine.device_catalog_;
+        // A cold enumeration can return before the background scan publishes its first snapshot.
+        std::unique_lock catalog_lock{catalog.mutex};
+        const bool catalog_ready = catalog.ready.wait_for(catalog_lock, 2s, [&] { return catalog.has_snapshot; });
+        catalog_lock.unlock();
+        check(catalog_ready && engine.enumerate_devices().size() == 2, "cold outputs: distinct software outputs available");
         check(state.replace_full_document(document(json::array({audio("bed", wav),
             audio("held", wav, {{"deviceOverride", "Held Output"}}),
             audio("backup", wav, {{"deviceOverride", "Backup Output"}}),
