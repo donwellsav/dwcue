@@ -166,14 +166,14 @@ struct ControlServer {
         std::vector<int> http_actions{1};
     };
     std::unique_ptr<Impl> impl_ = std::make_unique<Impl>();
-    std::unordered_map<std::string, int> prev_transports{{"cue", 1}}, prev_device_states{{"device", 1}};
+    std::unordered_map<std::string, int> prev_cue_states{{"cue", 1}}, prev_device_states{{"device", 1}};
     void broadcast_doc_patch(const json& payload);
     std::function<void()> cached_batch() {
         ${epochCapture}
         return [this, batch_epoch] {
             const std::string serialized = "meters", snapshot_serialized = "snapshot";
             const std::vector<std::string> cue_state_events{"playing"}, device_state_events{"device"};
-            auto& prev_transports = this->prev_transports;
+            auto& prev_cue_states = this->prev_cue_states;
             auto& prev_device_states = this->prev_device_states;
 ${source.slice(fanoutStart, fanoutEnd)}
         };
@@ -190,7 +190,7 @@ int main() {
     stale();
     assert(client.messages == std::vector<std::string>{"project_changed"});
     assert(server.impl_->ws_clients_pending_snapshot.contains(&client));
-    assert(server.prev_transports.empty() && server.prev_device_states.empty());
+    assert(server.prev_cue_states.empty() && server.prev_device_states.empty());
     assert(server.impl_->http_actions.empty());
     server.cached_batch()();
     assert((client.messages == std::vector<std::string>{"project_changed", "snapshot", "meters", "playing", "device"}));

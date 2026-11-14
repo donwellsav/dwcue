@@ -747,6 +747,54 @@ async function request(baseUrl, pathname, options = {}) {
   });
 }
 
+test('a prepared natural handoff publishes the incoming trigger order while playback continues', async t => {
+  const folder = await mkdtemp(path.join(os.tmpdir(), 'dwcue-follow-state-'));
+  const port = await unusedPort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const child = spawn(serverBinary, ['--bind', '127.0.0.1', '--port', String(port)], {
+    cwd: folder, env: { ...process.env, LIVEPLAY_STATE_DIR: path.join(folder, 'state'),
+      LIVEPLAY_ACCESS_TOKEN: accessToken, LIVEPLAY_ALLOWED_ORIGINS: baseUrl }, stdio: 'ignore',
+  });
+  let stream;
+  t.after(async () => {
+    stream?.socket.close();
+    await stopServer(child);
+    await rm(folder, { recursive: true, force: true });
+  });
+  const cue = (uuid, action) => ({
+    uuid, type: 'audio', mediaServerPath: path.join(folder, uuid + '.wav'),
+    duckingBehavior: { mode: 'no-ducking' }, fadeOutDuration: 0, playFade: 0,
+    endBehavior: { action },
+  });
+  await writeFile(path.join(folder, 'outgoing.wav'), silentWav(.75));
+  await writeFile(path.join(folder, 'incoming.wav'), silentWav(3));
+  const show = path.join(folder, 'Follow.dwcue');
+  await writeFile(show, JSON.stringify({
+    name: 'Follow', folderPath: folder, items: [cue('outgoing', 'next'), cue('incoming', 'nothing')],
+    cartItems: [], cartOnlyItems: [], settings: { stopAllFadeMs: 0 },
+  }));
+  const post = (route, body = {}) => request(baseUrl, route, { method: 'POST', body: JSON.stringify(body) });
+  await waitForServer(baseUrl, child);
+  assert.equal((await post('/api/project/load', { path: show })).status, 200);
+  for (let attempt = 0; !(await (await request(baseUrl, '/api/project/progress')).json()).ready; attempt++) {
+    assert.ok(attempt < 200, 'fixture media did not load');
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  stream = openEventStream(`ws://127.0.0.1:${port}/ws?access_token=${accessToken}`);
+  await stream.opened;
+  const trigger = (uuid, after) => stream.next(event => event.type === 'cue_state' &&
+    event.item_uuid === uuid && event.transport !== 0 && event.trigger_seq > after);
+  assert.equal((await post('/api/project/items/outgoing/play')).status, 200);
+  const outgoing = await trigger('outgoing', 0);
+  const incoming = await trigger('incoming', outgoing.trigger_seq);
+  assert.equal((await post('/api/project/items/incoming/play')).status, 200);
+  const replay = await trigger('incoming', incoming.trigger_seq);
+  assert.equal(replay.cue_id, incoming.cue_id);
+  assert.equal((await post('/api/transport/stop_all', { fade_ms: 0 })).status, 200);
+  const stopped = await stream.next(event => event.type === 'cue_state' && event.cue_id === incoming.cue_id && event.transport === 0);
+  assert.equal(stopped.trigger_seq, replay.trigger_seq);
+});
+
 test('media readers cannot block WebSocket control, HTTP framing, or cancellation', async t => {
   const home = await mkdtemp(path.join(os.tmpdir(), 'dwcue-media-backpressure-'));
   const port = await unusedPort();
