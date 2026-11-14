@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.22 development
-**Source revision:** 71a9e1046de0bf3511f30a0bebdd94716c091e2d
+**Source revision:** dc8db4f4c73ba0173fc5f688a5d53e09168639fa
 **Native engine baseline:** 71a9e1046de0bf3511f30a0bebdd94716c091e2d
 **Edition:** 14 November 2026 · English · Current-source operator edition
 
@@ -578,7 +578,7 @@ The output shows one picture at a time and cuts to the newest sounding cue. **Fu
 
 When a cue has no usable video, the output uses the first available layer in this order. Assigned **Cue image**, captured cue still, captured session standby, saved **Standby image**, then black. Set a Cue image in the cue's Basic Info and a saved standby image in **Settings → Video Output**. The native audio engine drives the soundtrack. Preview/headphone playback stays off the audience output.
 
-At an automatic **Play Next** ending, the output follows the cue that actually starts. A video cue shows its picture once decoding is ready. An audio-only cue uses its still or the standby layer. Rehearse through the full ending of each video and check both kinds of handoff.
+At an automatic **Play Next** ending, Video Output holds the outgoing video's last frame until the next video has a picture ready. An audio-only cue uses its still or the standby layer. **Stop All** clears the held frame, and a decode failure uses the normal cue image or standby. If the last frame stays frozen, check the output status before pressing GO again. Rehearse through the full ending of each video.
 
 Use H.264 or HEVC media for this source edition. ProRes and other production codecs are not supported by the documented video path. Container extension alone is not a codec guarantee. Test every video on the exact show machine, including its soundtrack, opening frame, end behavior, aspect ratio, and transitions between audio-only and video cues.
 
