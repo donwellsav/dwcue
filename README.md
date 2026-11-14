@@ -77,7 +77,7 @@ Download the latest installer from the [release page](https://github.com/donwell
 | **Windows** | `DonWells-Cue-Setup-x.y.z.exe` (installer, 64-bit) |
 | **macOS — Apple Silicon** (M1/M2/M3 and newer) | `DonWells-Cue-x.y.z-arm64.dmg` or `.zip` |
 | **macOS — Intel** (x86_64 Macs supported by macOS 13.3+) | `DonWells-Cue-x.y.z-x64.dmg` or `.zip` |
-| **Linux** | `DonWells-Cue-x.y.z.AppImage`, `.deb`, or `.rpm` |
+| **Linux x86_64** (glibc 2.43 or newer) | `DonWells-Cue-x.y.z-x86_64.AppImage`, `.deb`, or `.rpm` |
 
 The macOS release is native per architecture: the `arm64` package is for Apple Silicon and the `x64` package is for Intel. Both bundle a matching native `dwcue-server`; neither package relies on Rosetta or a machine-local server.
 
