@@ -147,6 +147,7 @@ const UI_FONT_SCALE_KEY = 'liveplay-ui-font-scale';
 const ONE_SHOT_FONT_SCALE_KEY = 'liveplay-one-shot-font-scale';
 const CART_GRID_LAYOUTS_KEY = 'liveplay-cart-grid-layouts-v1';
 const HEADER_WARNING_TIMING_KEY = 'dwcue-header-warning-timing';
+const SHOW_TOOLTIPS_KEY = 'dwcue-show-tooltips';
 
 const parseCartGridLayouts = (value: string | null): CartGridLayouts => {
   if (!value) return normalizeCartGridLayouts(null);
@@ -193,6 +194,7 @@ export const useUiMode = () => {
     () => normalizeCartGridLayouts(null),
   );
   const headerWarningTiming = useState('headerWarningTiming', () => normalizeHeaderWarningTiming(null));
+  const showTooltips = useState('useUiMode.showTooltips', () => true);
 
   if (import.meta.client && !_hydrated) {
     _hydrated = true;
@@ -222,6 +224,7 @@ export const useUiMode = () => {
       );
       cartGridLayouts.value = parseCartGridLayouts(localStorage.getItem(CART_GRID_LAYOUTS_KEY));
       headerWarningTiming.value = parseHeaderWarningTiming(localStorage.getItem(HEADER_WARNING_TIMING_KEY));
+      showTooltips.value = localStorage.getItem(SHOW_TOOLTIPS_KEY) !== 'false';
     } catch {
       // localStorage unavailable (e.g. private browsing) — fall back to 'edit'.
     }
@@ -251,6 +254,8 @@ export const useUiMode = () => {
           cartGridLayouts.value = parseCartGridLayouts(e.newValue);
         } else if (e.key === HEADER_WARNING_TIMING_KEY) {
           headerWarningTiming.value = parseHeaderWarningTiming(e.newValue);
+        } else if (e.key === SHOW_TOOLTIPS_KEY) {
+          showTooltips.value = e.newValue !== 'false';
         }
       });
     } catch {
@@ -328,6 +333,13 @@ export const useUiMode = () => {
     }
   };
 
+  const setShowTooltips = (enabled: boolean) => {
+    showTooltips.value = enabled;
+    if (import.meta.client) {
+      try { localStorage.setItem(SHOW_TOOLTIPS_KEY, String(enabled)); } catch {}
+    }
+  };
+
   const setCartGridLayout = (
     profile: CartGridProfile,
     patch: Partial<CartGridLayout>,
@@ -364,6 +376,7 @@ export const useUiMode = () => {
     oneShotFontScale,
     cartGridLayouts,
     headerWarningTiming,
+    showTooltips,
     setUiMode,
     setRegularPlaylistRowHeight,
     setShowPlaylistRowHeight,
@@ -373,6 +386,7 @@ export const useUiMode = () => {
     setOneShotFontScale,
     setCartGridLayout,
     setHeaderWarningTiming,
+    setShowTooltips,
     enterPlaybackMode,
     exitPlaybackMode,
     toggleUiMode,

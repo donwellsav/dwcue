@@ -1,7 +1,7 @@
 <template>
   <div class="modal-overlay" @click.self="close">
     <div class="modal-content about-modal">
-      <button class="modal-close" @click="close" :title="t('actions.close')">
+      <button class="modal-close" @click="close" :title="t('actions.close')" :aria-label="t('actions.close')">
         <span class="material-symbols-rounded">close</span>
       </button>
       <AboutContent />

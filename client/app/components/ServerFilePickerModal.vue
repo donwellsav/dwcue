@@ -4,8 +4,8 @@
       <div class="picker">
         <!-- Top toolbar: navigation + breadcrumb path -->
         <header class="toolbar">
-          <button class="nav-btn neutral" :disabled="historyBack.length === 0" @click="goBack" title="Back">←</button>
-          <button class="nav-btn neutral" :disabled="!canGoUp" @click="goUp" title="Up one level">↑</button>
+          <button class="nav-btn neutral" :disabled="historyBack.length === 0" @click="goBack" title="Back" aria-label="Back">←</button>
+          <button class="nav-btn neutral" :disabled="!canGoUp" @click="goUp" title="Up one level" aria-label="Up one level">↑</button>
           <input
             class="path-input"
             v-model="pathDraft"
@@ -13,7 +13,7 @@
             @keydown.enter.prevent="navigate(pathDraft)"
             placeholder="Type a path and press Enter"
           />
-          <button class="nav-btn neutral" @click="navigate('')" title="Computer / drives">
+          <button class="nav-btn neutral" @click="navigate('')" title="Computer / drives" aria-label="Computer / drives">
             <span class="material-symbols-rounded" aria-hidden="true">computer</span>
           </button>
           <slot name="actions" />

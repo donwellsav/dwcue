@@ -126,6 +126,7 @@
     "cueingSection": "Cueing",
     "safetySection": "Safety",
     "appearanceSection": "Appearance",
+    "showTooltips": "Show tooltips",
     "metersSection": "Meters",
     "secondsUnit": "seconds",
     "captureSection": "Standby & capture",

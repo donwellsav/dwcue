@@ -244,6 +244,13 @@
                   @change="onIndexDisplayStartChange"
                 />
               </section>
+              <section class="settings-field">
+                <label class="settings-label settings-label--checkbox">
+                  <input type="checkbox" :checked="showTooltips"
+                    @change="setShowTooltips(($event.target as HTMLInputElement).checked)" />
+                  {{ t('settings.showTooltips') }}
+                </label>
+              </section>
               <h3 class="settings-section-title">{{ t('settings.metersSection') }}</h3>
               <section class="settings-field">
                 <label class="settings-label" for="settings-meter-display">
@@ -811,6 +818,7 @@ const {
   oneShotFontScale,
   cartGridLayouts,
   headerWarningTiming,
+  showTooltips,
   setRegularPlaylistRowHeight,
   setShowPlaylistRowHeight,
   setFolderPlaylistRowHeight,
@@ -819,6 +827,7 @@ const {
   setOneShotFontScale,
   setCartGridLayout,
   setHeaderWarningTiming,
+  setShowTooltips,
 } = useUiMode();
 
 const headerWarningTimingError = ref('');

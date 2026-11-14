@@ -80,7 +80,8 @@
             <label for="cue-property-file">{{ t('properties.file') }}</label>
             <div class="input-with-btn">
               <input id="cue-property-file" :value="audioItem.mediaFileName" readonly />
-              <button class="icon-btn" :disabled="isReplacingMedia" :title="t('properties.replaceMedia')" @click="handleReplaceMedia">
+              <button class="icon-btn" :disabled="isReplacingMedia" @click="handleReplaceMedia"
+                :title="t('properties.replaceMedia')" :aria-label="t('properties.replaceMedia')">
                 <span class="material-symbols-rounded">swap_horiz</span>
               </button>
             </div>
@@ -96,6 +97,7 @@
               <button
                 class="icon-btn"
                 :title="t('properties.cueImageChoose')"
+                :aria-label="t('properties.cueImageChoose')"
                 @click="cueImagePickerOpen = true"
               >
                 <span class="material-symbols-rounded">image</span>
@@ -104,6 +106,7 @@
                 v-if="audioItem.imagePath"
                 class="icon-btn"
                 :title="t('properties.cueImageClear')"
+                :aria-label="t('properties.cueImageClear')"
                 @click="handleClearCueImage"
               >
                 <span class="material-symbols-rounded">close</span>
