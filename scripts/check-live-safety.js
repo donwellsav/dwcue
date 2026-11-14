@@ -1831,8 +1831,8 @@ assert.match(
 );
 assert.match(
   propertiesPanel,
-  /class="tab-panel basic-panel"[\s\S]*activeTab === 'basic' && selectedItem\.type === 'audio'[\s\S]{0,160}playback-behavior--ducking[\s\S]*playback-behavior--start[\s\S]*playback-behavior--end[\s\S]*groupOnly:\s*true[\s\S]*availableTabs\.value\.some\(tab => tab\.id === activeTab\.value\)/,
-  'audio cue behaviors must stay on Basic Info while group-only sections remain reachable',
+  /v-if="selectedItem\.type === 'audio'" class="properties-tabs"[\s\S]*<section v-if="activeTab === 'basic'" class="property-column cue-behaviors">[\s\S]*playback-behavior--ducking[\s\S]*playback-behavior--start[\s\S]*playback-behavior--end[\s\S]*newItem\.type === 'group'\) \{\s*activeTab\.value = 'basic'/,
+  'group properties must show both behavior controls together even when switching from an audio tab',
 );
 assert.doesNotMatch(
   propertiesPanel,

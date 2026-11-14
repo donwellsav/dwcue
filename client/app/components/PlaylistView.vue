@@ -25,7 +25,7 @@
           :aria-label="t('playlist.addGroup')" :disabled="!currentProject" @click="handleAddGroup" />
         <Btn icon="shuffle" :text="t('shuffle.label')" :title="t('shuffle.playlist')"
           :aria-label="t('shuffle.playlist')"
-          :disabled="shufflePending || projectHydrationStatus !== 'ready' || (currentProject?.items.length ?? 0) < 2"
+          :disabled="shufflePending || projectHydrationStatus !== 'ready' || server.cueStartsBlocked || (currentProject?.items.length ?? 0) < 2"
           @click="shuffleItems(undefined, warnShuffle)" />
       </div>
     </div>

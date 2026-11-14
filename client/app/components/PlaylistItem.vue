@@ -188,6 +188,16 @@
           draggable="false"
           @click.stop
         >{{ videoCheckIssue ? 'VIDEO !' : 'VIDEO' }}</span>
+        <ActionButton
+          v-if="item.type === 'group' && !showMode"
+          class="group-shuffle-action"
+          icon="shuffle"
+          type="button"
+          :title="t('shuffle.group')"
+          :aria-label="t('shuffle.groupFor', { name: item.displayName })"
+          :disabled="item.children.length < 2 || shufflePending || !projectControlsReady || server.cueStartsBlocked"
+          @click.stop="shuffleItems(item, status => showHeaderWarning(t(`shuffle.${status}`)))"
+        />
 
         <div class="item-transport">
           <ActionButton
@@ -290,6 +300,8 @@ const {
   waveformUpdateKey,
   triggerWaveformUpdate,
   formatItemIndex,
+  shuffleItems,
+  shufflePending,
   setMusicContinuity,
   musicContinuityPending,
 } = useProject();
@@ -1510,6 +1522,15 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .preview-action { grid-area: expand; }
+.group-shuffle-action {
+  grid-area: video;
+  justify-self: end;
+}
+
+.group-shuffle-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 
 .item-transport {
   grid-area: transport;

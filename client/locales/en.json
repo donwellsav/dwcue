@@ -415,9 +415,10 @@
     "probe-error": "Video check renderer stopped."
   },
   "shuffle": {
-    "label": "Shuffle",
+    "label": "Shuffle Playlist",
     "playlist": "Shuffle Playlist Order",
     "group": "Shuffle Group Order",
+    "groupFor": "Shuffle Group Order for {name}",
     "playing": "Stop playback before shuffling cue order.",
     "changed": "The list changed. Check the cue order and try Shuffle again.",
     "tooFew": "Shuffle needs at least two cues or groups.",
