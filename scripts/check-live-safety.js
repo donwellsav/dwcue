@@ -142,7 +142,10 @@ assert.match(
   /std::shared_ptr<MixerChannel> AudioEngine::find_mixer_channel\(\s*const MixerChannelId& id\) const\s*{\s*std::lock_guard lock\{mutex_\};\s*auto it = mixers_\./,
   'engine mixer lookup must return shared_ptr lifetimes',
 );
-assert.match(engine, /render_block \* 4\)/, 'output ring must not add hundreds of milliseconds of latency');
+assert.match(read('server/include/liveplay/audio/engine.hpp'), /kMasterQueueBlocks = 3;/,
+  'the master output stays at a three-block queue');
+assert.match(engine, /const auto target = cfg_\.render_block \* kMasterQueueBlocks;/,
+  'the render loop must pace against the master queue rather than total ring capacity');
 assert.match(engine, /info\.id = dev\.id;/,
   'opened device rows must expose the instance id accepted by close');
 assert.match(engine,

@@ -428,6 +428,9 @@ public:
 #ifndef LIVEPLAY_TEST_ACCESS
 private:
 #endif
+    static constexpr FrameCount kDeviceRingBlocks = 8;
+    static constexpr FrameCount kMasterQueueBlocks = 3;
+
     struct OutputChannelState {
         std::unique_ptr<Limiter> limiter;
         std::unique_ptr<Meter>   meter;

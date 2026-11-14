@@ -761,6 +761,32 @@ void test_live_ceiling(const std::filesystem::path& tone) {
           "explicit bypass passes the physical sum and reports zero GR");
 }
 
+void test_bursty_secondary_output(const std::filesystem::path& tone) {
+    Fixture f(tone, false, true);
+    const auto capacity = block * AudioEngine::kDeviceRingBlocks;
+    ma_pcm_rb_uninit(f.device->ring.get());
+    if (ma_pcm_rb_init(ma_format_f32, 2, capacity, nullptr, nullptr, f.device->ring.get()) != MA_SUCCESS)
+        std::abort();
+    f.device->clock_controller.configure(capacity, (capacity + block) / 2);
+    f.device->reset_requested.store(true);
+    f.item->set_loop(true, 0);
+    for (std::size_t i = 0; i < AudioEngine::kDeviceRingBlocks && f.device->reset_requested.load(); ++i)
+        f.render();
+
+    bool audible = true;
+    for (int burst = 0; burst < 200; ++burst) {
+        // Same average rate, but writes and reads arrive at different times.
+        f.render(2);
+        for (int read = 0; read < 4; ++read) {
+            const auto pcm = f.drain();
+            audible &= pcm[(block - 1) * 2] > 0.05f;
+        }
+        f.render(2);
+    }
+    check(audible && f.device->underrun_count.load() == 0 && f.device->overrun_count.load() == 0 &&
+          f.device->hard_resync_count.load() == 0, "secondary bursts: continuous PCM without a ring reset");
+}
+
 void test_clock_zero_crossing(const std::filesystem::path& ramp) {
     for (const int direction : {-1, 1}) {
         Fixture f(ramp, false, true);
@@ -1212,6 +1238,7 @@ int main() {
     test_shared_output(tone, true);
     test_delay_and_bypass(quiet);
     test_live_ceiling(tone);
+    test_bursty_secondary_output(quiet);
     test_clock_zero_crossing(ramp);
     test_clock_resync(ramp);
     test_exact_follow(quiet, next, false);

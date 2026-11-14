@@ -792,9 +792,8 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
     dev->ring         = std::make_unique<ma_pcm_rb>();
     dev->callback_state = callback_state_;
 
-    // Keep enough headroom for the render thread without queueing stopped-cue
-    // silence hundreds of milliseconds ahead of a transport command.
-    const ma_uint32 ring_frames = static_cast<ma_uint32>(cfg_.render_block * 4);
+    // Secondary outputs need headroom for bursts from independently scheduled callbacks.
+    const ma_uint32 ring_frames = static_cast<ma_uint32>(cfg_.render_block * kDeviceRingBlocks);
     if (ma_pcm_rb_init(ma_format_f32, output_channels, ring_frames,
                        nullptr, nullptr, dev->ring.get()) != MA_SUCCESS) {
         Logger::error("Failed to allocate ring buffer for device '{}'", dev->display_name);
@@ -1947,8 +1946,7 @@ bool AudioEngine::reset_device_if_requested(Device& device) noexcept {
 //   * The existing healthy master remains master until it closes/fails.
 //   * A failed master cannot stall another healthy device; election happens
 //     here without waiting for control-thread intervention.
-//   * Production stops at the master's target occupancy, preserving one block
-//     of ring headroom instead of filling the ring and adding latency.
+//   * Production stops at the master's target occupancy for low transport latency.
 //   * When no healthy device exists we use a coarse timer so stopped-device
 //     state and later native recovery are still observed.
 void AudioEngine::render_loop() {
@@ -2100,7 +2098,7 @@ void AudioEngine::render_loop() {
                     reset_device_if_requested(*clock_master);
                 if (master_ready) {
                     // Master latency is independent of secondary clock headroom.
-                    const auto target = cfg_.render_block * 3;
+                    const auto target = cfg_.render_block * kMasterQueueBlocks;
                     can_render =
                         ma_pcm_rb_available_read(
                             clock_master->ring.get()) +
@@ -2415,11 +2413,14 @@ void AudioEngine::render_one_block(const Topology& topo) {
             continue;
         }
 
-        if (dev->reset_applied &&
-            occupancy >= cfg_.render_block * 3) {
-            dev->reset_applied = false;
-            dev->reset_requested.store(
-                false, std::memory_order_release);
+        if (dev->reset_applied) {
+            const auto target = dev->clock_master.load(std::memory_order_acquire)
+                ? cfg_.render_block * kMasterQueueBlocks
+                : dev->clock_controller.target_frames();
+            if (occupancy >= target) {
+                dev->reset_applied = false;
+                dev->reset_requested.store(false, std::memory_order_release);
+            }
         }
     }
 }
