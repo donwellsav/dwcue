@@ -454,3 +454,11 @@ Primary driver reference: [miniaudio's low-level documentation](https://miniaud.
 A blocked miniaudio init or uninit can hold new device initialization until the driver returns. Competing cold requests have a bounded wait, and ready routes stay available. The current software checks cover this distinction and separate hardware Start calls. [miniaudio 0.11.25](https://github.com/mackron/miniaudio/blob/0.11.25/miniaudio.h)
 
 In-flight native calls own their resources for the life of the process. Managed recovery verifies actual process exit before launching a replacement. Pending kernel I/O can delay Windows termination even after a termination request. Physical acceptance remains in T24. [Microsoft's TerminateProcess reference](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-terminateprocess)
+
+### 14 November dock and playback follow-up
+
+- [x] Fit Settings, Properties, and imports to their content up to 60% of the window. Keep a visible playlist cue, GO, and Stop All. Anchor the tab bars at the bottom and retain manual resizing.
+- [x] Shuffle upcoming cues within a group during playback. Preserve the active cue, prepared handoff, and explicit Up Next. Keep whole-playlist shuffle available when stopped.
+- [x] Keep QuickPlay Settings in the lower panel. Let a playing QuickPlay follow the current Up Next at its ending without changing its saved behavior.
+- [x] Add Group Level in Properties for shared attenuation of descendant cues without rewriting individual gains.
+- [x] Reproduce secondary output ring resets in software and verify additional queue headroom with the same callback bursts. Carry physical recurrence and output alignment checks under T24.

@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
-**Version:** 2.6.23
-**Source revision:** f732f4f9847c48ced8ce6019ecd9a64e3021af9a
-**Native engine baseline:** f732f4f9847c48ced8ce6019ecd9a64e3021af9a
+**Version:** 2.6.23 development
+**Source revision:** fd3644cbada93c60b4e4fb1138743caa394553d5
+**Native engine baseline:** 9b97613
 **Edition:** 14 November 2026 · English · Operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition covers playlist and group shuffle, optional backup music, QuickPlays shortcuts, operator tooltips, and video-to-video handoffs. It also includes picture framing and the pre-show video check.
+This development edition covers docked controls, live group shuffle, group levels, the QuickPlay handoff to Up Next, backup music, picture framing, and the pre-show video check.
 
 The interface captures use practice media and software audio output. **docs/manual-assets/captures.json** records each capture's date, source revision and hash. Equipment photographs remain illustrative.
 
@@ -130,7 +130,7 @@ An empty QuickPlays bank is collapsed by default. Press **Q** or choose **Show Q
 
 Switch to **Show Mode** for performance after preparation is complete. It simplifies the interface and emphasizes transport and large cue controls. GO and assigned controls remain live. The QuickPlay Play/Stop button and keyboard and MIDI triggers work the same way in both modes. Use Edit Mode to change the bank.
 
-Rehearse at the actual display size and app zoom. Settings, Properties, and playlist imports share the lower panel. Each panel fits its contents until you resize it. Drag the top grip down for more playlist room or up for more controls. You can also focus the grip and use **Up/Down**. Settings, Properties, and imports keep their own adjusted heights while the app is open. GO and Stop All stay at the top, and the shortcut bar shows a compact reference while the lower panel is open. **Customize Shortcuts…** opens the full editor.
+Rehearse at the actual display size and app zoom. Settings, Properties, QuickPlay Settings, and imports share the lower panel. It fits the content up to 60% of the window, with room reserved for the playlist. On a short window the panel may scroll sooner. Tabs stay along the bottom while the controls scroll. Drag the top grip down for more playlist room or up for more controls. You can also focus the grip and use **Up/Down**. Each panel remembers its adjusted height while the app is open. GO and Stop All stay at the top and the shortcut bar shows a compact reference. **Customize Shortcuts…** opens the full editor.
 
 ![Show Mode with the QuickPlays bank open and the default number keys visible.](manual-assets/show-mode.png)
 
@@ -149,7 +149,7 @@ Accepted GO consumes an override and refused GO retains it. Check readiness, err
 
 ### Local files first
 
-Open **Import Media** from the playlist to use the lower panel. In local mode the primary action is **Choose files…**. The **Import plan** shows file handling and duplicate settings beside the file selection. Expand **Browse Server** for media already on the engine computer.
+Open **Import Media** from the playlist to use the lower panel. In local mode the primary action is **Choose files…**. The **Import plan** shows file handling and duplicate settings beside the file selection. Expand **Browse Server** for media already on the engine computer. When connected to a remote engine, choose **From This Computer** or **Browse Server** along the bottom of the panel.
 
 The desktop media chooser opens in a separate window. Bring the operator window forward to use the playlist, GO, and **Stop All Cues** while the chooser remains open. Other in-app file and folder dialogs provide **Stop All Cues** in their toolbars. Stopping cues uses the show’s configured fade and keeps the file selection open.
 
@@ -285,7 +285,9 @@ Do not use a loop as a substitute for rehearsing the loop boundary. Check for cl
 
 Open the group's **Edit** control to see **Start Behavior**, **End Behavior**, and the **Continue with** backup selector together under **Cueing**. **Play First** follows the first-child path and honors each nested group’s Start Behavior. It requires the first child to be ready. A nested **Play All** on that path can start several cues. **Play All** owns the selected descendant subtree and starts each selected playable descendant exactly once, including nested groups. For **Play All**, set each child's ducking for simultaneous playback.
 
-![Group Properties with Start Behavior, End Behavior and the backup selector in one panel.](manual-assets/group-current.png)
+Set **Group Level** in Properties to lower all audio inside the group, including the soundtrack of video cues. The fader runs from −60 to 0 dB and applies on release. Individual cue gains stay as saved. A cue inside several groups receives the combined attenuation, and cues outside the group keep their own levels.
+
+![Group Properties with Group Level, Start Behavior, End Behavior, and backup selection.](manual-assets/group-current.png)
 
 **Procedure — validate a group before it reaches the run sheet**
 
@@ -303,7 +305,7 @@ Manual stop or cancellation ends the owned group run without allowing stale chil
 
 ### Shuffle a playlist or group
 
-With playback stopped in Edit Mode, choose **Shuffle Playlist** in the toolbar to reorder top-level cues and groups. Choose the shuffle icon on a group row or **Shuffle Group Order** in Group Properties to reorder just that group's direct children. Nested groups move together, and cues addressed by a saved numbered action stay in place. Explicit **Up Next** follows the selected cue. Review the new order before pressing GO. External controllers that send cue numbers follow the new list. Save the show to keep the order when Autosave is off.
+In Edit Mode, choose the shuffle icon on a group row or **Shuffle Group Order** in Group Properties. During playback this shuffles the upcoming children and keeps the current and earlier children and any prepared handoff in place. Nested groups move together. Cues addressed by saved numbered actions stay in place, and an explicit **Up Next** stays on the chosen cue. With playback stopped, **Shuffle Playlist** in the toolbar reorders the top-level cues and groups. External controllers that send cue numbers follow the new order. Save the show to keep the order when Autosave is off.
 
 ### Beds, stings, and ducking
 
@@ -361,7 +363,7 @@ If Preview is not configured, its cue-row control opens Project Settings. Previe
 
 A missing or stalled audio callback shows a red header warning even while cue controls remain available. Confirm the intended interface and cable, then use the header's **Reconnect audio output** button. The button remains available after the warning text expires. Reconnecting restarts the device stream in place and retains its routes and cue identities. Wait for the recovery indicator to clear after callbacks return, then verify the physical destination before another GO. Explicit Stop and current recovery choices still take precedence over pending playback recovery.
 
-Secondary devices follow the master clock using continuous correction. The software resync repairs preserve fractional sample timing and balance queue headroom; they do not establish physical alignment between independently clocked interfaces. Record and investigate recurring buffer/device warnings during rehearsal. Prefer one verified program interface when the show does not require several, and calibrate any required independent outputs at their actual line-level destinations.
+Secondary devices follow the master clock using continuous correction. Their queue absorbs callback bursts and adds around 11 ms of buffering at 48 kHz compared with the previous software. The master queue stays at three blocks. Check recurring buffer warnings and align independently clocked outputs through the actual line-level destinations during rehearsal.
 
 ### Gain, metering, and the limiter
 
@@ -470,7 +472,7 @@ Stop or intentionally leave only the required interval material running. Verify 
 
 Reveal **QuickPlays**, then select **+** in an empty cell, drop a local audio file into it, or use **Add to QuickPlays** from a playlist cue's Basic Info. Adding an existing cue creates an independent copy with a new identity. Later edits to the QuickPlay do not change the playlist source, and later playlist edits do not automatically update the QuickPlay.
 
-Open a tile's settings and review these choices before assigning its control key:
+Open the tile gear to adjust playback in **QuickPlay Settings**. It opens below the playlist in Edit or Show Mode and below the tiles in the detached window. Edit Mode also offers **Replace Audio** and removal in that panel.
 
 ![QuickPlay settings with playback, retrigger, ending, gain and fade controls.](manual-assets/one-shot-settings-current.png)
 
@@ -489,6 +491,8 @@ New QuickPlays start with **Replace Program**, a **0.1-second fade-in**, a **0.5
 ### Fire and stop
 
 In either mode, press the tile's **Play** button, its shortcut, or its MIDI control to fire directly. The button changes to **Stop** when playback is active. Use the number row for slots **1–10** and hold **Shift** for slots **11–20**.
+
+To return from a playing QuickPlay to the playlist, set the playlist cue **Up Next** and choose **Cue to Continue** on the active QuickPlay. The default **C** shortcut does this for the active transport target. The QuickPlay finishes its current pass and plays whichever playlist cue is **Up Next** at that point. Use **Stop All** to cancel the handoff. The saved ending stays in the show file for the next play.
 
 ![QuickPlay 11 in Show Mode with its Play button and Shift+1 shortcut.](manual-assets/one-shot-show-mode.png)
 
@@ -516,7 +520,7 @@ Open **Settings → Shortcuts**, select a binding, and press the desired key. Fo
 - **Common mistake:** Testing Space or Escape while a text field or Video Output has focus and generalizing from that result.
 - **Recovery:** Stop safely, close editors, restore workspace focus, check conflicts, and repeat the controlled test.
 
-Keyboard assignments belong to the project. QuickPlay slots **1 through 9** default to their matching number keys, and **0** fires slot **10**. **Shift+1** fires slot **11**, **Shift+2** fires slot **12**, and so on through **Shift+0** for slot **20**. Saved assignments take precedence. **Clear shortcut** disables a tile's key. **Reset to Defaults** in **Settings → Shortcuts** restores the defaults. Use **Enter** to set the selected cue as Up Next, **Space** to fire it, **Shift+Enter** to play the selected cue immediately, and **L** to toggle Loop. **P** and **Shift+Space** both pause or resume. **C** cues the active loop to continue and **J** jumps to the next cue. **F1** also plays the selected audio cue.
+Keyboard assignments belong to the project. QuickPlay slots **1 through 9** default to their matching number keys, and **0** fires slot **10**. **Shift+1** fires slot **11**, **Shift+2** fires slot **12**, and so on through **Shift+0** for slot **20**. Saved assignments take precedence. **Clear shortcut** disables a tile's key. **Reset to Defaults** in **Settings → Shortcuts** restores the defaults. Use **Enter** to set the selected cue as Up Next, **Space** to fire it, **Shift+Enter** to play the selected cue immediately, and **L** to toggle Loop. **P** and **Shift+Space** both pause or resume. **C** cues a loop or QuickPlay to continue at the end of its pass. **J** jumps to the next cue. **F1** also plays the selected audio cue.
 
 The main workspace accepts playback and QuickPlay shortcuts with the bank visible, hidden, or detached. The mapped **Stop All** works even while the shortcut editor is learning a keyboard or MIDI assignment.
 
@@ -697,7 +701,7 @@ The save-recovery chart separates an Autosave toggle's forced save from later of
 
 When a command asks about unsaved changes, finish that decision first. If you choose **Save**, wait for it to finish. Run any declined command again after the first action completes.
 
-A failed toggle-save or ordinary save retains the dirty state. Enabling Autosave can hide the header's unsaved badge even when that forced save failed, because the badge appears only while Autosave is off and the document is dirty. Verify the save result and known-good disk copy rather than relying on the badge alone. A detached QuickPlay save failure is reported in the loaded detached panel and its error popover, not as the general presentation for every primary-window save failure. Correct the path, permissions, or storage fault before retrying.
+A failed toggle-save or ordinary save retains the dirty state. Enabling Autosave can hide the header's unsaved badge even when that forced save failed, because the badge appears only while Autosave is off and the document is dirty. Verify the save result and known-good disk copy. A detached QuickPlay save failure is reported in the detached QuickPlays window and the settings panel. Correct the path, permissions, or storage fault before retrying.
 
 
 **Procedure — recover from a save refusal without losing the show**
@@ -962,7 +966,7 @@ These are source defaults, not a promise about a project's customized assignment
 | G | Capture Video Output as a standby still |
 | Shift+G | Capture the display selected in Video Output settings |
 | F1 | Separate Play Selected audio action |
-| C | Cue to Continue at the end of the active loop pass |
+| C | Cue to Continue at the end of the active loop or QuickPlay pass |
 | J | Jump Cue immediately |
 | 1 through 9, then 0 | Fire QuickPlay slots 1 through 10 in either mode |
 | Shift+1 through Shift+9, then Shift+0 | Fire QuickPlay slots 11 through 20 in either mode |
@@ -987,7 +991,7 @@ With Video Output focused, Escape also exits its fullscreen mode. In Level Check
 
 ### About this edition
 
-This edition covers DonWells Cue **2.6.23**. The interface captures use generated media, a software audio output, and fixture display, MIDI and locale methods. Each capture's source revision is recorded in **docs/manual-assets/captures.json**.
+This development edition covers the current source after the **2.6.23** release. The interface captures use generated media, a software audio output, and fixture display, MIDI and locale methods. Each capture's source revision is recorded in **docs/manual-assets/captures.json**.
 
 The playback checkpoint **2f372c2** passed native 13/13, isolated API 61/61, client 229/229, typecheck and RT/live safety checks. Audio-output and project-runtime suites also pass AddressSanitizer; leak detection is disabled. Native checks include six simulated ten-minute secondary-clock runs with continuous generated audio and no buffer faults or resyncs inside the tested envelope. Physical alignment and the earlier intermittency remain unproven; more extreme drift/jitter can trigger recovery.
 

@@ -95,6 +95,12 @@ The original T30 evidence covered both nominal-speed crossings and six clock/pha
 
 Exploratory ±4,000 ppm cases with the same delivery variation can still exhaust headroom. The original real-media secondary-output burst is not uniquely attributed or physically confirmed resolved. Hardware acceptance remains deferred. No controller redesign or widened safety limit is implied by this bounded repair.
 
+### 14 November secondary callback bursts
+
+With a Bluetooth device as master, the built-in secondary reported ten new ring resyncs in two seconds while paused. The active media reported zero decoder read-ahead underruns. A software fixture with equal average rates and four consecutive secondary reads reproduced a PCM dropout and ring reset with the four-block capacity.
+
+The output ring now holds eight blocks. Secondary recovery primes to its occupancy target of 4.5 blocks, rounded up to five whole writes. The master still paces and primes at three blocks. This gives the secondary roughly 11 ms more queue headroom at 48 kHz with a 256-frame block. The same 200 software bursts pass with continuous PCM and zero ring underruns, overruns, or resyncs. The audible incident and output alignment still need physical rehearsal at the actual destinations.
+
 
 ## Ordered storage repair (T38)
 

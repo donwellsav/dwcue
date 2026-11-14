@@ -569,3 +569,13 @@ The visible name changed in `22e72d2`, the shifted defaults in `bf196c6`, and th
 ## 13 November — Packaged review and picture framing
 
 `3b69f60` adds Full HD by default with selectable professional canvas presets, editable dimensions, a fit or pixel-cap choice, and 25–100% centered scaling. Apply framing saves to the machine profile and updates the current output. Invalid framing and stale captures are rejected. Settings stays docked with the playlist, GO and Stop All available. The packaged Apple Silicon review cold-opened an isolated landscape sample with 23 ready cues, checked shifted QuickPlays in both modes, rendered the 1080p pattern with all edges visible, and verified custom, wide, optional portrait, Retina pixel cap and persistence. Native 13/13, isolated API 69/69, client 266/266, typecheck, production renderer, and Electron transition and recovery checks passed. The manual includes refreshed screenshots from the packaged review. Physical HDMI, PA and cross-platform acceptance remain in T24.
+
+## 14 November — Dock, group levels, and QuickPlay handoff
+
+`8b743a2` and `b8a2c9b` fix the Cueing row overlap and dock the Settings, Properties, and remote Import Media tabs along the bottom. Chromium checked the default fit, pointer and keyboard resizing, scrolling with tabs pinned, and live GO and Stop All using an isolated NULL audio engine. The checks covered 1471 × 868 at 90% scaling and 1200 × 668 at 110%.
+
+`039dede` shuffles upcoming group children while preserving the current playback, prepared handoff, and explicit Up Next. `fafc2fc` adds Group Level. Native PCM tests verify nested attenuation, independent cue gain, unchanged audio outside the group, and live edits without retriggering. `9b97613` follows the latest Up Next after the QuickPlay's current pass. Native checks cover stop, loop, and authored jump endings. `fd3644c` puts QuickPlay Settings and edit actions inside the dock. Chromium checked both workspace modes and the detached window with its Stop All shortcut.
+
+`c812393` passes 200 callback bursts that reset the old four-block ring. The secondary uses an eight-block ring and roughly 11 ms more nominal buffering at 48 kHz. The master still uses a three-block queue. The reported hardware stutter still needs a physical retest under T24.
+
+The application checkpoint passed all 13 native suites, 72 isolated API checks, 271 client checks, typecheck, and production renderer generation. The operator manual and affected screenshots describe this development build.
