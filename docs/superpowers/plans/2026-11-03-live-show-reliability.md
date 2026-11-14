@@ -462,3 +462,7 @@ In-flight native calls own their resources for the life of the process. Managed 
 - [x] Keep QuickPlay Settings in the lower panel. Let a playing QuickPlay follow the current Up Next at its ending without changing its saved behavior.
 - [x] Add Group Level in Properties for shared attenuation of descendant cues without rewriting individual gains.
 - [x] Reproduce secondary output ring resets in software and verify additional queue headroom with the same callback bursts. Carry physical recurrence and output alignment checks under T24.
+- [x] Keep cue names and simultaneous header warnings readable with QuickPlays attached. Verify Edit and Show Mode at 1200 × 700 with 110% text and one complete playlist row with Settings maximized (`6355da7`).
+- [x] Keep the shortcut reference on one line. Verify Space and Escape during playback with Settings → Shortcuts open (`d6f47fd`).
+- [x] Locate Up Next opens folded ancestors temporarily and scrolls to the queued cue. Verify pointer and keyboard operation, selection and arm preservation, pending and idle states, and the short playlist with Settings maximized (`062ff49`).
+- [x] Keep the playlist toolbar reachable when the action area narrows. Verify Shuffle, docked Import Media, and full labels on a wider panel (`74811e4`).

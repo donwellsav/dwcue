@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** 206d69b85c1761cdca91979f2539fe5842851b5b
+**Source revision:** 74811e4b0b19c3fd2d4806cf4549a55735cb3928
 **Native engine baseline:** 9b97613
 **Edition:** 14 November 2026 · English · Operator edition
 
@@ -126,19 +126,23 @@ The cue row provides **Set As Next**, **Preview**, **Play**, **Edit**, and **Del
 
 An empty QuickPlays bank is collapsed by default. Press **Q** or choose **Show QuickPlays** to reveal it. Assigning a cell can reveal the bank automatically unless you have explicitly chosen its visibility. Playback and shortcut assignments stay active when the bank is collapsed. On a narrow workspace, the bank and playlist share the available width.
 
+On narrow playlists, cue names appear above the row controls and the toolbar uses icons. Hover over an icon for its label when tooltips are enabled. The header can show the full silence countdown alongside a notice.
+
 ### Show Mode
 
 Switch to **Show Mode** for performance after preparation is complete. It simplifies the interface and emphasizes transport and large cue controls. GO and assigned controls remain live. The QuickPlay Play/Stop button and keyboard and MIDI triggers work the same way in both modes. Use Edit Mode to change the bank.
 
 Rehearse at the actual display size and app zoom. Settings, Properties, QuickPlay Settings, and imports share the lower panel. It fits the content up to 60% of the window, with room reserved for the playlist. On a short window the panel may scroll sooner. Tabs stay along the bottom while the controls scroll. Drag the top grip down for more playlist room or up for more controls. You can also focus the grip and use **Up/Down**. Each panel remembers its adjusted height while the app is open. GO and Stop All stay at the top and the shortcut bar shows a compact reference. **Customize Shortcuts…** opens the full editor.
 
-![Show Mode with the QuickPlays bank open and the default number keys visible.](manual-assets/show-mode.png)
+![Show Mode at a small window size with the silence countdown, cue names, and one-line QuickPlays shortcut reference.](manual-assets/show-mode.png)
 
 ### Selection is not arming
 
 Selection and arming are independent. Move through the playlist with **Up/Down**, then press **Enter** to set the selected cue as **Up Next**. Wait for its name beside **Play Next**, then press **Space** to run it. The row's **Set As Next** button also sets an explicit GO target. Pressing that button again on the armed row requests clearing the override.
 
 The playlist marks the current GO target **Up Next**, including a follow target during playback. GO waits while it says **Setting Up Next…**. When it says **No cue queued**, choose a cue and set it as **Up Next**. **Stop All Cues** stays available in either state.
+
+Choose **Locate Up Next**, the crosshair beside **Playlist**, to bring that queued row into view. Folded groups open temporarily so you can inspect the target while continuing to work with your selected cue. The button becomes available when GO has a playlist target.
 
 Automatic Up Next defaults on. Opening prepares the first playable item; stopping a cue with **End Behavior: Nothing** prepares its next sibling. A natural end at the top-level list’s end can wrap to the first item. Preparation waits for a deliberate GO unless an authored automatic action applies. An explicit override takes precedence.
 
@@ -407,7 +411,7 @@ Keep the LTC destination separate from the audience audio path. Do not enable ti
 
 1. Confirm the correct show and a connected, ready engine.
 2. Read the caller's cue and find the intended item.
-3. Read the name beside **Play Next** and check **Up Next** in the list. Use **Set As Next** if you need to override the automatic candidate; do not toggle an already correct manual target off.
+3. Read the name beside **Play Next** and check **Up Next** in the list. Use **Locate Up Next** if the row is out of view. Use **Set As Next** if you need to override the automatic candidate; do not toggle an already correct manual target off.
 4. On the cue call, press **Play Next** or its assigned shortcut once.
 5. Confirm the expected active cue and progress, then prepare the next target.
 
@@ -510,7 +514,7 @@ Press **Q** to show or hide the docked bank. Press **Shift+Q** to open or close 
 
 ### Assign and verify keyboard shortcuts
 
-Open **Settings → Shortcuts**, select a binding, and press the desired key. For a MIDI controller, open **Settings → MIDI** and use **Learn** beside the action. Use the **×** button beside a binding to clear it. Resolve any reserved combinations or conflicts before rehearsal. **Show shortcuts bar** toggles the reference, including the two **QuickPlays (defaults)** key ranges. The arrow beside a number on a tile means Shift. Individual tile settings also provide **Keyboard Shortcut**, **Assign shortcut**, and **Clear shortcut**.
+Open **Settings → Shortcuts**, select a binding, and press the desired key. For a MIDI controller, open **Settings → MIDI** and use **Learn** beside the action. Use the **×** button beside a binding to clear it. Resolve any reserved combinations or conflicts before rehearsal. **Show shortcuts bar** toggles the one-line reference for transport and the two **QuickPlays (defaults)** key ranges. **Customize Shortcuts…** opens the full list. The arrow beside a number on a tile means Shift. Individual tile settings also provide **Keyboard Shortcut**, **Assign shortcut**, and **Clear shortcut**.
 
 ![Keyboard bindings in the docked Shortcuts tab, including the two QuickPlays window controls.](manual-assets/shortcuts-current.png)
 
