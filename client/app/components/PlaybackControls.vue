@@ -662,7 +662,7 @@ const handlePlayNext = async () => {
 .play-next-btn.has-next {
   background-color: var(--state-up-next);
   border-color: var(--state-up-next);
-  color: #171b25;
+  color: var(--state-up-next-text);
 }
 
 .play-next-btn.has-next:hover:not(:disabled) {
@@ -706,7 +706,7 @@ const handlePlayNext = async () => {
   font-weight: 700;
   letter-spacing: 0.08em;
   line-height: 1;
-  opacity: 0.76;
+  opacity: 0.9;
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -843,7 +843,7 @@ const handlePlayNext = async () => {
   background-color: var(--color-surface-raised);
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-xs) var(--workspace-gutter);
   min-width: 0;
   width: 100%;
   height: 100%;
@@ -858,8 +858,8 @@ const handlePlayNext = async () => {
   min-width: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: auto auto;
-  gap: 5px;
+  grid-template-rows: auto minmax(42px, auto);
+  gap: var(--spacing-xs);
   align-content: center;
 }
 
@@ -884,7 +884,7 @@ const handlePlayNext = async () => {
   min-width: 0;
   overflow: hidden;
   color: var(--color-text-primary);
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 650;
   line-height: 1.2;
   white-space: nowrap;
@@ -925,9 +925,9 @@ const handlePlayNext = async () => {
 }
 
 .preview-transport .preview-action-btn {
-  width: 40px;
-  height: 40px;
-  font-size: 25px;
+  width: var(--panel-control-height);
+  height: var(--panel-control-height);
+  font-size: 22px;
 }
 
 .preview-action-btn {
@@ -997,7 +997,7 @@ const handlePlayNext = async () => {
 .preview-set-next-btn.active {
   background-color: var(--state-up-next);
   border-color: var(--state-up-next);
-  color: #171b25;
+  color: var(--state-up-next-text);
 }
 
 .preview-stop-btn {
@@ -1221,7 +1221,7 @@ const handlePlayNext = async () => {
 }
 
 .preview-jump-value {
-  height: 40px;
+  height: var(--panel-control-height);
   display: inline-flex;
   align-items: center;
   padding-left: 5px;

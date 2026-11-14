@@ -2,20 +2,19 @@
   <div class="test-card-controls">
     <fieldset class="test-card-fieldset" :disabled="disabled">
       <legend>{{ t('testCard.cardType') }}</legend>
-      <label class="test-card-control test-card-control--wide">
-        <span>{{ t('testCard.preset') }}</span>
-        <select class="test-card-select" :value="selectedPresetId" @change="onPresetChange">
+      <div class="test-card-grid test-card-grid--two">
+        <select class="test-card-select test-card-preset" :aria-label="t('testCard.preset')"
+          :value="selectedPresetId" @change="onPresetChange">
           <option v-for="preset in TEST_CARD_PRESETS" :key="preset.id" :value="preset.id">
             {{ t(`testCard.presets.${preset.id}`) }}
           </option>
         </select>
-      </label>
-
-      <div class="test-card-grid test-card-grid--three">
-        <label class="test-card-control">
+        <label class="test-card-control test-card-name">
           <span>{{ t('testCard.name') }}</span>
           <input :value="config.name" type="text" maxlength="120" @input="updateName">
         </label>
+      </div>
+      <div class="test-card-checks">
         <CheckControl :label="t('testCard.showInfo')" :checked="config.showInfo" @change="update({ showInfo: $event })" />
         <CheckControl
           :label="t('testCard.motion')"
@@ -62,7 +61,7 @@
           @change="onImagePicked($event, 'logo')"
         >
       </div>
-      <p class="test-card-help">{{ t('testCard.logoHelp') }}</p>
+      <p v-if="config.alteka.showLogo" class="test-card-help">{{ t('testCard.logoHelp') }}</p>
     </fieldset>
 
     <fieldset v-if="config.cardType === 'bars'" class="test-card-fieldset" :disabled="disabled">
@@ -221,7 +220,7 @@
 
     <fieldset class="test-card-fieldset" :disabled="disabled">
       <legend>{{ t('testCard.outputOptions') }}</legend>
-      <div class="test-card-grid test-card-grid--three">
+      <div class="test-card-checks">
         <CheckControl :label="t('testCard.windowed')" :checked="config.windowed" @change="setWindowed" />
         <CheckControl
           :label="t('testCard.fillOutput')"
@@ -287,7 +286,7 @@
           @change="onImagePicked($event, 'mask')"
         >
       </div>
-      <p class="test-card-help">{{ t('testCard.maskHelp') }}</p>
+      <p v-if="config.mask.image" class="test-card-help">{{ t('testCard.maskHelp') }}</p>
       <p v-if="imageError" class="test-card-error" role="alert">{{ imageError }}</p>
     </fieldset>
   </div>
@@ -345,9 +344,9 @@ const ColorControl = defineComponent({
         h('input', {
           type: 'color',
           value: componentProps.value,
+          title: componentProps.value,
           onInput: (event: Event) => componentEmit('change', (event.target as HTMLInputElement).value),
         }),
-        h('code', componentProps.value),
       ]),
     ]);
   },
@@ -592,40 +591,50 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
 
 <style>
 .test-card-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 2px 8px;
 }
 .test-card-fieldset {
   min-width: 0;
   margin: 0;
-  padding: 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-md);
+  padding: 2px 0;
+  border: 0;
+  border-top: 1px solid var(--color-border);
 }
 .test-card-fieldset > legend {
-  padding: 0 6px;
+  padding: 0 4px 0 0;
   color: var(--color-text-primary);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 650;
+  line-height: 1.35;
 }
 .test-card-grid {
   display: grid;
-  gap: 10px 12px;
+  gap: 2px 6px;
   align-items: end;
 }
 .test-card-grid + .test-card-grid,
+.test-card-grid + .test-card-checks,
 .test-card-subheading + .test-card-grid {
-  margin-top: 10px;
+  margin-top: 3px;
+}
+.test-card-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
 }
 .test-card-grid--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .test-card-grid--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .test-card-grid--four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.test-card-grid--four:has(.test-card-color) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .test-card-control,
 .test-card-check {
   display: flex;
   color: var(--color-text-primary);
   font-size: 12px;
+  line-height: 1.25;
 }
 .test-card-control {
   min-width: 0;
@@ -633,14 +642,17 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
   gap: 5px;
 }
 .test-card-control--wide { grid-column: span 2; }
+.test-card-color { flex-direction: row; align-items: center; justify-content: space-between; }
+.test-card-name { flex-direction: row; align-items: center; }
 .test-card-check {
-  min-height: 34px;
+  min-height: var(--settings-control-height);
   align-items: center;
-  gap: 7px;
+  gap: 5px;
 }
 .test-card-check input {
   width: 16px;
   height: 16px;
+  flex: none;
   margin: 0;
   accent-color: var(--color-accent);
 }
@@ -649,9 +661,9 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
 .test-card-select {
   min-width: 0;
   width: 100%;
-  height: 34px;
+  height: var(--settings-control-height);
   box-sizing: border-box;
-  padding: 0 9px;
+  padding: 0 6px;
   background: var(--color-control);
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
@@ -667,19 +679,16 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
   gap: 8px;
 }
 .test-card-color-row input[type='color'] {
-  width: 36px;
-  height: 34px;
+  width: 28px;
+  height: var(--settings-control-height);
+  flex: none;
   padding: 2px;
   background: var(--color-control);
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
 }
-.test-card-color-row code {
-  color: var(--color-text-secondary);
-  font-size: 11px;
-}
 .test-card-number-row input { flex: 1; }
-.test-card-image-row { flex-wrap: wrap; }
+.test-card-image-row { flex-wrap: wrap; gap: 4px; }
 .test-card-logo-preview,
 .test-card-mask-preview {
   display: block;
@@ -699,8 +708,8 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
   white-space: nowrap;
 }
 .test-card-button {
-  min-height: 32px;
-  padding: 5px 10px;
+  min-height: var(--settings-control-height);
+  padding: 3px 8px;
   background: var(--color-surface);
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
@@ -736,6 +745,7 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
 .test-card-error { color: var(--color-danger); }
 .test-card-fieldset:disabled { opacity: .58; }
 @media (max-width: 720px) {
+  .test-card-controls { grid-template-columns: minmax(0, 1fr); }
   .test-card-grid--three,
   .test-card-grid--four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

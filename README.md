@@ -1,8 +1,8 @@
 # DonWells Cue
 
-DonWells Cue **2.6.21** gives One Shots the same Play/Stop controls in Edit and Show Mode. Number keys **1–9** and **0** trigger the first ten slots by default. Use **Enter** to set the selected cue as Up Next and **Space** to run it after the engine confirms the target.
+DonWells Cue **2.6.22** gives **QuickPlays** the same Play/Stop controls in Edit and Show Mode. The number row triggers slots **1–10**, and holding **Shift** triggers **11–20**. Use **Enter** to set the selected cue as Up Next and **Space** to run it after the engine confirms the target.
 
-**V** toggles Video Output. **G** captures its picture and **Shift+G** captures a selected display for standby. **Settings → Shortcuts** holds keyboard and MIDI controls. Warnings appear in the header beside the steady silence countdown. The [workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification and the deferred line-level audio and 1080p HDMI checks.
+**V** toggles Video Output. **G** captures its picture and **Shift+G** captures a selected display for standby. Settings opens below the playlist, with separate **Shortcuts** and **MIDI** tabs and updates under **About**. Header warnings temporarily replace the show name. The [workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification and the deferred line-level audio and 1080p HDMI checks.
 
 **DonWells Cue is a free, open-source app for playing back audio and video in live shows.** If you run sound for theatre, conferences, houses of worship, AV installs, or any live event, DonWells Cue lets you line up your music, sound effects and stings ahead of time and fire them off reliably on the night — from a laptop, a touchscreen, or even a separate stage-side machine you control over the network.
 
@@ -10,13 +10,13 @@ You build a **show** as a list of cues plus a grid of one-touch buttons, then tr
 
 This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. Published macOS packages are Developer ID signed, notarized, and package-validated.
 
-> The current source builds **v2.6.21**. Match the installed About version to the release notes before rehearsal.
+> The current source builds **v2.6.22**. Match the installed About version to the release notes before rehearsal.
 
 > **Operating a show?** Use the [operator manual (PDF)](docs/operators-manual.pdf) or its [Markdown source](docs/operators-manual.md). Those instructions track the current source. The client and server READMEs linked later are developer references, not show-day instructions.
 
 Current-source desktop builds also bundle the English manual offline: open **Help → Operator Manual (English)**, the welcome-screen manual button, or **Settings → Help**. The separate reader has document search, clickable contents and chapter bookmarks, page thumbnails, zoom, and native PDF print/download controls.
 
-![DonWells Cue showing the playlist, One Shots grid, and output metering](client/public/screenshots/donwells_cue_main.jpg)
+![DonWells Cue showing the playlist, QuickPlays grid, and output metering](docs/manual-assets/edit-workspace.png)
 
 The screenshots in this README are representative captures and may lag the newest UI; treat the running app as the source of truth. The standalone website keeps its own copied screenshot set.
 
@@ -25,7 +25,7 @@ The screenshots in this README are representative captures and may lag the newes
 ## What you can do with it
 
 - **🎵 Build a cue list** — arrange audio into a playlist with nested groups. Set volume, In/Out points, fades, ducking, and what happens when a cue finishes: stop, **Play Next**, loop, or jump to another cue.
-- **⚡ Fire One Shots** — use a configurable grid for stings, SFX, announcements, walk-on music and beds. In Edit and Show Mode, fire a cue from its Play button, keyboard shortcut, or MIDI mapping. Keys 1–9 and 0 default to slots 1–10. A playing tile shows Stop and a live time-remaining display. Drop media or copy a playlist cue into the bank in Edit Mode. The bank can detach, and the primary window verifies and persists detached edits.
+- **⚡ Fire QuickPlays** — use a configurable grid for stings, SFX, announcements, walk-on music and beds. In Edit and Show Mode, fire a cue from its Play button, keyboard shortcut, or MIDI mapping. In the current source, 1–9 and 0 default to slots 1–10 and Shift+1 through Shift+0 default to slots 11–20. A playing tile shows Stop and the remaining time. Drop media or copy a playlist cue into the bank in Edit Mode. The bank can detach, and the primary window verifies and persists detached edits.
 - **🔎 Prepare cues precisely** — imports preserve source level and timing. Properties provides a detailed peak/RMS waveform, separate program and Preview playheads, click-to-seek, editable In/Out and Start Next markers, transport controls, explicit Trim Silence, loudness normalization, and attenuation-only peak reduction.
 - **🎧 Preview safely** — assign a monitor output and audition a cue away from the program bus. The lower Preview panel supports transport, seeking, quick Set In/Out, saving trim, Start Next markers, and Set As Next.
 - **📺 Show Mode** — switch to a simplified, touch-friendly playback view for the actual performance. Preview remains available as the lighter-weight way to inspect and prepare a cue during a show.
@@ -37,7 +37,7 @@ The screenshots in this README are representative captures and may lag the newes
 - **🎞 Play video cues** — H.264/HEVC media shows a picture on a dedicated fullscreen output (projector, LED wall, confidence monitor) while the audio plays through the normal engine path and mixer.
 - **📥 Bring in audio easily** — drag and drop local files or open **Import Media**, where **Choose files** is the primary local action. Advanced/server browsing stays collapsed until needed, and unsupported non-media entries are disabled. You can also download from YouTube or review and import selected Spotify tracks into a project folder.
 - **🎹 Trigger it your way** — click, tap, keyboard hotkeys (with an on-screen shortcuts bar, shown by default), MIDI controllers, or automation over the network (HTTP / WebSocket).
-- **🔠 Read it your size** — scale the interface text and the One Shot cell text independently from Settings → User Interface; the video output window is never scaled.
+- **🔠 Read it your size** — scale the interface text and the QuickPlay cell text independently from Settings → User Interface; the video output window is never scaled.
 - **🌍 Speak your language** — choose any of the app's **21 languages** from Settings → User Interface, including full right-to-left support for Arabic, Persian and Urdu.
 - **🖥 Run it remotely** — operate a stage-side machine wired to your sound gear from a separate show laptop over the local network, with automatic discovery so you don't have to type in IP addresses. (v1 keeps the app same-machine only by default: the remote-server options are hidden until you enable **Show network/server options** in Server Settings or on the welcome screen.)
 
@@ -53,12 +53,13 @@ Video cues are ordinary audio cues whose media file also carries a picture (H.26
 
 - **Open it for each session** from the toolbar **Video Output** button or Project Settings → **Video Output**. The app always launches with Video Output closed; it remembers the assigned display but never reopens the output automatically.
 - **Identify the physical screens** before assigning one: click **Identify displays** to show a large number, OS display name and resolution on every connected screen for five seconds. You can choose the display while the output is closed. If no independent display is assigned, DonWells Cue opens a normal preview window rather than taking over the control screen with fullscreen black.
+- **Picture framing** — 16:9 Full HD is the default. **Settings → Video Output** offers common HD, UHD, projector, stage and signage sizes, plus custom dimensions. Fit to display or cap the frame at its selected size and scale it proportionally. Choose the HDMI resolution and refresh rate in the operating system.
 - **Recover from the output itself** by right-clicking it. The context menu can enter or leave fullscreen, show the test card, or **Exit Video Output**. On Windows, **Alt+F4** also closes only the Video Output window; **Esc** leaves fullscreen. Closing it disarms the output for the rest of the session until you open it again.
-- **Keep using shortcuts** even if the Video Output window owns keyboard focus. DonWells Cue forwards application and One Shot shortcuts to the control window while preserving operating-system and native app shortcuts such as Windows Alt+F4 and the normal Ctrl/Cmd file commands.
+- **Keep using shortcuts** even if the Video Output window owns keyboard focus. DonWells Cue forwards application and QuickPlay shortcuts to the control window while preserving operating-system and native app shortcuts such as Windows Alt+F4 and the normal Ctrl/Cmd file commands.
 - **Standby stills** — press **G** to capture Video Output or **Shift+G** to capture the display chosen in **Settings → Video Output**. Capture for the selected cue or use a session-wide fallback. Clicking the confidence thumbnail captures Video Output for the selected cue. The picture falls back through assigned cue art, captured cue art, captured session standby, saved project standby and black.
 - **In sync with audio** — the picture follows the native engine clock, including file-absolute paused seeks, loops, and authored Out points. It freezes when native progress stops and resumes only with fresh progress; it does not free-run through an audio stall.
 - **Silent videos** — a video file with no audio track still plays: the engine runs a silent transport of the container's duration so the cue advances, auto-follows and reports progress exactly like an audible cue.
-- **Grouped cues and One Shots** — nested video/image cues and cart-only video are supported; video uses the same media resolution as native audio. Reopening the output restores the most recently fired program source, not arbitrary cue-list order.
+- **Grouped cues and QuickPlays** — nested video/image cues and cart-only video are supported; video uses the same media resolution as native audio. Reopening the output restores the most recently fired program source, not arbitrary cue-list order.
 - **Visible failures** — unsupported or undecodable video tracks produce an error in the control window and do not leave a misleading picture on the audience output. A healthy replacement source clears the error.
 - **Cue handoffs and recovery** — cancelled play attempts cannot mark a later cue as failed, background cues retain their current native position, and a failed output renderer stays under a native black cover with its reason shown in the control window; **Restart Output** is operator-controlled. [Video reliability checks and limits](docs/video-playback-reliability.md).
 - **Audio output recovery** — a stalled callback clock produces an operator warning. **Retry now** restarts that device in place, preserving its identity, routes, and loaded cues. Request acceptance is not success: the warning clears only after the matching restart receives a real callback. A failed attempt remains retryable.
@@ -126,7 +127,7 @@ DonWells Cue writes native show documents as `.dwcue` files and portable exports
 3. In **Project Settings**, choose the program output, Output Target, and—if you need private auditioning—the Preview output.
 4. Drop audio or video files onto the playlist, or use **Import Media → Choose files**. Expand the advanced/server browser only when the media lives on the server; unsupported non-media entries cannot be selected.
 5. Open a cue's **Properties** to set markers, fades, normalization, volume, ducking, its output device, and Start/End Behaviors. Rehearse group and cross-group sequencing before show day.
-6. Drag frequently used playlist cues into One Shot cells for one-touch playback. The copy leaves the playlist cue unchanged.
+6. Drag frequently used playlist cues into QuickPlay cells for one-touch playback. The copy leaves the playlist cue unchanged.
 7. Audition on the Preview output, set the named **Play Next** cue, and verify the program and monitor meters.
 8. If the show uses video, open Project Settings → **Video Output**, click **Identify displays**, assign the projector/switcher display, then manually open the output and verify the test card.
 9. Switch on **Show Mode** for the live performance.
@@ -170,7 +171,7 @@ Made with some help from Claude Sonnet 4.5, Claude Sonnet 4.6 and Claude Opus 4.
 |  client/                       | <----- meters @ ~30 Hz ---------> |  server/  (dwcue-server)          |
 |  Electron + Nuxt 4 + Vue 3     | <----- transport / route cmds --- |  C++20, miniaudio, Crow, TagLib   |
 |                                |        REST  (http://host:4480)   |                                   |
-|  - Playlist / One Shots / output controls | <----- list / load / waveform --> |  - AudioEngine (mixer + limiter)  |
+|  - Playlist / QuickPlays / output controls | <----- list / load / waveform --> |  - AudioEngine (mixer + limiter)  |
 |  - WaveformCanvas              |                                   |  - ProjectState (.dwcue I/O)      |
 |  - LiveMeterBar                |                                   |  - ControlServer (REST + WS)      |
 |                                |                                   |  - Metadata + waveform services   |
@@ -353,7 +354,7 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.21**. Find published artefacts and checksums on the release page.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.22**. Find published artefacts and checksums on the release page.
 
 ### Triggering a release
 
@@ -420,5 +421,7 @@ File issues at [github.com/donwellsav/dwcue/issues](https://github.com/donwellsa
 ## License
 
 Don Wells is the sole contributor to DonWells Cue, a modified fork of [LivePlay](https://github.com/tdoukinitsas/liveplay) dating to July 2026. Original LivePlay software © Thomas Doukinitsas and contributors.
+
+The source retains LivePlay's [contributor credits](client/assets/json/contributors.json) and [translation credits](client/locales).
 
 [**AGPL-3.0-only**](LICENCE.txt). Third-party dependencies retain their own licences (miniaudio: public domain / MIT-0; Crow: BSD-3; TagLib: LGPL-2.1+; nlohmann/json: MIT).

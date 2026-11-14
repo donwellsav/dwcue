@@ -19,13 +19,18 @@
     <span v-if="isPlaying" class="one-shot-progress" :style="progressStyle" aria-hidden="true"></span>
     <div class="one-shot-topline">
       <b class="one-shot-index">{{ position + 1 }}</b>
-      <span v-if="isPaused" class="one-shot-runtime-state is-paused" :title="t('status.paused')">{{ t('status.paused') }}</span>
-      <span v-else-if="isPlaying" class="one-shot-runtime-state is-playing" :title="t('status.playing')">{{ t('status.playing') }}</span>
-      <kbd v-if="hotkeyLabel" class="one-shot-hotkey" :title="hotkeyLabel">{{ hotkeyLabel }}</kbd>
-      <span class="one-shot-duration">{{ currentTimeLabel }}</span>
+      <kbd v-if="hotkeyLabel" class="one-shot-hotkey" :title="hotkeyLabel" dir="ltr">{{ hotkeyLabel.replace(/^Shift\+([0-9])$/, '⇧$1') }}</kbd>
+      <span class="one-shot-duration" dir="ltr">{{ currentTimeLabel }}</span>
     </div>
 
-    <div class="one-shot-title" :title="item.displayName">{{ item.displayName }}</div>
+    <div class="one-shot-body">
+      <div class="one-shot-title" :title="item.displayName">{{ item.displayName }}</div>
+      <span v-if="item.hasVideo && videoCheckIssue" class="one-shot-video-issue" role="img"
+        :title="t(`videoCheck.${videoCheckIssue}`)" :aria-label="t(`videoCheck.${videoCheckIssue}`)">VIDEO !</span>
+      <span v-if="isPlaying" class="one-shot-runtime-state" :class="{ 'is-paused': isPaused }">
+        {{ t(isPaused ? 'status.paused' : 'status.playing') }}
+      </span>
+    </div>
 
     <div class="one-shot-bottomline">
       <div class="one-shot-actions">
@@ -231,6 +236,8 @@ let resizeObserver: ResizeObserver | null = null;
 
 const { uiMode } = useUiMode();
 const { t } = useLocalization();
+const videoCheckIssues = useVideoPreflightIssues();
+const videoCheckIssue = computed(() => videoCheckIssues.value.get(props.item.uuid));
 const { saveProject, openItemProperties } = useProject();
 const { activeCues, stopCue } = useAudioEngine();
 const { playOneShot } = useOneShotPlayback();
@@ -503,19 +510,17 @@ onUnmounted(() => {
   isolation: isolate;
   display: grid;
   grid-template-rows: 22px minmax(0, 1fr) 31px;
-  gap: 5px;
-  padding: 7px 8px 7px 11px;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
   overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: var(--border-radius-sm);
   background: var(--color-surface);
   color: var(--color-text-primary);
-  box-shadow: inset 0 1px rgb(255 255 255 / 3%);
   cursor: grab;
   transition:
     background-color var(--transition-fast),
-    border-color var(--transition-fast),
-    box-shadow var(--transition-fast);
+    border-color var(--transition-fast);
 }
 
 .one-shot-tile:active { cursor: grabbing; }
@@ -526,7 +531,6 @@ onUnmounted(() => {
 
 .one-shot-tile.show-mode {
   grid-template-rows: 22px minmax(0, 1fr) 36px;
-  padding: 7px 8px 7px 11px;
   cursor: default;
 }
 
@@ -554,7 +558,6 @@ onUnmounted(() => {
 .one-shot-progress {
   right: auto;
   z-index: -1;
-  border-radius: inherit 0 0 inherit;
   background: color-mix(in srgb, var(--state-playing) 17%, transparent);
 }
 
@@ -564,9 +567,9 @@ onUnmounted(() => {
 
 .one-shot-color-rail {
   position: absolute;
-  inset: 8px auto 8px 5px;
-  width: 3px;
-  border-radius: 999px;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: 3px;
   background: var(--one-shot-color);
 }
 
@@ -574,10 +577,10 @@ onUnmounted(() => {
   min-width: 0;
   min-height: 22px;
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) minmax(0, 28px) 42px;
-  grid-template-areas: 'index state hotkey time';
+  grid-template-columns: 3ch minmax(0, 1fr) 7ch;
+  grid-template-areas: 'index hotkey time';
   align-items: center;
-  gap: 3px;
+  gap: var(--spacing-xs);
   color: var(--color-text-secondary);
   font-size: clamp(9px, calc(11px * var(--one-shot-font-scale, 1)), 12px);
   font-weight: 700;
@@ -606,24 +609,22 @@ onUnmounted(() => {
 }
 
 .one-shot-runtime-state {
-  grid-area: state;
   min-width: 0;
   overflow: hidden;
-  padding: 2px 3px;
-  border: 1px solid currentColor;
-  border-radius: var(--control-radius);
-  letter-spacing: .03em;
-  line-height: 1;
+  align-self: start;
+  font: 600 calc(11px * var(--one-shot-font-scale, 1)) / 1.2 var(--font-mono);
+  color: var(--state-playing);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.one-shot-runtime-state.is-playing {
-  color: var(--state-playing);
-}
-
 .one-shot-runtime-state.is-paused {
   color: var(--color-text-secondary);
+}
+
+.one-shot-video-issue {
+  color: var(--color-danger);
+  font: 700 calc(11px * var(--one-shot-font-scale, 1)) / 1.2 var(--font-mono);
 }
 
 .one-shot-hotkey {
@@ -634,12 +635,20 @@ onUnmounted(() => {
   padding: 2px 4px;
   overflow: hidden;
   border: 1px solid var(--color-border-strong);
-  border-radius: 5px;
+  border-radius: var(--control-radius);
   background: color-mix(in srgb, var(--color-surface-raised) 88%, transparent);
   color: var(--color-text-primary);
   font: 600 calc(10px * var(--one-shot-font-scale, 1)) / 1.2 var(--font-mono, ui-monospace, monospace);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.one-shot-body {
+  display: grid;
+  align-content: start;
+  gap: var(--spacing-xs);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .one-shot-title {
@@ -652,14 +661,9 @@ onUnmounted(() => {
   font-size: calc(15px * var(--one-shot-font-scale, 1));
   font-weight: 700;
   line-height: 1.15;
-  text-shadow: 0 1px 2px var(--color-background), 0 0 5px var(--color-background);
+  text-shadow: 0 1px 2px var(--color-background);
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-}
-
-.show-mode .one-shot-title {
-  min-height: 0;
-  font-size: calc(15px * var(--one-shot-font-scale, 1));
 }
 
 .one-shot-duration {
@@ -678,6 +682,7 @@ onUnmounted(() => {
 .one-shot-actions {
   position: relative;
   z-index: 2;
+  width: 100%;
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
@@ -686,17 +691,6 @@ onUnmounted(() => {
   border-radius: var(--control-radius);
   background: color-mix(in srgb, var(--color-surface-raised) 92%, transparent);
   box-shadow: inset 0 1px rgb(255 255 255 / 4%);
-}
-
-.one-shot-tile:not(.show-mode) .one-shot-actions {
-  width: 100%;
-  opacity: 0.72;
-  transition: opacity var(--transition-fast);
-}
-
-.one-shot-tile:not(.show-mode):hover .one-shot-actions,
-.one-shot-tile:not(.show-mode) .one-shot-actions:focus-within {
-  opacity: 1;
 }
 
 .one-shot-control,
@@ -726,48 +720,34 @@ onUnmounted(() => {
   border-inline-start: 1px solid var(--color-border);
 }
 
+.one-shot-actions .one-shot-transport {
+  background-color: color-mix(in srgb, var(--state-playing) 9%, var(--color-control));
+  color: var(--state-playing);
+}
+
+.one-shot-actions .one-shot-transport:hover {
+  background-color: color-mix(in srgb, var(--state-playing) 17%, var(--color-control));
+}
+
+.one-shot-actions .one-shot-transport.is-stop {
+  background-color: var(--color-danger);
+  color: var(--color-text-on-accent);
+}
+
 .one-shot-actions .material-symbols-rounded {
   font-size: 19px;
   font-variation-settings: 'FILL' 0, 'wght' 520, 'GRAD' 0, 'opsz' 20;
 }
 .show-mode .one-shot-actions { width: 100%; grid-auto-columns: minmax(0, 1fr); }
 .show-mode .one-shot-control { width: 34px; height: 34px; }
-.show-mode .one-shot-actions .one-shot-control { width: 100%; }
+.show-mode .one-shot-actions .one-shot-control { width: 100%; height: 34px; }
 .one-shot-control:hover,
 .one-shot-control.is-active { background: var(--color-surface-hover); border-color: var(--color-text-tertiary); }
 .one-shot-control:focus-visible {
   outline: 2px solid var(--color-focus, var(--color-accent));
   outline-offset: -3px;
 }
-.one-shot-transport {
-  background: color-mix(in srgb, var(--state-playing) 12%, transparent);
-  color: var(--state-playing);
-}
-.one-shot-transport:hover { background: color-mix(in srgb, var(--state-playing) 20%, transparent); }
-.one-shot-transport.is-stop { background: var(--color-danger); border-color: var(--color-danger); color: white; }
 .one-shot-remove:hover { background: color-mix(in srgb, var(--color-danger) 14%, transparent); color: var(--color-danger); }
-
-@container (max-width: 210px) {
-  .one-shot-tile {
-    grid-template-rows: 47px minmax(0, 1fr) 31px;
-    gap: 4px;
-    padding-block: 3px;
-  }
-
-  .one-shot-tile.show-mode {
-    grid-template-rows: 47px minmax(0, 1fr) 36px;
-  }
-
-  .one-shot-topline {
-    grid-template-columns: 14px minmax(0, 1fr) 54px;
-    grid-template-rows: 22px 22px;
-    grid-template-areas:
-      'index hotkey time'
-      'state state state';
-    column-gap: 2px;
-    row-gap: 3px;
-  }
-}
 
 .one-shot-popover,
 .one-shot-confirm {

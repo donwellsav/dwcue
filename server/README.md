@@ -179,7 +179,7 @@ In LAN mode, the boot banner shows the reachable URL:
     LAN reach  http://192.168.1.42:4480
 ```
 
-`Ctrl+C` (SIGINT / Ctrl-Break / WM_CLOSE on Windows) triggers a clean shutdown — devices closed, threads joined, project flushed if dirty.
+`Ctrl+C` requests a clean shutdown. The server also handles SIGTERM and Windows console Close and Ctrl+Break. If cleanup remains blocked about 1.5 seconds after the watchdog observes the request, the watchdog exits the process with failure status. Use the normal save command to persist show edits before stopping the engine.
 
 ---
 
@@ -195,13 +195,13 @@ Every cue's audio goes through three explicit mixer tiers on the engine's render
                                   Clock adaptation → Limiter + meter → Hardware
 ```
 
-- **Tier 1 — [`PlaybackItem`](include/liveplay/audio/playback_item.hpp)**: one instance per active cue, with its own `ma_decoder`, gain/fade state machine, optional LTC generator, and a per-source-channel meter. Loading the same `.wav` into two One Shot cells yields **two independent instances**; attenuating one never affects the other.
+- **Tier 1 — [`PlaybackItem`](include/liveplay/audio/playback_item.hpp)**: one instance per active cue, with its own `ma_decoder`, gain/fade state machine, optional LTC generator, and a per-source-channel meter. Loading the same `.wav` into two QuickPlay cells yields **two independent instances**; attenuating one never affects the other.
 - **Tier 2 — [`MixerChannel`](include/liveplay/audio/mixer_channel.hpp)**: a virtual strip with gain, mute, solo, and a smooth-fade ramp. Many items can route into one channel; one item's source channels can fan out to multiple channels.
 - **Tier 3 — Master output bus** ([`engine.hpp`](include/liveplay/audio/engine.hpp)): the current executable exposes 32 logical master channels. A master can be assigned to a `(Device, HardwareChannelIndex)` tuple; several masters can share that destination. The device callback limits their combined signal after clock adaptation. Assigned master meters and gain reduction report that final physical channel; unassigned buses retain their logical meters.
 
 The mixer renders 256-frame blocks (~5.3 ms at 48 kHz). Device callbacks can request different frame counts; final limiting uses preallocated scratch buffers and handles those counts without allocation or locks.
 
-Control-plane registries and immutable topology snapshots share ownership of playback items, mixer channels, and output devices, so removing an object cannot destroy storage still visible to the render thread. Native devices are deduplicated and reference-counted: Main and Preview can share one physical device, and releasing Preview cannot close Main's device. Device initialisation and shutdown are serialized; retired device storage stays off the real-time destruction path until engine shutdown.
+Control-plane registries and immutable topology snapshots share ownership of playback items, mixer channels, and output devices, so removing an object cannot destroy storage still visible to the render thread. Native devices are deduplicated and reference-counted: Main and Preview can share one physical device, and releasing Preview cannot close Main's device. Device initialization and uninitialization share a native lock. Distinct devices can start concurrently. Retired device storage stays off the real-time destruction path.
 
 ### Multi-device routing matrix
 
@@ -483,9 +483,9 @@ Mutating routes return `{ ok: true, ... }` only — the full document is **not**
 
 Project UI settings such as `settings.indexDisplayStart` only change the numbers shown and entered in the client. REST by-index paths stay zero-based for backwards compatibility.
 
-#### One Shot cells (legacy cart API)
+#### QuickPlay cells (legacy cart API)
 
-The current UI calls these quick-play cells **One Shots**. The HTTP paths and broadcast
+The current UI calls these quick-play cells **QuickPlays**. The HTTP paths and broadcast
 event names retain `cart` for compatibility with saved projects and external clients.
 
 | Method · Path | Body | Response | Broadcast op |
@@ -611,7 +611,7 @@ Unknown `type` values get a `{ "type": "error", "message": "unknown type" }` rep
 ### Network event lifecycle (cue trigger)
 
 ```
-1. User triggers One Shot #3.
+1. User triggers QuickPlay #3.
 2. OneShotTile.vue → useLiveplayServer().play(cueId)
 3. WebSocket frame { "type": "play", "cue_id": "…" } sent to server.
 4. ControlServer::handle_ws_message → engine_.play(cueId) — O(1) atomic state flip.
@@ -732,13 +732,13 @@ An unrouted cue's mono/stereo/surround sends remain cached immutably during load
 
 ### Loader and driver containment (T47-T50)
 
-File preparation owns decoder init, metadata and new One Shot priming independently of ProjectState/AudioEngine. Canceled coordinators stop waiting and fence adoption by generation/reserved CueId; completed native workers exit instead of waiting for the bulk batch. Shared-owned native teardown also covers cues with no active read-ahead worker. Diagnostic file removal follows actual decoder close.
+File preparation owns decoder init, metadata and new QuickPlay priming independently of ProjectState/AudioEngine. Canceled coordinators stop waiting and fence adoption by generation/reserved CueId; completed native workers exit instead of waiting for the bulk batch. Shared-owned native teardown also covers cues with no active read-ahead worker. Diagnostic file removal follows actual decoder close.
 
 Whole-document trim/LTC application reserves the cue before copying current properties, then performs native work outside project/lifecycle ownership. Same-cue GO and native edits refuse while that configuration is busy; pure level/fade edits, document access, Stop All and prepared backup GO remain available. Atomic file-channel/LTC state keeps timecode out of audible routing during configuration.
 
 Program GO acquires preparation ownership for its target cue only. A stalled seek, read or edit on another cue can remain outstanding while Stop All and backup GO complete. Show identity and playback intent fence late starts and follow actions. Confirmed Stop All also replaces a socket with pending Cue to Continue, and the server rejects a Continue carrying an old stop revision. Edits and show switches still share their existing serialization.
 
-Device start and failed/duplicate cleanup release the engine mutex. One refresh supplies a cached hardware catalog plus current runtime state (50 ms first-catalog grace, at most one refresh in flight, no more often than one second after completion). Device-owned recovery/retirement retain native buffers and callback signals across engine destruction; closing/stopped generations cannot restart from a late native return. Process-wide init/uninit serialization is retained.
+Device start and failed/duplicate cleanup release the engine mutex. One refresh supplies a cached hardware catalog plus current runtime state (50 ms first-catalog grace, at most one refresh in flight, no more often than one second after completion). Device-owned recovery/retirement retain native buffers and callback signals across engine destruction; closing/stopped generations cannot restart from a late native return. Independent native devices can start concurrently. When initialization or cleanup holds the process-wide lock, a second cold open returns through the existing output warning after a bounded wait. Ready outputs remain usable.
 
 Named Program and group output opens release the routing and playback lifecycle locks during native work. Stop All or a newer start invalidates the held cue. A reset invalidates the route and any late device reference is released. If a confirmed HTTP Stop All overtakes an unacknowledged start, the controller replaces the blocked control socket and verifies the active show and stop revision before enabling cue starts.
 
@@ -748,8 +748,10 @@ The initial open for a project Program or LTC selection or a cue override releas
 
 A separate worker prepares System Default, configured Program and LTC after media publication. Open, Close and the single-item loader can finish while native startup waits. Stop All or a show change discards a late route and releases its device reference. Settings reuses the validated mixer and keeps the current LTC feed when Program changes.
 
+At engine startup the listener binds before that worker opens System Default. Health and Stop All are available during a driver wait. During intentional shutdown, normal cleanup removes the owned pidfile. A deadline exit can leave it behind, so a managed restart still verifies the process is gone before replacing it.
+
 One owned revision sweep checks loaded media without waiting on the queued loader. Changed results apply only to the current document and cue. Playlist loads probe a relative path against its absolute fallback outside document ownership. Preview and media requests recheck the reference after the probe. Adding a cue queues its own media and any group children.
 
 Queued loads use two worker slots. Whole-show loads use the existing CPU-based limit with at least two slots. Repeated references to the same preferred path share one slot in each loader. Each completed cue publishes against its current identity, so it can take GO while an unrelated file is still pending. The show remains in loading state until current work settles. Several simultaneous stalls can fill the available slots.
 
-The workplan tracks storage waits during project-file Open/Save, cold LTC routing edits and engine startup/shutdown. A stuck native open can still occupy the shared device lifecycle lock or delay server shutdown until the driver returns. OS thread exhaustion may retain synchronous cleanup as a fallback.
+The workplan tracks project-file Open/Save and direct cue registration. A driver held in native init/uninit can prevent new device initialization until it returns. OS thread exhaustion may retain synchronous cleanup as a fallback. Pending kernel I/O can delay Windows process exit. [Microsoft's TerminateProcess reference](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-terminateprocess)

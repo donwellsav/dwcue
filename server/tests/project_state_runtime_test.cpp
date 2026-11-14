@@ -435,6 +435,127 @@ void test_stop_all_during_system_default_open() {
     context->callbacks.onDeviceInit = init;
 }
 
+void test_cold_outputs_keep_transport_available() {
+    using namespace liveplay::audio;
+    static ma_context context{};
+    static const auto initialized = [] {
+        const auto backend = ma_backend_null;
+        return ma_context_init(&backend, 1, nullptr, &context) == MA_SUCCESS;
+    }();
+    if (!initialized) std::abort();
+    static const auto original = context.callbacks;
+    static std::atomic<bool> hold_start{false}, hold_init{false}, entered{false};
+    static std::atomic<int> held_starts{0};
+    context.callbacks.onContextEnumerateDevices = [](ma_context* ctx, ma_enum_devices_callback_proc cb, void* data) {
+        ma_device_info info{};
+        std::snprintf(info.name, sizeof(info.name), "Held Output");
+        info.isDefault = MA_TRUE;
+        if (cb(ctx, ma_device_type_playback, &info, data)) {
+            info.id.nullbackend = 1;
+            info.isDefault = MA_FALSE;
+            std::snprintf(info.name, sizeof(info.name), "Backup Output");
+            cb(ctx, ma_device_type_playback, &info, data);
+        }
+        return MA_SUCCESS;
+    };
+    context.callbacks.onContextGetDeviceInfo = [](ma_context* ctx, ma_device_type type,
+                                                  const ma_device_id* id, ma_device_info* info) {
+        const auto result = original.onContextGetDeviceInfo(ctx, type, nullptr, info);
+        if (id) info->id = *id;
+        std::snprintf(info->name, sizeof(info->name), "%s", id && id->nullbackend ? "Backup Output" : "Held Output");
+        return result;
+    };
+    context.callbacks.onDeviceInit = [](ma_device* dev, const ma_device_config* config,
+                                       ma_device_descriptor* playback, ma_device_descriptor* capture) {
+        if (config->playback.pDeviceID && config->playback.pDeviceID->nullbackend == 0 && hold_init.load()) {
+            entered.store(true);
+            while (hold_init.load()) std::this_thread::sleep_for(1ms);
+        }
+        return original.onDeviceInit(dev, config, playback, capture);
+    };
+    context.callbacks.onDeviceStart = [](ma_device* dev) {
+        if (dev->playback.id.nullbackend == 0) {
+            ++held_starts;
+            if (hold_start.load()) {
+                entered.store(true);
+                while (hold_start.load()) std::this_thread::sleep_for(1ms);
+            }
+        }
+        return original.onDeviceStart(dev);
+    };
+
+    const auto wav = make_wav(8'192, 480'000);
+    for (const bool init : {false, true}) {
+        AudioEngine engine;
+        engine.device_test_context_ = &context;
+        liveplay::core::ProjectState state(engine);
+        check(engine.start(false), "cold outputs: headless engine started");
+        (void)engine.enumerate_devices();
+        auto& catalog = *engine.device_catalog_;
+        // A cold enumeration can return before the background scan publishes its first snapshot.
+        std::unique_lock catalog_lock{catalog.mutex};
+        const bool catalog_ready = catalog.ready.wait_for(catalog_lock, 2s, [&] { return catalog.has_snapshot; });
+        catalog_lock.unlock();
+        check(catalog_ready && engine.enumerate_devices().size() == 2, "cold outputs: distinct software outputs available");
+        check(state.replace_full_document(document(json::array({audio("bed", wav),
+            audio("held", wav, {{"deviceOverride", "Held Output"}}),
+            audio("backup", wav, {{"deviceOverride", "Backup Output"}}),
+        }))) && wait_ready(state) && state.trigger_item("bed"), "cold outputs: cues ready with a bed playing");
+
+        auto& hold = init ? hold_init : hold_start;
+        entered.store(false);
+        held_starts.store(0);
+        hold.store(true);
+        state.set_next_item_override("held");
+        auto held_go = std::async(std::launch::async, [&] { return state.go(); });
+        for (int i = 0; i < 1000 && !entered.load(); ++i) std::this_thread::sleep_for(2ms);
+        check(entered.load(), "cold outputs: GO reached the selected native call");
+        std::future<DeviceId> same_output;
+        if (!init) same_output = std::async(std::launch::async, [&] { return engine.open_default_device(); });
+
+        auto stop = std::async(std::launch::async, [&] { state.stop_all_cues(0); });
+        check(stop.wait_for(250ms) == std::future_status::ready && !on_air(state, engine, "bed"),
+              "cold outputs: Stop All is independent of the held output");
+        auto backup_go = std::async(std::launch::async, [&] {
+            state.set_next_item_override("backup");
+            return state.go();
+        });
+        const bool completed = backup_go.wait_for(1s) == std::future_status::ready;
+        check(completed, "cold outputs: backup GO responds before the other driver returns");
+        if (completed) {
+            const auto result = backup_go.get();
+            if (init) {
+                check(result.empty() && state.next_item_override() == "backup",
+                      "cold outputs: busy native init refuses the start and preserves Up Next");
+            } else {
+                check(result == "backup" && on_air(state, engine, "backup"), "cold outputs: a distinct cold output takes GO");
+                for (int i = 0; i < 40 && engine.read_master_meter(2).peak_max_db < -15.0f; ++i)
+                    std::this_thread::sleep_for(5ms);
+                check(engine.read_master_meter(2).peak_max_db > -15.0f, "cold outputs: backup output receives PCM while startup is held");
+            }
+        }
+        if (same_output.valid() && same_output.wait_for(1s) == std::future_status::ready) {
+            const auto id = same_output.get();
+            check(id.empty() && held_starts.load() == 1,
+                  "cold outputs: a default alias cannot start a second stream on the held device");
+            if (!id.empty()) engine.close_device(id);
+        } else if (!init) {
+            check(false, "cold outputs: a request for the same hardware settles while startup is held");
+        }
+        hold.store(false);
+        if (same_output.valid()) {
+            const auto id = same_output.get();
+            if (!id.empty()) engine.close_device(id);
+        }
+        stop.get();
+        if (backup_go.valid()) (void)backup_go.get();
+        check(held_go.get().empty() && !on_air(state, engine, "held"), "cold outputs: canceled GO cannot start late");
+        if (init && completed) check(state.go() == "backup", "cold outputs: deliberate retry opens the backup");
+        state.stop_all_cues(0);
+        state.release_device_routings();
+    }
+}
+
 void test_stop_all_during_ltc_device_start() {
     auto* context = null_preview_context();
     static const auto start = context->callbacks.onDeviceStart;
@@ -489,6 +610,85 @@ void test_stop_all_during_ltc_device_start() {
     state.stop_all_cues(0);
     check(state.trigger_item("ltc-cold") && state.device_routings_.size() == 1,
           "LTC open: deliberate retry restores timecode");
+    state.stop_all_cues(0);
+    context->callbacks.onDeviceStart = start;
+}
+
+void test_stop_all_during_ltc_edit() {
+    auto* context = null_preview_context();
+    static const auto start = context->callbacks.onDeviceStart;
+    static std::atomic<bool> hold{false}, entered{false};
+    context->callbacks.onDeviceStart = [](ma_device* device) {
+        if (hold.load()) {
+            entered.store(true);
+            while (hold.load()) std::this_thread::sleep_for(1ms);
+        }
+        return start(device);
+    };
+    const auto wav = make_wav(8'192, 480'000);
+    liveplay::audio::AudioEngine engine;
+    engine.device_test_context_ = context;
+    liveplay::core::ProjectState state(engine);
+    check(state.replace_full_document(document(json::array({
+        audio("ltc-edit", wav), audio("ltc-edit-backup", wav), audio("ltc-edit-warm", wav),
+    }))) && wait_ready(state) && state.trigger_item("ltc-edit"), "LTC edit: Program and backup media ready");
+    {
+        std::lock_guard lock{state.mutex_};
+        state.document_["settings"]["ltcDevice"] = "NULL Playback Device";
+    }
+    const auto backup = engine.find_cue(*state.item_to_cue_id("ltc-edit-backup"));
+    check(backup && backup->prime(2.0), "LTC edit: independent backup primed");
+    hold.store(true);
+    auto edit = std::async(std::launch::async, [&] {
+        auto lock = state.lock_project_session(state.project_session_id());
+        return state.update_item("ltc-edit", {{"ltcEnabled", true}}, &lock);
+    });
+    for (int i = 0; i < 1000 && !entered.load(); ++i) std::this_thread::sleep_for(2ms);
+    check(entered.load(), "LTC edit: native output startup is held");
+    check(edit.wait_for(250ms) == std::future_status::ready,
+          "LTC edit: edit acknowledges before the driver returns");
+    auto controls = std::async(std::launch::async, [&] {
+        state.stop_all_cues(0);
+        auto lock = state.lock_project_session(state.project_session_id());
+        if (!lock.owns_lock() || on_air(state, engine, "ltc-edit") ||
+            !state.set_next_item_override("ltc-edit-backup") || state.go() != "ltc-edit-backup") return false;
+        std::array<float, 256> left{}, right{};
+        float* channels[]{left.data(), right.data()};
+        return backup && backup->render_block(channels, 2, 256) == 256 && left[0] > 0.2f;
+    });
+    check(controls.wait_for(250ms) == std::future_status::ready,
+          "LTC edit: Stop All and backup GO render PCM before startup returns");
+    hold.store(false);
+    const auto accepted = edit.get();
+    const auto independent = controls.get();
+    check(accepted && independent && state.full_document()["items"][0]["ltcEnabled"] == true,
+          "LTC edit: accepted timecode setting remains in the show");
+    const auto retired = [&] {
+        std::lock_guard lock{engine.mutex_};
+        return !engine.retired_devices_.empty() && engine.devices_.empty();
+    };
+    for (int i = 0; i < 400 && !retired(); ++i) std::this_thread::sleep_for(5ms);
+    bool no_routes;
+    {
+        std::lock_guard lock{state.mutex_};
+        no_routes = state.device_routings_.empty();
+    }
+    check(retired() && no_routes && on_air(state, engine, "ltc-edit-backup") && !on_air(state, engine, "ltc-edit"),
+          "LTC edit: canceled startup leaves no device or route and cannot replay the cue");
+
+    check(state.set_next_item_override("ltc-edit") && state.go() == "ltc-edit" &&
+              state.device_routings_.size() == 1,
+          "LTC edit: deliberate GO opens the retained timecode destination");
+    check(state.update_item("ltc-edit-warm", {{"ltcEnabled", true}}), "LTC edit: warm destination accepts another cue edit");
+    const auto warm = state.item_to_cue_id("ltc-edit-warm");
+    {
+        std::lock_guard lock{engine.mutex_};
+        const auto routes = engine.pending_.item_sources.find(warm->value);
+        check(routes != engine.pending_.item_sources.end() && routes->second.by_source_channel.size() == 2 &&
+                  routes->second.by_source_channel.back().size() == 1 &&
+                  routes->second.by_source_channel.back().front().mixer == state.device_routings_.begin()->second.mixer,
+              "LTC edit: warm destination routes timecode immediately");
+    }
     state.stop_all_cues(0);
     context->callbacks.onDeviceStart = start;
 }
@@ -1657,10 +1857,10 @@ void render_engine(liveplay::audio::AudioEngine& engine, int blocks) {
 
 void test_terminal_custom_actions(const std::filesystem::path& wav) {
     for (const bool prepared : {false, true}) {
-        liveplay::audio::AudioEngine engine;
-        liveplay::core::ProjectState state(engine);
         std::mutex received_mutex;
         std::vector<std::string> received;
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
         state.set_external_action_handler([&](const json& action) {
             std::lock_guard lock{received_mutex};
             received.push_back(action.value("marker", ""));
@@ -1678,10 +1878,20 @@ void test_terminal_custom_actions(const std::filesystem::path& wav) {
         engine.create_mixer_channel("Terminal test");
         if (prepared) engine.running_.store(true);
         check(state.trigger_item("terminal-source"), "terminal actions: source starts");
-        if (prepared) check(static_cast<bool>(wait_prepared_follow(engine, *state.item_to_cue_id("terminal-target"))),
-                            "terminal actions: exact follow prepared");
+        const auto follow = prepared
+            ? wait_prepared_follow(engine, *state.item_to_cue_id("terminal-target"))
+            : nullptr;
         render_engine(engine, 4);
-        std::this_thread::sleep_for(150ms);
+        if (prepared) check(follow && follow->status.load() == liveplay::audio::PreparedFollow::State::Fired,
+                            "terminal actions: exact follow fires during rendering");
+        const auto finished = [&] {
+            return prepared ? state.item_trigger_seq("terminal-target").has_value()
+                            : state.next_item_override() == "terminal-target";
+        };
+        const auto deadline = std::chrono::steady_clock::now() + 2s;
+        while (!finished() && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(5ms);
+        check(finished(), "terminal actions: sequencer completes the end action");
         {
             std::lock_guard lock{received_mutex};
             check(received == std::vector<std::string>{"near", "edge"}, prepared
@@ -2974,7 +3184,9 @@ int main() try {
     test_stop_all_during_cue_retirement(wav);
     test_stop_all_during_program_device_start();
     test_stop_all_during_system_default_open();
+    test_cold_outputs_keep_transport_available();
     test_stop_all_during_ltc_device_start();
+    test_stop_all_during_ltc_edit();
     test_loader_output_wait();
     test_program_reroute_preserves_ltc();
     test_stop_all_during_diagnostic_output_start();

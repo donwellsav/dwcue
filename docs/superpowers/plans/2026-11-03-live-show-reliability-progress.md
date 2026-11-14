@@ -539,3 +539,33 @@ Not performed: physical PA/HDMI/LTC/MIDI, real driver stall/termination or hotpl
 ## 5 November v2.6.18 release follow-up
 
 T50d reproduced the Windows shutdown ordering in a software fixture. Stop published its wake while the renderer was held before the counter read. With the old code, a full output ring stranded Stop until a second wake. Commit `4e5855a` checks the run state after capturing the counter. The forced ordering and all 13 local native suites passed in 43.34 seconds. All 61 isolated API tests passed in 38.85 seconds. Decoder-isolation tests also drained 64 audible blocks at device cadence while twelve other decoder calls were held. Physical acceptance remains in T24.
+
+## 13 November — Cue LTC edit
+
+T49d in `fd0178d`. A held native NULL-device start reproduced an LTC edit waiting with the project, preparation and transport locks held. The edit now reuses a ready route or queues an LTC open on the existing routing worker. While the driver was held, the session-bound edit returned, Stop All stopped the active cue, and backup GO rendered its original PCM. On release, the canceled open retired without publishing a route or restarting the edited cue. Deliberate GO opened the destination again, and a later edit used the ready route immediately.
+
+The native suite passed 13/13 and the isolated control API suite passed 60/60 with macOS audio service access denied. Audio real-time and live safety checks passed. The engine process follow-up is below. Shared cold-device startup and physical LTC receiver acceptance remain open.
+
+## 13 November — Engine startup and shutdown
+
+T50e in `4b4f180`. A file gate holds the real miniaudio NULL backend inside device start. The old server never answered health or Stop All. The control listener now binds before default output preparation, which uses the existing routing worker. While the gate was held, health and Stop All answered and an older native show opened. Releasing the gate brought Main online while playback stayed stopped. Crash recovery intent checks also passed.
+
+T50f in `e2ddeb9`. With the startup fix alone, SIGINT left the process alive beyond the test's four-second deadline. A watchdog now allows about 1.5 seconds for cleanup after observing a stop signal, then exits the process if it is still running. With the driver held, the process exited with failure status and a fresh engine answered health on the same port with a new PID. The healthy replacement exited successfully on SIGTERM and removed its own pidfile. Forced exit leaves identity verification to the existing manager. It can wait briefly for a possible crash replacement before an explicit restart.
+
+The rebuilt macOS binary passed 13/13 native suites and 69/69 isolated server integration checks with audio service access denied. All seven fake-OS managed lifecycle checks, audio real-time safety and live safety passed. Hardware, packaged-app acceptance and native Windows and Linux execution remain untested. Shared cold-device serialization remains in T49.
+
+## 13 November — Cold output starts
+
+T49e in `b960703`. The NULL-backend tests reproduced backup GO waiting behind a held driver. A distinct output now starts and renders its original PCM while the first driver is held in Start. An alias for the held device cannot start a duplicate stream. Stop All invalidates the held cue and the late return leaves playback stopped. During held Init, ready outputs stay available and a second cold GO returns a warning with the cue still Up Next. A deliberate retry works after the driver returns. The process-wide lock remains around miniaudio init/uninit. Native 13/13, isolated API 69/69, audio real-time safety and live safety checks passed. [miniaudio 0.11.25](https://github.com/mackron/miniaudio/blob/0.11.25/miniaudio.h)
+
+## 13 November — QuickPlays and workspace polish
+
+The visible name changed in `22e72d2`, the shifted defaults in `bf196c6`, and the visual pass in `bbe27c4`. The tests exercise Shift+1 through Shift+0, custom and cleared bindings, forwarded keys, typing focus and repeated keys. All 21 locale files parse. Headless Chromium with the isolated native engine exercised the bank visible, hidden and detached, both work modes, Play/Pause/Resume, and a remapped Stop All on a focused Settings tab. At 1200 × 700 with 110% UI scaling, QuickPlays and both meter rails stayed beside the playlist. Preview, Play, Up Next and the import toolbar remained reachable. Both themes were reviewed at 1200 × 700 and 1400 × 880 across the two runs. The 265 client checks, typecheck and production renderer build passed. The renderer bundle carries its third-party notices and grew by about 6.3 kB gzip in its main JavaScript chunk. No new effects run on a frame loop. Platform and hardware acceptance remain in T24.
+
+## 13 November — 16:9 audience picture
+
+`33baacf` uses a centered 16:9 frame while the window and native recovery cover fill the assigned display. Chromium rendered full 1920 × 1080 video and proportional portrait media, standby stills and AV Sync. Pixel checks confirmed all four source edges and black bars on 4:3 and ultrawide viewports. The software preview starts at 960 × 540 content in Electron. Capture Output reads the frame with the existing Electron capture API, leaving outside bars out of the stored still. The regression rejects a capture if the window is resized while the readback is pending. The 265 client checks, typecheck, production renderer build, real Chromium handoffs and isolated Electron recovery passed. Physical HDMI and projector acceptance remain in T24. [Electron capture API](https://www.electronjs.org/docs/latest/api/web-contents#contentscapturepagerect-opts)
+
+## 13 November — Packaged review and picture framing
+
+`3b69f60` adds Full HD by default with selectable professional canvas presets, editable dimensions, a fit or pixel-cap choice, and 25–100% centered scaling. Apply framing saves to the machine profile and updates the current output. Invalid framing and stale captures are rejected. Settings stays docked with the playlist, GO and Stop All available. The packaged Apple Silicon review cold-opened an isolated landscape sample with 23 ready cues, checked shifted QuickPlays in both modes, rendered the 1080p pattern with all edges visible, and verified custom, wide, optional portrait, Retina pixel cap and persistence. Native 13/13, isolated API 69/69, client 266/266, typecheck, production renderer, and Electron transition and recovery checks passed. The manual includes refreshed screenshots from the packaged review. Physical HDMI, PA and cross-platform acceptance remain in T24.

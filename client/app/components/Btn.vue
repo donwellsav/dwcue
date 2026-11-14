@@ -6,7 +6,7 @@
   >
     <CueSymbol v-if="symbol" :name="symbol" />
     <span v-else-if="icon" class="material-symbols-rounded" aria-hidden="true">{{ icon }}</span>
-    <span>{{ text }}</span>
+    <span class="btn__text">{{ text }}</span>
   </button>
 </template>
 

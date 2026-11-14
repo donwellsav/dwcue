@@ -65,9 +65,14 @@ function captureImageUrl(image) {
   const still = scale < 1 ? image.resize({
     width: Math.max(1, Math.floor(width * scale)),
     height: Math.max(1, Math.floor(height * scale)),
-    quality: 'good',
+    quality: 'best',
   }) : image;
-  const jpeg = still.toJPEG(85);
+  const png = still.toPNG();
+  // shortcut: keep small captures lossless within the session memory budget; use disk-backed stills if the bank needs more.
+  if (png.length && png.length <= 1024 * 1024) {
+    return 'data:image/png;base64,' + png.toString('base64');
+  }
+  const jpeg = still.toJPEG(94);
   if (!jpeg.length) throw new Error('The captured picture could not be encoded.');
   return 'data:image/jpeg;base64,' + jpeg.toString('base64');
 }

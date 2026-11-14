@@ -159,8 +159,9 @@ export const removeOneShotDesignation = (item: AudioItem): void => {
 };
 
 export const getOneShotPlaybackMode = (item: AudioItem): OneShotPlaybackMode => {
-  if (item.duckingBehavior.mode === 'duck-others') return 'duck';
-  if (item.duckingBehavior.mode === 'stop-all') return 'replace';
+  const mode = item.duckingBehavior?.mode ?? 'stop-all';
+  if (mode === 'duck-others') return 'duck';
+  if (mode === 'stop-all') return 'replace';
   return 'overlay';
 };
 
@@ -179,7 +180,7 @@ export const setOneShotPlaybackMode = (
 };
 
 export const getOneShotEndMode = (item: AudioItem): OneShotEndMode =>
-  item.endBehavior.action === 'loop' ? 'loop' : 'stop';
+  item.endBehavior?.action === 'loop' ? 'loop' : 'stop';
 
 export const setOneShotEndMode = (item: AudioItem, mode: OneShotEndMode): void => {
   item.endBehavior = { action: mode === 'loop' ? 'loop' : 'nothing' };

@@ -268,6 +268,9 @@ ref="localModeButton"
         class="link-button"
         @click="openOperatorManual"
       >{{ t('menu.operatorManual') }}</button>
+      <button v-if="update.version" type="button" class="link-button" @click="emit('openAbout')">
+        {{ t('update.updateAvailable') }}
+      </button>
     </div>
 
   </div>
@@ -281,9 +284,11 @@ const props = defineProps<{
 const emit = defineEmits<{
   newProject: [fallbackFolder: string];
   openProject: [fallbackFolder: string];
+  openAbout: [];
 }>();
 const { tryRejoinExistingProject } = useProject();
 const { t } = useLocalization();
+const { update } = useAppUpdate();
 const server = useLiveplayServer();
 
 // Three-stage flow: mode picker → (optional remote address) → project picker.
@@ -335,7 +340,7 @@ const openOperatorManual = () => { void window.electronAPI.openOperatorManual();
 const serverUrlDisplay = computed(() => server.serverUrl ?? 'http://127.0.0.1:4480');
 
 // Get app version
-const appVersion = ref('2.6.21');
+const appVersion = ref('2.6.22');
 onMounted(async () => {
   if (import.meta.client && (window as any).electronAPI?.getAppVersion) {
     appVersion.value = await (window as any).electronAPI.getAppVersion();

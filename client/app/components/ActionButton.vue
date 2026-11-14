@@ -84,8 +84,8 @@ const computedStyle = computed(() => {
 }
 
 .action-btn--playlist.set-next-action:not(.action-btn--active) {
-  border-color: rgba(255, 255, 255, 0.9);
-  color: rgba(255, 255, 255, 0.9);
+  border-color: var(--color-border-strong);
+  color: var(--color-text-secondary);
 }
 
 .action-btn--playlist.set-next-action:not(.action-btn--active) .action-label-default {

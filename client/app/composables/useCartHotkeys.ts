@@ -46,6 +46,10 @@ export const eventToBinding = (e: KeyboardEvent): CartSlotKeyBinding => ({
   altKey: e.altKey,
 });
 
+const QUICK_PLAY_DIGITS = '1234567890';
+const SHIFTED_DIGITS = '!@#$%^&*()';
+export const QUICK_PLAY_DEFAULT_SLOTS = QUICK_PLAY_DIGITS.length * 2;
+
 // Shared by the shortcut editor and Settings summary.
 export const PLAYBACK_ACTIONS: { id: PlaybackKeyAction; labelKey: string }[] = [
   { id: 'play-next',     labelKey: 'controls.playNext'     },
@@ -75,7 +79,7 @@ export const resolveKeyboardBindings = (
   };
   // A new default must yield to a key the operator already assigned.
   const assigned = [...Object.values(keyMappings), ...Object.values(savedPlayback)];
-  for (const action of ['set-up-next', 'toggle-video-output', 'capture-video-standby', 'capture-display-standby'] as const) {
+  for (const action of ['set-up-next', 'play-selected', 'toggle-loop', 'jump-cue', 'cue-to-continue', 'toggle-video-output', 'capture-video-standby', 'capture-display-standby'] as const) {
     const defaultKey = DEFAULT_PLAYBACK_KEYS[action];
     if (savedPlayback[action] === undefined && defaultKey
         && assigned.some(binding => binding && bindingsMatch(binding, defaultKey))) {
@@ -84,13 +88,21 @@ export const resolveKeyboardBindings = (
   }
 
   const occupied = [...Object.values(keyMappings), ...Object.values(playbackMappings)];
-  for (const [index, key] of Array.from('1234567890').entries()) {
+  const shiftSpace = { key: ' ', ctrlKey: false, shiftKey: true, altKey: false };
+  const pauseAlternate = playbackMappings['pause-resume'] &&
+    !occupied.some(binding => binding && bindingsMatch(binding, shiftSpace)) ? shiftSpace : null;
+  for (let index = 0; index < QUICK_PLAY_DEFAULT_SLOTS; ++index) {
     const oneShot = slots[index]?.oneShot;
     if (!oneShot || oneShot.hotkey !== undefined) continue;
-    const binding = { key, ctrlKey: false, shiftKey: false, altKey: false };
-    if (!occupied.some(other => other && bindingsMatch(other, binding))) keyMappings[index] = binding;
+    const digit = index % QUICK_PLAY_DIGITS.length;
+    const binding = { key: QUICK_PLAY_DIGITS[digit], ctrlKey: false,
+      shiftKey: index >= QUICK_PLAY_DIGITS.length, altKey: false };
+    const legacy = binding.shiftKey ? { ...binding, key: SHIFTED_DIGITS[digit] } : null;
+    if (!occupied.some(other => other && (bindingsMatch(other, binding) || (legacy && bindingsMatch(other, legacy))))) {
+      keyMappings[index] = binding;
+    }
   }
-  return { keyMappings, playbackMappings };
+  return { keyMappings, playbackMappings, pauseAlternate };
 };
 
 let togglingVideoOutput = false;
@@ -133,6 +145,11 @@ export const useCartHotkeys = () => {
   ));
   const keyMappings = computed(() => bindings.value.keyMappings);
   const playbackMappings = computed(() => bindings.value.playbackMappings);
+  const playbackKeyLabel = (action: PlaybackKeyAction): string => {
+    const primary = playbackMappings.value[action];
+    const alternate = action === 'pause-resume' ? bindings.value.pauseAlternate : null;
+    return [primary, alternate].filter(binding => binding != null).map(formatKeyLabel).join(' / ');
+  };
 
   const isTextInputFocused = (): boolean => {
     const el = document.activeElement;
@@ -172,15 +189,17 @@ export const useCartHotkeys = () => {
 
   const findSlotForEvent = (e: KeyboardEvent): number => {
     const mappings = keyMappings.value;
+    const pressed = eventToBinding(e);
     for (const [slotStr, binding] of Object.entries(mappings)) {
-      if (
-        e.key.toLowerCase() === binding.key.toLowerCase()
-        && (e.ctrlKey || e.metaKey) === binding.ctrlKey
-        && e.shiftKey === binding.shiftKey
-        && e.altKey   === binding.altKey
-      ) {
-        return parseInt(slotStr, 10);
-      }
+      if (bindingsMatch(binding, pressed)) return Number(slotStr);
+    }
+    // Shift changes the produced character on many layouts. Saved bindings use it first.
+    if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && /^Digit[0-9]$/.test(e.code)) {
+      const digit = e.code[5];
+      const index = QUICK_PLAY_DIGITS.indexOf(digit) + QUICK_PLAY_DIGITS.length;
+      const binding = mappings[index];
+      if (binding && oneShotSlots.value[index]?.oneShot?.hotkey === undefined &&
+          bindingsMatch(binding, { ...pressed, key: digit })) return index;
     }
     return -1;
   };
@@ -191,6 +210,8 @@ export const useCartHotkeys = () => {
     for (const [action, binding] of Object.entries(mappings) as [PlaybackKeyAction, CartSlotKeyBinding | null][]) {
       if (binding && bindingsMatch(binding, pressed)) return action;
     }
+    const alternate = bindings.value.pauseAlternate;
+    if (alternate && bindingsMatch(alternate, pressed)) return 'pause-resume';
     return null;
   };
 
@@ -209,7 +230,7 @@ export const useCartHotkeys = () => {
     if (action === 'toggle-loop') {
       const item = getTargetItem();
       if (!item) return;
-      if (item.endBehavior.action === 'loop') {
+      if (item.endBehavior?.action === 'loop') {
         item.endBehavior = { action: 'nothing' };
       } else {
         item.endBehavior = { action: 'loop' };
@@ -370,6 +391,7 @@ export const useCartHotkeys = () => {
   return {
     keyMappings,
     playbackMappings,
+    playbackKeyLabel,
     triggerSlot,
     mount,
     unmount,

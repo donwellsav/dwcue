@@ -270,7 +270,10 @@ export const useAudioEngine = () => {
       // [-1, 0]): there is no "next playlist item" after one, so they never
       // contribute an Up Next target — and must not walk the tree at all.
       if (audioItem.index.some((i) => i < 0)) continue;
-      switch (audioItem.endBehavior.action) {
+      switch (audioItem.endBehavior?.action ?? 'nothing') {
+        case 'nothing':
+          if (currentProject.value.settings?.autoCueNextWithoutEndBehavior === false) break;
+          // Prepare a manual GO target without starting the next cue.
         case 'next': {
           const nextIndex = [...audioItem.index];
           nextIndex[nextIndex.length - 1]++;
@@ -293,19 +296,6 @@ export const useAudioEngine = () => {
           break;
       }
 
-      // Issue #28: an item WITHOUT an end behaviour still arms the next
-      // playlist item as "Up Next" when the project setting is enabled
-      // (default on, incl. legacy projects). This only arms the manual GO
-      // target — the server never auto-advances a 'nothing' cue, so playback
-      // still waits for the operator to press GO / spacebar. Lets an operator
-      // step through a pre-ordered playlist with a single button.
-      if (audioItem.endBehavior.action === 'nothing' &&
-          (currentProject.value as any)?.settings?.autoCueNextWithoutEndBehavior !== false) {
-        const nextIndex = [...audioItem.index];
-        nextIndex[nextIndex.length - 1]++;
-        const nextItem = findItemByIndex(nextIndex);
-        if (nextItem) return nextItem.uuid;
-      }
     }
     return null;
   });

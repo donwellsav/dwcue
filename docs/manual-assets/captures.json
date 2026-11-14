@@ -1,8 +1,8 @@
 {
   "application": "DonWells Cue",
-  "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-  "packageVersion": "2.6.17",
-  "edition": "12 November 2026 operator manual for 2.6.21 with per-image capture provenance",
+  "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
+  "packageVersion": "2.6.21",
+  "edition": "13 November 2026 development review with current QuickPlays, docked Settings and picture framing",
   "images": [
     {
       "file": "welcome-current.png",
@@ -40,122 +40,122 @@
     },
     {
       "file": "edit-workspace.png",
-      "view": "Current Edit Mode with the playlist, acknowledged Up Next target, Basic Info and output console.",
-      "version": "2.6.17",
-      "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "nativeSourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "capturedOn": "2026-11-03",
-      "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
+      "view": "Edit Mode with the QuickPlays bank, playlist, armed 1080p cue, transport, Properties, and output console.",
+      "version": "2.6.21",
+      "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
+      "nativeSourceRevision": "b96070379c7305bbb3af6e95d2d869aa9f9fe13b",
+      "capturedOn": "2026-11-13",
+      "surface": "Packaged macOS Apple Silicon review app with a dedicated profile.",
       "dimensions": [
-        1600,
-        1000
+        1400,
+        868
       ],
-      "sha256": "983a586a2f72a268ba55313658a640d68a50706917e46ecec14a2f795a51c6f6",
-      "fixture": "Disposable Conference rehearsal with generated WAV tones. Native engine uses NULL software output inside audio-service-denial sandbox; no user media, live app or physical outputs.",
-      "captureMethod": "Playwright screenshot of the actual rendered page or control panel; no UI controls redrawn.",
-      "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
+      "sha256": "cf36037234c260ecdf754296b5d88a94cf16049801961184ca27f6104ac24aaa",
+      "fixture": "Isolated Local review sample with generated audio and a silent 1080p clip. The bundled native engine uses its software NULL backend.",
+      "captureMethod": "Actual Electron renderer screenshot at CSS pixel dimensions. Whole workspace or a single panel or tile.",
+      "presentation": "Rendered UI with its actual settings and cue state."
     },
     {
       "file": "cue-basic-current.png",
-      "view": "Basic Info for House-open, including cue identity, ducking and start/end behavior.",
-      "version": "2.6.17",
-      "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "nativeSourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "capturedOn": "2026-11-03",
-      "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
+      "view": "Aligned Basic Info, Media, Identifiers, and Cueing columns for the selected framing cue.",
+      "version": "2.6.21",
+      "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
+      "nativeSourceRevision": "b96070379c7305bbb3af6e95d2d869aa9f9fe13b",
+      "capturedOn": "2026-11-13",
+      "surface": "Packaged macOS Apple Silicon review app with a dedicated profile.",
       "dimensions": [
-        720,
-        864
+        1400,
+        246
       ],
-      "sha256": "288c7a2323806c89a67aebf2db6522c6c0fd072ec17a4742f51eb0db1db3d82b",
-      "fixture": "Disposable Conference rehearsal with generated WAV tones. Native engine uses NULL software output inside audio-service-denial sandbox; no user media, live app or physical outputs.",
-      "captureMethod": "Playwright screenshot of the actual rendered panel at saved CSS pixel dimensions; viewport and accessible panel-height controls used for readable detail.",
-      "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
+      "sha256": "e7c19727919da71a524afaa2d69b61fa1db37013265b2abd024d3ef23fe4aca5",
+      "fixture": "Isolated Local review sample with generated audio and a silent 1080p clip. The bundled native engine uses its software NULL backend.",
+      "captureMethod": "Actual Electron renderer screenshot at CSS pixel dimensions. Whole workspace or a single panel or tile.",
+      "presentation": "Rendered UI with its actual settings and cue state."
     },
     {
       "file": "show-mode.png",
-      "view": "Show Mode with the One Shots bank open and the default number keys visible.",
-      "version": "2.6.20 development",
-      "sourceRevision": "bdcc79a2b2df5c90e9eab39759327957a547835d",
-      "nativeSourceRevision": "f14629d954a0ab6c312f4f37e4eec9b101cf84ea",
-      "capturedOn": "2026-11-12",
-      "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
+      "view": "Show Mode with QuickPlays and the two default number-key ranges.",
+      "version": "2.6.21",
+      "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
+      "nativeSourceRevision": "b96070379c7305bbb3af6e95d2d869aa9f9fe13b",
+      "capturedOn": "2026-11-13",
+      "surface": "Packaged macOS Apple Silicon review app with a dedicated profile.",
       "dimensions": [
-        1200,
-        800
+        1400,
+        868
       ],
-      "sha256": "34a5d0f551d90dbc2846f99d78533d7f927a9129214c5018a441adcda44dd8dd",
-      "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
-      "captureMethod": "Playwright screenshot of the rendered page or panel at its actual CSS pixel size.",
-      "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
+      "sha256": "915451ab1f3343e7150ec01b2fc6dcedfb527b4fc75b4ff855b499dd58ba5ed8",
+      "fixture": "Isolated Local review sample with generated audio and a silent 1080p clip. The bundled native engine uses its software NULL backend.",
+      "captureMethod": "Actual Electron renderer screenshot at CSS pixel dimensions. Whole workspace or a single panel or tile.",
+      "presentation": "Rendered UI with its actual settings and cue state."
     },
     {
       "file": "import-media.png",
-      "view": "Import Media with local file selection and the source-level/full-duration preservation notice.",
-      "version": "2.6.17",
-      "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "nativeSourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "capturedOn": "2026-11-03",
-      "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
+      "view": "Lower Import Media panel with the local file chooser and import plan.",
+      "version": "2.6.21 development",
+      "sourceRevision": "0b1b7bad54a980c830ba23d2a5ab50af82dfeb36",
+      "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
+      "capturedOn": "2026-11-13",
+      "surface": "Fresh static build of the Vue UI in isolated Chromium with fixture Electron methods.",
       "dimensions": [
-        720,
-        290
+        1200,
+        225
       ],
-      "sha256": "1552c0171132d0cb34d1cf2c9162e41a9a4627a2b3a7d236b521a80d71350342",
-      "fixture": "Disposable Conference rehearsal with generated WAV tones. Native engine uses NULL software output inside audio-service-denial sandbox; no user media, live app or physical outputs.",
-      "captureMethod": "Playwright screenshot of the actual rendered page or control panel; no UI controls redrawn.",
-      "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
+      "sha256": "582fc10adf3fbbc620fab05df95ea4f2ca4aef63eccfb7a4033bf6e684ea067a",
+      "fixture": "Disposable Running show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright screenshot at the rendered CSS pixel size.",
+      "presentation": "Workspace or panel crop with original UI values."
     },
     {
       "file": "server-picker-current.png",
-      "view": "Browse Server showing the three generated practice WAV files.",
-      "version": "2.6.17",
-      "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "nativeSourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "capturedOn": "2026-11-03",
-      "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
+      "view": "Browse Server inside the lower Import Media panel with generated files.",
+      "version": "2.6.21 development",
+      "sourceRevision": "0b1b7bad54a980c830ba23d2a5ab50af82dfeb36",
+      "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
+      "capturedOn": "2026-11-13",
+      "surface": "Fresh static build of the Vue UI in isolated Chromium with fixture Electron methods.",
       "dimensions": [
-        720,
-        656
+        1200,
+        397
       ],
-      "sha256": "b6a1112587340e057aca5c730d440083a76f66957ab50fa81131deca11d4d1f7",
-      "fixture": "Disposable Conference rehearsal with generated WAV tones. Native engine uses NULL software output inside audio-service-denial sandbox; no user media, live app or physical outputs.",
-      "captureMethod": "Playwright screenshot of the actual rendered page or control panel; no UI controls redrawn.",
-      "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
+      "sha256": "2f4f4944ec9acc6606d07736687709bfd8e8d31f5c86b40db813832947994c49",
+      "fixture": "Disposable Running show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright screenshot at the rendered CSS pixel size.",
+      "presentation": "Workspace or panel crop with original UI values."
     },
     {
       "file": "import-options-current.png",
-      "view": "Advanced import options for copying/linking, duplicate handling and new-cue settings. Audio processing is explicit after import.",
-      "version": "2.6.17",
-      "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "nativeSourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "capturedOn": "2026-11-03",
-      "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
+      "view": "Lower Import Media panel with a staged practice file and the import plan.",
+      "version": "2.6.21 development",
+      "sourceRevision": "0b1b7bad54a980c830ba23d2a5ab50af82dfeb36",
+      "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
+      "capturedOn": "2026-11-13",
+      "surface": "Fresh static build of the Vue UI in isolated Chromium with fixture Electron methods.",
       "dimensions": [
-        720,
-        490
+        1200,
+        257
       ],
-      "sha256": "341d45a8d76e643441b6186c9e7bdb0e5d5a5eec3b84257810458feff66e5150",
-      "fixture": "Disposable Conference rehearsal with generated WAV tones. Native engine uses NULL software output inside audio-service-denial sandbox; no user media, live app or physical outputs.",
-      "captureMethod": "Playwright screenshot of the actual rendered page or control panel; no UI controls redrawn.",
-      "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
+      "sha256": "5ae8f06e47058e5267c590aecb5196d235a27b20a2ebaec3a7c457ea8b159638",
+      "fixture": "Disposable Running show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright screenshot at the rendered CSS pixel size.",
+      "presentation": "Workspace or panel crop with original UI values."
     },
     {
       "file": "cue-playback-current.png",
-      "view": "Playback controls and waveform for the generated practice cue; In/Out and explicit preparation controls are visible.",
-      "version": "2.6.17",
-      "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "nativeSourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "capturedOn": "2026-11-03",
-      "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
+      "view": "Playback with the waveform, audition transport, and aligned timing, fade, and transition controls.",
+      "version": "2.6.21 development",
+      "sourceRevision": "0b1b7bad54a980c830ba23d2a5ab50af82dfeb36",
+      "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
+      "capturedOn": "2026-11-13",
+      "surface": "Fresh static build of the Vue UI in isolated Chromium with fixture Electron methods.",
       "dimensions": [
-        720,
-        864
+        1600,
+        284
       ],
-      "sha256": "726262a5c5092fef66de22f97ef22ae2a95fb30368bd1640b68a846cc2cea017",
-      "fixture": "Disposable Conference rehearsal with generated WAV tones. Native engine uses NULL software output inside audio-service-denial sandbox; no user media, live app or physical outputs.",
-      "captureMethod": "Playwright screenshot of the actual rendered panel at saved CSS pixel dimensions; viewport and accessible panel-height controls used for readable detail.",
-      "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
+      "sha256": "532b41ca2d0f97276d5226e664eaa69da939dd2368b774cb98edc1aaaec9170a",
+      "fixture": "Disposable Running show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright screenshot at the rendered CSS pixel size.",
+      "presentation": "Workspace or panel crop with original UI values."
     },
     {
       "file": "cue-end-detail-current.png",
@@ -177,53 +177,53 @@
     {
       "file": "group-current.png",
       "view": "Group Properties with Start Behavior set to Play All.",
-      "version": "2.6.17",
-      "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "nativeSourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "capturedOn": "2026-11-03",
-      "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
+      "version": "2.6.21 development",
+      "sourceRevision": "0b1b7bad54a980c830ba23d2a5ab50af82dfeb36",
+      "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
+      "capturedOn": "2026-11-13",
+      "surface": "Fresh static build of the Vue UI in isolated Chromium with fixture Electron methods.",
       "dimensions": [
-        720,
-        519
+        1200,
+        120
       ],
-      "sha256": "97652032e9a826d8b70a770d0dea7bcb28bcbb39d82fb85957e7775700655c7c",
-      "fixture": "Disposable Conference rehearsal with generated WAV tones. Native engine uses NULL software output inside audio-service-denial sandbox; no user media, live app or physical outputs.",
-      "captureMethod": "Playwright screenshot of the actual rendered panel at saved CSS pixel dimensions; viewport and accessible panel-height controls used for readable detail.",
-      "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
+      "sha256": "3006d64d954f61308f9e10884418a8bdd22afedb5afe17032bf0bd5e4e3679ba",
+      "fixture": "Disposable Running show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright screenshot at the rendered CSS pixel size.",
+      "presentation": "Workspace or panel crop with original UI values."
     },
     {
       "file": "audio-settings-current.png",
-      "view": "Audio Routing settings showing the isolated NULL software output. Choose the actual show interface on the performance computer.",
-      "version": "2.6.17",
-      "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "nativeSourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "capturedOn": "2026-11-03",
-      "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
+      "view": "Audio Routing in the aligned docked Settings tabs.",
+      "version": "2.6.21",
+      "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
+      "nativeSourceRevision": "b96070379c7305bbb3af6e95d2d869aa9f9fe13b",
+      "capturedOn": "2026-11-13",
+      "surface": "Packaged macOS Apple Silicon review app with a dedicated profile.",
       "dimensions": [
-        610,
-        558
+        1400,
+        315
       ],
-      "sha256": "c36ef89ee0136321853bc3defb50f8bafe68af2992c29f126eae633d22b69d36",
-      "fixture": "Disposable Conference rehearsal with generated WAV tones. Native engine uses NULL software output inside audio-service-denial sandbox; no user media, live app or physical outputs.",
-      "captureMethod": "Playwright screenshot of the actual rendered panel at saved CSS pixel dimensions; viewport and accessible panel-height controls used for readable detail.",
-      "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
+      "sha256": "00be0a90e375da6d179ad54ff9bb55815cd621c7f33d91c0ec4a25bb8cdd5953",
+      "fixture": "Isolated Local review sample with generated audio and a silent 1080p clip. The bundled native engine uses its software NULL backend.",
+      "captureMethod": "Actual Electron renderer screenshot at CSS pixel dimensions. Whole workspace or a single panel or tile.",
+      "presentation": "Rendered UI with its actual settings and cue state."
     },
     {
       "file": "output-routing-current.png",
-      "view": "Cue Output controls, including device override, channel and LTC routing.",
-      "version": "2.6.17",
-      "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "nativeSourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "capturedOn": "2026-11-03",
-      "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
+      "view": "Cue Output with the per-cue output device and LTC timecode controls.",
+      "version": "2.6.21 development",
+      "sourceRevision": "0b1b7bad54a980c830ba23d2a5ab50af82dfeb36",
+      "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
+      "capturedOn": "2026-11-13",
+      "surface": "Fresh static build of the Vue UI in isolated Chromium with fixture Electron methods.",
       "dimensions": [
-        720,
-        519
+        1600,
+        193
       ],
-      "sha256": "4b0c13aa28e68bbd66a29257ac0e2beeb1ce7f23131c9f1cacfe63ccf17e8297",
-      "fixture": "Disposable Conference rehearsal with generated WAV tones. Native engine uses NULL software output inside audio-service-denial sandbox; no user media, live app or physical outputs.",
-      "captureMethod": "Playwright screenshot of the actual rendered panel at saved CSS pixel dimensions; viewport and accessible panel-height controls used for readable detail.",
-      "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
+      "sha256": "a3f72b20ff88a25cf6d493b462aa038592e9f2940fb6932dc2ce4060fa723cd6",
+      "fixture": "Disposable Running show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright screenshot at the rendered CSS pixel size.",
+      "presentation": "Workspace or panel crop with original UI values."
     },
     {
       "file": "output-console-current.png",
@@ -261,88 +261,88 @@
     },
     {
       "file": "one-shot-settings-current.png",
-      "view": "One Shot settings with playback, retrigger, ending, gain and fade controls.",
-      "version": "2.6.20 development",
-      "sourceRevision": "bdcc79a2b2df5c90e9eab39759327957a547835d",
-      "nativeSourceRevision": "f14629d954a0ab6c312f4f37e4eec9b101cf84ea",
-      "capturedOn": "2026-11-12",
-      "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
+      "view": "QuickPlay settings with playback, retrigger, ending, gain, and fade controls.",
+      "version": "2.6.21",
+      "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
+      "nativeSourceRevision": "b96070379c7305bbb3af6e95d2d869aa9f9fe13b",
+      "capturedOn": "2026-11-13",
+      "surface": "Packaged macOS Apple Silicon review app with a dedicated profile.",
       "dimensions": [
         311,
-        589
+        595
       ],
-      "sha256": "36cee2ba992bac280e67c36f2e63f6be9debf7d682fe1ccd78dee849c9536f95",
-      "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
-      "captureMethod": "Playwright screenshot of the rendered page or panel at its actual CSS pixel size.",
-      "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
+      "sha256": "30ad5cd5956b8b524bc9645eb26c7f9561d9c419375227121d69b5ab0153d74f",
+      "fixture": "Isolated Local review sample with generated audio and a silent 1080p clip. The bundled native engine uses its software NULL backend.",
+      "captureMethod": "Actual Electron renderer screenshot at CSS pixel dimensions. Whole workspace or a single panel or tile.",
+      "presentation": "Rendered UI with its actual settings and cue state."
     },
     {
       "file": "one-shot-show-mode.png",
-      "view": "An idle One Shot in Show Mode with its Play button and number key.",
-      "version": "2.6.20 development",
-      "sourceRevision": "bdcc79a2b2df5c90e9eab39759327957a547835d",
-      "nativeSourceRevision": "f14629d954a0ab6c312f4f37e4eec9b101cf84ea",
-      "capturedOn": "2026-11-12",
-      "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
+      "view": "QuickPlay 11 in Show Mode with a direct Play button and Shift+1 shortcut.",
+      "version": "2.6.21",
+      "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
+      "nativeSourceRevision": "b96070379c7305bbb3af6e95d2d869aa9f9fe13b",
+      "capturedOn": "2026-11-13",
+      "surface": "Packaged macOS Apple Silicon review app with a dedicated profile.",
       "dimensions": [
         120,
-        122
+        110
       ],
-      "sha256": "b882f1574018e7433ae6d428d8ff76bc221b4aa071b8c97c9dd8f407ed540349",
-      "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
-      "captureMethod": "Playwright screenshot of the rendered page or panel at its actual CSS pixel size.",
-      "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
+      "sha256": "7eece1c92e691a40645c6676bf480350e76bb0574b040671d28ffee56eed276c",
+      "fixture": "Isolated Local review sample with generated audio and a silent 1080p clip. The bundled native engine uses its software NULL backend.",
+      "captureMethod": "Actual Electron renderer screenshot at CSS pixel dimensions. Whole workspace or a single panel or tile.",
+      "presentation": "Rendered UI with its actual settings and cue state."
     },
     {
       "file": "shortcuts-current.png",
-      "view": "The Shortcuts tab in Settings with the reference bar toggle and Customize Shortcuts button.",
-      "version": "2.6.20 development",
-      "sourceRevision": "100247ab6b139d0d1810e8c61d46d960cd74a6f2",
-      "nativeSourceRevision": "f14629d954a0ab6c312f4f37e4eec9b101cf84ea",
-      "capturedOn": "2026-11-12",
-      "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
+      "view": "Docked Shortcuts, scrolled to show all twenty default QuickPlay keys.",
+      "version": "2.6.21",
+      "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
+      "nativeSourceRevision": "b96070379c7305bbb3af6e95d2d869aa9f9fe13b",
+      "capturedOn": "2026-11-13",
+      "surface": "Packaged macOS Apple Silicon review app with a dedicated profile.",
       "dimensions": [
-        720,
-        648
+        1400,
+        315
       ],
-      "sha256": "c3578b006ee178ba4e566b666e2b81ce3cbf258f4d66e7f929092c5075fc3f70",
-      "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
-      "captureMethod": "Playwright screenshot of the rendered page or panel at its actual CSS pixel size.",
-      "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
+      "sha256": "331976879567535b3aeb45fc62daca15f95861eedbc485461fc0774910fdf5e6",
+      "fixture": "Isolated Local review sample with generated audio and a silent 1080p clip. The bundled native engine uses its software NULL backend.",
+      "captureMethod": "Actual Electron renderer screenshot at CSS pixel dimensions. Whole workspace or a single panel or tile.",
+      "presentation": "Rendered UI with its actual settings and cue state."
     },
     {
       "file": "midi-current.png",
-      "view": "MIDI configuration with fixture MIDI access and no detected hardware; assign and rehearse physical controls separately.",
-      "version": "2.6.17",
-      "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "nativeSourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "capturedOn": "2026-11-03",
-      "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
+      "view": "Docked MIDI configuration and device controls.",
+      "version": "2.6.21",
+      "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
+      "nativeSourceRevision": "b96070379c7305bbb3af6e95d2d869aa9f9fe13b",
+      "capturedOn": "2026-11-13",
+      "surface": "Packaged macOS Apple Silicon review app with a dedicated profile.",
       "dimensions": [
-        504,
-        678
+        1400,
+        315
       ],
-      "sha256": "01888be175ab9cda7970506f4b9704c41bba274da74e3d75a1d48dd24c0bdb19",
-      "fixture": "Disposable Conference rehearsal with generated WAV tones. Native engine uses NULL software output inside audio-service-denial sandbox; no user media, live app or physical outputs.",
-      "captureMethod": "Playwright screenshot of the actual rendered page or control panel; no UI controls redrawn.",
-      "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
+      "sha256": "d96a65d644726d261ec6abd472295be5e07fe1fe5883988b80a9ecde305631d8",
+      "fixture": "Isolated Local review sample with generated audio and a silent 1080p clip. The bundled native engine uses its software NULL backend.",
+      "captureMethod": "Actual Electron renderer screenshot at CSS pixel dimensions. Whole workspace or a single panel or tile.",
+      "presentation": "Rendered UI with its actual settings and cue state."
     },
     {
       "file": "video-settings-current.png",
-      "view": "Video Output settings with the output closed, test-card options.",
-      "version": "2.6.17",
-      "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "nativeSourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "capturedOn": "2026-11-03",
-      "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
+      "view": "Docked Video Output with Picture framing, standby capture, and test card controls.",
+      "version": "2.6.21",
+      "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
+      "nativeSourceRevision": "b96070379c7305bbb3af6e95d2d869aa9f9fe13b",
+      "capturedOn": "2026-11-13",
+      "surface": "Packaged macOS Apple Silicon review app with a dedicated profile.",
       "dimensions": [
-        720,
-        810
+        1400,
+        315
       ],
-      "sha256": "26ffa6353aa51c24ff8a2cd2c58897745cd95d3b2e790138a91157f533f18124",
-      "fixture": "Disposable Conference rehearsal with generated WAV tones. Native engine uses NULL software output inside audio-service-denial sandbox; no user media, live app or physical outputs.",
-      "captureMethod": "Playwright screenshot of the actual rendered page or control panel; no UI controls redrawn.",
-      "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
+      "sha256": "9d3eebf9a1ffb7404750be7cc38401a38c4f550b8299bb835ad5658cdf651ad0",
+      "fixture": "Isolated Local review sample with generated audio and a silent 1080p clip. The bundled native engine uses its software NULL backend.",
+      "captureMethod": "Actual Electron renderer screenshot at CSS pixel dimensions. Whole workspace or a single panel or tile.",
+      "presentation": "Rendered UI with its actual settings and cue state."
     },
     {
       "file": "server-connection-current.png",
@@ -363,20 +363,37 @@
     },
     {
       "file": "video-recovery-current.png",
-      "view": "Output status and recovery controls in Video Output settings. Restart Output is disabled while the output is closed.",
-      "version": "2.6.17",
-      "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "nativeSourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "capturedOn": "2026-11-03",
+      "view": "Output status with Restart Output disabled and Copy diagnostics available.",
+      "version": "2.6.21 development",
+      "sourceRevision": "f73d19ecfdf5e4c8b090dcce9e2f3f502d11960d",
+      "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
+      "capturedOn": "2026-11-13",
       "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
       "dimensions": [
-        682,
-        143
+        288,
+        48
       ],
-      "sha256": "5b64a17d9b53bca36e11938976cf8efc42040736f60c41ef63625ae7318362cf",
-      "fixture": "Disposable Conference rehearsal with generated WAV tones. Native engine uses NULL software output inside audio-service-denial sandbox; no user media, live app or physical outputs.",
-      "captureMethod": "Playwright element screenshot of the complete actual output-status section, including both recovery controls.",
-      "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
+      "sha256": "04adb06a325d4c0bfbf8f11f1772a1be0e19490aa6ae4942f08301c492e36566",
+      "fixture": "Disposable Running show with generated WAV files, native NULL software output and fixture Electron APIs.",
+      "captureMethod": "Playwright screenshot of the actual rendered Settings panel or section.",
+      "presentation": "Panel crop without callouts or altered UI values."
+    },
+    {
+      "file": "video-framing-current.png",
+      "view": "The default Full HD canvas, Fit to display scaling, and 100 percent frame size.",
+      "version": "2.6.21",
+      "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
+      "nativeSourceRevision": "b96070379c7305bbb3af6e95d2d869aa9f9fe13b",
+      "capturedOn": "2026-11-13",
+      "surface": "Packaged macOS Apple Silicon review app with a dedicated profile.",
+      "dimensions": [
+        342,
+        249
+      ],
+      "sha256": "787aab3637c97804b2244e0f561ba44b5ba119e022cfe55db07dd7a3d92112b3",
+      "fixture": "Isolated Local review sample with generated audio and a silent 1080p clip. The bundled native engine uses its software NULL backend.",
+      "captureMethod": "Actual Electron renderer screenshot at CSS pixel dimensions. Whole workspace or a single panel or tile.",
+      "presentation": "Rendered UI with its actual settings and cue state."
     }
   ],
   "photos": [
@@ -393,7 +410,7 @@
       "originalSha256": "979b0c8ea5df2809b1f885bed6948091d02e4dbb1b39409947a5601d9891216a",
       "derivativeDimensions": "1064x430 (unaltered download)",
       "derivativeSha256": "979b0c8ea5df2809b1f885bed6948091d02e4dbb1b39409947a5601d9891216a",
-      "attribution": "Photo: Musicproducer, \u201cProfessional sound card fireface uc back side with connectors,\u201d Wikimedia Commons, CC BY-SA 4.0."
+      "attribution": "Photo: Musicproducer, “Professional sound card fireface uc back side with connectors,” Wikimedia Commons, CC BY-SA 4.0."
     },
     {
       "asset": "docs/manual-assets/stage-operator-photo.jpg",
@@ -408,7 +425,7 @@
       "originalSha256": "26e7b33f8ffa75464e9e16769365adad6f817219a7581430c4b2b0e4f85fa158",
       "derivativeDimensions": "1800x1200 (aspect ratio preserved)",
       "derivativeSha256": "6fd772e754e05c75acad468f6726e155903a2813faff4d6b5f352e508c02b677",
-      "attribution": "Photo: unknown author via Pxhere, \u201cBehringer X32 Digital Mixer in operation - angled,\u201d Wikimedia Commons, CC0 1.0."
+      "attribution": "Photo: unknown author via Pxhere, “Behringer X32 Digital Mixer in operation - angled,” Wikimedia Commons, CC0 1.0."
     }
   ],
   "diagrams": {
@@ -424,11 +441,11 @@
     "duckEnvelope": "Schematic explanation, not a measured response plot",
     "gainStages": "Schematic: final physical sum and secondary-clock adaptation precede the attenuation-only limiter and device output."
   },
-  "uiBuildRevision": "4105c02dee64e7abe466fff4a0046a9c34cbf774",
-  "manualSourceRevision": "48ebe0b17b469c1b966b64c2f9a9a9f44afb7d75",
+  "uiBuildRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
+  "manualSourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
   "visualCompatibility": {
-    "checkedOn": "2026-11-11",
-    "revision": "48ebe0b17b469c1b966b64c2f9a9a9f44afb7d75",
-    "basis": "The Spotify review and display identification fixes are in the desktop main process. Welcome and About show their original capture versions. Original capture revisions, versions, dates, dimensions and hashes are retained."
+    "checkedOn": "2026-11-13",
+    "revision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
+    "basis": "The current QuickPlay, workspace, and Settings captures use the packaged review app. Older images retain their actual source, version, date and checksum."
   }
 }

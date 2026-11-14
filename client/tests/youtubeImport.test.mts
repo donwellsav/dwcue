@@ -120,7 +120,6 @@ function modalHarness(metadata = async (_signal?: AbortSignal) => ({ valid: true
         return pending.promise;
       },
     }),
-    defineEmits: () => () => {},
     localStorage: { getItem: () => null, setItem: () => {} },
     waitForDownloadedMediaReady,
     window: { electronAPI: {
@@ -137,7 +136,7 @@ function modalHarness(metadata = async (_signal?: AbortSignal) => ({ valid: true
   const compiled = ts.transpileModule(script, {
     compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  const modal = Function(...Object.keys(dependencies), `${compiled}\nreturn { downloadVideo, downloadQueue, cancelDownload, retryImport, retryDownload, closeModal };`)(...Object.values(dependencies));
+  const modal = Function(...Object.keys(dependencies), `${compiled}\nreturn { downloadVideo, downloadQueue, cancelDownload, retryImport, retryDownload };`)(...Object.values(dependencies));
   return {
     modal, props, downloads, imports, probes,
     progress: (value: unknown) => progress(value),
@@ -205,12 +204,22 @@ test('retry import gets a fresh signal and cancellation fences its late success'
   assert.equal(item.status, 'cancelled');
 });
 
+test('completion remains in the queue for operator review', async t => {
+  const harness = modalHarness();
+  t.after(harness.dispose);
+  const { pending, item } = await importingDownload(harness);
+  harness.imports[0]!.pending.resolve({ success: true, imported: 1 });
+  await pending;
+  assert.equal(harness.modal.downloadQueue.value[0], item);
+  assert.equal(item.status, 'completed');
+});
+
 test('close, project change and unmount fence late imports and retries', async t => {
   for (const stop of ['close', 'project', 'unmount']) {
     const harness = modalHarness();
     t.after(harness.dispose);
     const { pending, item } = await importingDownload(harness);
-    if (stop === 'close') await harness.modal.closeModal();
+    if (stop === 'close') harness.props.isOpen = false;
     if (stop === 'project') harness.props.projectEpoch++;
     if (stop === 'unmount') harness.unmount();
     const signal = harness.imports[0]!.signal;

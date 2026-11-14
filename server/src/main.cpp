@@ -91,19 +91,13 @@ bool replace_file_atomically(const std::filesystem::path& source,
 #endif
 }
 
-// Windows invokes its console handler on a separate thread. POSIX signal
-// handlers require the narrower signal-safe sig_atomic_t instead.
-#if defined(_WIN32)
+// A stop request crosses from the signal handler to both main and the watchdog.
+static_assert(std::atomic_bool::is_always_lock_free);
 std::atomic_bool g_running{true};
 void request_stop() noexcept { g_running.store(false, std::memory_order_relaxed); }
 bool should_keep_running() noexcept {
     return g_running.load(std::memory_order_relaxed);
 }
-#else
-volatile std::sig_atomic_t g_running = 1;
-void request_stop() noexcept { g_running = 0; }
-bool should_keep_running() noexcept { return g_running != 0; }
-#endif
 
 extern "C" void handle_signal(int sig) {
     // Stay async-signal-safe on POSIX; defer the actual logging.
@@ -712,6 +706,18 @@ int main(int argc, char** argv) {
     }
 
     install_signal_handlers();
+    // The watchdog must survive a blocked heartbeat or teardown without owning their state.
+    std::thread([] {
+        using namespace std::chrono_literals;
+        // shortcut: Poll the signal-safe flag at 100 ms until idle wakeups warrant a platform wakeup.
+        while (should_keep_running()) std::this_thread::sleep_for(100ms);
+        disable_crash_restart();
+        std::this_thread::sleep_for(1500ms);
+#if defined(_WIN32)
+        ::TerminateProcess(::GetCurrentProcess(), EXIT_FAILURE);
+#endif
+        std::_Exit(EXIT_FAILURE);
+    }).detach();
 
     const long long process_id =
 #if defined(_WIN32)
@@ -840,7 +846,7 @@ int main(int argc, char** argv) {
     // Audio engine (Milestone 2)
     // ------------------------------------------------------------------
     auto engine = std::make_unique<audio::AudioEngine>();
-    if (!engine->start()) {
+    if (!engine->start(/*open_default_output=*/false)) {
         Logger::error("Audio engine failed to start.");
         remove_owned_pidfile();
         return 1;
@@ -854,7 +860,7 @@ int main(int argc, char** argv) {
     // over REST so the client can pick).
     auto devices = engine->enumerate_devices();
     if (devices.empty()) {
-        Logger::warn("No audio output devices detected.");
+        Logger::warn("No audio output devices reported at startup.");
     } else {
         Logger::info("Detected {} playback device(s):", devices.size());
         for (auto& d : devices) {
@@ -928,6 +934,7 @@ int main(int argc, char** argv) {
     // A contender may have replaced the early hand-off pidfile before losing
     // the bind race. Once bound, republish the only generation that can serve.
     write_pidfile();
+    project->prepare_startup_output();
 
     // ------------------------------------------------------------------
     // LAN auto-discovery beacon — best-effort, non-fatal if it can't bind.
@@ -951,6 +958,7 @@ int main(int argc, char** argv) {
     auto last_resume_snap = clock::now();
     while (should_keep_running()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        if (!should_keep_running()) break;
         const auto now = clock::now();
 
         // Once we've been up long enough to be considered "healthy", clear the

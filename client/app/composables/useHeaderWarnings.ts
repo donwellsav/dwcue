@@ -8,13 +8,13 @@ export function useHeaderWarnings() {
   const silenceRemaining = useState<number | null>('headerWarning.silenceRemaining', () => null);
   const { headerWarningTiming } = useUiMode();
 
-  function showHeaderWarning(message: string, severity: HeaderWarningSeverity = 'advisory') {
+  function showHeaderWarning(message: string, severity: HeaderWarningSeverity = 'advisory', duration?: number) {
     if (!import.meta.client || !message.trim()) return;
     const next = { message, severity };
     if (!canReplaceHeaderWarning(warning.value, next)) return;
     warning.value = next;
     clearTimeout(expiration);
-    const seconds = headerWarningDuration(headerWarningTiming.value, silenceRemaining.value);
+    const seconds = duration ?? headerWarningDuration(headerWarningTiming.value, silenceRemaining.value);
     expiration = setTimeout(() => { warning.value = null; }, seconds * 1000);
   }
 

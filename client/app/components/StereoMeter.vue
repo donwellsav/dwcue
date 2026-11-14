@@ -81,6 +81,7 @@
           v-for="m in scaleMarks"
           :key="m.db"
           class="stereo-meter__mark"
+          :class="{ 'stereo-meter__mark--detail': m.db !== minDb && m.db !== maxDb && m.db !== 0 }"
           :style="{ bottom: m.pct + '%' }"
         >
           <span class="stereo-meter__mark-text" :style="{ color: m.labelColor }">{{ m.label }}</span>
@@ -438,6 +439,7 @@ const shortTermLabel = computed(() => {
     min-width: 0;
     margin: 10px 0;
     border-left: 1px solid var(--color-border);
+    container-type: size;
   }
 
   &__scale::before {
@@ -695,6 +697,12 @@ const shortTermLabel = computed(() => {
   &--strip &__footer {
     width: calc(100% + 20px);
     margin: 0 -10px -7px;
+  }
+}
+
+@container (height <= 160px) {
+  .stereo-meter__mark--detail {
+    display: none;
   }
 }
 

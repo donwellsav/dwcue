@@ -2,54 +2,66 @@
      Test-card animation is explicit; the ordinary idle surface stays black. -->
 <template>
   <div class="video-output" aria-hidden="true">
-    <div class="layer layer-black" />
-    <img v-if="standbySrc" class="layer layer-media" :src="standbySrc" alt="" draggable="false">
-    <img v-if="cueImageSrc" class="layer layer-media" :src="cueImageSrc" alt="" draggable="false">
+    <div class="video-output-frame" :style="frameStyle">
+      <img v-if="standbySrc" class="layer layer-media" :src="standbySrc" alt="" draggable="false">
+      <img v-if="cueImageSrc" :key="cueImageSrc" class="layer layer-media" :src="cueImageSrc" alt="" draggable="false"
+        @load="($event.currentTarget as HTMLImageElement).classList.add('layer-opaque')">
 
-    <!-- The target must exist before Teleport resolves an updated destination. -->
-    <KardsTestCard
-      v-if="testCard"
-      class="layer"
-      :config="config"
-      :display-frequency="status?.testCardInfo.displayFrequency ?? 0"
-      :network="status?.testCardInfo.network ?? []"
-      :audio-description="status?.testCardPlayback?.description ?? 'Program output'"
-    >
-      <template #audio-sync><div id="test-card-video-target" /></template>
-    </KardsTestCard>
+      <!-- The target must exist before Teleport resolves an updated destination. -->
+      <KardsTestCard
+        v-if="testCard"
+        class="layer"
+        :config="config"
+        :display-frequency="status?.testCardInfo.displayFrequency ?? 0"
+        :network="status?.testCardInfo.network ?? []"
+        :audio-description="status?.testCardPlayback?.description ?? 'Program output'"
+      >
+        <template #audio-sync><div id="test-card-video-target" /></template>
+      </KardsTestCard>
 
-    <!-- Move, rather than recreate, the same muted video into Kards' original
-         AV Sync rectangle. Native audio remains the only audio/clock source. -->
-    <Teleport defer :disabled="!showAudioSyncCard" :to="showAudioSyncCard ? '#test-card-video-target' : 'body'">
-      <video
-        v-show="showVideo && (!testCard || (showAudioSyncCard && diagnosticSource !== null))"
-        ref="videoEl"
-        :class="showAudioSyncCard ? 'vt' : 'layer layer-media'"
-        :src="videoSrc ?? undefined"
-        muted
-        playsinline
-        preload="auto"
-        disablepictureinpicture
-        @loadedmetadata="onVideoLoadedMetadata"
-        @canplay="onVideoCanPlay"
-        @error="onVideoError"
-      />
-    </Teleport>
+      <!-- Move, rather than recreate, the same muted video into Kards' original
+           AV Sync rectangle. Native audio remains the only audio/clock source. -->
+      <Teleport defer :disabled="!showAudioSyncCard" :to="showAudioSyncCard ? '#test-card-video-target' : 'body'">
+        <video
+          v-show="showVideo && (!testCard || (showAudioSyncCard && diagnosticSource !== null))"
+          ref="videoEl"
+          :class="showAudioSyncCard ? 'vt' : ['layer layer-media', { 'layer-opaque': videoReady }]"
+          :src="videoSrc ?? undefined"
+          muted
+          playsinline
+          preload="auto"
+          disablepictureinpicture
+          @loadedmetadata="onVideoLoadedMetadata"
+          @canplay="onVideoCanPlay"
+          @error="onVideoError"
+        />
+      </Teleport>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import KardsTestCard from './testcards/KardsTestCard.vue';
 import { createTestCardConfig } from '../../electron/test-card-config.mjs';
+import { DEFAULT_VIDEO_FRAMING, videoFrameLayout } from '../../electron/video-output-framing.mjs';
 
 const server = useLiveplayServer();
 const status = shallowRef<VideoOutputStatus | null>(null);
+const pixelScale = ref(1);
+const frameStyle = computed(() => {
+  const { aspect, fraction, maxWidth } = videoFrameLayout(status.value?.framing ?? DEFAULT_VIDEO_FRAMING, pixelScale.value);
+  return {
+    aspectRatio: String(aspect),
+    width: `min(${100 * fraction}vw, ${100 * fraction * aspect}vh)`,
+    maxWidth: Number.isFinite(maxWidth) ? `${maxWidth * fraction}px` : undefined,
+  };
+});
 const config = computed(() => status.value?.testCardConfig ?? createTestCardConfig());
 const testCard = computed(() => status.value?.testCard === true);
 const showAudioSyncCard = computed(() => testCard.value && config.value.cardType === 'audioSync');
 const diagnosticSource = computed(() => showAudioSyncCard.value ? status.value?.testCardPlayback ?? null : null);
 const {
-  videoEl, videoSrc, showVideo, cueImageSrc, standbySrc,
+  videoEl, videoSrc, videoReady, showVideo, cueImageSrc, standbySrc,
   onVideoLoadedMetadata, onVideoCanPlay, onVideoError,
   getPictureHealth,
 } = useVideoOutput(diagnosticSource);
@@ -95,8 +107,13 @@ function onKeydown(event: KeyboardEvent) {
 function onDblClick() {
   void window.electronAPI?.videoOutput?.toggleFullscreen();
 }
+function updatePixelScale() {
+  pixelScale.value = window.devicePixelRatio || 1;
+}
 
 onMounted(async () => {
+  updatePixelScale();
+  window.addEventListener('resize', updatePixelScale);
   const api = window.electronAPI?.videoOutput;
   if (!api) return;
   offStatus = api.onStatus((next) => { statusRevision += 1; status.value = next; });
@@ -113,6 +130,7 @@ onBeforeUnmount(() => {
   clearInterval(infoTimer);
   clearInterval(healthTimer);
   offStatus?.();
+  window.removeEventListener('resize', updatePixelScale);
   window.removeEventListener('keydown', onKeydown);
   window.removeEventListener('dblclick', onDblClick);
   void window.electronAPI?.videoOutput?.setTestCardConnection(null).catch(() => {
@@ -125,13 +143,20 @@ onBeforeUnmount(() => {
 .video-output {
   position: fixed;
   inset: 0;
+  display: grid;
+  place-items: center;
   background: #000;
   cursor: none;
   user-select: none;
   overflow: hidden;
   -webkit-app-region: no-drag;
 }
+.video-output-frame {
+  position: relative;
+  overflow: hidden;
+}
 .layer { position: absolute; inset: 0; }
-.layer-black { background: #000; }
-.layer-media { width: 100%; height: 100%; object-fit: contain; }
+.layer-media { width: 100%; height: 100%; }
+.layer-media, video { object-fit: contain; }
+.layer-opaque { background: #000; }
 </style>

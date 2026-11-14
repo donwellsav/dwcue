@@ -8,7 +8,7 @@ import * as Vue from 'vue';
 import ts from 'typescript';
 import { runExclusivePendingAction } from '../app/utils/acknowledgedAction.ts';
 import { DEFAULT_PLAYBACK_KEYS } from '../app/types/project.ts';
-import { bindingsMatch, eventToBinding } from '../app/composables/useCartHotkeys.ts';
+import { bindingsMatch, eventToBinding, resolveKeyboardBindings } from '../app/composables/useCartHotkeys.ts';
 
 function elementSource(component: string, tag: string, className?: string): string {
   const filename = new URL(`../app/components/${component}.vue`, import.meta.url);
@@ -51,14 +51,10 @@ test('Stop All remains clickable when no project-backed cue is active', () => {
   assert.equal(panicCalls, 1);
 });
 
-test('Stop All sends the normal command from transfer, file selection and loading dialogs', () => {
+test('Stop All sends the normal command from remaining blocking dialogs', () => {
   const dialogs = [
     ['AudioImportModal', 'header'],
-    ['SpotifyImportModal', 'header'],
-    ['YouTubeImportModal', 'div', 'modal-header'],
-    ['ProgressModal', 'div', 'modal-content'],
     ['ServerFilePickerModal', 'header', 'toolbar'],
-    ['LocationChoiceModal', 'div', 'lc-footer'],
     ['ConnectionLostModal', 'div', 'clm-dialog'],
     ['LoadingOverlay', 'div', 'loading-panel'],
   ];
@@ -72,16 +68,14 @@ test('Stop All sends the normal command from transfer, file selection and loadin
     const region = render({
       $slots: {},
       t: (key: string) => key,
-      busy: true, isBusy: true, visible: true, background: false, percentage: 50, attempts: 0, actionError: '', verifying: false,
+      docked: false, busy: true, visible: true, background: false, percentage: 50, attempts: 0, actionError: '', verifying: false,
       titleId: 'import-test', title: 'Working', message: 'Working', isDark: true, subtitle: '',
-      pickingLocal: true, isChoosingDestination: true,
+      pickingLocal: true,
       historyBack: [], canGoUp: false, pathDraft: '', goBack() {}, goUp() {}, navigate() {}, cancelLabel: 'Cancel',
       server: { stopAll: (...args: unknown[]) => { stopCalls.push(args); } },
       onReconnect() {}, onRestart() {}, onExit() {},
       close: () => assert.fail('Stop All must not close the import'),
       cancel: () => assert.fail('Stop All must not cancel file selection'),
-      handleClose: () => assert.fail('Stop All must not close the import'),
-      closeModal: () => assert.fail('Stop All must not close the import'),
     }, []);
     const button = region.children.find((child: Vue.VNode) => child.props?.text === 'controls.stopAll');
     assert.ok(button, `${component} must show Stop All during its operation`);
@@ -90,6 +84,35 @@ test('Stop All sends the normal command from transfer, file selection and loadin
     button.props.onClick();
     assert.deepEqual(stopCalls, [[]], `${component} must let the server apply the configured Stop All fade`);
   }
+});
+
+test('Stop All works in import fields and takes priority over docked tab navigation', () => {
+  const source = readFileSync(new URL('../app/components/MainWorkspace.vue', import.meta.url), 'utf8');
+  const handler = source.slice(source.indexOf('function handlePanelKeydown('), source.indexOf('const handleKeydown ='));
+  const code = ts.transpileModule(handler, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const playbackMappings = { value: { 'stop-all': DEFAULT_PLAYBACK_KEYS['stop-all'] } };
+  let stopped = 0;
+  let typing = true;
+  const keydown = Function('playbackMappings', 'bindingsMatch', 'eventToBinding', 'isTextInputFocused', 'stopAllCues',
+    `${code}\nreturn handlePanelKeydown;`)(playbackMappings, bindingsMatch, eventToBinding, () => typing, () => { stopped++; });
+  const press = (key: string, repeat = false, onTab = false) => {
+    const event = { key, repeat, defaultPrevented: false, stopped: false,
+      target: { closest: (selector: string) => onTab && selector === '[role="tab"]' ? {} : null },
+      ctrlKey: false, metaKey: false, shiftKey: false, altKey: false,
+      preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; } };
+    keydown(event, onTab);
+    return event;
+  };
+  assert.equal(press('Escape').stopped, true);
+  press('Escape', true);
+  playbackMappings.value['stop-all'] = { key: 'k', ctrlKey: false, shiftKey: false, altKey: false };
+  assert.equal(press('k').defaultPrevented, false, 'a plain-letter binding must not interrupt typing');
+  assert.equal(stopped, 1);
+  typing = false;
+  playbackMappings.value['stop-all'] = { key: 'ArrowRight', ctrlKey: false, shiftKey: false, altKey: false };
+  assert.equal(press('ArrowLeft', false, true).stopped, false, 'unmapped arrows should reach the tab list');
+  assert.equal(press('ArrowRight', false, true).stopped, true, 'Stop All must run in capture before the tabs');
+  assert.equal(stopped, 2);
 });
 
 test('Stop All remains available inside the recovery prompt while a recovery choice is pending', () => {
@@ -268,12 +291,97 @@ test('workspace shortcuts keep Stop All, repeat suppression, and text focus beha
   assert.deepEqual(actions, ['play-next', 'one-shot', 'stop-all', 'stop-all', 'play-next', 'one-shot', 'stop-all']);
 });
 
+test('QuickPlay number-row shortcuts work with shifted symbols and respect text focus', () => {
+  const filename = new URL('../app/composables/useCartHotkeys.ts', import.meta.url);
+  const source = readFileSync(filename, 'utf8');
+  const start = source.indexOf('  const findSlotForEvent =');
+  const end = source.indexOf('  const findPlaybackActionForEvent =', start);
+  assert.ok(start >= 0 && end > start);
+  const code = ts.transpileModule(source.slice(start, end), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const slots = Array.from({ length: 20 }, () => ({ oneShot: {} } as any));
+  const keyMappings = { value: resolveKeyboardBindings(slots).keyMappings };
+  const findSlotForEvent = Function('keyMappings', 'oneShotSlots', 'eventToBinding', 'bindingsMatch',
+    'QUICK_PLAY_DIGITS', `${code}\nreturn findSlotForEvent;`)(
+    keyMappings, { value: slots }, eventToBinding, bindingsMatch, '1234567890');
+  const played: number[] = [];
+  let typing = false;
+  const handle = loadHandleKeydown({
+    currentProject: { value: {} }, projectHydrationStatus: { value: 'ready' },
+    findPlaybackActionForEvent: () => null, findSlotForEvent,
+    isTextInputFocused: () => typing,
+    isForwardedFromVideoOutput: (event: { forwarded?: boolean }) => event.forwarded === true,
+    triggerSlot: (index: number) => played.push(index),
+  });
+  const press = (key: string, code: string, overrides = {}) => handle({
+    key, code, shiftKey: true, ctrlKey: false, altKey: false, metaKey: false,
+    preventDefault() {}, stopPropagation() {}, ...overrides,
+  });
+
+  press('1', 'Digit1', { shiftKey: false });
+  press('!', 'Digit1');
+  press('@', 'Digit2');
+  press(')', 'Digit0');
+  press('!', 'Digit1', { repeat: true });
+  typing = true;
+  press('!', 'Digit1');
+  press(')', 'Digit0', { forwarded: true });
+  assert.deepEqual(played, [0, 10, 11, 19, 19]);
+
+  typing = false;
+  keyMappings.value = resolveKeyboardBindings(slots, { 'stop-all': {
+    key: '!', ctrlKey: false, shiftKey: true, altKey: false,
+  } }).keyMappings;
+  press('!', 'Digit1');
+  assert.equal(played.length, 5, 'a saved shifted symbol takes precedence over the slot default');
+});
+
 function transpileFactory(source: string, factoryName: string): (...args: any[]) => any {
   const compiled = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   return Function(`${compiled}; return ${factoryName};`)();
 }
+
+test('cue copy yields to selected text and focused Project Settings', () => {
+  const source = parseSfc(readFileSync(new URL('../app/components/MainWorkspace.vue', import.meta.url), 'utf8'))
+    .descriptor.scriptSetup!.content;
+  const start = source.indexOf('const handleKeydown =');
+  const end = source.indexOf('onMounted(', start);
+  assert.ok(start >= 0 && end > start);
+  const makeHandler = transpileFactory(`
+    function makeHandler(window, showProjectSettings, copyItemsToClipboard) {
+      const projectHydrationStatus = { value: 'ready' };
+      const currentProject = { value: {} };
+      const uiMode = { value: 'edit' };
+      const selectedItems = { value: new Set(['selected-cue']) };
+      const isForwardedFromVideoOutput = () => false;
+      const isTextInputFocused = () => false;
+      ${source.slice(start, end)}
+      return handleKeydown;
+    }
+  `, 'makeHandler');
+  const selection = { isCollapsed: false };
+  const settings = { value: true };
+  const copies: string[][] = [];
+  const handler = makeHandler({ getSelection: () => selection }, settings, (items: string[]) => copies.push(items));
+  const copy = (insideSettings = false) => {
+    let prevented = false;
+    handler({ key: 'c', metaKey: true, target: { closest: () => insideSettings }, preventDefault: () => { prevented = true; } });
+    return prevented;
+  };
+  assert.equal(copy(), false);
+  selection.isCollapsed = true;
+  assert.equal(copy(true), false);
+  assert.equal(copy(), true, 'opening Settings must leave the playlist copy shortcut available');
+  settings.value = false;
+  selection.isCollapsed = false;
+  assert.equal(copy(), false);
+  selection.isCollapsed = true;
+  assert.equal(copy(), true);
+  assert.deepEqual(copies, [['selected-cue'], ['selected-cue']]);
+});
 
 function midiRecoveryHarness() {
   const source = readFileSync(new URL('../app/composables/useMidiController.ts', import.meta.url), 'utf8');
@@ -353,8 +461,10 @@ test('MIDI Stop and Learn remain available during recovery', () => {
   assert.deepEqual(midi.calls, ['stop', 'stop']);
   midi.learning.value = 'play-next';
   midi.send(0x90, 60, 127);
+  midi.send(0x90, 61, 0);
+  midi.send(0x90, 61, 127);
   assert.deepEqual(midi.learned, [{ channel: 0, type: 'note', number: 60 }]);
-  assert.deepEqual(midi.calls, ['stop', 'stop']);
+  assert.deepEqual(midi.calls, ['stop', 'stop', 'stop']);
 });
 
 test('held keys fire discrete actions once while selection arrows can repeat', () => {
@@ -648,6 +758,8 @@ test('Up Next follows playlist order when active cues arrived in reverse order',
   assert.equal(next.value, 'a');
   activeCues.value = new Map([['a', {}]]);
   currentProject.value.items[0].endBehavior.action = 'nothing';
+  assert.equal(next.value, 'b');
+  Reflect.deleteProperty(currentProject.value.items[0], 'endBehavior');
   assert.equal(next.value, 'b');
   currentProject.value.settings.autoCueNextWithoutEndBehavior = false;
   assert.equal(next.value, null);

@@ -1,5 +1,6 @@
 <template>
-  <div id="app" :data-theme="theme" :style="isVideoOutputWindow ? undefined : { zoom: uiFontScale / 100 }">
+  <div id="app" :data-theme="theme" :class="{ 'operator-window': !isVideoOutputWindow && !isCartWindow }"
+    :style="isVideoOutputWindow ? undefined : { zoom: uiFontScale / 100 }">
     <!-- Video Output window: passive render surface — no app chrome, no modals. -->
     <template v-if="isVideoOutputWindow">
       <VideoOutputView />
@@ -47,28 +48,76 @@
 
     <!-- Normal mode -->
     <template v-else>
-      <div v-if="!currentProject || projectHydrationStatus === 'failed'"
-        id="startup-header-warnings" class="startup-header-warnings"></div>
-      <WelcomeScreen
-        v-if="!currentProject"
-        ref="welcomeScreen"
-        :open-project="guardedOpenProject"
-        :project-file-dialog-open="projectFileDialogOpen"
-        @new-project="showNewProjectDialog"
-        @open-project="showOpenProjectPicker"
-      />
-      <div v-else-if="projectHydrationStatus === 'failed'" class="project-hydration-error" role="alert">
-        <strong>{{ t('projectHydration.failed') }}</strong>
-        <span v-if="projectHydrationError">{{ projectHydrationError }}</span>
-        <button type="button" data-testid="project-hydration-stop-all" @click="stopAllCues()">
-          {{ t('controls.stopAll') }}
-        </button>
-        <button type="button" @click="retryProjectHydration">{{ t('projectHydration.retry') }}</button>
-        <button type="button" @click="showOpenProjectPicker(currentProject.folderPath)">
-          {{ t('projectHydration.chooseAnotherShow') }}
-        </button>
+      <div v-if="!hasWorkspace" class="startup-workspace">
+        <div id="startup-header-warnings" class="startup-header-warnings"></div>
+        <WelcomeScreen
+          v-if="!currentProject"
+          ref="welcomeScreen"
+          :open-project="guardedOpenProject"
+          :project-file-dialog-open="projectFileDialogOpen"
+          @new-project="showNewProjectDialog"
+          @open-project="showOpenProjectPicker"
+          @open-about="openAbout"
+        />
+        <div v-else class="project-hydration-error" role="alert">
+          <strong>{{ t('projectHydration.failed') }}</strong>
+          <span v-if="projectHydrationError">{{ projectHydrationError }}</span>
+          <button type="button" data-testid="project-hydration-stop-all" @click="stopAllCues()">
+            {{ t('controls.stopAll') }}
+          </button>
+          <button type="button" @click="retryProjectHydration">{{ t('projectHydration.retry') }}</button>
+          <button type="button" @click="showOpenProjectPicker(currentProject.folderPath)">
+            {{ t('projectHydration.chooseAnotherShow') }}
+          </button>
+        </div>
       </div>
       <MainWorkspace v-else />
+      <Teleport v-if="archivePanel" :key="hasWorkspace ? 'workspace' : 'startup'"
+        defer to="#workspace-import-host" :disabled="!hasWorkspace">
+        <section class="archive-panel"
+          :class="{ 'archive-panel--startup': !hasWorkspace, 'archive-panel--browse': !archiveStatus }"
+          :aria-label="archiveTitle">
+          <header v-if="!hasWorkspace" class="workspace-panel-header">
+            <h2 class="workspace-panel-header__title">{{ archiveTitle }}</h2>
+            <Btn type="button" :text="t('actions.close')" @click="workspaceImportPanel = null" />
+          </header>
+          <template v-if="archiveStatus">
+            <div class="archive-row">
+              <p :role="archiveStatus.phase === 'failed' ? 'alert' : 'status'"
+                :class="{ 'archive-error': archiveStatus.phase === 'failed' }">{{ archiveStatus.message }}</p>
+              <div class="archive-actions">
+                <Btn v-for="file in (archivePanel === 'archive-import' ? archiveReceipt?.projectFiles : [])" :key="file"
+                  type="button" :text="archiveReceipt?.projectFiles.length === 1 ? t('selectProject.open') : file" :title="file"
+                  :disabled="archiveOpening || !archiveCanOpen" @click="openImportedArchive(file)" />
+                <Btn v-if="archiveStatus.phase !== 'working'" type="button"
+                  :text="t(archiveStatus.phase === 'failed' ? 'archive.retry' : 'archive.another')"
+                  :disabled="archiveOpening" @click="resetArchivePanel" />
+              </div>
+            </div>
+            <progress v-if="archiveStatus.phase === 'working'" class="archive-progress" :aria-label="archiveTitle" />
+          </template>
+          <template v-else>
+            <div class="archive-row">
+              <p :title="archivePickerCaption">{{ archivePickerCaption }}</p>
+            </div>
+            <ServerFilePickerModal v-if="server.connected" :key="archivePanel" docked :open="true" :mode="archiveChoosingSource ? 'file' : 'directory'"
+              :filter="archiveChoosingSource ? '.dwcuepack' : 'all'"
+              :filter-options="archiveChoosingSource ? ['.dwcuepack'] : ['all']"
+              :fallback-start-path="currentProject?.folderPath ?? ''"
+              :location-context="archiveChoosingSource ? 'archive-import' : archivePanel === 'archive-import' ? 'archive-import-destination' : 'archive-export'"
+              :cancel-label="t(archivePanel === 'archive-import' && importArchiveSource ? 'common.back' : 'common.cancel')"
+              :confirm-label="t(archiveChoosingSource ? 'archive.chooseArchive' : archivePanel === 'archive-import' ? 'archive.extractHere' : 'archive.saveHere')"
+              @pick="onArchivePickerPick" @close="cancelArchivePicker">
+              <template #actions>
+                <Btn v-if="!server.isLocalServer && (archivePanel === 'archive-export' || archiveChoosingSource)" type="button"
+                  :text="t(archivePanel === 'archive-export' ? 'exportProject.downloadHere' : 'importProject.fromThisComputer')"
+                  :disabled="nativeArchivePickerOpen" @click="browseControllerArchive" />
+              </template>
+            </ServerFilePickerModal>
+            <p v-else class="archive-row" role="status">{{ t('archive.waitingForEngine') }}</p>
+          </template>
+        </section>
+      </Teleport>
     <!-- Accent Color Picker Modal -->
     <div v-if="showColorPicker" class="color-picker-overlay" @click="showColorPicker = false">
       <div class="color-picker-dialog" @click.stop>
@@ -89,42 +138,6 @@
     <!-- About Modal -->
     <AboutModal v-if="showAboutModal" @close="showAboutModal = false" />
     
-    <!-- Update Modal -->
-    <UpdateModal
-      v-if="showUpdateModal"
-      :current-version="updateInfo.currentVersion"
-      :new-version="updateInfo.newVersion"
-      :release-notes="updateInfo.releaseNotes"
-      :release-date="updateInfo.releaseDate"
-      @close="showUpdateModal = false"
-      @install="handleUpdateInstall"
-      @install-on-exit="handleUpdateInstallOnExit"
-    />
-
-    
-    <!-- Progress Modal for Import/Export -->
-    <ProgressModal
-      :visible="progressModal.visible"
-      :title="progressModal.title"
-      :message="progressModal.message"
-      :percentage="progressModal.percentage"
-      :background="progressModal.background"
-      @background="progressModal.background = true"
-    >
-      <template v-if="archiveReceipt">
-        <Btn type="button" :text="t('selectProject.open')" :disabled="archiveOpening || !archiveCanOpen" @click="openImportedArchive()" />
-        <Btn type="button" :text="t('actions.close')" @click="dismissArchiveReceipt" />
-      </template>
-    </ProgressModal>
-    
-    <!-- Project Selection Modal -->
-    <ProjectSelectionModal
-      :visible="showProjectSelection"
-      :projects="archiveReceipt?.projectFiles ?? []"
-      @select="handleProjectSelection"
-      @cancel="handleProjectSelectionCancel"
-    />
-
     <!-- The New Show form owns both values. Browsing for a location temporarily
          swaps to the server-side picker so remote servers remain supported. -->
     <ServerFilePickerModal
@@ -237,29 +250,6 @@
       @pick="onQuitServerPick"
     />
 
-    <!-- Import: server vs client choice (only for remote servers). -->
-    <LocationChoiceModal
-      :visible="importChoiceVisible"
-      :title="t('importProject.chooseSourceTitle')"
-      :message="t('importProject.chooseSourceMessage')"
-      :server-label="t('importProject.fromServer')"
-      :client-label="t('importProject.fromThisComputer')"
-      :cancel-label="t('common.cancel')"
-      @pick="onImportChoice"
-      @cancel="importChoiceVisible = false"
-    />
-
-    <!-- Server file picker — used both to choose a show archive
-         on the server and to choose the extract destination. -->
-    <ServerFilePickerModal
-      :open="importServerPickerOpen"
-      :mode="importServerPickerStage === 'destination' ? 'directory' : 'file'"
-      :filter="importServerPickerStage === 'destination' ? 'all' : '.dwcuepack'"
-      :filter-options="importServerPickerStage === 'destination' ? ['all'] : ['.dwcuepack', 'all']"
-      :location-context="importServerPickerStage === 'destination' ? 'archive-import-destination' : 'archive-import'"
-      @pick="onImportServerPickerPick"
-      @close="importServerPickerOpen = false"
-    />
     </template>
     <ServerAlert v-if="!isVideoOutputWindow" :target="isCartWindow ? '#cart-header-warnings'
       : currentProject && projectHydrationStatus !== 'failed' ? '#project-header-warnings'
@@ -272,7 +262,7 @@ import 'material-symbols/rounded.css';
 import OneShotPanel from './components/OneShotPanel.vue';
 import WelcomeScreen from './components/WelcomeScreen.vue';
 import type { ProjectFileKind } from '~/utils/projectFileFormats';
-import { projectFileAction } from '~/utils/projectFileFormats';
+import { PROJECT_FILE_EXTENSIONS, projectFileAction } from '~/utils/projectFileFormats';
 import type { OneShotMutationIdentity, OneShotMutationRequest, OneShotMutationResult, OneShotProjectEnvelope } from '~/types/oneShotMutation';
 import { sameOneShotMutationIdentity } from '~/types/oneShotMutation';
 import { createProjectOpenGuard } from '~/utils/projectOpenGuard';
@@ -280,7 +270,7 @@ import { runExclusivePendingAction } from '~/utils/acknowledgedAction';
 import { applyOneShotMutation } from '~/utils/oneShotMutation';
 
 const {
-  currentProject, projectEpoch, saveProject, createNewProject, openProject, confirmUnsavedChanges,
+  currentProject, projectEpoch, saveProject, createNewProject, openProject, confirmUnsavedChanges, workspaceImportPanel,
   autoSaveEnabled, projectSyncIdentity,
   projectHydrationStatus, projectHydrationError, retryProjectHydration,
   isLoading, loadingMessage,
@@ -293,9 +283,10 @@ const { stopAllCues } = useAudioEngine();
 const { cartOnlyItems, clearCartOnlyItems, addCartOnlyItem } = useCartItems();
 import LoadingOverlay from './components/LoadingOverlay.vue';
 import AudioLoadProgress from './components/AudioLoadProgress.vue';
-import LocationChoiceModal from './components/LocationChoiceModal.vue';
 import ServerFilePickerModal from './components/ServerFilePickerModal.vue';
 const { currentLocale, setLocale, getDirection, t } = useLocalization();
+const server = useLiveplayServer();
+const hasWorkspace = computed(() => !!currentProject.value && projectHydrationStatus.value !== 'failed');
 const { showHeaderWarning } = useHeaderWarnings();
 let stopHeaderWarnings: (() => void) | undefined;
 onMounted(() => {
@@ -420,13 +411,11 @@ async function routePendingFile(data: { filePath: string; kind: ProjectFileKind 
       return;
     }
     if (data.kind === 'native-archive' && projectFileAction(data.filePath) === 'import-archive') {
-      if (archiveBusy.value || archiveOpening.value || importServerPickerOpen.value || !(await confirmUnsavedChanges())) return;
-      pendingArchiveOnServer.value = '';
-      pendingArchiveClientPath.value = data.filePath;
-      pendingArchiveName.value = data.filePath.split(/[\/]/).pop() || 'import.dwcuepack';
-      importServerPickerStage.value = 'destination';
-      importServerPickerOpen.value = true;
-      return;
+      if (importArchiveStatus.value?.phase === 'working' || archiveOpening.value) return;
+      importArchiveStatus.value = null;
+      archiveReceipt.value = null;
+      importArchiveSource.value = { path: data.filePath, client: true };
+      openArchivePanel('archive-import');
     }
   } finally {
     activeFileRoute = '';
@@ -437,7 +426,7 @@ const theme = useState('theme', () => 'dark');
 // Global interface text scale (Settings → Interface font size). The app's
 // styles are px-based, so the lever is `zoom` on the root — it scales text
 // and chrome uniformly without touching hundreds of px rules.
-const { uiFontScale, uiMode } = useUiMode();
+const { uiFontScale } = useUiMode();
 
 watch(theme, (value) => {
   if (import.meta.client) document.documentElement.dataset.theme = value;
@@ -462,25 +451,6 @@ onBeforeUnmount(unmountFailedHydrationHotkeys);
 // Initialize state viewer for dev mode
 useStateViewer();
 
-// Progress modal state
-const progressModal = ref({
-  visible: false,
-  background: false,
-  title: '',
-  message: '',
-  percentage: 0
-});
-
-// Project selection modal state
-const showProjectSelection = ref(false);
-const archiveBusy = ref(false);
-const archiveOpening = ref(false);
-const archiveReceipt = shallowRef<{ serverUrl: string; extractPath: string; projectFiles: string[] } | null>(null);
-const archiveCanOpen = computed(() => {
-  const server = useLiveplayServer();
-  return server.connected && !server.cueStartsBlocked && archiveReceipt.value?.serverUrl === server.serverUrl;
-});
-
 // Color picker for accent color
 const showColorPicker = ref(false);
 const DEFAULT_ACCENT = '#315fcf';
@@ -491,15 +461,24 @@ const displayAccent = (color?: string) =>
 // About modal
 const showAboutModal = ref(false);
 
-// Update modal
-const showUpdateModal = ref(false);
-const updateInfo = ref({
-  currentVersion: '',
-  newVersion: '',
-  releaseNotes: '',
-  releaseDate: '',
+const { update, checkForAppUpdate } = useAppUpdate();
+let announcedUpdate = '';
+watch(() => [update.version, t('update.headerAvailable', { version: update.version })] as const, ([version, message]) => {
+  if (!version || version === announcedUpdate || message === 'update.headerAvailable') return;
+  announcedUpdate = version;
+  showHeaderWarning(message, 'advisory', 5);
 });
-let installOnExitRequested = false;
+const showProjectSettings = useState('showProjectSettings', () => false);
+const settingsTab = useState('projectSettingsTab', () => 'audio');
+
+function openAbout() {
+  if (currentProject.value && projectHydrationStatus.value !== 'failed') {
+    settingsTab.value = 'about';
+    showProjectSettings.value = true;
+  } else {
+    showAboutModal.value = true;
+  }
+}
 
 const accentColors = [
   '#315fcf', '#3c6fe0', '#5a83e8', // DonWells cobalt
@@ -599,7 +578,7 @@ onMounted(() => {
     // shortcuts after any mouse click. Keyboard activation has detail === 0
     // and is left alone, so Tab+Space navigation still works.
     window.addEventListener('click', (e: MouseEvent) => {
-      if (e.detail === 0) return;
+      if (e.detail === 0 || (e.target as HTMLElement | null)?.closest?.('.binding-button')) return;
       const el = (e.target as HTMLElement | null)?.closest?.('button, [role="button"], a[href], summary') as HTMLElement | null;
       if (el && typeof el.blur === 'function') el.blur();
     }, true);
@@ -656,9 +635,7 @@ onMounted(() => {
       setLocale(locale);
     });
     
-    window.electronAPI.onMenuShowAbout(() => {
-      showAboutModal.value = true;
-    });
+    window.electronAPI.onMenuShowAbout(openAbout);
 
     window.electronAPI.onMenuNewProject(() => {
       if (currentProject.value) showNewProjectDialog(currentProject.value.folderPath);
@@ -674,51 +651,35 @@ onMounted(() => {
       }
     });
     
-    // File > Import Project. Local servers can browse a .dwcuepack directly.
-    // Remote servers can browse their filesystem or
-    // upload an archive selected on this computer. Extraction always happens
-    // beside the server's audio engine so imported media paths resolve.
-    window.electronAPI.onMenuImportProject(() => {
-      startImportFlow();
+    window.electronAPI.onMenuImportProject(() => openArchivePanel('archive-import'));
+    window.electronAPI.onMenuExportProject(() => {
+      if (currentProject.value) openArchivePanel('archive-export');
     });
 
-    // Update flow. The modal is deferred while Show Mode is active — never
-    // interrupt a running show — and shown as soon as the operator exits
-    // back to edit mode. A check that finds nothing (manual Help-menu check)
-    // gets confirmation in the header.
-    interface UpdateAvailableInfo {
-      currentVersion: string;
-      newVersion: string;
-      releaseNotes?: string;
-      releaseDate?: string;
-    }
-    let pendingUpdateInfo: UpdateAvailableInfo | null = null;
-    const presentUpdateInfo = () => {
-      if (uiMode.value === 'playback') return; // defer during a show
-      if (!pendingUpdateInfo) return;
-      updateInfo.value = {
-        currentVersion: pendingUpdateInfo.currentVersion,
-        newVersion: pendingUpdateInfo.newVersion,
-        releaseNotes: pendingUpdateInfo.releaseNotes ?? '',
-        releaseDate: pendingUpdateInfo.releaseDate ?? '',
-      };
-      pendingUpdateInfo = null;
-      showUpdateModal.value = true;
-    };
-    window.electronAPI.onUpdateAvailable((_event, info) => {
-      pendingUpdateInfo = info;
-      presentUpdateInfo();
+    const api = window.electronAPI;
+    void api.getUpdateInstallSupported?.().then(supported => { update.installSupported = supported; }).catch(() => {});
+    api.onUpdateAvailable?.((_event, info) => {
+      if (update.version === info.newVersion || update.downloading || update.downloaded) return;
+      update.version = info.newVersion;
+      update.downloaded = false;
+      update.installOnExit = false;
+      update.error = '';
     });
-    watch(uiMode, (mode) => {
-      if (mode !== 'playback') presentUpdateInfo();
-    });
-    window.electronAPI.onUpdateUpToDate((_event, info) => {
+    api.onUpdateUpToDate?.((_event, info) => {
+      if (!update.downloading && !update.downloaded) update.version = '';
       showHeaderWarning(t('update.upToDate', { version: info.version }));
     });
-    window.electronAPI.onMenuCheckForUpdates(() => {
-      void window.electronAPI.checkForUpdates();
+    api.onUpdateDownloadProgress?.((_event, progress) => { update.percent = progress.percent; });
+    api.onUpdateDownloaded?.((_event, info) => {
+      if (info.version === update.version) update.downloaded = true;
     });
-    
+    api.onUpdateError?.((_event, error) => {
+      if (update.checking || update.downloading || update.downloaded) update.error = error;
+    });
+    api.onMenuCheckForUpdates?.(() => { void checkForAppUpdate(); });
+    // Register the listeners before asking Electron to check the release feed.
+    void api.checkForUpdates?.(true).catch(() => {});
+
     // Cold and warm file associations share the same native format routing.
     window.electronAPI.onOpenFileAssociation((_event: any, data: { filePath: string; kind: ProjectFileKind }) => {
       void routePendingFile(data);
@@ -784,12 +745,13 @@ async function runQuitFlow() {
   try {
     // Step 1 — unsaved changes (including a failed autosave).
     if (!await confirmUnsavedChanges('quit')) return;
-    if (installOnExitRequested) {
+    if (update.installOnExit) {
       const accepted = await api?.app?.confirmQuit?.({
         installUpdate: true,
         runAfterInstall: false,
       });
-      if (accepted) installOnExitRequested = false;
+      if (accepted) update.installOnExit = false;
+      else showHeaderWarning(t('update.installFailed'), 'urgent');
       return;
     }
 
@@ -814,23 +776,6 @@ async function runQuitFlow() {
     quitFlowActive = false;
   }
 }
-// An update install is a quit action too: run the same unsaved-changes guard
-// before handing control to electron-updater. A failed forced save aborts.
-async function handleUpdateInstall() {
-  if (!import.meta.client || !window.electronAPI) return;
-  if (!(await confirmUnsavedChanges())) return;
-  const accepted = await window.electronAPI.installUpdate();
-  if (!accepted) {
-    console.warn('[update] install request was not accepted');
-  }
-}
-
-const handleUpdateInstallOnExit = () => {
-  installOnExitRequested = true;
-  showUpdateModal.value = false;
-};
-
-
 const changeAccentColor = (color: string) => {
   if (currentProject.value) {
     currentProject.value.theme.accentColor = color;
@@ -840,151 +785,184 @@ const changeAccentColor = (color: string) => {
   }
 };
 
-// ---------------------------------------------------------------------------
-// Import project flow (dual-dialog when client and server are on different
-// machines). Extraction happens server-side beside the audio engine.
-// ---------------------------------------------------------------------------
-const importChoiceVisible       = ref(false);
-const importServerPickerOpen    = ref(false);
-const importServerPickerStage   = ref<'archive' | 'destination'>('archive');
-const pendingArchiveOnServer    = ref('');
-const pendingArchiveClientPath  = ref('');
-const pendingArchiveName        = ref('');
+type ArchivePanel = 'archive-import' | 'archive-export';
+type ArchiveStatus = { phase: 'working' | 'done' | 'failed'; message: string };
 
-let importFlowActive = false;
-async function startImportFlow() {
-  if (importFlowActive || archiveBusy.value || archiveOpening.value || importServerPickerOpen.value) return;
-  importFlowActive = true;
+const importArchiveStatus = ref<ArchiveStatus | null>(null);
+const exportArchiveStatus = ref<ArchiveStatus | null>(null);
+const importArchiveSource = shallowRef<{ path: string; client: boolean } | null>(null);
+const archiveReceipt = shallowRef<{
+  serverUrl: string; accessToken: string; extractPath: string; projectFiles: string[];
+} | null>(null);
+const archiveOpening = ref(false);
+const nativeArchivePickerOpen = ref(false);
+const archivePanel = computed(() => {
+  const panel = workspaceImportPanel.value;
+  return panel === 'archive-import' || panel === 'archive-export' ? panel : null;
+});
+const archiveTitle = computed(() => t(archivePanel.value === 'archive-export'
+  ? 'exportProject.chooseLocationTitle' : 'importProject.chooseSourceTitle'));
+const archiveStatus = computed(() => archivePanel.value === 'archive-export'
+  ? exportArchiveStatus.value : importArchiveStatus.value);
+const archiveCanOpen = computed(() => !!archiveReceipt.value && server.connected && !server.cueStartsBlocked &&
+  archiveReceipt.value.serverUrl === server.serverUrl && archiveReceipt.value.accessToken === server.effectiveAccessToken);
+const archiveChoosingSource = computed(() => archivePanel.value === 'archive-import' && !importArchiveSource.value);
+const archiveFilename = (path: string) => path.split(/[\\/]/).pop() || '';
+const exportArchiveName = computed(() => (currentProject.value?.name || 'Project') + PROJECT_FILE_EXTENSIONS.nativeArchive);
+const archivePickerCaption = computed(() => {
+  if (archiveChoosingSource.value) return t('archive.chooseSource');
+  if (archivePanel.value === 'archive-export') return t('archive.exportDestination', { name: exportArchiveName.value });
+  return t('archive.importDestination', { name: archiveFilename(importArchiveSource.value?.path ?? '') });
+});
+
+let archivePickerRevision = 0;
+watch([workspaceImportPanel, showProjectSettings, projectEpoch,
+  () => server.serverUrl, () => server.effectiveAccessToken, () => server.projectSessionId], () => {
+  archivePickerRevision++;
+}, { flush: 'sync' });
+watch([() => server.serverUrl, () => server.effectiveAccessToken], () => {
+  if (!importArchiveSource.value?.client) importArchiveSource.value = null;
+}, { flush: 'sync' });
+
+function openArchivePanel(panel: ArchivePanel) {
+  showProjectSettings.value = false;
+  workspaceImportPanel.value = panel;
+}
+
+function resetArchivePanel() {
+  if (archivePanel.value === 'archive-export') exportArchiveStatus.value = null;
+  else {
+    if (importArchiveStatus.value?.phase === 'done') importArchiveSource.value = null;
+    importArchiveStatus.value = null;
+    archiveReceipt.value = null;
+  }
+}
+
+function cancelArchivePicker() {
+  if (archivePanel.value === 'archive-import' && importArchiveSource.value) importArchiveSource.value = null;
+  else workspaceImportPanel.value = null;
+}
+
+function showArchiveFailure(panel: ArchivePanel, error: unknown) {
+  const status = panel === 'archive-export' ? exportArchiveStatus : importArchiveStatus;
+  const message = t(panel === 'archive-export' ? 'archive.exportFailed' : 'archive.importFailed', {
+    error: error instanceof Error ? error.message : String(error),
+  });
+  status.value = { phase: 'failed', message };
+  showHeaderWarning(message, 'urgent');
+}
+
+async function browseControllerArchive() {
+  const panel = archivePanel.value;
+  if (!panel || nativeArchivePickerOpen.value || archiveStatus.value) return;
+  const revision = archivePickerRevision;
+  const source = importArchiveSource.value;
+  const isCurrent = () => archivePickerRevision === revision && !archiveStatus.value &&
+    (panel === 'archive-export' || importArchiveSource.value === source);
+  nativeArchivePickerOpen.value = true;
+  let path: string | null;
   try {
-    if (!(await confirmUnsavedChanges())) return;
-    const server = useLiveplayServer();
-    pendingArchiveClientPath.value = '';
-    pendingArchiveOnServer.value = '';
-    pendingArchiveName.value = '';
-    importServerPickerStage.value = 'archive';
-    if (server.isLocalServer) importServerPickerOpen.value = true;
-    else importChoiceVisible.value = true;
-  } finally {
-    importFlowActive = false;
-  }
-}
-
-async function onImportChoice(choice: 'server' | 'client') {
-  importChoiceVisible.value = false;
-  if (choice === 'server') {
-    importServerPickerStage.value = 'archive';
-    importServerPickerOpen.value = true;
+    const api = window.electronAPI;
+    path = panel === 'archive-export'
+      ? await api.showSaveArchiveDialog(exportArchiveName.value)
+      : await api.showOpenArchiveDialog();
+  } catch (error) {
+    if (isCurrent()) showArchiveFailure(panel, error);
     return;
+  } finally {
+    nativeArchivePickerOpen.value = false;
   }
-  const project = currentProject.value;
-  const server = useLiveplayServer();
-  const serverUrl = server.serverUrl;
-  const archivePath = await window.electronAPI.showOpenArchiveDialog();
-  if (!archivePath || currentProject.value !== project || server.serverUrl !== serverUrl) return;
-  pendingArchiveClientPath.value = archivePath;
-  pendingArchiveName.value = archivePath.split(/[\/]/).pop() || 'import.dwcuepack';
-  importServerPickerStage.value = 'destination';
-  importServerPickerOpen.value = true;
+  if (!path || !isCurrent()) return;
+  if (panel === 'archive-export') await runExport({ outputPath: '', downloadTo: path });
+  else importArchiveSource.value = { path, client: true };
 }
 
-async function onImportServerPickerPick(serverPath: string) {
-  importServerPickerOpen.value = false;
-  if (!serverPath || archiveBusy.value || archiveOpening.value) return;
-  const server = useLiveplayServer();
-  if (importServerPickerStage.value === 'archive') {
-    if (projectFileAction(serverPath) !== 'import-archive') {
-      server.lastError = t('importProgress.openFailed');
+async function onArchivePickerPick(path: string) {
+  const panel = archivePanel.value;
+  if (!path || !panel || archiveStatus.value) return;
+  if (panel === 'archive-export') {
+    await runExport({ outputPath: path.replace(/[\\/]+$/, '') + '/' + exportArchiveName.value });
+  } else if (archiveChoosingSource.value) {
+    if (projectFileAction(path) !== 'import-archive') {
+      showArchiveFailure(panel, t('archive.unsupported'));
       return;
     }
-    pendingArchiveOnServer.value = serverPath;
-    importServerPickerStage.value = 'destination';
-    importServerPickerOpen.value = true;
-    return;
+    importArchiveSource.value = { path, client: false };
+  } else if (importArchiveSource.value) {
+    await runImport(importArchiveSource.value, path);
   }
+}
 
+async function runExport(opts: { outputPath: string; downloadTo?: string }) {
+  const project = currentProject.value;
+  if (!project || exportArchiveStatus.value) return;
   const serverUrl = server.serverUrl;
+  const accessToken = server.effectiveAccessToken;
   const session = server.projectSessionId;
-  const epoch = projectEpoch.value;
-  const canAutoOpen = () => !progressModal.value.background && archiveCanOpen.value &&
-    server.projectSessionId === session && projectEpoch.value === epoch;
-  archiveBusy.value = true;
-  archiveReceipt.value = null;
-  showProjectSelection.value = false;
-  progressModal.value = {
-    visible: true,
-    background: false,
-    title: t('importProgress.title'),
-    message: t('importProgress.message') + ' ' + (pendingArchiveName.value
-      || pendingArchiveOnServer.value.split(/[\/]/).pop() || '') + '…',
-    percentage: 40,
+  const sameServer = () => server.serverUrl === serverUrl && server.effectiveAccessToken === accessToken;
+  const name = exportArchiveName.value;
+  exportArchiveStatus.value = { phase: 'working', message: t('archive.savingShow') };
+  try {
+    if (!await saveProject({ force: true })) throw new Error(t('archive.saveFailed'));
+    if (currentProject.value !== project || !sameServer() || server.projectSessionId !== session) {
+      throw new Error(t('archive.showChanged'));
+    }
+    exportArchiveStatus.value.message = t('exportProgress.message') + ' ' + name + '…';
+    const result = await server.exportProjectArchive(project.folderPath, project.name, opts.outputPath, session);
+    if (opts.downloadTo) {
+      if (!result.downloadToken || !sameServer()) throw new Error(t('archive.downloadUnavailable'));
+      exportArchiveStatus.value.message = t('exportProgress.downloading') + ' ' + name + '…';
+      await server.downloadArchiveToFile(result.downloadToken, opts.downloadTo);
+    }
+    exportArchiveStatus.value = {
+      phase: 'done', message: t('exportProgress.saved', { path: opts.downloadTo || result.archivePath }),
+    };
+  } catch (error) {
+    showArchiveFailure('archive-export', error);
+  }
+}
+
+async function runImport(source: { path: string; client: boolean }, destination: string) {
+  const serverUrl = server.serverUrl;
+  const accessToken = server.effectiveAccessToken;
+  const upload = source.client && !server.isLocalServer;
+  const name = archiveFilename(source.path);
+  importArchiveStatus.value = {
+    phase: 'working', message: t(upload ? 'archive.uploading' : 'importProgress.message') + ' ' + name + '…',
   };
   try {
-    const result = pendingArchiveClientPath.value
-      ? server.isLocalServer
-        ? await server.importProjectArchiveFromServer(pendingArchiveClientPath.value, serverPath)
-        : await server.importProjectArchiveFromClientPath(
-            pendingArchiveClientPath.value, serverPath, pendingArchiveName.value)
-      : await server.importProjectArchiveFromServer(pendingArchiveOnServer.value, serverPath);
-    progressModal.value.percentage = 100;
-    if (result.projectFiles.length === 0) {
-      server.lastError = t('importProgress.openFailed');
-      return;
-    }
-    archiveReceipt.value = { ...result, serverUrl };
-    progressModal.value.message = t('importProgress.savedOnServer', { path: result.extractPath, server: serverUrl });
-    if (canAutoOpen()) await openImportedArchive(canAutoOpen);
+    const result = upload
+      ? await server.importProjectArchiveFromClientPath(source.path, destination, name)
+      : await server.importProjectArchiveFromServer(source.path, destination);
+    if (result.projectFiles.length === 0) throw new Error(t('importProgress.openFailed'));
+    archiveReceipt.value = { ...result, serverUrl, accessToken };
+    importArchiveStatus.value = {
+      phase: 'done', message: t('importProgress.savedOnServer', { path: result.extractPath, server: serverUrl }),
+    };
   } catch (error) {
-    console.error('Import failed:', error);
-    server.lastError = t('importProgress.openFailed');
-  } finally {
-    archiveBusy.value = false;
-    progressModal.value.background = true;
-    progressModal.value.visible = !!archiveReceipt.value && !showProjectSelection.value;
-    pendingArchiveOnServer.value = '';
-    pendingArchiveClientPath.value = '';
-    pendingArchiveName.value = '';
+    showArchiveFailure('archive-import', error);
   }
 }
 
-async function openImportedArchive(canOpen = () => true) {
+async function openImportedArchive(file: string) {
   const receipt = archiveReceipt.value;
-  if (!receipt || !archiveCanOpen.value || !canOpen()) return;
-  if (receipt.projectFiles.length > 1) {
-    progressModal.value.visible = false;
-    showProjectSelection.value = true;
-    return;
-  }
-  await handleProjectSelection(receipt.projectFiles[0]!, canOpen);
-}
-
-async function handleProjectSelection(projectName: string, canOpen = () => true) {
-  const receipt = archiveReceipt.value;
-  if (archiveOpening.value || !receipt?.projectFiles.includes(projectName) || !archiveCanOpen.value) return;
-  const session = useLiveplayServer().projectSessionId;
+  if (archiveOpening.value || !receipt?.projectFiles.includes(file) || !archiveCanOpen.value) return;
+  const session = server.projectSessionId;
   const epoch = projectEpoch.value;
   archiveOpening.value = true;
-  progressModal.value.visible = false;
-  showProjectSelection.value = false;
   try {
-    const path = receipt.extractPath + '/' + projectName;
-    if (await guardedOpenProject(path, () => canOpen() && archiveCanOpen.value &&
-      archiveReceipt.value === receipt && useLiveplayServer().projectSessionId === session &&
-      projectEpoch.value === epoch)) dismissArchiveReceipt();
+    const path = receipt.extractPath.replace(/[\\/]+$/, '') + '/' + file;
+    if (await guardedOpenProject(path, () => archivePanel.value === 'archive-import' && archiveCanOpen.value && archiveReceipt.value === receipt &&
+      server.projectSessionId === session && projectEpoch.value === epoch)) {
+      archiveReceipt.value = null;
+      importArchiveStatus.value = null;
+      importArchiveSource.value = null;
+      if (archivePanel.value === 'archive-import') workspaceImportPanel.value = null;
+    }
   } finally {
     archiveOpening.value = false;
-    progressModal.value.visible = !!archiveReceipt.value;
   }
 }
-
-function dismissArchiveReceipt() {
-  archiveReceipt.value = null;
-  progressModal.value.visible = false;
-}
-
-const handleProjectSelectionCancel = () => {
-  showProjectSelection.value = false;
-  progressModal.value.visible = !!archiveReceipt.value;
-};
 
 // Set initial theme from project
 watch(currentProject, (project) => {
@@ -1029,6 +1007,72 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   overflow: hidden;
+}
+
+.operator-window {
+  display: flex;
+  flex-direction: column;
+}
+
+.startup-workspace {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.archive-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, var(--settings-width));
+  padding: 0 var(--workspace-gutter) var(--spacing-xs);
+  min-width: 0;
+}
+
+.archive-panel--browse {
+  flex: 1 1 auto;
+  height: clamp(230px, 32vh, 320px);
+  min-height: 210px;
+}
+
+.archive-panel--startup {
+  flex: 0 1 auto;
+  padding-top: var(--spacing-xs);
+  border-top: 1px solid var(--color-border);
+  overflow: auto;
+}
+
+.archive-panel--startup .workspace-panel-header {
+  padding-inline: 0;
+}
+
+.archive-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  min-height: var(--panel-control-height);
+  gap: var(--workspace-gutter);
+  margin: 0;
+  padding: var(--spacing-xs) 0;
+  overflow-wrap: anywhere;
+
+  p { margin: 0; }
+}
+
+.archive-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  flex-shrink: 0;
+}
+
+.archive-error { color: var(--color-danger); }
+
+.archive-progress {
+  width: min(24rem, 100%);
+  height: 8px;
+  margin-block: 0 var(--spacing-sm);
+  accent-color: var(--color-accent);
 }
 
 .color-picker-overlay {

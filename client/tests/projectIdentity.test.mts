@@ -287,12 +287,71 @@ test('closing keeps the old server session after clearing the local mirror and c
   assert.equal(session.value, 'new-session');
 });
 
+test('cold Open owns the loading overlay while the welcome screen probes for an existing show', async () => {
+  const source = readFileSync(new URL('../app/composables/useProject.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('  const tryRejoinExistingProject =');
+  const end = source.indexOf('  const openProject =', start);
+  assert.ok(start >= 0 && end > start);
+  const code = ts.transpileModule(source.slice(start, end), {
+    compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const isLoading = { value: false };
+  const header = { hasOpenProject: true, itemCount: 1 };
+  const currentProject = { value: { cartOnlyItems: [] } };
+  let headerProbes = 0;
+  let pages = 0;
+  const deps = {
+    _hydrationRequestRevision: 0, _openOverlayRevision: 0, _hydrationRetry: createProjectHydrationRetry(),
+    projectHydrationStatus: { value: 'ready' }, isHydrating: { value: false },
+    isLoading, loadingMessage: { value: '' }, currentProject, projectFilePathRef: { value: '' },
+    useLiveplayServer: () => ({
+      connected: true,
+      fetchProjectHeader: async () => { headerProbes++; return header; },
+    }),
+    applyServerHeader: () => ({}), nextTick: async () => {},
+    useCartItems: () => ({ clearCartOnlyItems() {}, addCartOnlyItem() {} }),
+    streamItemPages: async () => { pages++; return true; },
+    pollLoadingProgress() {}, recordRecentProject() {},
+    _projectHydration: { current: () => null },
+  };
+  const { hydrateProjectFrom, tryRejoinExistingProject } = Function(...Object.keys(deps),
+    `${code}; return { hydrateProjectFrom, tryRejoinExistingProject };`)(...Object.values(deps));
+  let loaded!: (header: object) => void;
+  const open = hydrateProjectFrom(() => new Promise(resolve => { loaded = resolve; }));
+  assert.equal(isLoading.value, true);
+  const rejoined = await tryRejoinExistingProject();
+  loaded(header);
+  const opened = await open;
+  assert.equal(isLoading.value, false, 'a welcome rejoin left the loading overlay visible');
+  assert.equal(rejoined, false);
+  assert.equal(opened, true);
+  assert.equal(headerProbes, 0);
+  assert.equal(pages, 1);
+  assert.equal(await tryRejoinExistingProject(), true, 'a standalone welcome rejoin still works');
+
+  const interrupted = hydrateProjectFrom(() => new Promise(resolve => { loaded = resolve; }));
+  assert.equal(await tryRejoinExistingProject(header), true, 'reconnect still verifies during an Open');
+  assert.equal(isLoading.value, true, 'reconnect must not dismiss the in-flight Open');
+  const newer = hydrateProjectFrom(async () => header);
+  loaded(header);
+  assert.equal(await interrupted, false);
+  assert.equal(isLoading.value, true, 'an older Open must not dismiss the newer overlay');
+  assert.equal(await newer, true);
+  assert.equal(isLoading.value, false);
+
+  const superseded = hydrateProjectFrom(() => new Promise(resolve => { loaded = resolve; }));
+  assert.equal(await tryRejoinExistingProject(header), true);
+  loaded(header);
+  assert.equal(await superseded, false);
+  assert.equal(isLoading.value, false, 'an Open must release its overlay after reconnect verification');
+});
+
 test('Retry still recovers the current cue list after a replacement show is refused', async () => {
   const retry = createProjectHydrationRetry();
   const attempts: string[] = [];
   retry.set(async () => { attempts.push('current show'); return true; });
   const open = projectFunction('hydrateProjectFrom', {
-    _hydrationRequestRevision: 0, _hydrationRetry: retry,
+    _hydrationRequestRevision: 0, _openOverlayRevision: 0, _hydrationRetry: retry,
     projectHydrationStatus: { value: 'failed' },
     isLoading: { value: false }, loadingMessage: { value: '' },
     useLiveplayServer: () => ({ connected: true }),

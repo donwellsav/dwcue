@@ -93,11 +93,21 @@ test('playlist cues copy into independent One Shots without sharing behavior', (
 });
 
 test('digits follow slot position and saved keyboard assignments take precedence', () => {
-  const slots: (AudioItem | null)[] = Array.from({ length: 11 }, (_, index) => audio(String(index), index));
-  const { keyMappings, playbackMappings } = resolveKeyboardBindings(slots);
-  assert.deepEqual(Object.values(keyMappings).map(binding => binding.key), [...'1234567890']);
+  const slots: (AudioItem | null)[] = Array.from({ length: 21 }, (_, index) => audio(String(index), index));
+  const { keyMappings, playbackMappings, pauseAlternate } = resolveKeyboardBindings(slots);
+  assert.deepEqual(Object.values(keyMappings).map(binding => binding.key), [...'12345678901234567890']);
+  assert.deepEqual(Object.values(keyMappings).map(binding => binding.shiftKey),
+    [...Array(10).fill(false), ...Array(10).fill(true)]);
+  assert.equal(keyMappings[20], undefined);
   assert.equal(playbackMappings['set-up-next']?.key, 'Enter');
-  assert.equal(playbackMappings['play-selected'], undefined);
+  assert.equal(playbackMappings['set-up-next']?.shiftKey, false);
+  assert.equal(playbackMappings['play-selected']?.key, 'Enter');
+  assert.equal(playbackMappings['play-selected']?.shiftKey, true);
+  assert.equal(playbackMappings['toggle-loop']?.key, 'l');
+  assert.equal(playbackMappings['jump-cue']?.key, 'j');
+  assert.equal(playbackMappings['cue-to-continue']?.key, 'c');
+  assert.equal(playbackMappings['pause-resume']?.key, 'p');
+  assert.deepEqual(pauseAlternate, { key: ' ', ctrlKey: false, shiftKey: true, altKey: false });
   assert.equal(playbackMappings['play-next']?.key, ' ');
   assert.equal(playbackMappings['toggle-video-output']?.key, 'v');
 
@@ -112,10 +122,27 @@ test('digits follow slot position and saved keyboard assignments take precedence
   assert.equal(saved.playbackMappings['stop-all']?.key, '4');
   assert.equal(saved.playbackMappings['play-selected']?.key, 'Enter');
   assert.equal(saved.playbackMappings['set-up-next'], undefined);
+  const shiftedDigit = { ...key('0'), shiftKey: true };
+  assert.equal(resolveKeyboardBindings(slots, { 'stop-all': shiftedDigit }).keyMappings[19], undefined);
   slots[10]!.oneShot!.hotkey = key('Enter');
   assert.equal(resolveKeyboardBindings(slots).playbackMappings['set-up-next'], undefined);
   slots[10]!.oneShot!.hotkey = key('v');
   assert.equal(resolveKeyboardBindings(slots).playbackMappings['toggle-video-output'], undefined);
+  slots[10]!.oneShot!.hotkey = key('L');
+  assert.equal(resolveKeyboardBindings(slots).playbackMappings['toggle-loop'], undefined);
+  slots[10]!.oneShot!.hotkey = { ...key('Enter'), shiftKey: true };
+  const shifted = resolveKeyboardBindings(slots, { 'toggle-loop': null });
+  assert.equal(shifted.playbackMappings['play-selected'], undefined);
+  assert.equal(shifted.playbackMappings['set-up-next']?.key, 'Enter');
+  assert.equal(shifted.playbackMappings['toggle-loop'], null);
+  assert.equal(resolveKeyboardBindings(slots, { 'jump-cue': key('l') }).playbackMappings['toggle-loop'], undefined);
+  assert.equal(resolveKeyboardBindings(slots, { 'pause-resume': null }).pauseAlternate, null);
+  assert.equal(resolveKeyboardBindings(slots, { 'stop-all': pauseAlternate }).pauseAlternate, null);
+  slots[10]!.oneShot!.hotkey = pauseAlternate;
+  assert.equal(resolveKeyboardBindings(slots).pauseAlternate, null);
+  slots[10]!.oneShot!.hotkey = key('j');
+  assert.equal(resolveKeyboardBindings(slots).playbackMappings['jump-cue'], undefined);
+  assert.equal(resolveKeyboardBindings(slots, { 'select-up': key('c') }).playbackMappings['cue-to-continue'], undefined);
 });
 
 test('One Shot copies into the playlist without consuming the source cell', () => {

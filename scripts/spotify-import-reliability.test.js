@@ -387,6 +387,7 @@ test('YouTube output-directory read failure at child completion rejects without 
 function spotifyReviewHarness(count, {
   kind = 'playlist', exitCode = 0, failedStdout = '',
   failedStderr = 'Error: playlist metadata unavailable', ffmpegReady = true, reverseResults = false,
+  metadata, reviewStdout = '\x1b[33m[12:34:56] Fetching playlist [1/2]\x1b[0m\n',
 } = {}) {
   const rawTracks = Array.from({ length: count }, (_, index) => ({
     song_id: String(index).padStart(22, '0'), name: `Track ${index + 1}`,
@@ -395,6 +396,7 @@ function spotifyReviewHarness(count, {
   }));
   const canonicalUrl = `https://open.spotify.com/${kind}/0123456789ABCDEFGHIJKL`;
   const fetches = [], commands = [];
+  const reviewDirs = [];
   const activeSpotifyPreflightJobs = new Map(), spotifyPreflights = new Map();
   const sender = new EventEmitter();
   sender.id = 7;
@@ -402,6 +404,7 @@ function spotifyReviewHarness(count, {
     activeSpotifyPreflightJobs, spotifyPreflights, spotDlPath: '/tools/spotdl',
     console: { warn() {} }, setupSpotDl: async () => true, terminateSpotifyChild() {},
     ffmpegPath: '/tools/bundled ffmpeg/ffmpeg', setupFfmpeg: async () => ffmpegReady,
+    app: { getPath: () => os.tmpdir() }, fs,
     setTimeout: () => ({ unref() {} }), clearTimeout() {},
     async fetch(url) {
       fetches.push(String(url));
@@ -425,7 +428,10 @@ function spotifyReviewHarness(count, {
       child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
       queueMicrotask(() => {
         const result = reverseResults ? [...rawTracks].reverse() : rawTracks;
-        child.stdout.emit('data', Buffer.from(exitCode ? failedStdout : JSON.stringify(result)));
+        const outputFile = args[args.indexOf('--save-file') + 1];
+        reviewDirs.push(path.dirname(outputFile));
+        if (!exitCode && metadata !== null) fs.writeFileSync(outputFile, metadata ?? JSON.stringify(result));
+        child.stdout.emit('data', Buffer.from(exitCode ? failedStdout : reviewStdout));
         child.stderr.emit('data', Buffer.from(exitCode ? failedStderr : ''));
         child.emit('close', exitCode);
       });
@@ -433,7 +439,7 @@ function spotifyReviewHarness(count, {
     },
   });
   return { run: url => run({ sender }, 'review-job-12345', url || canonicalUrl), rawTracks,
-    canonicalUrl, commands, fetches, activeSpotifyPreflightJobs, spotifyPreflights, sender };
+    canonicalUrl, commands, fetches, activeSpotifyPreflightJobs, spotifyPreflights, sender, reviewDirs };
 }
 
 for (const count of [100, 235, 10001]) {
@@ -445,14 +451,26 @@ for (const count of [100, 235, 10001]) {
     assert.equal(review.totalDuration, count * 60);
     assert.equal(review.playlistName, 'Entire playlist');
     assert.deepEqual(harness.commands, [['/tools/spotdl', [
-      'save', harness.canonicalUrl, '--save-file', '-', '--ffmpeg', '/tools/bundled ffmpeg/ffmpeg',
+      'save', harness.canonicalUrl, '--save-file', path.join(harness.reviewDirs[0], 'tracks.spotdl'),
+      '--ffmpeg', '/tools/bundled ffmpeg/ffmpeg',
       '--threads', '8', '--audio', 'youtube', '--lyrics',
     ]]]);
     assert.equal(harness.fetches.length, 0, 'playlist embeds cannot prove that their track list is complete');
     assert.equal(harness.spotifyPreflights.get(review.preflightId).tracksById.size, count);
     assert.equal(harness.activeSpotifyPreflightJobs.size, 0);
+    assert.equal(fs.existsSync(harness.reviewDirs[0]), false);
   });
 }
+
+test('Spotify ignores bracketed logs and releases the review after missing or malformed metadata', async () => {
+  for (const [metadata, message] of [[null, /no track list/], ['[invalid', /unreadable track list/]]) {
+    const harness = spotifyReviewHarness(5, { metadata });
+    await assert.rejects(harness.run(), message);
+    assert.equal(harness.activeSpotifyPreflightJobs.size, 0);
+    assert.equal(harness.spotifyPreflights.size, 0);
+    assert.equal(fs.existsSync(harness.reviewDirs[0]), false);
+  }
+});
 
 test('Spotify review restores playlist order after concurrent metadata lookups', async () => {
   const harness = spotifyReviewHarness(235, { reverseResults: true });

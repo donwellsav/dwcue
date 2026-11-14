@@ -1,5 +1,6 @@
 export {};
 import type { TestCardConfig } from '../../electron/test-card-config';
+import type { VideoFraming } from '../../electron/video-output-framing.mjs';
 import type {
   OneShotMutationIdentity,
   OneShotMutationRequest,
@@ -179,7 +180,7 @@ declare global {
       getSystemLocale: () => Promise<string>;
       getAvailableLocales: () => Promise<Array<{ code: string; name: string; direction: string }>>;
       getLocaleData: (localeCode: string) => Promise<any>;
-      checkForUpdates: () => Promise<{ success: boolean; updateInfo?: any; error?: string }>;
+      checkForUpdates: (silent?: boolean) => Promise<{ success: boolean; updateInfo?: any; error?: string }>;
       downloadUpdate: () => Promise<{ success: boolean; error?: string }>;
       installUpdate: () => Promise<boolean>;
       getUpdateInstallSupported: () => Promise<boolean>;
@@ -241,6 +242,12 @@ declare global {
         listDisplays: () => Promise<VideoOutputDisplay[]>;
         identifyDisplays: () => Promise<VideoOutputDisplay[]>;
         setDisplay: (displayId: string | null) => Promise<VideoOutputStatus>;
+        setFraming: (framing: VideoFraming) => Promise<VideoOutputStatus>;
+        checkFrame: (request: {
+          id: string; serverUrl: string; accessToken: string; sessionId: string;
+          uuid: string; fileRevision: string | null; inPoint: number;
+        }) => Promise<VideoFrameCheckResult | 'canceled'>;
+        cancelFrameCheck: (id: string) => void;
         setCaptureSettings: (displayId: string | null, target: VideoStandbyDestination) => Promise<VideoOutputStatus>;
         captureStandby: (source: 'output' | 'display', target: VideoStandbyTarget) => Promise<void>;
         clearStandbyCapture: (target: VideoStandbyTarget) => Promise<void>;
@@ -257,6 +264,7 @@ declare global {
       };
     };
   }
+  type VideoFrameCheckResult = 'ok' | 'unreadable' | 'decode' | 'no-frame' | 'in-point' | 'timeout' | 'probe-error';
   interface VideoOutputShortcut {
     key: string;
     code: string;
@@ -293,6 +301,7 @@ declare global {
     displayId: string | null;
     captureDisplayId: string | null;
     captureTarget: VideoStandbyDestination;
+    framing: VideoFraming;
     targetId: string | null;
     targetLabel: string | null;
     displays: VideoOutputDisplay[];

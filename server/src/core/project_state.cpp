@@ -892,13 +892,20 @@ void ProjectState::loader_loop() {
     }
 }
 
-void ProjectState::queue_loaded_routing(std::uint64_t generation, bool apply_program) {
+void ProjectState::prepare_startup_output() {
+    std::lock_guard lock{mutex_};
+    queue_loaded_routing(document_generation_, /*apply_program=*/false);
+}
+
+void ProjectState::queue_loaded_routing(std::uint64_t generation, bool apply_program, bool apply_main) {
     std::lock_guard lock{loader_mutex_};
     if (loaders_stop_ || (loaded_routing_ && loaded_routing_->generation > generation)) return;
     const auto stop = stop_revision();
-    if (loaded_routing_ && loaded_routing_->generation == generation && loaded_routing_->stop == stop)
+    if (loaded_routing_ && loaded_routing_->generation == generation && loaded_routing_->stop == stop) {
         apply_program |= loaded_routing_->apply_program;
-    loaded_routing_ = LoadedRoutingRequest{generation, stop, apply_program};
+        apply_main |= loaded_routing_->apply_main;
+    }
+    loaded_routing_ = LoadedRoutingRequest{generation, stop, apply_program, apply_main};
     loaded_routing_cv_.notify_one();
 }
 
@@ -920,16 +927,13 @@ void ProjectState::loaded_routing_loop() {
                        intent == playback_intent_revision_;
             };
             if (!current()) continue;
-            {
-                std::lock_guard lock{mutex_};
-                if (item_uuid_to_cue_.empty()) continue;
-            }
-            // shortcut: cold output opens share the driver lock; keep one coalesced
-            // routing worker until device startup can be isolated per backend.
+            // shortcut: background routing is sequential; deliberate GO prepares its own output.
+            if (request.apply_main) {
 #ifdef LIVEPLAY_TEST_NO_DEVICE_ROUTING
-            if (test_loader_main_routing_)
+                if (test_loader_main_routing_)
 #endif
-                ensure_program_main(lifecycle_lock, current, true);
+                    ensure_program_main(lifecycle_lock, current, true);
+            }
             if (current() && request.apply_program) apply_default_device_routing(lifecycle_lock);
             if (current()) apply_ltc_device_routing({}, &lifecycle_lock);
         } catch (const std::exception& e) {
@@ -1754,8 +1758,8 @@ void ProjectState::apply_ltc_device_routing(
 
     if (ltc_routes.empty()) return;
 
-    // 2. Ensure the LTC device is open and has a mixer (acquires/releases mutex
-    //    internally — safe because we're not holding mutex_ here).
+    // 2. An edit can still hold the project and preparation locks here. Only
+    // reuse a ready mixer inline and let the routing worker open a cold device.
     const auto ltc_mixer = prepared ? *prepared : ltc_device.empty() ? audio::MixerChannelId{}
         : ensure_device_routing(ltc_device, playback_lock);
     if (playback_lock) {
@@ -1764,7 +1768,10 @@ void ProjectState::apply_ltc_device_routing(
         if (ltc_device != selected_device()) return;
     }
     if (!ltc_device.empty() && ltc_mixer.empty()) {
-        (void)reject_output_selection(ltc_device, only.empty() ? std::string{} : cue_to_item_uuid(only).value_or(""));
+        if (!playback_lock)
+            queue_loaded_routing(generation, /*apply_program=*/false, /*apply_main=*/false);
+        else
+            (void)reject_output_selection(ltc_device, only.empty() ? std::string{} : cue_to_item_uuid(only).value_or(""));
         return;
     }
 
@@ -4343,7 +4350,8 @@ ProjectState::ensure_device_routing(const std::string& device_name,
     const auto devices = engine_.enumerate_devices();
     const auto selected = detail::resolve_output_device(device_name, devices);
     if (!selected) {
-        Logger::warn("Output '{}' is unavailable or ambiguous; reselect an output device", device_name);
+        if (lifecycle_lock)
+            Logger::warn("Output '{}' is unavailable or ambiguous; reselect an output device", device_name);
         return {};
     }
     return ensure_device_routing_impl(selected->display_name, selected->display_name,
@@ -4416,6 +4424,7 @@ audio::MixerChannelId ProjectState::ensure_device_routing_impl(
             }
         }
     }
+    if (!lifecycle_lock && !open) return {};
 
     // Device-name matching is intentionally delegated to the engine only
     // after callers that require exact matching have resolved a catalog entry.
@@ -5313,11 +5322,10 @@ RepairInfo ProjectState::repair_project() {
 }
 
 void ProjectState::apply_to_engine_locked() {
-    // 1) Load every cue's file into the engine. We accept that this can fail
-    //    for missing files; the entry stays in the project for the user to
-    //    relocate later.
+    // 1) Register cue files without waiting for Main while holding the project
+    //    lock. Missing files stay in the project for the operator to relocate.
     for (auto& [_, c] : cues_) {
-        const auto id = engine_.load_cue(c.file_path, c.id);
+        const auto id = engine_.load_cue_no_route(c.file_path, c.id);
         if (!id.empty()) {
             // Cache the lookup once and null-check it — find_cue can return
             // null (e.g. the load raced with an unload) and the previous code
@@ -5365,6 +5373,7 @@ void ProjectState::apply_to_engine_locked() {
             engine_.assign_master_to_device(a.master_channel, a.device, a.hw_channel);
         }
     }
+    if (!cues_.empty()) queue_loaded_routing(document_generation_, /*apply_program=*/false);
 }
 
 // ---------------------------------------------------------------------------

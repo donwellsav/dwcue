@@ -11,6 +11,7 @@ const {
   toRendererShortcut,
 } = require('../electron/video-output-shortcuts');
 const { buildVideoOutputContextTemplate } = require('../electron/video-output-context-menu');
+const { DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameCaptureRect } = require('../electron/video-output-framing.mjs');
 const { createOneShotMutationBroker } = require('../electron/one-shot-mutation-broker');
 const { createAppLifecycleActions, createWillQuitHandler } = require('../electron/terminal-action');
 const mainSource = readFileSync(require.resolve('../electron/main.js'), 'utf8');
@@ -32,7 +33,7 @@ test('mounted audience view reports DOM readiness without waiting for an animati
     onMounted: callback => { mounted = callback; },
     window: { electronAPI: { videoOutput: api }, addEventListener() {} },
     offStatus: null, healthTimer: null,
-    refreshStatus: async () => {}, syncConnection() {}, onKeydown() {}, onDblClick() {},
+    refreshStatus: async () => {}, syncConnection() {}, onKeydown() {}, onDblClick() {}, updatePixelScale() {},
     nextTick: async () => { committed = true; },
     requestAnimationFrame() {}, // A minimized/covered renderer may never receive it.
     setInterval: () => 1,
@@ -41,7 +42,19 @@ test('mounted audience view reports DOM readiness without waiting for an animati
   assert.equal(ready, 1, 'the native cover must not wait on hidden-window animation');
 });
 
-test('standby capture uses only the selected source and rejects stale shows and authored art', async () => {
+test('output framing fits the selected canvas without forcing an HDMI mode', () => {
+  assert.deepEqual(DEFAULT_VIDEO_FRAMING, { width: 1920, height: 1080, scale: 100, scaling: 'fit' });
+  const portrait = { ...DEFAULT_VIDEO_FRAMING, width: 1080, height: 1920 };
+  assert.deepEqual(readVideoFraming(portrait), portrait);
+  assert.equal(readVideoFraming({ ...portrait, width: 0 }), null);
+  assert.equal(readVideoFraming({ ...portrait, scaling: 'stretch' }), null);
+  assert.equal(readVideoFraming({ ...portrait, scale: 110 }), null);
+  assert.deepEqual(videoFrameCaptureRect(1920, 1080, portrait, 1), { x: 656, y: 0, width: 608, height: 1080 });
+  const limited = { ...DEFAULT_VIDEO_FRAMING, scale: 50, scaling: 'limit' };
+  assert.deepEqual(videoFrameCaptureRect(1920, 1080, limited, 2), { x: 720, y: 405, width: 480, height: 270 });
+});
+
+test('standby capture follows the saved frame or selected screen and rejects stale captures', async () => {
   const handlers = new Map();
   const sender = {};
   const identity = { projectPath: '/show.dwcue', projectEpoch: 1, ownerSessionId: 'owner' };
@@ -49,10 +62,18 @@ test('standby capture uses only the selected source and rejects stale shows and 
   const still = value => ({
     isEmpty: () => false,
     getSize: () => ({ width: 1920, height: 1080 }),
+    toPNG: () => Buffer.from(value),
     toJPEG: () => Buffer.from(value),
   });
-  const output = { isDestroyed: () => false, webContents: {
-    isDestroyed: () => false, send() {}, capturePage: async () => still('output'),
+  let outputSize = [1920, 1080];
+  let framing = DEFAULT_VIDEO_FRAMING;
+  let scaleFactor = 1;
+  let captureRect;
+  const output = { isDestroyed: () => false, getContentSize: () => outputSize, getBounds: () => ({}), webContents: {
+    isDestroyed: () => false, send() {}, capturePage: async (rect) => {
+      captureRect = { ...rect };
+      return still('output');
+    },
   } };
   const sourceStart = mainSource.indexOf('function requireCaptureOwner(');
   const sourceEnd = mainSource.indexOf("ipcMain.handle('video-output:set-display'", sourceStart);
@@ -61,19 +82,27 @@ test('standby capture uses only the selected source and rejects stale shows and 
   const context = {
     Buffer,
     ...captureHelpers, videoStandbyCaptures: captureHelpers.createStandbyCaptureStore(128),
-    ipcMain: { handle: (name, handler) => handlers.set(name, handler) },
+    DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameCaptureRect,
+    screen: { getDisplayMatching: () => ({ scaleFactor }) },
+    ipcMain: { handle: (name, handler) => handlers.set(name, handler), on() {} },
     mainWindow: { webContents: sender }, requireTrustedIpc() {},
     ...require('../electron/one-shot-mutation-broker'),
     currentProjectIdentity: identity, currentCaptureSession: 'session',
     currentProjectData: { items: [{ type: 'group', children: [cue] }] },
     videoOutputWindow: output, videoOutputRendererReady: true, videoOutputRendererResponsive: true,
     videoOutputRecoveryRequired: false, capturingVideoStandby: false,
-    readVideoOutputConfig: () => ({ captureDisplayId: '42' }),
+    readVideoOutputConfig: () => ({ captureDisplayId: '42', framing }),
+    writeVideoOutputConfig: (config) => { framing = config.framing; return true; },
+    broadcastVideoOutputStatus: () => ({ framing }),
     videoOutputDisplays: () => [{ id: '42' }],
-    desktopCapturer: { getSources: async () => [
-      { display_id: 'other', thumbnail: still('wrong screen') },
-      { display_id: '42', thumbnail: still('selected screen') },
-    ] },
+    desktopCapturer: { getSources: async ({ thumbnailSize }) => {
+      assert.equal(thumbnailSize.width, 3840);
+      assert.equal(thumbnailSize.height, 2160);
+      return [
+        { display_id: 'other', thumbnail: still('wrong screen') },
+        { display_id: '42', thumbnail: still('selected screen') },
+      ];
+    } },
   };
   vm.runInNewContext([
     productionFunctionSource('requireVideoOutputIpc'), productionFunctionSource('requireIpcString'),
@@ -86,8 +115,27 @@ test('standby capture uses only the selected source and rejects stale shows and 
     handlers.get('video-output:get-standby-capture')({ sender: output.webContents }, session, cue.uuid, media);
   await capture('display', null);
   await capture('output', cue.uuid);
-  assert.equal(read('session').standby, 'data:image/jpeg;base64,' + Buffer.from('selected screen').toString('base64'));
-  assert.equal(read('session').cue, 'data:image/jpeg;base64,' + Buffer.from('output').toString('base64'));
+  assert.deepEqual(captureRect, { x: 0, y: 0, width: 1920, height: 1080 });
+  outputSize = [1600, 1200];
+  await capture('output', cue.uuid);
+  assert.deepEqual(captureRect, { x: 0, y: 150, width: 1600, height: 900 });
+  outputSize = [2560, 1080];
+  await capture('output', cue.uuid);
+  assert.deepEqual(captureRect, { x: 320, y: 0, width: 1920, height: 1080 });
+  outputSize = [961, 540];
+  await capture('output', cue.uuid);
+  assert.deepEqual(captureRect, { x: 0, y: 0, width: 961, height: 540 });
+  const setFraming = handlers.get('video-output:set-framing');
+  assert.throws(() => setFraming({ sender }, { width: 0 }), /Invalid picture framing/);
+  assert.throws(() => setFraming({ sender: output.webContents }, DEFAULT_VIDEO_FRAMING), /main workspace/);
+  const custom = { width: 1920, height: 1200, scale: 80, scaling: 'limit' };
+  assert.deepEqual({ ...setFraming({ sender }, custom).framing }, custom);
+  outputSize = [1920, 1080];
+  scaleFactor = 2;
+  await capture('output', cue.uuid);
+  assert.deepEqual(captureRect, { x: 576, y: 300, width: 768, height: 480 });
+  assert.equal(read('session').standby, 'data:image/png;base64,' + Buffer.from('selected screen').toString('base64'));
+  assert.equal(read('session').cue, 'data:image/png;base64,' + Buffer.from('output').toString('base64'));
   assert.equal(read('session', 'media/replacement.wav').cue, null);
   assert.equal(read('other-session').standby, null);
   await assert.rejects(capture('output', null, { sender: output.webContents }), /main workspace/);
@@ -96,7 +144,20 @@ test('standby capture uses only the selected source and rejects stale shows and 
   await assert.rejects(capture('output', cue.uuid), /assigned image/);
   delete cue.imagePath;
   context.desktopCapturer.getSources = async () => [{ display_id: 'wrong', thumbnail: still('wrong') }];
-  await assert.rejects(capture('display', null), /No picture was captured/);
+  await assert.rejects(capture('display', null), /screen recording permission/);
+  const resizing = deferred();
+  output.webContents.capturePage = () => resizing.promise;
+  const resizedCapture = capture('output', null);
+  outputSize = [1920, 1200];
+  resizing.resolve(still('resized'));
+  await assert.rejects(resizedCapture, /Video Output changed/);
+  assert.equal(read('session').standby, 'data:image/png;base64,' + Buffer.from('selected screen').toString('base64'));
+  const reframing = deferred();
+  output.webContents.capturePage = () => reframing.promise;
+  const reframedCapture = capture('output', null);
+  setFraming({ sender }, DEFAULT_VIDEO_FRAMING);
+  reframing.resolve(still('reframed'));
+  await assert.rejects(reframedCapture, /Video Output changed/);
   const pending = deferred();
   output.webContents.capturePage = () => pending.promise;
   const inFlight = capture('output', null);
@@ -105,6 +166,26 @@ test('standby capture uses only the selected source and rejects stale shows and 
   await assert.rejects(inFlight, /active show changed/);
   handlers.get('video-output:clear-standby-capture')({ sender }, { identity, sessionId: 'another show', itemUuid: null });
   assert.equal(read('another show').standby, null);
+});
+
+test('standby stills preserve slide detail and keep large photo captures bounded', () => {
+  const { captureImageUrl } = require('../electron/video-standby-capture');
+  const image = {
+    isEmpty: () => false,
+    getSize: () => ({ width: 3840, height: 2160 }),
+    resize(options) {
+      assert.deepEqual(options, { width: 1920, height: 1080, quality: 'best' });
+      return this;
+    },
+    toPNG: () => Buffer.from('slide'),
+    toJPEG(quality) {
+      assert.equal(quality, 94);
+      return Buffer.from('photo');
+    },
+  };
+  assert.match(captureImageUrl(image), /^data:image\/png;/);
+  image.toPNG = () => Buffer.alloc(1024 * 1024 + 1);
+  assert.match(captureImageUrl(image), /^data:image\/jpeg;/);
 });
 
 function deferred() {
@@ -742,7 +823,7 @@ test('preload exposes only the typed mutation broker and separate project identi
   assert.deepEqual(sends.at(-1), ['one-shot-mutation:complete', result]);
 });
 
-test('detached One Shots mutations correlate a primary persisted result', async () => {
+test('detached QuickPlays mutations correlate a primary persisted result', async () => {
   const cart = mutationContents();
   const primary = mutationContents();
   const broker = createOneShotMutationBroker({
@@ -768,7 +849,7 @@ test('mutation broker rejects invalid senders, kinds, stale results, and duplica
     setTimer: callback => { fireTimeout = callback; return 1; },
     clearTimer() {},
   });
-  assert.throws(() => broker.request({}, mutationRequest), /not the detached One Shots window/);
+  assert.throws(() => broker.request({}, mutationRequest), /not the detached QuickPlays window/);
   assert.throws(() => broker.request(cart, { ...mutationRequest, kind: 'arbitrary-patch' }), /kind is invalid/);
   assert.throws(() => broker.request(cart, {
     ...mutationRequest,

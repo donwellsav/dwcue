@@ -223,12 +223,12 @@ export const applyOneShotMutation = (
   }
 
   const item = request.itemUuid ? findOneShot(document, request.itemUuid) : null;
-  if (!item) return { accepted: false, error: 'One Shot no longer exists.' };
+  if (!item) return { accepted: false, error: 'QuickPlay no longer exists.' };
 
   switch (request.kind) {
     case 'set-fields':
       if (Object.keys(request.payload).some(key => key !== 'fields') || !validateFields(request.payload.fields)) {
-        return { accepted: false, error: 'Invalid One Shot fields.' };
+        return { accepted: false, error: 'Invalid QuickPlay fields.' };
       }
       applyFields(item, request.payload.fields);
       return { accepted: true };

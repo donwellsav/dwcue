@@ -90,6 +90,7 @@ type ProjectHydrationLoad = ReturnType<typeof _projectHydration.begin>;
 const _ownerSessionId = globalThis.crypto?.randomUUID?.()
   ?? 'dwcue-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
 let _hydrationRequestRevision = 0;
+let _openOverlayRevision = 0;
 const _hydrationRetry = createProjectHydrationRetry();
 
 const createItemPatchMutationIdentity = (clientId: string) => {
@@ -206,6 +207,10 @@ export const useProject = () => {
   // the panel open on every click. The panel is only opened explicitly via
   // openItemProperties() (the gear button).
   const propertiesPanelOpen = useState<boolean>('propertiesPanelOpen', () => false);
+  const showProjectSettings = useState('showProjectSettings', () => false);
+  const workspaceImportPanel = useState<'media' | 'youtube' | 'spotify' | 'archive-import' | 'archive-export' | null>(
+    'workspaceImportPanel', () => null,
+  );
   // NB: activeCues is owned by useAudioEngine (it's the server projection).
   // useProject only clears it on closeProject; we re-use the same useState key.
   const activeCues = useState<Map<string, any>>('activeCues', () => new Map());
@@ -450,6 +455,8 @@ export const useProject = () => {
         selectedItems.value.clear();
         selectedItems.value.add(uuid);
       }
+      showProjectSettings.value = false;
+      workspaceImportPanel.value = null;
       propertiesPanelOpen.value = true;
     }
   };
@@ -705,7 +712,9 @@ export const useProject = () => {
   // project, we drop straight into MainWorkspace instead of showing
   // New/Open. Returns true if a project was rejoined.
   const tryRejoinExistingProject = async (existingHeader?: any, signal?: AbortSignal): Promise<boolean> => {
-    if (signal?.aborted) return false;
+    // A welcome probe must yield to an explicit Open or New. Reconnect
+    // verification supplies its own server header and can still proceed.
+    if (signal?.aborted || (isLoading.value && !existingHeader)) return false;
     const requestRevision = ++_hydrationRequestRevision;
     _hydrationRetry.set(() => tryRejoinExistingProject());
     try {
@@ -750,6 +759,7 @@ export const useProject = () => {
     loadHeader: (server: any) => Promise<any>,
   ): Promise<boolean> => {
     const requestRevision = ++_hydrationRequestRevision;
+    const overlayRevision = ++_openOverlayRevision;
     if (projectHydrationStatus.value !== 'failed') {
       _hydrationRetry.set(() => hydrateProjectFrom(loadHeader));
     }
@@ -791,7 +801,7 @@ export const useProject = () => {
       console.error('Error opening project:', error);
       return false;
     } finally {
-      if (requestRevision === _hydrationRequestRevision) isLoading.value = false;
+      if (overlayRevision === _openOverlayRevision) isLoading.value = false;
     }
   };
 
@@ -933,6 +943,8 @@ export const useProject = () => {
   // empty for streamItemPages() to populate.
   const clearLocalProjectMirror = () => {
     ++_hydrationRequestRevision;
+    ++_openOverlayRevision;
+    isLoading.value = false;
     _projectHydration.invalidate();
     const hadIdentity = currentProject.value !== null || projectFilePathRef.value !== '';
     _uninstallItemsWatcherFn?.();
@@ -942,6 +954,8 @@ export const useProject = () => {
     selectedItems.value.clear();
     selectionAnchorUuid = null;
     propertiesPanelOpen.value = false;
+    showProjectSettings.value = false;
+    workspaceImportPanel.value = null;
     activeCues.value.clear();
     projectFilePathRef.value = '';
     serverProjectSessionId.value = '';
@@ -2206,6 +2220,7 @@ export const useProject = () => {
     selectedItem,
     selectedItems,
     propertiesPanelOpen,
+    workspaceImportPanel,
     activeCues,
     waveformUpdateKey,
     triggerWaveformUpdate,

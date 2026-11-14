@@ -102,7 +102,7 @@
             ref="normalizeMenu"
             class="normalize-menu"
             @focusout="handleNormalizeFocusOut"
-            @keydown.esc.prevent.stop="closeNormalizeMenu"
+            @keydown.esc="closeNormalizeMenu"
           >
             <summary class="normalize-btn" :title="t(normalizationMode === 'truePeak' ? 'properties.peakReductionHelp' : 'properties.normalizationTargetHelp')">
               <span class="material-symbols-rounded">tune</span>
@@ -297,10 +297,11 @@
     </div>
 
     <!-- Time Display (moved to right side) -->
-    <div class="time-display-section">
+    <section class="time-display-section">
+      <h4>{{ t('properties.cueTiming') }}</h4>
       <div class="time-field">
         <div class="time-field-label-row">
-          <label>{{ t('properties.inPoint') }}</label>
+          <label for="cue-trim-inPoint">{{ t('properties.inPoint') }}</label>
           <button v-if="!multiSelect" type="button" class="audition-marker-btn time-field-set-btn" @click="setInPointAtPlayhead">
             {{ t('actions.setIn') }}
           </button>
@@ -309,7 +310,7 @@
           <button class="time-decrement" @click="adjustInPoint(-0.5)" :title="t('waveform.decreaseBy', { seconds: '0.5' })">
             <span class="material-symbols-rounded">remove</span>
           </button>
-          <input 
+          <input id="cue-trim-inPoint"
             type="text"
             class="time-input"
             :value="formatTimeDetailed(inPoint)"
@@ -327,7 +328,7 @@
         :title="multiSelect ? t('properties.multiSelectOutPointDisabled') : undefined"
       >
         <div class="time-field-label-row">
-          <label>{{ t('properties.outPoint') }}</label>
+          <label for="cue-trim-outPoint">{{ t('properties.outPoint') }}</label>
           <button v-if="!multiSelect" type="button" class="audition-marker-btn time-field-set-btn" @click="setOutPointAtPlayhead">
             {{ t('actions.setOut') }}
           </button>
@@ -336,7 +337,7 @@
           <button class="time-decrement" @click="adjustOutPoint(-0.5)" :disabled="multiSelect" :title="multiSelect ? t('properties.multiSelectOutPointDisabled') : t('waveform.decreaseBy', { seconds: '0.5' })">
             <span class="material-symbols-rounded">remove</span>
           </button>
-          <input
+          <input id="cue-trim-outPoint"
             type="text"
             class="time-input"
             :value="multiSelect ? '—' : formatTimeDetailed(outPoint)"
@@ -351,113 +352,113 @@
         </div>
       </div>
       <div class="time-field">
-        <label>{{ t('properties.duration') }}</label>
-        <input 
+        <label for="cue-trim-duration">{{ t('properties.duration') }}</label>
+        <input id="cue-trim-duration"
           type="text"
           class="time-input"
           :value="formatTimeDetailed(duration)"
           readonly
         />
       </div>
-    </div>
+    </section>
 
-    <!-- Fade & Transition Controls (hidden for cart items) -->
-    <div v-if="!isCartItem" class="fade-controls-section">
-      <div class="fade-column">
-        <div class="fade-control-group">
-          <label>{{ t('properties.playFade') }}</label>
-          <div class="time-input-with-buttons">
-            <button class="time-decrement" @click="adjustPlayFade(-0.5)" :title="t('waveform.decreaseBy', { seconds: '0.5' })">
-              <span class="material-symbols-rounded">remove</span>
-            </button>
-            <input
-              type="text"
-              class="time-input fade-input"
-              :value="formatTimeDetailed(playFade)"
-              @change="handlePlayFadeTextChange"
-              @focus="($event.target as HTMLInputElement).select()"
-            />
-            <button class="time-increment" @click="adjustPlayFade(0.5)" :title="t('waveform.increaseBy', { seconds: '0.5' })">
-              <span class="material-symbols-rounded">add</span>
-            </button>
-          </div>
-        </div>
-        <div class="fade-control-group">
-          <label>{{ t('properties.crossFade') }}</label>
-          <div class="time-input-with-buttons">
-            <button class="time-decrement" @click="adjustCrossFade(-0.5)" :title="t('waveform.decreaseBy', { seconds: '0.5' })">
-              <span class="material-symbols-rounded">remove</span>
-            </button>
-            <input
-              type="text"
-              class="time-input fade-input"
-              :value="formatTimeDetailed(crossFade)"
-              @change="handleCrossFadeTextChange"
-              @focus="($event.target as HTMLInputElement).select()"
-            />
-            <button class="time-increment" @click="adjustCrossFade(0.5)" :title="t('waveform.increaseBy', { seconds: '0.5' })">
-              <span class="material-symbols-rounded">add</span>
-            </button>
-          </div>
+    <section v-if="!isCartItem" class="fade-controls-section">
+      <h4>{{ t('properties.fadeSettings') }}</h4>
+      <div class="fade-control-group">
+        <label for="cue-trim-playFade">{{ t('properties.playFade') }}</label>
+        <div class="time-input-with-buttons">
+          <button class="time-decrement" @click="adjustPlayFade(-0.5)" :title="t('waveform.decreaseBy', { seconds: '0.5' })">
+            <span class="material-symbols-rounded">remove</span>
+          </button>
+          <input id="cue-trim-playFade"
+            type="text"
+            class="time-input"
+            :value="formatTimeDetailed(playFade)"
+            @change="handlePlayFadeTextChange"
+            @focus="($event.target as HTMLInputElement).select()"
+          />
+          <button class="time-increment" @click="adjustPlayFade(0.5)" :title="t('waveform.increaseBy', { seconds: '0.5' })">
+            <span class="material-symbols-rounded">add</span>
+          </button>
         </div>
       </div>
-      <div class="fade-column">
-        <div class="fade-control-group">
-          <label>{{ t('properties.stopFade') }}</label>
-          <div class="time-input-with-buttons">
-            <button class="time-decrement" @click="adjustStopFade(-0.5)" :title="t('waveform.decreaseBy', { seconds: '0.5' })">
-              <span class="material-symbols-rounded">remove</span>
-            </button>
-            <input
-              type="text"
-              class="time-input fade-input"
-              :value="formatTimeDetailed(stopFade)"
-              @change="handleStopFadeTextChange"
-              @focus="($event.target as HTMLInputElement).select()"
-            />
-            <button class="time-increment" @click="adjustStopFade(0.5)" :title="t('waveform.increaseBy', { seconds: '0.5' })">
-              <span class="material-symbols-rounded">add</span>
-            </button>
-          </div>
-        </div>
-        <label class="start-next-toggle">
-          <input
-            type="checkbox"
-            :checked="startNextEnabled"
-            @change="handleStartNextEnabledChange"
+      <div class="fade-control-group">
+        <label for="cue-trim-stopFade">{{ t('properties.stopFade') }}</label>
+        <div class="time-input-with-buttons">
+          <button class="time-decrement" @click="adjustStopFade(-0.5)" :title="t('waveform.decreaseBy', { seconds: '0.5' })">
+            <span class="material-symbols-rounded">remove</span>
+          </button>
+          <input id="cue-trim-stopFade"
+            type="text"
+            class="time-input"
+            :value="formatTimeDetailed(stopFade)"
+            @change="handleStopFadeTextChange"
+            @focus="($event.target as HTMLInputElement).select()"
           />
-          <span>{{ t('properties.startNextEnable') }}</span>
-        </label>
-        <div class="fade-control-group" :class="{ 'start-next-disabled': !startNextEnabled }">
-          <label>{{ t('properties.startNextTime') }}</label>
-          <div class="time-input-with-buttons">
-            <button class="time-decrement" :disabled="!startNextEnabled" @click="adjustStartNextTime(-0.5)" :title="t('waveform.decreaseBy', { seconds: '0.5' })">
-              <span class="material-symbols-rounded">remove</span>
-            </button>
-            <input
-              type="text"
-              class="time-input fade-input"
-              :value="formatTimeDetailed(startNextTime)"
-              :disabled="!startNextEnabled"
-              @change="handleStartNextTimeTextChange"
-              @focus="($event.target as HTMLInputElement).select()"
-            />
-            <button class="time-increment" :disabled="!startNextEnabled" @click="adjustStartNextTime(0.5)" :title="t('waveform.increaseBy', { seconds: '0.5' })">
-              <span class="material-symbols-rounded">add</span>
-            </button>
-          </div>
+          <button class="time-increment" @click="adjustStopFade(0.5)" :title="t('waveform.increaseBy', { seconds: '0.5' })">
+            <span class="material-symbols-rounded">add</span>
+          </button>
         </div>
-        <label class="start-next-toggle" :class="{ 'start-next-disabled': !startNextEnabled }">
-          <input
-            type="checkbox"
-            :checked="startNextFadeOut"
+      </div>
+      <div class="fade-control-group">
+        <label for="cue-trim-crossFade">{{ t('properties.crossFade') }}</label>
+        <div class="time-input-with-buttons">
+          <button class="time-decrement" @click="adjustCrossFade(-0.5)" :title="t('waveform.decreaseBy', { seconds: '0.5' })">
+            <span class="material-symbols-rounded">remove</span>
+          </button>
+          <input id="cue-trim-crossFade"
+            type="text"
+            class="time-input"
+            :value="formatTimeDetailed(crossFade)"
+            @change="handleCrossFadeTextChange"
+            @focus="($event.target as HTMLInputElement).select()"
+          />
+          <button class="time-increment" @click="adjustCrossFade(0.5)" :title="t('waveform.increaseBy', { seconds: '0.5' })">
+            <span class="material-symbols-rounded">add</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="!isCartItem" class="transition-controls-section">
+      <h4>{{ t('properties.transitions') }}</h4>
+      <label class="start-next-toggle">
+        <input
+          type="checkbox"
+          :checked="startNextEnabled"
+          @change="handleStartNextEnabledChange"
+        />
+        <span>{{ t('properties.startNextEnable') }}</span>
+      </label>
+      <div class="fade-control-group" :class="{ 'start-next-disabled': !startNextEnabled }">
+        <label for="cue-trim-startNextTime">{{ t('properties.startNextTime') }}</label>
+        <div class="time-input-with-buttons">
+          <button class="time-decrement" :disabled="!startNextEnabled" @click="adjustStartNextTime(-0.5)" :title="t('waveform.decreaseBy', { seconds: '0.5' })">
+            <span class="material-symbols-rounded">remove</span>
+          </button>
+          <input id="cue-trim-startNextTime"
+            type="text"
+            class="time-input"
+            :value="formatTimeDetailed(startNextTime)"
             :disabled="!startNextEnabled"
-            @change="handleStartNextFadeOutChange"
+            @change="handleStartNextTimeTextChange"
+            @focus="($event.target as HTMLInputElement).select()"
           />
-          <span>{{ t('properties.startNextFadeOut') }}</span>
-        </label>
+          <button class="time-increment" :disabled="!startNextEnabled" @click="adjustStartNextTime(0.5)" :title="t('waveform.increaseBy', { seconds: '0.5' })">
+            <span class="material-symbols-rounded">add</span>
+          </button>
+        </div>
       </div>
-    </div>
+      <label class="start-next-toggle" :class="{ 'start-next-disabled': !startNextEnabled }">
+        <input
+          type="checkbox"
+          :checked="startNextFadeOut"
+          :disabled="!startNextEnabled"
+          @change="handleStartNextFadeOutChange"
+        />
+        <span>{{ t('properties.startNextFadeOut') }}</span>
+      </label>
+    </section>
 
   </div>
 </template>
@@ -1787,24 +1788,39 @@ onUnmounted(() => {
 <style scoped>
 .waveform-trimmer {
   display: grid;
-  background: transparent;
-  grid-template-columns: 80px minmax(300px, 1fr) 184px minmax(260px, 296px);
-  align-items: stretch;
+  grid-template-columns: 64px minmax(0, 2fr) repeat(3, minmax(0, 1fr));
   gap: var(--spacing-sm);
-  width: 100%;
   min-width: 0;
-  height: 100%;
   min-height: 188px;
-  padding: 0;
+  flex: 1;
 }
 
-.volume-control-section,
-.waveform-section,
-.time-display-section,
-.fade-controls-section {
-  min-height: 0;
-  height: 100%;
-  box-sizing: border-box;
+.waveform-trimmer:not(:has(.fade-controls-section)) {
+  grid-template-columns: 64px minmax(0, 1fr) minmax(160px, 20%);
+}
+
+@container (max-width: 980px) {
+  .waveform-trimmer:has(.fade-controls-section) {
+    grid-template-columns: 64px repeat(3, minmax(0, 1fr));
+  }
+  .waveform-trimmer:has(.fade-controls-section) .waveform-section { grid-column: 2 / -1; }
+  .waveform-trimmer:has(.fade-controls-section) .time-display-section { grid-column: 2; }
+}
+
+@container (max-width: 660px) {
+  .waveform-trimmer {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+  .waveform-trimmer:has(.fade-controls-section),
+  .waveform-trimmer:not(:has(.fade-controls-section)) {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+  .waveform-trimmer .time-display-section,
+  .waveform-trimmer:has(.fade-controls-section) .time-display-section,
+  .waveform-trimmer .fade-controls-section,
+  .waveform-trimmer .transition-controls-section {
+    grid-column: 1 / -1;
+  }
 }
 
 /* Volume Control */
@@ -1837,17 +1853,19 @@ onUnmounted(() => {
 }
 
 .volume-slider-container {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
   gap: var(--spacing-xs);
-  align-items: center;
   flex: 1;
   min-height: 0;
+  contain: size;
 }
 
 .volume-slider-vertical {
   writing-mode: vertical-lr;
   direction: rtl;
-  width: 40px;
+  width: 100%;
   height: 100%;
   cursor: pointer;
   -webkit-appearance: none;
@@ -1928,86 +1946,50 @@ onUnmounted(() => {
   font-family: var(--font-mono);
 }
 
-/* Fade & Transition Controls Section */
-.fade-controls-section {
+.time-display-section,
+.fade-controls-section,
+.transition-controls-section {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  align-items: start;
-  gap: var(--spacing-xs);
-  padding: 0 0 0 var(--spacing-sm);
-  border-left: 1px solid var(--color-border);
-  width: auto;
+  grid-template-rows: var(--settings-row-height) repeat(3, minmax(calc(2 * var(--settings-control-height) + 2px), auto));
+  align-content: start;
   min-width: 0;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
-.fade-column {
+.time-display-section h4,
+.fade-controls-section h4,
+.transition-controls-section h4 {
   display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xs);
-  min-width: 0;
+  align-items: center;
+  padding: 0 var(--spacing-sm);
+  font-size: var(--type-panel-title-size);
 }
 
-.fade-control-group {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.time-field,
+.fade-control-group,
+.start-next-toggle {
+  min-width: 0;
+  padding: 2px var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
 }
 
 .start-next-toggle {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--spacing-xs);
   font-size: var(--type-metadata-size);
   color: var(--color-text-primary);
   font-weight: 600;
   cursor: pointer;
-  text-wrap: wrap;
 }
 
 .start-next-toggle input[type='checkbox'] {
-  accent-color: rgb(22, 163, 74);
-  cursor: pointer;
+  accent-color: var(--color-accent);
 }
 
 .start-next-disabled {
   opacity: 0.62;
-  pointer-events: auto;
-}
-
-.fade-control-group label {
-  font-size: var(--type-metadata-size);
-  color: var(--color-text-primary);
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-
-.fade-input {
-  width: 100%;
-  height: 30px;
-  padding: 4px var(--spacing-xs);
-  background: var(--color-control);
-  border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-sm);
-  color: var(--color-text-primary);
-  font-family: var(--font-mono);
-  font-size: var(--type-metadata-size);
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-
-.fade-input:focus {
-  outline: none;
-  border-color: var(--color-accent);
-}
-
-.fade-unit {
-  display: inline-block;
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  margin-top: 2px;
 }
 
 /* Waveform Section */
@@ -2459,6 +2441,8 @@ onUnmounted(() => {
 }
 
 .waveform-canvas {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;
@@ -2689,47 +2673,41 @@ onUnmounted(() => {
   width: auto;
 }
 
-/* Time Display Section (right side) */
-.time-display-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xs);
-  width: auto;
-  min-width: 0;
-  padding: 0 0 0 var(--spacing-sm);
-  border-left: 1px solid var(--color-border);
-}
-
-.time-field {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.time-field,
+.fade-control-group {
+  display: grid;
+  align-content: start;
 }
 
 .time-field-label-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 22px;
+  min-height: 20px;
   gap: var(--spacing-xs);
 }
 
 .time-field-label-row label,
-.time-field > label {
+.time-field > label,
+.fade-control-group > label {
+  display: flex;
+  align-items: center;
+  min-height: 20px;
   font-size: var(--type-metadata-size);
   color: var(--color-text-primary);
   font-weight: 600;
 }
 
 .time-field-set-btn {
-  height: 22px;
+  height: 20px;
+  min-height: 20px;
   padding: 0 6px;
   font-size: 10px;
 }
 
 .time-input-with-buttons {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) 30px;
+  grid-template-columns: var(--settings-control-height) minmax(0, 1fr) var(--settings-control-height);
   align-items: center;
   gap: 2px;
 }
@@ -2745,8 +2723,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 30px;
-  height: 30px;
+  min-width: var(--settings-control-height);
+  height: var(--settings-control-height);
   transition:
     color var(--transition-fast),
     background-color var(--transition-fast),
@@ -2768,8 +2746,9 @@ onUnmounted(() => {
 }
 
 .time-input {
-  height: 30px;
-  padding: 4px var(--spacing-xs);
+  width: 100%;
+  height: var(--settings-control-height);
+  padding: 0 var(--spacing-xs);
   background: var(--color-control);
   border: 1px solid var(--color-border);
   border-radius: var(--border-radius-sm);
@@ -2783,7 +2762,6 @@ onUnmounted(() => {
 }
 
 .time-input:focus-visible,
-.fade-input:focus-visible,
 .time-decrement:focus-visible,
 .time-increment:focus-visible,
 .trim-silence-btn:focus-visible,

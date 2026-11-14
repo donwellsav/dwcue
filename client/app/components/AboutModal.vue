@@ -58,6 +58,9 @@ onMounted(() => {
   padding: var(--dialog-padding);
   max-width: 500px;
   width: 90%;
+  max-height: var(--modal-max-height);
+  overflow-y: auto;
+  padding-top: calc(var(--dialog-padding) + 24px);
   position: relative;
   box-shadow: var(--dialog-shadow);
 }

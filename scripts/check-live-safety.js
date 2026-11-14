@@ -186,7 +186,6 @@ assert.match(
   'the new-project prompt must expose native dialog semantics',
 );
 const playlistItem = read('client/app/components/PlaylistItem.vue');
-const locationChoiceModal = read('client/app/components/LocationChoiceModal.vue');
 const quitConfirmModal = read('client/app/components/QuitConfirmModal.vue');
 const deleteSelectionModal = read('client/app/components/DeleteSelectionModal.vue');
 const waveformTrimmer = read('client/app/components/WaveformTrimmer.vue');
@@ -300,7 +299,7 @@ assert.match(
 );
 assert.equal((playlistItem.match(/class="status-pill up-next"/g) ?? []).length, 0, 'the separate Up Next status pill must be removed');
 assert.equal((playlistItem.match(/v-if="item\.endBehavior\?\.action === 'next'"/g) ?? []).length, 0, 'the obsolete end-next icon must be removed');
-assert.match(playlistItem, /class="video-badge-icon"[\s\S]{0,240}>VIDEO<\/span>/, 'video cues must use a readable VIDEO text badge');
+assert.match(playlistItem, /class="video-badge-icon"[\s\S]{0,600}>\{\{ videoCheckIssue \? 'VIDEO !' : 'VIDEO' \}\}<\/span>/, 'video cues must use a readable VIDEO text badge');
 assert.doesNotMatch(playlistItem, /class="material-symbols-rounded video-badge-icon"|>movie<\/span>/, 'video cues must not use the old movie glyph');
 assert.match(playlistItem, /class="set-next-action"[\s\S]{0,700}:label="t\('status\.upNext'\)"[\s\S]{0,700}:hover-label="[^"]+"/, 'the next control must combine its fixed Up Next label with the Play Next hover label');
 assert.match(
@@ -549,8 +548,8 @@ assert.ok(
 );
 assert.match(
   mainWorkspace,
-  /const newWidth = e\.clientX - rect\.left;[\s\S]*newWidth < snapThreshold[\s\S]*cartClosed\.value = true[\s\S]*newWidth > rect\.width - snapThreshold[\s\S]*cartFullscreen\.value = true/,
-  'the left-side cart splitter must close leftward and expand rightward',
+  /const newWidth = fromStart \/ zoom;[\s\S]*newWidth < snapThreshold[\s\S]*cartClosed\.value = true[\s\S]*newWidth > container\.offsetWidth - snapThreshold[\s\S]*cartFullscreen\.value = true/,
+  'the QuickPlays splitter must snap closed at the start and expanded at the end',
 );
 assert.match(
   mainWorkspace,
@@ -559,7 +558,7 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /&\.collapsed-left\s*\{[\s\S]*left:\s*0;[\s\S]*top:\s*var\(--panel-header-height\);/,
+  /&\.collapsed-left\s*\{[\s\S]*inset-inline-start:\s*0;[\s\S]*top:\s*var\(--panel-header-height\);/,
   'the closed-cart resize edge must start below the fixed header toggle',
 );
 assert.match(
@@ -589,7 +588,7 @@ assert.doesNotMatch(
 );
 assert.match(
   mainWorkspace,
-  /v-if="!cartFullscreen \|\| cartDetached" class="playlist-section"/,
+  /v-show="!cartFullscreen \|\| cartDetached" class="playlist-section"/,
   'detaching a fullscreen cart must reveal the playlist',
 );
 assert.match(
@@ -649,8 +648,8 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /<div class="workspace-content">[\s\S]*<div id="preview-lower-panel" class="preview-lower-panel"[\s\S]*\.preview-lower-panel\s*\{[\s\S]*flex:\s*0 0 112px;[\s\S]*\.preview-lower-panel:empty\s*\{[\s\S]*display:\s*none;/,
-  'the Preview target must be a fixed lower panel beneath the track workspace and collapse when unused',
+  /class="workspace-content"[\s\S]*<div id="preview-lower-panel" class="preview-lower-panel"[\s\S]*\.preview-lower-panel\s*\{[^}]*flex:\s*0 0 auto;[\s\S]*\.preview-lower-panel:empty\s*\{[\s\S]*display:\s*none;/,
+  'the Preview target must fit its controls and collapse when unused',
 );
 assert.match(
   playbackControls,
@@ -694,13 +693,23 @@ assert.match(
 );
 assert.match(
   mainWorkspace + playbackControls + propertiesPanel + waveformTrimmer,
-  /selectedItem\.uuid === previewItemUuid[\s\S]*handleOpenPreviewProperties[\s\S]*openItemProperties\(previewItemUuid\.value\)[\s\S]*:preview-mode="uiMode === 'playback'"[\s\S]*class="audition-transport"[\s\S]*handleCanvasPointerDown[\s\S]*previewMode[\s\S]*startPreview\(props\.audioItem\.uuid\)/,
+  /selectedItem\.value\.uuid === previewItemUuid\.value[\s\S]*handleOpenPreviewProperties[\s\S]*openItemProperties\(previewItemUuid\.value\)[\s\S]*:preview-mode="uiMode === 'playback'"[\s\S]*class="audition-transport"[\s\S]*handleCanvasPointerDown[\s\S]*previewMode[\s\S]*startPreview\(props\.audioItem\.uuid\)/,
   'Show Mode Preview must open the same cue in Properties and reuse its safe preview path for audition transport and playhead scrubbing',
 );
 assert.match(
-  propertiesPanel,
-  /height: `\$\{panelHeight\}px`[\s\S]*class="properties-resize-handle"[\s\S]*role="separator"[\s\S]*@pointerdown="startPanelResize"[\s\S]*@keydown="handlePanelResizeKey"/,
-  'Properties must remain vertically resizable by pointer and keyboard without replacing editor controls',
+  mainWorkspace,
+  /class="lower-workspace-panel"[\s\S]*:style="\{ height: [^"]+panelHeight[^"]+\}"[\s\S]*class="lower-panel-resize-handle"[\s\S]*role="separator"[\s\S]*@pointerdown="startPanelResize"[\s\S]*@keydown="handlePanelResizeKey"/,
+  'Settings, Properties, and imports must share the pointer and keyboard resize control',
+);
+assert.match(
+  mainWorkspace,
+  /settingsHeight = useState<number \| null>\('ProjectSettingsPanel.height', \(\) => null\);[\s\S]*panelHeight = computed\(\(\) => showProjectSettings\.value \? settingsHeight\.value\s*: visibleImportPanel\.value \? importHeight\.value : propertiesHeight\.value\);/,
+  'each lower panel must fit its contents until the operator resizes it',
+);
+assert.match(
+  mainWorkspace,
+  /\.workspace-content\s*\{[^}]*min-height:\s*calc\(var\(--panel-header-height\) \+ var\(--reserved-playlist-row-height\)[^}]*\}[\s\S]*\.lower-workspace-panel\s*\{[^}]*flex:\s*0 1 auto;/,
+  'the lower panel must give up space before the playlist loses a cue row',
 );
 assert.match(
   waveformTrimmer,
@@ -888,7 +897,7 @@ assert.match(
 );
 assert.match(
   projectSettingsModal,
-  /countdownColorBands[\s\S]*type="number"[\s\S]*type="color"[\s\S]*removeCountdownBand[\s\S]*addCountdownBand[\s\S]*saveProject/,
+  /addCountdownBand[\s\S]*countdownColorBands[\s\S]*type="number"[\s\S]*type="color"[\s\S]*removeCountdownBand[\s\S]*saveProject/,
   'countdown colour thresholds must be editable, addable, removable, and saved with the project',
 );
 assert.match(
@@ -1256,7 +1265,7 @@ assert.match(
 
 const electron = read('client/electron/main.js');
 const audioImportModal = read('client/app/components/AudioImportModal.vue');
-const updateModal = read('client/app/components/UpdateModal.vue');
+const aboutContent = read('client/app/components/AboutContent.vue');
 const cspHashStart = electron.indexOf('function cspHashesForInlineScripts');
 const cspHashEnd = electron.indexOf(
   '\n}\n\nfunction configureSessionSecurity', cspHashStart) + 2;
@@ -1478,7 +1487,7 @@ assert.doesNotMatch(
   'DonWells Cue must never install or advertise upstream LivePlay updates',
 );
 assert.doesNotMatch(
-  updateModal,
+  aboutContent,
   /isManualUpdate|downloadUrl|github\.io\/liveplay/,
   'the update UI must not fall back to upstream LivePlay downloads',
 );
@@ -1498,7 +1507,7 @@ assert.match(
 );
 assert.match(
   electron,
-  /check-for-updates[\s\S]{0,400}if \(!DWCUE_UPDATES_CONFIGURED\)/,
+  /ipcMain.handle\('check-for-updates'[\s\S]{0,400}if \(!DWCUE_UPDATES_CONFIGURED/,
   'the manual update check must fail closed when updates are disabled',
 );
 assert.match(
@@ -1521,6 +1530,10 @@ assert.match(
   /autoUpdater\.autoInstallOnAppQuit = false/,
   'updates must wait for an explicit install-on-now or install-on-exit choice',
 );
+assert.match(updateInstallation, /if \([^\n]*!downloadedUpdateVersion\) return false;/,
+  'install requests without a staged update must leave the engine running');
+assert.match(appVue, /showHeaderWarning\(message, 'advisory', 5\)/,
+  'startup update notices belong in the header for five seconds');
 assert.match(
   electron,
   /async function installDownloadedUpdate\([\s\S]{0,900}const shouldRunAfterInstall = runAfterInstall !== false[\s\S]{0,500}autoUpdater\.autoRunAppAfterInstall = shouldRunAfterInstall[\s\S]{0,180}autoUpdater\.quitAndInstall\(!shouldRunAfterInstall, shouldRunAfterInstall\)/,
@@ -1670,7 +1683,7 @@ assert.match(
 );
 assert.match(
   spotifyModal,
-  /v-if="progressState\?\.playlistName"[\s\S]{0,180}v-if="progressState\?\.message && isActive"[\s\S]*resultState\?\.projectFolderPath[\s\S]*openResultFolder/,
+  /v-if="!reviewState && progressState\?\.playlistName"[\s\S]{0,180}v-if="progressState\?\.message && isActive"[\s\S]*resultState\?\.projectFolderPath[\s\S]*openResultFolder/,
   'Spotify progress must keep the collection, current operation, result path, and reveal action visible',
 );
 assert.match(
@@ -1680,7 +1693,7 @@ assert.match(
 );
 assert.match(
   spotifyModal,
-  /const projectFolderPath = props\.projectFolderPath[\s\S]*const projectEpoch = props\.projectEpoch[\s\S]*props\.projectFolderPath !== projectFolderPath[\s\S]*props\.projectEpoch !== projectEpoch/,
+  /const projectFolderPath = props\.projectFolderPath[\s\S]*const projectEpoch = props\.projectEpoch[\s\S]*props\.projectFolderPath !== projectFolderPath[\s\S]*currentEpoch\.value !== projectEpoch/,
   'a Spotify job must stay bound to the project generation that started it',
 );
 const oneShotPanel = read('client/app/components/OneShotPanel.vue');
@@ -1723,18 +1736,23 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /\.cart-section\s*\{[\s\S]{0,80}flex:\s*0 0 auto;/,
-  'the cart must keep the exact width supplied by its splitter',
+  /\.cart-section\s*\{[^}]*flex:\s*0 0 auto;[^}]*max-width:\s*var\(--cart-max-width\);/,
+  'the splitter width must respect the workspace bound',
 );
 assert.match(
   mainWorkspace,
-  /getPropertyValue\('--resize-handle-width'\)[\s\S]{0,180}getPropertyValue\('--playlist-split-min-width'\)[\s\S]{0,140}const maxWidth = Math\.max\(0, rect\.width - handleWidth - minPlaylistWidth\);[\s\S]{0,80}const minWidth = Math\.min\(300, maxWidth\);[\s\S]*cartWidth\.value = Math\.round\(Math\.max\(minWidth, Math\.min\(maxWidth, newWidth\)\)\);/,
-  'cart resizing must preserve the mode-specific usable playlist width',
+  /const zoom = rect\.width \/ container\.offsetWidth \|\| 1;[\s\S]{0,260}const newWidth = fromStart \/ zoom;[\s\S]*cartWidth\.value = Math\.round\(newWidth\);/,
+  'the splitter must track the pointer at the current interface scale',
 );
 assert.match(
   mainWorkspace,
-  /\.main-workspace\.show-mode\s*\{[\s\S]{0,240}--playlist-split-min-width:\s*637px;[\s\S]*\.playlist-section\s*\{[\s\S]{0,140}min-width:\s*var\(--playlist-split-min-width\);[\s\S]*\.cart-section\s*\{[\s\S]{0,180}max-width:\s*calc\(100% - var\(--playlist-split-min-width\) - var\(--resize-handle-width\)\);[\s\S]{0,140}&\.cart-section--fullscreen\s*\{[\s\S]{0,80}max-width:\s*none;/,
+  /\.main-workspace\.show-mode\s*\{[\s\S]{0,240}--playlist-split-min-width:\s*637px;[\s\S]*\.playlist-section\s*\{[\s\S]{0,140}min-width:\s*var\(--playlist-split-min-width\);[\s\S]*\.cart-section\s*\{[^}]*--cart-max-width:\s*calc\(100% - var\(--playlist-split-min-width\) - var\(--resize-handle-width\)\);[^}]*&\.cart-section--fullscreen\s*\{[^}]*max-width:\s*none;/,
   'the split view must stay usable while fullscreen cart remains unconstrained',
+);
+assert.match(
+  mainWorkspace,
+  /@container \(max-width: 940px\)\s*\{\s*\.playlist-section\s*\{\s*min-width:\s*0;\s*\}\s*\.cart-section:not\(\.cart-section--fullscreen\)\s*\{\s*--cart-max-width:\s*min\(32%, 280px\);/,
+  'the narrow QuickPlays bank must share workspace width with the playlist',
 );
 assert.match(
   mainWorkspace,
@@ -1832,19 +1850,24 @@ assert.match(
   'settings dialogs must share one shell geometry',
 );
 assert.match(
+  mainWorkspace,
+  /<ShortcutsBar :compact="lowerPanelOpen" \/>[\s\S]*<ProjectSettingsModal :open="showProjectSettings"[\s\S]*<PropertiesPanel v-if="showCueProperties"[\s\S]*id="workspace-import-host"[\s\S]*const showCueProperties = computed\(\(\) => !showProjectSettings\.value && !visibleImportPanel\.value/,
+  'Settings, cue Properties, and imports must share the lower workspace without stacking',
+);
+assert.match(
   projectSettingsModal,
-  /\.project-settings-modal\s*\{[^}]*border-radius:\s*var\(--dialog-radius\);[^}]*width:\s*min\(800px, 94vw\);[^}]*max-height:\s*var\(--modal-max-height\);[\s\S]*\.close-x\s*\{[^}]*width:\s*var\(--spacing-xxl\);[^}]*height:\s*var\(--spacing-xxl\);/,
-  'project settings must use the shared dialog shell and close target',
+  /class="project-settings-panel"[\s\S]*class="workspace-panel-header settings-header"[\s\S]*<ControlConfigModal v-if="activeTab === 'shortcuts' \|\| activeTab === 'midi'"[\s\S]*?\/>[\s\S]*\.project-settings-panel\s*\{[^}]*flex:\s*1;/,
+  'Settings must fit the resizable workspace panel and host the same shortcuts editor',
+);
+assert.doesNotMatch(
+  projectSettingsModal + controlConfig,
+  /(?:project-settings-backdrop|control-config-overlay)/,
+  'Settings and Shortcuts must not use a full-window backdrop',
 );
 assert.match(
   controlConfig,
-  /\.control-config-panel\s*\{[\s\S]{0,180}border-radius:\s*var\(--dialog-radius\);[\s\S]{0,100}width:\s*min\(var\(--modal-width\), 92vw\);[\s\S]{0,80}max-height:\s*var\(--modal-max-height\);[\s\S]*\.config-header\s*\{[\s\S]{0,180}padding:\s*var\(--dialog-header-padding\);[\s\S]{0,80}border-bottom:\s*1px solid var\(--color-border\);[\s\S]*\.tab-bar\s*\{[\s\S]{0,80}flex-shrink:\s*0;[\s\S]{0,80}gap:\s*2px;[\s\S]*\.tab-btn\s*\{[\s\S]{0,80}min-height:\s*36px;[\s\S]*\.reset-btn,[\s\S]*\.done-btn\s*\{[\s\S]{0,120}padding:\s*var\(--spacing-sm\) var\(--spacing-lg\);/,
-  'shortcuts must use the same dialog header, tabs, and action rail as settings',
-);
-assert.match(
-  controlConfig,
-  /\.action-row\s*\{[\s\S]{0,100}display:\s*grid;[\s\S]{0,100}grid-template-columns:\s*130px minmax\(80px, 1fr\) 108px;[\s\S]*\.action-label\s*\{[\s\S]{0,60}grid-column:\s*1;[\s\S]*\.action-binding\s*\{[\s\S]{0,60}grid-column:\s*2;[\s\S]*\.action-buttons\s*\{[\s\S]{0,60}grid-column:\s*3;[\s\S]*\.clear-key-btn\s*\{[\s\S]{0,60}grid-column:\s*3;/,
-  'shortcut bindings must keep one column width whether or not an action button is present',
+  /\.config-body\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\);[\s\S]*\.action-label\s*\{\s*grid-column:\s*1;[\s\S]*\.action-binding\s*\{\s*grid-column:\s*2;[\s\S]*\.clear-key-btn\s*\{\s*grid-column:\s*3;/,
+  'each shortcut must keep its label, binding and Clear action together',
 );
 assert.doesNotMatch(
   `${controlConfig}\n${projectSettingsModal}\n${propertiesPanel}`,
@@ -1853,8 +1876,13 @@ assert.doesNotMatch(
 );
 assert.match(
   projectSettingsModal,
-  /\.settings-tabs\s*\{[\s\S]{0,80}flex-shrink:\s*0;[\s\S]*\.tab-btn\s*\{[\s\S]{0,100}min-height:\s*36px;/,
-  'settings tabs must keep their control height under the dialog height cap',
+  /\.settings-tabs\s*\{[^}]*grid-auto-columns:\s*minmax\(0, 1fr\);[^}]*align-self:\s*stretch;[^}]*min-width:\s*0;/,
+  'settings tabs must share the available header width',
+);
+assert.match(
+  projectSettingsModal,
+  /\.settings-content\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\);[\s\S]*\.settings-content--playback > \.settings-rows\s*\{[^}]*grid-template-rows:\s*subgrid;/,
+  'settings columns must share a grid and Playback Behaviour must align its corresponding rows',
 );
 assert.match(
   playbackControls,
@@ -1868,13 +1896,13 @@ assert.match(
 );
 assert.match(
   playlistView,
-  /\.playlist-actions\s*\{[\s\S]{0,160}flex:\s*0 0 auto;[\s\S]{0,120}margin-left:\s*auto;[\s\S]{0,120}overflow-x:\s*auto;[\s\S]*\.playlist-header \.workspace-panel-header__leading\s*\{[\s\S]{0,80}flex:\s*0 0 auto;/,
+  /\.playlist-actions\s*\{[\s\S]{0,160}flex:\s*0 1 auto;[\s\S]{0,120}margin-inline-start:\s*auto;[\s\S]{0,120}overflow-x:\s*auto;[\s\S]*\.playlist-header \.workspace-panel-header__leading\s*\{[\s\S]{0,80}flex:\s*0 0 auto;/,
   'playlist actions must stay bounded by the shared header at every supported width',
 );
 assert.match(
   projectHeader,
-  /class="header-titles">[\s\S]*class="silence-warning"[\s\S]*class="project-name"[\s\S]*\.silence-warning__label\s*\{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;/,
-  'the silence warning must stay above the project name and fit beside the header controls',
+  /class="header-name-line">\s*<h2\s+v-if="silenceSeconds === null && !warning"\s+class="project-name"[\s\S]*?<\/h2>\s*<div class="header-warning-line">[\s\S]*?class="silence-warning"[\s\S]*?id="project-header-warnings"/,
+  'the title slot must yield to the steady countdown and transient notices',
 );
 assert.match(
   playlistView,
@@ -1992,8 +2020,8 @@ assert.match(
 );
 assert.match(
   actionButton,
-  /\.action-btn--playlist\.set-next-action:not\(\.action-btn--active\)\s*\{[\s\S]*border-color:\s*rgba\(255, 255, 255, 0\.9\)[\s\S]*\.action-label-default\s*\{[\s\S]*display:\s*none;[\s\S]*:hover \.action-label-hover\s*\{[\s\S]*display:\s*inline;[\s\S]*:hover \.material-symbols-rounded\s*\{[\s\S]*display:\s*none;/,
-  'inactive Up Next must keep its white border, icon-only idle state, and text-only Play Next hover state',
+  /\.action-btn--playlist\.set-next-action:not\(\.action-btn--active\)\s*\{[^}]*color:\s*var\(--color-text-secondary\);[\s\S]*\.action-label-default\s*\{[\s\S]*display:\s*none;[\s\S]*:hover \.action-label-hover\s*\{[\s\S]*display:\s*inline;[\s\S]*:hover \.material-symbols-rounded\s*\{[\s\S]*display:\s*none;/,
+  'inactive Up Next must be legible in both themes and keep its icon and hover label',
 );
 assert.match(
   playlistItem,
@@ -2226,12 +2254,10 @@ assert.doesNotMatch(
   /onTriggerItem|onStopItem|onTriggerCartSlot|onStopAllCues|onApiUpdateItem|onApiUpdateCartItem|sendApiResponse/,
   'workspace startup must not call retired preload APIs',
 );
-assert.match(workspace, /downloadArchiveToFile\(result\.downloadToken, opts\.downloadTo\)/,
+assert.match(appVue, /downloadArchiveToFile\(result\.downloadToken, opts\.downloadTo\)/,
   'remote archive exports must bypass renderer memory');
-assert.match(workspace, /catch \(e\)[\s\S]*server\.lastError = `Export failed:/,
-  'archive export failures must be visible to the operator');
 assert.match(
-  workspace,
+  appVue,
   /runExport[\s\S]*await saveProject\(\{ force: true \}\)[\s\S]*exportProjectArchive/,
   'project export must persist the authoritative document before zipping disk state',
 );
@@ -2243,24 +2269,20 @@ assert.match(
 );
 assert.match(
   appVue,
-  /pendingArchiveClientPath[\s\S]*importProjectArchiveFromClientPath/,
+  /runImport\(source: \{ path: string; client: boolean \}[\s\S]*importProjectArchiveFromClientPath\(source\.path/,
   'remote archive imports must preserve a file path until chunked upload',
 );
-const archiveImportStart = appVue.indexOf('async function onImportServerPickerPick');
-const archiveImportEnd = appVue.indexOf(
-  '\n}\n\nasync function openImportedArchive', archiveImportStart,
-);
-assert.ok(archiveImportStart >= 0 && archiveImportEnd > archiveImportStart,
-  'app must define the archive import handler');
-const archiveImport = appVue.slice(archiveImportStart, archiveImportEnd);
-assert.equal(
-  (archiveImport.match(/server\.lastError = t\('importProgress\.openFailed'\);/g) ?? []).length,
-  3,
-  'unsupported, empty and failed archive imports must show the localized operator error',
-);
+assert.match(appVue, /defer to="#workspace-import-host"[\s\S]*class="archive-panel"[\s\S]*<progress[\s\S]*<ServerFilePickerModal [^>]*docked/,
+  'archive destination, progress and results must share the lower workspace');
+assert.doesNotMatch(appVue + workspace, /<(?:LocationChoiceModal|ProgressModal|ProjectSelectionModal)/,
+  'archive operations must not mount the old blocking dialogs');
+assert.match(appVue, /function showArchiveFailure[\s\S]*phase: 'failed', message[\s\S]*showHeaderWarning\(message, 'urgent'\)/,
+  'archive failures must appear in the dock and header');
+assert.equal((appVue.match(/openImportedArchive\(/g) ?? []).length, 2,
+  'an archive may open only from the operator action in its receipt');
 assert.match(
   appVue,
-  /if \(installOnExitRequested\)[\s\S]{0,260}runAfterInstall: false/,
+  /if \(update\.installOnExit\)[\s\S]{0,260}runAfterInstall: false/,
   'Install on Exit must pass the no-relaunch mode through the quit IPC',
 );
 
@@ -2273,11 +2295,13 @@ assert.match(
 
 const spotifyImportModal = read('client/app/components/SpotifyImportModal.vue');
 const youtubeImportModal = read('client/app/components/YouTubeImportModal.vue');
-assert.match(
-  spotifyImportModal,
-  /class="icon-btn"[\s\S]*:aria-label="t\('actions\.close'\)"/,
-  'the Spotify dialog close button must expose an accessible name',
-);
+assert.match(mainWorkspace, /class="workspace-import-close" :aria-label="t\('actions\.close'\)"/,
+  'the shared import close button must expose an accessible name');
+assert.match(playlistView,
+  /<Teleport defer to="#workspace-import-host">\s*<YouTubeImportModal[\s\S]*:visible="workspaceImportPanel === 'youtube'"\s*:is-open="importOpen.youtube"[\s\S]*<SpotifyImportModal[\s\S]*:visible="workspaceImportPanel === 'spotify'"\s*:open="importOpen.spotify"[\s\S]*<AudioImportModal [^>]*docked/,
+  'hiding an import must preserve its job and selection inside the shared workspace');
+assert.doesNotMatch(spotifyImportModal + youtubeImportModal, /aria-modal|--dialog-backdrop|<Teleport to="body"/,
+  'online imports must not block the playlist or transport with a modal');
 
 const electronMain = read('client/electron/main.js');
 const electronPreload = read('client/electron/preload.js');
@@ -2318,7 +2342,7 @@ assert.match(
 );
 assert.match(
   electronMain,
-  /spotify-preflight[\s\S]*'save', metadataUrl, '--save-file', '-', '--ffmpeg', ffmpegPath[\s\S]*selectedTracks = selectedTrackIds\.map[\s\S]*selectedTracks\.some\(\(track\) => !track\)[\s\S]*const chunkTracks = selectedTracks\.slice[\s\S]*'url', \.\.\.chunkTracks\.map\(\(track\) => track\.spotifyUrl\)/,
+  /spotify-preflight[\s\S]*'save', metadataUrl, '--save-file', metadataFile, '--ffmpeg', ffmpegPath[\s\S]*selectedTracks = selectedTrackIds\.map[\s\S]*selectedTracks\.some\(\(track\) => !track\)[\s\S]*const chunkTracks = selectedTracks\.slice[\s\S]*'url', \.\.\.chunkTracks\.map\(\(track\) => track\.spotifyUrl\)/,
   'Spotify review must stay metadata-only and download only the validated selected tracks',
 );
 assert.match(
@@ -2384,7 +2408,7 @@ assert.match(
 );
 assert.match(
   oneShotPanel,
-  /props\.isDetachedWindow[\s\S]*'detachedShow'[\s\S]*'detachedRegular'[\s\S]*'attachedShow'[\s\S]*'attachedRegular'[\s\S]*const contentMinHeight = Math\.ceil\(104 \+ 35 \* oneShotFontScale\.value \/ 100\);[\s\S]{0,100}const minHeight = Math\.max\(layout\.minHeight, contentMinHeight\);[\s\S]{0,220}--one-shot-columns[\s\S]*--one-shot-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--one-shot-columns, 2\), minmax\(128px, 1fr\)\)[\s\S]{0,160}grid-auto-rows:\s*var\(--one-shot-row-height, 106px\)[\s\S]{0,240}overflow-x:\s*auto;[\s\S]{0,80}overflow-y:\s*auto;/,
+  /props\.isDetachedWindow[\s\S]*'detachedShow'[\s\S]*'detachedRegular'[\s\S]*'attachedShow'[\s\S]*'attachedRegular'[\s\S]*const contentMinHeight = Math\.ceil\(80 \+ 48 \* oneShotFontScale\.value \/ 100\);[\s\S]{0,100}const minHeight = Math\.max\(layout\.minHeight, contentMinHeight\);[\s\S]{0,220}--one-shot-columns[\s\S]*--one-shot-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--one-shot-columns, 2\), minmax\(128px, 1fr\)\)[\s\S]{0,160}grid-auto-rows:\s*var\(--one-shot-row-height, 106px\)[\s\S]{0,240}overflow-x:\s*auto;[\s\S]{0,80}overflow-y:\s*auto;/,
   'One Shots must preserve exact profile columns while reserving a measured safe width and font-scaled two-line row height',
 );
 assert.doesNotMatch(
@@ -2425,7 +2449,7 @@ assert.match(
 );
 assert.match(
   projectSettingsModal,
-  /cartPlayerLayout[\s\S]*minimumCardHeight[\s\S]*visibleRows[\s\S]*columns[\s\S]*cartGridProfileOptions[\s\S]*attachedRegular[\s\S]*attachedShow[\s\S]*detachedRegular[\s\S]*detachedShow[\s\S]*onCartGridLayoutChange[\s\S]*input\.value\.trim\(\)[\s\S]*setCartGridLayout/,
+  /cart-layout-grid[\s\S]*minimumCardHeight[\s\S]*visibleRows[\s\S]*columns[\s\S]*cartGridProfileOptions[\s\S]*attachedRegular[\s\S]*attachedShow[\s\S]*detachedRegular[\s\S]*detachedShow[\s\S]*onCartGridLayoutChange[\s\S]*input\.value\.trim\(\)[\s\S]*setCartGridLayout/,
   'settings must expose height, visible rows, and columns for all four One Shot layout profiles',
 );
 assert.match(
@@ -2434,9 +2458,9 @@ assert.match(
   'keyboard and MIDI configuration must follow the configured One Shot cells',
 );
 assert.match(
-  `${locationChoiceModal}\n${quitConfirmModal}`,
-  /\.lc-modal\s*\{[\s\S]{0,220}border-radius:\s*var\(--dialog-radius\);[\s\S]{0,100}width:\s*min\(var\(--modal-width, 560px\), 92vw\);[\s\S]{0,80}padding:\s*var\(--dialog-padding\);[\s\S]*\.qm-modal\s*\{[\s\S]{0,220}border-radius:\s*var\(--dialog-radius\);[\s\S]{0,100}width:\s*min\(var\(--modal-width, 560px\), 92vw\);[\s\S]{0,80}padding:\s*var\(--dialog-padding\);/,
-  'confirmation and location dialogs must share the main modal shell geometry',
+  quitConfirmModal,
+  /\.qm-modal\s*\{[\s\S]{0,220}border-radius:\s*var\(--dialog-radius\);[\s\S]{0,100}width:\s*min\(var\(--modal-width, 560px\), 92vw\);[\s\S]{0,80}padding:\s*var\(--dialog-padding\);/,
+  'quit confirmation must use the main modal shell geometry',
 );
 assert.match(
   midiController,
@@ -2505,8 +2529,8 @@ assert.match(
 );
 assert.match(
   oneShotPanel,
-  /one-shot-header[\s\S]{0,300}v-if="!showMode"[\s\S]{0,120}t\('oneShots\.hint'\)/,
-  'the One Shots header must reserve its import guidance for editable regular mode',
+  /one-shot-header workspace-panel-header" :title="showMode \? undefined : t\('oneShots\.hint'\)"/,
+  'QuickPlays import guidance must remain available in Edit Mode',
 );
 assert.match(
   oneShotPanel,
@@ -2581,21 +2605,13 @@ for (const file of [
   'AudioImportModal.vue',
   'CartHotkeyConfig.vue',
   'ConnectionLostModal.vue',
-  'ControlConfigModal.vue',
   'DeleteSelectionModal.vue',
   'LoadingOverlay.vue',
-  'LocationChoiceModal.vue',
-  'ProgressModal.vue',
-  'ProjectSelectionModal.vue',
-  'ProjectSettingsModal.vue',
   'QuitConfirmModal.vue',
   'ServerFilePickerModal.vue',
   'ServerSettingsModal.vue',
   'SessionRecoveryModal.vue',
-  'SpotifyImportModal.vue',
   'UnsavedChangesModal.vue',
-  'UpdateModal.vue',
-  'YouTubeImportModal.vue',
 ].map(file => `client/app/components/${file}`).concat('client/app/app.vue')) {
   const dialog = read(file);
   for (const token of ['backdrop', 'surface', 'radius', 'shadow']) {

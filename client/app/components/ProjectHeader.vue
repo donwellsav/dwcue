@@ -6,7 +6,12 @@
         alt="DonWells Cue"
         class="header-logo"
       />
-      <div class="header-titles">
+      <div class="header-name-line">
+        <h2
+          v-if="silenceSeconds === null && !warning"
+          class="project-name"
+          :title="currentProject?.name || t('project.noProject')"
+        >{{ currentProject?.name || t('project.noProject') }}</h2>
         <div class="header-warning-line">
           <div
             v-if="silenceSeconds !== null"
@@ -15,15 +20,10 @@
           >
             <span class="silence-warning__label">{{ t('project.silenceWarning') }}</span>
             <bdi class="silence-warning__seconds">{{ silenceSeconds }}</bdi>
-            <span>{{ t('project.seconds') }}</span>
+            <span class="silence-warning__label">{{ t('project.seconds') }}</span>
           </div>
-          <span v-else-if="!warning" class="brand-wordmark">{{ t('app.name') }}</span>
           <div id="project-header-warnings" class="header-warning-slot"></div>
         </div>
-        <h2
-          class="project-name"
-          :title="currentProject?.name || t('project.noProject')"
-        >{{ currentProject?.name || t('project.noProject') }}</h2>
       </div>
       <span
         v-if="currentProject && !autoSaveEnabled && hasUnsavedChanges"
@@ -35,7 +35,10 @@
       <!-- Appears the moment the socket drops; spins for as long as we retry. -->
       <ConnectionStatusPill />
 
-      <Btn :text="t('settings.title')" @click="showProjectSettings = true" />
+      <Btn :text="t('settings.title')" :aria-expanded="showProjectSettings"
+        @click="showProjectSettings = !showProjectSettings" />
+      <Btn v-if="update.version" class="update-indicator" :text="t('update.updateAvailable')"
+        @click="settingsTab = 'about'; showProjectSettings = true" />
       <Btn
         :text="t('settings.tabVideoOutput')"
         symbol="video-output"
@@ -106,19 +109,9 @@
     </div>
   </div>
 
-  <ControlConfigModal
-    v-if="showControlConfig"
-    @close="showControlConfig = false"
-  />
-  <ProjectSettingsModal
-    :open="showProjectSettings"
-    @close="showProjectSettings = false"
-    @open-shortcuts="showProjectSettings = false; showControlConfig = true"
-  />
 </template>
 
 <script setup lang="ts">
-import ProjectSettingsModal from './ProjectSettingsModal.vue';
 import Btn from './Btn.vue';
 import VideoConfidenceChip from './VideoConfidenceChip.vue';
 import { useVideoOutputToggle } from '~/composables/useCartHotkeys';
@@ -130,7 +123,8 @@ const { activeCues } = useAudioEngine();
 const { uiMode, toggleUiMode } = useUiMode();
 const { warning, silenceRemaining } = useHeaderWarnings();
 
-const showControlConfig = useState('showControlConfig', () => false);
+const { update } = useAppUpdate();
+const settingsTab = useState('projectSettingsTab', () => 'audio');
 const showProjectSettings = useState('showProjectSettings', () => false);
 
 const isDark = computed(() => currentProject.value?.theme.mode === 'dark');
@@ -355,6 +349,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--spacing-sm);
   flex: 0 0 var(--app-header-height);
   height: var(--app-header-height);
   padding: var(--spacing-xs) var(--workspace-gutter);
@@ -365,7 +360,7 @@ onMounted(() => {
 .header-left {
   display: flex;
   align-items: center;
-  flex: 0 1 auto;
+  flex: 1;
   min-width: 0;
   gap: var(--spacing-sm);
 }
@@ -377,19 +372,13 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-/* The warning and wordmark share one line above the project name. */
-.header-titles {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-width: 0;
-}
-
+.header-name-line,
 .header-warning-line {
   display: flex;
   align-items: center;
+  flex: 1;
   gap: var(--spacing-xs);
-  height: 18px;
+  min-width: 0;
 }
 
 .header-warning-slot {
@@ -400,34 +389,15 @@ onMounted(() => {
   display: none;
 }
 
-.brand-wordmark,
-.silence-warning {
-  flex: none;
-  display: flex;
-  align-items: center;
-  align-self: flex-start;
-  box-sizing: border-box;
-  max-width: 100%;
-  height: 18px;
-  white-space: nowrap;
-}
-
-.brand-wordmark {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  line-height: 1.1;
-  color: var(--color-text-secondary);
-}
-
 .project-name {
   font-size: var(--type-project-size);
   font-weight: 650;
   letter-spacing: -0.01em;
   color: var(--color-text-primary);
   margin: 0;
-  max-width: clamp(140px, 24vw, 420px);
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(420px, 100%);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -457,6 +427,10 @@ onMounted(() => {
   color: var(--color-accent);
 }
 
+.header-right :deep(.update-indicator) {
+  color: var(--state-up-next);
+}
+
 .header-right :deep(.btn:hover:not(:disabled)),
 .autosave-toggle:hover:not(:disabled) {
   color: var(--color-text-primary);
@@ -477,7 +451,7 @@ onMounted(() => {
   white-space: nowrap;
   flex-shrink: 0;
   background-color: var(--state-up-next);
-  color: black;
+  color: var(--state-up-next-text);
 }
 
 /* Autosave toggle switch */
@@ -618,13 +592,19 @@ onMounted(() => {
 }
 
 .silence-warning {
+  flex: none;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  max-width: calc(100% - 60px);
+  white-space: nowrap;
   gap: var(--spacing-xs);
-  padding-inline: var(--spacing-xs);
-  border: 1px solid var(--state-up-next);
+  padding: var(--spacing-xs) var(--spacing-lg);
+  border: 2px solid var(--state-up-next);
   border-radius: var(--control-radius);
   background-color: var(--color-surface-raised);
   font-weight: 700;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--state-up-next);
 }
 

@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
+const { once } = require('node:events');
 const { constants } = require('node:fs');
 const { mkdir, mkdtemp, open, readFile, rename, rm, stat, utimes, writeFile } = require('node:fs/promises');
 const http = require('node:http');
@@ -60,6 +61,7 @@ test('project session preconditions reject delayed edits after switching or reop
     ['PATCH', '/api/project/settings', { autoSave: false }],
     ['PUT', '/api/project/document', project('late-replacement')],
     ['POST', '/api/project/save', { path: p, document: project('late-save') }],
+    ['POST', '/api/project/export', { folderPath: path.dirname(p), outputPath: path.join(path.dirname(p), 'Test.dwcuepack') }],
     ['POST', '/api/project/close', {}],
     ['POST', '/api/project/repair', {}],
     ['POST', '/api/project/load', { path: p }],
@@ -477,6 +479,100 @@ test('waveform caches and analysis identify the current file revision', { timeou
       body: JSON.stringify({ path: media, item_uuid: 'late-old-show' }) });
     assert.equal(stale.status, 409, await stale.text());
   });
+});
+
+async function startWithHeldAudio(t) {
+  const folder = await mkdtemp(path.join(os.tmpdir(), 'dwcue-driver-lifecycle-'));
+  const gate = path.join(folder, 'audio-start.gate');
+  const pidfile = path.join(folder, 'server.lock');
+  const port = await unusedPort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  await writeFile(gate, '');
+  const children = [];
+  let diagnostics = '';
+  const start = () => {
+    const child = spawn(serverBinary, ['--bind', '127.0.0.1', '--port', String(port), '--pidfile', pidfile], {
+      cwd: folder,
+      env: { ...process.env, LIVEPLAY_STATE_DIR: path.join(folder, 'state'),
+        LIVEPLAY_ACCESS_TOKEN: accessToken, LIVEPLAY_ALLOWED_ORIGINS: baseUrl,
+        DWCUE_TEST_DEVICE_START_GATE: gate },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    child.stdout.on('data', chunk => { diagnostics += chunk; });
+    child.stderr.on('data', chunk => { diagnostics += chunk; });
+    children.push(child);
+    return child;
+  };
+  t.after(async () => {
+    await rm(gate, { force: true });
+    for (const child of children) await stopServer(child);
+    await rm(folder, { recursive: true, force: true });
+  });
+  const child = start();
+  try {
+    const reached = async () => readFile(gate + '.entered', 'utf8').catch(() => '');
+    for (let i = 0; i < 150 && !(await reached()); ++i)
+      await new Promise(resolve => setTimeout(resolve, 20));
+    assert.match(await reached(), /starting/, 'the software driver is held in start');
+    await waitForServer(baseUrl, child);
+  } catch (error) {
+    error.message += `\nNative server diagnostics:\n${diagnostics}`;
+    throw error;
+  }
+  return { baseUrl, child, folder, gate, pidfile, start };
+}
+
+test('held default audio startup leaves the server usable', { timeout: 15000 }, async t => {
+  const { baseUrl, child, folder, gate } = await startWithHeldAudio(t);
+  const health = await (await request(baseUrl, '/api/health')).json();
+  assert.equal(health.pid, child.pid);
+  const stopped = await request(baseUrl, '/api/transport/stop_all', {
+    method: 'POST', body: JSON.stringify({ fade_ms: 0 }),
+  });
+  assert.equal(stopped.status, 200, await stopped.text());
+  const summary = await (await request(baseUrl, '/api/state/summary')).json();
+  assert.deepEqual(summary.playing, []);
+
+  const media = path.join(folder, 'silence.wav');
+  const show = path.join(folder, 'native-routing.dwcue');
+  await writeFile(media, silentWav());
+  await writeFile(show, JSON.stringify({ schema_version: 2, project_name: 'Native routing',
+    cues: [{ id: 'native-cue', file_path: media }] }));
+  const loaded = await request(baseUrl, '/api/project/load', {
+    method: 'POST', body: JSON.stringify({ path: show }),
+  });
+  assert.equal(loaded.status, 200, await loaded.text());
+  const cue = await request(baseUrl, '/api/cues/native-cue');
+  assert.equal(cue.status, 200, await cue.text());
+  const devices = async () => (await request(baseUrl, '/api/devices')).json();
+  assert.ok((await devices()).every(device => !device.is_open),
+    'the output has not been published while the driver is held');
+  await rm(gate);
+  const outputReady = async () => (await devices()).some(device => device.runtime_state === 'running');
+  for (let i = 0; i < 100 && !(await outputReady()); ++i)
+    await new Promise(resolve => setTimeout(resolve, 20));
+  assert.ok(await outputReady(), 'Main starts when the driver returns');
+  assert.deepEqual((await (await request(baseUrl, '/api/state/summary')).json()).playing, []);
+});
+
+test('engine shutdown exits and releases its port with the audio driver still held', {
+  timeout: 15000, skip: process.platform === 'win32',
+}, async t => {
+  const { baseUrl, child, gate, pidfile, start } = await startWithHeldAudio(t);
+  const exited = once(child, 'exit', { signal: AbortSignal.timeout(4000) });
+  assert.ok(child.kill('SIGINT'));
+  assert.deepEqual(await exited, [1, null], 'the server exits on its own shutdown deadline');
+  assert.equal(await readFile(gate, 'utf8'), '', 'the test never released the driver before exit');
+
+  await rm(gate);
+  const replacement = start();
+  await waitForServer(baseUrl, replacement);
+  assert.equal((await (await request(baseUrl, '/api/health')).json()).pid, replacement.pid);
+  assert.equal(JSON.parse(await readFile(pidfile, 'utf8')).pid, replacement.pid);
+  const cleanExit = once(replacement, 'exit', { signal: AbortSignal.timeout(4000) });
+  assert.ok(replacement.kill('SIGTERM'));
+  assert.deepEqual(await cleanExit, [0, null], 'healthy shutdown still completes normally');
+  await assert.rejects(readFile(pidfile), { code: 'ENOENT' });
 });
 
 test('crash recovery respects newer intent and resumes without repeating crossed actions', { timeout: 45000 }, async t => {

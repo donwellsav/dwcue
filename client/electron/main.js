@@ -32,6 +32,8 @@ const { cleanupConnectionFor, TestCardPlayback } = require('./test-card-playback
 const { managedWebSocketHeaders } = require('./managed-websocket-origin');
 const { createOneShotMutationBroker, validateIdentity, sameIdentity } = require('./one-shot-mutation-broker');
 const { createStandbyCaptureStore, findCaptureCue, captureImageUrl } = require('./video-standby-capture');
+const { DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameCaptureRect } = require('./video-output-framing.mjs');
+const { checkVideoFrame } = require('./video-frame-check');
 const { createAppLifecycleActions, createWillQuitHandler } = require('./terminal-action');
 const { createOperatorManual } = require('./operator-manual');
 const {
@@ -2015,11 +2017,12 @@ let manualCheckPending = false;
 // instead of throwing from quitAndInstall. Keep the close veto armed only
 // while an install attempt is actually live.
 let updateInstallAttemptActive = false;
+let downloadedUpdateVersion = '';
 // A downloaded update must not replace the app while the detached audio
 // server still owns files from the current installation (especially the old
 // Windows executable). Both Install Now and Install on Exit use this helper.
 async function installDownloadedUpdate({ runAfterInstall = true } = {}) {
-  if (!DWCUE_UPDATES_CONFIGURED || !updatesInstallSupported) return false;
+  if (!DWCUE_UPDATES_CONFIGURED || !updatesInstallSupported || !downloadedUpdateVersion) return false;
   try {
     await prepareForTerminalAction();
     const serverStopped = await stopLiveplayServer();
@@ -2092,6 +2095,7 @@ autoUpdater.on('download-progress', (progressObj) => {
 });
 
 autoUpdater.on('update-downloaded', (info) => {
+  downloadedUpdateVersion = info.version;
   console.log('Update downloaded:', info.version);
   if (mainWindow) {
     mainWindow.webContents.send('update-downloaded', {
@@ -2141,20 +2145,7 @@ function createWindow() {
     console.error('Failed to load:', errorCode, errorDescription);
   });
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
-    
-    // Silent startup check against the pinned GitHub feed. The renderer
-    // defers showing the update modal while Show Mode is active.
-    if (!isDevMode && DWCUE_UPDATES_CONFIGURED) {
-      // Wait a bit for the window to fully load before checking updates
-      setTimeout(() => {
-        autoUpdater.checkForUpdates().catch(err => {
-          console.error('Failed to check for updates:', err);
-        });
-      }, 3000);
-    }
-  });
+  mainWindow.once('ready-to-show', () => mainWindow.show());
 
   // Veto the first close so the renderer can run its quit-confirmation
   // flow (unsaved changes → optionally shut the local audio server down).
@@ -2179,7 +2170,7 @@ function createWindow() {
   createMenu('en', isDevMode);
 }
 
-// Create detached One Shots window (IPC/query names stay backward compatible).
+// Create detached QuickPlays window (IPC/query names stay backward compatible).
 function createCartPlayerWindow() {
   if (cartPlayerWindow) {
     cartPlayerWindow.focus();
@@ -2191,7 +2182,7 @@ function createCartPlayerWindow() {
     height: 700,
     minWidth: 380,
     minHeight: 400,
-    title: 'DonWells Cue - One Shots',
+    title: 'DonWells Cue - QuickPlays',
     icon: path.join(__dirname, '../assets/icons/2x/app_icon_darkmode@2x.png'),
     webPreferences: {
       nodeIntegration: false,
@@ -2404,6 +2395,7 @@ function readVideoOutputConfig() {
       displayId: typeof parsed.displayId === 'string' ? parsed.displayId : null,
       captureDisplayId: typeof parsed.captureDisplayId === 'string' ? parsed.captureDisplayId : null,
       captureTarget: parsed.captureTarget === 'cue' ? 'cue' : 'session',
+      framing: readVideoFraming(parsed.framing) ?? DEFAULT_VIDEO_FRAMING,
       // Resolution+label hint for re-attach when the OS hands out a new display
       // id after a reconnect. Ambiguous for two identical projectors — the id
       // stays the primary key; the fingerprint is only a fallback hint.
@@ -2413,7 +2405,7 @@ function readVideoOutputConfig() {
     };
   } catch {
     return { displayId: null, displayFingerprint: null, captureDisplayId: null,
-      captureTarget: 'session', testCardConfig: createTestCardConfig() };
+      captureTarget: 'session', framing: DEFAULT_VIDEO_FRAMING, testCardConfig: createTestCardConfig() };
   }
 }
 
@@ -2485,6 +2477,7 @@ function videoOutputStatus() {
     displayId: cfg.displayId,
     captureDisplayId: cfg.captureDisplayId,
     captureTarget: cfg.captureTarget,
+    framing: cfg.framing,
     targetId: target ? String(target.id) : null,
     targetLabel: target ? (target.label || `Display ${target.id}`) : null,
     displays,
@@ -2786,7 +2779,7 @@ function createVideoOutputWindow() {
   } else {
     // Preview mode: single-display (or unassigned) machines get a normal
     // window instead of a hostile fullscreen black takeover.
-    Object.assign(options, { width: 960, height: 540, minWidth: 320, minHeight: 180 });
+    Object.assign(options, { useContentSize: true, width: 960, height: 540, minWidth: 320, minHeight: 180 });
   }
 
   const outputWindow = new BrowserWindow(options);
@@ -3033,6 +3026,83 @@ function requireCaptureTarget(event, target) {
   return cue;
 }
 
+ipcMain.handle('video-output:set-framing', (event, value) => {
+  requireTrustedIpc(event);
+  if (event.sender !== mainWindow?.webContents) throw new Error('Picture framing requires the main workspace.');
+  const framing = readVideoFraming(value);
+  if (!framing) throw new TypeError('Invalid picture framing.');
+  const config = readVideoOutputConfig();
+  config.framing = framing;
+  if (!writeVideoOutputConfig(config)) throw new Error('Could not save picture framing.');
+  return broadcastVideoOutputStatus();
+});
+
+let videoFrameProbe = null;
+
+function requireVideoCheckOwner(event) {
+  requireTrustedIpc(event);
+  if (event.sender !== mainWindow?.webContents || !event.senderFrame || event.senderFrame !== event.sender.mainFrame) {
+    throw new Error('Video checks require the main workspace.');
+  }
+}
+
+ipcMain.on('video-output:cancel-frame-check', (event, checkId) => {
+  if (event.sender !== mainWindow?.webContents || !event.senderFrame || event.senderFrame !== event.sender.mainFrame) return;
+  if (videoFrameProbe?.id === checkId) videoFrameProbe.controller.abort();
+});
+
+ipcMain.handle('video-output:check-frame', async (event, request) => {
+  requireVideoCheckOwner(event);
+  requireBoundedIpcObject(request, 'video check', 64 * 1024);
+  const id = requireIpcString(request?.id, 'checkId', 64);
+  const sessionId = requireIpcString(request.sessionId, 'sessionId', 256);
+  const uuid = requireIpcString(request.uuid, 'itemUuid', 256);
+  const fileRevision = request.fileRevision === null ? null
+    : requireIpcString(request.fileRevision, 'fileRevision', 1024);
+  const { inPoint, accessToken } = request;
+  if (!Number.isFinite(inPoint) || inPoint < 0) throw new TypeError('Invalid video cue in point.');
+  if (typeof accessToken !== 'string' || accessToken.length > 8192 || /[\0\r\n]/.test(accessToken)) {
+    throw new TypeError('Invalid server credential.');
+  }
+  const serverUrl = new URL(requireIpcString(request.serverUrl, 'serverUrl', 2048));
+  const config = readLiveplayConfig();
+  const configuredUrl = new URL(config.mode === 'remote'
+    ? config.remoteUrl : `http://127.0.0.1:${config.localPort}`);
+  const base = serverUrl.href.replace(/\/+$/, '');
+  if (!['http:', 'https:'].includes(serverUrl.protocol) || serverUrl.username || serverUrl.password ||
+    serverUrl.search || serverUrl.hash || base !== configuredUrl.href.replace(/\/+$/, '')) {
+    throw new Error('Video checks must use the selected Cue server.');
+  }
+  if (sessionId !== currentCaptureSession || !findCaptureCue(currentProjectData, uuid)?.hasVideo) {
+    throw new Error('The video cue is no longer in the current show.');
+  }
+  if (videoFrameProbe) throw new Error('A video check is already running.');
+
+  const params = new URLSearchParams({ item_uuid: uuid, project_session_id: sessionId });
+  if (fileRevision) params.set('file_revision', fileRevision);
+  if (accessToken) params.set('access_token', accessToken);
+  const owner = event.sender;
+  const controller = new AbortController();
+  videoFrameProbe = { id, controller };
+  const cancel = () => controller.abort();
+  const onNavigate = details => {
+    if (details.isMainFrame && !details.isSameDocument) cancel();
+  };
+  owner.once('destroyed', cancel);
+  owner.once('render-process-gone', cancel);
+  owner.on('did-start-navigation', onNavigate);
+  try {
+    return await checkVideoFrame(`${base}/api/media?${params}`, inPoint, controller.signal);
+  } finally {
+    videoFrameProbe = null;
+    if (!owner.isDestroyed()) {
+      owner.removeListener('destroyed', cancel);
+      owner.removeListener('render-process-gone', cancel);
+      owner.removeListener('did-start-navigation', onNavigate);
+    }
+  }
+});
+
 ipcMain.handle('video-output:set-capture-settings', (event, displayId, target) => {
   requireCaptureOwner(event);
   if (target !== 'session' && target !== 'cue') throw new TypeError('Invalid standby capture destination.');
@@ -3062,19 +3132,31 @@ ipcMain.handle('video-output:capture-standby', async (event, source, target) => 
         !output.webContents.isDestroyed() && videoOutputRendererReady &&
         videoOutputRendererResponsive && !videoOutputRecoveryRequired;
       if (!ready()) throw new Error('Open Video Output and wait for its picture before capturing.');
-      image = await output.webContents.capturePage();
+      const [width, height] = output.getContentSize();
+      const framing = readVideoOutputConfig().framing;
+      const { scaleFactor } = screen.getDisplayMatching(output.getBounds());
+      image = await output.webContents.capturePage(videoFrameCaptureRect(width, height, framing, scaleFactor));
       if (!ready()) throw new Error('Video Output changed during capture. Try again.');
+      const [currentWidth, currentHeight] = output.getContentSize();
+      if (currentWidth !== width || currentHeight !== height
+          || screen.getDisplayMatching(output.getBounds()).scaleFactor !== scaleFactor
+          || JSON.stringify(readVideoOutputConfig().framing) !== JSON.stringify(framing)) {
+        throw new Error('Video Output changed during capture. Try again.');
+      }
     } else if (source === 'display') {
       const { captureDisplayId } = readVideoOutputConfig();
       const available = () => videoOutputDisplays().some(display => display.id === captureDisplayId);
       if (!captureDisplayId || !available()) throw new Error('Choose an available capture display in Video Output settings.');
       const sources = await desktopCapturer.getSources({
-        types: ['screen'], thumbnailSize: { width: 1920, height: 1080 },
+        types: ['screen'], thumbnailSize: { width: 3840, height: 2160 },
       });
       if (!available() || readVideoOutputConfig().captureDisplayId !== captureDisplayId) {
         throw new Error('The selected capture display changed. Try again.');
       }
       image = sources.find(entry => entry.display_id === captureDisplayId)?.thumbnail;
+      if (!image || image.isEmpty()) {
+        throw new Error('No picture was captured from the selected display. Check screen recording permission and try again.');
+      }
     } else {
       throw new TypeError('Invalid standby capture source.');
     }
@@ -4165,14 +4247,13 @@ ipcMain.handle('update-menu-language', async (event, locale) => {
 
 // Auto-updater IPC handlers. The feed is configured above (setFeedURL pins
 // donwellsav/dwcue); these only run the flow.
-ipcMain.handle('check-for-updates', async (event) => {
+ipcMain.handle('check-for-updates', async (event, silent = false) => {
   requireTrustedIpc(event);
-  if (!DWCUE_UPDATES_CONFIGURED) {
+  if (!DWCUE_UPDATES_CONFIGURED || (silent === true && isDevMode)) {
     return { success: false, error: 'Updates are not configured for this build.' };
   }
   try {
-    console.log('Manual update check requested');
-    manualCheckPending = true;
+    if (silent !== true) manualCheckPending = true;
     const result = await autoUpdater.checkForUpdates();
     // update-available / update-not-available events carry the renderer
     // notification; this return also reports which update was found (null
@@ -4300,6 +4381,7 @@ ipcMain.on('sync-project-data', (event, projectData, identity, captureSession = 
 
   const nextCaptureSession = projectData ? captureSession : null;
   if (nextCaptureSession !== currentCaptureSession || (identity && !sameIdentity(identity, currentProjectIdentity))) {
+    videoFrameProbe?.controller.abort();
     videoStandbyCaptures.reset();
     notifyStandbyCaptureChanged();
   }
@@ -4755,7 +4837,8 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
     event.sender.once(eventName, cancelOnRendererExit);
   }
 
-  let stdout = '';
+  let reviewDir = '';
+  let rawTracks;
   let embedReview = null;
   try {
     try {
@@ -4768,7 +4851,9 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
       console.warn('[spotify] embed preflight unavailable; falling back to spotDL:', error.message);
     }
 
-    if (!embedReview?.rawTracks) {
+    if (embedReview?.rawTracks) {
+      rawTracks = embedReview.rawTracks;
+    } else {
       const setupResult = await Promise.race([
         Promise.all([setupSpotDl(), setupFfmpeg()])
           .then((value) => ({ value }), (error) => ({ error })),
@@ -4780,10 +4865,14 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
       if (!spotDlReady || !spotDlPath) throw new Error('Spotify downloader is unavailable');
       if (!ffmpegReady || !ffmpegPath) throw new Error('FFmpeg is unavailable for Spotify review');
       const metadataUrl = embedReview?.playlistUrl || url;
-      stdout = await new Promise((resolve, reject) => {
+      reviewDir = await fs.promises.mkdtemp(path.join(app.getPath('temp'), 'dwcue-spotify-review-'));
+      if (job.cancelled) throw new Error('Spotify review cancelled');
+      const metadataFile = path.join(reviewDir, 'tracks.spotdl');
+      const outputLimit = 32 * 1024 * 1024;
+      await new Promise((resolve, reject) => {
         // Review only needs metadata. Skip the YouTube Music connection check and lyrics lookups.
         const child = spawn(spotDlPath, [
-          'save', metadataUrl, '--save-file', '-', '--ffmpeg', ffmpegPath,
+          'save', metadataUrl, '--save-file', metadataFile, '--ffmpeg', ffmpegPath,
           '--threads', '8', '--audio', 'youtube', '--lyrics',
         ], {
           windowsHide: true,
@@ -4796,15 +4885,15 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
         let bytes = 0;
         let settled = false;
         let timeout;
-        const finish = (error, value) => {
+        const finish = (error) => {
           if (settled) return;
           settled = true;
           clearTimeout(timeout);
-          error ? reject(error) : resolve(value);
+          error ? reject(error) : resolve();
         };
         const append = (chunk, stderr = false) => {
           bytes += chunk.length;
-          if (bytes > 32 * 1024 * 1024) {
+          if (bytes > outputLimit) {
             terminateSpotifyChild(child);
             finish(new Error('Spotify review output was too large'));
             return;
@@ -4819,7 +4908,7 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
           job.child = null;
           if (job.cancelled) finish(new Error('Spotify review cancelled'));
           else if (code !== 0) finish(new Error(summarizeSpotDlError(output, errors, code)));
-          else finish(null, output);
+          else finish();
         });
         timeout = setTimeout(() => {
           terminateSpotifyChild(child);
@@ -4827,8 +4916,22 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
         }, 300000);
         timeout.unref();
       });
+      try {
+        const info = await fs.promises.stat(metadataFile);
+        if (!info.isFile()) throw new Error('Spotify review output is not a file');
+        if (info.size > outputLimit) throw new Error('Spotify review output was too large');
+        rawTracks = JSON.parse(await fs.promises.readFile(metadataFile, 'utf8'));
+      } catch (error) {
+        if (error.code === 'ENOENT') throw new Error('Spotify returned no track list');
+        if (error instanceof SyntaxError) throw new Error('Spotify returned an unreadable track list');
+        throw error;
+      }
+      if (job.cancelled) throw new Error('Spotify review cancelled');
     }
   } finally {
+    if (reviewDir) await fs.promises.rm(reviewDir, { recursive: true, force: true }).catch(error => {
+      console.warn('[spotify] Could not remove review files:', error.message);
+    });
     for (const eventName of ['destroyed', 'render-process-gone', 'did-start-navigation']) {
       event.sender.removeListener(eventName, cancelOnRendererExit);
     }
@@ -4836,13 +4939,6 @@ ipcMain.handle('spotify-preflight', async (event, jobId, rawUrl) => {
     job.resolveDone();
   }
 
-  const clean = stdout.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '').trim();
-  const rawTracks = embedReview?.rawTracks || (() => {
-    const start = clean.indexOf('[');
-    const end = clean.lastIndexOf(']');
-    if (start < 0 || end <= start) throw new Error('Spotify returned no track list');
-    return JSON.parse(clean.slice(start, end + 1));
-  })();
   if (!Array.isArray(rawTracks)) {
     throw new Error('Spotify returned an invalid track list');
   }

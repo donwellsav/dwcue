@@ -1,314 +1,258 @@
 <template>
-  <Teleport to="body">
-    <div v-if="open" class="modal-backdrop" @click.self="handleClose">
-      <div class="modal" role="dialog" aria-modal="true" :aria-labelledby="titleId">
-        <header class="modal-header">
-          <h2 :id="titleId">{{ t('spotifyImport.title') }}</h2>
-          <Btn type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
+  <form v-if="open" v-show="visible" class="workspace-import-body spotify-import"
+    :class="{ 'has-review': reviewState && !isActive, 'is-busy': isBusy }" @submit.prevent="handleSubmit">
+    <div class="import-column spotify-controls">
+      <label v-if="!isBusy && !resultState && !reviewState" class="field">
+        <span class="field-label">{{ t('spotifyImport.urlLabel') }}</span>
+        <input
+          ref="urlInput"
+          v-model.trim="spotifyUrl"
+          type="url"
+          :placeholder="t('spotifyImport.urlPlaceholder')"
+          :disabled="isBusy || hasLockedDestination"
+          spellcheck="false"
+          autocomplete="off"
+        >
+      </label>
+
+      <p v-if="!isBusy && !reviewState && !resultState" class="hint selectable">{{ t('spotifyImport.hint') }}</p>
+      <p v-if="preferencesWarning" class="settings-save-error selectable" role="status">
+        {{ t('spotifyImport.preferencesSaveFailed') }}
+      </p>
+      <div v-if="!isBusy" class="actions">
+        <template v-if="resultState && !isActive">
           <button
+            v-if="pendingRecoveryCount"
             type="button"
-            class="icon-btn"
-            :aria-label="t('actions.close')"
-            :disabled="isBusy || isChoosingDestination"
-            @click="handleClose"
+            class="btn primary"
+            @click="resumeImport"
           >
-            <span class="material-symbols-rounded" aria-hidden="true">close</span>
+            <span class="material-symbols-rounded" aria-hidden="true">library_add</span>
+            <span>{{ t('spotifyImport.resumeImport', { count: pendingRecoveryCount }) }}</span>
           </button>
-        </header>
-
-        <form class="modal-body" @submit.prevent="handleSubmit">
-          <label class="field">
-            <span class="field-label">{{ t('spotifyImport.urlLabel') }}</span>
-            <input
-              ref="urlInput"
-              v-model.trim="spotifyUrl"
-              type="url"
-              :placeholder="t('spotifyImport.urlPlaceholder')"
-              :disabled="isBusy || hasLockedDestination"
-              spellcheck="false"
-              autocomplete="off"
-            >
-          </label>
-
-          <p class="hint selectable">{{ t('spotifyImport.hint') }}</p>
-          <p class="hint selectable">{{ t('importAudio.preserveAudio') }}</p>
-          <p v-if="preferencesWarning" class="settings-save-error selectable" role="status">
-            {{ t('spotifyImport.preferencesSaveFailed') }}
-          </p>
-
-          <section class="import-plan selectable" :aria-labelledby="planId">
-            <button
-              type="button"
-              class="plan-toggle"
-              :aria-expanded="!planCollapsed"
-              :aria-controls="planBodyId"
-              @click="planCollapsed = !planCollapsed"
-            >
-              <span
-                class="material-symbols-rounded plan-chevron"
-                :class="{ open: !planCollapsed }"
-                aria-hidden="true"
-              >chevron_right</span>
-              <span :id="planId" class="plan-title">{{ t('spotifyImport.importPlan') }}</span>
-              <span v-if="planCollapsed" class="plan-summary">{{ planSummary }}</span>
+          <template v-else>
+            <button type="button" class="btn" @click="startAnotherImport">
+              <span>{{ t('spotifyImport.startAnother') }}</span>
             </button>
-
-            <div v-show="!planCollapsed" :id="planBodyId" class="plan-body">
-            <dl class="plan-list">
-              <div class="plan-row">
-                <dt>{{ t('spotifyImport.source') }}</dt>
-                <dd>{{ sourceTypeText }}</dd>
-              </div>
-              <div class="plan-row">
-                <dt>{{ t('spotifyImport.audioFormat') }}</dt>
-                <dd>
-                  <label class="inline-option">
-                    <span class="sr-only">{{ t('spotifyImport.audioBitrate') }}</span>
-                    <select v-model="audioBitrate" :disabled="isBusy">
-                      <option value="320k">{{ t('spotifyImport.audioBitrate320') }}</option>
-                      <option value="256k">{{ t('spotifyImport.audioBitrate256') }}</option>
-                      <option value="192k">{{ t('spotifyImport.audioBitrate192') }}</option>
-                    </select>
-                  </label>
-                </dd>
-              </div>
-              <div class="plan-row">
-                <dt>{{ t('spotifyImport.searchSources') }}</dt>
-                <dd>{{ t('spotifyImport.searchSourcesValue') }}</dd>
-              </div>
-              <div class="plan-row destination-row">
-                <dt>{{ t('spotifyImport.destination') }}</dt>
-                <dd>
-                  <span class="path-value" :title="destinationParentPath">
-                    {{ destinationParentPath || t('spotifyImport.destinationNotSelected') }}
-                  </span>
-                  <button
-                    type="button"
-                    class="btn compact"
-                    :disabled="isBusy || isChoosingDestination || hasLockedDestination"
-                    @click="chooseDestination"
-                  >
-                    <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
-                    <span>
-                      {{ destinationParentPath
-                        ? t('spotifyImport.changeDestination')
-                        : t('spotifyImport.chooseDestination') }}
-                    </span>
-                  </button>
-                </dd>
-              </div>
-            </dl>
-
-            <p class="plan-note">{{ t('spotifyImport.createsDescription') }}</p>
-
-            <div class="processing-summary">
-              <p class="processing-title">{{ t('spotifyImport.cueSetup') }}</p>
-              <label class="processing-control processing-control--select">
-                <span>{{ t('settings.transitionMode') }}</span>
-                <select
-                  :value="cueProcessingSettings.transitionMode"
-                  :disabled="isBusy || isSavingSettings"
-                  @change="updateTransitionMode"
-                >
-                  <option value="crossfade">{{ t('settings.transitionModeCrossfade') }}</option>
-                  <option value="start-next">{{ t('settings.transitionModeStartNext') }}</option>
-                </select>
-              </label>
-              <label class="processing-control">
-                <input
-                  type="checkbox"
-                  :checked="cueProcessingSettings.cycleColors"
-                  :disabled="isBusy || isSavingSettings"
-                  @change="updateBooleanSetting('cycleTrackColors', $event)"
-                >
-                <span>{{ t('settings.cycleTrackColors') }}</span>
-              </label>
-              <p v-if="settingsSaveError" class="settings-save-error" role="alert">
-                {{ settingsSaveError }}
-              </p>
-            </div>
-            </div>
-          </section>
-
-          <section v-if="reviewState" class="track-review" :aria-label="t('spotifyImport.reviewTitle')">
-            <div class="review-heading">
-              <div class="selectable">
-                <h3>{{ reviewState.playlistName }}</h3>
-                <p>{{ t('spotifyImport.reviewSummary', {
-                  selected: selectedTrackIds.length,
-                  total: reviewState.tracks.length,
-                  duration: formatDuration(selectedDuration),
-                }) }}</p>
-                <p v-if="reviewState.skippedTrackCount" role="status">
-                  {{ t('spotifyImport.skippedTracks', { count: reviewState.skippedTrackCount }) }}
-                </p>
-              </div>
-              <div class="review-actions">
-                <button type="button" class="btn compact" :disabled="isBusy" @click="selectAllTracks">{{ t('spotifyImport.selectAll') }}</button>
-                <button type="button" class="btn compact" :disabled="isBusy" @click="selectedTrackIds = []">{{ t('spotifyImport.selectNone') }}</button>
-              </div>
-            </div>
-            <ul class="track-list">
-              <li
-                v-for="track in reviewState.tracks"
-                :key="track.id"
-                :class="trackResultClass(track.id)"
-              >
-                <label :class="{ 'has-cover': !!track.coverUrl }">
-                  <input
-                    type="checkbox"
-                    :checked="selectedTrackIds.includes(track.id)"
-                    :disabled="isBusy"
-                    @change="toggleTrack(track.id)"
-                  >
-                  <img v-if="track.coverUrl" :src="track.coverUrl" alt="">
-                  <span class="track-info selectable">
-                    <strong>{{ track.title }}</strong>
-                    <span>{{ track.artists.join(', ') }}<template v-if="track.album"> · {{ track.album }}</template></span>
-                    <small>{{ trackMatchText(track.id) }}</small>
-                  </span>
-                  <time class="selectable">{{ formatDuration(track.duration) }}</time>
-                </label>
-                <button
-                  v-if="trackImportResults[track.id]?.itemUuid && trackImportResults[track.id]?.status !== 'failed'"
-                  type="button"
-                  class="track-preview"
-                  :title="previewItemUuid === trackImportResults[track.id]?.itemUuid ? t('actions.stopPreview') : t('actions.preview')"
-                  @click="toggleImportedPreview(track.id)"
-                >
-                  <span class="material-symbols-rounded" aria-hidden="true">
-                    {{ previewItemUuid === trackImportResults[track.id]?.itemUuid ? 'stop_circle' : 'headphones' }}
-                  </span>
-                </button>
-              </li>
-            </ul>
-          </section>
-
-          <div
-            v-if="progressState || resultState || errorMessage"
-            class="status-card"
-            :class="{
-              'has-result': !!resultState,
-              'has-ready-tracks': (resultState?.completed ?? 0) > 0,
-              'has-import-errors': importFailedTrackCount > 0 || !!errorMessage,
-            }"
-          >
-            <div
-              class="status-top"
-              role="status"
-              aria-live="polite"
-              aria-atomic="false"
-            >
-              <div class="selectable">
-                <p class="status-label">{{ statusText }}</p>
-                <p v-if="progressState?.playlistName" class="status-detail">{{ progressState.playlistName }}</p>
-                <p v-if="progressState?.message && isActive" class="status-detail">{{ progressState.message }}</p>
-                <p v-if="pendingRecoveryCount" class="status-detail">
-                  {{ t('spotifyImport.resumeExplanation', { count: pendingRecoveryCount }) }}
-                </p>
-                <p v-else-if="unavailableTrackCount" class="status-detail">
-                  {{ t('spotifyImport.partialExplanation', { failed: unavailableTrackCount }) }}
-                </p>
-                <p v-if="importFailedTrackCount" class="status-error" role="alert">
-                  {{ t('spotifyImport.importFailureExplanation', { count: importFailedTrackCount }) }}
-                </p>
-                <p v-if="resultState?.projectFolderPath" class="status-detail">{{ resultState.projectFolderPath }}</p>
-              </div>
-              <p v-if="countText" class="status-count selectable">{{ countText }}</p>
-            </div>
-
-            <div
-              class="progress-bar"
-              role="progressbar"
-              :aria-label="resultState ? t('spotifyImport.resultLabel') : t('spotifyImport.progressLabel')"
-              aria-valuemin="0"
-              aria-valuemax="100"
-              :aria-valuenow="progressValue"
-              :aria-valuetext="countText || statusText"
-            >
-              <div
-                class="progress-fill"
-                :style="{ transform: `scaleX(${progressPercent / 100})` }"
-              />
-            </div>
-
-            <p v-if="errorMessage" class="status-error selectable" role="alert">{{ errorMessage }}</p>
-            <details v-if="technicalMessage" class="status-technical selectable">
-              <summary>{{ t('spotifyImport.technicalDetails') }}</summary>
-              <p>{{ technicalMessage }}</p>
-            </details>
             <button
-              v-if="resultState?.projectFolderPath"
+              v-if="failedTrackCount"
               type="button"
-              class="btn compact open-folder"
-              @click="openResultFolder"
+              class="btn"
+              @click="resumeImport"
             >
-              <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
-              <span>{{ t('spotifyImport.openFolder') }}</span>
+              <span class="material-symbols-rounded" aria-hidden="true">refresh</span>
+              <span>{{ t(importFailedTrackCount
+                ? 'spotifyImport.retryTracks'
+                : 'spotifyImport.retryUnmatched', { count: failedTrackCount }) }}</span>
+            </button>
+            <button type="button" class="btn primary" @click="continueToProject">
+              <span class="material-symbols-rounded" aria-hidden="true">arrow_forward</span>
+              <span>{{ resultState.completed
+                ? t('spotifyImport.continueWithTracks', { count: resultState.completed })
+                : t('spotifyImport.done') }}</span>
+            </button>
+          </template>
+        </template>
+        <button v-else type="submit" class="btn primary" :disabled="!canStart">
+          <span class="material-symbols-rounded" aria-hidden="true">library_add</span>
+          <span>{{ reviewState ? t('spotifyImport.downloadSelected', { count: selectedTrackIds.length })
+            : t('spotifyImport.reviewTracks') }}</span>
+        </button>
+        <button v-if="reviewState && !resultState" type="button" class="btn" @click="clearReview">
+          {{ t('spotifyImport.changeLink') }}
+        </button>
+      </div>
+      <div
+        v-if="isBusy || progressState || resultState || errorMessage"
+        class="status-card"
+        :class="{
+          'has-result': !!resultState,
+          'has-ready-tracks': (resultState?.completed ?? 0) > 0,
+          'has-import-errors': importFailedTrackCount > 0 || !!errorMessage,
+        }"
+      >
+        <div
+          class="status-top"
+          role="status"
+          aria-live="polite"
+          aria-atomic="false"
+        >
+          <div class="selectable">
+            <p class="status-label">{{ statusText }}</p>
+            <p v-if="!reviewState && progressState?.playlistName" class="status-detail">{{ progressState.playlistName }}</p>
+            <p v-if="progressState?.message && isActive" class="status-detail">{{ progressState.message }}</p>
+            <p v-if="pendingRecoveryCount" class="status-detail">
+              {{ t('spotifyImport.resumeExplanation', { count: pendingRecoveryCount }) }}
+            </p>
+            <p v-else-if="unavailableTrackCount" class="status-detail">
+              {{ t('spotifyImport.partialExplanation', { failed: unavailableTrackCount }) }}
+            </p>
+            <p v-if="importFailedTrackCount" class="status-error" role="alert">
+              {{ t('spotifyImport.importFailureExplanation', { count: importFailedTrackCount }) }}
+            </p>
+            <p v-if="resultState?.projectFolderPath" class="status-detail destination-path" :title="resultState.projectFolderPath">{{ resultState.projectFolderPath }}</p>
+            <p v-else-if="isActive && destinationParentPath" class="status-detail destination-path" :title="destinationParentPath">{{ destinationParentPath }}</p>
+          </div>
+          <div class="status-actions">
+            <p v-if="countText" class="status-count selectable">{{ countText }}</p>
+            <button v-if="isBusy" type="button" class="btn compact" :disabled="isCancelling" @click="cancelDownload">
+              {{ isCancelling ? t('spotifyImport.cancelling') : t('common.cancel') }}
             </button>
           </div>
+        </div>
 
-          <div class="actions">
-            <template v-if="resultState && !isActive">
-              <button
-                v-if="pendingRecoveryCount"
-                type="button"
-                class="btn primary"
-                @click="resumeImport"
-              >
-                <span class="material-symbols-rounded" aria-hidden="true">library_add</span>
-                <span>{{ t('spotifyImport.resumeImport', { count: pendingRecoveryCount }) }}</span>
-              </button>
-              <template v-else>
-                <button type="button" class="btn" @click="startAnotherImport">
-                  <span>{{ t('spotifyImport.startAnother') }}</span>
-                </button>
-                <button
-                  v-if="failedTrackCount"
-                  type="button"
-                  class="btn"
-                  @click="resumeImport"
-                >
-                  <span class="material-symbols-rounded" aria-hidden="true">refresh</span>
-                  <span>{{ t(importFailedTrackCount
-                    ? 'spotifyImport.retryTracks'
-                    : 'spotifyImport.retryUnmatched', { count: failedTrackCount }) }}</span>
-                </button>
-                <button type="button" class="btn primary" @click="continueToProject">
-                  <span class="material-symbols-rounded" aria-hidden="true">arrow_forward</span>
-                  <span>{{ resultState.completed
-                    ? t('spotifyImport.continueWithTracks', { count: resultState.completed })
-                    : t('spotifyImport.done') }}</span>
-                </button>
-              </template>
-            </template>
-            <template v-else>
-              <button type="submit" class="btn primary" :disabled="!canStart">
-                <span class="material-symbols-rounded" aria-hidden="true">library_add</span>
-                <span>{{ isReviewing
-                  ? t('spotifyImport.reviewing')
-                  : isActive
-                    ? t('spotifyImport.downloading')
-                    : reviewState
-                      ? t('spotifyImport.downloadSelected', { count: selectedTrackIds.length })
-                      : t('spotifyImport.reviewTracks') }}</span>
-              </button>
-              <button
-                v-if="isBusy"
-                type="button"
-                class="btn"
-                :disabled="isCancelling"
-                @click="cancelDownload"
-              >
-                <span class="material-symbols-rounded" aria-hidden="true">close</span>
-                <span>{{ isCancelling ? t('spotifyImport.cancelling') : t('common.cancel') }}</span>
-              </button>
-            </template>
-          </div>
-        </form>
+        <progress
+          v-if="isBusy || resultState"
+          class="progress-bar"
+          :aria-label="resultState ? t('spotifyImport.resultLabel') : t('spotifyImport.progressLabel')"
+          max="100"
+          :value.attr="progressValue"
+          :aria-valuetext="countText || statusText"
+        />
+
+        <p v-if="errorMessage" class="status-error selectable" role="alert">{{ errorMessage }}</p>
+        <details v-if="technicalMessage" class="status-technical selectable">
+          <summary>{{ t('spotifyImport.technicalDetails') }}</summary>
+          <p>{{ technicalMessage }}</p>
+        </details>
+        <button
+          v-if="resultState?.projectFolderPath"
+          type="button"
+          class="btn compact open-folder"
+          @click="openResultFolder"
+        >
+          <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
+          <span>{{ t('spotifyImport.openFolder') }}</span>
+        </button>
       </div>
     </div>
-  </Teleport>
+    <section v-if="reviewState && !isActive" class="track-review" :aria-label="t('spotifyImport.reviewTitle')">
+        <div class="review-heading">
+          <div class="selectable">
+            <h3>{{ reviewState.playlistName }}</h3>
+            <p>{{ t('spotifyImport.reviewSummary', {
+              selected: selectedTrackIds.length,
+              total: reviewState.tracks.length,
+              duration: formatDuration(selectedDuration),
+            }) }}</p>
+            <p v-if="reviewState.skippedTrackCount" role="status">
+              {{ t('spotifyImport.skippedTracks', { count: reviewState.skippedTrackCount }) }}
+            </p>
+          </div>
+          <div class="review-actions">
+            <button type="button" class="btn compact" :disabled="isBusy" @click="selectAllTracks">{{ t('spotifyImport.selectAll') }}</button>
+            <button type="button" class="btn compact" :disabled="isBusy" @click="selectedTrackIds = []">{{ t('spotifyImport.selectNone') }}</button>
+          </div>
+        </div>
+        <ul class="track-list">
+          <li
+            v-for="track in reviewState.tracks"
+            :key="track.id"
+            :class="trackResultClass(track.id)"
+          >
+            <label :class="{ 'has-cover': !!track.coverUrl }">
+              <input
+                type="checkbox"
+                :checked="selectedIds.has(track.id)"
+                :disabled="isBusy"
+                @change="toggleTrack(track.id)"
+              >
+              <img v-if="track.coverUrl" :src="track.coverUrl" alt="">
+              <span class="track-info selectable">
+                <strong>{{ track.title }}</strong>
+                <span>{{ track.artists.join(', ') }}<template v-if="track.album"> · {{ track.album }}</template></span>
+                <small>{{ trackMatchText(track.id) }}</small>
+              </span>
+              <time class="selectable">{{ formatDuration(track.duration) }}</time>
+            </label>
+            <button
+              v-if="trackImportResults[track.id]?.itemUuid && trackImportResults[track.id]?.status !== 'failed'"
+              type="button"
+              class="track-preview"
+              :title="previewItemUuid === trackImportResults[track.id]?.itemUuid ? t('actions.stopPreview') : t('actions.preview')"
+              @click="toggleImportedPreview(track.id)"
+            >
+              <span class="material-symbols-rounded" aria-hidden="true">
+                {{ previewItemUuid === trackImportResults[track.id]?.itemUuid ? 'stop_circle' : 'headphones' }}
+              </span>
+            </button>
+          </li>
+        </ul>
+    </section>
+    <section v-if="!isBusy && !resultState" class="import-plan" aria-labelledby="spotify-import-plan">
+      <h3 id="spotify-import-plan">{{ t('spotifyImport.importPlan') }}</h3>
+      <dl class="plan-list">
+        <div v-if="!reviewState" class="plan-row">
+          <dt>{{ t('spotifyImport.source') }}</dt>
+          <dd>{{ sourceTypeText }}</dd>
+        </div>
+        <div class="plan-row">
+          <dt>{{ t('spotifyImport.audioFormat') }}</dt>
+          <dd>
+            <select v-model="audioBitrate" :aria-label="t('spotifyImport.audioBitrate')">
+              <option value="320k">{{ t('spotifyImport.audioBitrate320') }}</option>
+              <option value="256k">{{ t('spotifyImport.audioBitrate256') }}</option>
+              <option value="192k">{{ t('spotifyImport.audioBitrate192') }}</option>
+            </select>
+          </dd>
+        </div>
+        <div v-if="!reviewState" class="plan-row">
+          <dt>{{ t('spotifyImport.searchSources') }}</dt>
+          <dd>{{ t('spotifyImport.searchSourcesValue') }}</dd>
+        </div>
+        <div class="plan-row destination-row">
+          <dt>{{ t('spotifyImport.destination') }}</dt>
+          <dd>
+            <span class="path-value" :title="destinationParentPath">
+              {{ destinationParentPath || t('spotifyImport.destinationNotSelected') }}
+            </span>
+            <button
+              type="button"
+              class="btn compact"
+              :disabled="isBusy || isChoosingDestination || hasLockedDestination"
+              @click="chooseDestination"
+            >
+              <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
+              <span>
+                {{ destinationParentPath
+                  ? t('spotifyImport.changeDestination')
+                  : t('spotifyImport.chooseDestination') }}
+              </span>
+            </button>
+          </dd>
+        </div>
+      </dl>
+
+      <p v-if="!reviewState" class="plan-note">{{ t('spotifyImport.createsDescription') }}</p>
+
+      <div class="processing-summary">
+        <p class="processing-title">{{ t('spotifyImport.cueSetup') }}</p>
+        <label class="processing-control processing-control--select">
+          <span>{{ t('settings.transitionMode') }}</span>
+          <select
+            :value="cueProcessingSettings.transitionMode"
+            :disabled="isBusy || isSavingSettings"
+            @change="updateTransitionMode"
+          >
+            <option value="crossfade">{{ t('settings.transitionModeCrossfade') }}</option>
+            <option value="start-next">{{ t('settings.transitionModeStartNext') }}</option>
+          </select>
+        </label>
+        <label class="processing-control">
+          <input
+            type="checkbox"
+            :checked="cueProcessingSettings.cycleColors"
+            :disabled="isBusy || isSavingSettings"
+            @change="updateBooleanSetting('cycleTrackColors', $event)"
+          >
+          <span>{{ t('settings.cycleTrackColors') }}</span>
+        </label>
+        <p v-if="settingsSaveError" class="settings-save-error" role="alert">
+          {{ settingsSaveError }}
+        </p>
+      </div>
+    </section>
+  </form>
 </template>
 
 <script setup lang="ts">
@@ -429,6 +373,7 @@ interface SpotifyElectronApi {
 
 const props = defineProps<{
   open: boolean;
+  visible: boolean;
   projectFolderPath: string;
   projectEpoch: number;
   importFiles: (
@@ -443,22 +388,12 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useLocalization();
-const { currentProject, previewItemUuid, startPreview, stopPreview, saveProject } = useProject();
+const {
+  currentProject, previewItemUuid, startPreview, stopPreview, saveProject,
+  projectEpoch: currentEpoch,
+} = useProject();
 const server = useLiveplayServer();
 
-const titleId = `spotify-import-${Math.random().toString(36).slice(2)}`;
-const planId = `${titleId}-plan`;
-const planBodyId = `${planId}-body`;
-// Accordion: the import plan folds away once tracks load so the review list
-// and the Download button sit next to each other without scrolling. It
-// reopens when the review is dismissed (start another import).
-const planCollapsed = ref(false);
-const planSummary = computed(() => {
-  const parts: string[] = [audioBitrate.value];
-  const dest = destinationParentPath.value.split(/[\\/]/).filter(Boolean).pop();
-  if (dest) parts.push(dest);
-  return parts.join(' · ');
-});
 const urlInput = ref<HTMLInputElement | null>(null);
 const spotifyUrl = ref('');
 const storedAudioBitrate = import.meta.client
@@ -476,10 +411,6 @@ const errorMessage = ref('');
 const technicalMessage = ref('');
 const preferencesWarning = ref(false);
 const reviewState = ref<SpotifyPreflight | null>(null);
-watch(reviewState, (state, prev) => {
-  if (state && !prev) planCollapsed.value = true;
-  if (!state) planCollapsed.value = false;
-});
 const trackImportResults = ref<Record<string, NonNullable<ImportBatchResult['results']>[number]>>({});
 const selectedTrackIds = ref<string[]>([]);
 const isReviewing = ref(false);
@@ -505,8 +436,9 @@ const normalizedUrl = computed(() => normalizeSpotifyUrl(spotifyUrl.value));
 const canStart = computed(() => !!props.projectFolderPath && !!normalizedUrl.value &&
   !isBusy.value && !isChoosingDestination.value &&
   (!reviewState.value || selectedTrackIds.value.length > 0));
+const selectedIds = computed(() => new Set(selectedTrackIds.value));
 const selectedDuration = computed(() => reviewState.value?.tracks
-  .filter(track => selectedTrackIds.value.includes(track.id))
+  .filter(track => selectedIds.value.has(track.id))
   .reduce((sum, track) => sum + track.duration, 0) ?? 0);
 const failedTrackCount = computed(() => resultState.value?.failedTrackIds.length ?? 0);
 const importFailedTrackCount = computed(() => resultState.value?.failedTrackIds
@@ -534,22 +466,14 @@ const cueProcessingSettings = computed(() => {
   };
 });
 
-const progressPercent = computed(() => {
-  const source = resultState.value ?? progressState.value;
-  if (!source?.total) return progressState.value ? 8 : 0;
-  const percent = (source.completed / source.total) * 100;
-  return resultState.value
-    ? Math.max(0, Math.min(100, percent))
-    : Math.max(8, Math.min(100, percent));
-});
-
 const progressValue = computed(() => {
-  const source = resultState.value ?? progressState.value;
-  return source?.total ? Math.round(progressPercent.value) : undefined;
+  const source = isActive.value ? progressState.value : resultState.value;
+  return source?.total ? Math.round(source.completed / source.total * 100) : undefined;
 });
 
 const statusText = computed(() => {
-  if (resultState.value) {
+  if (isReviewing.value) return t('spotifyImport.reviewing');
+  if (!isActive.value && resultState.value) {
     if (resultState.value.completed > 0) {
       return t('spotifyImport.tracksReady', { completed: resultState.value.completed });
     }
@@ -587,9 +511,9 @@ const statusText = computed(() => {
 });
 
 const countText = computed(() => {
-  const source = resultState.value ?? progressState.value;
+  const source = isActive.value ? progressState.value : resultState.value;
   if (!source?.total) return '';
-  if (resultState.value) {
+  if (!isActive.value && resultState.value) {
     if (importFailedTrackCount.value) {
       return t('spotifyImport.resultCountWithErrors', {
         completed: resultState.value.completed,
@@ -620,7 +544,7 @@ watch(
     }
     if (open) {
       void loadImportPreferences();
-      nextTick(() => urlInput.value?.focus());
+      nextTick(() => { if (props.visible) urlInput.value?.focus(); });
     }
   },
 );
@@ -724,9 +648,9 @@ async function chooseDestination(): Promise<string> {
   isChoosingDestination.value = true;
   try {
     const selected = await api.selectProjectFolder();
-    if (!selected || !props.open || props.projectEpoch !== epoch) return '';
+    if (!selected || !props.open || currentEpoch.value !== epoch) return '';
     preferencesWarning.value = !await api.setSpotifyImportDestination(selected);
-    if (!props.open || props.projectEpoch !== epoch) return '';
+    if (!props.open || currentEpoch.value !== epoch) return '';
     destinationParentPath.value = selected;
     return selected;
   } catch (error: any) {
@@ -740,6 +664,7 @@ async function chooseDestination(): Promise<string> {
 async function loadImportPreferences() {
   if (!import.meta.client) return;
   const preferences = await window.electronAPI.getImportPreferences().catch(() => null);
+  if (!props.open || currentEpoch.value !== props.projectEpoch) return;
   if (preferences) preferencesWarning.value = preferences.preferencesSaved === false;
   if (!destinationParentPath.value && preferences?.spotifyDestination) {
     destinationParentPath.value = preferences.spotifyDestination;
@@ -854,7 +779,8 @@ async function reviewSpotify() {
     reviewState.value = await api.preflightSpotify(jobId, normalizedUrl.value);
     selectedTrackIds.value = reviewState.value.tracks.map(track => track.id);
   } catch (error: any) {
-    errorMessage.value = error?.message || t('spotifyImport.reviewFailed');
+    errorMessage.value = t(isCancelling.value ? 'spotifyImport.cancelled' : 'spotifyImport.reviewFailed');
+    technicalMessage.value = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '') : '';
   } finally {
     if (reviewJobId.value === jobId) reviewJobId.value = '';
     isReviewing.value = false;
@@ -863,6 +789,13 @@ async function reviewSpotify() {
 
 function selectAllTracks() {
   selectedTrackIds.value = reviewState.value?.tracks.map(track => track.id) ?? [];
+}
+function clearReview() {
+  reviewState.value = null;
+  selectedTrackIds.value = [];
+  errorMessage.value = '';
+  technicalMessage.value = '';
+  void nextTick(() => urlInput.value?.focus());
 }
 function toggleTrack(id: string) {
   selectedTrackIds.value = selectedTrackIds.value.includes(id)
@@ -1075,7 +1008,7 @@ async function startDownload() {
     destinationParentPath.value || await chooseDestination();
   if (!destinationParentPathForJob ||
       props.projectFolderPath !== projectFolderPath ||
-      props.projectEpoch !== projectEpoch) return;
+      currentEpoch.value !== projectEpoch) return;
 
   const jobId = crypto.randomUUID();
   const retry = retryingFailed.value;
@@ -1127,7 +1060,7 @@ async function startDownload() {
     // ponytail: once files reach the user-selected collection, preserve them as canonical media.
     finalizeKeepFiles = true;
     if (props.projectFolderPath !== projectFolderPath ||
-        props.projectEpoch !== projectEpoch) {
+        currentEpoch.value !== projectEpoch) {
       importController.abort();
       throw new Error(t('spotifyImport.cancelled'));
     }
@@ -1301,75 +1234,24 @@ function resetState() {
 </script>
 
 <style scoped lang="scss">
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 9000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--spacing-lg);
-  background: var(--dialog-backdrop);
+.has-review {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.modal {
-  width: min(760px, 100%);
-  max-height: calc(100vh - 32px);
-  overflow-y: auto;
-  border: 1px solid var(--color-border);
-  border-radius: var(--dialog-radius);
-  background: var(--dialog-surface);
-  color: var(--color-text-primary);
-  box-shadow: var(--dialog-shadow);
+.has-review .track-review {
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 
-.modal-header {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  padding: var(--dialog-header-padding);
-  background: var(--dialog-surface);
-  border-bottom: 1px solid var(--color-border);
+.has-review .import-plan { grid-column: 1; }
+.has-review .processing-title { display: none; }
+.has-review .processing-control--select { grid-column: auto; }
+.is-busy .spotify-controls { grid-column: 1 / -1; }
 
-  h2 {
-    flex: 1;
-    margin: 0;
-    font-size: 15px;
-    font-weight: 650;
-  }
-}
-
-.icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-
-  &:hover:not(:disabled) {
-    background: var(--color-surface-hover);
-    color: var(--color-text-primary);
-  }
-
-  &:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
-}
-
-.modal-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: var(--dialog-body-padding);
+.import-column {
+  display: grid;
+  gap: var(--spacing-xs);
+  min-width: 0;
 }
 
 .field {
@@ -1387,10 +1269,11 @@ function resetState() {
 input {
   width: 100%;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: var(--color-background);
   color: var(--color-text-primary);
-  padding: 10px 12px;
+  min-height: var(--settings-row-height);
+  padding: 0 var(--spacing-sm);
   font-size: 13px;
 
   &:focus {
@@ -1410,70 +1293,21 @@ input {
 }
 
 .import-plan {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-background);
-
-    .plan-title,
-  p,
-  dl,
-  dd {
-    margin: 0;
-  }
-
-    .plan-title {
-    font-size: 13px;
-    font-weight: 650;
-  }
-}
-
-.plan-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--color-text-primary);
-  text-align: left;
-  cursor: pointer;
-
-  &:focus-visible {
-    outline: 2px solid var(--color-accent);
-    outline-offset: 2px;
-    border-radius: 4px;
-  }
-}
-
-.plan-chevron {
-  font-size: 18px;
-  color: var(--color-text-tertiary);
-  transition: transform 0.15s ease;
-
-  &.open { transform: rotate(90deg); }
-}
-
-.plan-summary {
-  flex: 1;
+  display: grid;
+  gap: var(--spacing-xs);
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: right;
-  color: var(--color-text-tertiary);
-  font-size: 11px;
-  font-weight: 400;
-}
+  border: 1px solid var(--color-border);
+  padding: 0 var(--spacing-sm) var(--spacing-xs);
 
-.plan-body {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  h3 {
+    margin: 0 calc(-1 * var(--spacing-sm));
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface);
+    font-size: var(--type-metadata-size);
+  }
+
+  p, dl, dd { margin: 0; }
 }
 
 .plan-list {
@@ -1512,7 +1346,7 @@ input {
 }
 
 .plan-note {
-  padding-top: 9px;
+  padding-top: var(--spacing-xs);
   border-top: 1px solid var(--color-border);
   font-size: 12px;
   line-height: 1.45;
@@ -1539,8 +1373,8 @@ input {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  min-height: 32px;
-  padding: 6px 8px;
+  min-height: var(--settings-row-height);
+  padding: var(--spacing-xs) var(--spacing-sm);
   border: 1px solid var(--color-border);
   border-radius: 7px;
   background: var(--color-surface-raised);
@@ -1574,12 +1408,13 @@ input {
   justify-content: space-between;
 
   select {
-    min-width: min(240px, 55%);
+    min-width: 0;
+    max-width: 100%;
     border: 1px solid var(--color-border);
     border-radius: 6px;
     background: var(--color-background);
     color: var(--color-text-primary);
-    padding: 6px 28px 6px 8px;
+    padding: 2px 8px;
     font: inherit;
   }
 }
@@ -1592,9 +1427,13 @@ input {
 }
 
 .track-review {
-  padding: 12px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-height: clamp(150px, 30vh, 260px);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: var(--color-background);
 }
 
@@ -1602,8 +1441,9 @@ input {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 9px;
+  gap: var(--spacing-xs);
+  flex-wrap: wrap;
+  margin-bottom: var(--spacing-xs);
 
   h3, p { margin: 0; }
   h3 { font-size: 13px; }
@@ -1613,8 +1453,9 @@ input {
 .review-actions { display: flex; gap: 6px; }
 
 .track-list {
-  max-height: 300px;
-  overflow-y: auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
   margin: 0;
   padding: 0;
   border-top: 1px solid var(--color-border);
@@ -1636,12 +1477,12 @@ input {
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 9px;
-    padding: 7px 6px;
+    padding: 4px 6px;
     cursor: pointer;
   }
-  label.has-cover { grid-template-columns: auto 36px minmax(0, 1fr) auto; }
+  label.has-cover { grid-template-columns: auto 32px minmax(0, 1fr) auto; }
   input { width: auto; margin: 0; padding: 0; }
-  img { width: 36px; height: 36px; border-radius: 3px; object-fit: cover; }
+  img { width: 32px; height: 32px; border-radius: 3px; object-fit: cover; }
   .track-info { min-width: 0; display: grid; gap: 2px; }
   .track-info > strong,
   .track-info > span,
@@ -1668,9 +1509,9 @@ input {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px;
+  padding: var(--spacing-xs) var(--spacing-sm);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: var(--color-surface-raised);
 }
 
@@ -1679,8 +1520,23 @@ input {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+
+  > div:first-child { min-width: 0; }
 }
 
+.status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+}
+
+.destination-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .status-label,
 .status-detail,
 .status-count,
@@ -1712,9 +1568,7 @@ input {
   border-color: color-mix(in srgb, var(--color-success) 45%, var(--color-border));
   background: color-mix(in srgb, var(--color-success) 7%, var(--color-surface-raised));
 
-  .progress-fill {
-    background: var(--color-success);
-  }
+  .progress-bar { accent-color: var(--color-success); }
 }
 
 .status-card.has-import-errors {
@@ -1738,32 +1592,29 @@ input {
 }
 
 .progress-bar {
-  height: 6px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-border) 70%, transparent);
-}
-
-.progress-fill {
   width: 100%;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--color-accent);
-  transform-origin: left center;
-  transition: transform 140ms ease;
+  height: 6px;
+  accent-color: var(--color-accent);
 }
 
 .actions {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  padding-block: 2px;
+  background: var(--color-background);
+}
+
+@container (max-width: 780px) {
+  .has-review { grid-template-columns: minmax(0, 1fr); }
+  .has-review .track-review { grid-column: 1; grid-row: auto; }
 }
 
 .btn {
-  min-height: 34px;
-  padding: 6px 12px;
+  min-height: var(--settings-row-height);
+  padding: 0 var(--spacing-sm);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: var(--color-surface-raised);
   color: var(--color-text-primary);
   font-size: 12px;

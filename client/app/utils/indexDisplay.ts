@@ -1,7 +1,6 @@
 export function normalizeIndexDisplayStart(value: unknown): number {
   const n = Number(value);
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.trunc(n));
+  return Number.isSafeInteger(n) && n >= 1 ? n : 1;
 }
 
 function isSpecialIndexPath(index: number[] | undefined | null): boolean {
@@ -17,9 +16,9 @@ export function toDisplayIndexPath(index: number[], start: unknown): number[] {
 
 export function fromDisplayIndexPath(displayIndex: number[], start: unknown): number[] {
   const offset = normalizeIndexDisplayStart(start);
-  return displayIndex
-    .map(part => part - offset)
-    .filter(part => Number.isInteger(part) && part >= 0);
+  return displayIndex.every(part => Number.isSafeInteger(part) && part >= offset)
+    ? displayIndex.map(part => part - offset)
+    : [];
 }
 
 export function formatDisplayIndexPath(index: number[] | undefined | null, start: unknown): string {
@@ -28,12 +27,8 @@ export function formatDisplayIndexPath(index: number[] | undefined | null, start
 }
 
 export function parseDisplayIndexPath(raw: string, start: unknown): number[] {
-  const displayIndex = raw
-    .split(/[.,/]/)
-    .map(s => s.trim())
-    .filter(Boolean)
-    .map(s => Number.parseInt(s, 10))
-    .filter(n => Number.isFinite(n));
-
-  return fromDisplayIndexPath(displayIndex, start);
+  const parts = raw.split(/[.,/]/).map(part => part.trim());
+  return parts.every(part => /^\d+$/.test(part))
+    ? fromDisplayIndexPath(parts.map(Number), start)
+    : [];
 }

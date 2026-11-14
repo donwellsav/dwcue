@@ -1,99 +1,10 @@
 <template>
-  <div class="control-config-overlay" @click.self="$emit('close')">
-    <div class="control-config-panel">
-      <div class="config-header">
-        <div class="header-left">
-          <h3>{{ t('controls.title') }}</h3>
-        </div>
-        <button class="close-btn" @click="$emit('close')">&times;</button>
-      </div>
-
-      <div class="tab-bar">
-        <button
-          class="tab-btn"
-          :class="{ active: activeTab === 'keyboard' }"
-          @click="activeTab = 'keyboard'"
-        >
-          <span class="tab-icon">&#x2328;</span> {{ t('controls.tabKeyboard') }}
-        </button>
-        <button
-          class="tab-btn"
-          :class="{ active: activeTab === 'midi' }"
-          @click="activeTab = 'midi'"
-        >
-          <span class="tab-icon material-symbols-rounded">piano</span> {{ t('controls.tabMidi') }}
-        </button>
-      </div>
-
-      <!-- Keyboard tab -->
-      <div v-if="activeTab === 'keyboard'" class="config-body">
-        <!-- Playback section -->
-        <div class="category-header">{{ t('controls.sectionPlayback') }}</div>
-        <div
-          v-for="action in PLAYBACK_ACTIONS"
-          :key="action.id"
-          class="action-row keyboard-action-row"
-          :class="{
-            capturing: capturingKeyAction === action.id,
-            conflict: keyConflictAction === action.id || keyConflictSlotForAction === action.id
-          }"
-          @click="startCaptureAction(action.id)"
-        >
-          <span class="action-label">{{ t(action.labelKey) }}</span>
-          <span class="action-binding">
-            <template v-if="capturingKeyAction === action.id">
-              {{ t('controls.pressAnyKey') }}
-            </template>
-            <template v-else-if="getPlaybackKeyLabel(action.id)">
-              {{ getPlaybackKeyLabel(action.id) }}
-            </template>
-            <template v-else>—</template>
-          </span>
-          <button
-            v-if="getPlaybackBinding(action.id)"
-            class="clear-key-btn"
-            @click.stop="clearPlaybackBinding(action.id)"
-          >{{ t('controls.clear') }}</button>
-          <span v-if="keyErrorActionId === action.id && keyErrorMessage" class="error-msg">{{ keyErrorMessage }}</span>
-        </div>
-
-        <!-- One Shots section -->
-        <div class="category-header">{{ t('controls.sectionOneShots') }}</div>
-        <div
-          v-for="entry in configuredOneShots"
-          :key="entry.item.uuid"
-          class="action-row keyboard-action-row"
-          :class="{
-            capturing: capturingSlot === entry.slotIndex,
-            conflict: conflictSlot === entry.slotIndex
-          }"
-          @click="startCaptureSlot(entry.slotIndex)"
-        >
-          <span class="action-label">{{ t('controls.oneShot', { n: entry.slotIndex + 1 }) }}</span>
-          <span class="action-binding">
-            <template v-if="capturingSlot === entry.slotIndex">
-              {{ t('controls.pressAnyKey') }}
-            </template>
-            <template v-else-if="getSlotKeyLabel(entry.slotIndex)">
-              {{ getSlotKeyLabel(entry.slotIndex) }}
-            </template>
-            <template v-else>—</template>
-          </span>
-          <button
-            v-if="keyMappings[entry.slotIndex]"
-            class="clear-key-btn"
-            @click.stop="clearSlotBinding(entry.slotIndex)"
-          >{{ t('controls.clear') }}</button>
-          <span v-if="keyErrorMessage && keyErrorSlot === entry.slotIndex" class="error-msg">{{ keyErrorMessage }}</span>
-        </div>
-      </div>
-
-      <!-- MIDI tab -->
-      <div v-if="activeTab === 'midi'" class="config-body">
-        <!-- Device selector -->
-        <div class="device-row">
-          <label class="device-label">{{ t('controls.midiDevice') }}</label>
+  <section class="control-config-panel" :aria-label="t('controls.title')" @keydown.capture="handleKeydown">
+      <div class="config-toolbar">
+        <div v-if="mode === 'midi'" class="device-row">
+          <label for="shortcut-midi-device" class="device-label">{{ t('controls.midiDevice') }}</label>
           <select
+            id="shortcut-midi-device"
             class="device-select"
             :value="preferredDevice ?? ''"
             @change="handleDeviceChange"
@@ -103,67 +14,118 @@
           </select>
           <span v-if="connectedDevices.length === 0" class="no-device-hint">{{ t('controls.noDevices') }}</span>
         </div>
+        <label class="shortcut-bar-toggle">
+          <input v-model="showShortcutsBar" type="checkbox" />
+          {{ t('settings.showShortcutsBar') }}
+        </label>
+        <button class="reset-btn" @click="handleReset">
+          {{ mode === 'keyboard' ? t('controls.resetKeyboard') : t('controls.resetMidi') }}
+        </button>
+      </div>
 
-        <template v-for="category in midiCategories" :key="category">
-          <div class="category-header">{{ t(categoryLabelKey(category)) }}</div>
-          <div
-            v-for="action in midiActionsByCategory(category)"
-            :key="action.id"
-            class="action-row"
-            :class="{ learning: learning === action.id }"
-          >
-            <span class="action-label">{{ action.n !== undefined ? t(action.labelKey, { n: action.n }) : t(action.labelKey) }}</span>
-            <span class="action-binding">
-              <template v-if="learning === action.id">
-                {{ t('controls.waitingForInput') }}
-              </template>
-              <template v-else-if="getMidiBinding(action.id)">
-                {{ formatMidiBindingLabel(action.id) }}
-              </template>
-              <template v-else>—</template>
+      <!-- Keyboard tab -->
+      <div v-if="mode === 'keyboard'" class="config-body">
+        <!-- Playback section -->
+        <div
+          v-for="action in PLAYBACK_ACTIONS"
+          :key="action.id"
+          class="action-row keyboard-action-row"
+          :class="{
+            capturing: capturingKeyAction === action.id,
+            conflict: keyConflictAction === action.id || keyConflictSlotForAction === action.id
+          }"
+        >
+          <span class="action-label">{{ t(action.labelKey) }}</span>
+          <button type="button" class="action-binding binding-button"
+            :aria-label="t(action.labelKey)"
+            @click="startCaptureAction(action.id, $event)"
+            @blur="cancelKeyCapture">
+            <template v-if="capturingKeyAction === action.id">
+              {{ t('controls.pressAnyKey') }}
+            </template>
+            <template v-else-if="playbackKeyLabel(action.id)">
+              {{ playbackKeyLabel(action.id) }}
+            </template>
+            <template v-else>—</template>
+          </button>
+          <button
+            v-if="getPlaybackBinding(action.id)"
+            type="button"
+            class="clear-key-btn"
+            :aria-label="`${t('controls.clear')} · ${t(action.labelKey)}`"
+            :title="t('controls.clear')"
+            @click.stop="clearPlaybackBinding(action.id)"
+          ><span class="material-symbols-rounded" aria-hidden="true">close</span></button>
+          <span v-if="keyErrorActionId === action.id && keyErrorMessage" class="error-msg">{{ keyErrorMessage }}</span>
+        </div>
+
+        <h3 v-if="configuredOneShots.length" class="binding-heading">{{ t('controls.sectionOneShots') }}</h3>
+        <div
+          v-for="entry in configuredOneShots"
+          :key="entry.item.uuid"
+          class="action-row keyboard-action-row"
+          :class="{
+            capturing: capturingSlot === entry.slotIndex,
+            conflict: conflictSlot === entry.slotIndex
+          }"
+        >
+          <span class="action-label">{{ t('controls.oneShot', { n: entry.slotIndex + 1 }) }}</span>
+          <button type="button" class="action-binding binding-button"
+            :aria-label="t('controls.oneShot', { n: entry.slotIndex + 1 })"
+            @click="startCaptureSlot(entry.slotIndex, $event)"
+            @blur="cancelKeyCapture">
+            <template v-if="capturingSlot === entry.slotIndex">
+              {{ t('controls.pressAnyKey') }}
+            </template>
+            <template v-else-if="getSlotKeyLabel(entry.slotIndex)">
+              {{ getSlotKeyLabel(entry.slotIndex) }}
+            </template>
+            <template v-else>—</template>
+          </button>
+          <button
+            v-if="keyMappings[entry.slotIndex]"
+            type="button"
+            class="clear-key-btn"
+            :aria-label="`${t('controls.clear')} · ${t('controls.oneShot', { n: entry.slotIndex + 1 })}`"
+            :title="t('controls.clear')"
+            @click.stop="clearSlotBinding(entry.slotIndex)"
+          ><span class="material-symbols-rounded" aria-hidden="true">close</span></button>
+          <span v-if="keyErrorMessage && keyErrorSlot === entry.slotIndex" class="error-msg">{{ keyErrorMessage }}</span>
+        </div>
+      </div>
+
+      <!-- MIDI tab -->
+      <div v-else class="config-body">
+        <template v-for="group in midiGroups" :key="group.id">
+          <h3 v-if="group.id === 'One Shots'" class="binding-heading">{{ t('controls.sectionOneShots') }}</h3>
+          <div v-for="action in group.actions" :key="action.id" class="action-row midi-action-row"
+            :class="{ learning: learning === action.id }">
+            <span class="action-label">{{ t(action.labelKey, { n: action.n }) }}</span>
+            <span v-if="learning === action.id || getMidiBinding(action.id)" class="midi-binding"
+              :title="formatMidiBindingLabel(action.id)" aria-live="polite">
+              {{ learning === action.id ? t('controls.waitingForInput') : formatMidiBindingLabel(action.id) }}
             </span>
             <div class="action-buttons">
-              <button
-                class="learn-btn"
-                :class="{ active: learning === action.id }"
-                @click="toggleLearn(action.id)"
-              >
+              <button type="button" class="learn-btn" :class="{ active: learning === action.id }"
+                :aria-label="`${learning === action.id ? t('controls.cancel') : t('controls.learn')} · ${t(action.labelKey, { n: action.n })}`"
+                @click="toggleLearn(action.id)">
                 {{ learning === action.id ? t('controls.cancel') : t('controls.learn') }}
               </button>
-              <button
-                v-if="getMidiBinding(action.id)"
-                class="clear-btn"
-                @click="handleMidiClear(action.id)"
-              >
-                {{ t('controls.clear') }}
+              <button v-if="getMidiBinding(action.id)" type="button" class="clear-btn"
+                :aria-label="`${t('controls.clear')} · ${t(action.labelKey, { n: action.n })}`"
+                :title="t('controls.clear')"
+                @click="handleMidiClear(action.id)">
+                <span class="material-symbols-rounded" aria-hidden="true">close</span>
               </button>
             </div>
           </div>
 
-          <!-- Master-volume step multiplier (incremental control) -->
-          <template v-if="category === 'Volume'">
-            <div class="action-row">
-              <span class="action-label">{{ t('controls.volumeMultiplier') }}</span>
-              <input
-                class="multiplier-input"
-                type="number"
-                min="0.1"
-                max="60"
-                step="0.1"
-                :value="masterVolumeMultiplier"
-                @change="onMultiplierChange"
-              />
-            </div>
-            <p class="multiplier-hint">{{ t('controls.volumeMultiplierHint') }}</p>
-          </template>
+          <label v-if="group.id === 'Volume'" class="action-row midi-action-row">
+            <span class="action-label">{{ t('controls.volumeMultiplier') }}</span>
+            <input class="multiplier-input" type="number" :title="t('controls.volumeMultiplierHint')" min="0.1" max="60" step="0.1"
+              :value="masterVolumeMultiplier" @change="onMultiplierChange" />
+          </label>
         </template>
-      </div>
-
-      <div class="config-footer">
-        <button class="reset-btn" @click="handleReset">
-          {{ activeTab === 'keyboard' ? t('controls.resetKeyboard') : t('controls.resetMidi') }}
-        </button>
-        <button class="done-btn" @click="$emit('close')">{{ t('controls.close') }}</button>
       </div>
 
       <!-- MIDI Conflict dialog -->
@@ -176,12 +138,11 @@
           </div>
         </div>
       </div>
-    </div>
-  </div>
+  </section>
 </template>
 
 <script setup lang="ts">
-import { formatKeyLabel, eventToBinding, isReservedCombo, PLAYBACK_ACTIONS } from '~/composables/useCartHotkeys';
+import { formatKeyLabel, eventToBinding, bindingsMatch, isReservedCombo, PLAYBACK_ACTIONS } from '~/composables/useCartHotkeys';
 import {
   MIDI_ACTIONS,
   formatMidiBinding,
@@ -192,14 +153,14 @@ import {
 import type { PlaybackKeyAction, CartSlotKeyBinding } from '~/types/project';
 import { buildOneShotSlots } from '~/utils/oneShots';
 
-const emit = defineEmits<{ close: [] }>();
-
 const { t } = useLocalization();
+const showShortcutsBar = useState('showShortcutsBar', () => true);
 
 // Keyboard state
 const {
   keyMappings,
   playbackMappings,
+  playbackKeyLabel,
   updateBinding: updateKeyBinding,
   updatePlaybackBinding,
   resetToDefaults,
@@ -250,7 +211,7 @@ const onMultiplierChange = (e: Event) => {
 };
 
 const midiConflictInfo = ref<{ actionId: MidiActionId; binding: MidiBinding; conflictAction: string } | null>(null);
-const activeTab = ref<'keyboard' | 'midi'>('keyboard');
+const { mode } = defineProps<{ mode: 'keyboard' | 'midi' }>();
 
 // --- Keyboard helpers ---
 
@@ -261,11 +222,6 @@ const getSlotKeyLabel = (slotIndex: number): string => {
 
 const getPlaybackBinding = (action: PlaybackKeyAction): CartSlotKeyBinding | null => {
   return playbackMappings.value[action] ?? null;
-};
-
-const getPlaybackKeyLabel = (action: PlaybackKeyAction): string => {
-  const binding = getPlaybackBinding(action);
-  return binding ? formatKeyLabel(binding) : '';
 };
 
 const clearSlotBinding = (slotIndex: number) => {
@@ -280,7 +236,8 @@ const clearPlaybackBinding = (action: PlaybackKeyAction) => {
   saveProject();
 };
 
-const startCaptureSlot = (slotIndex: number) => {
+const startCaptureSlot = (slotIndex: number, event: MouseEvent) => {
+  (event.currentTarget as HTMLElement).focus();
   capturingSlot.value = slotIndex;
   capturingKeyAction.value = null;
   keyErrorMessage.value = null;
@@ -291,7 +248,8 @@ const startCaptureSlot = (slotIndex: number) => {
   keyConflictSlotForAction.value = null;
 };
 
-const startCaptureAction = (action: PlaybackKeyAction) => {
+const startCaptureAction = (action: PlaybackKeyAction, event: MouseEvent) => {
+  (event.currentTarget as HTMLElement).focus();
   capturingKeyAction.value = action;
   capturingSlot.value = null;
   keyErrorMessage.value = null;
@@ -302,33 +260,34 @@ const startCaptureAction = (action: PlaybackKeyAction) => {
   keyConflictSlotForAction.value = null;
 };
 
+const cancelKeyCapture = () => {
+  capturingSlot.value = null;
+  capturingKeyAction.value = null;
+  keyErrorMessage.value = null;
+  keyErrorSlot.value = null;
+  keyErrorActionId.value = null;
+};
+
 const handleKeydown = (e: KeyboardEvent) => {
-  if (e.key === 'Escape') {
-    e.preventDefault();
-    if (capturingSlot.value !== null || capturingKeyAction.value !== null) {
-      capturingSlot.value = null;
-      capturingKeyAction.value = null;
-      keyErrorMessage.value = null;
-      keyErrorSlot.value = null;
-      keyErrorActionId.value = null;
-      return;
-    }
-    if (learning.value) {
-      stopLearn();
-      return;
-    }
-    emit('close');
+  if (e.defaultPrevented) return;
+  const binding = eventToBinding(e);
+  const stop = playbackMappings.value['stop-all'];
+  if (stop && bindingsMatch(stop, binding)) {
+    // Keep panic available even while the editor has a key assignment armed.
+    cancelKeyCapture();
     return;
   }
-
-  if (activeTab.value !== 'keyboard') return;
-  if (capturingSlot.value === null && capturingKeyAction.value === null) return;
-  if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
+  if (mode !== 'keyboard' || (capturingSlot.value === null && capturingKeyAction.value === null)) return;
+  if (e.key === 'Escape') {
+    cancelKeyCapture();
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
+  if (['Control', 'Shift', 'Alt', 'Meta', 'Tab'].includes(e.key)) return;
 
   e.preventDefault();
   e.stopPropagation();
-
-  const binding = eventToBinding(e);
 
   if (isReservedCombo(binding)) {
     keyErrorMessage.value = t('controls.reserved');
@@ -394,25 +353,15 @@ const handleKeydown = (e: KeyboardEvent) => {
 
 // --- MIDI helpers ---
 
-const midiCategories = computed(() => {
-  const cats: string[] = [];
-  for (const action of MIDI_ACTIONS) {
-    if (!cats.includes(action.category)) cats.push(action.category);
-  }
-  return cats;
+const midiGroups = computed(() => {
+  const priority = (id: MidiActionId) => id === 'play-next' ? 0 : id === 'stop-all' ? 1 : 2;
+  return ['Playback', 'Volume', 'One Shots'].map(id => ({
+    id,
+    actions: MIDI_ACTIONS.filter(action => action.category === id
+      && (action.n === undefined || !!oneShotSlots.value[action.n - 1]))
+      .sort((a, b) => priority(a.id) - priority(b.id)),
+  })).filter(group => group.actions.length);
 });
-
-const categoryLabelKey = (category: string): string => {
-  if (category === 'One Shots' || category === 'Cart Slots') return 'controls.sectionOneShots';
-  if (category === 'Playback')   return 'controls.sectionPlayback';
-  if (category === 'Volume')     return 'controls.sectionVolume';
-  return category;
-};
-
-const midiActionsByCategory = (category: string) =>
-  MIDI_ACTIONS.filter(a => a.category === category && (
-    a.n === undefined || !!oneShotSlots.value[a.n - 1]
-  ));
 
 const getMidiBinding = (actionId: string): MidiBinding | undefined =>
   midiConfig.value.bindings[actionId];
@@ -463,7 +412,7 @@ const handleDeviceChange = (e: Event) => {
 // --- Shared ---
 
 const handleReset = () => {
-  if (activeTab.value === 'keyboard') {
+  if (mode === 'keyboard') {
     resetToDefaults();
     resetPlaybackToDefaults();
     saveProject();
@@ -472,182 +421,130 @@ const handleReset = () => {
   }
 };
 
-onMounted(() => {
-  window.addEventListener('keydown', handleKeydown, true);
+watch(() => mode, () => {
+  cancelKeyCapture();
+  if (learning.value) stopLearn();
+  midiConflictInfo.value = null;
 });
-
 onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeydown, true);
   if (learning.value) stopLearn();
 });
 </script>
 
 <style scoped>
-.control-config-overlay {
-  position: fixed;
-  inset: 0;
-  background: var(--dialog-backdrop);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
 .control-config-panel {
-  background: var(--dialog-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--dialog-radius);
-  width: min(var(--modal-width), 92vw);
-  max-height: var(--modal-max-height);
-  overflow: hidden;
   display: flex;
+  flex: 1;
   flex-direction: column;
-  box-shadow: var(--dialog-shadow);
+  min-height: 0;
   position: relative;
 }
 
-.config-header {
+.config-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: var(--dialog-header-padding);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.header-left {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.config-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.close-btn {
-  display: grid;
-  place-items: center;
-  width: var(--spacing-xxl);
-  height: var(--spacing-xxl);
-  padding: 0;
-  background: none;
-  border: none;
-  border-radius: var(--control-radius);
-  font-size: 18px;
-  cursor: pointer;
-  color: var(--color-text-secondary);
-  line-height: 1;
-}
-
-.close-btn:hover {
-  color: var(--color-text-primary);
-}
-
-/* Tabs */
-.tab-bar {
-  display: flex;
   flex-shrink: 0;
-  gap: 2px;
-  padding: 0 20px;
-  border-bottom: 1px solid var(--color-border);
-  background-color: var(--color-surface);
-  overflow-x: auto;
-}
-
-.tab-btn {
-  min-height: 36px;
-  padding: 6px var(--spacing-md);
-  font-size: 13px;
-  font-weight: 500;
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
+  flex-wrap: wrap;
   gap: var(--spacing-sm);
-}
-
-.tab-btn:hover { color: var(--color-text-primary); }
-.tab-btn.active {
-  color: var(--color-accent);
-  border-bottom-color: var(--color-accent, #3b82f6);
-}
-
-.tab-icon {
-  font-size: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  padding: 3px var(--workspace-gutter);
+  min-height: 33px;
+  border-bottom: 1px solid var(--color-border);
 }
 
 /* Body */
 .config-body {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 1px var(--spacing-sm);
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 8px 0;
+  width: min(100%, var(--settings-width));
+  padding: var(--spacing-xs) var(--workspace-gutter);
 }
 
-/* Category headers */
-.category-header {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--color-text-secondary);
-  padding: 12px 20px 4px;
+.binding-heading {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  min-height: var(--settings-row-height);
+  padding-inline: var(--spacing-sm);
+  font-size: 12px;
+  border-bottom: 1px solid var(--color-border);
 }
 
-/* Shared action row (both tabs) */
 .action-row {
   display: grid;
-  grid-template-columns: 130px minmax(80px, 1fr) 108px;
   align-items: center;
-  gap: 8px;
-  padding: 6px 20px;
+  gap: var(--spacing-xs);
+  min-width: 0;
+  min-height: 32px;
+  padding: 1px var(--spacing-sm);
+  line-height: 1.1;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
   transition: background-color 0.1s;
 }
 
 .action-row:hover { background: var(--color-surface-hover); }
 .action-row.capturing,
-.keyboard-action-row.capturing {
-  background: rgba(59, 130, 246, 0.1);
-  cursor: text;
+.action-row.learning {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
 }
-.action-row.conflict { background: rgba(239, 68, 68, 0.1); }
-.action-row.learning { background: rgba(59, 130, 246, 0.1); }
+.action-row.conflict { border-color: var(--color-danger); }
 
-.keyboard-action-row { cursor: pointer; }
+.keyboard-action-row {
+  grid-template-columns: minmax(0, 1fr) minmax(114px, 0.8fr) var(--settings-control-height);
+}
+
+.midi-action-row {
+  grid-template-columns: minmax(0, 1fr) 82px;
+}
+
+.midi-action-row .action-buttons {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.midi-binding {
+  grid-column: 1 / -1;
+  min-width: 0;
+  font: 11px var(--font-mono);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
 
 .action-label {
   grid-column: 1;
   font-size: 13px;
   color: var(--color-text-primary);
+  overflow-wrap: anywhere;
 }
 
 .action-binding {
   grid-column: 2;
   font-family: var(--font-mono);
   font-size: 12px;
+  line-height: 1.15;
   font-weight: 600;
   color: var(--color-text-primary);
   background: var(--color-background);
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
   padding: 2px 8px;
-  min-width: 80px;
+  min-width: 0;
+  min-height: var(--settings-control-height);
+  overflow-wrap: anywhere;
   text-align: center;
 }
 
 .error-msg {
   grid-column: 2 / -1;
   font-size: 11px;
-  color: #ef4444;
+  color: var(--color-danger);
   flex-shrink: 0;
   max-width: none;
 }
@@ -655,17 +552,19 @@ onUnmounted(() => {
 /* MIDI / keyboard action buttons */
 .action-buttons {
   grid-column: 3;
-  display: flex;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--settings-control-height);
   gap: 4px;
-  flex-shrink: 0;
 }
 
 .learn-btn,
 .clear-btn,
 .clear-key-btn {
   font-size: 11px;
-  padding: 3px 8px;
+  min-height: var(--settings-control-height);
+  padding: 2px 5px;
+  min-width: 0;
+  overflow-wrap: anywhere;
   border-radius: var(--control-radius);
   border: 1px solid var(--color-border);
   background: var(--color-background);
@@ -677,8 +576,17 @@ onUnmounted(() => {
 
 .clear-key-btn {
   grid-column: 3;
-  justify-self: end;
 }
+
+.clear-btn,
+.clear-key-btn {
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.clear-btn .material-symbols-rounded,
+.clear-key-btn .material-symbols-rounded { font-size: 16px; }
 
 .learn-btn:hover,
 .clear-btn:hover,
@@ -693,30 +601,24 @@ onUnmounted(() => {
 /* Master-volume multiplier input */
 .multiplier-input {
   grid-column: 2;
-  width: 80px;
+  width: 100%;
+  min-height: var(--settings-control-height);
   font-size: 12px;
-  padding: 4px 8px;
+  padding: 2px 8px;
   border-radius: var(--control-radius);
   border: 1px solid var(--color-border);
   background: var(--color-background);
   color: var(--color-text-primary);
 }
 
-.multiplier-hint {
-  font-size: 11px;
-  color: var(--color-text-secondary);
-  padding: 0 20px 8px;
-  margin: 0;
-}
 
 /* Device selector row */
 .device-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 20px 8px;
-  border-bottom: 1px solid var(--color-border);
-  margin-bottom: 4px;
+  gap: var(--spacing-xs);
+  flex-wrap: wrap;
+  max-width: 100%;
 }
 
 .device-label {
@@ -727,9 +629,10 @@ onUnmounted(() => {
 }
 
 .device-select {
-  flex: 1;
+  width: clamp(100px, 13vw, 176px);
   font-size: 12px;
-  padding: 4px 8px;
+  min-height: var(--settings-control-height);
+  padding: 2px 8px;
   border-radius: var(--control-radius);
   border: 1px solid var(--color-border);
   background: var(--color-background);
@@ -739,23 +642,25 @@ onUnmounted(() => {
 
 .no-device-hint {
   font-size: 11px;
-  color: var(--color-text-disabled);
-  flex-shrink: 0;
+  color: var(--color-text-secondary);
 }
 
-/* Footer */
-.config-footer {
+.shortcut-bar-toggle {
   display: flex;
-  justify-content: space-between;
-  padding: 12px 20px;
-  border-top: 1px solid var(--color-border);
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
-.reset-btn,
-.done-btn {
-  padding: var(--spacing-sm) var(--spacing-lg);
+.shortcut-bar-toggle input { margin: 0; }
+
+.reset-btn {
+  min-height: var(--settings-control-height);
+  padding: 2px var(--spacing-sm);
   border-radius: var(--control-radius);
-  font-size: 14px;
+  font-size: 12px;
+  white-space: nowrap;
   cursor: pointer;
   border: 1px solid var(--color-border);
   background: var(--color-background);
@@ -763,16 +668,34 @@ onUnmounted(() => {
   transition: background-color 0.15s;
 }
 
-.reset-btn:hover,
-.done-btn:hover { background: var(--color-surface-hover); }
+.reset-btn:hover { background: var(--color-surface-hover); }
 
-.done-btn {
-  background: var(--color-accent, #3b82f6);
-  color: white;
-  border-color: transparent;
+.binding-button {
+  background: var(--color-control);
+  padding: 2px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
 }
 
-.done-btn:hover { opacity: 0.9; }
+.binding-button:hover {
+  border-color: var(--color-accent);
+}
+
+@container (max-width: 900px) {
+  .config-body { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@container (max-width: 560px) {
+  .config-body { grid-template-columns: minmax(0, 1fr); }
+}
+
+.binding-button:focus-visible,
+.learn-btn:focus-visible,
+.clear-btn:focus-visible,
+.clear-key-btn:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
 
 /* Conflict dialog */
 .conflict-overlay {

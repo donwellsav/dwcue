@@ -129,19 +129,19 @@ function createOneShotMutationBroker({
 
   function request(sender, rawRequest) {
     const request = validateRequest(rawRequest);
-    if (sender !== getCartWebContents()) throw new Error('IPC request rejected: sender is not the detached One Shots window');
+    if (sender !== getCartWebContents()) throw new Error('IPC request rejected: sender is not the detached QuickPlays window');
     if (!sameIdentity(request.identity, getCurrentIdentity())) {
       return Promise.resolve(unavailableResult(request, 'Project ownership changed'));
     }
     const primary = getPrimaryWebContents();
     if (!usable(primary)) return Promise.resolve(unavailableResult(request, 'Primary project owner is unavailable'));
-    if (pending.has(request.requestId)) throw new Error('Duplicate One Shot mutation requestId');
+    if (pending.has(request.requestId)) throw new Error('Duplicate QuickPlay mutation requestId');
 
     return new Promise((resolve) => {
       const entry = { request, resolve, listeners: [], timer: null };
       entry.timer = setTimer(() => settle(entry, unavailableResult(request, 'Primary project owner did not respond')), timeoutMs);
       pending.set(request.requestId, entry);
-      watch(entry, sender, 'Detached One Shots window');
+      watch(entry, sender, 'Detached QuickPlays window');
       watch(entry, primary, 'Primary project owner');
       try {
         primary.send('one-shot-mutation-request', request);
@@ -155,7 +155,7 @@ function createOneShotMutationBroker({
     const result = validateResult(rawResult);
     if (sender !== getPrimaryWebContents()) throw new Error('IPC result rejected: sender is not the primary project owner');
     const entry = pending.get(result.requestId);
-    if (!entry) throw new Error('IPC result rejected: no matching One Shot mutation request');
+    if (!entry) throw new Error('IPC result rejected: no matching QuickPlay mutation request');
     if (!sameIdentity(result.identity, entry.request.identity) || !sameIdentity(result.identity, getCurrentIdentity())) {
       throw new Error('IPC result rejected: project ownership changed');
     }

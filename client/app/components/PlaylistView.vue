@@ -7,11 +7,16 @@
       </div>
       <!-- Import / add-group are edit actions — hidden in Show Mode. -->
       <div v-if="!showMode" class="playlist-actions">
-        <Btn icon="audio_file" :text="t('playlist.importAudio')" :disabled="!currentProject" @click="handleImport" />
-        <Btn v-if="importReviewAvailable" :text="t('importAudio.resultsTitle')" @click="handleImport" />
-        <Btn v-if="canOnlineImport" icon="youtube_activity" :text="t('youtube.importFromYouTube')" @click="showYouTubeModal = true" />
-        <Btn v-if="canOnlineImport" icon="library_music" :text="t('spotifyImport.button')" @click="showSpotifyModal = true" />
-        <Btn icon="folder" :text="t('playlist.addGroup')" :disabled="!currentProject" @click="handleAddGroup" />
+        <Btn icon="audio_file" :text="t('playlist.importAudio')" :title="t('playlist.importAudio')"
+          :aria-label="t('playlist.importAudio')" :disabled="!currentProject" @click="handleImport" />
+        <Btn v-if="importReviewAvailable" icon="list_alt" :text="t('importAudio.resultsTitle')"
+          :title="t('importAudio.resultsTitle')" :aria-label="t('importAudio.resultsTitle')" @click="handleImport" />
+        <Btn v-if="canOnlineImport" icon="youtube_activity" :text="t('youtube.importFromYouTube')"
+          :title="t('youtube.importFromYouTube')" :aria-label="t('youtube.importFromYouTube')" @click="openImport('youtube')" />
+        <Btn v-if="canOnlineImport" icon="library_music" :text="t('spotifyImport.button')"
+          :title="t('spotifyImport.button')" :aria-label="t('spotifyImport.button')" @click="openImport('spotify')" />
+        <Btn icon="folder" :text="t('playlist.addGroup')" :title="t('playlist.addGroup')"
+          :aria-label="t('playlist.addGroup')" :disabled="!currentProject" @click="handleAddGroup" />
       </div>
     </div>
     
@@ -43,32 +48,32 @@
       </div>
     </div>
 
-    <!-- YouTube Import Modal -->
-    <YouTubeImportModal
-      :is-open="showYouTubeModal"
-      :project-folder-path="currentProject?.folderPath ?? ''"
-      :project-epoch="projectEpoch"
-      :import-files="importFromServerPaths"
-      @close="showYouTubeModal = false"
-    />
-
-    <!-- Spotify Import Modal -->
-    <SpotifyImportModal
-      :open="showSpotifyModal"
-      :project-folder-path="currentProject?.folderPath ?? ''"
-      :project-epoch="projectEpoch"
-      :import-files="importFromServerPaths"
-      @close="showSpotifyModal = false"
-    />
-
-    <!-- Audio Import Modal — server browse + native upload -->
-    <AudioImportModal :open="showImportModal"
-                      :busy="audioImportBusy"
-                      :result="audioImportResult"
-                      :progress="audioImportProgress"
-                      @pick="onImportPick"
-                      @cancel="cancelAudioImport"
-                      @close="closeAudioImport" />
+    <Teleport defer to="#workspace-import-host">
+      <YouTubeImportModal
+        :key="`youtube-${projectEpoch}`"
+        :visible="workspaceImportPanel === 'youtube'"
+        :is-open="importOpen.youtube"
+        :project-folder-path="currentProject?.folderPath ?? ''"
+        :project-epoch="projectEpoch"
+        :import-files="importFromServerPaths"
+      />
+      <SpotifyImportModal
+        :key="`spotify-${projectEpoch}`"
+        :visible="workspaceImportPanel === 'spotify'"
+        :open="importOpen.spotify"
+        :project-folder-path="currentProject?.folderPath ?? ''"
+        :project-epoch="projectEpoch"
+        :import-files="importFromServerPaths"
+        @close="closeImport('spotify')"
+      />
+      <AudioImportModal :key="projectEpoch" :open="importOpen.media" docked :visible="workspaceImportPanel === 'media'"
+                        :busy="audioImportBusy"
+                        :result="audioImportResult"
+                        :progress="audioImportProgress"
+                        @pick="onImportPick"
+                        @cancel="cancelAudioImport"
+                        @close="closeAudioImport" />
+    </Teleport>
   </div>
 </template>
 
@@ -103,6 +108,7 @@ const {
   getAllItemsFlat,
   findItemByUuid,
   projectEpoch,
+  workspaceImportPanel,
 } = useProject();
 const { t } = useLocalization();
 const theme = useState('theme', () => 'dark');
@@ -131,9 +137,9 @@ const playlistRowStyle = computed(() => ({
 const scrollContainer = ref<HTMLElement | null>(null);
 const canOnlineImport = computed(() => !!currentProject.value && server.isLocalServer);
 
-const showYouTubeModal = ref(false);
-const showSpotifyModal = ref(false);
-const showImportModal  = ref(false);
+const showProjectSettings = useState('showProjectSettings', () => false);
+// The dock can hide a form while its import still owns an active job.
+const importOpen = reactive({ media: false, youtube: false, spotify: false });
 const audioImportBusy = ref(false);
 const audioImportResult = ref<ImportBatchResult | null>(null);
 const importReviewAvailable = computed(() => audioImportResult.value?.results.some(
@@ -143,6 +149,10 @@ let audioImportAbortController: AbortController | null = null;
 watch([projectEpoch, () => server.serverUrl, () => server.projectSessionId], () => {
   audioImportAbortController?.abort();
   audioImportResult.value = null;
+});
+watch(projectEpoch, () => {
+  workspaceImportPanel.value = null;
+  importOpen.media = importOpen.youtube = importOpen.spotify = false;
 });
 
 // ---------------------------------------------------------------------------
@@ -425,10 +435,21 @@ onUnmounted(() => {
 
 const handleImport = () => {
   if (!currentProject.value) return;
-  showImportModal.value = true;
+  openImport('media');
 };
 
-// Called once per file the user selected in the modal (server browse or upload).
+function openImport(panel: keyof typeof importOpen) {
+  showProjectSettings.value = false;
+  importOpen[panel] = true;
+  workspaceImportPanel.value = panel;
+}
+
+function closeImport(panel: keyof typeof importOpen) {
+  importOpen[panel] = false;
+  if (workspaceImportPanel.value === panel) workspaceImportPanel.value = null;
+}
+
+// Called with the files selected in the panel (server browse or upload).
 // The path is always a server-side absolute path at this point.
 const onImportPick = async (
   serverPaths: string | string[],
@@ -461,7 +482,7 @@ const cancelAudioImport = () => audioImportAbortController?.abort();
 
 const closeAudioImport = () => {
   if (audioImportBusy.value) return;
-  showImportModal.value = false;
+  closeImport('media');
 };
 
 interface PreparedImport {
@@ -1200,7 +1221,6 @@ const handleDrop = async (e: DragEvent) => {
         success: false, imported: 0, error: reason,
         results: [{ sourcePath: file.name, displayName: file.name, status: 'failed', reason }],
       };
-      showImportModal.value = true;
       return;
     }
   }
@@ -1217,6 +1237,7 @@ const handleDrop = async (e: DragEvent) => {
   height: 100%;
   display: flex;
   flex-direction: column;
+  container-type: inline-size;
   background-color: var(--color-background);
 }
 
@@ -1226,16 +1247,31 @@ const handleDrop = async (e: DragEvent) => {
 
 .playlist-actions {
   display: flex;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   align-items: center;
   min-width: 0;
-  margin-left: auto;
+  margin-inline-start: auto;
   gap: var(--spacing-sm);
   overflow-x: auto;
 }
 
 .playlist-header .workspace-panel-header__leading {
   flex: 0 0 auto;
+}
+
+@container (max-width: 580px) {
+  .playlist-actions {
+    gap: var(--spacing-xs);
+  }
+
+  .playlist-actions :deep(.btn) {
+    flex: 0 0 var(--panel-control-height);
+    justify-content: center;
+    padding: 0;
+  }
+
+  .playlist-actions :deep(.btn__text),
+  .playlist-header :deep(.cart-toggle__label) { display: none; }
 }
 
 .playlist-header,

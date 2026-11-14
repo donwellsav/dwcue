@@ -5,11 +5,16 @@
     role="complementary"
     :aria-label="t('settings.helpShortcutsTitle')"
   >
-    <span class="shortcuts-bar__title">{{ t('settings.helpShortcutsTitle') }}</span>
+    <span v-if="!compact" class="shortcuts-bar__title">{{ t('settings.helpShortcutsTitle') }}</span>
     <div class="shortcuts-bar__items">
-      <span v-for="action in PLAYBACK_ACTIONS" :key="action.id" class="shortcuts-bar__item">
+      <span v-for="action in displayedActions" :key="action.id" class="shortcuts-bar__item">
         <span class="shortcuts-bar__action">{{ t(action.labelKey) }}</span>
         <kbd class="shortcuts-bar__key">{{ playbackKeyLabel(action.id) || '—' }}</kbd>
+      </span>
+      <span class="shortcuts-bar__item">
+        <span class="shortcuts-bar__action">{{ t('oneShots.defaultShortcuts') }}</span>
+        <kbd class="shortcuts-bar__key">1–9, 0</kbd>
+        <kbd class="shortcuts-bar__key">Shift+1–9, Shift+0</kbd>
       </span>
     </div>
     <button type="button" class="shortcuts-bar__edit" @click="openEditor">
@@ -30,22 +35,23 @@
 // Compact shortcut reference pinned to the bottom of the workspace, in both
 // edit and show mode — operators should never have to guess the keys. The
 // full editor is available under Settings → Shortcuts and from Customize.
-import { PLAYBACK_ACTIONS, formatKeyLabel, useCartHotkeys } from '~/composables/useCartHotkeys';
-import type { PlaybackKeyAction } from '~/types/project';
+import { PLAYBACK_ACTIONS, useCartHotkeys } from '~/composables/useCartHotkeys';
+
+const props = defineProps<{ compact: boolean }>();
+const transportActions = PLAYBACK_ACTIONS.filter(({ id }) =>
+  ['play-next', 'stop-all', 'pause-resume', 'set-up-next'].includes(id));
+const displayedActions = computed(() => props.compact ? transportActions : PLAYBACK_ACTIONS);
 
 const { t } = useLocalization();
-const { playbackMappings } = useCartHotkeys();
+const { playbackKeyLabel } = useCartHotkeys();
 
 const open = useState('showShortcutsBar', () => true);
-const showControlConfig = useState('showControlConfig', () => false);
-
-const playbackKeyLabel = (action: PlaybackKeyAction): string => {
-  const binding = playbackMappings.value[action];
-  return binding ? formatKeyLabel(binding) : '';
-};
+const showProjectSettings = useState('showProjectSettings', () => false);
+const settingsTab = useState('projectSettingsTab', () => 'audio');
 
 const openEditor = () => {
-  showControlConfig.value = true;
+  settingsTab.value = 'shortcuts';
+  showProjectSettings.value = true;
 };
 </script>
 
@@ -53,8 +59,8 @@ const openEditor = () => {
 .shortcuts-bar {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md);
-  padding: 4px var(--spacing-md);
+  gap: var(--spacing-sm);
+  padding: 2px var(--workspace-gutter);
   border-top: 1px solid var(--color-border);
   background: var(--color-surface);
   flex: 0 0 auto;

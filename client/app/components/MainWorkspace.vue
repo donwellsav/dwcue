@@ -9,7 +9,7 @@
     <PlaybackControls />
     <LevelCheckBar />
 
-    <div class="workspace-content">
+    <div ref="workspaceContent" class="workspace-content" :style="{ '--reserved-playlist-row-height': `${reservedPlaylistRowHeight}px` }">
       <aside
         v-if="monitorAssigned"
         class="monitor-console output-console"
@@ -64,7 +64,7 @@
                 aria-controls="cart-player-panel"
                 @click="toggleCart"
               >
-                <CueSymbol name="one-shots" />
+                <span class="material-symbols-rounded cart-toggle__collapse" aria-hidden="true">chevron_left</span>
               </button>
             </template>
           </OneShotPanel>
@@ -77,7 +77,7 @@
           @pointerdown="startResize"
         ></div>
 
-        <div v-if="!cartFullscreen || cartDetached" class="playlist-section">
+        <div v-show="!cartFullscreen || cartDetached" class="playlist-section">
           <div class="playlist-panel">
             <PlaylistView>
               <template #header-leading>
@@ -196,61 +196,48 @@
 
     <div id="preview-lower-panel" class="preview-lower-panel" aria-live="polite"></div>
 
-    <ShortcutsBar />
-    
-    <PropertiesPanel
-      v-if="propertiesPanelOpen && selectedItem && (uiMode !== 'playback' || selectedItem.uuid === previewItemUuid)"
-    />
+    <ShortcutsBar :compact="lowerPanelOpen" />
 
-    <ProgressModal
-      :visible="progressModal.visible"
-      :title="progressModal.title"
-      :message="progressModal.message"
-      :percentage="progressModal.percentage"
-      :background="progressModal.background"
-      @background="progressModal.background = true"
-    >
-      <Btn v-if="progressModal.percentage === 100" type="button" :text="t('actions.close')" @click="progressModal.visible = false" />
-    </ProgressModal>
-
-    <!-- Export: server vs client choice (only shown for remote servers). -->
-    <LocationChoiceModal
-      :visible="exportChoiceVisible"
-      :title="t('exportProject.chooseLocationTitle')"
-      :message="t('exportProject.chooseLocationMessage')"
-      :server-label="t('exportProject.saveOnServer')"
-      :client-label="t('exportProject.downloadHere')"
-      :cancel-label="t('common.cancel')"
-      @pick="onExportChoice"
-      @cancel="exportChoiceVisible = false"
-    />
-
-    <!-- Server file picker (directory mode) for "save on server" path. -->
-    <ServerFilePickerModal
-      :open="exportServerPickerOpen"
-      mode="directory"
-      filter="all"
-      :filter-options="['all']"
-      :fallback-start-path="currentProject?.folderPath ?? ''"
-      location-context="archive-export"
-      @pick="onExportServerPath"
-      @close="exportServerPickerOpen = false"
-    />
+    <div v-show="lowerPanelOpen" ref="lowerPanel" class="lower-workspace-panel"
+      :style="{ height: panelHeight === null ? 'auto' : `${panelHeight}px` }"
+      @keydown.capture="handlePanelKeydown($event, true)"
+      @keydown="handlePanelKeydown">
+      <div class="lower-panel-resize-handle" role="separator" aria-orientation="horizontal"
+        :aria-label="showProjectSettings ? t('settings.title') : importPanelTitle || t('properties.title')"
+        :aria-valuemin="MIN_PANEL_HEIGHT" :aria-valuemax="panelMaxHeight"
+        :aria-valuenow="visiblePanelHeight || panelHeight || MIN_PANEL_HEIGHT" tabindex="0"
+        @pointerdown="startPanelResize" @pointermove="movePanelResize"
+        @lostpointercapture="panelDrag = null" @keydown="handlePanelResizeKey"
+      ></div>
+      <ProjectSettingsModal :open="showProjectSettings" @close="showProjectSettings = false" />
+      <PropertiesPanel v-if="showCueProperties" />
+      <section v-show="visibleImportPanel" class="workspace-import" :aria-label="importPanelTitle">
+        <header class="workspace-panel-header">
+          <h2 class="workspace-panel-header__title">{{ importPanelTitle }}</h2>
+          <button type="button" class="workspace-import-close" :aria-label="t('actions.close')" @click="workspaceImportPanel = null">
+            <span class="material-symbols-rounded" aria-hidden="true">close</span>
+          </button>
+        </header>
+        <div id="workspace-import-host" ref="importHost" class="workspace-import-host"
+          :class="{ 'workspace-import-host--archive': visibleImportPanel?.startsWith('archive-') }"></div>
+      </section>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import LevelCheckBar from './LevelCheckBar.vue';
-import LocationChoiceModal from './LocationChoiceModal.vue';
-import ServerFilePickerModal from './ServerFilePickerModal.vue';
+import ProjectSettingsModal from './ProjectSettingsModal.vue';
 import StereoMeter from './StereoMeter.vue';
 import VolumeSlider from './VolumeSlider.vue';
+import { bindingsMatch, eventToBinding } from '~/composables/useCartHotkeys';
 import { flattenOneShots } from '~/utils/oneShots';
 
 const {
   selectedItem,
   selectedItems,
   propertiesPanelOpen,
+  workspaceImportPanel,
   previewItemUuid,
   saveProject,
   closeProject,
@@ -267,19 +254,83 @@ const {
 const { cartOnlyItems } = useCartItems();
 const { t } = useLocalization();
 const server = useLiveplayServer();
-const { uiMode } = useUiMode();
+const { uiMode, uiFontScale, regularPlaylistRowHeight, showPlaylistRowHeight, folderPlaylistRowHeight } = useUiMode();
 const { levels: outputTargetLevels } = useOutputTarget();
-
-
-// Progress modal state
-const progressModal = ref({
-  visible: false,
-  background: false,
-  title: '',
-  message: '',
-  percentage: 0
+const showProjectSettings = useState('showProjectSettings', () => false);
+const visibleImportPanel = computed(() => {
+  const panel = workspaceImportPanel.value;
+  return !showProjectSettings.value && (uiMode.value !== 'playback' || panel?.startsWith('archive-')) ? panel : null;
 });
-const exportBusy = ref(false);
+const importPanelTitle = computed(() => {
+  if (visibleImportPanel.value === 'media') return t('importAudio.title');
+  if (visibleImportPanel.value === 'youtube') return t('youtube.importFromYouTube');
+  if (visibleImportPanel.value === 'spotify') return t('spotifyImport.title');
+  if (visibleImportPanel.value === 'archive-import') return t('importProject.chooseSourceTitle');
+  if (visibleImportPanel.value === 'archive-export') return t('exportProject.chooseLocationTitle');
+  return '';
+});
+const showCueProperties = computed(() => !showProjectSettings.value && !visibleImportPanel.value && propertiesPanelOpen.value && selectedItem.value &&
+  (uiMode.value !== 'playback' || selectedItem.value.uuid === previewItemUuid.value));
+const lowerPanelOpen = computed(() => showProjectSettings.value || !!visibleImportPanel.value || !!showCueProperties.value);
+const reservedPlaylistRowHeight = computed(() => Math.max(folderPlaylistRowHeight.value,
+  uiMode.value === 'playback' ? showPlaylistRowHeight.value : regularPlaylistRowHeight.value));
+
+const MIN_PANEL_HEIGHT = 120;
+const MAX_PANEL_HEIGHT = 640;
+const settingsHeight = useState<number | null>('ProjectSettingsPanel.height', () => null);
+const propertiesHeight = useState<number | null>('PropertiesPanel.height', () => null);
+const importHeight = useState<number | null>('ImportPanel.height', () => null);
+const panelHeight = computed(() => showProjectSettings.value ? settingsHeight.value
+  : visibleImportPanel.value ? importHeight.value : propertiesHeight.value);
+const workspaceContent = ref<HTMLElement | null>(null);
+const lowerPanel = ref<HTMLElement | null>(null);
+const importHost = ref<HTMLElement | null>(null);
+watch(visibleImportPanel, () => {
+  if (importHost.value) importHost.value.scrollTop = 0;
+}, { flush: 'post' });
+const visiblePanelHeight = ref(0);
+const panelMaxHeight = ref(MAX_PANEL_HEIGHT);
+let panelObserver: ResizeObserver | undefined;
+let panelDrag: { pointerId: number; startY: number; height: number; max: number } | null = null;
+
+function availablePanelHeight() {
+  const content = workspaceContent.value;
+  if (!content) return MAX_PANEL_HEIGHT;
+  const reserved = parseFloat(getComputedStyle(content).minHeight);
+  return Math.min(MAX_PANEL_HEIGHT, Math.max(MIN_PANEL_HEIGHT,
+    (lowerPanel.value?.offsetHeight ?? MIN_PANEL_HEIGHT) + content.offsetHeight - reserved));
+}
+
+function setPanelHeight(height: number, max: number) {
+  const size = showProjectSettings.value ? settingsHeight : visibleImportPanel.value ? importHeight : propertiesHeight;
+  size.value = Math.round(Math.max(MIN_PANEL_HEIGHT, Math.min(max, height)));
+}
+
+function startPanelResize(event: PointerEvent) {
+  if (event.button !== 0 || !event.isPrimary) return;
+  const handle = event.currentTarget as HTMLElement;
+  event.preventDefault();
+  handle.focus({ preventScroll: true });
+  handle.setPointerCapture(event.pointerId);
+  panelDrag = {
+    pointerId: event.pointerId, startY: event.clientY,
+    height: lowerPanel.value?.offsetHeight ?? MIN_PANEL_HEIGHT, max: availablePanelHeight(),
+  };
+}
+
+function movePanelResize(event: PointerEvent) {
+  if (panelDrag?.pointerId !== event.pointerId) return;
+  setPanelHeight(panelDrag.height + (panelDrag.startY - event.clientY) * 100 / uiFontScale.value, panelDrag.max);
+}
+
+function handlePanelResizeKey(event: KeyboardEvent) {
+  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+  event.preventDefault();
+  event.stopPropagation();
+  const height = lowerPanel.value?.offsetHeight ?? MIN_PANEL_HEIGHT;
+  setPanelHeight(height + (event.key === 'ArrowUp' ? 16 : -16), availablePanelHeight());
+}
+
 
 // Resizable cart width
 const cartWidth = ref(300);
@@ -303,7 +354,8 @@ watch(hasAssignedOneShots, (assigned) => {
 const cartFullscreen = ref(false);
 const cartDetached = ref(false);
 const cartVisible = computed(() => !cartClosed.value && !cartDetached.value);
-const { mount: mountHotkeys, unmount: unmountHotkeys } = useCartHotkeys();
+const { mount: mountHotkeys, unmount: unmountHotkeys, playbackMappings } = useCartHotkeys();
+const { stopAllCues } = useAudioEngine();
 const outputConsoleMinDb = -60;
 const outputConsoleMaxDb = 40;
 const limiterCeilingDragPixelsPerStep = 6;
@@ -529,32 +581,26 @@ const startResize = (e: PointerEvent) => {
   const handleMouseMove = (e: PointerEvent) => {
     if (!isResizing.value) return;
 
-    const container = document.querySelector('.workspace-panels');
+    const container = document.querySelector<HTMLElement>('.workspace-panels');
     if (!container) return;
 
     const rect = container.getBoundingClientRect();
-    const newWidth = e.clientX - rect.left;
+    const zoom = rect.width / container.offsetWidth || 1;
+    const fromStart = getComputedStyle(container).direction === 'rtl' ? rect.right - e.clientX : e.clientX - rect.left;
+    const newWidth = fromStart / zoom;
 
     // Snap zones
     const snapThreshold = 100; // pixels from edge to trigger snap
-    const handleWidth = Number.parseFloat(
-      getComputedStyle(container).getPropertyValue('--resize-handle-width'),
-    ) || 1;
-    const minPlaylistWidth = Number.parseFloat(
-      getComputedStyle(container).getPropertyValue('--playlist-split-min-width'),
-    ) || 577;
-    const maxWidth = Math.max(0, rect.width - handleWidth - minPlaylistWidth);
-    const minWidth = Math.min(300, maxWidth);
     
-    // Check for close snap (dragging very close to left edge)
+    // Snap closed at the bank's outer edge.
     if (newWidth < snapThreshold) {
       cartClosed.value = true;
       cartFullscreen.value = false;
       return;
     }
     
-    // Check for fullscreen snap (dragging very close to right edge)
-    if (newWidth > rect.width - snapThreshold) {
+    // Expand the bank at the opposite edge.
+    if (newWidth > container.offsetWidth - snapThreshold) {
       cartFullscreen.value = true;
       cartClosed.value = false;
       return;
@@ -563,7 +609,7 @@ const startResize = (e: PointerEvent) => {
     // Normal resize
     cartClosed.value = false;
     cartFullscreen.value = false;
-    cartWidth.value = Math.round(Math.max(minWidth, Math.min(maxWidth, newWidth)));
+    cartWidth.value = Math.round(newWidth);
   };
   
   const handleMouseUp = () => {
@@ -589,10 +635,6 @@ if (import.meta.client && window.electronAPI) {
     saveProject({ force: true });
   });
 
-  window.electronAPI.onMenuExportProject(() => {
-    startExportFlow();
-  });
-
   window.electronAPI.onMenuCloseProject(async () => {
     if (!(await confirmUnsavedChanges())) return;
     void closeProject();
@@ -612,102 +654,6 @@ if (import.meta.client && window.electronAPI) {
     cartDetached.value = false;
   });
 
-}
-
-// ---------------------------------------------------------------------------
-// Export project flow (dual-dialog when the server is on another machine).
-// ---------------------------------------------------------------------------
-// When server runs locally, jump straight to a server-side directory picker.
-// Otherwise, ask the user where to save: on the server, or back to this
-// computer (via a one-shot download token). This replaces the old purely-
-// Electron archiver path, which only worked when the project files were
-// reachable from this machine.
-const exportChoiceVisible   = ref(false);
-const exportServerPickerOpen = ref(false);
-
-async function startExportFlow() {
-  if (!currentProject.value || exportBusy.value) return;
-  if (server.isLocalServer) {
-    // Local: skip the choice modal and go straight to the server picker
-    // (the "server" here is this same computer, so this matches the user's
-    // expectation of a familiar OS-style directory chooser).
-    exportServerPickerOpen.value = true;
-  } else {
-    exportChoiceVisible.value = true;
-  }
-}
-
-async function onExportChoice(choice: 'server' | 'client') {
-  exportChoiceVisible.value = false;
-  if (!currentProject.value) return;
-
-  if (choice === 'server') {
-    exportServerPickerOpen.value = true;
-    return;
-  }
-
-  // client → server packages to its temp dir, returns a token, we download
-  // the blob and save it via Electron's native save dialog.
-  await exportToClientDownload();
-}
-
-async function onExportServerPath(serverDir: string) {
-  exportServerPickerOpen.value = false;
-  if (!serverDir || !currentProject.value) return;
-  const project = currentProject.value;
-  const outPath = serverDir.replace(/[\/]+$/, '') + '/' + project.name + '.dwcuepack';
-  await runExport({ outputPath: outPath });
-}
-
-async function exportToClientDownload() {
-  if (!currentProject.value) return;
-  const project = currentProject.value;
-  const serverUrl = server.serverUrl;
-  const defaultName = project.name + '.dwcuepack';
-  // Pick the local destination FIRST so a cancelled save dialog doesn't
-  // leave a stray archive sitting in the server's temp directory.
-  const localDest = await window.electronAPI.showSaveArchiveDialog(defaultName);
-  if (!localDest || currentProject.value !== project || server.serverUrl !== serverUrl) return;
-  await runExport({ outputPath: '', downloadTo: localDest });
-}
-
-async function runExport(opts: { outputPath: string; downloadTo?: string }) {
-  if (!currentProject.value || exportBusy.value) return;
-  const project = currentProject.value;
-  const serverUrl = server.serverUrl;
-  const session = server.projectSessionId;
-  exportBusy.value = true;
-  progressModal.value = {
-    visible: true,
-    background: false,
-    title: t('exportProgress.title'),
-    message: t('exportProgress.message') + ' ' + project.name + '.dwcuepack…',
-    percentage: 30,
-  };
-  try {
-    if (!(await saveProject({ force: true }))) {
-      throw new Error('Project must be saved before it can be exported');
-    }
-    if (currentProject.value !== project || server.serverUrl !== serverUrl || server.projectSessionId !== session)
-      throw new Error('Show changed before export. Start the export again.');
-    const result = await server.exportProjectArchive(
-      project.folderPath, project.name, opts.outputPath);
-    if (opts.downloadTo) {
-      if (!result.downloadToken || server.serverUrl !== serverUrl) throw new Error('Archive download is unavailable.');
-      progressModal.value.percentage = 60;
-      progressModal.value.message =
-        t('exportProgress.downloading') + ' ' + project.name + '.dwcuepack…';
-      await server.downloadArchiveToFile(result.downloadToken, opts.downloadTo);
-    }
-    progressModal.value.message = t('exportProgress.saved', { path: opts.downloadTo || result.archivePath });
-    progressModal.value.percentage = 100;
-  } catch (e) {
-    console.error('Export failed:', e);
-    server.lastError = `Export failed: ${e instanceof Error ? e.message : String(e)}`;
-  } finally {
-    exportBusy.value = false;
-    progressModal.value.visible = progressModal.value.background && progressModal.value.percentage === 100;
-  }
 }
 
 // Keep the main process HTTP API server up-to-date with the full project state.
@@ -769,6 +715,25 @@ const isForwardedFromVideoOutput = (e: KeyboardEvent): boolean =>
   (e as KeyboardEvent & { dwcueForwardedFromVideoOutput?: boolean })
     .dwcueForwardedFromVideoOutput === true;
 
+function handlePanelKeydown(event: KeyboardEvent, beforeTabNavigation = false) {
+  if (event.defaultPrevented) return;
+  const target = event.target as HTMLElement | null;
+  // A remapped Stop All must reach transport before tab navigation consumes it.
+  if (beforeTabNavigation && !target?.closest?.('[role="tab"]')) return;
+  const stop = playbackMappings.value['stop-all'];
+  const typing = isTextInputFocused() && event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey;
+  if (!typing && stop && bindingsMatch(stop, eventToBinding(event))) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) void stopAllCues();
+    return;
+  }
+  if (beforeTabNavigation) return;
+  if (target?.closest?.('select') ||
+      ['Delete', 'Backspace'].includes(event.key) ||
+      (['Enter', ' '].includes(event.key) && target?.closest?.('button, a[href], summary'))) event.stopPropagation();
+}
+
 const handleKeydown = (e: KeyboardEvent) => {
   if (e.defaultPrevented || projectHydrationStatus.value !== 'ready') return;
   // Save on F1 key (alternative to big play button)
@@ -812,6 +777,8 @@ const handleKeydown = (e: KeyboardEvent) => {
     const uuids = Array.from(selectedItems.value);
     if (uuids.length > 0) duplicateItems(uuids);
   } else if (key === 'c') {
+    if (!isForwardedFromVideoOutput(e) && (window.getSelection()?.isCollapsed === false ||
+        (e.target as HTMLElement | null)?.closest?.('.lower-workspace-panel'))) return;
     const uuids = Array.from(selectedItems.value);
     if (uuids.length > 0) {
       e.preventDefault();
@@ -827,11 +794,18 @@ onMounted(() => {
   if (import.meta.client) {
     mountHotkeys();
     window.addEventListener('keydown', handleKeydown);
+    panelObserver = new ResizeObserver(() => {
+      visiblePanelHeight.value = lowerPanel.value?.offsetHeight ?? 0;
+      if (visiblePanelHeight.value) panelMaxHeight.value = availablePanelHeight();
+    });
+    if (lowerPanel.value) panelObserver.observe(lowerPanel.value);
+    if (workspaceContent.value) panelObserver.observe(workspaceContent.value);
   }
 });
 
 onUnmounted(() => {
   if (import.meta.client) {
+    panelObserver?.disconnect();
     unmountHotkeys();
     window.removeEventListener('keydown', handleKeydown);
   }
@@ -855,7 +829,8 @@ onUnmounted(() => {
 }
 
 .workspace-content {
-  flex: 1;
+  flex: 1 1 0;
+  min-height: calc(var(--panel-header-height) + var(--reserved-playlist-row-height) + 2 * var(--workspace-gutter));
   display: flex;
   overflow: hidden;
   position: relative;
@@ -863,10 +838,9 @@ onUnmounted(() => {
 }
 
 .preview-lower-panel {
-  flex: 0 0 112px;
-  height: 112px;
+  flex: 0 0 auto;
   box-sizing: border-box;
-  padding: var(--workspace-gutter);
+  padding: var(--spacing-xs) var(--workspace-gutter);
   overflow: hidden;
   background: var(--color-surface);
   border-top: 1px solid var(--color-border);
@@ -874,6 +848,78 @@ onUnmounted(() => {
 
 .preview-lower-panel:empty {
   display: none;
+}
+
+.lower-workspace-panel {
+  position: relative;
+  flex: 0 1 auto;
+  min-height: 120px;
+  max-height: 640px;
+  display: flex;
+  flex-direction: column;
+}
+
+.workspace-import {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-background);
+}
+
+.workspace-import-close {
+  display: grid;
+  place-items: center;
+  width: var(--panel-control-height);
+  height: var(--panel-control-height);
+  padding: 0;
+  border: 0;
+  border-radius: var(--control-radius);
+  background: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.workspace-import-close:hover {
+  background: var(--color-surface-hover);
+}
+
+.workspace-import-host {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  container-type: inline-size;
+}
+
+.workspace-import-host--archive {
+  display: flex;
+  flex-direction: column;
+}
+
+.lower-panel-resize-handle {
+  position: absolute;
+  z-index: 2;
+  inset: -6px calc(50% - 48px) auto;
+  height: 12px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.lower-panel-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  left: calc(50% - 24px);
+  width: 48px;
+  height: 2px;
+  background: var(--color-border-strong);
+}
+
+.lower-panel-resize-handle:hover::after,
+.lower-panel-resize-handle:focus-visible::after {
+  background: var(--color-accent);
 }
 
 .workspace-panels {
@@ -886,7 +932,6 @@ onUnmounted(() => {
 }
 
 .playlist-section {
-  /* Keep sticky group headers below the narrow One Shots drawer. */
   isolation: isolate;
   flex: 1 1 0;
   width: auto;
@@ -924,7 +969,7 @@ onUnmounted(() => {
   gap: var(--spacing-sm);
   min-height: 0;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: auto;
   padding: var(--spacing-sm);
   background: var(--color-background);
   box-shadow: none;
@@ -1109,6 +1154,7 @@ onUnmounted(() => {
   position: relative;
   display: flex;
   flex: 0 0 var(--output-strip-width);
+  min-height: 144px;
   align-items: stretch;
   border-radius: var(--control-radius);
   box-shadow: none;
@@ -1169,9 +1215,8 @@ onUnmounted(() => {
   }
 
   &.collapsed-left {
-    /* When cart is closed, show handle at left edge */
     position: absolute;
-    left: 0;
+    inset-inline-start: 0;
     top: var(--panel-header-height);
     bottom: 0;
     width: 8px;
@@ -1181,15 +1226,15 @@ onUnmounted(() => {
        inward — growing outward too would swallow taps on the panel behind it. */
     @media (any-pointer: coarse) {
       &::before {
-        left: 0;
-        right: -16px;
+        inset-inline-start: 0;
+        inset-inline-end: -16px;
       }
     }
 
     &::after {
       content: '';
       position: absolute;
-      left: 0;
+      inset-inline-start: 0;
       top: 0;
       bottom: 0;
       width: 1px;
@@ -1206,9 +1251,8 @@ onUnmounted(() => {
   }
   
   &.collapsed-right {
-    /* When cart is fullscreen, show handle at right edge */
     position: absolute;
-    right: 0;
+    inset-inline-end: 0;
     top: var(--panel-header-height);
     bottom: 0;
     width: 8px;
@@ -1216,15 +1260,15 @@ onUnmounted(() => {
 
     @media (any-pointer: coarse) {
       &::before {
-        left: -16px;
-        right: 0;
+        inset-inline-start: -16px;
+        inset-inline-end: 0;
       }
     }
 
     &::after {
       content: '';
       position: absolute;
-      right: 0;
+      inset-inline-end: 0;
       top: 0;
       bottom: 0;
       width: 1px;
@@ -1289,9 +1333,13 @@ onUnmounted(() => {
   }
 }
 
+.cart-toggle__collapse:dir(rtl) { transform: scaleX(-1); }
+
 .cart-section {
+  --cart-max-width: calc(100% - var(--playlist-split-min-width) - var(--resize-handle-width));
   flex: 0 0 auto;
-  max-width: calc(100% - var(--playlist-split-min-width) - var(--resize-handle-width));
+  min-width: min(220px, var(--cart-max-width));
+  max-width: var(--cart-max-width);
   overflow: hidden;
 
   &.cart-section--fullscreen {
@@ -1299,24 +1347,15 @@ onUnmounted(() => {
   }
 }
 
-/* Narrow windows: the playlist's fixed minimum (637px in show mode) plus the
-   side consoles can leave the cart section a zero-width "open" strip. Below
-   the fit threshold the panel becomes an overlay drawer instead of being
-   squeezed to nothing. Inline width is set from JS, hence !important. */
-@container (max-width: 925px) {
-  .cart-section:not(.cart-section--fullscreen) {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: min(320px, 85%) !important;
-    max-width: none;
-    z-index: 20;
-    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.45);
+/* Let the existing compact cue rows reflow before either panel loses its controls. */
+@container (max-width: 940px) {
+  .playlist-section {
+    min-width: 0;
   }
 
-  .resize-handle:not(.collapsed-left):not(.collapsed-right) {
-    display: none;
+  .cart-section:not(.cart-section--fullscreen) {
+    --cart-max-width: min(32%, 280px);
+    min-width: min(170px, var(--cart-max-width));
   }
 }
 </style>

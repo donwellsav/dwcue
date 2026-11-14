@@ -7,6 +7,54 @@ import { compile, NodeTypes, parse as parseTemplate } from '@vue/compiler-dom';
 import * as Vue from 'vue';
 import ts from 'typescript';
 
+import { formatDisplayIndexPath, parseDisplayIndexPath } from '../app/utils/indexDisplay.ts';
+
+test('playlist numbering starts at one for new shows and saved zero starts', () => {
+  for (const start of [undefined, null, 0, '0', -1, '']) {
+    assert.equal(formatDisplayIndexPath([0], start), '1');
+    assert.equal(formatDisplayIndexPath([0, 1], start), '1,2');
+    assert.deepEqual(parseDisplayIndexPath('1.2', start), [0, 1]);
+    assert.deepEqual(parseDisplayIndexPath('1,0,2', start), []);
+    assert.deepEqual(parseDisplayIndexPath('1/2x', start), []);
+  }
+  assert.equal(formatDisplayIndexPath([0, 1], 10), '10,11');
+  assert.deepEqual(parseDisplayIndexPath('10/11', 10), [0, 1]);
+  assert.equal(formatDisplayIndexPath([-1, 0], 1), '-1,0');
+});
+
+test('invalid cue number edits preserve the previously saved target', () => {
+  const file = new URL('../app/components/PropertiesPanel.vue', import.meta.url);
+  const script = parse(readFileSync(file, 'utf8')).descriptor.scriptSetup!.content;
+  for (const phase of ['Start', 'End']) {
+    const name = `handle${phase}BehaviorIndexChange`;
+    const property = `${phase.toLowerCase()}Behavior`;
+    const start = script.indexOf(`const ${name} =`);
+    const end = script.indexOf('\n};', start);
+    assert.ok(start >= 0 && end > start);
+    const code = ts.transpileModule(script.slice(start, end + 3), {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+    }).outputText;
+    const behavior = { targetIndex: [1] };
+    let saves = 0;
+    const edit = Function('selectedItem', 'audioItem', `${property}TargetIndex`,
+      'parseItemIndexInput', 'formatItemIndex', 'handleSave', `${code}; return ${name};`)(
+      { value: { type: 'audio' } }, { value: { [property]: behavior } }, { value: [1] },
+      (raw: string) => parseDisplayIndexPath(raw, 1),
+      (index: number[]) => formatDisplayIndexPath(index, 1),
+      () => { saves++; },
+    );
+    const input = { value: '1,0,2' };
+    edit({ target: input });
+    assert.equal(input.value, '2');
+    assert.deepEqual(behavior.targetIndex, [1]);
+    assert.equal(saves, 0);
+    input.value = '1';
+    edit({ target: input });
+    assert.deepEqual(behavior.targetIndex, [0]);
+    assert.equal(saves, 1);
+  }
+});
+
 test('project and cue output choices persist hardware names instead of opened-session IDs', () => {
   const device = { id: 'ephemeral-opened-device-id', display_name: 'Stage USB output' };
   for (const [component, handler] of [['ProjectSettingsModal', 'onAudioDeviceChange'], ['ProjectSettingsModal', 'onLtcDeviceChange'], ['PropertiesPanel', 'onDeviceOverrideChange']]) {
