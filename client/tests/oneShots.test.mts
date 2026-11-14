@@ -110,6 +110,8 @@ test('digits follow slot position and saved keyboard assignments take precedence
   assert.deepEqual(pauseAlternate, { key: ' ', ctrlKey: false, shiftKey: true, altKey: false });
   assert.equal(playbackMappings['play-next']?.key, ' ');
   assert.equal(playbackMappings['toggle-video-output']?.key, 'v');
+  assert.deepEqual(playbackMappings['toggle-settings'], { key: 's', ctrlKey: false, shiftKey: false, altKey: false });
+  assert.deepEqual(playbackMappings['toggle-properties'], { key: 's', ctrlKey: false, shiftKey: true, altKey: false });
 
   const key = (value: string) => ({ key: value, ctrlKey: false, shiftKey: false, altKey: false });
   slots[0] = null;
@@ -143,6 +145,17 @@ test('digits follow slot position and saved keyboard assignments take precedence
   slots[10]!.oneShot!.hotkey = key('j');
   assert.equal(resolveKeyboardBindings(slots).playbackMappings['jump-cue'], undefined);
   assert.equal(resolveKeyboardBindings(slots, { 'select-up': key('c') }).playbackMappings['cue-to-continue'], undefined);
+
+  const shiftS = { ...key('S'), shiftKey: true };
+  slots[10]!.oneShot!.hotkey = key('s');
+  const panelKeys = resolveKeyboardBindings(slots, { 'stop-all': shiftS });
+  assert.deepEqual(panelKeys.keyMappings[10], key('s'));
+  assert.deepEqual(panelKeys.playbackMappings['stop-all'], shiftS);
+  assert.equal(panelKeys.playbackMappings['toggle-settings'], undefined);
+  assert.equal(panelKeys.playbackMappings['toggle-properties'], undefined);
+  const customized = resolveKeyboardBindings(slots, { 'toggle-settings': key('k'), 'toggle-properties': null });
+  assert.deepEqual(customized.playbackMappings['toggle-settings'], key('k'));
+  assert.equal(customized.playbackMappings['toggle-properties'], null);
 });
 
 test('One Shot copies into the playlist without consuming the source cell', () => {

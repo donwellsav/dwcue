@@ -167,6 +167,8 @@ export type PlaybackKeyAction =
   | 'toggle-video-output'
   | 'capture-video-standby'
   | 'capture-display-standby'
+  | 'toggle-settings'
+  | 'toggle-properties'
   | 'play-selected'
   | 'play-next';
 
@@ -471,4 +473,6 @@ export const DEFAULT_PLAYBACK_KEYS: Partial<Record<PlaybackKeyAction, CartSlotKe
   'toggle-video-output': { key: 'v',   ctrlKey: false, shiftKey: false, altKey: false },
   'capture-video-standby': { key: 'g', ctrlKey: false, shiftKey: false, altKey: false },
   'capture-display-standby': { key: 'g', ctrlKey: false, shiftKey: true, altKey: false },
+  'toggle-settings': { key: 's', ctrlKey: false, shiftKey: false, altKey: false },
+  'toggle-properties': { key: 's', ctrlKey: false, shiftKey: true, altKey: false },
 };

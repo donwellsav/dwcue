@@ -1851,7 +1851,7 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /<ShortcutsBar :compact="lowerPanelOpen" \/>[\s\S]*<ProjectSettingsModal :open="showProjectSettings"[\s\S]*<PropertiesPanel v-if="showCueProperties"[\s\S]*id="workspace-import-host"[\s\S]*const showCueProperties = computed\(\(\) => !showProjectSettings\.value && !visibleImportPanel\.value/,
+  /<ShortcutsBar :compact="lowerPanelOpen" \/>[\s\S]*<ProjectSettingsModal :open="showProjectSettings"[\s\S]*<PropertiesPanel v-if="showCueProperties"[\s\S]*id="workspace-import-host"[\s\S]*const showCueProperties = computed\(\(\) =>\s*!showProjectSettings\.value && !visibleImportPanel\.value/,
   'Settings, cue Properties, and imports must share the lower workspace without stacking',
 );
 assert.match(

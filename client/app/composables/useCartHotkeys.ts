@@ -65,6 +65,8 @@ export const PLAYBACK_ACTIONS: { id: PlaybackKeyAction; labelKey: string }[] = [
   { id: 'capture-video-standby', labelKey: 'controls.captureVideoStandby' },
   { id: 'capture-display-standby', labelKey: 'controls.captureDisplayStandby' },
   { id: 'play-selected', labelKey: 'controls.playSelected' },
+  { id: 'toggle-settings', labelKey: 'settings.title' },
+  { id: 'toggle-properties', labelKey: 'properties.title' },
 ];
 
 export const resolveKeyboardBindings = (
@@ -79,7 +81,11 @@ export const resolveKeyboardBindings = (
   };
   // A new default must yield to a key the operator already assigned.
   const assigned = [...Object.values(keyMappings), ...Object.values(savedPlayback)];
-  for (const action of ['set-up-next', 'play-selected', 'toggle-loop', 'jump-cue', 'cue-to-continue', 'toggle-video-output', 'capture-video-standby', 'capture-display-standby'] as const) {
+  for (const action of [
+    'set-up-next', 'play-selected', 'toggle-loop', 'jump-cue', 'cue-to-continue',
+    'toggle-video-output', 'capture-video-standby', 'capture-display-standby',
+    'toggle-settings', 'toggle-properties',
+  ] as const) {
     const defaultKey = DEFAULT_PLAYBACK_KEYS[action];
     if (savedPlayback[action] === undefined && defaultKey
         && assigned.some(binding => binding && bindingsMatch(binding, defaultKey))) {
@@ -128,7 +134,7 @@ export const useVideoOutputToggle = () => {
   };
 };
 
-export const useCartHotkeys = () => {
+export const useCartHotkeys = (workspace?: Record<'toggle-settings' | 'toggle-properties', () => void>) => {
   const { currentProject, projectHydrationStatus, selectedItem, selectedItems, saveProject, getAllItemsFlat, toggleItemSelection, findItemByUuid } = useProject();
   const { cartOnlyItems } = useCartItems();
   const { oneShotPlaybackReady, playOneShot } = useOneShotPlayback();
@@ -208,6 +214,7 @@ export const useCartHotkeys = () => {
     const mappings = playbackMappings.value;
     const pressed = eventToBinding(e);
     for (const [action, binding] of Object.entries(mappings) as [PlaybackKeyAction, CartSlotKeyBinding | null][]) {
+      if (!workspace && (action === 'toggle-settings' || action === 'toggle-properties')) continue;
       if (binding && bindingsMatch(binding, pressed)) return action;
     }
     const alternate = bindings.value.pauseAlternate;
@@ -217,6 +224,7 @@ export const useCartHotkeys = () => {
 
   const dispatchPlaybackAction = async (action: PlaybackKeyAction) => {
     if (action !== 'stop-all' && projectHydrationStatus.value !== 'ready') return false;
+    if (action === 'toggle-settings' || action === 'toggle-properties') return workspace?.[action]();
     if (action === 'pause-resume') {
       const item = getTargetItem();
       if (!item) return;
