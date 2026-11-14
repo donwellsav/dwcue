@@ -2363,6 +2363,120 @@ void test_failed_group_follow_requires_go(const std::filesystem::path& wav) {
     }
 }
 
+void test_shuffle_items(const std::filesystem::path& wav) {
+    liveplay::audio::AudioEngine engine;
+    liveplay::core::ProjectState state(engine);
+    auto group = json{{"uuid", "music"}, {"type", "group"}, {"children", json::array({
+        audio("one", wav), audio("two", wav), audio("three", wav),
+    })}};
+    auto show = document(json::array({group, audio("opener", wav, {
+        {"endBehavior", {{"action", "goto-index"}, {"targetIndex", {0, 0}}}},
+    }), audio("closer", wav)}));
+    check(state.load_from_json(show), "shuffle: show opens");
+    check(wait_ready(state), "shuffle: media ready"); close_devices(engine);
+    const auto cue_before = state.item_to_cue_id("one");
+    check(state.set_next_item_override("three"), "shuffle: explicit Up Next armed");
+    const auto inside = state.shuffle_items({"one", "two", "three"}, "music");
+    check(inside.value("status", "") == std::string{"ok"} &&
+          inside.at("uuids") == json::array({"one", "three", "two"}) &&
+          state.item_uuid_by_index({0, 0}) == "one" && state.next_item_override() == "three",
+          "shuffle: numbered target stays fixed, order changes, explicit Up Next survives");
+    const auto root = state.shuffle_items({"music", "opener", "closer"}, "");
+    check(root.value("status", "") == std::string{"ok"} &&
+          root.at("uuids") == json::array({"music", "closer", "opener"}) &&
+          state.item_uuid_by_index({0, 1}) == "three" &&
+          cue_before.has_value() && state.item_to_cue_id("one") == cue_before,
+          "shuffle: nested group moves only as a unit and keeps loaded cue IDs");
+    check(state.shuffle_items({"music", "opener", "closer"}, "").value("status", "") == std::string{"changed"},
+          "shuffle: stale order cannot overwrite a newer edit");
+    check(state.go() == "three" &&
+          state.shuffle_items({"one", "three", "two"}, "music").value("status", "") == std::string{"playing"},
+          "shuffle: GO starts the shown cue and active playback rejects shuffle");
+    state.stop_all_cues(0);
+}
+
+void test_music_backup(const std::filesystem::path& wav) {
+    for (const auto mode : {"off", "intentional-stop", "root", "folder", "group-ending", "busy-target",
+                           "stalled-read", "ready-target", "normal-next", "stop-all", "already-air"}) {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        const std::string_view scenario{mode};
+        const bool group_ending = scenario == "group-ending";
+        const bool group_scope = scenario == "folder" || group_ending;
+        const bool stale_read = scenario == "stalled-read";
+        const bool busy_target = scenario == "busy-target" || stale_read;
+        const bool ready_target = scenario == "ready-target";
+        const bool normal_next = scenario == "normal-next";
+        const auto source = audio("music-out", wav, {{"outPoint", 0.06},
+            {"crossFade", stale_read ? 0.025 : 0.0},
+            {"duckingBehavior", {{"mode", scenario == "already-air" ? "no-ducking" : "stop-all"}}},
+            {"endBehavior", {{"action", scenario == "intentional-stop" || group_ending ? "nothing" : "next"}}}});
+        const json backup{{"uuid", "backup-group"}, {"type", "group"},
+            {"displayName", "Backup Music"}, {"startBehavior", {{"action", "play-first"}}},
+            {"children", json::array({audio("music-backup", wav, {{"endBehavior", {{"action", "next"}}}})})}};
+        json items = json::array({backup});
+        if (busy_target || ready_target || scenario == "already-air") items.push_back(audio("operator-next", wav));
+        items.push_back(group_scope ? json{{"uuid", "walk-in"}, {"type", "group"},
+            {"keepMusicGoing", true}, {"backupMusicGroup", "backup-group"},
+            {"endBehavior", {{"action", group_ending ? "next" : "nothing"}}},
+            {"children", json::array({source})}} : source);
+        if (normal_next) items.push_back(audio("operator-next", wav, {{"inPoint", 0.08}}));
+        auto show = document(items);
+        show["settings"]["keepMusicGoing"] = scenario != "off" && !group_scope;
+        show["settings"]["backupMusicGroup"] = "backup-group";
+        state.replace_full_document(show);
+        check(wait_ready(state), "music backup: media ready"); close_devices(engine);
+        std::atomic<bool> notice{false};
+        std::atomic<bool> unavailable{false};
+        state.set_ui_state_broadcaster([&](const json& event) {
+            if (event.value("code", "") == std::string{"music_backup"}) notice.store(true);
+            if (event.value("code", "") == std::string{"sequence_ended"}) unavailable.store(true);
+        });
+        if (scenario == "already-air") check(state.trigger_item("operator-next"), "music backup: other bed is playing");
+        const auto target_id = state.item_to_cue_id("operator-next");
+        const auto target = target_id ? engine.find_cue(*target_id) : nullptr;
+        std::unique_lock<std::mutex> held;
+        if (busy_target) held = std::unique_lock{stale_read ? target->decoder_mutex_ : target->preparation_mutex()};
+        check(state.trigger_item(group_scope ? "walk-in" : "music-out"), "music backup: outgoing cue starts");
+        if (busy_target || ready_target)
+            check(state.set_next_item_override("operator-next"), "music backup: last-minute Up Next is armed");
+        if (ready_target || normal_next) {
+            const auto in_point = normal_next ? 0.08 : 0.0;
+            for (int i = 0; i < 400 && !target->has_buffered_start(in_point); ++i)
+                std::this_thread::sleep_for(5ms);
+            check(target->has_buffered_start(in_point), "music backup: chosen target primes silently at its authored In");
+        }
+        if (stale_read) {
+            // Enter the crossfade window with the target decoder held, while
+            // the first cue still has some time left.
+            const auto id = state.item_to_cue_id("music-out");
+            const auto from = id ? engine.find_cue(*id) : nullptr;
+            std::array<float, 256> left{}, right{};
+            float* channels[]{left.data(), right.data()};
+            for (int i = 0; i < 7; ++i) from->render_block(channels, 2, 256);
+            std::this_thread::sleep_for(150ms);
+            check(on_air(state, engine, "music-out") && !on_air(state, engine, "music-backup"),
+                  "music backup: failed crossfade leaves outgoing audio on air until its end");
+        }
+        if (scenario == "stop-all") state.stop_all_cues(0);
+        else render_to_end(state, engine, "music-out");
+        const bool expect_backup = scenario == "root" || group_scope || busy_target;
+        if (expect_backup) (void)wait_for_on_air(state, engine, "music-backup");
+        check(on_air(state, engine, "music-backup") == expect_backup &&
+              notice.load() == expect_backup && !unavailable.load() &&
+              (!(ready_target || normal_next) || on_air(state, engine, "operator-next")), mode);
+        if (busy_target) {
+            held.unlock();
+            check(state.next_item_override() == "operator-next", "music backup: pending choice stays Up Next");
+            render_to_end(state, engine, "music-backup");
+            check(!on_air(state, engine, "operator-next") && state.go() == "operator-next",
+                  "music backup: recovered target starts only on explicit GO");
+        }
+        state.stop_all_cues(0);
+        state.set_ui_state_broadcaster({});
+    }
+}
+
 void test_manual_go_parity(const std::filesystem::path& wav) {
     liveplay::audio::AudioEngine engine;
     liveplay::core::ProjectState state(engine);
@@ -3223,6 +3337,8 @@ int main() try {
     test_output_identity_catalog();
     test_failed_follow_requires_go(wav);
     test_failed_group_follow_requires_go(wav);
+    test_shuffle_items(wav);
+    test_music_backup(wav);
     test_manual_go_parity(wav);
     test_replacement_cancels_ownership();
     test_group_waits_for_fading_child(wav);

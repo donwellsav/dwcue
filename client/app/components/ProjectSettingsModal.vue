@@ -140,6 +140,20 @@
                 </label>
                 <p class="settings-help">{{ t('settings.autoCueNextHelp') }}</p>
               </section>
+              <section class="settings-field">
+                <label class="settings-label" for="settings-music-backup">{{ t('musicContinuity.backup') }}</label>
+                <select id="settings-music-backup" class="settings-select" :value="configuredMusicBackup"
+                  :disabled="projectHydrationStatus !== 'ready' || musicContinuityPending.has('')"
+                  @change="changeMusicBackup">
+                  <option value="">{{ t('musicContinuity.none') }}</option>
+                  <option v-if="configuredMusicBackup && !musicBackupOptions.some(group => group.uuid === configuredMusicBackup)"
+                    :value="configuredMusicBackup" disabled>{{ t('musicContinuity.missing') }}</option>
+                  <option v-for="group in musicBackupOptions" :key="group.uuid" :value="group.uuid">
+                    {{ formatItemIndex(group.index) }} · {{ group.displayName }}
+                  </option>
+                </select>
+                <p class="settings-help">{{ t('musicContinuity.help') }}</p>
+              </section>
             </div>
             <div class="settings-rows">
               <h3 class="settings-section-title">{{ t('settings.safetySection') }}</h3>
@@ -786,7 +800,8 @@ const onLocaleChange = (event: Event) => {
   }
 };
 
-const { currentProject, indexDisplayStart, saveProject } = useProject();
+const { currentProject, indexDisplayStart, saveProject, getAllItemsFlat, formatItemIndex,
+  projectHydrationStatus, setMusicContinuity, musicContinuityPending } = useProject();
 const {
   regularPlaylistRowHeight,
   showPlaylistRowHeight,
@@ -879,6 +894,15 @@ const defaultTransitionMode    = computed(() => (currentProject.value as any)?.s
 // Defaults ON (undefined → true) so legacy projects and new projects both
 // arm the next item as "Up Next" for cues without an end behaviour. (#28)
 const autoCueNextWithoutEndBehavior = computed(() => (currentProject.value as any)?.settings?.autoCueNextWithoutEndBehavior !== false);
+const musicBackupOptions = computed(() => getAllItemsFlat().filter(item => item.type === 'group'));
+const configuredMusicBackup = computed(() => currentProject.value?.settings?.backupMusicGroup ?? '');
+const changeMusicBackup = (event: Event) => {
+  const input = event.target as HTMLSelectElement;
+  const backupMusicGroup = input.value || null;
+  input.value = configuredMusicBackup.value;
+  return setMusicContinuity(undefined, backupMusicGroup ? { backupMusicGroup } : { backupMusicGroup, keepMusicGoing: false },
+    status => { settingsError.value = t(`musicContinuity.${status}`); });
+};
 // Project-wide Stop All fade, stored in ms (default 1000). Shown in seconds.
 const stopAllFadeSeconds = computed(() => {
   const ms = (currentProject.value as any)?.settings?.stopAllFadeMs;

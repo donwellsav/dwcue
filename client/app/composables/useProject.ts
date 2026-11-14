@@ -70,6 +70,7 @@ let _refreshItemsBaselineAfterHydrate: () => void = () => {};
 // Bridges endItemBatch (outer composable scope) to the serialized item diff
 // queue defined inside the one-time sync-watcher block.
 let _syncItemsDiffFn: () => Promise<void> = async () => {};
+let _applyProjectDocPatch = (_patch: unknown): void => {};
 let _installItemsWatcherFn:   null | (() => void) = null;
 let _uninstallItemsWatcherFn: null | (() => void) = null;
 interface ProjectSaveRequest {
@@ -270,6 +271,8 @@ export const useProject = () => {
   // Every post-mutation save intent advances this renderer-global revision,
   // including intents that only mark dirty while autosave is disabled.
   const saveRevision = useState<number>('useProject.saveRevision', () => 0);
+  const shufflePending = useState<boolean>('useProject.shufflePending', () => false);
+  const musicContinuityPending = useState<Set<string>>('useProject.musicContinuityPending', () => new Set());
 
   // Loading state — set true during open/create/save so the UI can render a
   // loading overlay. `loadingMessage` is the title shown in the overlay.
@@ -1639,6 +1642,8 @@ export const useProject = () => {
       const p = currentProject.value;
       if (!p) return;
       const op = patch?.op;
+      if (op === 'items_reordered' && patch.project_session_id &&
+          patch.project_session_id !== serverProjectSessionId.value) return;
       // Own acknowledgements already have their sent snapshot in the baseline;
       // applying a delayed echo would overwrite a newer local edit.
       if (op === 'item_updated' && itemPatchIdentity.owns(patch.clientMutationId)) return;
@@ -1743,17 +1748,8 @@ export const useProject = () => {
               ? findItemAndParent(parentUuid)?.item?.children
               : p.items;
             if (!Array.isArray(target)) return;
-            const byUuid = new Map(target.map((x: any) => [x.uuid, x]));
-            const reordered: any[] = [];
-            for (const u of uuids) {
-              const it = byUuid.get(u);
-              if (it) reordered.push(it);
-            }
-            // Append anything we didn't see in the patch (defensive).
-            for (const it of target) {
-              if (!uuids.includes(it.uuid)) reordered.push(it);
-            }
-            target.splice(0, target.length, ...reordered);
+            const rank = new Map(uuids.map((uuid, i) => [uuid, i]));
+            target.sort((a, b) => (rank.get(a.uuid) ?? uuids.length) - (rank.get(b.uuid) ?? uuids.length));
             updateIndices(p.items);
             break;
           }
@@ -1875,6 +1871,7 @@ export const useProject = () => {
     };
 
     server().onDocPatch(applyDocPatch);
+    _applyProjectDocPatch = applyDocPatch;
 
     // Apply the server's connect/reconnect snapshot. Covers preview state;
     // transport + master gain + next-item are handled in useAudioEngine.
@@ -2215,6 +2212,93 @@ export const useProject = () => {
     }
   };
 
+  const shuffleItems = async (group: GroupItem | undefined, warn: (status: string) => void) => {
+    const project = currentProject.value;
+    const srv = useLiveplayServer();
+    const session = serverProjectSessionId.value;
+    const epoch = projectEpoch.value;
+    const url = srv.serverUrl;
+    const items = group ? group.children : project?.items;
+    if (!items || !session || items.length < 2 || shufflePending.value ||
+        projectHydrationStatus.value !== 'ready' || srv.cueStartsBlocked || !srv.connected) return;
+    const before = items.map(item => item.uuid);
+    const current = () => project === currentProject.value && session === serverProjectSessionId.value &&
+      epoch === projectEpoch.value && url === srv.serverUrl && !srv.cueStartsBlocked && srv.connected;
+    shufflePending.value = true;
+    try {
+      await _syncItemsDiffFn();
+      if (!current()) return;
+      const parentUuid = group?.uuid ?? '';
+      const result = await srv.shuffleProjectItems(before, parentUuid, session);
+      if (!current()) return;
+      if (result.status !== 'ok') {
+        warn(result.status);
+        return;
+      }
+      // The REST acknowledgement also covers a delayed or lost broadcast.
+      // Avoid replaying a stale acknowledgement over a newer edit.
+      const local = group ? (findItemByUuid(parentUuid) as GroupItem | null)?.children : project?.items;
+      if (local?.length === before.length && local.every((item, i) => item.uuid === before[i])) {
+        _applyProjectDocPatch({ op: 'items_reordered', parentUuid, uuids: result.uuids, project_session_id: session });
+      }
+      if (!await saveProject() && current() && hasUnsavedChanges.value) warn('saveFailed');
+    } catch (error) {
+      console.warn('Shuffle confirmation failed:', error);
+      if (current()) warn('failed');
+    } finally {
+      shufflePending.value = false;
+    }
+  };
+
+  const setMusicContinuity = async (
+    group: GroupItem | undefined, patch: { keepMusicGoing?: boolean; backupMusicGroup?: string | null },
+    warn: (status: string) => void,
+  ) => {
+    const project = currentProject.value;
+    const scope = group?.uuid ?? '';
+    const srv = useLiveplayServer();
+    const session = serverProjectSessionId.value;
+    if (!project || !session || projectHydrationStatus.value !== 'ready' ||
+        !srv.connected || srv.cueStartsBlocked || musicContinuityPending.value.has(scope)) return;
+    const epoch = projectEpoch.value;
+    const url = srv.serverUrl;
+    const current = () => project === currentProject.value && session === srv.projectSessionId &&
+      epoch === projectEpoch.value && url === srv.serverUrl;
+    musicContinuityPending.value.add(scope);
+    try {
+      // Flush authored edits before sending the live toggle.
+      await _syncItemsDiffFn();
+      if (!current() || srv.cueStartsBlocked) return;
+      if (group) {
+        const previous = findItemByUuid(scope) as GroupItem | null;
+        if (!previous || previous.type !== 'group') return;
+        const fields = ['keepMusicGoing', 'backupMusicGroup'] as const;
+        const before = fields.map(key => previous[key]);
+        await srv.updateProjectItem(scope, patch, '', session);
+        if (!current()) return;
+        const local = findItemByUuid(scope) as GroupItem | null;
+        if (local?.type === 'group' && fields.every((key, i) => local[key] === before[i]))
+          _applyProjectDocPatch({ op: 'item_updated', uuid: scope, patch });
+      } else {
+        const before = project.settings;
+        await srv.patchSettings(patch, session);
+        if (!current()) return;
+        if (project.settings === before)
+          _applyProjectDocPatch({ op: 'settings_patched', settings: patch });
+      }
+      const save = saveProject();
+      const revision = saveRevision.value;
+      void save.then(saved => {
+        if (!saved && current() && revision === saveRevision.value && hasUnsavedChanges.value) warn('saveFailed');
+      }).catch(() => { if (current()) warn('saveFailed'); });
+    } catch (error) {
+      console.warn('Keep Music Going confirmation failed:', error);
+      if (current()) warn('failed');
+    } finally {
+      musicContinuityPending.value.delete(scope);
+    }
+  };
+
   return {
     currentProject,
     selectedItem,
@@ -2287,5 +2371,9 @@ export const useProject = () => {
     deleteDialogCancel,
     beginItemBatch,
     endItemBatch,
+    shuffleItems,
+    shufflePending,
+    setMusicContinuity,
+    musicContinuityPending,
   };
 };

@@ -229,6 +229,7 @@ function loadItemsSync(dependencies: Record<string, unknown>) {
         projectFilePathRef = { value: '/show.dwcue' }, projectEpoch = { value: 1 },
         sessionLost = { value: false }, recoveringProject = { value: false },
         projectHydrationStatus = { value: 'ready' }, isHydrating = ref(false),
+        serverProjectSessionId = { value: 'show' },
         previewItemUuid = ref(''), previewCueId = ref('') } = dependencies;
       const { applyPreviewState = (state: any) => {
         previewItemUuid.value = state.itemUuid || ''; previewCueId.value = state.cueId || '';

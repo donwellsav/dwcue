@@ -191,6 +191,21 @@
 
         <div class="item-transport">
           <ActionButton
+            v-if="item.type === 'group' && ((groupBackup?.type === 'group' && groupBackup.uuid !== item.uuid) || item.keepMusicGoing)"
+            class="group-music-toggle"
+            icon="music_note"
+            highlight-color="var(--state-playing)"
+            active-text-color="var(--color-background)"
+            type="button"
+            :is-active="item.keepMusicGoing === true"
+            :aria-pressed="item.keepMusicGoing === true"
+            :aria-label="t('musicContinuity.groupToggle', { name: item.displayName })"
+            :title="groupBackup?.type === 'group'
+              ? t('musicContinuity.target', { name: groupBackup.displayName }) : t('musicContinuity.chooseBackup')"
+            :disabled="!projectControlsReady || server.cueStartsBlocked || musicContinuityPending.has(item.uuid)"
+            @click.stop="toggleGroupMusic"
+          />
+          <ActionButton
             v-if="isPlaying && item.type === 'audio'"
             class="restart-action"
             icon="restart_alt"
@@ -275,6 +290,8 @@ const {
   waveformUpdateKey,
   triggerWaveformUpdate,
   formatItemIndex,
+  setMusicContinuity,
+  musicContinuityPending,
 } = useProject();
 
 // mm:ss position of the Start Next marker, for the badge tooltip.
@@ -286,6 +303,21 @@ const formatMarkerTime = (seconds: number): string => {
 const { levels: outputTargetLevels } = useOutputTarget();
 const { playCue, stopCue, seekCue, activeCues, activeGroups, triggerGroup, nextItemOverrideUuid, autoNextItemUuid, setNextItemPending, setNextItem } = useAudioEngine();
 const { t } = useLocalization();
+const server = useLiveplayServer();
+const { showHeaderWarning } = useHeaderWarnings();
+const groupBackup = computed(() => props.item.type === 'group'
+  ? findItemByUuid(props.item.backupMusicGroup ?? currentProject.value?.settings?.backupMusicGroup ?? '')
+  : null);
+const toggleGroupMusic = () => {
+  const group = props.item;
+  if (group.type !== 'group') return;
+  if (!group.keepMusicGoing && (groupBackup.value?.type !== 'group' || groupBackup.value.uuid === group.uuid)) {
+    showHeaderWarning(t('musicContinuity.chooseBackup'));
+    return;
+  }
+  return setMusicContinuity(group, { keepMusicGoing: !group.keepMusicGoing },
+    status => showHeaderWarning(t(`musicContinuity.${status}`)));
+};
 const videoCheckIssues = useVideoPreflightIssues();
 const videoCheckIssue = computed(() => videoCheckIssues.value.get(props.item.uuid));
 const { uiMode } = useUiMode();
@@ -1485,7 +1517,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   min-width: 0;
 }
 
-.play-action { flex-shrink: 0; }
+.play-action,
+.group-music-toggle { flex-shrink: 0; }
 .edit-action { grid-column: 1; }
 .delete-action { grid-column: 2; }
 
@@ -1646,6 +1679,10 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
     .material-symbols-rounded {
       font-size: clamp(18px, calc(var(--current-playlist-row-height, 44px) * 0.42), 36px);
     }
+  }
+
+  :deep(.group-music-toggle.action-btn--playlist) {
+    width: 44px;
   }
 
   :deep(.restart-action.action-btn--playlist) {

@@ -193,6 +193,7 @@ public:
     // deliberately much smaller than two seconds. Returns false when the
     // decoder isn't ready.
     bool prime(double seconds = 2.0, double start_seconds = 0.0) noexcept;
+    bool has_buffered_start(double start_seconds) noexcept;
 
     // Prepared follows keep decoding/control work off the audio callback.
     // Zero means preparation failed; changes to playback intent invalidate it.

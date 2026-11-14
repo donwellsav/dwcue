@@ -633,7 +633,7 @@ assert.ok(
 );
 assert.match(
   playbackControls,
-  /\.playback-controls\s*\{[\s\S]{0,180}--transport-stop-width:\s*clamp\(148px, 12vw, 176px\);[\s\S]{0,100}--transport-next-width:\s*clamp\(264px, 23vw, 320px\);[\s\S]{0,300}grid-template-columns:\s*var\(--transport-stop-width\) minmax\(0, 1fr\) var\(--transport-next-width\);[\s\S]{0,100}grid-template-areas:\s*'panic live next';[\s\S]*\.control-btn\s*\{[\s\S]{0,180}align-self:\s*stretch;[\s\S]{0,100}width:\s*100%;[\s\S]*\.play-next-btn\s*\{[\s\S]{0,100}grid-area:\s*next;[\s\S]*\.panic-zone\s*\{[\s\S]{0,100}grid-area:\s*panic;[\s\S]*\.active-cues\s*\{[\s\S]{0,100}grid-area:\s*live;[\s\S]{0,180}min-width:\s*0;/,
+  /\.playback-controls\s*\{[\s\S]{0,180}--transport-stop-width:\s*clamp\(148px, 12vw, 176px\);[\s\S]{0,100}--transport-next-width:\s*clamp\(264px, 23vw, 416px\);[\s\S]{0,300}grid-template-columns:\s*var\(--transport-stop-width\) minmax\(0, 1fr\) var\(--transport-next-width\);[\s\S]{0,100}grid-template-areas:\s*'panic live next';[\s\S]*\.control-btn\s*\{[\s\S]{0,180}align-self:\s*stretch;[\s\S]{0,100}width:\s*100%;[\s\S]*\.play-next-btn\s*\{[\s\S]{0,100}grid-area:\s*next;[\s\S]*\.panic-zone\s*\{[\s\S]{0,100}grid-area:\s*panic;[\s\S]*\.active-cues\s*\{[\s\S]{0,100}grid-area:\s*live;[\s\S]{0,180}min-width:\s*0;/,
   'aligned console controls must keep dedicated Stop All and Play Next widths around a flexible active-cue lane',
 );
 assert.match(

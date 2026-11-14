@@ -414,6 +414,31 @@
     "timeout": "No picture within 8 seconds.",
     "probe-error": "Video check renderer stopped."
   },
+  "shuffle": {
+    "label": "Shuffle",
+    "playlist": "Shuffle Playlist Order",
+    "group": "Shuffle Group Order",
+    "playing": "Stop playback before shuffling cue order.",
+    "changed": "The list changed. Check the cue order and try Shuffle again.",
+    "tooFew": "Shuffle needs at least two cues or groups.",
+    "linked": "Fewer than two items can move without changing numbered cue targets.",
+    "failed": "Shuffle could not be confirmed. Check the playlist before trying again.",
+    "saveFailed": "Cue order changed. Use Save Project to keep it."
+  },
+  "musicContinuity": {
+    "toggle": "Keep Music Going",
+    "groupToggle": "Keep Music Going for {name}",
+    "target": "Keep Music Going · {name}",
+    "backup": "Backup music group",
+    "continueWith": "Continue with",
+    "none": "None",
+    "missing": "Group unavailable",
+    "useDefault": "Use show backup",
+    "help": "Choose a group, then enable the music-note toggle beside Playlist or on a group.",
+    "chooseBackup": "Choose a backup music group in Playback Behaviour or group Properties.",
+    "failed": "Keep Music Going could not be confirmed. Check the music-note toggle.",
+    "saveFailed": "Music continuation changed. Use Save Project to keep it."
+  },
   "spotifyImport": {
     "button": "Spotify",
     "title": "Import from Spotify",
@@ -983,6 +1008,9 @@
     "conflictMessage": "This MIDI control is already assigned to \"{action}\". Reassign it?"
   },
   "controls": {
+    "nextGroup": "Group",
+    "nextVideo": "Video",
+    "nextAudio": "Audio",
     "title": "Configure Controls",
     "shortcutBtn": "Shortcuts",
     "tabKeyboard": "Keyboard",

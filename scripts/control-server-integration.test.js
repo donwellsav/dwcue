@@ -55,6 +55,7 @@ test('project session preconditions reject delayed edits after switching or reop
     ['POST', '/api/project/items', { item: { uuid: 'late-add', type: 'group', children: [] } }],
     ['DELETE', '/api/project/items/shared', {}],
     ['POST', '/api/project/items/reorder', { uuids: ['sibling', 'shared'] }],
+    ['POST', '/api/project/items/shuffle', { before: ['shared', 'sibling'] }],
     ['POST', '/api/project/cart', { slot: 0, itemUuid: 'sibling' }],
     ['DELETE', '/api/project/cart/0', {}],
     ['PATCH', '/api/project/theme', { accentColor: '#abcdef' }],

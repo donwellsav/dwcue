@@ -85,6 +85,8 @@ export interface GroupItem extends BaseItem {
   children: (AudioItem | GroupItem)[];
   startBehavior: GroupStartBehavior;
   endBehavior: EndBehavior;
+  keepMusicGoing?: boolean;
+  backupMusicGroup?: string | null;
   isExpanded: boolean; // UI state
 }
 
@@ -219,6 +221,8 @@ export interface ProjectSettings {
   meterMode?: string;
   defaultTransitionMode?: TransitionMode;
   autoCueNextWithoutEndBehavior?: boolean;
+  keepMusicGoing?: boolean;
+  backupMusicGroup?: string | null;
   stopAllFadeMs?: number;
   uiScrollToPlaying?: boolean;
   // Legacy file fields; import always preserves audio regardless of these values.

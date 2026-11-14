@@ -478,6 +478,10 @@ function createClient() {
           break;
         }
         case 'playback_error': {
+          if ((payload.code === 'music_backup' || payload.code === 'sequence_ended') && typeof payload.message === 'string') {
+            lastErrorEvent.value = { message: payload.message, severity: 'advisory' };
+            break;
+          }
           if ((payload.code === 'output_device_unavailable' || payload.code === 'cue_prepare_failed')
               && typeof payload.message === 'string') {
             lastError.value = payload.message;
@@ -970,10 +974,13 @@ function createClient() {
       body: JSON.stringify({ item, parentUuid, cartOnly }),
     }).then(p => { fetchCues(); return p; });
   }
-  async function updateProjectItem(uuid: string, patch: any, clientMutationId: string) {
+  async function updateProjectItem(uuid: string, patch: any, clientMutationId: string, expectedSessionId?: string) {
     return rest<any>(`/api/project/items/${encodeURIComponent(uuid)}`, {
       method: 'PATCH',
-      headers: { 'X-DWCUE-Mutation-ID': clientMutationId },
+      headers: {
+        'X-DWCUE-Mutation-ID': clientMutationId,
+        ...(expectedSessionId !== undefined && { 'X-DWCUE-Project-Session': expectedSessionId }),
+      },
       body: JSON.stringify(patch),
     });
   }
@@ -986,6 +993,13 @@ function createClient() {
     return rest<any>('/api/project/items/reorder', {
       method: 'POST',
       body: JSON.stringify({ uuids, parentUuid }),
+    });
+  }
+  function shuffleProjectItems(before: string[], parentUuid: string, expectedSessionId: string) {
+    return rest<{ status: 'ok'; uuids: string[] } | { status: 'playing' | 'changed' | 'tooFew' | 'linked' }>('/api/project/items/shuffle', {
+      method: 'POST',
+      headers: { 'X-DWCUE-Project-Session': expectedSessionId },
+      body: JSON.stringify({ before, parentUuid }),
     });
   }
 
@@ -1112,9 +1126,10 @@ function createClient() {
       body: JSON.stringify(patch),
     });
   }
-  async function patchSettings(patch: any) {
+  async function patchSettings(patch: any, expectedSessionId?: string) {
     return rest<any>('/api/project/settings', {
       method: 'PATCH',
+      headers: expectedSessionId === undefined ? undefined : { 'X-DWCUE-Project-Session': expectedSessionId },
       body: JSON.stringify(patch),
     });
   }
@@ -1581,6 +1596,7 @@ function createClient() {
     updateProjectItem,
     removeProjectItem,
     reorderProjectItems,
+    shuffleProjectItems,
 
     // transport by item uuid
     playItem,

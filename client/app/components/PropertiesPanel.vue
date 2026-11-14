@@ -64,6 +64,28 @@
               {{ t('properties.cycleSelectedColors') }}
             </button>
           </div>
+          <div v-if="selectedItem.type === 'group' && uiMode !== 'playback'" class="property-field">
+            <button type="button" class="icon-btn regen-btn"
+              :disabled="shufflePending || projectHydrationStatus !== 'ready' || groupItem.children.length < 2"
+              :title="t('shuffle.group')" @click="shuffleItems(groupItem, warnShuffle)">
+              <span class="material-symbols-rounded" aria-hidden="true">shuffle</span>
+              {{ t('shuffle.group') }}
+            </button>
+          </div>
+          <div v-if="selectedItem.type === 'group'" class="property-field">
+            <label for="cue-property-music-backup">{{ t('musicContinuity.continueWith') }}</label>
+            <select id="cue-property-music-backup"
+              :value="groupItem.backupMusicGroup ?? ''"
+              :disabled="projectHydrationStatus !== 'ready' || musicContinuityPending.has(groupItem.uuid)"
+              @change="changeGroupBackup">
+              <option value="">{{ t('musicContinuity.useDefault') }}</option>
+              <option v-if="groupItem.backupMusicGroup && !groupBackupOptions.some(group => group.uuid === groupItem.backupMusicGroup)"
+                :value="groupItem.backupMusicGroup" disabled>{{ t('musicContinuity.missing') }}</option>
+              <option v-for="group in groupBackupOptions" :key="group.uuid" :value="group.uuid">
+                {{ formatItemIndex(group.index) }} · {{ group.displayName }}
+              </option>
+            </select>
+          </div>
         </section>
         <section v-if="selectedItem.type === 'audio'" class="property-column">
           <h4>{{ t('properties.media') }}</h4>
@@ -410,8 +432,16 @@ const {
   endItemBatch,
   formatItemIndex,
   parseItemIndexInput,
+  projectHydrationStatus,
+  shuffleItems,
+  shufflePending,
+  getAllItemsFlat,
+  setMusicContinuity,
+  musicContinuityPending,
 } = useProject();
 const { t } = useLocalization();
+const { showHeaderWarning } = useHeaderWarnings();
+const warnShuffle = (status: string) => showHeaderWarning(t(`shuffle.${status}`));
 const { uiMode } = useUiMode();
 const { cartOnlyItems, addCartOnlyItem, removeCartOnlyItem } = useCartItems();
 const propertySaveFailed = ref(false);
@@ -592,6 +622,19 @@ const onLtcFrameRateChange = (e: Event) => {
   handleSave();
 };
 const groupItem = computed(() => selectedItem.value as GroupItem);
+const groupBackupOptions = computed(() => {
+  const source = groupItem.value?.index;
+  if (!source?.length) return [];
+  return getAllItemsFlat().filter(item => item.type === 'group' &&
+    item.index.slice(0, source.length).some((position, depth) => depth < source.length && position !== source[depth]));
+});
+const changeGroupBackup = (event: Event) => {
+  const input = event.target as HTMLSelectElement;
+  const backupMusicGroup = input.value || null;
+  input.value = groupItem.value.backupMusicGroup ?? '';
+  return setMusicContinuity(groupItem.value, { backupMusicGroup },
+    status => showHeaderWarning(t(`musicContinuity.${status}`)));
+};
 
 // Check if selected item is a cart item
 const isCartItem = computed(() => {

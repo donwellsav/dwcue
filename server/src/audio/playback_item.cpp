@@ -746,10 +746,26 @@ bool PlaybackItem::prime(double seconds, double start_seconds) noexcept {
         read_ahead_[read % read_ahead_.size()].frames > 0;
 }
 
+bool PlaybackItem::has_buffered_start(double start_seconds) noexcept {
+    if (source_changed() || !std::isfinite(start_seconds) || start_seconds < 0.0 ||
+        start_seconds >= static_cast<double>(UINT64_MAX) / desc_.mix_sample_rate) return false;
+    std::unique_lock lock{decoder_mutex_, std::try_to_lock};
+    if (!lock.owns_lock() || render_exclusion_.test_and_set(std::memory_order_acquire)) return false;
+    RenderActiveGuard guard{render_exclusion_};
+    const auto frame = static_cast<std::uint64_t>(start_seconds * desc_.mix_sample_rate);
+    const auto read = read_ahead_read_.load(std::memory_order_acquire);
+    return decoder_ready_.load(std::memory_order_acquire) &&
+        transport_.load(std::memory_order_acquire) == TransportState::Stopped &&
+        !rewind_on_play_.load(std::memory_order_acquire) && !decode_error_.load(std::memory_order_acquire) &&
+        playhead_frames_.load(std::memory_order_acquire) == frame && read_ahead_offset_ == 0 &&
+        !read_ahead_.empty() && read < read_ahead_write_.load(std::memory_order_acquire) &&
+        read_ahead_[read % read_ahead_.size()].frames > 0;
+}
+
 std::uint64_t PlaybackItem::prepare_start() {
     if (source_changed()) return 0;
-    std::lock_guard lock{decoder_mutex_};
-    begin_render_exclusion();
+    std::unique_lock lock{decoder_mutex_, std::try_to_lock};
+    if (!lock.owns_lock() || render_exclusion_.test_and_set(std::memory_order_acquire)) return 0;
     RenderActiveGuard guard{render_exclusion_};
     const auto revision = playback_revision_.fetch_add(1, std::memory_order_acq_rel) + 1;
     prepared_revision_.store(0, std::memory_order_release);

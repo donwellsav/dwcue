@@ -4167,6 +4167,29 @@ void ControlServer::install_routes() {
             }
         });
 
+    CROW_ROUTE(app, "/api/project/items/shuffle").methods(crow::HTTPMethod::Post)
+        ([this](const crow::request& req){
+            const auto session = req.get_header_value("X-DWCUE-Project-Session");
+            if (session.empty()) return json_err(400, "project session required");
+            auto project_lock = state_.lock_project_session(session);
+            if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
+            try {
+                const auto j = json::parse(req.body);
+                const auto parent_uuid = j.value("parentUuid", std::string{});
+                auto result = state_.shuffle_items(j.at("before").get<std::vector<std::string>>(), parent_uuid);
+                if (result.value("status", "") == std::string{"ok"}) {
+                    broadcast_doc_patch(json{
+                        {"type", "doc_patch"}, {"op", "items_reordered"},
+                        {"parentUuid", parent_uuid}, {"uuids", result.at("uuids")},
+                        {"project_session_id", session},
+                    });
+                }
+                return json_ok(result);
+            } catch (const std::exception& e) {
+                return json_err(400, e.what());
+            }
+        });
+
     // Item-by-uuid transport. Routed through ProjectState so duckingBehavior,
     // inPoint, and fade settings from the project document are honoured.
     CROW_ROUTE(app, "/api/project/items/<string>/play")
