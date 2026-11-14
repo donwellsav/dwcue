@@ -1,9 +1,26 @@
 {
   "application": "DonWells Cue",
-  "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
-  "packageVersion": "2.6.21",
-  "edition": "13 November 2026 development review with current QuickPlays, docked Settings and picture framing",
+  "sourceRevision": "79ed56ede6a5362885750367f02ff35ce443be0f",
+  "packageVersion": "2.6.22 development",
+  "edition": "14 November 2026 development review with playlist shuffle and backup music",
   "images": [
+    {
+      "file": "music-continuity-current.png",
+      "view": "Playlist toolbar and Walk-in music group with Keep Music Going enabled",
+      "version": "2.6.22 development",
+      "sourceRevision": "79ed56ede6a5362885750367f02ff35ce443be0f",
+      "nativeSourceRevision": "79ed56ede6a5362885750367f02ff35ce443be0f",
+      "capturedOn": "2026-11-14",
+      "surface": "Compiled DonWells Cue workspace in Chromium at 1440 CSS pixels wide.",
+      "dimensions": [
+        1251,
+        115
+      ],
+      "sha256": "8ccba480f44eab5c24cfc53ebd6021d6c2844d23fa778ee154794b29b4c60c9e",
+      "fixture": "Disposable Corporate show review using generated WAV files and a native software audio output.",
+      "captureMethod": "Playwright screenshot of the rendered playlist toolbar and group row.",
+      "presentation": "Original UI crop."
+    },
     {
       "file": "welcome-current.png",
       "view": "Welcome screen connected to the isolated software engine, showing version 2.6.17.",
@@ -441,11 +458,11 @@
     "duckEnvelope": "Schematic explanation, not a measured response plot",
     "gainStages": "Schematic: final physical sum and secondary-clock adaptation precede the attenuation-only limiter and device output."
   },
-  "uiBuildRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
-  "manualSourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
+  "uiBuildRevision": "79ed56ede6a5362885750367f02ff35ce443be0f",
+  "manualSourceRevision": "79ed56ede6a5362885750367f02ff35ce443be0f",
   "visualCompatibility": {
-    "checkedOn": "2026-11-13",
-    "revision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
-    "basis": "The current QuickPlay, workspace, and Settings captures use the packaged review app. Older images retain their actual source, version, date and checksum."
+    "checkedOn": "2026-11-14",
+    "revision": "79ed56ede6a5362885750367f02ff35ce443be0f",
+    "basis": "The new playlist and group controls were captured in the compiled renderer. Earlier examples retain their original capture details."
   }
 }

@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.22 development
-**Source revision:** 8af5a12f0b843ea20ea4e31fa2f819cbc965f231
-**Native engine baseline:** b96070379c7305bbb3af6e95d2d869aa9f9fe13b
-**Edition:** 13 November 2026 · English · Current-source operator edition
+**Source revision:** 79ed56ede6a5362885750367f02ff35ce443be0f
+**Native engine baseline:** 79ed56ede6a5362885750367f02ff35ce443be0f
+**Edition:** 14 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition covers the docked workspace, 20 default QuickPlay shortcuts, adjustable picture framing, and the pre-show video check. Match your installer to its release notes before rehearsal.
+This edition covers the docked workspace, QuickPlays, playlist shuffle, backup music, adjustable picture framing, and the pre-show video check. Match your installer to its release notes before rehearsal.
 
 The interface captures use practice media and software audio output. **docs/manual-assets/captures.json** records each capture's date, source revision and hash. Equipment photographs remain illustrative.
 
@@ -104,7 +104,7 @@ DonWells Cue creates `<show name>.dwcue` and `media/` in the selected folder; po
 
 ### Edit Mode
 
-Use Edit Mode to import, organize, and configure the show. The top bar contains Settings, Video Output, Level Check, Autosave, and the Show Mode switch. Open **Settings → Shortcuts** for the keyboard reference and editor. While a Settings tab has focus, Left and Right move between tabs and Enter opens the focused tab. Transport sits below the top bar with **Stop All Cues**, the active-cue area, and **Play Next** with its target name. The output strip shows the selected device, main level, meters, and true-peak limiter.
+Use Edit Mode to import, organize, and configure the show. The top bar contains Settings, Video Output, Level Check, Autosave, and the Show Mode switch. Open **Settings → Shortcuts** for the keyboard reference and editor. While a Settings tab has focus, Left and Right move between tabs and Enter opens the focused tab. Transport sits below the top bar with **Stop All Cues**, the active-cue area, and **Play Next**. The button shows the cue name on multiple lines, its number, and the playable duration. A wider window has room for cue type, group, and loop or group start behavior where applicable. Hover for the full name. The output strip shows the selected device, main level, meters, and true-peak limiter.
 
 ![Current Edit Mode with the playlist, acknowledged Up Next target, Basic Info and output console.](manual-assets/edit-workspace.png)
 
@@ -297,6 +297,10 @@ A child's **Play Next** advances within its immediate group. When an owned group
 
 Manual stop or cancellation ends the owned group run without allowing stale child completions to fire its ending later. **Nothing** remains the safe default when the group must stop and wait.
 
+### Shuffle a playlist or group
+
+With playback stopped in Edit Mode, choose **Shuffle** in the Playlist toolbar or **Shuffle Group Order** in a group’s Basic Info. Shuffle changes the visible cue order at that level. Nested groups move together, and cues addressed by a saved numbered action stay in place. Explicit **Up Next** follows the selected cue. Review the new order before pressing GO. External controllers that send cue numbers follow the new list. Save the show to keep the order when Autosave is off.
+
 ### Beds, stings, and ducking
 
 The **Ducking** choices are **Stop All Other Cues**, **No Ducking**, and **Duck Others**, with a **Duck Level**. Decide what a cue should do to sound that is already running before you fire it.
@@ -413,13 +417,25 @@ Keep the LTC destination separate from the audience audio path. Do not enable ti
 
 The default GO key is **Space**. **Enter** sets the selected playlist cue as **Up Next**. While the engine is confirming the new target, GO is unavailable. Press Space after the target name appears and **Play Next** is available. Check the project's shortcut assignments before operating. An unready start is refused visibly, the armed target is retained, and Stop All/Panic remain live. Resolve the reported cause, then retry once.
 
+### Keep walk-in music going
+
+1. Create a **Play First** group with an audio-only music bed and the intended venue output. Use **Loop** on the bed if it should play until the next GO.
+2. In **Settings → Playback Behaviour**, choose it as the **Backup music group**. For an individual group, use **Continue with** in its Basic Info to choose a different destination.
+3. Turn on the music-note button beside **Playlist** for top-level cues or on the group row for that group. Green shows it is on. The button is available in both modes after a backup is configured.
+
+![The green music-note buttons for the playlist and the Walk-in music group.](manual-assets/music-continuity-current.png)
+
+At a **Play Next** ending, the acknowledged **Up Next** cue has priority when its media and output are ready. Without an explicit choice, the normal next cue has priority. If neither can start and Program would be silent, the app tries the prepared backup and shows the result in the header. A missed target can remain armed for a deliberate GO after the cause is corrected. **Nothing**, manual Stop, and **Stop All** still stop. Use **Play First** groups for this automatic handoff. Launch a **Play All** group with GO.
+
+Rehearse the last track, a late **Up Next** change, and **Stop All**. Both the chosen cue and backup can be unavailable. A backup starts when the engine detects the ending, so a brief gap is possible.
+
 ### Active-cue controls
 
 Pause/Resume holds or resumes an active cue. Stop uses its configured stop behavior; a row’s Restart starts a fresh playback instance and cancels a pending one-pass action. **Stop All Cues** affects every active cue. Its default fade is 1 second; set and rehearse 0 seconds if immediate silence is required.
 
 ### Finish a loop without changing the saved show
 
-Use **Cue to Continue** to finish the active loop pass and advance. It resolves the saved item/index destination or next sibling; with no valid target, the pass ends without another cue. The saved End Behavior stays Loop.
+Use **Cue to Continue** to finish the active loop pass and advance. It resolves the saved item/index destination or next sibling. You can still set a different **Up Next** before the pass ends. With no valid target, the pass ends without another cue. The saved End Behavior stays Loop.
 
 If Cue to Continue stalls, use **Stop All**. The controller reconnects if the command is still awaiting acknowledgment. After it verifies the show, arm a ready backup and press GO. The canceled command cannot change a later playback of the loop.
 
