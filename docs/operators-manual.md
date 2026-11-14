@@ -1,8 +1,8 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.22 development
-**Source revision:** 79ed56ede6a5362885750367f02ff35ce443be0f
-**Native engine baseline:** 79ed56ede6a5362885750367f02ff35ce443be0f
+**Source revision:** bc3fee61f364ccb81d4e81b2c1bf2c0b2a6cb6d3
+**Native engine baseline:** 355b93aecaee0320bfb960fd8342fdc01417fc52
 **Edition:** 14 November 2026 · English · Current-source operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
@@ -120,7 +120,7 @@ Use Edit Mode to import, organize, and configure the show. The top bar contains 
 
 The cue row provides **Set As Next**, **Preview**, **Play**, **Edit**, and **Delete** controls in Edit Mode. Hover for the current tooltip rather than relying on icon shape alone. **Play** fires a cue directly; **Set As Next** requests a manual GO override without playing it. The displayed target changes only after the engine acknowledges the request; a refusal or lost connection leaves the prior target authoritative. The **Edit** control opens **Properties**, with **Basic Info**, **Playback**, and **Output** tabs.
 
-An empty QuickPlays bank is collapsed by default. Choose **Show QuickPlays** to reveal it. Assigning a cell can reveal the bank automatically unless you have explicitly chosen its visibility. Playback and shortcut assignments stay active when the bank is collapsed. On a narrow workspace, the bank and playlist share the available width.
+An empty QuickPlays bank is collapsed by default. Press **Q** or choose **Show QuickPlays** to reveal it. Assigning a cell can reveal the bank automatically unless you have explicitly chosen its visibility. Playback and shortcut assignments stay active when the bank is collapsed. On a narrow workspace, the bank and playlist share the available width.
 
 ### Show Mode
 
@@ -279,9 +279,9 @@ Do not use a loop as a substitute for rehearsing the loop boundary. Check for cl
 
 ### Groups
 
-A group's **Start Behavior** can be **Play First** or **Play All**. Play First follows the first-child path and honors each nested group’s Start Behavior. It does not skip an empty or unready first child to find a later playable sibling. A nested Play All on that path can start several cues. Play All owns the selected descendant subtree and starts each selected playable descendant exactly once, including nested groups. For Play All, set each child's ducking so the children do not immediately stop one another when simultaneous playback is intended.
+Open the group's **Edit** control to see **Start Behavior**, **End Behavior**, and the **Continue with** backup selector together under **Cueing**. **Play First** follows the first-child path and honors each nested group’s Start Behavior. It requires the first child to be ready. A nested **Play All** on that path can start several cues. **Play All** owns the selected descendant subtree and starts each selected playable descendant exactly once, including nested groups. For **Play All**, set each child's ducking for simultaneous playback.
 
-![Group Properties with Start Behavior set to Play All.](manual-assets/group-current.png)
+![Group Properties with Start Behavior, End Behavior and the backup selector in one panel.](manual-assets/group-current.png)
 
 **Procedure — validate a group before it reaches the run sheet**
 
@@ -299,7 +299,7 @@ Manual stop or cancellation ends the owned group run without allowing stale chil
 
 ### Shuffle a playlist or group
 
-With playback stopped in Edit Mode, choose **Shuffle** in the Playlist toolbar or **Shuffle Group Order** in a group’s Basic Info. Shuffle changes the visible cue order at that level. Nested groups move together, and cues addressed by a saved numbered action stay in place. Explicit **Up Next** follows the selected cue. Review the new order before pressing GO. External controllers that send cue numbers follow the new list. Save the show to keep the order when Autosave is off.
+With playback stopped in Edit Mode, choose **Shuffle Playlist** in the toolbar to reorder top-level cues and groups. Choose the shuffle icon on a group row or **Shuffle Group Order** in Group Properties to reorder just that group's direct children. Nested groups move together, and cues addressed by a saved numbered action stay in place. Explicit **Up Next** follows the selected cue. Review the new order before pressing GO. External controllers that send cue numbers follow the new list. Save the show to keep the order when Autosave is off.
 
 ### Beds, stings, and ducking
 
@@ -496,13 +496,13 @@ In either mode, press the tile's **Play** button, its shortcut, or its MIDI cont
 - **Common mistake:** Assuming a hidden bank disables its number keys.
 - **Recovery:** Use the tile's **Stop** or **Stop All Cues**, then correct the settings in Edit Mode.
 
-The bank can **Detach** into a separate window and **Attach** again. Rehearse focus and screen placement on the actual machine. Removing a cell's QuickPlay designation does not delete its source media. Do not treat a hidden, detached, or removed tile as proof that audio has stopped; check active playback.
+Press **Q** to show or hide the docked bank. Press **Shift+Q** to open or close the detached QuickPlays window. **Shift+Q** also closes it when the detached window has focus. The **Detach** and **Attach** buttons offer the same window controls by mouse. Rehearse focus and screen placement on the actual machine. Check active playback before assuming a hidden or removed tile has stopped.
 
 ### Assign and verify keyboard shortcuts
 
 Open **Settings → Shortcuts**, select a binding, and press the desired key. For a MIDI controller, open **Settings → MIDI** and use **Learn** beside the action. Use the **×** button beside a binding to clear it. Resolve any reserved combinations or conflicts before rehearsal. **Show shortcuts bar** toggles the reference, including the two **QuickPlays (defaults)** key ranges. The arrow beside a number on a tile means Shift. Individual tile settings also provide **Keyboard Shortcut**, **Assign shortcut**, and **Clear shortcut**.
 
-![Keyboard bindings in the docked Shortcuts tab, including Settings and Properties.](manual-assets/shortcuts-current.png)
+![Keyboard bindings in the docked Shortcuts tab, including the two QuickPlays window controls.](manual-assets/shortcuts-current.png)
 
 **Procedure — hand over a keyboard-controlled show**
 
