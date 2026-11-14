@@ -711,6 +711,14 @@ void test_loader_output_wait() {
         const bool ltc = queued || std::string_view{key} == "ltcDevice";
         liveplay::audio::AudioEngine engine;
         engine.device_test_context_ = context;
+        if (!main) {
+            // Named routes need the fixture catalog before the test holds device startup.
+            (void)engine.enumerate_devices();
+            auto& catalog = *engine.device_catalog_;
+            std::unique_lock catalog_lock{catalog.mutex};
+            check(catalog.ready.wait_for(catalog_lock, 2s, [&] { return catalog.has_snapshot; }),
+                  "Loader output: software device catalog is ready");
+        }
         auto owned_state = std::make_unique<liveplay::core::ProjectState>(engine);
         auto& state = *owned_state;
         state.test_loader_main_routing_ = main;
