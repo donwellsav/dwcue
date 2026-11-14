@@ -325,6 +325,10 @@ export const useCartHotkeys = (workspace?: Record<'toggle-settings' | 'toggle-pr
     // cues can remain active without a project document or local activeCue.
     const playbackAction = findPlaybackActionForEvent(e);
     if (playbackAction) {
+      if (playbackAction !== 'stop-all' && !isForwardedFromVideoOutput(e) &&
+          !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey &&
+          (e.key === 'Enter' || e.key === ' ') &&
+          (e.target as HTMLElement | null)?.matches?.('button[data-native-activation]:focus-visible')) return;
       // The detached window gets a project snapshot without a hydration status.
       const closingDetached = playbackAction === 'toggle-detached-quickplays' && isDetached;
       if (playbackAction !== 'stop-all' && !closingDetached &&

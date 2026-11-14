@@ -272,7 +272,7 @@ import { formatKeyLabel } from '~/composables/useCartHotkeys';
 import { useLiveplayServer } from '~/composables/useLiveplayServer';
 import { useCueMeters } from '~/composables/useLiveMeters';
 
-const { activeCues, panicStop, nextItemOverrideUuid, autoNextItemUuid, setNextItemPending, setNextItem, playNext } = useAudioEngine();
+const { activeCues, panicStop, nextItemOverrideUuid, effectiveNextUuid, setNextItemPending, setNextItem, playNext } = useAudioEngine();
 const {
   findItemByIndex,
   findItemByUuid,
@@ -540,7 +540,6 @@ async function handleSetPreviewStartNext() {
   await saveProject({ force: true });
 }
 
-const effectiveNextUuid = computed(() => nextItemOverrideUuid.value ?? autoNextItemUuid.value);
 const canPlayNext = computed(() => projectControlsReady.value && !!effectiveNextUuid.value && !setNextItemPending.value);
 
 const playNextTooltip = computed(() => {

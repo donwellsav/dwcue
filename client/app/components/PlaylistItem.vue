@@ -997,7 +997,6 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
     background-color var(--transition-fast),
     border-color var(--transition-fast),
     box-shadow var(--transition-fast);
-  scroll-margin-top: var(--current-playlist-row-height);
 
   /* Native sticky positioning keeps every open folder's collapse control in
      reach. Expanded group wrappers must not become overflow ancestors or the
@@ -1154,6 +1153,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   justify-content: space-between;
   padding: 6px var(--spacing-md);
   min-height: var(--current-playlist-row-height);
+  scroll-margin-top: var(--current-playlist-row-height);
   position: relative;
   z-index: 5;
   cursor: pointer;
@@ -1730,6 +1730,13 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   .behavior-indicators {
     max-width: 100%;
     justify-content: flex-end;
+  }
+}
+
+@container playlist-scroll (max-height: 220px) {
+  /* A pinned group would cover most of a short playlist. */
+  .playlist-item.is-sticky-group > .item-content {
+    position: relative;
   }
 }
 </style>

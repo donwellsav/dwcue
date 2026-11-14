@@ -4,6 +4,9 @@
       <div class="workspace-panel-header__leading">
         <slot name="header-leading" />
         <h2 class="workspace-panel-header__title">{{ t('playlist.title') }}</h2>
+        <Btn type="button" class="locate-next" icon="my_location" text="" data-native-activation
+          :title="t('actions.locateUpNext')" :aria-label="t('actions.locateUpNext')"
+          :disabled="!locatableNextUuid" @click="locateUpNext" />
         <Btn v-if="backupMusicGroup?.type === 'group' || currentProject?.settings?.keepMusicGoing"
           type="button" class="music-toggle" icon="music_note" text=""
           :title="musicContinuityTitle" :aria-label="t('musicContinuity.toggle')"
@@ -143,7 +146,12 @@ const toggleMusicContinuity = () => {
 };
 const theme = useState('theme', () => 'dark');
 const isDark = computed(() => theme.value === 'dark');
-const { activeCues, nextItemOverrideUuid } = useAudioEngine();
+const { activeCues, nextItemOverrideUuid, effectiveNextUuid, setNextItemPending } = useAudioEngine();
+const locatableNextUuid = computed(() => {
+  if (projectHydrationStatus.value !== 'ready' || setNextItemPending.value || !effectiveNextUuid.value) return null;
+  const item = findItemByUuid(effectiveNextUuid.value);
+  return item && (item.index?.[0] ?? -1) >= 0 ? item.uuid : null;
+});
 const {
   uiMode,
   regularPlaylistRowHeight,
@@ -151,7 +159,7 @@ const {
   folderPlaylistRowHeight,
   waveformOpacity,
 } = useUiMode();
-const { revealSelection, commitReveal, clearReveals } = usePlaylistReveal();
+const { revealItems, commitReveal, clearReveals } = usePlaylistReveal();
 const server = useLiveplayServer();
 // Same useState key useProject/useShowControl bind to — watching the uuid (not
 // the `selectedItem` computed) means we react to the selection MOVING, not to
@@ -248,7 +256,7 @@ const primaryPlayingUuid = computed<string | null>(() => {
 function scrollItemIntoView(uuid: string, block: ScrollLogicalPosition = 'center') {
   const container = scrollContainer.value;
   if (!container) return;
-  const el = container.querySelector<HTMLElement>(`[data-item-uuid="${uuid}"]`);
+  const el = container.querySelector<HTMLElement>(`[data-item-uuid="${CSS.escape(uuid)}"] > .item-content`);
   if (el) {
     el.scrollIntoView({ block, behavior: 'smooth' });
     return;
@@ -261,6 +269,15 @@ function scrollItemIntoView(uuid: string, block: ScrollLogicalPosition = 'center
     renderLimit.value = topIndex + 1;
     nextTick(() => scrollItemIntoView(uuid, block));
   }
+}
+
+function locateUpNext() {
+  const uuid = locatableNextUuid.value;
+  if (!uuid) return;
+  revealItems(selectedItemUuid.value, uuid);
+  nextTick(() => {
+    if (locatableNextUuid.value === uuid) scrollItemIntoView(uuid, 'end');
+  });
 }
 
 watch(
@@ -283,7 +300,7 @@ watch(
 // already fully visible, so ordinary mouse clicks never jerk the list around,
 // and an off-screen selection is brought in with the smallest move that works.
 watch(selectedItemUuid, (uuid) => {
-  revealSelection(uuid);
+  revealItems(uuid);
   if (!uuid) return;
   // A revealed group renders its children on the next flush, so the row we
   // want to scroll to does not exist yet at this point.
@@ -1289,8 +1306,14 @@ const handleDrop = async (e: DragEvent) => {
   flex: 0 0 auto;
 }
 
-.music-toggle {
+.music-toggle,
+.locate-next {
   padding-inline: var(--spacing-xs);
+}
+
+.locate-next {
+  min-width: var(--panel-control-height);
+  justify-content: center;
 }
 
 .music-toggle[aria-pressed='true'] {
@@ -1324,6 +1347,7 @@ const handleDrop = async (e: DragEvent) => {
 
 .playlist-content {
   flex: 1;
+  container: playlist-scroll / size;
   overflow-y: auto;
   padding: 0 var(--workspace-gutter) var(--workspace-gutter);
   scrollbar-color: var(--color-border-strong) transparent;

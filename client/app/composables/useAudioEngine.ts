@@ -308,6 +308,7 @@ export const useAudioEngine = () => {
     }
     return null;
   });
+  const effectiveNextUuid = computed(() => nextItemOverrideUuid.value ?? autoNextItemUuid.value);
 
   // ---- WS / REST plumbing -------------------------------------------
   // Installed exactly once per renderer. Everything below writes only to
@@ -561,6 +562,7 @@ export const useAudioEngine = () => {
     nextItemOverrideUuid,
     setNextItemPending,
     autoNextItemUuid,
+    effectiveNextUuid,
     setMasterGain,
     adjustMasterGain,
     setNextItem,
