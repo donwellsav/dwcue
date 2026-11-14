@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
-**Version:** 2.6.22
-**Source revision:** 6333f515c7b4cb3f07bf46dbb461fe2ce4ccd102
+**Version:** 2.6.22 development
+**Source revision:** 8af5a12f0b843ea20ea4e31fa2f819cbc965f231
 **Native engine baseline:** b96070379c7305bbb3af6e95d2d869aa9f9fe13b
 **Edition:** 13 November 2026 · English · Current-source operator edition
 
@@ -113,7 +113,7 @@ Use Edit Mode to import, organize, and configure the show. The top bar contains 
 **Procedure — inspect a cue without firing it**
 
 - **Prerequisites:** Edit Mode is active and no text editor or modal covers the playlist.
-- **Actions:** Select the cue, choose **Edit**, and read **Basic Info**. Compare its display name and index with the playlist row. Read **End Behavior** before changing it.
+- **Actions:** Select the cue, press **Shift+S** or choose **Edit**, and read **Basic Info**. Compare its display name and index with the playlist row. Read **End Behavior** before changing it.
 - **Expected visible outcome:** Properties names the selected cue while transport independently continues to show the acknowledged **Play Next** target.
 - **Common mistake:** Assuming the open Properties panel means this cue is armed.
 - **Recovery:** Close or leave Properties unchanged, use **Set As Next** on the intended row, and wait until **Play Next** shows the intended name.
@@ -486,7 +486,7 @@ The bank can **Detach** into a separate window and **Attach** again. Rehearse fo
 
 Open **Settings → Shortcuts**, select a binding, and press the desired key. For a MIDI controller, open **Settings → MIDI** and use **Learn** beside the action. Use the **×** button beside a binding to clear it. Resolve any reserved combinations or conflicts before rehearsal. **Show shortcuts bar** toggles the reference, including the two **QuickPlays (defaults)** key ranges. The arrow beside a number on a tile means Shift. Individual tile settings also provide **Keyboard Shortcut**, **Assign shortcut**, and **Clear shortcut**.
 
-![Keyboard bindings in the docked Shortcuts tab.](manual-assets/shortcuts-current.png)
+![Keyboard bindings in the docked Shortcuts tab, including Settings and Properties.](manual-assets/shortcuts-current.png)
 
 **Procedure — hand over a keyboard-controlled show**
 
@@ -933,6 +933,8 @@ These are source defaults, not a promise about a project's customized assignment
 | Up / Down arrows | Move playlist selection |
 | Enter | Set the selected playlist cue as Up Next |
 | Shift+Enter | Play the selected audio cue immediately |
+| S | Toggle Settings |
+| Shift+S | Toggle Properties for the selected cue in Edit Mode or while that cue is in Preview |
 | L | Toggle the target cue's saved End Behavior between Loop and Nothing |
 | V | Open or close the Video Output window |
 | G | Capture Video Output as a standby still |
@@ -963,7 +965,7 @@ With Video Output focused, Escape also exits its fullscreen mode. In Level Check
 
 ### About this edition
 
-This edition covers the **2.6.22** source listed on the cover. The interface captures use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
+This development edition covers the source listed on the cover. The Settings and Properties shortcuts are for the next build after **2.6.22**. The interface captures use generated media, a software audio output, and fixture display, MIDI and locale methods. Capture details are in **docs/manual-assets/captures.json**.
 
 The playback checkpoint **2f372c2** passed native 13/13, isolated API 61/61, client 229/229, typecheck and RT/live safety checks. Audio-output and project-runtime suites also pass AddressSanitizer; leak detection is disabled. Native checks include six simulated ten-minute secondary-clock runs with continuous generated audio and no buffer faults or resyncs inside the tested envelope. Physical alignment and the earlier intermittency remain unproven; more extreme drift/jitter can trigger recovery.
 

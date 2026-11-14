@@ -295,20 +295,20 @@
     },
     {
       "file": "shortcuts-current.png",
-      "view": "Docked Shortcuts, scrolled to show all twenty default QuickPlay keys.",
-      "version": "2.6.21",
-      "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
+      "view": "Docked Shortcuts with the Settings and cue Properties defaults visible.",
+      "version": "2.6.22 development",
+      "sourceRevision": "8af5a12f0b843ea20ea4e31fa2f819cbc965f231",
       "nativeSourceRevision": "b96070379c7305bbb3af6e95d2d869aa9f9fe13b",
       "capturedOn": "2026-11-13",
-      "surface": "Packaged macOS Apple Silicon review app with a dedicated profile.",
+      "surface": "Headless Chromium running the built renderer against an isolated local engine.",
       "dimensions": [
-        1400,
-        315
+        1200,
+        252
       ],
-      "sha256": "331976879567535b3aeb45fc62daca15f95861eedbc485461fc0774910fdf5e6",
-      "fixture": "Isolated Local review sample with generated audio and a silent 1080p clip. The bundled native engine uses its software NULL backend.",
-      "captureMethod": "Actual Electron renderer screenshot at CSS pixel dimensions. Whole workspace or a single panel or tile.",
-      "presentation": "Rendered UI with its actual settings and cue state."
+      "sha256": "a43b6b547a0daeceb6f918b8bc788ca0c273a93ce39b5e977a827490686f1d64",
+      "fixture": "Isolated Running sample with generated silent audio and the software audio backend.",
+      "captureMethod": "Docked Settings panel captured at CSS pixel dimensions with default keyboard assignments.",
+      "presentation": "Actual Shortcuts tab with Settings on S and Properties on Shift+S."
     },
     {
       "file": "midi-current.png",
