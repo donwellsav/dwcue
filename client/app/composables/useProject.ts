@@ -209,9 +209,10 @@ export const useProject = () => {
   // openItemProperties() (the gear button).
   const propertiesPanelOpen = useState<boolean>('propertiesPanelOpen', () => false);
   const showProjectSettings = useState('showProjectSettings', () => false);
-  const workspaceImportPanel = useState<'media' | 'youtube' | 'spotify' | 'archive-import' | 'archive-export' | null>(
+  const workspaceImportPanel = useState<'media' | 'youtube' | 'spotify' | 'archive-import' | 'archive-export' | 'quickplay' | null>(
     'workspaceImportPanel', () => null,
   );
+  const quickPlayEditor = useState<{ uuid: string; remove: boolean } | null>('quickPlayEditor', () => null);
   // NB: activeCues is owned by useAudioEngine (it's the server projection).
   // useProject only clears it on closeProject; we re-use the same useState key.
   const activeCues = useState<Map<string, any>>('activeCues', () => new Map());
@@ -460,6 +461,7 @@ export const useProject = () => {
       }
       showProjectSettings.value = false;
       workspaceImportPanel.value = null;
+      quickPlayEditor.value = null;
       propertiesPanelOpen.value = true;
     }
   };
@@ -2305,6 +2307,7 @@ export const useProject = () => {
     selectedItems,
     propertiesPanelOpen,
     workspaceImportPanel,
+    quickPlayEditor,
     activeCues,
     waveformUpdateKey,
     triggerWaveformUpdate,

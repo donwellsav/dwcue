@@ -1819,8 +1819,8 @@ assert.match(
 );
 assert.match(
   oneShotTile,
-  /v-if="!showMode"[\s\S]*class="one-shot-control one-shot-remove"[\s\S]*v-if="removeOpen"[\s\S]*role="alertdialog"/,
-  'One Shot removal must remain an explicit regular-mode-only confirmation',
+  /v-if="!showMode"[\s\S]*class="one-shot-control one-shot-remove"[\s\S]*<Teleport defer :to="[^"]*#workspace-import-host[^"]*">[\s\S]*v-if="menuOpen"\s*class="quickplay-settings"[\s\S]*v-if="removeOpen"\s*class="quickplay-remove"[\s\S]*@click="confirmRemove"/,
+  'QuickPlay settings and the edit-mode removal confirmation must share the nonmodal dock',
 );
 assert.match(
   propertiesPanel,

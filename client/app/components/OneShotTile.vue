@@ -1,6 +1,5 @@
 <template>
   <article
-    ref="root"
     class="one-shot-tile"
     :class="{
       'is-playing': isPlaying,
@@ -46,7 +45,6 @@
           <span class="material-symbols-rounded" aria-hidden="true">{{ isPlaying ? 'stop' : 'play_arrow' }}</span>
         </button>
         <button
-          v-if="!showMode"
           type="button"
           class="one-shot-control"
           :class="{ 'is-active': menuOpen }"
@@ -72,31 +70,17 @@
       </div>
     </div>
 
-    <Teleport to="body">
-      <div
+    <Teleport defer :to="isDetached ? '#detached-quickplay-dock' : '#workspace-import-host'">
+      <section
         v-if="menuOpen"
-        ref="menuPopover"
-        class="one-shot-popover"
-        role="dialog"
-        :style="overlayStyle"
+        class="quickplay-settings"
         :aria-label="t('oneShots.settingsFor', { name: item.displayName })"
-        @click.stop
       >
-        <div class="popover-heading">
-          <strong>{{ t('oneShots.settings') }}</strong>
-          <button type="button" class="popover-close" :aria-label="t('actions.close')" @click="menuOpen = false">
-            <span class="material-symbols-rounded" aria-hidden="true">close</span>
-          </button>
-        </div>
+        <h3 class="quickplay-settings-title">{{ item.displayName }}</h3>
         <small
           v-if="isDetached && detachedMutationError"
           class="popover-error detached-mutation-error"
         >{{ detachedMutationError }}</small>
-
-        <button v-if="!showMode" type="button" class="popover-command" @click="requestImport">
-          <span class="material-symbols-rounded" aria-hidden="true">upload_file</span>
-          {{ t('oneShots.replaceAudio') }}
-        </button>
 
         <label class="popover-field">
           <span>{{ t('oneShots.playback') }}</span>
@@ -177,28 +161,24 @@
           <small v-if="hotkeyError" class="popover-error">{{ hotkeyError }}</small>
         </div>
 
-        <button type="button" class="open-properties" @click="openProperties">
-          <span class="material-symbols-rounded" aria-hidden="true">tune</span>
-          {{ t('oneShots.openProperties') }}
-        </button>
-      </div>
+        <div v-if="!showMode" class="quickplay-settings-actions">
+          <Btn icon="upload_file" :text="t('oneShots.replaceAudio')" @click="requestImport" />
+          <Btn v-if="!isDetached" icon="tune" :text="t('oneShots.openProperties')" @click="openProperties" />
+        </div>
+      </section>
 
-      <div
+      <section
         v-if="removeOpen"
-        ref="removePopover"
-        class="one-shot-confirm"
-        role="alertdialog"
-        :style="overlayStyle"
+        class="quickplay-remove"
         :aria-label="t('oneShots.removeConfirmTitle')"
-        @click.stop
       >
-        <strong>{{ t('oneShots.removeConfirmTitle') }}</strong>
+        <strong>{{ item.displayName }}</strong>
         <p>{{ t('oneShots.removeConfirmBody') }}</p>
         <div class="confirm-actions">
-          <button type="button" @click="removeOpen = false">{{ t('common.cancel') }}</button>
+          <button type="button" @click="closeEditor">{{ t('common.cancel') }}</button>
           <button type="button" class="confirm-remove" @click="confirmRemove">{{ t('oneShots.remove') }}</button>
         </div>
-      </div>
+      </section>
     </Teleport>
   </article>
 </template>
@@ -215,20 +195,14 @@ import {
   type OneShotEndMode,
   type OneShotPlaybackMode,
 } from '~/utils/oneShots';
-import { eventToBinding, formatKeyLabel, isReservedCombo } from '~/composables/useCartHotkeys';
+import { bindingsMatch, eventToBinding, formatKeyLabel, isReservedCombo } from '~/composables/useCartHotkeys';
 
 const props = defineProps<{ item: AudioItem; position: number; hotkey?: CartSlotKeyBinding }>();
 const emit = defineEmits<{
   (event: 'request-import'): void;
   (event: 'remove'): void;
 }>();
-const root = ref<HTMLElement | null>(null);
 const waveformCanvas = ref<HTMLCanvasElement | null>(null);
-const menuPopover = ref<HTMLElement | null>(null);
-const removePopover = ref<HTMLElement | null>(null);
-const menuOpen = ref(false);
-const removeOpen = ref(false);
-const overlayStyle = ref({ left: '8px', top: '8px' });
 const capturingHotkey = ref(false);
 const hotkeyError = ref('');
 const isDragging = ref(false);
@@ -238,12 +212,17 @@ const { uiMode } = useUiMode();
 const { t } = useLocalization();
 const videoCheckIssues = useVideoPreflightIssues();
 const videoCheckIssue = computed(() => videoCheckIssues.value.get(props.item.uuid));
-const { saveProject, openItemProperties } = useProject();
+const { saveProject, openItemProperties, workspaceImportPanel, quickPlayEditor } = useProject();
+const showProjectSettings = useState('showProjectSettings', () => false);
 const { activeCues, stopCue } = useAudioEngine();
 const { playOneShot } = useOneShotPlayback();
-const { updateBinding } = useCartHotkeys();
+const { updateBinding, playbackMappings } = useCartHotkeys();
 const server = useLiveplayServer();
 const { isDetached, error: detachedMutationError, mutate } = useDetachedOneShotMutation();
+const editorOpen = computed(() => quickPlayEditor.value?.uuid === props.item.uuid &&
+  (isDetached || (workspaceImportPanel.value === 'quickplay' && !showProjectSettings.value)));
+const menuOpen = computed(() => editorOpen.value && !quickPlayEditor.value?.remove);
+const removeOpen = computed(() => editorOpen.value && !!quickPlayEditor.value?.remove && !showMode.value);
 
 const showMode = computed(() => uiMode.value === 'playback');
 const activeCue = computed(() => activeCues.value.get(props.item.uuid));
@@ -283,7 +262,7 @@ const persist = (fields: OneShotMutableFields) => {
 };
 
 const requestImport = () => {
-  menuOpen.value = false;
+  closeEditor();
   emit('request-import');
 };
 
@@ -313,36 +292,33 @@ const handleDragEnd = () => {
   isDragging.value = false;
 };
 
-const positionOverlay = (anchor: HTMLElement, kind: 'menu' | 'remove') => {
-  const anchorRect = anchor.getBoundingClientRect();
-  const width = kind === 'menu' ? 310 : 286;
-  const rightSide = anchorRect.right + 8;
-  const left = rightSide + width <= window.innerWidth - 8
-    ? rightSide
-    : Math.max(8, anchorRect.left - width - 8);
-  overlayStyle.value = { left: `${left}px`, top: `${Math.max(8, anchorRect.top)}px` };
-  nextTick(() => {
-    const popover = kind === 'menu' ? menuPopover.value : removePopover.value;
-    if (!popover) return;
-    const height = popover.getBoundingClientRect().height;
-    const top = Math.max(8, Math.min(anchorRect.top, window.innerHeight - height - 8));
-    overlayStyle.value = { left: `${left}px`, top: `${top}px` };
-  });
+const closeEditor = () => {
+  quickPlayEditor.value = null;
+  if (!isDetached && workspaceImportPanel.value === 'quickplay') workspaceImportPanel.value = null;
 };
 
-const toggleMenu = (event: MouseEvent) => {
-  menuOpen.value = !menuOpen.value;
-  removeOpen.value = false;
+const showEditor = (remove: boolean) => {
+  quickPlayEditor.value = { uuid: props.item.uuid, remove };
+  if (!isDetached) {
+    showProjectSettings.value = false;
+    workspaceImportPanel.value = 'quickplay';
+  }
+};
+
+const toggleMenu = () => {
+  if (menuOpen.value) closeEditor();
+  else showEditor(false);
+};
+
+const toggleRemove = () => {
+  if (removeOpen.value) closeEditor();
+  else showEditor(true);
+};
+
+watch(menuOpen, () => {
   capturingHotkey.value = false;
   hotkeyError.value = '';
-  if (menuOpen.value) positionOverlay(event.currentTarget as HTMLElement, 'menu');
-};
-
-const toggleRemove = (event: MouseEvent) => {
-  removeOpen.value = !removeOpen.value;
-  menuOpen.value = false;
-  if (removeOpen.value) positionOverlay(event.currentTarget as HTMLElement, 'remove');
-};
+});
 
 const onPlaybackModeChange = (event: Event) => {
   const mode = (event.target as HTMLSelectElement).value as OneShotPlaybackMode;
@@ -412,21 +388,20 @@ const clearHotkey = () => {
 };
 
 const handleDocumentKeydown = (event: KeyboardEvent) => {
-  if (!capturingHotkey.value) {
-    if (event.key === 'Escape') {
-      menuOpen.value = false;
-      removeOpen.value = false;
-    }
+  if (!menuOpen.value || !capturingHotkey.value) return;
+  if (['Control', 'Shift', 'Alt', 'Meta'].includes(event.key)) return;
+  const binding = eventToBinding(event);
+  const stopAll = playbackMappings.value['stop-all'];
+  if (stopAll && bindingsMatch(stopAll, binding)) {
+    capturingHotkey.value = false;
     return;
   }
-  if (['Control', 'Shift', 'Alt', 'Meta'].includes(event.key)) return;
   event.preventDefault();
   event.stopImmediatePropagation();
   if (event.key === 'Escape') {
     capturingHotkey.value = false;
     return;
   }
-  const binding = eventToBinding(event);
   if (isReservedCombo(binding)) {
     hotkeyError.value = t('controls.reserved');
     return;
@@ -441,21 +416,13 @@ const handleDocumentKeydown = (event: KeyboardEvent) => {
   persist({ hotkey: binding });
 };
 
-const handleDocumentPointerdown = (event: PointerEvent) => {
-  const target = event.target as Node;
-  if (root.value?.contains(target) || menuPopover.value?.contains(target) || removePopover.value?.contains(target)) return;
-  menuOpen.value = false;
-  removeOpen.value = false;
-  capturingHotkey.value = false;
-};
-
 const openProperties = () => {
-  menuOpen.value = false;
+  closeEditor();
   openItemProperties(props.item.uuid);
 };
 
 const confirmRemove = () => {
-  removeOpen.value = false;
+  closeEditor();
   emit('remove');
 };
 
@@ -489,7 +456,6 @@ watch(() => [props.item.waveform?.peaks, props.item.color], () => nextTick(drawW
 
 onMounted(() => {
   document.addEventListener('keydown', handleDocumentKeydown, true);
-  document.addEventListener('pointerdown', handleDocumentPointerdown);
   resizeObserver = new ResizeObserver(drawWaveform);
   if (waveformCanvas.value) resizeObserver.observe(waveformCanvas.value);
   nextTick(drawWaveform);
@@ -497,7 +463,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleDocumentKeydown, true);
-  document.removeEventListener('pointerdown', handleDocumentPointerdown);
+  if (quickPlayEditor.value?.uuid === props.item.uuid) closeEditor();
   resizeObserver?.disconnect();
 });
 </script>
@@ -749,56 +715,33 @@ onUnmounted(() => {
 }
 .one-shot-remove:hover { background: color-mix(in srgb, var(--color-danger) 14%, transparent); color: var(--color-danger); }
 
-.one-shot-popover,
-.one-shot-confirm {
-  position: fixed;
-  z-index: 1000;
-  width: min(310px, calc(100vw - 32px));
-  max-height: calc(100vh - 16px);
-  overflow-y: auto;
-  padding: 12px;
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-md, 8px);
-  background: var(--color-surface-raised);
-  box-shadow: 0 14px 34px rgb(0 0 0 / 42%);
-  color: var(--color-text-primary);
-  cursor: default;
+.quickplay-settings,
+.quickplay-remove {
+  width: min(100%, var(--settings-width));
+  padding: var(--spacing-sm) var(--workspace-gutter);
 }
 
-.popover-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
+.quickplay-settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+  align-items: start;
+  gap: var(--spacing-sm);
 }
 
-.popover-close { width: 26px; height: 26px; border-color: transparent; background: transparent; }
-.popover-command {
-  width: 100%;
-  min-height: 34px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 10px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--control-radius);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.popover-command:hover { background: var(--color-surface-hover); border-color: var(--color-border-strong); }
-.popover-command:focus-visible { outline: 2px solid var(--color-focus, var(--color-accent)); outline-offset: 2px; }
-.popover-command .material-symbols-rounded { font-size: 18px; }
-.popover-field { display: grid; gap: 5px; margin-top: 9px; color: var(--color-text-secondary); font-size: 12px; }
+.quickplay-settings-title,
+.detached-mutation-error,
+.quickplay-settings-actions { grid-column: 1 / -1; }
+.quickplay-settings-title { margin: 0; font-size: var(--type-metadata-size); }
+.quickplay-settings-actions { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); }
+
+.popover-field { display: grid; gap: 4px; min-width: 0; color: var(--color-text-secondary); font-size: 12px; }
 .popover-field > span:first-child { display: flex; justify-content: space-between; gap: 8px; }
 .popover-field select,
 .popover-field input[type='number'] {
   width: 100%;
-  min-height: 32px;
+  min-height: var(--settings-control-height);
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: var(--control-radius);
   background: var(--color-surface);
   color: var(--color-text-primary);
 }
@@ -812,31 +755,16 @@ onUnmounted(() => {
   min-height: 32px;
   flex: 1;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: var(--control-radius);
   background: var(--color-surface);
   color: var(--color-text-primary);
 }
 .shortcut-capture.is-capturing { border-color: var(--color-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 25%, transparent); }
 .popover-error { color: var(--color-danger); }
 .detached-mutation-error { display: block; margin-bottom: 8px; }
-.open-properties {
-  width: 100%;
-  min-height: 34px;
-  margin-top: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 7px;
-  background: var(--color-surface-hover);
-  color: var(--color-text-primary);
-}
-
-.one-shot-confirm { width: min(286px, calc(100vw - 32px)); }
-.one-shot-confirm p { margin: 7px 0 12px; color: var(--color-text-secondary); font-size: 12px; line-height: 1.4; }
+.quickplay-remove p { margin: 5px 0; color: var(--color-text-secondary); font-size: 12px; }
 .confirm-actions { display: flex; justify-content: flex-end; gap: 7px; }
-.confirm-actions button { min-height: 32px; padding: 0 11px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-surface); color: var(--color-text-primary); }
+.confirm-actions button { min-height: 32px; padding: 0 11px; border: 1px solid var(--color-border); border-radius: var(--control-radius); background: var(--color-surface); color: var(--color-text-primary); }
 .confirm-actions .confirm-remove { border-color: var(--color-danger); color: var(--color-danger); }
 .confirm-actions .confirm-remove:hover { background: var(--color-danger); color: white; }
 

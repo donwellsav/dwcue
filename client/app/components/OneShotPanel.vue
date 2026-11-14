@@ -85,12 +85,23 @@
       </div>
     </div>
 
-    <AudioImportModal
-      :open="importSlot !== null"
-      :busy="busySlot !== null"
-      @pick="handleImportPick"
-      @close="closeImport"
-    />
+    <section v-if="isDetachedWindow" v-show="quickPlayEditor || importSlot !== null" class="detached-quickplay-panel">
+      <header class="workspace-panel-header">
+        <h3 class="workspace-panel-header__title">{{ t(quickPlayEditor?.remove
+          ? 'oneShots.removeConfirmTitle' : quickPlayEditor ? 'oneShots.settings' : 'importAudio.title') }}</h3>
+        <Btn type="button" icon="close" :text="t('actions.close')" @click="quickPlayEditor = null; closeImport()" />
+      </header>
+      <div id="detached-quickplay-dock"></div>
+    </section>
+    <Teleport defer :to="isDetachedWindow ? '#detached-quickplay-dock' : '#workspace-import-host'">
+      <AudioImportModal docked
+        :open="importSlot !== null"
+        :visible="!quickPlayEditor && (isDetachedWindow || workspaceImportPanel === 'quickplay')"
+        :busy="busySlot !== null"
+        @pick="handleImportPick"
+        @close="closeImport"
+      />
+    </Teleport>
   </section>
 </template>
 
@@ -119,6 +130,8 @@ const {
   projectEpoch,
   projectHydrationStatus,
   propertiesPanelOpen,
+  quickPlayEditor,
+  workspaceImportPanel,
   saveProject,
   selectedItem,
   selectedItems,
@@ -178,16 +191,38 @@ const busySlot = ref<number | null>(null);
 const dragOverSlot = ref<number | null>(null);
 const slotErrors = reactive<Record<number, string>>({});
 const clearSlotError = (slot: number) => delete slotErrors[slot];
+const showProjectSettings = useState('showProjectSettings', () => false);
 
 const openImport = (slot: number) => {
   if (!canMutate.value || showMode.value || !currentProject.value || busySlot.value !== null) return;
   clearSlotError(slot);
+  quickPlayEditor.value = null;
   importSlot.value = slot;
+  if (!isDetached) {
+    showProjectSettings.value = false;
+    workspaceImportPanel.value = 'quickplay';
+  }
 };
 
 const closeImport = () => {
-  if (busySlot.value === null) importSlot.value = null;
+  if (busySlot.value !== null) return;
+  importSlot.value = null;
+  if (!isDetached && !quickPlayEditor.value && workspaceImportPanel.value === 'quickplay')
+    workspaceImportPanel.value = null;
 };
+
+watch(workspaceImportPanel, panel => {
+  if (!isDetached && panel !== 'quickplay') {
+    quickPlayEditor.value = null;
+    closeImport();
+  }
+});
+watch(showMode, active => {
+  if (active && quickPlayEditor.value?.remove) {
+    quickPlayEditor.value = null;
+    closeImport();
+  }
+});
 
 const errorMessage = (error: unknown): string => t('oneShots.importFailed', {
   reason: error instanceof Error && error.message ? error.message : t('oneShots.unknownImportError'),
@@ -328,7 +363,7 @@ const handleImportPick = async (paths: string[], options: ImportOptions) => {
   const slot = importSlot.value;
   const first = paths[0];
   if (slot === null || !first) return;
-  if (await importFromServerPath(first, slot, options)) importSlot.value = null;
+  if (await importFromServerPath(first, slot, options)) closeImport();
 };
 
 const copyPlaylistItemIntoSlot = async (uuid: string, slot: number) => {
@@ -464,6 +499,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  if (!isDetached && workspaceImportPanel.value === 'quickplay') workspaceImportPanel.value = null;
   unmountHotkeys();
   unmountMidi();
 });
@@ -485,6 +521,18 @@ onUnmounted(() => {
   height: 18px;
   flex: 0 0 auto;
   color: var(--color-text-primary);
+}
+
+.detached-quickplay-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 60%;
+  border-top: 1px solid var(--color-border);
+}
+
+#detached-quickplay-dock {
+  overflow: auto;
 }
 
 .one-shot-header__actions {

@@ -214,7 +214,7 @@
       <section v-show="visibleImportPanel" class="workspace-import" :aria-label="importPanelTitle">
         <header class="workspace-panel-header">
           <h2 class="workspace-panel-header__title">{{ importPanelTitle }}</h2>
-          <button type="button" class="workspace-import-close" :aria-label="t('actions.close')" @click="workspaceImportPanel = null">
+          <button type="button" class="workspace-import-close" :aria-label="t('actions.close')" @click="closeImportPanel">
             <span class="material-symbols-rounded" aria-hidden="true">close</span>
           </button>
         </header>
@@ -239,6 +239,7 @@ const {
   openItemProperties,
   propertiesPanelOpen,
   workspaceImportPanel,
+  quickPlayEditor,
   previewItemUuid,
   saveProject,
   closeProject,
@@ -260,7 +261,7 @@ const { levels: outputTargetLevels } = useOutputTarget();
 const showProjectSettings = useState('showProjectSettings', () => false);
 const visibleImportPanel = computed(() => {
   const panel = workspaceImportPanel.value;
-  return !showProjectSettings.value && (uiMode.value !== 'playback' || panel?.startsWith('archive-')) ? panel : null;
+  return !showProjectSettings.value && (uiMode.value !== 'playback' || panel === 'quickplay' || panel?.startsWith('archive-')) ? panel : null;
 });
 const importPanelTitle = computed(() => {
   if (visibleImportPanel.value === 'media') return t('importAudio.title');
@@ -268,8 +269,14 @@ const importPanelTitle = computed(() => {
   if (visibleImportPanel.value === 'spotify') return t('spotifyImport.title');
   if (visibleImportPanel.value === 'archive-import') return t('importProject.chooseSourceTitle');
   if (visibleImportPanel.value === 'archive-export') return t('exportProject.chooseLocationTitle');
+  if (visibleImportPanel.value === 'quickplay') return t(quickPlayEditor.value?.remove
+    ? 'oneShots.removeConfirmTitle' : quickPlayEditor.value ? 'oneShots.settings' : 'importAudio.title');
   return '';
 });
+function closeImportPanel() {
+  if (workspaceImportPanel.value === 'quickplay') quickPlayEditor.value = null;
+  workspaceImportPanel.value = null;
+}
 const editableSelectedItem = computed(() => {
   if (!selectedItem.value) return null;
   if (uiMode.value !== 'playback' || selectedItem.value.uuid === previewItemUuid.value) return selectedItem.value;
