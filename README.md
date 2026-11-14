@@ -1,8 +1,8 @@
 # DonWells Cue
 
-DonWells Cue **2.6.22** gives **QuickPlays** the same Play/Stop controls in Edit and Show Mode. The number row triggers slots **1–10**, and holding **Shift** triggers **11–20**. Use **Enter** to set the selected cue as Up Next and **Space** to run it after the engine confirms the target.
+DonWells Cue **2.6.23** adds shuffle for the playlist and individual groups, plus optional backup music when a cue ends without a follow. Video Output holds the outgoing picture until the incoming video has a frame ready. **Settings → User Interface → Show tooltips** controls operator hover hints.
 
-**V** toggles Video Output. **G** captures its picture and **Shift+G** captures a selected display for standby. Settings opens below the playlist, with separate **Shortcuts** and **MIDI** tabs and updates under **About**. Header warnings temporarily replace the show name. The [workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification and the deferred line-level audio and 1080p HDMI checks.
+**Enter** sets Up Next and **Space** runs it after the engine confirms the target. **Q** toggles QuickPlays and **Shift+Q** toggles the detached window. The number row triggers slots **1–10**, and holding **Shift** triggers **11–20**. **S** opens Settings, **Shift+S** opens Properties, and **V** toggles Video Output. The [workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification and the deferred line-level audio and 1080p HDMI checks.
 
 **DonWells Cue is a free, open-source app for playing back audio and video in live shows.** If you run sound for theatre, conferences, houses of worship, AV installs, or any live event, DonWells Cue lets you line up your music, sound effects and stings ahead of time and fire them off reliably on the night — from a laptop, a touchscreen, or even a separate stage-side machine you control over the network.
 
@@ -10,7 +10,7 @@ You build a **show** as a list of cues plus a grid of one-touch buttons, then tr
 
 This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. Published macOS packages are Developer ID signed, notarized, and package-validated.
 
-> The current source builds **v2.6.22**. Match the installed About version to the release notes before rehearsal.
+> The current source builds **v2.6.23**. Match the installed About version to the release notes before rehearsal.
 
 > **Operating a show?** Use the [operator manual (PDF)](docs/operators-manual.pdf) or its [Markdown source](docs/operators-manual.md). Those instructions track the current source. The client and server READMEs linked later are developer references, not show-day instructions.
 
@@ -77,7 +77,7 @@ Download the latest installer from the [release page](https://github.com/donwell
 | **Windows** | `DonWells-Cue-Setup-x.y.z.exe` (installer, 64-bit) |
 | **macOS — Apple Silicon** (M1/M2/M3 and newer) | `DonWells-Cue-x.y.z-arm64.dmg` or `.zip` |
 | **macOS — Intel** (x86_64 Macs supported by macOS 13.3+) | `DonWells-Cue-x.y.z-x64.dmg` or `.zip` |
-| **Linux** | `DonWells-Cue-x.y.z.AppImage`, `.deb`, or `.rpm` |
+| **Linux x86_64** (glibc 2.43 or newer) | `DonWells-Cue-x.y.z-x86_64.AppImage`, `.deb`, or `.rpm` |
 
 The macOS release is native per architecture: the `arm64` package is for Apple Silicon and the `x64` package is for Intel. Both bundle a matching native `dwcue-server`; neither package relies on Rosetta or a machine-local server.
 
@@ -354,7 +354,7 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.22**. Find published artefacts and checksums on the release page.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.23**. Find published artefacts and checksums on the release page.
 
 ### Triggering a release
 

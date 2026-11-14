@@ -169,6 +169,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Cart player window — detach/attach
   openCartPlayerWindow: (projectFolderPath) => ipcRenderer.invoke('open-cart-player-window', projectFolderPath),
+  toggleCartPlayerWindow: () => ipcRenderer.invoke('toggle-cart-player-window'),
   attachCartPlayerWindow: () => ipcRenderer.send('cart-player-window-attach'),
   getCartWindowProjectData: () => ipcRenderer.invoke('get-cart-window-project-data'),
   onCartPlayerWindowOpened: (callback) => replaceIpcListener('cart-player-window-opened', callback),

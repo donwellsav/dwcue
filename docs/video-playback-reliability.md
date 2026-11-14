@@ -12,6 +12,8 @@ The 3 November source was checkpointed in `2ea5984` and `a9a86a3` (package metad
 
 **Pre-show video check:** `8832230` checks each video cue's In point in a hidden Chromium renderer, one at a time. It uses the existing Cue server media route and reports results in the dock and on the affected cues. A timeout ends the run to avoid adding more storage work. Run `node --test scripts/video-preflight.test.cjs` on a desktop host for the actual decode, timeout, and cancellation checks. The packaged macOS check also verified grouped cues, QuickPlays, replacement invalidation, and native GO and Stop All delivery during a held media request. The check samples the In point. Full-clip playback and physical output remain rehearsal checks.
 
+**14 November automatic video handoff:** `dc8db4f` keeps a copy of the outgoing frame until Chromium submits the incoming frame. Clock updates wait for an in-flight seek. A delayed first frame reports a warning after three seconds and can still take over when ready. The Chromium regression delays the incoming media by 3.3 seconds and verifies recovery. Three packaged macOS runs played the same 32-second film into the same 15-second color test. Before the repair the output recordings contained approximately 208, 17 and 17 ms of black. Afterward none of the 1,576 captured frames were black, and the second cue started at about 32 seconds each time. This is a recording of the macOS Video Output window. Physical output and the separate report of a picture staying black for the entire cue remain unverified.
+
 ## Confirmed failure paths
 
 | Failure | Evidence | Repair |
@@ -26,6 +28,8 @@ The 3 November source was checkpointed in `2ea5984` and `a9a86a3` (package metad
 | Slow video downloads blocked control networking. | A paused whole-file reader delayed an already-connected WebSocket's command acknowledgment for more than 2 s. The installed Crow transport uses synchronous writes for both general and static-file responses. | Repair and verification are recorded with the native transport patch described below. |
 
 Independent review also reproduced a meter/stop-edge ordering bug: a Stopped background video could become the fallback before its `cue_state` edge arrived. Stopped normal cues are now removed before selection, including during device-health loss; removing the displayed cue immediately selects the remaining picture or clears to idle. Diagnostic transport retains its separate behavior.
+
+Auditioning the same playlist item as the on-air cue could suppress or remove its Program picture. The video controller now excludes Preview by its separate engine cue ID. The controller regression covers automatic follow while Preview is active, a Preview restart while Program is playing, and a reconnect snapshot with both instances.
 
 ## Native response transport
 

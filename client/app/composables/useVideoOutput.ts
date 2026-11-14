@@ -16,6 +16,9 @@ const CHASE_HARD_SEEK_S = 0.08;
 const NATIVE_CLOCK_STALE_MS = 250;
 const PINNED_METER_LIMIT = 2;
 const NATIVE_PROGRESS_EPSILON_S = 0.001;
+const FOLLOW_END_TOLERANCE_S = 0.1;
+const FOLLOW_CUE_GRACE_MS = 750;
+const FIRST_FRAME_WARNING_MS = 3000;
 
 interface OutputItem {
   uuid: string;
@@ -25,6 +28,8 @@ interface OutputItem {
   mediaServerPath: string | null;
   inPoint: number;
   outPoint: number | null;
+  duration: number;
+  followsAtEnd: boolean;
   fileRevision: string | null;
 }
 
@@ -76,6 +81,7 @@ function readDoc(value: unknown): DocMirror | null {
       const item = raw as Record<string, unknown>;
       const uuid = readString(item.uuid);
       if (uuid) {
+        const endAction = (item.endBehavior as { action?: string } | null)?.action;
         items.set(uuid, {
           uuid,
           hasVideo: item.hasVideo === true,
@@ -84,6 +90,8 @@ function readDoc(value: unknown): DocMirror | null {
           mediaServerPath: readString(item.mediaServerPath),
           inPoint: readNumber(item.inPoint) ?? 0,
           outPoint: readNumber(item.outPoint),
+          duration: readNumber(item.duration) ?? 0,
+          followsAtEnd: endAction === 'next' || endAction === 'goto-item' || endAction === 'goto-index',
           fileRevision: readString(fileRevisions[uuid]),
         });
       }
@@ -129,6 +137,9 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   const videoReady = ref(false);
   const videoFailed = ref(false);
   const showVideo = ref(false);
+  const heldFrameEl = shallowRef<HTMLCanvasElement | null>(null);
+  const showHeldFrame = ref(false);
+  let pictureTimer: number | undefined;
   const assignedCueImageSrc = ref<string | null>(null);
   const captured = shallowRef<VideoStandbyStill>({ standby: null, cue: null });
   const cueImageSrc = computed(() => assignedCueImageSrc.value ?? captured.value.cue);
@@ -140,7 +151,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   const activeItemUuid = ref<string | null>(null);
   const activeCueId = ref<string | null>(null);
   const activeTransport = ref(TRANSPORT_STOPPED);
-  const previewItemUuid = ref<string | null>(null);
+  let previewCueId: string | null = null;
   let previewStateRevision = -1;
   let previewStateSession = '';
   const nextItemUuid = ref<string | null>(null);
@@ -149,6 +160,8 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   let diagnosticItem: OutputItem | null = null;
   let activeTriggerSeq = -1;
   let highestTriggerSeqSeen = -1;
+  let stopRevision: number | null = null;
+  let stoppedThroughTriggerSeq = -1;
   let acceptNextSnapshot = true;
   let pendingSeekSeconds = 0;
 
@@ -176,10 +189,12 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   let presentedAt: number | null = null;
   let presentedMediaTime: number | null = null;
   let presentedFrames: number | null = null;
+  let awaitingFirstFrame = false;
 
   watch(videoSrc, () => {
     cancelFrameClockCheck();
     presentedAt = presentedMediaTime = presentedFrames = null;
+    awaitingFirstFrame = false;
   }, { flush: 'sync' });
 
   function getPictureHealth(): VideoPictureHealth {
@@ -189,7 +204,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
       : !showVideo.value ? (cueImageSrc.value || standbySrc.value ? 'still' : 'idle')
       : activeTransport.value === TRANSPORT_PAUSED ? 'paused'
       : !hasHealthyClock.value || waitingForHealthyClockSample || waitingForNativeProgress ? 'clock-wait'
-      : element?.seeking ? 'seeking' : !videoReady.value ? 'loading' : 'playing';
+      : element?.seeking ? 'seeking' : !videoReady.value || awaitingFirstFrame ? 'loading' : 'playing';
     return {
       itemUuid: activeItemUuid.value, state,
       sourceItemUuid,
@@ -220,6 +235,40 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     if (typeof report === 'function') {
       void Promise.resolve(Reflect.apply(report, api, [payload])).catch(() => {});
     }
+  }
+
+  function clearHeldFrame() {
+    clearTimeout(pictureTimer);
+    showHeldFrame.value = false;
+    awaitingFirstFrame = false;
+  }
+
+  function holdCurrentFrame() {
+    if (showHeldFrame.value || !showVideo.value || presentedAt === null
+      || !doc.value?.items.get(activeItemUuid.value ?? '')?.hasVideo
+      || activeTriggerSeq <= stoppedThroughTriggerSeq) return;
+    const element = currentVideoEventElement();
+    const canvas = heldFrameEl.value;
+    if (!element || !canvas || element.readyState < 2 || !element.videoWidth || !element.videoHeight) return;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    // Copy only at the handoff so the old frame survives replacing the one decoder's source.
+    if (canvas.width !== element.videoWidth) canvas.width = element.videoWidth;
+    if (canvas.height !== element.videoHeight) canvas.height = element.videoHeight;
+    try {
+      context.drawImage(element, 0, 0);
+      showHeldFrame.value = true;
+    } catch { /* Leave the normal standby visible if the last frame is unavailable. */ }
+  }
+
+  function observeStopRevision(raw: unknown) {
+    const revision = readTriggerSeq(raw);
+    if (revision === null) return;
+    if (stopRevision !== null && revision > stopRevision) {
+      stoppedThroughTriggerSeq = highestTriggerSeqSeen;
+      clearHeldFrame();
+    }
+    stopRevision = revision;
   }
 
   function pathMediaUrl(path: string | null): string | null {
@@ -297,21 +346,34 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     videoFrameCallbackElement = element;
     const source = videoSrc.value;
     videoFrameCallbackId = element.requestVideoFrameCallback((timestamp, metadata) => {
+      videoFrameCallbackId = null;
+      videoFrameCallbackElement = null;
       if (videoSrc.value !== source || videoEl.value !== element) return;
+      if (currentVideoEventElement() !== element) {
+        scheduleFrameClockCheck();
+        return;
+      }
       onVideoFrame(timestamp, metadata);
     });
   }
 
   function onVideoFrame(timestamp: DOMHighResTimeStamp, metadata: VideoFrameCallbackMetadata) {
-    videoFrameCallbackId = null;
-    videoFrameCallbackElement = null;
-    if (metadata && Number.isFinite(metadata.mediaTime)) {
+    const frameReady = Number.isFinite(metadata?.mediaTime)
+      && (!awaitingFirstFrame || (videoReady.value && !videoEl.value?.seeking));
+    if (frameReady) {
       presentedAt = timestamp;
       presentedMediaTime = metadata.mediaTime;
       presentedFrames = metadata.presentedFrames;
+      if (awaitingFirstFrame && showVideo.value) {
+        clearHeldFrame();
+        reportPlaybackError(null);
+      }
     }
-    if (activeTransport.value === TRANSPORT_STOPPED
-      || activeTransport.value === TRANSPORT_PAUSED || !showVideo.value
+    if (activeTransport.value === TRANSPORT_PAUSED && awaitingFirstFrame && showVideo.value) {
+      scheduleFrameClockCheck();
+      return;
+    }
+    if (activeTransport.value === TRANSPORT_STOPPED || activeTransport.value === TRANSPORT_PAUSED || !showVideo.value
       || !hasHealthyClock.value || waitingForHealthyClockSample
       || waitingForNativeProgress) return;
 
@@ -361,6 +423,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   }
 
   function markPlaybackFailure(itemUuid: string | null, message: string) {
+    clearHeldFrame();
     playAttemptFailed = true;
     videoFailed.value = true;
     videoReady.value = false;
@@ -394,10 +457,21 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
       && playheadSeconds >= item.outPoint;
   }
 
+  function holdAtFollowEnd(playheadSeconds: number): boolean {
+    const item = doc.value?.items.get(activeItemUuid.value ?? '');
+    if (diagnosticCue || !item?.hasVideo || !item.followsAtEnd
+      || activeTriggerSeq <= stoppedThroughTriggerSeq) return false;
+    const end = item.outPoint !== null && item.outPoint > item.inPoint ? item.outPoint : item.duration;
+    if (end <= 0 || playheadSeconds < end - FOLLOW_END_TOLERANCE_S) return false;
+    holdCurrentFrame();
+    return showHeldFrame.value;
+  }
+
   function applyItem(item: OutputItem, playheadSeconds: number, seekImmediately = true) {
     assignedCueImageSrc.value = pathMediaUrl(item.imagePath);
 
     if (!item.hasVideo) {
+      clearHeldFrame();
       showVideo.value = false;
       pauseVideo();
       preloadNextItem();
@@ -451,7 +525,15 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     return newest;
   }
 
-  function clearActive() {
+  function clearActive(keepHeldFrame = false) {
+    if (keepHeldFrame) {
+      clearTimeout(pictureTimer);
+      awaitingFirstFrame = false;
+      // Some endings never produce a follow. An idle output returns to its standby.
+      pictureTimer = window.setTimeout(clearHeldFrame, FOLLOW_CUE_GRACE_MS);
+    } else {
+      clearHeldFrame();
+    }
     activeItemUuid.value = null;
     activeCueId.value = null;
     activeTransport.value = TRANSPORT_STOPPED;
@@ -463,10 +545,10 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     preloadNextItem();
   }
 
-  function renderNewestActive(seekImmediately = true) {
+  function renderNewestActive(seekImmediately = true, stoppedAt?: number) {
     const active = newestActiveCue();
     if (!active) {
-      if (activeItemUuid.value) clearActive();
+      if (activeItemUuid.value) clearActive(stoppedAt !== undefined && holdAtFollowEnd(stoppedAt));
       return;
     }
     const item = active === diagnosticCue ? diagnosticItem : doc.value?.items.get(active.itemUuid);
@@ -478,16 +560,36 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     const sourceChanged = active.itemUuid !== activeItemUuid.value
       || active.triggerSeq !== activeTriggerSeq;
     if (sourceChanged) {
+      if (item.hasVideo && active !== diagnosticCue && active.itemUuid !== activeItemUuid.value) {
+        holdCurrentFrame();
+      }
+      if (active === diagnosticCue) clearHeldFrame();
+      if (videoFailed.value && active.itemUuid === sourceItemUuid) sourceSignature = null;
+      const previousSource = videoSrc.value;
       pauseVideo();
       reportPlaybackError(null);
       activeItemUuid.value = active.itemUuid;
       activeCueId.value = active.cueId;
       activeTriggerSeq = active.triggerSeq;
       beginNativeClockGrace(active.cueId, active.playheadSeconds);
+      applyItem(item, active.playheadSeconds);
+      if (active !== diagnosticCue && item.hasVideo && !isAtOutPoint(item, active.playheadSeconds)
+        && (videoSrc.value !== previousSource || showHeldFrame.value || !videoReady.value)) {
+        awaitingFirstFrame = true;
+        presentedAt = presentedMediaTime = presentedFrames = null;
+        clearTimeout(pictureTimer);
+        pictureTimer = window.setTimeout(() => {
+          // A slow decoder can still replace the held picture after the warning.
+          reportPlaybackError({ itemUuid: active.itemUuid, message: 'Waiting for the first video frame.' });
+        }, FIRST_FRAME_WARNING_MS);
+      }
     } else if (active.cueId !== activeCueId.value) {
       activeCueId.value = active.cueId;
     }
-    applyItem(item, active.playheadSeconds, seekImmediately || sourceChanged);
+    if (active.transport !== TRANSPORT_PAUSED && isAtOutPoint(item, active.playheadSeconds)) {
+      holdAtFollowEnd(active.playheadSeconds);
+    }
+    if (!sourceChanged) applyItem(item, active.playheadSeconds, seekImmediately);
     applyTransport(active.transport);
   }
 
@@ -535,14 +637,15 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   const offCueState = server.onCueState((raw: unknown) => {
     if (acceptDiagnosticState(raw)) return;
     const state = readActiveCue(raw);
-    if (!state) return;
+    if (!state || (previewCueId !== null && state.cueId === previewCueId)) return;
     acceptNextSnapshot = false;
     highestTriggerSeqSeen = Math.max(highestTriggerSeqSeen, state.triggerSeq);
 
-    if (state.itemUuid === previewItemUuid.value) return;
     if (state.transport === TRANSPORT_STOPPED) {
+      const stoppedAt = state.itemUuid === activeItemUuid.value && state.triggerSeq === activeTriggerSeq
+        ? state.playheadSeconds : undefined;
       removeMatchingActive(state);
-      renderNewestActive(false);
+      renderNewestActive(false, stoppedAt);
       return;
     }
 
@@ -555,15 +658,16 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   });
 
   const offMeters = server.onMeters((meters: MetersBroadcast) => {
+    observeStopRevision(meters.stop_revision);
     // Background cues keep advancing before they become the picture again.
     const displayed = newestActiveCue();
-    let removedDisplayed = false;
+    let stoppedAt: number | undefined;
     for (const meter of meters.items) {
       const key = `cue:${meter.cue_id}`;
       const cue = activeCues.get(key);
       if (meter.transport === TRANSPORT_STOPPED) {
         activeCues.delete(key);
-        if (cue && cue === displayed) removedDisplayed = true;
+        if (cue && cue === displayed) stoppedAt = meter.playhead_seconds;
         continue;
       }
       if (cue && (hasHealthyClock.value || meter.transport === TRANSPORT_PAUSED)) {
@@ -571,7 +675,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
         cue.transport = meter.transport;
       }
     }
-    if (removedDisplayed) renderNewestActive();
+    if (stoppedAt !== undefined) renderNewestActive(false, stoppedAt);
     const active = newestActiveCue();
     if (!active?.cueId) return;
     const meter = meters.items.find((item) => item.cue_id === active.cueId);
@@ -609,6 +713,11 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     }
     if (!element || !showVideo.value || !videoReady.value) return;
 
+    // Let a seek land and submit the first frame before chasing the moving clock.
+    if (element.seeking || (showHeldFrame.value && awaitingFirstFrame)) {
+      applyTransport(meter.transport);
+      return;
+    }
     const drift = element.currentTime - meter.playhead_seconds;
     const absoluteDrift = Math.abs(drift);
     if (absoluteDrift > CHASE_HARD_SEEK_S) {
@@ -659,25 +768,27 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     if ((!session || session === previewStateSession) && revision < previewStateRevision) return false;
     previewStateSession = session;
     previewStateRevision = revision;
-    previewItemUuid.value = readString(state?.itemUuid);
+    // Preview loads a separate engine cue, even when Program plays the same playlist item.
+    previewCueId = readString(state?.cueId);
     return true;
   }
 
   const offSnapshot = server.onPlaybackSnapshot((raw: unknown) => {
     if (!raw || typeof raw !== 'object') return;
     const snapshot = raw as Record<string, unknown>;
+    observeStopRevision(snapshot.stop_revision);
     nextItemUuid.value = readString(snapshot.next_item_uuid);
     const preview = snapshot.preview && typeof snapshot.preview === 'object'
       ? snapshot.preview as Record<string, unknown>
       : null;
-    applyPreviewState(preview ? { ...preview, itemUuid: preview.item_uuid } : null, true);
+    applyPreviewState(preview ? { ...preview, cueId: preview.cue_id ?? preview.cueId } : null, true);
 
     const candidates: ActiveCue[] = [];
     for (const entry of Array.isArray(snapshot.cues) ? snapshot.cues : []) {
       if (acceptDiagnosticState(entry)) continue;
       const active = readActiveCue(entry);
       if (!active || active.transport === TRANSPORT_STOPPED
-        || active.itemUuid === previewItemUuid.value) continue;
+        || (previewCueId !== null && active.cueId === previewCueId)) continue;
       candidates.push(active);
     }
     const newestSequence = candidates.reduce(
@@ -710,10 +821,12 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
           doc.value = null;
           activeCues.clear();
           nextItemUuid.value = null;
-          previewItemUuid.value = null;
+          previewCueId = null;
           previewStateRevision = -1;
           previewStateSession = '';
           highestTriggerSeqSeen = -1;
+          stoppedThroughTriggerSeq = -1;
+          clearHeldFrame();
           acceptNextSnapshot = true;
           if (!diagnosticCue) {
             clearActive();
@@ -732,16 +845,13 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
           break;
         case 'preview_started': {
           if (!applyPreviewState(patch)) return;
-          if (previewItemUuid.value) {
-            for (const [key, active] of activeCues) {
-              if (active.itemUuid === previewItemUuid.value) activeCues.delete(key);
-            }
+          if (previewCueId && activeCues.delete(`cue:${previewCueId}`)) {
             renderNewestActive(false);
           }
           break;
         }
         case 'preview_stopped':
-          applyPreviewState({ ...patch, itemUuid: '' });
+          applyPreviewState({ ...patch, cueId: '' });
           break;
         default:
           break;
@@ -781,9 +891,9 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     videoReady.value = true;
     videoFailed.value = false;
     playAttemptFailed = false;
-    reportPlaybackError(null);
+    if (!awaitingFirstFrame) reportPlaybackError(null);
     // Rebuffer/seek can fire canplay again; keep later drift on the meter chase.
-    renderNewestActive(firstReady);
+    renderNewestActive(firstReady && !element.seeking);
     scheduleFrameClockCheck();
   }
 
@@ -810,6 +920,8 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
       mediaServerPath: source.path,
       inPoint: 0,
       outPoint: source.duration,
+      duration: source.duration,
+      followsAtEnd: false,
       fileRevision: null,
     } : null;
     renderNewestActive();
@@ -829,6 +941,8 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   const stopConnectedWatch = watch(() => server.connected, (connected) => {
     if (!connected) {
       acceptNextSnapshot = true;
+      stopRevision = null;
+      clearHeldFrame();
     } else {
       void refetchDoc();
     }
@@ -837,6 +951,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   onScopeDispose(() => {
     offCapture?.();
     clearTimeout(refetchTimer);
+    clearHeldFrame();
     pauseVideo();
     fetchGeneration += 1;
     offCueState();
@@ -851,6 +966,8 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
 
   return {
     videoEl,
+    heldFrameEl,
+    showHeldFrame,
     getPictureHealth,
     videoSrc,
     videoReady,

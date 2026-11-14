@@ -38,16 +38,20 @@
       <div class="waveform-controls">
         <Teleport v-if="!multiSelect" defer to="#properties-transport-host">
           <div class="audition-transport" role="group" :aria-label="t('properties.playback')" :inert="!projectControlsReady">
-            <button type="button" class="audition-btn" @click="jumpAudition(-1)" :title="t('actions.jumpPreviewBack')">
+            <button type="button" class="audition-btn" @click="jumpAudition(-1)"
+              :title="t('actions.jumpPreviewBack')" :aria-label="t('actions.jumpPreviewBack')">
               <span class="material-symbols-rounded" aria-hidden="true">fast_rewind</span>
             </button>
-            <button type="button" class="audition-btn audition-btn--primary" @click="toggleAudition" :title="auditionToggleLabel">
+            <button type="button" class="audition-btn audition-btn--primary" @click="toggleAudition"
+              :title="auditionToggleLabel" :aria-label="auditionToggleLabel">
               <span class="material-symbols-rounded" aria-hidden="true">{{ auditionToggleIcon }}</span>
             </button>
-            <button type="button" class="audition-btn audition-btn--stop" @click="stopAudition" :title="t('actions.stop')">
+            <button type="button" class="audition-btn audition-btn--stop" @click="stopAudition"
+              :title="t('actions.stop')" :aria-label="t('actions.stop')">
               <span class="material-symbols-rounded" aria-hidden="true">stop</span>
             </button>
-            <button type="button" class="audition-btn" @click="jumpAudition(1)" :title="t('actions.jumpPreviewForward')">
+            <button type="button" class="audition-btn" @click="jumpAudition(1)"
+              :title="t('actions.jumpPreviewForward')" :aria-label="t('actions.jumpPreviewForward')">
               <span class="material-symbols-rounded" aria-hidden="true">fast_forward</span>
             </button>
             <label class="audition-jump">
@@ -307,7 +311,8 @@
           </button>
         </div>
         <div class="time-input-with-buttons">
-          <button class="time-decrement" @click="adjustInPoint(-0.5)" :title="t('waveform.decreaseBy', { seconds: '0.5' })">
+          <button class="time-decrement" @click="adjustInPoint(-0.5)"
+            :title="t('waveform.decreaseBy', { seconds: '0.5' })" :aria-label="t('waveform.decreaseBy', { seconds: '0.5' })">
             <span class="material-symbols-rounded">remove</span>
           </button>
           <input id="cue-trim-inPoint"
@@ -317,7 +322,8 @@
             @change="handleInPointTextChange"
             @focus="($event.target as HTMLInputElement).select()"
           />
-          <button class="time-increment" @click="adjustInPoint(0.5)" :title="t('waveform.increaseBy', { seconds: '0.5' })">
+          <button class="time-increment" @click="adjustInPoint(0.5)"
+            :title="t('waveform.increaseBy', { seconds: '0.5' })" :aria-label="t('waveform.increaseBy', { seconds: '0.5' })">
             <span class="material-symbols-rounded">add</span>
           </button>
         </div>
@@ -334,7 +340,9 @@
           </button>
         </div>
         <div class="time-input-with-buttons">
-          <button class="time-decrement" @click="adjustOutPoint(-0.5)" :disabled="multiSelect" :title="multiSelect ? t('properties.multiSelectOutPointDisabled') : t('waveform.decreaseBy', { seconds: '0.5' })">
+          <button class="time-decrement" @click="adjustOutPoint(-0.5)" :disabled="multiSelect"
+            :title="multiSelect ? t('properties.multiSelectOutPointDisabled') : t('waveform.decreaseBy', { seconds: '0.5' })"
+            :aria-label="t('waveform.decreaseBy', { seconds: '0.5' })">
             <span class="material-symbols-rounded">remove</span>
           </button>
           <input id="cue-trim-outPoint"
@@ -346,7 +354,9 @@
             @change="handleOutPointTextChange"
             @focus="($event.target as HTMLInputElement).select()"
           />
-          <button class="time-increment" @click="adjustOutPoint(0.5)" :disabled="multiSelect" :title="multiSelect ? t('properties.multiSelectOutPointDisabled') : t('waveform.increaseBy', { seconds: '0.5' })">
+          <button class="time-increment" @click="adjustOutPoint(0.5)" :disabled="multiSelect"
+            :title="multiSelect ? t('properties.multiSelectOutPointDisabled') : t('waveform.increaseBy', { seconds: '0.5' })"
+            :aria-label="t('waveform.increaseBy', { seconds: '0.5' })">
             <span class="material-symbols-rounded">add</span>
           </button>
         </div>
@@ -367,7 +377,8 @@
       <div class="fade-control-group">
         <label for="cue-trim-playFade">{{ t('properties.playFade') }}</label>
         <div class="time-input-with-buttons">
-          <button class="time-decrement" @click="adjustPlayFade(-0.5)" :title="t('waveform.decreaseBy', { seconds: '0.5' })">
+          <button class="time-decrement" @click="adjustPlayFade(-0.5)"
+            :title="t('waveform.decreaseBy', { seconds: '0.5' })" :aria-label="t('waveform.decreaseBy', { seconds: '0.5' })">
             <span class="material-symbols-rounded">remove</span>
           </button>
           <input id="cue-trim-playFade"
@@ -377,7 +388,8 @@
             @change="handlePlayFadeTextChange"
             @focus="($event.target as HTMLInputElement).select()"
           />
-          <button class="time-increment" @click="adjustPlayFade(0.5)" :title="t('waveform.increaseBy', { seconds: '0.5' })">
+          <button class="time-increment" @click="adjustPlayFade(0.5)"
+            :title="t('waveform.increaseBy', { seconds: '0.5' })" :aria-label="t('waveform.increaseBy', { seconds: '0.5' })">
             <span class="material-symbols-rounded">add</span>
           </button>
         </div>
@@ -385,7 +397,8 @@
       <div class="fade-control-group">
         <label for="cue-trim-stopFade">{{ t('properties.stopFade') }}</label>
         <div class="time-input-with-buttons">
-          <button class="time-decrement" @click="adjustStopFade(-0.5)" :title="t('waveform.decreaseBy', { seconds: '0.5' })">
+          <button class="time-decrement" @click="adjustStopFade(-0.5)"
+            :title="t('waveform.decreaseBy', { seconds: '0.5' })" :aria-label="t('waveform.decreaseBy', { seconds: '0.5' })">
             <span class="material-symbols-rounded">remove</span>
           </button>
           <input id="cue-trim-stopFade"
@@ -395,7 +408,8 @@
             @change="handleStopFadeTextChange"
             @focus="($event.target as HTMLInputElement).select()"
           />
-          <button class="time-increment" @click="adjustStopFade(0.5)" :title="t('waveform.increaseBy', { seconds: '0.5' })">
+          <button class="time-increment" @click="adjustStopFade(0.5)"
+            :title="t('waveform.increaseBy', { seconds: '0.5' })" :aria-label="t('waveform.increaseBy', { seconds: '0.5' })">
             <span class="material-symbols-rounded">add</span>
           </button>
         </div>
@@ -403,7 +417,8 @@
       <div class="fade-control-group">
         <label for="cue-trim-crossFade">{{ t('properties.crossFade') }}</label>
         <div class="time-input-with-buttons">
-          <button class="time-decrement" @click="adjustCrossFade(-0.5)" :title="t('waveform.decreaseBy', { seconds: '0.5' })">
+          <button class="time-decrement" @click="adjustCrossFade(-0.5)"
+            :title="t('waveform.decreaseBy', { seconds: '0.5' })" :aria-label="t('waveform.decreaseBy', { seconds: '0.5' })">
             <span class="material-symbols-rounded">remove</span>
           </button>
           <input id="cue-trim-crossFade"
@@ -413,7 +428,8 @@
             @change="handleCrossFadeTextChange"
             @focus="($event.target as HTMLInputElement).select()"
           />
-          <button class="time-increment" @click="adjustCrossFade(0.5)" :title="t('waveform.increaseBy', { seconds: '0.5' })">
+          <button class="time-increment" @click="adjustCrossFade(0.5)"
+            :title="t('waveform.increaseBy', { seconds: '0.5' })" :aria-label="t('waveform.increaseBy', { seconds: '0.5' })">
             <span class="material-symbols-rounded">add</span>
           </button>
         </div>
@@ -433,7 +449,8 @@
       <div class="fade-control-group" :class="{ 'start-next-disabled': !startNextEnabled }">
         <label for="cue-trim-startNextTime">{{ t('properties.startNextTime') }}</label>
         <div class="time-input-with-buttons">
-          <button class="time-decrement" :disabled="!startNextEnabled" @click="adjustStartNextTime(-0.5)" :title="t('waveform.decreaseBy', { seconds: '0.5' })">
+          <button class="time-decrement" :disabled="!startNextEnabled" @click="adjustStartNextTime(-0.5)"
+            :title="t('waveform.decreaseBy', { seconds: '0.5' })" :aria-label="t('waveform.decreaseBy', { seconds: '0.5' })">
             <span class="material-symbols-rounded">remove</span>
           </button>
           <input id="cue-trim-startNextTime"
@@ -444,7 +461,8 @@
             @change="handleStartNextTimeTextChange"
             @focus="($event.target as HTMLInputElement).select()"
           />
-          <button class="time-increment" :disabled="!startNextEnabled" @click="adjustStartNextTime(0.5)" :title="t('waveform.increaseBy', { seconds: '0.5' })">
+          <button class="time-increment" :disabled="!startNextEnabled" @click="adjustStartNextTime(0.5)"
+            :title="t('waveform.increaseBy', { seconds: '0.5' })" :aria-label="t('waveform.increaseBy', { seconds: '0.5' })">
             <span class="material-symbols-rounded">add</span>
           </button>
         </div>

@@ -170,6 +170,7 @@
               type="button"
               class="track-preview"
               :title="previewItemUuid === trackImportResults[track.id]?.itemUuid ? t('actions.stopPreview') : t('actions.preview')"
+              :aria-label="previewItemUuid === trackImportResults[track.id]?.itemUuid ? t('actions.stopPreview') : t('actions.preview')"
               @click="toggleImportedPreview(track.id)"
             >
               <span class="material-symbols-rounded" aria-hidden="true">

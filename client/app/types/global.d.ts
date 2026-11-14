@@ -209,6 +209,7 @@ declare global {
       writeMidiConfig: (config: Record<string, any>) => Promise<{ success: boolean }>;
       // Cart player window
       openCartPlayerWindow: (projectFolderPath: string) => Promise<void>;
+      toggleCartPlayerWindow: () => Promise<void>;
       attachCartPlayerWindow: () => void;
       getCartWindowProjectData: () => Promise<OneShotProjectEnvelope>;
       onCartPlayerWindowOpened: (callback: () => void) => void;

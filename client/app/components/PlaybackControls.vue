@@ -32,7 +32,7 @@
       :class="{ 'has-next': !!effectiveNextUuid }"
       @click="handlePlayNext"
       :disabled="!projectControlsReady || !effectiveNextUuid || setNextItemPending"
-      :title="playNextTooltip"
+      :title="effectiveNextItem ? `${playNextTooltip}\n${effectiveNextName}\n${effectiveNextContext}` : playNextTooltip"
     >
       <span class="material-symbols-rounded" aria-hidden="true">fast_forward</span>
       <span class="play-next-label">
@@ -42,6 +42,7 @@
           <span v-if="effectiveNextIndex" class="play-next-detail">{{ effectiveNextIndex }}</span>
           <span v-if="effectiveNextDuration" class="play-next-detail">{{ effectiveNextDuration }}</span>
         </span>
+        <span v-if="effectiveNextContext" class="play-next-context" aria-hidden="true">{{ effectiveNextContext }}</span>
       </span>
     </button>
 
@@ -272,6 +273,7 @@ import { useCueMeters } from '~/composables/useLiveMeters';
 
 const { activeCues, panicStop, nextItemOverrideUuid, autoNextItemUuid, setNextItemPending, setNextItem, playNext } = useAudioEngine();
 const {
+  findItemByIndex,
   findItemByUuid,
   formatItemIndex,
   previewItemUuid,
@@ -555,6 +557,17 @@ const effectiveNextItem = computed(() => effectiveNextUuid.value
   : null);
 const effectiveNextName = computed(() => effectiveNextItem.value?.displayName || '-');
 const effectiveNextIndex = computed(() => formatItemIndex(effectiveNextItem.value?.index));
+const effectiveNextContext = computed(() => {
+  const item = effectiveNextItem.value;
+  if (!item) return '';
+  const parent = (item.index?.length ?? 0) > 1 && (item.index[0] ?? -1) >= 0
+    ? findItemByIndex(item.index.slice(0, -1)) : null;
+  const details = item.type === 'group'
+    ? [t('controls.nextGroup'), t(item.startBehavior?.action === 'play-all' ? 'startBehavior.playAll' : 'startBehavior.playFirst')]
+    : [t(item.hasVideo ? 'controls.nextVideo' : 'controls.nextAudio'),
+       item.endBehavior?.action === 'loop' ? t('endBehavior.loop') : ''];
+  return [...details, parent?.displayName].filter(Boolean).join(' · ');
+});
 const effectiveNextDuration = computed(() => {
   const item = effectiveNextItem.value;
   if (!item || item.type !== 'audio') return '';
@@ -587,7 +600,7 @@ const handlePlayNext = async () => {
 <style scoped>
 .playback-controls {
   --transport-stop-width: clamp(148px, 12vw, 176px);
-  --transport-next-width: clamp(264px, 23vw, 320px);
+  --transport-next-width: clamp(264px, 23vw, 416px);
   flex: 0 0 var(--playback-controls-height);
   height: var(--playback-controls-height);
   box-sizing: border-box;
@@ -657,6 +670,12 @@ const handlePlayNext = async () => {
 .play-next-btn {
   grid-area: next;
   color: var(--color-text-secondary);
+  container: play-next / inline-size;
+  padding-block: var(--spacing-xs);
+}
+
+.playback-controls.show-mode .play-next-btn {
+  padding-block: var(--spacing-xs);
 }
 
 .play-next-btn.has-next {
@@ -679,19 +698,21 @@ const handlePlayNext = async () => {
   text-align: left;
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
-  line-height: 1.05;
+  gap: 3px;
 }
 
 .play-next-target {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
   overflow: hidden;
+  overflow-wrap: anywhere;
   width: 100%;
   color: currentColor;
   font-size: 17px;
   font-weight: 720;
   letter-spacing: -0.01em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.1;
 }
 
 .play-next-meta {
@@ -719,8 +740,29 @@ const handlePlayNext = async () => {
   letter-spacing: 0.02em;
 }
 
+.play-next-context {
+  display: none;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.2;
+  opacity: 0.9;
+}
+
+@container play-next (min-width: 268px) {
+  .play-next-label:has(.play-next-context) .play-next-target {
+    -webkit-line-clamp: 2;
+  }
+
+  .play-next-context {
+    display: block;
+  }
+}
+
 .playback-controls.show-mode .play-next-target {
-  font-size: 21px;
+  font-size: 20px;
 }
 
 .playback-controls.show-mode .play-next-meta {

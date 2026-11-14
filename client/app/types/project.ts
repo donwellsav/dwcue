@@ -85,6 +85,8 @@ export interface GroupItem extends BaseItem {
   children: (AudioItem | GroupItem)[];
   startBehavior: GroupStartBehavior;
   endBehavior: EndBehavior;
+  keepMusicGoing?: boolean;
+  backupMusicGroup?: string | null;
   isExpanded: boolean; // UI state
 }
 
@@ -167,6 +169,10 @@ export type PlaybackKeyAction =
   | 'toggle-video-output'
   | 'capture-video-standby'
   | 'capture-display-standby'
+  | 'toggle-settings'
+  | 'toggle-properties'
+  | 'toggle-quickplays'
+  | 'toggle-detached-quickplays'
   | 'play-selected'
   | 'play-next';
 
@@ -217,6 +223,8 @@ export interface ProjectSettings {
   meterMode?: string;
   defaultTransitionMode?: TransitionMode;
   autoCueNextWithoutEndBehavior?: boolean;
+  keepMusicGoing?: boolean;
+  backupMusicGroup?: string | null;
   stopAllFadeMs?: number;
   uiScrollToPlaying?: boolean;
   // Legacy file fields; import always preserves audio regardless of these values.
@@ -471,4 +479,8 @@ export const DEFAULT_PLAYBACK_KEYS: Partial<Record<PlaybackKeyAction, CartSlotKe
   'toggle-video-output': { key: 'v',   ctrlKey: false, shiftKey: false, altKey: false },
   'capture-video-standby': { key: 'g', ctrlKey: false, shiftKey: false, altKey: false },
   'capture-display-standby': { key: 'g', ctrlKey: false, shiftKey: true, altKey: false },
+  'toggle-settings': { key: 's', ctrlKey: false, shiftKey: false, altKey: false },
+  'toggle-properties': { key: 's', ctrlKey: false, shiftKey: true, altKey: false },
+  'toggle-quickplays': { key: 'q', ctrlKey: false, shiftKey: false, altKey: false },
+  'toggle-detached-quickplays': { key: 'q', ctrlKey: false, shiftKey: true, altKey: false },
 };

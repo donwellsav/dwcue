@@ -268,6 +268,7 @@ import { sameOneShotMutationIdentity } from '~/types/oneShotMutation';
 import { createProjectOpenGuard } from '~/utils/projectOpenGuard';
 import { runExclusivePendingAction } from '~/utils/acknowledgedAction';
 import { applyOneShotMutation } from '~/utils/oneShotMutation';
+import { suppressTooltips } from '~/utils/tooltips';
 
 const {
   currentProject, projectEpoch, saveProject, createNewProject, openProject, confirmUnsavedChanges, workspaceImportPanel,
@@ -426,7 +427,7 @@ const theme = useState('theme', () => 'dark');
 // Global interface text scale (Settings → Interface font size). The app's
 // styles are px-based, so the lever is `zoom` on the root — it scales text
 // and chrome uniformly without touching hundreds of px rules.
-const { uiFontScale } = useUiMode();
+const { uiFontScale, showTooltips } = useUiMode();
 
 watch(theme, (value) => {
   if (import.meta.client) document.documentElement.dataset.theme = value;
@@ -440,6 +441,9 @@ const isCartWindow = import.meta.client
 const isVideoOutputWindow = import.meta.client
   ? new URLSearchParams(window.location.search).get('videoOutput') === '1'
   : false;
+watch(() => isVideoOutputWindow || !showTooltips.value, (suppressed, _previous, onCleanup) => {
+  if (import.meta.client && suppressed) onCleanup(suppressTooltips(document.body));
+}, { immediate: true, flush: 'post' });
 const { mount: mountFailedHydrationHotkeys, unmount: unmountFailedHydrationHotkeys } = useCartHotkeys();
 watch(() => !isCartWindow && !isVideoOutputWindow && projectHydrationStatus.value === 'failed', (failed) => {
   if (!import.meta.client) return;

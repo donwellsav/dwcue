@@ -30,6 +30,8 @@ interface Deferred<T> {
 interface MockVideo {
   currentTime: number;
   currentSrc: string;
+  readyState: number;
+  seeking: boolean;
   videoWidth: number;
   videoHeight: number;
   paused: boolean;
@@ -91,6 +93,8 @@ function videoElement(): MockVideo {
   return {
     currentTime: 0,
     currentSrc: '',
+    readyState: 4,
+    seeking: false,
     videoWidth: 640,
     videoHeight: 360,
     paused: true,
@@ -696,6 +700,95 @@ test('first canplay still aligns to the latest native position after delayed dec
   } finally { h.stop(); }
 });
 
+test('keeps the outgoing picture across an automatic stop until the new video submits a frame', async () => {
+  const h = createHarness(project([
+    {
+      ...audioItem('outgoing', { hasVideo: true, outPoint: 0 }),
+      duration: 32,
+      endBehavior: { action: 'next' },
+    },
+    audioItem('incoming', { hasVideo: true }),
+  ]));
+  const drawn: string[] = [];
+  const canvas = {
+    width: 0, height: 0,
+    getContext: () => ({ drawImage: (element: MockVideo) => drawn.push(element.currentSrc) }),
+  } as unknown as HTMLCanvasElement;
+  try {
+    await flush();
+    if (h.controller.heldFrameEl) h.controller.heldFrameEl.value = canvas;
+    h.emitCue(snapshotCue('outgoing', 'cue-a', 1, 31.9));
+    h.element.currentSrc = h.controller.videoSrc.value!;
+    h.controller.onVideoCanPlay();
+    h.element.fireVideoFrame(10, { mediaTime: 31.9, presentedFrames: 955 });
+    const outgoingSrc = h.element.currentSrc;
+
+    h.emitCue(snapshotCue('outgoing', 'cue-a', 1, 32, 0));
+    await flush();
+    assert.equal(h.controller.showHeldFrame?.value, true, 'the stopped edge must keep the outgoing frame');
+    assert.deepEqual(drawn, [outgoingSrc]);
+
+    h.emitCue(snapshotCue('incoming', 'cue-b', 2, .05));
+    h.element.currentSrc = h.controller.videoSrc.value!;
+    h.controller.onVideoCanPlay();
+    assert.equal(h.controller.showHeldFrame.value, true, 'canplay does not replace the held picture');
+    h.emitMeters({ items: [{ cue_id: 'cue-b', transport: 1, playhead_seconds: .25 }] });
+    assert.equal(h.element.currentTime, .05, 'let the incoming frame land before chasing the clock');
+    h.element.fireVideoFrame(20, { mediaTime: .05, presentedFrames: 1 });
+    assert.equal(h.controller.showHeldFrame.value, false, 'the new source can replace it once it submits a frame');
+    h.emitCue(snapshotCue('incoming', 'cue-b', 2, 0, 0));
+    assert.equal(h.controller.showVideo.value, false);
+  } finally { h.stop(); }
+});
+
+test('Stop All and an incoming decoder failure can always clear the held picture', async () => {
+  const h = createHarness(project([
+    audioItem('from', { hasVideo: true }),
+    audioItem('to', { hasVideo: true }),
+  ]));
+  try {
+    await flush();
+    h.controller.heldFrameEl.value = {
+      width: 0, height: 0, getContext: () => ({ drawImage() {} }),
+    } as unknown as HTMLCanvasElement;
+    h.emitMeters({ stop_revision: 2, items: [] });
+    h.emitCue(snapshotCue('from', 'cue-a', 1, 1));
+    h.controller.onVideoCanPlay();
+    h.element.fireVideoFrame(10, { mediaTime: 1, presentedFrames: 1 });
+    h.emitCue(snapshotCue('to', 'cue-b', 2));
+    assert.equal(h.controller.showHeldFrame.value, true);
+    h.emitMeters({ stop_revision: 3, items: [] });
+    assert.equal(h.controller.showHeldFrame.value, false);
+
+    h.emitCue(snapshotCue('from', 'cue-a', 3, 1));
+    h.controller.onVideoCanPlay();
+    h.element.fireVideoFrame(20, { mediaTime: 1, presentedFrames: 1 });
+    h.emitCue(snapshotCue('to', 'cue-b', 4));
+    assert.equal(h.controller.showHeldFrame.value, true);
+    h.controller.onVideoError();
+    assert.equal(h.controller.showHeldFrame.value, false);
+    assert.deepEqual(h.reports.at(-1), { itemUuid: 'to', message: 'Video playback could not be decoded.' });
+  } finally { h.stop(); }
+});
+
+test('native position updates do not restart a pending video seek', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]));
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    h.element.fireVideoFrame(10, { mediaTime: 1, presentedFrames: 1 });
+    h.emitMeters({ items: [{ cue_id: 'cue', transport: 1, playhead_seconds: 2 }] });
+    assert.equal(h.element.currentTime, 2);
+    h.element.seeking = true;
+    h.emitMeters({ items: [{ cue_id: 'cue', transport: 1, playhead_seconds: 2.2 }] });
+    assert.equal(h.element.currentTime, 2);
+    h.element.seeking = false;
+    h.emitMeters({ items: [{ cue_id: 'cue', transport: 1, playhead_seconds: 2.25 }] });
+    assert.equal(h.element.currentTime, 2.25);
+  } finally { h.stop(); }
+});
+
 test('trigger_seq chooses newest-fired program cue while stop and preview preserve program picture', async () => {
   const olderVideo = audioItem('older-video', { hasVideo: true });
   const newerImage = audioItem('newer-image', { imagePath: 'images/newer.png' });
@@ -722,10 +815,48 @@ test('trigger_seq chooses newest-fired program cue while stop and preview preser
   assert.equal(harness.controller.showVideo.value, true, 'stopping newest falls back to the older audio/video cue');
   assert.equal(new URL(harness.controller.videoSrc.value!).searchParams.get('item_uuid'), 'older-video');
 
-  harness.emitPatch({ op: 'preview_started', itemUuid: 'preview-video' });
+  harness.emitPatch({ op: 'preview_started', itemUuid: 'preview-video', cueId: 'preview-cue' });
   harness.emitCue(snapshotCue('preview-video', 'preview-cue', 100, 0, 1));
   assert.equal(new URL(harness.controller.videoSrc.value!).searchParams.get('item_uuid'), 'older-video');
   harness.stop();
+});
+
+test('auditioning the same playlist item never removes its Program picture', async () => {
+  const h = createHarness(project([
+    audioItem('outgoing', { hasVideo: true }),
+    audioItem('incoming', { hasVideo: true }),
+  ]));
+  const program = snapshotCue('incoming', 'program-cue', 2, 0.5);
+  const preview = snapshotCue('incoming', 'preview-cue', 99, 8);
+  try {
+    await flush();
+    h.emitCue(snapshotCue('outgoing', 'outgoing-cue', 1, 2));
+    h.emitPatch({ op: 'preview_started', itemUuid: 'incoming', cueId: 'preview-cue', revision: 1 });
+    h.emitCue(snapshotCue('outgoing', 'outgoing-cue', 1, 20, 0));
+    h.emitCue(program);
+    assert.equal(h.controller.showVideo.value, true, 'automatic follow can take an item already in Preview');
+    assert.equal(new URL(h.controller.videoSrc.value!).searchParams.get('item_uuid'), 'incoming');
+    h.controller.onVideoCanPlay();
+    assert.equal(h.element.currentTime, 0.5);
+    h.emitCue(preview);
+    h.emitPatch({ op: 'preview_started', itemUuid: 'incoming', cueId: 'preview-cue', revision: 2 });
+    h.emitMeters({ items: [{ cue_id: 'preview-cue', transport: 1, playhead_seconds: 9 }] });
+    assert.equal(h.controller.showVideo.value, true, 'starting Preview cannot remove an on-air copy');
+    assert.equal(h.element.currentTime, 0.5, 'Preview cannot seek the Program picture');
+
+    h.server.connected = false;
+    await flush();
+    h.server.connected = true;
+    await flush();
+    h.emitSnapshot({
+      cues: [program, preview],
+      preview: { item_uuid: 'incoming', cue_id: 'preview-cue', revision: 2 },
+    });
+    assert.equal(h.controller.showVideo.value, true, 'reconnect keeps the Program copy of the auditioned item');
+    assert.equal(h.element.currentTime, 0.5);
+    h.emitCue({ ...program, transport: 0 });
+    assert.equal(h.controller.showVideo.value, false, 'Preview stays off the audience feed after Program stops');
+  } finally { h.stop(); }
 });
 
 for (const op of ['preview_stopped', 'preview_started']) {
@@ -748,7 +879,7 @@ test('a new server snapshot resets Preview ordering and refuses an older server 
   const h = createHarness(project([audioItem('program', { hasVideo: true }), audioItem('preview', { hasVideo: true })]));
   try {
     await flush(); h.emitCue(snapshotCue('program', 'program-cue', 1));
-    h.emitPatch({ op: 'preview_started', itemUuid: 'preview', revision: 50, project_session_id: 'old-server' });
+    h.emitPatch({ op: 'preview_started', itemUuid: 'preview', cueId: 'old-preview-cue', revision: 50, project_session_id: 'old-server' });
     h.emitSnapshot({ cues: [snapshotCue('program', 'program-cue', 1)], preview: {
       item_uuid: 'preview', cue_id: 'preview-cue', revision: 1, project_session_id: 'new-server' } });
     h.emitPatch({ op: 'preview_stopped', revision: 51, project_session_id: 'old-server' });

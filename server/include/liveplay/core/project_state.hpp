@@ -290,6 +290,7 @@ public:
     // ordering of items at the target level. `parent_uuid` empty = top-level.
     bool         reorder_items(const std::vector<std::string>& uuids,
                                const std::string& parent_uuid = "");
+    json         shuffle_items(const std::vector<std::string>& before, const std::string& parent_uuid);
 
     // Find an audio item's file path by uuid (for engine play hookups etc.).
     std::optional<std::filesystem::path> resolve_item_path(const std::string& uuid) const;
@@ -590,6 +591,7 @@ private:
     // True when next_item_override_ was set by the operator rather than derived
     // by the server. See set_next_item_override(). Guarded by mutex_.
     bool next_item_override_manual_{false};
+    bool next_item_for_go_only_{false};
 
     // Shared operator UI state (see the Show-control surface above). All
     // guarded by mutex_.
@@ -721,6 +723,8 @@ private:
         bool                     advance_triggered    = false;
         std::shared_ptr<audio::PreparedFollow> prepared_follow;
         std::string              prepared_target_uuid;
+        std::string              music_warm_target;
+        std::string              music_warm_backup;
         // Runtime-only Cue to Continue state. The resolved target is captured
         // when the operator arms the current pass; it is never serialized.
         bool                     continue_armed       = false;
@@ -768,7 +772,7 @@ private:
     void handle_item_ended(std::unique_lock<std::recursive_mutex>& lifecycle_lock, const SequencedItem& item);
     void execute_custom_action(std::unique_lock<std::recursive_mutex>& lifecycle_lock, const json& action);
     void cancel_prepared_follows(const std::string& changed_uuid = {});
-    enum class ItemPlayPhase { Immediate, Validate, Prepare, AlreadyStarted, Recovery };
+    enum class ItemPlayPhase { Immediate, Validate, Prepare, AlreadyStarted, Recovery, Buffered, PrepareBuffered };
     bool play_item_impl(std::unique_lock<std::recursive_mutex>& lifecycle_lock, const std::string& uuid,
                         double fade_in_override_sec,
                         const audio::CueId& exclude_from_ducking,
@@ -779,7 +783,10 @@ private:
     // endBehavior (next / goto-item / goto-index only; empty for loop /
     // nothing / no target). An armed "Up Next" override takes precedence and
     // is consumed only by a successful trigger. Takes its own locks.
-    std::string resolve_advance_target(const SequencedItem& item);
+    std::string resolve_advance_target(const std::string& source_uuid, bool manual_override_only = false);
+    std::string music_backup_for(const std::string& source_uuid);
+    bool start_music_backup(std::unique_lock<std::recursive_mutex>& lifecycle_lock,
+                            const std::string& source_uuid, const std::string& missed_target);
     void apply_duck_owner(detail::PlaybackGenerationFence::Generation owner,
                           const audio::CueId& target, float target_linear,
                           double attack_seconds, double release_seconds);
@@ -788,19 +795,19 @@ private:
         const std::string& uuid,
         const std::vector<std::uint64_t>& preserved_generations = {});
     std::vector<std::uint64_t> prepare_group_sequence_transition(
-        const std::string& source_uuid, const std::string& target_uuid);
+        const std::string& source_uuid, const std::string& target_uuid, bool commit = true);
     bool trigger_sequence_item(std::unique_lock<std::recursive_mutex>& lifecycle_lock, const std::string& source_uuid,
                                const std::string& target_uuid,
                                double fade_in_override_sec = -1.0,
                                const audio::CueId& exclude_from_ducking = audio::CueId{},
-                               bool already_started = false);
+                               bool already_started = false, bool buffered = false);
     void complete_group_runs_for_item(std::unique_lock<std::recursive_mutex>& lifecycle_lock, const std::string& uuid);
     bool trigger_item_impl(std::unique_lock<std::recursive_mutex>& lifecycle_lock, const std::string& uuid,
                            double fade_in_override_sec,
                            const audio::CueId& exclude_from_ducking,
                            bool consume_armed_override,
                            const std::vector<std::uint64_t>& preserved_generations,
-                           bool already_started = false);
+                           bool already_started = false, bool buffered = false);
 
     // Resolve Cue to Continue's target without consulting endBehavior.action:
     // targetUuid, then targetIndex, then the next sibling. Caller holds mutex_.
@@ -880,6 +887,8 @@ private:
     void loader_loop();
     void queue_loaded_routing(std::uint64_t generation, bool apply_program, bool apply_main = true);
     void loaded_routing_loop();
+    void prepare_music_backups();
+    void prepare_music_target(const std::string& uuid);
     using MediaRevisionCandidates = std::vector<std::pair<std::string, std::weak_ptr<audio::PlaybackItem>>>;
     void publish_media_revisions(std::uint64_t generation, const MediaRevisionCandidates& changed);
     void stop_loaders();
@@ -940,7 +949,8 @@ private:
     // Uuid of the first audio item in document order (depth-first through
     // groups), or empty if the playlist has no audio items. Caller must hold
     // mutex_. Used by the server-side "Up Next" arming.
-    std::string first_playable_item_uuid_locked() const;
+    std::string first_playable_item_uuid_locked(const json* scope = nullptr) const;
+    json* playlist_siblings_locked(const std::string& parent_uuid);
 
     // Every playlist item uuid in the client's flat selection order: each node
     // followed by its children, depth-first. Groups are included (they are

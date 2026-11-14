@@ -32,10 +32,12 @@
           preload="auto"
           disablepictureinpicture
           @loadedmetadata="onVideoLoadedMetadata"
+          @loadeddata="onVideoCanPlay"
           @canplay="onVideoCanPlay"
           @error="onVideoError"
         />
       </Teleport>
+      <canvas v-show="showHeldFrame && !testCard" ref="heldFrameEl" class="layer layer-media layer-opaque" />
     </div>
   </div>
 </template>
@@ -61,7 +63,7 @@ const testCard = computed(() => status.value?.testCard === true);
 const showAudioSyncCard = computed(() => testCard.value && config.value.cardType === 'audioSync');
 const diagnosticSource = computed(() => showAudioSyncCard.value ? status.value?.testCardPlayback ?? null : null);
 const {
-  videoEl, videoSrc, videoReady, showVideo, cueImageSrc, standbySrc,
+  videoEl, videoSrc, videoReady, showVideo, heldFrameEl, showHeldFrame, cueImageSrc, standbySrc,
   onVideoLoadedMetadata, onVideoCanPlay, onVideoError,
   getPictureHealth,
 } = useVideoOutput(diagnosticSource);

@@ -41,7 +41,7 @@ async function electronCheck() {
       ${compiled}
       const handlers = Object.fromEntries(['cue', 'meter', 'snapshot', 'patch'].map(key => [key, new Set()]));
       const reports = [];
-      const uuids = ['a', 'audio', 'c', 'bad', 'bench-0', 'bench-1', 'bench-2', 'soak-hd'];
+      const uuids = ['a', 'audio', 'c', 'bad', 'bench-0', 'bench-1', 'bench-2', 'soak-hd', 'delayed'];
       const doc = { folderPath: '/isolated', settings: {},
         server: { projectSessionId: 'fixture', audioReadiness: { fileRevisions: Object.fromEntries(uuids.map(id => [id, 'v1'])) } },
         items: uuids.map(uuid => ({
@@ -89,11 +89,13 @@ async function electronCheck() {
             });
             observe();
           });
-          return () => h('video', { ref: controller.videoEl, src: controller.videoSrc.value ?? undefined,
+            return () => [h('video', { ref: controller.videoEl, src: controller.videoSrc.value ?? undefined,
             muted: true, playsinline: true, preload: 'auto',
             style: { width: '100%', height: '100%', display: controller.showVideo.value ? '' : 'none' },
             onLoadedmetadata: controller.onVideoLoadedMetadata,
-            onCanplay: controller.onVideoCanPlay, onError: controller.onVideoError });
+            onCanplay: controller.onVideoCanPlay, onError: controller.onVideoError }),
+            h('canvas', { ref: controller.heldFrameEl, style: { position: 'absolute', inset: '0',
+              width: '100%', height: '100%', display: controller.showHeldFrame?.value ? '' : 'none' } })];
         },
       }).mount('#app');
       globalThis.check = {
@@ -148,6 +150,7 @@ async function electronCheck() {
           const el = controller.videoEl.value;
           const quality = el.getVideoPlaybackQuality();
           return { show: controller.showVideo.value, failed: reports.at(-1) != null,
+            held: controller.showHeldFrame?.value === true,
             paused: el.paused, currentTime: el.currentTime, width: el.videoWidth,
             source: el.currentSrc, reports, ticks, presentedFrames,
             quality: { totalVideoFrames: quality.totalVideoFrames, droppedVideoFrames: quality.droppedVideoFrames },
@@ -268,6 +271,17 @@ async function electronCheck() {
       process.stdout.write('Video soak result: ' + JSON.stringify({ durationMs: Date.now() - start,
         rounds: round, presentedFrames: samples.at(-1).presentedFrames, samples }) + '\n');
     }
+    if (!process.env.DWCUE_VIDEO_TEST_CONTROLLER) {
+      await run(`check.reset(); check.cue("c", ${refusalSequence++})`);
+      await waitFor('check.state().pictureHealth.mediaTime > 0', 'outgoing video did not present');
+      await run(`check.cue("delayed", ${refusalSequence++})`);
+      await waitFor('check.state().held', 'the outgoing frame did not cover the slow decode');
+      await waitFor('check.state().reports.at(-1)?.message === "Waiting for the first video frame."',
+        'slow incoming media did not report the missing picture');
+      assert.equal((await run('check.state()')).held, true, 'the warning must preserve the held frame');
+      await waitFor('check.state().source.includes("item_uuid=delayed") && !check.state().held && !check.state().failed && check.state().pictureHealth.mediaTime > 0',
+        'late media did not replace the held picture and clear the warning');
+    }
     await run(`check.cue("bad", ${refusalSequence})`);
     await waitFor('check.state().failed', 'unplayable exact file must report player failure');
     assert.equal((await run('check.state().pictureHealth')).preparedSeconds, null);
@@ -318,6 +332,7 @@ if (process.versions.electron) {
       const content = uuid === 'bad' ? Buffer.from('Not a decodable video')
         : uuid === 'standby-hd' || uuid === 'soak-hd' ? hdBytes : bytes;
       if ((uuid?.startsWith('bench-') || uuid === 'standby-hd') && !mediaDelays.has(uuid)) mediaDelays.set(uuid, Date.now() + 250);
+      if (uuid === 'delayed' && !mediaDelays.has(uuid)) mediaDelays.set(uuid, Date.now() + 3300);
       const send = () => {
         if (response.destroyed) return;
         const range = /^bytes=(\d+)-(\d*)$/.exec(request.headers.range || '');

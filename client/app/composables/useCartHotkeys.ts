@@ -65,7 +65,14 @@ export const PLAYBACK_ACTIONS: { id: PlaybackKeyAction; labelKey: string }[] = [
   { id: 'capture-video-standby', labelKey: 'controls.captureVideoStandby' },
   { id: 'capture-display-standby', labelKey: 'controls.captureDisplayStandby' },
   { id: 'play-selected', labelKey: 'controls.playSelected' },
+  { id: 'toggle-settings', labelKey: 'settings.title' },
+  { id: 'toggle-properties', labelKey: 'properties.title' },
+  { id: 'toggle-quickplays', labelKey: 'oneShots.title' },
+  { id: 'toggle-detached-quickplays', labelKey: 'controls.toggleDetachedQuickPlays' },
 ];
+
+const isWorkspaceAction = (action: PlaybackKeyAction) =>
+  action === 'toggle-settings' || action === 'toggle-properties' || action === 'toggle-quickplays';
 
 export const resolveKeyboardBindings = (
   slots: readonly (AudioItem | null)[],
@@ -79,7 +86,11 @@ export const resolveKeyboardBindings = (
   };
   // A new default must yield to a key the operator already assigned.
   const assigned = [...Object.values(keyMappings), ...Object.values(savedPlayback)];
-  for (const action of ['set-up-next', 'play-selected', 'toggle-loop', 'jump-cue', 'cue-to-continue', 'toggle-video-output', 'capture-video-standby', 'capture-display-standby'] as const) {
+  for (const action of [
+    'set-up-next', 'play-selected', 'toggle-loop', 'jump-cue', 'cue-to-continue',
+    'toggle-video-output', 'capture-video-standby', 'capture-display-standby',
+    'toggle-settings', 'toggle-properties', 'toggle-quickplays', 'toggle-detached-quickplays',
+  ] as const) {
     const defaultKey = DEFAULT_PLAYBACK_KEYS[action];
     if (savedPlayback[action] === undefined && defaultKey
         && assigned.some(binding => binding && bindingsMatch(binding, defaultKey))) {
@@ -128,11 +139,14 @@ export const useVideoOutputToggle = () => {
   };
 };
 
-export const useCartHotkeys = () => {
+export const useCartHotkeys = (workspace?: Record<'toggle-settings' | 'toggle-properties' | 'toggle-quickplays', () => void>) => {
   const { currentProject, projectHydrationStatus, selectedItem, selectedItems, saveProject, getAllItemsFlat, toggleItemSelection, findItemByUuid } = useProject();
   const { cartOnlyItems } = useCartItems();
   const { oneShotPlaybackReady, playOneShot } = useOneShotPlayback();
   const toggleVideoOutput = useVideoOutputToggle();
+  const { isDetached } = useDetachedOneShotMutation();
+  const { showHeaderWarning } = useHeaderWarnings();
+  const { t } = useLocalization();
   const { captureStandby } = useVideoStandbyCapture();
   const { playCue, playNext, setNextItem, pauseCue, resumeCue, stopAllCues, activeCues, queueLoopContinuation, jumpCue } = useAudioEngine();
 
@@ -208,6 +222,7 @@ export const useCartHotkeys = () => {
     const mappings = playbackMappings.value;
     const pressed = eventToBinding(e);
     for (const [action, binding] of Object.entries(mappings) as [PlaybackKeyAction, CartSlotKeyBinding | null][]) {
+      if (!workspace && isWorkspaceAction(action)) continue;
       if (binding && bindingsMatch(binding, pressed)) return action;
     }
     const alternate = bindings.value.pauseAlternate;
@@ -216,7 +231,15 @@ export const useCartHotkeys = () => {
   };
 
   const dispatchPlaybackAction = async (action: PlaybackKeyAction) => {
-    if (action !== 'stop-all' && projectHydrationStatus.value !== 'ready') return false;
+    if (isWorkspaceAction(action)) return workspace?.[action]();
+    if (action === 'toggle-detached-quickplays') {
+      try {
+        await window.electronAPI?.toggleCartPlayerWindow();
+      } catch {
+        showHeaderWarning(t('oneShots.windowToggleFailed'));
+      }
+      return;
+    }
     if (action === 'pause-resume') {
       const item = getTargetItem();
       if (!item) return;
@@ -302,7 +325,9 @@ export const useCartHotkeys = () => {
     // cues can remain active without a project document or local activeCue.
     const playbackAction = findPlaybackActionForEvent(e);
     if (playbackAction) {
-      if (playbackAction !== 'stop-all' &&
+      // The detached window gets a project snapshot without a hydration status.
+      const closingDetached = playbackAction === 'toggle-detached-quickplays' && isDetached;
+      if (playbackAction !== 'stop-all' && !closingDetached &&
           (!currentProject.value || projectHydrationStatus.value !== 'ready')) return;
       e.preventDefault();
       e.stopPropagation();

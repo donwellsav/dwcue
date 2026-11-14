@@ -633,7 +633,7 @@ assert.ok(
 );
 assert.match(
   playbackControls,
-  /\.playback-controls\s*\{[\s\S]{0,180}--transport-stop-width:\s*clamp\(148px, 12vw, 176px\);[\s\S]{0,100}--transport-next-width:\s*clamp\(264px, 23vw, 320px\);[\s\S]{0,300}grid-template-columns:\s*var\(--transport-stop-width\) minmax\(0, 1fr\) var\(--transport-next-width\);[\s\S]{0,100}grid-template-areas:\s*'panic live next';[\s\S]*\.control-btn\s*\{[\s\S]{0,180}align-self:\s*stretch;[\s\S]{0,100}width:\s*100%;[\s\S]*\.play-next-btn\s*\{[\s\S]{0,100}grid-area:\s*next;[\s\S]*\.panic-zone\s*\{[\s\S]{0,100}grid-area:\s*panic;[\s\S]*\.active-cues\s*\{[\s\S]{0,100}grid-area:\s*live;[\s\S]{0,180}min-width:\s*0;/,
+  /\.playback-controls\s*\{[\s\S]{0,180}--transport-stop-width:\s*clamp\(148px, 12vw, 176px\);[\s\S]{0,100}--transport-next-width:\s*clamp\(264px, 23vw, 416px\);[\s\S]{0,300}grid-template-columns:\s*var\(--transport-stop-width\) minmax\(0, 1fr\) var\(--transport-next-width\);[\s\S]{0,100}grid-template-areas:\s*'panic live next';[\s\S]*\.control-btn\s*\{[\s\S]{0,180}align-self:\s*stretch;[\s\S]{0,100}width:\s*100%;[\s\S]*\.play-next-btn\s*\{[\s\S]{0,100}grid-area:\s*next;[\s\S]*\.panic-zone\s*\{[\s\S]{0,100}grid-area:\s*panic;[\s\S]*\.active-cues\s*\{[\s\S]{0,100}grid-area:\s*live;[\s\S]{0,180}min-width:\s*0;/,
   'aligned console controls must keep dedicated Stop All and Play Next widths around a flexible active-cue lane',
 );
 assert.match(
@@ -1831,8 +1831,8 @@ assert.match(
 );
 assert.match(
   propertiesPanel,
-  /class="tab-panel basic-panel"[\s\S]*activeTab === 'basic' && selectedItem\.type === 'audio'[\s\S]{0,160}playback-behavior--ducking[\s\S]*playback-behavior--start[\s\S]*playback-behavior--end[\s\S]*groupOnly:\s*true[\s\S]*availableTabs\.value\.some\(tab => tab\.id === activeTab\.value\)/,
-  'audio cue behaviors must stay on Basic Info while group-only sections remain reachable',
+  /v-if="selectedItem\.type === 'audio'" class="properties-tabs"[\s\S]*<section v-if="activeTab === 'basic'" class="property-column cue-behaviors">[\s\S]*playback-behavior--ducking[\s\S]*playback-behavior--start[\s\S]*playback-behavior--end[\s\S]*newItem\.type === 'group'\) \{\s*activeTab\.value = 'basic'/,
+  'group properties must show both behavior controls together even when switching from an audio tab',
 );
 assert.doesNotMatch(
   propertiesPanel,
@@ -1851,7 +1851,7 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /<ShortcutsBar :compact="lowerPanelOpen" \/>[\s\S]*<ProjectSettingsModal :open="showProjectSettings"[\s\S]*<PropertiesPanel v-if="showCueProperties"[\s\S]*id="workspace-import-host"[\s\S]*const showCueProperties = computed\(\(\) => !showProjectSettings\.value && !visibleImportPanel\.value/,
+  /<ShortcutsBar :compact="lowerPanelOpen" \/>[\s\S]*<ProjectSettingsModal :open="showProjectSettings"[\s\S]*<PropertiesPanel v-if="showCueProperties"[\s\S]*id="workspace-import-host"[\s\S]*const showCueProperties = computed\(\(\) =>\s*!showProjectSettings\.value && !visibleImportPanel\.value/,
   'Settings, cue Properties, and imports must share the lower workspace without stacking',
 );
 assert.match(
@@ -1916,6 +1916,11 @@ assert.doesNotMatch(
 );
 assert.match(
   playlistItem,
+  /\.playlist-item\.is-group > \.item-content \.item-identity\s*\{\s*grid-template-columns:\s*var\(--cue-number-width, 36px\) max-content minmax\(0, 1fr\);[\s\S]*\.item-index\s*\{\s*grid-column:\s*1;[\s\S]*\.item-icon\s*\{\s*grid-column:\s*2;[\s\S]*\.playlist-item\.is-group \.item-name\s*\{\s*grid-column:\s*3;/,
+  'a folder number, icon and title must have separate columns in the same row',
+);
+assert.match(
+  playlistItem,
   /\.group-children\s*\{[\s\S]{0,180}gap:\s*2px;[\s\S]{0,100}padding-top:\s*2px;[\s\S]*@container \(max-width: 560px\)/,
   'folder children must keep the same row rhythm and only wrap when the wide grid no longer fits',
 );
@@ -1946,7 +1951,7 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.playlist-item:not\(\.show-mode\)\.is-group > \.item-content \.expand-btn\s*\{[\s\S]{0,80}transform:\s*translateX\(10px\);/,
+  /\.playlist-item:not\(\.show-mode\)\.is-group > \.item-content \.expand-btn\s*\{[^}]*translateX\(min\(10px, calc\(2px \+ var\(--folder-column-gap, var\(--spacing-sm\)\)\)\)\)/,
   'Regular Mode folder arrows must align with their child accent rail',
 );
 assert.match(

@@ -236,6 +236,7 @@ import { flattenOneShots } from '~/utils/oneShots';
 const {
   selectedItem,
   selectedItems,
+  openItemProperties,
   propertiesPanelOpen,
   workspaceImportPanel,
   previewItemUuid,
@@ -269,8 +270,13 @@ const importPanelTitle = computed(() => {
   if (visibleImportPanel.value === 'archive-export') return t('exportProject.chooseLocationTitle');
   return '';
 });
-const showCueProperties = computed(() => !showProjectSettings.value && !visibleImportPanel.value && propertiesPanelOpen.value && selectedItem.value &&
-  (uiMode.value !== 'playback' || selectedItem.value.uuid === previewItemUuid.value));
+const editableSelectedItem = computed(() => {
+  if (!selectedItem.value) return null;
+  if (uiMode.value !== 'playback' || selectedItem.value.uuid === previewItemUuid.value) return selectedItem.value;
+  return null;
+});
+const showCueProperties = computed(() =>
+  !showProjectSettings.value && !visibleImportPanel.value && propertiesPanelOpen.value && !!editableSelectedItem.value);
 const lowerPanelOpen = computed(() => showProjectSettings.value || !!visibleImportPanel.value || !!showCueProperties.value);
 const reservedPlaylistRowHeight = computed(() => Math.max(folderPlaylistRowHeight.value,
   uiMode.value === 'playback' ? showPlaylistRowHeight.value : regularPlaylistRowHeight.value));
@@ -354,7 +360,16 @@ watch(hasAssignedOneShots, (assigned) => {
 const cartFullscreen = ref(false);
 const cartDetached = ref(false);
 const cartVisible = computed(() => !cartClosed.value && !cartDetached.value);
-const { mount: mountHotkeys, unmount: unmountHotkeys, playbackMappings } = useCartHotkeys();
+const { mount: mountHotkeys, unmount: unmountHotkeys, playbackMappings } = useCartHotkeys({
+  'toggle-settings': () => { showProjectSettings.value = !showProjectSettings.value; },
+  'toggle-properties': () => {
+    const item = editableSelectedItem.value;
+    if (!item) return;
+    if (showCueProperties.value) propertiesPanelOpen.value = false;
+    else openItemProperties(item.uuid);
+  },
+  'toggle-quickplays': () => { if (!cartDetached.value) toggleCart(); },
+});
 const { stopAllCues } = useAudioEngine();
 const outputConsoleMinDb = -60;
 const outputConsoleMaxDb = 40;

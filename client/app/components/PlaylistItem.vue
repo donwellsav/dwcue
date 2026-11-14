@@ -188,8 +188,33 @@
           draggable="false"
           @click.stop
         >{{ videoCheckIssue ? 'VIDEO !' : 'VIDEO' }}</span>
+        <ActionButton
+          v-if="item.type === 'group' && !showMode"
+          class="group-shuffle-action"
+          icon="shuffle"
+          type="button"
+          :title="t('shuffle.group')"
+          :aria-label="t('shuffle.groupFor', { name: item.displayName })"
+          :disabled="item.children.length < 2 || shufflePending || !projectControlsReady || server.cueStartsBlocked"
+          @click.stop="shuffleItems(item, status => showHeaderWarning(t(`shuffle.${status}`)))"
+        />
 
         <div class="item-transport">
+          <ActionButton
+            v-if="item.type === 'group' && ((groupBackup?.type === 'group' && groupBackup.uuid !== item.uuid) || item.keepMusicGoing)"
+            class="group-music-toggle"
+            icon="music_note"
+            highlight-color="var(--state-playing)"
+            active-text-color="var(--color-background)"
+            type="button"
+            :is-active="item.keepMusicGoing === true"
+            :aria-pressed="item.keepMusicGoing === true"
+            :aria-label="t('musicContinuity.groupToggle', { name: item.displayName })"
+            :title="groupBackup?.type === 'group'
+              ? t('musicContinuity.target', { name: groupBackup.displayName }) : t('musicContinuity.chooseBackup')"
+            :disabled="!projectControlsReady || server.cueStartsBlocked || musicContinuityPending.has(item.uuid)"
+            @click.stop="toggleGroupMusic"
+          />
           <ActionButton
             v-if="isPlaying && item.type === 'audio'"
             class="restart-action"
@@ -275,6 +300,10 @@ const {
   waveformUpdateKey,
   triggerWaveformUpdate,
   formatItemIndex,
+  shuffleItems,
+  shufflePending,
+  setMusicContinuity,
+  musicContinuityPending,
 } = useProject();
 
 // mm:ss position of the Start Next marker, for the badge tooltip.
@@ -286,6 +315,21 @@ const formatMarkerTime = (seconds: number): string => {
 const { levels: outputTargetLevels } = useOutputTarget();
 const { playCue, stopCue, seekCue, activeCues, activeGroups, triggerGroup, nextItemOverrideUuid, autoNextItemUuid, setNextItemPending, setNextItem } = useAudioEngine();
 const { t } = useLocalization();
+const server = useLiveplayServer();
+const { showHeaderWarning } = useHeaderWarnings();
+const groupBackup = computed(() => props.item.type === 'group'
+  ? findItemByUuid(props.item.backupMusicGroup ?? currentProject.value?.settings?.backupMusicGroup ?? '')
+  : null);
+const toggleGroupMusic = () => {
+  const group = props.item;
+  if (group.type !== 'group') return;
+  if (!group.keepMusicGoing && (groupBackup.value?.type !== 'group' || groupBackup.value.uuid === group.uuid)) {
+    showHeaderWarning(t('musicContinuity.chooseBackup'));
+    return;
+  }
+  return setMusicContinuity(group, { keepMusicGoing: !group.keepMusicGoing },
+    status => showHeaderWarning(t(`musicContinuity.${status}`)));
+};
 const videoCheckIssues = useVideoPreflightIssues();
 const videoCheckIssue = computed(() => videoCheckIssues.value.get(props.item.uuid));
 const { uiMode } = useUiMode();
@@ -1197,8 +1241,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   max-width: 100%;
 }
 
-.playlist-item.is-audio .item-identity {
-  grid-template-columns: var(--cue-number-width, 36px) minmax(0, 1fr) max-content;
+.playlist-item.is-group > .item-content .item-identity {
+  grid-template-columns: var(--cue-number-width, 36px) max-content minmax(0, 1fr);
 }
 
 .item-index {
@@ -1211,7 +1255,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .item-icon {
-  grid-column: 1;
+  grid-column: 2;
   justify-self: start;
   display: flex;
   align-items: center;
@@ -1307,6 +1351,9 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .playlist-item.is-group .item-name {
+  grid-column: 3;
+  display: block;
+  align-content: center;
   font-size: var(--cue-text-size);
   font-weight: 800;
 }
@@ -1475,6 +1522,15 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .preview-action { grid-area: expand; }
+.group-shuffle-action {
+  grid-area: video;
+  justify-self: end;
+}
+
+.group-shuffle-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 
 .item-transport {
   grid-area: transport;
@@ -1485,7 +1541,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   min-width: 0;
 }
 
-.play-action { flex-shrink: 0; }
+.play-action,
+.group-music-toggle { flex-shrink: 0; }
 .edit-action { grid-column: 1; }
 .delete-action { grid-column: 2; }
 
@@ -1519,12 +1576,14 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .playlist-item:not(.show-mode).is-group > .item-content .expand-btn {
-  transform: translateX(10px);
+  /* Keep the arrow aligned to the child rail without covering the number. */
+  transform: translateX(min(10px, calc(2px + var(--folder-column-gap, var(--spacing-sm)))));
 }
 
 /* Keep identity and status above the controls when both side rails are open. */
 @container (max-width: 560px) {
   .item-left {
+    --folder-column-gap: var(--spacing-xs);
     grid-template-columns: 34px minmax(0, 1fr) 68px max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
     grid-template-areas:
       'expand identity identity identity state video'
@@ -1578,12 +1637,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .item-identity {
-    grid-template-columns: var(--cue-number-width, 40px) minmax(0, 1fr) max-content;
     gap: var(--spacing-sm);
-  }
-
-  &.is-audio .item-identity {
-    grid-template-columns: var(--cue-number-width, 40px) minmax(0, 1fr) max-content;
   }
 
   .item-index {
@@ -1646,6 +1700,10 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
     .material-symbols-rounded {
       font-size: clamp(18px, calc(var(--current-playlist-row-height, 44px) * 0.42), 36px);
     }
+  }
+
+  :deep(.group-music-toggle.action-btn--playlist) {
+    width: 44px;
   }
 
   :deep(.restart-action.action-btn--playlist) {

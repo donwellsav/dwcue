@@ -852,9 +852,8 @@ void ControlServer::broadcast_loop() {
     const auto period = std::chrono::nanoseconds{
         1'000'000'000LL / static_cast<long long>(std::max<std::size_t>(1, cfg_.meter_broadcast_hz))};
 
-    // Track previous transport state per cue so we can emit cue_state events
-    // exactly once on each transition (rather than every tick).
-    std::unordered_map<std::string, audio::TransportState> prev_transports;
+    using CueStateSignature = std::pair<audio::TransportState, std::optional<long long>>;
+    std::unordered_map<std::string, CueStateSignature> prev_cue_states;
 
     // Absolute-deadline schedule. sleep_for(period - work) systematically
     // undershoots the target rate on Windows (~15.6 ms sleep granularity
@@ -978,29 +977,31 @@ void ControlServer::broadcast_loop() {
             continue;
         }
 
-        // Detect transport changes and build cue_state edge events.
+        // Prepared follows can start playing before the sequencer stamps the
+        // trigger order. Publish that change even if transport stays Playing.
         std::vector<std::string> cue_state_events;
         try {
             for (auto& cue : state_.list_cues()) {
-                auto item = engine_.find_cue(cue.id);
-                const auto current = item
-                    ? item->stats().transport
-                    : audio::TransportState::Stopped;
-                auto& prev = prev_transports[cue.id.value];
-                if (current != prev) {
-                    prev = current;
-                    json evt{
-                        {"type", "cue_state"},
-                        {"cue_id", cue.id.value},
-                        {"transport", static_cast<int>(current)},
-                        {"playhead_seconds", item ? item->stats().playhead_seconds : 0.0},
-                    };
-                    if (auto uuid = state_.cue_to_item_uuid(cue.id)) {
-                        evt["item_uuid"] = *uuid;
-                        if (auto seq = state_.item_trigger_seq(*uuid)) evt["trigger_seq"] = *seq;
-                    }
-                    cue_state_events.push_back(evt.dump());
-                }
+                const auto item = engine_.find_cue(cue.id);
+                const auto stats = item ? item->stats() : audio::PlaybackItemStats{};
+                auto& prev = prev_cue_states[cue.id.value];
+                if (stats.transport == audio::TransportState::Stopped &&
+                    prev.first == audio::TransportState::Stopped) continue;
+                const auto uuid = state_.cue_to_item_uuid(cue.id);
+                const auto seq = uuid ? state_.item_trigger_seq(*uuid) : std::nullopt;
+                const CueStateSignature current{stats.transport, seq};
+                if (current == prev) continue;
+
+                json evt{
+                    {"type", "cue_state"},
+                    {"cue_id", cue.id.value},
+                    {"transport", static_cast<int>(stats.transport)},
+                    {"playhead_seconds", stats.playhead_seconds},
+                };
+                if (uuid) evt["item_uuid"] = *uuid;
+                if (seq) evt["trigger_seq"] = *seq;
+                cue_state_events.push_back(evt.dump());
+                prev = current;
             }
         } catch (const std::exception& e) {
             Logger::error("broadcast_loop: failed to build cue_state events: {}", e.what());
@@ -1054,7 +1055,7 @@ void ControlServer::broadcast_loop() {
             std::lock_guard lock{impl_->ws_mutex};
             if (batch_epoch != impl_->http_generation.load(std::memory_order_acquire)) {
                 // Rebuild fresh edges next tick; reconnect snapshots stay pending.
-                prev_transports.clear();
+                prev_cue_states.clear();
                 prev_device_states.clear();
             } else for (auto* c : impl_->ws_clients) {
                 try {
@@ -4163,6 +4164,29 @@ void ControlServer::install_routes() {
                 return json_ok(json({{"ok", true}}));
             } catch (const std::exception& e) {
                 Logger::error("POST /api/project/items/reorder threw: {}", e.what());
+                return json_err(400, e.what());
+            }
+        });
+
+    CROW_ROUTE(app, "/api/project/items/shuffle").methods(crow::HTTPMethod::Post)
+        ([this](const crow::request& req){
+            const auto session = req.get_header_value("X-DWCUE-Project-Session");
+            if (session.empty()) return json_err(400, "project session required");
+            auto project_lock = state_.lock_project_session(session);
+            if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
+            try {
+                const auto j = json::parse(req.body);
+                const auto parent_uuid = j.value("parentUuid", std::string{});
+                auto result = state_.shuffle_items(j.at("before").get<std::vector<std::string>>(), parent_uuid);
+                if (result.value("status", "") == std::string{"ok"}) {
+                    broadcast_doc_patch(json{
+                        {"type", "doc_patch"}, {"op", "items_reordered"},
+                        {"parentUuid", parent_uuid}, {"uuids", result.at("uuids")},
+                        {"project_session_id", session},
+                    });
+                }
+                return json_ok(result);
+            } catch (const std::exception& e) {
                 return json_err(400, e.what());
             }
         });

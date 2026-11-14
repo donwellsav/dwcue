@@ -1,9 +1,26 @@
 {
   "application": "DonWells Cue",
-  "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
-  "packageVersion": "2.6.21",
-  "edition": "13 November 2026 development review with current QuickPlays, docked Settings and picture framing",
+  "sourceRevision": "bc3fee61f364ccb81d4e81b2c1bf2c0b2a6cb6d3",
+  "packageVersion": "2.6.22 development",
+  "edition": "14 November 2026 development review with group cueing, shuffle and QuickPlays window controls",
   "images": [
+    {
+      "file": "music-continuity-current.png",
+      "view": "Playlist and group Shuffle controls beside Keep Music Going and the aligned group identity.",
+      "version": "2.6.22 development",
+      "sourceRevision": "bc3fee61f364ccb81d4e81b2c1bf2c0b2a6cb6d3",
+      "nativeSourceRevision": "355b93aecaee0320bfb960fd8342fdc01417fc52",
+      "capturedOn": "2026-11-14",
+      "surface": "Compiled DonWells Cue workspace in Chromium at 1440 CSS pixels wide.",
+      "dimensions": [
+        1251,
+        102
+      ],
+      "sha256": "4646f31ffae56af8f64e0e63eded1022c1e1b78720189d90ec48d96b0b97f3e4",
+      "fixture": "Disposable Corporate show review using generated WAV files and a native software audio output.",
+      "captureMethod": "Playwright screenshot of the rendered playlist toolbar and group row.",
+      "presentation": "Original UI crop."
+    },
     {
       "file": "welcome-current.png",
       "view": "Welcome screen connected to the isolated software engine, showing version 2.6.17.",
@@ -176,20 +193,20 @@
     },
     {
       "file": "group-current.png",
-      "view": "Group Properties with Start Behavior set to Play All.",
-      "version": "2.6.21 development",
-      "sourceRevision": "0b1b7bad54a980c830ba23d2a5ab50af82dfeb36",
-      "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
-      "capturedOn": "2026-11-13",
-      "surface": "Fresh static build of the Vue UI in isolated Chromium with fixture Electron methods.",
+      "view": "Group Properties with Play All, End Behavior, backup selection, and Shuffle on the same panel.",
+      "version": "2.6.22 development",
+      "sourceRevision": "bc3fee61f364ccb81d4e81b2c1bf2c0b2a6cb6d3",
+      "nativeSourceRevision": "355b93aecaee0320bfb960fd8342fdc01417fc52",
+      "capturedOn": "2026-11-14",
+      "surface": "Packaged Electron renderer at 1200 CSS pixels wide.",
       "dimensions": [
-        1200,
-        120
+        1008,
+        202
       ],
-      "sha256": "3006d64d954f61308f9e10884418a8bdd22afedb5afe17032bf0bd5e4e3679ba",
-      "fixture": "Disposable Running show with generated WAV files and a native NULL software output.",
-      "captureMethod": "Playwright screenshot at the rendered CSS pixel size.",
-      "presentation": "Workspace or panel crop with original UI values."
+      "sha256": "63f5ef644a6a0bbcd4f9d1e89968be57691ea4ea5b8bcec85e59560a2ca1a6da",
+      "fixture": "Disposable Summit music review project with generated media and native NULL software output.",
+      "captureMethod": "Playwright screenshot cropped to the group controls.",
+      "presentation": "Original UI crop."
     },
     {
       "file": "audio-settings-current.png",
@@ -295,20 +312,20 @@
     },
     {
       "file": "shortcuts-current.png",
-      "view": "Docked Shortcuts, scrolled to show all twenty default QuickPlay keys.",
-      "version": "2.6.21",
-      "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
-      "nativeSourceRevision": "b96070379c7305bbb3af6e95d2d869aa9f9fe13b",
-      "capturedOn": "2026-11-13",
-      "surface": "Packaged macOS Apple Silicon review app with a dedicated profile.",
+      "view": "Docked Shortcuts with Q for QuickPlays and Shift+Q for the detached window.",
+      "version": "2.6.22 development",
+      "sourceRevision": "bc3fee61f364ccb81d4e81b2c1bf2c0b2a6cb6d3",
+      "nativeSourceRevision": "355b93aecaee0320bfb960fd8342fdc01417fc52",
+      "capturedOn": "2026-11-14",
+      "surface": "Packaged Electron renderer at 1200 CSS pixels wide.",
       "dimensions": [
-        1400,
-        315
+        1200,
+        225
       ],
-      "sha256": "331976879567535b3aeb45fc62daca15f95861eedbc485461fc0774910fdf5e6",
-      "fixture": "Isolated Local review sample with generated audio and a silent 1080p clip. The bundled native engine uses its software NULL backend.",
-      "captureMethod": "Actual Electron renderer screenshot at CSS pixel dimensions. Whole workspace or a single panel or tile.",
-      "presentation": "Rendered UI with its actual settings and cue state."
+      "sha256": "8a052b0f87df057945abc08c7913b984e70c6d75d0d0b87767c15a1fe4de624a",
+      "fixture": "Disposable Summit music review project with generated media and native NULL software output.",
+      "captureMethod": "Playwright screenshot of the docked Shortcuts tab.",
+      "presentation": "Actual default shortcuts."
     },
     {
       "file": "midi-current.png",
@@ -441,11 +458,11 @@
     "duckEnvelope": "Schematic explanation, not a measured response plot",
     "gainStages": "Schematic: final physical sum and secondary-clock adaptation precede the attenuation-only limiter and device output."
   },
-  "uiBuildRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
-  "manualSourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
+  "uiBuildRevision": "79ed56ede6a5362885750367f02ff35ce443be0f",
+  "manualSourceRevision": "79ed56ede6a5362885750367f02ff35ce443be0f",
   "visualCompatibility": {
-    "checkedOn": "2026-11-13",
-    "revision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
-    "basis": "The current QuickPlay, workspace, and Settings captures use the packaged review app. Older images retain their actual source, version, date and checksum."
+    "checkedOn": "2026-11-14",
+    "revision": "79ed56ede6a5362885750367f02ff35ce443be0f",
+    "basis": "The new playlist and group controls were captured in the compiled renderer. Earlier examples retain their original capture details."
   }
 }

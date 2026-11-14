@@ -4,6 +4,12 @@
       <div class="workspace-panel-header__leading">
         <slot name="header-leading" />
         <h2 class="workspace-panel-header__title">{{ t('playlist.title') }}</h2>
+        <Btn v-if="backupMusicGroup?.type === 'group' || currentProject?.settings?.keepMusicGoing"
+          type="button" class="music-toggle" icon="music_note" text=""
+          :title="musicContinuityTitle" :aria-label="t('musicContinuity.toggle')"
+          :aria-pressed="currentProject?.settings?.keepMusicGoing === true"
+          :disabled="projectHydrationStatus !== 'ready' || server.cueStartsBlocked || musicContinuityPending.has('')"
+          @click="toggleMusicContinuity" />
       </div>
       <!-- Import / add-group are edit actions — hidden in Show Mode. -->
       <div v-if="!showMode" class="playlist-actions">
@@ -17,6 +23,10 @@
           :title="t('spotifyImport.button')" :aria-label="t('spotifyImport.button')" @click="openImport('spotify')" />
         <Btn icon="folder" :text="t('playlist.addGroup')" :title="t('playlist.addGroup')"
           :aria-label="t('playlist.addGroup')" :disabled="!currentProject" @click="handleAddGroup" />
+        <Btn icon="shuffle" :text="t('shuffle.label')" :title="t('shuffle.playlist')"
+          :aria-label="t('shuffle.playlist')"
+          :disabled="shufflePending || projectHydrationStatus !== 'ready' || server.cueStartsBlocked || (currentProject?.items.length ?? 0) < 2"
+          @click="shuffleItems(undefined, warnShuffle)" />
       </div>
     </div>
     
@@ -109,8 +119,28 @@ const {
   findItemByUuid,
   projectEpoch,
   workspaceImportPanel,
+  projectHydrationStatus,
+  shuffleItems,
+  shufflePending,
+  setMusicContinuity,
+  musicContinuityPending,
 } = useProject();
 const { t } = useLocalization();
+const { showHeaderWarning } = useHeaderWarnings();
+const warnShuffle = (status: string) => showHeaderWarning(t(`shuffle.${status}`));
+const backupMusicGroup = computed(() => findItemByUuid(currentProject.value?.settings?.backupMusicGroup ?? ''));
+const musicContinuityTitle = computed(() => backupMusicGroup.value?.type === 'group'
+  ? t('musicContinuity.target', { name: backupMusicGroup.value.displayName })
+  : t('musicContinuity.chooseBackup'));
+const toggleMusicContinuity = () => {
+  const enabled = currentProject.value?.settings?.keepMusicGoing === true;
+  if (!enabled && backupMusicGroup.value?.type !== 'group') {
+    showHeaderWarning(t('musicContinuity.chooseBackup'));
+    return;
+  }
+  return setMusicContinuity(undefined, { keepMusicGoing: !enabled },
+    status => showHeaderWarning(t(`musicContinuity.${status}`)));
+};
 const theme = useState('theme', () => 'dark');
 const isDark = computed(() => theme.value === 'dark');
 const { activeCues, nextItemOverrideUuid } = useAudioEngine();
@@ -1257,6 +1287,15 @@ const handleDrop = async (e: DragEvent) => {
 
 .playlist-header .workspace-panel-header__leading {
   flex: 0 0 auto;
+}
+
+.music-toggle {
+  padding-inline: var(--spacing-xs);
+}
+
+.music-toggle[aria-pressed='true'] {
+  border-color: var(--state-playing);
+  color: var(--state-playing);
 }
 
 @container (max-width: 580px) {
