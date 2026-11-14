@@ -4533,8 +4533,14 @@ bool ProjectState::trigger_item_impl(std::unique_lock<std::recursive_mutex>& lif
         }
         if (intent != playback_intent_revision_ || generation != document_generation_) return false;
         if (triggered) {
-            if (group_end_action == "next" && !music_backup_for(uuid).empty())
-                prepare_music_target(resolve_advance_target(uuid, /*manual_override_only=*/true));
+            if (group_end_action == "next") {
+                const auto backup = music_backup_for(uuid);
+                if (!backup.empty()) {
+                    const auto next = resolve_advance_target(uuid, /*manual_override_only=*/true);
+                    prepare_music_target(next);
+                    if (backup != next) prepare_music_target(backup);
+                }
+            }
             std::lock_guard lock{sequencer_mutex_};
             group_runs_.erase(
                 std::remove_if(group_runs_.begin(), group_runs_.end(),
@@ -5962,6 +5968,8 @@ void ProjectState::sequencer_loop() {
                     p.item.stop_fade_sec <= 0.0 && p.item.start_next_time <= 0.0;
                 if (buffered && p.item.music_warm_target != next_uuid)
                     prepare_music_target(next_uuid);
+                if (buffered && backup != next_uuid && p.item.music_warm_backup != backup)
+                    prepare_music_target(backup);
                 std::shared_ptr<audio::PreparedFollow> follow;
                 // Groups/actions, unavailable media and a self-target retain
                 // the ordinary control-thread EOF follow (up to one poll late).
@@ -5978,7 +5986,10 @@ void ProjectState::sequencer_loop() {
                     if (item.uuid != p.item.uuid ||
                         item.playback_generation != p.item.playback_generation) continue;
                     item.advance_triggered = static_cast<bool>(follow) || (!plain_follow && !buffered);
-                    if (buffered) item.music_warm_target = next_uuid;
+                    if (buffered) {
+                        item.music_warm_target = next_uuid;
+                        item.music_warm_backup = backup;
+                    }
                     item.prepared_follow = std::move(follow);
                     item.prepared_target_uuid = item.prepared_follow ? next_uuid : std::string{};
                     break;

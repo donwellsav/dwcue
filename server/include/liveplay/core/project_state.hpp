@@ -724,6 +724,7 @@ private:
         std::shared_ptr<audio::PreparedFollow> prepared_follow;
         std::string              prepared_target_uuid;
         std::string              music_warm_target;
+        std::string              music_warm_backup;
         // Runtime-only Cue to Continue state. The resolved target is captured
         // when the operator arms the current pass; it is never serialized.
         bool                     continue_armed       = false;

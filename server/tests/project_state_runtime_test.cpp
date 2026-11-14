@@ -2472,6 +2472,21 @@ void test_music_backup(const std::filesystem::path& wav) {
             check(!on_air(state, engine, "operator-next") && state.go() == "operator-next",
                   "music backup: recovered target starts only on explicit GO");
         }
+        if (group_scope && on_air(state, engine, "music-backup")) {
+            const auto bed = engine.find_cue(*state.item_to_cue_id("music-backup"));
+            std::array<float, 256> left{}, right{};
+            float* channels[]{left.data(), right.data()};
+            check(bed->render_block(channels, 2, 256) > 0, "music backup: bed advances past its prepared start");
+            state.stop_all_cues(0);
+            check(!on_air(state, engine, "music-backup"), "music backup: Stop All stops the active bed");
+            check(state.trigger_item("walk-in"), "music backup: walk-in can be played again");
+            notice.store(false);
+            for (int i = 0; i < 200 && !bed->has_buffered_start(0.0); ++i)
+                std::this_thread::sleep_for(5ms);
+            render_to_end(state, engine, "music-out");
+            check(wait_for_on_air(state, engine, "music-backup") && notice.load(),
+                  "music backup: a second handoff starts the bed after Stop All");
+        }
         state.stop_all_cues(0);
         state.set_ui_state_broadcaster({});
     }
