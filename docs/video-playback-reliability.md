@@ -29,6 +29,8 @@ The 3 November source was checkpointed in `2ea5984` and `a9a86a3` (package metad
 
 Independent review also reproduced a meter/stop-edge ordering bug: a Stopped background video could become the fallback before its `cue_state` edge arrived. Stopped normal cues are now removed before selection, including during device-health loss; removing the displayed cue immediately selects the remaining picture or clears to idle. Diagnostic transport retains its separate behavior.
 
+Auditioning the same playlist item as the on-air cue could suppress or remove its Program picture. The video controller now excludes Preview by its separate engine cue ID. The controller regression covers automatic follow while Preview is active, a Preview restart while Program is playing, and a reconnect snapshot with both instances.
+
 ## Native response transport
 
 `server/cmake/CrowAsyncHttp.cmake` applies `server/patches/crow-async-http.patch` to build-local copies of Crow 1.3.2's connection, parser and response headers. The original dependency tree is untouched. Original and patched SHA-256 values are checked; an unsupported version, skipped patch or unexpected output fails configuration. The copied umbrella header ensures the compiler uses one consistent set of types. The upstream BSD license is retained in `server/patches/crow.LICENSE`.

@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.22 development
-**Source revision:** dc8db4f4c73ba0173fc5f688a5d53e09168639fa
+**Source revision:** 1ff7f8a4f697b840136e4c852073bc62773c0878
 **Native engine baseline:** 71a9e1046de0bf3511f30a0bebdd94716c091e2d
 **Edition:** 14 November 2026 · English · Current-source operator edition
 
@@ -35,6 +35,8 @@ The Video Output window is a separate picture renderer on the desktop computer. 
 ### Language and terminology
 
 This manual uses the English labels. Change language through **Settings → User Interface → Language** or the desktop **View → Language** menu. That preference belongs to the device, not to the show. The app includes 21 languages and right-to-left layouts for Arabic, Persian, and Urdu.
+
+**Settings → User Interface → Show tooltips** controls hover hints in the operator workspace and detached QuickPlays. It starts on and is saved on this device. The audience Video Output window always runs without tooltips.
 
 | Term | Meaning in this manual |
 | --- | --- |
@@ -576,7 +578,7 @@ With only one display or no dedicated assignment, the app uses a normal preview 
 
 The output shows one picture at a time and cuts to the newest sounding cue. **Full HD**, **Fit to display**, and **100%** are the default picture settings. A 16:9 cue fills a 1920 × 1080 output edge to edge. Video and stills retain their proportions and show the entire source. Black fills any space around the picture.
 
-When a cue has no usable video, the output uses the first available layer in this order. Assigned **Cue image**, captured cue still, captured session standby, saved **Standby image**, then black. Set a Cue image in the cue's Basic Info and a saved standby image in **Settings → Video Output**. The native audio engine drives the soundtrack. Preview/headphone playback stays off the audience output.
+When a cue has no usable video, the output uses the first available layer in this order. Assigned **Cue image**, captured cue still, captured session standby, saved **Standby image**, then black. Set a Cue image in the cue's Basic Info and a saved standby image in **Settings → Video Output**. The native audio engine drives the soundtrack. Preview/headphone playback stays off the audience output. A video can play on Video Output while the operator auditions that same cue in Preview.
 
 At an automatic **Play Next** ending, Video Output holds the outgoing video's last frame until the next video has a picture ready. An audio-only cue uses its still or the standby layer. **Stop All** clears the held frame, and a decode failure uses the normal cue image or standby. If the last frame stays frozen, check the output status before pressing GO again. Rehearse through the full ending of each video.
 
