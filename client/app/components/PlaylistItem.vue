@@ -1229,8 +1229,8 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   max-width: 100%;
 }
 
-.playlist-item.is-audio .item-identity {
-  grid-template-columns: var(--cue-number-width, 36px) minmax(0, 1fr) max-content;
+.playlist-item.is-group > .item-content .item-identity {
+  grid-template-columns: var(--cue-number-width, 36px) max-content minmax(0, 1fr);
 }
 
 .item-index {
@@ -1243,7 +1243,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .item-icon {
-  grid-column: 1;
+  grid-column: 2;
   justify-self: start;
   display: flex;
   align-items: center;
@@ -1339,6 +1339,9 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .playlist-item.is-group .item-name {
+  grid-column: 3;
+  display: block;
+  align-content: center;
   font-size: var(--cue-text-size);
   font-weight: 800;
 }
@@ -1552,12 +1555,14 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .playlist-item:not(.show-mode).is-group > .item-content .expand-btn {
-  transform: translateX(10px);
+  /* Keep the arrow aligned to the child rail without covering the number. */
+  transform: translateX(min(10px, calc(2px + var(--folder-column-gap, var(--spacing-sm)))));
 }
 
 /* Keep identity and status above the controls when both side rails are open. */
 @container (max-width: 560px) {
   .item-left {
+    --folder-column-gap: var(--spacing-xs);
     grid-template-columns: 34px minmax(0, 1fr) 68px max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
     grid-template-areas:
       'expand identity identity identity state video'
@@ -1611,12 +1616,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 
   .item-identity {
-    grid-template-columns: var(--cue-number-width, 40px) minmax(0, 1fr) max-content;
     gap: var(--spacing-sm);
-  }
-
-  &.is-audio .item-identity {
-    grid-template-columns: var(--cue-number-width, 40px) minmax(0, 1fr) max-content;
   }
 
   .item-index {

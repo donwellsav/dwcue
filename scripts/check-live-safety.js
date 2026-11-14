@@ -1916,6 +1916,11 @@ assert.doesNotMatch(
 );
 assert.match(
   playlistItem,
+  /\.playlist-item\.is-group > \.item-content \.item-identity\s*\{\s*grid-template-columns:\s*var\(--cue-number-width, 36px\) max-content minmax\(0, 1fr\);[\s\S]*\.item-index\s*\{\s*grid-column:\s*1;[\s\S]*\.item-icon\s*\{\s*grid-column:\s*2;[\s\S]*\.playlist-item\.is-group \.item-name\s*\{\s*grid-column:\s*3;/,
+  'a folder number, icon and title must have separate columns in the same row',
+);
+assert.match(
+  playlistItem,
   /\.group-children\s*\{[\s\S]{0,180}gap:\s*2px;[\s\S]{0,100}padding-top:\s*2px;[\s\S]*@container \(max-width: 560px\)/,
   'folder children must keep the same row rhythm and only wrap when the wide grid no longer fits',
 );
@@ -1946,7 +1951,7 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.playlist-item:not\(\.show-mode\)\.is-group > \.item-content \.expand-btn\s*\{[\s\S]{0,80}transform:\s*translateX\(10px\);/,
+  /\.playlist-item:not\(\.show-mode\)\.is-group > \.item-content \.expand-btn\s*\{[^}]*translateX\(min\(10px, calc\(2px \+ var\(--folder-column-gap, var\(--spacing-sm\)\)\)\)\)/,
   'Regular Mode folder arrows must align with their child accent rail',
 );
 assert.match(
