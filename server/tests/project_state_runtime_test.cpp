@@ -1734,10 +1734,13 @@ void test_paused_sequencer(const std::filesystem::path& wav) {
         check(source->stats().transport == liveplay::audio::TransportState::Paused &&
               !on_air(state, engine, "pause-b"), label);
         source->resume();
-        std::this_thread::sleep_for(160ms);
-        check(follows ? on_air(state, engine, "pause-b")
-                      : source->stats().transport == liveplay::audio::TransportState::FadingOut,
-              "paused sequence: timing action remains available after Resume");
+        if (follows) {
+            check(wait_for_on_air(state, engine, "pause-b"), "paused sequence: target starts after Resume");
+        } else {
+            std::this_thread::sleep_for(160ms);
+            check(source->stats().transport == liveplay::audio::TransportState::FadingOut,
+                  "paused sequence: stop fade starts after Resume");
+        }
         state.stop_all_cues(0);
     };
     run_case("paused sequence: crossfade cannot sound or launch a target",
