@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** fd3644cbada93c60b4e4fb1138743caa394553d5
+**Source revision:** 206d69b85c1761cdca91979f2539fe5842851b5b
 **Native engine baseline:** 9b97613
 **Edition:** 14 November 2026 · English · Operator edition
 
@@ -137,6 +137,8 @@ Rehearse at the actual display size and app zoom. Settings, Properties, QuickPla
 ### Selection is not arming
 
 Selection and arming are independent. Move through the playlist with **Up/Down**, then press **Enter** to set the selected cue as **Up Next**. Wait for its name beside **Play Next**, then press **Space** to run it. The row's **Set As Next** button also sets an explicit GO target. Pressing that button again on the armed row requests clearing the override.
+
+The playlist marks the current GO target **Up Next**, including a follow target during playback. GO waits while it says **Setting Up Next…**. When it says **No cue queued**, choose a cue and set it as **Up Next**. **Stop All Cues** stays available in either state.
 
 Automatic Up Next defaults on. Opening prepares the first playable item; stopping a cue with **End Behavior: Nothing** prepares its next sibling. A natural end at the top-level list’s end can wrap to the first item. Preparation waits for a deliberate GO unless an authored automatic action applies. An explicit override takes precedence.
 

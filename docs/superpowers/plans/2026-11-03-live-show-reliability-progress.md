@@ -579,3 +579,5 @@ The visible name changed in `22e72d2`, the shifted defaults in `bf196c6`, and th
 `c812393` passes 200 callback bursts that reset the old four-block ring. The secondary uses an eight-block ring and roughly 11 ms more nominal buffering at 48 kHz. The master still uses a three-block queue. The reported hardware stutter still needs a physical retest under T24.
 
 The application checkpoint passed all 13 native suites, 72 isolated API checks, 271 client checks, typecheck, and production renderer generation. The operator manual and affected screenshots describe this development build.
+
+`206d69b` makes the follow target visible in the playlist and gives GO readable waiting and idle labels. An isolated renderer check held the cue change confirmation, confirmed Stop All stayed enabled, and exercised GO and Stop All in Show Mode with Settings open at 1200 × 700 and 110% text size. Typecheck, renderer generation, and live safety checks passed.
