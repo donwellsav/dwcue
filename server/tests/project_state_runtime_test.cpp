@@ -2437,12 +2437,23 @@ void test_music_backup(const std::filesystem::path& wav) {
         show["settings"]["backupMusicGroup"] = "backup-group";
         state.replace_full_document(show);
         check(wait_ready(state), "music backup: media ready"); close_devices(engine);
+        std::mutex notice_mutex;
+        std::condition_variable notice_ready;
         std::atomic<bool> notice{false};
         std::atomic<bool> unavailable{false};
         state.set_ui_state_broadcaster([&](const json& event) {
-            if (event.value("code", "") == std::string{"music_backup"}) notice.store(true);
+            if (event.value("code", "") == std::string{"music_backup"}) {
+                std::lock_guard lock{notice_mutex};
+                notice.store(true);
+                notice_ready.notify_one();
+            }
             if (event.value("code", "") == std::string{"sequence_ended"}) unavailable.store(true);
         });
+        const auto wait_for_backup = [&] {
+            std::unique_lock lock{notice_mutex};
+            return notice_ready.wait_for(lock, 2s, [&] { return notice.load(); }) &&
+                on_air(state, engine, "music-backup");
+        };
         if (scenario == "already-air") check(state.trigger_item("operator-next"), "music backup: other bed is playing");
         const auto target_id = state.item_to_cue_id("operator-next");
         const auto target = target_id ? engine.find_cue(*target_id) : nullptr;
@@ -2472,10 +2483,10 @@ void test_music_backup(const std::filesystem::path& wav) {
         if (scenario == "stop-all") state.stop_all_cues(0);
         else render_to_end(state, engine, "music-out");
         const bool expect_backup = scenario == "root" || group_scope || busy_target;
-        if (expect_backup) (void)wait_for_on_air(state, engine, "music-backup");
-        check((!(ready_target || normal_next) || wait_for_on_air(state, engine, "operator-next")) &&
-              on_air(state, engine, "music-backup") == expect_backup &&
-              notice.load() == expect_backup && !unavailable.load(), mode);
+        const bool followed = !(ready_target || normal_next) || wait_for_on_air(state, engine, "operator-next");
+        const bool backup_ok = expect_backup ? wait_for_backup()
+            : !on_air(state, engine, "music-backup") && !notice.load();
+        check(followed && backup_ok && !unavailable.load(), mode);
         if (busy_target) {
             held.unlock();
             check(state.next_item_override() == "operator-next", "music backup: pending choice stays Up Next");
@@ -2495,8 +2506,7 @@ void test_music_backup(const std::filesystem::path& wav) {
             for (int i = 0; i < 200 && !bed->has_buffered_start(0.0); ++i)
                 std::this_thread::sleep_for(5ms);
             render_to_end(state, engine, "music-out");
-            check(wait_for_on_air(state, engine, "music-backup") && notice.load(),
-                  "music backup: a second handoff starts the bed after Stop All");
+            check(wait_for_backup(), "music backup: a second handoff starts the bed after Stop All");
         }
         state.stop_all_cues(0);
         state.set_ui_state_broadcaster({});
