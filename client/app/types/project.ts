@@ -171,6 +171,8 @@ export type PlaybackKeyAction =
   | 'capture-display-standby'
   | 'toggle-settings'
   | 'toggle-properties'
+  | 'toggle-quickplays'
+  | 'toggle-detached-quickplays'
   | 'play-selected'
   | 'play-next';
 
@@ -479,4 +481,6 @@ export const DEFAULT_PLAYBACK_KEYS: Partial<Record<PlaybackKeyAction, CartSlotKe
   'capture-display-standby': { key: 'g', ctrlKey: false, shiftKey: true, altKey: false },
   'toggle-settings': { key: 's', ctrlKey: false, shiftKey: false, altKey: false },
   'toggle-properties': { key: 's', ctrlKey: false, shiftKey: true, altKey: false },
+  'toggle-quickplays': { key: 'q', ctrlKey: false, shiftKey: false, altKey: false },
+  'toggle-detached-quickplays': { key: 'q', ctrlKey: false, shiftKey: true, altKey: false },
 };

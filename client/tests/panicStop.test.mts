@@ -207,6 +207,7 @@ function loadHandleKeydown(dependencies: Record<string, unknown>) {
         dispatchPlaybackAction,
         findPlaybackActionForEvent,
         findSlotForEvent,
+        isDetached = false,
         isForwardedFromVideoOutput,
         isTextInputFocused,
         triggerSlot,
@@ -289,6 +290,24 @@ test('workspace shortcuts keep Stop All, repeat suppression, and text focus beha
   press('1');
   press('F9');
   assert.deepEqual(actions, ['play-next', 'one-shot', 'stop-all', 'stop-all', 'play-next', 'one-shot', 'stop-all']);
+});
+
+test('Shift+Q can close focused QuickPlays without relaxing the hydration guard for GO', () => {
+  const actions: string[] = [];
+  const handleKeydown = loadHandleKeydown({
+    isDetached: true,
+    currentProject: { value: {} },
+    projectHydrationStatus: { value: 'failed' },
+    dispatchPlaybackAction: (action: string) => actions.push(action),
+    findPlaybackActionForEvent: (event: { key: string }) =>
+      event.key === 'Q' ? 'toggle-detached-quickplays' : 'play-next',
+    isForwardedFromVideoOutput: () => false,
+    isTextInputFocused: () => false,
+  });
+  for (const [key, repeat] of [['Q', false], ['Q', true], [' ', false]]) {
+    handleKeydown({ key, repeat, preventDefault() {}, stopPropagation() {} });
+  }
+  assert.deepEqual(actions, ['toggle-detached-quickplays']);
 });
 
 test('QuickPlay number-row shortcuts work with shifted symbols and respect text focus', () => {

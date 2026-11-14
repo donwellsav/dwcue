@@ -368,6 +368,7 @@ const { mount: mountHotkeys, unmount: unmountHotkeys, playbackMappings } = useCa
     if (showCueProperties.value) propertiesPanelOpen.value = false;
     else openItemProperties(item.uuid);
   },
+  'toggle-quickplays': () => { if (!cartDetached.value) toggleCart(); },
 });
 const { stopAllCues } = useAudioEngine();
 const outputConsoleMinDb = -60;

@@ -4425,6 +4425,12 @@ ipcMain.handle('open-cart-player-window', (event, projectFolderPath) => {
   createCartPlayerWindow();
 });
 
+ipcMain.handle('toggle-cart-player-window', (event) => {
+  requireTrustedIpc(event);
+  if (cartPlayerWindow) cartPlayerWindow.close();
+  else createCartPlayerWindow();
+});
+
 ipcMain.on('cart-player-window-attach', (event) => {
   try {
     requireTrustedIpc(event);
