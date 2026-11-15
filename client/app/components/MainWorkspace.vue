@@ -202,7 +202,7 @@
       :style="{ height: panelHeight === null ? 'auto' : `${panelHeight}px`, maxHeight: `${MAX_PANEL_HEIGHT_PERCENT}%` }"
       @keydown.capture="handlePanelKeydown($event, true)"
       @keydown="handlePanelKeydown">
-      <div class="lower-panel-resize-handle" role="separator" aria-orientation="horizontal"
+      <div v-if="visibleImportPanel !== 'delete-selection'" class="lower-panel-resize-handle" role="separator" aria-orientation="horizontal"
         :aria-label="showProjectSettings ? t('settings.title') : importPanelTitle || t('properties.title')"
         :aria-valuemin="MIN_PANEL_HEIGHT" :aria-valuemax="panelMaxHeight"
         :aria-valuenow="visiblePanelHeight || panelHeight || MIN_PANEL_HEIGHT" tabindex="0"
@@ -219,7 +219,9 @@
           </button>
         </header>
         <div id="workspace-import-host" ref="importHost" class="workspace-import-host"
-          :class="{ 'workspace-import-host--archive': visibleImportPanel?.startsWith('archive-') }"></div>
+          :class="{ 'workspace-import-host--archive': visibleImportPanel?.startsWith('archive-') }">
+          <DeleteSelectionPanel v-if="visibleImportPanel === 'delete-selection'" />
+        </div>
       </section>
     </div>
   </div>
@@ -252,6 +254,8 @@ const {
   copyItemsToClipboard,
   pasteItemsFromClipboard,
   requestDeleteFromKeyboard,
+  pendingDelete,
+  cancelDelete,
 } = useProject();
 const { cartOnlyItems } = useCartItems();
 const { t } = useLocalization();
@@ -261,6 +265,7 @@ const { levels: outputTargetLevels } = useOutputTarget();
 const showProjectSettings = useState('showProjectSettings', () => false);
 const visibleImportPanel = computed(() => {
   const panel = workspaceImportPanel.value;
+  if (panel === 'delete-selection') return !showProjectSettings.value && pendingDelete.value ? panel : null;
   return !showProjectSettings.value && (uiMode.value !== 'playback' || panel === 'quickplay' || panel?.startsWith('archive-')) ? panel : null;
 });
 const importPanelTitle = computed(() => {
@@ -269,11 +274,13 @@ const importPanelTitle = computed(() => {
   if (visibleImportPanel.value === 'spotify') return t('spotifyImport.title');
   if (visibleImportPanel.value === 'archive-import') return t('importProject.chooseSourceTitle');
   if (visibleImportPanel.value === 'archive-export') return t('exportProject.chooseLocationTitle');
+  if (visibleImportPanel.value === 'delete-selection') return t('deleteSelection.title');
   if (visibleImportPanel.value === 'quickplay') return t(quickPlayEditor.value?.remove
     ? 'oneShots.removeConfirmTitle' : quickPlayEditor.value ? 'oneShots.settings' : 'importAudio.title');
   return '';
 });
 function closeImportPanel() {
+  if (workspaceImportPanel.value === 'delete-selection') return cancelDelete();
   if (workspaceImportPanel.value === 'quickplay') quickPlayEditor.value = null;
   workspaceImportPanel.value = null;
 }
@@ -295,6 +302,7 @@ const settingsHeight = useState<number | null>('ProjectSettingsPanel.height', ()
 const propertiesHeight = useState<number | null>('PropertiesPanel.height', () => null);
 const importHeight = useState<number | null>('ImportPanel.height', () => null);
 const panelHeight = computed(() => showProjectSettings.value ? settingsHeight.value
+  : visibleImportPanel.value === 'delete-selection' ? null
   : visibleImportPanel.value ? importHeight.value : propertiesHeight.value);
 const workspaceContent = ref<HTMLElement | null>(null);
 const lowerPanel = ref<HTMLElement | null>(null);
@@ -781,7 +789,7 @@ const handleKeydown = (e: KeyboardEvent) => {
   }
 
   // Delete / Backspace removes the current selection. A multi-selection opens
-  // the confirm dialog; a single item is removed outright. Must defer to
+  // the confirmation panel; a single item is removed outright. Must defer to
   // native editing inside text fields.
   if (e.key === 'Delete' || e.key === 'Backspace') {
     if ((!isForwardedFromVideoOutput(e) && isTextInputFocused()) || !currentProject.value) return;

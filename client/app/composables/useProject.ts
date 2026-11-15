@@ -163,20 +163,13 @@ const unsavedDialogReason = ref<'project' | 'quit'>('project');
 const unsavedDialogBlocked = ref(false);
 let _unsavedPromiseResolve: ((choice: 'save' | 'discard' | 'cancel') => Promise<void>) | null = null;
 
-// ---- Delete-selection dialog state (module-scoped, shared across calls) ----
-// Shown when a delete is triggered while more than one item is selected, so a
-// single trash-button click can't silently wipe the whole selection. The
-// keyboard DEL variant omits the "Delete Only" choice (firmer intent).
-const deleteDialogVisible = ref(false);
-const deleteDialogCount = ref(0);
-const deleteDialogName = ref('');
-const deleteDialogAllowOnly = ref(true);
-// When opened from a specific item's trash button, the UUID "Delete Only"
-// should target.
-let _deleteOnlyUuid: string | null = null;
-// Which delete path the dialog's buttons should take, captured when the dialog
-// opens so it can't drift if the selection changes underneath it.
-let _deleteContext: 'playlist' | 'cart' = 'playlist';
+const deleteRequest = shallowRef<{
+  uuids: string[];
+  onlyUuid?: string;
+  name: string;
+  context: 'playlist' | 'cart';
+  epoch: number;
+} | null>(null);
 
 export const useProject = () => {
   const currentProject = useState<Project | null>('currentProject', () => null);
@@ -210,7 +203,7 @@ export const useProject = () => {
   // openItemProperties() (the gear button).
   const propertiesPanelOpen = useState<boolean>('propertiesPanelOpen', () => false);
   const showProjectSettings = useState('showProjectSettings', () => false);
-  const workspaceImportPanel = useState<'media' | 'youtube' | 'spotify' | 'archive-import' | 'archive-export' | 'quickplay' | null>(
+  const workspaceImportPanel = useState<'media' | 'youtube' | 'spotify' | 'archive-import' | 'archive-export' | 'quickplay' | 'delete-selection' | null>(
     'workspaceImportPanel', () => null,
   );
   const quickPlayEditor = useState<{ uuid: string; remove: boolean } | null>('quickPlayEditor', () => null);
@@ -1346,72 +1339,48 @@ export const useProject = () => {
     saveProject();
   };
 
-  // Remove every selected item via the path appropriate to where the selection
-  // lives. Playlist deletes pull items from the tree; cart deletes only
-  // unassign slots. The set is snapshotted first because both paths mutate it.
-  const deleteSelection = (context: 'playlist' | 'cart' = selectionContext.value) => {
-    const uuids = Array.from(selectedItems.value);
-    if (context === 'cart') {
-      deleteCartItems(uuids);
-    } else {
-      for (const u of uuids) removeItem(u);
-    }
-    selectedItems.value.clear();
-    selectedItem.value = null;
+  const pendingDelete = computed(() => deleteRequest.value?.epoch === projectEpoch.value ? deleteRequest.value : null);
+
+  const showDeleteConfirmation = (uuids: string[], context: 'playlist' | 'cart', clickedUuid?: string) => {
+    // Cue selection stays live while the confirmation is open.
+    deleteRequest.value = {
+      uuids, context, epoch: projectEpoch.value,
+      onlyUuid: uuids.length > 1 ? clickedUuid : undefined,
+      name: clickedUuid ? findItemByUuid(clickedUuid)?.displayName ?? '' : '',
+    };
+    showProjectSettings.value = false;
+    workspaceImportPanel.value = 'delete-selection';
   };
 
-  // Entry point from an item's trash button. When the clicked item is part of
-  // a multi-selection, open the confirm dialog and return true so the caller
-  // leaves the deletion to the dialog. Returns false for the simple
-  // single-item case, which the caller handles itself. `context` reflects which
-  // panel the button lives in (cart vs playlist).
   const requestDeleteFromButton = (uuid: string, context: 'playlist' | 'cart' = 'playlist'): boolean => {
-    if (selectedItems.value.has(uuid) && selectedItems.value.size > 1) {
-      _deleteOnlyUuid = uuid;
-      _deleteContext = context;
-      deleteDialogName.value = findItemByUuid(uuid)?.displayName ?? '';
-      deleteDialogCount.value = selectedItems.value.size;
-      deleteDialogAllowOnly.value = true;
-      deleteDialogVisible.value = true;
-      return true;
-    }
-    return false;
-  };
-
-  // Entry point from the keyboard DEL key. A single selected item is removed
-  // outright; a multi-selection opens the confirm dialog without the "Delete
-  // Only" choice. The active selectionContext decides playlist vs cart.
-  const requestDeleteFromKeyboard = (): boolean => {
-    const size = selectedItems.value.size;
-    if (size === 0) return false;
-    if (size === 1) {
-      deleteSelection(selectionContext.value);
-      return true;
-    }
-    _deleteOnlyUuid = null;
-    _deleteContext = selectionContext.value;
-    deleteDialogName.value = '';
-    deleteDialogCount.value = size;
-    deleteDialogAllowOnly.value = false;
-    deleteDialogVisible.value = true;
+    const uuids = selectionContext.value === context && selectedItems.value.has(uuid)
+      ? [...selectedItems.value] : [uuid];
+    if (context === 'cart' && uuids.length === 1) return false;
+    showDeleteConfirmation(uuids, context, uuid);
     return true;
   };
 
-  const deleteDialogConfirmAll = () => {
-    deleteDialogVisible.value = false;
-    deleteSelection(_deleteContext);
+  const requestDeleteFromKeyboard = (): boolean => {
+    const uuids = [...selectedItems.value];
+    if (uuids.length === 0) return false;
+    const context = selectionContext.value;
+    if (uuids.length > 1) showDeleteConfirmation(uuids, context);
+    else if (context === 'cart') deleteCartItems(uuids);
+    else removeItem(uuids[0]!);
+    return true;
   };
-  const deleteDialogConfirmOnly = () => {
-    deleteDialogVisible.value = false;
-    if (_deleteOnlyUuid) {
-      if (_deleteContext === 'cart') deleteCartItems([_deleteOnlyUuid]);
-      else removeItem(_deleteOnlyUuid);
-    }
-    _deleteOnlyUuid = null;
+
+  const cancelDelete = () => {
+    deleteRequest.value = null;
+    if (workspaceImportPanel.value === 'delete-selection') workspaceImportPanel.value = null;
   };
-  const deleteDialogCancel = () => {
-    deleteDialogVisible.value = false;
-    _deleteOnlyUuid = null;
+  const confirmDelete = (only: boolean) => {
+    const request = pendingDelete.value;
+    cancelDelete();
+    if (!request || (only && !request.onlyUuid)) return;
+    const uuids = only ? [request.onlyUuid!] : request.uuids;
+    if (request.context === 'cart') deleteCartItems(uuids);
+    else for (const uuid of uuids) removeItem(uuid);
   };
 
   // Find item by UUID
@@ -2365,17 +2334,12 @@ export const useProject = () => {
     unsavedDiscard,
     unsavedCancel,
     selectionContext,
-    deleteSelection,
     deleteCartItems,
     requestDeleteFromButton,
     requestDeleteFromKeyboard,
-    deleteDialogVisible,
-    deleteDialogCount,
-    deleteDialogName,
-    deleteDialogAllowOnly,
-    deleteDialogConfirmAll,
-    deleteDialogConfirmOnly,
-    deleteDialogCancel,
+    pendingDelete,
+    confirmDelete,
+    cancelDelete,
     beginItemBatch,
     endItemBatch,
     shuffleItems,

@@ -190,7 +190,6 @@ assert.match(
 );
 const playlistItem = read('client/app/components/PlaylistItem.vue');
 const quitConfirmModal = read('client/app/components/QuitConfirmModal.vue');
-const deleteSelectionModal = read('client/app/components/DeleteSelectionModal.vue');
 const waveformTrimmer = read('client/app/components/WaveformTrimmer.vue');
 const waveformTypes = read('client/app/types/project.ts');
 const audioUtils = read('client/app/utils/audio.ts');
@@ -706,9 +705,12 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /settingsHeight = useState<number \| null>\('ProjectSettingsPanel.height', \(\) => null\);[\s\S]*panelHeight = computed\(\(\) => showProjectSettings\.value \? settingsHeight\.value\s*: visibleImportPanel\.value \? importHeight\.value : propertiesHeight\.value\);/,
+  /settingsHeight = useState<number \| null>\('ProjectSettingsPanel.height', \(\) => null\);[\s\S]*panelHeight = computed\(\(\) => showProjectSettings\.value \? settingsHeight\.value\s*: visibleImportPanel\.value === 'delete-selection' \? null\s*: visibleImportPanel\.value \? importHeight\.value : propertiesHeight\.value\);/,
   'each lower panel must fit its contents until the operator resizes it',
 );
+assert.ok(mainWorkspace.includes('<DeleteSelectionPanel v-if="visibleImportPanel === \'delete-selection\'" />')
+  && !/\bconfirm\(t\('actions\.confirmDelete'/.test(playlistItem),
+  'playlist deletes must use the lower panel instead of a blocking native confirmation');
 assert.match(
   mainWorkspace,
   /\.workspace-content\s*\{[^}]*min-height:\s*calc\(var\(--panel-header-height\) \+ var\(--reserved-playlist-row-height\)[^}]*\}[\s\S]*\.lower-workspace-panel\s*\{[^}]*flex:\s*0 1 auto;/,
@@ -1286,11 +1288,6 @@ assert.match(
   electron,
   /inlineScriptHashes = cspHashesForInlineScripts\(rendererHtml\)\.join\(' '\)[\s\S]*script-src 'self' file: \$\{inlineScriptHashes\}/,
   'packaged renderer CSP must include hashes from its exact generated HTML',
-);
-assert.match(
-  deleteSelectionModal,
-  /\.ds-modal\s*\{[\s\S]{0,260}width:\s*min\(440px, calc\(100vw - 32px\)\);/,
-  'the delete dialog must fit the supported 380px detached-cart window',
 );
 assert.match(
   audioImportModal,
@@ -2613,7 +2610,6 @@ for (const file of [
   'AudioImportModal.vue',
   'CartHotkeyConfig.vue',
   'ConnectionLostModal.vue',
-  'DeleteSelectionModal.vue',
   'LoadingOverlay.vue',
   'QuitConfirmModal.vue',
   'ServerFilePickerModal.vue',

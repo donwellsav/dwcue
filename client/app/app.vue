@@ -22,6 +22,7 @@
         <template v-if="currentProject && detachedProjectIdentity">
           <p v-if="detachedProjectError" class="cart-window-error" role="alert">{{ detachedProjectError }}</p>
           <OneShotPanel :is-detached-window="true" />
+          <DeleteSelectionPanel />
         </template>
         <div v-else class="cart-window-loading">
           <CueSymbol name="one-shots" />
@@ -34,16 +35,6 @@
            that silently never reach the server. -->
       <ConnectionLostModal />
 
-      <!-- Multi-item delete confirm, also needed in the detached cart window -->
-      <DeleteSelectionModal
-        :visible="deleteDialogVisible"
-        :count="deleteDialogCount"
-        :name="deleteDialogName"
-        :allow-only="deleteDialogAllowOnly"
-        @delete-all="deleteDialogConfirmAll"
-        @delete-only="deleteDialogConfirmOnly"
-        @cancel="deleteDialogCancel"
-      />
     </template>
 
     <!-- Normal mode -->
@@ -206,17 +197,6 @@
       @cancel="unsavedCancel"
     />
 
-    <!-- Confirm prompt shown when deleting a multi-item selection -->
-    <DeleteSelectionModal
-      :visible="deleteDialogVisible"
-      :count="deleteDialogCount"
-      :name="deleteDialogName"
-      :allow-only="deleteDialogAllowOnly"
-      @delete-all="deleteDialogConfirmAll"
-      @delete-only="deleteDialogConfirmOnly"
-      @cancel="deleteDialogCancel"
-    />
-
     <!-- Background audio-loading progress (when document already rendered) -->
     <AudioLoadProgress />
 
@@ -277,8 +257,6 @@ const {
   isLoading, loadingMessage,
   projectRepair, saveRepairedProject,
   unsavedDialogVisible, unsavedDialogReason, unsavedDialogBlocked, unsavedSave, unsavedDiscard, unsavedCancel,
-  deleteDialogVisible, deleteDialogCount, deleteDialogName, deleteDialogAllowOnly,
-  deleteDialogConfirmAll, deleteDialogConfirmOnly, deleteDialogCancel,
 } = useProject();
 const { stopAllCues } = useAudioEngine();
 const { cartOnlyItems, clearCartOnlyItems, addCartOnlyItem } = useCartItems();

@@ -704,13 +704,7 @@ const handleSetAsNext = (): Promise<boolean> =>
   setNextItem(isManuallyQueued.value ? null : props.item.uuid);
 
 const handleDelete = () => {
-  // When this item is part of a multi-selection, defer to the confirm dialog
-  // (Delete N Selected / Delete Only this / Cancel). Otherwise fall back to
-  // the simple single-item confirmation.
-  if (requestDeleteFromButton(props.item.uuid)) return;
-  if (confirm(t('actions.confirmDelete', { name: props.item.displayName }))) {
-    removeItem(props.item.uuid);
-  }
+  requestDeleteFromButton(props.item.uuid);
 };
 
 const toggleExpand = () => {
