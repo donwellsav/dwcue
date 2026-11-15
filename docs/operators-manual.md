@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** 5a3782750c398ba19f0ecd82d57190b1dc38ac71
+**Source revision:** 25cd0b88962853c44522a97ef5167452847b0b45
 **Native engine baseline:** 7c233a9
 **Edition:** 15 November 2026 · English · Operator edition
 
@@ -796,7 +796,9 @@ Use **Choose Another Show** to open the standard show picker from the load-error
 
 The **Connection lost** panel opens below the playlist in the main window. The last verified playlist stays visible for reference while cue starts and edits wait. **Retry now** retries the same server. Its **Restart** action relaunches the client. The engine and Program can continue running. **Exit** closes the client. Before restart or exit, the desktop removes client-owned AV resources. If cleanup fails, the diagnostic remains visible and the client stays open so you can correct the cause and retry. Verify the destination and credential before retrying a failed connection.
 
-After the managed engine restarts, **Server restarted** offers **Continue session** and **Start fresh** in the same lower panel.
+In a detached QuickPlays window, the reconnect notice opens below the tiles. **Stop All** remains available in the header, and **Escape** runs Stop All while the notice is open even if you remapped the shortcut. QuickPlay starts wait for the active show to be verified.
+
+After the managed engine restarts, **Server restarted** offers **Continue session** and **Start fresh** in the main window’s lower panel.
 
 **Stop All Cues** stays available while the recovery panel is open, including its configured keyboard and MIDI bindings. **Escape** also runs Stop All when a different shortcut is assigned. Stop All uses a separate HTTP request so the engine can receive it while the control socket is down or waiting on a cue. The engine applies the active show's Stop All fade. **The engine accepted Stop All** confirms receipt of the stop request. If Stop All is unconfirmed, check the output and use your independent console-silence procedure as needed.
 
