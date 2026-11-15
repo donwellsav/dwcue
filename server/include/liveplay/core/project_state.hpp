@@ -184,7 +184,8 @@ public:
     // Load a canonical project file (.dwcue JSON). Returns true on success. On
     // failure, the previous state is preserved.
     bool load(const std::filesystem::path& path,
-              std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max());
+              std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max(),
+              const std::string& expected_session = {}, json* loaded_header = nullptr);
     // Serialize saves and optional document replacement as one operation. An
     // empty path resolves to the current project path while holding save_mutex_;
     // identity/folder metadata commit only after atomic publication succeeds.
@@ -193,7 +194,8 @@ public:
 
     // Replace state from an in-memory JSON document. Same semantics as load.
     bool load_from_json(const json& doc, const std::filesystem::path& project_path = {},
-                        std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max());
+                        std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max(),
+                        const std::string& expected_session = {}, json* loaded_header = nullptr);
 
     // Returns and clears any repair info recorded during the last load /
     // load_from_json call. The repair has already been applied in memory;

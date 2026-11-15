@@ -181,6 +181,16 @@ test('project session preconditions reject delayed edits after switching or reop
         assert.equal(createDeadlineSupported, true);
         return openDeadlineMs;
       };
+      const fifoWriter = async delayed => {
+        for (let attempt = 0; attempt < 80; ++attempt) {
+          try { return await open(delayed, constants.O_WRONLY | constants.O_NONBLOCK); }
+          catch (error) {
+            if (error.code !== 'ENXIO') throw error;
+            await new Promise(resolve => setTimeout(resolve, 10));
+          }
+        }
+        assert.fail('the engine must be reading the delayed file');
+      };
       const openDeadlineMs = await lease();
       for (const [route, body, status] of [
         ['load', { path: broken }, 400],
@@ -227,20 +237,14 @@ test('project session preconditions reject delayed edits after switching or reop
         assert.equal(await new Promise(resolve => fifo.once('exit', resolve)), 0);
         // Shorten the engine's 25-second lease to hold a real file read past expiry.
         const pending = change('load', { path: delayed, openDeadlineMs: await lease() - 24_000 });
-        let writer;
+        const writer = await fifoWriter(delayed);
         try {
-          for (let attempt = 0; attempt < 80 && !writer; ++attempt) {
-            try { writer = await open(delayed, constants.O_WRONLY | constants.O_NONBLOCK); }
-            catch (error) {
-              if (error.code !== 'ENXIO') throw error;
-              await new Promise(resolve => setTimeout(resolve, 10));
-            }
-          }
-          assert.ok(writer, 'the engine must be reading the delayed file');
+          const page = await request(baseUrl, '/api/project/items', { signal: AbortSignal.timeout(750) });
+          assert.equal(page.status, 200, 'a held Open must not lock show control requests');
           await new Promise(resolve => setTimeout(resolve, 1100));
           assert.deepEqual(await playing(), ['show-bed']);
           await writer.writeFile(JSON.stringify(newShow));
-        } finally { await writer?.close(); }
+        } finally { await writer.close(); }
         const rejected = await pending;
         assert.equal(rejected.status, 410, await rejected.text());
         assert.deepEqual(await current(), before);
@@ -315,6 +319,32 @@ test('project session preconditions reject delayed edits after switching or reop
       assert.equal(savedSuperseded.status, 410, await savedSuperseded.text());
       assert.equal(JSON.parse(await readFile(supersededPath, 'utf8')).name, 'New');
       assert.equal((await current()).session, replacement.server.projectSessionId);
+      if (process.platform !== 'win32') {
+        await load(p);
+        await current();
+        const program = await request(baseUrl, '/api/project/items/show-bed/play', { method: 'POST', body: '{}' });
+        assert.equal(program.status, 200, await program.text());
+        const delayed = path.join(folder, 'Delayed.dwcue');
+        const stale = request(baseUrl, '/api/project/load', {
+          method: 'POST', body: JSON.stringify({ path: delayed, openDeadlineMs: await lease() }),
+        });
+        const writer = await fifoWriter(delayed);
+        try {
+          const stop = await request(baseUrl, '/api/transport/stop_all', {
+            method: 'POST', body: '{}', signal: AbortSignal.timeout(750),
+          });
+          assert.equal(stop.status, 200, await stop.text());
+          const newer = await request(baseUrl, '/api/project/load', {
+            method: 'POST', signal: AbortSignal.timeout(750), body: JSON.stringify({ path: q }),
+          });
+          assert.equal(newer.status, 200, await newer.text());
+          await writer.writeFile(JSON.stringify({ ...newShow, name: 'Stale file' }));
+        } finally { await writer.close(); }
+        const rejected = await stale;
+        assert.equal(rejected.status, 409, await rejected.text());
+        assert.equal((await current()).path, q);
+      }
+
     });
     await t.test('a repaired show stays usable and reports its repairs until the file is saved', async () => {
       const file = path.join(folder, 'Repair.dwcue');

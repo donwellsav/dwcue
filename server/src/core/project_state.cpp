@@ -5385,7 +5385,8 @@ json ProjectState::upgrade_legacy_document(const json& legacy) const {
 }
 
 bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::path& project_path,
-                                  std::chrono::steady_clock::time_point deadline) {
+                                  std::chrono::steady_clock::time_point deadline,
+                                  const std::string& expected_session, json* loaded_header) {
     std::optional<project_file::PreparedDocument> client_document;
     if (project_file::is_client_document(doc_in)) {
         project_file::PreparedDocument prepared;
@@ -5399,7 +5400,6 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
         client_document = std::move(prepared);
     }
 
-    std::lock_guard operation_lock{project_operation_mutex_};
     std::string loaded_name;
     std::optional<std::filesystem::path> loaded_media_root;
     decltype(cues_) loaded_cues;
@@ -5408,7 +5408,6 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
     decltype(mixer_routes_) loaded_mixer_routes;
     decltype(master_assignments_) loaded_master_assignments;
     if (!client_document) {
-        std::lock_guard lock{mutex_};
         try {
             json doc = doc_in;
             if (is_legacy_document(doc)) {
@@ -5493,6 +5492,8 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
             return false;
         }
     }
+    auto operation_lock = lock_project_session(expected_session);
+    if (!operation_lock.owns_lock()) return false;
     if (std::chrono::steady_clock::now() >= deadline) return false;
     // Quiesce the old mirror without blocking transport control. Project
     // operations are serialized by project_operation_mutex_, and the mirror's
@@ -5583,35 +5584,40 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
         // async mirror kickoff — cues_ is empty at this instant, so the "nothing
         // on air" guard passes on a fresh open.
         arm_first_item_on_open();
+        if (loaded_header) *loaded_header = header_document();
         return true;
     }
 
-    std::lock_guard lock{mutex_};
-    for (auto& [_, id] : item_uuid_to_cue_) engine_.unload_cue(id);
-    item_uuid_to_cue_.clear();
-    group_gains_.clear();
-    cues_ = std::move(loaded_cues);
-    mixers_ = std::move(loaded_mixers);
-    item_routes_ = std::move(loaded_item_routes);
-    mixer_routes_ = std::move(loaded_mixer_routes);
-    master_assignments_ = std::move(loaded_master_assignments);
-    project_name_ = std::move(loaded_name);
-    if (loaded_media_root) media_root_ = std::move(*loaded_media_root);
-    ++document_generation_;
-    project_session_id_ = engine_.new_cue_id().value;
-    project_file_path_ = project_path;
-    document_ = default_empty_document();
-    pending_repair_info_ = {};
-    apply_audio_settings(engine_, document_["settings"]);
-
-    apply_to_engine_locked();
+    {
+        std::lock_guard lock{mutex_};
+        for (auto& [_, id] : item_uuid_to_cue_) engine_.unload_cue(id);
+        item_uuid_to_cue_.clear();
+        group_gains_.clear();
+        cues_ = std::move(loaded_cues);
+        mixers_ = std::move(loaded_mixers);
+        item_routes_ = std::move(loaded_item_routes);
+        mixer_routes_ = std::move(loaded_mixer_routes);
+        master_assignments_ = std::move(loaded_master_assignments);
+        project_name_ = std::move(loaded_name);
+        if (loaded_media_root) media_root_ = std::move(*loaded_media_root);
+        ++document_generation_;
+        project_session_id_ = engine_.new_cue_id().value;
+        project_file_path_ = project_path;
+        document_ = default_empty_document();
+        if (project_path.has_parent_path()) document_["folderPath"] = util::path_to_utf8(project_path.parent_path());
+        pending_repair_info_ = {};
+        apply_audio_settings(engine_, document_["settings"]);
+        apply_to_engine_locked();
+    }
+    if (loaded_header) *loaded_header = header_document();
     return true;
 }
 
 bool ProjectState::load(const std::filesystem::path& path,
-                        std::chrono::steady_clock::time_point deadline) {
-    std::lock_guard operation_lock{project_operation_mutex_};
+                        std::chrono::steady_clock::time_point deadline,
+                        const std::string& expected_session, json* loaded_header) {
     if (std::chrono::steady_clock::now() >= deadline) return false;
+    const auto session = expected_session.empty() ? project_session_id() : expected_session;
     if (!project_file::is_native_project(path)) {
         Logger::error("ProjectState::load: native project path must use .dwcue: '{}'",
                       util::path_to_utf8(path));
@@ -5648,12 +5654,7 @@ bool ProjectState::load(const std::filesystem::path& path,
         if (path.has_parent_path() && doc.is_object()) {
             doc["folderPath"] = util::path_to_utf8(path.parent_path());
         }
-        const bool ok = load_from_json(doc, path, deadline);
-        if (ok && !project_file::is_client_document(doc) && path.has_parent_path()) {
-            std::lock_guard lock{mutex_};
-            document_["folderPath"] = util::path_to_utf8(path.parent_path());
-        }
-        return ok;
+        return load_from_json(doc, path, deadline, session, loaded_header);
     } catch (const std::exception& ex) {
         Logger::error("ProjectState::load failed: {}", ex.what());
         return false;
