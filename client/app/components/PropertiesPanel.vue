@@ -1438,8 +1438,57 @@ const formatTime = (seconds: number): string => {
   gap: var(--spacing-sm);
 }
 
-.group-level-control input { flex: 1; min-width: 0; }
-.group-level-control output { min-width: 7ch; text-align: end; font-variant-numeric: tabular-nums; }
+.group-level-control input {
+  flex: 1;
+  min-width: 0;
+  min-height: max(24px, var(--settings-control-height));
+  margin: 0;
+}
+
+.group-level-control input:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+  border-radius: var(--control-radius);
+}
+
+.group-level-control input::-webkit-slider-runnable-track {
+  height: 6px;
+  background: var(--color-background);
+}
+
+.group-level-control input::-webkit-slider-thumb {
+  width: 23px;
+  height: 16px;
+  margin-top: -6px;
+  background: linear-gradient(90deg, var(--color-accent), var(--color-accent)) center / 2px 65% no-repeat,
+    var(--color-surface-raised);
+}
+
+.group-level-control input::-moz-range-track {
+  height: 6px;
+  background: var(--color-background);
+}
+
+.group-level-control input::-moz-range-thumb {
+  width: 21px;
+  height: 14px;
+  background: linear-gradient(90deg, var(--color-accent), var(--color-accent)) center / 2px 65% no-repeat,
+    var(--color-surface-raised);
+}
+
+.group-level-control input:disabled { opacity: .5; }
+
+.group-level-control output {
+  min-width: 9ch;
+  padding: 2px var(--spacing-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  background: var(--color-control);
+  color: var(--color-text-primary);
+  text-align: end;
+  font: var(--type-metadata-size) var(--font-mono);
+  white-space: nowrap;
+}
 
 .properties-content:has(.playback-panel) {
   grid-template-columns: minmax(0, 1fr);
