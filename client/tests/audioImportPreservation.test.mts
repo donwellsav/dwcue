@@ -179,6 +179,43 @@ test('missing waveform admits only decoder-verified media at the same file revis
   await assert.rejects(build('/show/clip.wav', {}, 0));
 });
 
+test('folder imports group only prepared files, append retries and roll back failed saves', async () => {
+  const items: any[] = [];
+  let bad = true;
+  let saved = true;
+  const runImport = compile(section(playlist, 'const importFromServerPaths =', 'const handleAddGroup ='), {
+    ...project,
+    currentProject: { value: { items } }, projectEpoch: { value: 2 }, crypto,
+    t: (key: string) => key, getAllItemsFlat: () => items,
+    findItemByUuid: (uuid: string) => items.find(item => item.uuid === uuid),
+    addItem: (item: any, parent?: number[]) => {
+      (parent ? items[parent[0]!]!.children : items).push(item);
+    },
+    removeItem: (uuid: string) => { items.splice(items.findIndex(item => item.uuid === uuid), 1); },
+    prepareImportFromServerPath: async (path: string, _signal: unknown, _offset: number, _name: string,
+      _mode: string, _policy: string, resultIndex: number) => {
+      const failed = bad && path === 'missing.wav';
+      const result = { sourcePath: path, status: failed ? 'failed' : 'ready' };
+      return failed ? { result } : {
+        result, prepared: { audioItem: { uuid: path, waveform: {} }, resultIndex },
+      };
+    },
+    saveProject: async () => saved,
+  }, 'importFromServerPaths');
+  const first = await runImport(['intro.wav', 'missing.wav'], undefined, { groupName: 'Walk-in' });
+  assert.equal(first.imported, 1);
+  assert.equal(items[0]?.displayName, 'Walk-in');
+  assert.equal(items[0]?.children[0]?.uuid, 'intro.wav');
+  assert.equal(items[0]?.uuid, first.groupUuid);
+  bad = false;
+  await runImport(['missing.wav'], undefined, { groupName: 'Walk-in', existingGroupUuid: first.groupUuid });
+  assert.equal(items.length, 1);
+  assert.deepEqual(items[0].children.map((item: any) => item.uuid), ['intro.wav', 'missing.wav']);
+  saved = false;
+  await runImport(['outro.wav'], undefined, { groupName: 'Other' });
+  assert.equal(items.length, 1);
+});
+
 test('upload continues after a failed file and retries only the failed selection', async () => {
   const calls: string[] = [];
   const projectEpoch = ref(0);

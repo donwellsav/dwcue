@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -84,8 +85,9 @@ test('derives native media selection folders for POSIX and Windows paths', () =>
   assert.equal(pickerParentPath('D:\\Shows\\Act One\\intro.wav'), 'D:\\Shows\\Act One');
 });
 
-test('native pickers leave the operator window enabled and authorize one selection at a time', async () => {
-  const folder = path.join(tmpdir(), 'dwcue-picker');
+test('native pickers leave the operator window enabled and authorize one selection at a time', async (t) => {
+  const folder = await mkdtemp(path.join(tmpdir(), 'dwcue-picker-'));
+  t.after(() => rm(folder, { recursive: true, force: true }));
   const cases = new Map([
     ['select-project-folder', { selected: folder, authorization: 'root' }],
     ['select-project-file', { selected: path.join(folder, 'Show.dwcue'), authorization: 'project' }],
@@ -97,7 +99,8 @@ test('native pickers leave the operator window enabled and authorize one selecti
     readFileSync(new URL('../electron/main.js', import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   const code = source.statements.filter(node => {
     if (ts.isVariableStatement(node)) {
-      return node.declarationList.declarations.some(decl => decl.name.getText(source) === 'nativeFilePickerOpen');
+      return node.declarationList.declarations.some(decl =>
+        ['nativeFilePickerOpen', 'mediaPickerExtensions'].includes(decl.name.getText(source)));
     }
     if (ts.isFunctionDeclaration(node)) {
       return ['showNativeFilePicker', 'rememberNativePickerFolder', 'writeImportPreferences',
@@ -106,10 +109,10 @@ test('native pickers leave the operator window enabled and authorize one selecti
     if (!ts.isExpressionStatement(node) || !ts.isCallExpression(node.expression)) return false;
     const [channel] = node.expression.arguments;
     return node.expression.expression.getText(source) === 'ipcMain.handle'
-      && channel && ts.isStringLiteral(channel) && cases.has(channel.text);
+      && channel && ts.isStringLiteral(channel) && (cases.has(channel.text) || channel.text === 'select-media-folder');
   }).map(node => node.getText(source)).join('\n');
 
-  const handlers = new Map<string, () => Promise<string | string[] | null>>();
+  const handlers = new Map<string, () => Promise<unknown>>();
   const authorized: Array<[string, string, boolean]> = [];
   const warnings: string[] = [];
   const authorize = (kind: string) => (file: string, options?: { allowMissing?: boolean }) => {
@@ -134,6 +137,7 @@ test('native pickers leave the operator window enabled and authorize one selecti
       showSaveDialog: (...args: unknown[]) => choose(true, ...args),
     },
     fs: {
+      promises: { readdir },
       existsSync: () => true,
       statSync: () => ({ isFile: () => true }),
       writeFileSync() { throw new Error('Folder history is read-only'); },
@@ -180,4 +184,15 @@ test('native pickers leave the operator window enabled and authorize one selecti
   await assert.rejects(chooseFolder(), /Native panel could not open/);
   hold = undefined;
   assert.equal(await chooseFolder(), folder, 'a native failure must release the picker for a retry');
+
+  const nested = path.join(folder, 'Video');
+  await mkdir(nested);
+  const media = ['Cue 2.WAV', 'Cue 10.wav', path.join('Video', 'Opening.mp4')];
+  await Promise.all([...media, '.Hidden.wav', 'notes.pdf'].map(name => writeFile(path.join(folder, name), 'fixture')));
+  const pickMediaFolder = handlers.get('select-media-folder')!;
+  const batch = await pickMediaFolder() as { name: string; files: string[] };
+  assert.equal(batch.name, path.basename(folder));
+  assert.deepEqual([...batch.files], media.map(name => path.join(folder, name)));
+  canceled = true;
+  assert.equal(await pickMediaFolder(), null);
 });

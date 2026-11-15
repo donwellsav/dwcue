@@ -1299,7 +1299,7 @@ assert.match(
 );
 assert.match(
   audioImportModal,
-  /class="import-plan"[\s\S]*mediaDestination[\s\S]*destinationFallback[\s\S]*importSettings[\s\S]*knownSelectionCount[\s\S]*uploadedSizes/,
+  /selectedOfTotal[\s\S]*uploadedSizes[\s\S]*class="import-plan"[\s\S]*mediaDestination[\s\S]*destinationFallback[\s\S]*importSettings/,
   'local imports must show their destination, processing, selection count, and uploaded file sizes',
 );
 assert.match(

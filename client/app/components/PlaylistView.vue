@@ -1101,20 +1101,33 @@ const importFromServerPaths = async (
     };
   }
 
-  for (const [offset, entry] of prepared.entries()) {
-    entry.audioItem.index = [project.items.length + offset];
-    addItem(entry.audioItem);
+  const target = options?.groupName && options.existingGroupUuid
+    ? findItemByUuid(options.existingGroupUuid)
+    : undefined;
+  const existingGroup = target?.type === 'group' ? target : undefined;
+  const newGroup: GroupItem | undefined = options?.groupName && !existingGroup ? {
+    ...DEFAULT_GROUP_ITEM,
+    uuid: crypto.randomUUID(),
+    index: [project.items.length],
+    displayName: options.groupName,
+    type: 'group',
+    children: prepared.map(entry => entry.audioItem),
+  } : undefined;
+  if (newGroup) addItem(newGroup);
+  else {
+    for (const entry of prepared) addItem(entry.audioItem, existingGroup?.index);
   }
+  const addedUuids = newGroup ? [newGroup.uuid] : prepared.map(entry => entry.audioItem.uuid);
 
   if (signal?.aborted) {
-    for (const entry of prepared) removeItem(entry.audioItem.uuid);
+    for (const uuid of addedUuids) removeItem(uuid);
     return { success: false, imported: 0, error: t('spotifyImport.cancelled'), results };
   }
 
   const saved = await saveProject({ signal });
   if (!saved) {
     if (currentProject.value === project && projectEpoch.value === epoch) {
-      for (const entry of prepared) removeItem(entry.audioItem.uuid);
+      for (const uuid of addedUuids) removeItem(uuid);
     }
     return {
       success: false,
@@ -1142,6 +1155,7 @@ const importFromServerPaths = async (
   return {
     success: !failed,
     imported: prepared.length,
+    groupUuid: (newGroup ?? existingGroup)?.uuid,
     error: failed ? t('importAudio.partialFailure') : undefined,
     results,
   };

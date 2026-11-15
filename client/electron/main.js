@@ -3876,6 +3876,13 @@ ipcMain.handle('select-project-file', async (event) => {
   return authorizeOpenableFilePath(selectedPath);
 });
 
+const mediaPickerExtensions = [
+  'mp3', 'wav', 'aiff', 'aif', 'flac', 'ogg', 'oga', 'm4a', 'aac', 'mp2',
+  'wma', 'opus', 'ac3', 'amr', 'au', 'caf',
+  'mp4', 'm4v', 'mov', 'mkv', 'webm', 'avi', 'mpg', 'mpeg', 'm2ts', 'mts',
+  'wmv', 'flv', '3gp',
+];
+
 ipcMain.handle('select-audio-files', async (event) => {
   requireTrustedIpc(event);
   const result = await showNativeFilePicker(() => dialog.showOpenDialog({
@@ -3886,18 +3893,39 @@ ipcMain.handle('select-audio-files', async (event) => {
     // Video Output window.
     filters: [{
       name: 'Audio & video',
-      extensions: [
-        'mp3', 'wav', 'aiff', 'aif', 'flac', 'ogg', 'oga', 'm4a', 'aac', 'mp2',
-        'wma', 'opus', 'ac3', 'amr', 'au', 'caf',
-        'mp4', 'm4v', 'mov', 'mkv', 'webm', 'avi', 'mpg', 'mpeg', 'm2ts', 'mts',
-        'wmv', 'flv', '3gp',
-      ],
+      extensions: mediaPickerExtensions,
     }],
   }));
 
   if (result.canceled || result.filePaths.length === 0) return null;
   rememberNativePickerFolder('media', path.dirname(result.filePaths[0]));
   return result.filePaths.map(filePath => pathCapabilities.authorizeFile(filePath));
+});
+
+ipcMain.handle('select-media-folder', async (event) => {
+  requireTrustedIpc(event);
+  const result = await showNativeFilePicker(() => dialog.showOpenDialog({
+    defaultPath: nativePickerFolder('media'),
+    properties: ['openDirectory'],
+  }));
+  if (result.canceled || !result.filePaths.length) return null;
+  const folder = result.filePaths[0];
+  const remaining = [folder];
+  const files = [];
+  while (remaining.length) {
+    const dir = remaining.pop();
+    for (const entry of await fs.promises.readdir(dir, { withFileTypes: true })) {
+      if (entry.name.startsWith('.')) continue;
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) remaining.push(fullPath);
+      else if (entry.isFile() && mediaPickerExtensions.includes(path.extname(entry.name).slice(1).toLowerCase()))
+        files.push(fullPath);
+    }
+  }
+  // The authenticated local engine reads selected media through its file API.
+  rememberNativePickerFolder('media', folder);
+  files.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  return { name: path.basename(folder) || folder, files };
 });
 
 ipcMain.handle('get-import-preferences', (event) => {

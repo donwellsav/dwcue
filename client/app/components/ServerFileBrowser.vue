@@ -51,7 +51,11 @@
         </ul>
 
         <div v-if="canSelect" class="server-file-browser__footer">
-          <span class="sel-count">{{ selectedCountLabel }}</span>
+          <span class="sel-count" role="status">{{ selectedCountLabel }}</span>
+          <button type="button" class="btn" :disabled="loading || !!error || !selectablePaths.length"
+            @click="setSelection([...selectablePaths])">{{ t('importAudio.selectAll') }}</button>
+          <button type="button" class="btn" :disabled="!selected.length"
+            @click="setSelection([])">{{ t('importAudio.selectNone') }}</button>
           <button class="btn primary" :disabled="loading || !!error || selected.length === 0" @click="importSelected">
             {{ t('importAudio.importSelected') }}<span v-if="selected.length"> ({{ selected.length }})</span>
           </button>
@@ -127,6 +131,14 @@ const sortedEntries = computed(() => {
     return r !== 0 ? r : a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
   });
 });
+const selectablePaths = computed(() => sortedEntries.value
+  .filter(entry => entry.kind === 'file' && !isObviouslyNonMedia(entry))
+  .map(entry => entry.full_path));
+
+function setSelection(paths: string[]) {
+  selected.value = paths;
+  anchorIndex = -1;
+}
 
 const selectedCountLabel = computed(() =>
   selected.value.length ? t('importAudio.selectedCount', { count: selected.value.length }) : '');
@@ -310,6 +322,7 @@ watch([() => props.startPath, () => props.fallbackStartPath, () => String(server
 
   &__footer {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: flex-end;
     gap: 12px;

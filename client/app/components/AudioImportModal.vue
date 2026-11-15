@@ -31,33 +31,18 @@
              available without making operators navigate a filesystem first. -->
         <section v-if="tab === 'server'" class="pane">
           <template v-if="server.isLocalServer && hasElectron">
-            <p>{{ t('importAudio.localIntro') }}</p>
             <div class="row">
-              <button class="btn primary" :disabled="pickingLocal || busy" @click="pickLocal">
-                <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
-                {{ pickingLocal ? t('importAudio.verifying') : t('importAudio.chooseFiles') }}
+              <button type="button" class="btn" :disabled="pickingLocal || busy" @click="pickLocal()">
+                <span class="material-symbols-rounded" aria-hidden="true">audio_file</span>
+                {{ t('importAudio.chooseFiles') }}
               </button>
+              <button type="button" class="btn" :disabled="pickingLocal || busy" @click="pickLocal(true)">
+                <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
+                {{ t('importAudio.chooseFolder') }}
+              </button>
+              <span v-if="pickingLocal" class="status" role="status">{{ t('importAudio.readingSelection') }}</span>
             </div>
             <p v-if="localPickerError" class="picker-error" role="alert">{{ localPickerError }}</p>
-            <ul v-if="localPicked.length" class="uploaded">
-              <li v-for="(p, i) in localPicked"
-                  :key="p"
-                  :class="{ selected: selectedLocal.includes(p) }"
-                  @click="toggleLocal(p, i, $event)">
-                <span class="icon material-symbols-rounded">{{ isVideoPath(p) ? 'movie' : 'audio_file' }}</span>
-                <span class="name">{{ basename(p) }}</span>
-              </li>
-            </ul>
-            <div v-if="localPicked.length" class="list-footer">
-              <button class="btn primary" :disabled="!selectedLocal.length || busy || pickingLocal" @click="importLocalSelected">
-                {{ busy ? t('importAudio.verifying') : t('importAudio.importSelected') }}<span v-if="selectedLocal.length"> ({{ selectedLocal.length }})</span>
-              </button>
-            </div>
-            <details class="source-browser">
-              <summary>{{ t('importProject.fromServer') }}</summary>
-              <ServerFileBrowser :fallback-start-path="projectStartPath" @select="onServerPick" />
-              <p class="hint">{{ t('importAudio.serverHint') }}</p>
-            </details>
           </template>
           <template v-else>
             <ServerFileBrowser :fallback-start-path="projectStartPath" @select="onServerPick" />
@@ -67,8 +52,6 @@
 
         <!-- "Upload" tab — browser file picker, then upload to /api/upload -->
         <section v-else class="pane">
-          <p>{{ t('importAudio.uploadIntro') }}</p>
-
           <div class="row">
             <input
               ref="uploadInput"
@@ -78,9 +61,15 @@
               :accept="mediaAccept"
               @change="uploadSelectedFiles"
             >
-            <button class="btn primary" :disabled="uploading || busy" @click="uploadInput?.click()">
-              <span class="material-symbols-rounded" style="font-size:16px;vertical-align:middle;">folder_open</span>
-              {{ uploading ? t('importAudio.uploading') : t('importAudio.chooseFiles') }}
+            <input ref="uploadFolderInput" class="file-input" type="file" webkitdirectory
+              @change="uploadSelectedFiles($event, true)">
+            <button type="button" class="btn" :disabled="uploading || busy" @click="uploadInput?.click()">
+              <span class="material-symbols-rounded" aria-hidden="true">audio_file</span>
+              {{ t('importAudio.chooseFiles') }}
+            </button>
+            <button type="button" class="btn" :disabled="uploading || busy" @click="uploadFolderInput?.click()">
+              <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
+              {{ t('importAudio.chooseFolder') }}
             </button>
             <span v-if="uploadStatus" class="status" role="status" aria-live="polite">
               {{ uploadStatus }}
@@ -98,25 +87,39 @@
             </ul>
           </section>
 
-          <ul v-if="uploadedThisSession.length" class="uploaded">
-            <li v-for="(p, i) in uploadedThisSession"
-                :key="p"
-                :class="{ selected: selectedUploaded.includes(p) }"
-                @click="toggleUploaded(p, i, $event)">
-              <span class="icon material-symbols-rounded">{{ isVideoPath(p) ? 'movie' : 'audio_file' }}</span>
-              <span class="name">{{ basename(p) }}</span>
-              <span v-if="uploadedSizes[p] !== undefined" class="size">
-                {{ formatBytes(uploadedSizes[p]) }}
-              </span>
-            </li>
-          </ul>
-          <div v-if="uploadedThisSession.length" class="list-footer">
-            <button class="btn primary" :disabled="!selectedUploaded.length || busy" @click="importUploadedSelected">
-              {{ busy ? t('importAudio.verifying') : t('importAudio.importSelected') }}<span v-if="selectedUploaded.length"> ({{ selectedUploaded.length }})</span>
-            </button>
-          </div>
         </section>
 
+        <section v-if="stagedPaths.length" class="staged-media" :aria-label="t('importAudio.filesToImport')">
+          <div class="batch-controls">
+            <span class="selection-count" role="status">{{ t('importAudio.selectedOfTotal', { count: stagedSelection.length, total: stagedPaths.length }) }}</span>
+            <button type="button" class="btn small" :disabled="stagingBusy || stagedSelection.length === stagedPaths.length"
+              @click="setStagedSelection([...stagedPaths])">{{ t('importAudio.selectAll') }}</button>
+            <button type="button" class="btn small" :disabled="stagingBusy || !stagedSelection.length"
+              @click="setStagedSelection([])">{{ t('importAudio.selectNone') }}</button>
+            <label v-if="stagedFolder" class="group-option" :title="stagedFolder">
+              <input v-model="importAsGroup" type="checkbox" :disabled="stagingBusy">
+              <span>{{ t('importAudio.importAsGroup') }}</span>
+              <strong>{{ stagedFolder }}</strong>
+            </label>
+            <button type="button" class="btn primary import-selected" :disabled="stagingBusy || !stagedSelection.length"
+              @click="importStaged">{{ t('importAudio.importSelected') }}</button>
+          </div>
+          <ul class="uploaded">
+            <li v-for="(p, i) in stagedPaths" :key="p" :class="{ selected: selectedPaths.has(p) }">
+              <label class="staged-row" :title="p">
+                <input type="checkbox" :checked="selectedPaths.has(p)" :disabled="stagingBusy"
+                  @click="toggleStaged(p, i, $event)">
+                <span class="icon material-symbols-rounded" aria-hidden="true">{{ isVideoPath(p) ? 'movie' : 'audio_file' }}</span>
+                <span class="name">{{ basename(p) }}</span>
+                <span v-if="tab === 'upload' && uploadedSizes[p] !== undefined" class="size">{{ formatBytes(uploadedSizes[p]) }}</span>
+              </label>
+            </li>
+          </ul>
+        </section>
+        <details v-if="tab === 'server' && server.isLocalServer && hasElectron" class="source-browser" @toggle="onBrowseToggle">
+          <summary>{{ t('importProject.fromServer') }}</summary>
+          <ServerFileBrowser v-if="browsingLocalServer" :fallback-start-path="projectStartPath" @select="onServerPick" />
+        </details>
         <p class="hint">{{ t('importAudio.preserveAudio') }}</p>
         </div>
 
@@ -143,12 +146,6 @@
           </section>
 
           <section class="import-plan" :aria-label="t('importAudio.planTitle')">
-            <div class="plan-heading">
-              <h3 v-if="!docked">{{ t('importAudio.planTitle') }}</h3>
-              <span v-if="knownSelectionCount !== null" class="plan-count">
-                {{ t('importAudio.selectedCount', { count: knownSelectionCount }) }}
-              </span>
-            </div>
             <dl class="plan-grid">
               <div>
                 <dt>{{ t('importAudio.destination') }}</dt>
@@ -175,7 +172,7 @@
           </section>
         </component>
 
-        <section v-if="result" class="import-results" aria-live="polite">
+        <section v-if="result && !busy" class="import-results" aria-live="polite">
           <div class="result-heading">
             <h3>{{ t('importAudio.resultsTitle') }}</h3>
             <div class="result-actions">
@@ -229,9 +226,11 @@ import ServerFileBrowser from '~/components/ServerFileBrowser.vue';
 type FileMode = 'copy' | 'link';
 type DuplicatePolicy = 'reuse' | 'skip' | 'keep';
 type ImportStatus = 'ready' | 'warning' | 'failed' | 'skipped';
+type ImportOptions = { fileMode: FileMode; duplicatePolicy: DuplicatePolicy; groupName?: string; existingGroupUuid?: string };
 interface ImportResult {
   success: boolean;
   imported: number;
+  groupUuid?: string;
   results: Array<{
     sourcePath: string;
     displayName: string;
@@ -257,7 +256,7 @@ const props = defineProps<{
   progress?: { current: number; total: number; name: string } | null;
 }>();
 const emit  = defineEmits<{
-  (e: 'pick', serverPaths: string[], options: { fileMode: FileMode; duplicatePolicy: DuplicatePolicy }): void;
+  (e: 'pick', serverPaths: string[], options: ImportOptions): void;
   (e: 'cancel'): void;
   (e: 'close'): void;
 }>();
@@ -310,33 +309,38 @@ watch([projectEpoch, () => server.serverUrl, () => server.projectSessionId], () 
   uploading.value = false;
   uploadedThisSession.value = [];
   selectedUploaded.value = [];
+  uploadedFolder.value = '';
   uploadedSizes.value = {};
   failedUploads.value = [];
   uploadStatus.value = '';
 });
 const uploadedAnchor      = { i: -1 };
 const uploadInput          = ref<HTMLInputElement | null>(null);
+const uploadFolderInput    = ref<HTMLInputElement | null>(null);
 const mediaAccept = [
   'mp3', 'wav', 'aiff', 'aif', 'flac', 'ogg', 'oga', 'm4a', 'aac', 'mp2',
   'wma', 'opus', 'ac3', 'amr', 'au', 'caf', 'mp4', 'm4v', 'mov', 'mkv',
   'webm', 'avi', 'mpg', 'mpeg', 'm2ts', 'mts', 'wmv', 'flv', '3gp',
 ].map(extension => '.' + extension).join(',');
 type ImportSource = 'server' | 'local' | 'upload';
-const lastImportSource = ref<ImportSource>('local');
+let lastImportOptions: ImportOptions = { fileMode: 'copy', duplicatePolicy: 'reuse' };
 
 // Local file picker (used when server is local — same machine, so local paths = server paths)
 const hasElectron = !!(globalThis as any).electronAPI?.selectAudioFiles;
+const browsingLocalServer = ref(false);
 const localPicked  = ref<string[]>([]);
 const selectedLocal = ref<string[]>([]);
+const localFolder = ref('');
+const uploadedFolder = ref('');
+const importAsGroup = ref(false);
 const localPickerError = ref('');
 const localAnchor   = { i: -1 };
 const pickingLocal = ref(false);
-const knownSelectionCount = computed<number | null>(() => {
-  if (tab.value === 'upload') return selectedUploaded.value.length;
-  if (localPicked.value.length) return selectedLocal.value.length;
-  // ServerFileBrowser owns and displays its own selection count.
-  return null;
-});
+const stagedPaths = computed(() => tab.value === 'upload' ? uploadedThisSession.value : localPicked.value);
+const stagedSelection = computed(() => tab.value === 'upload' ? selectedUploaded.value : selectedLocal.value);
+const selectedPaths = computed(() => new Set(stagedSelection.value));
+const stagedFolder = computed(() => tab.value === 'upload' ? uploadedFolder.value : localFolder.value);
+const stagingBusy = computed(() => props.busy || pickingLocal.value || uploading.value);
 
 // Browse-time hint only (container extension); the authoritative flag is the
 // server's has_video probe, attached to the item at import.
@@ -355,8 +359,13 @@ function close()       { if (!props.busy && !pickingLocal.value) emit('close'); 
 watch([() => props.result, () => props.busy], ([result, busy]) => {
   if (!result || busy) return;
   const finished = new Set(result.results.filter(item => item.status !== 'failed').map(item => item.sourcePath));
+  localPicked.value = localPicked.value.filter(path => !finished.has(path));
+  uploadedThisSession.value = uploadedThisSession.value.filter(path => !finished.has(path));
   selectedLocal.value = selectedLocal.value.filter(path => !finished.has(path));
   selectedUploaded.value = selectedUploaded.value.filter(path => !finished.has(path));
+  if (!localPicked.value.length) localFolder.value = '';
+  if (!uploadedThisSession.value.length) uploadedFolder.value = '';
+  localAnchor.i = uploadedAnchor.i = -1;
   if (result.results.length > 0 && result.results.every(item => item.status !== 'failed')) close();
 });
 function basename(p: string): string { return p.split(/[\\/]/).pop() || p; }
@@ -366,20 +375,25 @@ function onServerPick(serverPaths: string[]) {
   if (serverPaths.length && !props.busy) emitPick(serverPaths, 'server');
 }
 
-function importLocalSelected() {
-  if (selectedLocal.value.length && !props.busy) emitPick([...selectedLocal.value], 'local');
+function onBrowseToggle(event: Event) {
+  browsingLocalServer.value = (event.target as HTMLDetailsElement).open;
 }
 
-function importUploadedSelected() {
-  if (selectedUploaded.value.length && !props.busy) emitPick([...selectedUploaded.value], 'upload');
+function importStaged() {
+  if (stagedSelection.value.length && !stagingBusy.value) {
+    emitPick(stagedPaths.value.filter(path => selectedPaths.value.has(path)),
+      tab.value === 'upload' ? 'upload' : 'local');
+  }
 }
 
-function emitPick(paths: string[], source: ImportSource = lastImportSource.value) {
-  lastImportSource.value = source;
-  const options = source === 'upload'
-    ? { fileMode: 'copy' as const, duplicatePolicy: 'reuse' as const }
+function emitPick(paths: string[], source: ImportSource) {
+  lastImportOptions = source === 'upload'
+    ? { fileMode: 'copy', duplicatePolicy: 'reuse' }
     : { fileMode: fileMode.value, duplicatePolicy: duplicatePolicy.value };
-  emit('pick', paths, options);
+  if (source !== 'server' && importAsGroup.value && stagedFolder.value) {
+    lastImportOptions.groupName = stagedFolder.value;
+  }
+  emit('pick', paths, lastImportOptions);
 }
 
 const failedPaths = computed(() => props.result?.results
@@ -387,7 +401,12 @@ const failedPaths = computed(() => props.result?.results
   .map(item => item.sourcePath) ?? []);
 
 function retryFailed() {
-  if (failedPaths.value.length) emitPick(failedPaths.value, lastImportSource.value);
+  if (!failedPaths.value.length || stagingBusy.value) return;
+  lastImportOptions = {
+    ...lastImportOptions,
+    existingGroupUuid: props.result?.groupUuid ?? lastImportOptions.existingGroupUuid,
+  };
+  emit('pick', failedPaths.value, lastImportOptions);
 }
 async function openMediaFolder() {
   if (hasElectron && projectStartPath.value) {
@@ -430,33 +449,55 @@ function clickSelect(
     : [...current, item];
 }
 
-function toggleLocal(item: string, index: number, e: MouseEvent) {
-  selectedLocal.value = clickSelect(localPicked.value, selectedLocal.value, localAnchor, item, index, e);
+function setStagedSelection(paths: string[]) {
+  if (tab.value === 'upload') selectedUploaded.value = paths;
+  else selectedLocal.value = paths;
+  localAnchor.i = uploadedAnchor.i = -1;
 }
 
-function toggleUploaded(item: string, index: number, e: MouseEvent) {
-  selectedUploaded.value = clickSelect(uploadedThisSession.value, selectedUploaded.value, uploadedAnchor, item, index, e);
+function toggleStaged(item: string, index: number, e: MouseEvent) {
+  if (tab.value === 'upload') {
+    selectedUploaded.value = clickSelect(uploadedThisSession.value, selectedUploaded.value, uploadedAnchor, item, index, e);
+  } else {
+    selectedLocal.value = clickSelect(localPicked.value, selectedLocal.value, localAnchor, item, index, e);
+  }
+  (e.currentTarget as HTMLInputElement).checked = selectedPaths.value.has(item);
 }
 
-async function pickLocal() {
-  const api: any = (globalThis as any).electronAPI;
+async function pickLocal(fromFolder = false) {
+  const api = window.electronAPI;
   if (!api?.selectAudioFiles || pickingLocal.value) return;
   const project = currentProject.value;
   pickingLocal.value = true;
   localPickerError.value = '';
   try {
-    const paths: string[] | null = await api.selectAudioFiles();
-    if (paths?.length && props.open && currentProject.value === project) {
-      for (const p of paths) {
-        if (!localPicked.value.includes(p)) {
-          localPicked.value.push(p);
-          selectedLocal.value.push(p);   // pre-select newly picked files
-        }
+    const folder = fromFolder ? await api.selectMediaFolder() : null;
+    const paths = fromFolder ? folder?.files : await api.selectAudioFiles();
+    if (!paths || !props.open || currentProject.value !== project) return;
+    if (folder) {
+      if (!paths.length) {
+        localPickerError.value = t('importAudio.emptyMediaFolder');
+        return;
       }
+      localFolder.value = folder.name;
+      importAsGroup.value = false;
+      localPicked.value = paths;
+      selectedLocal.value = [...paths];
+      localAnchor.i = -1;
+    } else {
+      const existing = new Set(localPicked.value);
+      const added = paths.filter(path => !existing.has(path));
+      localPicked.value = [...localPicked.value, ...added];
+      selectedLocal.value = [...selectedLocal.value, ...added];
     }
   } catch (error) {
     if (props.open && currentProject.value === project) {
-      localPickerError.value = error instanceof Error ? error.message : String(error);
+      if (fromFolder) {
+        console.warn('Could not read the selected media folder:', error);
+        localPickerError.value = t('importAudio.folderReadFailed');
+      } else {
+        localPickerError.value = error instanceof Error ? error.message : String(error);
+      }
     }
   } finally {
     pickingLocal.value = false;
@@ -464,10 +505,29 @@ async function pickLocal() {
 }
 
 // File-backed browser uploads avoid copying audio through Electron IPC.
-async function uploadSelectedFiles(event: Event) {
+async function uploadSelectedFiles(event: Event, fromFolder = false) {
   const input = event.target as HTMLInputElement;
-  const files = Array.from(input.files ?? []);
+  let files = Array.from(input.files ?? []);
   input.value = '';
+  if (!files.length || uploading.value || props.busy) return;
+  if (fromFolder) {
+    const name = files[0]!.webkitRelativePath.split('/')[0] || '';
+    const extensions = new Set(mediaAccept.split(','));
+    files = files.filter(file =>
+      !file.webkitRelativePath.split('/').slice(1).some(part => part.startsWith('.')) &&
+      extensions.has(file.name.match(/\.[^.]+$/)?.[0].toLowerCase() ?? ''),
+    ).sort((a, b) => a.webkitRelativePath.localeCompare(b.webkitRelativePath, undefined, { numeric: true }));
+    if (!files.length) {
+      uploadStatus.value = t('importAudio.emptyMediaFolder');
+      return;
+    }
+    uploadedFolder.value = name;
+    importAsGroup.value = false;
+    uploadedThisSession.value = [];
+    selectedUploaded.value = [];
+    uploadedAnchor.i = -1;
+    failedUploads.value = [];
+  }
   await uploadFiles(files);
 }
 
@@ -590,13 +650,6 @@ function formatBytes(n: number): string {
 
   .pane { display: flex; flex-direction: column; gap: 10px; }
   .hint { font-size: 11px; color: var(--color-text-tertiary); margin: 0; }
-  .divider {
-    display: flex; align-items: center; gap: 8px;
-    font-size: 11px; color: var(--color-text-tertiary); margin: 4px 0;
-
-    &::before, &::after { content: ''; flex: 1; border-top: 1px solid var(--color-border); }
-  }
-
   .source-browser,
   .import-advanced {
     border: 1px solid var(--color-border);
@@ -643,16 +696,44 @@ function formatBytes(n: number): string {
     border: 1px solid var(--color-border); border-radius: var(--control-radius); background: var(--color-background);
     max-height: 200px; overflow: auto;
     li {
-      display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 8px; align-items: center;
-      padding: 6px 10px; border-bottom: 1px solid var(--color-border); cursor: pointer;
+      border-bottom: 1px solid var(--color-border);
+      &:last-child { border-bottom: 0; }
       &:hover { background: var(--color-surface-hover); }
-      &.selected { background: var(--color-accent); .name, .icon, .size { color: var(--color-text-on-accent); } }
-      .icon { font-size: 18px; color: var(--color-accent); }
+      &.selected { background: var(--color-surface-raised); }
+      .icon { font-size: 16px; color: var(--color-text-secondary); }
       .name { color: var(--color-text-primary); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
       .size { color: var(--color-text-tertiary); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
     }
   }
-  .list-footer { display: flex; justify-content: flex-end; }
+  .staged-row {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    min-height: 30px;
+    padding: 3px 8px;
+    cursor: pointer;
+  }
+  .batch-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+  .selection-count { color: var(--color-text-secondary); font-size: var(--type-metadata-size); font-variant-numeric: tabular-nums; }
+  .group-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 100%;
+    min-width: 0;
+    color: var(--color-text-primary);
+    font-size: var(--type-metadata-size);
+    strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    span { flex-shrink: 0; }
+  }
+  .import-selected { margin-inline-start: auto; }
   .import-progress {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
     color: var(--color-text-secondary); font-size: 11px;
@@ -669,12 +750,6 @@ function formatBytes(n: number): string {
   .import-plan {
     border-top: 1px solid var(--color-border);
     padding-top: 10px;
-  }
-  .plan-heading {
-    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
-    margin-bottom: 8px;
-    h3 { margin: 0; color: var(--color-text-primary); font-size: 12px; font-weight: 650; }
-    .plan-count { color: var(--color-text-secondary); font-size: 11px; font-variant-numeric: tabular-nums; }
   }
   .plan-grid {
     display: grid; gap: 8px; margin: 0;
@@ -720,6 +795,12 @@ function formatBytes(n: number): string {
 }
 
 .workspace-import-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 23rem);
+  align-content: start;
+  align-items: start;
+  gap: var(--spacing-sm);
+  padding: var(--workspace-gutter);
   .tabs {
     order: 1;
     grid-column: 1 / -1;
@@ -742,7 +823,6 @@ function formatBytes(n: number): string {
   .import-options { padding: 0; border: 0; }
   .import-options select { min-height: var(--settings-control-height); }
   .import-plan { padding-top: var(--spacing-xs); }
-  .plan-heading:empty { display: none; }
   .pane, .import-source, .plan-grid { gap: var(--spacing-xs); }
   .pane > p { margin: 0; }
   .import-progress, .import-results { grid-column: 1 / -1; }
@@ -752,5 +832,9 @@ function formatBytes(n: number): string {
   .import-results li { grid-template-columns: 58px minmax(0, 1fr) auto; }
   .import-results .result-details { white-space: normal; }
   .import-results .result-reason { overflow-wrap: anywhere; }
+}
+
+@container (max-width: 760px) {
+  .workspace-import-body { grid-template-columns: minmax(0, 1fr); }
 }
 </style>
