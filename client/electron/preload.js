@@ -35,6 +35,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ensureDirectory: (dirPath) => ipcRenderer.invoke('ensure-directory', dirPath),
   openFolder: (folderPath) => ipcRenderer.invoke('open-folder', folderPath),
   getImportPreferences: () => ipcRenderer.invoke('get-import-preferences'),
+  authorizeDroppedSpotifyFolder: (file) => {
+    const folder = webUtils?.getPathForFile(file);
+    return folder ? ipcRenderer.invoke('authorize-dropped-spotify-folder', folder) : Promise.resolve('');
+  },
   setSpotifyImportDestination: (destination) =>
     ipcRenderer.invoke('set-spotify-import-destination', destination),
   setSpotifyImportRecovery: (recovery) =>

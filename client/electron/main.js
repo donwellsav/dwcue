@@ -3950,6 +3950,12 @@ ipcMain.handle('get-import-preferences', (event) => {
   return { ...response, preferencesSaved: !unsavedImportPreferences };
 });
 
+// The preload only calls this with a path extracted from an OS-backed File.
+ipcMain.handle('authorize-dropped-spotify-folder', (event, folder) => {
+  requireTrustedIpc(event);
+  return pathCapabilities.authorizeRoot(requireAbsoluteIpcPath(folder, 'folder'));
+});
+
 ipcMain.handle('set-spotify-import-destination', (event, destination) => {
   requireTrustedIpc(event);
   destination = requireAuthorizedIpcPath(destination, 'destination');

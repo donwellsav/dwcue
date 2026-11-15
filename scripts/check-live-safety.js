@@ -1678,8 +1678,8 @@ assert.match(
 );
 assert.match(
   spotifyModal,
-  /await api\.selectProjectFolder\(\)[\s\S]*destinationParentPath[\s\S]*api\.downloadSpotifyAudio\([\s\S]*destinationParentPath/,
-  'Spotify imports must let the operator choose the template parent folder',
+  /<ServerFilePickerModal[^>]*\bdocked\b[^>]*mode="directory"[^>]*@pick="saveDestination"[\s\S]*api\.setSpotifyImportDestination\(selected\)[\s\S]*api\.downloadSpotifyAudio\([\s\S]*destinationParentPath/,
+  'Spotify imports must use the docked browser and keep the authorized destination in the job',
 );
 assert.match(
   spotifyModal,

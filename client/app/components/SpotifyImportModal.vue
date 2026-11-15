@@ -1,5 +1,26 @@
 <template>
-  <form v-if="open" v-show="visible" class="workspace-import-body spotify-import"
+  <section v-if="open && destinationPickerOpen" v-show="visible" class="spotify-destination-picker"
+    :aria-label="t('spotifyImport.destination')">
+    <div class="destination-picker-bar" @dragover.stop.prevent @drop.stop.prevent="onDestinationDrop">
+      <p>{{ t('spotifyImport.dropDestinationFolder') }}</p>
+      <button v-if="!server.isLocalServer && !isChoosingDestination" type="button" class="btn"
+        @click="closeDestinationPicker">{{ t('common.cancel') }}</button>
+    </div>
+    <p v-if="destinationError" class="destination-picker-error" role="alert">{{ destinationError }}</p>
+    <p v-if="isChoosingDestination" role="status">{{ t('importAudio.readingSelection') }}</p>
+    <ServerFilePickerModal v-else-if="server.isLocalServer" docked :open="true" mode="directory" filter="all"
+      :filter-options="[]" :fallback-start-path="destinationParentPath || projectFolderPath"
+      location-context="spotify-destination" :confirm-label="t('spotifyImport.chooseDestination')"
+      @pick="saveDestination" @close="closeDestinationPicker" />
+    <form v-else class="destination-picker-path" @submit.prevent="saveDestination(destinationDraft)">
+      <input v-model.trim="destinationDraft" class="field-input" type="text"
+        :aria-label="t('spotifyImport.destination')" :placeholder="t('spotifyImport.destinationNotSelected')" />
+      <button type="submit" class="btn primary" :disabled="!destinationDraft">
+        {{ t('spotifyImport.chooseDestination') }}
+      </button>
+    </form>
+  </section>
+  <form v-else-if="open" v-show="visible" class="workspace-import-body spotify-import"
     :class="{ 'has-review': reviewState && !isBusy, 'is-busy': isBusy }" @submit.prevent="handleSubmit">
     <div v-if="!reviewState || isBusy || resultState || progressState || errorMessage || preferencesWarning"
       class="import-column spotify-controls">
@@ -212,7 +233,7 @@
               type="button"
               class="btn compact"
               :disabled="isBusy || isChoosingDestination || hasLockedDestination"
-              @click="chooseDestination"
+              @click="openDestinationPicker()"
             >
               <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
               <span>
@@ -419,6 +440,13 @@ const isReviewing = ref(false);
 const isCancelling = ref(false);
 const isImportingCues = ref(false);
 const isChoosingDestination = ref(false);
+const destinationPickerOpen = ref(false);
+const destinationDraft = ref('');
+const destinationError = ref('');
+let destinationRevision = 0;
+let downloadAfterDestination = false;
+watch([() => props.open, () => props.visible, currentEpoch, () => server.serverUrl, () => server.projectSessionId],
+  closeDestinationPicker, { flush: 'sync' });
 const importAbortController = ref<AbortController | null>(null);
 const retryingFailed = ref(false);
 const pendingRecoveryFiles = ref<string[]>([]);
@@ -643,23 +671,49 @@ function updateBooleanSetting(key: string, event: Event) {
   void persistProjectSetting({ [key]: (event.target as HTMLInputElement).checked });
 }
 
-async function chooseDestination(): Promise<string> {
+function openDestinationPicker(download = false) {
+  if (!getSpotifyApi() || isBusy.value || hasLockedDestination.value) return;
+  downloadAfterDestination = download;
+  destinationDraft.value = destinationParentPath.value;
+  destinationPickerOpen.value = true;
+}
+
+function closeDestinationPicker() {
+  ++destinationRevision;
+  destinationPickerOpen.value = false;
+  destinationError.value = '';
+  isChoosingDestination.value = false;
+  downloadAfterDestination = false;
+}
+
+function onDestinationDrop(event: DragEvent) {
+  const file = event.dataTransfer?.files[0];
+  if (file) void saveDestination(file);
+}
+
+async function saveDestination(path: string | File) {
   const api = getSpotifyApi();
-  if (!api || isActive.value || isChoosingDestination.value || hasLockedDestination.value) return '';
-  const epoch = props.projectEpoch;
+  if (!api || !destinationPickerOpen.value || isBusy.value || isChoosingDestination.value || hasLockedDestination.value) return;
+  const revision = ++destinationRevision;
+  destinationError.value = '';
   isChoosingDestination.value = true;
   try {
-    const selected = await api.selectProjectFolder();
-    if (!selected || !props.open || currentEpoch.value !== epoch) return '';
-    preferencesWarning.value = !await api.setSpotifyImportDestination(selected);
-    if (!props.open || currentEpoch.value !== epoch) return '';
+    const selected = typeof path === 'string' ? path : await api.authorizeDroppedSpotifyFolder(path);
+    if (revision !== destinationRevision) return;
+    if (!selected) throw new Error(t('spotifyImport.destinationFailed'));
+    const saved = await api.setSpotifyImportDestination(selected);
+    if (revision !== destinationRevision) return;
+    preferencesWarning.value = !saved;
     destinationParentPath.value = selected;
-    return selected;
-  } catch (error: any) {
-    errorMessage.value = error?.message || t('spotifyImport.destinationFailed');
-    return '';
+    const download = downloadAfterDestination;
+    closeDestinationPicker();
+    if (download) void startDownload();
+  } catch (error: unknown) {
+    if (revision === destinationRevision) {
+      destinationError.value = error instanceof Error ? error.message : t('spotifyImport.destinationFailed');
+    }
   } finally {
-    isChoosingDestination.value = false;
+    if (revision === destinationRevision) isChoosingDestination.value = false;
   }
 }
 
@@ -1003,14 +1057,14 @@ async function startDownload() {
   }
   if (!props.projectFolderPath || isActive.value) return;
   if (!reviewState.value || selectedTrackIds.value.length === 0) return;
+  if (!destinationParentPath.value) {
+    openDestinationPicker(true);
+    return;
+  }
 
   const projectFolderPath = props.projectFolderPath;
   const projectEpoch = props.projectEpoch;
-  const destinationParentPathForJob =
-    destinationParentPath.value || await chooseDestination();
-  if (!destinationParentPathForJob ||
-      props.projectFolderPath !== projectFolderPath ||
-      currentEpoch.value !== projectEpoch) return;
+  const destinationParentPathForJob = destinationParentPath.value;
 
   const jobId = crypto.randomUUID();
   const retry = retryingFailed.value;
@@ -1236,6 +1290,25 @@ function resetState() {
 </script>
 
 <style scoped lang="scss">
+.spotify-destination-picker {
+  display: grid;
+  gap: var(--spacing-xs);
+  padding: var(--workspace-gutter);
+  > p { margin: 0; font-size: var(--type-metadata-size); }
+  :deep(.picker-dock) { height: clamp(168px, 27vh, 225px); }
+}
+
+.destination-picker-bar,
+.destination-picker-path {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--type-metadata-size);
+  p, input { flex: 1; min-width: 0; margin: 0; }
+}
+
+.destination-picker-error { color: var(--color-danger); }
+
 .spotify-import { grid-template-columns: minmax(0, 1fr) minmax(0, 23rem); }
 
 .has-review .track-review {

@@ -62,6 +62,7 @@ declare global {
           updatedAt: number;
         } | null;
       }>;
+      authorizeDroppedSpotifyFolder: (file: File) => Promise<string>;
       setSpotifyImportDestination: (destination: string) => Promise<boolean>;
       setSpotifyImportRecovery: (recovery: {
         version: 1;
