@@ -617,3 +617,11 @@ The generated renderer and native NULL audio engine passed menu, warm file deliv
 The main window uses the lower panel for connection loss, show verification, and recovery choices (`7d68e57`). The workspace displays the last verified playlist while the controller checks the show and reads every page of its replacement. GO and editing wait for verification. Stop All remains usable by click, focused Space, the assigned shortcut, and Escape. If HTTP cannot reach the engine, the lower panel reports Stop All as unconfirmed.
 
 In Edit and Show Mode, the generated renderer and NULL audio engine kept the playlist visible through a failed second page and another disconnect. A show switch invalidated a response held after the old page was read. Failed recovery kept unsaved edits, and an explicit retry restored the verified show. Continue session on an empty engine restored the show without replaying a cue. The New Show and Open Project checks, 276 client tests, type checking, and renderer generation passed. Physical output acceptance remains in T24.
+
+## 15 November — Cue and standby image pickers
+
+Cue Image in Properties and Standby Image in Video Output settings use the existing lower file browser (`e47b31a`). Chromium and the NULL audio engine verified both at 1200 × 700 and 845 × 690 with 110% text. Playlist arming, GO by click and Space, Stop All by click, and Escape from the path field worked with Stop All assigned to F9. Cancel returned to the editor and the browser remembered its folder.
+
+Picking a different cue closes an unconfirmed cue image browser. Once confirmed, a held copy updates its original cue even if the playlist selection changes. Opening another show while a standby copy is pending leaves the new show's standby unchanged. Both accepted images were byte-identical in the project media folder.
+
+The shared browser preserves a path entered while the initial folder is loading (`ac515e2`). Software tests held both a successful listing and a missing remembered folder until after path entry, then used Enter to open the typed folder. The New Show folder picker, 276 client tests, type checking, and renderer generation passed.
