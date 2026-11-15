@@ -147,7 +147,7 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
   const sessionLost = { value: true };
   const projectLoad = { value: null as 'open' | 'create' | null };
   const projectPanelOpen = { value: false };
-  const imagePicker = { value: null as 'cue' | 'standby' | null };
+  const filePicker = { value: null as 'cue' | 'standby' | 'replace-media' | null };
   const quickPlayImportSlot = { value: null as number | null };
   const server = {
     connected: true, connectionLost: false, showVerification: false,
@@ -155,9 +155,9 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
     stopAll: (...args: unknown[]) => calls.push(args),
   };
   const currentProject = { value: { playbackKeys: {} as Record<string, unknown> } };
-  const trap = Function('server', 'projectLoad', 'projectPanelOpen', 'imagePicker', 'quickPlayImportSlot',
+  const trap = Function('server', 'projectLoad', 'projectPanelOpen', 'filePicker', 'quickPlayImportSlot',
     'currentProject', 'DEFAULT_PLAYBACK_KEYS', 'bindingsMatch', 'eventToBinding', `${code}\nreturn trapKeydown;`)(
-    server, projectLoad, projectPanelOpen, imagePicker, quickPlayImportSlot, currentProject,
+    server, projectLoad, projectPanelOpen, filePicker, quickPlayImportSlot, currentProject,
     DEFAULT_PLAYBACK_KEYS, bindingsMatch, eventToBinding);
   const press = (key: string, opts = {}) => {
     let swallowed = false;
@@ -232,16 +232,16 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
 
   sessionLost.value = false;
   projectPanelOpen.value = false;
-  for (const picker of ['cue', 'standby'] as const) {
-    imagePicker.value = picker;
-    assert.equal(press('Escape', { target: editor }), true, `${picker} image browsing gives Escape to Stop All`);
-    assert.equal(imagePicker.value, picker);
+  for (const picker of ['cue', 'standby', 'replace-media'] as const) {
+    filePicker.value = picker;
+    assert.equal(press('Escape', { target: editor }), true, `${picker} file browsing gives Escape to Stop All`);
+    assert.equal(filePicker.value, picker);
     assert.equal(press(' '), false, 'GO still reaches the workspace');
     assert.equal(press('Enter', { target: editor }), false, 'Enter still reaches the path field');
   }
-  imagePicker.value = null;
+  filePicker.value = null;
   assert.equal(press('Escape', { target: editor }), false, 'the picker fallback ends on close');
-  assert.deepEqual(calls.slice(10), [[], []]);
+  assert.deepEqual(calls.slice(10), [[], [], []]);
 
   quickPlayImportSlot.value = 0;
   assert.equal(press('Escape', { target: editor }), true, 'QuickPlay slot 1 also routes Escape to Stop All');
@@ -251,7 +251,7 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
   assert.equal(press('Enter', { target: editor }), false, 'Enter still reaches the folder field');
   quickPlayImportSlot.value = null;
   assert.equal(press('Escape', { target: editor }), false, 'closing the import restores the normal mapping');
-  assert.deepEqual(calls.slice(12), [[]]);
+  assert.deepEqual(calls.slice(13), [[]]);
 });
 
 function loadHandleKeydown(dependencies: Record<string, unknown>) {

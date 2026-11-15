@@ -111,22 +111,19 @@ function loadHandleTrimSilence(dependencies: Record<string, unknown>) {
 
 function loadHandleReplaceMedia(dependencies: Record<string, unknown>) {
   const script = propertiesScript();
-  const start = script.indexOf('const handleReplaceMedia = async () => {');
+  const start = script.indexOf('const handleReplaceMedia = async (');
   const end = script.indexOf('const copyToClipboard = async', start);
   assert.ok(start >= 0 && end > start, 'replace-media handler must be present');
 
-  const handler = script
-    .slice(start, end)
-    .replaceAll('import.meta.client', 'client')
-    .replaceAll('window.electronAPI', 'electronAPI');
   const factorySource = `
     function buildHandleReplaceMedia(dependencies: Record<string, any>) {
       const {
-        client,
-        electronAPI,
+        filePicker,
+        replacementCheck,
         isReplacingMedia,
         audioItem,
         currentProject,
+        projectEpoch,
         replaceMediaError,
         replaceMediaStatus,
         t,
@@ -135,7 +132,7 @@ function loadHandleReplaceMedia(dependencies: Record<string, unknown>) {
         saveProject,
         originalSnapshot,
       } = dependencies;
-      ${handler}
+      ${script.slice(start, end)}
       return handleReplaceMedia;
     }
   `;
@@ -143,7 +140,9 @@ function loadHandleReplaceMedia(dependencies: Record<string, unknown>) {
     compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const buildHandleReplaceMedia = Function(`${compiled}; return buildHandleReplaceMedia;`)();
-  return buildHandleReplaceMedia(dependencies) as () => Promise<void>;
+  return buildHandleReplaceMedia({
+    filePicker: ref('replace-media'), replacementCheck: { value: null }, projectEpoch: ref(1), ...dependencies,
+  }) as (path: string) => Promise<void>;
 }
 
 function loadHandleSave(dependencies: Record<string, unknown>) {
@@ -591,11 +590,9 @@ test('replace media saves the final reactive item and snapshots the replacement'
   const replaceMediaStatus = ref('');
   const saveSnapshots: Record<string, unknown>[] = [];
   const regenerationCalls: Array<[string, string, boolean]> = [];
+  const filePicker = ref('replace-media');
   const handleReplaceMedia = loadHandleReplaceMedia({
-    client: true,
-    electronAPI: {
-      selectAudioFiles: async () => ['/media/replacement.wav'],
-    },
+    filePicker,
     isReplacingMedia,
     audioItem,
     currentProject: ref({ name: 'Current show' }),
@@ -620,7 +617,7 @@ test('replace media saves the final reactive item and snapshots the replacement'
     originalSnapshot,
   });
 
-  await handleReplaceMedia();
+  await handleReplaceMedia('/media/replacement.wav');
 
   assert.equal(saveSnapshots.length, 1);
   assert.equal(saveSnapshots[0]?.mediaFileName, 'replacement.wav');
@@ -635,6 +632,7 @@ test('replace media saves the final reactive item and snapshots the replacement'
   assert.equal(replaceMediaError.value, false);
   assert.equal(replaceMediaStatus.value, 'properties.replacementComplete');
   assert.equal(isReplacingMedia.value, false);
+  assert.equal(filePicker.value, null);
 
   item.mediaServerPath = '/media/changed-after-save.wav';
   assert.equal(originalSnapshot.value?.mediaServerPath, '/media/replacement.wav');
@@ -645,14 +643,11 @@ test('replace media restores and re-saves the original reactive item when save r
     type: 'audio',
     uuid: 'replace-rejected',
     mediaFileName: 'original.wav',
-    mediaPath: '',
-    mediaServerPath: '/media/original.wav',
+    mediaPath: 'media/original.wav',
     duration: 12,
     inPoint: 2,
     outPoint: 10,
     startNextTime: 9,
-    waveform: [0.1],
-    hasVideo: true,
   });
   const baseline = JSON.parse(JSON.stringify(item));
   const audioItem = ref(item);
@@ -664,10 +659,6 @@ test('replace media restores and re-saves the original reactive item when save r
   let saveCalls = 0;
   let regenerationCalls = 0;
   const handleReplaceMedia = loadHandleReplaceMedia({
-    client: true,
-    electronAPI: {
-      selectAudioFiles: async () => ['/media/rejected.wav'],
-    },
     isReplacingMedia,
     audioItem,
     currentProject: ref({ name: 'Current show' }),
@@ -675,11 +666,9 @@ test('replace media restores and re-saves the original reactive item when save r
     replaceMediaStatus,
     t: (key: string) => key,
     _server: {
-      fetchMetadata: async () => ({ valid: true, duration_ms: 6_000, has_video: false }),
+      fetchMetadata: async () => ({ valid: true, duration_ms: 6_000, has_video: true }),
       fetchWaveformByPath: async () => ({ duration_ms: 6_000, channels: [[0.75]] }),
-      copyToMedia: async () => {
-        throw new Error('linked media must not be copied');
-      },
+      copyToMedia: async () => '/show/media/rejected-2.wav',
       requestWaveformGeneration: async () => {
         regenerationCalls += 1;
       },
@@ -693,10 +682,11 @@ test('replace media restores and re-saves the original reactive item when save r
     originalSnapshot,
   });
 
-  await handleReplaceMedia();
+  await handleReplaceMedia('/incoming/rejected.wav');
 
   assert.equal(saveCalls, 2, 'the restored item must be persisted after the rejected save');
-  assert.equal(saveSnapshots[0]?.mediaFileName, 'rejected.wav');
+  assert.equal(saveSnapshots[0]?.mediaFileName, 'rejected-2.wav');
+  assert.equal(saveSnapshots[0]?.mediaPath, 'media/rejected-2.wav');
   assert.equal(saveSnapshots[0]?.duration, 6);
   assert.deepEqual(saveSnapshots[1], baseline);
   assert.deepEqual(JSON.parse(JSON.stringify(item)), baseline);
@@ -707,30 +697,43 @@ test('replace media restores and re-saves the original reactive item when save r
   assert.equal(isReplacingMedia.value, false);
 });
 
-test('a replacement selected in the native picker cannot change a different cue', async () => {
-  const first = { type: 'audio', mediaServerPath: '/first.wav' };
-  const second = { type: 'audio', mediaServerPath: '/second.wav' };
-  const audioItem = ref(first);
-  let probes = 0;
-  let choose!: (files: string[]) => void;
-  const selection = new Promise<string[]>(resolve => { choose = resolve; });
-  const replace = loadHandleReplaceMedia({
-    client: true, audioItem, currentProject: ref({ name: 'Show' }),
-    isReplacingMedia: ref(false),
-    electronAPI: { selectAudioFiles: () => selection },
-    replaceMediaError: ref(false), replaceMediaStatus: ref(''), t: (key: string) => key,
-    _server: {
-      fetchMetadata: async () => { probes += 1; return { valid: false }; },
-      fetchWaveformByPath: async () => ({ channels: [], duration_ms: 0 }),
-    },
-    buildWaveformFromChannels: () => null,
-  });
-  const pending = replace();
-  audioItem.value = second;
-  choose(['/replacement.wav']);
-  await pending;
-  assert.equal(probes, 0);
-  assert.deepEqual([first.mediaServerPath, second.mediaServerPath], ['/first.wav', '/second.wav']);
+test('replacement leaves the cue intact after a bad file, Cancel, or a cue or show change', async () => {
+  for (const reason of ['bad-file', 'cancel', 'change-cue', 'change-show']) {
+    const first = { type: 'audio', mediaPath: 'media/first.wav', duration: 12, inPoint: 2, outPoint: 10 };
+    const baseline = { ...first };
+    const audioItem = ref(first);
+    const projectEpoch = ref(1);
+    const replaceMediaStatus = ref('');
+    const replacementCheck = { value: null as AbortController | null };
+    let finishProbe!: () => void;
+    const probe = new Promise<void>(resolve => { finishProbe = resolve; });
+    let writes = 0;
+    const replace = loadHandleReplaceMedia({
+      audioItem, currentProject: ref({ name: 'Show' }), projectEpoch, replacementCheck,
+      isReplacingMedia: ref(false), replaceMediaError: ref(false), replaceMediaStatus,
+      t: (key: string) => key,
+      _server: {
+        fetchMetadata: async () => ({ valid: true, duration_ms: 6000 }),
+        fetchWaveformByPath: async () => {
+          await probe;
+          if (reason === 'bad-file') throw new Error('Decode failed');
+          return { channels: [[0.5]], duration_ms: 6000 };
+        },
+        copyToMedia: async () => { writes++; return '/media/replacement.wav'; },
+      },
+      buildWaveformFromChannels: () => [0.5],
+      saveProject: async () => { writes++; return true; },
+    });
+    const pending = replace('/incoming/replacement.wav');
+    if (reason === 'cancel') replacementCheck.value?.abort();
+    if (reason === 'change-cue') audioItem.value = { ...first, mediaPath: 'media/second.wav' };
+    if (reason === 'change-show') projectEpoch.value++;
+    finishProbe();
+    await pending;
+    assert.deepEqual(first, baseline, reason);
+    assert.equal(writes, 0, reason);
+    if (reason === 'bad-file') assert.equal(replaceMediaStatus.value, 'properties.replacementDecodeFailed');
+  }
 });
 
 test('rapid manual edit then trim survives a delayed local PATCH echo and reload', async () => {

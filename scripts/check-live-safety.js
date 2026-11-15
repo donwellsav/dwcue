@@ -2407,8 +2407,8 @@ assert.match(
 );
 assert.match(
   propertiesPanel,
-  /buildWaveformFromChannels[\s\S]*handleReplaceMedia[\s\S]*const snapshot = JSON\.parse\(JSON\.stringify\(item\)\)[\s\S]*Object\.assign\(item, snapshot\)/,
-  'media replacement must decode first and restore the original cue when replacement fails',
+  /<ServerFilePickerModal [^>]*\bdocked\b[^>]*location-context="replace-media"\s+@pick="handleReplaceMedia"[\s\S]*const handleReplaceMedia = [\s\S]*buildWaveformFromChannels[\s\S]*const snapshot = [\s\S]*await saveProject\(\)[\s\S]*Object\.assign\(item, snapshot\)/,
+  'media replacement must stay docked, decode first, and restore the original cue if saving fails',
 );
 assert.match(
   controlServer,

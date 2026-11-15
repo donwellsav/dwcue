@@ -35,7 +35,7 @@
              available without making operators navigate a filesystem first. -->
         <section v-if="tab === 'server'" class="pane">
           <template v-if="singleFile">
-            <ServerFilePickerModal docked :open="open" :filter="mediaAccept" :filter-options="[]"
+            <ServerFilePickerModal docked :open="open" :filter="MEDIA_FILE_ACCEPT" :filter-options="[]"
               :fallback-start-path="projectStartPath" location-context="quickplay-import"
               :confirm-label="t('importAudio.importSelected')" @pick="onServerPick([$event])" @close="close" />
             <p v-if="!server.isLocalServer" class="hint">{{ t('oneShots.hint') }}</p>
@@ -76,7 +76,7 @@
               class="file-input"
               type="file"
               multiple
-              :accept="mediaAccept"
+              :accept="MEDIA_FILE_ACCEPT"
               @change="uploadSelectedFiles"
             >
             <input ref="uploadFolderInput" class="file-input" type="file" webkitdirectory
@@ -234,6 +234,7 @@ import { computed, ref, watch } from 'vue';
 import { useLiveplayServer } from '~/composables/useLiveplayServer';
 import ServerFileBrowser from '~/components/ServerFileBrowser.vue';
 import ServerFilePickerModal from '~/components/ServerFilePickerModal.vue';
+import { MEDIA_FILE_ACCEPT } from '~/utils/audio';
 
 type FileMode = 'copy' | 'link';
 type DuplicatePolicy = 'reuse' | 'skip' | 'keep';
@@ -330,11 +331,6 @@ watch([projectEpoch, () => server.serverUrl, () => server.projectSessionId], () 
 const uploadedAnchor      = { i: -1 };
 const uploadInput          = ref<HTMLInputElement | null>(null);
 const uploadFolderInput    = ref<HTMLInputElement | null>(null);
-const mediaAccept = [
-  'mp3', 'wav', 'aiff', 'aif', 'flac', 'ogg', 'oga', 'm4a', 'aac', 'mp2',
-  'wma', 'opus', 'ac3', 'amr', 'au', 'caf', 'mp4', 'm4v', 'mov', 'mkv',
-  'webm', 'avi', 'mpg', 'mpeg', 'm2ts', 'mts', 'wmv', 'flv', '3gp',
-].map(extension => '.' + extension).join(',');
 type ImportSource = 'server' | 'local' | 'upload';
 let lastImportOptions: ImportOptions = { fileMode: 'copy', duplicatePolicy: 'reuse' };
 
@@ -524,7 +520,7 @@ async function uploadSelectedFiles(event: Event, fromFolder = false) {
   if (!files.length || uploading.value || props.busy) return;
   if (fromFolder) {
     const name = files[0]!.webkitRelativePath.split('/')[0] || '';
-    const extensions = new Set(mediaAccept.split(','));
+    const extensions = new Set(MEDIA_FILE_ACCEPT.split(','));
     files = files.filter(file =>
       !file.webkitRelativePath.split('/').slice(1).some(part => part.startsWith('.')) &&
       extensions.has(file.name.match(/\.[^.]+$/)?.[0].toLowerCase() ?? ''),

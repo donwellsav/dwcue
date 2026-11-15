@@ -1,7 +1,12 @@
 <template>
   <div class="properties-panel" :class="{ 'properties-panel--group': selectedItem.type === 'group' }">
     <div class="properties-header workspace-panel-header">
-      <h3 class="workspace-panel-header__title" :title="selectedItem?.displayName">{{ imagePicker === 'cue' ? `${t('properties.cueImage')} · ${selectedItem.displayName}` : selectedItems.size > 1 ? t('properties.multipleItemsSelected', { count: selectedItems.size }) : (t('properties.title') + ': ' + (selectedItem?.displayName || '')) }}</h3>
+      <h3 class="workspace-panel-header__title" :title="selectedItem?.displayName">
+        {{ filePicker === 'cue' ? `${t('properties.cueImage')} · ${selectedItem.displayName}`
+          : filePicker === 'replace-media' ? `${t('properties.replaceMedia')} · ${selectedItem.displayName}`
+          : selectedItems.size > 1 ? t('properties.multipleItemsSelected', { count: selectedItems.size })
+          : `${t('properties.title')}: ${selectedItem.displayName}` }}
+      </h3>
       <div v-if="selectedItem.type === 'audio'" class="properties-tabs" :aria-label="t('properties.title')">
         <button
           v-for="tab in audioTabs"
@@ -19,10 +24,20 @@
       </button>
     </div>
 
-    <ServerFilePickerModal v-if="imagePicker === 'cue'" docked :open="true"
+    <ServerFilePickerModal v-if="filePicker === 'cue'" docked :open="true"
       filter=".png,.jpg,.jpeg,.webp,.gif,.svg" :filter-options="[]"
       :fallback-start-path="currentProject?.folderPath" location-context="cue-image"
-      @pick="handleCueImagePicked" @close="closeCueImagePicker" />
+      @pick="handleCueImagePicked" @close="closePropertiesFilePicker" />
+    <template v-else-if="filePicker === 'replace-media'">
+      <div v-if="replaceMediaStatus" class="replace-media-feedback">
+        <p class="property-help" :class="{ 'property-help--error': replaceMediaError }" role="status">{{ replaceMediaStatus }}</p>
+        <Btn v-if="replacementCheck" type="button" :text="t('common.cancel')" @click="closePropertiesFilePicker" />
+      </div>
+      <ServerFilePickerModal v-if="!isReplacingMedia" docked :open="true"
+        :filter="MEDIA_FILE_ACCEPT" :filter-options="[]" :confirm-label="t('properties.replaceMedia')"
+        :fallback-start-path="currentProject?.folderPath" location-context="replace-media"
+        @pick="handleReplaceMedia" @close="closePropertiesFilePicker" />
+    </template>
     <div v-else class="properties-content" :class="{ 'properties-content--audio': selectedItem.type === 'audio' }">
       <!-- Basic Info Tab -->
       <div v-if="activeTab === 'basic'" class="tab-panel basic-panel">
@@ -95,7 +110,7 @@
             <label for="cue-property-file">{{ t('properties.file') }}</label>
             <div class="input-with-btn">
               <input id="cue-property-file" :value="audioItem.mediaFileName" readonly />
-              <button class="icon-btn" :disabled="isReplacingMedia" @click="handleReplaceMedia"
+              <button type="button" class="icon-btn" :disabled="isReplacingMedia" @click="openReplaceMediaPicker"
                 :title="t('properties.replaceMedia')" :aria-label="t('properties.replaceMedia')">
                 <span class="material-symbols-rounded">swap_horiz</span>
               </button>
@@ -113,7 +128,7 @@
                 class="icon-btn"
                 :title="t('properties.cueImageChoose')"
                 :aria-label="t('properties.cueImageChoose')"
-                @click="imagePicker = 'cue'"
+                @click="filePicker = 'cue'"
               >
                 <span class="material-symbols-rounded">image</span>
               </button>
@@ -421,6 +436,7 @@ import {
   applyLoudnessMatch,
   applyTruePeakCeiling,
   buildWaveformFromChannels,
+  MEDIA_FILE_ACCEPT,
   trimSilence,
   type MeasuredLoudness,
 } from '~/utils/audio';
@@ -462,17 +478,20 @@ let propertySaveAttempt = 0;
 
 const audioItem = computed(() => selectedItem.value as AudioItem);
 
-// Per-cue still image for the video output. The picked file is copied into
-// the project media folder and stored relative, same portability rule as
-// mediaPath and the global standby image.
-const imagePicker = useState<'cue' | 'standby' | null>('workspaceImagePicker', () => null);
-const closeCueImagePicker = () => {
-  if (imagePicker.value === 'cue') imagePicker.value = null;
+const filePicker = useState<'cue' | 'standby' | 'replace-media' | null>('workspaceFilePicker', () => null);
+const isReplacingMedia = useState('PropertiesPanel.replacingMedia', () => false);
+const replaceMediaStatus = ref('');
+const replaceMediaError = ref(false);
+const replacementCheck = shallowRef<AbortController | null>(null);
+const closePropertiesFilePicker = () => {
+  replacementCheck.value?.abort();
+  if (filePicker.value === 'replace-media') replaceMediaStatus.value = '';
+  if (filePicker.value === 'cue' || filePicker.value === 'replace-media') filePicker.value = null;
 };
-onScopeDispose(closeCueImagePicker);
+onScopeDispose(closePropertiesFilePicker);
 
 const handleCueImagePicked = async (path: string) => {
-  closeCueImagePicker();
+  closePropertiesFilePicker();
   const project = currentProject.value;
   const epoch = projectEpoch.value;
   const uuid = selectedItem.value?.uuid;
@@ -676,7 +695,7 @@ const isCartItem = computed(() => {
 const activeTab = ref<'basic' | 'playback' | 'output'>(uiMode.value === 'playback' && selectedItem.value?.type === 'audio'
   ? 'playback'
   : 'basic');
-watch([() => selectedItem.value?.uuid, projectEpoch, activeTab], closeCueImagePicker, { flush: 'sync' });
+watch([selectedItem, projectEpoch, activeTab], closePropertiesFilePicker, { flush: 'sync' });
 
 const audioTabs = computed(() => [
   { id: 'basic', label: t('properties.basicInfo'), icon: 'info' },
@@ -862,6 +881,7 @@ watch(selectedItem, (newItem, oldItem) => {
 const handleClose = () => {
   // Close the panel but leave the current selection intact so the highlighted
   // rows stay highlighted. Only the panel's visibility is toggled here.
+  closePropertiesFilePicker();
   propertiesPanelOpen.value = false;
   propertySaveAttempt += 1;
   propertySaveFailed.value = false;
@@ -1130,11 +1150,8 @@ const handleStartNextFadeOutUpdate = (value: boolean) => {
 };
 
 const isRegenerating = ref(false);
-const isReplacingMedia = ref(false);
-const replaceMediaStatus = ref('');
-const replaceMediaError = ref(false);
-watch(() => selectedItem.value?.uuid, () => {
-  if (!isReplacingMedia.value) replaceMediaStatus.value = '';
+watch([() => selectedItem.value?.uuid, projectEpoch], () => {
+  replaceMediaStatus.value = '';
 });
 
 const handleRegenerateWaveform = async () => {
@@ -1166,45 +1183,57 @@ const handleRegenerateWaveform = async () => {
   }
 };
 
-const handleReplaceMedia = async () => {
-  if (!import.meta.client || !window.electronAPI || isReplacingMedia.value) return;
+const openReplaceMediaPicker = () => {
+  replaceMediaStatus.value = '';
+  filePicker.value = 'replace-media';
+};
+
+const handleReplaceMedia = async (sourcePath: string) => {
+  if (filePicker.value !== 'replace-media' || isReplacingMedia.value) return;
   const project = currentProject.value;
+  const epoch = projectEpoch.value;
   const item = audioItem.value;
-  if (!item || item.type !== 'audio') return;
-  const isCurrent = () => currentProject.value === project && audioItem.value === item;
+  if (!project || item?.type !== 'audio') return;
+  const check = new AbortController();
+  const { signal } = check;
+  const isCurrentShow = () => currentProject.value === project && projectEpoch.value === epoch;
+  const isCurrent = () => !signal.aborted && isCurrentShow() && audioItem.value === item && filePicker.value === 'replace-media';
 
-  const files = await window.electronAPI.selectAudioFiles();
-  const sourcePath = files?.[0];
-  if (!sourcePath || !isCurrent()) return;
-
-  const snapshot = JSON.parse(JSON.stringify(item));
-  let mutated = false;
+  replacementCheck.value = check;
   isReplacingMedia.value = true;
   replaceMediaError.value = false;
   replaceMediaStatus.value = t('properties.verifyingReplacement');
   try {
     const [metadata, serverWaveform] = await Promise.all([
-      _server.fetchMetadata(sourcePath),
-      _server.fetchWaveformByPath(sourcePath),
-    ]);
+      _server.fetchMetadata(sourcePath, signal),
+      _server.fetchWaveformByPath(sourcePath, 1000, undefined, signal),
+    ]).catch(() => { throw new Error(t('properties.replacementDecodeFailed')); });
     if (!isCurrent()) return;
-    const metadataDuration = Number((metadata as any)?.duration_ms);
+    const metadataDuration = Number(metadata?.duration_ms);
     const durationMs = Number.isFinite(metadataDuration) && metadataDuration > 0
       ? metadataDuration
       : Number(serverWaveform.duration_ms);
     const duration = durationMs / 1000;
     const waveform = buildWaveformFromChannels(serverWaveform.channels, duration, serverWaveform);
-    if ((metadata as any)?.valid !== true || !Number.isFinite(duration) || duration <= 0 || !waveform) {
+    if (metadata?.valid !== true || !Number.isFinite(duration) || duration <= 0 || !waveform) {
       throw new Error(t('properties.replacementDecodeFailed'));
     }
 
-    const linked = !snapshot.mediaPath;
-    const mediaServerPath = linked ? sourcePath : await _server.copyToMedia(sourcePath);
+    if (_server.cueStartsBlocked) throw new Error(t('properties.replacementFailed'));
+    const linked = !item.mediaPath;
+    const mediaServerPath = linked ? sourcePath : await _server.copyToMedia(sourcePath, signal);
     if (!isCurrent()) return;
+    if (_server.cueStartsBlocked) throw new Error(t('properties.replacementFailed'));
     const fileName = mediaServerPath.split(/[\\/]/).pop() || sourcePath.split(/[\\/]/).pop() || 'audio';
+    const snapshot = {
+      mediaFileName: item.mediaFileName, mediaPath: item.mediaPath, mediaServerPath: item.mediaServerPath,
+      waveform: item.waveform, duration: item.duration, inPoint: item.inPoint, outPoint: item.outPoint,
+      hasVideo: item.hasVideo, startNextTime: item.startNextTime,
+    };
     const usedWholeFile = snapshot.inPoint <= 0 && Math.abs(snapshot.outPoint - snapshot.duration) < 0.01;
 
-    mutated = true;
+    replacementCheck.value = null;
+    replaceMediaStatus.value = t('archive.savingShow');
     item.mediaFileName = fileName;
     item.mediaServerPath = mediaServerPath;
     item.mediaPath = linked ? '' : `media/${fileName}`;
@@ -1213,24 +1242,35 @@ const handleReplaceMedia = async () => {
     item.inPoint = usedWholeFile ? 0 : Math.min(snapshot.inPoint, Math.max(0, duration - 0.01));
     item.outPoint = usedWholeFile ? duration : Math.min(duration, Math.max(item.inPoint + Math.min(0.01, duration), Math.min(snapshot.outPoint, duration)));
     // Re-probe: swapping media can add or remove the video stream.
-    if ((metadata as any)?.has_video === true) item.hasVideo = true;
+    if (metadata?.has_video === true) item.hasVideo = true;
     else delete item.hasVideo;
     if (typeof item.startNextTime === 'number') {
       item.startNextTime = Math.max(item.inPoint, Math.min(item.startNextTime, item.outPoint));
     }
 
-    if (!await saveProject()) throw new Error(t('properties.replacementSaveFailed'));
-    originalSnapshot.value = JSON.parse(JSON.stringify(item));
-    replaceMediaStatus.value = t('properties.replacementComplete');
-    void _server.requestWaveformGeneration(mediaServerPath, item.uuid, true).catch(() => {});
-  } catch (error: any) {
-    if (mutated) {
+    if (!await saveProject().catch(() => false)) {
       Object.assign(item, snapshot);
-      if (currentProject.value === project) await saveProject();
+      for (const key of ['mediaServerPath', 'waveform', 'hasVideo', 'startNextTime'] as const) {
+        if (snapshot[key] === undefined) delete item[key];
+      }
+      if (isCurrentShow()) await saveProject().catch(() => false);
+      throw new Error(t('properties.replacementSaveFailed'));
     }
-    replaceMediaError.value = true;
-    replaceMediaStatus.value = error?.message || t('properties.replacementFailed');
+    if (isCurrentShow()) {
+      void _server.requestWaveformGeneration(mediaServerPath, item.uuid, true).catch(() => {});
+    }
+    if (isCurrent()) {
+      originalSnapshot.value = JSON.parse(JSON.stringify(item));
+      replaceMediaStatus.value = t('properties.replacementComplete');
+      filePicker.value = null;
+    }
+  } catch (error: unknown) {
+    if (isCurrent()) {
+      replaceMediaError.value = true;
+      replaceMediaStatus.value = error instanceof Error ? error.message : t('properties.replacementFailed');
+    }
   } finally {
+    replacementCheck.value = null;
     isReplacingMedia.value = false;
   }
 };
@@ -1692,6 +1732,14 @@ const formatTime = (seconds: number): string => {
 
 .property-help--error {
   color: var(--color-danger);
+}
+
+.replace-media-feedback {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--workspace-gutter);
 }
 
 .trim-save-feedback {
