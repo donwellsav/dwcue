@@ -82,30 +82,23 @@
           class="popover-error detached-mutation-error"
         >{{ detachedMutationError }}</small>
 
-        <label class="popover-field">
+        <div class="popover-field">
           <span>{{ t('oneShots.playback') }}</span>
-          <select :value="playbackMode" @change="onPlaybackModeChange">
-            <option value="overlay">{{ t('oneShots.overlay') }}</option>
-            <option value="duck">{{ t('oneShots.duck') }}</option>
-            <option value="replace">{{ t('oneShots.replace') }}</option>
-          </select>
-        </label>
+          <InlineChoicePicker id="quickplay-playback" :label="t('oneShots.playback')"
+            :value="playbackMode" :options="playbackOptions" @change="onPlaybackModeChange" />
+        </div>
 
-        <label class="popover-field">
+        <div class="popover-field">
           <span>{{ t('oneShots.retrigger') }}</span>
-          <select :value="item.oneShot?.retrigger ?? 'restart'" @change="onRetriggerChange">
-            <option value="restart">{{ t('oneShots.restart') }}</option>
-            <option value="ignore">{{ t('oneShots.ignore') }}</option>
-          </select>
-        </label>
+          <InlineChoicePicker id="quickplay-retrigger" :label="t('oneShots.retrigger')"
+            :value="item.oneShot?.retrigger ?? 'restart'" :options="retriggerOptions" @change="onRetriggerChange" />
+        </div>
 
-        <label class="popover-field">
+        <div class="popover-field">
           <span>{{ t('oneShots.ending') }}</span>
-          <select :value="endMode" @change="onEndModeChange">
-            <option value="stop">{{ t('oneShots.stop') }}</option>
-            <option value="loop">{{ t('oneShots.loop') }}</option>
-          </select>
-        </label>
+          <InlineChoicePicker id="quickplay-ending" :label="t('oneShots.ending')"
+            :value="endMode" :options="endingOptions" @change="onEndModeChange" />
+        </div>
 
         <label class="popover-field popover-field--range">
           <span>{{ t('oneShots.gain') }} <output>{{ volumeDb.toFixed(1) }} dB</output></span>
@@ -140,13 +133,11 @@
           </div>
         </template>
 
-        <label class="popover-field">
+        <div class="popover-field">
           <span>{{ t('oneShots.output') }}</span>
-          <select :value="(item as any).deviceOverride ?? ''" @change="onOutputChange">
-            <option value="">{{ t('settings.useProjectDefault') }}</option>
-            <option v-for="device in devices" :key="device.id" :value="device.id">{{ device.display_name }}</option>
-          </select>
-        </label>
+          <InlineChoicePicker id="quickplay-output" :label="t('oneShots.output')"
+            :value="item.deviceOverride ?? ''" :options="outputOptions" @change="onOutputChange" />
+        </div>
 
         <div class="popover-field">
           <span>{{ t('oneShots.shortcut') }}</span>
@@ -229,7 +220,23 @@ const activeCue = computed(() => activeCues.value.get(props.item.uuid));
 // Map membership remains the active/stop contract; pause is a visual sub-state.
 const isPlaying = computed(() => !!activeCue.value);
 const isPaused = computed(() => activeCue.value?.isPaused === true);
-const devices = computed(() => server.devices ?? []);
+const playbackOptions = computed(() => [
+  { value: 'overlay', label: t('oneShots.overlay') },
+  { value: 'duck', label: t('oneShots.duck') },
+  { value: 'replace', label: t('oneShots.replace') },
+] as const);
+const retriggerOptions = computed(() => [
+  { value: 'restart', label: t('oneShots.restart') },
+  { value: 'ignore', label: t('oneShots.ignore') },
+] as const);
+const endingOptions = computed(() => [
+  { value: 'stop', label: t('oneShots.stop') },
+  { value: 'loop', label: t('oneShots.loop') },
+] as const);
+const outputOptions = computed(() => [
+  { value: '', label: t('settings.useProjectDefault') },
+  ...(server.devices ?? []).map(device => ({ value: device.id, label: device.display_name })),
+]);
 const playbackMode = computed(() => getOneShotPlaybackMode(props.item));
 const endMode = computed(() => getOneShotEndMode(props.item));
 const volumeDb = computed(() => props.item.volume > 0 ? 20 * Math.log10(props.item.volume) : -60);
@@ -320,21 +327,18 @@ watch(menuOpen, () => {
   hotkeyError.value = '';
 });
 
-const onPlaybackModeChange = (event: Event) => {
-  const mode = (event.target as HTMLSelectElement).value as OneShotPlaybackMode;
+const onPlaybackModeChange = (mode: OneShotPlaybackMode) => {
   setOneShotPlaybackMode(props.item, mode);
   persist({ playbackMode: mode });
 };
 
-const onEndModeChange = (event: Event) => {
-  const mode = (event.target as HTMLSelectElement).value as OneShotEndMode;
+const onEndModeChange = (mode: OneShotEndMode) => {
   setOneShotEndMode(props.item, mode);
   persist({ endMode: mode });
 };
 
-const onRetriggerChange = (event: Event) => {
+const onRetriggerChange = (retrigger: NonNullable<OneShotMutableFields['retrigger']>) => {
   if (!props.item.oneShot) return;
-  const retrigger = (event.target as HTMLSelectElement).value as 'restart' | 'ignore';
   props.item.oneShot.retrigger = retrigger;
   persist({ retrigger });
 };
@@ -368,12 +372,9 @@ const onDuckFadeChange = (field: 'duckFadeIn' | 'duckFadeOut', event: Event) => 
   persist({ [field]: value });
 };
 
-const onOutputChange = (event: Event) => {
-  const value = (event.target as HTMLSelectElement).value;
-  const routedItem = props.item as AudioItem & { deviceOverride?: string };
-  if (value) routedItem.deviceOverride = value;
-  else delete routedItem.deviceOverride;
-  persist({ deviceOverride: value || null });
+const onOutputChange = (value: string) => {
+  props.item.deviceOverride = value || null;
+  persist({ deviceOverride: props.item.deviceOverride });
 };
 
 const startHotkeyCapture = () => {
@@ -736,7 +737,6 @@ onUnmounted(() => {
 
 .popover-field { display: grid; gap: 4px; min-width: 0; color: var(--color-text-secondary); font-size: 12px; }
 .popover-field > span:first-child { display: flex; justify-content: space-between; gap: 8px; }
-.popover-field select,
 .popover-field input[type='number'] {
   width: 100%;
   min-height: var(--settings-control-height);

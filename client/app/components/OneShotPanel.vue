@@ -89,7 +89,11 @@
       <header class="workspace-panel-header">
         <h3 class="workspace-panel-header__title">{{ t(quickPlayEditor?.remove
           ? 'oneShots.removeConfirmTitle' : quickPlayEditor ? 'oneShots.settings' : 'oneShots.importInto', { number: (importSlot ?? 0) + 1 }) }}</h3>
-        <Btn type="button" icon="close" :text="t('actions.close')" @click="quickPlayEditor = null; closeImport()" />
+        <div class="detached-quickplay-actions">
+          <Btn v-if="quickPlayEditor && !quickPlayEditor.remove" class="detached-quickplay-stop"
+            type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
+          <Btn type="button" icon="close" :text="t('actions.close')" @click="quickPlayEditor = null; closeImport()" />
+        </div>
       </header>
       <div id="detached-quickplay-dock"></div>
     </section>
@@ -539,6 +543,12 @@ onUnmounted(() => {
   max-height: 60%;
   border-top: 1px solid var(--color-border);
 }
+
+.detached-quickplay-actions {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+.detached-quickplay-stop { color: var(--color-danger); }
 
 #detached-quickplay-dock {
   overflow: auto;

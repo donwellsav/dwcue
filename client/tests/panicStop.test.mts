@@ -64,6 +64,23 @@ test('Stop All remains clickable when no project-backed cue is active', () => {
   assert.equal(panicCalls, 1);
 });
 
+test('Detached QuickPlay Settings expose the normal Stop All action', () => {
+  const code = compile(elementSource('OneShotPanel', 'Btn', 'detached-quickplay-stop'), { mode: 'function' }).code;
+  const render = Function('Vue', `${code}; return render;`)({ ...Vue, resolveComponent: () => 'button' });
+  const calls: unknown[][] = [];
+  const context = {
+    quickPlayEditor: { remove: false },
+    t: (key: string) => key,
+    server: { stopAll: (...args: unknown[]) => calls.push(args) },
+  };
+  const button = render(context, []);
+  assert.equal(button.props.type, 'button');
+  assert.equal(button.props.text, 'controls.stopAll');
+  button.props.onClick();
+  assert.deepEqual(calls, [[]]);
+  assert.deepEqual(context.quickPlayEditor, { remove: false });
+});
+
 test('Stop All sends the normal command from remaining blocking dialogs', () => {
   const dialogs = [
     ['AudioImportModal', 'header'],

@@ -53,11 +53,14 @@ test('applies every allowed detached field and rejects arbitrary patch keys', ()
   assert.equal(state.standalone.oneShot?.armed, true, 'existing project metadata is preserved');
   assert.deepEqual(state.standalone.oneShot?.hotkey, { key: 'F1' });
   assert.equal(state.standalone.endBehavior.action, 'loop');
+  assert.equal(state.standalone.deviceOverride, 'out-2');
   const cleared = applyOneShotMutation(state, request({
-    kind: 'set-fields', itemUuid: 'standalone', payload: { fields: { hotkey: null } },
+    kind: 'set-fields', itemUuid: 'standalone', payload: { fields: { hotkey: null, deviceOverride: null } },
   }));
   assert.equal(cleared.accepted, true);
-  assert.equal(JSON.parse(JSON.stringify(state.standalone)).oneShot.hotkey, null);
+  const patch = JSON.parse(JSON.stringify(state.standalone));
+  assert.equal(patch.oneShot.hotkey, null);
+  assert.equal(patch.deviceOverride, null, 'the serialized patch must explicitly clear the old route');
   const rejected = applyOneShotMutation(state, request({
     kind: 'set-fields', itemUuid: 'standalone',
     payload: { fields: { server: { projectFilePath: '/evil' } } },
