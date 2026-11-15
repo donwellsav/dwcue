@@ -122,6 +122,7 @@ test('native pickers leave the operator window enabled and authorize one selecti
   let selected = '';
   let canceled = false;
   let hold: Promise<void> | undefined;
+  let unreadable = '';
   const choose = async (saving: boolean, ...args: unknown[]) => {
     assert.equal(args.length, 1, 'passing an operator window disables it during native file selection');
     assert.ok(args[0] && typeof args[0] === 'object');
@@ -137,7 +138,10 @@ test('native pickers leave the operator window enabled and authorize one selecti
       showSaveDialog: (...args: unknown[]) => choose(true, ...args),
     },
     fs: {
-      promises: { readdir },
+      promises: { readdir: (dir: string, options: { withFileTypes: true }) => {
+        if (dir === unreadable) return Promise.reject(Object.assign(new Error('Permission denied'), { code: 'EACCES' }));
+        return readdir(dir, options);
+      } },
       existsSync: () => true,
       statSync: () => ({ isFile: () => true }),
       writeFileSync() { throw new Error('Folder history is read-only'); },
@@ -190,9 +194,15 @@ test('native pickers leave the operator window enabled and authorize one selecti
   const media = ['Cue 2.WAV', 'Cue 10.wav', path.join('Video', 'Opening.mp4')];
   await Promise.all([...media, '.Hidden.wav', 'notes.pdf'].map(name => writeFile(path.join(folder, name), 'fixture')));
   const pickMediaFolder = handlers.get('select-media-folder')!;
-  const batch = await pickMediaFolder() as { name: string; files: string[] };
+  unreadable = path.join(folder, 'Unavailable');
+  await mkdir(unreadable);
+  await writeFile(path.join(unreadable, 'Skipped.wav'), 'fixture');
+  const batch = await pickMediaFolder() as { name: string; files: string[]; skippedFolders: string[] };
   assert.equal(batch.name, path.basename(folder));
   assert.deepEqual([...batch.files], media.map(name => path.join(folder, name)));
+  assert.deepEqual([...batch.skippedFolders], ['Unavailable']);
+  unreadable = folder;
+  await assert.rejects(pickMediaFolder(), /Permission denied/);
   canceled = true;
   assert.equal(await pickMediaFolder(), null);
 });

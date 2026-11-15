@@ -43,6 +43,9 @@
               <span v-if="pickingLocal" class="status" role="status">{{ t('importAudio.readingSelection') }}</span>
             </div>
             <p v-if="localPickerError" class="picker-error" role="alert">{{ localPickerError }}</p>
+            <p v-if="localSkippedFolders.length" class="picker-warning" role="status">
+              {{ t('importAudio.foldersSkipped', { folders: localSkippedFolders.join(', ') }) }}
+            </p>
           </template>
           <template v-else>
             <ServerFileBrowser :fallback-start-path="projectStartPath" @select="onServerPick" />
@@ -334,6 +337,7 @@ const localFolder = ref('');
 const uploadedFolder = ref('');
 const importAsGroup = ref(false);
 const localPickerError = ref('');
+const localSkippedFolders = ref<string[]>([]);
 const localAnchor   = { i: -1 };
 const pickingLocal = ref(false);
 const stagedPaths = computed(() => tab.value === 'upload' ? uploadedThisSession.value : localPicked.value);
@@ -475,6 +479,7 @@ async function pickLocal(fromFolder = false) {
     const paths = fromFolder ? folder?.files : await api.selectAudioFiles();
     if (!paths || !props.open || currentProject.value !== project) return;
     if (folder) {
+      localSkippedFolders.value = folder.skippedFolders ?? [];
       if (!paths.length) {
         localPickerError.value = t('importAudio.emptyMediaFolder');
         return;
@@ -689,7 +694,9 @@ function formatBytes(n: number): string {
   .row { display: flex; gap: 10px; align-items: center; }
   .file-input { display: none; }
   .status { font-size: 12px; color: var(--color-text-secondary); }
-  .picker-error { margin: 0; color: var(--color-danger); overflow-wrap: anywhere; }
+  .picker-error, .picker-warning { margin: 0; overflow-wrap: anywhere; }
+  .picker-error { color: var(--color-danger); }
+  .picker-warning { color: var(--color-warning); }
 
   .uploaded {
     list-style: none; margin: 0; padding: 0;

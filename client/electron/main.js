@@ -3912,9 +3912,18 @@ ipcMain.handle('select-media-folder', async (event) => {
   const folder = result.filePaths[0];
   const remaining = [folder];
   const files = [];
+  const skippedFolders = [];
   while (remaining.length) {
     const dir = remaining.pop();
-    for (const entry of await fs.promises.readdir(dir, { withFileTypes: true })) {
+    let entries;
+    try {
+      entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    } catch (error) {
+      if (dir === folder) throw error;
+      skippedFolders.push(path.relative(folder, dir));
+      continue;
+    }
+    for (const entry of entries) {
       if (entry.name.startsWith('.')) continue;
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) remaining.push(fullPath);
@@ -3925,7 +3934,7 @@ ipcMain.handle('select-media-folder', async (event) => {
   // The authenticated local engine reads selected media through its file API.
   rememberNativePickerFolder('media', folder);
   files.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  return { name: path.basename(folder) || folder, files };
+  return { name: path.basename(folder) || folder, files, skippedFolders: skippedFolders.sort() };
 });
 
 ipcMain.handle('get-import-preferences', (event) => {

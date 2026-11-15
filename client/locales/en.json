@@ -1209,6 +1209,7 @@
     "readingSelection": "Reading selection…",
     "emptyMediaFolder": "No supported audio or video files in this folder.",
     "folderReadFailed": "Could not read this folder. Check its permissions or choose a subfolder.",
+    "foldersSkipped": "Skipped unreadable folders: {folders}",
     "filesToImport": "Files to import",
     "selectedOfTotal": "{count} of {total} selected",
     "selectAll": "Select all",
