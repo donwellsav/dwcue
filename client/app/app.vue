@@ -85,7 +85,7 @@
                   :disabled="archiveOpening" @click="resetArchivePanel" />
               </div>
             </div>
-            <progress v-if="archiveStatus.phase === 'working'" class="archive-progress" :aria-label="archiveTitle" />
+            <progress v-if="archiveStatus.phase === 'working'" class="workspace-import-progress" :aria-label="archiveTitle" />
           </template>
           <template v-else>
             <div class="archive-row">
@@ -1034,6 +1034,7 @@ onMounted(() => {
   flex: 0 0 auto;
   min-height: var(--panel-control-height);
   gap: var(--workspace-gutter);
+  flex-wrap: wrap;
   margin: 0;
   padding: var(--spacing-xs) 0;
   overflow-wrap: anywhere;
@@ -1046,16 +1047,10 @@ onMounted(() => {
   flex-wrap: wrap;
   gap: var(--spacing-xs);
   flex-shrink: 0;
+  max-width: 100%;
 }
 
 .archive-error { color: var(--color-danger); }
-
-.archive-progress {
-  width: min(24rem, 100%);
-  height: 8px;
-  margin-block: 0 var(--spacing-sm);
-  accent-color: var(--color-accent);
-}
 
 .color-picker-overlay {
   position: fixed;

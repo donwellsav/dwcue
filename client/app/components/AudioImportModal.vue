@@ -8,9 +8,13 @@
           <button class="x" :aria-label="t('actions.close')" :disabled="busy || pickingLocal" @click="close">✕</button>
         </header>
 
-        <section v-if="busy && progress" class="import-progress" role="status">
-          <span>{{ t('importAudio.progress', progress) }}</span>
-          <button type="button" class="btn small" @click="emit('cancel')">{{ t('importAudio.cancelImport') }}</button>
+        <section v-if="busy && progress" class="import-progress">
+          <div class="import-progress-heading">
+            <strong role="status" :title="progress.name">{{ t('importAudio.progress', progress) }}</strong>
+            <button type="button" class="btn small" @click="emit('cancel')">{{ t('importAudio.cancelImport') }}</button>
+          </div>
+          <progress class="workspace-import-progress" :max="progress.total"
+            :value="Math.max(0, progress.current - 1)" :aria-label="t('importAudio.verifying')" />
         </section>
         <!-- Source mode toggle. Only rendered when the server is on a
              different machine; otherwise "upload" makes no sense and we
@@ -40,12 +44,17 @@
                 <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
                 {{ t('importAudio.chooseFolder') }}
               </button>
+              <button type="button" class="btn" :aria-expanded="browsingLocalServer" :disabled="busy"
+                @click="browsingLocalServer = !browsingLocalServer">
+                {{ t('importProject.fromServer') }}
+              </button>
               <span v-if="pickingLocal" class="status" role="status">{{ t('importAudio.readingSelection') }}</span>
             </div>
             <p v-if="localPickerError" class="picker-error" role="alert">{{ localPickerError }}</p>
             <p v-if="localSkippedFolders.length" class="picker-warning" role="status">
               {{ t('importAudio.foldersSkipped', { folders: localSkippedFolders.join(', ') }) }}
             </p>
+            <ServerFileBrowser v-if="browsingLocalServer" :fallback-start-path="projectStartPath" @select="onServerPick" />
           </template>
           <template v-else>
             <ServerFileBrowser :fallback-start-path="projectStartPath" @select="onServerPick" />
@@ -119,10 +128,6 @@
             </li>
           </ul>
         </section>
-        <details v-if="tab === 'server' && server.isLocalServer && hasElectron" class="source-browser" @toggle="onBrowseToggle">
-          <summary>{{ t('importProject.fromServer') }}</summary>
-          <ServerFileBrowser v-if="browsingLocalServer" :fallback-start-path="projectStartPath" @select="onServerPick" />
-        </details>
         <p class="hint">{{ t('importAudio.preserveAudio') }}</p>
         </div>
 
@@ -150,12 +155,9 @@
 
           <section class="import-plan" :aria-label="t('importAudio.planTitle')">
             <dl class="plan-grid">
-              <div>
+              <div v-if="tab === 'upload' || fileMode === 'copy'">
                 <dt>{{ t('importAudio.destination') }}</dt>
-                <dd>
-                  <span class="destination" :title="mediaDestination">{{ mediaDestination }}</span>
-                  <span class="destination-note">{{ t('importAudio.destinationFallback') }}</span>
-                </dd>
+                <dd class="destination" :title="mediaDestination">{{ mediaDestination }}</dd>
               </div>
               <div>
                 <dt>{{ t('importAudio.processing') }}</dt>
@@ -379,9 +381,6 @@ function onServerPick(serverPaths: string[]) {
   if (serverPaths.length && !props.busy) emitPick(serverPaths, 'server');
 }
 
-function onBrowseToggle(event: Event) {
-  browsingLocalServer.value = (event.target as HTMLDetailsElement).open;
-}
 
 function importStaged() {
   if (stagedSelection.value.length && !stagingBusy.value) {
@@ -655,7 +654,6 @@ function formatBytes(n: number): string {
 
   .pane { display: flex; flex-direction: column; gap: 10px; }
   .hint { font-size: 11px; color: var(--color-text-tertiary); margin: 0; }
-  .source-browser,
   .import-advanced {
     border: 1px solid var(--color-border);
     border-radius: var(--control-radius);
@@ -676,7 +674,6 @@ function formatBytes(n: number): string {
     }
   }
 
-  .source-browser > :not(summary),
   .import-advanced > :not(summary) {
     margin: 10px;
   }
@@ -691,7 +688,7 @@ function formatBytes(n: number): string {
     &.primary { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-text-on-accent); }
     &.small   { min-height: 28px; padding: 2px 8px; font-size: 12px; }
   }
-  .row { display: flex; gap: 10px; align-items: center; }
+  .row { display: flex; gap: var(--spacing-xs); align-items: center; flex-wrap: wrap; }
   .file-input { display: none; }
   .status { font-size: 12px; color: var(--color-text-secondary); }
   .picker-error, .picker-warning { margin: 0; overflow-wrap: anywhere; }
@@ -742,8 +739,16 @@ function formatBytes(n: number): string {
   }
   .import-selected { margin-inline-start: auto; }
   .import-progress {
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    color: var(--color-text-secondary); font-size: 11px;
+    display: grid;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    font-size: var(--type-metadata-size);
+  }
+  .import-progress-heading {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm);
+    strong { min-width: 0; color: var(--color-text-primary); overflow-wrap: anywhere; }
   }
 
   .import-options {
@@ -768,7 +773,6 @@ function formatBytes(n: number): string {
       color: var(--color-text-secondary); font-family: var(--font-mono); font-size: 11px;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    .destination-note { display: block; margin-top: 2px; color: var(--color-text-tertiary); font-size: 10px; line-height: 1.35; }
   }
   .settings-summary { display: flex; flex-wrap: wrap; gap: 5px; }
   .setting-pill {
@@ -833,7 +837,6 @@ function formatBytes(n: number): string {
   .pane, .import-source, .plan-grid { gap: var(--spacing-xs); }
   .pane > p { margin: 0; }
   .import-progress, .import-results { grid-column: 1 / -1; }
-  .import-progress span { overflow-wrap: anywhere; }
   .import-progress .btn { flex-shrink: 0; }
   .import-results ul { max-height: clamp(120px, 26vh, 240px); overflow: auto; overscroll-behavior: contain; }
   .import-results li { grid-template-columns: 58px minmax(0, 1fr) auto; }

@@ -15,11 +15,11 @@
           <button
             type="button"
             class="search-btn"
-            :aria-label="t('youtube.searchPlaceholder')"
             :disabled="isSearching || !searchQuery.trim()"
             @click="performSearch"
           >
             <span class="material-symbols-rounded" aria-hidden="true">search</span>
+            {{ t('youtube.search') }}
           </button>
         </div>
         <p class="search-hint">{{ t('youtube.searchOrPaste') }}</p>
@@ -46,17 +46,18 @@
             :key="video.id"
             class="video-item"
             :class="{ selected: selectedVideo?.id === video.id }"
-            @click="selectedVideo = video"
           >
-            <img v-if="video.thumbnail" :src="video.thumbnail" alt="" class="video-thumbnail" />
-            <div class="video-info">
-              <div class="video-title-line">
-                <h3 class="video-title">{{ video.title }}</h3>
-                <span v-if="video.isLive" class="live-badge">{{ t('youtube.liveStream') }}</span>
-              </div>
-              <p class="video-channel">{{ video.channelTitle }}</p>
-              <p v-if="video.length" class="video-duration">{{ video.length }}</p>
-            </div>
+            <button type="button" class="video-pick" :aria-pressed="selectedVideo?.id === video.id"
+              :title="video.title" @click="selectedVideo = video">
+              <img v-if="video.thumbnail" :src="video.thumbnail" alt="" class="video-thumbnail" />
+              <span class="video-info">
+                <span class="video-title-line">
+                  <strong class="video-title">{{ video.title }}</strong>
+                  <span v-if="video.isLive" class="live-badge">{{ t('youtube.liveStream') }}</span>
+                </span>
+                <span class="video-channel">{{ video.channelTitle }}<template v-if="video.length"> · {{ video.length }}</template></span>
+              </span>
+            </button>
             <div class="video-actions">
               <button type="button" class="action-btn preview-btn" @click="previewVideo(video)">
                 <span class="material-symbols-rounded" aria-hidden="true">play_circle</span>
@@ -110,14 +111,14 @@
             </select>
           </label>
 
-          <div class="plan-field plan-processing" :class="{ skipped: !addDownloadedAudio }">
+          <div class="plan-field plan-processing">
             <span class="plan-label">{{ t('youtube.projectProcessing') }}</span>
-            <div class="processing-list">
+            <div v-if="addDownloadedAudio" class="processing-list">
               <span v-for="setting in processingSettings" :key="setting.label">
                 {{ setting.label }}<template v-if="setting.value">: {{ setting.value }}</template>
               </span>
             </div>
-            <span v-if="!addDownloadedAudio" class="plan-detail">{{ t('youtube.processingSkipped') }}</span>
+            <span v-else>{{ t('youtube.processingSkipped') }}</span>
           </div>
         </div>
       </section>
@@ -147,17 +148,12 @@
               </span>
               <span v-if="download.actionError" class="queue-action-error">{{ download.actionError }}</span>
             </div>
-            <div
-              class="progress-bar"
-              role="progressbar"
-              :aria-label="download.title"
-              aria-valuemin="0"
-              aria-valuemax="100"
-              :aria-valuenow="Math.round(download.progress)"
-            >
-              <div class="progress-fill" :style="{ width: download.progress + '%' }"></div>
+            <div class="queue-progress">
+              <progress class="workspace-import-progress" :aria-label="download.title"
+                max="100" :value="download.progress" />
+              <span class="progress-text">{{ Math.round(download.progress) }}%</span>
             </div>
-            <span class="progress-text">{{ download.progress.toFixed(1) }}%</span>
+            <div class="queue-actions">
             <button
               v-if="download.folderPath"
               type="button"
@@ -200,6 +196,7 @@
               :aria-label="t('actions.close')" @click="downloadQueue = downloadQueue.filter(item => item !== download)">
               <span class="material-symbols-rounded" aria-hidden="true">close</span>
             </button>
+            </div>
           </div>
         </div>
       </div>
@@ -734,10 +731,6 @@ onBeforeUnmount(() => {
   grid-column: 1 / -1;
 }
 
-.plan-processing.skipped .processing-list {
-  opacity: 0.5;
-}
-
 .processing-list {
   display: flex;
   min-width: 0;
@@ -793,12 +786,26 @@ onBeforeUnmount(() => {
 
 .video-item {
   display: flex;
+  align-items: center;
   gap: var(--spacing-sm);
   padding: var(--spacing-xs) var(--spacing-sm);
   background: var(--color-surface);
   border-radius: var(--control-radius);
   border: 1px solid transparent;
   transition: border-color 0.2s;
+}
+
+.video-pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: start;
+  cursor: pointer;
 }
 
 .video-item.selected {
@@ -852,8 +859,7 @@ onBeforeUnmount(() => {
   letter-spacing: 0.06em;
 }
 
-.video-channel,
-.video-duration {
+.video-channel {
   margin: 0;
   font-size: 12px;
   color: var(--color-text-secondary);
@@ -861,8 +867,7 @@ onBeforeUnmount(() => {
 
 .video-actions {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  gap: var(--spacing-xs);
   flex-shrink: 0;
 }
 
@@ -940,7 +945,8 @@ onBeforeUnmount(() => {
   background: var(--color-surface);
   padding: var(--spacing-xs) var(--spacing-sm);
   border-radius: var(--control-radius);
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(92px, 14rem) auto;
   align-items: center;
   gap: var(--spacing-sm);
 }
@@ -984,26 +990,21 @@ onBeforeUnmount(() => {
   color: var(--color-danger);
 }
 
-.progress-bar {
-  flex: 0 1 140px;
-  min-width: 36px;
-  height: 6px;
-  background: var(--color-border);
-  border-radius: 3px;
-  overflow: hidden;
+.queue-progress, .queue-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
 }
 
-.progress-fill {
-  height: 100%;
-  background: var(--color-accent);
-  transition: width 0.3s;
-}
+.queue-progress { min-width: 0; }
+.queue-progress progress { flex: 1; min-width: 0; }
+.queue-actions { flex-wrap: wrap; justify-content: flex-end; }
 
 .progress-text {
-  font-size: 12px;
+  font: 12px var(--font-mono);
+  flex: 0 0 4ch;
   color: var(--color-text-secondary);
-  width: 50px;
-  text-align: right;
+  text-align: end;
 }
 
 .open-folder-btn {
@@ -1017,15 +1018,19 @@ select:focus-visible {
   outline-offset: 2px;
 }
 
-@container (max-width: 720px) {
-  .has-downloads > .import-column:last-child { grid-row: 1; }
+.has-downloads > .import-column {
+  grid-column: 1 / -1;
 }
 
+.has-downloads > .import-column:last-child { grid-row: 1; }
+
 @container (max-width: 940px) {
-  .plan-heading, .queue-item {
-    flex-wrap: wrap;
-  }
-  .queue-info { flex-basis: 100%; }
-  .progress-bar { flex: 1; }
+  .plan-heading { flex-wrap: wrap; }
+  .video-actions { flex-direction: column; }
+}
+
+@container (max-width: 720px) {
+  .queue-item { grid-template-columns: minmax(68px, 1fr) minmax(0, auto); }
+  .queue-info { grid-column: 1 / -1; }
 }
 </style>

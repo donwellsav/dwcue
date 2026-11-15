@@ -1,26 +1,25 @@
 <template>
   <form v-if="open" v-show="visible" class="workspace-import-body spotify-import"
-    :class="{ 'has-review': reviewState && !isActive, 'is-busy': isBusy }" @submit.prevent="handleSubmit">
-    <div class="import-column spotify-controls">
-      <label v-if="!isBusy && !resultState && !reviewState" class="field">
-        <span class="field-label">{{ t('spotifyImport.urlLabel') }}</span>
-        <input
-          ref="urlInput"
-          v-model.trim="spotifyUrl"
-          type="url"
-          :placeholder="t('spotifyImport.urlPlaceholder')"
-          :disabled="isBusy || hasLockedDestination"
-          spellcheck="false"
-          autocomplete="off"
-        >
-      </label>
+    :class="{ 'has-review': reviewState && !isBusy, 'is-busy': isBusy }" @submit.prevent="handleSubmit">
+    <div v-if="!reviewState || isBusy || resultState || progressState || errorMessage || preferencesWarning"
+      class="import-column spotify-controls">
+      <div v-if="!isBusy && !resultState && !reviewState" class="spotify-entry">
+        <label class="field">
+          <span class="field-label">{{ t('spotifyImport.urlLabel') }}</span>
+          <input ref="urlInput" v-model.trim="spotifyUrl" type="url" :placeholder="t('spotifyImport.urlPlaceholder')"
+            :disabled="hasLockedDestination" spellcheck="false" autocomplete="off">
+        </label>
+        <button type="submit" class="btn primary" :disabled="!canStart">
+          <span class="material-symbols-rounded" aria-hidden="true">library_add</span>
+          {{ t('spotifyImport.reviewTracks') }}
+        </button>
+      </div>
 
       <p v-if="!isBusy && !reviewState && !resultState" class="hint selectable">{{ t('spotifyImport.hint') }}</p>
       <p v-if="preferencesWarning" class="settings-save-error selectable" role="status">
         {{ t('spotifyImport.preferencesSaveFailed') }}
       </p>
-      <div v-if="!isBusy" class="actions">
-        <template v-if="resultState && !isActive">
+      <div v-if="!isBusy && resultState && !isActive" class="actions">
           <button
             v-if="pendingRecoveryCount"
             type="button"
@@ -52,15 +51,6 @@
                 : t('spotifyImport.done') }}</span>
             </button>
           </template>
-        </template>
-        <button v-else type="submit" class="btn primary" :disabled="!canStart">
-          <span class="material-symbols-rounded" aria-hidden="true">library_add</span>
-          <span>{{ reviewState ? t('spotifyImport.downloadSelected', { count: selectedTrackIds.length })
-            : t('spotifyImport.reviewTracks') }}</span>
-        </button>
-        <button v-if="reviewState && !resultState" type="button" class="btn" @click="clearReview">
-          {{ t('spotifyImport.changeLink') }}
-        </button>
       </div>
       <div
         v-if="isBusy || progressState || resultState || errorMessage"
@@ -103,7 +93,7 @@
 
         <progress
           v-if="isBusy || resultState"
-          class="progress-bar"
+          class="workspace-import-progress"
           :aria-label="resultState ? t('spotifyImport.resultLabel') : t('spotifyImport.progressLabel')"
           max="100"
           :value.attr="progressValue"
@@ -126,7 +116,7 @@
         </button>
       </div>
     </div>
-    <section v-if="reviewState && !isActive" class="track-review" :aria-label="t('spotifyImport.reviewTitle')">
+    <section v-if="reviewState && !isBusy" class="track-review" :aria-label="t('spotifyImport.reviewTitle')">
         <div class="review-heading">
           <div class="selectable">
             <h3>{{ reviewState.playlistName }}</h3>
@@ -140,8 +130,10 @@
             </p>
           </div>
           <div class="review-actions">
-            <button type="button" class="btn compact" :disabled="isBusy" @click="selectAllTracks">{{ t('spotifyImport.selectAll') }}</button>
-            <button type="button" class="btn compact" :disabled="isBusy" @click="selectedTrackIds = []">{{ t('spotifyImport.selectNone') }}</button>
+            <button type="button" class="btn compact" :disabled="selectedTrackIds.length === reviewState.tracks.length"
+              @click="selectAllTracks">{{ t('spotifyImport.selectAll') }}</button>
+            <button type="button" class="btn compact" :disabled="!selectedTrackIds.length"
+              @click="selectedTrackIds = []">{{ t('spotifyImport.selectNone') }}</button>
           </div>
         </div>
         <ul class="track-list">
@@ -159,9 +151,11 @@
               >
               <img v-if="track.coverUrl" :src="track.coverUrl" alt="">
               <span class="track-info selectable">
-                <strong>{{ track.title }}</strong>
-                <span>{{ track.artists.join(', ') }}<template v-if="track.album"> · {{ track.album }}</template></span>
-                <small>{{ trackMatchText(track.id) }}</small>
+                <strong :title="track.title">{{ track.title }}</strong>
+                <span>
+                  {{ track.artists.join(', ') }}<template v-if="track.album"> · {{ track.album }}</template>
+                </span>
+                <small v-if="resultState">{{ trackMatchText(track.id) }}</small>
               </span>
               <time class="selectable">{{ formatDuration(track.duration) }}</time>
             </label>
@@ -179,6 +173,13 @@
             </button>
           </li>
         </ul>
+        <div v-if="!resultState" class="review-footer">
+          <button type="button" class="btn" @click="clearReview">{{ t('spotifyImport.changeLink') }}</button>
+          <button type="submit" class="btn primary" :disabled="!canStart">
+            <span class="material-symbols-rounded" aria-hidden="true">download</span>
+            {{ t('spotifyImport.downloadSelected', { count: selectedTrackIds.length }) }}
+          </button>
+        </div>
     </section>
     <section v-if="!isBusy && !resultState" class="import-plan" aria-labelledby="spotify-import-plan">
       <h3 id="spotify-import-plan">{{ t('spotifyImport.importPlan') }}</h3>
@@ -1235,24 +1236,28 @@ function resetState() {
 </script>
 
 <style scoped lang="scss">
-.has-review {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
+.spotify-import { grid-template-columns: minmax(0, 1fr) minmax(0, 23rem); }
 
 .has-review .track-review {
-  grid-column: 2;
+  grid-column: 1;
   grid-row: 1 / span 2;
 }
 
-.has-review .import-plan { grid-column: 1; }
+.has-review .import-plan, .has-review .spotify-controls { grid-column: 2; }
 .has-review .processing-title { display: none; }
-.has-review .processing-control--select { grid-column: auto; }
-.is-busy .spotify-controls { grid-column: 1 / -1; }
+.is-busy .spotify-controls, .spotify-import:not(.has-review):has(.has-result) .spotify-controls { grid-column: 1 / -1; }
 
 .import-column {
   display: grid;
   gap: var(--spacing-xs);
   min-width: 0;
+}
+
+.spotify-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--spacing-xs);
 }
 
 .field {
@@ -1356,8 +1361,9 @@ input {
 
 .processing-summary {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: 2px;
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--spacing-xs);
 }
 
 .processing-title {
@@ -1375,10 +1381,6 @@ input {
   gap: 8px;
   min-width: 0;
   min-height: var(--settings-row-height);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border: 1px solid var(--color-border);
-  border-radius: 7px;
-  background: var(--color-surface-raised);
   color: var(--color-text-primary);
   font-size: 12px;
   cursor: pointer;
@@ -1405,10 +1407,10 @@ input {
 }
 
 .processing-control--select {
-  grid-column: 1 / -1;
   justify-content: space-between;
 
   select {
+    flex: 0 1 auto;
     min-width: 0;
     max-width: 100%;
     border: 1px solid var(--color-border);
@@ -1432,7 +1434,7 @@ input {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  max-height: clamp(150px, 30vh, 260px);
+  max-height: clamp(166px, 29vh, 260px);
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
   background: var(--color-background);
@@ -1452,6 +1454,15 @@ input {
 }
 
 .review-actions { display: flex; gap: 6px; }
+
+.review-footer {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  padding-top: var(--spacing-xs);
+  border-top: 1px solid var(--color-border);
+}
 
 .track-list {
   min-height: 0;
@@ -1482,15 +1493,14 @@ input {
     cursor: pointer;
   }
   label.has-cover { grid-template-columns: auto 32px minmax(0, 1fr) auto; }
-  input { width: auto; margin: 0; padding: 0; }
+  input { width: auto; min-height: 0; margin: 0; padding: 0; }
   img { width: 32px; height: 32px; border-radius: 3px; object-fit: cover; }
-  .track-info { min-width: 0; display: grid; gap: 2px; }
+  .track-info { min-width: 0; display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: baseline; gap: 2px 8px; }
   .track-info > strong,
-  .track-info > span,
-  .track-info > small { overflow-wrap: anywhere; }
-  .track-info > strong { font-size: 13px; line-height: 1.3; }
+  .track-info > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .track-info > strong { color: var(--color-text-primary); font-size: 13px; line-height: 1.3; }
   .track-info > span { color: var(--color-text-secondary); font-size: 11px; }
-  .track-info > small { color: var(--color-text-tertiary); font-size: 11px; line-height: 1.35; }
+  .track-info > small { grid-column: 1 / -1; overflow-wrap: anywhere; color: var(--color-text-tertiary); font-size: 11px; line-height: 1.35; }
   time {
     color: var(--color-text-secondary);
     font-size: 12px;
@@ -1569,7 +1579,7 @@ input {
   border-color: color-mix(in srgb, var(--color-success) 45%, var(--color-border));
   background: color-mix(in srgb, var(--color-success) 7%, var(--color-surface-raised));
 
-  .progress-bar { accent-color: var(--color-success); }
+  .workspace-import-progress { accent-color: var(--color-success); }
 }
 
 .status-card.has-import-errors {
@@ -1592,13 +1602,8 @@ input {
   }
 }
 
-.progress-bar {
-  width: 100%;
-  height: 6px;
-  accent-color: var(--color-accent);
-}
-
 .actions {
+  order: 1;
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-xs);
@@ -1607,8 +1612,8 @@ input {
 }
 
 @container (max-width: 780px) {
-  .has-review { grid-template-columns: minmax(0, 1fr); }
-  .has-review .track-review { grid-column: 1; grid-row: auto; }
+  .spotify-import { grid-template-columns: minmax(0, 1fr); }
+  .has-review .track-review, .has-review .import-plan, .has-review .spotify-controls { grid-column: 1; grid-row: auto; }
 }
 
 .btn {

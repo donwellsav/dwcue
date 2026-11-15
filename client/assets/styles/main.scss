@@ -261,6 +261,13 @@ body {
   gap: var(--spacing-sm);
 }
 
+.workspace-import-progress {
+  display: block;
+  width: 100%;
+  height: 6px;
+  accent-color: var(--color-accent);
+}
+
 @container (max-width: 720px) {
   .workspace-import-body {
     grid-template-columns: minmax(0, 1fr);
