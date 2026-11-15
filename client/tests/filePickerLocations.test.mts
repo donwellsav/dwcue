@@ -91,7 +91,6 @@ test('native pickers leave the operator window enabled and authorize one selecti
   const cases = new Map([
     ['select-project-folder', { selected: folder, authorization: 'root' }],
     ['select-project-file', { selected: path.join(folder, 'Show.dwcue'), authorization: 'project' }],
-    ['select-audio-files', { selected: path.join(folder, 'Cue.wav'), authorization: 'file' }],
     ['show-open-archive-dialog', { selected: path.join(folder, 'Show.dwcuepack'), authorization: 'file' }],
     ['show-save-archive-dialog', { selected: path.join(folder, 'Backup'), authorization: 'file' }],
   ]);
@@ -109,10 +108,10 @@ test('native pickers leave the operator window enabled and authorize one selecti
     if (!ts.isExpressionStatement(node) || !ts.isCallExpression(node.expression)) return false;
     const [channel] = node.expression.arguments;
     return node.expression.expression.getText(source) === 'ipcMain.handle'
-      && channel && ts.isStringLiteral(channel) && (cases.has(channel.text) || channel.text === 'select-media-folder');
+      && channel && ts.isStringLiteral(channel) && (cases.has(channel.text) || channel.text === 'scan-media-folder');
   }).map(node => node.getText(source)).join('\n');
 
-  const handlers = new Map<string, () => Promise<unknown>>();
+  const handlers = new Map<string, (event?: unknown, input?: string) => Promise<unknown>>();
   const authorized: Array<[string, string, boolean]> = [];
   const warnings: string[] = [];
   const authorize = (kind: string) => (file: string, options?: { allowMissing?: boolean }) => {
@@ -123,6 +122,7 @@ test('native pickers leave the operator window enabled and authorize one selecti
   let canceled = false;
   let hold: Promise<void> | undefined;
   let unreadable = '';
+  let mode = 'local';
   const choose = async (saving: boolean, ...args: unknown[]) => {
     assert.equal(args.length, 1, 'passing an operator window disables it during native file selection');
     assert.ok(args[0] && typeof args[0] === 'object');
@@ -132,7 +132,12 @@ test('native pickers leave the operator window enabled and authorize one selecti
   runInNewContext(code, {
     ...createRequire(import.meta.url)('../electron/project-file-formats.js'),
     path, mainWindow: {}, ipcMain: { handle: handlers.set.bind(handlers) },
-    requireTrustedIpc() {}, nativePickerFolder() {}, requireAbsoluteIpcPath: (file: string) => file,
+    requireTrustedIpc() {}, nativePickerFolder() {},
+    readLiveplayConfig: () => ({ mode }),
+    requireAbsoluteIpcPath: (file: string) => {
+      if (!path.isAbsolute(file)) throw new TypeError('Expected an absolute path');
+      return file;
+    },
     dialog: {
       showOpenDialog: (...args: unknown[]) => choose(false, ...args),
       showSaveDialog: (...args: unknown[]) => choose(true, ...args),
@@ -193,16 +198,17 @@ test('native pickers leave the operator window enabled and authorize one selecti
   await mkdir(nested);
   const media = ['Cue 2.WAV', 'Cue 10.wav', path.join('Video', 'Opening.mp4')];
   await Promise.all([...media, '.Hidden.wav', 'notes.pdf'].map(name => writeFile(path.join(folder, name), 'fixture')));
-  const pickMediaFolder = handlers.get('select-media-folder')!;
+  const scanMediaFolder = (dir: string) => handlers.get('scan-media-folder')!({}, dir);
   unreadable = path.join(folder, 'Unavailable');
   await mkdir(unreadable);
   await writeFile(path.join(unreadable, 'Skipped.wav'), 'fixture');
-  const batch = await pickMediaFolder() as { name: string; files: string[]; skippedFolders: string[] };
+  const batch = await scanMediaFolder(folder) as { name: string; files: string[]; skippedFolders: string[] };
   assert.equal(batch.name, path.basename(folder));
   assert.deepEqual([...batch.files], media.map(name => path.join(folder, name)));
   assert.deepEqual([...batch.skippedFolders], ['Unavailable']);
   unreadable = folder;
-  await assert.rejects(pickMediaFolder(), /Permission denied/);
-  canceled = true;
-  assert.equal(await pickMediaFolder(), null);
+  await assert.rejects(scanMediaFolder(folder), /Permission denied/);
+  await assert.rejects(scanMediaFolder('relative'), /absolute path/);
+  mode = 'remote';
+  await assert.rejects(scanMediaFolder(folder), /requires the local audio engine/);
 });

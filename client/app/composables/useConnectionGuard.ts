@@ -116,6 +116,7 @@ export const useConnectionGuard = () => {
   const projectPanelOpen = useState('projectPanelOpen', () => false);
   const filePicker = useState<'cue' | 'standby' | 'replace-media' | null>('workspaceFilePicker', () => null);
   const quickPlayImportSlot = useState<number | null>('quickPlayImportSlot', () => null);
+  const importPanel = useState<string | null>('workspaceImportPanel', () => null);
 
   // Capture Stop All before an editor can consume it, and guard cue starts during recovery.
   const trapKeydown = (e: KeyboardEvent) => {
@@ -124,7 +125,8 @@ export const useConnectionGuard = () => {
     if (e.key === 'Tab') return;
     const el = e.target as HTMLElement | null;
     const editing = el?.closest?.('input, textarea, [contenteditable]:not([contenteditable="false"])');
-    const projectPanelEscape = (projectPanelOpen.value || filePicker.value !== null || quickPlayImportSlot.value !== null) && e.key === 'Escape' &&
+    const projectPanelEscape = (projectPanelOpen.value || filePicker.value !== null ||
+      quickPlayImportSlot.value !== null || importPanel.value === 'media') && e.key === 'Escape' &&
       !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey;
     if (!projectPanelEscape && !blocked && !projectLoad.value && !(currentProject.value && editing)) return;
     const typing = e.isComposing ||

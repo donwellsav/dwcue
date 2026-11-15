@@ -149,15 +149,16 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
   const projectPanelOpen = { value: false };
   const filePicker = { value: null as 'cue' | 'standby' | 'replace-media' | null };
   const quickPlayImportSlot = { value: null as number | null };
+  const importPanel = { value: null as string | null };
   const server = {
     connected: true, connectionLost: false, showVerification: false,
     get cueStartsBlocked() { return this.connectionLost || this.showVerification || sessionLost.value || projectLoad.value === 'open'; },
     stopAll: (...args: unknown[]) => calls.push(args),
   };
   const currentProject = { value: { playbackKeys: {} as Record<string, unknown> } };
-  const trap = Function('server', 'projectLoad', 'projectPanelOpen', 'filePicker', 'quickPlayImportSlot',
+  const trap = Function('server', 'projectLoad', 'projectPanelOpen', 'filePicker', 'quickPlayImportSlot', 'importPanel',
     'currentProject', 'DEFAULT_PLAYBACK_KEYS', 'bindingsMatch', 'eventToBinding', `${code}\nreturn trapKeydown;`)(
-    server, projectLoad, projectPanelOpen, filePicker, quickPlayImportSlot, currentProject,
+    server, projectLoad, projectPanelOpen, filePicker, quickPlayImportSlot, importPanel, currentProject,
     DEFAULT_PLAYBACK_KEYS, bindingsMatch, eventToBinding);
   const press = (key: string, opts = {}) => {
     let swallowed = false;
@@ -252,6 +253,12 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
   quickPlayImportSlot.value = null;
   assert.equal(press('Escape', { target: editor }), false, 'closing the import restores the normal mapping');
   assert.deepEqual(calls.slice(13), [[]]);
+
+  importPanel.value = 'media';
+  assert.equal(press('Escape', { target: editor }), true, 'media browsing and scanning give Escape to Stop All');
+  assert.equal(press(' '), false, 'media import leaves GO available');
+  assert.equal(press('Enter', { target: editor }), false, 'the path field keeps Enter');
+  assert.deepEqual(calls.slice(14), [[]]);
 });
 
 function loadHandleKeydown(dependencies: Record<string, unknown>) {

@@ -3883,33 +3883,10 @@ const mediaPickerExtensions = [
   'wmv', 'flv', '3gp',
 ];
 
-ipcMain.handle('select-audio-files', async (event) => {
+ipcMain.handle('scan-media-folder', async (event, input) => {
   requireTrustedIpc(event);
-  const result = await showNativeFilePicker(() => dialog.showOpenDialog({
-    defaultPath: nativePickerFolder('media'),
-    properties: ['openFile', 'multiSelections'],
-    // Audio plus the video containers the engine decodes (H.264/HEVC tracks);
-    // imported video cues play their audio through the engine and drive the
-    // Video Output window.
-    filters: [{
-      name: 'Audio & video',
-      extensions: mediaPickerExtensions,
-    }],
-  }));
-
-  if (result.canceled || result.filePaths.length === 0) return null;
-  rememberNativePickerFolder('media', path.dirname(result.filePaths[0]));
-  return result.filePaths.map(filePath => pathCapabilities.authorizeFile(filePath));
-});
-
-ipcMain.handle('select-media-folder', async (event) => {
-  requireTrustedIpc(event);
-  const result = await showNativeFilePicker(() => dialog.showOpenDialog({
-    defaultPath: nativePickerFolder('media'),
-    properties: ['openDirectory'],
-  }));
-  if (result.canceled || !result.filePaths.length) return null;
-  const folder = result.filePaths[0];
+  if (readLiveplayConfig().mode !== 'local') throw new Error('Folder scan requires the local audio engine');
+  const folder = requireAbsoluteIpcPath(input, 'folder');
   const remaining = [folder];
   const files = [];
   const skippedFolders = [];
@@ -3931,8 +3908,6 @@ ipcMain.handle('select-media-folder', async (event) => {
         files.push(fullPath);
     }
   }
-  // The authenticated local engine reads selected media through its file API.
-  rememberNativePickerFolder('media', folder);
   files.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   return { name: path.basename(folder) || folder, files, skippedFolders: skippedFolders.sort() };
 });

@@ -30,9 +30,7 @@
           </button>
         </div>
 
-        <div v-show="!docked || !busy" class="import-source">
-        <!-- Local installs lead with the native picker. Server browsing stays
-             available without making operators navigate a filesystem first. -->
+        <div v-show="!docked || !busy" class="import-source" :class="{ 'import-source--picking': localPicker }">
         <section v-if="tab === 'server'" class="pane">
           <template v-if="singleFile">
             <ServerFilePickerModal docked :open="open" :filter="MEDIA_FILE_ACCEPT" :filter-options="[]"
@@ -41,26 +39,30 @@
             <p v-if="!server.isLocalServer" class="hint">{{ t('oneShots.hint') }}</p>
           </template>
           <template v-else-if="server.isLocalServer && hasElectron">
-            <div class="row">
-              <button type="button" class="btn" :disabled="pickingLocal || busy" @click="pickLocal()">
+            <ServerFileBrowser v-if="localPicker === 'files'" staging
+              :fallback-start-path="projectStartPath" @select="stageLocalFiles" @close="cancelLocalPicker" />
+            <ServerFilePickerModal v-else-if="localPicker === 'folder' && !pickingLocal" docked :open="true"
+              mode="directory" :filter="MEDIA_FILE_ACCEPT" :filter-options="[]" :fallback-start-path="projectStartPath"
+              location-context="media" :confirm-label="t('importAudio.chooseFolder')"
+              @pick="stageLocalFolder" @close="cancelLocalPicker" />
+            <div v-else-if="pickingLocal" class="row">
+              <span class="status" role="status">{{ t('importAudio.readingSelection') }}</span>
+              <button type="button" class="btn" @click="cancelLocalPicker">{{ t('common.cancel') }}</button>
+            </div>
+            <div v-else class="row">
+              <button type="button" class="btn" :disabled="busy" @click="localPicker = 'files'">
                 <span class="material-symbols-rounded" aria-hidden="true">audio_file</span>
                 {{ t('importAudio.chooseFiles') }}
               </button>
-              <button type="button" class="btn" :disabled="pickingLocal || busy" @click="pickLocal(true)">
+              <button type="button" class="btn" :disabled="busy" @click="localPicker = 'folder'">
                 <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
                 {{ t('importAudio.chooseFolder') }}
               </button>
-              <button type="button" class="btn" :aria-expanded="browsingLocalServer" :disabled="busy"
-                @click="browsingLocalServer = !browsingLocalServer">
-                {{ t('importProject.fromServer') }}
-              </button>
-              <span v-if="pickingLocal" class="status" role="status">{{ t('importAudio.readingSelection') }}</span>
             </div>
             <p v-if="localPickerError" class="picker-error" role="alert">{{ localPickerError }}</p>
             <p v-if="localSkippedFolders.length" class="picker-warning" role="status">
               {{ t('importAudio.foldersSkipped', { folders: localSkippedFolders.join(', ') }) }}
             </p>
-            <ServerFileBrowser v-if="browsingLocalServer" :fallback-start-path="projectStartPath" @select="onServerPick" />
           </template>
           <template v-else>
             <ServerFileBrowser :fallback-start-path="projectStartPath" @select="onServerPick" />
@@ -107,7 +109,7 @@
 
         </section>
 
-        <section v-if="stagedPaths.length" class="staged-media" :aria-label="t('importAudio.filesToImport')">
+        <section v-if="!localPicker && stagedPaths.length" class="staged-media" :aria-label="t('importAudio.filesToImport')">
           <div class="batch-controls">
             <span class="selection-count" role="status">{{ t('importAudio.selectedOfTotal', { count: stagedSelection.length, total: stagedPaths.length }) }}</span>
             <button type="button" class="btn small" :disabled="stagingBusy || stagedSelection.length === stagedPaths.length"
@@ -134,10 +136,10 @@
             </li>
           </ul>
         </section>
-        <p v-if="!singleFile" class="hint">{{ t('importAudio.preserveAudio') }}</p>
+        <p v-if="!singleFile && !localPicker" class="hint">{{ t('importAudio.preserveAudio') }}</p>
         </div>
 
-        <component v-show="!docked || !busy" :is="docked ? 'section' : 'details'" class="import-advanced">
+        <component v-show="!localPicker && (!docked || !busy)" :is="docked ? 'section' : 'details'" class="import-advanced">
           <h3 v-if="docked">{{ t('importAudio.planTitle') }}</h3>
           <summary v-else>{{ t('importAudio.advanced') }}</summary>
           <section v-if="tab === 'server'" class="import-options" :aria-label="t('importAudio.fileHandling')">
@@ -183,7 +185,7 @@
           </section>
         </component>
 
-        <section v-if="result && !busy" class="import-results" aria-live="polite">
+        <section v-if="result && !busy && !localPicker" class="import-results" aria-live="polite">
           <div class="result-heading">
             <h3>{{ t('importAudio.resultsTitle') }}</h3>
             <div class="result-actions">
@@ -279,8 +281,7 @@ const server = useLiveplayServer();
 const { currentProject, projectEpoch } = useProject();
 const { t }  = useLocalization();
 
-// Local Electron uses the server tab shell for its native picker; remote
-// clients lead with upload and can switch to the server browser.
+// Remote clients lead with upload and can switch to the engine's folders.
 const tab = ref<'server' | 'upload'>(props.singleFile || server.isLocalServer ? 'server' : 'upload');
 const fileMode = ref<FileMode>('copy');
 const duplicatePolicy = ref<DuplicatePolicy>('reuse');
@@ -334,9 +335,9 @@ const uploadFolderInput    = ref<HTMLInputElement | null>(null);
 type ImportSource = 'server' | 'local' | 'upload';
 let lastImportOptions: ImportOptions = { fileMode: 'copy', duplicatePolicy: 'reuse' };
 
-// Local file picker (used when server is local — same machine, so local paths = server paths)
-const hasElectron = !!(globalThis as any).electronAPI?.selectAudioFiles;
-const browsingLocalServer = ref(false);
+const hasElectron = typeof globalThis.window?.electronAPI?.scanMediaFolder === 'function';
+const localPicker = ref<'files' | 'folder' | null>(null);
+let folderScan = 0;
 const localPicked  = ref<string[]>([]);
 const selectedLocal = ref<string[]>([]);
 const localFolder = ref('');
@@ -346,6 +347,8 @@ const localPickerError = ref('');
 const localSkippedFolders = ref<string[]>([]);
 const localAnchor   = { i: -1 };
 const pickingLocal = ref(false);
+watch([() => props.open, () => props.visible, projectEpoch, () => server.serverUrl, () => server.projectSessionId],
+  cancelLocalPicker, { flush: 'sync' });
 const stagedPaths = computed(() => tab.value === 'upload' ? uploadedThisSession.value : localPicked.value);
 const stagedSelection = computed(() => tab.value === 'upload' ? selectedUploaded.value : selectedLocal.value);
 const selectedPaths = computed(() => new Set(stagedSelection.value));
@@ -471,44 +474,47 @@ function toggleStaged(item: string, index: number, e: MouseEvent) {
   (e.currentTarget as HTMLInputElement).checked = selectedPaths.value.has(item);
 }
 
-async function pickLocal(fromFolder = false) {
-  const api = window.electronAPI;
-  if (!api?.selectAudioFiles || pickingLocal.value) return;
-  const project = currentProject.value;
+function cancelLocalPicker() {
+  ++folderScan;
+  localPicker.value = null;
+  pickingLocal.value = false;
+}
+
+function stageLocalFiles(paths: string[]) {
+  if (localPicker.value !== 'files' || props.busy) return;
+  const existing = new Set(localPicked.value);
+  const added = paths.filter(path => !existing.has(path));
+  localPicked.value = [...localPicked.value, ...added];
+  selectedLocal.value = [...selectedLocal.value, ...added];
+  localPickerError.value = '';
+  cancelLocalPicker();
+}
+
+async function stageLocalFolder(path: string) {
+  if (localPicker.value !== 'folder' || props.busy || pickingLocal.value) return;
+  const revision = ++folderScan;
   pickingLocal.value = true;
   localPickerError.value = '';
   try {
-    const folder = fromFolder ? await api.selectMediaFolder() : null;
-    const paths = fromFolder ? folder?.files : await api.selectAudioFiles();
-    if (!paths || !props.open || currentProject.value !== project) return;
-    if (folder) {
-      localSkippedFolders.value = folder.skippedFolders ?? [];
-      if (!paths.length) {
-        localPickerError.value = t('importAudio.emptyMediaFolder');
-        return;
-      }
-      localFolder.value = folder.name;
-      importAsGroup.value = false;
-      localPicked.value = paths;
-      selectedLocal.value = [...paths];
-      localAnchor.i = -1;
-    } else {
-      const existing = new Set(localPicked.value);
-      const added = paths.filter(path => !existing.has(path));
-      localPicked.value = [...localPicked.value, ...added];
-      selectedLocal.value = [...selectedLocal.value, ...added];
+    const folder = await window.electronAPI.scanMediaFolder(path);
+    if (revision !== folderScan) return;
+    localSkippedFolders.value = folder.skippedFolders;
+    if (!folder.files.length) {
+      localPickerError.value = t('importAudio.emptyMediaFolder');
+      return;
     }
+    localFolder.value = folder.name;
+    importAsGroup.value = false;
+    localPicked.value = folder.files;
+    selectedLocal.value = [...folder.files];
+    localAnchor.i = -1;
   } catch (error) {
-    if (props.open && currentProject.value === project) {
-      if (fromFolder) {
-        console.warn('Could not read the selected media folder:', error);
-        localPickerError.value = t('importAudio.folderReadFailed');
-      } else {
-        localPickerError.value = error instanceof Error ? error.message : String(error);
-      }
+    if (revision === folderScan) {
+      console.warn('Could not read the selected media folder:', error);
+      localPickerError.value = t('importAudio.folderReadFailed');
     }
   } finally {
-    pickingLocal.value = false;
+    if (revision === folderScan) cancelLocalPicker();
   }
 }
 
@@ -641,6 +647,10 @@ function formatBytes(n: number): string {
   display: grid;
   gap: var(--spacing-sm);
   min-width: 0;
+}
+
+.import-source--picking {
+  grid-column: 1 / -1;
 }
 
 .import-media {

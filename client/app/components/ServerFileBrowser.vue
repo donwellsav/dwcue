@@ -1,5 +1,5 @@
 <template>
-  <div class="server-file-browser">
+  <div class="server-file-browser" :class="{ 'server-file-browser--staging': staging }">
     <div class="server-file-browser__bar">
       <button class="btn" :disabled="!canGoUp" @click="goUp" title="Up one level">
         <span class="material-symbols-rounded" style="font-size:16px;vertical-align:middle;">arrow_upward</span>
@@ -8,7 +8,8 @@
       <input
         v-model="pathInput"
         class="path-input"
-        @keydown.enter="goTo(pathInput)"
+        aria-label="Folder path"
+        @keydown.enter.prevent="goTo(pathInput)"
         placeholder="Server path (Enter to browse)"
       />
       <button class="btn primary" @click="goTo(pathInput)">Go</button>
@@ -28,22 +29,25 @@
         <div v-else-if="loading" class="status">Loading…</div>
 
         <ul v-else class="entries">
-          <li v-for="(entry, idx) in sortedEntries"
-              :key="entry.full_path"
+          <li v-for="(entry, idx) in sortedEntries" :key="entry.full_path">
+            <button type="button"
               class="entry"
               :class="[entry.kind, {
                 selected: isSelected(entry.full_path),
                 'unsupported-file': isObviouslyNonMedia(entry),
                 'unknown-file': isUnknownFileType(entry),
               }]"
-              :aria-disabled="isObviouslyNonMedia(entry) ? 'true' : undefined"
+              :aria-pressed="entry.kind === 'file' && !isObviouslyNonMedia(entry) ? isSelected(entry.full_path) : undefined"
+              :disabled="isObviouslyNonMedia(entry)"
               @click="onEntryClick(entry, idx, $event)"
-              @dblclick="onEntryActivate(entry)">
-            <span class="icon material-symbols-rounded">{{ iconFor(entry) }}</span>
+              @dblclick="onEntryActivate(entry)"
+              @keydown.enter.prevent.stop="onEntryActivate(entry)">
+            <span class="icon material-symbols-rounded" aria-hidden="true">{{ iconFor(entry) }}</span>
             <span class="name">{{ entry.name }}</span>
             <span v-if="isObviouslyNonMedia(entry)" class="size file-type-note unsupported">{{ t('importAudio.unsupportedFileType') }}</span>
             <span v-else-if="isUnknownFileType(entry)" class="size file-type-note">{{ t('importAudio.verifyFileType') }}</span>
             <span v-else-if="entry.kind === 'file' && entry.size != null" class="size">{{ formatBytes(entry.size) }}</span>
+            </button>
           </li>
           <li v-if="(listing?.entries?.length ?? 0) === 0" class="empty">
             {{ t('importAudio.emptyServerFolder') }}
@@ -56,8 +60,9 @@
             @click="setSelection([...selectablePaths])">{{ t('importAudio.selectAll') }}</button>
           <button type="button" class="btn" :disabled="!selected.length"
             @click="setSelection([])">{{ t('importAudio.selectNone') }}</button>
+          <button v-if="staging" type="button" class="btn" @click="emit('close')">{{ t('common.cancel') }}</button>
           <button class="btn primary" :disabled="loading || !!error || selected.length === 0" @click="importSelected">
-            {{ t('importAudio.importSelected') }}<span v-if="selected.length"> ({{ selected.length }})</span>
+            {{ t(staging ? 'importAudio.add' : 'importAudio.importSelected') }}<span v-if="selected.length"> ({{ selected.length }})</span>
           </button>
         </div>
       </div>
@@ -91,17 +96,20 @@ import {
 } from '~/composables/useFilePickerLocations';
 import { useLiveplayServer } from '~/composables/useLiveplayServer';
 import type { ServerFsEntry, ServerFsListing } from '~/types/server';
+import { MEDIA_FILE_ACCEPT } from '~/utils/audio';
 
 const props = withDefaults(defineProps<{
   startPath?: string;
   fallbackStartPath?: string;
   canSelect?: boolean;
+  staging?: boolean;
 }>(), {
   canSelect: true,
 });
 
 const emit = defineEmits<{
   (e: 'select', fullPaths: string[]): void;
+  (e: 'close'): void;
 }>();
 
 const server = useLiveplayServer();
@@ -189,7 +197,9 @@ function iconFor(entry: ServerFsEntry): string {
 async function goTo(path: string, fallbackPath?: string): Promise<boolean> {
   const revision = ++navigationRevision;
   const endpoint = String(server.serverUrl);
-  const isCurrent = () => revision === navigationRevision && endpoint === String(server.serverUrl);
+  const credential = server.effectiveAccessToken;
+  const isCurrent = () => revision === navigationRevision && endpoint === String(server.serverUrl) &&
+    credential === server.effectiveAccessToken;
   loading.value = true;
   error.value = null;
   notice.value = null;
@@ -197,16 +207,16 @@ async function goTo(path: string, fallbackPath?: string): Promise<boolean> {
   anchorIndex = -1;
   pathInput.value = path;
   try {
-    const next = await server.listServerPath(path);
+    const next = await server.listServerPath(path, props.staging ? MEDIA_FILE_ACCEPT : 'audio');
     if (!isCurrent()) return false;
     listing.value = next;
-    pathInput.value = next.path;
+    if (pathInput.value === path) pathInput.value = next.path;
     pickerLocations.rememberFolder(next.path);
     return true;
   } catch (cause) {
     if (!isCurrent()) return false;
     const message = cause instanceof Error ? cause.message : String(cause);
-    if (fallbackPath !== undefined && /^404(?:\s|$)/.test(message)) {
+    if (fallbackPath !== undefined && pathInput.value === path && /^404(?:\s|$)/.test(message)) {
       const recovered = await goTo(fallbackPath);
       if (recovered) notice.value = t('filePicker.unavailableFolder', { path });
       return recovered;
@@ -273,7 +283,7 @@ function formatBytes(n: number): string {
   return `${v.toFixed(1)} ${units[i]}`;
 }
 
-watch([() => props.startPath, () => props.fallbackStartPath, () => String(server.serverUrl)], () => {
+watch([() => props.startPath, () => props.fallbackStartPath, () => String(server.serverUrl), () => server.effectiveAccessToken], () => {
   navigationRevision++;
   listing.value = null;
   const remembered = pickerLocations.lastFolder.value;
@@ -296,6 +306,7 @@ watch([() => props.startPath, () => props.fallbackStartPath, () => String(server
 
     .path-input {
       flex: 1;
+      min-width: 0;
       padding: 6px 10px;
       background: var(--color-control);
       border: 1px solid var(--color-border);
@@ -330,6 +341,17 @@ watch([() => props.startPath, () => props.fallbackStartPath, () => String(server
     .sel-count { color: var(--color-text-secondary); font-size: 12px; }
   }
 
+  &--staging &__content {
+    height: clamp(128px, 24vh, 192px);
+    min-height: 0;
+    .entries { flex: 1; min-height: 0; }
+  }
+
+  &--staging &__footer {
+    flex-shrink: 0;
+    padding: var(--spacing-xs) var(--spacing-sm);
+  }
+
   .btn {
     min-height: var(--panel-control-height);
     background: var(--color-surface-raised);
@@ -355,17 +377,24 @@ watch([() => props.startPath, () => props.fallbackStartPath, () => String(server
     border-radius: var(--control-radius);
     background: var(--color-background);
 
+    li:not(:last-child) { border-bottom: 1px solid var(--color-border); }
+
     .entry {
+      width: 100%;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      text-align: start;
       display: grid;
       grid-template-columns: 28px 1fr auto;
       align-items: center;
       gap: 8px;
       padding: 6px 10px;
       cursor: pointer;
-      border-bottom: 1px solid var(--color-border);
       user-select: none;
-      &:last-child { border-bottom: none; }
       &:hover { background: var(--color-surface-hover); }
+      &:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: -2px; }
       .size   { color: var(--color-text-tertiary); font-size: 11px; font-family: var(--font-mono); }
       .name   { color: var(--color-text-primary); }
       &.drive .name,

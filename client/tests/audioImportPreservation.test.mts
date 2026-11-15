@@ -33,6 +33,34 @@ const playlist = read('components/PlaylistView.vue');
 const projectSource = read('composables/useProject.ts');
 const serverSource = read('composables/useLiveplayServer.ts');
 
+test('cancelling a held folder scan preserves the staged files and their selection', async () => {
+  let finish!: (value: { name: string; files: string[]; skippedFolders: string[] }) => void;
+  const pending = new Promise<Parameters<typeof finish>[0]>(resolve => { finish = resolve; });
+  const localPicked = ref(['/media/first.wav', '/media/second.wav']);
+  const selectedLocal = ref(['/media/second.wav']);
+  const localFolder = ref('Original batch');
+  const importAsGroup = ref(true);
+  const localPicker = ref('folder');
+  const { stageLocalFolder, cancelLocalPicker } = compile(
+    section(read('components/AudioImportModal.vue'), 'function cancelLocalPicker(', '// File-backed browser uploads'),
+    {
+      window: { electronAPI: { scanMediaFolder: () => pending } },
+      folderScan: 0, localPicker, localPicked, selectedLocal, localFolder, importAsGroup,
+      pickingLocal: ref(false), localPickerError: ref(''), localSkippedFolders: ref([]),
+      localAnchor: { i: -1 }, props: { busy: false }, t: (key: string) => key,
+    }, '{ stageLocalFolder, cancelLocalPicker }',
+  );
+  const scan = stageLocalFolder('/new');
+  cancelLocalPicker();
+  finish({ name: 'New batch', files: ['/new/late.wav'], skippedFolders: [] });
+  await scan;
+  assert.equal(localPicker.value, null);
+  assert.deepEqual(localPicked.value, ['/media/first.wav', '/media/second.wav']);
+  assert.deepEqual(selectedLocal.value, ['/media/second.wav']);
+  assert.equal(localFolder.value, 'Original batch');
+  assert.equal(importAsGroup.value, true);
+});
+
 test('manual loudness normalization uses its LUFS target without a peak-ceiling input', () => {
   const item = { volume: 1 };
   assert.equal(audio.applyLoudnessMatch(item, {

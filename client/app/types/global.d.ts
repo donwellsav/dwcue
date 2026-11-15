@@ -14,8 +14,7 @@ declare global {
     electronAPI: {
       selectProjectFolder: () => Promise<string | null>;
       selectProjectFile: () => Promise<string | null>;
-      selectAudioFiles: () => Promise<string[] | null>;
-      selectMediaFolder: () => Promise<{ name: string; files: string[]; skippedFolders: string[] } | null>;
+      scanMediaFolder: (folder: string) => Promise<{ name: string; files: string[]; skippedFolders: string[] }>;
       readFile: (filePath: string) => Promise<{ success: boolean; data?: string; error?: string }>;
       writeFile: (filePath: string, data: string) => Promise<{ success: boolean; error?: string }>;
       showSaveArchiveDialog: (defaultName?: string) => Promise<string | null>;
