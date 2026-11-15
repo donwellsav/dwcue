@@ -68,16 +68,20 @@
         <ProjectDecisionPanel v-if="projectDecision" :title="projectDecision.title" :message="projectDecision.message"
           :buttons="projectDecision.buttons" @pick="projectDecision.pick" />
         <section v-else class="project-file-panel"
-          :class="{ 'project-file-panel--startup': !hasWorkspace, 'project-file-panel--browse': projectPicker === 'new-location' }"
+          :class="{ 'project-file-panel--startup': !hasWorkspace, 'project-file-panel--browse': projectPicker && !projectFileBusy }"
           aria-labelledby="project-file-panel-title">
           <header class="workspace-panel-header">
-            <h2 id="project-file-panel-title" class="workspace-panel-header__title">{{ t('project.newShow') }}</h2>
+            <h2 id="project-file-panel-title" class="workspace-panel-header__title">{{ t(projectPicker === 'open' ? 'menu.openProject' : 'project.newShow') }}</h2>
             <Btn v-if="!hasWorkspace" type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="stopAllCues()" />
           </header>
-          <p v-if="creatingNewShow" class="project-file-status" role="status">{{ isLoading ? loadingMessage : t('common.loading') }}</p>
-          <ServerFilePickerModal v-else-if="projectPicker === 'new-location'" docked :open="true"
-            mode="directory" filter="all" :filter-options="['all']" :fallback-start-path="projectPickerFallback"
-            location-context="project-create" :cancel-label="t('common.back')"
+          <p v-if="projectFileBusy" class="project-file-status" role="status">{{ isLoading ? loadingMessage : t('common.loading') }}</p>
+          <ServerFilePickerModal v-else-if="projectPicker" docked :open="true"
+            :mode="projectPicker === 'open' ? 'file' : 'directory'"
+            :filter="projectPicker === 'open' ? '.dwcue' : 'all'"
+            :filter-options="projectPicker === 'open' ? ['.dwcue', 'all'] : ['all']"
+            :location-context="projectPicker === 'open' ? 'project-open' : 'project-create'"
+            :cancel-label="t(projectPicker === 'open' ? 'common.cancel' : 'common.back')"
+            :fallback-start-path="projectPickerFallback"
             @pick="onProjectPickerPick" @close="closeProjectPicker" />
           <form v-else class="new-show-form" @submit.prevent="createNewShow">
             <label class="new-show-field" for="welcome-new-show-name">
@@ -166,17 +170,7 @@
     <!-- About Modal -->
     <AboutModal v-if="showAboutModal && !projectPanelOpen" @close="showAboutModal = false" />
     
-    <ServerFilePickerModal
-      :open="projectPicker === 'open' && !projectDecision"
-      mode="file" filter=".dwcue" :filter-options="['.dwcue', 'all']"
-      :fallback-start-path="projectPickerFallback"
-      location-context="project-open"
-      @pick="onProjectPickerPick"
-      @close="closeProjectPicker"
-    />
-
-    <!-- Loading overlay (project open / create / save) -->
-    <LoadingOverlay :visible="isLoading && !creatingNewShow" :title="loadingMessage" />
+    <LoadingOverlay :visible="isLoading && !projectFileBusy" :title="loadingMessage" />
 
     <ProjectRepairNotice v-if="projectRepair" :notice="projectRepair" @save="saveRepairedProject" />
 
@@ -274,6 +268,8 @@ const newShowNameInput = ref<HTMLInputElement | null>(null);
 const newShowBrowseButton = ref<HTMLButtonElement | null>(null);
 const newShowDialogReturnFocus = ref<HTMLElement | null>(null);
 const creatingNewShow = ref(false);
+const openingShow = useState('useProject.openingFromPicker', () => false);
+const projectFileBusy = computed(() => creatingNewShow.value || openingShow.value);
 const newShowError = ref<string | null>(null);
 const canCreateNewShow = computed(() => !!newShowName.value.trim() && !!newShowLocation.value.trim());
 
@@ -307,12 +303,20 @@ function closeProjectPicker() {
   projectPicker.value = null;
 }
 
-function onProjectPickerPick(path: string) {
-  const intent = projectPicker.value;
-  closeProjectPicker();
-  if (!path) return;
-  if (intent === 'new-location') newShowLocation.value = path;
-  else if (intent === 'open') void guardedOpenProject(path);
+async function onProjectPickerPick(path: string) {
+  if (!path || !projectPicker.value || openingShow.value) return;
+  if (projectPicker.value === 'new-location') {
+    newShowLocation.value = path;
+    closeProjectPicker();
+    return;
+  }
+  openingShow.value = true;
+  try {
+    await guardedOpenProject(path);
+  } finally {
+    closeProjectPicker();
+    openingShow.value = false;
+  }
 }
 
 async function createNewShow() {
@@ -684,9 +688,9 @@ const projectDecision = computed(() => {
   };
   return null;
 });
-const projectDecisionOpen = useState('projectDecisionOpen', () => false);
-const projectPanelOpen = computed(() => !!projectDecision.value || showNewShowDialog.value || projectPicker.value === 'new-location');
-watch(projectPanelOpen, (open) => { projectDecisionOpen.value = open; }, { immediate: true });
+const projectPanelOpen = useState('projectPanelOpen', () => false);
+watch(() => !!projectDecision.value || projectFileDialogOpen.value,
+  (open) => { projectPanelOpen.value = open; }, { immediate: true });
 
 function onUnsavedPick(choice: string) {
   if (choice === 'save') void unsavedSave();

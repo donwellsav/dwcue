@@ -269,8 +269,7 @@ export const useProject = () => {
   const shufflePending = useState<boolean>('useProject.shufflePending', () => false);
   const musicContinuityPending = useState<Set<string>>('useProject.musicContinuityPending', () => new Set());
 
-  // Loading state — set true during open/create/save so the UI can render a
-  // loading overlay. `loadingMessage` is the title shown in the overlay.
+  // Tracks project loading for the progress display and cue-start guards.
   const isLoading = useState<boolean>('useProject.isLoading', () => false);
   const loadingMessage = useState<string>('useProject.loadingMessage', () => '');
   // Background audio-loading progress (polled while the server is still

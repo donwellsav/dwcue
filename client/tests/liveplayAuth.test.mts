@@ -659,6 +659,19 @@ test('cue starts wait for show verification and explicit session recovery', asyn
     assert.equal(await server.go(), false);
     assert.deepEqual(next.sent, []);
     sessionLost.value = false;
+    const openingFromPicker = nuxtState.get('useProject.openingFromPicker')!;
+    const projectLoading = nuxtState.get('useProject.isLoading')!;
+    openingFromPicker.value = true;
+    assert.equal(server.cueStartsBlocked, false, 'the save decision before Open must leave live transport available');
+    projectLoading.value = true;
+    try {
+      assert.equal(await server.go(), false);
+      assert.equal(await server.playItem('old-cue'), false);
+      assert.deepEqual(next.sent, [], 'a submitted Open must not send cue starts into a possibly different show');
+    } finally {
+      openingFromPicker.value = false;
+      projectLoading.value = false;
+    }
     const started = server.go();
     const command = JSON.parse(next.sent[0]!);
     assert.equal(command.type, 'go');

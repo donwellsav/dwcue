@@ -2469,8 +2469,10 @@ assert.match(
 );
 assert.doesNotMatch(projectDecisionPanel, /aria-modal|position:\s*fixed|keydown|Teleport/,
   'project decisions must leave pointer and keyboard transport available');
-assert.match(appVue, /to="#workspace-project-decision"[\s\S]*?<ProjectDecisionPanel v-if="projectDecision"[\s\S]*?class="project-file-panel"[\s\S]*?role="status"[\s\S]*?<ServerFilePickerModal [^>]*docked[\s\S]*?class="new-show-form" @submit.prevent="createNewShow"[\s\S]*?<\/Teleport>/,
-  'New Show, its folder picker and progress must share the same lower panel as the save decision');
+assert.match(appVue, /to="#workspace-project-decision"[\s\S]*?<ProjectDecisionPanel v-if="projectDecision"[\s\S]*?class="project-file-panel"[\s\S]*?role="status"[\s\S]*?<ServerFilePickerModal v-else-if="projectPicker" docked[\s\S]*?class="new-show-form" @submit.prevent="createNewShow"[\s\S]*?<\/Teleport>/,
+  'New Show, Open Project, their progress and the save decision must share the lower panel');
+assert.match(appVue, /<LoadingOverlay :visible="isLoading && !projectFileBusy"/,
+  'a show request from the lower panel must keep transport visible while loading');
 assert.match(
   midiController,
   /`trigger-slot-\$\{number\}`[\s\S]*length:\s*CART_SLOT_COUNT_LIMITS\.max/,
