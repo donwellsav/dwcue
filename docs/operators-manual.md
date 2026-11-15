@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** 07c7bacc91dd85bc07c06d614f15ab6c3c1d4c05
+**Source revision:** 03ef672ee4940bee44a6f8260825242fbc867fcd
 **Native engine baseline:** 7c233a9
 **Edition:** 15 November 2026 · English · Operator edition
 
@@ -36,7 +36,7 @@ The Video Output window is a separate picture renderer on the desktop computer. 
 
 This manual uses the English labels. Change language through **Settings → User Interface → Language** or the desktop **View → Language** menu. That preference belongs to the device, not to the show. The app includes 21 languages and right-to-left layouts for Arabic, Persian, and Urdu.
 
-**Settings → User Interface → Show tooltips** controls hover hints in the operator workspace and detached QuickPlays. It starts on and is saved on this device. The audience Video Output window always runs without tooltips.
+**Settings → User Interface → Show tooltips** controls hover hints in the workspace and detached QuickPlays. It starts on and is saved on this device. The audience Video Output window always runs without tooltips. **View → Change Accent Color** opens this tab, where the accent swatches apply to the current show.
 
 | Term | Meaning in this manual |
 | --- | --- |
@@ -159,21 +159,19 @@ Accepted GO consumes an override and refused GO retains it. Check readiness, err
 
 ### Local files first
 
-Open **Import Media** from the playlist to use the lower panel. **Choose files…** stages individual items. **Choose folder…** stages supported audio and video from the folder and its subfolders in filename order. Review the list, use **Select all** or **Select none** to adjust the batch, and choose **Import selected**. Turn on **Import as group** to put those cues in one playlist group named for the folder.
+Open **Import Media** from the playlist. For a local engine, **Choose files…** and **Choose folder…** both open in the lower panel. Use **Add** to stage selected files. Choosing a folder stages supported files from it and its subfolders in filename order. Use **Select all** or **Select none** to adjust the batch. **Import as group** puts the selected cues in a group named for the folder.
 
 If a subfolder cannot be read, its relative path appears in a warning. The readable files remain available to import. Restore access and select the skipped subfolder separately if the show needs its files.
 
-The **Import plan** shows file handling and duplicate settings beside the selection. Use **Browse Server** next to the file and folder buttons for media already on the engine computer. When connected to a remote engine, choose **From This Computer** or **Browse Server** along the bottom of the panel.
-
-The desktop media chooser opens in a separate window. Bring the operator window forward to use the playlist, GO, and **Stop All Cues** while the chooser remains open. Other in-app file and folder dialogs provide **Stop All Cues** in their toolbars. Stopping cues uses the show’s configured fade and keeps the file selection open.
+The **Import plan** shows file handling and duplicate settings beside the selection. **Cancel** while browsing or scanning keeps the staged batch. The playlist, GO and **Stop All Cues** stay available, and **Escape** stops cues without discarding the selection.
 
 ![Import Media with separate file and folder choices.](manual-assets/import-media.png)
 
-In **Browse Server**, double-click a folder to open it. Use **Select all** to stage eligible files in that view, or select individual files with Shift or Ctrl/Cmd-click. Choose **Import selected** to start verification. The file list distinguishes recognizable media, unsupported file types, and files whose type still needs verification. Wait for the import result to confirm the selected media can play.
+Double-click a folder or press **Enter** on it to browse. Use **Select all**, **Select none**, Shift or Ctrl/Cmd-click to select files before choosing **Add**. Select **Import selected** in the review to start verification.
 
-![The server browser inside the Import Media panel.](manual-assets/server-picker-current.png)
+![Multi-file selection inside the Import Media panel.](manual-assets/server-picker-current.png)
 
-Remote operation separates the two computers: **From This Computer** transfers files from the controller, while **Browse Server** selects files already accessible to the engine. Do not enter a controller-only path into the server browser and expect it to exist remotely.
+With a remote engine, **From This Computer** opens the controller's system chooser to upload files. **Browse Server** selects files accessible to the engine and starts verification with **Import selected**.
 
 During verification, the panel shows the current file, a progress bar, and **Cancel import**. If an individual file fails to upload, the remaining uploads continue. Review the failed filenames and use **Retry Failed** for those files. Retrying a group batch puts newly verified files in the same group. Reopen **Import Media** to return to the results for this show.
 
@@ -188,7 +186,7 @@ The import plan starts with **Copy into project media** and **Reuse existing cop
 **Procedure — import media that will travel with the show**
 
 - **Prerequisites:** The show is saved in a dedicated folder and the source files are authorized, stable, and available for audition.
-- **Actions:** Choose **Import Media → Choose files…**, select the sources, then confirm **Copy into project media** and the duplicate policy in the **Import plan**. Start the import and wait for every result.
+- **Actions:** Choose **Import Media → Choose files…**, select the sources, then choose **Add**. Confirm **Copy into project media** and the duplicate policy in the **Import plan**. Start the import and wait for every result.
 - **Expected visible outcome:** Each wanted file reports a successful import and appears as a cue; the project media folder contains the copied source.
 - **Common mistake:** Choosing a link to save time, then moving only the `.dwcue` file to another machine.
 - **Recovery:** Re-import with copying enabled or replace the cue media, save, export a `.dwcuepack`, and rehearse with the original source volume unavailable.
@@ -221,7 +219,7 @@ YouTube and Spotify import controls are available in Edit Mode. They depend on e
 
 Paste a Spotify link or short share link, then choose **Review tracks** to retrieve usable tracks in playlist order. The review counts entries with missing or invalid Spotify track IDs. Large playlists can take several minutes to review. Use **Select all** or **Select none** above the track list, then **Download & Add** below it. Use **Change Link** to return to the URL field. During a download, the panel shows the current phase, count, and **Cancel**. Resolve unavailable, unmatched or failed entries before taking the cues. **Technical details** shows the downloader's message if review fails.
 
-The app normally saves the Spotify destination and retry information. If it warns that it could not save them, you can continue with the selected folder and retry within the current app session. Restore write access before relying on that information after restarting the app. If cue setup settings reach the engine but cannot be saved, they stay active. Correct the storage problem and save again.
+**Choose Folder** opens the destination browser in the same panel. To use a new folder outside the show, drop it from Finder or File Explorer. The app normally saves the destination and retry information. If saving fails, you can keep using that folder for the session. If cue setup settings reach the engine and saving fails, those settings stay active. Correct the storage problem and save again.
 
 
 The YouTube download queue appears above search while it has jobs. Each row shows the file, phase, progress, and actions. Completed items stay in the queue with **Open Folder** until dismissed or the show changes. Cancelling during tool preparation prevents the downloader from starting afterward. Tool or media-folder failures report an error so you can correct the cause and retry.

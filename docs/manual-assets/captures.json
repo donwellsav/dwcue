@@ -1,6 +1,6 @@
 {
   "application": "DonWells Cue",
-  "sourceRevision": "07c7bacc91dd85bc07c06d614f15ab6c3c1d4c05",
+  "sourceRevision": "03ef672ee4940bee44a6f8260825242fbc867fcd",
   "packageVersion": "2.6.23 development",
   "edition": "15 November 2026 development review of operator controls, imports, and project panels",
   "images": [
@@ -108,53 +108,53 @@
     },
     {
       "file": "import-media.png",
-      "view": "Lower Import Media panel with separate file and folder pickers.",
+      "view": "Local Import Media actions and the import plan.",
       "version": "2.6.23 development",
-      "sourceRevision": "89d574e9ddc709e54f286e134416b7b189528947",
+      "sourceRevision": "03ef672ee4940bee44a6f8260825242fbc867fcd",
       "nativeSourceRevision": "7c233a943f4c9ec42b6008fb3ffea09729429b84",
-      "capturedOn": "2026-11-14",
+      "capturedOn": "2026-11-15",
       "surface": "DonWells Cue development renderer in isolated Chromium at 110% interface scale.",
       "dimensions": [
         1200,
         259
       ],
-      "sha256": "5bf3d3745a2160ea8ec6bcac186229d2dee15695600cd41dbea959e3d00adec7",
+      "sha256": "d52120fbda96ff75eeea91183c988a359f70f8812c6cdb63f3bb43c3d4f11d72",
       "fixture": "Disposable rehearsal show with generated WAV files and a native NULL software output.",
-      "captureMethod": "Playwright panel screenshot with fixture Electron picker methods.",
+      "captureMethod": "Playwright lower-panel screenshot with a fixture Electron folder scan.",
       "presentation": "Full lower Import Media panel at its fitted height."
     },
     {
       "file": "server-picker-current.png",
-      "view": "Server folder browser with bulk file selection and import controls.",
+      "view": "Docked multi-file selection with Select All, Select None, Cancel and Add.",
       "version": "2.6.23 development",
-      "sourceRevision": "89d574e9ddc709e54f286e134416b7b189528947",
+      "sourceRevision": "03ef672ee4940bee44a6f8260825242fbc867fcd",
       "nativeSourceRevision": "7c233a943f4c9ec42b6008fb3ffea09729429b84",
-      "capturedOn": "2026-11-14",
+      "capturedOn": "2026-11-15",
       "surface": "DonWells Cue development renderer in isolated Chromium at 110% interface scale.",
       "dimensions": [
         1200,
-        468
+        298
       ],
-      "sha256": "58811b7acddd62b9b3e210cb454b1085a108cc55db22cccfab25ff54ba78e7dd",
+      "sha256": "69bf4f2cb34eb5009f8e79e1f9faabf61e55c021e706cb61896078d1b237ecdc",
       "fixture": "Disposable rehearsal show with generated WAV files and a native NULL software output.",
-      "captureMethod": "Playwright panel screenshot with fixture Electron picker methods.",
+      "captureMethod": "Playwright lower-panel screenshot with a fixture Electron folder scan.",
       "presentation": "Full lower Import Media panel at its fitted height."
     },
     {
       "file": "import-options-current.png",
-      "view": "Folder batch with selection controls, group import, and the import plan.",
+      "view": "Staged nested-folder batch with group import and duplicate handling.",
       "version": "2.6.23 development",
-      "sourceRevision": "89d574e9ddc709e54f286e134416b7b189528947",
+      "sourceRevision": "03ef672ee4940bee44a6f8260825242fbc867fcd",
       "nativeSourceRevision": "7c233a943f4c9ec42b6008fb3ffea09729429b84",
-      "capturedOn": "2026-11-14",
+      "capturedOn": "2026-11-15",
       "surface": "DonWells Cue development renderer in isolated Chromium at 110% interface scale.",
       "dimensions": [
         1200,
-        283
+        259
       ],
-      "sha256": "f650ff039e76fb7e812c1073f370811145f79e742f87ed82e56ab90e28869bf8",
+      "sha256": "f8589d93d21d6ff522b81807d088bdf9570bd8c65d50442ad7c7b26f4f7e46f7",
       "fixture": "Disposable rehearsal show with generated WAV files and a native NULL software output.",
-      "captureMethod": "Playwright panel screenshot with fixture Electron picker methods.",
+      "captureMethod": "Playwright lower-panel screenshot with a fixture Electron folder scan.",
       "presentation": "Full lower Import Media panel at its fitted height."
     },
     {
@@ -476,10 +476,10 @@
     "gainStages": "Schematic: final physical sum and secondary-clock adaptation precede the attenuation-only limiter and device output."
   },
   "uiBuildRevision": "534615e1ce656d849e886cacba121fbe3d986020",
-  "manualSourceRevision": "07c7bacc91dd85bc07c06d614f15ab6c3c1d4c05",
+  "manualSourceRevision": "03ef672ee4940bee44a6f8260825242fbc867fcd",
   "visualCompatibility": {
     "checkedOn": "2026-11-15",
-    "revision": "07c7bacc91dd85bc07c06d614f15ab6c3c1d4c05",
-    "basis": "The generated renderer was checked with Replace Media in Properties at 1200 × 700 and 845 × 690 at 110% interface scale. The existing Properties figures retain their capture revisions."
+    "revision": "03ef672ee4940bee44a6f8260825242fbc867fcd",
+    "basis": "The current renderer was software-checked for local media and Spotify destination browsing and accent selection. The three Import Media figures were refreshed. Other figures retain their capture revisions."
   }
 }

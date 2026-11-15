@@ -35,7 +35,7 @@ The screenshots in this README are representative captures and may lag the newes
 - **🎚 Choose show outputs** — configure program and Preview devices in Settings, then choose an output device (and LTC routing when needed) per cue in Properties. The server exposes a richer multi-device routing API, but the current client does not mount its Routing Matrix component as an operator screen.
 - **🎬 Timecode** — send SMPTE LTC timecode from a cue to keep lighting, video or other systems in sync.
 - **🎞 Play video cues** — H.264/HEVC media shows a picture on a dedicated fullscreen output (projector, LED wall, confidence monitor) while the audio plays through the normal engine path and mixer.
-- **📥 Bring in audio easily** — drag and drop local files or open **Import Media**, where **Choose files** is the primary local action. Advanced/server browsing stays collapsed until needed, and unsupported non-media entries are disabled. You can also download from YouTube or review and import selected Spotify tracks into a project folder.
+- **📥 Bring in audio easily** — drop local files onto the playlist or use **Import Media** to select files and folders in the lower panel. Review the selection, copy or link the files, and optionally import a folder as a group. You can also download from YouTube or review and import selected Spotify tracks.
 - **🎹 Trigger it your way** — click, tap, keyboard hotkeys (with an on-screen shortcuts bar, shown by default), MIDI controllers, or automation over the network (HTTP / WebSocket).
 - **🔠 Read it your size** — scale the interface text and the QuickPlay cell text independently from Settings → User Interface; the video output window is never scaled.
 - **🌍 Speak your language** — choose any of the app's **21 languages** from Settings → User Interface, including full right-to-left support for Arabic, Persian and Urdu.
@@ -125,7 +125,7 @@ DonWells Cue writes native show documents as `.dwcue` files and portable exports
 1. Install the [latest release](https://github.com/donwellsav/dwcue/releases/latest), or build DonWells Cue from source, and launch it.
 2. Choose **New Show**, enter its name, use **Choose…** to select the read-only Location, and create it — DonWells Cue writes `<show name>.dwcue` and a `media/` sub-folder there.
 3. In **Project Settings**, choose the program output, Output Target, and—if you need private auditioning—the Preview output.
-4. Drop audio or video files onto the playlist, or use **Import Media → Choose files**. Expand the advanced/server browser only when the media lives on the server; unsupported non-media entries cannot be selected.
+4. Drop audio or video files onto the playlist, or use **Import Media → Choose files…** or **Choose folder…**. On a local engine, both choices open in the lower panel. Review the batch before choosing **Import selected**.
 5. Open a cue's **Properties** to set markers, fades, normalization, volume, ducking, its output device, and Start/End Behaviors. Rehearse group and cross-group sequencing before show day.
 6. Drag frequently used playlist cues into QuickPlay cells for one-touch playback. The copy leaves the playlist cue unchanged.
 7. Audition on the Preview output, set the named **Play Next** cue, and verify the program and monitor meters.
@@ -143,6 +143,8 @@ The Cue Image picker in **Properties → Basic Info** and the Standby Image pick
 In **Properties → Basic Info → Media**, use **Replace or relink media** beside **File** to pick and verify a replacement in the lower panel. Cancel or a failed file check leaves the original media assigned.
 
 For a QuickPlay, click **+** in an empty slot or **Replace audio** in its settings to browse a single file in the lower panel. The panel uses the engine computer's folders. To import a file from the controller when the engine is on another computer, drop it directly on the slot.
+
+In **Spotify**, **Choose Folder** opens the destination inside the panel. To use a new folder outside the show, drop it from Finder or File Explorer. **View → Change Accent Color** opens the current show's swatches in **Settings → User Interface**.
 
 Full-document saves wait until all project cue pages have loaded; a failed, closed, or replaced load cannot authorize a partial save. A page failure leaves the loaded workspace visibly read-only with **Retry** and keeps Stop All available. Retry rejoins the server's current header/pages instead of reopening the old file, so live playhead state and unsaved server-accepted edits survive. Changing Autosave either on or off force-saves the current document and the new preference. Afterward, edits persist automatically while it is on; while it is off, later edits only mark the project dirty. The unsaved badge is shown only when Autosave is off and the project is dirty, so enabling Autosave hides the badge even if that forced save fails; the project nevertheless remains dirty. Save As is serialized by the server and publishes a complete snapshot atomically; failure leaves the existing file and current project path unchanged. The time-of-day clock uses the neutral text color, independently of the countdown's configured warning colors.
 
