@@ -780,6 +780,8 @@
     "close": "Close",
     "play": "Play",
     "restartCue": "Restart {name}",
+    "showCueTitle": "Show cue title",
+    "showMediaFilename": "Show media filename",
     "stop": "Stop",
     "pause": "Pause",
     "resume": "Resume",

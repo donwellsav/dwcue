@@ -337,7 +337,7 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /<span class="item-color-rail" :style="\{ backgroundColor: item\.color \}" aria-hidden="true"><\/span>[\s\S]*<span class="item-name"[^>]*>\{\{ item\.displayName \}\}<\/span>[\s\S]*v-if="isPaused" class="status-pill paused"[\s\S]*v-else-if="isPlaying" class="status-pill playing"/,
+  /<span class="item-color-rail" :style="\{ backgroundColor: item\.color \}" aria-hidden="true"><\/span>[\s\S]*<button[\s\S]*?class="item-name"[\s\S]*?@click="toggleFileName"[\s\S]*?\{\{ visibleTitle \}\}<\/button>[\s\S]*v-if="isPaused" class="status-pill paused"[\s\S]*v-else-if="isPlaying" class="status-pill playing"/,
   'cue colour must remain an independent rail while paused and playing states retain explicit priority',
 );
 assert.match(playlistItem, /'is-up-next': isQueuedNext/, 'queued-next state must remain on the playlist row');

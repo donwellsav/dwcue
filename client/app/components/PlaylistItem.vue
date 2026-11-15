@@ -109,7 +109,16 @@
             <span class="material-symbols-rounded" aria-hidden="true">folder</span>
           </span>
 
-          <span class="item-name" :title="item.displayName" :style="{ color: durationColor ?? undefined }">{{ item.displayName }}</span>
+          <button
+            v-if="mediaFileName && mediaFileName !== item.displayName"
+            type="button"
+            class="item-name"
+            :aria-pressed="showFileName"
+            :title="[visibleTitle, t(showFileName ? 'actions.showCueTitle' : 'actions.showMediaFilename')].join('\n')"
+            :style="{ color: durationColor ?? undefined }"
+            @click="toggleFileName"
+          >{{ visibleTitle }}</button>
+          <span v-else class="item-name" :title="item.displayName" :style="{ color: durationColor ?? undefined }">{{ item.displayName }}</span>
           <span
             v-if="isPeaking"
             class="material-symbols-rounded peak-warning-icon"
@@ -355,6 +364,17 @@ const groupToggleLabel = computed(() =>
 const waveformCanvas = ref<HTMLCanvasElement | null>(null);
 const dragPosition = ref<'top' | 'bottom' | 'group' | null>(null);
 const isDragging = ref(false);
+const showFileName = ref(false);
+const mediaFileName = computed(() => {
+  const item = props.item;
+  if (item.type !== 'audio') return '';
+  return item.mediaFileName || (item.mediaServerPath || item.mediaPath || '').split(/[\\/]/).pop() || '';
+});
+const visibleTitle = computed(() => showFileName.value && mediaFileName.value ? mediaFileName.value : props.item.displayName);
+
+function toggleFileName(event: MouseEvent) {
+  if (!event.ctrlKey && !event.metaKey && !event.shiftKey) showFileName.value = !showFileName.value;
+}
 
 const isSelected = computed(() => selectedItems.value.has(props.item.uuid));
 const isPlaying = computed(() => activeCues.value.has(props.item.uuid));
@@ -1318,6 +1338,13 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   max-width: 100%;
   justify-self: start;
   padding: 2px 6px;
+}
+
+button.item-name {
+  font-family: inherit;
+  text-align: start;
+  cursor: pointer;
+  &:hover { border-color: var(--color-border-strong); }
 }
 
 .item-duration {
