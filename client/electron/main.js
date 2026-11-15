@@ -4426,6 +4426,7 @@ ipcMain.on('sync-project-data', (event, projectData, identity, captureSession = 
     cartPlayerWindow.webContents.send('cart-window-project-update', {
       project: currentProjectData,
       identity: currentProjectIdentity,
+      projectSessionId: currentCaptureSession,
     });
   }
 });
@@ -4496,7 +4497,7 @@ ipcMain.on('cart-grid-layouts-changed', (event, layouts) => {
 
 ipcMain.handle('get-cart-window-project-data', (event) => {
   requireTrustedIpc(event);
-  return { project: currentProjectData, identity: currentProjectIdentity };
+  return { project: currentProjectData, identity: currentProjectIdentity, projectSessionId: currentCaptureSession };
 });
 
 ipcMain.handle('one-shot-mutation:request', (event, request) => {

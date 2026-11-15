@@ -162,6 +162,7 @@ export const useConnectionGuard = () => {
   // The callback fires from a WebSocket event, outside any Nuxt context, so
   // useState/useProject would throw there — runWithContext restores it.
   const nuxtApp = useNuxtApp();
+  const isDetachedWindow = import.meta.client && new URLSearchParams(window.location.search).get('cartWindow') === '1';
   server.onReconnected((signal) => {
     void nuxtApp.runWithContext(async () => {
       if (signal.aborted) return;
@@ -177,6 +178,14 @@ export const useConnectionGuard = () => {
         if (typeof header?.hasOpenProject !== 'boolean' ||
             (header.hasOpenProject && !header.server?.projectSessionId)) {
           throw new Error('Server returned an invalid show identity');
+        }
+        if (isDetachedWindow) {
+          // The primary window owns the document. A new or missing engine
+          // session can only be adopted through its verified snapshot.
+          if (server.showVerification !== 'checking') return;
+          sessionLost.value = !header.hasOpenProject || header.server.projectSessionId !== server.projectSessionId;
+          verified = true;
+          return;
         }
         if (!header.hasOpenProject) {
           projectChanged.value = false;
@@ -203,7 +212,9 @@ export const useConnectionGuard = () => {
       } catch (e) {
         if (!signal.aborted) console.warn('[connectionGuard] post-reconnect project probe failed:', e);
       } finally {
-        if (!signal.aborted) server.showVerification = verified ? null : 'failed';
+        if (!signal.aborted && (!isDetachedWindow || server.showVerification === 'checking')) {
+          server.showVerification = verified ? null : 'failed';
+        }
       }
     });
   });

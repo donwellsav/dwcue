@@ -3,6 +3,7 @@ import test from 'node:test';
 import { reactive } from 'vue';
 import type { AudioItem, Project } from '../app/types/project';
 import type { OneShotMutationIdentity, OneShotMutationRequest } from '../app/types/oneShotMutation';
+import { isNewerOneShotProject } from '../app/types/oneShotMutation';
 import type { OneShotMutationDraft } from '../app/utils/oneShotMutation';
 import { applyOneShotMutation, createDetachedOneShotMutationClient } from '../app/utils/oneShotMutation';
 import { cloneAsIndependentOneShot } from '../app/utils/oneShots';
@@ -10,6 +11,13 @@ import { cloneAsIndependentOneShot } from '../app/utils/oneShots';
 const identity: OneShotMutationIdentity = {
   projectPath: '/shows/a.dwcue', projectEpoch: 7, ownerSessionId: 'primary-1',
 };
+
+test('a detached recovery requires a newer primary show identity', () => {
+  assert.equal(isNewerOneShotProject(identity, identity), false);
+  assert.equal(isNewerOneShotProject({ ...identity, projectPath: '/shows/old.dwcue', projectEpoch: 6 }, identity), false);
+  assert.equal(isNewerOneShotProject({ ...identity, projectEpoch: 8 }, identity), true);
+  assert.equal(isNewerOneShotProject({ ...identity, ownerSessionId: 'primary-2', projectEpoch: 0 }, identity), true);
+});
 const audio = (uuid: string, order: number): AudioItem => ({
   uuid, index: [-1, order], displayName: uuid, color: '#00cc99', type: 'audio',
   mediaFileName: `${uuid}.wav`, mediaPath: `media/${uuid}.wav`, waveformPath: '',

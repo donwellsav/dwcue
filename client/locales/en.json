@@ -566,6 +566,7 @@
   "oneShots": {
     "defaultShortcuts": "QuickPlays (defaults)",
     "detachedNoPrimary": "The main project window is unavailable.",
+    "detachedWaitingForShow": "Restore or open the show in the main window to re-enable QuickPlays.",
     "detachedStale": "This QuickPlays window is out of date. Reopen it from the main window.",
     "detachedRejected": "The change was not accepted by the main window.",
     "detachedSaveFailed": "The change was applied but could not be saved.",

@@ -17,21 +17,22 @@
           />
           <span class="cart-brand-wordmark">DONWELLS CUE</span>
           <div id="cart-header-warnings" class="cart-header-warnings"></div>
-          <Btn v-if="reconnectPanelOpen" class="cart-recovery-stop" data-recovery-panel type="button"
+          <Btn v-if="detachedRecoveryOpen" class="cart-recovery-stop" data-recovery-panel type="button"
             icon="stop_circle" :text="t('controls.stopAll')" @click="stopAllCues()" @keydown.enter.space.stop />
           <span v-else class="cart-brand-url">dwcue.com</span>
         </header>
         <template v-if="currentProject && detachedProjectIdentity">
           <p v-if="detachedProjectError" class="cart-window-error" role="alert">{{ detachedProjectError }}</p>
-          <OneShotPanel :is-detached-window="true" :inert="reconnectPanelOpen" />
-          <DeleteSelectionPanel v-if="!reconnectPanelOpen" />
+          <OneShotPanel :is-detached-window="true" :inert="detachedRecoveryOpen" />
+          <DeleteSelectionPanel v-if="!detachedRecoveryOpen" />
         </template>
         <div v-else class="cart-window-loading">
           <CueSymbol name="one-shots" />
           <p v-if="detachedProjectError">{{ detachedProjectError }}</p>
         </div>
-        <div v-if="reconnectPanelOpen" class="cart-recovery-panel" data-recovery-panel>
-          <ConnectionLostModal docked :show-stop-all="false" />
+        <div v-if="detachedRecoveryOpen" class="cart-recovery-panel" data-recovery-panel>
+          <ConnectionLostModal v-if="reconnectPanelOpen" docked :show-stop-all="false" />
+          <p v-else class="cart-recovery-wait" role="status">{{ t('oneShots.detachedWaitingForShow') }}</p>
         </div>
       </div>
     </template>
@@ -216,7 +217,7 @@ import WelcomeScreen from './components/WelcomeScreen.vue';
 import type { ProjectFileKind } from '~/utils/projectFileFormats';
 import { PROJECT_FILE_EXTENSIONS, projectFileAction } from '~/utils/projectFileFormats';
 import type { OneShotMutationIdentity, OneShotMutationRequest, OneShotMutationResult, OneShotProjectEnvelope } from '~/types/oneShotMutation';
-import { sameOneShotMutationIdentity } from '~/types/oneShotMutation';
+import { isNewerOneShotProject, sameOneShotMutationIdentity } from '~/types/oneShotMutation';
 import { createProjectOpenGuard } from '~/utils/projectOpenGuard';
 import { runExclusivePendingAction } from '~/utils/acknowledgedAction';
 import { applyOneShotMutation } from '~/utils/oneShotMutation';
@@ -452,23 +453,22 @@ const detachedProjectIdentity = useState<OneShotMutationIdentity | null>(
 const detachedProjectError = useState<string>('oneShots.detachedMutationError', () => '');
 let rejectedDetachedIdentity: OneShotMutationIdentity | null = null;
 
-function applyCartWindowProjectData(envelope: OneShotProjectEnvelope | null) {
+function applyCartWindowProjectData(envelope: OneShotProjectEnvelope | null, liveUpdate = false) {
   if (!isCartWindow) return;
   const projectData = envelope?.project ?? null;
   const identity = envelope?.identity ?? null;
-  if (!projectData || !identity) {
-    rejectedDetachedIdentity = detachedProjectIdentity.value;
+  const projectSessionId = envelope?.projectSessionId;
+  if (!projectData || !identity || !projectSessionId) {
+    rejectedDetachedIdentity = detachedProjectIdentity.value ?? rejectedDetachedIdentity;
     detachedProjectIdentity.value = null;
     currentProject.value = null;
     clearCartOnlyItems();
     detachedProjectError.value = t('oneShots.detachedNoPrimary');
     return;
   }
-  if (rejectedDetachedIdentity && sameOneShotMutationIdentity(identity, rejectedDetachedIdentity)) return;
   const currentIdentity = detachedProjectIdentity.value;
-  if (currentIdentity?.ownerSessionId === identity.ownerSessionId
-    && currentIdentity.projectPath === identity.projectPath
-    && identity.projectEpoch < currentIdentity.projectEpoch) return;
+  const fresh = isNewerOneShotProject(identity, currentIdentity ?? rejectedDetachedIdentity);
+  if (!fresh && !sameOneShotMutationIdentity(identity, currentIdentity)) return;
   detachedProjectIdentity.value = identity;
   detachedProjectError.value = '';
   clearCartOnlyItems();
@@ -476,6 +476,11 @@ function applyCartWindowProjectData(envelope: OneShotProjectEnvelope | null) {
     for (const item of projectData.cartOnlyItems) addCartOnlyItem(item);
   }
   currentProject.value = projectData;
+  server.projectSessionId = projectSessionId;
+  if (liveUpdate && fresh) {
+    sessionLost.value = false;
+    server.showVerification = null;
+  }
 }
 
 let oneShotMutationTail = Promise.resolve();
@@ -535,13 +540,15 @@ onMounted(() => {
       if (el && typeof el.blur === 'function') el.blur();
     }, true);
 
-    // Cart window initialisation: load project data then listen for updates
+    // A delayed cached snapshot must not replace an update from the owner.
     if (isCartWindow) {
-      window.electronAPI.getCartWindowProjectData().then((projectData: any) => {
-        applyCartWindowProjectData(projectData);
-      });
+      let receivedUpdate = false;
       window.electronAPI.onCartWindowProjectUpdate((projectData) => {
-        applyCartWindowProjectData(projectData);
+        receivedUpdate = true;
+        applyCartWindowProjectData(projectData, true);
+      });
+      window.electronAPI.getCartWindowProjectData().then((projectData) => {
+        if (!receivedUpdate) applyCartWindowProjectData(projectData);
       });
       // Apply locale from localStorage (already handled by useLocalization)
       return; // skip main-window-only event listeners below
@@ -692,6 +699,7 @@ const projectDecision = computed(() => {
 });
 const projectPanelOpen = useState('projectPanelOpen', () => false);
 const reconnectPanelOpen = computed(() => server.connectionLost || !!server.showVerification);
+const detachedRecoveryOpen = computed(() => reconnectPanelOpen.value || sessionLost.value);
 const recoveryPanelOpen = computed(() => !isCartWindow && !isVideoOutputWindow &&
   (reconnectPanelOpen.value || (sessionLost.value && !!currentProject.value)));
 watch(() => recoveryPanelOpen.value || !!projectDecision.value || projectFileDialogOpen.value,
@@ -1275,6 +1283,13 @@ onMounted(() => {
   flex: 0 0 auto;
   max-height: 60%;
   overflow: auto;
+}
+
+.cart-recovery-wait {
+  margin: 0;
+  padding: var(--spacing-sm) var(--workspace-gutter);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
 }
 
 .cart-window-error {
