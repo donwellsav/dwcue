@@ -342,15 +342,10 @@
 
         <div class="playback-behavior playback-behavior--start">
           <div class="property-field">
-            <label for="cue-property-startBehavior">{{ t('properties.startBehavior') }}</label>
-            <select id="cue-property-startBehavior" v-model="startBehaviorAction" @change="handleSave">
-              <option v-if="selectedItem.type === 'audio'" value="nothing">{{ t('startBehavior.nothing') }}</option>
-              <option v-if="selectedItem.type === 'audio'" value="play-next">{{ t('startBehavior.playNext') }}</option>
-              <option v-if="selectedItem.type === 'audio'" value="play-item">{{ t('startBehavior.playItem') }}</option>
-              <option v-if="selectedItem.type === 'audio'" value="play-index">{{ t('startBehavior.playIndex') }}</option>
-              <option v-if="selectedItem.type === 'group'" value="play-first">{{ t('startBehavior.playFirst') }}</option>
-              <option v-if="selectedItem.type === 'group'" value="play-all">{{ t('startBehavior.playAll') }}</option>
-            </select>
+            <span class="property-label">{{ t('properties.startBehavior') }}</span>
+            <InlineChoicePicker id="cue-property-startBehavior" :label="t('properties.startBehavior')"
+              :value="startBehaviorAction" :options="startBehaviorOptions"
+              @change="startBehaviorAction = $event; handleSave()" />
           </div>
 
           <div class="property-field" v-if="startBehaviorAction === 'play-item'">
@@ -374,14 +369,10 @@
 
         <div class="playback-behavior playback-behavior--end">
           <div class="property-field">
-            <label for="cue-property-endBehavior">{{ t('properties.endBehavior') }}</label>
-            <select id="cue-property-endBehavior" v-model="endBehaviorAction" @change="handleSave">
-              <option value="nothing">{{ t('endBehavior.nothing') }}</option>
-              <option value="next">{{ t('endBehavior.next') }}</option>
-              <option value="goto-item">{{ t('endBehavior.gotoItem') }}</option>
-              <option value="goto-index">{{ t('endBehavior.gotoIndex') }}</option>
-              <option v-if="selectedItem.type === 'audio'" value="loop">{{ t('endBehavior.loop') }}</option>
-            </select>
+            <span class="property-label">{{ t('properties.endBehavior') }}</span>
+            <InlineChoicePicker id="cue-property-endBehavior" :label="t('properties.endBehavior')"
+              :value="endBehaviorAction" :options="endBehaviorOptions"
+              @change="endBehaviorAction = $event; handleSave()" />
           </div>
 
           <div class="property-field" v-if="endBehaviorAction === 'goto-item'">
@@ -704,6 +695,26 @@ const audioTabs = computed(() => [
 ] as const);
 
 // Computed properties for behavior fields
+const startBehaviorOptions = computed(() => selectedItem.value?.type === 'group' ? [
+  { value: 'play-first', label: t('startBehavior.playFirst') },
+  { value: 'play-all', label: t('startBehavior.playAll') },
+] as const : [
+  { value: 'nothing', label: t('startBehavior.nothing') },
+  { value: 'play-next', label: t('startBehavior.playNext') },
+  { value: 'play-item', label: t('startBehavior.playItem') },
+  { value: 'play-index', label: t('startBehavior.playIndex') },
+] as const);
+const endBehaviorOptions = computed(() => {
+  const options: { value: AudioItem['endBehavior']['action']; label: string }[] = [
+    { value: 'nothing', label: t('endBehavior.nothing') },
+    { value: 'next', label: t('endBehavior.next') },
+    { value: 'goto-item', label: t('endBehavior.gotoItem') },
+    { value: 'goto-index', label: t('endBehavior.gotoIndex') },
+  ];
+  if (selectedItem.value?.type === 'audio') options.push({ value: 'loop', label: t('endBehavior.loop') });
+  return options;
+});
+
 const endBehaviorAction = computed({
   get: () => {
     if (selectedItem.value?.type === 'audio') {
@@ -1507,6 +1518,13 @@ const formatTime = (seconds: number): string => {
 .property-field > .one-shot-designation__toggle,
 .property-field > .ltc-checkbox-label {
   grid-column: 1 / -1;
+}
+
+.property-field:has(> .inline-choice-picker[open]) { align-items: start; }
+.property-field:has(> .inline-choice-picker) > .property-label {
+  display: flex;
+  align-items: center;
+  min-height: var(--settings-control-height);
 }
 
 .properties-content--audio .property-field:has(.color-picker) {

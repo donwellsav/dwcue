@@ -152,6 +152,8 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
   const importPanel = { value: null as string | null };
   const showProjectSettings = { value: false };
   const settingsTab = { value: 'audio' };
+  let choiceOpen = false;
+  const document = { querySelector: (selector: string) => choiceOpen && selector === '.inline-choice-picker[open]' };
   const server = {
     connected: true, connectionLost: false, showVerification: false,
     get cueStartsBlocked() { return this.connectionLost || this.showVerification || sessionLost.value || projectLoad.value === 'open'; },
@@ -159,10 +161,10 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
   };
   const currentProject = { value: { playbackKeys: {} as Record<string, unknown> } };
   const trap = Function('server', 'projectLoad', 'projectPanelOpen', 'filePicker', 'quickPlayImportSlot', 'importPanel',
-    'showProjectSettings', 'settingsTab',
+    'showProjectSettings', 'settingsTab', 'document',
     'currentProject', 'DEFAULT_PLAYBACK_KEYS', 'bindingsMatch', 'eventToBinding', `${code}\nreturn trapKeydown;`)(
     server, projectLoad, projectPanelOpen, filePicker, quickPlayImportSlot, importPanel,
-    showProjectSettings, settingsTab, currentProject,
+    showProjectSettings, settingsTab, document, currentProject,
     DEFAULT_PLAYBACK_KEYS, bindingsMatch, eventToBinding);
   const press = (key: string, opts = {}) => {
     let swallowed = false;
@@ -278,6 +280,16 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
   assert.equal(press(' '), false, 'the settings continue to leave GO available');
   assert.equal(press('Escape', { target: editor, isComposing: true }), false);
   assert.deepEqual(calls.slice(18), [[], []]);
+
+  showProjectSettings.value = false;
+  choiceOpen = true;
+  assert.equal(press('Escape'), true, 'Escape stops with a docked choice open even when focus is outside it');
+  assert.equal(press('Escape', { repeat: true }), true);
+  assert.equal(press('Escape', { shiftKey: true }), false);
+  assert.equal(press(' '), false, 'the choice leaves GO available');
+  choiceOpen = false;
+  assert.equal(press('Escape'), false, 'closing the choice restores the normal mapping');
+  assert.deepEqual(calls.slice(20), [[]]);
 });
 
 function loadHandleKeydown(dependencies: Record<string, unknown>) {

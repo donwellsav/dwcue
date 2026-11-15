@@ -127,18 +127,19 @@ export const useConnectionGuard = () => {
     if (e.key === 'Tab') return;
     const el = e.target as HTMLElement | null;
     const editing = el?.closest?.('input, textarea, [contenteditable]:not([contenteditable="false"])');
-    const projectPanelEscape = (projectPanelOpen.value || filePicker.value !== null ||
+    const panelEscape = e.key === 'Escape' && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey &&
+      (projectPanelOpen.value || filePicker.value !== null ||
       quickPlayImportSlot.value !== null || importPanel.value === 'media' || importPanel.value === 'spotify' ||
       importPanel.value === 'archive-import' || importPanel.value === 'archive-export' ||
-      (showProjectSettings.value && ['video', 'ui'].includes(settingsTab.value))) && e.key === 'Escape' &&
-      !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey;
-    if (!projectPanelEscape && !blocked && !projectLoad.value && !(currentProject.value && editing)) return;
+      (showProjectSettings.value && ['video', 'ui'].includes(settingsTab.value)) ||
+      document.querySelector('.inline-choice-picker[open]'));
+    if (!panelEscape && !blocked && !projectLoad.value && !(currentProject.value && editing)) return;
     const typing = e.isComposing ||
         (editing && e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey);
     if (!typing) {
       const saved = currentProject.value?.playbackKeys?.['stop-all'];
       const binding = saved === undefined ? DEFAULT_PLAYBACK_KEYS['stop-all'] : saved;
-      if (projectPanelEscape || (binding && bindingsMatch(binding, eventToBinding(e)))) {
+      if (panelEscape || (binding && bindingsMatch(binding, eventToBinding(e)))) {
         e.preventDefault();
         e.stopImmediatePropagation();
         if (!e.repeat) void server.stopAll();

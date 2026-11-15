@@ -2,13 +2,9 @@
   <div class="test-card-controls">
     <fieldset class="test-card-fieldset" :disabled="disabled">
       <legend>{{ t('testCard.cardType') }}</legend>
-      <div class="test-card-grid test-card-grid--two">
-        <select class="test-card-select test-card-preset" :aria-label="t('testCard.preset')"
-          :value="selectedPresetId" @change="onPresetChange">
-          <option v-for="preset in TEST_CARD_PRESETS" :key="preset.id" :value="preset.id">
-            {{ t(`testCard.presets.${preset.id}`) }}
-          </option>
-        </select>
+      <div class="test-card-grid test-card-grid--two test-card-preset-row">
+        <InlineChoicePicker class="test-card-preset" :label="t('testCard.preset')" :value="selectedPresetId"
+          :options="presetOptions" :disabled="disabled" @change="onPresetChange" />
         <label class="test-card-control test-card-name">
           <span>{{ t('testCard.name') }}</span>
           <input :value="config.name" type="text" maxlength="120" @input="updateName">
@@ -408,6 +404,9 @@ const DEGHOST_SPEEDS = [
   { value: 11, labelKey: 'testCard.maximum' },
 ] as const;
 
+const presetOptions = computed(() => TEST_CARD_PRESETS.map(preset => ({
+  value: preset.id, label: t(`testCard.presets.${preset.id}`),
+})));
 const selectedPresetId = computed(() => {
   const match = TEST_CARD_PRESETS.find((preset) => preset.cardType === props.config.cardType
     && (preset.cardType !== 'bars' || preset.barsType === props.config.bars.type));
@@ -500,8 +499,8 @@ function updateMask(patch: Partial<TestCardConfig['mask']>): void {
   update({ mask: { ...props.config.mask, ...patch } });
 }
 
-function onPresetChange(event: Event): void {
-  const preset = TEST_CARD_PRESETS.find((candidate) => candidate.id === eventString(event));
+function onPresetChange(id: string): void {
+  const preset = TEST_CARD_PRESETS.find(candidate => candidate.id === id);
   if (!preset) return;
   const patch: Partial<TestCardConfig> = { cardType: preset.cardType };
   if (preset.barsType) patch.bars = { ...props.config.bars, type: preset.barsType };
@@ -614,6 +613,8 @@ async function pickImage(files: FileList | undefined, target: ImageTarget): Prom
 .test-card-grid--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .test-card-grid--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .test-card-grid--four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.test-card-preset-row { align-items: start; }
+.test-card-preset[open] { grid-column: 1 / -1; }
 .test-card-grid:has(> .inline-color-picker) { align-items: start; }
 .test-card-grid--four:has(> .inline-color-picker) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .test-card-control,
