@@ -161,6 +161,8 @@ The cue’s **Output device** and **Ducking** choices open inside Properties. Th
 
 **QuickPlay Settings** expands Playback, Retrigger, Ending, and Output choices inside the panel, attached or detached. **Escape** runs Stop All with a list open, and the detached settings header has a **Stop All** button.
 
+Video Capture, Test Card options, cue LTC frame rate, the file type filter, import options, and the remaining Settings choices also expand in place. Normalize and Reduce Peaks share one section, and MIDI reassignment stays in the MIDI panel. About opens below the welcome screen during startup.
+
 In **Properties → Basic Info → Media**, use **Replace or relink media** beside **File** to pick and verify a replacement in the lower panel. Cancel or a failed file check leaves the original media assigned.
 
 For a QuickPlay, click **+** in an empty slot or **Replace audio** in its settings to browse a single file in the lower panel. The panel uses the engine computer's folders. To import a file from the controller when the engine is on another computer, drop it directly on the slot.

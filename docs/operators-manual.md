@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** 618e07dae60c32bdf267305738af1d92b740ca49
+**Source revision:** 5a3782750c398ba19f0ecd82d57190b1dc38ac71
 **Native engine baseline:** 7c233a9
 **Edition:** 15 November 2026 · English · Operator edition
 
@@ -57,7 +57,7 @@ Get the installer for your operating system and architecture from the [official 
 
 The Linux x86_64 packages require glibc 2.43 or newer. They were tested on Ubuntu 26.04.
 
-When a newer release is available, the desktop app shows a five-second header notice and leaves an **Update Available** indicator. Open **Settings → About** to check for updates or choose **Download Update**. On the welcome screen, choose **Update Available** or use **Help → Check for Updates**. macOS, Windows, and Linux AppImage builds can install in place. DEB and RPM builds open the downloads page. After download, stop playback and Preview and exit Show Mode to use **Install Now**. Choose **Install on Exit** to apply the update on the next app quit. Download and installation each require an operator action.
+When a newer release is available, the desktop app shows a five-second header notice and leaves an **Update Available** indicator. Open **Settings → About** to check for updates or choose **Download Update**. On the welcome screen, choose **Update Available** or use **Help → Check for Updates**. About opens below the welcome screen. macOS, Windows, and Linux AppImage builds can install in place. DEB and RPM builds open the downloads page. After download, stop playback and Preview and exit Show Mode to use **Install Now**. Choose **Install on Exit** to apply the update on the next app quit. Download and installation each require an operator action.
 
 Connect the audio interface before opening the show. Confirm the correct outputs at the sound console, start with a conservative listening level, connect mains power, and disable sleep for the performance using the operating system's controls. Prevent notification sounds from reaching the audience. Keep a separate copy of the show and its media on reliable storage.
 
@@ -134,7 +134,7 @@ On narrow playlists, cue names appear above the row controls and the toolbar use
 
 Switch to **Show Mode** for performance after preparation is complete. It simplifies the interface and emphasizes transport and large cue controls. GO and assigned controls remain live. The QuickPlay Play/Stop button and keyboard and MIDI triggers work the same way in both modes. Use Edit Mode to change the bank.
 
-Rehearse at the actual display size and app zoom. Settings, Properties, QuickPlay Settings, and imports share the lower panel. It fits the content up to 60% of the window, with room reserved for the playlist. On a short window the panel may scroll sooner. Tabs stay along the bottom while the controls scroll. Drag the top grip down for more playlist room or up for more controls. You can also focus the grip and use **Up/Down**. Each panel remembers its adjusted height while the app is open. GO and Stop All stay at the top and the shortcut bar shows a compact reference. **Customize Shortcuts…** opens the full editor.
+Rehearse at the actual display size and app zoom. Settings, Properties, QuickPlay Settings, and imports share the lower panel. It fits the content up to 60% of the window, with room reserved for the playlist. On a short window the panel may scroll sooner. Tabs stay along the bottom while the controls scroll. Drag the top grip down for more playlist room or up for more controls. You can also focus the grip and use **Up/Down**. Each panel remembers its adjusted height while the app is open. GO and Stop All stay at the top and the shortcut bar shows a compact reference. **Customize Shortcuts…** opens the full editor. Settings choices for default transition, language, meter display and meter ballistics expand in the panel.
 
 ![Show Mode at a small window size with the silence countdown, cue names, and one-line QuickPlays shortcut reference.](manual-assets/show-mode.png)
 
@@ -163,7 +163,7 @@ Open **Import Media** from the playlist. For a local engine, **Choose files…**
 
 If a subfolder cannot be read, its relative path appears in a warning. The readable files remain available to import. Restore access and select the skipped subfolder separately if the show needs its files.
 
-The **Import plan** shows file handling and duplicate settings beside the selection. **Cancel** while browsing or scanning keeps the staged batch. The playlist, GO and **Stop All Cues** stay available, and **Escape** stops cues without discarding the selection.
+The **Import plan** shows file handling and duplicate settings beside the selection. These choices and the shared file type filter expand in the panel. Spotify bitrate and transition and YouTube output format also open inline. **Cancel** while browsing or scanning keeps the staged batch. The playlist, GO and **Stop All Cues** stay available, and **Escape** stops cues without discarding the selection.
 
 ![Import Media with separate file and folder choices.](manual-assets/import-media.png)
 
@@ -207,7 +207,7 @@ Imports preserve the source level and full duration: new cues begin at **0.0 dB*
 
 When waveform analysis is unavailable, the app can import the cue after the native decoder verifies the exact file and its duration. Use **Verification results** in the playlist toolbar to review the warning or retry files that failed verification.
 
-Choose any preparation explicitly in **Properties → Playback**. **Normalize** uses a loudness target; **Reduce peaks** uses a maximum true-peak ceiling; **Trim Silence** adjusts cue boundaries. These actions change cue settings and keep the source media bytes unchanged. Existing authored gains and trims are retained when opening a show. To recover a cue affected by older automatic import behavior, review its Volume and In/Out values or import a fresh copy.
+Choose any preparation explicitly in **Properties → Playback**. The normalization panel in Playback shows **Loudness Targets** and **Reduce Peaks** side by side. Loudness uses a target level, Reduce Peaks uses a maximum true-peak ceiling, and **Trim Silence** adjusts cue boundaries. The LTC frame-rate list also expands inside cue Properties. These actions change cue settings and keep the source media bytes unchanged. Existing authored gains and trims are retained when opening a show. To recover a cue affected by older automatic import behavior, review its Volume and In/Out values or import a fresh copy.
 
 Wait for the source copy/download to finish and for media readiness before taking the cue. Missing, changed or provably incomplete files can be refused; resolve the reported file before one deliberate retry. A generated waveform is an analysis result, not a guarantee that an unfamiliar file will decode throughout the show. Recheck media after replacing or editing a file outside the app.
 
@@ -561,7 +561,7 @@ In the playlist workspace, Enter, Space, and Escape keep their assigned show act
 1. Connect the controller before the show and open **Settings → MIDI**.
 2. Select the intended **MIDI Device**. **All Devices** listens broadly; choosing a particular controller reduces accidental input from other connected equipment.
 3. Choose **Learn** beside the required action and operate the intended pad, button, or fader once.
-4. Check the captured channel and message, resolve any **Reassign** conflict, and leave Learn mode.
+4. Check the captured channel and message, resolve any conflict with **Cancel** or **Reassign** above the MIDI binding list, and leave Learn mode. **Escape** still runs Stop All.
 5. In a safe rehearsal, test exactly one intended action, including arming and retrigger policy for QuickPlays.
 6. Repeat on the backup computer. MIDI mappings are machine settings, not part of the project document.
 
@@ -597,7 +597,7 @@ With only one display or no dedicated assignment, the app uses a normal preview 
 **Procedure — line up picture and optional AV Sync**
 
 - **Prerequisites:** The audience feed is safe to show a test pattern and, for AV Sync, the selected DonWells Cue Program output may safely carry the native tone.
-- **Actions:** Open **Settings → Video Output**, choose **Show test card**, then click the current **Test Card Type** to pick a pattern in the lower panel. Confirm identity, resolution, and framing at the destination. For **AV Sync**, select the intended Audio Device, run the tone with audio staff ready, then switch the card off.
+- **Actions:** Open **Settings → Video Output**, choose **Show test card**, then click the current **Test Card Type** to pick a pattern in the lower panel. Pattern-specific choices also expand inside the panel. Confirm identity, resolution, and framing at the destination. For **AV Sync**, select the intended Audio Device, run the tone with audio staff ready, then switch the card off.
 - **Expected visible outcome:** The physical destination shows the labelled card within the expected bounds; AV Sync is visible and audible only through the intended Program path.
 - **Common mistake:** Assuming AV Sync is silent or routed to Preview.
 - **Recovery:** Press **Stop All** to stop the tone, switch the card off and on only when a restart is intended, then correct the selected Audio Device before retesting.
@@ -649,6 +649,8 @@ In **Settings → Video Output → Picture framing**, click the current **Canvas
 Set the HDMI resolution, refresh rate, and display rotation in the operating system. Confirm the received signal at the switcher or display. For a standard projector or TV, rehearse at Full HD with Fit to display at 100%. Check that the corner markers and edges of a framing pattern are visible and its circle is round.
 
 ### Capture a standby still
+
+**Capture display** and **Destination** expand inside Video Output settings. Selecting either only sets up the capture. Use a capture button or shortcut when ready.
 
 - Press **G** or choose **Capture output** in **Settings → Video Output** to save the current picture from the configured canvas. Bars outside that canvas are excluded.
 - Choose a **Capture display** in **Settings → Video Output**, then press **Shift+G** or choose **Capture display** to save the selected screen. The capture display can be different from the audience display. Grant screen capture permission if the operating system asks.
