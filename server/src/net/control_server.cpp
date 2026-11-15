@@ -3971,7 +3971,8 @@ void ControlServer::install_routes() {
 
     CROW_ROUTE(app, "/api/project/save").methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req){
-            auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
+            const auto& expected_session = req.get_header_value("X-DWCUE-Project-Session");
+            auto project_lock = state_.lock_project_session(expected_session);
             if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
             try {
                 auto j = json::parse(req.body);
@@ -4000,7 +4001,7 @@ void ControlServer::install_routes() {
                 fs::path published_path;
                 const auto session = state_.project_session_id();
                 project_lock.unlock();
-                if (!state_.save(requested_path, replacement, &published_path, session)) {
+                if (!state_.save(requested_path, replacement, &published_path, expected_session)) {
                     if (state_.project_session_id() != session)
                         return json_err(409, "project session changed before save could finish");
                     Logger::error("POST /api/project/save FAILED for '{}'",

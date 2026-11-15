@@ -405,6 +405,42 @@ test('project session preconditions reject delayed edits after switching or reop
       assert.equal((await current()).session, replacement.server.projectSessionId);
       await assert.rejects(stat(alternate), { code: 'ENOENT' });
     });
+    await t.test('held cue registration leaves Stop All and Open responsive and cannot leak into another show', async () => {
+      const media = path.join(folder, 'registration.wav');
+      await writeFile(media, silentWav(10));
+      await writeFile(p, JSON.stringify({ ...project('Registration'), settings: { stopAllFadeMs: 0 }, items: [{
+        uuid: 'bed', type: 'audio', displayName: 'Bed', mediaServerPath: media,
+        duration: 10, endBehavior: { action: 'loop' },
+      }] }));
+      await load(p);
+      const active = await current();
+      const play = await request(baseUrl, '/api/project/items/bed/play', { method: 'POST', body: '{}' });
+      assert.equal(play.status, 200, await play.text());
+      for (const switchShow of [false, true]) {
+        await rm(pathGate + '.entered', { force: true });
+        await writeFile(pathGate, JSON.stringify(media));
+        const registration = request(baseUrl, '/api/cues', { method: 'POST',
+          body: JSON.stringify({ file_path: `${folder}/./registration.wav` }) });
+        try {
+          for (let attempt = 0; attempt < 80; ++attempt) {
+            if (await stat(pathGate + '.entered').then(() => true, () => false)) break;
+            await new Promise(resolve => setTimeout(resolve, 10));
+          }
+          assert.ok(await stat(pathGate + '.entered'), 'the old path probe must be in progress');
+          const stop = await request(baseUrl, '/api/transport/stop_all', {
+            method: 'POST', body: '{}', signal: AbortSignal.timeout(750),
+          });
+          assert.equal(stop.status, 200, await stop.text());
+          assert.deepEqual((await (await request(baseUrl, '/api/state/summary')).json()).playing, []);
+          if (switchShow) await load(q);
+        } finally { await rm(pathGate, { force: true }); }
+        const response = await registration;
+        assert.equal(response.status, switchShow ? 400 : 200, await response.clone().text());
+        if (!switchShow) assert.equal((await response.json()).id, active.items[0].cueId);
+      }
+      assert.equal((await current()).path, q);
+      assert.deepEqual(await (await request(baseUrl, '/api/cues')).json(), []);
+    });
     await t.test('a repaired show stays usable and reports its repairs until the file is saved', async () => {
       const file = path.join(folder, 'Repair.dwcue');
       const media = path.join(folder, 'show-bed.wav');

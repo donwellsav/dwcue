@@ -558,6 +558,7 @@ private:
     // Incremented whenever the complete project document is replaced. Async
     // decoder publication must match the generation it snapshotted.
     std::uint64_t              document_generation_ = 0;
+    std::uint64_t              project_open_revision_ = 0; // Save As keeps the same show.
     std::string                project_session_id_;
 
     std::unordered_map<std::string, CueMeta>          cues_;

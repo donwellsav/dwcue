@@ -119,19 +119,26 @@ detail::MediaPaths media_paths(const json& item, const std::string& folder) {
     return {util::utf8_to_path(relative), util::utf8_to_path(server)};
 }
 
+#ifdef LIVEPLAY_TEST_HOOKS
+void hold_path_probe_for_test(const std::filesystem::path& path) {
+    if (const char* value = std::getenv("DWCUE_TEST_PATH_PROBE_GATE"); value && *value) {
+        std::error_code ec;
+        const std::filesystem::path gate{value};
+        std::filesystem::path target;
+        std::ifstream{gate} >> target;
+        if (target == path && std::filesystem::exists(gate, ec)) {
+            std::ofstream{gate.string() + ".entered"} << path;
+            while (std::filesystem::exists(gate, ec)) std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        }
+    }
+}
+#endif
+
 std::filesystem::path resolve_media_path(const detail::MediaPaths& paths) {
     if (paths.fallback.empty() || paths.preferred == paths.fallback) return paths.preferred;
     std::error_code ec;
 #ifdef LIVEPLAY_TEST_HOOKS
-    if (const char* value = std::getenv("DWCUE_TEST_PATH_PROBE_GATE"); value && *value) {
-        const std::filesystem::path gate{value};
-        std::filesystem::path target;
-        std::ifstream{gate} >> target;
-        if (target == paths.preferred && std::filesystem::exists(gate, ec)) {
-            std::ofstream{gate.string() + ".entered"} << paths.preferred;
-            while (std::filesystem::exists(gate, ec)) std::this_thread::sleep_for(std::chrono::milliseconds{1});
-        }
-    }
+    hold_path_probe_for_test(paths.preferred);
 #endif
     if (!std::filesystem::exists(paths.preferred, ec) && std::filesystem::exists(paths.fallback, ec))
         return paths.fallback;
@@ -1470,6 +1477,7 @@ void ProjectState::reset() {
     document_ = default_empty_document();
     pending_repair_info_ = {};
     ++document_generation_;
+    ++project_open_revision_;
     project_session_id_ = engine_.new_cue_id().value;
     apply_audio_settings(engine_, document_["settings"]);
     apply_to_engine_locked();
@@ -1634,33 +1642,41 @@ void ProjectState::refresh_group_gains_locked() {
 // ---------------------------------------------------------------------------
 audio::CueId ProjectState::add_cue_from_file(const std::filesystem::path& file,
                                              std::string display_name) {
-    // De-dupe: if a cue is already loaded for this file path (typical case
-    // is the project mirror loading every item up front), reuse it instead
-    // of creating a parallel engine cue. Without this, the legacy
-    // ServerHowl path creates a *second* cue for every project item, and
-    // play(cue_id) on that orphan bypasses ProjectState::play_item — which
-    // is what carries duckingBehavior / inPoint / fades / endBehavior into
-    // the engine. The user-visible symptom is in/out points and Up Next
-    // not firing.
+    std::string session;
+    std::vector<std::pair<std::string, std::filesystem::path>> candidates;
     {
-        std::error_code ec;
-        const auto canonical = std::filesystem::weakly_canonical(file, ec);
-        const auto& want = ec ? file : canonical;
         std::lock_guard lock{mutex_};
-        for (auto& [id, c] : cues_) {
-            std::error_code ec2;
-            const auto have = std::filesystem::weakly_canonical(c.file_path, ec2);
-            const auto& cmp = ec2 ? c.file_path : have;
-            if (cmp == want) return audio::CueId{id};
+        session = project_session_id_;
+        candidates.reserve(cues_.size());
+        for (const auto& [id, cue] : cues_) {
+            if (cue.file_path == file) return audio::CueId{id};
+            candidates.emplace_back(id, cue.file_path);
         }
     }
+    // Reuse the mirrored cue, including path aliases, without probing under Stop All's lock.
+    const auto canonicalize = [](const std::filesystem::path& path) {
+#ifdef LIVEPLAY_TEST_HOOKS
+        hold_path_probe_for_test(path);
+#endif
+        std::error_code ec;
+        const auto canonical = std::filesystem::weakly_canonical(path, ec);
+        return ec ? path : canonical;
+    };
+    const auto want = canonicalize(file);
+    for (const auto& [id, path] : candidates) {
+        if (canonicalize(path) != want) continue;
+        std::lock_guard lock{mutex_};
+        if (project_session_id_ != session) return {};
+        const auto cue = cues_.find(id);
+        if (cue != cues_.end() && cue->second.file_path == path) return audio::CueId{id};
+    }
+    if (project_session_id() != session) return {};
     const auto cue_id = engine_.load_cue(file);
     if (cue_id.empty()) return {};
 
     // Populate artist/title/duration via TagLib (best-effort; never fatal).
     const auto md = meta::read_metadata(file);
 
-    std::lock_guard lock{mutex_};
     CueMeta meta;
     meta.id           = cue_id;
     meta.display_name = display_name.empty()
@@ -1670,8 +1686,15 @@ audio::CueId ProjectState::add_cue_from_file(const std::filesystem::path& file,
     meta.artist       = md.artist;
     meta.title        = md.title;
     meta.duration_seconds = static_cast<double>(md.duration.count()) / 1000.0;
-    cues_.emplace(cue_id.value, std::move(meta));
-    return cue_id;
+    {
+        std::lock_guard lock{mutex_};
+        if (project_session_id_ == session) {
+            cues_.emplace(cue_id.value, std::move(meta));
+            return cue_id;
+        }
+    }
+    engine_.unload_cue(cue_id);
+    return {};
 }
 
 DiagnosticCueResult ProjectState::add_av_sync_diagnostic_cue(
@@ -2071,14 +2094,21 @@ bool ProjectState::save(const std::filesystem::path& requested_path,
                         std::filesystem::path* published_path,
                         const std::string& expected_session) {
     if (published_path) published_path->clear();
-    const auto session = expected_session.empty() ? project_session_id() : expected_session;
+    std::uint64_t open_revision;
+    {
+        std::lock_guard lock{mutex_};
+        open_revision = project_open_revision_;
+    }
     std::lock_guard save_lock{save_mutex_};
-    auto operation_lock = lock_project_session(session);
+    auto operation_lock = lock_project_session(expected_session);
     if (!operation_lock.owns_lock()) return false;
     std::filesystem::path path = requested_path;
-    if (path.empty()) {
+    std::string session;
+    {
         std::lock_guard lock{mutex_};
-        path = project_file_path_;
+        if (project_open_revision_ != open_revision) return false;
+        session = project_session_id_;
+        if (path.empty()) path = project_file_path_;
     }
     if (!project_file::is_native_project(path)) {
         Logger::error("ProjectState::save: project path must use .dwcue: '{}'",
@@ -2370,6 +2400,7 @@ bool ProjectState::replace_full_document(const json& doc, bool new_session) {
         refresh_group_gains_locked();
         ++document_generation_;
         if (new_session) {
+            ++project_open_revision_;
             project_session_id_ = engine_.new_cue_id().value;
             pending_repair_info_ = {prepared.repair.repaired, std::move(prepared.repair.issues)};
         }
@@ -5578,6 +5609,7 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
             master_assignments_.clear();
 
             ++document_generation_;
+            ++project_open_revision_;
             project_session_id_ = engine_.new_cue_id().value;
             project_file_path_ = project_path;
             document_ = std::move(client_document->document);
@@ -5615,6 +5647,7 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
         project_name_ = std::move(loaded_name);
         if (loaded_media_root) media_root_ = std::move(*loaded_media_root);
         ++document_generation_;
+        ++project_open_revision_;
         project_session_id_ = engine_.new_cue_id().value;
         project_file_path_ = project_path;
         document_ = default_empty_document();
