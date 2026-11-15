@@ -19,6 +19,7 @@ const NATIVE_PROGRESS_EPSILON_S = 0.001;
 const FOLLOW_END_TOLERANCE_S = 0.1;
 const FOLLOW_CUE_GRACE_MS = 750;
 const FIRST_FRAME_WARNING_MS = 3000;
+const DOC_REFETCH_DELAY_MS = 300;
 
 interface OutputItem {
   uuid: string;
@@ -604,21 +605,30 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
 
   async function refetchDoc() {
     const generation = ++fetchGeneration;
-    try {
-      const nextDoc = readDoc(await server.fetchProject());
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const nextDoc = readDoc(await server.fetchProject());
+        if (generation !== fetchGeneration) return;
+        doc.value = nextDoc;
+        // Document refreshes are not transport seeks; preserve on-air rate correction.
+        renderNewestActive(activeTransport.value === TRANSPORT_PAUSED);
+        preloadNextItem();
+      } catch {
+        // A cue can start before its metadata is available to this renderer.
+      }
       if (generation !== fetchGeneration) return;
-      doc.value = nextDoc;
-      // Document refreshes are not transport seeks; preserve on-air rate correction.
-      renderNewestActive(activeTransport.value === TRANSPORT_PAUSED);
-      preloadNextItem();
-    } catch {
-      // A reconnect or later document patch will retry.
+      const active = newestActiveCue();
+      if (attempt || !server.connected || !active || active === diagnosticCue
+        || doc.value?.items.has(active.itemUuid) || active.triggerSeq <= stoppedThroughTriggerSeq) return;
+      await new Promise<void>(resolve => { window.setTimeout(resolve, DOC_REFETCH_DELAY_MS); });
+      if (generation !== fetchGeneration || !server.connected || newestActiveCue() !== active
+        || active.triggerSeq <= stoppedThroughTriggerSeq) return;
     }
   }
 
   function scheduleRefetch() {
     clearTimeout(refetchTimer);
-    refetchTimer = window.setTimeout(() => { void refetchDoc(); }, 300);
+    refetchTimer = window.setTimeout(() => { void refetchDoc(); }, DOC_REFETCH_DELAY_MS);
   }
 
   function acceptDiagnosticState(raw: unknown): boolean {

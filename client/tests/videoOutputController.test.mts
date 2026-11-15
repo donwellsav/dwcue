@@ -475,6 +475,35 @@ test('an unknown newest cue blanks old media until its document arrives', async 
   h.stop();
 });
 
+test('a failed metadata lookup retries the on-air video at the current playhead', { timeout: 2000 }, async () => {
+  const h = createHarness(project([]));
+  try {
+    await flush();
+    const retry = deferred<void>();
+    let requests = 0;
+    h.setFetchProject(async () => {
+      if (++requests === 1) throw new Error('Temporary project read failure');
+      retry.resolve();
+      return project([audioItem('late-video', { hasVideo: true })]);
+    });
+    h.emitCue(snapshotCue('late-video', 'late-cue', 1));
+    h.emitMeters({ items: [{ cue_id: 'late-cue', transport: 1, playhead_seconds: 1.25 }] });
+    assert.equal(h.controller.showVideo.value, false);
+
+    await retry.promise;
+    await flush();
+    assert.equal(requests, 2);
+    const source = h.controller.videoSrc.value;
+    assert.ok(source);
+    assert.equal(new URL(source).searchParams.get('item_uuid'), 'late-video');
+    h.element.currentSrc = source;
+    h.controller.onVideoLoadedMetadata();
+    h.controller.onVideoCanPlay();
+    assert.equal(h.element.currentTime, 1.25);
+    assert.equal(h.controller.showVideo.value, true);
+  } finally { h.stop(); }
+});
+
 test('project lifecycle changes clear audience media before the new document arrives', async () => {
   const h = createHarness(project([audioItem('old', { hasVideo: true, imagePath: 'images/old.png' })]));
   await flush();
