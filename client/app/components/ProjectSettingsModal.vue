@@ -40,78 +40,42 @@
           <template v-if="activeTab === 'audio'">
             <!-- Audio device (default for cue playback) -->
             <section class="settings-field">
-              <label class="settings-label" for="settings-audio-device">
-                {{ t('settings.audioDevice') }}
-              </label>
-              <select
-                id="settings-audio-device"
-                class="settings-select"
-                :value="audioDeviceId"
-                @change="onAudioDeviceChange"
-              >
-                <option :value="''">{{ t('settings.noneSelected') }}</option>
-                <option v-for="d in devices" :key="d.id" :value="d.display_name">
-                  {{ d.display_name }}{{ d.is_default ? ' (' + t('common.default') + ')' : '' }}
-                </option>
-              </select>
-              <p class="settings-help">{{ t('settings.audioDeviceHelp') }}</p>
+              <span class="settings-label">{{ t('settings.audioDevice') }}</span>
+              <div class="audio-routing-choice">
+                <InlineChoicePicker id="settings-audio-device" :label="t('settings.audioDevice')"
+                  :value="audioDeviceId" :options="audioDeviceOptions" @change="onAudioDeviceChange" />
+                <p class="settings-help">{{ t('settings.audioDeviceHelp') }}</p>
+              </div>
             </section>
 
             <!-- Preview stores the stable hardware name; opened-device ids are session-scoped. -->
             <section class="settings-field">
-              <label class="settings-label" for="settings-preview-device">
-                {{ t('settings.previewDevice') }}
-              </label>
-              <select
-                id="settings-preview-device"
-                class="settings-select"
-                :value="previewDeviceId"
-                @change="onPreviewDeviceChange"
-              >
-                <option :value="''">{{ t('settings.noneSelected') }}</option>
-                <option v-for="d in devices" :key="d.id" :value="d.display_name">
-                  {{ d.display_name }}{{ d.is_default ? ' (' + t('common.default') + ')' : '' }}
-                </option>
-              </select>
-              <p class="settings-help">{{ t('settings.previewDeviceHelp') }}</p>
+              <span class="settings-label">{{ t('settings.previewDevice') }}</span>
+              <div class="audio-routing-choice">
+                <InlineChoicePicker id="settings-preview-device" :label="t('settings.previewDevice')"
+                  :value="previewDeviceId" :options="audioDeviceOptions" @change="onPreviewDeviceChange" />
+                <p class="settings-help">{{ t('settings.previewDeviceHelp') }}</p>
+              </div>
             </section>
 
             <!-- LTC device (timecode output) -->
             <section class="settings-field">
-              <label class="settings-label" for="settings-ltc-device">
-                {{ t('settings.ltcDevice') }}
-              </label>
-              <select
-                id="settings-ltc-device"
-                class="settings-select"
-                :value="ltcDeviceId"
-                @change="onLtcDeviceChange"
-              >
-                <option :value="''">{{ t('settings.noneSelected') }}</option>
-                <option v-for="d in devices" :key="d.id" :value="d.display_name">
-                  {{ d.display_name }}{{ d.is_default ? ' (' + t('common.default') + ')' : '' }}
-                </option>
-              </select>
-              <p class="settings-help">{{ t('settings.ltcDeviceHelp') }}</p>
+              <span class="settings-label">{{ t('settings.ltcDevice') }}</span>
+              <div class="audio-routing-choice">
+                <InlineChoicePicker id="settings-ltc-device" :label="t('settings.ltcDevice')"
+                  :value="ltcDeviceId" :options="audioDeviceOptions" @change="onLtcDeviceChange" />
+                <p class="settings-help">{{ t('settings.ltcDeviceHelp') }}</p>
+              </div>
             </section>
 
             <!-- Output Target (loudness platform standard) -->
             <section class="settings-field">
-              <label class="settings-label" for="settings-output-target">
-                {{ t('settings.outputTarget') }}
-              </label>
-              <select
-                id="settings-output-target" class="settings-select"
-                :value="outputTarget"
-                @change="onOutputTargetChange"
-              >
-                <option value="ebu-r128">{{ t('settings.outputTargetEbuR128') }}</option>
-                <option value="streaming">{{ t('settings.outputTargetStreaming') }}</option>
-                <option value="radio">{{ t('settings.outputTargetRadio') }}</option>
-                <option value="netflix">{{ t('settings.outputTargetNetflix') }}</option>
-                <option value="live">{{ t('settings.outputTargetLive') }}</option>
-              </select>
-              <p class="settings-help">{{ t('settings.outputTargetHelp') }}</p>
+              <span class="settings-label">{{ t('settings.outputTarget') }}</span>
+              <div class="audio-routing-choice">
+                <InlineChoicePicker id="settings-output-target" :label="t('settings.outputTarget')"
+                  :value="outputTarget" :options="outputTargetOptions" @change="onOutputTargetChange" />
+                <p class="settings-help">{{ t('settings.outputTargetHelp') }}</p>
+              </div>
             </section>
           </template>
 
@@ -864,6 +828,20 @@ const cartGridProfileOptions = computed<Array<{ id: CartGridProfile; label: stri
 ]);
 
 const devices = computed(() => server.devices ?? []);
+const audioDeviceOptions = computed(() => {
+  const options = new Map(devices.value.map(d => [d.display_name, {
+    value: d.display_name,
+    label: d.is_default ? `${d.display_name} (${t('common.default')})` : d.display_name,
+  }]));
+  return [{ value: '', label: t('settings.noneSelected') }, ...options.values()];
+});
+const outputTargetOptions = computed(() => [
+  { value: 'ebu-r128', label: t('settings.outputTargetEbuR128') },
+  { value: 'streaming', label: t('settings.outputTargetStreaming') },
+  { value: 'radio', label: t('settings.outputTargetRadio') },
+  { value: 'netflix', label: t('settings.outputTargetNetflix') },
+  { value: 'live', label: t('settings.outputTargetLive') },
+]);
 
 // Tabs mirror the Properties panel's tab styling. Grouping:
 //  - audio    : device routing + loudness target
@@ -1375,26 +1353,16 @@ function removeCountdownBand(startSeconds: number) {
   });
 }
 
-async function onAudioDeviceChange(e: Event) {
-  const input = e.target as HTMLSelectElement;
-  const v = input.value;
-  input.value = audioDeviceId.value;
+async function onAudioDeviceChange(v: string) {
   await applyPatch({ defaultOutputDevice: v || null });
 }
-async function onPreviewDeviceChange(e: Event) {
-  const input = e.target as HTMLSelectElement;
-  const v = input.value;
-  input.value = previewDeviceId.value;
+async function onPreviewDeviceChange(v: string) {
   await applyPatch({ previewDevice: v || null });
 }
-async function onLtcDeviceChange(e: Event) {
-  const input = e.target as HTMLSelectElement;
-  const v = input.value;
-  input.value = ltcDeviceId.value;
+async function onLtcDeviceChange(v: string) {
   await applyPatch({ ltcDevice: v || null });
 }
-async function onOutputTargetChange(e: Event) {
-  const v = (e.target as HTMLSelectElement).value;
+async function onOutputTargetChange(v: string) {
   await applyPatch({ outputTarget: v });
 }
 async function onMeterModeChange(e: Event) {
@@ -1716,19 +1684,17 @@ function close() {
 
 .settings-content--audio > .settings-field {
   display: grid;
-  grid-row: span 3;
+  grid-row: span 2;
   grid-template-rows: subgrid;
   gap: 0;
   padding: 0;
 }
 
-.settings-content--audio > .settings-field > .settings-select {
-  width: calc(100% - 2 * var(--spacing-sm));
-  margin: var(--spacing-xs) var(--spacing-sm) 0;
-}
-
-.settings-content--audio > .settings-field > .settings-help {
-  grid-column: auto;
+.audio-routing-choice {
+  display: grid;
+  align-content: start;
+  gap: var(--spacing-xs);
+  min-width: 0;
   padding: var(--spacing-xs) var(--spacing-sm);
 }
 

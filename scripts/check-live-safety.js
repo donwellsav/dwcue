@@ -509,7 +509,8 @@ assert.match(
 );
 assert.equal(
   projectSettingsModal.includes('Preview stores the stable hardware name') &&
-    projectSettingsModal.includes(':value="d.display_name"'),
+    projectSettingsModal.includes(':value="previewDeviceId" :options="audioDeviceOptions"') &&
+    projectSettingsModal.includes('value: d.display_name'),
   true,
   'preview device settings must persist stable hardware names instead of opened-device ids',
 );

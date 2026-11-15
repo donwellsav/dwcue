@@ -98,13 +98,19 @@ test('invalid cue number edits preserve the previously saved target', () => {
 });
 
 test('project and cue output choices persist hardware names instead of opened-session IDs', () => {
-  const device = { id: 'ephemeral-opened-device-id', display_name: 'Stage USB output' };
-  for (const [component, handler] of [['ProjectSettingsModal', 'onAudioDeviceChange'], ['ProjectSettingsModal', 'onLtcDeviceChange'], ['PropertiesPanel', 'onDeviceOverrideChange']]) {
+  const device = { id: 'ephemeral-opened-device-id', display_name: 'Stage USB output', is_default: true };
+  for (const [component, handler] of [
+    ['ProjectSettingsModal', 'onAudioDeviceChange'], ['ProjectSettingsModal', 'onPreviewDeviceChange'],
+    ['ProjectSettingsModal', 'onLtcDeviceChange'], ['PropertiesPanel', 'onDeviceOverrideChange'],
+  ]) {
     const filename = new URL(`../app/components/${component}.vue`, import.meta.url);
-    const template = parse(readFileSync(filename, 'utf8')).descriptor.template!;
-    const ast = parseTemplate(template.content);
+    const { template, scriptSetup } = parse(readFileSync(filename, 'utf8')).descriptor;
+    const ast = parseTemplate(template!.content);
+    const docked = component === 'ProjectSettingsModal';
+    const t = (key: string) => key;
     const find = (node: any): any => {
-      if (node.type === NodeTypes.ELEMENT && node.tag === 'select' && node.loc.source.includes(`@change="${handler}"`)) return node;
+      if (node.type === NodeTypes.ELEMENT && node.tag === (docked ? 'InlineChoicePicker' : 'select') &&
+          node.loc.source.includes(`@change="${handler}"`)) return node;
       for (const child of node.children ?? []) {
         const found = find(child);
         if (found) return found;
@@ -115,14 +121,27 @@ test('project and cue output choices persist hardware names instead of opened-se
     const code = ts.transpileModule(compile(select.loc.source, { mode: 'function', isTS: true }).code, {
       compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
     }).outputText;
-    const render = Function('Vue', `${code}; return render;`)(Vue);
+    let audioDeviceOptions;
+    if (docked) {
+      const script = scriptSetup!.content;
+      const start = script.indexOf('const audioDeviceOptions =');
+      const end = script.indexOf('const outputTargetOptions =', start);
+      assert.ok(start >= 0 && end > start);
+      audioDeviceOptions = Function('computed', 'devices', 't',
+        `${script.slice(start, end)}\nreturn audioDeviceOptions.value;`)(Vue.computed, { value: [device] }, t);
+    }
+    const render = Function('Vue', `${code}; return render;`)({ ...Vue, resolveComponent: (name: string) => name });
     const node = render({
-      devices: [device], devicesList: [device], audioDeviceId: device.display_name,
-      ltcDeviceId: device.display_name,
+      audioDeviceOptions, devicesList: [device], audioDeviceId: device.display_name,
+      previewDeviceId: device.display_name, ltcDeviceId: device.display_name,
       audioItem: { deviceOverride: device.display_name }, audioDeviceOverride: device.display_name,
       deviceOverrideEditPending: false,
-      t: (key: string) => key, [handler]() {},
+      t, [handler]() {},
     }, []);
+    if (docked) {
+      assert.deepEqual(node.props.options.map((option: {value: string}) => option.value), ['', device.display_name]);
+      continue;
+    }
     const options: any[] = [];
     const walk = (value: any) => {
       if (value?.type === 'option') options.push(value);
