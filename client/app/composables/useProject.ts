@@ -2132,7 +2132,7 @@ export const useProject = () => {
 
   // Guard an action that can discard current project state (New / Open /
   // Close / update install). Resolves true when there are no pending edits.
-  // When edits are pending it pops the unsaved-changes modal and acts on the
+  // When edits are pending it opens the unsaved-changes panel and acts on the
   // choice: "save" force-saves first, "discard" proceeds without saving,
   // "cancel" aborts. This also catches an autosave failure, which marks the
   // project dirty even when autosave is on.

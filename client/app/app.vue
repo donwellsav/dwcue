@@ -148,7 +148,7 @@
     />
 
     <Teleport to="body">
-      <div v-if="showNewShowDialog && !projectDecision && !(creatingNewShow && isLoading)" class="name-dialog-backdrop" :data-theme="theme" @click.self="cancelNewShowDialog">
+      <div v-if="showNewShowDialog && !creatingNewShow && !projectDecision" class="name-dialog-backdrop" :data-theme="theme" @click.self="cancelNewShowDialog">
         <form
           class="name-dialog new-show-dialog"
           role="dialog"
@@ -192,15 +192,6 @@
     <LoadingOverlay :visible="isLoading" :title="loadingMessage" />
 
     <ProjectRepairNotice v-if="projectRepair" :notice="projectRepair" @save="saveRepairedProject" />
-
-    <!-- Unsaved-changes prompt (shown when leaving a project with autosave off) -->
-    <UnsavedChangesModal
-      :visible="unsavedDialogVisible && unsavedDialogReason === 'project'"
-      :blocked="unsavedDialogBlocked"
-      @save="unsavedSave"
-      @discard="unsavedDiscard"
-      @cancel="unsavedCancel"
-    />
 
     <!-- Background audio-loading progress (when document already rendered) -->
     <AudioLoadProgress />
@@ -679,28 +670,29 @@ const quitServerVisible  = ref(false);
 let _quitServerResolve:  ((choice: 'server'  | 'client' | 'cancel') => void) | null = null;
 let quitFlowActive = false;
 
-const quitUnsavedButtons = computed(() => [
-  { key: 'cancel',  label: t('quitModal.return') },
-  { key: 'discard', label: t('quitModal.unsavedDiscard'),   variant: 'danger'  as const },
-  { key: 'save',    label: t('quitModal.unsavedSaveClose'), variant: 'primary' as const, icon: 'save' },
-]);
-const quitServerButtons = computed(() => [
-  { key: 'cancel', label: t('quitModal.return') },
-  { key: 'client', label: t('quitModal.serverCloseClient') },
-  { key: 'server', label: t('quitModal.serverCloseServer'), variant: 'danger' as const, icon: 'power_settings_new' },
-]);
-
 const projectDecision = computed(() => {
-  if (unsavedDialogVisible.value && unsavedDialogReason.value === 'quit') return {
-    title: t('quitModal.unsavedTitle'),
-    message: t('quitModal.unsavedMessage') + (unsavedDialogBlocked.value ? ' ' + t('unsavedModal.finishCurrent') : ''),
-    buttons: quitUnsavedButtons.value,
-    pick: onQuitUnsavedPick,
-  };
+  if (unsavedDialogVisible.value) {
+    const quitting = unsavedDialogReason.value === 'quit';
+    return {
+      title: t(quitting ? 'quitModal.unsavedTitle' : 'unsavedModal.title'),
+      message: t(quitting ? 'quitModal.unsavedMessage' : 'unsavedModal.message') +
+        (unsavedDialogBlocked.value ? ' ' + t('unsavedModal.finishCurrent') : ''),
+      buttons: [
+        { key: 'cancel', label: t(quitting ? 'quitModal.return' : 'unsavedModal.cancel') },
+        { key: 'discard', label: t(quitting ? 'quitModal.unsavedDiscard' : 'unsavedModal.discard'), variant: 'danger' as const },
+        { key: 'save', label: t(quitting ? 'quitModal.unsavedSaveClose' : 'unsavedModal.save'), variant: 'primary' as const, icon: 'save' },
+      ],
+      pick: onUnsavedPick,
+    };
+  }
   if (quitServerVisible.value) return {
     title: t('quitModal.serverTitle'),
     message: t('quitModal.serverMessage'),
-    buttons: quitServerButtons.value,
+    buttons: [
+      { key: 'cancel', label: t('quitModal.return') },
+      { key: 'client', label: t('quitModal.serverCloseClient') },
+      { key: 'server', label: t('quitModal.serverCloseServer'), variant: 'danger' as const, icon: 'power_settings_new' },
+    ],
     pick: onQuitServerPick,
   };
   return null;
@@ -708,7 +700,7 @@ const projectDecision = computed(() => {
 const projectDecisionOpen = useState('projectDecisionOpen', () => false);
 watch(() => !!projectDecision.value, (open) => { projectDecisionOpen.value = open; }, { immediate: true });
 
-function onQuitUnsavedPick(choice: string) {
+function onUnsavedPick(choice: string) {
   if (choice === 'save') void unsavedSave();
   else if (choice === 'discard') void unsavedDiscard();
   else void unsavedCancel();

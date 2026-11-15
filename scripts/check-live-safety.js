@@ -2465,10 +2465,12 @@ assert.match(
 assert.match(
   appVue + mainWorkspace,
   /<MainWorkspace v-else :decision-open="!!projectDecision"[\s\S]*?to="#workspace-project-decision"[\s\S]*?<ProjectDecisionPanel[\s\S]*?class="lower-workspace-panel"[\s\S]*?id="workspace-project-decision"/,
-  'Quit must use the lower workspace panel',
+  'Quit and unsaved changes must use the lower workspace panel',
 );
 assert.doesNotMatch(projectDecisionPanel, /aria-modal|position:\s*fixed|keydown|Teleport/,
   'project decisions must leave pointer and keyboard transport available');
+assert.match(appVue, /v-if="showNewShowDialog && !creatingNewShow && !projectDecision"/,
+  'the New Show form must give the lower decision panel room while confirming and saving');
 assert.match(
   midiController,
   /`trigger-slot-\$\{number\}`[\s\S]*length:\s*CART_SLOT_COUNT_LIMITS\.max/,
@@ -2616,7 +2618,6 @@ for (const file of [
   'ServerFilePickerModal.vue',
   'ServerSettingsModal.vue',
   'SessionRecoveryModal.vue',
-  'UnsavedChangesModal.vue',
 ].map(file => `client/app/components/${file}`).concat('client/app/app.vue')) {
   const dialog = read(file);
   for (const token of ['backdrop', 'surface', 'radius', 'shadow']) {
