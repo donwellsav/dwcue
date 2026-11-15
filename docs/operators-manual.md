@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** a16dd464d580249b0d6bbf212afd74c1de517d9d
+**Source revision:** b059f39d91baef9356fd6948ff57effd4e68ca18
 **Native engine baseline:** 7c233a9
 **Edition:** 15 November 2026 · English · Operator edition
 
@@ -582,7 +582,7 @@ Use **V** or the toolbar's **Video Output** button to open or close the output w
 **Procedure — open and identify the audience output**
 
 - **Prerequisites:** Operator and audience displays are extended rather than mirrored, the switcher/projector operator is ready, and no private desktop content is exposed.
-- **Actions:** Open **Settings → Video Output**, choose **Identify displays**, match the number at the physical destination, select that **Output display**, and enable **Open video output for this session**. Read **Output status**.
+- **Actions:** Open **Settings → Video Output**, choose **Identify displays**, and match the number at the physical destination. Click the current **Output display** to open its choices in the lower panel. Select the display, enable **Open video output for this session**, and read **Output status**.
 - **Expected visible outcome:** The numbered labels clear after five seconds. Settings stays available while they are shown. After you enable output, it reports live on the intended display and the destination operator confirms the same image.
 - **Common mistake:** Treating the single-display preview window as the assigned fullscreen output.
 - **Recovery:** Disable the session output, correct mirroring/cabling/assignment, identify again, then reopen and verify at the physical destination.
@@ -626,7 +626,7 @@ The check is advisory and keeps the playlist and transport available. Run it aga
 
 ### Set picture framing
 
-In **Settings → Video Output → Picture framing**, choose a **Canvas**, **Scaling**, and **Frame size**, then select **Apply framing**. Changes take effect in the open Video Output window. The choices are saved on this machine.
+In **Settings → Video Output → Picture framing**, click the current **Canvas** or **Scaling** to expand its choices in the lower panel. Set **Frame size**, then select **Apply framing** to save the settings on this machine and apply them to an open Video Output window. While the display and framing lists are open, the playlist and **GO** stay available. **Escape** runs Stop All even if you changed its shortcut.
 
 ![Picture framing defaults in the docked Video Output settings.](manual-assets/video-framing-current.png)
 
