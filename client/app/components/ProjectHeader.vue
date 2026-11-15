@@ -24,8 +24,13 @@
           <div id="project-header-warnings" class="header-warning-slot"></div>
         </div>
       </div>
+      <div v-if="currentProject && saveFailed" class="save-failure">
+        <span role="status">{{ t('project.saveFailed') }}</span>
+        <Btn type="button" :text="t('project.retrySave')" :disabled="retryingSave"
+          :aria-busy="retryingSave" @click="retrySave" />
+      </div>
       <span
-        v-if="currentProject && !autoSaveEnabled && hasUnsavedChanges"
+        v-else-if="currentProject && !autoSaveEnabled && hasUnsavedChanges"
         class="unsaved-pill"
       >{{ t('project.unsavedChanges') }}</span>
     </div>
@@ -116,7 +121,7 @@ import VideoConfidenceChip from './VideoConfidenceChip.vue';
 import { useVideoOutputToggle } from '~/composables/useCartHotkeys';
 import { countdownColorForSeconds, type AudioItem } from '~/types/project';
 
-const { currentProject, findItemByUuid, findItemByIndex, autoSaveEnabled, hasUnsavedChanges, setAutoSave } = useProject();
+const { currentProject, findItemByUuid, findItemByIndex, autoSaveEnabled, hasUnsavedChanges, saveFailed, saveProject, setAutoSave } = useProject();
 const { t } = useLocalization();
 const { activeCues } = useAudioEngine();
 const { uiMode, toggleUiMode } = useUiMode();
@@ -128,6 +133,14 @@ const showProjectSettings = useState('showProjectSettings', () => false);
 
 const isDark = computed(() => currentProject.value?.theme.mode === 'dark');
 const currentTime = ref('00:00:00');
+const retryingSave = ref(false);
+
+async function retrySave() {
+  if (retryingSave.value) return;
+  retryingSave.value = true;
+  try { await saveProject({ force: true }); }
+  finally { retryingSave.value = false; }
+}
 
 // Match PlaylistView's primary-cue convention: during a seamless advance the
 // newest cue is the one the operator is now following.
@@ -461,6 +474,17 @@ onMounted(() => {
   flex-shrink: 0;
   background-color: var(--state-up-next);
   color: var(--state-up-next-text);
+}
+
+.save-failure {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex: 0 0 auto;
+  color: var(--color-danger);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 /* Autosave toggle switch */

@@ -81,9 +81,10 @@ test('an owned project header commits its server session together with the local
   const currentProject = { value: null as any };
   const path = { value: '' };
   const repairNotice = { value: null as any };
+  const saveFailed = { value: true };
   const apply = projectFunction('applyServerHeader', {
     currentProject, projectFilePathRef: path, serverProjectSessionId: session,
-    projectEpoch: { value: 0 }, hasUnsavedChanges: { value: false },
+    projectEpoch: { value: 0 }, hasUnsavedChanges: { value: false }, saveFailed,
     repairNotice, useLiveplayServer: () => ({ serverUrl: 'http://engine' }),
     projectPathFromHeader: (h: any) => h.server.projectFilePath,
     isNativeProjectPath: (p: string) => p.endsWith('.dwcue'),
@@ -97,6 +98,7 @@ test('an owned project header commits its server session together with the local
   assert.equal(currentProject.value.name, 'New');
   assert.equal(path.value, '/new.dwcue');
   assert.equal(session.value, 'new-session');
+  assert.equal(saveFailed.value, false);
   assert.equal(repairNotice.value.session, 'new-session');
   assert.deepEqual(repairNotice.value.issues, ['duplicate cue']);
   apply({ hasOpenProject: false, server: { projectFilePath: '', projectSessionId: 'closed-session' } });
@@ -130,6 +132,7 @@ test('New Show opens the header from the server operation that saves before swit
 test('explicit session recovery uses fresh server and load identities for its chained writes', async () => {
   const calls: any[][] = [];
   const project = { name: 'Local', items: [], cartOnlyItems: [] };
+  const saveFailed = { value: true };
   const server = {
     fetchProjectHeader: async () => ({ server: { projectSessionId: 'fresh-server-session' } }),
     loadProjectFromPath: async (...args: any[]) => { calls.push(['load', ...args]); return { server: { projectSessionId: 'loaded-session' } }; },
@@ -139,12 +142,13 @@ test('explicit session recovery uses fresh server and load identities for its ch
     currentProject: { value: project }, _projectHydration: { wait: async () => true },
     useLiveplayServer: () => server, projectFilePathRef: { value: '/show/Local.dwcue' },
     isNativeProjectPath: () => true, useCartItems: () => ({ cartOnlyItems: { value: new Map() } }),
-    hasUnsavedChanges: { value: true }, buildDocumentSnapshot: () => ({ ...project }),
-    uninstallItemsWatcherFn() {}, tryRejoinExistingProject: async () => true,
+    hasUnsavedChanges: { value: true }, saveFailed, buildDocumentSnapshot: () => ({ ...project }),
+    uninstallItemsWatcherFn() {}, tryRejoinExistingProject: async () => { saveFailed.value = false; return true; },
   });
   assert.equal(await resume(), true);
   assert.equal(calls[0][2], 'fresh-server-session');
   assert.equal(calls[1][2], 'loaded-session');
+  assert.equal(saveFailed.value, true);
 });
 
 import {
@@ -344,6 +348,62 @@ test('cold Open owns the loading overlay while the welcome screen probes for an 
   loaded(header);
   assert.equal(await superseded, false);
   assert.equal(isLoading.value, false, 'an Open must release its overlay after reconnect verification');
+});
+
+test('save failure persists through edits and pending retries until the current show is saved', async () => {
+  const currentProject = { value: { name: 'Show' } };
+  const saveFailed = { value: false };
+  const hasUnsavedChanges = { value: false };
+  const autoSaveEnabled = { value: false };
+  let complete!: (result: { ok: boolean }) => void;
+  const server = {
+    serverUrl: 'local', projectSessionId: 'session', connected: true,
+    saveProjectTo: () => new Promise(resolve => { complete = resolve; }),
+  };
+  const save = projectFunction('saveProject', {
+    currentProject, saveFailed, hasUnsavedChanges, autoSaveEnabled, saveRevision: { value: 0 },
+    useCartItems: () => ({ cartOnlyItems: { value: new Map() } }),
+    useLiveplayServer: () => server, projectFilePathRef: { value: '/show.dwcue' },
+    projectEpoch: { value: 0 }, serverProjectSessionId: { value: 'session' },
+    sessionLost: { value: false }, recoveringProject: { value: false }, repairNotice: { value: null },
+    isNativeProjectPath: () => true, isCurrentSaveIdentity,
+    _projectHydration: { wait: async () => true }, _syncItemsDiffFn: async () => {},
+    _projectSaveQueue: createLatestWriteQueue(), buildDocumentSnapshot: () => ({ ...currentProject.value }),
+  });
+  const started = () => new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(await save(), true);
+  assert.equal(hasUnsavedChanges.value, true);
+  assert.equal(saveFailed.value, false);
+  const forcedSave = save({ force: true });
+  await started();
+  assert.equal(await save(), true);
+  complete({ ok: false });
+  assert.equal(await forcedSave, false);
+  assert.equal(saveFailed.value, true);
+
+  const retry = save({ force: true });
+  await started();
+  assert.equal(saveFailed.value, true);
+  complete({ ok: true });
+  assert.equal(await retry, true);
+  assert.equal(hasUnsavedChanges.value, false);
+  assert.equal(saveFailed.value, false);
+
+  const cancellation = new AbortController();
+  const canceled = save({ force: true, signal: cancellation.signal });
+  await started();
+  cancellation.abort();
+  complete({ ok: false });
+  assert.equal(await canceled, false);
+  assert.equal(saveFailed.value, false);
+
+  const stale = save({ force: true });
+  await started();
+  currentProject.value = { name: 'Replacement' };
+  complete({ ok: false });
+  assert.equal(await stale, false);
+  assert.equal(saveFailed.value, false);
 });
 
 test('Retry still recovers the current cue list after a replacement show is refused', async () => {

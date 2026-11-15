@@ -380,7 +380,9 @@
     "clock": "Clock",
     "timeLeft": "Time Left",
     "autosave": "Autosave",
-    "unsavedChanges": "Unsaved Changes"
+    "unsavedChanges": "Unsaved Changes",
+    "saveFailed": "Save failed",
+    "retrySave": "Retry"
   },
   "playlist": {
     "title": "Playlist",
