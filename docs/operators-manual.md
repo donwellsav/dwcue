@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** b7288a5fc4e60f733e961e905fbe4dd5b2ebcc6e
+**Source revision:** a16dd464d580249b0d6bbf212afd74c1de517d9d
 **Native engine baseline:** 7c233a9
 **Edition:** 15 November 2026 · English · Operator edition
 
@@ -299,7 +299,7 @@ Do not use a loop as a substitute for rehearsing the loop boundary. Check for cl
 
 Open the group's **Edit** control to see **Start Behavior**, **End Behavior**, and the **Continue with** backup selector together under **Cueing**. **Play First** follows the first-child path and honors each nested group’s Start Behavior. It requires the first child to be ready. A nested **Play All** on that path can start several cues. **Play All** owns the selected descendant subtree and starts each selected playable descendant exactly once, including nested groups. For **Play All**, set each child's ducking for simultaneous playback.
 
-Set **Group Level** in Properties to lower all audio inside the group, including the soundtrack of video cues. The fader runs from −60 to 0 dB and applies on release. Individual cue gains stay as saved. A cue inside several groups receives the combined attenuation, and cues outside the group keep their own levels.
+Use the **Group Level** fader in group Properties to lower all audio inside the group, including the soundtrack of video cues. The fader runs from −60 to 0 dB and shows the exact setting beside it. Individual cue gains stay as saved. A cue inside several groups receives the combined attenuation, and cues outside the group keep their own levels.
 
 ![Group Properties with Group Level, Start Behavior, End Behavior, and backup selection.](manual-assets/group-current.png)
 
@@ -340,6 +340,8 @@ The duck-envelope chart is **schematic, not measured**. It shows authored attack
 
 Open **Settings** and choose **Audio Device** for the show. Check the device name in the main output strip and listen at the sound system. Hardware names and availability can change when a device is unplugged, a driver changes, or the show moves to another computer.
 
+**Audio Device**, **Preview Device**, **LTC Device**, and **Output Target** open their choice lists inside **Audio Routing**. The playlist and **GO** stay accessible while the lists are open. **Escape** runs Stop All even if you changed its shortcut.
+
 ![Rear-panel audio-interface connector reference. Use it to discuss labelled outputs, cable seating, and strain relief; the photograph does not certify pinout, signal continuity, gain, or a particular show setup.](manual-assets/audio-connector-photo.jpg)
 
 ![The docked Audio Routing tab. Choose the actual show interface on the performance computer.](manual-assets/audio-settings-current.png)
@@ -347,7 +349,7 @@ Open **Settings** and choose **Audio Device** for the show. Check the device nam
 **Procedure — prove the Main route end to end**
 
 - **Prerequisites:** The console operator is present, audience feeds are protected, cables are labelled, and a known low-level test cue is available.
-- **Actions:** Open **Settings → Audio Routing**, select **Audio Device**, save, and confirm the same device in the workspace output strip. Play the known cue at a conservative level while the console operator identifies the arriving channel and destination.
+- **Actions:** Open **Settings → Audio Routing** and click the current **Audio Device** to expand its choices in the lower panel. Choose the interface, save, and confirm the same device in the workspace output strip. Play the known cue at a conservative level while the console operator identifies the arriving channel and destination.
 - **Expected visible outcome:** Transport and the intended output meter move, and the console operator confirms the expected physical input and listening destination.
 - **Common mistake:** Stopping after seeing an application meter.
 - **Recovery:** Stop audio. Trace cue override, project device, application output, interface channel, cable, console patch, mute, and destination in that order.
@@ -365,7 +367,7 @@ The engine supports more advanced routing through its API, but the current deskt
 ### Configure Preview before using headphones
 
 1. Connect and identify the intended headphone or monitor device.
-2. Open **Settings → Preview Device** and select it.
+2. Open **Settings → Audio Routing → Preview Device** and select it.
 3. At a safe level, use a cue's **Preview** control and verify that it is heard only where intended.
 4. Stop the preview before returning to show operation.
 

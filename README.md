@@ -152,6 +152,8 @@ Click the current **Test Card Type**, **Start Behavior**, or **End Behavior** to
 
 **Backup music group** in Playback Behaviour and **Continue with** in group Properties also expand their choices in place. Choose **Use show backup** to clear a group override. The playlist, **GO**, and **Stop All** stay available, including **Escape** while the choices are open.
 
+In **Settings → Audio Routing**, the Audio, Preview and LTC device choices and Output Target open in the lower panel. **Group Level** in group Properties uses a fader with a dB readout for shared attenuation.
+
 In **Properties → Basic Info → Media**, use **Replace or relink media** beside **File** to pick and verify a replacement in the lower panel. Cancel or a failed file check leaves the original media assigned.
 
 For a QuickPlay, click **+** in an empty slot or **Replace audio** in its settings to browse a single file in the lower panel. The panel uses the engine computer's folders. To import a file from the controller when the engine is on another computer, drop it directly on the slot.
