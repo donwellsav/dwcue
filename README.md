@@ -159,7 +159,7 @@ In **Settings → Audio Routing**, the Audio, Preview and LTC device choices and
 
 The cue’s **Output device** and **Ducking** choices open inside Properties. The playlist and **GO** stay usable, and **Escape** runs Stop All while either list is open.
 
-**QuickPlay Settings** expands Playback, Retrigger, Ending, and Output choices inside the panel, attached or detached. **Escape** runs Stop All with a list open, and the detached settings header has a **Stop All** button. During reconnect, the detached window shows the notice below the tiles and **Stop All** in the window header. QuickPlay starts wait for show verification.
+**QuickPlay Settings** expands Playback, Retrigger, Ending, and Output choices inside the panel, attached or detached. **Escape** runs Stop All with a list open, and the detached settings header has a **Stop All** button. During reconnect, the detached window shows the notice below the tiles and **Stop All** in the window header. QuickPlay starts wait for show verification. If the engine has no show or a different show, restore or open it in the main window. The detached bank unlocks when it receives the fresh, verified show.
 
 Video Capture, Test Card options, cue LTC frame rate, the file type filter, import options, and the remaining Settings choices also expand in place. Normalize and Reduce Peaks share one section, and MIDI reassignment stays in the MIDI panel. About opens below the welcome screen during startup.
 

@@ -1,6 +1,6 @@
 {
   "application": "DonWells Cue",
-  "sourceRevision": "25cd0b88962853c44522a97ef5167452847b0b45",
+  "sourceRevision": "30dd3c4c82bb5e07bf74fd907f5e7557187e68b1",
   "packageVersion": "2.6.23 development",
   "edition": "15 November 2026 development review of operator controls, imports, and project panels",
   "images": [
@@ -476,7 +476,7 @@
     "gainStages": "Schematic: final physical sum and secondary-clock adaptation precede the attenuation-only limiter and device output."
   },
   "uiBuildRevision": "534615e1ce656d849e886cacba121fbe3d986020",
-  "manualSourceRevision": "25cd0b88962853c44522a97ef5167452847b0b45",
+  "manualSourceRevision": "30dd3c4c82bb5e07bf74fd907f5e7557187e68b1",
   "visualCompatibility": {
     "checkedOn": "2026-11-15",
     "revision": "618e07dae60c32bdf267305738af1d92b740ca49",
