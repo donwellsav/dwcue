@@ -132,7 +132,7 @@ export const useConnectionGuard = () => {
       quickPlayImportSlot.value !== null || importPanel.value === 'media' || importPanel.value === 'spotify' ||
       importPanel.value === 'archive-import' || importPanel.value === 'archive-export' || importPanel.value === 'repair' ||
       (showProjectSettings.value && ['video', 'ui'].includes(settingsTab.value)) ||
-      document.querySelector('.inline-choice-picker[open], .normalize-menu[open], .midi-conflict, .workspace-status .audio-load-progress'));
+      document.querySelector('[data-recovery-panel], .inline-choice-picker[open], .normalize-menu[open], .midi-conflict, .workspace-status .audio-load-progress'));
     if (!panelEscape && !blocked && !projectLoad.value && !(currentProject.value && editing)) return;
     const typing = e.isComposing ||
         (editing && e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey);

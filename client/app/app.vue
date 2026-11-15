@@ -17,24 +17,23 @@
           />
           <span class="cart-brand-wordmark">DONWELLS CUE</span>
           <div id="cart-header-warnings" class="cart-header-warnings"></div>
-          <span class="cart-brand-url">dwcue.com</span>
+          <Btn v-if="reconnectPanelOpen" class="cart-recovery-stop" data-recovery-panel type="button"
+            icon="stop_circle" :text="t('controls.stopAll')" @click="stopAllCues()" @keydown.enter.space.stop />
+          <span v-else class="cart-brand-url">dwcue.com</span>
         </header>
         <template v-if="currentProject && detachedProjectIdentity">
           <p v-if="detachedProjectError" class="cart-window-error" role="alert">{{ detachedProjectError }}</p>
-          <OneShotPanel :is-detached-window="true" />
-          <DeleteSelectionPanel />
+          <OneShotPanel :is-detached-window="true" :inert="reconnectPanelOpen" />
+          <DeleteSelectionPanel v-if="!reconnectPanelOpen" />
         </template>
         <div v-else class="cart-window-loading">
           <CueSymbol name="one-shots" />
           <p v-if="detachedProjectError">{{ detachedProjectError }}</p>
         </div>
+        <div v-if="reconnectPanelOpen" class="cart-recovery-panel" data-recovery-panel>
+          <ConnectionLostModal docked :show-stop-all="false" />
+        </div>
       </div>
-
-      <!-- The detached cart window fires cues too, so it needs the same
-           lockout: without it, cart pads here would keep accepting presses
-           that silently never reach the server. -->
-      <ConnectionLostModal />
-
     </template>
 
     <!-- Normal mode -->
@@ -1264,6 +1263,18 @@ onMounted(() => {
   font-size: 10px;
   color: var(--color-text-secondary);
   opacity: 0.7;
+}
+
+.cart-recovery-stop {
+  flex: none;
+  margin-inline-start: auto;
+  color: var(--color-danger);
+}
+
+.cart-recovery-panel {
+  flex: 0 0 auto;
+  max-height: 60%;
+  overflow: auto;
 }
 
 .cart-window-error {
