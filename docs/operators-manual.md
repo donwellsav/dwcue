@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** dea1973b2963d2c540f26e57df4f36300ae2c7ab
+**Source revision:** 76b02e4281211066f5953b610dc9bba1c86ffec4
 **Native engine baseline:** 7c233a9
 **Edition:** 15 November 2026 · English · Operator edition
 
@@ -594,7 +594,9 @@ With only one display or no dedicated assignment, the app uses a normal preview 
 - **Common mistake:** Assuming AV Sync is silent or routed to Preview.
 - **Recovery:** Press **Stop All** to stop the tone, switch the card off and on only when a restart is intended, then correct the selected Audio Device before retesting.
 
-**Stop All** also cancels an AV Sync test that is still waiting for its audio device. When the driver returns, the canceled test stays off.
+**Stop All** cancels a pending AV Sync device start. The test stays off when the driver returns.
+
+In **Settings → Video Output → Test card**, drop or paste a PNG, JPEG, WebP, or GIF onto the logo or mask field. Both show a preview and offer **Clear**. **Custom Logo** shows the logo. A new mask enables itself. A rejected file leaves the previous image in place. The playlist and **GO** stay available during loading. **Escape** runs Stop All even when remapped.
 
 ### What the audience sees
 
