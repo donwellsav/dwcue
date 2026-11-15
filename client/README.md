@@ -121,9 +121,10 @@ Key IPC channels (non-exhaustive):
 | `scan-media-folder` | Recursively list a folder chosen in the local Import Media panel, reporting unreadable subfolders. |
 | `authorize-dropped-spotify-folder` | Authorize the real local folder passed by the preload from a Spotify destination drop. |
 | `read-file` / `write-file` / `copy-file` | Authorized project filesystem helpers. |
-| `get-binary-file-info` / `read-binary-file-chunk` | Bounded local archive reads for remote imports. |
-| `download-archive-to-file` | Streams a server archive directly to an authorized local destination. |
-| `menu-export-project` / `menu-import-project` (main → renderer) | Menu-triggered `.dwcuepack` export/import. The renderer owns the dialogs. |
+| `get-binary-file-info` / `read-binary-file-chunk` | Bounded local archive reads for remote imports launched by file association. |
+| `archive-download-folder` | Authorizes Downloads or a disk-backed folder dropped in the archive panel for archive downloads. |
+| `download-archive-to-file` | Streams the archive to a temporary file and saves it in the authorized folder without replacing an existing file. |
+| `menu-export-project` / `menu-import-project` (main → renderer) | Opens the docked `.dwcuepack` export or import panel. |
 | `check-for-updates` / `download-update` / `install-update` / `get-update-install-supported` / `get-app-version` | `electron-updater` controls. |
 | `update-available` / `update-up-to-date` / `update-download-progress` / `update-downloaded` / `update-error` / `menu-check-for-updates` (main → renderer) | Update flow events; `menu-check-for-updates` is the Help-menu trigger. |
 | `update-menu-language` / `get-system-locale` / `get-available-locales` / `get-locale-data` | Dynamic menu localisation. |

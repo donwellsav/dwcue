@@ -136,6 +136,8 @@ With a remote engine, open **Import Media → From This Computer** and drop file
 
 Use **File → Open Project** for a `.dwcue` show and **File → Import Project…** for a `.dwcuepack` archive. Each archive must contain exactly one `.dwcue` at its root. The app refuses upstream LivePlay `.liveplay` and `.lpa` files. Previously converted `.dwcue` shows open as native projects.
 
+For remote archives, select **From This Computer** to drop a `.dwcuepack` into the lower panel. In **File → Export Project…**, **Download Here** saves to the controller's Downloads folder by default. Drop a different destination folder into that panel if needed. Progress stays in the dock and **Escape** runs Stop All.
+
 The file browsers remember the last successfully visited folder separately for each server and picker purpose. Use the Favorites sidebar to add, revisit, or remove frequent folders. If the configured starting location is available, a missing remembered folder falls back there with a notice. Failed navigation clears the selection and disables Open. Native desktop choosers also remember their last selected folder by purpose.
 
 In the current source, New Show, Open Project, Open Recent, direct `.dwcue` opens, Quit, and Unsaved Changes use the lower panel. The playlist, GO, and Stop All stay available while you fill in the form, browse, or decide. Escape runs Stop All and leaves the panel open. While an existing show loads, the playlist stays visible and cue starts wait for the controller to finish opening the show.

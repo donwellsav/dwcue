@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** 7068755156563faba159096cea2203b779e5933d
+**Source revision:** dea1973b2963d2c540f26e57df4f36300ae2c7ab
 **Native engine baseline:** 7c233a9
 **Edition:** 15 November 2026 · English · Operator edition
 
@@ -737,7 +737,7 @@ The server makes background copies of the existing disk project every 10 minutes
 
 1. Stop the rehearsal at a known point and save the intended project changes.
 2. Use **File → Export Project…**. The lower panel shows the destination browser. Navigate to a folder and select **Save Here**.
-3. With a remote engine, the browser shows the engine's files. Use **Download Here** to choose a path on the controller in the operating system's save window.
+3. To save to the controller when using a remote engine, choose **Download Here**. The panel starts in Downloads. Drop another folder into the panel to change the location. Leave **Filename** blank to use the show's name, or enter a name, then select **Save Here**. If that name already exists, choose another filename and retry.
 4. Wait for **Archive saved to** before using the resulting **.dwcuepack**. Export saves the show before packaging. Resolve any save failure before retrying.
 5. Import it into a separate rehearsal location and verify cues, media readiness, images, and playback with the original source paths unavailable.
 
@@ -745,13 +745,13 @@ The server makes background copies of the existing disk project every 10 minutes
 
 Device assignments, physical patching, local MIDI mappings, and video display identity need checking on the destination machine. A successful archive extraction is not a substitute for that check.
 
-The playlist, **GO**, and **Stop All Cues** stay available during browsing and transfers. Closing the lower panel leaves the job running. Reopen the same File menu action to see progress or the saved path.
+The playlist, **GO**, and **Stop All Cues** stay available during browsing and transfers. **Escape** runs Stop All while the panel is open. Closing the lower panel leaves the job running. Reopen the same File menu action to see progress or the saved path.
 
 ### Import a show or archive and inspect repairs
 
 Use **File → Import Project…** for a portable `.dwcuepack` containing exactly one root `.dwcue` show. DonWells Cue refuses upstream LivePlay `.liveplay` shows and `.lpa` archives. Previously converted `.dwcue` shows open through **File → Open Project**.
 
-In the lower panel, select the archive and choose **Choose Archive**. With a remote engine, **From This Computer** opens the operating system's file chooser for an archive on the controller. Choose an empty folder on the audio-engine computer and select **Extract Here**. The panel shows the extracted location when it finishes. Select **Open** when you are ready to switch shows.
+For an archive on the engine, select it in the lower panel and choose **Choose Archive**. For an archive on a remote controller, select **From This Computer** and drop one `.dwcuepack` into the panel. You can paste if the clipboard supplies an archive file. Choose an empty folder on the audio-engine computer and select **Extract Here**. The panel shows the extracted location when it finishes. Select **Open** when you are ready to switch shows.
 
 Extraction refuses unsafe entries and destination collisions rather than silently overwriting an existing show. If import reports a collision, choose a clean destination; do not delete the working show just to force an import. Wait for import and audio readiness, then listen to representative cues and inspect the important transitions.
 
@@ -996,7 +996,7 @@ These are source defaults, not a promise about a project's customized assignment
 | Cmd/Ctrl+Q | Exit / quit workflow |
 | F11 | Fullscreen |
 
-The default **Escape** Stop All shortcut works while editing, including in the limiter ceiling and Preview In/Out fields. New Show, Open Project, Quit, **Unsaved Changes**, and the main window's recovery panel reserve Escape for Stop All. With Video Output focused, Escape also exits its fullscreen mode. In Level Check, R / [ / ] / Q have the temporary meanings described in chapter 12. MIDI bindings belong to the machine; keyboard playback assignments belong to the project.
+The default **Escape** Stop All shortcut works while editing, including in the limiter ceiling and Preview In/Out fields. New Show, Open Project, archive import and export, Quit, **Unsaved Changes**, and the main window's recovery panel reserve Escape for Stop All. With Video Output focused, Escape also exits its fullscreen mode. In Level Check, R / [ / ] / Q have the temporary meanings described in chapter 12. MIDI bindings belong to the machine; keyboard playback assignments belong to the project.
 
 ### Operating boundaries
 

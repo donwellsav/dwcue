@@ -1,6 +1,6 @@
 {
   "application": "DonWells Cue",
-  "sourceRevision": "7068755156563faba159096cea2203b779e5933d",
+  "sourceRevision": "dea1973b2963d2c540f26e57df4f36300ae2c7ab",
   "packageVersion": "2.6.23 development",
   "edition": "15 November 2026 development review of operator controls, imports, and project panels",
   "images": [
@@ -476,10 +476,10 @@
     "gainStages": "Schematic: final physical sum and secondary-clock adaptation precede the attenuation-only limiter and device output."
   },
   "uiBuildRevision": "534615e1ce656d849e886cacba121fbe3d986020",
-  "manualSourceRevision": "7068755156563faba159096cea2203b779e5933d",
+  "manualSourceRevision": "dea1973b2963d2c540f26e57df4f36300ae2c7ab",
   "visualCompatibility": {
     "checkedOn": "2026-11-15",
-    "revision": "7068755156563faba159096cea2203b779e5933d",
-    "basis": "The current renderer was software-checked for remote file and folder drops, batch review, and group import at 1200 × 700 and 845 × 690. Figures retain their capture revisions."
+    "revision": "dea1973b2963d2c540f26e57df4f36300ae2c7ab",
+    "basis": "The current renderer was software-checked for docked remote archive sources, destinations, and transfer progress at 1200 × 700 and 845 × 690. Figures retain their capture revisions."
   }
 }
