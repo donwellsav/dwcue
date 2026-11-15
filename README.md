@@ -132,6 +132,8 @@ DonWells Cue writes native show documents as `.dwcue` files and portable exports
 8. If the show uses video, open Project Settings → **Video Output**, click **Identify displays**, assign the projector/switcher display, then manually open the output and verify the test card.
 9. Switch on **Show Mode** for the live performance.
 
+With a remote engine, open **Import Media → From This Computer** and drop files or one folder in the lower panel. You can paste files there if your clipboard supplies them. After upload, review the selection and choose **Import selected**.
+
 Use **File → Open Project** for a `.dwcue` show and **File → Import Project…** for a `.dwcuepack` archive. Each archive must contain exactly one `.dwcue` at its root. The app refuses upstream LivePlay `.liveplay` and `.lpa` files. Previously converted `.dwcue` shows open as native projects.
 
 The file browsers remember the last successfully visited folder separately for each server and picker purpose. Use the Favorites sidebar to add, revisit, or remove frequent folders. If the configured starting location is available, a missing remembered folder falls back there with a notice. Failed navigation clears the selection and disables Open. Native desktop choosers also remember their last selected folder by purpose.

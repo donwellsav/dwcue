@@ -38,7 +38,7 @@ This developer guide tracks the v2.6.20 client. Match the installed About versio
 | Media tooling    | `@ffmpeg-installer/ffmpeg`, `@ffprobe-installer/ffprobe`        |
 | YouTube import   | `yt-dlp-wrap` + `youtube-search-api`                            |
 | Updates          | `electron-updater` (GitHub Releases feed: `donwellsav/dwcue`)      |
-| File transport   | Server-backed REST upload/download for `.dwcuepack` project archives |
+| File transport   | Chunked uploads for controller media and server-backed REST transfer for `.dwcuepack` project archives |
 
 Audio playback, waveform extraction, metering and routing all live in the C++ server. The renderer never decodes audio.
 
@@ -150,6 +150,7 @@ New shows and normal saves use the native `.dwcue` JSON document. Portable expor
 
 - The server URL and a remote user's token are stored in `localStorage` under `liveplay.serverUrl` and `liveplay.accessToken`; change them via **Server Settings**. A managed local token is session-only in the renderer and is never written there.
 - Every local and remote control call is authenticated except `GET /api/health`. REST uses `Authorization: Bearer <token>`; bearer-in-query is restricted to browser WebSocket `/ws` and media-element `/api/media` requests.
+- Remote media import reads the controller's dropped folders in the browser and uploads bounded slices of the selected files. [File and Directory Entries API](https://wicg.github.io/entries-api/)
 - Browser origins must exactly match `LIVEPLAY_ALLOWED_ORIGINS`. Source development uses `http://localhost:3000`, not an arbitrary loopback origin. Packaged Electron's opaque `Origin: null` is accepted, but it still requires the token.
 - On boot, the [`app/plugins/liveplay-server.client.ts`](app/plugins/liveplay-server.client.ts) plugin connects. Project hydration streams the current server header and pages. A failed page leaves an explicit read-only workspace with **Retry** and Stop All; Retry rejoins the server's current document rather than reopening the prior file path. If a changed server project meets dirty local edits, `ConnectionLostModal` requires **Use server project** (discard local/adopt server) or **Restore local project** (replace server/keep local dirty) instead of overwriting either side silently.
 - A close-side `project_changed` clears both the renderer's project document and its remembered path. Saves wait for complete hydration and are serialized, revision-fenced and identity-fenced. Toggling Autosave in either direction force-saves the current document plus preference; subsequent edits save while enabled and only mark dirty while disabled. The unsaved badge is conditional on Autosave being off, so enabling hides it even when that forced save fails, while `hasUnsavedChanges` remains true. Save As changes the path only after the server publishes successfully.

@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** 03ef672ee4940bee44a6f8260825242fbc867fcd
+**Source revision:** 7068755156563faba159096cea2203b779e5933d
 **Native engine baseline:** 7c233a9
 **Edition:** 15 November 2026 · English · Operator edition
 
@@ -171,7 +171,7 @@ Double-click a folder or press **Enter** on it to browse. Use **Select all**, **
 
 ![Multi-file selection inside the Import Media panel.](manual-assets/server-picker-current.png)
 
-With a remote engine, **From This Computer** opens the controller's system chooser to upload files. **Browse Server** selects files accessible to the engine and starts verification with **Import selected**.
+With a remote engine, drop files or one folder into **From This Computer** in the lower panel. You can paste if the clipboard supplies files. **Cancel** while reading a folder keeps the staged selection. After upload, use **Select all**, **Select none**, or **Import as group** to review the batch. **Browse Server** selects files already accessible to the engine.
 
 During verification, the panel shows the current file, a progress bar, and **Cancel import**. If an individual file fails to upload, the remaining uploads continue. Review the failed filenames and use **Retry Failed** for those files. Retrying a group batch puts newly verified files in the same group. Reopen **Import Media** to return to the results for this show.
 
