@@ -9,9 +9,7 @@
 // fetch — and the operator finds out at the worst possible moment, mid-show.
 // So while the connection is lost we:
 //
-//   * freeze input      — a capture-phase keydown trap plus the modal's own
-//                         full-screen overlay for pointer events, so no UI
-//                         state can drift away from the server's copy
+//   * freeze edits and cue starts until the current server show is verified
 //   * say so, loudly    — ConnectionLostModal + the animated header pill
 //   * keep retrying     — useLiveplayServer's backoff loop never stops
 //
@@ -120,7 +118,7 @@ export const useConnectionGuard = () => {
   // Capture Stop All before an editor can consume it, and guard cue starts during recovery.
   const trapKeydown = (e: KeyboardEvent) => {
     const blocked = server.cueStartsBlocked;
-    // Tab still moves focus, so the dialog is reachable from anywhere.
+    // Tab still moves focus, so recovery actions and Stop All are reachable.
     if (e.key === 'Tab') return;
     const el = e.target as HTMLElement | null;
     const editing = el?.closest?.('input, textarea, [contenteditable]:not([contenteditable="false"])');
@@ -140,9 +138,8 @@ export const useConnectionGuard = () => {
       }
     }
     if (!blocked) return;
-    // Keys aimed at the recovery dialogs — or at Server Settings, which stacks
-    // above them so the URL can be retargeted — go through untouched.
-    if (el?.closest?.('.clm-overlay, .srm-overlay, .modal-backdrop')) return;
+    if (el?.closest?.('[data-recovery-panel], .clm-overlay, .modal-backdrop')) return;
+    if (el?.closest?.('.panic-btn') && (e.key === 'Enter' || e.key === ' ')) return;
     e.preventDefault();
     e.stopImmediatePropagation();
   };

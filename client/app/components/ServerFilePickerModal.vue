@@ -1,6 +1,7 @@
 <template>
   <Teleport to="body" :disabled="docked">
-    <div v-if="open" :class="docked ? 'picker-dock' : 'picker-backdrop'" @click.self="!docked && cancel()">
+    <div v-if="open" v-show="docked || !projectPanelOpen"
+      :class="docked ? 'picker-dock' : 'picker-backdrop'" @click.self="!docked && cancel()">
       <div class="picker">
         <!-- Top toolbar: navigation + breadcrumb path -->
         <header class="toolbar">
@@ -168,6 +169,7 @@ const emit = defineEmits<{
 }>();
 
 const server = useLiveplayServer();
+const projectPanelOpen = useState('projectPanelOpen', () => false);
 const pickerContext = computed(() => props.locationContext ?? pickerLocationContext(props.mode, props.filter));
 const pickerLocations = useFilePickerLocations(
   () => String(server.serverUrl),

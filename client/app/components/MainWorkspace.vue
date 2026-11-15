@@ -5,13 +5,14 @@
          components read useUiMode() and hide their edit affordances + enlarge
          touch targets, so waveforms, colours, durations, behaviour flags and
          warnings all render exactly as in edit mode. -->
-    <ProjectHeader />
+    <ProjectHeader :inert="recoveryOpen" />
     <PlaybackControls />
-    <LevelCheckBar />
+    <LevelCheckBar :inert="recoveryOpen" />
 
     <div ref="workspaceContent" class="workspace-content" :style="{ '--reserved-playlist-row-height': `${reservedPlaylistRowHeight}px` }">
       <aside
         v-if="monitorAssigned"
+        :inert="recoveryOpen"
         class="monitor-console output-console"
         aria-label="Monitor"
       >
@@ -48,6 +49,8 @@
       <div class="workspace-panels">
         <div
           v-if="cartVisible"
+          v-show="!recoveryOpen || !cartFullscreen"
+          :inert="recoveryOpen"
           id="cart-player-panel"
           class="cart-section"
           :class="{ 'cart-section--fullscreen': cartFullscreen }"
@@ -72,17 +75,20 @@
 
         <div
           v-if="!cartDetached"
+          v-show="!recoveryOpen || !cartFullscreen"
+          :inert="recoveryOpen"
           class="resize-handle"
           :class="{ 'collapsed-left': cartClosed, 'collapsed-right': cartFullscreen, dragging: isResizing }"
           @pointerdown="startResize"
         ></div>
 
-        <div v-show="!cartFullscreen || cartDetached" class="playlist-section">
+        <div v-show="recoveryOpen || !cartFullscreen || cartDetached" class="playlist-section">
           <div class="playlist-panel">
-            <PlaylistView>
+            <PlaylistView :read-only="recoveryOpen">
               <template #header-leading>
                 <button
                   v-if="cartClosed && !cartDetached"
+                  :disabled="recoveryOpen"
                   type="button"
                   class="cart-toggle cart-toggle--reveal"
                   :aria-label="t('oneShots.show')"
@@ -99,7 +105,7 @@
         </div>
       </div>
 
-      <aside class="output-console" :aria-label="t('properties.output')">
+      <aside class="output-console" :aria-label="t('properties.output')" :inert="recoveryOpen">
         <div class="output-console__header workspace-panel-header">
           <div class="output-console__header-controls">
 
@@ -196,7 +202,7 @@
 
     <div id="preview-lower-panel" class="preview-lower-panel" aria-live="polite"></div>
 
-    <ShortcutsBar />
+    <ShortcutsBar :inert="recoveryOpen" />
 
     <div v-show="lowerPanelOpen" ref="lowerPanel" class="lower-workspace-panel"
       :class="{ 'lower-workspace-panel--deciding': decisionOpen }"
@@ -237,7 +243,7 @@ import VolumeSlider from './VolumeSlider.vue';
 import { bindingsMatch, eventToBinding } from '~/composables/useCartHotkeys';
 import { flattenOneShots } from '~/utils/oneShots';
 
-const { decisionOpen } = defineProps<{ decisionOpen: boolean }>();
+const { decisionOpen, recoveryOpen } = defineProps<{ decisionOpen: boolean; recoveryOpen: boolean }>();
 const {
   selectedItem,
   selectedItems,

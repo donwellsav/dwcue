@@ -316,6 +316,7 @@ test('cold Open owns the loading panel while the welcome screen probes for an ex
   let pages = 0;
   const deps = {
     _hydrationRequestRevision: 0, _openLoadRevision: 0, _hydrationRetry: createProjectHydrationRetry(),
+    isCartWindowMode: false, isVideoOutputWindowMode: false, recoveringProject: { value: false },
     projectHydrationStatus: { value: 'ready' }, isHydrating: { value: false },
     projectLoad, currentProject, projectFilePathRef: { value: '' },
     useLiveplayServer: () => ({
@@ -358,6 +359,49 @@ test('cold Open owns the loading panel while the welcome screen probes for an ex
   loaded(header);
   assert.equal(await superseded, false);
   assert.equal(projectLoad.value, null, 'an Open must release its panel after reconnect verification');
+});
+
+test('reconnect retains the verified playlist through a failed page and replaces it only on success', async () => {
+  const previous = { items: ['verified cue'], cartOnlyItems: [] };
+  const currentProject = { value: previous };
+  const header = { hasOpenProject: true, itemCount: 2, server: { projectSessionId: 'new-show' } };
+  let finishPages!: (loaded: boolean) => void;
+  const rejoin = projectFunction('tryRejoinExistingProject', {
+    currentProject, _hydrationRequestRevision: 0, projectLoad: { value: null }, _hydrationRetry: createProjectHydrationRetry(),
+    isCartWindowMode: false, isVideoOutputWindowMode: false, recoveringProject: { value: false },
+    projectHydrationStatus: { value: 'ready' }, isHydrating: { value: false },
+    useLiveplayServer: () => ({ connected: true, showVerification: 'checking' }),
+    async readProjectItemPages(_: unknown, count: number, isCurrent: () => boolean,
+      receive: (items: string[]) => void, _signal: unknown, session: string) {
+      assert.equal(count, 2);
+      assert.equal(session, 'new-show');
+      receive(['first incoming cue']);
+      const accepted = await new Promise<boolean>(resolve => { finishPages = resolve; });
+      if (accepted) receive(['last incoming cue']);
+      return accepted && isCurrent();
+    },
+    applyServerHeader(_header: unknown, items: string[]) {
+      currentProject.value = { items, cartOnlyItems: [] };
+      return {};
+    },
+    nextTick: async () => {},
+    useCartItems: () => ({ clearCartOnlyItems() {}, addCartOnlyItem() {} }),
+    async streamItemPages(_: unknown, _count: number, _load: unknown, _signal: unknown, pagesLoaded: boolean) {
+      assert.equal(pagesLoaded, true, 'verification pages must be applied only once');
+      return true;
+    },
+    pollLoadingProgress() {},
+  });
+  const refused = rejoin(header);
+  assert.equal(currentProject.value, previous);
+  finishPages(false);
+  assert.equal(await refused, false);
+  assert.equal(currentProject.value, previous);
+  const accepted = rejoin(header);
+  assert.equal(currentProject.value, previous);
+  finishPages(true);
+  assert.equal(await accepted, true);
+  assert.deepEqual(currentProject.value.items, ['first incoming cue', 'last incoming cue']);
 });
 
 test('save failure persists through edits and pending retries until the current show is saved', async () => {

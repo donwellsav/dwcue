@@ -713,6 +713,7 @@ export const useProject = () => {
     // verification supplies its own server header and can still proceed.
     if (signal?.aborted || (projectLoad.value && !existingHeader)) return false;
     const requestRevision = ++_hydrationRequestRevision;
+    const isCurrent = () => !signal?.aborted && requestRevision === _hydrationRequestRevision;
     _hydrationRetry.set(() => tryRejoinExistingProject());
     try {
       const server = useLiveplayServer();
@@ -720,13 +721,25 @@ export const useProject = () => {
         try { server.connect(); } catch { /* noop */ }
       }
       const header = existingHeader ?? await server.fetchProjectHeader(signal);
-      if (signal?.aborted || requestRevision !== _hydrationRequestRevision) return false;
+      if (!isCurrent()) return false;
       if (!header || !header.hasOpenProject) return false;
+
+      // Keep the last verified show readable until the replacement can be installed whole.
+      const retainPlaylist = !isCartWindowMode && !isVideoOutputWindowMode && currentProject.value &&
+        projectHydrationStatus.value === 'ready' && (server.showVerification === 'checking' || recoveringProject.value);
+      const items: Project['items'] | undefined = retainPlaylist ? [] : undefined;
+      if (items) {
+        const session = header.server?.projectSessionId;
+        if (typeof session !== 'string' || !session) throw new Error('The server did not identify the show');
+        if (!await readProjectItemPages(server, header.itemCount, isCurrent, page => { items.push(...page); }, signal, session)) return false;
+        if (!isCurrent()) return false;
+        if (items.length !== header.itemCount) throw new Error('The cue list changed while verifying the show');
+      }
 
       isHydrating.value = true;
       let hydration: ProjectHydrationLoad | false = false;
       try {
-        hydration = applyServerHeader(header);
+        hydration = applyServerHeader(header, items);
       } finally {
         await nextTick();
         isHydrating.value = false;
@@ -742,7 +755,7 @@ export const useProject = () => {
       const cartOnly = currentProject.value?.cartOnlyItems ?? [];
       for (const item of cartOnly) addCartOnlyItem(item);
 
-      if (!await streamItemPages(server, header.itemCount ?? 0, hydration, signal)) return false;
+      if (!await streamItemPages(server, header.itemCount ?? 0, hydration, signal, items !== undefined) || !isCurrent()) return false;
       void pollLoadingProgress(server);
       return true;
     } catch (error) {
@@ -809,58 +822,54 @@ export const useProject = () => {
     return hydrateProjectFrom(server => server.loadProjectFromPath(projectFilePath));
   };
 
-  // Stream paged items from the server into currentProject.items. Yields
-  // to the renderer between pages via requestAnimationFrame so the
-  // playlist paints incrementally rather than blocking on one giant tick.
-  // Safe to call multiple times — bails if currentProject becomes null.
+  // Ordinary opens paint each page as it arrives. Recovery collects the same
+  // pages against the new show identity before replacing the visible list.
+  async function readProjectItemPages(
+    server: ReturnType<typeof useLiveplayServer>, totalHint: number, isCurrent: () => boolean,
+    receive: (items: Project['items']) => void | Promise<void>, signal?: AbortSignal, session?: string,
+  ): Promise<boolean> {
+    let offset = 0;
+    while (isCurrent() && !signal?.aborted) {
+      const page = await server.fetchProjectItemsPage(offset, 100, signal, session);
+      if (!isCurrent() || signal?.aborted) return false;
+      if (!Array.isArray(page.items)) throw new Error('Server returned an invalid project page');
+      if (page.items.length === 0) {
+        if (offset < Math.max(totalHint, page.total)) throw new Error('Project item stream ended before all items arrived');
+        return true;
+      }
+
+      // Waveforms are read-only and expensive to track deeply. Reuse cached
+      // peaks on a reconnect or a reload of the same show.
+      for (const item of page.items) {
+        if (item?.waveform) item.waveform = markRaw(item.waveform);
+        restoreWaveform(item);
+      }
+      await receive(page.items);
+      offset += page.items.length;
+      if (offset >= page.total) return isCurrent() && !signal?.aborted;
+      await new Promise<void>(resolve => {
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
+        else setTimeout(resolve, 0);
+      });
+    }
+    return false;
+  }
+
   async function streamItemPages(
-    server: any, totalHint: number, hydration: ProjectHydrationLoad, signal?: AbortSignal,
+    server: ReturnType<typeof useLiveplayServer>, totalHint: number, hydration: ProjectHydrationLoad,
+    signal?: AbortSignal, pagesAlreadyLoaded = false,
   ): Promise<boolean> {
     const project = hydration.project;
     const isCurrent = () => _projectHydration.current() === hydration && currentProject.value === project;
     let complete = false;
     let failure: unknown = null;
-    const PAGE = 100;
-    let offset = 0;
     try {
-      while (true) {
-        // Abort if another openProject started, or the project was closed.
-        if (signal?.aborted || !isCurrent()) return false;
-        let page: { offset: number; limit: number; total: number; items: any[] };
-        try { page = await server.fetchProjectItemsPage(offset, PAGE, signal); }
-        catch (error) {
-          failure = error;
-          console.warn('[useProject] item page fetch failed:', error);
-          return false;
-        }
-        if (signal?.aborted || !isCurrent()) return false;
-        if (!Array.isArray(page.items)) {
-          failure = new Error('Server returned an invalid project page');
-          return false;
-        }
-        if (page.items.length === 0) {
-          if (offset < Math.max(totalHint, page.total)) {
-            failure = new Error('Project item stream ended before all items arrived');
-            return false;
-          }
-          break;
-        }
-
+      if (!pagesAlreadyLoaded && !await readProjectItemPages(server, totalHint, isCurrent, async page => {
         // Push under the hydrating flag so the diff-watcher doesn't echo
         // these items right back to the server as "client adds".
         isHydrating.value = true;
         try {
-          // Prevent Vue from deeply tracking waveform peaks arrays — they are
-          // read-only server data (thousands of floats per item) and making
-          // them reactive freezes the UI when the deep watcher is installed.
-          // Pages from the server are waveform-less; re-attach any waveform we
-          // already cached this session so a project_changed restream (another
-          // client reloaded) doesn't blank waveforms we already have.
-          for (const it of page.items) {
-            if (it?.waveform) it.waveform = markRaw(it.waveform);
-            restoreWaveform(it);
-          }
-          project.items.push(...page.items);
+          project.items.push(...page);
           updateIndices(project.items);
         } finally {
           // Defer clearing the flag until after Vue flushes its watcher
@@ -871,19 +880,7 @@ export const useProject = () => {
           if (isCurrent()) isHydrating.value = false;
         }
 
-        offset += page.items.length;
-        if (offset >= page.total) break;
-
-        // Yield so Vue paints the freshly-pushed rows before we fetch
-        // the next page.
-        await new Promise<void>(r => {
-          if (typeof requestAnimationFrame === 'function') {
-            requestAnimationFrame(() => r());
-          } else {
-            setTimeout(r, 0);
-          }
-        });
-      }
+      }, signal)) return false;
       if (signal?.aborted || !isCurrent()) return false;
       // One-time repair for projects corrupted by an earlier bug where a
       // cart-only item leaked into the playlist tree (the same uuid ended up
@@ -980,7 +977,7 @@ export const useProject = () => {
     } catch { /* noop */ }
   };
 
-  const applyServerHeader = (header: any): ProjectHydrationLoad | false => {
+  const applyServerHeader = (header: any, items: Project['items'] = []): ProjectHydrationLoad | false => {
     if (!header || typeof header !== 'object') return false;
     if (header.hasOpenProject !== true) {
       clearLocalProjectMirror();
@@ -1012,7 +1009,7 @@ export const useProject = () => {
       name:           header.name ?? 'Untitled',
       version:        header.version ?? '2.0.0',
       folderPath:     header.folderPath ?? '',
-      items:          [],
+      items,
       cartItems:      header.cartItems ?? [],
       cartSlotKeys:   header.cartSlotKeys ?? { ...DEFAULT_CART_SLOT_KEYS },
       playbackKeys:   header.playbackKeys,
@@ -1803,6 +1800,11 @@ export const useProject = () => {
             // Local open/create and recovery own their returned header; ignore
             // their echo so one transition cannot hydrate twice.
             if (projectLoad.value || recoveringProject.value) break;
+            if (server().showVerification) {
+              // A late page from the old session cannot finish this check.
+              ++_hydrationRequestRevision;
+              break;
+            }
             void (async () => {
               try {
                 const header = await server().fetchProjectHeader();

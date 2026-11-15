@@ -497,6 +497,9 @@ test('project REST calls carry the bound session while chained creation uses its
     assert.equal(scoped.length, 15);
     assert.deepEqual(scoped.map(call => call.session), Array(13).fill('bound-show-session').concat(['creation-session', 'creation-session']));
     assert.equal(scoped[0].mutation, 'owner:7', 'session tagging preserves the item mutation echo identity');
+    await server.fetchProjectItemsPage(0, 100, undefined, 'unverified-show-session');
+    assert.equal(calls.at(-1)!.session, 'unverified-show-session');
+    assert.equal(server.projectSessionId, 'bound-show-session', 'reading recovery pages must keep the existing show binding');
     server.projectSessionId = 'newer-show-session';
     await server.closeProjectOnServer('captured-closing-session');
     assert.equal(calls.at(-1)!.session, 'captured-closing-session', 'late close cannot adopt the newer current session');

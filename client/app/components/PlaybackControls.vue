@@ -5,6 +5,7 @@
         type="button"
         class="control-btn panic-btn"
         @click="handlePanic"
+        @keydown="server.cueStartsBlocked && $event.stopPropagation()"
         :title="stopAllTooltip"
       >
         <span class="material-symbols-rounded" aria-hidden="true">stop_circle</span>

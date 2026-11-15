@@ -39,7 +39,7 @@
 
     <!-- Normal mode -->
     <template v-else>
-      <div v-if="!hasWorkspace" class="startup-workspace">
+      <div v-if="!hasWorkspace" class="startup-workspace" :inert="recoveryPanelOpen">
         <div id="startup-header-warnings" class="startup-header-warnings"></div>
         <WelcomeScreen
           v-if="!currentProject"
@@ -62,10 +62,14 @@
           </button>
         </div>
       </div>
-      <MainWorkspace v-else :decision-open="projectPanelOpen" />
+      <MainWorkspace v-else :decision-open="projectPanelOpen" :recovery-open="recoveryPanelOpen" />
       <Teleport v-if="projectPanelOpen" :key="hasWorkspace ? 'decision-dock' : 'decision-startup'"
         defer to="#workspace-project-decision" :disabled="!hasWorkspace">
-        <ProjectDecisionPanel v-if="projectDecision" :title="projectDecision.title" :message="projectDecision.message"
+        <div v-if="recoveryPanelOpen" data-recovery-panel>
+          <ConnectionLostModal v-if="reconnectPanelOpen" docked :show-stop-all="!hasWorkspace" />
+          <SessionRecoveryModal v-else :show-stop-all="!hasWorkspace" />
+        </div>
+        <ProjectDecisionPanel v-else-if="projectDecision" :title="projectDecision.title" :message="projectDecision.message"
           :buttons="projectDecision.buttons" @pick="projectDecision.pick" />
         <section v-else class="project-file-panel"
           :class="{ 'project-file-panel--startup': !hasWorkspace, 'project-file-panel--browse': projectPicker && !projectFileBusy }"
@@ -172,23 +176,16 @@
     <!-- About Modal -->
     <AboutModal v-if="showAboutModal && !projectPanelOpen" @close="showAboutModal = false" />
     
-    <ProjectRepairNotice v-if="projectRepair" :notice="projectRepair" @save="saveRepairedProject" />
+    <ProjectRepairNotice v-if="projectRepair" v-show="!recoveryPanelOpen" :notice="projectRepair" @save="saveRepairedProject" />
 
     <!-- Background audio-loading progress (when document already rendered) -->
-    <AudioLoadProgress />
+    <AudioLoadProgress v-if="!recoveryPanelOpen" />
 
     <!-- LocalServerStatus pill intentionally not mounted. The local server
          now runs as a visible application with its own console window /
          taskbar entry, so the user has a direct way to see and stop it.
          Keep the component on disk in case we want to re-enable it later. -->
     <!-- <LocalServerStatus /> -->
-
-    <!-- Persistent disconnect → ask the user how to recover -->
-    <ConnectionLostModal />
-
-    <!-- Reconnected, but the server no longer holds our project (it restarted)
-         → resume from where we left off, or go back to the welcome screen. -->
-    <SessionRecoveryModal />
 
     </template>
     <ServerAlert v-if="!isVideoOutputWindow" :target="isCartWindow ? '#cart-header-warnings'
@@ -224,6 +221,7 @@ import AudioLoadProgress from './components/AudioLoadProgress.vue';
 import ServerFilePickerModal from './components/ServerFilePickerModal.vue';
 const { currentLocale, setLocale, getDirection, t } = useLocalization();
 const server = useLiveplayServer();
+const { sessionLost } = useConnectionGuard();
 const hasWorkspace = computed(() => !!currentProject.value && projectHydrationStatus.value !== 'failed');
 const { showHeaderWarning } = useHeaderWarnings();
 let stopHeaderWarnings: (() => void) | undefined;
@@ -693,7 +691,10 @@ const projectDecision = computed(() => {
   return null;
 });
 const projectPanelOpen = useState('projectPanelOpen', () => false);
-watch(() => !!projectDecision.value || projectFileDialogOpen.value,
+const reconnectPanelOpen = computed(() => server.connectionLost || !!server.showVerification);
+const recoveryPanelOpen = computed(() => !isCartWindow && !isVideoOutputWindow &&
+  (reconnectPanelOpen.value || (sessionLost.value && !!currentProject.value)));
+watch(() => recoveryPanelOpen.value || !!projectDecision.value || projectFileDialogOpen.value,
   (open) => { projectPanelOpen.value = open; }, { immediate: true });
 
 function onUnsavedPick(choice: string) {

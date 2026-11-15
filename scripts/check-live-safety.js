@@ -540,7 +540,7 @@ assert.match(
 );
 const workspaceOrder = [
   mainWorkspace.indexOf('<OneShotPanel>'),
-  mainWorkspace.indexOf('<PlaylistView>'),
+  mainWorkspace.indexOf('<PlaylistView '),
   mainWorkspace.indexOf('class="output-console"'),
 ];
 assert.ok(
@@ -565,7 +565,7 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /class="workspace-panels"[\s\S]*id="cart-player-panel"[\s\S]*<OneShotPanel>[\s\S]*#header-leading[\s\S]*class="cart-toggle cart-toggle--open"[\s\S]*t\('oneShots\.hide'\)[\s\S]*@click="toggleCart"[\s\S]*<PlaylistView>[\s\S]*#header-leading[\s\S]*v-if="cartClosed && !cartDetached"[\s\S]*class="cart-toggle(?: [^"]*)?"[\s\S]*t\('oneShots\.show'\)[\s\S]*@click="toggleCart"[\s\S]*function toggleCart\(\)[\s\S]*cartClosed\.value = !cartClosed\.value[\s\S]*cartFullscreen\.value = false/,
+  /class="workspace-panels"[\s\S]*id="cart-player-panel"[\s\S]*<OneShotPanel>[\s\S]*#header-leading[\s\S]*class="cart-toggle cart-toggle--open"[\s\S]*t\('oneShots\.hide'\)[\s\S]*@click="toggleCart"[\s\S]*<PlaylistView\b[^>]*>[\s\S]*#header-leading[\s\S]*v-if="cartClosed && !cartDetached"[\s\S]*class="cart-toggle(?: [^"]*)?"[\s\S]*t\('oneShots\.show'\)[\s\S]*@click="toggleCart"[\s\S]*function toggleCart\(\)[\s\S]*cartClosed\.value = !cartClosed\.value[\s\S]*cartFullscreen\.value = false/,
   'the One Shots toggle must stay in the active panel header and leave resizing to the splitter',
 );
 assert.match(
@@ -590,7 +590,7 @@ assert.doesNotMatch(
 );
 assert.match(
   mainWorkspace,
-  /v-show="!cartFullscreen \|\| cartDetached" class="playlist-section"/,
+  /v-show="recoveryOpen \|\| !cartFullscreen \|\| cartDetached" class="playlist-section"/,
   'detaching a fullscreen cart must reveal the playlist',
 );
 assert.match(
@@ -1851,7 +1851,7 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /<ShortcutsBar \/>[\s\S]*<ProjectSettingsModal :open="showProjectSettings"[\s\S]*<PropertiesPanel v-if="showCueProperties"[\s\S]*id="workspace-import-host"[\s\S]*const showCueProperties = computed\(\(\) =>\s*!showProjectSettings\.value && !visibleImportPanel\.value/,
+  /<ShortcutsBar\b[^>]*>[\s\S]*<ProjectSettingsModal :open="showProjectSettings"[\s\S]*<PropertiesPanel v-if="showCueProperties"[\s\S]*id="workspace-import-host"[\s\S]*const showCueProperties = computed\(\(\) =>\s*!showProjectSettings\.value && !visibleImportPanel\.value/,
   'Settings, cue Properties, and imports must share the lower workspace without stacking',
 );
 assert.match(
@@ -2469,8 +2469,10 @@ assert.match(
 );
 assert.doesNotMatch(projectDecisionPanel, /aria-modal|position:\s*fixed|keydown|Teleport/,
   'project decisions must leave pointer and keyboard transport available');
-assert.match(appVue, /to="#workspace-project-decision"[\s\S]*?<ProjectDecisionPanel v-if="projectDecision"[\s\S]*?class="project-file-panel"[\s\S]*?role="status"[\s\S]*?<ServerFilePickerModal v-else-if="projectPicker" docked[\s\S]*?class="new-show-form" @submit.prevent="createNewShow"[\s\S]*?<\/Teleport>/,
+assert.match(appVue, /to="#workspace-project-decision"[\s\S]*?<ProjectDecisionPanel v-else-if="projectDecision"[\s\S]*?class="project-file-panel"[\s\S]*?role="status"[\s\S]*?<ServerFilePickerModal v-else-if="projectPicker" docked[\s\S]*?class="new-show-form" @submit.prevent="createNewShow"[\s\S]*?<\/Teleport>/,
   'New Show, Open Project, their progress and the save decision must share the lower panel');
+assert.match(appVue, /to="#workspace-project-decision"[\s\S]*?data-recovery-panel[\s\S]*?<ConnectionLostModal v-if="reconnectPanelOpen" docked[\s\S]*?<SessionRecoveryModal v-else[\s\S]*?<\/Teleport>/,
+  'reconnect and session recovery must share the lower panel in the operator window');
 assert.doesNotMatch(appVue, /<LoadingOverlay\b/,
   'show loads must leave the playlist and transport visible');
 assert.match(
@@ -2618,7 +2620,6 @@ for (const file of [
   'ConnectionLostModal.vue',
   'ServerFilePickerModal.vue',
   'ServerSettingsModal.vue',
-  'SessionRecoveryModal.vue',
 ].map(file => `client/app/components/${file}`)) {
   const dialog = read(file);
   for (const token of ['backdrop', 'surface', 'radius', 'shadow']) {

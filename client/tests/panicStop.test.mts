@@ -68,6 +68,7 @@ test('Stop All sends the normal command from remaining blocking dialogs', () => 
       $slots: {},
       t: (key: string) => key,
       docked: false, busy: true, visible: true, background: false, percentage: 50, attempts: 0, actionError: '', verifying: false,
+      showStopAll: true,
       titleId: 'import-test', title: 'Working', message: 'Working', isDark: true, subtitle: '',
       pickingLocal: true,
       historyBack: [], canGoUp: false, pathDraft: '', goBack() {}, goUp() {}, navigate() {}, cancelLabel: 'Cancel',
@@ -119,7 +120,7 @@ test('Stop All remains available inside the recovery prompt while a recovery cho
   const render = Function('Vue', `${code}; return render;`)({ ...Vue, resolveComponent: (name: string) => name });
   const stopCalls: unknown[][] = [];
   const server = { connected: true, stopAll: (...args: unknown[]) => stopCalls.push(args) };
-  const context = { t: (key: string) => key, projectChanged: true, recovering: true, server,
+  const context = { t: (key: string) => key, projectChanged: true, recovering: true, server, showStopAll: true,
     currentProject: { name: 'Local show' }, serverProjectName: 'Server show', actionFailed: false };
   const findStop = () => render(context, []).children.find((child: Vue.VNode) =>
     child.props?.text === 'controls.stopAll');
@@ -130,6 +131,8 @@ test('Stop All remains available inside the recovery prompt while a recovery cho
   assert.deepEqual(stopCalls, [[]], 'recovery uses the normal server fade');
   server.connected = false;
   assert.ok(findStop(), 'the HTTP stop must remain available during a second disconnect');
+  context.showStopAll = false;
+  assert.equal(findStop(), undefined, 'the workspace supplies the button when the panel is docked');
 });
 
 test('Stop All takes priority in editors, recovery and project loading', () => {
@@ -166,7 +169,7 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
   assert.deepEqual(calls, [[]]);
   currentProject.value.playbackKeys['stop-all'] = { key: 'k', ctrlKey: true, shiftKey: false, altKey: false };
   press('Escape');
-  assert.equal(press('K', { metaKey: true, target: { closest: (selector: string) => selector.includes('.srm-overlay') } }), true);
+  assert.equal(press('K', { metaKey: true, target: { closest: (selector: string) => selector.includes('[data-recovery-panel]') } }), true);
   currentProject.value.playbackKeys['stop-all'] = null;
   press('Escape');
   assert.deepEqual(calls, [[], []]);
@@ -213,6 +216,15 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
   assert.equal(press('Escape', { ctrlKey: true }), false);
   assert.equal(press(' '), false, 'the project panel must leave GO available');
   assert.deepEqual(calls.slice(8), [[]]);
+
+  sessionLost.value = true;
+  const recoveryButton = { closest: (selector: string) => selector.includes('[data-recovery-panel]') ? {} : null };
+  const mainStopButton = { closest: (selector: string) => selector === '.panic-btn' ? {} : null };
+  assert.equal(press('Escape', { target: recoveryButton }), true, 'Escape stops even with a remap during docked recovery');
+  assert.equal(press('Enter', { target: recoveryButton }), false, 'keyboard recovery choices are reachable');
+  assert.equal(press(' ', { target: mainStopButton }), false, 'focused Stop All is reachable by keyboard');
+  assert.equal(press(' '), true, 'Space elsewhere still cannot start a cue');
+  assert.deepEqual(calls.slice(9), [[]]);
 });
 
 function loadHandleKeydown(dependencies: Record<string, unknown>) {

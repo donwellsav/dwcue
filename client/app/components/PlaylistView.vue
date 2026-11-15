@@ -6,7 +6,7 @@
         <h2 class="workspace-panel-header__title">{{ t('playlist.title') }}</h2>
         <Btn type="button" class="locate-next" icon="my_location" text=""
           :title="t('actions.locateUpNext')" :aria-label="t('actions.locateUpNext')"
-          :disabled="!locatableNextUuid" @click="locateUpNext" />
+          :disabled="readOnly || !locatableNextUuid" @click="locateUpNext" />
         <Btn v-if="backupMusicGroup?.type === 'group' || currentProject?.settings?.keepMusicGoing"
           type="button" class="music-toggle" icon="music_note" text=""
           :title="musicContinuityTitle" :aria-label="t('musicContinuity.toggle')"
@@ -15,7 +15,7 @@
           @click="toggleMusicContinuity" />
       </div>
       <!-- Import / add-group are edit actions — hidden in Show Mode. -->
-      <div v-if="!showMode" class="playlist-actions">
+      <div v-if="!showMode" class="playlist-actions" :inert="readOnly">
         <Btn icon="audio_file" :text="t('playlist.importAudio')" :title="t('playlist.importAudio')"
           :aria-label="t('playlist.importAudio')" :disabled="!currentProject" @click="handleImport" />
         <Btn v-if="importReviewAvailable" icon="list_alt" :text="t('importAudio.resultsTitle')"
@@ -33,7 +33,9 @@
       </div>
     </div>
     
-    <div ref="scrollContainer" class="playlist-content" @drop="handleDrop" @dragover="handleDragOver">
+    <div ref="scrollContainer" class="playlist-content"
+      @drop="readOnly ? $event.preventDefault() : handleDrop($event)"
+      @dragover="readOnly ? $event.preventDefault() : handleDragOver($event)">
       <div v-if="currentProject?.items.length === 0" class="empty-state">
         <img
           :src="isDark ? './assets/icons/SVG/app_icon_darkmode@web.svg' : './assets/icons/SVG/app_icon_lightmode@web.svg'"
@@ -45,7 +47,7 @@
         <p class="hint">{{ t('playlist.importHint') }}</p>
       </div>
       
-      <div v-else class="item-list">
+      <div v-else class="item-list" :inert="readOnly">
         <PlaylistItem
           v-for="item in visibleItems"
           :key="item.uuid"
@@ -113,6 +115,7 @@ import { canonicalSpotifyMediaReference } from '~/utils/spotifyImport';
 import { cloneAsPlaylistItem } from '~/utils/oneShots';
 import { projectPathInFolder } from '~/utils/projectFileFormats';
 
+const { readOnly } = defineProps<{ readOnly: boolean }>();
 const {
   currentProject,
   addItem,

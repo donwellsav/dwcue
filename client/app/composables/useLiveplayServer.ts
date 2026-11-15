@@ -730,11 +730,12 @@ function createClient() {
   }
   // Paged items. Caller drives the loop; we keep this stateless so it
   // composes with the open-project streaming logic in useProject.
-  async function fetchProjectItemsPage(offset = 0, limit = 100, signal?: AbortSignal) {
+  async function fetchProjectItemsPage(offset = 0, limit = 100, signal?: AbortSignal, expectedSessionId?: string) {
     return rest<{
       offset: number; limit: number; total: number; items: any[];
     }>(`/api/project/items?offset=${offset}&limit=${limit}`, {
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : undefined,
+      headers: expectedSessionId === undefined ? undefined : { 'X-DWCUE-Project-Session': expectedSessionId },
     });
   }
   async function fetchProjectProgress(signal?: AbortSignal) {

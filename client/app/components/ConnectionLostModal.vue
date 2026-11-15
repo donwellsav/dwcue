@@ -1,9 +1,10 @@
 <template>
   <transition name="fade">
-    <div v-if="visible" class="clm-overlay" @keydown.stop>
-      <div class="clm-dialog" role="dialog" aria-modal="true" aria-labelledby="connection-lost-title">
+    <div v-if="visible" :class="docked ? 'clm-dock' : 'clm-overlay'" @keydown.stop>
+      <div class="clm-dialog" :role="docked ? 'region' : 'dialog'"
+        :aria-modal="docked ? undefined : true" aria-labelledby="connection-lost-title">
         <div class="clm-header">
-          <span class="material-symbols-rounded clm-icon">cloud_off</span>
+          <span class="material-symbols-rounded clm-icon" aria-hidden="true">cloud_off</span>
           <h2 id="connection-lost-title">{{ t(verifying ? 'connectionLost.verifyingTitle' : 'connectionLost.title') }}</h2>
         </div>
         <p v-if="verifying" class="clm-body" role="status">
@@ -17,7 +18,7 @@
              animation is the honest signal that work is still happening.
              Without it a stalled-looking modal reads as "app has hung". -->
         <p v-if="!verifying" class="clm-retry">
-          <span class="material-symbols-rounded clm-spinner">progress_activity</span>
+          <span class="material-symbols-rounded clm-spinner" aria-hidden="true">progress_activity</span>
           <span>{{ t('connectionLost.attempting') }}</span>
           <span v-if="attempts > 0" class="clm-attempts">
             {{ t('connectionLost.attemptCount', { count: attempts }) }}
@@ -25,6 +26,7 @@
         </p>
         <p class="clm-locked">{{ t('connectionLost.locked') }}</p>
         <Btn
+          v-if="showStopAll"
           class="clm-stop-all"
           type="button"
           icon="stop_circle"
@@ -39,15 +41,15 @@
 
         <div class="clm-actions">
           <button class="clm-btn primary" @click="onReconnect">
-            <span class="material-symbols-rounded">sync</span>
+            <span class="material-symbols-rounded" aria-hidden="true">sync</span>
             <span>{{ t('connectionLost.reconnect') }}</span>
           </button>
           <button class="clm-btn" @click="onRestart">
-            <span class="material-symbols-rounded">restart_alt</span>
+            <span class="material-symbols-rounded" aria-hidden="true">restart_alt</span>
             <span>{{ t('connectionLost.restart') }}</span>
           </button>
           <button class="clm-btn" @click="onExit">
-            <span class="material-symbols-rounded">logout</span>
+            <span class="material-symbols-rounded" aria-hidden="true">logout</span>
             <span>{{ t('connectionLost.exit') }}</span>
           </button>
         </div>
@@ -62,6 +64,9 @@
 </template>
 
 <script setup lang="ts">
+withDefaults(defineProps<{ docked?: boolean; showStopAll?: boolean }>(), {
+  showStopAll: true,
+});
 const { t } = useLocalization();
 const server = useLiveplayServer();
 const visible = computed(() => !!server.connectionLost || !!server.showVerification);
@@ -221,6 +226,24 @@ async function onExit() {
   margin-top: 12px;
   line-height: 1.4;
 }
+
+.clm-dock .clm-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  max-width: none;
+  width: auto;
+  padding: var(--spacing-sm) var(--workspace-gutter);
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  border-radius: 0;
+  background: var(--color-background);
+  box-shadow: none;
+}
+.clm-dock :is(.clm-header, p, .clm-actions) { margin: 0; }
+.clm-dock .clm-actions { flex-wrap: wrap; }
+.clm-dock .clm-btn { flex: 0 1 auto; }
+.clm-dock .clm-stop-all { width: auto; align-self: flex-start; }
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.15s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
