@@ -76,16 +76,42 @@ test('waveform delivery preserves the full-file timing sentinel and explicit tri
   }
 });
 
+test('audio readiness drops a late response from the previous show', async () => {
+  const source = readFileSync(new URL('../app/composables/useProject.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('  async function pollLoadingProgress(');
+  const end = source.indexOf('\n  }', start);
+  assert.ok(start >= 0 && end > start);
+  const code = ts.transpileModule(source.slice(start, end + 4), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const progress = { value: null };
+  const poll = Function('audioLoadingProgress', `${code}\nreturn pollLoadingProgress;`)(progress);
+  let release!: (report: unknown) => void;
+  const pending = new Promise(resolve => { release = resolve; });
+  let current = true;
+  const old = poll({ fetchProjectProgress: () => pending }, () => current);
+  current = false;
+  release({ loading: false, failedCount: 1 });
+  await old;
+  assert.equal(progress.value, null);
+  const report = { loading: false, failedCount: 1 };
+  await poll({ fetchProjectProgress: async () => report }, () => true);
+  assert.equal(progress.value, report);
+});
+
 test('an owned project header commits its server session together with the local identity', () => {
   const session = { value: 'old-session' };
   const currentProject = { value: null as any };
   const path = { value: '' };
   const repairNotice = { value: null as any };
   const saveFailed = { value: true };
+  const emptyReadiness = { loading: false, failedCount: 0 };
+  const audioLoadingProgress = { value: { loading: true, failedCount: 1 } };
   const apply = projectFunction('applyServerHeader', {
     currentProject, projectFilePathRef: path, serverProjectSessionId: session,
     projectEpoch: { value: 0 }, hasUnsavedChanges: { value: false }, saveFailed,
-    repairNotice, useLiveplayServer: () => ({ serverUrl: 'http://engine' }),
+    repairNotice, audioLoadingProgress, EMPTY_AUDIO_READINESS: emptyReadiness,
+    useLiveplayServer: () => ({ serverUrl: 'http://engine' }),
     projectPathFromHeader: (h: any) => h.server.projectFilePath,
     isNativeProjectPath: (p: string) => p.endsWith('.dwcue'),
     reportOpenProjectPath() {}, updateIndices() {}, _uninstallItemsWatcherFn() {},
@@ -99,6 +125,7 @@ test('an owned project header commits its server session together with the local
   assert.equal(path.value, '/new.dwcue');
   assert.equal(session.value, 'new-session');
   assert.equal(saveFailed.value, false);
+  assert.equal(audioLoadingProgress.value, emptyReadiness);
   assert.equal(repairNotice.value.session, 'new-session');
   assert.deepEqual(repairNotice.value.issues, ['duplicate cue']);
   apply({ hasOpenProject: false, server: { projectFilePath: '', projectSessionId: 'closed-session' } });

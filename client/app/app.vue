@@ -190,11 +190,6 @@
     <!-- About Modal -->
     <AboutModal v-if="showAboutModal && !projectPanelOpen" @close="showAboutModal = false" />
     
-    <ProjectRepairNotice v-if="projectRepair" v-show="!recoveryPanelOpen" :notice="projectRepair" @save="saveRepairedProject" />
-
-    <!-- Background audio-loading progress (when document already rendered) -->
-    <AudioLoadProgress v-if="!recoveryPanelOpen" />
-
     <!-- LocalServerStatus pill intentionally not mounted. The local server
          now runs as a visible application with its own console window /
          taskbar entry, so the user has a direct way to see and stop it.
@@ -226,12 +221,10 @@ const {
   autoSaveEnabled, projectSyncIdentity, saveRevision,
   projectHydrationStatus, projectHydrationError, retryProjectHydration,
   projectLoad,
-  projectRepair, saveRepairedProject,
   unsavedDialogVisible, unsavedDialogReason, unsavedDialogBlocked, unsavedSave, unsavedDiscard, unsavedCancel,
 } = useProject();
 const { stopAllCues } = useAudioEngine();
 const { cartOnlyItems, clearCartOnlyItems, addCartOnlyItem } = useCartItems();
-import AudioLoadProgress from './components/AudioLoadProgress.vue';
 import ServerFilePickerModal from './components/ServerFilePickerModal.vue';
 const { currentLocale, setLocale, getDirection, t } = useLocalization();
 const server = useLiveplayServer();

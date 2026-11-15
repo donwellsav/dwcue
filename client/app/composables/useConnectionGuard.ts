@@ -130,9 +130,9 @@ export const useConnectionGuard = () => {
     const panelEscape = e.key === 'Escape' && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey &&
       (projectPanelOpen.value || filePicker.value !== null ||
       quickPlayImportSlot.value !== null || importPanel.value === 'media' || importPanel.value === 'spotify' ||
-      importPanel.value === 'archive-import' || importPanel.value === 'archive-export' ||
+      importPanel.value === 'archive-import' || importPanel.value === 'archive-export' || importPanel.value === 'repair' ||
       (showProjectSettings.value && ['video', 'ui'].includes(settingsTab.value)) ||
-      document.querySelector('.inline-choice-picker[open]'));
+      document.querySelector('.inline-choice-picker[open], .workspace-status .audio-load-progress'));
     if (!panelEscape && !blocked && !projectLoad.value && !(currentProject.value && editing)) return;
     const typing = e.isComposing ||
         (editing && e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey);

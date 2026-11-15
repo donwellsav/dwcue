@@ -153,6 +153,9 @@ const restoreWaveform = (item: any): void => {
 let selectionAnchorUuid: string | null = null;
 
 const repairNotice = ref<{ serverUrl: string; session: string; issues: string[]; saving: boolean; failed: boolean } | null>(null);
+const EMPTY_AUDIO_READINESS: ServerAudioReadiness = {
+  ready: true, loading: false, loaded: 0, total: 0, failedCount: 0, failures: [],
+};
 
 // ---- Unsaved-changes dialog state (module-scoped, shared across calls) ----
 // Shown when the user tries to leave the current project (New / Open / Close)
@@ -203,7 +206,7 @@ export const useProject = () => {
   // openItemProperties() (the gear button).
   const propertiesPanelOpen = useState<boolean>('propertiesPanelOpen', () => false);
   const showProjectSettings = useState('showProjectSettings', () => false);
-  const workspaceImportPanel = useState<'media' | 'youtube' | 'spotify' | 'archive-import' | 'archive-export' | 'quickplay' | 'delete-selection' | null>(
+  const workspaceImportPanel = useState<'media' | 'youtube' | 'spotify' | 'archive-import' | 'archive-export' | 'quickplay' | 'delete-selection' | 'repair' | null>(
     'workspaceImportPanel', () => null,
   );
   const quickPlayEditor = useState<{ uuid: string; remove: boolean } | null>('quickPlayEditor', () => null);
@@ -271,19 +274,10 @@ export const useProject = () => {
 
   // Tracks project loading for the progress display and cue-start guards.
   const projectLoad = useState<'create' | 'open' | null>('useProject.projectLoad', () => null);
-  // Background audio-loading progress (polled while the server is still
-  // mirroring cues into the engine in a worker thread). loading=false means
-  // every audio cue is ready to play.
+  // Keep the final report so files that failed to load remain visible.
   const audioLoadingProgress = useState<ServerAudioReadiness>(
     'useProject.audioLoadingProgress',
-    () => ({
-      ready: true,
-      loading: false,
-      loaded: 0,
-      total: 0,
-      failedCount: 0,
-      failures: [],
-    }),
+    () => EMPTY_AUDIO_READINESS,
   );
   // Server-owned preview state: at most one item is "being previewed" at a
   // time (DJ pre-listen on settings.previewDevice). Empty string = no
@@ -756,7 +750,6 @@ export const useProject = () => {
       for (const item of cartOnly) addCartOnlyItem(item);
 
       if (!await streamItemPages(server, header.itemCount ?? 0, hydration, signal, items !== undefined) || !isCurrent()) return false;
-      void pollLoadingProgress(server);
       return true;
     } catch (error) {
       if (requestRevision === _hydrationRequestRevision) _projectHydration.current()?.finish(false, error);
@@ -802,7 +795,6 @@ export const useProject = () => {
       for (const item of cartOnly) addCartOnlyItem(item);
 
       if (!hydration || !await streamItemPages(server, header?.itemCount ?? 0, hydration)) return false;
-      void pollLoadingProgress(server);
       recordRecentProject(projectFilePathRef.value);
       return true;
     } catch (error) {
@@ -922,6 +914,7 @@ export const useProject = () => {
       if (signal?.aborted || !isCurrent()) return false;
       installItemsWatcherFn();
       complete = true;
+      void pollLoadingProgress(server, isCurrent);
       return true;
     } catch (error) {
       failure = error;
@@ -957,14 +950,7 @@ export const useProject = () => {
     previewCueId.value = '';
     previewStateRevision.value = -1;
     previewStateSession.value = '';
-    audioLoadingProgress.value = {
-      ready: true,
-      loading: false,
-      loaded: 0,
-      total: 0,
-      failedCount: 0,
-      failures: [],
-    };
+    audioLoadingProgress.value = EMPTY_AUDIO_READINESS;
     _waveformCache.clear();
     useCartItems().clearCartOnlyItems();
     hasUnsavedChanges.value = false;
@@ -994,6 +980,7 @@ export const useProject = () => {
     }
     projectFilePathRef.value = nextProjectPath;
     serverProjectSessionId.value = typeof header.server?.projectSessionId === 'string' ? header.server.projectSessionId : '';
+    audioLoadingProgress.value = EMPTY_AUDIO_READINESS;
     const serverUrl = useLiveplayServer().serverUrl;
     if (header.needsRepair === true) {
       repairNotice.value = {
@@ -1035,28 +1022,15 @@ export const useProject = () => {
   const installItemsWatcherFn   = () => _installItemsWatcherFn?.();
   const uninstallItemsWatcherFn = () => _uninstallItemsWatcherFn?.();
 
-  // Background poll of audio-loading progress. Updates `audioLoadingProgress`
-  // until the server reports loading=false, then clears it. Safe to call
-  // multiple times — only one poll runs at a time. Bails out fast when the
-  // first poll already shows loading=false (e.g. small projects that finish
-  // mirroring before the client even asks), avoiding a second HTTP call.
-  let progressPolling = false;
-  async function pollLoadingProgress(server: any) {
-    if (progressPolling) return;
-    progressPolling = true;
-    try {
-      while (true) {
-        let p: ServerAudioReadiness;
-        try { p = await server.fetchProjectProgress(); }
-        catch { break; }
-        audioLoadingProgress.value = p;
-        if (!p.loading) break;
-        await new Promise(r => setTimeout(r, 400));
-      }
-    } finally {
-      // Preserve the final readiness report so missing/failed media stays
-      // visible after loading finishes instead of disappearing with the spinner.
-      progressPolling = false;
+  async function pollLoadingProgress(server: ReturnType<typeof useLiveplayServer>, isCurrent: () => boolean) {
+    while (isCurrent()) {
+      let report: ServerAudioReadiness;
+      try { report = await server.fetchProjectProgress(); }
+      catch { break; }
+      if (!isCurrent()) break;
+      audioLoadingProgress.value = report;
+      if (!report.loading) break;
+      await new Promise(resolve => setTimeout(resolve, 400));
     }
   }
 

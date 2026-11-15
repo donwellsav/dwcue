@@ -202,6 +202,15 @@
 
     <div id="preview-lower-panel" class="preview-lower-panel" aria-live="polite"></div>
 
+    <div v-if="!recoveryOpen" class="workspace-status">
+      <AudioLoadProgress />
+      <div v-if="projectRepair" class="repair-status">
+        <span role="status">{{ t('repair.noticeTitle') }}</span>
+        <Btn class="repair-review" type="button" icon="warning" :text="t('repair.review')" :disabled="decisionOpen"
+          :aria-expanded="visibleImportPanel === 'repair' && !decisionOpen"
+          aria-controls="workspace-import-host" @click="toggleRepairReview" />
+      </div>
+    </div>
     <ShortcutsBar :inert="recoveryOpen" />
 
     <div v-show="lowerPanelOpen" ref="lowerPanel" class="lower-workspace-panel"
@@ -209,7 +218,7 @@
       :style="{ height: decisionOpen || panelHeight === null ? 'auto' : `${panelHeight}px`, maxHeight: `${MAX_PANEL_HEIGHT_PERCENT}%` }"
       @keydown.capture="handlePanelKeydown($event, true)"
       @keydown="handlePanelKeydown">
-      <div v-if="visibleImportPanel !== 'delete-selection'" class="lower-panel-resize-handle" role="separator" aria-orientation="horizontal"
+      <div v-if="!autoSizeImportPanel" class="lower-panel-resize-handle" role="separator" aria-orientation="horizontal"
         :aria-label="showProjectSettings ? t('settings.title') : importPanelTitle || t('properties.title')"
         :aria-valuemin="MIN_PANEL_HEIGHT" :aria-valuemax="panelMaxHeight"
         :aria-valuenow="visiblePanelHeight || panelHeight || MIN_PANEL_HEIGHT" tabindex="0"
@@ -228,6 +237,7 @@
         <div id="workspace-import-host" ref="importHost" class="workspace-import-host"
           :class="{ 'workspace-import-host--archive': visibleImportPanel?.startsWith('archive-') }">
           <DeleteSelectionPanel v-if="visibleImportPanel === 'delete-selection'" />
+          <ProjectRepairNotice v-else-if="visibleImportPanel === 'repair' && projectRepair" :notice="projectRepair" @save="saveRepairedProject" />
         </div>
       </section>
       <div v-show="decisionOpen" id="workspace-project-decision"></div>
@@ -265,6 +275,8 @@ const {
   requestDeleteFromKeyboard,
   pendingDelete,
   cancelDelete,
+  projectRepair,
+  saveRepairedProject,
 } = useProject();
 const { cartOnlyItems } = useCartItems();
 const { t } = useLocalization();
@@ -276,6 +288,7 @@ const quickPlayImportSlot = useState<number | null>('quickPlayImportSlot', () =>
 const visibleImportPanel = computed(() => {
   const panel = workspaceImportPanel.value;
   if (panel === 'delete-selection') return !showProjectSettings.value && pendingDelete.value ? panel : null;
+  if (panel === 'repair') return !showProjectSettings.value && projectRepair.value ? panel : null;
   return !showProjectSettings.value && (uiMode.value !== 'playback' || panel === 'quickplay' || panel?.startsWith('archive-')) ? panel : null;
 });
 const importPanelTitle = computed(() => {
@@ -285,11 +298,17 @@ const importPanelTitle = computed(() => {
   if (visibleImportPanel.value === 'archive-import') return t('importProject.chooseSourceTitle');
   if (visibleImportPanel.value === 'archive-export') return t('exportProject.chooseLocationTitle');
   if (visibleImportPanel.value === 'delete-selection') return t('deleteSelection.title');
+  if (visibleImportPanel.value === 'repair') return t('repair.noticeTitle');
   if (visibleImportPanel.value === 'quickplay') return t(quickPlayEditor.value?.remove
     ? 'oneShots.removeConfirmTitle' : quickPlayEditor.value ? 'oneShots.settings' : 'oneShots.importInto',
     { number: (quickPlayImportSlot.value ?? 0) + 1 });
   return '';
 });
+function toggleRepairReview() {
+  const open = visibleImportPanel.value === 'repair';
+  showProjectSettings.value = false;
+  workspaceImportPanel.value = open ? null : 'repair';
+}
 function closeImportPanel() {
   if (workspaceImportPanel.value === 'delete-selection') return cancelDelete();
   if (workspaceImportPanel.value === 'quickplay') quickPlayEditor.value = null;
@@ -313,8 +332,9 @@ const MAX_PANEL_HEIGHT_PERCENT = 60;
 const settingsHeight = useState<number | null>('ProjectSettingsPanel.height', () => null);
 const propertiesHeight = useState<number | null>('PropertiesPanel.height', () => null);
 const importHeight = useState<number | null>('ImportPanel.height', () => null);
+const autoSizeImportPanel = computed(() => visibleImportPanel.value === 'delete-selection' || visibleImportPanel.value === 'repair');
 const panelHeight = computed(() => showProjectSettings.value ? settingsHeight.value
-  : visibleImportPanel.value === 'delete-selection' ? null
+  : autoSizeImportPanel.value ? null
   : visibleImportPanel.value ? importHeight.value : propertiesHeight.value);
 const workspaceContent = ref<HTMLElement | null>(null);
 const lowerPanel = ref<HTMLElement | null>(null);
@@ -322,6 +342,9 @@ const importHost = ref<HTMLElement | null>(null);
 watch(visibleImportPanel, () => {
   if (importHost.value) importHost.value.scrollTop = 0;
 }, { flush: 'post' });
+watch(projectRepair, (notice) => {
+  if (!notice && workspaceImportPanel.value === 'repair') workspaceImportPanel.value = null;
+});
 const visiblePanelHeight = ref(0);
 const panelMaxHeight = ref(MIN_PANEL_HEIGHT);
 let panelObserver: ResizeObserver | undefined;
@@ -893,6 +916,28 @@ onUnmounted(() => {
 .preview-lower-panel:empty {
   display: none;
 }
+
+.workspace-status {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 2px var(--workspace-gutter);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.workspace-status:empty { display: none; }
+.repair-status {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-inline-start: auto;
+  color: var(--color-text-secondary);
+  font-size: var(--type-metadata-size);
+}
+.workspace-status .repair-review { flex: none; color: var(--color-warning); }
 
 .lower-workspace-panel {
   position: relative;

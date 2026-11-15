@@ -166,7 +166,10 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
   const showProjectSettings = { value: false };
   const settingsTab = { value: 'audio' };
   let choiceOpen = false;
-  const document = { querySelector: (selector: string) => choiceOpen && selector === '.inline-choice-picker[open]' };
+  let loadingStatusVisible = false;
+  const document = { querySelector: (selector: string) =>
+    (choiceOpen && selector.includes('.inline-choice-picker[open]')) ||
+    (loadingStatusVisible && selector.includes('.workspace-status .audio-load-progress')) };
   const server = {
     connected: true, connectionLost: false, showVerification: false,
     get cueStartsBlocked() { return this.connectionLost || this.showVerification || sessionLost.value || projectLoad.value === 'open'; },
@@ -303,6 +306,19 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
   choiceOpen = false;
   assert.equal(press('Escape'), false, 'closing the choice restores the normal mapping');
   assert.deepEqual(calls.slice(20), [[]]);
+
+  loadingStatusVisible = true;
+  assert.equal(press('Escape'), true, 'the audio status gives Escape to Stop All');
+  assert.equal(press(' '), false, 'the audio status leaves GO available');
+  loadingStatusVisible = false;
+  importPanel.value = 'repair';
+  assert.equal(press('Escape'), true, 'the repair panel gives Escape to Stop All');
+  assert.equal(press('Escape', { repeat: true }), true);
+  assert.equal(press(' '), false, 'the repair panel leaves GO available');
+  assert.equal(press('Enter'), false, 'the repair action keeps Enter');
+  importPanel.value = null;
+  assert.equal(press('Escape'), false, 'the fallback ends when neither surface is open');
+  assert.deepEqual(calls.slice(21), [[], []]);
 });
 
 function loadHandleKeydown(dependencies: Record<string, unknown>) {
