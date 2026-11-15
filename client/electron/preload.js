@@ -23,9 +23,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // File operations
   readFile: (filePath) => ipcRenderer.invoke('read-file', filePath),
   writeFile: (filePath, data) => ipcRenderer.invoke('write-file', filePath, data),
-  // Dialogs + binary helpers used by the dual-dialog import/export flows.
-  showSaveArchiveDialog: (defaultName) => ipcRenderer.invoke('show-save-archive-dialog', defaultName),
-  showOpenArchiveDialog: () => ipcRenderer.invoke('show-open-archive-dialog'),
+  getArchiveDownloadFolder: (file) => {
+    if (file === undefined) return ipcRenderer.invoke('archive-download-folder');
+    const folder = webUtils.getPathForFile(file);
+    return folder ? ipcRenderer.invoke('archive-download-folder', folder) : Promise.resolve('');
+  },
   getBinaryFileInfo: (filePath) => ipcRenderer.invoke('get-binary-file-info', filePath),
   readBinaryFileChunk: (filePath, offset, length) =>
     ipcRenderer.invoke('read-binary-file-chunk', filePath, offset, length),

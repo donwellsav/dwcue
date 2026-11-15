@@ -1162,6 +1162,11 @@
   "archive": {
     "chooseSource": "Select a .dwcuepack show archive.",
     "chooseArchive": "Choose Archive",
+    "dropSource": "Drop one .dwcuepack archive here, or paste an archive file.",
+    "downloadFolder": "Download folder",
+    "dropDownloadFolder": "Drop a folder here to change where the archive is saved.",
+    "invalidDownloadFolder": "Select a local folder by dropping it here.",
+    "downloadName": "Filename",
     "extractHere": "Extract Here",
     "saveHere": "Save Here",
     "exportDestination": "Choose a folder for {name}",

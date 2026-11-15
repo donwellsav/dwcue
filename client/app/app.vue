@@ -113,7 +113,7 @@
       <Teleport v-if="archivePanel" :key="hasWorkspace ? 'workspace' : 'startup'"
         defer to="#workspace-import-host" :disabled="!hasWorkspace">
         <section v-show="hasWorkspace || !projectPanelOpen" class="archive-panel"
-          :class="{ 'archive-panel--startup': !hasWorkspace, 'archive-panel--browse': !archiveStatus }"
+          :class="{ 'archive-panel--startup': !hasWorkspace, 'archive-panel--browse': !archiveStatus && !controllerArchivePicker }"
           :aria-label="archiveTitle">
           <header v-if="!hasWorkspace" class="workspace-panel-header">
             <h2 class="workspace-panel-header__title">{{ archiveTitle }}</h2>
@@ -134,6 +134,37 @@
             </div>
             <progress v-if="archiveStatus.phase === 'working'" class="workspace-import-progress" :aria-label="archiveTitle" />
           </template>
+          <div v-else-if="server.connected && controllerArchivePicker && archivePanel === 'archive-import'" class="archive-controller">
+            <div class="archive-row">
+              <div class="archive-drop" role="group" tabindex="0" :aria-label="t('archive.dropSource')"
+                @dragover.prevent @drop.stop.prevent="chooseControllerArchive($event.dataTransfer?.files)"
+                @paste.stop.prevent="chooseControllerArchive($event.clipboardData?.files)">
+                {{ t('archive.dropSource') }}
+              </div>
+              <Btn type="button" :text="t('common.back')" @click="closeControllerArchivePicker" />
+            </div>
+            <p v-if="controllerArchiveError" class="archive-error" role="alert">{{ controllerArchiveError }}</p>
+          </div>
+          <form v-else-if="server.connected && controllerArchivePicker" class="archive-controller" @submit.prevent="downloadControllerArchive">
+            <div class="archive-row">
+              <div class="archive-drop" :aria-busy="archiveFolderPending" @dragover.prevent @drop.stop.prevent="dropArchiveDownloadFolder">
+                <strong :title="archiveDownloadFolder">{{ archiveDownloadFolder || t('archive.downloadFolder') }}</strong>
+                <span>{{ t('archive.dropDownloadFolder') }}</span>
+              </div>
+            </div>
+            <div class="archive-row">
+              <label class="archive-name">
+                {{ t('archive.downloadName') }}
+                <input v-model.trim="archiveDownloadName" type="text" maxlength="255" :placeholder="exportArchiveName">
+              </label>
+              <div class="archive-actions">
+                <Btn type="button" :text="t('common.back')" @click="closeControllerArchivePicker" />
+                <Btn type="submit" class="archive-save" :text="t('archive.saveHere')"
+                  :disabled="!archiveDownloadFolder || archiveFolderPending" />
+              </div>
+            </div>
+            <p v-if="controllerArchiveError" class="archive-error" role="alert">{{ controllerArchiveError }}</p>
+          </form>
           <template v-else>
             <div class="archive-row">
               <p :title="archivePickerCaption">{{ archivePickerCaption }}</p>
@@ -149,7 +180,7 @@
               <template #actions>
                 <Btn v-if="!server.isLocalServer && (archivePanel === 'archive-export' || archiveChoosingSource)" type="button"
                   :text="t(archivePanel === 'archive-export' ? 'exportProject.downloadHere' : 'importProject.fromThisComputer')"
-                  :disabled="nativeArchivePickerOpen" @click="browseControllerArchive" />
+                  @click="browseControllerArchive" />
               </template>
             </ServerFilePickerModal>
             <p v-else class="archive-row" role="status">{{ t('archive.waitingForEngine') }}</p>
@@ -726,15 +757,20 @@ async function runQuitFlow() {
 }
 type ArchivePanel = 'archive-import' | 'archive-export';
 type ArchiveStatus = { phase: 'working' | 'done' | 'failed'; message: string };
+type ArchiveSource = { path: string; client: boolean } | { file: File };
 
 const importArchiveStatus = ref<ArchiveStatus | null>(null);
 const exportArchiveStatus = ref<ArchiveStatus | null>(null);
-const importArchiveSource = shallowRef<{ path: string; client: boolean } | null>(null);
+const importArchiveSource = shallowRef<ArchiveSource | null>(null);
 const archiveReceipt = shallowRef<{
   serverUrl: string; accessToken: string; extractPath: string; projectFiles: string[];
 } | null>(null);
 const archiveOpening = ref(false);
-const nativeArchivePickerOpen = ref(false);
+const controllerArchivePicker = ref(false);
+const controllerArchiveError = ref('');
+const archiveDownloadFolder = ref('');
+const archiveDownloadName = ref('');
+const archiveFolderPending = ref(false);
 const archivePanel = computed(() => {
   const panel = workspaceImportPanel.value;
   return panel === 'archive-import' || panel === 'archive-export' ? panel : null;
@@ -747,20 +783,22 @@ const archiveCanOpen = computed(() => !!archiveReceipt.value && server.connected
   archiveReceipt.value.serverUrl === server.serverUrl && archiveReceipt.value.accessToken === server.effectiveAccessToken);
 const archiveChoosingSource = computed(() => archivePanel.value === 'archive-import' && !importArchiveSource.value);
 const archiveFilename = (path: string) => path.split(/[\\/]/).pop() || '';
+const archiveSourceName = (source: ArchiveSource) => 'file' in source ? source.file.name : archiveFilename(source.path);
 const exportArchiveName = computed(() => (currentProject.value?.name || 'Project') + PROJECT_FILE_EXTENSIONS.nativeArchive);
 const archivePickerCaption = computed(() => {
   if (archiveChoosingSource.value) return t('archive.chooseSource');
   if (archivePanel.value === 'archive-export') return t('archive.exportDestination', { name: exportArchiveName.value });
-  return t('archive.importDestination', { name: archiveFilename(importArchiveSource.value?.path ?? '') });
+  return t('archive.importDestination', { name: importArchiveSource.value ? archiveSourceName(importArchiveSource.value) : '' });
 });
 
 let archivePickerRevision = 0;
 watch([workspaceImportPanel, showProjectSettings, projectEpoch,
   () => server.serverUrl, () => server.effectiveAccessToken, () => server.projectSessionId], () => {
-  archivePickerRevision++;
+  closeControllerArchivePicker();
 }, { flush: 'sync' });
 watch([() => server.serverUrl, () => server.effectiveAccessToken], () => {
-  if (!importArchiveSource.value?.client) importArchiveSource.value = null;
+  const source = importArchiveSource.value;
+  if (source && 'path' in source && !source.client) importArchiveSource.value = null;
 }, { flush: 'sync' });
 
 function openArchivePanel(panel: ArchivePanel) {
@@ -769,8 +807,10 @@ function openArchivePanel(panel: ArchivePanel) {
 }
 
 function resetArchivePanel() {
-  if (archivePanel.value === 'archive-export') exportArchiveStatus.value = null;
-  else {
+  if (archivePanel.value === 'archive-export') {
+    if (exportArchiveStatus.value?.phase === 'done') closeControllerArchivePicker();
+    exportArchiveStatus.value = null;
+  } else {
     if (importArchiveStatus.value?.phase === 'done') importArchiveSource.value = null;
     importArchiveStatus.value = null;
     archiveReceipt.value = null;
@@ -791,29 +831,56 @@ function showArchiveFailure(panel: ArchivePanel, error: unknown) {
   showHeaderWarning(message, 'urgent');
 }
 
-async function browseControllerArchive() {
-  const panel = archivePanel.value;
-  if (!panel || nativeArchivePickerOpen.value || archiveStatus.value) return;
-  const revision = archivePickerRevision;
-  const source = importArchiveSource.value;
-  const isCurrent = () => archivePickerRevision === revision && !archiveStatus.value &&
-    (panel === 'archive-export' || importArchiveSource.value === source);
-  nativeArchivePickerOpen.value = true;
-  let path: string | null;
+function closeControllerArchivePicker() {
+  archivePickerRevision++;
+  controllerArchivePicker.value = false;
+  controllerArchiveError.value = '';
+  archiveDownloadFolder.value = '';
+  archiveDownloadName.value = '';
+  archiveFolderPending.value = false;
+}
+
+function browseControllerArchive() {
+  if (!archivePanel.value || archiveStatus.value) return;
+  controllerArchivePicker.value = true;
+  if (archivePanel.value === 'archive-export') void chooseArchiveDownloadFolder();
+}
+
+function chooseControllerArchive(files: FileList | undefined) {
+  const file = files?.length === 1 ? files[0] : undefined;
+  if (!file || projectFileAction(file.name) !== 'import-archive' || !file.size) {
+    controllerArchiveError.value = t('archive.unsupported');
+    return;
+  }
+  importArchiveSource.value = { file };
+  closeControllerArchivePicker();
+}
+
+function dropArchiveDownloadFolder(event: DragEvent) {
+  const files = event.dataTransfer?.files;
+  if (files?.length === 1) void chooseArchiveDownloadFolder(files[0]);
+  else controllerArchiveError.value = t('archive.invalidDownloadFolder');
+}
+
+async function chooseArchiveDownloadFolder(file?: File) {
+  const revision = ++archivePickerRevision;
+  archiveFolderPending.value = true;
+  controllerArchiveError.value = '';
   try {
     const api = window.electronAPI;
-    path = panel === 'archive-export'
-      ? await api.showSaveArchiveDialog(exportArchiveName.value)
-      : await api.showOpenArchiveDialog();
-  } catch (error) {
-    if (isCurrent()) showArchiveFailure(panel, error);
-    return;
+    const folder = await api.getArchiveDownloadFolder(file);
+    if (!folder) throw new Error('Folder unavailable');
+    if (archivePickerRevision === revision) archiveDownloadFolder.value = folder;
+  } catch {
+    if (archivePickerRevision === revision) controllerArchiveError.value = t('archive.invalidDownloadFolder');
   } finally {
-    nativeArchivePickerOpen.value = false;
+    if (archivePickerRevision === revision) archiveFolderPending.value = false;
   }
-  if (!path || !isCurrent()) return;
-  if (panel === 'archive-export') await runExport({ outputPath: '', downloadTo: path });
-  else importArchiveSource.value = { path, client: true };
+}
+
+function downloadControllerArchive() {
+  if (!archiveDownloadFolder.value || archiveFolderPending.value) return;
+  void runExport({ outputPath: '', downloadTo: { folder: archiveDownloadFolder.value, name: archiveDownloadName.value } });
 }
 
 async function onArchivePickerPick(path: string) {
@@ -832,7 +899,7 @@ async function onArchivePickerPick(path: string) {
   }
 }
 
-async function runExport(opts: { outputPath: string; downloadTo?: string }) {
+async function runExport(opts: { outputPath: string; downloadTo?: { folder: string; name: string } }) {
   const project = currentProject.value;
   if (!project || exportArchiveStatus.value) return;
   const serverUrl = server.serverUrl;
@@ -848,31 +915,35 @@ async function runExport(opts: { outputPath: string; downloadTo?: string }) {
     }
     exportArchiveStatus.value.message = t('exportProgress.message') + ' ' + name + '…';
     const result = await server.exportProjectArchive(project.folderPath, project.name, opts.outputPath, session);
+    let path = result.archivePath;
     if (opts.downloadTo) {
       if (!result.downloadToken || !sameServer()) throw new Error(t('archive.downloadUnavailable'));
       exportArchiveStatus.value.message = t('exportProgress.downloading') + ' ' + name + '…';
-      await server.downloadArchiveToFile(result.downloadToken, opts.downloadTo);
+      path = await server.downloadArchiveToFile(result.downloadToken, opts.downloadTo.folder,
+        opts.downloadTo.name || result.downloadFilename || name);
     }
     exportArchiveStatus.value = {
-      phase: 'done', message: t('exportProgress.saved', { path: opts.downloadTo || result.archivePath }),
+      phase: 'done', message: t('exportProgress.saved', { path }),
     };
   } catch (error) {
     showArchiveFailure('archive-export', error);
   }
 }
 
-async function runImport(source: { path: string; client: boolean }, destination: string) {
+async function runImport(source: ArchiveSource, destination: string) {
   const serverUrl = server.serverUrl;
   const accessToken = server.effectiveAccessToken;
-  const upload = source.client && !server.isLocalServer;
-  const name = archiveFilename(source.path);
+  const upload = 'file' in source || (source.client && !server.isLocalServer);
+  const name = archiveSourceName(source);
   importArchiveStatus.value = {
     phase: 'working', message: t(upload ? 'archive.uploading' : 'importProgress.message') + ' ' + name + '…',
   };
   try {
-    const result = upload
-      ? await server.importProjectArchiveFromClientPath(source.path, destination, name)
-      : await server.importProjectArchiveFromServer(source.path, destination);
+    const result = 'file' in source
+      ? await server.importProjectArchiveUpload(source.file, destination)
+      : upload
+        ? await server.importProjectArchiveFromClientPath(source.path, destination, name)
+        : await server.importProjectArchiveFromServer(source.path, destination);
     if (result.projectFiles.length === 0) throw new Error(t('importProgress.openFailed'));
     archiveReceipt.value = { ...result, serverUrl, accessToken };
     importArchiveStatus.value = {
@@ -1016,13 +1087,15 @@ onMounted(() => {
 .new-show-location button:hover { background: var(--color-surface-hover); }
 .new-show-actions { margin-inline-start: auto; }
 
-.new-show-actions .new-show-create {
+.new-show-actions .new-show-create,
+.archive-actions .archive-save:not(:disabled) {
   border-color: var(--color-accent);
   background: var(--color-accent);
   color: var(--color-text-on-accent);
 }
 
-.new-show-actions .new-show-create:hover:not(:disabled) { filter: brightness(1.1); }
+.new-show-actions .new-show-create:hover:not(:disabled),
+.archive-actions .archive-save:hover:not(:disabled) { filter: brightness(1.1); }
 
 .new-show-error {
   flex: 0 0 100%;
@@ -1037,6 +1110,7 @@ onMounted(() => {
   width: min(100%, var(--settings-width));
   padding: 0 var(--workspace-gutter) var(--spacing-xs);
   min-width: 0;
+  color: var(--color-text-primary);
 }
 
 .archive-panel--browse {
@@ -1077,6 +1151,32 @@ onMounted(() => {
   gap: var(--spacing-xs);
   flex-shrink: 0;
   max-width: 100%;
+}
+
+.archive-controller p { margin: 0; }
+
+.archive-drop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs) var(--workspace-gutter);
+  flex: 1 1 16rem;
+  min-width: 0;
+  padding: var(--spacing-xs) var(--workspace-gutter);
+  border: 1px dashed var(--color-border);
+  min-height: var(--panel-control-height);
+
+  span { color: var(--color-text-secondary); }
+}
+
+.archive-name {
+  display: flex;
+  flex: 0 1 30rem;
+  align-items: center;
+  gap: var(--workspace-gutter);
+  min-width: 0;
+
+  input { flex: 1; min-width: 0; }
 }
 
 .archive-error { color: var(--color-danger); }

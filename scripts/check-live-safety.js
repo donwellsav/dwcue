@@ -1478,8 +1478,8 @@ assert.match(
 );
 assert.match(
   electron,
-  /download-archive-to-file[\s\S]*pipeline\([\s\S]*Readable\.fromWeb[\s\S]*fs\.promises\.rename/,
-  'archive downloads must stream to a temp file before atomic replacement',
+  /download-archive-to-file[\s\S]*pipeline\([\s\S]*Readable\.fromWeb[\s\S]*fs\.promises\.link/,
+  'archive downloads must stream to a temp file before publishing without replacing an existing file',
 );
 assert.doesNotMatch(
   electron,
@@ -2274,7 +2274,7 @@ assert.doesNotMatch(
   /onTriggerItem|onStopItem|onTriggerCartSlot|onStopAllCues|onApiUpdateItem|onApiUpdateCartItem|sendApiResponse/,
   'workspace startup must not call retired preload APIs',
 );
-assert.match(appVue, /downloadArchiveToFile\(result\.downloadToken, opts\.downloadTo\)/,
+assert.match(appVue, /downloadArchiveToFile\(result\.downloadToken, opts\.downloadTo\.folder,/,
   'remote archive exports must bypass renderer memory');
 assert.match(
   appVue,
@@ -2289,13 +2289,15 @@ assert.match(
 );
 assert.match(
   appVue,
-  /runImport\(source: \{ path: string; client: boolean \}[\s\S]*importProjectArchiveFromClientPath\(source\.path/,
-  'remote archive imports must preserve a file path until chunked upload',
+  /runImport\(source: ArchiveSource[\s\S]*importProjectArchiveUpload\(source\.file[\s\S]*importProjectArchiveFromClientPath\(source\.path/,
+  'remote archives from the dock and from file associations must both use chunked upload',
 );
 assert.match(appVue, /defer to="#workspace-import-host"[\s\S]*class="archive-panel"[\s\S]*<progress[\s\S]*<ServerFilePickerModal [^>]*docked/,
   'archive destination, progress and results must share the lower workspace');
 assert.doesNotMatch(appVue + workspace, /<(?:LocationChoiceModal|ProgressModal|ProjectSelectionModal)/,
   'archive operations must not mount the old blocking dialogs');
+assert.doesNotMatch(appVue + electron, /show(Open|Save)ArchiveDialog|show-(open|save)-archive-dialog/,
+  'remote archive actions must stay in the dock');
 assert.match(appVue, /function showArchiveFailure[\s\S]*phase: 'failed', message[\s\S]*showHeaderWarning\(message, 'urgent'\)/,
   'archive failures must appear in the dock and header');
 assert.equal((appVue.match(/openImportedArchive\(/g) ?? []).length, 2,

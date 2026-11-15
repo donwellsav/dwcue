@@ -254,13 +254,13 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
   assert.equal(press('Escape', { target: editor }), false, 'closing the import restores the normal mapping');
   assert.deepEqual(calls.slice(13), [[]]);
 
-  for (const panel of ['media', 'spotify']) {
+  for (const panel of ['media', 'spotify', 'archive-import', 'archive-export']) {
     importPanel.value = panel;
     assert.equal(press('Escape', { target: editor }), true, `${panel} gives Escape to Stop All`);
     assert.equal(press(' '), false, 'import leaves GO available');
     assert.equal(press('Enter', { target: editor }), false, 'the path field keeps Enter');
   }
-  assert.deepEqual(calls.slice(14), [[], []]);
+  assert.deepEqual(calls.slice(14), [[], [], [], []]);
 });
 
 function loadHandleKeydown(dependencies: Record<string, unknown>) {

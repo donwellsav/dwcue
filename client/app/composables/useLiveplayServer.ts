@@ -883,7 +883,7 @@ function createClient() {
 
   // Stream the archive in Electron's main process so large shows never cross
   // the renderer IPC boundary as one giant ArrayBuffer.
-  async function downloadArchiveToFile(token: string, destination: string) {
+  async function downloadArchiveToFile(token: string, folder: string, filename: string) {
     const api = window.electronAPI;
     if (!api?.downloadArchiveToFile) {
       throw new Error('Local archive download is unavailable');
@@ -891,10 +891,12 @@ function createClient() {
     const result = await api.downloadArchiveToFile({
       baseUrl: httpBase.value,
       token,
-      destination,
+      folder,
+      filename,
       accessToken: effectiveAccessToken.value,
     });
-    if (!result.success) throw new Error(result.error || 'download failed');
+    if (result.success === false) throw new Error(result.error || 'download failed');
+    return result.path;
   }
 
   // Upload a .dwcuepack archive and have the server extract it

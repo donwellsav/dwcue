@@ -17,8 +17,7 @@ declare global {
       scanMediaFolder: (folder: string) => Promise<{ name: string; files: string[]; skippedFolders: string[] }>;
       readFile: (filePath: string) => Promise<{ success: boolean; data?: string; error?: string }>;
       writeFile: (filePath: string, data: string) => Promise<{ success: boolean; error?: string }>;
-      showSaveArchiveDialog: (defaultName?: string) => Promise<string | null>;
-      showOpenArchiveDialog: () => Promise<string | null>;
+      getArchiveDownloadFolder: (file?: File) => Promise<string>;
       getBinaryFileInfo: (filePath: string) => Promise<{
         success: boolean;
         size?: number;
@@ -33,9 +32,10 @@ declare global {
       downloadArchiveToFile: (request: {
         baseUrl: string;
         token: string;
-        destination: string;
+        folder: string;
+        filename: string;
         accessToken?: string;
-      }) => Promise<{ success: boolean; error?: string }>;
+      }) => Promise<{ success: true; path: string } | { success: false; error?: string }>;
       copyFile: (source: string, destination: string) => Promise<{ success: boolean; error?: string }>;
       ensureDirectory: (dirPath: string) => Promise<{ success: boolean; error?: string }>;
       generateWaveform: (audioPath: string, outputPath: string) => Promise<{ success: boolean; error?: string }>;

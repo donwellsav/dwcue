@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
@@ -91,11 +94,9 @@ test('native pickers leave the operator window enabled and authorize one selecti
   const cases = new Map([
     ['select-project-folder', { selected: folder, authorization: 'root' }],
     ['select-project-file', { selected: path.join(folder, 'Show.dwcue'), authorization: 'project' }],
-    ['show-open-archive-dialog', { selected: path.join(folder, 'Show.dwcuepack'), authorization: 'file' }],
-    ['show-save-archive-dialog', { selected: path.join(folder, 'Backup'), authorization: 'file' }],
   ]);
   const source = ts.createSourceFile('main.js',
-    readFileSync(new URL('../electron/main.js', import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+    fs.readFileSync(new URL('../electron/main.js', import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   const code = source.statements.filter(node => {
     if (ts.isVariableStatement(node)) {
       return node.declarationList.declarations.some(decl =>
@@ -123,11 +124,11 @@ test('native pickers leave the operator window enabled and authorize one selecti
   let hold: Promise<void> | undefined;
   let unreadable = '';
   let mode = 'local';
-  const choose = async (saving: boolean, ...args: unknown[]) => {
+  const choose = async (...args: unknown[]) => {
     assert.equal(args.length, 1, 'passing an operator window disables it during native file selection');
     assert.ok(args[0] && typeof args[0] === 'object');
     await hold;
-    return saving ? { canceled, filePath: selected } : { canceled, filePaths: [selected] };
+    return { canceled, filePaths: [selected] };
   };
   runInNewContext(code, {
     ...createRequire(import.meta.url)('../electron/project-file-formats.js'),
@@ -138,10 +139,7 @@ test('native pickers leave the operator window enabled and authorize one selecti
       if (!path.isAbsolute(file)) throw new TypeError('Expected an absolute path');
       return file;
     },
-    dialog: {
-      showOpenDialog: (...args: unknown[]) => choose(false, ...args),
-      showSaveDialog: (...args: unknown[]) => choose(true, ...args),
-    },
+    dialog: { showOpenDialog: choose },
     fs: {
       promises: { readdir: (dir: string, options: { withFileTypes: true }) => {
         if (dir === unreadable) return Promise.reject(Object.assign(new Error('Permission denied'), { code: 'EACCES' }));
@@ -161,11 +159,9 @@ test('native pickers leave the operator window enabled and authorize one selecti
     selected = item.selected;
     const pick = handlers.get(channel);
     assert.ok(pick, channel);
-    const saving = channel === 'show-save-archive-dialog';
-    const expected = saving ? `${selected}.dwcuepack` : selected;
     const result = await pick();
-    assert.deepEqual(Array.isArray(result) ? [...result] : [result], [expected], channel);
-    assert.deepEqual(authorized.pop(), [item.authorization, expected, saving], channel);
+    assert.deepEqual(Array.isArray(result) ? [...result] : [result], [selected], channel);
+    assert.deepEqual(authorized.pop(), [item.authorization, selected, false], channel);
     canceled = true;
     assert.equal(await pick(), null, channel);
     canceled = false;
@@ -179,7 +175,7 @@ test('native pickers leave the operator window enabled and authorize one selecti
   selected = folder;
   const first = handlers.get('select-project-folder')!();
   try {
-    const overlapping = handlers.get('show-save-archive-dialog')!();
+    const overlapping = handlers.get('select-project-file')!();
     const pending = new Promise(resolve => setImmediate(() => resolve('pending')));
     assert.equal(await Promise.race([overlapping, pending]), null);
   } finally {
@@ -211,4 +207,66 @@ test('native pickers leave the operator window enabled and authorize one selecti
   await assert.rejects(scanMediaFolder('relative'), /absolute path/);
   mode = 'remote';
   await assert.rejects(scanMediaFolder(folder), /requires the local audio engine/);
+});
+
+test('docked archive download validates the folder and publishes only complete, non-overwriting files', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'dwcue-archive-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const folder = await realpath(root);
+  const droppedFolder = path.join(folder, 'Dropped');
+  await mkdir(droppedFolder);
+  const source = fs.readFileSync(new URL('../electron/main.js', import.meta.url), 'utf8');
+  const handlers = new Map<string, (...args: any[]) => Promise<any>>();
+  let length = 6;
+  let deletes = 0;
+  let fallback = false;
+  runInNewContext(source.slice(source.indexOf('const archiveDownloadFolders'),
+    source.indexOf("ipcMain.handle('copy-file'")), {
+    ...createRequire(import.meta.url)('../electron/project-file-formats.js'),
+    crypto, path, Buffer, URL, Transform, Readable, pipeline, AbortSignal,
+    fs: { ...fs, promises: { ...fs.promises, link(from: string, to: string) {
+      if (fallback) throw Object.assign(new Error('Hard links unavailable'), { code: 'ENOTSUP' });
+      return fs.promises.link(from, to);
+    } } },
+    MAX_ARCHIVE_DOWNLOAD_BYTES: 1024,
+    ipcMain: { handle: handlers.set.bind(handlers) },
+    app: { getPath: () => root },
+    requireTrustedIpc() {},
+    requireBoundedIpcObject: (value: unknown) => value,
+    requireAbsoluteIpcPath: (value: string) => value,
+    requireIpcString: (value: string) => value,
+    fetch: async (_url: URL, opts: { method?: string }) => {
+      if (opts.method === 'DELETE') {
+        deletes++;
+        return new Response(null, { status: 204 });
+      }
+      return new Response('backup', { headers: { 'content-length': String(length) } });
+    },
+  });
+
+  const selectFolder = handlers.get('archive-download-folder')!;
+  const download = handlers.get('download-archive-to-file')!;
+  const request = { folder, filename: 'Show', token: 'a'.repeat(64), baseUrl: 'http://127.0.0.1' };
+  assert.match((await download({}, request)).error, /Choose a download folder/);
+  assert.equal(await selectFolder({}), folder);
+  assert.match((await download({}, { ...request, filename: '../outside' })).error, /valid archive filename/);
+  const existing = path.join(folder, 'Show.dwcuepack');
+  await writeFile(existing, 'original');
+  assert.match((await download({}, request)).error, /already exists/);
+  assert.equal(await readFile(existing, 'utf8'), 'original');
+  await assert.rejects(selectFolder({}, existing), /Choose a folder/);
+
+  assert.equal(await selectFolder({}, droppedFolder), droppedFolder);
+  length = 7;
+  assert.match((await download({}, { ...request, folder: droppedFolder })).error, /incomplete/);
+  assert.deepEqual(await readdir(droppedFolder), []);
+  assert.equal(deletes, 0);
+  length = 6;
+  fallback = true;
+  const saved = await download({}, { ...request, folder: droppedFolder, filename: 'Show.DWCUEPACK' });
+  assert.equal(saved.path, path.join(droppedFolder, 'Show.dwcuepack'));
+  assert.equal(await readFile(saved.path, 'utf8'), 'backup');
+  assert.deepEqual(await readdir(droppedFolder), ['Show.dwcuepack']);
+  assert.deepEqual((await readdir(folder)).sort(), ['Dropped', 'Show.dwcuepack']);
+  assert.equal(deletes, 1);
 });

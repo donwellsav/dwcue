@@ -126,7 +126,8 @@ export const useConnectionGuard = () => {
     const el = e.target as HTMLElement | null;
     const editing = el?.closest?.('input, textarea, [contenteditable]:not([contenteditable="false"])');
     const projectPanelEscape = (projectPanelOpen.value || filePicker.value !== null ||
-      quickPlayImportSlot.value !== null || importPanel.value === 'media' || importPanel.value === 'spotify') && e.key === 'Escape' &&
+      quickPlayImportSlot.value !== null || importPanel.value === 'media' || importPanel.value === 'spotify' ||
+      importPanel.value === 'archive-import' || importPanel.value === 'archive-export') && e.key === 'Escape' &&
       !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey;
     if (!projectPanelEscape && !blocked && !projectLoad.value && !(currentProject.value && editing)) return;
     const typing = e.isComposing ||

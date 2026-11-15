@@ -4088,50 +4088,34 @@ ipcMain.handle('write-file', async (event, filePath, data) => {
   }
 });
 
-// Save dialog for the canonical archive download flow. Returns the chosen
-// absolute .dwcuepack path or null on cancel.
-ipcMain.handle('show-save-archive-dialog', async (event, defaultName) => {
+const archiveDownloadFolders = new Set();
+ipcMain.handle('archive-download-folder', async (event, droppedPath) => {
   requireTrustedIpc(event);
-  const requestedName = typeof defaultName === 'string' && defaultName.length <= 255
-    ? path.basename(defaultName)
-    : 'project.dwcuepack';
-  const result = await showNativeFilePicker(() => dialog.showSaveDialog({
-    title: 'Save DonWells Cue Show Archive',
-    defaultPath: path.join(nativePickerFolder('archive-export') || '', canonicalArchivePath(requestedName)),
-    filters: [{ name: 'DonWells Cue Show Archive', extensions: ['dwcuepack'] }],
-  }));
-  if (result.canceled || !result.filePath) return null;
-  rememberNativePickerFolder('archive-export', path.dirname(result.filePath));
-  return pathCapabilities.authorizeFile(
-    canonicalArchivePath(result.filePath), { allowMissing: true });
+  const selected = requireAbsoluteIpcPath(droppedPath ?? app.getPath('downloads'), 'folder');
+  const folder = await fs.promises.realpath(selected);
+  if (!(await fs.promises.stat(folder)).isDirectory()) throw new Error('Choose a folder.');
+  archiveDownloadFolders.add(folder);
+  return folder;
 });
 
-// Choose a DonWells Cue archive.
-ipcMain.handle('show-open-archive-dialog', async (event) => {
-  requireTrustedIpc(event);
-  const result = await showNativeFilePicker(() => dialog.showOpenDialog({
-    defaultPath: nativePickerFolder('archive-import'),
-    title: 'Choose DonWells Cue Show Archive',
-    properties: ['openFile'],
-    filters: [{ name: 'DonWells Cue Show Archive', extensions: ['dwcuepack'] }],
-  }));
-  if (result.canceled || result.filePaths.length === 0) return null;
-  const selectedPath = result.filePaths[0];
-  if (fileKindFor(selectedPath) !== ProjectFileKind.NativeArchive) return null;
-  rememberNativePickerFolder('archive-import', path.dirname(selectedPath));
-  return pathCapabilities.authorizeFile(selectedPath);
-});
-
-// Stream a one-shot server archive directly to an authorized local path.
-// The renderer never holds the archive in memory, and the destination is
-// replaced only after the complete response reaches a sibling temp file.
+// Stage the stream next to its destination so an incomplete transfer cannot replace a backup.
 ipcMain.handle('download-archive-to-file', async (event, request) => {
   let tempPath = '';
   try {
     requireTrustedIpc(event);
     const checked = requireBoundedIpcObject(request, 'request', 16 * 1024);
-    const destination = requireAuthorizedIpcPath(
-      checked.destination, 'destination', true);
+    const folder = requireAbsoluteIpcPath(checked.folder, 'folder');
+    if (!archiveDownloadFolders.has(folder) || await fs.promises.realpath(folder) !== folder) {
+      throw new Error('Choose a download folder first.');
+    }
+    const name = requireIpcString(checked.filename, 'filename', 255).trim();
+    const filename = canonicalArchivePath(name);
+    if (!name || name.startsWith('.') || /[<>:"/\\|?*\x00-\x1f]/.test(name) ||
+        /^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³]) *\./i.test(filename) ||
+        Buffer.byteLength(filename, 'utf8') > 255) {
+      throw new Error('Enter a valid archive filename.');
+    }
+    const destination = path.join(folder, filename);
     const token = requireIpcString(checked.token, 'token', 64);
     if (!/^[0-9a-f]{64}$/.test(token)) {
       throw new TypeError('token must be 64 lowercase hexadecimal characters');
@@ -4185,17 +4169,28 @@ ipcMain.handle('download-archive-to-file', async (event, request) => {
       Readable.fromWeb(response.body),
       sizeLimit,
       fs.createWriteStream(tempPath, { flags: 'wx', mode: 0o600 }));
-    await fs.promises.rename(tempPath, destination);
-    tempPath = '';
+    if (declaredLength !== null && Number(declaredLength) !== received) {
+      throw new Error('The archive download was incomplete.');
+    }
+    try {
+      await fs.promises.link(tempPath, destination);
+    } catch (error) {
+      if (!['ENOTSUP', 'EOPNOTSUPP', 'ENOSYS', 'EPERM', 'EXDEV'].includes(error.code)) throw error;
+      // shortcut: On filesystems without hard links, copy once more. Use a no-replace rename if large copies become a bottleneck.
+      await fs.promises.copyFile(tempPath, destination, fs.constants.COPYFILE_EXCL);
+    }
 
     await fetch(endpoint, {
       method: 'DELETE',
       headers,
       redirect: 'error',
+      signal: AbortSignal.timeout(3000),
     }).catch(() => undefined);
-    return { success: true };
+    return { success: true, path: destination };
   } catch (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: error.code === 'EEXIST'
+      ? 'An archive with that name already exists. Enter a different filename.'
+      : error.message };
   } finally {
     if (tempPath) await fs.promises.unlink(tempPath).catch(() => {});
   }
