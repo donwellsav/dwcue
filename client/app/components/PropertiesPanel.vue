@@ -244,21 +244,11 @@
         <section class="property-column">
           <h4>{{ t('properties.output') }}</h4>
           <div class="property-field">
-            <label for="cue-output-device">{{ t('properties.deviceOverride') }}</label>
-            <select id="cue-output-device"
-              :value="audioDeviceOverride"
+            <span class="property-label">{{ t('properties.deviceOverride') }}</span>
+            <InlineChoicePicker id="cue-output-device" :label="t('properties.deviceOverride')"
+              :value="audioDeviceOverride" :options="deviceOverrideOptions"
               :disabled="deviceOverrideEditPending"
-              @change="onDeviceOverrideChange"
-            >
-              <option value="">{{ t('settings.useProjectDefault') }}</option>
-              <option
-                v-for="d in devicesList"
-                :key="d.id"
-                :value="d.display_name"
-              >
-                {{ d.display_name }}{{ d.is_default ? ' (' + t('common.default') + ')' : '' }}
-              </option>
-            </select>
+              @change="onDeviceOverrideChange" />
           </div>
           <p class="property-help">{{ t('properties.deviceOverrideHelp') }}</p>
         </section>
@@ -314,12 +304,10 @@
           class="playback-behavior playback-behavior--ducking"
         >
           <div class="property-field">
-            <label for="cue-property-ducking">{{ t('properties.ducking') }}</label>
-            <select id="cue-property-ducking" v-model="duckingMode" @change="handleSave">
-              <option value="stop-all">{{ t('duckingBehavior.stopAll') }}</option>
-              <option value="no-ducking">{{ t('duckingBehavior.noDucking') }}</option>
-              <option value="duck-others">{{ t('duckingBehavior.duckOthers') }}</option>
-            </select>
+            <span class="property-label">{{ t('properties.ducking') }}</span>
+            <InlineChoicePicker id="cue-property-ducking" :label="t('properties.ducking')"
+              :value="duckingMode" :options="duckingOptions"
+              @change="duckingMode = $event; handleSave()" />
           </div>
 
           <div class="property-field" v-if="duckingMode === 'duck-others'">
@@ -564,6 +552,13 @@ const ltcDeviceConfigured = computed(() => {
 // shared server state — populated once on connect.
 const _server = useLiveplayServer();
 const devicesList = computed(() => _server.devices ?? []);
+const deviceOverrideOptions = computed(() => {
+  const options = new Map(devicesList.value.map(device => [device.display_name, {
+    value: device.display_name,
+    label: device.is_default ? `${device.display_name} (${t('common.default')})` : device.display_name,
+  }]));
+  return [{ value: '', label: t('settings.useProjectDefault') }, ...options.values()];
+});
 const audioDeviceOverride = computed(() => {
   const selected = (audioItem.value as any)?.deviceOverride || '';
   return devicesList.value.find(device => device.id === selected)?.display_name ?? selected;
@@ -577,12 +572,9 @@ const apiTriggerUrl = computed(() => {
   const base = (_server.serverUrl ?? 'http://127.0.0.1:4480').replace(/\/+$/, '');
   return `${base}/api/project/items/${selectedItem.value?.uuid}/play`;
 });
-const onDeviceOverrideChange = async (e: Event) => {
-  const input = e.target as HTMLSelectElement;
-  const value = input.value;
+const onDeviceOverrideChange = async (value: string) => {
   const project = currentProject.value;
   const item = audioItem.value;
-  input.value = audioDeviceOverride.value;
   if (!project || !item || deviceOverrideEditPending.value) return;
   const previous = item.deviceOverride;
   deviceOverrideEditPending.value = true;
@@ -830,6 +822,12 @@ const handleStartBehaviorIndexChange = (e: Event) => {
   }
   handleSave();
 };
+
+const duckingOptions = computed(() => [
+  { value: 'stop-all', label: t('duckingBehavior.stopAll') },
+  { value: 'no-ducking', label: t('duckingBehavior.noDucking') },
+  { value: 'duck-others', label: t('duckingBehavior.duckOthers') },
+] as const);
 
 const duckingMode = computed({
   get: () => audioItem.value.duckingBehavior?.mode ?? 'stop-all',

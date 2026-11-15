@@ -127,10 +127,11 @@ test('project and cue output choices persist hardware names instead of opened-se
     const filename = new URL(`../app/components/${component}.vue`, import.meta.url);
     const { template, scriptSetup } = parse(readFileSync(filename, 'utf8')).descriptor;
     const ast = parseTemplate(template!.content);
-    const docked = component === 'ProjectSettingsModal';
+    const cue = component === 'PropertiesPanel';
+    const optionList = cue ? 'deviceOverrideOptions' : 'audioDeviceOptions';
     const t = (key: string) => key;
     const find = (node: any): any => {
-      if (node.type === NodeTypes.ELEMENT && node.tag === (docked ? 'InlineChoicePicker' : 'select') &&
+      if (node.type === NodeTypes.ELEMENT && node.tag === 'InlineChoicePicker' &&
           node.loc.source.includes(`@change="${handler}"`)) return node;
       for (const child of node.children ?? []) {
         const found = find(child);
@@ -142,34 +143,21 @@ test('project and cue output choices persist hardware names instead of opened-se
     const code = ts.transpileModule(compile(select.loc.source, { mode: 'function', isTS: true }).code, {
       compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
     }).outputText;
-    let audioDeviceOptions;
-    if (docked) {
-      const script = scriptSetup!.content;
-      const start = script.indexOf('const audioDeviceOptions =');
-      const end = script.indexOf('const outputTargetOptions =', start);
-      assert.ok(start >= 0 && end > start);
-      audioDeviceOptions = Function('computed', 'devices', 't',
-        `${script.slice(start, end)}\nreturn audioDeviceOptions.value;`)(Vue.computed, { value: [device] }, t);
-    }
+    const script = scriptSetup!.content;
+    const start = script.indexOf(`const ${optionList} =`);
+    const end = script.indexOf('\n});', start);
+    assert.ok(start >= 0 && end > start);
+    const options = Function('computed', cue ? 'devicesList' : 'devices', 't',
+      `${script.slice(start, end + 4)}\nreturn ${optionList}.value;`)(Vue.computed, { value: [device] }, t);
     const render = Function('Vue', `${code}; return render;`)({ ...Vue, resolveComponent: (name: string) => name });
     const node = render({
-      audioDeviceOptions, devicesList: [device], audioDeviceId: device.display_name,
+      [optionList]: options, audioDeviceId: device.display_name,
       previewDeviceId: device.display_name, ltcDeviceId: device.display_name,
-      audioItem: { deviceOverride: device.display_name }, audioDeviceOverride: device.display_name,
+      audioDeviceOverride: device.display_name,
       deviceOverrideEditPending: false,
       t, [handler]() {},
     }, []);
-    if (docked) {
-      assert.deepEqual(node.props.options.map((option: {value: string}) => option.value), ['', device.display_name]);
-      continue;
-    }
-    const options: any[] = [];
-    const walk = (value: any) => {
-      if (value?.type === 'option') options.push(value);
-      if (Array.isArray(value?.children)) value.children.forEach(walk);
-    };
-    walk(node);
-    assert.equal(options.find(option => option.key === device.id)?.props.value, device.display_name);
+    assert.deepEqual(node.props.options.map((option: {value: string}) => option.value), ['', device.display_name]);
   }
 });
 
@@ -333,27 +321,35 @@ test('a refused cue device change preserves the running route and skips the save
   const cue = { uuid: 'cue', deviceOverride: 'Running output' };
   const pending = deferred<void>();
   let saves = 0;
+  const editPending = { value: false };
   const factory = Function('deps', `
-    const { audioItem, currentProject, audioDeviceOverride, deviceOverrideEditPending,
-      _server, t, endItemBatch, persistPropertyChanges, handleSave } = deps;
+    const { audioItem, currentProject, deviceOverrideEditPending,
+      _server, t, endItemBatch, persistPropertyChanges } = deps;
     ${code}
     return onDeviceOverrideChange;
   `);
-  const server = { updateProjectItem: () => pending.promise, lastError: '' };
+  const server = {
+    updateProjectItem: (uuid: string, patch: object) => {
+      assert.equal(uuid, cue.uuid);
+      assert.deepEqual(patch, { deviceOverride: 'Cold output' });
+      return pending.promise;
+    },
+    lastError: '',
+  };
   const change = factory({
     audioItem: { value: cue }, currentProject: { value: {} },
-    audioDeviceOverride: { value: cue.deviceOverride }, deviceOverrideEditPending: { value: false },
+    deviceOverrideEditPending: editPending,
     _server: server, t: (key: string) => key,
-    endItemBatch: async () => {}, persistPropertyChanges: () => { ++saves; }, handleSave: () => { ++saves; },
+    endItemBatch: async () => {}, persistPropertyChanges: () => { ++saves; },
   });
-  const select = { value: 'Cold output' };
-  const result = change({ target: select });
+  const result = change('Cold output');
+  assert.equal(editPending.value, true);
   assert.equal(cue.deviceOverride, 'Running output');
   assert.equal(saves, 0);
   pending.reject(new Error('Device open canceled'));
   await result;
   assert.equal(cue.deviceOverride, 'Running output');
-  assert.equal(select.value, 'Running output');
+  assert.equal(editPending.value, false);
   assert.equal(saves, 0);
   assert.equal(server.lastError, 'properties.deviceOverrideFailed');
 });
