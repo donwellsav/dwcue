@@ -105,7 +105,6 @@
           <details
             ref="normalizeMenu"
             class="normalize-menu"
-            @focusout="handleNormalizeFocusOut"
             @keydown.esc="closeNormalizeMenu"
           >
             <summary class="normalize-btn" :title="t(normalizationMode === 'truePeak' ? 'properties.peakReductionHelp' : 'properties.normalizationTargetHelp')">
@@ -114,13 +113,12 @@
               <span class="material-symbols-rounded normalize-chevron">expand_more</span>
             </summary>
             <div class="normalize-popover">
-              <label class="normalize-field">
-                <span>{{ t('properties.action') }}</span>
-                <select v-model="normalizationMode" class="normalize-mode">
-                  <option value="loudness">{{ t('properties.loudnessTargets') }}</option>
-                  <option value="truePeak">{{ t('properties.reducePeaks') }} (dBTP)</option>
-                </select>
-              </label>
+              <div class="normalize-actions" role="group" :aria-label="t('properties.action')">
+                <button type="button" :aria-pressed="normalizationMode === 'loudness'"
+                  @click="normalizationMode = 'loudness'">{{ t('properties.loudnessTargets') }}</button>
+                <button type="button" :aria-pressed="normalizationMode === 'truePeak'"
+                  @click="normalizationMode = 'truePeak'">{{ t('properties.reducePeaks') }} (dBTP)</button>
+              </div>
               <label class="normalize-field">
                 <span>{{ t(normalizationMode === 'truePeak' ? 'properties.peakCeiling' : 'properties.normalizeTarget') }}</span>
                 <span class="normalize-level">
@@ -547,10 +545,6 @@ const normalizationTarget = computed<number>({
 });
 
 const closeNormalizeMenu = () => normalizeMenu.value?.removeAttribute('open');
-const handleNormalizeFocusOut = (event: FocusEvent) => {
-  const next = event.relatedTarget as Node | null;
-  if (!next || !normalizeMenu.value?.contains(next)) closeNormalizeMenu();
-};
 
 const { activeCues, nextItemOverrideUuid, setNextItemPending, setNextItem } = useAudioEngine();
 const {
@@ -2280,12 +2274,13 @@ onUnmounted(() => {
 
 .audio-tools {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  align-items: center;
+  align-items: flex-start;
 }
 
 .normalize-menu {
-  position: relative;
+  max-width: 100%;
   min-height: 30px;
 }
 
@@ -2329,18 +2324,14 @@ onUnmounted(() => {
 }
 
 .normalize-popover {
-  position: absolute;
-  z-index: var(--z-dropdown);
-  top: calc(100% + 6px);
-  right: 0;
   display: grid;
   gap: var(--spacing-sm);
-  width: 256px;
+  width: min(280px, 100%);
+  margin-top: var(--spacing-xs);
   padding: var(--spacing-sm);
   background: var(--color-surface-raised);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--border-radius-md);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42);
 }
 
 .normalize-field {
@@ -2352,7 +2343,22 @@ onUnmounted(() => {
   color: var(--color-text-secondary);
 }
 
-.normalize-field select,
+.normalize-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-xs);
+}
+
+.normalize-actions button {
+  min-height: var(--settings-control-height);
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  color: var(--color-text-primary);
+  background: var(--color-control);
+}
+
+.normalize-actions button[aria-pressed='true'] { border-color: var(--color-accent); }
+
 .normalize-level {
   min-height: 30px;
 }
@@ -2784,7 +2790,7 @@ onUnmounted(() => {
 .time-increment:focus-visible,
 .trim-silence-btn:focus-visible,
 .normalize-btn:focus-visible,
-.normalize-mode:focus-visible,
+.normalize-actions button:focus-visible,
 .normalize-target:focus-visible {
   outline: none;
   border-color: var(--color-accent);

@@ -212,11 +212,8 @@
         <div class="plan-row">
           <dt>{{ t('spotifyImport.audioFormat') }}</dt>
           <dd>
-            <select v-model="audioBitrate" :aria-label="t('spotifyImport.audioBitrate')">
-              <option value="320k">{{ t('spotifyImport.audioBitrate320') }}</option>
-              <option value="256k">{{ t('spotifyImport.audioBitrate256') }}</option>
-              <option value="192k">{{ t('spotifyImport.audioBitrate192') }}</option>
-            </select>
+            <InlineChoicePicker :label="t('spotifyImport.audioBitrate')" :value="audioBitrate"
+              :options="audioBitrateOptions" @change="audioBitrate = $event" />
           </dd>
         </div>
         <div v-if="!reviewState" class="plan-row">
@@ -250,17 +247,11 @@
 
       <div class="processing-summary">
         <p class="processing-title">{{ t('spotifyImport.cueSetup') }}</p>
-        <label class="processing-control processing-control--select">
+        <div class="processing-control processing-control--choice">
           <span>{{ t('settings.transitionMode') }}</span>
-          <select
-            :value="cueProcessingSettings.transitionMode"
-            :disabled="isBusy || isSavingSettings"
-            @change="updateTransitionMode"
-          >
-            <option value="crossfade">{{ t('settings.transitionModeCrossfade') }}</option>
-            <option value="start-next">{{ t('settings.transitionModeStartNext') }}</option>
-          </select>
-        </label>
+          <InlineChoicePicker :label="t('settings.transitionMode')" :value="cueProcessingSettings.transitionMode"
+            :options="transitionModeOptions" :disabled="isBusy || isSavingSettings" @change="updateTransitionMode" />
+        </div>
         <label class="processing-control">
           <input
             type="checkbox"
@@ -422,6 +413,15 @@ const spotifyUrl = ref('');
 const storedAudioBitrate = import.meta.client
   ? localStorage.getItem('liveplay-spotify-bitrate')
   : null;
+const audioBitrateOptions = computed(() => [
+  { value: '320k', label: t('spotifyImport.audioBitrate320') },
+  { value: '256k', label: t('spotifyImport.audioBitrate256') },
+  { value: '192k', label: t('spotifyImport.audioBitrate192') },
+] as const);
+const transitionModeOptions = computed(() => [
+  { value: 'crossfade', label: t('settings.transitionModeCrossfade') },
+  { value: 'start-next', label: t('settings.transitionModeStartNext') },
+] as const);
 const audioBitrate = ref<'192k' | '256k' | '320k'>(
   storedAudioBitrate === '192k' || storedAudioBitrate === '256k' ? storedAudioBitrate : '320k',
 );
@@ -661,10 +661,8 @@ async function persistProjectSetting(patch: Record<string, unknown>) {
   }
 }
 
-function updateTransitionMode(event: Event) {
-  void persistProjectSetting({
-    defaultTransitionMode: (event.target as HTMLSelectElement).value,
-  });
+function updateTransitionMode(value: string) {
+  void persistProjectSetting({ defaultTransitionMode: value });
 }
 
 function updateBooleanSetting(key: string, event: Event) {
@@ -1479,20 +1477,9 @@ input {
   }
 }
 
-.processing-control--select {
+.processing-control--choice {
+  align-items: flex-start;
   justify-content: space-between;
-
-  select {
-    flex: 0 1 auto;
-    min-width: 0;
-    max-width: 100%;
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    background: var(--color-background);
-    color: var(--color-text-primary);
-    padding: 2px 8px;
-    font: inherit;
-  }
 }
 
 .settings-save-error {
@@ -1738,11 +1725,10 @@ input {
     grid-template-columns: 1fr;
   }
 
-  .processing-control--select {
+  .processing-control--choice {
     align-items: stretch;
     flex-direction: column;
 
-    select { min-width: 100%; }
   }
 
   .destination-row dd {

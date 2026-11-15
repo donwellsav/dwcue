@@ -102,14 +102,11 @@
             <strong :title="mediaDestination">{{ mediaDestination }}</strong>
           </div>
 
-          <label class="plan-field plan-format">
+          <div class="plan-field plan-format">
             <span class="plan-label">{{ t('youtube.outputFormat') }}</span>
-            <select v-model="outputMode">
-              <option value="source">{{ t('youtube.outputFormatSource') }}</option>
-              <option value="mp3">{{ t('youtube.outputFormatMp3V0') }}</option>
-              <option value="video">{{ t('youtube.outputFormatVideo') }}</option>
-            </select>
-          </label>
+            <InlineChoicePicker :label="t('youtube.outputFormat')" :value="outputMode"
+              :options="outputFormatOptions" @change="outputMode = $event" />
+          </div>
 
           <div class="plan-field plan-processing">
             <span class="plan-label">{{ t('youtube.projectProcessing') }}</span>
@@ -125,11 +122,8 @@
       <div v-if="downloadQueue.length > 0" class="download-queue">
         <div class="plan-heading">
           <h3>{{ t('youtube.downloadQueue') }}</h3>
-          <select v-model="outputMode" :aria-label="t('youtube.outputFormat')">
-            <option value="source">{{ t('youtube.outputFormatSource') }}</option>
-            <option value="mp3">{{ t('youtube.outputFormatMp3V0') }}</option>
-            <option value="video">{{ t('youtube.outputFormatVideo') }}</option>
-          </select>
+          <InlineChoicePicker :label="t('youtube.outputFormat')" :value="outputMode"
+            :options="outputFormatOptions" @change="outputMode = $event" />
           <label class="add-to-playlist-option">
             <input v-model="addDownloadedAudio" type="checkbox">
             <span>{{ t('youtube.addDownloadedAudio') }}</span>
@@ -291,6 +285,10 @@ const formatLabels = computed<Record<DownloadProgress['outputMode'], string>>(()
   mp3: t('youtube.outputFormatMp3V0'),
   video: t('youtube.outputFormatVideo'),
 }));
+
+const outputFormatOptions = computed(() => (['source', 'mp3', 'video'] as const).map(value => ({
+  value, label: formatLabels.value[value],
+})));
 
 const processingSettings = computed(() => {
   const settings = currentProject.value?.settings;
@@ -650,9 +648,10 @@ onBeforeUnmount(() => {
 
 .plan-heading {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--spacing-xs) var(--spacing-sm);
   margin-bottom: var(--spacing-xs);
 }
 
@@ -714,17 +713,6 @@ onBeforeUnmount(() => {
   color: var(--color-text-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.plan-format select {
-  width: 100%;
-  height: var(--settings-control-height);
-  padding: 0 28px 0 9px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--control-radius);
-  background: var(--color-background);
-  color: var(--color-text-primary);
-  font: inherit;
 }
 
 .plan-processing {

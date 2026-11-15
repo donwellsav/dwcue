@@ -134,21 +134,16 @@
           <h3 v-if="docked">{{ t('importAudio.planTitle') }}</h3>
           <summary v-else>{{ t('importAudio.advanced') }}</summary>
           <section v-if="tab === 'server'" class="import-options" :aria-label="t('importAudio.fileHandling')">
-            <label>
+            <div class="import-option">
               <span>{{ t('importAudio.fileHandling') }}</span>
-              <select v-model="fileMode" :disabled="busy">
-                <option value="copy">{{ t('importAudio.copyFiles') }}</option>
-                <option value="link">{{ t('importAudio.linkFiles') }}</option>
-              </select>
-            </label>
-            <label v-if="fileMode === 'copy'">
+              <InlineChoicePicker :label="t('importAudio.fileHandling')" :value="fileMode" :options="fileModeOptions"
+                :disabled="busy" @change="fileMode = $event" />
+            </div>
+            <div class="import-option" v-if="fileMode === 'copy'">
               <span>{{ t('importAudio.duplicates') }}</span>
-              <select v-model="duplicatePolicy" :disabled="busy">
-                <option value="reuse">{{ t('importAudio.reuseDuplicate') }}</option>
-                <option value="skip">{{ t('importAudio.skipDuplicate') }}</option>
-                <option value="keep">{{ t('importAudio.keepDuplicate') }}</option>
-              </select>
-            </label>
+              <InlineChoicePicker :label="t('importAudio.duplicates')" :value="duplicatePolicy" :options="duplicatePolicyOptions"
+                :disabled="busy" @change="duplicatePolicy = $event" />
+            </div>
             <p v-if="fileMode === 'link'" class="option-note">{{ t('importAudio.linkWarning') }}</p>
           </section>
 
@@ -276,6 +271,15 @@ const { t }  = useLocalization();
 const tab = ref<'server' | 'upload'>(props.singleFile || server.isLocalServer ? 'server' : 'upload');
 const fileMode = ref<FileMode>('copy');
 const duplicatePolicy = ref<DuplicatePolicy>('reuse');
+const fileModeOptions = computed(() => [
+  { value: 'copy', label: t('importAudio.copyFiles') },
+  { value: 'link', label: t('importAudio.linkFiles') },
+] as const);
+const duplicatePolicyOptions = computed(() => [
+  { value: 'reuse', label: t('importAudio.reuseDuplicate') },
+  { value: 'skip', label: t('importAudio.skipDuplicate') },
+  { value: 'keep', label: t('importAudio.keepDuplicate') },
+] as const);
 
 watch(() => props.open, (open) => {
   if (!open) return;
@@ -832,8 +836,7 @@ function formatBytes(n: number): string {
   .import-options {
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
     padding: 10px; border: 1px solid var(--color-border); border-radius: var(--control-radius); background: var(--color-background);
-    label { display: grid; gap: 5px; color: var(--color-text-secondary); font-size: 11px; }
-    select { min-width: 0; }
+    .import-option { display: grid; align-content: start; gap: 5px; min-width: 0; color: var(--color-text-secondary); font-size: 11px; }
     .option-note { grid-column: 1 / -1; margin: 0; color: var(--color-warning); font-size: 11px; }
   }
 
@@ -910,7 +913,6 @@ function formatBytes(n: number): string {
   }
   .import-advanced { border-radius: 0; }
   .import-options { padding: 0; border: 0; }
-  .import-options select { min-height: var(--settings-control-height); }
   .import-plan { padding-top: var(--spacing-xs); }
   .pane, .import-source, .plan-grid { gap: var(--spacing-xs); }
   .pane :deep(.picker-dock) { flex-basis: clamp(174px, 28vh, 235px); }

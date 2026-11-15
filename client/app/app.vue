@@ -110,6 +110,16 @@
           </form>
         </section>
       </Teleport>
+      <section v-if="!hasWorkspace && showStartupAbout && !projectPanelOpen && !archivePanel"
+        class="project-file-panel project-file-panel--startup startup-about-panel" aria-labelledby="startup-about-title">
+        <header class="workspace-panel-header">
+          <h2 id="startup-about-title" class="workspace-panel-header__title">{{ t('settings.tabAbout') }}</h2>
+          <Btn type="button" icon="close" :text="t('actions.close')" @click="showStartupAbout = false" />
+        </header>
+        <div class="startup-about-content">
+          <AboutContent />
+        </div>
+      </section>
       <Teleport v-if="archivePanel" :key="hasWorkspace ? 'workspace' : 'startup'"
         defer to="#workspace-import-host" :disabled="!hasWorkspace">
         <section v-show="hasWorkspace || !projectPanelOpen" class="archive-panel"
@@ -187,9 +197,6 @@
           </template>
         </section>
       </Teleport>
-    <!-- About Modal -->
-    <AboutModal v-if="showAboutModal && !projectPanelOpen" @close="showAboutModal = false" />
-    
     <!-- LocalServerStatus pill intentionally not mounted. The local server
          now runs as a visible application with its own console window /
          taskbar entry, so the user has a direct way to see and stop it.
@@ -418,8 +425,8 @@ const retiredBrandAccents = new Set(['#a45d00', '#8f5000', '#c47a00', '#ffb000']
 const displayAccent = (color?: string) =>
   color && !retiredBrandAccents.has(color.toLowerCase()) ? color : DEFAULT_ACCENT;
 
-// About modal
-const showAboutModal = ref(false);
+const showStartupAbout = ref(false);
+watch(hasWorkspace, (ready) => { if (ready) showStartupAbout.value = false; });
 
 const { update, checkForAppUpdate } = useAppUpdate();
 let announcedUpdate = '';
@@ -432,11 +439,11 @@ const showProjectSettings = useState('showProjectSettings', () => false);
 const settingsTab = useState('projectSettingsTab', () => 'audio');
 
 function openAbout() {
-  if (currentProject.value && projectHydrationStatus.value !== 'failed') {
+  if (hasWorkspace.value) {
     settingsTab.value = 'about';
     showProjectSettings.value = true;
   } else {
-    showAboutModal.value = true;
+    showStartupAbout.value = true;
   }
 }
 
@@ -1026,6 +1033,13 @@ onMounted(() => {
 .project-file-panel--startup {
   max-height: 60%;
   overflow: auto;
+}
+
+.startup-about-panel { overflow: hidden; }
+.startup-about-content {
+  min-height: 0;
+  overflow: auto;
+  padding: var(--spacing-sm) var(--workspace-gutter);
 }
 
 .project-file-panel--browse {

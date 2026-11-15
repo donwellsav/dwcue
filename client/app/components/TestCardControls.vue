@@ -63,24 +63,17 @@
     <fieldset v-if="config.cardType === 'bars'" class="test-card-fieldset" :disabled="disabled">
       <legend>{{ t('testCard.bars') }}</legend>
       <div class="test-card-grid test-card-grid--three">
-        <label class="test-card-control">
+        <div class="test-card-control">
           <span>{{ t('testCard.barsStyle') }}</span>
-          <select class="test-card-select" :value="config.bars.type" @change="updateBars({ type: eventString($event) as TestCardBarsType })">
-            <option value="simple">{{ t('testCard.simple') }}</option>
-            <option value="smpte">SMPTE</option>
-            <option value="arib">ARIB</option>
-            <option value="hdr">HDR</option>
-            <option value="sdi">SDI</option>
-            <option value="single">{{ t('testCard.single') }}</option>
-          </select>
-        </label>
+          <InlineChoicePicker :label="t('testCard.barsStyle')" :value="config.bars.type" :options="barsTypeOptions"
+            :disabled="disabled" @change="updateBars({ type: $event })" />
+        </div>
         <CheckControl :label="t('testCard.details')" :checked="config.bars.overlay" @change="updateBars({ overlay: $event })" />
-        <label v-if="config.bars.type === 'single'" class="test-card-control">
+        <div v-if="config.bars.type === 'single'" class="test-card-control">
           <span>{{ t('testCard.color') }}</span>
-          <select class="test-card-select" :value="config.bars.color" @change="updateBars({ color: eventString($event) as TestCardBarsColor })">
-            <option v-for="color in BAR_COLORS" :key="color" :value="color">{{ t(`testCard.barColors.${color.toLowerCase()}`) }}</option>
-          </select>
-        </label>
+          <InlineChoicePicker :label="t('testCard.color')" :value="config.bars.color" :options="barsColorOptions"
+            :disabled="disabled" @change="updateBars({ color: $event })" />
+        </div>
       </div>
       <div v-if="config.bars.type === 'simple' || config.bars.type === 'single'" class="test-card-choice-row">
         <span>{{ t('testCard.level') }}</span>
@@ -130,15 +123,11 @@
           :disabled="!rampOverlayAvailable"
           @change="updateRamp({ overlay: $event })"
         />
-        <label class="test-card-control test-card-control--wide">
+        <div class="test-card-control test-card-control--wide">
           <span>{{ t('testCard.direction') }}</span>
-          <select class="test-card-select" :value="config.ramp.direction" @change="updateRamp({ direction: eventString($event) as TestCardRampDirection })">
-            <option value="Horizontal">{{ t('testCard.horizontal') }}</option>
-            <option value="Vertical">{{ t('testCard.vertical') }}</option>
-            <option value="Diagonal">{{ t('testCard.diagonal') }}</option>
-            <option value="Radial">{{ t('testCard.radial') }}</option>
-          </select>
-        </label>
+          <InlineChoicePicker :label="t('testCard.direction')" :value="config.ramp.direction" :options="rampDirectionOptions"
+            :disabled="disabled" @change="updateRamp({ direction: $event })" />
+        </div>
       </div>
     </fieldset>
 
@@ -148,12 +137,11 @@
         <InlineColorPicker :label="t('testCard.background')" :value="config.placeholder.bg" @change="updatePlaceholder({ bg: $event })" />
         <InlineColorPicker :label="t('testCard.foreground')" :value="config.placeholder.fg" @change="updatePlaceholder({ fg: $event })" />
         <CheckControl :label="t('testCard.gradient')" :checked="config.placeholder.gradient" @change="updatePlaceholder({ gradient: $event })" />
-        <label class="test-card-control">
+        <div class="test-card-control">
           <span>{{ t('testCard.icon') }}</span>
-          <select class="test-card-select" :value="config.placeholder.icon" @change="updatePlaceholder({ icon: eventString($event) })">
-            <option v-for="icon in PLACEHOLDER_ICONS" :key="icon.id" :value="icon.id">{{ t(icon.labelKey) }}</option>
-          </select>
-        </label>
+          <InlineChoicePicker :label="t('testCard.icon')" :value="config.placeholder.icon" :options="placeholderIconOptions"
+            :disabled="disabled" @change="updatePlaceholder({ icon: $event })" />
+        </div>
         <label v-if="config.placeholder.icon === 'custom'" class="test-card-control test-card-control--wide">
           <span>{{ t('testCard.fontAwesomeIcon') }}</span>
           <input :value="config.placeholder.custom" type="text" maxlength="120" @input="updatePlaceholder({ custom: eventString($event) })">
@@ -164,21 +152,16 @@
     <fieldset v-if="config.cardType === 'audioSync'" class="test-card-fieldset" :disabled="disabled">
       <legend>{{ t('testCard.audioSync') }}</legend>
       <div class="test-card-grid test-card-grid--two">
-        <label class="test-card-control">
+        <div class="test-card-control">
           <span>{{ t('testCard.audioDevice') }}</span>
-          <select class="test-card-select" :value="config.audioSync.deviceId" @change="updateAudioSync({ deviceId: eventString($event) })">
-            <option value="default">{{ t('testCard.programOutput') }}</option>
-            <option v-for="device in audioDevices" :key="device.id" :value="device.display_name">
-              {{ device.display_name }}
-            </option>
-          </select>
-        </label>
-        <label class="test-card-control">
+          <InlineChoicePicker :label="t('testCard.audioDevice')" :value="config.audioSync.deviceId" :options="audioDeviceOptions"
+            :disabled="disabled" @change="updateAudioSync({ deviceId: $event })" />
+        </div>
+        <div class="test-card-control">
           <span>{{ t('testCard.rateFps') }}</span>
-          <select class="test-card-select" :value="config.audioSync.rate" @change="updateAudioSync({ rate: eventNumber($event) as TestCardAudioSyncRate })">
-            <option v-for="rate in AUDIO_SYNC_RATES" :key="rate" :value="rate">{{ rate }}</option>
-          </select>
-        </label>
+          <InlineChoicePicker :label="t('testCard.rateFps')" :value="config.audioSync.rate" :options="audioRateOptions"
+            :disabled="disabled" @change="updateAudioSync({ rate: $event })" />
+        </div>
       </div>
       <p class="test-card-help">{{ t('testCard.audioSyncHelp') }}</p>
     </fieldset>
@@ -186,18 +169,16 @@
     <fieldset v-if="config.cardType === 'deghost'" class="test-card-fieldset" :disabled="disabled">
       <legend>{{ t('testCard.deghost') }}</legend>
       <div class="test-card-grid test-card-grid--two">
-        <label class="test-card-control">
+        <div class="test-card-control">
           <span>{{ t('testCard.density') }}</span>
-          <select class="test-card-select" :value="config.deghost.density" @change="updateDeghost({ density: eventNumber($event) as TestCardConfig['deghost']['density'] })">
-            <option v-for="option in DEGHOST_DENSITIES" :key="option.value" :value="option.value">{{ t(option.labelKey) }}</option>
-          </select>
-        </label>
-        <label class="test-card-control">
+          <InlineChoicePicker :label="t('testCard.density')" :value="config.deghost.density" :options="deghostDensityOptions"
+            :disabled="disabled" @change="updateDeghost({ density: $event })" />
+        </div>
+        <div class="test-card-control">
           <span>{{ t('testCard.speed') }}</span>
-          <select class="test-card-select" :value="config.deghost.speed" @change="updateDeghost({ speed: eventNumber($event) as TestCardConfig['deghost']['speed'] })">
-            <option v-for="option in DEGHOST_SPEEDS" :key="option.value" :value="option.value">{{ t(option.labelKey) }}</option>
-          </select>
-        </label>
+          <InlineChoicePicker :label="t('testCard.speed')" :value="config.deghost.speed" :options="deghostSpeedOptions"
+            :disabled="disabled" @change="updateDeghost({ speed: $event })" />
+        </div>
       </div>
     </fieldset>
 
@@ -289,12 +270,9 @@
 
 <script setup lang="ts">
 import type {
-  TestCardAudioSyncRate,
   TestCardBarsColor,
   TestCardBarsLevel,
-  TestCardBarsType,
   TestCardConfig,
-  TestCardRampDirection,
   TestCardRotation,
 } from '../../electron/test-card-config.mjs';
 import {
@@ -429,15 +407,42 @@ const audioDevices = computed(() => {
   }
   return [...uniqueDevices.values()];
 });
+const barsTypeOptions = computed(() => [
+  { value: 'simple', label: t('testCard.simple') },
+  { value: 'smpte', label: 'SMPTE' },
+  { value: 'arib', label: 'ARIB' },
+  { value: 'hdr', label: 'HDR' },
+  { value: 'sdi', label: 'SDI' },
+  { value: 'single', label: t('testCard.single') },
+] as const);
+const barsColorOptions = computed(() => BAR_COLORS.map(value => ({
+  value, label: t(`testCard.barColors.${value.toLowerCase()}`),
+})));
+const rampDirectionOptions = computed(() => [
+  { value: 'Horizontal', label: t('testCard.horizontal') },
+  { value: 'Vertical', label: t('testCard.vertical') },
+  { value: 'Diagonal', label: t('testCard.diagonal') },
+  { value: 'Radial', label: t('testCard.radial') },
+] as const);
+const placeholderIconOptions = computed(() => PLACEHOLDER_ICONS.map(icon => ({
+  value: icon.id, label: t(icon.labelKey),
+})));
+const audioDeviceOptions = computed(() => [
+  { value: 'default', label: t('testCard.programOutput') },
+  ...audioDevices.value.map(device => ({ value: device.display_name, label: device.display_name })),
+]);
+const audioRateOptions = AUDIO_SYNC_RATES.map(value => ({ value, label: String(value) }));
+const deghostDensityOptions = computed(() => DEGHOST_DENSITIES.map(option => ({
+  value: option.value, label: t(option.labelKey),
+})));
+const deghostSpeedOptions = computed(() => DEGHOST_SPEEDS.map(option => ({
+  value: option.value, label: t(option.labelKey),
+})));
 const ledWidth = computed(() => props.config.led.width * props.config.led.columns);
 const ledHeight = computed(() => props.config.led.height * props.config.led.rows);
 
 function eventString(event: Event): string {
-  return (event.target as HTMLInputElement | HTMLSelectElement).value;
-}
-
-function eventNumber(event: Event): number {
-  return Number(eventString(event));
+  return (event.target as HTMLInputElement).value;
 }
 
 function update(patch: Partial<TestCardConfig>): void {
@@ -644,8 +649,7 @@ async function pickImage(files: FileList | undefined, target: ImageTarget): Prom
   accent-color: var(--color-accent);
 }
 .test-card-control input[type='text'],
-.test-card-control input[type='number'],
-.test-card-select {
+.test-card-control input[type='number'] {
   min-width: 0;
   width: 100%;
   height: var(--settings-control-height);

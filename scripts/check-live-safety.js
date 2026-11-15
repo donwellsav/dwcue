@@ -199,7 +199,7 @@ const liveMeters = read('client/app/composables/useLiveMeters.ts');
 const uiMode = read('client/app/composables/useUiMode.ts');
 assert.match(
   waveformTrimmer,
-  /class="normalize-menu"[\s\S]*<summary class="normalize-btn"[\s\S]*properties\.normalize[\s\S]*class="normalize-popover"[\s\S]*v-model="normalizationMode"[\s\S]*value="loudness"[\s\S]*value="truePeak"[\s\S]*v-model\.number\.lazy="normalizationTarget"[\s\S]*type="number"[\s\S]*step="0\.1"[\s\S]*normalizationUnit/,
+  /class="normalize-menu"[\s\S]*<summary class="normalize-btn"[\s\S]*properties\.normalize[\s\S]*class="normalize-popover"[\s\S]*normalizationMode = 'loudness'[\s\S]*normalizationMode = 'truePeak'[\s\S]*v-model\.number\.lazy="normalizationTarget"[\s\S]*type="number"[\s\S]*step="0\.1"[\s\S]*normalizationUnit/,
   'Properties must expose manual loudness matching and peak reduction with editable 0.1-step levels',
 );
 assert.match(
@@ -1692,7 +1692,7 @@ assert.match(
 );
 assert.match(
   spotifyModal,
-  /sourceTypeText[\s\S]*v-model="audioBitrate"[\s\S]*destinationParentPath[\s\S]*cueProcessingSettings/,
+  /sourceTypeText[\s\S]*:value="audioBitrate"[\s\S]*destinationParentPath[\s\S]*cueProcessingSettings/,
   'Spotify imports must disclose their source and let operators edit bitrate, destination, and cue processing',
 );
 assert.match(
@@ -2635,7 +2635,6 @@ assert.match(
   'dialogs must share one backdrop, surface, corner, and elevation system',
 );
 for (const file of [
-  'AboutModal.vue',
   'AudioImportModal.vue',
   'CartHotkeyConfig.vue',
   'ConnectionLostModal.vue',

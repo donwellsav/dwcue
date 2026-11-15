@@ -282,16 +282,10 @@
             </p>
           </div>
           <div class="property-field" :class="{ 'field-disabled': !(audioItem.ltcEnabled ?? false) }">
-            <label for="cue-output-rate">{{ t('properties.ltcFrameRate') }}</label>
-            <select id="cue-output-rate"
-              :value="audioItem.ltcFrameRate ?? 4"
-              :disabled="!(audioItem.ltcEnabled ?? false)"
-              @change="onLtcFrameRateChange"
-            >
-              <option v-for="opt in ltcFrameRateOptions" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
+            <span class="property-label">{{ t('properties.ltcFrameRate') }}</span>
+            <InlineChoicePicker id="cue-output-rate" :label="t('properties.ltcFrameRate')"
+              :value="audioItem.ltcFrameRate ?? 4" :options="ltcFrameRateOptions"
+              :disabled="!audioItem.ltcEnabled" @change="onLtcFrameRateChange" />
           </div>
           <p class="property-help">{{ t(ltcDeviceConfigured ? 'properties.ltcOutputTimecodeHelp' : 'properties.ltcRequiresDevice') }}</p>
         </section>
@@ -634,8 +628,8 @@ const onLtcTimecodeChange = (e: Event) => {
   }
 };
 
-const onLtcFrameRateChange = (e: Event) => {
-  audioItem.value.ltcFrameRate = parseInt((e.target as HTMLSelectElement).value, 10);
+const onLtcFrameRateChange = (value: number) => {
+  audioItem.value.ltcFrameRate = value;
   handleSave();
 };
 const groupItem = computed(() => selectedItem.value as GroupItem);

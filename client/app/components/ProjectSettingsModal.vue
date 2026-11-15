@@ -84,17 +84,11 @@
             <div class="settings-rows">
               <h3 class="settings-section-title">{{ t('settings.cueingSection') }}</h3>
               <section class="settings-field">
-                <label class="settings-label" for="settings-transition">
+                <span class="settings-label">
                   {{ t('settings.transitionMode') }}
-                </label>
-                <select
-                  id="settings-transition" class="settings-select"
-                  :value="defaultTransitionMode"
-                  @change="onDefaultTransitionModeChange"
-                >
-                  <option value="crossfade">{{ t('settings.transitionModeCrossfade') }}</option>
-                  <option value="start-next">{{ t('settings.transitionModeStartNext') }}</option>
-                </select>
+                </span>
+                <InlineChoicePicker id="settings-transition" :label="t('settings.transitionMode')"
+                  :value="defaultTransitionMode" :options="transitionModeOptions" @change="onDefaultTransitionModeChange" />
                 <p class="settings-help">{{ t('settings.transitionModeHelp') }}</p>
               </section>
               <section class="settings-field">
@@ -184,23 +178,11 @@
                 <output for="ui-font-scale">{{ uiFontScale }}%</output>
               </section>
               <section class="settings-field">
-                <label class="settings-label" for="app-language">
+                <span class="settings-label">
                   {{ t('menu.language') }}
-                </label>
-                <select
-                  id="app-language"
-                  class="settings-select"
-                  :value="currentLocale"
-                  @change="onLocaleChange"
-                >
-                  <option
-                    v-for="locale in availableLocales"
-                    :key="locale.code"
-                    :value="locale.code"
-                  >
-                    {{ locale.name }}
-                  </option>
-                </select>
+                </span>
+                <InlineChoicePicker id="app-language" :label="t('menu.language')"
+                  :value="currentLocale" :options="localeOptions" @change="onLocaleChange" />
               </section>
               <section class="settings-field">
                 <label class="settings-label" for="settings-index-start">
@@ -224,35 +206,18 @@
               </section>
               <h3 class="settings-section-title">{{ t('settings.metersSection') }}</h3>
               <section class="settings-field">
-                <label class="settings-label" for="settings-meter-display">
+                <span class="settings-label">
                   {{ t('settings.meterMode') }}
-                </label>
-                <select
-                  id="settings-meter-display" class="settings-select"
-                  :value="meterMode"
-                  @change="onMeterModeChange"
-                >
-                  <option value="LUFS">{{ t('settings.meterModeLufs') }}</option>
-                  <option value="dBFS">{{ t('settings.meterModeDbfs') }}</option>
-                  <option value="dBTP">{{ t('settings.meterModeDbtp') }}</option>
-                  <option value="RMS">{{ t('settings.meterModeRms') }}</option>
-                </select>
+                </span>
+                <InlineChoicePicker id="settings-meter-display" :label="t('settings.meterMode')"
+                  :value="meterMode" :options="meterModeOptions" @change="onMeterModeChange" />
               </section>
               <section class="settings-field">
-                <label class="settings-label" for="settings-meter-ballistics">
+                <span class="settings-label">
                   {{ t('settings.meterBallistics') }}
-                </label>
-                <select
-                  id="settings-meter-ballistics" class="settings-select"
-                  :value="meterBallistics"
-                  @change="onMeterBallisticsChange"
-                >
-                  <option value="digital-ppm">{{ t('settings.meterBallisticsDigitalPpm') }}</option>
-                  <option value="ppm-i">{{ t('settings.meterBallisticsPpmI') }}</option>
-                  <option value="ppm-ii">{{ t('settings.meterBallisticsPpmII') }}</option>
-                  <option value="vu">{{ t('settings.meterBallisticsVu') }}</option>
-                  <option value="instant">{{ t('settings.meterBallisticsInstant') }}</option>
-                </select>
+                </span>
+                <InlineChoicePicker id="settings-meter-ballistics" :label="t('settings.meterBallistics')"
+                  :value="meterBallistics" :options="meterBallisticsOptions" @change="onMeterBallisticsChange" />
               </section>
             </div>
             <div class="settings-rows">
@@ -598,26 +563,16 @@
               </section>
               <template v-if="voStatus">
                 <section class="settings-field video-capture">
-                  <label for="capture-display" class="settings-label">{{ t('standbyCapture.display') }}</label>
-                  <select id="capture-display" class="settings-select" :value="voStatus.captureDisplayId ?? ''"
-                    :disabled="captureSettingsPending || standbyCapturePending"
-                    @change="onCaptureSettingsChange($event, 'display')">
-                    <option value="">{{ t('standbyCapture.chooseDisplay') }}</option>
-                    <option v-if="voStatus.captureDisplayId && !voDisplays.some(d => d.id === voStatus?.captureDisplayId)"
-                      :value="voStatus.captureDisplayId" disabled>{{ t('standbyCapture.missingDisplay') }}</option>
-                    <option v-for="d in voDisplays" :key="d.id" :value="d.id">
-                      {{ d.index }} · {{ d.label }} ({{ d.width }} × {{ d.height }})
-                    </option>
-                  </select>
+                  <span class="settings-label">{{ t('standbyCapture.display') }}</span>
+                  <InlineChoicePicker id="capture-display" :label="t('standbyCapture.display')"
+                  :value="voStatus.captureDisplayId ?? ''" :options="captureDisplayOptions"
+                  :disabled="captureSettingsPending || standbyCapturePending" @change="onCaptureSettingsChange($event, 'display')" />
                 </section>
                 <section class="settings-field video-capture">
-                  <label for="capture-destination" class="settings-label">{{ t('standbyCapture.destination') }}</label>
-                  <select id="capture-destination" class="settings-select" :value="voStatus.captureTarget ?? 'session'"
-                    :disabled="captureSettingsPending || standbyCapturePending"
-                    @change="onCaptureSettingsChange($event, 'target')">
-                    <option value="session">{{ t('standbyCapture.session') }}</option>
-                    <option value="cue">{{ t('standbyCapture.cue') }}</option>
-                  </select>
+                  <span class="settings-label">{{ t('standbyCapture.destination') }}</span>
+                  <InlineChoicePicker id="capture-destination" :label="t('standbyCapture.destination')"
+                  :value="voStatus.captureTarget ?? 'session'" :options="captureTargetOptions"
+                  :disabled="captureSettingsPending || standbyCapturePending" @change="onCaptureSettingsChange($event, 'target')" />
                 </section>
               </template>
               <section v-if="voStatus" class="settings-field">
@@ -745,8 +700,7 @@ const openExternal = (url: string) => {
 const canOpenOperatorManual = import.meta.client && typeof window.electronAPI?.openOperatorManual === 'function';
 const openOperatorManual = () => { void window.electronAPI.openOperatorManual(); };
 
-const onLocaleChange = (event: Event) => {
-  const locale = (event.target as HTMLSelectElement).value;
+const onLocaleChange = (locale: string) => {
   setLocale(locale);
   if (window.electronAPI?.updateMenuLanguage) {
     void window.electronAPI.updateMenuLanguage(locale);
@@ -820,6 +774,24 @@ const audioDeviceOptions = computed(() => {
   }]));
   return [{ value: '', label: t('settings.noneSelected') }, ...options.values()];
 });
+const localeOptions = computed(() => availableLocales.value.map(locale => ({ value: locale.code, label: locale.name })));
+const transitionModeOptions = computed(() => [
+  { value: 'crossfade', label: t('settings.transitionModeCrossfade') },
+  { value: 'start-next', label: t('settings.transitionModeStartNext') },
+] as const);
+const meterModeOptions = computed(() => [
+  { value: 'LUFS', label: t('settings.meterModeLufs') },
+  { value: 'dBFS', label: t('settings.meterModeDbfs') },
+  { value: 'dBTP', label: t('settings.meterModeDbtp') },
+  { value: 'RMS', label: t('settings.meterModeRms') },
+] as const);
+const meterBallisticsOptions = computed(() => [
+  { value: 'digital-ppm', label: t('settings.meterBallisticsDigitalPpm') },
+  { value: 'ppm-i', label: t('settings.meterBallisticsPpmI') },
+  { value: 'ppm-ii', label: t('settings.meterBallisticsPpmII') },
+  { value: 'vu', label: t('settings.meterBallisticsVu') },
+  { value: 'instant', label: t('settings.meterBallisticsInstant') },
+] as const);
 const outputTargetOptions = computed(() => [
   { value: 'ebu-r128', label: t('settings.outputTargetEbuR128') },
   { value: 'streaming', label: t('settings.outputTargetStreaming') },
@@ -956,6 +928,24 @@ const voDisplayOptions = computed(() => [
     label: `${d.index} — ${d.label} — ${d.width}×${d.height}${d.primary ? ` (${t('common.default')})` : ''}`,
   })),
 ]);
+const captureDisplayOptions = computed(() => {
+  const selected = voStatus.value?.captureDisplayId;
+  const missing = selected && !voDisplays.value.some(display => display.id === selected)
+    ? [{ value: selected, label: t('standbyCapture.missingDisplay'), disabled: true }]
+    : [];
+  return [
+    { value: '', label: t('standbyCapture.chooseDisplay') },
+    ...missing,
+    ...voDisplays.value.map(display => ({
+      value: display.id,
+      label: `${display.index} · ${display.label} (${display.width} × ${display.height})`,
+    })),
+  ];
+});
+const captureTargetOptions = computed(() => [
+  { value: 'session', label: t('standbyCapture.session') },
+  { value: 'cue', label: t('standbyCapture.cue') },
+] as const);
 const voFramePresetOptions = computed(() => [
   ...VIDEO_FRAME_PRESETS.map(preset => ({
     value: preset.id, label: `${t(`settings.videoFraming.${preset.id}`)} · ${preset.width}×${preset.height}`,
@@ -1054,19 +1044,17 @@ async function onVideoOutputDisplayChange(value: string) {
   }
 }
 
-async function onCaptureSettingsChange(event: Event, field: 'display' | 'target') {
-  const input = event.target as HTMLSelectElement;
+async function onCaptureSettingsChange(value: string, field: 'display' | 'target') {
   const api = window.electronAPI?.videoOutput;
   const status = voStatus.value;
   if (!api?.setCaptureSettings || !status) return;
-  const display = field === 'display' ? input.value || null : status.captureDisplayId;
-  const target = field === 'target' ? (input.value === 'cue' ? 'cue' : 'session') : status.captureTarget;
+  const display = field === 'display' ? value || null : status.captureDisplayId;
+  const target = field === 'target' ? (value === 'cue' ? 'cue' : 'session') : status.captureTarget;
   captureSettingsPending.value = true;
   settingsError.value = '';
   try {
     receiveVideoOutputStatus(await api.setCaptureSettings(display, target));
   } catch (error) {
-    input.value = field === 'display' ? status.captureDisplayId ?? '' : status.captureTarget;
     settingsError.value = describeSettingsError(error);
   } finally {
     captureSettingsPending.value = false;
@@ -1367,13 +1355,11 @@ async function onLtcDeviceChange(v: string) {
 async function onOutputTargetChange(v: string) {
   await applyPatch({ outputTarget: v });
 }
-async function onMeterModeChange(e: Event) {
-  const v = (e.target as HTMLSelectElement).value;
-  await applyPatch({ meterMode: v });
+async function onMeterModeChange(value: string) {
+  await applyPatch({ meterMode: value });
 }
-async function onMeterBallisticsChange(e: Event) {
-  const v = (e.target as HTMLSelectElement).value;
-  await applyPatch({ meterBallistics: v });
+async function onMeterBallisticsChange(value: string) {
+  await applyPatch({ meterBallistics: value });
 }
 async function onCycleTrackColorsChange(e: Event) {
   await applyPatch({ cycleTrackColors: (e.target as HTMLInputElement).checked });
@@ -1384,8 +1370,8 @@ async function onDisableLimiterChange(e: Event) {
 async function onDisableSilenceWarningChange(e: Event) {
   await applyPatch({ disableSilenceWarning: (e.target as HTMLInputElement).checked });
 }
-async function onDefaultTransitionModeChange(e: Event) {
-  await applyPatch({ defaultTransitionMode: (e.target as HTMLSelectElement).value });
+async function onDefaultTransitionModeChange(value: string) {
+  await applyPatch({ defaultTransitionMode: value });
 }
 async function onIndexDisplayStartChange(e: Event) {
   const input = e.target as HTMLInputElement;
@@ -1677,7 +1663,7 @@ function close() {
 
 .settings-rows > .test-card-heading + .settings-field { border-top: 0; }
 
-.settings-rows > .settings-field:has(> :is(.settings-select, .settings-input, .inline-choice-picker)) {
+.settings-rows > .settings-field:has(> :is(.settings-input, .inline-choice-picker)) {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 45%);
   column-gap: var(--spacing-sm);
@@ -1702,7 +1688,7 @@ function close() {
 
 .settings-field > .settings-help { grid-column: 1 / -1; }
 
-.settings-content--playback .settings-field > :is(.settings-input, .settings-select, .inline-choice-picker:not([open])) {
+.settings-content--playback .settings-field > :is(.settings-input, .inline-choice-picker:not([open])) {
   max-width: 180px;
   justify-self: end;
 }
@@ -1796,7 +1782,6 @@ function close() {
   color: var(--color-text-primary);
   font-weight: 600;
 }
-.settings-select,
 .settings-input {
   width: 100%;
   min-width: 0;
@@ -1808,7 +1793,6 @@ function close() {
   border-radius: var(--control-radius);
   font-size: 13px;
 }
-.settings-select:focus,
 .settings-input:focus {
   outline: none;
   border-color: var(--color-accent);
