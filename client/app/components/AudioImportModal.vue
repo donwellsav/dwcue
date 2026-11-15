@@ -19,7 +19,7 @@
         <!-- Source mode toggle. Only rendered when the server is on a
              different machine; otherwise "upload" makes no sense and we
              skip the tabs entirely. -->
-        <div v-if="!server.isLocalServer" v-show="!docked || !busy" class="tabs">
+        <div v-if="!singleFile && !server.isLocalServer" v-show="!docked || !busy" class="tabs">
           <button type="button" class="tab" :class="{ active: tab === 'upload' }"
             :aria-pressed="tab === 'upload'" @click="tab = 'upload'">
             {{ t('importProject.fromThisComputer') }}
@@ -34,7 +34,13 @@
         <!-- Local installs lead with the native picker. Server browsing stays
              available without making operators navigate a filesystem first. -->
         <section v-if="tab === 'server'" class="pane">
-          <template v-if="server.isLocalServer && hasElectron">
+          <template v-if="singleFile">
+            <ServerFilePickerModal docked :open="open" :filter="mediaAccept" :filter-options="[]"
+              :fallback-start-path="projectStartPath" location-context="quickplay-import"
+              :confirm-label="t('importAudio.importSelected')" @pick="onServerPick([$event])" @close="close" />
+            <p v-if="!server.isLocalServer" class="hint">{{ t('oneShots.hint') }}</p>
+          </template>
+          <template v-else-if="server.isLocalServer && hasElectron">
             <div class="row">
               <button type="button" class="btn" :disabled="pickingLocal || busy" @click="pickLocal()">
                 <span class="material-symbols-rounded" aria-hidden="true">audio_file</span>
@@ -128,7 +134,7 @@
             </li>
           </ul>
         </section>
-        <p class="hint">{{ t('importAudio.preserveAudio') }}</p>
+        <p v-if="!singleFile" class="hint">{{ t('importAudio.preserveAudio') }}</p>
         </div>
 
         <component v-show="!docked || !busy" :is="docked ? 'section' : 'details'" class="import-advanced">
@@ -162,7 +168,7 @@
               <div>
                 <dt>{{ t('importAudio.processing') }}</dt>
                 <dd class="settings-summary">
-                  <span class="setting-pill">
+                  <span v-if="!singleFile" class="setting-pill">
                     {{ t('importAudio.playlistTransition') }} {{ transitionLabel }}
                   </span>
                   <span v-for="setting in importSettings" :key="setting.label" class="setting-pill">
@@ -227,6 +233,7 @@
 import { computed, ref, watch } from 'vue';
 import { useLiveplayServer } from '~/composables/useLiveplayServer';
 import ServerFileBrowser from '~/components/ServerFileBrowser.vue';
+import ServerFilePickerModal from '~/components/ServerFilePickerModal.vue';
 
 type FileMode = 'copy' | 'link';
 type DuplicatePolicy = 'reuse' | 'skip' | 'keep';
@@ -256,6 +263,7 @@ const props = defineProps<{
   open: boolean;
   docked?: boolean;
   visible?: boolean;
+  singleFile?: boolean;
   busy?: boolean;
   result?: ImportResult | null;
   progress?: { current: number; total: number; name: string } | null;
@@ -272,13 +280,13 @@ const { t }  = useLocalization();
 
 // Local Electron uses the server tab shell for its native picker; remote
 // clients lead with upload and can switch to the server browser.
-const tab = ref<'server' | 'upload'>(server.isLocalServer ? 'server' : 'upload');
+const tab = ref<'server' | 'upload'>(props.singleFile || server.isLocalServer ? 'server' : 'upload');
 const fileMode = ref<FileMode>('copy');
 const duplicatePolicy = ref<DuplicatePolicy>('reuse');
 
 watch(() => props.open, (open) => {
   if (!open) return;
-  tab.value = server.isLocalServer ? 'server' : 'upload';
+  tab.value = props.singleFile || server.isLocalServer ? 'server' : 'upload';
   fileMode.value = 'copy';
   duplicatePolicy.value = 'reuse';
 });
@@ -835,6 +843,7 @@ function formatBytes(n: number): string {
   .import-options select { min-height: var(--settings-control-height); }
   .import-plan { padding-top: var(--spacing-xs); }
   .pane, .import-source, .plan-grid { gap: var(--spacing-xs); }
+  .pane :deep(.picker-dock) { flex-basis: clamp(174px, 28vh, 235px); }
   .pane > p { margin: 0; }
   .import-progress, .import-results { grid-column: 1 / -1; }
   .import-progress .btn { flex-shrink: 0; }

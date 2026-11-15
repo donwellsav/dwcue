@@ -148,14 +148,17 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
   const projectLoad = { value: null as 'open' | 'create' | null };
   const projectPanelOpen = { value: false };
   const imagePicker = { value: null as 'cue' | 'standby' | null };
+  const quickPlayImportSlot = { value: null as number | null };
   const server = {
     connected: true, connectionLost: false, showVerification: false,
     get cueStartsBlocked() { return this.connectionLost || this.showVerification || sessionLost.value || projectLoad.value === 'open'; },
     stopAll: (...args: unknown[]) => calls.push(args),
   };
   const currentProject = { value: { playbackKeys: {} as Record<string, unknown> } };
-  const trap = Function('server', 'projectLoad', 'projectPanelOpen', 'imagePicker', 'currentProject', 'DEFAULT_PLAYBACK_KEYS', 'bindingsMatch', 'eventToBinding',
-    `${code}\nreturn trapKeydown;`)(server, projectLoad, projectPanelOpen, imagePicker, currentProject, DEFAULT_PLAYBACK_KEYS, bindingsMatch, eventToBinding);
+  const trap = Function('server', 'projectLoad', 'projectPanelOpen', 'imagePicker', 'quickPlayImportSlot',
+    'currentProject', 'DEFAULT_PLAYBACK_KEYS', 'bindingsMatch', 'eventToBinding', `${code}\nreturn trapKeydown;`)(
+    server, projectLoad, projectPanelOpen, imagePicker, quickPlayImportSlot, currentProject,
+    DEFAULT_PLAYBACK_KEYS, bindingsMatch, eventToBinding);
   const press = (key: string, opts = {}) => {
     let swallowed = false;
     trap({ key, target: { closest: () => null }, ctrlKey: false, metaKey: false, shiftKey: false,
@@ -239,6 +242,16 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
   imagePicker.value = null;
   assert.equal(press('Escape', { target: editor }), false, 'the picker fallback ends on close');
   assert.deepEqual(calls.slice(10), [[], []]);
+
+  quickPlayImportSlot.value = 0;
+  assert.equal(press('Escape', { target: editor }), true, 'QuickPlay slot 1 also routes Escape to Stop All');
+  assert.equal(press('Escape', { target: editor, repeat: true }), true);
+  assert.equal(quickPlayImportSlot.value, 0, 'Stop All leaves QuickPlay import open');
+  assert.equal(press(' '), false, 'QuickPlay import leaves GO available');
+  assert.equal(press('Enter', { target: editor }), false, 'Enter still reaches the folder field');
+  quickPlayImportSlot.value = null;
+  assert.equal(press('Escape', { target: editor }), false, 'closing the import restores the normal mapping');
+  assert.deepEqual(calls.slice(12), [[]]);
 });
 
 function loadHandleKeydown(dependencies: Record<string, unknown>) {

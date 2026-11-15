@@ -272,6 +272,7 @@ const server = useLiveplayServer();
 const { uiMode, uiFontScale, regularPlaylistRowHeight, showPlaylistRowHeight, folderPlaylistRowHeight } = useUiMode();
 const { levels: outputTargetLevels } = useOutputTarget();
 const showProjectSettings = useState('showProjectSettings', () => false);
+const quickPlayImportSlot = useState<number | null>('quickPlayImportSlot', () => null);
 const visibleImportPanel = computed(() => {
   const panel = workspaceImportPanel.value;
   if (panel === 'delete-selection') return !showProjectSettings.value && pendingDelete.value ? panel : null;
@@ -285,7 +286,8 @@ const importPanelTitle = computed(() => {
   if (visibleImportPanel.value === 'archive-export') return t('exportProject.chooseLocationTitle');
   if (visibleImportPanel.value === 'delete-selection') return t('deleteSelection.title');
   if (visibleImportPanel.value === 'quickplay') return t(quickPlayEditor.value?.remove
-    ? 'oneShots.removeConfirmTitle' : quickPlayEditor.value ? 'oneShots.settings' : 'importAudio.title');
+    ? 'oneShots.removeConfirmTitle' : quickPlayEditor.value ? 'oneShots.settings' : 'oneShots.importInto',
+    { number: (quickPlayImportSlot.value ?? 0) + 1 });
   return '';
 });
 function closeImportPanel() {

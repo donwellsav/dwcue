@@ -1292,7 +1292,12 @@ assert.match(
 assert.match(
   audioImportModal,
   /\.modal\s*\{[\s\S]{0,140}max-height:\s*calc\(100vh - 32px\);[\s\S]{0,60}overflow-y:\s*auto;/,
-  'the audio import header and close control must remain reachable in the detached cart window',
+  'the standalone audio import header and close control must remain reachable',
+);
+assert.match(
+  audioImportModal,
+  /v-if="singleFile">\s*<ServerFilePickerModal docked[\s\S]*?@pick="onServerPick\(\[\$event\]\)"[\s\S]*?<template v-else-if="server\.isLocalServer && hasElectron">/,
+  'single-file import must browse in the dock instead of opening the native chooser',
 );
 assert.match(
   audioImportModal,
@@ -1818,6 +1823,11 @@ assert.match(
   oneShotTile,
   /v-if="!showMode"[\s\S]*class="one-shot-control one-shot-remove"[\s\S]*<Teleport defer :to="[^"]*#workspace-import-host[^"]*">[\s\S]*v-if="menuOpen"\s*class="quickplay-settings"[\s\S]*v-if="removeOpen"\s*class="quickplay-remove"[\s\S]*@click="confirmRemove"/,
   'QuickPlay settings and the edit-mode removal confirmation must share the nonmodal dock',
+);
+assert.match(
+  oneShotPanel,
+  /defer :to="isDetachedWindow \? '#detached-quickplay-dock' : '#workspace-import-host'"[\s\S]*?<AudioImportModal :key="importSlot" docked single-file/,
+  'QuickPlay import must use the single-file dock in either window',
 );
 assert.match(
   propertiesPanel,
