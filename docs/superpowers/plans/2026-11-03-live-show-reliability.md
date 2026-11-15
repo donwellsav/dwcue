@@ -449,7 +449,9 @@ Primary driver reference: [miniaudio's low-level documentation](https://miniaud.
 
 ### Remaining work, in order
 
-1. **T48d — project file I/O and direct cue registration.** Explicit project-file Open/Save can still retain project-operation ownership during disk access. Direct cue registration also canonicalizes existing paths under the document mutex. Test those entry points separately, preserving save ordering and refusing a late Open when another show has taken ownership.
+- [x] **T48d — project file I/O and direct cue registration.** Open reads and prepares the show before taking switch ownership; it checks the original session and deadline before committing (`9c3d761`). Saves serialize snapshots and writes separately from show control (`c4ee00f`, `7c233a9`). Direct cue registration compares canonical paths without holding the document lock and rechecks ownership before reusing or publishing a cue (`7c233a9`). Held-read and held-path tests verify Stop All, switching shows, editing, save order, and rejection of stale operations.
+
+Remaining validation is T24 on the actual PA, displays and media. A stalled OS write still delays later saves, and an already admitted atomic write may finish at its captured path after a show switch. Native operations and hardware are not forcibly canceled by these changes.
 
 A blocked miniaudio init or uninit can hold new device initialization until the driver returns. Competing cold requests have a bounded wait, and ready routes stay available. The current software checks cover this distinction and separate hardware Start calls. [miniaudio 0.11.25](https://github.com/mackron/miniaudio/blob/0.11.25/miniaudio.h)
 
@@ -466,3 +468,7 @@ In-flight native calls own their resources for the life of the process. Managed 
 - [x] Keep the shortcut reference on one line. Verify Space and Escape during playback with Settings → Shortcuts open (`d6f47fd`).
 - [x] Locate Up Next opens folded ancestors temporarily and scrolls to the queued cue. Verify pointer and keyboard operation, selection and arm preservation, pending and idle states, and the short playlist with Settings maximized (`062ff49`).
 - [x] Keep the playlist toolbar reachable when the action area narrows. Verify Shuffle, docked Import Media, and full labels on a wider panel (`74811e4`).
+- [x] Protect Stop All in editing fields, including limiter and Preview In/Out (`7229cc8`).
+- [x] Dock playlist delete confirmation and keep the original targets when the operator changes the selection (`a73de33`).
+- [x] Keep readable files after a failed subfolder scan and name the skipped paths (`582a5ee`).
+- [x] Tighten Media, Spotify, YouTube, and archive status layouts. Verify selection, retries, visible progress, GO and Stop All in software (`89d574e`).

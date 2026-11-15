@@ -1,8 +1,8 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** f0d836f90d4757805aac94a6a0441f9064ac0d6a
-**Native engine baseline:** 9b97613
+**Source revision:** 89d574e9ddc709e54f286e134416b7b189528947
+**Native engine baseline:** 7c233a9
 **Edition:** 14 November 2026 · English · Operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
@@ -124,6 +124,8 @@ Use Edit Mode to import, organize, and configure the show. The top bar contains 
 
 The cue row provides **Set As Next**, **Preview**, **Play**, **Edit**, and **Delete** controls in Edit Mode. Hover for the current tooltip rather than relying on icon shape alone. **Play** fires a cue directly; **Set As Next** requests a manual GO override without playing it. The displayed target changes only after the engine acknowledges the request; a refusal or lost connection leaves the prior target authoritative. The **Edit** control opens **Properties**, with **Basic Info**, **Playback**, and **Output** tabs.
 
+The cue row's **Delete** button and a bulk keyboard delete open **Delete Items** in the lower panel. Check the cue name or selection count before confirming. Changing the selection leaves the original confirmation targets intact. The playlist, GO, and Stop All remain available. A single selected cue can still be removed directly with the Delete key.
+
 An empty QuickPlays bank is collapsed by default. Press **Q** or choose **Show QuickPlays** to reveal it. Assigning a cell can reveal the bank automatically unless you have explicitly chosen its visibility. Playback and shortcut assignments stay active when the bank is collapsed. On a narrow workspace, the bank and playlist share the available width.
 
 On narrow playlists, cue names appear above the row controls and the toolbar uses icons. Hover over an icon for its label when tooltips are enabled. The header can show the full silence countdown alongside a notice.
@@ -159,7 +161,9 @@ Accepted GO consumes an override and refused GO retains it. Check readiness, err
 
 Open **Import Media** from the playlist to use the lower panel. **Choose files…** stages individual items. **Choose folder…** stages supported audio and video from the folder and its subfolders in filename order. Review the list, use **Select all** or **Select none** to adjust the batch, and choose **Import selected**. Turn on **Import as group** to put those cues in one playlist group named for the folder.
 
-The **Import plan** shows file handling and duplicate settings beside the selection. Expand **Browse Server** for media already on the engine computer. When connected to a remote engine, choose **From This Computer** or **Browse Server** along the bottom of the panel.
+If a subfolder cannot be read, its relative path appears in a warning. The readable files remain available to import. Restore access and select the skipped subfolder separately if the show needs its files.
+
+The **Import plan** shows file handling and duplicate settings beside the selection. Use **Browse Server** next to the file and folder buttons for media already on the engine computer. When connected to a remote engine, choose **From This Computer** or **Browse Server** along the bottom of the panel.
 
 The desktop media chooser opens in a separate window. Bring the operator window forward to use the playlist, GO, and **Stop All Cues** while the chooser remains open. Other in-app file and folder dialogs provide **Stop All Cues** in their toolbars. Stopping cues uses the show’s configured fade and keeps the file selection open.
 
@@ -171,7 +175,9 @@ In **Browse Server**, double-click a folder to open it. Use **Select all** to st
 
 Remote operation separates the two computers: **From This Computer** transfers files from the controller, while **Browse Server** selects files already accessible to the engine. Do not enter a controller-only path into the server browser and expect it to exist remotely.
 
-The panel shows the current file, batch count, and **Cancel import** during verification. If an individual file fails to upload, the remaining uploads continue. Review the failed filenames and use **Retry Failed** for those files. Retrying a group batch puts newly verified files in the same group. Reopen **Import Media** to return to the results for this show.
+During verification, the panel shows the current file, a progress bar, and **Cancel import**. If an individual file fails to upload, the remaining uploads continue. Review the failed filenames and use **Retry Failed** for those files. Retrying a group batch puts newly verified files in the same group. Reopen **Import Media** to return to the results for this show.
+
+![Verification progress with its own Cancel import action.](manual-assets/import-progress.png)
 
 ### Copy or link deliberately
 
@@ -213,12 +219,12 @@ YouTube and Spotify import controls are available in Edit Mode. They depend on e
 
 **Import from YouTube** and **Spotify** open in the lower panel. Close the panel or switch to Settings or Properties to make room for the playlist during a job. Reopen the same import to check its progress, results, or retry actions. Use the job’s **Cancel** button to stop the import. **Stop All Cues** controls playback independently.
 
-Paste a Spotify link or short share link, then choose **Review tracks** to retrieve usable tracks in playlist order. The review reports entries skipped because their Spotify track IDs are missing or invalid. Large playlists can take several minutes to review. The track list scrolls beside the download controls. Use **Change Link** to return to the URL field. During a download, the panel shows the current phase, count, and **Cancel**. Resolve unavailable, unmatched or failed entries before taking the cues. **Technical details** shows the downloader's message if review fails.
+Paste a Spotify link or short share link, then choose **Review tracks** to retrieve usable tracks in playlist order. The review counts entries with missing or invalid Spotify track IDs. Large playlists can take several minutes to review. Use **Select all** or **Select none** above the track list, then **Download & Add** below it. Use **Change Link** to return to the URL field. During a download, the panel shows the current phase, count, and **Cancel**. Resolve unavailable, unmatched or failed entries before taking the cues. **Technical details** shows the downloader's message if review fails.
 
 The app normally saves the Spotify destination and retry information. If it warns that it could not save them, you can continue with the selected folder and retry within the current app session. Restore write access before relying on that information after restarting the app. If cue setup settings reach the engine but cannot be saved, they stay active. Correct the storage problem and save again.
 
 
-The YouTube download queue shows each item's phase, progress, and actions. Completed items stay in the queue with **Open Folder** until dismissed or the show changes. Cancelling during tool preparation prevents the downloader from starting afterward. Tool or media-folder failures report an error so you can correct the cause and retry.
+The YouTube download queue appears above search while it has jobs. Each row shows the file, phase, progress, and actions. Completed items stay in the queue with **Open Folder** until dismissed or the show changes. Cancelling during tool preparation prevents the downloader from starting afterward. Tool or media-folder failures report an error so you can correct the cause and retry.
 
 ## 5. Build cues and transitions
 
@@ -721,7 +727,7 @@ A failed autosave or manual save leaves **Save failed** and **Retry** in the hea
 - Wait for the indicator to clear, verify the intended show file, and make a separate copy. Later edits follow the current Autosave preference.
 - If saving still fails, preserve the running session and use a writable destination without overwriting a known-good show.
 
-Saving is serialized: each save captures one consistent document and destination, publishes through a unique sibling temporary file, and leaves newer pending edits dirty until their own save succeeds. A failed Save As does not change the project's identity or path. A late response from an older project, detached window, or older edit cannot clear or mutate the current project. Closing a project clears its identity and destination path; a blank welcome screen is not an invitation to overwrite the previous show.
+Saves run in order. Each captures one document and destination, then writes through a sibling temporary file before atomically replacing the saved show. Slow storage can delay a save or another save behind it. GO and Stop All remain available while the write waits. A failed Save As leaves the active path unchanged. If another controller switches shows during a write, the old save cannot change the new show's path or clear its pending edits. Wait for a save to finish before opening the file you just saved.
 
 The server makes background copies of the existing disk project every 10 minutes into a **backups** folder beside it, retaining at most 20. Those are project-file backups, not full media packages, and they cannot capture unsaved edits that never reached disk. Keep a separate known-good full-show copy as well.
 
@@ -751,7 +757,7 @@ If the engine accepts a repaired document, the cue list loads and **Show opened 
 
 **File → Open Project** lets you browse while the current show plays. Canceling the picker or selecting an unavailable or invalid file leaves that show playing. The same applies if **Open Recent** cannot load its file. A successful load, including reopening the same file, clears the previous selection and armed override. The first playable cue is armed when the project’s automatic-cue option allows it. Confirm Play Next before GO.
 
-If Open expires before the engine accepts the switch, the current show keeps playing. If the connection drops before the reply arrives, wait for the controller to verify which show the engine has active before pressing GO. Update older remote engines before using Open from this controller.
+If Open expires or another controller opens a different show while the first file is still being read, the late Open cannot take over. If the connection drops before the reply arrives, wait for the controller to verify which show the engine has active before pressing GO. Update older remote engines before using Open from this controller.
 
 While Open is waiting, use **Stop All Cues** in the loading panel or press the configured Stop All shortcut. Playback uses the current show's Stop All fade and the Open request continues waiting for its result.
 
@@ -986,7 +992,7 @@ These are source defaults, not a promise about a project's customized assignment
 | Cmd/Ctrl+Q | Exit / quit workflow |
 | F11 | Fullscreen |
 
-With Video Output focused, Escape also exits its fullscreen mode. In Level Check, R / [ / ] / Q have the temporary meanings described in chapter 12. MIDI bindings belong to the machine; keyboard playback assignments belong to the project.
+The default **Escape** Stop All shortcut works while editing, including in the limiter ceiling and Preview In/Out fields. With Video Output focused, Escape also exits its fullscreen mode. In Level Check, R / [ / ] / Q have the temporary meanings described in chapter 12. MIDI bindings belong to the machine; keyboard playback assignments belong to the project.
 
 ### Operating boundaries
 
@@ -1001,6 +1007,8 @@ With Video Output focused, Escape also exits its fullscreen mode. In Level Check
 ### About this edition
 
 This development edition covers the current source after the **2.6.23** release. The interface captures use generated media, a software audio output, and fixture display, MIDI and locale methods. Each capture's source revision is recorded in **docs/manual-assets/captures.json**.
+
+This edition passed 13 native suites, 74 API checks, client checks, type checking, and renderer generation. Held storage tests exercised late Open, Save ordering, and direct cue registration. Chromium exercised Stop All during field editing, deletion, and imports with a software output and simulated online providers.
 
 The playback checkpoint **2f372c2** passed native 13/13, isolated API 61/61, client 229/229, typecheck and RT/live safety checks. Audio-output and project-runtime suites also pass AddressSanitizer; leak detection is disabled. Native checks include six simulated ten-minute secondary-clock runs with continuous generated audio and no buffer faults or resyncs inside the tested envelope. Physical alignment and the earlier intermittency remain unproven; more extreme drift/jitter can trigger recovery.
 

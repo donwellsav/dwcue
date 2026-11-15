@@ -581,3 +581,11 @@ The visible name changed in `22e72d2`, the shifted defaults in `bf196c6`, and th
 The application checkpoint passed all 13 native suites, 72 isolated API checks, 271 client checks, typecheck, and production renderer generation. The operator manual and affected screenshots describe this development build.
 
 `206d69b` makes the follow target visible in the playlist and gives GO readable waiting and idle labels. An isolated renderer check held the cue change confirmation, confirmed Stop All stayed enabled, and exercised GO and Stop All in Show Mode with Settings open at 1200 × 700 and 110% text size. Typecheck, renderer generation, and live safety checks passed.
+
+## 14 November — Operator blockers and import panels
+
+The Escape check stopped native software playback from the limiter field and a Preview edit (`7229cc8`). A lower delete confirmation left GO and both Stop All paths reachable and retained the original selection (`a73de33`). A denied child folder left readable media staged, with the skipped path visible and group import and retry still working (`582a5ee`).
+
+T48d reproduced lockups with a held project-file read and held filesystem probes. Open keeps the original session and deadline (`9c3d761`). Save keeps its own writer order and gives up show ownership during disk I/O (`c4ee00f`); concurrent Save As calls for the same show retain separate snapshots, while direct cue registration verifies the session after its unlocked path comparison (`7c233a9`). Native 13/13 and API 74/74 passed with software audio. The tests do not cancel OS storage waits.
+
+The import panel review used 1200 × 700 and 845 × 690 Chromium viewports at 110% text with simulated providers and the NULL playback device. Media staging, Spotify selection and Cancel, YouTube progress and completion, GO, and Escape passed. Client checks, type checking, and production renderer generation passed (`89d574e`). Updated the manual and affected captures. Physical PA and HDMI acceptance remains deferred.

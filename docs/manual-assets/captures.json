@@ -1,8 +1,8 @@
 {
   "application": "DonWells Cue",
-  "sourceRevision": "f0d836f90d4757805aac94a6a0441f9064ac0d6a",
+  "sourceRevision": "89d574e9ddc709e54f286e134416b7b189528947",
   "packageVersion": "2.6.23 development",
-  "edition": "14 November 2026 development review of the lower panels, folder import, and small-window playlist controls",
+  "edition": "14 November 2026 development review of operator controls and import panels",
   "images": [
     {
       "file": "music-continuity-current.png",
@@ -110,15 +110,15 @@
       "file": "import-media.png",
       "view": "Lower Import Media panel with separate file and folder pickers.",
       "version": "2.6.23 development",
-      "sourceRevision": "f0d836f90d4757805aac94a6a0441f9064ac0d6a",
-      "nativeSourceRevision": "9b976139d3524a330299e6c19dcae47a48e34b29",
+      "sourceRevision": "89d574e9ddc709e54f286e134416b7b189528947",
+      "nativeSourceRevision": "7c233a943f4c9ec42b6008fb3ffea09729429b84",
       "capturedOn": "2026-11-14",
       "surface": "DonWells Cue development renderer in isolated Chromium at 110% interface scale.",
       "dimensions": [
         1200,
-        291
+        259
       ],
-      "sha256": "23731dba041f0993cf4735f1b219923cf04a030751bc71d1c5699a75b289aecc",
+      "sha256": "5bf3d3745a2160ea8ec6bcac186229d2dee15695600cd41dbea959e3d00adec7",
       "fixture": "Disposable rehearsal show with generated WAV files and a native NULL software output.",
       "captureMethod": "Playwright panel screenshot with fixture Electron picker methods.",
       "presentation": "Full lower Import Media panel at its fitted height."
@@ -127,15 +127,15 @@
       "file": "server-picker-current.png",
       "view": "Server folder browser with bulk file selection and import controls.",
       "version": "2.6.23 development",
-      "sourceRevision": "f0d836f90d4757805aac94a6a0441f9064ac0d6a",
-      "nativeSourceRevision": "9b976139d3524a330299e6c19dcae47a48e34b29",
+      "sourceRevision": "89d574e9ddc709e54f286e134416b7b189528947",
+      "nativeSourceRevision": "7c233a943f4c9ec42b6008fb3ffea09729429b84",
       "capturedOn": "2026-11-14",
       "surface": "DonWells Cue development renderer in isolated Chromium at 110% interface scale.",
       "dimensions": [
         1200,
-        533
+        468
       ],
-      "sha256": "a5f75df7f44a2b92c7aacdeb8753bd12bfb4b0590bc4cbaf862ee56fde93ac43",
+      "sha256": "58811b7acddd62b9b3e210cb454b1085a108cc55db22cccfab25ff54ba78e7dd",
       "fixture": "Disposable rehearsal show with generated WAV files and a native NULL software output.",
       "captureMethod": "Playwright panel screenshot with fixture Electron picker methods.",
       "presentation": "Full lower Import Media panel at its fitted height."
@@ -144,15 +144,15 @@
       "file": "import-options-current.png",
       "view": "Folder batch with selection controls, group import, and the import plan.",
       "version": "2.6.23 development",
-      "sourceRevision": "f0d836f90d4757805aac94a6a0441f9064ac0d6a",
-      "nativeSourceRevision": "9b976139d3524a330299e6c19dcae47a48e34b29",
+      "sourceRevision": "89d574e9ddc709e54f286e134416b7b189528947",
+      "nativeSourceRevision": "7c233a943f4c9ec42b6008fb3ffea09729429b84",
       "capturedOn": "2026-11-14",
       "surface": "DonWells Cue development renderer in isolated Chromium at 110% interface scale.",
       "dimensions": [
         1200,
-        329
+        283
       ],
-      "sha256": "e51fb0ee78ccc37006d8a58ccd8698f042cf97235f4affb7e05e1ca4b8287290",
+      "sha256": "f650ff039e76fb7e812c1073f370811145f79e742f87ed82e56ab90e28869bf8",
       "fixture": "Disposable rehearsal show with generated WAV files and a native NULL software output.",
       "captureMethod": "Playwright panel screenshot with fixture Electron picker methods.",
       "presentation": "Full lower Import Media panel at its fitted height."
@@ -411,6 +411,23 @@
       "fixture": "Isolated Local review sample with generated audio and a silent 1080p clip. The bundled native engine uses its software NULL backend.",
       "captureMethod": "Actual Electron renderer screenshot at CSS pixel dimensions. Whole workspace or a single panel or tile.",
       "presentation": "Rendered UI with its actual settings and cue state."
+    },
+    {
+      "file": "import-progress.png",
+      "view": "Media verification progress showing the current file, batch count, and Cancel import.",
+      "version": "2.6.23 development",
+      "sourceRevision": "89d574e9ddc709e54f286e134416b7b189528947",
+      "nativeSourceRevision": "7c233a943f4c9ec42b6008fb3ffea09729429b84",
+      "capturedOn": "2026-11-14",
+      "surface": "DonWells Cue development renderer in isolated Chromium at 110% interface scale.",
+      "dimensions": [
+        1200,
+        132
+      ],
+      "sha256": "d6bcb77a7bc7ced4282190615f269dcd796bd8df5914147a28058d07fc289f37",
+      "fixture": "Disposable rehearsal show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright panel screenshot with fixture Electron picker methods.",
+      "presentation": "Full lower Import Media panel at its fitted height."
     }
   ],
   "photos": [
