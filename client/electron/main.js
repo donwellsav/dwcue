@@ -3759,6 +3759,7 @@ function createMenu(locale = 'en', isDev = false) {
         },
         {
           label: t.changeAccentColor,
+          enabled: !!currentProject,
           click: () => {
             mainWindow.webContents.send('menu-change-accent-color');
           }

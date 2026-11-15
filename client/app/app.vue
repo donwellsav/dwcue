@@ -156,23 +156,6 @@
           </template>
         </section>
       </Teleport>
-    <!-- Accent Color Picker Modal -->
-    <div v-if="showColorPicker && !projectPanelOpen" class="color-picker-overlay" @click="showColorPicker = false">
-      <div class="color-picker-dialog" @click.stop>
-        <h3>{{ t('colors.chooseAccent') }}</h3>
-        <div class="color-grid">
-          <button
-            v-for="color in accentColors"
-            :key="color"
-            class="color-option"
-            :style="{ backgroundColor: color }"
-            @click="changeAccentColor(color)"
-          ></button>
-        </div>
-        <button class="close-dialog" @click="showColorPicker = false">{{ t('common.cancel') }}</button>
-      </div>
-    </div>
-    
     <!-- About Modal -->
     <AboutModal v-if="showAboutModal && !projectPanelOpen" @close="showAboutModal = false" />
     
@@ -406,7 +389,6 @@ onBeforeUnmount(unmountFailedHydrationHotkeys);
 useStateViewer();
 
 // Color picker for accent color
-const showColorPicker = ref(false);
 const DEFAULT_ACCENT = '#315fcf';
 const retiredBrandAccents = new Set(['#a45d00', '#8f5000', '#c47a00', '#ffb000']);
 const displayAccent = (color?: string) =>
@@ -433,16 +415,6 @@ function openAbout() {
     showAboutModal.value = true;
   }
 }
-
-const accentColors = [
-  '#315fcf', '#3c6fe0', '#5a83e8', // DonWells cobalt
-  '#007d79', '#009d9a', '#08bdba', // Teals
-  '#da1e28', '#a2191f', '#750e13', // Reds
-  '#24a148', '#198038', '#0e6027', // Greens
-  '#f1c21b', '#d2a106', '#b28600', // Yellows
-  '#8a3ffc', '#6929c4', '#491d8b', // Purples
-  '#ff7eb6', '#ee5396', '#d02670', // Pinks
-];
 
 const detachedProjectIdentity = useState<OneShotMutationIdentity | null>(
   'oneShots.detachedProjectIdentity', () => null,
@@ -474,10 +446,6 @@ function applyCartWindowProjectData(envelope: OneShotProjectEnvelope | null) {
     for (const item of projectData.cartOnlyItems) addCartOnlyItem(item);
   }
   currentProject.value = projectData;
-  if (projectData.theme?.mode) theme.value = projectData.theme.mode;
-  if (projectData.theme?.accentColor) {
-    document.documentElement.style.setProperty('--color-accent-custom', displayAccent(projectData.theme.accentColor));
-  }
 }
 
 let oneShotMutationTail = Promise.resolve();
@@ -582,7 +550,9 @@ onMounted(() => {
     });
 
     window.electronAPI.onMenuChangeAccentColor(() => {
-      showColorPicker.value = true;
+      if (!hasWorkspace.value) return;
+      settingsTab.value = 'ui';
+      showProjectSettings.value = true;
     });
 
     window.electronAPI.onMenuChangeLanguage((event: any, locale: string) => {
@@ -754,15 +724,6 @@ async function runQuitFlow() {
     quitFlowActive = false;
   }
 }
-const changeAccentColor = (color: string) => {
-  if (currentProject.value) {
-    currentProject.value.theme.accentColor = color;
-    document.documentElement.style.setProperty('--color-accent-custom', color);
-    saveProject();
-    showColorPicker.value = false;
-  }
-};
-
 type ArchivePanel = 'archive-import' | 'archive-export';
 type ArchiveStatus = { phase: 'working' | 'done' | 'failed'; message: string };
 
@@ -942,18 +903,11 @@ async function openImportedArchive(file: string) {
   }
 }
 
-// Set initial theme from project
-watch(currentProject, (project) => {
-  if (project) {
-    theme.value = project.theme.mode;
-    
-    // Set accent color
-    if (import.meta.client && project.theme.accentColor) {
-      document.documentElement.style.setProperty('--color-accent-custom', displayAccent(project.theme.accentColor));
-    }
-  } else if (import.meta.client) {
-    document.documentElement.style.removeProperty('--color-accent-custom');
-  }
+watch([currentProject, () => currentProject.value?.theme?.accentColor], ([project, color]) => {
+  if (project?.theme?.mode) theme.value = project.theme.mode;
+  if (!import.meta.client) return;
+  if (project) document.documentElement.style.setProperty('--color-accent-custom', displayAccent(color));
+  else document.documentElement.style.removeProperty('--color-accent-custom');
 }, { immediate: true });
 
 // Apply RTL direction when locale changes
@@ -1127,53 +1081,6 @@ onMounted(() => {
 
 .archive-error { color: var(--color-danger); }
 
-.color-picker-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: var(--z-modal);
-}
-
-.color-picker-dialog {
-  background: var(--color-surface);
-  padding: var(--spacing-xl);
-  border-radius: var(--border-radius-lg);
-  min-width: 400px;
-  color: var(--color-text-primary);
-}
-
-.color-picker-dialog h3 {
-  margin-bottom: var(--spacing-md);
-  color: var(--color-text-primary);
-}
-
-.color-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: var(--spacing-sm);
-  margin-bottom: var(--spacing-md);
-}
-
-.color-option {
-  width: 50px;
-  height: 50px;
-  border: 2px solid var(--color-border);
-  border-radius: var(--border-radius-sm);
-  cursor: pointer;
-  transition: transform var(--transition-fast);
-}
-
-.color-option:hover {
-  transform: scale(1.1);
-  border-color: var(--color-text-primary);
-}
-
 .startup-header-warnings {
   position: fixed;
   inset-block-start: var(--spacing-sm);
@@ -1185,20 +1092,6 @@ onMounted(() => {
 .cart-header-warnings {
   min-width: 0;
 }
-
-.close-dialog {
-  width: 100%;
-  padding: var(--spacing-sm) var(--spacing-md);
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-sm);
-  color: var(--color-text-primary);
-}
-
-.close-dialog:hover {
-  background: var(--color-surface-hover);
-}
-
 
 .project-hydration-error {
   height: 100%;

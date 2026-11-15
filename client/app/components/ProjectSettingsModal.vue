@@ -203,6 +203,15 @@
           <template v-else-if="activeTab === 'ui'">
             <div class="settings-rows">
               <h3 class="settings-section-title">{{ t('settings.appearanceSection') }}</h3>
+              <section class="settings-field">
+                <span class="settings-label">{{ t('colors.chooseAccent') }}</span>
+                <div class="accent-swatches" role="group" :aria-label="t('colors.chooseAccent')">
+                  <button v-for="color in accentColors" :key="color" type="button" class="accent-swatch"
+                    :style="{ backgroundColor: color }" :title="color" :aria-label="color"
+                    :aria-pressed="selectedAccent === color"
+                    :disabled="projectHydrationStatus !== 'ready'" @click="setAccentColor(color)" />
+                </div>
+              </section>
               <section class="settings-field track-height-control">
                 <label for="ui-font-scale">{{ t('settings.interfaceFontSize') }}</label>
                 <input
@@ -803,6 +812,22 @@ const onLocaleChange = (event: Event) => {
 
 const { currentProject, projectEpoch, indexDisplayStart, saveProject, getAllItemsFlat, formatItemIndex,
   projectHydrationStatus, setMusicContinuity, musicContinuityPending } = useProject();
+const accentColors = [
+  '#315fcf', '#3c6fe0', '#5a83e8', // DonWells cobalt
+  '#007d79', '#009d9a', '#08bdba', // Teals
+  '#da1e28', '#a2191f', '#750e13', // Reds
+  '#24a148', '#198038', '#0e6027', // Greens
+  '#f1c21b', '#d2a106', '#b28600', // Yellows
+  '#8a3ffc', '#6929c4', '#491d8b', // Purples
+  '#ff7eb6', '#ee5396', '#d02670', // Pinks
+];
+const selectedAccent = computed(() => currentProject.value?.theme?.accentColor?.toLowerCase() || accentColors[0]);
+function setAccentColor(color: string) {
+  const project = currentProject.value;
+  if (!project || projectHydrationStatus.value !== 'ready' || selectedAccent.value === color) return;
+  project.theme.accentColor = color;
+  void saveProject();
+}
 const {
   regularPlaylistRowHeight,
   showPlaylistRowHeight,
@@ -1713,6 +1738,27 @@ function close() {
 }
 
 .settings-content--ui .settings-field > .settings-input { text-align: center; }
+
+.accent-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  padding-block: var(--spacing-xs);
+}
+
+.accent-swatch {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  cursor: pointer;
+
+  &[aria-pressed="true"],
+  &:focus-visible {
+    outline: 2px solid var(--color-text-primary);
+    outline-offset: 1px;
+  }
+}
 
 .settings-rows > .settings-field.video-capture {
   grid-template-columns: minmax(0, 1fr) minmax(0, 56%);

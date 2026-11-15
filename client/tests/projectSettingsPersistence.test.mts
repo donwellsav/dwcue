@@ -9,6 +9,29 @@ import ts from 'typescript';
 
 import { formatDisplayIndexPath, parseDisplayIndexPath } from '../app/utils/indexDisplay.ts';
 
+test('the Settings accent applies to the current show and saves only an actual change', () => {
+  const source = readFileSync(new URL('../app/components/ProjectSettingsModal.vue', import.meta.url), 'utf8');
+  const start = source.indexOf('function setAccentColor(');
+  const end = source.indexOf('\n}', start);
+  assert.ok(start >= 0 && end > start);
+  const code = ts.transpileModule(source.slice(start, end + 2), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+  }).outputText;
+  const currentProject = Vue.ref({ theme: { accentColor: '#315fcf', mode: 'dark' } });
+  const hydration = Vue.ref('loading');
+  const selectedAccent = Vue.computed(() => currentProject.value.theme.accentColor);
+  const saves: string[] = [];
+  const select = Function('currentProject', 'projectHydrationStatus', 'selectedAccent', 'saveProject',
+    `${code}; return setAccentColor;`)(currentProject, hydration, selectedAccent,
+    () => saves.push(selectedAccent.value));
+  select('#24a148');
+  hydration.value = 'ready';
+  select('#24a148');
+  select('#24a148');
+  assert.deepEqual(saves, ['#24a148']);
+  assert.deepEqual(currentProject.value.theme, { accentColor: '#24a148', mode: 'dark' });
+});
+
 test('playlist numbering starts at one for new shows and saved zero starts', () => {
   for (const start of [undefined, null, 0, '0', -1, '']) {
     assert.equal(formatDisplayIndexPath([0], start), '1');
