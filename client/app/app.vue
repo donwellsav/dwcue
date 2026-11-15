@@ -62,15 +62,47 @@
           </button>
         </div>
       </div>
-      <MainWorkspace v-else :decision-open="!!projectDecision" />
-      <Teleport v-if="projectDecision" :key="hasWorkspace ? 'decision-dock' : 'decision-startup'"
+      <MainWorkspace v-else :decision-open="projectPanelOpen" />
+      <Teleport v-if="projectPanelOpen" :key="hasWorkspace ? 'decision-dock' : 'decision-startup'"
         defer to="#workspace-project-decision" :disabled="!hasWorkspace">
-        <ProjectDecisionPanel :title="projectDecision.title" :message="projectDecision.message"
+        <ProjectDecisionPanel v-if="projectDecision" :title="projectDecision.title" :message="projectDecision.message"
           :buttons="projectDecision.buttons" @pick="projectDecision.pick" />
+        <section v-else class="project-file-panel"
+          :class="{ 'project-file-panel--startup': !hasWorkspace, 'project-file-panel--browse': projectPicker === 'new-location' }"
+          aria-labelledby="project-file-panel-title">
+          <header class="workspace-panel-header">
+            <h2 id="project-file-panel-title" class="workspace-panel-header__title">{{ t('project.newShow') }}</h2>
+            <Btn v-if="!hasWorkspace" type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="stopAllCues()" />
+          </header>
+          <p v-if="creatingNewShow" class="project-file-status" role="status">{{ isLoading ? loadingMessage : t('common.loading') }}</p>
+          <ServerFilePickerModal v-else-if="projectPicker === 'new-location'" docked :open="true"
+            mode="directory" filter="all" :filter-options="['all']" :fallback-start-path="projectPickerFallback"
+            location-context="project-create" :cancel-label="t('common.back')"
+            @pick="onProjectPickerPick" @close="closeProjectPicker" />
+          <form v-else class="new-show-form" @submit.prevent="createNewShow">
+            <label class="new-show-field" for="welcome-new-show-name">
+              <span>{{ t('project.showName') }}</span>
+              <input id="welcome-new-show-name" ref="newShowNameInput" v-model="newShowName"
+                :placeholder="t('project.placeholder')" autocomplete="off" />
+            </label>
+            <div class="new-show-field new-show-field--location">
+              <label for="welcome-new-show-location">{{ t('project.location') }}</label>
+              <div class="new-show-location">
+                <input id="welcome-new-show-location" :value="newShowLocation" readonly />
+                <button ref="newShowBrowseButton" type="button" @click="browseNewShowLocation">{{ t('project.chooseLocation') }}</button>
+              </div>
+            </div>
+            <div class="new-show-actions">
+              <Btn type="button" :text="t('common.cancel')" @click="cancelNewShowDialog" />
+              <Btn type="submit" class="new-show-create" :text="t('project.createShow')" :disabled="!canCreateNewShow" />
+            </div>
+            <p v-if="newShowError" class="new-show-error" role="alert">{{ newShowError }}</p>
+          </form>
+        </section>
       </Teleport>
       <Teleport v-if="archivePanel" :key="hasWorkspace ? 'workspace' : 'startup'"
         defer to="#workspace-import-host" :disabled="!hasWorkspace">
-        <section class="archive-panel"
+        <section v-show="hasWorkspace || !projectPanelOpen" class="archive-panel"
           :class="{ 'archive-panel--startup': !hasWorkspace, 'archive-panel--browse': !archiveStatus }"
           :aria-label="archiveTitle">
           <header v-if="!hasWorkspace" class="workspace-panel-header">
@@ -115,7 +147,7 @@
         </section>
       </Teleport>
     <!-- Accent Color Picker Modal -->
-    <div v-if="showColorPicker && !projectDecision" class="color-picker-overlay" @click="showColorPicker = false">
+    <div v-if="showColorPicker && !projectPanelOpen" class="color-picker-overlay" @click="showColorPicker = false">
       <div class="color-picker-dialog" @click.stop>
         <h3>{{ t('colors.chooseAccent') }}</h3>
         <div class="color-grid">
@@ -132,64 +164,19 @@
     </div>
     
     <!-- About Modal -->
-    <AboutModal v-if="showAboutModal && !projectDecision" @close="showAboutModal = false" />
+    <AboutModal v-if="showAboutModal && !projectPanelOpen" @close="showAboutModal = false" />
     
-    <!-- The New Show form owns both values. Browsing for a location temporarily
-         swaps to the server-side picker so remote servers remain supported. -->
     <ServerFilePickerModal
-      :open="projectPicker !== null && !projectDecision"
-      :mode="projectPicker === 'new-location' ? 'directory' : 'file'"
-      :filter="projectPicker === 'new-location' ? 'all' : '.dwcue'"
-      :filter-options="projectPicker === 'new-location' ? ['all'] : ['.dwcue', 'all']"
+      :open="projectPicker === 'open' && !projectDecision"
+      mode="file" filter=".dwcue" :filter-options="['.dwcue', 'all']"
       :fallback-start-path="projectPickerFallback"
-      :location-context="projectPicker === 'new-location' ? 'project-create' : 'project-open'"
+      location-context="project-open"
       @pick="onProjectPickerPick"
       @close="closeProjectPicker"
     />
 
-    <Teleport to="body">
-      <div v-if="showNewShowDialog && !creatingNewShow && !projectDecision" class="name-dialog-backdrop" :data-theme="theme" @click.self="cancelNewShowDialog">
-        <form
-          class="name-dialog new-show-dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="welcome-new-show-title"
-          @submit.prevent="createNewShow"
-          @keydown.stop
-          @keydown.escape.prevent="cancelNewShowDialog"
-        >
-          <h3 id="welcome-new-show-title" class="name-dialog__title">{{ t('project.newShow') }}</h3>
-          <label class="new-show-field" for="welcome-new-show-name">
-            <span>{{ t('project.showName') }}</span>
-            <input
-              id="welcome-new-show-name"
-              ref="newShowNameInput"
-              class="name-dialog__input"
-              v-model="newShowName"
-              :placeholder="t('project.placeholder')"
-              autocomplete="off"
-            />
-          </label>
-          <div class="new-show-field">
-            <label for="welcome-new-show-location">{{ t('project.location') }}</label>
-            <div class="new-show-location">
-              <input id="welcome-new-show-location" class="name-dialog__input" :value="newShowLocation" readonly />
-              <button ref="newShowBrowseButton" type="button" class="name-dialog__btn" @click="browseNewShowLocation">
-                {{ t('project.chooseLocation') }}
-              </button>
-            </div>
-          </div>
-          <p v-if="newShowError" class="new-show-error" role="alert">{{ newShowError }}</p>
-          <div class="name-dialog__actions">
-            <button type="button" class="name-dialog__btn" :disabled="creatingNewShow" @click="cancelNewShowDialog">{{ t('common.cancel') }}</button>
-            <button type="submit" class="name-dialog__btn name-dialog__btn--primary" :disabled="!canCreateNewShow || creatingNewShow">{{ t('project.createShow') }}</button>
-          </div>
-        </form>
-      </div>
-    </Teleport>
-
     <!-- Loading overlay (project open / create / save) -->
-    <LoadingOverlay :visible="isLoading" :title="loadingMessage" />
+    <LoadingOverlay :visible="isLoading && !creatingNewShow" :title="loadingMessage" />
 
     <ProjectRepairNotice v-if="projectRepair" :notice="projectRepair" @save="saveRepairedProject" />
 
@@ -698,7 +685,8 @@ const projectDecision = computed(() => {
   return null;
 });
 const projectDecisionOpen = useState('projectDecisionOpen', () => false);
-watch(() => !!projectDecision.value, (open) => { projectDecisionOpen.value = open; }, { immediate: true });
+const projectPanelOpen = computed(() => !!projectDecision.value || showNewShowDialog.value || projectPicker.value === 'new-location');
+watch(projectPanelOpen, (open) => { projectDecisionOpen.value = open; }, { immediate: true });
 
 function onUnsavedPick(choice: string) {
   if (choice === 'save') void unsavedSave();
@@ -1001,6 +989,85 @@ onMounted(() => {
   overflow: auto;
 }
 
+.project-file-panel {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-background);
+}
+
+.project-file-panel--startup {
+  max-height: 60%;
+  overflow: auto;
+}
+
+.project-file-panel--browse {
+  height: clamp(230px, 38vh, 330px);
+}
+
+.new-show-form,
+.new-show-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--spacing-sm);
+}
+
+.new-show-form,
+.project-file-status {
+  margin: 0;
+  padding: var(--spacing-sm) var(--workspace-gutter);
+}
+
+.new-show-field {
+  flex: 1 1 180px;
+  min-width: 0;
+  display: grid;
+  gap: var(--spacing-xs);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.new-show-field--location { flex-basis: 290px; }
+
+.new-show-location {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--spacing-xs);
+}
+
+.new-show-field input,
+.new-show-location button {
+  min-height: var(--panel-control-height);
+  min-width: 0;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  background: var(--color-control);
+  color: var(--color-text-primary);
+  font: inherit;
+}
+
+.new-show-location input { text-overflow: ellipsis; }
+.new-show-location button:hover { background: var(--color-surface-hover); }
+.new-show-actions { margin-inline-start: auto; }
+
+.new-show-actions .new-show-create {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+}
+
+.new-show-actions .new-show-create:hover:not(:disabled) { filter: brightness(1.1); }
+
+.new-show-error {
+  flex: 0 0 100%;
+  margin: 0;
+  color: var(--color-danger);
+  overflow-wrap: anywhere;
+}
+
 .archive-panel {
   display: flex;
   flex-direction: column;
@@ -1213,122 +1280,5 @@ onMounted(() => {
     font-size: 48px;
     opacity: 0.3;
   }
-}
-</style>
-
-<style>
-/* New Show form is teleported to body. */
-.name-dialog-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 9200;
-  background: var(--dialog-backdrop);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.name-dialog {
-  background: var(--dialog-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--dialog-radius);
-  padding: var(--dialog-padding);
-  min-width: 360px;
-  max-width: 480px;
-  width: 90vw;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-md);
-  box-shadow: var(--dialog-shadow);
-}
-
-.name-dialog__title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.name-dialog__input {
-  padding: 10px 12px;
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-md);
-  color: var(--color-text-primary);
-  font-size: 14px;
-  outline: none;
-  transition: border-color var(--transition-fast);
-}
-
-.name-dialog__input:focus { border-color: var(--color-accent); }
-
-.new-show-dialog { width: min(520px, 92vw); }
-
-.new-show-error {
-  margin: 0;
-  color: var(--color-text-primary);
-  overflow-wrap: anywhere;
-}
-
-.new-show-field {
-  display: grid;
-  gap: 6px;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.new-show-location {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--spacing-sm);
-}
-
-.new-show-location .name-dialog__input {
-  min-width: 0;
-  color: var(--color-text-secondary);
-  font-family: var(--font-mono);
-  text-overflow: ellipsis;
-}
-
-.name-dialog__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--spacing-sm);
-}
-
-.name-dialog__btn {
-  min-height: var(--panel-control-height);
-  padding: 6px 12px;
-  border-radius: var(--control-radius);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-raised);
-  color: var(--color-text-primary);
-  transition: background var(--transition-fast), border-color var(--transition-fast);
-}
-
-.name-dialog__btn:hover:not(:disabled) {
-  background: var(--color-surface-hover);
-  border-color: var(--color-accent);
-}
-
-.name-dialog__btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.name-dialog__btn--primary {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-  color: #fff;
-}
-
-.name-dialog__btn--primary:hover:not(:disabled) {
-  filter: brightness(1.1);
-  background: var(--color-accent);
-  border-color: var(--color-accent);
 }
 </style>

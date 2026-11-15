@@ -669,10 +669,10 @@ export const useProject = () => {
         lastModified: new Date().toISOString()
       };
 
+      const projectFilePath = projectPathInFolder(folderPath, name);
+      const header = await server.loadProjectDocument(newProject, projectFilePath);
       isHydrating.value = true;
       try {
-        const projectFilePath = projectPathInFolder(folderPath, name);
-        const header = await server.loadProjectDocument(newProject, projectFilePath);
         const hydration = applyServerHeader(header);
         if (!hydration) throw new Error('Server did not open the new project');
         hydration.finish(true);

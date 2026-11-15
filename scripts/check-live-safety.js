@@ -185,8 +185,8 @@ assert.match(
 );
 assert.match(
   appVue,
-  /class="name-dialog(?: [^"]*)?"[\s\S]*role="dialog"[\s\S]*aria-modal="true"[\s\S]*aria-labelledby=/,
-  'the new-project prompt must expose native dialog semantics',
+  /<section v-else class="project-file-panel"[\s\S]*?aria-labelledby="project-file-panel-title"[\s\S]*?<h2 id="project-file-panel-title"/,
+  'the project file panel must expose its heading as the region name',
 );
 const playlistItem = read('client/app/components/PlaylistItem.vue');
 const projectDecisionPanel = read('client/app/components/ProjectDecisionPanel.vue');
@@ -2464,13 +2464,13 @@ assert.match(
 );
 assert.match(
   appVue + mainWorkspace,
-  /<MainWorkspace v-else :decision-open="!!projectDecision"[\s\S]*?to="#workspace-project-decision"[\s\S]*?<ProjectDecisionPanel[\s\S]*?class="lower-workspace-panel"[\s\S]*?id="workspace-project-decision"/,
+  /<MainWorkspace v-else :decision-open="projectPanelOpen"[\s\S]*?to="#workspace-project-decision"[\s\S]*?<ProjectDecisionPanel[\s\S]*?class="lower-workspace-panel"[\s\S]*?id="workspace-project-decision"/,
   'Quit and unsaved changes must use the lower workspace panel',
 );
 assert.doesNotMatch(projectDecisionPanel, /aria-modal|position:\s*fixed|keydown|Teleport/,
   'project decisions must leave pointer and keyboard transport available');
-assert.match(appVue, /v-if="showNewShowDialog && !creatingNewShow && !projectDecision"/,
-  'the New Show form must give the lower decision panel room while confirming and saving');
+assert.match(appVue, /to="#workspace-project-decision"[\s\S]*?<ProjectDecisionPanel v-if="projectDecision"[\s\S]*?class="project-file-panel"[\s\S]*?role="status"[\s\S]*?<ServerFilePickerModal [^>]*docked[\s\S]*?class="new-show-form" @submit.prevent="createNewShow"[\s\S]*?<\/Teleport>/,
+  'New Show, its folder picker and progress must share the same lower panel as the save decision');
 assert.match(
   midiController,
   /`trigger-slot-\$\{number\}`[\s\S]*length:\s*CART_SLOT_COUNT_LIMITS\.max/,
@@ -2618,7 +2618,7 @@ for (const file of [
   'ServerFilePickerModal.vue',
   'ServerSettingsModal.vue',
   'SessionRecoveryModal.vue',
-].map(file => `client/app/components/${file}`).concat('client/app/app.vue')) {
+].map(file => `client/app/components/${file}`)) {
   const dialog = read(file);
   for (const token of ['backdrop', 'surface', 'radius', 'shadow']) {
     assert.match(dialog, new RegExp(`var\\(--dialog-${token}\\)`),

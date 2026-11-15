@@ -109,23 +109,30 @@ test('an owned project header commits its server session together with the local
 test('New Show opens the header from the server operation that saves before switching', async () => {
   const calls: unknown[][] = [];
   const header = { hasOpenProject: true, server: { projectFilePath: '/show/New.dwcue', projectSessionId: 'created-session' } };
+  const isHydrating = { value: false };
+  let acknowledge!: (value: typeof header) => void;
+  const accepted = new Promise<typeof header>(resolve => { acknowledge = resolve; });
   const server = { connected: true,
     loadProjectDocument: async (document: { name: string }, createPath?: string) => {
       calls.push([document.name, createPath]);
-      return header;
+      return accepted;
     },
     saveProjectTo: async () => { calls.push(['separate save']); return { ok: true }; },
     fetchProjectHeader: async () => header,
   };
   const create = projectFunction('createNewProject', {
-    isLoading: { value: false }, loadingMessage: { value: '' }, isHydrating: { value: false },
+    isLoading: { value: false }, loadingMessage: { value: '' }, isHydrating,
     useLiveplayServer: () => server, DEFAULT_CART_SLOT_KEYS: {}, DEFAULT_THEME: {}, DEFAULT_PROJECT_SETTINGS: {},
     projectPathInFolder: (folder: string, name: string) => `${folder}/${name}.dwcue`,
     applyServerHeader: (accepted: unknown) => { calls.push(['accepted', accepted]); return { finish() {} }; }, nextTick: async () => {},
     refreshItemsBaselineAfterHydrate() {}, installItemsWatcherFn() {}, recordRecentProject() {},
     projectFilePathRef: { value: '/show/New.dwcue' },
   });
-  assert.equal(await create('New', '/show'), true);
+  const creating = create('New', '/show');
+  assert.deepEqual(calls, [['New', '/show/New.dwcue']]);
+  assert.equal(isHydrating.value, false, 'the current show must still sync its edits while create waits for storage');
+  acknowledge(header);
+  assert.equal(await creating, true);
   assert.deepEqual(calls, [['New', '/show/New.dwcue'], ['accepted', header]]);
 });
 
