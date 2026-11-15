@@ -74,7 +74,7 @@
 - [x] **Dock show archive import and export** in `c8c198b`. The folder browser, progress, retry, and result share the lower panel. Extraction finishes with an explicit Open. The controller's own paths on a remote connection use the system chooser. An isolated native-engine round trip exercised the playlist, GO, and Stop All during held transfers. The 67 API checks include stale export rejection after a show switch or same-file reopen.
 - [x] **Read Spotify metadata separately from downloader logs** in `17f4f40`. The metadata-only job reads spotDL's output file and removes its temporary folder. Software checks cover bracketed logs, missing or malformed metadata, and reviews of 235 and 10,001 tracks.
 - [x] **Fit active media imports to the dock** in `41d1305`. Media verification and Spotify transfers expose progress and Cancel at the top. Spotify scrolls the track list within its review. YouTube keeps completed downloads visible. Headless checks exercised active transfers, error and completion states, and transport at a compact window size.
-- [ ] Dock QuickPlay import.
+- [x] Dock QuickPlay file selection for empty slots and Replace audio (`7336b29`). Keep the playlist, GO, Stop All, and Escape available through browsing and preparation. Preserve drag-and-drop for files on a remote controller.
 - [x] Dock cue and standby image selection (`e47b31a`). Keep the playlist, GO, and Stop All accessible, including Escape while editing the folder path.
 - [x] Preserve a typed path when the shared file browser finishes loading a folder (`ac515e2`).
 - [x] Dock show-file choices, unsaved changes, bulk delete, and reconnect and recovery prompts.

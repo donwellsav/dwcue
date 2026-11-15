@@ -1,6 +1,6 @@
 {
   "application": "DonWells Cue",
-  "sourceRevision": "ac515e22b8a3523cf8ec992fa6bffc42bccadd89",
+  "sourceRevision": "7336b2977cb2161a957de3e9c9ad51dbb3a192d0",
   "packageVersion": "2.6.23 development",
   "edition": "15 November 2026 development review of operator controls, imports, and project panels",
   "images": [
@@ -476,10 +476,10 @@
     "gainStages": "Schematic: final physical sum and secondary-clock adaptation precede the attenuation-only limiter and device output."
   },
   "uiBuildRevision": "534615e1ce656d849e886cacba121fbe3d986020",
-  "manualSourceRevision": "ac515e22b8a3523cf8ec992fa6bffc42bccadd89",
+  "manualSourceRevision": "7336b2977cb2161a957de3e9c9ad51dbb3a192d0",
   "visualCompatibility": {
     "checkedOn": "2026-11-15",
-    "revision": "ac515e22b8a3523cf8ec992fa6bffc42bccadd89",
-    "basis": "The generated renderer was checked with the cue and standby image browsers in the lower panel. Existing figures show the workspace and their originating panels."
+    "revision": "7336b2977cb2161a957de3e9c9ad51dbb3a192d0",
+    "basis": "The generated renderer was checked with the single-file picker in both QuickPlays layouts. Existing figures show the workspace and the QuickPlay Settings that opens the picker."
   }
 }

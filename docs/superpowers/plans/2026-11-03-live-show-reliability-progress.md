@@ -625,3 +625,9 @@ Cue Image in Properties and Standby Image in Video Output settings use the exist
 Picking a different cue closes an unconfirmed cue image browser. Once confirmed, a held copy updates its original cue even if the playlist selection changes. Opening another show while a standby copy is pending leaves the new show's standby unchanged. Both accepted images were byte-identical in the project media folder.
 
 The shared browser preserves a path entered while the initial folder is loading (`ac515e2`). Software tests held both a successful listing and a missing remembered folder until after path entry, then used Enter to open the typed folder. The New Show folder picker, 276 client tests, type checking, and renderer generation passed.
+
+## 15 November — QuickPlay import
+
+The empty slot button and **Replace audio** open the single-file browser in the dock (`7336b29`). It shows the destination slot, copy or link options, and preparation or failure status. A different slot starts with a fresh selection. Show Mode closes an unconfirmed import.
+
+Chromium and the NULL audio engine exercised the playlist, GO by click and Space, Stop All by click, and Escape from the folder field with Stop All assigned to F9. At 845 × 690 and 1200 × 700 with 110% text, Cancel and a failed decode kept the slot intact, and a held preparation left transport active. Copy preserved the file bytes and Link replaced only the original slot. The detached picker applied the import using the main-project mutation contract. A simulated remote client browsed server folders and uploaded a dropped local file byte-for-byte. All 276 client tests, type checking, and the generated renderer passed.

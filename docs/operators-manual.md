@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** ac515e22b8a3523cf8ec992fa6bffc42bccadd89
+**Source revision:** 7336b2977cb2161a957de3e9c9ad51dbb3a192d0
 **Native engine baseline:** 7c233a9
 **Edition:** 15 November 2026 · English · Operator edition
 
@@ -486,9 +486,11 @@ Stop or intentionally leave only the required interval material running. Verify 
 
 ### Prepare independent quick-play cues
 
-Reveal **QuickPlays**, then select **+** in an empty cell, drop a local audio file into it, or use **Add to QuickPlays** from a playlist cue's Basic Info. Adding an existing cue creates an independent copy with a new identity. Later edits to the QuickPlay do not change the playlist source, and later playlist edits do not automatically update the QuickPlay.
+In Edit Mode, click **+** in an empty **QuickPlays** slot. In the lower panel, select one audio or video file on the engine computer and click **Import selected**. Use **File handling** to copy or link the file. **Cancel** leaves the slot as it was. The playlist, GO, and Stop All stay available. **Escape** stops playback and leaves the picker open, even with a remapped Stop All shortcut.
 
-Open the tile gear to adjust playback in **QuickPlay Settings**. It opens below the playlist in Edit or Show Mode and below the tiles in the detached window. Edit Mode also offers **Replace Audio** and removal in that panel.
+Drop a file from the controller directly onto a slot, including for a remote engine. To make an independent copy of a playlist cue, drag it to a slot or use **Add to QuickPlays** in Basic Info.
+
+The tile gear opens **QuickPlay Settings** below the playlist or detached tiles in both modes. In Edit Mode, **Replace audio** uses the same file browser and the remove control is available.
 
 ![QuickPlay settings with playback, retrigger, ending, gain and fade controls.](manual-assets/one-shot-settings-current.png)
 
