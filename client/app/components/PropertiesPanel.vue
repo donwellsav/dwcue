@@ -1,7 +1,7 @@
 <template>
   <div class="properties-panel" :class="{ 'properties-panel--group': selectedItem.type === 'group' }">
     <div class="properties-header workspace-panel-header">
-      <h3 class="workspace-panel-header__title" :title="selectedItem?.displayName">{{ selectedItems.size > 1 ? t('properties.multipleItemsSelected', { count: selectedItems.size }) : (t('properties.title') + ': ' + (selectedItem?.displayName || '')) }}</h3>
+      <h3 class="workspace-panel-header__title" :title="selectedItem?.displayName">{{ imagePicker === 'cue' ? `${t('properties.cueImage')} · ${selectedItem.displayName}` : selectedItems.size > 1 ? t('properties.multipleItemsSelected', { count: selectedItems.size }) : (t('properties.title') + ': ' + (selectedItem?.displayName || '')) }}</h3>
       <div v-if="selectedItem.type === 'audio'" class="properties-tabs" :aria-label="t('properties.title')">
         <button
           v-for="tab in audioTabs"
@@ -19,7 +19,11 @@
       </button>
     </div>
 
-    <div class="properties-content" :class="{ 'properties-content--audio': selectedItem.type === 'audio' }">
+    <ServerFilePickerModal v-if="imagePicker === 'cue'" docked :open="true"
+      filter=".png,.jpg,.jpeg,.webp,.gif,.svg" :filter-options="[]"
+      :fallback-start-path="currentProject?.folderPath" location-context="cue-image"
+      @pick="handleCueImagePicked" @close="closeCueImagePicker" />
+    <div v-else class="properties-content" :class="{ 'properties-content--audio': selectedItem.type === 'audio' }">
       <!-- Basic Info Tab -->
       <div v-if="activeTab === 'basic'" class="tab-panel basic-panel">
         <section class="property-column">
@@ -109,7 +113,7 @@
                 class="icon-btn"
                 :title="t('properties.cueImageChoose')"
                 :aria-label="t('properties.cueImageChoose')"
-                @click="cueImagePickerOpen = true"
+                @click="imagePicker = 'cue'"
               >
                 <span class="material-symbols-rounded">image</span>
               </button>
@@ -407,16 +411,6 @@
         </div>
       </section>
     </div>
-
-    <ServerFilePickerModal
-      :open="cueImagePickerOpen"
-      mode="file"
-      filter=".png,.jpg,.jpeg,.webp,.gif,.svg"
-      :fallback-start-path="cueImagePickerStart"
-      location-context="cue-image"
-      @pick="handleCueImagePicked"
-      @close="cueImagePickerOpen = false"
-    />
   </div>
 </template>
 
@@ -444,6 +438,8 @@ const {
   getSelectedItems,
   saveProject,
   currentProject,
+  projectEpoch,
+  findItemByUuid,
   beginItemBatch,
   endItemBatch,
   formatItemIndex,
@@ -469,20 +465,30 @@ const audioItem = computed(() => selectedItem.value as AudioItem);
 // Per-cue still image for the video output. The picked file is copied into
 // the project media folder and stored relative, same portability rule as
 // mediaPath and the global standby image.
-const cueImagePickerOpen = ref(false);
-const cueImagePickerStart = computed(() => currentProject.value?.folderPath || '');
+const imagePicker = useState<'cue' | 'standby' | null>('workspaceImagePicker', () => null);
+const closeCueImagePicker = () => {
+  if (imagePicker.value === 'cue') imagePicker.value = null;
+};
+onScopeDispose(closeCueImagePicker);
 
 const handleCueImagePicked = async (path: string) => {
-  cueImagePickerOpen.value = false;
-  const item = audioItem.value;
-  if (!item || item.type !== 'audio') return;
+  closeCueImagePicker();
+  const project = currentProject.value;
+  const epoch = projectEpoch.value;
+  const uuid = selectedItem.value?.uuid;
+  const isCurrent = () => currentProject.value === project && projectEpoch.value === epoch;
+  if (!project || !uuid || selectedItem.value?.type !== 'audio' || _server.cueStartsBlocked) return;
   try {
     const dest = await _server.copyToMedia(path);
-    const folder = currentProject.value?.folderPath || '';
+    if (!isCurrent() || _server.cueStartsBlocked) return;
+    const item = findItemByUuid(uuid);
+    if (item?.type !== 'audio') return;
+    const folder = project.folderPath;
     item.imagePath = folder && dest.startsWith(folder)
       ? dest.slice(folder.length).replace(/^[\\/]+/, '').replace(/\\/g, '/')
       : dest;
-    await handleSave();
+    await endItemBatch();
+    if (isCurrent()) await persistPropertyChanges();
   } catch (e) {
     console.warn('[PropertiesPanel] cue image copy failed:', e);
   }
@@ -670,6 +676,7 @@ const isCartItem = computed(() => {
 const activeTab = ref<'basic' | 'playback' | 'output'>(uiMode.value === 'playback' && selectedItem.value?.type === 'audio'
   ? 'playback'
   : 'basic');
+watch([() => selectedItem.value?.uuid, projectEpoch, activeTab], closeCueImagePicker, { flush: 'sync' });
 
 const audioTabs = computed(() => [
   { id: 'basic', label: t('properties.basicInfo'), icon: 'info' },

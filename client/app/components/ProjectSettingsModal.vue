@@ -2,7 +2,7 @@
   <TabsRoot v-if="open" v-model="activeTab" as="section" activation-mode="manual"
     :dir="getDirection() === 'rtl' ? 'rtl' : 'ltr'" class="project-settings-panel" :aria-label="t('settings.title')">
         <header class="workspace-panel-header settings-header">
-          <h2 class="workspace-panel-header__title">{{ t('settings.title') }}</h2>
+          <h2 class="workspace-panel-header__title">{{ t(imagePicker === 'standby' ? 'settings.videoOutputStandbyImage' : 'settings.title') }}</h2>
           <TabsList class="settings-tabs" :aria-label="t('settings.title')">
             <TabsTrigger
               v-for="tab in tabs"
@@ -28,6 +28,10 @@
       <template v-if="tab.id === activeTab">
         <ControlConfigModal v-if="activeTab === 'shortcuts' || activeTab === 'midi'"
           :mode="activeTab === 'midi' ? 'midi' : 'keyboard'" />
+        <ServerFilePickerModal v-else-if="activeTab === 'video' && imagePicker === 'standby'" docked :open="true"
+          filter=".png,.jpg,.jpeg,.webp,.gif,.svg" :filter-options="[]"
+          :fallback-start-path="currentProject?.folderPath" location-context="standby-image"
+          @pick="onVideoOutputStandbyPicked" @close="closeStandbyImagePicker" />
         <div v-else :class="['settings-content', `settings-content--${activeTab}`]">
           <p v-if="settingsError" class="settings-error" role="alert">
             {{ settingsError }}
@@ -628,7 +632,7 @@
                   <span class="video-output-standby-path" :title="voStandbyImage">
                     {{ voStandbyImage || t('settings.videoOutputStandbyNone') }}
                   </span>
-                  <button type="button" class="modal-btn" @click="voStandbyPickerOpen = true">
+                  <button type="button" class="modal-btn" @click="imagePicker = 'standby'">
                     {{ t('settings.videoOutputStandbyChoose') }}
                   </button>
                   <button
@@ -745,16 +749,6 @@
         </div>
       </template>
     </TabsContent>
-
-    <ServerFilePickerModal
-      :open="voStandbyPickerOpen"
-      mode="file"
-      filter=".png,.jpg,.jpeg,.webp,.gif,.svg"
-      :fallback-start-path="voStandbyPickerStart"
-      location-context="standby-image"
-      @pick="onVideoOutputStandbyPicked"
-      @close="voStandbyPickerOpen = false"
-    />
   </TabsRoot>
 </template>
 
@@ -807,7 +801,7 @@ const onLocaleChange = (event: Event) => {
   }
 };
 
-const { currentProject, indexDisplayStart, saveProject, getAllItemsFlat, formatItemIndex,
+const { currentProject, projectEpoch, indexDisplayStart, saveProject, getAllItemsFlat, formatItemIndex,
   projectHydrationStatus, setMusicContinuity, musicContinuityPending } = useProject();
 const {
   regularPlaylistRowHeight,
@@ -1151,16 +1145,23 @@ async function drainVideoOutputTestCardConfig(): Promise<void> {
 // project media folder and stored relative, so the show file stays portable.
 const voStandbyImage = computed(() =>
   (currentProject.value as any)?.settings?.videoStandbyImage || '');
-const voStandbyPickerOpen = ref(false);
-const voStandbyPickerStart = computed(() =>
-  (currentProject.value as any)?.folderPath || '');
+const imagePicker = useState<'cue' | 'standby' | null>('workspaceImagePicker', () => null);
+const closeStandbyImagePicker = () => {
+  if (imagePicker.value === 'standby') imagePicker.value = null;
+};
+watch([() => props.open, projectEpoch, activeTab], closeStandbyImagePicker, { flush: 'sync' });
+onScopeDispose(closeStandbyImagePicker);
 
 async function onVideoOutputStandbyPicked(path: string) {
-  voStandbyPickerOpen.value = false;
+  closeStandbyImagePicker();
+  const project = currentProject.value;
+  const epoch = projectEpoch.value;
+  if (!project || server.cueStartsBlocked) return;
   settingsError.value = '';
   try {
     const dest = await server.copyToMedia(path);
-    const folder: string = (currentProject.value as any)?.folderPath || '';
+    if (currentProject.value !== project || projectEpoch.value !== epoch || server.cueStartsBlocked) return;
+    const folder = project.folderPath;
     const relative = folder && dest.startsWith(folder)
       ? dest.slice(folder.length).replace(/^[\\/]+/, '').replace(/\\/g, '/')
       : dest;

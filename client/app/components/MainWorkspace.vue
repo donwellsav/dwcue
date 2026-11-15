@@ -205,7 +205,7 @@
     <ShortcutsBar :inert="recoveryOpen" />
 
     <div v-show="lowerPanelOpen" ref="lowerPanel" class="lower-workspace-panel"
-      :class="{ 'lower-workspace-panel--deciding': decisionOpen }"
+      :class="{ 'lower-workspace-panel--deciding': decisionOpen, 'lower-workspace-panel--picking-image': imagePicker }"
       :style="{ height: decisionOpen || panelHeight === null ? 'auto' : `${panelHeight}px`, maxHeight: `${MAX_PANEL_HEIGHT_PERCENT}%` }"
       @keydown.capture="handlePanelKeydown($event, true)"
       @keydown="handlePanelKeydown">
@@ -301,6 +301,7 @@ const editableSelectedItem = computed(() => {
 const showCueProperties = computed(() =>
   !showProjectSettings.value && !visibleImportPanel.value && propertiesPanelOpen.value && !!editableSelectedItem.value);
 const lowerPanelOpen = computed(() => decisionOpen || showProjectSettings.value || !!visibleImportPanel.value || !!showCueProperties.value);
+const imagePicker = useState<'cue' | 'standby' | null>('workspaceImagePicker', () => null);
 // Leave room for both lines of a compact cue when the lower panel is maximized.
 const reservedPlaylistRowHeight = computed(() => Math.max(folderPlaylistRowHeight.value,
   uiMode.value === 'playback' ? Math.max(showPlaylistRowHeight.value, 108) : Math.max(regularPlaylistRowHeight.value, 84)));
@@ -905,6 +906,11 @@ onUnmounted(() => {
   overscroll-behavior: contain;
 
   > :not(#workspace-project-decision) { display: none; }
+}
+
+.lower-workspace-panel--picking-image :deep(.picker-dock) {
+  flex-basis: clamp(200px, 30vh, 300px);
+  overflow: auto;
 }
 
 .workspace-import {
