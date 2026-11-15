@@ -148,6 +148,8 @@ In **Settings → Video Output**, drop or paste Test Card logos and masks. Each 
 
 Open a Test Card or Time Left color swatch to choose a preset or enter a hex color. Both color editors stay in Settings.
 
+Click the current **Test Card Type**, **Start Behavior**, or **End Behavior** to show the choices in the lower panel. The playlist and **GO** remain available. **Escape** runs Stop All while the choices are open, even if you changed the Stop All shortcut.
+
 In **Properties → Basic Info → Media**, use **Replace or relink media** beside **File** to pick and verify a replacement in the lower panel. Cancel or a failed file check leaves the original media assigned.
 
 For a QuickPlay, click **+** in an empty slot or **Replace audio** in its settings to browse a single file in the lower panel. The panel uses the engine computer's folders. To import a file from the controller when the engine is on another computer, drop it directly on the slot.

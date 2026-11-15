@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** b2da1f8e971eefd6996da3428d7126b5fecb7859
+**Source revision:** 1ae8427d593da3247b43aa4c4d4abfc620f63f93
 **Native engine baseline:** 7c233a9
 **Edition:** 15 November 2026 · English · Operator edition
 
@@ -267,7 +267,7 @@ Stop All remains available during slow seek, trim, loop and cue-removal decoder 
 
 ### Choose the end behavior deliberately
 
-**Properties → Basic Info → End Behavior** is the main supported way to control what follows a cue.
+In **Properties → Basic Info**, click the current **Start Behavior** or **End Behavior** to expand its choices in the lower panel. The playlist and **GO** remain available. **Escape** runs Stop All while the choices are open, even if you changed the Stop All shortcut.
 
 <!-- diagram:cue-lifecycle -->
 
@@ -591,12 +591,12 @@ With only one display or no dedicated assignment, the app uses a normal preview 
 **Procedure — line up picture and optional AV Sync**
 
 - **Prerequisites:** The audience feed is safe to show a test pattern and, for AV Sync, the selected DonWells Cue Program output may safely carry the native tone.
-- **Actions:** Open **Settings → Video Output**, choose **Show test card**, confirm identity/resolution/framing at the destination, and adjust the venue video chain. If the production needs it, select **AV Sync** and the intended Audio Device, run the tone only with audio staff ready, then switch the card off.
+- **Actions:** Open **Settings → Video Output**, choose **Show test card**, then click the current **Test Card Type** to pick a pattern in the lower panel. Confirm identity, resolution, and framing at the destination. For **AV Sync**, select the intended Audio Device, run the tone with audio staff ready, then switch the card off.
 - **Expected visible outcome:** The physical destination shows the labelled card within the expected bounds; AV Sync is visible and audible only through the intended Program path.
 - **Common mistake:** Assuming AV Sync is silent or routed to Preview.
 - **Recovery:** Press **Stop All** to stop the tone, switch the card off and on only when a restart is intended, then correct the selected Audio Device before retesting.
 
-**Stop All** cancels a pending AV Sync device start. The test stays off when the driver returns.
+The playlist and **GO** remain available while the card choices are open. **Escape** runs Stop All even if you changed the Stop All shortcut. **Stop All** also cancels a pending AV Sync device start. The test stays off when the driver returns.
 
 In **Settings → Video Output → Test card**, drop or paste a PNG, JPEG, WebP, or GIF onto the logo or mask field. Both show a preview and offer **Clear**. **Custom Logo** shows the logo. A new mask enables itself. A rejected file leaves the previous image in place. The playlist and **GO** stay available during loading. **Escape** runs Stop All even when remapped.
 

@@ -1,6 +1,6 @@
 {
   "application": "DonWells Cue",
-  "sourceRevision": "b2da1f8e971eefd6996da3428d7126b5fecb7859",
+  "sourceRevision": "1ae8427d593da3247b43aa4c4d4abfc620f63f93",
   "packageVersion": "2.6.23 development",
   "edition": "15 November 2026 development review of operator controls, imports, and project panels",
   "images": [
@@ -476,10 +476,10 @@
     "gainStages": "Schematic: final physical sum and secondary-clock adaptation precede the attenuation-only limiter and device output."
   },
   "uiBuildRevision": "534615e1ce656d849e886cacba121fbe3d986020",
-  "manualSourceRevision": "b2da1f8e971eefd6996da3428d7126b5fecb7859",
+  "manualSourceRevision": "1ae8427d593da3247b43aa4c4d4abfc620f63f93",
   "visualCompatibility": {
     "checkedOn": "2026-11-15",
-    "revision": "b2da1f8e971eefd6996da3428d7126b5fecb7859",
-    "basis": "The current renderer was software-checked for inline Test Card and Time Left color editing at 1200 × 700 and 845 × 690. Figures retain their capture revisions."
+    "revision": "1ae8427d593da3247b43aa4c4d4abfc620f63f93",
+    "basis": "The packaged arm64 Mac app was checked at 1400 × 868 with the Test Card Type and cue behavior choices open. Figures retain their capture revisions."
   }
 }
