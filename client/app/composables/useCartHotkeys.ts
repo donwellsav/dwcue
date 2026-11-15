@@ -318,17 +318,31 @@ export const useCartHotkeys = (workspace?: Record<'toggle-settings' | 'toggle-pr
     }
   };
 
+  // Chromium can mark a clicked button focus-visible after the first hotkey.
+  let pointerFocusedButton: Element | null = null;
+  const rememberPointerButton = (e: PointerEvent) => {
+    pointerFocusedButton = (e.target as Element | null)?.closest?.('button') ?? null;
+  };
+  const clearPointerButton = (e: FocusEvent) => {
+    if (e.target === pointerFocusedButton) pointerFocusedButton = null;
+  };
+
   const handleKeydown = (e: KeyboardEvent) => {
-    if (e.defaultPrevented || (!isForwardedFromVideoOutput(e) && isTextInputFocused())) return;
+    if (e.defaultPrevented) return;
+    const fromVideoOutput = isForwardedFromVideoOutput(e);
+    if (!fromVideoOutput && isTextInputFocused()) return;
 
     // Stop All is a server-global panic action: native diagnostics and orphaned
     // cues can remain active without a project document or local activeCue.
     const playbackAction = findPlaybackActionForEvent(e);
+    // Let a keyboard-focused button activate before playback or QuickPlay bindings.
+    if (playbackAction !== 'stop-all' && !fromVideoOutput &&
+        !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey &&
+        (e.key === 'Enter' || e.key === ' ') &&
+        e.target !== pointerFocusedButton &&
+        (e.target as HTMLElement | null)?.matches?.('button:focus-visible')) return;
+
     if (playbackAction) {
-      if (playbackAction !== 'stop-all' && !isForwardedFromVideoOutput(e) &&
-          !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey &&
-          (e.key === 'Enter' || e.key === ' ') &&
-          (e.target as HTMLElement | null)?.matches?.('button[data-native-activation]:focus-visible')) return;
       // The detached window gets a project snapshot without a hydration status.
       const closingDetached = playbackAction === 'toggle-detached-quickplays' && isDetached;
       if (playbackAction !== 'stop-all' && !closingDetached &&
@@ -408,12 +422,17 @@ export const useCartHotkeys = (workspace?: Record<'toggle-settings' | 'toggle-pr
   const mount = () => {
     if (isMounted) return;
     window.addEventListener('keydown', handleKeydown);
+    window.addEventListener('pointerdown', rememberPointerButton, true);
+    window.addEventListener('focusout', clearPointerButton, true);
     isMounted = true;
   };
 
   const unmount = () => {
     if (!isMounted) return;
     window.removeEventListener('keydown', handleKeydown);
+    window.removeEventListener('pointerdown', rememberPointerButton, true);
+    window.removeEventListener('focusout', clearPointerButton, true);
+    pointerFocusedButton = null;
     isMounted = false;
   };
 

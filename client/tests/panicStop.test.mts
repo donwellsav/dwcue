@@ -195,7 +195,7 @@ test('the configured Stop All shortcut works during recovery and project loading
 function loadHandleKeydown(dependencies: Record<string, unknown>) {
   const filename = new URL('../app/composables/useCartHotkeys.ts', import.meta.url);
   const source = readFileSync(filename, 'utf8');
-  const start = source.indexOf('  const handleKeydown =');
+  const start = source.indexOf('  let pointerFocusedButton:');
   const end = source.indexOf('  const updateBinding =', start);
   assert.ok(start >= 0 && end > start, 'hotkey handler must be present');
   const factorySource = `
@@ -213,14 +213,17 @@ function loadHandleKeydown(dependencies: Record<string, unknown>) {
         triggerSlot,
       } = dependencies;
       ${source.slice(start, end)}
-      return handleKeydown;
+      return Object.assign(handleKeydown, { rememberPointerButton, clearPointerButton });
     }
   `;
   const compiled = ts.transpileModule(factorySource, {
     compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const buildHandleKeydown = Function(`${compiled}; return buildHandleKeydown;`)();
-  return buildHandleKeydown(dependencies) as (event: any) => void;
+  return buildHandleKeydown(dependencies) as ((event: any) => void) & {
+    rememberPointerButton: (event: any) => void;
+    clearPointerButton: (event: any) => void;
+  };
 }
 
 test('Stop All shortcut reaches the server-global action without an open project', () => {
@@ -290,6 +293,50 @@ test('workspace shortcuts keep Stop All, repeat suppression, and text focus beha
   press('1');
   press('F9');
   assert.deepEqual(actions, ['play-next', 'one-shot', 'stop-all', 'stop-all', 'play-next', 'one-shot', 'stop-all']);
+});
+
+test('Tab-focused buttons receive Enter and Space while Stop All stays available', () => {
+  const actions: string[] = [];
+  const button = { matches: (selector: string) => selector === 'button:focus-visible' };
+  let enterAction: string | null = 'set-up-next';
+  const handleKeydown = loadHandleKeydown({
+    currentProject: { value: {} }, projectHydrationStatus: { value: 'ready' },
+    dispatchPlaybackAction: (action: string) => actions.push(action),
+    findPlaybackActionForEvent: ({ key, shiftKey }: { key: string; shiftKey?: boolean }) => {
+      if (key === 'Escape') return 'stop-all';
+      if (key === 'Enter') return shiftKey ? 'play-selected' : enterAction;
+      return key === ' ' ? 'play-next' : null;
+    },
+    findSlotForEvent: () => 0,
+    isForwardedFromVideoOutput: (event: { forwarded?: boolean }) => event.forwarded === true,
+    isTextInputFocused: () => false,
+    triggerSlot: () => actions.push('quick-play'),
+  });
+  const press = (key: string, overrides = {}) => {
+    let prevented = false;
+    handleKeydown({ key, target: button,
+      preventDefault() { prevented = true; }, stopPropagation() {}, ...overrides });
+    return prevented;
+  };
+
+  assert.equal(press('Enter'), false);
+  assert.equal(press(' '), false);
+  assert.equal(press('Escape'), true);
+  assert.deepEqual(actions, ['stop-all']);
+
+  assert.equal(press('Enter', { shiftKey: true }), true);
+  assert.equal(press(' ', { forwarded: true }), true);
+  enterAction = null;
+  assert.equal(press('Enter'), false, 'a QuickPlay binding must also yield to the focused button');
+  enterAction = 'stop-all';
+  assert.equal(press('Enter'), true, 'a remapped Stop All must take priority');
+  enterAction = 'set-up-next';
+  handleKeydown.rememberPointerButton({ target: { closest: () => button } });
+  assert.equal(press('Enter'), true);
+  assert.equal(press(' '), true);
+  handleKeydown.clearPointerButton({ target: button });
+  assert.equal(press(' '), false, 'returning to the button with Tab restores native activation');
+  assert.deepEqual(actions, ['stop-all', 'play-selected', 'play-next', 'stop-all', 'set-up-next', 'play-next']);
 });
 
 test('Shift+Q can close focused QuickPlays without relaxing the hydration guard for GO', () => {

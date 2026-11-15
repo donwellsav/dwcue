@@ -4,7 +4,7 @@
       <div class="workspace-panel-header__leading">
         <slot name="header-leading" />
         <h2 class="workspace-panel-header__title">{{ t('playlist.title') }}</h2>
-        <Btn type="button" class="locate-next" icon="my_location" text="" data-native-activation
+        <Btn type="button" class="locate-next" icon="my_location" text=""
           :title="t('actions.locateUpNext')" :aria-label="t('actions.locateUpNext')"
           :disabled="!locatableNextUuid" @click="locateUpNext" />
         <Btn v-if="backupMusicGroup?.type === 'group' || currentProject?.settings?.keepMusicGoing"
