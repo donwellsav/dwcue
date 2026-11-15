@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** 7336b2977cb2161a957de3e9c9ad51dbb3a192d0
+**Source revision:** 07c7bacc91dd85bc07c06d614f15ab6c3c1d4c05
 **Native engine baseline:** 7c233a9
 **Edition:** 15 November 2026 · English · Operator edition
 
@@ -234,7 +234,7 @@ Use descriptive **Display Name** values that match the show caller's language. U
 
 Drag cues into the required order and use **Add Group** where a folder-like structure makes the show easier to navigate. Save and rehearse after rearranging any sequence with jumps, groups, or automatic transitions. A correct-looking playlist does not prove that every transition points where you intend.
 
-Replacing a cue's file keeps its cue identity but reloads the corresponding media decoder. Recheck duration, trims, fades, waveform, level, and end behavior after replacement; an old trim can be inappropriate for the new file. Do media replacements during preparation, not during a live cue.
+In **Properties → Basic Info**, use **Replace or relink media** beside **File**. Select and confirm a file in the lower panel. **Cancel** or a failed check keeps the original media. **Escape** stops playback. Replace during preparation and recheck timing and levels.
 
 ### Trims, fades, and normalization
 
