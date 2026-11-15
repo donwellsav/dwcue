@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** b059f39d91baef9356fd6948ff57effd4e68ca18
+**Source revision:** ecf7969f8eaf603d818192b777e34bfc6ff956c8
 **Native engine baseline:** 7c233a9
 **Edition:** 15 November 2026 · English · Operator edition
 
@@ -323,7 +323,9 @@ In Edit Mode, choose the shuffle icon on a group row or **Shuffle Group Order** 
 
 ### Beds, stings, and ducking
 
-The **Ducking** choices are **Stop All Other Cues**, **No Ducking**, and **Duck Others**, with a **Duck Level**. Decide what a cue should do to sound that is already running before you fire it.
+In **Properties → Basic Info**, click the current **Ducking** setting to open its choices in the lower panel. Choose **Stop All Other Cues**, **No Ducking**, or **Duck Others**. **Duck Others** shows a **Duck Level**. Decide what the cue should do to sound that is already running before you fire it.
+
+The playlist and **GO** stay available with the **Ducking** or **Output device** list open. **Escape** runs Stop All even if you changed its shortcut.
 
 <!-- diagram:duck-envelope -->
 
@@ -354,7 +356,7 @@ Open **Settings** and choose **Audio Device** for the show. Check the device nam
 - **Common mistake:** Stopping after seeing an application meter.
 - **Recovery:** Stop audio. Trace cue override, project device, application output, interface channel, cable, console patch, mute, and destination in that order.
 
-A cue may specify a different **Properties → Output → Output device**. Verify overrides when preparing the backup machine. The previous selection stays in place until the engine accepts the change. Use **Stop All** to cancel an edit waiting for a device to open.
+In **Properties → Output**, click the current **Output device** to expand the choices. The previous route stays selected until the engine accepts the change. Verify overrides on the backup machine. Use **Stop All** to cancel an edit waiting for a device to open.
 
 Media can show as ready while the engine prepares its audio outputs. If a driver stalls during that preparation, you can still use **Stop All**, close or open a show, and import healthy media. Play a test cue through each required Program and LTC destination before doors.
 
