@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** ecf7969f8eaf603d818192b777e34bfc6ff956c8
+**Source revision:** 0aee819574d42ae615dca6f5718afb41b3260fb9
 **Native engine baseline:** 7c233a9
 **Edition:** 15 November 2026 · English · Operator edition
 
@@ -763,7 +763,9 @@ For an archive on the engine, select it in the lower panel and choose **Choose A
 
 Extraction refuses unsafe entries and destination collisions rather than silently overwriting an existing show. If import reports a collision, choose a clean destination; do not delete the working show just to force an import. Wait for import and audio readiness, then listen to representative cues and inspect the important transitions.
 
-If the engine accepts a repaired document, the cue list loads and **Show opened with repairs** appears. Use **Review Repairs** to inspect the issues and check the cue count, groups, QuickPlays, and jump targets. **Save Repaired Show** writes the repaired document to disk. If saving fails, the repaired show remains usable in memory and the original file is preserved.
+If the engine accepts a repaired document, **Review Repairs** appears in the status area below the playlist. Open it to see **Show opened with repairs** and the issues in the lower panel. Check the cue count, groups, QuickPlays, and jump targets before choosing **Save Repaired Show**. If saving fails, the repaired show remains usable in memory and the original file is preserved. You can close the review and reopen it until the show is saved.
+
+The status area also shows background audio loading and keeps unavailable files visible after loading ends. The playlist and **GO** remain available for ready cues. **Escape** runs Stop All while the load status or repair review is visible, even if you changed the Stop All shortcut.
 
 **File → Open Project** opens the picker in the lower panel. Select a `.dwcue` and choose **Open**. The playlist, GO, and **Stop All Cues** stay available while you browse and respond to any save prompt. Canceling the picker or selecting an unavailable or invalid file leaves the current show playing. The same applies if **Open Recent** cannot load its file. A successful load, including reopening the same file, clears the previous selection and armed override. The first playable cue is armed when the project’s automatic-cue option allows it. Confirm Play Next before GO.
 

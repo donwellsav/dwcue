@@ -1,6 +1,6 @@
 {
   "application": "DonWells Cue",
-  "sourceRevision": "ecf7969f8eaf603d818192b777e34bfc6ff956c8",
+  "sourceRevision": "0aee819574d42ae615dca6f5718afb41b3260fb9",
   "packageVersion": "2.6.23 development",
   "edition": "15 November 2026 development review of operator controls, imports, and project panels",
   "images": [
@@ -476,10 +476,10 @@
     "gainStages": "Schematic: final physical sum and secondary-clock adaptation precede the attenuation-only limiter and device output."
   },
   "uiBuildRevision": "534615e1ce656d849e886cacba121fbe3d986020",
-  "manualSourceRevision": "ecf7969f8eaf603d818192b777e34bfc6ff956c8",
+  "manualSourceRevision": "0aee819574d42ae615dca6f5718afb41b3260fb9",
   "visualCompatibility": {
     "checkedOn": "2026-11-15",
-    "revision": "ecf7969f8eaf603d818192b777e34bfc6ff956c8",
-    "basis": "The packaged arm64 Mac app was checked at 1400 × 868 with the cue Output device and Ducking choices open. Figures retain their capture revisions."
+    "revision": "0aee819574d42ae615dca6f5718afb41b3260fb9",
+    "basis": "The packaged arm64 Mac app was checked at 1400 × 868 with audio loading in the status area and repair review in the lower panel. Figures retain their capture revisions."
   }
 }

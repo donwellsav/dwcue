@@ -143,6 +143,8 @@ The file browsers remember the last successfully visited folder separately for e
 
 In the current source, New Show, Open Project, Open Recent, direct `.dwcue` opens, Quit, and Unsaved Changes use the lower panel. The playlist, GO, and Stop All stay available while you fill in the form, browse, or decide. Escape runs Stop All and leaves the panel open. While an existing show loads, the playlist stays visible and cue starts wait for the controller to finish opening the show.
 
+Once the playlist is ready, the status area below it shows background audio loading and unavailable files. Select **Review Repairs** there to inspect or save a repaired show in the lower panel. You can still fire ready cues with **GO**, and **Escape** runs Stop All while either status or review is visible.
+
 The Cue Image picker in **Properties → Basic Info** and the Standby Image picker in **Settings → Video Output** also use the lower panel. Escape runs Stop All while you browse.
 
 In **Settings → Video Output**, drop or paste Test Card logos and masks. Each has a preview and a **Clear** button. Escape runs Stop All while an image loads.
