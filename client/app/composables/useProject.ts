@@ -92,7 +92,7 @@ type ProjectHydrationLoad = ReturnType<typeof _projectHydration.begin>;
 const _ownerSessionId = globalThis.crypto?.randomUUID?.()
   ?? 'dwcue-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
 let _hydrationRequestRevision = 0;
-let _openOverlayRevision = 0;
+let _openLoadRevision = 0;
 const _hydrationRetry = createProjectHydrationRetry();
 
 const createItemPatchMutationIdentity = (clientId: string) => {
@@ -270,8 +270,7 @@ export const useProject = () => {
   const musicContinuityPending = useState<Set<string>>('useProject.musicContinuityPending', () => new Set());
 
   // Tracks project loading for the progress display and cue-start guards.
-  const isLoading = useState<boolean>('useProject.isLoading', () => false);
-  const loadingMessage = useState<string>('useProject.loadingMessage', () => '');
+  const projectLoad = useState<'create' | 'open' | null>('useProject.projectLoad', () => null);
   // Background audio-loading progress (polled while the server is still
   // mirroring cues into the engine in a worker thread). loading=false means
   // every audio cue is ready to play.
@@ -645,8 +644,7 @@ export const useProject = () => {
   // ----------------------------------------------------------------------
   // Create and save the canonical show before the server switches to it.
   const createNewProject = async (name: string, folderPath: string): Promise<boolean> => {
-    isLoading.value = true;
-    loadingMessage.value = 'Creating project…';
+    projectLoad.value = 'create';
     try {
       const server = useLiveplayServer();
       // Ensure server is reachable; without it we can't actually own state.
@@ -701,7 +699,7 @@ export const useProject = () => {
       console.error('Error creating project:', error);
       return false;
     } finally {
-      isLoading.value = false;
+      projectLoad.value = null;
     }
   };
 
@@ -713,7 +711,7 @@ export const useProject = () => {
   const tryRejoinExistingProject = async (existingHeader?: any, signal?: AbortSignal): Promise<boolean> => {
     // A welcome probe must yield to an explicit Open or New. Reconnect
     // verification supplies its own server header and can still proceed.
-    if (signal?.aborted || (isLoading.value && !existingHeader)) return false;
+    if (signal?.aborted || (projectLoad.value && !existingHeader)) return false;
     const requestRevision = ++_hydrationRequestRevision;
     _hydrationRetry.set(() => tryRejoinExistingProject());
     try {
@@ -758,12 +756,11 @@ export const useProject = () => {
     loadHeader: (server: any) => Promise<any>,
   ): Promise<boolean> => {
     const requestRevision = ++_hydrationRequestRevision;
-    const overlayRevision = ++_openOverlayRevision;
+    const loadRevision = ++_openLoadRevision;
     if (projectHydrationStatus.value !== 'failed') {
       _hydrationRetry.set(() => hydrateProjectFrom(loadHeader));
     }
-    isLoading.value = true;
-    loadingMessage.value = 'Loading project…';
+    projectLoad.value = 'open';
     try {
       const server = useLiveplayServer();
       if (!server.connected) {
@@ -800,7 +797,7 @@ export const useProject = () => {
       console.error('Error opening project:', error);
       return false;
     } finally {
-      if (overlayRevision === _openOverlayRevision) isLoading.value = false;
+      if (loadRevision === _openLoadRevision) projectLoad.value = null;
     }
   };
 
@@ -942,8 +939,8 @@ export const useProject = () => {
   // empty for streamItemPages() to populate.
   const clearLocalProjectMirror = () => {
     ++_hydrationRequestRevision;
-    ++_openOverlayRevision;
-    isLoading.value = false;
+    ++_openLoadRevision;
+    projectLoad.value = null;
     _projectHydration.invalidate();
     const hadIdentity = currentProject.value !== null || projectFilePathRef.value !== '';
     _uninstallItemsWatcherFn?.();
@@ -1805,7 +1802,7 @@ export const useProject = () => {
             _hydrationRetry.set(() => tryRejoinExistingProject());
             // Local open/create and recovery own their returned header; ignore
             // their echo so one transition cannot hydrate twice.
-            if (isLoading.value || recoveringProject.value) break;
+            if (projectLoad.value || recoveringProject.value) break;
             void (async () => {
               try {
                 const header = await server().fetchProjectHeader();
@@ -2317,8 +2314,7 @@ export const useProject = () => {
     updateIndices,
     projectFilePath: projectFilePathRef,
     projectEpoch,
-    isLoading,
-    loadingMessage,
+    projectLoad,
     audioLoadingProgress,
     previewItemUuid,
     previewCueId,

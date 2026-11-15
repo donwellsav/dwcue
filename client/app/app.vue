@@ -56,7 +56,7 @@
           <button type="button" data-testid="project-hydration-stop-all" @click="stopAllCues()">
             {{ t('controls.stopAll') }}
           </button>
-          <button type="button" @click="retryProjectHydration">{{ t('projectHydration.retry') }}</button>
+          <button type="button" :disabled="!!projectLoad" @click="retryProjectHydration">{{ t('projectHydration.retry') }}</button>
           <button type="button" @click="showOpenProjectPicker(currentProject.folderPath)">
             {{ t('projectHydration.chooseAnotherShow') }}
           </button>
@@ -71,10 +71,12 @@
           :class="{ 'project-file-panel--startup': !hasWorkspace, 'project-file-panel--browse': projectPicker && !projectFileBusy }"
           aria-labelledby="project-file-panel-title">
           <header class="workspace-panel-header">
-            <h2 id="project-file-panel-title" class="workspace-panel-header__title">{{ t(projectPicker === 'open' ? 'menu.openProject' : 'project.newShow') }}</h2>
+            <h2 id="project-file-panel-title" class="workspace-panel-header__title">
+              {{ t(projectLoad === 'open' || projectPicker === 'open' ? 'menu.openProject' : 'project.newShow') }}
+            </h2>
             <Btn v-if="!hasWorkspace" type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="stopAllCues()" />
           </header>
-          <p v-if="projectFileBusy" class="project-file-status" role="status">{{ isLoading ? loadingMessage : t('common.loading') }}</p>
+          <p v-if="projectFileBusy" class="project-file-status" role="status">{{ projectFileStatus }}</p>
           <ServerFilePickerModal v-else-if="projectPicker" docked :open="true"
             :mode="projectPicker === 'open' ? 'file' : 'directory'"
             :filter="projectPicker === 'open' ? '.dwcue' : 'all'"
@@ -170,8 +172,6 @@
     <!-- About Modal -->
     <AboutModal v-if="showAboutModal && !projectPanelOpen" @close="showAboutModal = false" />
     
-    <LoadingOverlay :visible="isLoading && !projectFileBusy" :title="loadingMessage" />
-
     <ProjectRepairNotice v-if="projectRepair" :notice="projectRepair" @save="saveRepairedProject" />
 
     <!-- Background audio-loading progress (when document already rendered) -->
@@ -214,13 +214,12 @@ const {
   currentProject, projectEpoch, saveProject, createNewProject, openProject, confirmUnsavedChanges, workspaceImportPanel,
   autoSaveEnabled, projectSyncIdentity, saveRevision,
   projectHydrationStatus, projectHydrationError, retryProjectHydration,
-  isLoading, loadingMessage,
+  projectLoad,
   projectRepair, saveRepairedProject,
   unsavedDialogVisible, unsavedDialogReason, unsavedDialogBlocked, unsavedSave, unsavedDiscard, unsavedCancel,
 } = useProject();
 const { stopAllCues } = useAudioEngine();
 const { cartOnlyItems, clearCartOnlyItems, addCartOnlyItem } = useCartItems();
-import LoadingOverlay from './components/LoadingOverlay.vue';
 import AudioLoadProgress from './components/AudioLoadProgress.vue';
 import ServerFilePickerModal from './components/ServerFilePickerModal.vue';
 const { currentLocale, setLocale, getDirection, t } = useLocalization();
@@ -260,7 +259,7 @@ const welcomeScreen = ref<InstanceType<typeof WelcomeScreen> | null>(null);
 const projectPicker = ref<'open' | 'new-location' | null>(null);
 const projectPickerFallback = ref('');
 const showNewShowDialog = ref(false);
-const projectFileDialogOpen = computed(() => showNewShowDialog.value || projectPicker.value !== null);
+const projectFileDialogOpen = computed(() => !!projectLoad.value || showNewShowDialog.value || projectPicker.value !== null);
 const newShowName = ref('');
 const newShowLocation = ref('');
 const newShowLocations = useFilePickerLocations(() => String(useLiveplayServer().serverUrl), 'project-create');
@@ -268,13 +267,18 @@ const newShowNameInput = ref<HTMLInputElement | null>(null);
 const newShowBrowseButton = ref<HTMLButtonElement | null>(null);
 const newShowDialogReturnFocus = ref<HTMLElement | null>(null);
 const creatingNewShow = ref(false);
-const openingShow = useState('useProject.openingFromPicker', () => false);
-const projectFileBusy = computed(() => creatingNewShow.value || openingShow.value);
+const openingFromPicker = ref(false);
+const projectFileBusy = computed(() => !!projectLoad.value || creatingNewShow.value || openingFromPicker.value);
+const projectFileStatus = computed(() => {
+  if (projectLoad.value === 'open') return 'Loading project…';
+  if (projectLoad.value === 'create') return 'Creating project…';
+  return t('common.loading');
+});
 const newShowError = ref<string | null>(null);
 const canCreateNewShow = computed(() => !!newShowName.value.trim() && !!newShowLocation.value.trim());
 
 function showNewProjectDialog(fallbackFolder: string) {
-  if (projectFileDialogOpen.value || isLoading.value || unsavedDialogVisible.value) return;
+  if (projectFileDialogOpen.value || unsavedDialogVisible.value) return;
   projectPickerFallback.value = fallbackFolder;
   newShowName.value = '';
   newShowError.value = null;
@@ -285,7 +289,7 @@ function showNewProjectDialog(fallbackFolder: string) {
 }
 
 function showOpenProjectPicker(fallbackFolder: string) {
-  if (projectFileDialogOpen.value || isLoading.value || unsavedDialogVisible.value) return;
+  if (projectFileDialogOpen.value || unsavedDialogVisible.value) return;
   projectPickerFallback.value = fallbackFolder;
   projectPicker.value = 'open';
 }
@@ -304,18 +308,18 @@ function closeProjectPicker() {
 }
 
 async function onProjectPickerPick(path: string) {
-  if (!path || !projectPicker.value || openingShow.value) return;
+  if (!path || !projectPicker.value || openingFromPicker.value) return;
   if (projectPicker.value === 'new-location') {
     newShowLocation.value = path;
     closeProjectPicker();
     return;
   }
-  openingShow.value = true;
+  openingFromPicker.value = true;
   try {
     await guardedOpenProject(path);
   } finally {
     closeProjectPicker();
-    openingShow.value = false;
+    openingFromPicker.value = false;
   }
 }
 

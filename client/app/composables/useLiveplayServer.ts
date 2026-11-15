@@ -55,8 +55,7 @@ function createClient() {
   const currentProjectForImport = useState<{ folderPath: string } | null>('currentProject', () => null);
   const projectPathForImport = useState<string>('useProject.projectFilePath', () => '');
   const projectSessionId = useState<string>('useProject.serverSessionId', () => '');
-  const openingFromPicker = useState('useProject.openingFromPicker', () => false);
-  const projectLoading = useState('useProject.isLoading', () => false);
+  const projectLoad = useState<'create' | 'open' | null>('useProject.projectLoad', () => null);
   const sessionLost = useState<boolean>('connectionGuard.sessionLost', () => false);
   const detachedProjectForImport = useState<OneShotMutationIdentity | null>('oneShots.detachedProjectIdentity', () => null);
   // ---- Server URL config (persisted via localStorage) ---------------
@@ -230,7 +229,7 @@ function createClient() {
   const cueStartsBlocked = computed(() =>
     connectionLost.value || showVerification.value !== null || sessionLost.value || awaitingStopRevision.value ||
     // The engine can switch before its Open reply reaches the old workspace.
-    (openingFromPicker.value && projectLoading.value));
+    projectLoad.value === 'open');
   let socketLifetime: AbortController | null = null;
   // Grace period before we shout about it. A WS bounce that heals inside this
   // window is invisible to the operator; anything longer gets the modal.

@@ -56,7 +56,6 @@ test('Stop All sends the normal command from remaining blocking dialogs', () => 
     ['AudioImportModal', 'header'],
     ['ServerFilePickerModal', 'header', 'toolbar'],
     ['ConnectionLostModal', 'div', 'clm-dialog'],
-    ['LoadingOverlay', 'div', 'loading-panel'],
   ];
   for (const [component, tag, className] of dialogs) {
     const code = compile(elementSource(component, tag, className), { mode: 'function' }).code;
@@ -143,16 +142,16 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
   }).outputText;
   const calls: unknown[][] = [];
   const sessionLost = { value: true };
-  const projectLoading = { value: false };
+  const projectLoad = { value: null as 'open' | 'create' | null };
   const projectPanelOpen = { value: false };
   const server = {
     connected: true, connectionLost: false, showVerification: false,
-    get cueStartsBlocked() { return this.connectionLost || this.showVerification || sessionLost.value; },
+    get cueStartsBlocked() { return this.connectionLost || this.showVerification || sessionLost.value || projectLoad.value === 'open'; },
     stopAll: (...args: unknown[]) => calls.push(args),
   };
   const currentProject = { value: { playbackKeys: {} as Record<string, unknown> } };
-  const trap = Function('server', 'projectLoading', 'projectPanelOpen', 'currentProject', 'DEFAULT_PLAYBACK_KEYS', 'bindingsMatch', 'eventToBinding',
-    `${code}\nreturn trapKeydown;`)(server, projectLoading, projectPanelOpen, currentProject, DEFAULT_PLAYBACK_KEYS, bindingsMatch, eventToBinding);
+  const trap = Function('server', 'projectLoad', 'projectPanelOpen', 'currentProject', 'DEFAULT_PLAYBACK_KEYS', 'bindingsMatch', 'eventToBinding',
+    `${code}\nreturn trapKeydown;`)(server, projectLoad, projectPanelOpen, currentProject, DEFAULT_PLAYBACK_KEYS, bindingsMatch, eventToBinding);
   const press = (key: string, opts = {}) => {
     let swallowed = false;
     trap({ key, target: { closest: () => null }, ctrlKey: false, metaKey: false, shiftKey: false,
@@ -184,11 +183,11 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
   assert.equal(press('Escape'), true);
   assert.deepEqual(calls, [[], [], [], []]);
   server.showVerification = false;
-  projectLoading.value = true;
+  projectLoad.value = 'create';
   currentProject.value.playbackKeys['stop-all'] = { key: 'F9', ctrlKey: false, shiftKey: false, altKey: false };
   assert.equal(press('F9'), true, 'loading captures Stop All without the One Shots panel');
-  assert.equal(press(' '), false, 'loading leaves other shortcuts to their usual handlers');
-  projectLoading.value = false;
+  assert.equal(press(' '), false, 'New Show leaves other shortcuts to their usual handlers');
+  projectLoad.value = null;
   assert.equal(press('F9'), false, 'the trap defers to normal routing after loading');
   assert.deepEqual(calls, [[], [], [], [], []]);
 

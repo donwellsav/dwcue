@@ -114,7 +114,7 @@ export const useConnectionGuard = () => {
   }
   _wired = true;
   const currentProject = useState<Project | null>('currentProject', () => null);
-  const projectLoading = useState<boolean>('useProject.isLoading', () => false);
+  const projectLoad = useState<'create' | 'open' | null>('useProject.projectLoad', () => null);
   const projectPanelOpen = useState('projectPanelOpen', () => false);
 
   // Capture Stop All before an editor can consume it, and guard cue starts during recovery.
@@ -126,7 +126,7 @@ export const useConnectionGuard = () => {
     const editing = el?.closest?.('input, textarea, [contenteditable]:not([contenteditable="false"])');
     const projectPanelEscape = projectPanelOpen.value && e.key === 'Escape' &&
       !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey;
-    if (!projectPanelEscape && !blocked && !projectLoading.value && !(currentProject.value && editing)) return;
+    if (!projectPanelEscape && !blocked && !projectLoad.value && !(currentProject.value && editing)) return;
     const typing = e.isComposing ||
         (editing && e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey);
     if (!typing) {

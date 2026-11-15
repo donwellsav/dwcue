@@ -110,6 +110,7 @@ test('New Show opens the header from the server operation that saves before swit
   const calls: unknown[][] = [];
   const header = { hasOpenProject: true, server: { projectFilePath: '/show/New.dwcue', projectSessionId: 'created-session' } };
   const isHydrating = { value: false };
+  const projectLoad = { value: null };
   let acknowledge!: (value: typeof header) => void;
   const accepted = new Promise<typeof header>(resolve => { acknowledge = resolve; });
   const server = { connected: true,
@@ -121,7 +122,7 @@ test('New Show opens the header from the server operation that saves before swit
     fetchProjectHeader: async () => header,
   };
   const create = projectFunction('createNewProject', {
-    isLoading: { value: false }, loadingMessage: { value: '' }, isHydrating,
+    projectLoad, isHydrating,
     useLiveplayServer: () => server, DEFAULT_CART_SLOT_KEYS: {}, DEFAULT_THEME: {}, DEFAULT_PROJECT_SETTINGS: {},
     projectPathInFolder: (folder: string, name: string) => `${folder}/${name}.dwcue`,
     applyServerHeader: (accepted: unknown) => { calls.push(['accepted', accepted]); return { finish() {} }; }, nextTick: async () => {},
@@ -130,9 +131,11 @@ test('New Show opens the header from the server operation that saves before swit
   });
   const creating = create('New', '/show');
   assert.deepEqual(calls, [['New', '/show/New.dwcue']]);
+  assert.equal(projectLoad.value, 'create');
   assert.equal(isHydrating.value, false, 'the current show must still sync its edits while create waits for storage');
   acknowledge(header);
   assert.equal(await creating, true);
+  assert.equal(projectLoad.value, null);
   assert.deepEqual(calls, [['New', '/show/New.dwcue'], ['accepted', header]]);
 });
 
@@ -298,7 +301,7 @@ test('closing keeps the old server session after clearing the local mirror and c
   assert.equal(session.value, 'new-session');
 });
 
-test('cold Open owns the loading overlay while the welcome screen probes for an existing show', async () => {
+test('cold Open owns the loading panel while the welcome screen probes for an existing show', async () => {
   const source = readFileSync(new URL('../app/composables/useProject.ts', import.meta.url), 'utf8');
   const start = source.indexOf('  const tryRejoinExistingProject =');
   const end = source.indexOf('  const openProject =', start);
@@ -306,15 +309,15 @@ test('cold Open owns the loading overlay while the welcome screen probes for an 
   const code = ts.transpileModule(source.slice(start, end), {
     compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  const isLoading = { value: false };
+  const projectLoad = { value: null };
   const header = { hasOpenProject: true, itemCount: 1 };
   const currentProject = { value: { cartOnlyItems: [] } };
   let headerProbes = 0;
   let pages = 0;
   const deps = {
-    _hydrationRequestRevision: 0, _openOverlayRevision: 0, _hydrationRetry: createProjectHydrationRetry(),
+    _hydrationRequestRevision: 0, _openLoadRevision: 0, _hydrationRetry: createProjectHydrationRetry(),
     projectHydrationStatus: { value: 'ready' }, isHydrating: { value: false },
-    isLoading, loadingMessage: { value: '' }, currentProject, projectFilePathRef: { value: '' },
+    projectLoad, currentProject, projectFilePathRef: { value: '' },
     useLiveplayServer: () => ({
       connected: true,
       fetchProjectHeader: async () => { headerProbes++; return header; },
@@ -329,11 +332,11 @@ test('cold Open owns the loading overlay while the welcome screen probes for an 
     `${code}; return { hydrateProjectFrom, tryRejoinExistingProject };`)(...Object.values(deps));
   let loaded!: (header: object) => void;
   const open = hydrateProjectFrom(() => new Promise(resolve => { loaded = resolve; }));
-  assert.equal(isLoading.value, true);
+  assert.equal(projectLoad.value, 'open');
   const rejoined = await tryRejoinExistingProject();
   loaded(header);
   const opened = await open;
-  assert.equal(isLoading.value, false, 'a welcome rejoin left the loading overlay visible');
+  assert.equal(projectLoad.value, null, 'a welcome rejoin left the loading panel visible');
   assert.equal(rejoined, false);
   assert.equal(opened, true);
   assert.equal(headerProbes, 0);
@@ -342,19 +345,19 @@ test('cold Open owns the loading overlay while the welcome screen probes for an 
 
   const interrupted = hydrateProjectFrom(() => new Promise(resolve => { loaded = resolve; }));
   assert.equal(await tryRejoinExistingProject(header), true, 'reconnect still verifies during an Open');
-  assert.equal(isLoading.value, true, 'reconnect must not dismiss the in-flight Open');
+  assert.equal(projectLoad.value, 'open', 'reconnect must not dismiss the in-flight Open');
   const newer = hydrateProjectFrom(async () => header);
   loaded(header);
   assert.equal(await interrupted, false);
-  assert.equal(isLoading.value, true, 'an older Open must not dismiss the newer overlay');
+  assert.equal(projectLoad.value, 'open', 'an older Open must not dismiss the newer panel');
   assert.equal(await newer, true);
-  assert.equal(isLoading.value, false);
+  assert.equal(projectLoad.value, null);
 
   const superseded = hydrateProjectFrom(() => new Promise(resolve => { loaded = resolve; }));
   assert.equal(await tryRejoinExistingProject(header), true);
   loaded(header);
   assert.equal(await superseded, false);
-  assert.equal(isLoading.value, false, 'an Open must release its overlay after reconnect verification');
+  assert.equal(projectLoad.value, null, 'an Open must release its panel after reconnect verification');
 });
 
 test('save failure persists through edits and pending retries until the current show is saved', async () => {
@@ -418,9 +421,9 @@ test('Retry still recovers the current cue list after a replacement show is refu
   const attempts: string[] = [];
   retry.set(async () => { attempts.push('current show'); return true; });
   const open = projectFunction('hydrateProjectFrom', {
-    _hydrationRequestRevision: 0, _openOverlayRevision: 0, _hydrationRetry: retry,
+    _hydrationRequestRevision: 0, _openLoadRevision: 0, _hydrationRetry: retry,
     projectHydrationStatus: { value: 'failed' },
-    isLoading: { value: false }, loadingMessage: { value: '' },
+    projectLoad: { value: null },
     useLiveplayServer: () => ({ connected: true }),
     _projectHydration: { current: () => null }, console: { error() {} },
   });
