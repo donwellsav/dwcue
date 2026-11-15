@@ -116,20 +116,17 @@ export const useConnectionGuard = () => {
   const currentProject = useState<Project | null>('currentProject', () => null);
   const projectLoading = useState<boolean>('useProject.isLoading', () => false);
 
-  // ---- Input freeze --------------------------------------------------
-  // Capture phase on `window` runs before every other listener in the app
-  // (MainWorkspace, useCartHotkeys and the playback keys all listen in the
-  // bubble phase), so one trap here covers all of them without each handler
-  // needing its own check. Keys inside the dialogs themselves are exempt, so
-  // the operator can always drive the recovery UI.
+  // Capture Stop All before an editor can consume it, and guard cue starts during recovery.
   const trapKeydown = (e: KeyboardEvent) => {
     const blocked = server.cueStartsBlocked;
-    if (!blocked && !projectLoading.value) return;
     // Tab still moves focus, so the dialog is reachable from anywhere.
     if (e.key === 'Tab') return;
     const el = e.target as HTMLElement | null;
-    if (!e.isComposing &&
-        !el?.closest?.('input, textarea, [contenteditable]:not([contenteditable="false"])')) {
+    const editing = el?.closest?.('input, textarea, [contenteditable]:not([contenteditable="false"])');
+    if (!blocked && !projectLoading.value && !(currentProject.value && editing)) return;
+    const typing = e.isComposing ||
+        (editing && e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey);
+    if (!typing) {
       const saved = currentProject.value?.playbackKeys?.['stop-all'];
       const binding = saved === undefined ? DEFAULT_PLAYBACK_KEYS['stop-all'] : saved;
       if (binding && bindingsMatch(binding, eventToBinding(e))) {

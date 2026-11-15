@@ -133,7 +133,7 @@ test('Stop All remains available inside the recovery prompt while a recovery cho
   assert.ok(findStop(), 'the HTTP stop must remain available during a second disconnect');
 });
 
-test('the configured Stop All shortcut works during recovery and project loading', () => {
+test('Stop All takes priority in editors, recovery and project loading', () => {
   const source = readFileSync(new URL('../app/composables/useConnectionGuard.ts', import.meta.url), 'utf8');
   const start = source.indexOf('  const trapKeydown =');
   const end = source.indexOf('  window.addEventListener', start);
@@ -190,6 +190,21 @@ test('the configured Stop All shortcut works during recovery and project loading
   projectLoading.value = false;
   assert.equal(press('F9'), false, 'the trap defers to normal routing after loading');
   assert.deepEqual(calls, [[], [], [], [], []]);
+
+  const editor = { closest: (selector: string) => selector.startsWith('input, textarea') ? {} : null };
+  currentProject.value.playbackKeys = {};
+  assert.equal(press('Escape', { target: editor }), true, 'Stop All must run before the active editor handles Escape');
+  press('Escape', { target: editor, repeat: true });
+  assert.equal(press('Escape', { target: editor, isComposing: true }), false, 'allow IME cancellation');
+  assert.equal(press(' ', { target: editor }), false, 'space must reach the editor');
+  assert.equal(press('Tab', { target: editor }), false);
+  currentProject.value.playbackKeys['stop-all'] = { key: 'k', ctrlKey: false, shiftKey: false, altKey: false };
+  assert.equal(press('k', { target: editor }), false, 'typing cannot fire a bare-letter binding');
+  currentProject.value.playbackKeys['stop-all'] = { key: 'F9', ctrlKey: false, shiftKey: false, altKey: false };
+  assert.equal(press('F9', { target: editor }), true);
+  sessionLost.value = true;
+  assert.equal(press('F9', { target: editor }), true, 'Stop All also reaches the engine from a focused editor during recovery');
+  assert.deepEqual(calls.slice(5), [[], [], []]);
 });
 
 function loadHandleKeydown(dependencies: Record<string, unknown>) {
