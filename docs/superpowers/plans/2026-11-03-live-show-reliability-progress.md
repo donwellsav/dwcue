@@ -589,3 +589,11 @@ The Escape check stopped native software playback from the limiter field and a P
 T48d reproduced lockups with a held project-file read and held filesystem probes. Open keeps the original session and deadline (`9c3d761`). Save keeps its own writer order and gives up show ownership during disk I/O (`c4ee00f`); concurrent Save As calls for the same show retain separate snapshots, while direct cue registration verifies the session after its unlocked path comparison (`7c233a9`). Native 13/13 and API 74/74 passed with software audio. The tests do not cancel OS storage waits.
 
 The import panel review used 1200 × 700 and 845 × 690 Chromium viewports at 110% text with simulated providers and the NULL playback device. Media staging, Spotify selection and Cancel, YouTube progress and completion, GO, and Escape passed. Client checks, type checking, and production renderer generation passed (`89d574e`). Updated the manual and affected captures. Physical PA and HDMI acceptance remains deferred.
+
+## 14 November — Quit and unsaved changes
+
+Quit uses the lower panel for both the save decision and the local engine choice (`c43b68e`). The Chromium and NULL audio check kept playlist arming, GO, pointer Stop All, and the first Escape usable at 1200 × 700 and 110% text. It also covered restoring the Settings tab, requesting client-only or server shutdown through the renderer, late edits that require another save decision, and returning to Welcome. The key routing check covered Escape with a remapped Stop All.
+
+New, Open, and Close use the same lower panel (`5ad46ba`). Software checks exercised Show Mode, an 845 × 690 viewport, Cancel and restoration of the New Show form, opening after Save or Don't Save, and a held save that let GO and Escape work before an injected write failure. The current show stayed loaded on failure.
+
+Both scenarios passed against the generated renderer. All 275 client tests, type checking, renderer generation, and the manual checks passed. Physical output acceptance remains in T24.

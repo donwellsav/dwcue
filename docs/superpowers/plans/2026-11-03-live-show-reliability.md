@@ -472,3 +472,5 @@ In-flight native calls own their resources for the life of the process. Managed 
 - [x] Dock playlist delete confirmation and keep the original targets when the operator changes the selection (`a73de33`).
 - [x] Keep readable files after a failed subfolder scan and name the skipped paths (`582a5ee`).
 - [x] Tighten Media, Spotify, YouTube, and archive status layouts. Verify selection, retries, visible progress, GO and Stop All in software (`89d574e`).
+- [x] Dock Quit choices and reserve Escape for Stop All while deciding. Verify playlist arming, GO, both Stop All paths, Close Client Only, Close Server, and edits made while the choice is open (`c43b68e`).
+- [x] Dock Unsaved Changes for New, Open, and Close. Verify Edit and Show modes, Save and Don't Save, Cancel, and transport during a held or failed save (`5ad46ba`).

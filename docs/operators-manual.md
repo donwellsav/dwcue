@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** 89d574e9ddc709e54f286e134416b7b189528947
+**Source revision:** 5ad46ba49eda29ea25203faf25cdef4067680935
 **Native engine baseline:** 7c233a9
 **Edition:** 14 November 2026 · English · Operator edition
 
@@ -826,7 +826,9 @@ Expect a possible position rollback and recheck the result before taking control
 
 ### Quit the intended part of the system
 
-For unsaved edits, ordinary New/Open/Close actions offer **Save**, **Don't Save**, or **Cancel**. Cancel is a single native cancellation path. If Save fails, the current show and selection remain in place and the requested open/close is cancelled; a successful Save writes the old show before the new one opens. Quit uses **Return to Project**, **Close and disregard changes**, or **Save project, then close**. A failed save cancels the requested close action.
+Quit and **Unsaved Changes** open in the lower panel. The playlist, GO, and **Stop All Cues** stay available in Edit and Show modes. **Escape** runs Stop All with the configured fade and leaves the panel open, even if you assigned Stop All another key. Use **Cancel** or **Return to Project** to dismiss the decision.
+
+For unsaved edits, New, Open, and Close offer **Save**, **Don't Save**, or **Cancel**. A successful Save writes the current show before continuing. A failed save leaves the current show open. If you cancel the decision while creating a new show, the New Show form returns with the name and location you entered. Quit offers **Return to Project**, **Close and disregard changes**, or **Save project, then close**.
 
 **Procedure — clear the unsaved-project quit guard**
 
@@ -837,7 +839,7 @@ For unsaved edits, ordinary New/Open/Close actions offer **Save**, **Don't Save*
 - **Recovery:** If save fails, remain with the project and selection intact, correct the storage fault, verify a deliberate save, then request Quit again.
 
 
-If the managed local engine is running, the next choice distinguishes **Close Client Only** from **Close Server**. **Close Client Only removes client-owned Preview/test-tone resources but leaves the Program mix and engine running. Close Server stops playback and disconnects every connected client.** A failed AV cleanup retains the owned-resource diagnostic and refuses the terminal action. Closing a controller connected to a remote engine does not shut down that remote engine.
+If the managed local engine is running, the next choice distinguishes **Close Client Only** from **Close Server**. **Close Client Only removes client-owned Preview/test-tone resources but leaves the Program mix and engine running. Close Server stops playback and disconnects every connected client.** If you make further unsaved edits while this choice is open, Quit asks what to do with them before closing. A failed AV cleanup retains the owned-resource diagnostic and refuses the terminal action. Closing a controller connected to a remote engine does not shut down that remote engine.
 
 
 **Procedure — end an operating session**
@@ -992,7 +994,7 @@ These are source defaults, not a promise about a project's customized assignment
 | Cmd/Ctrl+Q | Exit / quit workflow |
 | F11 | Fullscreen |
 
-The default **Escape** Stop All shortcut works while editing, including in the limiter ceiling and Preview In/Out fields. With Video Output focused, Escape also exits its fullscreen mode. In Level Check, R / [ / ] / Q have the temporary meanings described in chapter 12. MIDI bindings belong to the machine; keyboard playback assignments belong to the project.
+The default **Escape** Stop All shortcut works while editing, including in the limiter ceiling and Preview In/Out fields. Quit and **Unsaved Changes** reserve Escape for Stop All. With Video Output focused, Escape also exits its fullscreen mode. In Level Check, R / [ / ] / Q have the temporary meanings described in chapter 12. MIDI bindings belong to the machine; keyboard playback assignments belong to the project.
 
 ### Operating boundaries
 

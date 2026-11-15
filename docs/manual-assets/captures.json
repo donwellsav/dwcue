@@ -1,8 +1,8 @@
 {
   "application": "DonWells Cue",
-  "sourceRevision": "89d574e9ddc709e54f286e134416b7b189528947",
+  "sourceRevision": "5ad46ba49eda29ea25203faf25cdef4067680935",
   "packageVersion": "2.6.23 development",
-  "edition": "14 November 2026 development review of operator controls and import panels",
+  "edition": "14 November 2026 development review of operator controls, imports, and docked confirmations",
   "images": [
     {
       "file": "music-continuity-current.png",
@@ -476,10 +476,10 @@
     "gainStages": "Schematic: final physical sum and secondary-clock adaptation precede the attenuation-only limiter and device output."
   },
   "uiBuildRevision": "79ed56ede6a5362885750367f02ff35ce443be0f",
-  "manualSourceRevision": "79ed56ede6a5362885750367f02ff35ce443be0f",
+  "manualSourceRevision": "5ad46ba49eda29ea25203faf25cdef4067680935",
   "visualCompatibility": {
     "checkedOn": "2026-11-14",
-    "revision": "79ed56ede6a5362885750367f02ff35ce443be0f",
-    "basis": "The new playlist and group controls were captured in the compiled renderer. Earlier examples retain their original capture details."
+    "revision": "5ad46ba49eda29ea25203faf25cdef4067680935",
+    "basis": "Quit and Unsaved Changes now open in the lower panel. Existing figures show other states and retain their original capture details."
   }
 }
