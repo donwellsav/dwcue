@@ -594,6 +594,14 @@ The import panel review used 1200 × 700 and 845 × 690 Chromium viewports at 11
 
 Quit uses the lower panel for both the save decision and the local engine choice (`c43b68e`). The Chromium and NULL audio check kept playlist arming, GO, pointer Stop All, and the first Escape usable at 1200 × 700 and 110% text. It also covered restoring the Settings tab, requesting client-only or server shutdown through the renderer, late edits that require another save decision, and returning to Welcome. The key routing check covered Escape with a remapped Stop All.
 
-New, Open, and Close use the same lower panel (`5ad46ba`). Software checks exercised Show Mode, an 845 × 690 viewport, Cancel and restoration of the New Show form, opening after Save or Don't Save, and a held save that let GO and Escape work before an injected write failure. The current show stayed loaded on failure.
+Unsaved Changes for New, Open, and Close uses the same lower panel (`5ad46ba`). Software checks exercised Show Mode, an 845 × 690 viewport, Cancel and restoration of the New Show form, opening after Save or Don't Save, and a held save that let GO and Escape work before an injected write failure. The current show stayed loaded on failure.
 
 Both scenarios passed against the generated renderer. All 275 client tests, type checking, renderer generation, and the manual checks passed. Physical output acceptance remains in T24.
+
+## 14 November — New Show and Open Project
+
+New Show, its folder picker, and create progress use the lower panel (`7c0d18b`). Chromium with the NULL audio engine verified both workspace modes at 1200 × 700 and 845 × 690 with 110% text. Escape stopped playback from the form and path field with Stop All assigned to F9. Cancel kept the show and restored the previous panel or the form draft. GO and Stop All worked while a create request was held.
+
+Open Project uses the same browser from the workspace or Welcome (`534615e`). Cancel, invalid files, and a canceled save decision left the playing cue intact. A response held after engine acceptance reproduced a GO from the old workspace starting a cue in the replacement show. The submitted Open now holds cue starts until loading ends. A repeat with the reply held verified that the old workspace could not start the new cue. The held request kept the playlist visible and both Stop All controls available.
+
+All three Chromium scenarios passed against the generated renderer. The 275 client tests, type checking, and renderer generation passed. The manual includes the new form and explains when GO waits. Physical output acceptance remains in T24.

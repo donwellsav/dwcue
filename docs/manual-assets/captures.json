@@ -1,8 +1,8 @@
 {
   "application": "DonWells Cue",
-  "sourceRevision": "5ad46ba49eda29ea25203faf25cdef4067680935",
+  "sourceRevision": "534615e1ce656d849e886cacba121fbe3d986020",
   "packageVersion": "2.6.23 development",
-  "edition": "14 November 2026 development review of operator controls, imports, and docked confirmations",
+  "edition": "14 November 2026 development review of operator controls, imports, and project panels",
   "images": [
     {
       "file": "music-continuity-current.png",
@@ -40,20 +40,20 @@
     },
     {
       "file": "new-show-current.png",
-      "view": "New Show form with a practice name and disposable destination selected.",
-      "version": "2.6.17",
-      "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "nativeSourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "capturedOn": "2026-11-03",
-      "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
+      "view": "New Show in the lower panel with a practice name and disposable destination selected.",
+      "version": "2.6.23 development",
+      "sourceRevision": "534615e1ce656d849e886cacba121fbe3d986020",
+      "nativeSourceRevision": "7c233a943f4c9ec42b6008fb3ffea09729429b84",
+      "capturedOn": "2026-11-14",
+      "surface": "Production DonWells Cue renderer in Chromium, 1040 × 700 at 110% interface scale.",
       "dimensions": [
-        480,
-        272
+        1040,
+        129
       ],
-      "sha256": "839b3a6d64f983449c40bc6e0d89f2bef16113e3a2bd292ad3b5c2d3316d212b",
-      "fixture": "Disposable Conference rehearsal with generated WAV tones. Native engine uses NULL software output inside audio-service-denial sandbox; no user media, live app or physical outputs.",
-      "captureMethod": "Playwright screenshot of the actual rendered page or control panel; no UI controls redrawn.",
-      "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
+      "sha256": "be006455ddf00fb3f902f865959ba9a95a05c0bbec3a0054ad415efbfbb08d37",
+      "fixture": "Disposable rehearsal with generated WAV media and the native NULL playback device. The form was left unsubmitted.",
+      "captureMethod": "Playwright screenshot of the rendered lower panel with fixture Electron methods.",
+      "presentation": "Crop of the New Show panel."
     },
     {
       "file": "edit-workspace.png",
@@ -475,11 +475,11 @@
     "duckEnvelope": "Schematic explanation, not a measured response plot",
     "gainStages": "Schematic: final physical sum and secondary-clock adaptation precede the attenuation-only limiter and device output."
   },
-  "uiBuildRevision": "79ed56ede6a5362885750367f02ff35ce443be0f",
-  "manualSourceRevision": "5ad46ba49eda29ea25203faf25cdef4067680935",
+  "uiBuildRevision": "534615e1ce656d849e886cacba121fbe3d986020",
+  "manualSourceRevision": "534615e1ce656d849e886cacba121fbe3d986020",
   "visualCompatibility": {
     "checkedOn": "2026-11-14",
-    "revision": "5ad46ba49eda29ea25203faf25cdef4067680935",
-    "basis": "Quit and Unsaved Changes now open in the lower panel. Existing figures show other states and retain their original capture details."
+    "revision": "534615e1ce656d849e886cacba121fbe3d986020",
+    "basis": "The New Show figure was refreshed from the generated renderer. The other figures retain their original capture details."
   }
 }

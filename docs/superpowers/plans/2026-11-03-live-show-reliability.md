@@ -474,3 +474,5 @@ In-flight native calls own their resources for the life of the process. Managed 
 - [x] Tighten Media, Spotify, YouTube, and archive status layouts. Verify selection, retries, visible progress, GO and Stop All in software (`89d574e`).
 - [x] Dock Quit choices and reserve Escape for Stop All while deciding. Verify playlist arming, GO, both Stop All paths, Close Client Only, Close Server, and edits made while the choice is open (`c43b68e`).
 - [x] Dock Unsaved Changes for New, Open, and Close. Verify Edit and Show modes, Save and Don't Save, Cancel, and transport during a held or failed save (`5ad46ba`).
+- [x] Dock New Show, its destination picker, and create progress. Verify the playlist, GO, and Stop All during editing, folder selection, and a held create, including Escape with a remapped Stop All (`7c0d18b`).
+- [x] Dock Open Project and its progress. Keep GO available while browsing and answering the save prompt. Once the picker submits an Open, keep Stop All and Escape available and hold cue starts through the switch (`534615e`).

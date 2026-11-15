@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** 5ad46ba49eda29ea25203faf25cdef4067680935
+**Source revision:** 534615e1ce656d849e886cacba121fbe3d986020
 **Native engine baseline:** 7c233a9
 **Edition:** 14 November 2026 · English · Operator edition
 
@@ -75,17 +75,17 @@ On launch, the desktop normally starts its managed local server automatically. T
 
 ### Create a show
 
-1. On the welcome screen choose **New Show**, or use **File → New Project** while a show is open.
+1. On the welcome screen choose **New Show**, or use **File → New Project** while a show is open. The form opens in the lower panel.
 2. Enter a descriptive **Show name**, such as `Evening Show - rehearsal`.
 3. Beside **Location**, choose **Choose…**. Location is a read-only summary, not a text field.
 4. In the folder picker, navigate to the destination. You may type an absolute path in its path bar and press Enter. Choose **Select folder**.
 5. Back in the combined name/location form, check both values and choose **Create Show**.
 
-![New Show form with a practice name and disposable destination selected.](manual-assets/new-show-current.png)
+![New Show in the lower panel with a practice name and disposable destination selected.](manual-assets/new-show-current.png)
 
 **Expected result:** After the new file is saved, the workspace opens with the new show name and an empty playlist. Canceling or a failed write leaves any current show playing. If the selected name already exists in that folder, choose a different name or folder.
 
-While New Show waits for storage, use **Stop All** in the loading panel if needed. If the deadline passes before the engine accepts the switch, the current show stays active. When a late save is confirmed, the form shows the saved `.dwcue` path. Close the form and use **File → Open Project** when you are ready. If the reply is lost, let the controller verify the active show and check for the file before retrying.
+The playlist, GO, and **Stop All Cues** stay available while you enter the name, choose a folder, or wait for the engine to save the new file. **Escape** stops playback and keeps the panel open. If the deadline passes before the engine accepts the switch, the current show stays active. When a late save is confirmed, the form shows the saved `.dwcue` path. Close the form and use **File → Open Project** when you are ready. If the reply is lost, let the controller verify the active show and check for the file before retrying.
 
 DonWells Cue creates `<show name>.dwcue` and `media/` in the selected folder; portable exports use `.dwcuepack`. Keep that folder dedicated to the show. A remote picker uses the engine computer. See chapter 11 for archive import and non-overwrite safeguards.
 
@@ -755,11 +755,11 @@ Extraction refuses unsafe entries and destination collisions rather than silentl
 
 If the engine accepts a repaired document, the cue list loads and **Show opened with repairs** appears. Use **Review Repairs** to inspect the issues and check the cue count, groups, QuickPlays, and jump targets. **Save Repaired Show** writes the repaired document to disk. If saving fails, the repaired show remains usable in memory and the original file is preserved.
 
-**File → Open Project** lets you browse while the current show plays. Canceling the picker or selecting an unavailable or invalid file leaves that show playing. The same applies if **Open Recent** cannot load its file. A successful load, including reopening the same file, clears the previous selection and armed override. The first playable cue is armed when the project’s automatic-cue option allows it. Confirm Play Next before GO.
+**File → Open Project** opens the picker in the lower panel. Select a `.dwcue` and choose **Open**. The playlist, GO, and **Stop All Cues** stay available while you browse and respond to any save prompt. Canceling the picker or selecting an unavailable or invalid file leaves the current show playing. The same applies if **Open Recent** cannot load its file. A successful load, including reopening the same file, clears the previous selection and armed override. The first playable cue is armed when the project’s automatic-cue option allows it. Confirm Play Next before GO.
 
 If Open expires or another controller opens a different show while the first file is still being read, the late Open cannot take over. If the connection drops before the reply arrives, wait for the controller to verify which show the engine has active before pressing GO. Update older remote engines before using Open from this controller.
 
-While Open is waiting, use **Stop All Cues** in the loading panel or press the configured Stop All shortcut. Playback uses the current show's Stop All fade and the Open request continues waiting for its result.
+Once the picker submits an Open to the engine, the lower panel shows progress and cue starts wait for the controller to load the show. **Stop All Cues** and **Escape** stay available during the wait. **Open Recent** and files opened directly can still display the loading screen with its own **Stop All Cues** button. Stop All uses the current show's fade and the Open request continues waiting for its result.
 
 Recognized malformed cue, group and audio-settings values are refused before replacing the current show or overwriting its saved file. Keep the known-good copy and correct the rejected document separately. Supported legacy/default repairs still apply; a refusal does not promise that every damaged file can be repaired.
 
@@ -994,7 +994,7 @@ These are source defaults, not a promise about a project's customized assignment
 | Cmd/Ctrl+Q | Exit / quit workflow |
 | F11 | Fullscreen |
 
-The default **Escape** Stop All shortcut works while editing, including in the limiter ceiling and Preview In/Out fields. Quit and **Unsaved Changes** reserve Escape for Stop All. With Video Output focused, Escape also exits its fullscreen mode. In Level Check, R / [ / ] / Q have the temporary meanings described in chapter 12. MIDI bindings belong to the machine; keyboard playback assignments belong to the project.
+The default **Escape** Stop All shortcut works while editing, including in the limiter ceiling and Preview In/Out fields. New Show, Open Project, Quit, and **Unsaved Changes** reserve Escape for Stop All. With Video Output focused, Escape also exits its fullscreen mode. In Level Check, R / [ / ] / Q have the temporary meanings described in chapter 12. MIDI bindings belong to the machine; keyboard playback assignments belong to the project.
 
 ### Operating boundaries
 
