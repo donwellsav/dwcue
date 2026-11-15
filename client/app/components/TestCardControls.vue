@@ -41,9 +41,9 @@
     <fieldset v-if="config.cardType === 'alteka'" class="test-card-fieldset" :disabled="disabled">
       <legend>{{ t('testCard.brandCard') }}</legend>
       <div class="test-card-grid test-card-grid--four">
-        <ColorControl :label="t('testCard.background')" :value="config.alteka.bg" @change="updateAlteka({ bg: $event })" />
-        <ColorControl :label="t('testCard.foreground')" :value="config.alteka.fg" @change="updateAlteka({ fg: $event })" />
-        <ColorControl :label="t('testCard.centerText')" :value="config.alteka.textColour" @change="updateAlteka({ textColour: $event })" />
+        <InlineColorPicker :label="t('testCard.background')" :value="config.alteka.bg" @change="updateAlteka({ bg: $event })" />
+        <InlineColorPicker :label="t('testCard.foreground')" :value="config.alteka.fg" @change="updateAlteka({ fg: $event })" />
+        <InlineColorPicker :label="t('testCard.centerText')" :value="config.alteka.textColour" @change="updateAlteka({ textColour: $event })" />
         <CheckControl :label="t('testCard.gradient')" :checked="config.alteka.gradient" @change="updateAlteka({ gradient: $event })" />
       </div>
       <div class="test-card-image-row">
@@ -104,10 +104,10 @@
     <fieldset v-if="config.cardType === 'grid'" class="test-card-fieldset" :disabled="disabled">
       <legend>{{ t('testCard.grid') }}</legend>
       <div class="test-card-grid test-card-grid--four">
-        <ColorControl :label="t('testCard.background')" :value="config.grid.bg" @change="updateGrid({ bg: $event })" />
-        <ColorControl :label="t('testCard.crosshair')" :value="config.grid.crosshair" @change="updateGrid({ crosshair: $event })" />
-        <ColorControl :label="t('testCard.lines')" :value="config.grid.lines" @change="updateGrid({ lines: $event })" />
-        <ColorControl :label="t('testCard.diagonalsColor')" :value="config.grid.diagColour" @change="updateGrid({ diagColour: $event })" />
+        <InlineColorPicker :label="t('testCard.background')" :value="config.grid.bg" @change="updateGrid({ bg: $event })" />
+        <InlineColorPicker :label="t('testCard.crosshair')" :value="config.grid.crosshair" @change="updateGrid({ crosshair: $event })" />
+        <InlineColorPicker :label="t('testCard.lines')" :value="config.grid.lines" @change="updateGrid({ lines: $event })" />
+        <InlineColorPicker :label="t('testCard.diagonalsColor')" :value="config.grid.diagColour" @change="updateGrid({ diagColour: $event })" />
         <CheckControl :label="t('testCard.showDiagonals')" :checked="config.grid.diagonals" @change="updateGrid({ diagonals: $event })" />
         <CheckControl :label="t('testCard.showCircles')" :checked="config.grid.circles" @change="updateGrid({ circles: $event })" />
         <NumberControl
@@ -149,8 +149,8 @@
     <fieldset v-if="config.cardType === 'placeholder'" class="test-card-fieldset" :disabled="disabled">
       <legend>{{ t('testCard.nameCard') }}</legend>
       <div class="test-card-grid test-card-grid--three">
-        <ColorControl :label="t('testCard.background')" :value="config.placeholder.bg" @change="updatePlaceholder({ bg: $event })" />
-        <ColorControl :label="t('testCard.foreground')" :value="config.placeholder.fg" @change="updatePlaceholder({ fg: $event })" />
+        <InlineColorPicker :label="t('testCard.background')" :value="config.placeholder.bg" @change="updatePlaceholder({ bg: $event })" />
+        <InlineColorPicker :label="t('testCard.foreground')" :value="config.placeholder.fg" @change="updatePlaceholder({ fg: $event })" />
         <CheckControl :label="t('testCard.gradient')" :checked="config.placeholder.gradient" @change="updatePlaceholder({ gradient: $event })" />
         <label class="test-card-control">
           <span>{{ t('testCard.icon') }}</span>
@@ -325,28 +325,6 @@ const CheckControl = defineComponent({
         onChange: (event: Event) => componentEmit('change', (event.target as HTMLInputElement).checked),
       }),
       h('span', componentProps.label),
-    ]);
-  },
-});
-
-const ColorControl = defineComponent({
-  name: 'TestCardColorControl',
-  props: {
-    label: { type: String, required: true },
-    value: { type: String, required: true },
-  },
-  emits: ['change'],
-  setup(componentProps, { emit: componentEmit }) {
-    return () => h('label', { class: ['test-card-control', 'test-card-color'] }, [
-      h('span', componentProps.label),
-      h('span', { class: 'test-card-color-row' }, [
-        h('input', {
-          type: 'color',
-          value: componentProps.value,
-          title: componentProps.value,
-          onInput: (event: Event) => componentEmit('change', (event.target as HTMLInputElement).value),
-        }),
-      ]),
     ]);
   },
 });
@@ -636,7 +614,8 @@ async function pickImage(files: FileList | undefined, target: ImageTarget): Prom
 .test-card-grid--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .test-card-grid--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .test-card-grid--four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.test-card-grid--four:has(.test-card-color) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.test-card-grid:has(> .inline-color-picker) { align-items: start; }
+.test-card-grid--four:has(> .inline-color-picker) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .test-card-control,
 .test-card-check {
   display: flex;
@@ -650,7 +629,6 @@ async function pickImage(files: FileList | undefined, target: ImageTarget): Prom
   gap: 5px;
 }
 .test-card-control--wide { grid-column: span 2; }
-.test-card-color { flex-direction: row; align-items: center; justify-content: space-between; }
 .test-card-name { flex-direction: row; align-items: center; }
 .test-card-check {
   min-height: var(--settings-control-height);
@@ -678,22 +656,12 @@ async function pickImage(files: FileList | undefined, target: ImageTarget): Prom
   border-radius: var(--control-radius);
   font: inherit;
 }
-.test-card-color-row,
 .test-card-number-row,
 .test-card-image-row,
 .test-card-choice-row {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-.test-card-color-row input[type='color'] {
-  width: 28px;
-  height: var(--settings-control-height);
-  flex: none;
-  padding: 2px;
-  background: var(--color-control);
-  border: 1px solid var(--color-border);
-  border-radius: var(--control-radius);
 }
 .test-card-number-row input { flex: 1; }
 .test-card-image-row { flex-wrap: wrap; gap: 4px; }

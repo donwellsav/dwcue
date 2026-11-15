@@ -913,7 +913,12 @@
     "noDevices": "(no devices yet)"
   },
   "colors": {
-    "chooseAccent": "Choose Accent Color"
+    "chooseAccent": "Choose Accent Color",
+    "presets": "Preset colors",
+    "hexFor": "Hex color for {label}",
+    "applyHex": "Apply color",
+    "invalidHex": "Enter a hex color, such as #36A or #3366AA.",
+    "invalidOpaqueHex": "Enter a hex color without transparency, such as #36A or #3366AA."
   },
   "youtube": {
     "importFromYouTube": "Import from YouTube",

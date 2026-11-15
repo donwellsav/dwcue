@@ -9,6 +9,25 @@ import ts from 'typescript';
 
 import { formatDisplayIndexPath, parseDisplayIndexPath } from '../app/utils/indexDisplay.ts';
 
+test('the inline color editor reads shorthand and full hex while fencing transparency to Test Cards', () => {
+  const source = readFileSync(new URL('../app/components/InlineColorPicker.vue', import.meta.url), 'utf8');
+  const start = source.indexOf('function readHexColor(');
+  const end = source.indexOf('function applyColor(', start);
+  assert.ok(start >= 0 && end > start);
+  const code = ts.transpileModule(source.slice(start, end), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+  }).outputText;
+  const read = Function(code + '\nreturn readHexColor;')();
+  assert.equal(read(' #36a ', true), '#3366AA');
+  assert.equal(read('3E159C', true), '#3E159C');
+  assert.equal(read('#3698', false), '#33669988');
+  assert.equal(read('#33669988', false), '#33669988');
+  assert.equal(read('#33669988', true), null);
+  assert.equal(read('#3698', true), null);
+  assert.equal(read('red', false), null);
+  assert.equal(read('#12Z', false), null);
+});
+
 test('the Settings accent applies to the current show and saves only an actual change', () => {
   const source = readFileSync(new URL('../app/components/ProjectSettingsModal.vue', import.meta.url), 'utf8');
   const start = source.indexOf('function setAccentColor(');
@@ -152,7 +171,9 @@ function loadApplyPatch(dependencies: Record<string, unknown>) {
     compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const buildApplyPatch = Function(`${compiled}; return buildApplyPatch;`)();
-  return buildApplyPatch(dependencies) as (patch: Record<string, unknown>) => Promise<string>;
+  type SettingsPatch = Record<string, unknown>;
+  return buildApplyPatch(dependencies) as
+    (request: SettingsPatch | ((settings: SettingsPatch) => SettingsPatch | null)) => Promise<string>;
 }
 
 function settingsHarness(initialSettings: Record<string, unknown>) {
@@ -213,6 +234,32 @@ test('serializes same-key edits so two rejected patches restore the acknowledged
   assert.equal(await second, 'failed');
   assert.equal(harness.project.settings.cycleTrackColors, false);
   assert.equal(harness.settingsError.value, 'second rejected');
+});
+
+test('queued countdown color edits preserve other bands and ignore a rejected optimistic value', async () => {
+  type Band = { startSeconds: number; color: string };
+  const initial = [{ startSeconds: 6, color: '#004488' }, { startSeconds: 0, color: '#993311' }];
+  const harness = settingsHarness({ countdownColorBands: initial });
+  const setColor = (seconds: number, color: string) => harness.applyPatch(settings => ({
+    countdownColorBands: (settings.countdownColorBands as Band[]).map(band =>
+      band.startSeconds === seconds ? { ...band, color } : band),
+  }));
+  const first = setColor(6, '#111111');
+  const second = setColor(0, '#222222');
+  const third = setColor(6, '#333333');
+  await Promise.resolve();
+  harness.patchRequests[0]!.pending.reject(new Error('refused'));
+  assert.equal(await first, 'failed');
+  await Promise.resolve();
+  assert.deepEqual(harness.patchRequests[1]!.patch.countdownColorBands,
+    [initial[0], { ...initial[1], color: '#222222' }]);
+  harness.patchRequests[1]!.pending.resolve();
+  assert.equal(await second, 'saved');
+  await Promise.resolve();
+  harness.patchRequests[2]!.pending.resolve();
+  assert.equal(await third, 'saved');
+  assert.deepEqual(harness.project.settings.countdownColorBands,
+    [{ ...initial[0], color: '#333333' }, { ...initial[1], color: '#222222' }]);
 });
 
 test('device edits keep the acknowledged project setting until the engine accepts the new route', async () => {

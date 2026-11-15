@@ -452,6 +452,7 @@
               <div class="settings-section-title countdown-band-grid countdown-band-heading">
                 <h3>{{ t('settings.countdownColors') }}</h3>
                 <span class="settings-unit">{{ t('settings.countdownStartsAt') }} (s)</span>
+                <span class="settings-unit">{{ t('settings.countdownColor') }}</span>
                 <button type="button" class="modal-btn countdown-band-add"
                   :aria-label="t('settings.countdownAddBand')" :title="t('settings.countdownAddBand')"
                   @click="addCountdownBand">
@@ -475,17 +476,15 @@
                       step="1"
                       :value="band.startSeconds"
                       :aria-label="t('settings.countdownStartsAtFor', { range: countdownBandRange(index) })"
-                      @change="onCountdownBandStartChange(index, $event)"
+                      @change="onCountdownBandStartChange(band.startSeconds, $event)"
                     />
                     <span v-else class="countdown-band-start countdown-band-fixed">0</span>
 
-                    <input
-                      class="countdown-band-color"
-                      type="color"
+                    <InlineColorPicker
+                      hide-label opaque
                       :value="band.color"
-                      :title="band.color"
-                      :aria-label="t('settings.countdownColorFor', { range: countdownBandRange(index) })"
-                      @change="onCountdownBandColorChange(index, $event)"
+                      :label="t('settings.countdownColorFor', { range: countdownBandRange(index) })"
+                      @change="onCountdownBandColorChange(band.startSeconds, $event)"
                     />
 
                     <button
@@ -494,7 +493,7 @@
                       class="countdown-band-remove"
                       :aria-label="t('settings.countdownRemoveFor', { range: countdownBandRange(index) })"
                       :title="t('settings.countdownRemoveFor', { range: countdownBandRange(index) })"
-                      @click="removeCountdownBand(index)"
+                      @click="removeCountdownBand(band.startSeconds)"
                     >
                       <span class="material-symbols-rounded" aria-hidden="true">remove</span>
                     </button>
@@ -768,6 +767,7 @@ import {
   DEFAULT_COUNTDOWN_COLOR_BANDS,
   normalizeCountdownColorBands,
   type CountdownColorBand,
+  type ProjectSettings,
 } from '~/types/project';
 import {
   CART_GRID_LIMITS,
@@ -1232,12 +1232,14 @@ type PreviousSetting = { exists: boolean; value: unknown };
 
 let settingsPatchQueue = Promise.resolve();
 
-function applyPatch(patch: Record<string, any>): Promise<PatchResult> {
+function applyPatch(request: Record<string, any> | ((settings: ProjectSettings) => Record<string, any> | null)): Promise<PatchResult> {
   const project = currentProject.value as any;
   const queued = settingsPatchQueue.then(async (): Promise<PatchResult> => {
     if (!project || currentProject.value !== project) return 'saved';
 
     const settings = (project.settings ?? {});
+    const patch = typeof request === 'function' ? request(settings) : request;
+    if (!patch) return 'saved';
     const outputEdit = ['defaultOutputDevice', 'previewDevice', 'ltcDevice'].some(key => key in patch);
     const previousSettings = new Map<string, PreviousSetting>();
     settingsError.value = '';
@@ -1315,11 +1317,13 @@ function countdownBandRange(index: number): string {
 
 let countdownMutationVersion = 0;
 
-async function persistCountdownBands(bands: CountdownColorBand[]) {
+async function persistCountdownBands(edit: (bands: CountdownColorBand[]) => boolean) {
   const mutationVersion = ++countdownMutationVersion;
   countdownBandError.value = '';
-  const next = normalizeCountdownColorBands(bands);
-  const result = await applyPatch({ countdownColorBands: next });
+  const result = await applyPatch(settings => {
+    const bands = normalizeCountdownColorBands(settings.countdownColorBands);
+    return edit(bands) ? { countdownColorBands: normalizeCountdownColorBands(bands) } : null;
+  });
   if (mutationVersion !== countdownMutationVersion || result === 'saved') return;
 
   // applyPatch restores a rejected live change. A disk-save failure leaves the
@@ -1327,45 +1331,47 @@ async function persistCountdownBands(bands: CountdownColorBand[]) {
   countdownBandError.value = t('settings.countdownSaveFailed');
 }
 
-function onCountdownBandStartChange(index: number, e: Event) {
+function onCountdownBandStartChange(startSeconds: number, e: Event) {
   const input = e.target as HTMLInputElement;
-  const bands = countdownColorBands.value.map(band => ({ ...band }));
   const seconds = Number(input.value);
-  const duplicate = bands.some((band, i) => i !== index && band.startSeconds === seconds);
-  if (!Number.isInteger(seconds) || seconds < 1 || duplicate) {
-    countdownBandError.value = t('settings.countdownThresholdInvalid');
-    input.value = String(bands[index]?.startSeconds ?? 1);
-    return;
-  }
-
-  bands[index] = { ...bands[index]!, startSeconds: seconds };
-  void persistCountdownBands(bands);
+  void persistCountdownBands(bands => {
+    const band = bands.find(band => band.startSeconds === startSeconds);
+    if (!band || startSeconds === seconds) return false;
+    if (!Number.isInteger(seconds) || seconds < 1 || bands.some(other => other.startSeconds === seconds)) {
+      countdownBandError.value = t('settings.countdownThresholdInvalid');
+      input.value = String(startSeconds);
+      return false;
+    }
+    band.startSeconds = seconds;
+    return true;
+  });
 }
 
-function onCountdownBandColorChange(index: number, e: Event) {
-  const bands = countdownColorBands.value.map(band => ({ ...band }));
-  bands[index] = {
-    ...bands[index]!,
-    color: (e.target as HTMLInputElement).value.toUpperCase(),
-  };
-  void persistCountdownBands(bands);
+function onCountdownBandColorChange(startSeconds: number, color: string) {
+  void persistCountdownBands(bands => {
+    const band = bands.find(band => band.startSeconds === startSeconds);
+    if (!band || band.color === color) return false;
+    band.color = color;
+    return true;
+  });
 }
 
 function addCountdownBand() {
-  const bands = countdownColorBands.value.map(band => ({ ...band }));
-  const highestStart = bands[0]?.startSeconds ?? 0;
-  bands.push({
-    startSeconds: highestStart + 5,
-    color: DEFAULT_COUNTDOWN_COLOR_BANDS[0]!.color,
+  void persistCountdownBands(bands => {
+    const highestStart = bands[0]?.startSeconds ?? 0;
+    bands.push({ startSeconds: highestStart + 5, color: DEFAULT_COUNTDOWN_COLOR_BANDS[0]!.color });
+    return true;
   });
-  void persistCountdownBands(bands);
 }
 
-function removeCountdownBand(index: number) {
-  const bands = countdownColorBands.value.map(band => ({ ...band }));
-  if (!bands[index] || bands[index]!.startSeconds === 0) return;
-  bands.splice(index, 1);
-  void persistCountdownBands(bands);
+function removeCountdownBand(startSeconds: number) {
+  if (startSeconds === 0) return;
+  void persistCountdownBands(bands => {
+    const index = bands.findIndex(band => band.startSeconds === startSeconds);
+    if (index === -1) return false;
+    bands.splice(index, 1);
+    return true;
+  });
 }
 
 async function onAudioDeviceChange(e: Event) {
@@ -1955,7 +1961,7 @@ function close() {
 
 .countdown-band-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 42px 29px 24px;
+  grid-template-columns: minmax(0, 1fr) 42px 100px 24px;
   gap: 4px;
   align-items: center;
 }
@@ -1971,9 +1977,16 @@ function close() {
 .countdown-band-grid--row {
   min-height: var(--settings-row-height);
   padding: 1px 0;
+  align-items: start;
   border-bottom: 1px solid var(--color-border);
 }
 .countdown-band-grid--row:last-child { border-color: transparent; }
+.countdown-band-range,
+.countdown-band-fixed {
+  display: flex;
+  align-items: center;
+  min-height: var(--settings-control-height);
+}
 .countdown-band-range {
   font-size: 12px;
   line-height: 1.25;
@@ -1985,19 +1998,9 @@ function close() {
   text-align: center;
 }
 .countdown-band-fixed {
-  display: grid;
-  place-items: center;
+  justify-content: center;
   font-size: 13px;
   color: var(--color-text-secondary);
-}
-.countdown-band-color {
-  width: 28px;
-  height: var(--settings-control-height);
-  padding: 2px;
-  background: var(--color-control);
-  border: 1px solid var(--color-border);
-  border-radius: var(--control-radius);
-  cursor: pointer;
 }
 .countdown-band-remove {
   display: grid;
@@ -2015,8 +2018,7 @@ function close() {
   border-color: var(--color-danger);
 }
 .countdown-band-remove:focus-visible,
-.countdown-band-start:focus-visible,
-.countdown-band-color:focus-visible {
+.countdown-band-start:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }

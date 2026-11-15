@@ -130,7 +130,7 @@ export const useConnectionGuard = () => {
     const projectPanelEscape = (projectPanelOpen.value || filePicker.value !== null ||
       quickPlayImportSlot.value !== null || importPanel.value === 'media' || importPanel.value === 'spotify' ||
       importPanel.value === 'archive-import' || importPanel.value === 'archive-export' ||
-      (showProjectSettings.value && settingsTab.value === 'video')) && e.key === 'Escape' &&
+      (showProjectSettings.value && ['video', 'ui'].includes(settingsTab.value))) && e.key === 'Escape' &&
       !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey;
     if (!projectPanelEscape && !blocked && !projectLoad.value && !(currentProject.value && editing)) return;
     const typing = e.isComposing ||

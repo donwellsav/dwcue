@@ -273,7 +273,11 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
   assert.equal(press('Escape'), true, 'Video Output routes Escape to Stop All with a remapped shortcut');
   assert.equal(press('Escape', { repeat: true }), true);
   assert.equal(press(' '), false, 'the image drop target leaves GO available');
-  assert.deepEqual(calls.slice(18), [[]]);
+  settingsTab.value = 'ui';
+  assert.equal(press('Escape', { target: editor }), true, 'Time Left color editing reserves Escape for Stop All');
+  assert.equal(press(' '), false, 'the settings continue to leave GO available');
+  assert.equal(press('Escape', { target: editor, isComposing: true }), false);
+  assert.deepEqual(calls.slice(18), [[], []]);
 });
 
 function loadHandleKeydown(dependencies: Record<string, unknown>) {

@@ -902,9 +902,12 @@ assert.match(
 );
 assert.match(
   projectSettingsModal,
-  /addCountdownBand[\s\S]*countdownColorBands[\s\S]*type="number"[\s\S]*type="color"[\s\S]*removeCountdownBand[\s\S]*saveProject/,
+  /addCountdownBand[\s\S]*countdownColorBands[\s\S]*type="number"[\s\S]*<InlineColorPicker[\s\S]*removeCountdownBand[\s\S]*saveProject/,
   'countdown colour thresholds must be editable, addable, removable, and saved with the project',
 );
+assert.doesNotMatch(projectSettingsModal + read('client/app/components/TestCardControls.vue'),
+  /type\s*[:=]\s*['"]color['"]/,
+  'Time Left and Test Card colors must not open native color dialogs');
 assert.match(
   projectSettingsModal,
   /regular-playlist-row-height[\s\S]*type="range"[\s\S]*PLAYLIST_ROW_HEIGHTS\.regular[\s\S]*show-playlist-row-height[\s\S]*type="range"[\s\S]*PLAYLIST_ROW_HEIGHTS\.show[\s\S]*folder-playlist-row-height[\s\S]*type="range"[\s\S]*PLAYLIST_ROW_HEIGHTS\.folder[\s\S]*onPlaylistRowHeightInput/,
