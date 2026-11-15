@@ -7,7 +7,28 @@ import { compile, NodeTypes, parse as parseTemplate } from '@vue/compiler-dom';
 import * as Vue from 'vue';
 import ts from 'typescript';
 
+import { DEFAULT_VIDEO_FRAMING, VIDEO_FRAME_PRESETS } from '../electron/video-output-framing.mjs';
 import { formatDisplayIndexPath, parseDisplayIndexPath } from '../app/utils/indexDisplay.ts';
+
+test('the inline Canvas chooser updates the draft and keeps it when switching to Custom', () => {
+  const source = readFileSync(new URL('../app/components/ProjectSettingsModal.vue', import.meta.url), 'utf8');
+  const start = source.indexOf('function selectVideoFramePreset(');
+  const end = source.indexOf('\n}', start);
+  assert.ok(start >= 0 && end > start);
+  const code = ts.transpileModule(source.slice(start, end + 2), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const preset = { value: '1080p' };
+  const draft = { value: { ...DEFAULT_VIDEO_FRAMING, scale: 80, scaling: 'limit' } };
+  const choose = Function('VIDEO_FRAME_PRESETS', 'voFramePreset', 'voFraming',
+    `${code}\nreturn selectVideoFramePreset;`)(VIDEO_FRAME_PRESETS, preset, draft);
+  choose('720p');
+  assert.equal(preset.value, '720p');
+  assert.deepEqual(draft.value, { width: 1280, height: 720, scale: 80, scaling: 'limit' });
+  choose('custom');
+  assert.equal(preset.value, 'custom');
+  assert.deepEqual(draft.value, { width: 1280, height: 720, scale: 80, scaling: 'limit' });
+});
 
 test('the inline color editor reads shorthand and full hex while fencing transparency to Test Cards', () => {
   const source = readFileSync(new URL('../app/components/InlineColorPicker.vue', import.meta.url), 'utf8');

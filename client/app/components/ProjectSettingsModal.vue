@@ -485,22 +485,12 @@
               </ul>
             </div>
             <div class="settings-rows">
-              <h3 class="settings-section-title">
-                <label for="settings-output-display">{{ t('settings.videoOutputDisplay') }}</label>
-              </h3>
+              <h3 class="settings-section-title">{{ t('settings.videoOutputDisplay') }}</h3>
               <section class="settings-field">
                 <div class="video-output-display-row">
-                  <select
-                    id="settings-output-display"
-                    class="settings-select"
-                    :value="voStatus?.displayId ?? ''"
-                    @change="onVideoOutputDisplayChange"
-                  >
-                    <option :value="''">{{ t('settings.videoOutputNoDisplay') }}</option>
-                    <option v-for="d in voDisplays" :key="d.id" :value="d.id">
-                      {{ d.index }} — {{ d.label }} — {{ d.width }}×{{ d.height }}{{ d.primary ? ' (' + t('common.default') + ')' : '' }}
-                    </option>
-                  </select>
+                  <InlineChoicePicker id="settings-output-display" :label="t('settings.videoOutputDisplay')"
+                    :value="voStatus?.displayId ?? ''" :options="voDisplayOptions" :disabled="!voStatus"
+                    @change="onVideoOutputDisplayChange" />
                   <button type="button" class="modal-btn" @click="onVideoOutputIdentifyDisplays">
                     {{ t('settings.videoOutputIdentifyDisplays') }}
                   </button>
@@ -547,14 +537,10 @@
               <h3 class="settings-section-title">{{ t('settings.videoFraming.title') }}</h3>
               <section class="settings-field video-framing">
                 <div class="video-framing-row">
-                  <label for="video-frame-preset" class="settings-label">{{ t('settings.videoFraming.preset') }}</label>
-                  <select id="video-frame-preset" class="settings-select" v-model="voFramePreset"
-                    :disabled="!voStatus || voFramingPending" @change="selectVideoFramePreset">
-                    <option v-for="preset in VIDEO_FRAME_PRESETS" :key="preset.id" :value="preset.id">
-                      {{ t(`settings.videoFraming.${preset.id}`) }} · {{ preset.width }}×{{ preset.height }}
-                    </option>
-                    <option value="custom">{{ t('settings.videoFraming.custom') }}</option>
-                  </select>
+                  <span class="settings-label">{{ t('settings.videoFraming.preset') }}</span>
+                  <InlineChoicePicker id="video-frame-preset" :label="t('settings.videoFraming.preset')"
+                    :value="voFramePreset" :options="voFramePresetOptions"
+                    :disabled="!voStatus || voFramingPending" @change="selectVideoFramePreset" />
                 </div>
                 <div v-if="voFramePreset === 'custom'" class="video-framing-dimensions">
                   <label class="settings-field">
@@ -569,11 +555,10 @@
                   </label>
                 </div>
                 <div class="video-framing-row">
-                  <label for="video-frame-scaling" class="settings-label">{{ t('settings.videoFraming.scaling') }}</label>
-                  <select id="video-frame-scaling" v-model="voFraming.scaling" class="settings-select" :disabled="!voStatus || voFramingPending">
-                    <option value="fit">{{ t('settings.videoFraming.fit') }}</option>
-                    <option value="limit">{{ t('settings.videoFraming.limit') }}</option>
-                  </select>
+                  <span class="settings-label">{{ t('settings.videoFraming.scaling') }}</span>
+                  <InlineChoicePicker id="video-frame-scaling" :label="t('settings.videoFraming.scaling')"
+                    :value="voFraming.scaling" :options="voFramingScalingOptions"
+                    :disabled="!voStatus || voFramingPending" @change="voFraming.scaling = $event" />
                 </div>
                 <div class="video-framing-row">
                   <label for="video-frame-scale" class="settings-label">{{ t('settings.videoFraming.size') }}</label>
@@ -964,6 +949,23 @@ const voTestCardConfig = ref<TestCardConfig>(createTestCardConfig());
 
 const voEnabled  = computed(() => voStatus.value?.enabled === true);
 const voDisplays = computed(() => voStatus.value?.displays ?? []);
+const voDisplayOptions = computed(() => [
+  { value: '', label: t('settings.videoOutputNoDisplay') },
+  ...voDisplays.value.map(d => ({
+    value: d.id,
+    label: `${d.index} — ${d.label} — ${d.width}×${d.height}${d.primary ? ` (${t('common.default')})` : ''}`,
+  })),
+]);
+const voFramePresetOptions = computed(() => [
+  ...VIDEO_FRAME_PRESETS.map(preset => ({
+    value: preset.id, label: `${t(`settings.videoFraming.${preset.id}`)} · ${preset.width}×${preset.height}`,
+  })),
+  { value: 'custom', label: t('settings.videoFraming.custom') },
+]);
+const voFramingScalingOptions = computed(() => [
+  { value: 'fit', label: t('settings.videoFraming.fit') },
+  { value: 'limit', label: t('settings.videoFraming.limit') },
+] as const);
 
 const voTargetDisplay = computed(() =>
   voDisplays.value.find((d) => d.id === voStatus.value?.targetId) ?? null);
@@ -1005,8 +1007,9 @@ function receiveVideoOutputStatus(status: VideoOutputStatus, forceConfig = false
   }
 }
 
-function selectVideoFramePreset(): void {
-  const preset = VIDEO_FRAME_PRESETS.find(entry => entry.id === voFramePreset.value);
+function selectVideoFramePreset(value: string): void {
+  voFramePreset.value = value;
+  const preset = VIDEO_FRAME_PRESETS.find(entry => entry.id === value);
   if (preset) {
     voFraming.value.width = preset.width;
     voFraming.value.height = preset.height;
@@ -1040,8 +1043,7 @@ async function onVideoOutputEnableChange(event: Event) {
   }
 }
 
-async function onVideoOutputDisplayChange(event: Event) {
-  const value = (event.target as HTMLSelectElement).value;
+async function onVideoOutputDisplayChange(value: string) {
   const api = window.electronAPI?.videoOutput;
   if (!api) return;
   settingsError.value = '';
@@ -1841,7 +1843,7 @@ function close() {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 4px;
-  align-items: stretch;
+  align-items: start;
 }
 .video-output-display-row .modal-btn,
 .video-output-standby .modal-btn { padding-inline: 6px; }
@@ -1852,6 +1854,10 @@ function close() {
   align-items: center;
   gap: var(--spacing-xs);
 }
+.video-framing-row:has(> #video-frame-preset[open]) { grid-template-columns: minmax(0, 1fr); }
+.video-framing-row:has(> .inline-choice-picker[open]) { align-items: start; }
+.video-framing-row > .settings-label { min-height: var(--settings-control-height); }
+.video-framing-row:has(> #video-frame-preset[open]) > .settings-label { min-height: 0; }
 .video-framing-dimensions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .video-framing-size { display: flex; align-items: center; gap: var(--spacing-xs); }
 .video-framing-size .modal-btn { flex-shrink: 0; }
