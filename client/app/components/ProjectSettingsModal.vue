@@ -145,17 +145,11 @@
                 <p class="settings-help">{{ t('settings.autoCueNextHelp') }}</p>
               </section>
               <section class="settings-field">
-                <label class="settings-label" for="settings-music-backup">{{ t('musicContinuity.backup') }}</label>
-                <select id="settings-music-backup" class="settings-select" :value="configuredMusicBackup"
+                <span class="settings-label">{{ t('musicContinuity.backup') }}</span>
+                <InlineChoicePicker id="settings-music-backup" :label="t('musicContinuity.backup')"
+                  :value="configuredMusicBackup" :options="musicBackupOptions"
                   :disabled="projectHydrationStatus !== 'ready' || musicContinuityPending.has('')"
-                  @change="changeMusicBackup">
-                  <option value="">{{ t('musicContinuity.none') }}</option>
-                  <option v-if="configuredMusicBackup && !musicBackupOptions.some(group => group.uuid === configuredMusicBackup)"
-                    :value="configuredMusicBackup" disabled>{{ t('musicContinuity.missing') }}</option>
-                  <option v-for="group in musicBackupOptions" :key="group.uuid" :value="group.uuid">
-                    {{ formatItemIndex(group.index) }} · {{ group.displayName }}
-                  </option>
-                </select>
+                  @change="changeMusicBackup" />
                 <p class="settings-help">{{ t('musicContinuity.help') }}</p>
               </section>
             </div>
@@ -922,12 +916,19 @@ const defaultTransitionMode    = computed(() => (currentProject.value as any)?.s
 // Defaults ON (undefined → true) so legacy projects and new projects both
 // arm the next item as "Up Next" for cues without an end behaviour. (#28)
 const autoCueNextWithoutEndBehavior = computed(() => (currentProject.value as any)?.settings?.autoCueNextWithoutEndBehavior !== false);
-const musicBackupOptions = computed(() => getAllItemsFlat().filter(item => item.type === 'group'));
 const configuredMusicBackup = computed(() => currentProject.value?.settings?.backupMusicGroup ?? '');
-const changeMusicBackup = (event: Event) => {
-  const input = event.target as HTMLSelectElement;
-  const backupMusicGroup = input.value || null;
-  input.value = configuredMusicBackup.value;
+const musicBackupOptions = computed(() => {
+  const groups = getAllItemsFlat().filter(item => item.type === 'group');
+  const selected = configuredMusicBackup.value;
+  return [
+    { value: '', label: t('musicContinuity.none') },
+    ...groups.map(group => ({ value: group.uuid, label: `${formatItemIndex(group.index)} · ${group.displayName}` })),
+    ...(selected && !groups.some(group => group.uuid === selected)
+      ? [{ value: selected, label: t('musicContinuity.missing'), disabled: true }] : []),
+  ];
+});
+const changeMusicBackup = (value: string) => {
+  const backupMusicGroup = value || null;
   return setMusicContinuity(undefined, backupMusicGroup ? { backupMusicGroup } : { backupMusicGroup, keepMusicGoing: false },
     status => { settingsError.value = t(`musicContinuity.${status}`); });
 };
@@ -1706,7 +1707,7 @@ function close() {
 
 .settings-rows > .test-card-heading + .settings-field { border-top: 0; }
 
-.settings-rows > .settings-field:has(> .settings-select, > .settings-input) {
+.settings-rows > .settings-field:has(> :is(.settings-select, .settings-input, .inline-choice-picker)) {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 45%);
   column-gap: var(--spacing-sm);
@@ -1733,10 +1734,14 @@ function close() {
 
 .settings-field > .settings-help { grid-column: 1 / -1; }
 
-.settings-content--playback .settings-field > :is(.settings-input, .settings-select) {
+.settings-content--playback .settings-field > :is(.settings-input, .settings-select, .inline-choice-picker:not([open])) {
   max-width: 180px;
   justify-self: end;
 }
+
+.settings-field > .inline-choice-picker { width: 100%; }
+.settings-field:has(> .inline-choice-picker[open]) { align-items: start; }
+.settings-field:has(> .inline-choice-picker) > .settings-label { min-height: var(--settings-control-height); }
 
 .settings-content--ui .track-height-control {
   grid-template-columns: minmax(0, 1fr) minmax(40px, 0.8fr) 44px;

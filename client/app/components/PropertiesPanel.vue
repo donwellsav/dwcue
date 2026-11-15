@@ -394,18 +394,11 @@
           </div>
         </div>
         <div v-if="selectedItem.type === 'group'" class="property-field">
-          <label for="cue-property-music-backup">{{ t('musicContinuity.continueWith') }}</label>
-          <select id="cue-property-music-backup"
-            :value="groupItem.backupMusicGroup ?? ''"
+          <span class="property-label">{{ t('musicContinuity.continueWith') }}</span>
+          <InlineChoicePicker id="cue-property-music-backup" :label="t('musicContinuity.continueWith')"
+            :value="configuredGroupBackup" :options="groupBackupOptions"
             :disabled="projectHydrationStatus !== 'ready' || musicContinuityPending.has(groupItem.uuid)"
-            @change="changeGroupBackup">
-            <option value="">{{ t('musicContinuity.useDefault') }}</option>
-            <option v-if="groupItem.backupMusicGroup && !groupBackupOptions.some(group => group.uuid === groupItem.backupMusicGroup)"
-              :value="groupItem.backupMusicGroup" disabled>{{ t('musicContinuity.missing') }}</option>
-            <option v-for="group in groupBackupOptions" :key="group.uuid" :value="group.uuid">
-              {{ formatItemIndex(group.index) }} · {{ group.displayName }}
-            </option>
-          </select>
+            @change="changeGroupBackup" />
         </div>
         <div v-if="selectedItem.type === 'group' && uiMode !== 'playback'" class="property-field">
           <button type="button" class="icon-btn regen-btn group-shuffle"
@@ -659,17 +652,21 @@ const groupLevel = computed(() => {
   return typeof db === 'number' && Number.isFinite(db) ? Math.min(0, Math.max(-60, db)) : 0;
 });
 const groupLevelLabel = computed(() => `${groupLevel.value.toFixed(1)} dB`);
+const configuredGroupBackup = computed(() => groupItem.value?.backupMusicGroup ?? '');
 const groupBackupOptions = computed(() => {
   const source = groupItem.value?.index;
-  if (!source?.length) return [];
-  return getAllItemsFlat().filter(item => item.type === 'group' &&
-    item.index.slice(0, source.length).some((position, depth) => depth < source.length && position !== source[depth]));
+  const groups = source?.length ? getAllItemsFlat().filter(item => item.type === 'group' &&
+    item.index.slice(0, source.length).some((position, depth) => position !== source[depth])) : [];
+  const selected = configuredGroupBackup.value;
+  return [
+    { value: '', label: t('musicContinuity.useDefault') },
+    ...groups.map(group => ({ value: group.uuid, label: `${formatItemIndex(group.index)} · ${group.displayName}` })),
+    ...(selected && !groups.some(group => group.uuid === selected)
+      ? [{ value: selected, label: t('musicContinuity.missing'), disabled: true }] : []),
+  ];
 });
-const changeGroupBackup = (event: Event) => {
-  const input = event.target as HTMLSelectElement;
-  const backupMusicGroup = input.value || null;
-  input.value = groupItem.value.backupMusicGroup ?? '';
-  return setMusicContinuity(groupItem.value, { backupMusicGroup },
+const changeGroupBackup = (value: string) => {
+  return setMusicContinuity(groupItem.value, { backupMusicGroup: value || null },
     status => showHeaderWarning(t(`musicContinuity.${status}`)));
 };
 

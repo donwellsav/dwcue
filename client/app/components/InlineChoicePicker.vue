@@ -6,7 +6,7 @@
       <span class="material-symbols-rounded" aria-hidden="true">{{ disabled ? 'remove' : 'expand_more' }}</span>
     </summary>
     <div class="inline-choice-options" role="group" :aria-label="label">
-      <button v-for="option in options" :key="option.value" type="button" :disabled="disabled"
+      <button v-for="option in options" :key="option.value" type="button" :disabled="disabled || option.disabled"
         :aria-pressed="option.value === value" @click="choose(option.value)">
         {{ option.label }}
       </button>
@@ -18,7 +18,7 @@
 const props = defineProps<{
   label: string;
   value: T;
-  options: readonly { value: T; label: string }[];
+  options: readonly { value: T; label: string; disabled?: boolean }[];
   disabled?: boolean;
 }>();
 const emit = defineEmits<{ change: [value: T] }>();

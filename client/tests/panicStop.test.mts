@@ -35,6 +35,19 @@ function elementSource(component: string, tag: string, className?: string): stri
   return element.loc.source;
 }
 
+test('Inline choices show a missing saved backup as selected but disabled', () => {
+  const code = compile(elementSource('InlineChoicePicker', 'div', 'inline-choice-options'), { mode: 'function' }).code;
+  const render = Function('Vue', `${code}; return render;`)(Vue);
+  const region = render({
+    label: 'Backup music group', value: 'missing', disabled: false, choose() {},
+    options: [{ value: '', label: 'None' }, { value: 'missing', label: 'Missing group', disabled: true }],
+  }, []);
+  const [none, missing] = region.children[0].children;
+  assert.equal(none.props.disabled, undefined);
+  assert.equal(missing.props.disabled, true);
+  assert.equal(missing.props['aria-pressed'], true);
+});
+
 test('Stop All remains clickable when no project-backed cue is active', () => {
   const code = compile(elementSource('PlaybackControls', 'button', 'panic-btn'), { mode: 'function' }).code;
   const render = Function('Vue', `${code}; return render;`)(Vue);
