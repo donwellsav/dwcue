@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** 534615e1ce656d849e886cacba121fbe3d986020
+**Source revision:** adc3bc81e06148b4e38b4b399a1216f0d147b355
 **Native engine baseline:** 7c233a9
 **Edition:** 14 November 2026 · English · Operator edition
 
@@ -759,7 +759,7 @@ If the engine accepts a repaired document, the cue list loads and **Show opened 
 
 If Open expires or another controller opens a different show while the first file is still being read, the late Open cannot take over. If the connection drops before the reply arrives, wait for the controller to verify which show the engine has active before pressing GO. Update older remote engines before using Open from this controller.
 
-Once the picker submits an Open to the engine, the lower panel shows progress and cue starts wait for the controller to load the show. **Stop All Cues** and **Escape** stay available during the wait. **Open Recent** and files opened directly can still display the loading screen with its own **Stop All Cues** button. Stop All uses the current show's fade and the Open request continues waiting for its result.
+**File → Open Recent** and opening a `.dwcue` directly from the desktop use the same lower panel. While the show loads, the playlist stays visible and GO waits for the controller to finish opening the show. **Stop All Cues** and **Escape** stay available. When a file opens at launch, use **Stop All** in the panel until the workspace opens. Stop All uses the current show's fade and lets the Open request continue.
 
 Recognized malformed cue, group and audio-settings values are refused before replacing the current show or overwriting its saved file. Keep the known-good copy and correct the rejected document separately. Supported legacy/default repairs still apply; a refusal does not promise that every damaged file can be repaired.
 

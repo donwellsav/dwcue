@@ -476,3 +476,4 @@ In-flight native calls own their resources for the life of the process. Managed 
 - [x] Dock Unsaved Changes for New, Open, and Close. Verify Edit and Show modes, Save and Don't Save, Cancel, and transport during a held or failed save (`5ad46ba`).
 - [x] Dock New Show, its destination picker, and create progress. Verify the playlist, GO, and Stop All during editing, folder selection, and a held create, including Escape with a remapped Stop All (`7c0d18b`).
 - [x] Dock Open Project and its progress. Keep GO available while browsing and answering the save prompt. Once the picker submits an Open, keep Stop All and Escape available and hold cue starts through the switch (`534615e`).
+- [x] Dock Open Recent and direct `.dwcue` opens. Verify the visible playlist and both Stop All controls during warm opens, the startup panel during a cold open, and the GO lock while a reply is held after the engine switches shows (`adc3bc8`).

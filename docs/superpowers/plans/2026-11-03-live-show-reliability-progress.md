@@ -605,3 +605,9 @@ New Show, its folder picker, and create progress use the lower panel (`7c0d18b`)
 Open Project uses the same browser from the workspace or Welcome (`534615e`). Cancel, invalid files, and a canceled save decision left the playing cue intact. A response held after engine acceptance reproduced a GO from the old workspace starting a cue in the replacement show. The submitted Open now holds cue starts until loading ends. A repeat with the reply held verified that the old workspace could not start the new cue. The held request kept the playlist visible and both Stop All controls available.
 
 All three Chromium scenarios passed against the generated renderer. The 275 client tests, type checking, and renderer generation passed. The manual includes the new form and explains when GO waits. Physical output acceptance remains in T24.
+
+## 14 November — Open Recent and direct show opens
+
+Open Recent and direct `.dwcue` opens now use the existing lower panel and the same cue-start guard as the Open Project picker (`adc3bc8`). Holding Open before the engine accepted it kept the old playlist visible. The Stop All button and Escape each stopped a playing cue with Stop All remapped to F9. A refused file left the cue playing. Holding the reply after the engine switched shows verified that GO from the old workspace could not start a cue in the replacement show.
+
+The generated renderer and native NULL audio engine passed menu, warm file delivery, and pending launch file tests. The launch panel sent both Stop All commands before the workspace loaded. The New Show and Open Project picker checks also passed. All 275 client tests, type checking, and renderer generation passed. Physical output acceptance remains in T24.

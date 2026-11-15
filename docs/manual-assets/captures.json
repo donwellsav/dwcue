@@ -1,6 +1,6 @@
 {
   "application": "DonWells Cue",
-  "sourceRevision": "534615e1ce656d849e886cacba121fbe3d986020",
+  "sourceRevision": "adc3bc81e06148b4e38b4b399a1216f0d147b355",
   "packageVersion": "2.6.23 development",
   "edition": "14 November 2026 development review of operator controls, imports, and project panels",
   "images": [
@@ -476,10 +476,10 @@
     "gainStages": "Schematic: final physical sum and secondary-clock adaptation precede the attenuation-only limiter and device output."
   },
   "uiBuildRevision": "534615e1ce656d849e886cacba121fbe3d986020",
-  "manualSourceRevision": "534615e1ce656d849e886cacba121fbe3d986020",
+  "manualSourceRevision": "adc3bc81e06148b4e38b4b399a1216f0d147b355",
   "visualCompatibility": {
     "checkedOn": "2026-11-14",
-    "revision": "534615e1ce656d849e886cacba121fbe3d986020",
-    "basis": "The New Show figure was refreshed from the generated renderer. The other figures retain their original capture details."
+    "revision": "adc3bc81e06148b4e38b4b399a1216f0d147b355",
+    "basis": "The New Show layout was checked against the generated renderer. No published figure depicts the removed loading overlay."
   }
 }
