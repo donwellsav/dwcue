@@ -186,11 +186,10 @@ public:
     bool load(const std::filesystem::path& path,
               std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max(),
               const std::string& expected_session = {}, json* loaded_header = nullptr);
-    // Serialize saves and optional document replacement as one operation. An
-    // empty path resolves to the current project path while holding save_mutex_;
-    // identity/folder metadata commit only after atomic publication succeeds.
+    // Order all writes, but leave playback and other show operations unlocked
+    // during disk I/O. A stale save cannot change the current show's metadata.
     bool save(const std::filesystem::path& path, const json* replacement = nullptr,
-              std::filesystem::path* published_path = nullptr);
+              std::filesystem::path* published_path = nullptr, const std::string& expected_session = {});
 
     // Replace state from an in-memory JSON document. Same semantics as load.
     bool load_from_json(const json& doc, const std::filesystem::path& project_path = {},

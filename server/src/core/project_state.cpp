@@ -2068,10 +2068,13 @@ json ProjectState::to_json() const {
 
 bool ProjectState::save(const std::filesystem::path& requested_path,
                         const json* replacement,
-                        std::filesystem::path* published_path) {
-    std::lock_guard operation_lock{project_operation_mutex_};
-    std::lock_guard save_lock{save_mutex_};
+                        std::filesystem::path* published_path,
+                        const std::string& expected_session) {
     if (published_path) published_path->clear();
+    const auto session = expected_session.empty() ? project_session_id() : expected_session;
+    std::lock_guard save_lock{save_mutex_};
+    auto operation_lock = lock_project_session(session);
+    if (!operation_lock.owns_lock()) return false;
     std::filesystem::path path = requested_path;
     if (path.empty()) {
         std::lock_guard lock{mutex_};
@@ -2091,6 +2094,7 @@ bool ProjectState::save(const std::filesystem::path& requested_path,
             doc["lastModified"] = now_iso();
             doc["folderPath"] = util::path_to_utf8(path.parent_path());
         }
+        operation_lock.unlock();
         relativize_media_paths(doc);
         std::filesystem::path tmp = path;
         tmp += ".tmp";
@@ -2113,6 +2117,13 @@ bool ProjectState::save(const std::filesystem::path& requested_path,
             }
         }
         std::error_code ec;
+        operation_lock = lock_project_session(session);
+        if (!operation_lock.owns_lock()) {
+            std::filesystem::remove(tmp, ec);
+            return false;
+        }
+        // Rename may itself wait on storage. The admitted write owns only its captured path.
+        operation_lock.unlock();
         if (!util::replace_file_atomically(tmp, path, ec)) {
             Logger::error("ProjectState::save: rename '{}' -> '{}' failed: {} — previous file left untouched",
                           util::path_to_utf8(tmp), util::path_to_utf8(path), ec.message());
@@ -2121,12 +2132,15 @@ bool ProjectState::save(const std::filesystem::path& requested_path,
             return false;
         }
         {
-            std::lock_guard lock{mutex_};
-            if (project_file_path_ != path) project_session_id_ = engine_.new_cue_id().value;
-            project_file_path_ = path;
-            document_["folderPath"] = util::path_to_utf8(path.parent_path());
-            pending_repair_info_ = {};
-            update_media_root_from_folder_locked();
+            operation_lock = lock_project_session(session);
+            if (operation_lock.owns_lock()) {
+                std::lock_guard lock{mutex_};
+                if (project_file_path_ != path) project_session_id_ = engine_.new_cue_id().value;
+                project_file_path_ = path;
+                document_["folderPath"] = util::path_to_utf8(path.parent_path());
+                pending_repair_info_ = {};
+                update_media_root_from_folder_locked();
+            }
         }
         if (published_path) *published_path = path;
         return true;

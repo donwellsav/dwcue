@@ -3944,9 +3944,13 @@ void ControlServer::install_routes() {
                 // the repair persisted.
                 const auto repair = state_.repair_project();
                 const auto path = state_.project_file_path();
+                const auto session = state_.project_session_id();
+                project_lock.unlock();
                 bool saved = false;
                 if (!path.empty()) {
-                    if (!state_.save(path)) {
+                    if (!state_.save(path, nullptr, nullptr, session)) {
+                        if (state_.project_session_id() != session)
+                            return json_err(409, "project session changed before repair could be saved");
                         Logger::error("POST /api/project/repair — save failed for '{}'",
                                       liveplay::util::path_to_utf8(path));
                         return json_err(500, "repair succeeded but save failed");
@@ -3994,7 +3998,11 @@ void ControlServer::install_routes() {
                                         ? liveplay::util::path_to_utf8(requested_path)
                                         : std::string{"<current>"});
                 fs::path published_path;
-                if (!state_.save(requested_path, replacement, &published_path)) {
+                const auto session = state_.project_session_id();
+                project_lock.unlock();
+                if (!state_.save(requested_path, replacement, &published_path, session)) {
+                    if (state_.project_session_id() != session)
+                        return json_err(409, "project session changed before save could finish");
                     Logger::error("POST /api/project/save FAILED for '{}'",
                                   path_provided
                                       ? liveplay::util::path_to_utf8(requested_path)
