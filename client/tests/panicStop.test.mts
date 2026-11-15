@@ -150,6 +150,8 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
   const filePicker = { value: null as 'cue' | 'standby' | 'replace-media' | null };
   const quickPlayImportSlot = { value: null as number | null };
   const importPanel = { value: null as string | null };
+  const showProjectSettings = { value: false };
+  const settingsTab = { value: 'audio' };
   const server = {
     connected: true, connectionLost: false, showVerification: false,
     get cueStartsBlocked() { return this.connectionLost || this.showVerification || sessionLost.value || projectLoad.value === 'open'; },
@@ -157,8 +159,10 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
   };
   const currentProject = { value: { playbackKeys: {} as Record<string, unknown> } };
   const trap = Function('server', 'projectLoad', 'projectPanelOpen', 'filePicker', 'quickPlayImportSlot', 'importPanel',
+    'showProjectSettings', 'settingsTab',
     'currentProject', 'DEFAULT_PLAYBACK_KEYS', 'bindingsMatch', 'eventToBinding', `${code}\nreturn trapKeydown;`)(
-    server, projectLoad, projectPanelOpen, filePicker, quickPlayImportSlot, importPanel, currentProject,
+    server, projectLoad, projectPanelOpen, filePicker, quickPlayImportSlot, importPanel,
+    showProjectSettings, settingsTab, currentProject,
     DEFAULT_PLAYBACK_KEYS, bindingsMatch, eventToBinding);
   const press = (key: string, opts = {}) => {
     let swallowed = false;
@@ -261,6 +265,15 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
     assert.equal(press('Enter', { target: editor }), false, 'the path field keeps Enter');
   }
   assert.deepEqual(calls.slice(14), [[], [], [], []]);
+
+  importPanel.value = null;
+  settingsTab.value = 'video';
+  assert.equal(press('Escape'), false, 'a remembered Video Output tab does not claim Escape when closed');
+  showProjectSettings.value = true;
+  assert.equal(press('Escape'), true, 'Video Output routes Escape to Stop All with a remapped shortcut');
+  assert.equal(press('Escape', { repeat: true }), true);
+  assert.equal(press(' '), false, 'the image drop target leaves GO available');
+  assert.deepEqual(calls.slice(18), [[]]);
 });
 
 function loadHandleKeydown(dependencies: Record<string, unknown>) {

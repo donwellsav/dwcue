@@ -48,19 +48,19 @@
       </div>
       <div class="test-card-image-row">
         <CheckControl :label="t('testCard.customLogo')" :checked="config.alteka.showLogo" @change="updateAlteka({ showLogo: $event })" />
-        <button type="button" class="test-card-button" @click="logoInput?.click()">{{ t('testCard.selectImage') }}</button>
-        <button v-if="config.alteka.logo" type="button" class="test-card-button" @click="updateAlteka({ logo: '' })">
+        <div class="test-card-image-drop" role="group" :tabindex="disabled ? undefined : 0"
+          :aria-label="t('testCard.dropLogo')" :aria-disabled="disabled"
+          @dragover.prevent @drop.stop.prevent="pickImage($event.dataTransfer?.files, 'logo')"
+          @paste.stop.prevent="pickImage($event.clipboardData?.files, 'logo')">
+          {{ t('testCard.dropLogo') }}
+        </div>
+        <button v-if="config.alteka.logo" type="button" class="test-card-button" @click="clearImage('logo')">
           {{ t('testCard.clearImage') }}
         </button>
         <img v-if="config.alteka.logo" class="test-card-logo-preview" :src="config.alteka.logo" alt="">
-        <input
-          ref="logoInput"
-          class="test-card-file-input"
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/gif"
-          @change="onImagePicked($event, 'logo')"
-        >
       </div>
+      <p v-if="imageStatus.logo === 'reading'" class="test-card-help" role="status">{{ t('testCard.checkingImage') }}</p>
+      <p v-if="imageStatus.logo === 'invalid'" class="test-card-error" role="alert">{{ t('testCard.imageRejected') }}</p>
       <p v-if="config.alteka.showLogo" class="test-card-help">{{ t('testCard.logoHelp') }}</p>
     </fieldset>
 
@@ -275,19 +275,18 @@
           :disabled="config.fullsize || config.windowed"
           @change="updateMask({ applyBounds: $event })"
         />
-        <button type="button" class="test-card-button" @click="maskInput?.click()">{{ t('testCard.selectImage') }}</button>
-        <button v-if="config.mask.image" type="button" class="test-card-button" @click="clearMask">{{ t('testCard.clearImage') }}</button>
+        <div class="test-card-image-drop" role="group" :tabindex="disabled ? undefined : 0"
+          :aria-label="t('testCard.dropMask')" :aria-disabled="disabled"
+          @dragover.prevent @drop.stop.prevent="pickImage($event.dataTransfer?.files, 'mask')"
+          @paste.stop.prevent="pickImage($event.clipboardData?.files, 'mask')">
+          {{ t('testCard.dropMask') }}
+        </div>
+        <button v-if="config.mask.image" type="button" class="test-card-button" @click="clearImage('mask')">{{ t('testCard.clearImage') }}</button>
         <img v-if="config.mask.image" class="test-card-mask-preview" :src="config.mask.image" alt="">
-        <input
-          ref="maskInput"
-          class="test-card-file-input"
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/gif"
-          @change="onImagePicked($event, 'mask')"
-        >
       </div>
       <p v-if="config.mask.image" class="test-card-help">{{ t('testCard.maskHelp') }}</p>
-      <p v-if="imageError" class="test-card-error" role="alert">{{ imageError }}</p>
+      <p v-if="imageStatus.mask === 'reading'" class="test-card-help" role="status">{{ t('testCard.checkingImage') }}</p>
+      <p v-if="imageStatus.mask === 'invalid'" class="test-card-error" role="alert">{{ t('testCard.imageRejected') }}</p>
     </fieldset>
   </div>
 </template>
@@ -395,9 +394,13 @@ const emit = defineEmits<{
 
 const { t } = useLocalization();
 const server = useLiveplayServer();
-const logoInput = ref<HTMLInputElement | null>(null);
-const maskInput = ref<HTMLInputElement | null>(null);
-const imageError = ref('');
+type ImageTarget = 'logo' | 'mask';
+const imageStatus = reactive<Record<ImageTarget, 'reading' | 'invalid' | null>>({ logo: null, mask: null });
+const imageRequest = { logo: 0, mask: 0 };
+onScopeDispose(() => {
+  imageRequest.logo++;
+  imageRequest.mask++;
+});
 
 const BAR_COLORS: readonly TestCardBarsColor[] = ['Red', 'Green', 'Blue', 'Cyan', 'Magenta', 'Yellow', 'white'];
 const ROTATIONS: readonly TestCardRotation[] = [0, 90, 180, 270];
@@ -544,8 +547,11 @@ function setWindowed(windowed: boolean): void {
   update(patch);
 }
 
-function clearMask(): void {
-  updateMask({ image: '', enabled: false });
+function clearImage(target: ImageTarget): void {
+  imageRequest[target]++;
+  imageStatus[target] = null;
+  if (target === 'logo') updateAlteka({ logo: '' });
+  else updateMask({ image: '', enabled: false });
 }
 
 function readImage(file: File): Promise<string> {
@@ -559,31 +565,33 @@ function readImage(file: File): Promise<string> {
   });
 }
 
-async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<void> {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  input.value = '';
-  if (!file) return;
-
-  imageError.value = '';
-  if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type) || file.size > 5_500_000) {
-    imageError.value = t('testCard.imageRejected');
+async function pickImage(files: FileList | undefined, target: ImageTarget): Promise<void> {
+  if (props.disabled) return;
+  const request = ++imageRequest[target];
+  const file = files?.length === 1 ? files[0] : undefined;
+  if (!file?.size || file.size > 5_500_000 || !['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) {
+    imageStatus[target] = 'invalid';
     return;
   }
 
+  imageStatus[target] = 'reading';
   try {
     const image = await readImage(file);
+    if (imageRequest[target] !== request) return;
+    const preview = new Image();
+    preview.src = image;
+    await preview.decode();
+    if (imageRequest[target] !== request || props.disabled) return;
     const candidate = target === 'logo'
       ? createTestCardConfig({ ...props.config, alteka: { ...props.config.alteka, logo: image } })
       : createTestCardConfig({ ...props.config, mask: { ...props.config.mask, image, enabled: true } });
     const accepted = target === 'logo' ? candidate.alteka.logo : candidate.mask.image;
-    if (!accepted) {
-      imageError.value = t('testCard.imageRejected');
-      return;
-    }
+    if (!accepted) throw new Error('Image is not supported');
     emit('change', candidate);
   } catch {
-    imageError.value = t('testCard.imageRejected');
+    if (imageRequest[target] === request) imageStatus[target] = 'invalid';
+  } finally {
+    if (imageRequest[target] === request && imageStatus[target] === 'reading') imageStatus[target] = null;
   }
 }
 </script>
@@ -699,13 +707,17 @@ async function onImagePicked(event: Event, target: 'logo' | 'mask'): Promise<voi
   border: 1px solid var(--color-border);
 }
 .test-card-mask-preview { width: 80px; object-fit: cover; }
-.test-card-file-input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
+.test-card-image-drop {
+  display: flex;
+  flex: 1 0 auto;
+  align-items: center;
+  min-height: var(--settings-control-height);
+  max-width: 100%;
+  padding: 3px 8px;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--control-radius);
+  color: var(--color-text-primary);
+  font-size: 12px;
 }
 .test-card-button {
   min-height: var(--settings-control-height);
