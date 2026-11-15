@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** 76b02e4281211066f5953b610dc9bba1c86ffec4
+**Source revision:** b2da1f8e971eefd6996da3428d7126b5fecb7859
 **Native engine baseline:** 7c233a9
 **Edition:** 15 November 2026 · English · Operator edition
 
@@ -474,6 +474,8 @@ For overlapping playback, check Ducking. If the wrong material is audible, use t
 Header warnings temporarily replace the show name. The steady **Silence in** countdown stays in that slot when another warning appears beside it. The show name returns when the warnings clear. Red urgent warnings take priority over yellow advisories. Audio and video recovery buttons stay available while their outputs need attention.
 
 In **Settings → User Interface**, set the four durations and two countdown thresholds for this device. Defaults are **5 seconds** without a countdown, **3 seconds** above 30 seconds remaining, **2 seconds** from 15 through 30 seconds, and **1 second** below 15 seconds. A timing change applies to the next message.
+
+Open a swatch in **Settings → User Interface → Time Left colors** or **Settings → Video Output → Test card**. Choose a preset, or enter a hex color and press **Enter** or **Apply color**. Time Left ranges save with the show, and Test Card colors are stored on this machine. The playlist and **GO** stay available. **Escape** runs Stop All even when remapped.
 
 ### At the interval and at the end
 

@@ -1,6 +1,6 @@
 {
   "application": "DonWells Cue",
-  "sourceRevision": "76b02e4281211066f5953b610dc9bba1c86ffec4",
+  "sourceRevision": "b2da1f8e971eefd6996da3428d7126b5fecb7859",
   "packageVersion": "2.6.23 development",
   "edition": "15 November 2026 development review of operator controls, imports, and project panels",
   "images": [
@@ -476,10 +476,10 @@
     "gainStages": "Schematic: final physical sum and secondary-clock adaptation precede the attenuation-only limiter and device output."
   },
   "uiBuildRevision": "534615e1ce656d849e886cacba121fbe3d986020",
-  "manualSourceRevision": "76b02e4281211066f5953b610dc9bba1c86ffec4",
+  "manualSourceRevision": "b2da1f8e971eefd6996da3428d7126b5fecb7859",
   "visualCompatibility": {
     "checkedOn": "2026-11-15",
-    "revision": "76b02e4281211066f5953b610dc9bba1c86ffec4",
-    "basis": "The current renderer was software-checked for docked Test Card logo and mask selection at 1200 × 700 and 845 × 690. Figures retain their capture revisions."
+    "revision": "b2da1f8e971eefd6996da3428d7126b5fecb7859",
+    "basis": "The current renderer was software-checked for inline Test Card and Time Left color editing at 1200 × 700 and 845 × 690. Figures retain their capture revisions."
   }
 }
