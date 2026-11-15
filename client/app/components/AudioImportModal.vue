@@ -70,33 +70,24 @@
           </template>
         </section>
 
-        <!-- "Upload" tab — browser file picker, then upload to /api/upload -->
         <section v-else class="pane">
-          <div class="row">
-            <input
-              ref="uploadInput"
-              class="file-input"
-              type="file"
-              multiple
-              :accept="MEDIA_FILE_ACCEPT"
-              @change="uploadSelectedFiles"
-            >
-            <input ref="uploadFolderInput" class="file-input" type="file" webkitdirectory
-              @change="uploadSelectedFiles($event, true)">
-            <button type="button" class="btn" :disabled="uploading || busy" @click="uploadInput?.click()">
-              <span class="material-symbols-rounded" aria-hidden="true">audio_file</span>
-              {{ t('importAudio.chooseFiles') }}
-            </button>
-            <button type="button" class="btn" :disabled="uploading || busy" @click="uploadFolderInput?.click()">
-              <span class="material-symbols-rounded" aria-hidden="true">folder_open</span>
-              {{ t('importAudio.chooseFolder') }}
-            </button>
-            <span v-if="uploadStatus" class="status" role="status" aria-live="polite">
-              {{ uploadStatus }}
-            </span>
+          <div class="upload-drop" role="group" tabindex="0" :aria-label="t('importProject.fromThisComputer')"
+            aria-describedby="remote-upload-instructions" :aria-disabled="stagingBusy" @dragover.stop.prevent
+            @drop.stop.prevent="selectForUpload($event.dataTransfer)" @paste.stop="selectForUpload($event.clipboardData)">
+            <span id="remote-upload-instructions">{{ t('importAudio.dropForUpload') }}</span>
           </div>
+          <div v-if="readingUploadFolder" class="row">
+            <span class="status" role="status">{{ t('importAudio.readingSelection') }}</span>
+            <button type="button" class="btn small" @click="cancelUploadFolderRead">
+              {{ t('common.cancel') }}
+            </button>
+          </div>
+          <p v-else-if="uploadStatus" class="status" role="status">{{ uploadStatus }}</p>
+          <p v-if="skippedUploadEntries.length" class="picker-warning" role="status">
+            {{ t('importAudio.uploadEntriesSkipped', { entries: skippedUploadEntries.join(', ') }) }}
+          </p>
           <section v-if="failedUploads.length" class="import-results" aria-live="polite">
-            <button type="button" class="btn small" :disabled="uploading || busy" @click="uploadFiles(failedUploads.map(entry => entry.file))">
+            <button type="button" class="btn small" :disabled="stagingBusy" @click="uploadFiles(failedUploads.map(entry => entry.file))">
               {{ t('importAudio.retryFailed') }}
             </button>
             <ul>
@@ -232,7 +223,7 @@
     both local and remote-server modes behave identically downstream.
 -->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onScopeDispose, ref, watch } from 'vue';
 import { useLiveplayServer } from '~/composables/useLiveplayServer';
 import ServerFileBrowser from '~/components/ServerFileBrowser.vue';
 import ServerFilePickerModal from '~/components/ServerFilePickerModal.vue';
@@ -314,6 +305,8 @@ const importSettings = computed(() => [
 
 const uploading           = ref(false);
 let uploadBatch = 0;
+const readingUploadFolder = ref(false);
+const skippedUploadEntries = ref<string[]>([]);
 const failedUploads       = ref<Array<{ file: File; reason: string }>>([]);
 const uploadStatus        = ref<string>('');
 const uploadedThisSession = ref<string[]>([]);
@@ -322,16 +315,20 @@ const uploadedSizes       = ref<Record<string, number>>({});
 watch([projectEpoch, () => server.serverUrl, () => server.projectSessionId], () => {
   ++uploadBatch;
   uploading.value = false;
+  readingUploadFolder.value = false;
+  skippedUploadEntries.value = [];
   uploadedThisSession.value = [];
   selectedUploaded.value = [];
   uploadedFolder.value = '';
   uploadedSizes.value = {};
   failedUploads.value = [];
   uploadStatus.value = '';
-});
+}, { flush: 'sync' });
+watch([() => props.open, () => props.visible, tab], ([open, visible, source]) => {
+  if (!open || visible === false || source !== 'upload') cancelUploadFolderRead();
+}, { flush: 'sync' });
+onScopeDispose(() => { ++uploadBatch; });
 const uploadedAnchor      = { i: -1 };
-const uploadInput          = ref<HTMLInputElement | null>(null);
-const uploadFolderInput    = ref<HTMLInputElement | null>(null);
 type ImportSource = 'server' | 'local' | 'upload';
 let lastImportOptions: ImportOptions = { fileMode: 'copy', duplicatePolicy: 'reuse' };
 
@@ -353,7 +350,7 @@ const stagedPaths = computed(() => tab.value === 'upload' ? uploadedThisSession.
 const stagedSelection = computed(() => tab.value === 'upload' ? selectedUploaded.value : selectedLocal.value);
 const selectedPaths = computed(() => new Set(stagedSelection.value));
 const stagedFolder = computed(() => tab.value === 'upload' ? uploadedFolder.value : localFolder.value);
-const stagingBusy = computed(() => props.busy || pickingLocal.value || uploading.value);
+const stagingBusy = computed(() => props.busy || pickingLocal.value || uploading.value || readingUploadFolder.value);
 
 // Browse-time hint only (container extension); the authoritative flag is the
 // server's has_video probe, attached to the item at import.
@@ -518,31 +515,90 @@ async function stageLocalFolder(path: string) {
   }
 }
 
-// File-backed browser uploads avoid copying audio through Electron IPC.
-async function uploadSelectedFiles(event: Event, fromFolder = false) {
-  const input = event.target as HTMLInputElement;
-  let files = Array.from(input.files ?? []);
-  input.value = '';
-  if (!files.length || uploading.value || props.busy) return;
-  if (fromFolder) {
-    const name = files[0]!.webkitRelativePath.split('/')[0] || '';
-    const extensions = new Set(MEDIA_FILE_ACCEPT.split(','));
-    files = files.filter(file =>
-      !file.webkitRelativePath.split('/').slice(1).some(part => part.startsWith('.')) &&
-      extensions.has(file.name.match(/\.[^.]+$/)?.[0].toLowerCase() ?? ''),
-    ).sort((a, b) => a.webkitRelativePath.localeCompare(b.webkitRelativePath, undefined, { numeric: true }));
-    if (!files.length) {
-      uploadStatus.value = t('importAudio.emptyMediaFolder');
-      return;
+const uploadExtensions = new Set(MEDIA_FILE_ACCEPT.split(','));
+function isUploadMedia(name: string) {
+  return uploadExtensions.has(name.match(/\.[^.]+$/)?.[0].toLowerCase() ?? '');
+}
+
+async function readDroppedFolder(root: FileSystemDirectoryEntry, isCurrent: () => boolean) {
+  const pending: FileSystemEntry[] = [root];
+  const files: Array<{ path: string; file: File }> = [];
+  const skipped: string[] = [];
+  while (pending.length && isCurrent()) {
+    const entry = pending.pop()!;
+    if (entry !== root && entry.name.startsWith('.')) continue;
+    try {
+      if (entry.isDirectory) {
+        const reader = (entry as FileSystemDirectoryEntry).createReader();
+        // The browser can return the directory in several batches.
+        while (isCurrent()) {
+          const children = await new Promise<FileSystemEntry[]>((resolve, reject) => reader.readEntries(resolve, reject));
+          if (!children.length) break;
+          for (const child of children) pending.push(child);
+        }
+      } else if (entry.isFile && isUploadMedia(entry.name)) {
+        const file = await new Promise<File>((resolve, reject) => (entry as FileSystemFileEntry).file(resolve, reject));
+        files.push({ path: entry.fullPath, file });
+      }
+    } catch (error) {
+      if (entry === root) throw error;
+      skipped.push(entry.fullPath.slice(root.fullPath.length + 1));
     }
-    uploadedFolder.value = name;
-    importAsGroup.value = false;
-    uploadedThisSession.value = [];
-    selectedUploaded.value = [];
-    uploadedAnchor.i = -1;
-    failedUploads.value = [];
   }
-  await uploadFiles(files);
+  files.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }));
+  return { files: files.map(entry => entry.file), skipped: skipped.sort() };
+}
+
+function cancelUploadFolderRead() {
+  if (!readingUploadFolder.value) return;
+  ++uploadBatch;
+  readingUploadFolder.value = false;
+}
+
+async function selectForUpload(transfer: DataTransfer | null) {
+  if (!transfer || stagingBusy.value || !currentProject.value) return;
+  const droppedFiles = Array.from(transfer.files);
+  const entries = Array.from(transfer.items)
+    .filter(item => item.kind === 'file')
+    .map(item => item.webkitGetAsEntry?.());
+  const folder = entries.find(entry => entry?.isDirectory) as FileSystemDirectoryEntry | undefined;
+  if (!folder) {
+    const files = droppedFiles.filter(file => isUploadMedia(file.name));
+    if (files.length) await uploadFiles(files);
+    else if (droppedFiles.length) uploadStatus.value = t('importAudio.dropNoMedia');
+    return;
+  }
+  if (entries.length > 1 || droppedFiles.length > 1) {
+    uploadStatus.value = t('importAudio.dropOneFolder');
+    return;
+  }
+
+  const revision = ++uploadBatch;
+  const isCurrent = () => revision === uploadBatch;
+  readingUploadFolder.value = true;
+  let batch;
+  try {
+    batch = await readDroppedFolder(folder, isCurrent);
+  } catch {
+    if (isCurrent()) uploadStatus.value = t('importAudio.folderReadFailed');
+    return;
+  } finally {
+    if (isCurrent()) readingUploadFolder.value = false;
+  }
+  if (!isCurrent()) return;
+  skippedUploadEntries.value = batch.skipped;
+  if (!batch.files.length) {
+    uploadStatus.value = t('importAudio.emptyMediaFolder');
+    return;
+  }
+  uploadedFolder.value = folder.name;
+  importAsGroup.value = false;
+  uploadedThisSession.value = [];
+  selectedUploaded.value = [];
+  uploadedSizes.value = {};
+  uploadedAnchor.i = -1;
+  failedUploads.value = [];
+  await uploadFiles(batch.files);
 }
 
 async function uploadFiles(files: File[]) {
@@ -586,7 +642,7 @@ async function uploadFiles(files: File[]) {
         }
       }
     }
-    uploadStatus.value = t('importAudio.uploadedCount', { count: uploadedCount });
+    uploadStatus.value = failedUploads.value.length ? t('importAudio.uploadedCount', { count: uploadedCount }) : '';
   } finally {
     if (batch === uploadBatch) uploading.value = false;
   }
@@ -703,7 +759,15 @@ function formatBytes(n: number): string {
     &.small   { min-height: 28px; padding: 2px 8px; font-size: 12px; }
   }
   .row { display: flex; gap: var(--spacing-xs); align-items: center; flex-wrap: wrap; }
-  .file-input { display: none; }
+  .upload-drop {
+    border: 1px dashed var(--color-border-strong);
+    border-radius: var(--control-radius);
+    padding: var(--spacing-sm);
+    color: var(--color-text-primary);
+    font-size: var(--type-metadata-size);
+    &[aria-disabled="true"] { color: var(--color-text-secondary); }
+    &:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: 1px; }
+  }
   .status { font-size: 12px; color: var(--color-text-secondary); }
   .picker-error, .picker-warning { margin: 0; overflow-wrap: anywhere; }
   .picker-error { color: var(--color-danger); }

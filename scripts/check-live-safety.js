@@ -1331,8 +1331,13 @@ assert.match(
 );
 assert.match(
   audioImportModal,
-  /type="file"[\s\S]*multiple[\s\S]*@change="uploadSelectedFiles"/,
-  'remote audio import must use the browser file picker instead of whole-file IPC',
+  /class="upload-drop"[^>]*@drop\.stop\.prevent="selectForUpload\(\$event\.dataTransfer\)"[\s\S]*webkitGetAsEntry[\s\S]*server\.uploadFile\(file, file\.name, session\)/,
+  'remote audio import must accept file-backed files and folders in the dock',
+);
+assert.doesNotMatch(
+  audioImportModal,
+  /type="file"|show(OpenFile|Directory)Picker/,
+  'remote audio import must keep selection inside the dock',
 );
 assert.match(
   electron,
