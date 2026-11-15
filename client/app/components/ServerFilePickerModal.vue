@@ -302,13 +302,13 @@ async function navigate(path: string, recordHistory = true, fallbackPath?: strin
       historyBack.value.push(previousPath);
     }
     listing.value = next;
-    pathDraft.value = next.path;
+    if (pathDraft.value === path) pathDraft.value = next.path;
     pickerLocations.rememberFolder(next.path);
     return true;
   } catch (cause) {
     if (!isCurrent()) return false;
     const message = cause instanceof Error ? cause.message : String(cause);
-    if (fallbackPath !== undefined && /^404(?:\s|$)/.test(message)) {
+    if (fallbackPath !== undefined && pathDraft.value === path && /^404(?:\s|$)/.test(message)) {
       const recovered = await navigate(fallbackPath, false);
       if (recovered) notice.value = t('filePicker.unavailableFolder', { path });
       return recovered;
