@@ -144,6 +144,8 @@ Full-document saves wait until all project cue pages have loaded; a failed, clos
 
 Every local and remote control request requires a token; only `GET /api/health` is public. The desktop app provisions its managed local token automatically through trusted Electron IPC rather than browser storage. If a dirty local project meets a changed server project after reconnect, choose **Use server project** to discard the local edits and adopt the server copy, or **Restore local project** to replace the server copy and keep the local state dirty.
 
+Connection loss, show verification, and session recovery use the main window's lower panel. The last verified playlist stays visible for reference while cue starts wait. Stop All and Escape remain available, including when the Stop All shortcut is remapped.
+
 ---
 
 ## Change the app language

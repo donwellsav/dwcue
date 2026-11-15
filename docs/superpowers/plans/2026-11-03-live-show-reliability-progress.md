@@ -611,3 +611,9 @@ All three Chromium scenarios passed against the generated renderer. The 275 clie
 Open Recent and direct `.dwcue` opens now use the existing lower panel and the same cue-start guard as the Open Project picker (`adc3bc8`). Holding Open before the engine accepted it kept the old playlist visible. The Stop All button and Escape each stopped a playing cue with Stop All remapped to F9. A refused file left the cue playing. Holding the reply after the engine switched shows verified that GO from the old workspace could not start a cue in the replacement show.
 
 The generated renderer and native NULL audio engine passed menu, warm file delivery, and pending launch file tests. The launch panel sent both Stop All commands before the workspace loaded. The New Show and Open Project picker checks also passed. All 275 client tests, type checking, and renderer generation passed. Physical output acceptance remains in T24.
+
+## 14 November — Reconnect and session recovery
+
+The main window uses the lower panel for connection loss, show verification, and recovery choices (`7d68e57`). The workspace displays the last verified playlist while the controller checks the show and reads every page of its replacement. GO and editing wait for verification. Stop All remains usable by click, focused Space, the assigned shortcut, and Escape. If HTTP cannot reach the engine, the lower panel reports Stop All as unconfirmed.
+
+In Edit and Show Mode, the generated renderer and NULL audio engine kept the playlist visible through a failed second page and another disconnect. A show switch invalidated a response held after the old page was read. Failed recovery kept unsaved edits, and an explicit retry restored the verified show. Continue session on an empty engine restored the show without replaying a cue. The New Show and Open Project checks, 276 client tests, type checking, and renderer generation passed. Physical output acceptance remains in T24.

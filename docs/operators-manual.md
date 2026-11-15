@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** adc3bc81e06148b4e38b4b399a1216f0d147b355
+**Source revision:** 7d68e57902645710ea4f8204e55e1a2aa4d788a6
 **Native engine baseline:** 7c233a9
 **Edition:** 14 November 2026 · English · Operator edition
 
@@ -778,13 +778,13 @@ Use **Choose Another Show** to open the standard show picker from the load-error
 
 ### Connection loss is not proof that sound stopped
 
-The **Connection lost** overlay blocks normal playback/edit input while reconnection is attempted. **Retry now** retries the same server. Its **Restart** action relaunches the client only; the audio engine and Program can continue running. **Exit** closes the client. Before restart or exit, the desktop removes client-owned AV resources. If that cleanup fails, the diagnostic remains visible and the action is refused rather than abandoning an owned resource; correct the cause and retry. Correct a wrong address or credential through Server Settings rather than repeatedly retrying the wrong destination.
+The **Connection lost** panel opens below the playlist in the main window. The last verified playlist stays visible for reference while cue starts and edits wait. **Retry now** retries the same server. Its **Restart** action relaunches the client. The engine and Program can continue running. **Exit** closes the client. Before restart or exit, the desktop removes client-owned AV resources. If cleanup fails, the diagnostic remains visible and the client stays open so you can correct the cause and retry. Verify the destination and credential before retrying a failed connection.
 
-After the managed engine actually restarts, the controller can present the different **Server restarted** prompt; do not confuse it with the Connection lost overlay's Retry, Restart-client, and Exit actions.
+After the managed engine restarts, **Server restarted** offers **Continue session** and **Start fresh** in the same lower panel.
 
-**Stop All Cues** stays available in the **Connection lost** and recovery prompts, including its configured keyboard and MIDI bindings. It uses a separate HTTP request so the engine can receive Stop All while the control socket is down or waiting on a cue. The engine applies the active show's Stop All fade. **The engine accepted Stop All** confirms receipt of the stop request. If Stop All is unconfirmed, check the output and use your independent console-silence procedure as needed.
+**Stop All Cues** stays available while the recovery panel is open, including its configured keyboard and MIDI bindings. **Escape** also runs Stop All when a different shortcut is assigned. Stop All uses a separate HTTP request so the engine can receive it while the control socket is down or waiting on a cue. The engine applies the active show's Stop All fade. **The engine accepted Stop All** confirms receipt of the stop request. If Stop All is unconfirmed, check the output and use your independent console-silence procedure as needed.
 
-After the control link returns, **Verifying show** keeps GO and other cue starts unavailable while the controller checks the active show and loads its cue list. Stop All stays available. If verification fails, choose **Retry now**. When the engine has no show open or local edits need a decision, use the recovery prompt to choose what to load.
+After the control link returns, **Verifying show** keeps GO and other cue starts unavailable while the controller checks the active show and loads its full cue list. If verification fails, the previous playlist stays visible for reference. Choose **Retry now**. When the engine has no show open or local edits need a decision, use the recovery panel to choose what to load.
 
 
 **Procedure — respond to connection loss during a show**
@@ -799,7 +799,7 @@ When a network controller loses contact, do not assume the audience has silence.
 
 ### Choose client or engine restart
 
-In the **Connection lost** overlay, **Restart** relaunches only the client; it leaves the audio engine and Program running. To restart the managed local audio process, use **Server Settings -> Restart engine** in Local mode. Coordinate that interruption with the show team and verify the returned project, active cue, position and output before GO. A remote engine requires its own operator's recovery procedure.
+In the **Connection lost** panel, **Restart** relaunches the client and leaves the engine and Program running. To restart the managed local audio process, use **Server Settings -> Restart engine** in Local mode. Coordinate that interruption with the show team and verify the returned project, active cue, position and output before GO. A remote engine requires its own operator's recovery procedure.
 
 The local controller can connect and use Stop All while the default audio output starts. A backup can start on a separate device while another device waits in Start. If the driver is still initializing or releasing a device, a new output can report that it is unavailable. Use a cue routed to a ready output or retry the armed cue when the selected output returns. Confirm Program sound during soundcheck. Save the show before restarting the engine. If driver cleanup stalls during an intentional stop, the engine attempts to exit after about 1.5 seconds. The app verifies the old engine has exited before launching another.
 
@@ -994,7 +994,7 @@ These are source defaults, not a promise about a project's customized assignment
 | Cmd/Ctrl+Q | Exit / quit workflow |
 | F11 | Fullscreen |
 
-The default **Escape** Stop All shortcut works while editing, including in the limiter ceiling and Preview In/Out fields. New Show, Open Project, Quit, and **Unsaved Changes** reserve Escape for Stop All. With Video Output focused, Escape also exits its fullscreen mode. In Level Check, R / [ / ] / Q have the temporary meanings described in chapter 12. MIDI bindings belong to the machine; keyboard playback assignments belong to the project.
+The default **Escape** Stop All shortcut works while editing, including in the limiter ceiling and Preview In/Out fields. New Show, Open Project, Quit, **Unsaved Changes**, and the main window's recovery panel reserve Escape for Stop All. With Video Output focused, Escape also exits its fullscreen mode. In Level Check, R / [ / ] / Q have the temporary meanings described in chapter 12. MIDI bindings belong to the machine; keyboard playback assignments belong to the project.
 
 ### Operating boundaries
 
