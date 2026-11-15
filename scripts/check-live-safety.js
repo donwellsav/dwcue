@@ -189,7 +189,7 @@ assert.match(
   'the new-project prompt must expose native dialog semantics',
 );
 const playlistItem = read('client/app/components/PlaylistItem.vue');
-const quitConfirmModal = read('client/app/components/QuitConfirmModal.vue');
+const projectDecisionPanel = read('client/app/components/ProjectDecisionPanel.vue');
 const waveformTrimmer = read('client/app/components/WaveformTrimmer.vue');
 const waveformTypes = read('client/app/types/project.ts');
 const audioUtils = read('client/app/utils/audio.ts');
@@ -2463,10 +2463,12 @@ assert.match(
   'keyboard and MIDI configuration must follow the configured One Shot cells',
 );
 assert.match(
-  quitConfirmModal,
-  /\.qm-modal\s*\{[\s\S]{0,220}border-radius:\s*var\(--dialog-radius\);[\s\S]{0,100}width:\s*min\(var\(--modal-width, 560px\), 92vw\);[\s\S]{0,80}padding:\s*var\(--dialog-padding\);/,
-  'quit confirmation must use the main modal shell geometry',
+  appVue + mainWorkspace,
+  /<MainWorkspace v-else :decision-open="!!projectDecision"[\s\S]*?to="#workspace-project-decision"[\s\S]*?<ProjectDecisionPanel[\s\S]*?class="lower-workspace-panel"[\s\S]*?id="workspace-project-decision"/,
+  'Quit must use the lower workspace panel',
 );
+assert.doesNotMatch(projectDecisionPanel, /aria-modal|position:\s*fixed|keydown|Teleport/,
+  'project decisions must leave pointer and keyboard transport available');
 assert.match(
   midiController,
   /`trigger-slot-\$\{number\}`[\s\S]*length:\s*CART_SLOT_COUNT_LIMITS\.max/,
@@ -2611,7 +2613,6 @@ for (const file of [
   'CartHotkeyConfig.vue',
   'ConnectionLostModal.vue',
   'LoadingOverlay.vue',
-  'QuitConfirmModal.vue',
   'ServerFilePickerModal.vue',
   'ServerSettingsModal.vue',
   'SessionRecoveryModal.vue',

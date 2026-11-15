@@ -199,7 +199,8 @@
     <ShortcutsBar />
 
     <div v-show="lowerPanelOpen" ref="lowerPanel" class="lower-workspace-panel"
-      :style="{ height: panelHeight === null ? 'auto' : `${panelHeight}px`, maxHeight: `${MAX_PANEL_HEIGHT_PERCENT}%` }"
+      :class="{ 'lower-workspace-panel--deciding': decisionOpen }"
+      :style="{ height: decisionOpen || panelHeight === null ? 'auto' : `${panelHeight}px`, maxHeight: `${MAX_PANEL_HEIGHT_PERCENT}%` }"
       @keydown.capture="handlePanelKeydown($event, true)"
       @keydown="handlePanelKeydown">
       <div v-if="visibleImportPanel !== 'delete-selection'" class="lower-panel-resize-handle" role="separator" aria-orientation="horizontal"
@@ -223,6 +224,7 @@
           <DeleteSelectionPanel v-if="visibleImportPanel === 'delete-selection'" />
         </div>
       </section>
+      <div v-show="decisionOpen" id="workspace-project-decision"></div>
     </div>
   </div>
 </template>
@@ -235,6 +237,7 @@ import VolumeSlider from './VolumeSlider.vue';
 import { bindingsMatch, eventToBinding } from '~/composables/useCartHotkeys';
 import { flattenOneShots } from '~/utils/oneShots';
 
+const { decisionOpen } = defineProps<{ decisionOpen: boolean }>();
 const {
   selectedItem,
   selectedItems,
@@ -291,7 +294,7 @@ const editableSelectedItem = computed(() => {
 });
 const showCueProperties = computed(() =>
   !showProjectSettings.value && !visibleImportPanel.value && propertiesPanelOpen.value && !!editableSelectedItem.value);
-const lowerPanelOpen = computed(() => showProjectSettings.value || !!visibleImportPanel.value || !!showCueProperties.value);
+const lowerPanelOpen = computed(() => decisionOpen || showProjectSettings.value || !!visibleImportPanel.value || !!showCueProperties.value);
 // Leave room for both lines of a compact cue when the lower panel is maximized.
 const reservedPlaylistRowHeight = computed(() => Math.max(folderPlaylistRowHeight.value,
   uiMode.value === 'playback' ? Math.max(showPlaylistRowHeight.value, 108) : Math.max(regularPlaylistRowHeight.value, 84)));
@@ -888,6 +891,14 @@ onUnmounted(() => {
   min-height: 120px;
   display: flex;
   flex-direction: column;
+}
+
+.lower-workspace-panel--deciding {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+
+  > :not(#workspace-project-decision) { display: none; }
 }
 
 .workspace-import {

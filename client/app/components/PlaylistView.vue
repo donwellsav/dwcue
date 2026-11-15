@@ -1174,6 +1174,7 @@ const handleAddGroup = () => {
   } as GroupItem;
 
   addItem(groupItem);
+  void saveProject();
 };
 
 const handleDragOver = (e: DragEvent) => {

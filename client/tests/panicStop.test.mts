@@ -144,14 +144,15 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
   const calls: unknown[][] = [];
   const sessionLost = { value: true };
   const projectLoading = { value: false };
+  const projectDecisionOpen = { value: false };
   const server = {
     connected: true, connectionLost: false, showVerification: false,
     get cueStartsBlocked() { return this.connectionLost || this.showVerification || sessionLost.value; },
     stopAll: (...args: unknown[]) => calls.push(args),
   };
   const currentProject = { value: { playbackKeys: {} as Record<string, unknown> } };
-  const trap = Function('server', 'projectLoading', 'currentProject', 'DEFAULT_PLAYBACK_KEYS', 'bindingsMatch', 'eventToBinding',
-    `${code}\nreturn trapKeydown;`)(server, projectLoading, currentProject, DEFAULT_PLAYBACK_KEYS, bindingsMatch, eventToBinding);
+  const trap = Function('server', 'projectLoading', 'projectDecisionOpen', 'currentProject', 'DEFAULT_PLAYBACK_KEYS', 'bindingsMatch', 'eventToBinding',
+    `${code}\nreturn trapKeydown;`)(server, projectLoading, projectDecisionOpen, currentProject, DEFAULT_PLAYBACK_KEYS, bindingsMatch, eventToBinding);
   const press = (key: string, opts = {}) => {
     let swallowed = false;
     trap({ key, target: { closest: () => null }, ctrlKey: false, metaKey: false, shiftKey: false,
@@ -205,6 +206,14 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
   sessionLost.value = true;
   assert.equal(press('F9', { target: editor }), true, 'Stop All also reaches the engine from a focused editor during recovery');
   assert.deepEqual(calls.slice(5), [[], [], []]);
+
+  sessionLost.value = false;
+  projectDecisionOpen.value = true;
+  assert.equal(press('Escape'), true, 'Escape stops even with a remapped Stop All while deciding');
+  assert.equal(press('Escape', { repeat: true }), true);
+  assert.equal(press('Escape', { ctrlKey: true }), false);
+  assert.equal(press(' '), false, 'the confirmation must leave GO available');
+  assert.deepEqual(calls.slice(8), [[]]);
 });
 
 function loadHandleKeydown(dependencies: Record<string, unknown>) {

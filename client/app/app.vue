@@ -62,7 +62,12 @@
           </button>
         </div>
       </div>
-      <MainWorkspace v-else />
+      <MainWorkspace v-else :decision-open="!!projectDecision" />
+      <Teleport v-if="projectDecision" :key="hasWorkspace ? 'decision-dock' : 'decision-startup'"
+        defer to="#workspace-project-decision" :disabled="!hasWorkspace">
+        <ProjectDecisionPanel :title="projectDecision.title" :message="projectDecision.message"
+          :buttons="projectDecision.buttons" @pick="projectDecision.pick" />
+      </Teleport>
       <Teleport v-if="archivePanel" :key="hasWorkspace ? 'workspace' : 'startup'"
         defer to="#workspace-import-host" :disabled="!hasWorkspace">
         <section class="archive-panel"
@@ -110,7 +115,7 @@
         </section>
       </Teleport>
     <!-- Accent Color Picker Modal -->
-    <div v-if="showColorPicker" class="color-picker-overlay" @click="showColorPicker = false">
+    <div v-if="showColorPicker && !projectDecision" class="color-picker-overlay" @click="showColorPicker = false">
       <div class="color-picker-dialog" @click.stop>
         <h3>{{ t('colors.chooseAccent') }}</h3>
         <div class="color-grid">
@@ -127,12 +132,12 @@
     </div>
     
     <!-- About Modal -->
-    <AboutModal v-if="showAboutModal" @close="showAboutModal = false" />
+    <AboutModal v-if="showAboutModal && !projectDecision" @close="showAboutModal = false" />
     
     <!-- The New Show form owns both values. Browsing for a location temporarily
          swaps to the server-side picker so remote servers remain supported. -->
     <ServerFilePickerModal
-      :open="projectPicker !== null"
+      :open="projectPicker !== null && !projectDecision"
       :mode="projectPicker === 'new-location' ? 'directory' : 'file'"
       :filter="projectPicker === 'new-location' ? 'all' : '.dwcue'"
       :filter-options="projectPicker === 'new-location' ? ['all'] : ['.dwcue', 'all']"
@@ -143,7 +148,7 @@
     />
 
     <Teleport to="body">
-      <div v-if="showNewShowDialog && !(creatingNewShow && isLoading)" class="name-dialog-backdrop" :data-theme="theme" @click.self="cancelNewShowDialog">
+      <div v-if="showNewShowDialog && !projectDecision && !(creatingNewShow && isLoading)" class="name-dialog-backdrop" :data-theme="theme" @click.self="cancelNewShowDialog">
         <form
           class="name-dialog new-show-dialog"
           role="dialog"
@@ -213,23 +218,6 @@
          → resume from where we left off, or go back to the welcome screen. -->
     <SessionRecoveryModal />
 
-    <!-- App-quit confirmation: unsaved changes, then (in local mode) whether
-         to also shut the local audio server down. -->
-    <QuitConfirmModal
-      :visible="unsavedDialogVisible && unsavedDialogReason === 'quit'"
-      :title="t('quitModal.unsavedTitle')"
-      :message="t('quitModal.unsavedMessage') + (unsavedDialogBlocked ? ' ' + t('unsavedModal.finishCurrent') : '')"
-      :buttons="quitUnsavedButtons"
-      @pick="onQuitUnsavedPick"
-    />
-    <QuitConfirmModal
-      :visible="quitServerVisible"
-      :title="t('quitModal.serverTitle')"
-      :message="t('quitModal.serverMessage')"
-      :buttons="quitServerButtons"
-      @pick="onQuitServerPick"
-    />
-
     </template>
     <ServerAlert v-if="!isVideoOutputWindow" :target="isCartWindow ? '#cart-header-warnings'
       : currentProject && projectHydrationStatus !== 'failed' ? '#project-header-warnings'
@@ -252,7 +240,7 @@ import { suppressTooltips } from '~/utils/tooltips';
 
 const {
   currentProject, projectEpoch, saveProject, createNewProject, openProject, confirmUnsavedChanges, workspaceImportPanel,
-  autoSaveEnabled, projectSyncIdentity,
+  autoSaveEnabled, projectSyncIdentity, saveRevision,
   projectHydrationStatus, projectHydrationError, retryProjectHydration,
   isLoading, loadingMessage,
   projectRepair, saveRepairedProject,
@@ -598,7 +586,7 @@ onMounted(() => {
     });
 
     // Main pushes this when the window is about to close; we run the
-    // quit-confirmation dialogs then call confirmQuit to actually quit.
+    // lower-panel decisions then call confirmQuit to actually quit.
     (window as any).electronAPI.app?.onRequestQuit?.(() => { void runQuitFlow(); });
 
     window.electronAPI.onMenuToggleDarkMode(() => {
@@ -678,7 +666,7 @@ onMounted(() => {
 // ---------------------------------------------------------------------------
 // App-quit confirmation flow.
 // Main vetoes the window close and pushes `app:request-quit`; we run a
-// two-step dialog sequence then call confirmQuit (which actually quits):
+// two-step confirmation then call confirmQuit (which actually quits):
 //   1. Unsaved-changes prompt — only when there are pending edits. The user
 //      can save-then-close, close & discard, or return to the project.
 //   2. Local-server prompt — only when the audio server is running locally
@@ -692,15 +680,33 @@ let _quitServerResolve:  ((choice: 'server'  | 'client' | 'cancel') => void) | n
 let quitFlowActive = false;
 
 const quitUnsavedButtons = computed(() => [
-  { key: 'cancel',  label: t('quitModal.return'),           variant: 'ghost'   as const },
+  { key: 'cancel',  label: t('quitModal.return') },
   { key: 'discard', label: t('quitModal.unsavedDiscard'),   variant: 'danger'  as const },
   { key: 'save',    label: t('quitModal.unsavedSaveClose'), variant: 'primary' as const, icon: 'save' },
 ]);
 const quitServerButtons = computed(() => [
-  { key: 'cancel', label: t('quitModal.return'),            variant: 'ghost'  as const },
-  { key: 'client', label: t('quitModal.serverCloseClient'), variant: undefined },
+  { key: 'cancel', label: t('quitModal.return') },
+  { key: 'client', label: t('quitModal.serverCloseClient') },
   { key: 'server', label: t('quitModal.serverCloseServer'), variant: 'danger' as const, icon: 'power_settings_new' },
 ]);
+
+const projectDecision = computed(() => {
+  if (unsavedDialogVisible.value && unsavedDialogReason.value === 'quit') return {
+    title: t('quitModal.unsavedTitle'),
+    message: t('quitModal.unsavedMessage') + (unsavedDialogBlocked.value ? ' ' + t('unsavedModal.finishCurrent') : ''),
+    buttons: quitUnsavedButtons.value,
+    pick: onQuitUnsavedPick,
+  };
+  if (quitServerVisible.value) return {
+    title: t('quitModal.serverTitle'),
+    message: t('quitModal.serverMessage'),
+    buttons: quitServerButtons.value,
+    pick: onQuitServerPick,
+  };
+  return null;
+});
+const projectDecisionOpen = useState('projectDecisionOpen', () => false);
+watch(() => !!projectDecision.value, (open) => { projectDecisionOpen.value = open; }, { immediate: true });
 
 function onQuitUnsavedPick(choice: string) {
   if (choice === 'save') void unsavedSave();
@@ -727,6 +733,8 @@ async function runQuitFlow() {
   try {
     // Step 1 — unsaved changes (including a failed autosave).
     if (!await confirmUnsavedChanges('quit')) return;
+    const confirmedRevision = saveRevision.value;
+    const confirmedEpoch = projectEpoch.value;
     if (update.installOnExit) {
       const accepted = await api?.app?.confirmQuit?.({
         installUpdate: true,
@@ -747,13 +755,12 @@ async function runQuitFlow() {
       console.warn('[quit] could not read server status:', e);
     }
 
-    if (serverIsLocal) {
-      const choice = await askQuitServer();
-      if (choice === 'cancel') return;
-      await api?.app?.confirmQuit?.({ stopServer: choice === 'server' });
-    } else {
-      await api?.app?.confirmQuit?.({ stopServer: false });
-    }
+    const choice = serverIsLocal ? await askQuitServer() : 'client';
+    if (choice === 'cancel') return;
+    // Transport stays available while deciding, so edits made in that time need their own approval.
+    if ((projectEpoch.value !== confirmedEpoch || saveRevision.value !== confirmedRevision) &&
+        !await confirmUnsavedChanges('quit')) return;
+    await api?.app?.confirmQuit?.({ stopServer: choice === 'server' });
   } finally {
     quitFlowActive = false;
   }

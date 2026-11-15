@@ -2302,6 +2302,7 @@ export const useProject = () => {
     retryProjectHydration,
     projectSyncIdentity,
     hasUnsavedChanges,
+    saveRevision,
     saveFailed,
     autoSaveEnabled,
     indexDisplayStart,

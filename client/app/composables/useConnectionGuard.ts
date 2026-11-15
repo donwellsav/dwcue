@@ -115,6 +115,7 @@ export const useConnectionGuard = () => {
   _wired = true;
   const currentProject = useState<Project | null>('currentProject', () => null);
   const projectLoading = useState<boolean>('useProject.isLoading', () => false);
+  const projectDecisionOpen = useState('projectDecisionOpen', () => false);
 
   // Capture Stop All before an editor can consume it, and guard cue starts during recovery.
   const trapKeydown = (e: KeyboardEvent) => {
@@ -123,13 +124,15 @@ export const useConnectionGuard = () => {
     if (e.key === 'Tab') return;
     const el = e.target as HTMLElement | null;
     const editing = el?.closest?.('input, textarea, [contenteditable]:not([contenteditable="false"])');
-    if (!blocked && !projectLoading.value && !(currentProject.value && editing)) return;
+    const decisionEscape = projectDecisionOpen.value && e.key === 'Escape' &&
+      !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey;
+    if (!decisionEscape && !blocked && !projectLoading.value && !(currentProject.value && editing)) return;
     const typing = e.isComposing ||
         (editing && e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey);
     if (!typing) {
       const saved = currentProject.value?.playbackKeys?.['stop-all'];
       const binding = saved === undefined ? DEFAULT_PLAYBACK_KEYS['stop-all'] : saved;
-      if (binding && bindingsMatch(binding, eventToBinding(e))) {
+      if (decisionEscape || (binding && bindingsMatch(binding, eventToBinding(e)))) {
         e.preventDefault();
         e.stopImmediatePropagation();
         if (!e.repeat) void server.stopAll();
