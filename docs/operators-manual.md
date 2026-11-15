@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** 1ae8427d593da3247b43aa4c4d4abfc620f63f93
+**Source revision:** b7288a5fc4e60f733e961e905fbe4dd5b2ebcc6e
 **Native engine baseline:** 7c233a9
 **Edition:** 15 November 2026 · English · Operator edition
 
@@ -440,14 +440,14 @@ The default GO key is **Space**. **Enter** sets the selected playlist cue as **U
 ### Keep walk-in music going
 
 1. Create a **Play First** group with an audio-only music bed and the intended venue output. Use **Loop** on the bed if it should play until the next GO.
-2. In **Settings → Playback Behaviour**, choose it as the **Backup music group**. For an individual group, use **Continue with** in its Basic Info to choose a different destination.
+2. In **Settings → Playback Behaviour**, click the current **Backup music group** and choose a group in the lower panel. In a group’s **Properties → Basic Info**, open **Continue with** to set an override or choose **Use show backup** to inherit the show setting.
 3. Turn on the music-note button beside **Playlist** for top-level cues or on the group row for that group. Green shows it is on. The button is available in both modes after a backup is configured.
 
 ![The green music-note buttons for the playlist and the Walk-in music group.](manual-assets/music-continuity-current.png)
 
 At a **Play Next** ending, the acknowledged **Up Next** cue has priority when its media and output are ready. Without an explicit choice, the normal next cue has priority. If neither can start and Program would be silent, the app tries the prepared backup and shows the result in the header. A missed target can remain armed for a deliberate GO after the cause is corrected. **Nothing**, manual Stop, and **Stop All** still stop. Use **Play First** groups for this automatic handoff. Launch a **Play All** group with GO.
 
-Rehearse the last track, a late **Up Next** change, and **Stop All**. Both the chosen cue and backup can be unavailable. A backup starts when the engine detects the ending, so a brief gap is possible.
+The playlist and **GO** remain available while either backup list is open. **Escape** runs Stop All even if you changed its shortcut. Rehearse the last track, a late **Up Next** change, and **Stop All**. Both the chosen cue and backup can be unavailable. A backup can start with a brief gap.
 
 ### Active-cue controls
 
