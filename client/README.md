@@ -117,7 +117,7 @@ Key IPC channels (non-exhaustive):
 | `liveplay-server:get-config` / `set-config` | Read/write the persisted server mode, URL, and remote-user connection settings; managed credentials are excluded. |
 | `liveplay-server:get-status` / `ensure-running` / `restart` / `shutdown` / `state` | Manage the bundled server child process. Trusted status/state replies deliver the current managed credential to the renderer. |
 | `liveplay-discovery:start` / `list`   | Browse for `dwcue-server` instances on the LAN. |
-| `select-project-folder` / `select-project-file` / `select-audio-files` | Native file pickers. |
+| `select-project-folder` / `select-project-file` / `select-audio-files` / `select-media-folder` | Native file and folder pickers. |
 | `read-file` / `write-file` / `copy-file` | Authorized project filesystem helpers. |
 | `get-binary-file-info` / `read-binary-file-chunk` | Bounded local archive reads for remote imports. |
 | `download-archive-to-file` | Streams a server archive directly to an authorized local destination. |

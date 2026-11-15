@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.6.23 development
-**Source revision:** 74811e4b0b19c3fd2d4806cf4549a55735cb3928
+**Source revision:** f0d836f90d4757805aac94a6a0441f9064ac0d6a
 **Native engine baseline:** 9b97613
 **Edition:** 14 November 2026 · English · Operator edition
 
@@ -144,6 +144,8 @@ The playlist marks the current GO target **Up Next**, including a follow target 
 
 Choose **Locate Up Next**, the crosshair beside **Playlist**, to bring that queued row into view. Folded groups open temporarily so you can inspect the target while continuing to work with your selected cue. The button becomes available when GO has a playlist target.
 
+Click a cue title to switch between the cue name and its media filename. The click also selects the row in the editing workspace. The original cue name is still used for Play Next and saved with the show.
+
 Automatic Up Next defaults on. Opening prepares the first playable item; stopping a cue with **End Behavior: Nothing** prepares its next sibling. A natural end at the top-level list’s end can wrap to the first item. Preparation waits for a deliberate GO unless an authored automatic action applies. An explicit override takes precedence.
 
 Accepted GO consumes an override and refused GO retains it. Check readiness, errors and connection before retrying. **Stop All Cues** and Panic remain available during preparation. Repeated GO input shares the pending confirmation. If it times out, check live state before pressing again.
@@ -155,25 +157,27 @@ Accepted GO consumes an override and refused GO retains it. Check readiness, err
 
 ### Local files first
 
-Open **Import Media** from the playlist to use the lower panel. In local mode the primary action is **Choose files…**. The **Import plan** shows file handling and duplicate settings beside the file selection. Expand **Browse Server** for media already on the engine computer. When connected to a remote engine, choose **From This Computer** or **Browse Server** along the bottom of the panel.
+Open **Import Media** from the playlist to use the lower panel. **Choose files…** stages individual items. **Choose folder…** stages supported audio and video from the folder and its subfolders in filename order. Review the list, use **Select all** or **Select none** to adjust the batch, and choose **Import selected**. Turn on **Import as group** to put those cues in one playlist group named for the folder.
+
+The **Import plan** shows file handling and duplicate settings beside the selection. Expand **Browse Server** for media already on the engine computer. When connected to a remote engine, choose **From This Computer** or **Browse Server** along the bottom of the panel.
 
 The desktop media chooser opens in a separate window. Bring the operator window forward to use the playlist, GO, and **Stop All Cues** while the chooser remains open. Other in-app file and folder dialogs provide **Stop All Cues** in their toolbars. Stopping cues uses the show’s configured fade and keeps the file selection open.
 
-![Import Media with local file selection and the source-level/full-duration preservation notice.](manual-assets/import-media.png)
+![Import Media with separate file and folder choices.](manual-assets/import-media.png)
 
-In **Browse Server**, double-click folders to open them. Click files to select; use Shift or Ctrl/Cmd-click for multiple files, then **Import selected**. The file list distinguishes recognizable media, unsupported file types, and files whose type still needs verification. An extension or icon is not proof of decodability; wait for the import result.
+In **Browse Server**, double-click a folder to open it. Use **Select all** to stage eligible files in that view, or select individual files with Shift or Ctrl/Cmd-click. Choose **Import selected** to start verification. The file list distinguishes recognizable media, unsupported file types, and files whose type still needs verification. Wait for the import result to confirm the selected media can play.
 
 ![The server browser inside the Import Media panel.](manual-assets/server-picker-current.png)
 
 Remote operation separates the two computers: **From This Computer** transfers files from the controller, while **Browse Server** selects files already accessible to the engine. Do not enter a controller-only path into the server browser and expect it to exist remotely.
 
-The panel shows the current file, batch count, and **Cancel import** during verification. If an individual file fails to upload, the remaining uploads continue. Review the failed filenames and use **Retry Failed** for those files. Reopen **Import Media** to return to the results for this show.
+The panel shows the current file, batch count, and **Cancel import** during verification. If an individual file fails to upload, the remaining uploads continue. Review the failed filenames and use **Retry Failed** for those files. Retrying a group batch puts newly verified files in the same group. Reopen **Import Media** to return to the results for this show.
 
 ### Copy or link deliberately
 
 The import plan starts with **Copy into project media** and **Reuse existing copy**. Choose different options in the plan when needed.
 
-![A staged media file and the copy, link, and duplicate options.](manual-assets/import-options-current.png)
+![A staged folder with bulk selection, group import, and file handling options.](manual-assets/import-options-current.png)
 
 **Procedure — import media that will travel with the show**
 
@@ -530,7 +534,7 @@ Keyboard assignments belong to the project. QuickPlay slots **1 through 9** defa
 
 The main workspace accepts playback and QuickPlay shortcuts with the bank visible, hidden, or detached. The mapped **Stop All** works even while the shortcut editor is learning a keyboard or MIDI assignment.
 
-Text fields normally own typing, so a playback letter does not fire while you are editing a name. Close editors and dialogs before the next cue call. Keyboard/MIDI Pause/Resume and Toggle Loop target the first active cue, otherwise the selected audio cue; use the specific cue's visible control if several cues are active and you need certainty about the target.
+In the playlist workspace, Enter, Space, and Escape keep their assigned show actions after Tab moves focus to a button. Text fields own typing while you edit. Keyboard/MIDI Pause/Resume and Toggle Loop target the first active cue, otherwise the selected audio cue. Use the cue's visible control if several cues are active and you need to target a specific one.
 
 **Cmd/Ctrl+C** copies highlighted text when you select it, including About credits. To copy a cue, select its playlist row and press **Cmd/Ctrl+C** in the workspace.
 
@@ -707,16 +711,15 @@ The save-recovery chart separates an Autosave toggle's forced save from later of
 
 When a command asks about unsaved changes, finish that decision first. If you choose **Save**, wait for it to finish. Run any declined command again after the first action completes.
 
-A failed toggle-save or ordinary save retains the dirty state. Enabling Autosave can hide the header's unsaved badge even when that forced save failed, because the badge appears only while Autosave is off and the document is dirty. Verify the save result and known-good disk copy. A detached QuickPlay save failure is reported in the detached QuickPlays window and the settings panel. Correct the path, permissions, or storage fault before retrying.
+A failed autosave or manual save leaves **Save failed** and **Retry** in the header. Correct the path, permissions, or storage fault, then choose **Retry**. Retry saves the current show even with Autosave off. The indicator clears once a save of the current changes succeeds. A detached QuickPlay save failure is also reported in the detached QuickPlays window and the settings panel.
 
 
 **Procedure — recover from a save refusal without losing the show**
 
-- **Prerequisites:** Keep the current client and project open; do not toggle Autosave again merely to clear an indicator.
-- **Actions:** Read and record the exact refusal. Check destination availability, permissions, free space, and whether the expected volume is mounted. Correct the fault, use **File → Save Project**, then verify the intended canonical file and make a separate copy.
-- **Expected visible outcome:** Save succeeds for the current document and destination; subsequent intended edits follow the current Autosave preference.
-- **Common mistake:** Enabling Autosave, seeing the header badge disappear, and concluding that the forced save succeeded.
-- **Recovery:** Treat the document as dirty until a positive save succeeds. If it cannot, preserve the running session and use an authorized writable destination/export path without overwriting a known-good show.
+- Keep the current show open while checking that the destination volume is mounted, writable, and has free space.
+- After correcting the fault, choose **Retry** in the header or use **File → Save Project**.
+- Wait for the indicator to clear, verify the intended show file, and make a separate copy. Later edits follow the current Autosave preference.
+- If saving still fails, preserve the running session and use a writable destination without overwriting a known-good show.
 
 Saving is serialized: each save captures one consistent document and destination, publishes through a unique sibling temporary file, and leaves newer pending edits dirty until their own save succeeds. A failed Save As does not change the project's identity or path. A late response from an older project, detached window, or older edit cannot clear or mutate the current project. Closing a project clears its identity and destination path; a blank welcome screen is not an invitation to overwrite the previous show.
 

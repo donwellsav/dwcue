@@ -1425,7 +1425,7 @@ class SaveRecoveryDiagram(_ManualDiagram):
             _diagram_box(canvas, xs[i], y, width, h, title, detail, accent=i < 2)
             if i < 2: _arrow(canvas, xs[i] + width, y + h / 2, xs[i + 1], y + h / 2)
         canvas.setFont(FONT_BOLD, 6.5); canvas.setFillColor(AMBER)
-        canvas.drawString(margin, 140, _pdf_text("BOTH DIRECTIONS FORCE-SAVE BEFORE THE NEW PREFERENCE TAKES EFFECT", "save note"))
+        canvas.drawString(margin, 140, _pdf_text("BOTH DIRECTIONS UPDATE THE PREFERENCE AND REQUEST A SAVE", "save note"))
         fy, fh = 52, 55
         _diagram_box(canvas, margin, fy, width, fh, "HYDRATION FAILED", "Stop All and Escape remain available", accent=True)
         _diagram_box(canvas, xs[1], fy, width, fh, "RETRY ACCEPTED LOAD", "Request current native header / pages", accent=True)
@@ -1433,7 +1433,7 @@ class SaveRecoveryDiagram(_ManualDiagram):
         _arrow(canvas, margin + width, fy + fh / 2, xs[1], fy + fh / 2)
         _arrow(canvas, xs[1] + width, fy + fh / 2, xs[2], fy + fh / 2)
         canvas.setFont(FONT_ITALIC, 6.3); canvas.setFillColor(MID_GRAY)
-        canvas.drawCentredString(self.width / 2, 25, _pdf_text("A failed save can retain dirty state even when the header badge is hidden.", "save disclaimer"))
+        canvas.drawCentredString(self.width / 2, 25, _pdf_text("The header shows Save failed and Retry until the current changes are saved.", "save note"))
         canvas.restoreState()
 
 

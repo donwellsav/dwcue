@@ -1,8 +1,8 @@
 {
   "application": "DonWells Cue",
-  "sourceRevision": "74811e4b0b19c3fd2d4806cf4549a55735cb3928",
+  "sourceRevision": "f0d836f90d4757805aac94a6a0441f9064ac0d6a",
   "packageVersion": "2.6.23 development",
-  "edition": "14 November 2026 development review of the lower panels, QuickPlays, and small-window playlist controls",
+  "edition": "14 November 2026 development review of the lower panels, folder import, and small-window playlist controls",
   "images": [
     {
       "file": "music-continuity-current.png",
@@ -108,54 +108,54 @@
     },
     {
       "file": "import-media.png",
-      "view": "Lower Import Media panel with the local file chooser and import plan.",
-      "version": "2.6.21 development",
-      "sourceRevision": "0b1b7bad54a980c830ba23d2a5ab50af82dfeb36",
-      "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
-      "capturedOn": "2026-11-13",
-      "surface": "Fresh static build of the Vue UI in isolated Chromium with fixture Electron methods.",
+      "view": "Lower Import Media panel with separate file and folder pickers.",
+      "version": "2.6.23 development",
+      "sourceRevision": "f0d836f90d4757805aac94a6a0441f9064ac0d6a",
+      "nativeSourceRevision": "9b976139d3524a330299e6c19dcae47a48e34b29",
+      "capturedOn": "2026-11-14",
+      "surface": "DonWells Cue development renderer in isolated Chromium at 110% interface scale.",
       "dimensions": [
         1200,
-        225
+        291
       ],
-      "sha256": "582fc10adf3fbbc620fab05df95ea4f2ca4aef63eccfb7a4033bf6e684ea067a",
-      "fixture": "Disposable Running show with generated WAV files and a native NULL software output.",
-      "captureMethod": "Playwright screenshot at the rendered CSS pixel size.",
-      "presentation": "Workspace or panel crop with original UI values."
+      "sha256": "23731dba041f0993cf4735f1b219923cf04a030751bc71d1c5699a75b289aecc",
+      "fixture": "Disposable rehearsal show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright panel screenshot with fixture Electron picker methods.",
+      "presentation": "Full lower Import Media panel at its fitted height."
     },
     {
       "file": "server-picker-current.png",
-      "view": "Browse Server inside the lower Import Media panel with generated files.",
-      "version": "2.6.21 development",
-      "sourceRevision": "0b1b7bad54a980c830ba23d2a5ab50af82dfeb36",
-      "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
-      "capturedOn": "2026-11-13",
-      "surface": "Fresh static build of the Vue UI in isolated Chromium with fixture Electron methods.",
+      "view": "Server folder browser with bulk file selection and import controls.",
+      "version": "2.6.23 development",
+      "sourceRevision": "f0d836f90d4757805aac94a6a0441f9064ac0d6a",
+      "nativeSourceRevision": "9b976139d3524a330299e6c19dcae47a48e34b29",
+      "capturedOn": "2026-11-14",
+      "surface": "DonWells Cue development renderer in isolated Chromium at 110% interface scale.",
       "dimensions": [
         1200,
-        397
+        533
       ],
-      "sha256": "2f4f4944ec9acc6606d07736687709bfd8e8d31f5c86b40db813832947994c49",
-      "fixture": "Disposable Running show with generated WAV files and a native NULL software output.",
-      "captureMethod": "Playwright screenshot at the rendered CSS pixel size.",
-      "presentation": "Workspace or panel crop with original UI values."
+      "sha256": "a5f75df7f44a2b92c7aacdeb8753bd12bfb4b0590bc4cbaf862ee56fde93ac43",
+      "fixture": "Disposable rehearsal show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright panel screenshot with fixture Electron picker methods.",
+      "presentation": "Full lower Import Media panel at its fitted height."
     },
     {
       "file": "import-options-current.png",
-      "view": "Lower Import Media panel with a staged practice file and the import plan.",
-      "version": "2.6.21 development",
-      "sourceRevision": "0b1b7bad54a980c830ba23d2a5ab50af82dfeb36",
-      "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
-      "capturedOn": "2026-11-13",
-      "surface": "Fresh static build of the Vue UI in isolated Chromium with fixture Electron methods.",
+      "view": "Folder batch with selection controls, group import, and the import plan.",
+      "version": "2.6.23 development",
+      "sourceRevision": "f0d836f90d4757805aac94a6a0441f9064ac0d6a",
+      "nativeSourceRevision": "9b976139d3524a330299e6c19dcae47a48e34b29",
+      "capturedOn": "2026-11-14",
+      "surface": "DonWells Cue development renderer in isolated Chromium at 110% interface scale.",
       "dimensions": [
         1200,
-        257
+        329
       ],
-      "sha256": "5ae8f06e47058e5267c590aecb5196d235a27b20a2ebaec3a7c457ea8b159638",
-      "fixture": "Disposable Running show with generated WAV files and a native NULL software output.",
-      "captureMethod": "Playwright screenshot at the rendered CSS pixel size.",
-      "presentation": "Workspace or panel crop with original UI values."
+      "sha256": "e51fb0ee78ccc37006d8a58ccd8698f042cf97235f4affb7e05e1ca4b8287290",
+      "fixture": "Disposable rehearsal show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright panel screenshot with fixture Electron picker methods.",
+      "presentation": "Full lower Import Media panel at its fitted height."
     },
     {
       "file": "cue-playback-current.png",
