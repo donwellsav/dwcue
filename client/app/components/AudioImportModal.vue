@@ -919,7 +919,7 @@ function formatBytes(n: number): string {
   .pane > p { margin: 0; }
   .import-progress, .import-results { grid-column: 1 / -1; }
   .import-progress .btn { flex-shrink: 0; }
-  .import-results ul { max-height: clamp(120px, 26vh, 240px); overflow: auto; overscroll-behavior: contain; }
+  .import-results ul { max-height: clamp(200px, 44vh, 520px); overflow: auto; overscroll-behavior: contain; }
   .import-results li { grid-template-columns: 58px minmax(0, 1fr) auto; }
   .import-results .result-details { white-space: normal; }
   .import-results .result-reason { overflow-wrap: anywhere; }

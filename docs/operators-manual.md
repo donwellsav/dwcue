@@ -159,7 +159,7 @@ Accepted GO consumes an override and refused GO retains it. Check readiness, err
 
 ### Local files first
 
-Choose **Import** on the playlist bar, then **Media files**. The file browser opens tall so a folder can be read without constant scrolling. Use the arrows button beside **Close** to make an import panel larger or return it to its usual size, or drag the bar at its top edge. When the show can only import files (a remote engine), **Import** opens Media files directly. For a local engine, **Choose files…** and **Choose folder…** both open in the lower panel. Use **Add** to stage selected files. Choosing a folder stages supported files from it and its subfolders in filename order. Use **Select all** or **Select none** to adjust the batch. **Import as group** puts the selected cues in a group named for the folder.
+Choose **Import** on the playlist bar, then **Media files**. Every file browser opens tall so a folder can be read without constant scrolling: the importers, **Open Project**, **Save As**, archive destinations and the pickers inside Properties. Use the arrows button beside **Close** to make an import panel larger or return it to its usual size, or drag the bar at its top edge. When the show can only import files (a remote engine), **Import** opens Media files directly. For a local engine, **Choose files…** and **Choose folder…** both open in the lower panel. Use **Add** to stage selected files. Choosing a folder stages supported files from it and its subfolders in filename order. Use **Select all** or **Select none** to adjust the batch. **Import as group** puts the selected cues in a group named for the folder.
 
 If a subfolder cannot be read, its relative path appears in a warning. The readable files remain available to import. Restore access and select the skipped subfolder separately if the show needs its files.
 
@@ -300,6 +300,10 @@ Do not use a loop as a substitute for rehearsing the loop boundary. Check for cl
 Open the group's **Edit** control to see **Start Behavior**, **End Behavior**, and the **Continue with** backup selector together under **Cueing**. **Play First** follows the first-child path and honors each nested group’s Start Behavior. It requires the first child to be ready. A nested **Play All** on that path can start several cues. **Play All** owns the selected descendant subtree and starts each selected playable descendant exactly once, including nested groups. For **Play All**, set each child's ducking for simultaneous playback.
 
 Use the **Group Level** fader in group Properties to lower all audio inside the group, including the soundtrack of video cues. The fader runs from −60 to 0 dB and shows the exact setting beside it. The same level appears at the right of the group's row in the playlist, beside **Shuffle**. Every audio cue has the same control on its row for its own **Volume** (−60 to +10 dB). Press **−** or **+** to move to the next whole dB, or type a value in Edit Mode. In Show Mode the number is display-only and the **−** and **+** buttons remain. The row and Properties set one value, and the change is heard at once.
+
+### Finding what is on air
+
+The cue that is playing has a bright edge and a tinted row in the playlist, and a playing QuickPlay has the same bright edge on its tile, so it can be found at a glance. A paused cue keeps the edge in grey. The end-of-cue warning border still takes over as a cue approaches its end.
 
 ### Notes on the playlist
 

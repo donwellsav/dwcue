@@ -564,14 +564,20 @@ onUnmounted(() => {
   cursor: default;
 }
 
+/* On air: a bright edge, a glow and a tinted tile, found without reading. */
 .one-shot-tile.is-playing {
-  border-color: var(--state-playing);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--state-playing) 48%, transparent);
+  border-color: var(--state-playing-edge);
+  background-color: color-mix(in srgb, var(--state-playing) 16%, var(--color-surface));
+  box-shadow:
+    inset 0 0 0 3px var(--state-playing-edge),
+    0 0 18px color-mix(in srgb, var(--state-playing-edge) 60%, transparent);
+  z-index: 1;
 }
 
 .one-shot-tile.is-playing.is-paused {
   border-color: var(--color-text-tertiary);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-text-tertiary) 45%, transparent);
+  background-color: var(--color-surface);
+  box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--color-text-tertiary) 70%, transparent);
 }
 
 .one-shot-waveform,

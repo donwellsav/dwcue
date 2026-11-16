@@ -1038,7 +1038,8 @@ onMounted(() => {
 }
 
 .project-file-panel--startup {
-  max-height: 60%;
+  /* Nothing else needs this screen: let the browser use most of it. */
+  max-height: 80%;
   overflow: auto;
 }
 
@@ -1050,7 +1051,7 @@ onMounted(() => {
 }
 
 .project-file-panel--browse {
-  height: clamp(230px, 38vh, 330px);
+  height: clamp(300px, 58vh, 680px);
 }
 
 .new-show-form,
@@ -1129,8 +1130,8 @@ onMounted(() => {
 
 .archive-panel--browse {
   flex: 1 1 auto;
-  height: clamp(230px, 32vh, 320px);
-  min-height: 210px;
+  height: clamp(300px, 54vh, 640px);
+  min-height: 240px;
 }
 
 .archive-panel--startup {

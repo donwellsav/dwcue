@@ -1203,11 +1203,19 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .playlist-item.is-playing {
-  border-color: color-mix(in srgb, var(--state-playing) 78%, var(--color-border));
+  /* On air: a bright edge, a glow and a tinted row. var(--state-playing) */
+  border-color: var(--state-playing-edge);
+  background: color-mix(in srgb, var(--state-playing) 18%, var(--color-surface));
+  box-shadow:
+    inset 0 0 0 3px var(--state-playing-edge),
+    0 0 16px color-mix(in srgb, var(--state-playing-edge) 60%, transparent);
+  z-index: 1;
 }
 
 .playlist-item.is-playing.is-paused {
   border-color: var(--color-text-tertiary);
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 3px var(--color-text-tertiary);
 }
 
 .playlist-item.is-group + .playlist-item.is-group {

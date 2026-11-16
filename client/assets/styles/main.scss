@@ -143,6 +143,9 @@ button > .material-symbols-rounded {
   --color-focus-ring: #91bdd5;
 
   --state-playing: var(--color-success);
+  // The edge and glow of whatever is on air: brighter than the state colour
+  // so it is found at a glance, without reading.
+  --state-playing-edge: color-mix(in srgb, var(--state-playing) 62%, #ffffff);
   --state-up-next: var(--color-warning);
   --state-up-next-text: #171b25;
   --state-preview: var(--color-accent);
@@ -150,6 +153,7 @@ button > .material-symbols-rounded {
 
 // Light console: the same hierarchy without forcing a dark work surface.
 [data-theme='light'] {
+  --state-playing-edge: color-mix(in srgb, var(--state-playing) 82%, #000000);
   --color-background: #e6ecef;
   --color-surface: #f5f8f9;
   --color-surface-raised: #ffffff;

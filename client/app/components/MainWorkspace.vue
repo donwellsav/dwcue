@@ -352,7 +352,10 @@ const panelHeight = computed(() => showProjectSettings.value ? settingsHeight.va
 const noteEditRequest = useState<string | null>('playlistNoteEditRequest', () => null);
 const importExpanded = useState<boolean>('ImportPanel.expanded', () => false);
 const tallImportPanel = computed(() => !showProjectSettings.value && !!visibleImportPanel.value && !autoSizeImportPanel.value);
-const panelMaxPercent = computed(() => tallImportPanel.value ? IMPORT_MAX_PANEL_HEIGHT_PERCENT : MAX_PANEL_HEIGHT_PERCENT);
+// Anything that lists files or results may use the larger limit: importers,
+// the Open / Save As browser, and the file pickers inside Properties.
+const roomyPanel = computed(() => tallImportPanel.value || decisionOpen || !!filePicker.value);
+const panelMaxPercent = computed(() => roomyPanel.value ? IMPORT_MAX_PANEL_HEIGHT_PERCENT : MAX_PANEL_HEIGHT_PERCENT);
 const lowerPanelHeight = computed(() => {
   if (decisionOpen) return 'auto';
   if (tallImportPanel.value && importExpanded.value) return `${IMPORT_MAX_PANEL_HEIGHT_PERCENT}%`;
@@ -997,7 +1000,7 @@ onUnmounted(() => {
 }
 
 .lower-workspace-panel--browsing-files :deep(.picker-dock) {
-  flex: 1 1 clamp(200px, 30vh, 300px);
+  flex: 1 1 clamp(300px, 52vh, 620px);
   overflow: auto;
 }
 

@@ -2390,7 +2390,7 @@ assert.match(playlistView,
   /handleImportButton = \(\) => \{\s*if \(!currentProject\.value\) return;\s*if \(!canOnlineImport\.value\) return handleImport\(\);/,
   'with only one import source the Import button must go straight to it');
 assert.match(mainWorkspace,
-  /const MAX_PANEL_HEIGHT_PERCENT = 60;[\s\S]*const IMPORT_MAX_PANEL_HEIGHT_PERCENT = 84;[\s\S]*panelMaxPercent = computed\(\(\) => tallImportPanel\.value \? IMPORT_MAX_PANEL_HEIGHT_PERCENT : MAX_PANEL_HEIGHT_PERCENT\)/,
+  /const MAX_PANEL_HEIGHT_PERCENT = 60;[\s\S]*const IMPORT_MAX_PANEL_HEIGHT_PERCENT = 84;[\s\S]*roomyPanel = computed\(\(\) => tallImportPanel\.value \|\| decisionOpen \|\| !!filePicker\.value\);\s*const panelMaxPercent = computed\(\(\) => roomyPanel\.value \? IMPORT_MAX_PANEL_HEIGHT_PERCENT : MAX_PANEL_HEIGHT_PERCENT\)/,
   'importers may grow taller than Settings and Properties, but never to the whole window: the transport bar stays in view');
 assert.match(mainWorkspace,
   /visibleImportPanel\.value === 'media' \? `\$\{IMPORT_PANEL_HEIGHT_PERCENT\}%` : 'auto'/,
