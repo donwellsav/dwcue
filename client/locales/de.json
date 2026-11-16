@@ -1364,5 +1364,109 @@
     "untitledShow": "Unbenannte Show",
     "exported": "Cue-Liste gespeichert als {name}",
     "exportFailed": "Die Cue-Liste konnte nicht exportiert werden: {error}"
+  },
+  "backups": {
+    "title": "Show-Backups",
+    "help": "Die Show-Datei wird automatisch kopiert, bevor sie überschrieben wird, höchstens alle fünf Minuten. Die zehn neuesten Kopien bleiben erhalten.",
+    "none": "Noch keine Backups. Das erste entsteht beim nächsten Speichern dieser Show.",
+    "restore": "Wiederherstellen",
+    "restoreFrom": "Backup vom {when} wiederherstellen",
+    "confirm": "Die geöffnete Show durch diese Kopie ersetzen? Die aktuelle Show wird vorher gesichert.",
+    "restored": "Show aus dem Backup vom {when} wiederhergestellt",
+    "restoreFailed": "Das Backup wurde nicht wiederhergestellt: {reason}",
+    "listFailed": "Die Backups konnten nicht gelesen werden: {reason}"
+  },
+  "showCheck": {
+    "title": "Show-Check",
+    "hint": "Prüft Audio-Engine, Ausgaben, Cue-Medien und Show-Datei. Startet nichts.",
+    "again": "Erneut prüfen",
+    "checking": "Prüfung läuft…",
+    "outdated": "Die Show wurde seit dieser Prüfung geändert.",
+    "checkedAt": "Geprüft {time}",
+    "selectCue": "Diesen Cue in der Wiedergabeliste auswählen",
+    "cueNumber": "Cue {number}",
+    "quickPlayNumber": "QuickPlay {number}",
+    "status": {
+      "pass": "OK",
+      "attention": "Prüfen",
+      "unchecked": "Nicht geprüft"
+    },
+    "verdict": {
+      "ready": "Bereit",
+      "attentionOne": "{count} Punkt prüfen",
+      "attention": "{count} Punkte prüfen",
+      "incomplete": "Keine Probleme gefunden, aber nicht alles ließ sich prüfen",
+      "notChecked": "{count} nicht geprüft"
+    },
+    "engine": {
+      "title": "Audio-Engine",
+      "ok": "Läuft und antwortet · Version {version}",
+      "disconnected": "Dieses Fenster ist nicht mit der Audio-Engine verbunden.",
+      "noAnswer": "Die Audio-Engine hat nicht geantwortet.",
+      "startsHeld": "Verbunden, aber Cue-Starts sind angehalten, bis die Show mit der Engine abgeglichen ist.",
+      "versionMismatch": "Läuft, hat aber Version {engine}; diese App hat Version {app}.",
+      "versionNotReported": "Läuft und antwortet. Sie hat keine Version gemeldet und wurde daher nicht mit der App verglichen.",
+      "appVersionUnknown": "Läuft und antwortet, Version {engine}. Dieses Fenster kennt die App-Version nicht, daher wurden beide nicht verglichen."
+    },
+    "output": {
+      "title": "Ausgabegerät",
+      "mainOk": "Hauptausgabe {name} ist verbunden.",
+      "defaultOk": "Standardausgabe des Systems wird verwendet: {name}.",
+      "mainMissing": "Hauptausgabe {name} ist nicht mit dem Engine-Rechner verbunden.",
+      "mainStalled": "Hauptausgabe {name} ist verbunden, aber ihr Audio steht still.",
+      "mainAmbiguous": "Mehrere Ausgaben heißen {name}; die Engine kann nicht wählen.",
+      "defaultMissing": "Auf dem Engine-Rechner wurde keine Standardausgabe gefunden.",
+      "noList": "Die Audio-Engine hat keine Ausgabeliste geliefert, daher wurden die Ausgaben nicht geprüft.",
+      "preview": "Vorschau-Ausgabe",
+      "ltc": "LTC-Ausgabe",
+      "ok": "Verbunden.",
+      "missing": "Nicht mit dem Engine-Rechner verbunden.",
+      "stalled": "Verbunden, aber das Audio steht still.",
+      "ambiguous": "Mehrere Ausgaben haben diesen Namen; die Engine kann nicht wählen.",
+      "cue": {
+        "missing": "Geroutet an {device}, das nicht mit dem Engine-Rechner verbunden ist.",
+        "stalled": "Geroutet an {device}, das verbunden ist, aber dessen Audio steht still.",
+        "ambiguous": "Geroutet an {device}, aber mehrere Ausgaben haben diesen Namen."
+      }
+    },
+    "media": {
+      "title": "Medien",
+      "ready": "{ready} von {total} Cues bereit.",
+      "none": "Keine Audio-Cues in dieser Show.",
+      "listLoading": "Die Cue-Liste wird in diesem Fenster noch geladen, daher wurden die Medien nicht geprüft.",
+      "noReport": "Die Audio-Engine hat nichts zu den Cue-Medien gemeldet, daher wurden sie nicht geprüft.",
+      "notListed": "Diese Audio-Engine listet ihre geladenen Cues nicht auf, daher wurden die {total} Cues nicht bestätigt.",
+      "problemsOnly": "{count} von {total} Cues meldeten ein Problem. Diese Audio-Engine listet ihre geladenen Cues nicht auf.",
+      "reason": {
+        "noFile": "Keine Mediendatei festgelegt.",
+        "unreadable": "Datei fehlt oder ließ sich nicht dekodieren.",
+        "loadFailed": "Datei ließ sich nicht laden.",
+        "changed": "Datei wurde nach dem Laden geändert oder entfernt.",
+        "loading": "Wird noch geladen.",
+        "notLoaded": "Nicht in die Audio-Engine geladen.",
+        "failed": "Nicht bereit ({code})."
+      }
+    },
+    "file": {
+      "title": "Show-Datei",
+      "saved": "Alle Änderungen sind gespeichert.",
+      "savedAutosaveOff": "Alle Änderungen sind gespeichert. Automatisches Speichern ist aus.",
+      "saving": "Änderungen werden noch gespeichert.",
+      "unsaved": "Es gibt ungespeicherte Änderungen. Automatisches Speichern ist aus.",
+      "saveFailed": "Das letzte Speichern wurde nicht abgeschlossen. Die Show-Datei ist älter als der Stand auf dem Bildschirm.",
+      "repairPending": "Die Show wurde mit Reparaturen geöffnet, die noch nicht gespeichert sind.",
+      "noFile": "Diese Show wurde noch nicht in einer Datei gespeichert."
+    },
+    "video": {
+      "title": "Video",
+      "open": "Video-Check öffnen",
+      "passed": "{checked} geprüft · Alle Bilder dekodiert",
+      "issues": "{checked} geprüft · {count} prüfen",
+      "notRun": "Video-Cues in dieser Show: {count}. Der Video-Check wurde dafür nicht ausgeführt.",
+      "running": "Video-Check läuft · {checked}/{total}",
+      "stale": "Video-Cues wurden seit dem letzten Video-Check geändert.",
+      "incomplete": "Der letzte Video-Check wurde nicht abgeschlossen · {checked}/{total} geprüft",
+      "unavailable": "Video-Cues in dieser Show: {count}. Der Video-Check kann in diesem Fenster nicht laufen."
+    }
   }
 }

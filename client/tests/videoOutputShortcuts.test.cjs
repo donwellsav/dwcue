@@ -215,7 +215,7 @@ function productionFunctionSource(name) {
 
 test('control-window close waits for healthy quit confirmation', () => {
   for (const state of ['healthy', 'crashed', 'unresponsive', 'destroyed', 'confirmed']) {
-    const messages = [], serverStops = [];
+    const messages = [], serverStops = [], keepAwakeReleases = [];
     class ControlWindow extends EventEmitter {
       constructor() {
         super();
@@ -231,6 +231,7 @@ test('control-window close waits for healthy quit confirmation', () => {
       path: require('node:path'), __dirname: require('node:path').dirname(require.resolve('../electron/main.js')),
       isDevMode: true, quitConfirmed: state === 'confirmed', createMenu() {}, process: { argv: [] },
       stopServer: () => serverStops.push('stop'),
+      releaseKeepAwake: () => keepAwakeReleases.push('release'),
     };
     vm.runInNewContext(productionFunctionSource('createWindow') + '\ncreateWindow();', context);
     const window = context.mainWindow;
@@ -242,6 +243,7 @@ test('control-window close waits for healthy quit confirmation', () => {
     assert.deepEqual(serverStops, [], 'closing the client must not stop the detached show server');
     window.emit('closed');
     assert.equal(context.mainWindow, null, 'closed window reference is released');
+    assert.deepEqual(keepAwakeReleases, ['release'], 'a closed control window lets the computer sleep again');
   }
 });
 

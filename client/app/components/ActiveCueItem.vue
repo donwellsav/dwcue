@@ -293,7 +293,7 @@ const formatTime = (seconds: number): string => {
 }
 
 .warning-border--yellow {
-  border-color: var(--state-up-next);
+  border-color: var(--color-warning);
 }
 
 .warning-border--orange {
@@ -394,15 +394,15 @@ const formatTime = (seconds: number): string => {
 }
 
 .action-btn.continue-btn {
-  border-color: var(--state-playing);
-  background-color: var(--state-playing);
+  border-color: var(--state-up-next);
+  background-color: var(--state-up-next);
   color: var(--color-background);
 }
 
 .action-btn.stop-btn {
-  background-color: var(--color-danger);
-  border-color: var(--color-danger);
-  color: white;
+  border: var(--stop-button-border);
+  background: var(--stop-button-background);
+  color: var(--stop-edge);
 }
 
 .action-btn:hover {
@@ -451,9 +451,9 @@ const formatTime = (seconds: number): string => {
   align-items: center;
   gap: 2px;
   padding: 1px 4px;
-  border: 1px solid color-mix(in srgb, var(--state-playing) 58%, transparent);
+  border: 1px solid color-mix(in srgb, var(--state-up-next) 58%, transparent);
   border-radius: var(--border-radius-sm);
-  color: var(--state-playing);
+  color: var(--state-up-next);
   font-weight: 600;
 }
 
@@ -462,7 +462,7 @@ const formatTime = (seconds: number): string => {
 }
 
 .segue-countdown--imminent {
-  border-color: var(--state-playing);
+  border-color: var(--state-up-next);
   color: var(--color-text-primary);
 }
 
@@ -471,7 +471,7 @@ const formatTime = (seconds: number): string => {
   top: -2px;
   bottom: -2px;
   width: 2px;
-  background: var(--state-playing);
+  background: var(--state-up-next);
   pointer-events: none;
 }
 

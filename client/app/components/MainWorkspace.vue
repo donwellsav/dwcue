@@ -232,7 +232,7 @@
       :style="{ height: lowerPanelHeight, maxHeight: `${panelMaxPercent}%` }"
       @keydown.capture="handlePanelKeydown($event, true)"
       @keydown="handlePanelKeydown">
-      <div v-if="!autoSizeImportPanel" class="lower-panel-resize-handle" role="separator" aria-orientation="horizontal"
+      <div v-if="!autoSizeImportPanel && !compactShowCheck" class="lower-panel-resize-handle" role="separator" aria-orientation="horizontal"
         :aria-label="showProjectSettings ? t('settings.title') : importPanelTitle || t('properties.title')"
         :aria-valuemin="MIN_PANEL_HEIGHT" :aria-valuemax="panelMaxHeight"
         :aria-valuenow="visiblePanelHeight || panelHeight || MIN_PANEL_HEIGHT" tabindex="0"
@@ -258,6 +258,7 @@
           :class="{ 'workspace-import-host--archive': visibleImportPanel?.startsWith('archive-') }">
           <DeleteSelectionPanel v-if="visibleImportPanel === 'delete-selection'" />
           <ProjectRepairNotice v-else-if="visibleImportPanel === 'repair' && projectRepair" :notice="projectRepair" @save="saveRepairedProject" />
+          <PreShowCheckPanel v-else-if="visibleImportPanel === 'show-check'" />
         </div>
       </section>
       <div v-show="decisionOpen" id="workspace-project-decision"></div>
@@ -267,10 +268,12 @@
 
 <script setup lang="ts">
 import LevelCheckBar from './LevelCheckBar.vue';
+import PreShowCheckPanel from './PreShowCheckPanel.vue';
 import ProjectSettingsModal from './ProjectSettingsModal.vue';
 import StereoMeter from './StereoMeter.vue';
 import VolumeSlider from './VolumeSlider.vue';
 import { bindingsMatch, eventToBinding } from '~/composables/useCartHotkeys';
+import { usePreShowCheckLongList } from '~/composables/usePreShowCheck';
 import { flattenOneShots } from '~/utils/oneShots';
 
 const { decisionOpen, recoveryOpen } = defineProps<{ decisionOpen: boolean; recoveryOpen: boolean }>();
@@ -309,6 +312,8 @@ const visibleImportPanel = computed(() => {
   const panel = workspaceImportPanel.value;
   if (panel === 'delete-selection') return !showProjectSettings.value && pendingDelete.value ? panel : null;
   if (panel === 'repair') return !showProjectSettings.value && projectRepair.value ? panel : null;
+  // Read-only, so the Pre-show check is available in Show Mode as well.
+  if (panel === 'show-check') return !showProjectSettings.value ? panel : null;
   return !showProjectSettings.value && (uiMode.value !== 'playback' || panel === 'quickplay' || panel?.startsWith('archive-')) ? panel : null;
 });
 const importPanelTitle = computed(() => {
@@ -320,6 +325,7 @@ const importPanelTitle = computed(() => {
   if (visibleImportPanel.value === 'archive-export') return t('exportProject.chooseLocationTitle');
   if (visibleImportPanel.value === 'delete-selection') return t('deleteSelection.title');
   if (visibleImportPanel.value === 'repair') return t('repair.noticeTitle');
+  if (visibleImportPanel.value === 'show-check') return t('showCheck.title');
   if (visibleImportPanel.value === 'quickplay') return t(quickPlayEditor.value?.remove
     ? 'oneShots.removeConfirmTitle' : quickPlayEditor.value ? 'oneShots.settings' : 'oneShots.importInto',
     { number: (quickPlayImportSlot.value ?? 0) + 1 });
@@ -363,6 +369,10 @@ const autoSizeImportPanel = computed(() => visibleImportPanel.value === 'delete-
 const panelHeight = computed(() => showProjectSettings.value ? settingsHeight.value
   : autoSizeImportPanel.value ? null
   : visibleImportPanel.value ? importHeight.value : propertiesHeight.value);
+// The Pre-show check fits its contents like the panels above. Only a long
+// list of named cues turns it into a resizable panel, as an importer is.
+const showCheckLongList = usePreShowCheckLongList();
+const compactShowCheck = computed(() => visibleImportPanel.value === 'show-check' && !showCheckLongList.value);
 // The output meter strip can be folded to a slim rail; the choice is remembered.
 const METERS_COLLAPSED_KEY = 'dwcue.outputMetersCollapsed';
 const metersCollapsed = useState<boolean>('OutputConsole.collapsed', () => false);
@@ -374,13 +384,14 @@ if (import.meta.client) {
 }
 const noteEditRequest = useState<string | null>('playlistNoteEditRequest', () => null);
 const importExpanded = useState<boolean>('ImportPanel.expanded', () => false);
-const tallImportPanel = computed(() => !showProjectSettings.value && !!visibleImportPanel.value && !autoSizeImportPanel.value);
+const tallImportPanel = computed(() => !showProjectSettings.value && !!visibleImportPanel.value && !autoSizeImportPanel.value
+  && !compactShowCheck.value);
 // Anything that lists files or results may use the larger limit: importers,
 // the Open / Save As browser, and the file pickers inside Properties.
 const roomyPanel = computed(() => tallImportPanel.value || decisionOpen || !!filePicker.value);
 const panelMaxPercent = computed(() => roomyPanel.value ? IMPORT_MAX_PANEL_HEIGHT_PERCENT : MAX_PANEL_HEIGHT_PERCENT);
 const lowerPanelHeight = computed(() => {
-  if (decisionOpen) return 'auto';
+  if (decisionOpen || compactShowCheck.value) return 'auto';
   if (tallImportPanel.value && importExpanded.value) return `${IMPORT_MAX_PANEL_HEIGHT_PERCENT}%`;
   if (panelHeight.value !== null) return `${panelHeight.value}px`;
   // Browsing files needs the room at once. Search and track lists start

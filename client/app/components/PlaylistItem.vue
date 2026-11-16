@@ -154,7 +154,7 @@
 
         <div class="item-state">
           <span v-if="isPaused" class="status-pill paused">{{ t('status.paused') }}</span>
-          <span v-else-if="isPlaying" class="status-pill playing" :style="{ backgroundColor: durationColor ?? undefined }">{{ t('status.playing') }}</span>
+          <span v-else-if="isPlaying" class="status-pill playing" :class="{ 'status-pill--banded': !!durationColor }" :style="{ backgroundColor: durationColor ?? undefined }">{{ t('status.playing') }}</span>
           <span v-if="isPreviewing" class="status-pill preview">{{ t('status.previewing') }}</span>
 
           <!-- Behavior indicators (for audio items) -->
@@ -239,7 +239,7 @@
             v-if="item.type === 'group' && ((groupBackup?.type === 'group' && groupBackup.uuid !== item.uuid) || item.keepMusicGoing)"
             class="group-music-toggle"
             icon="music_note"
-            highlight-color="var(--state-playing)"
+            highlight-color="var(--state-ready)"
             active-text-color="var(--color-background)"
             type="button"
             :is-active="item.keepMusicGoing === true"
@@ -254,7 +254,7 @@
             v-if="isPlaying && item.type === 'audio'"
             class="restart-action"
             icon="restart_alt"
-            :highlight-color="durationColor ?? 'var(--state-playing)'"
+            highlight-color="var(--color-text-secondary)"
             context="Playlist"
             type="button"
             @click.stop="handleRestart"
@@ -263,8 +263,9 @@
           />
           <ActionButton
             class="play-action"
+            :class="{ 'is-stop': isPlaying }"
             :icon="isPlaying ? 'stop' : 'play_arrow'"
-            :highlight-color="isPlaying ? 'var(--color-danger)' : (item.type === 'group' ? 'var(--folder-play-action)' : 'var(--state-playing)')"
+            :highlight-color="isPlaying ? 'var(--stop-edge)' : (item.type === 'group' ? 'var(--folder-play-action)' : 'var(--state-ready)')"
             context="Playlist"
             @click.stop="isPlaying ? handleStop() : handlePlay()"
             :title="isPlaying ? t('actions.stop') : t('actions.play')"
@@ -1058,7 +1059,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 <style scoped>
 .playlist-item {
   --current-playlist-row-height: var(--playlist-row-height, 44px);
-  --folder-play-action: color-mix(in srgb, var(--state-playing) 82%, var(--color-accent));
+  --folder-play-action: color-mix(in srgb, var(--state-ready) 82%, var(--color-accent));
   --folder-next-action: color-mix(in srgb, var(--state-up-next) 84%, var(--color-accent));
   --cue-cell-height: 28px;
   --cue-text-size: 16px;
@@ -1143,17 +1144,41 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .playlist-item.is-up-next:not(.is-playing) {
-  border-color: color-mix(in srgb, var(--state-up-next) 72%, var(--color-border));
+  /* Next: var(--state-up-next) as a green edge and a green number chip. The
+     title stays white: words are easier to read in white than in colour. */
+  border-color: var(--state-up-next);
+  box-shadow: inset 0 0 0 2px var(--state-up-next);
 }
 
 .playlist-item.is-playing {
-  /* On air: a bright edge, a glow and a tinted row. var(--state-playing) */
+  /* On air: var(--state-playing) as a red edge, a red number chip and the
+     Playing badge. The row stays dark and its words stay white, which is the
+     easiest thing to read; solid colour is what the eye finds. */
   border-color: var(--state-playing-edge);
-  background: color-mix(in srgb, var(--state-playing) 18%, var(--color-surface));
   box-shadow:
     inset 0 0 0 3px var(--state-playing-edge),
-    0 0 16px color-mix(in srgb, var(--state-playing-edge) 60%, transparent);
+    0 0 12px color-mix(in srgb, var(--state-playing-edge) 45%, transparent);
   z-index: 1;
+}
+
+/* Stop on the live row: the striped edge of Stop All, never the live red. */
+.playlist-item .item-transport .play-action.is-stop.is-stop {
+  border: var(--stop-button-border);
+  background: var(--stop-button-background);
+  color: var(--stop-edge);
+}
+
+/* The cue number becomes a solid chip: red on air, green for what is next. */
+.playlist-item.is-playing:not(.is-paused) > .item-content .item-index {
+  border-color: var(--state-playing);
+  background: var(--state-playing);
+  color: var(--state-playing-on);
+}
+
+.playlist-item.is-up-next:not(.is-playing) > .item-content .item-index {
+  border-color: var(--state-up-next);
+  background: var(--state-up-next);
+  color: var(--state-up-next-text);
 }
 
 .playlist-item.is-playing.is-paused {
@@ -1463,7 +1488,7 @@ button.item-name {
   justify-self: start;
   max-width: 100%;
   box-sizing: border-box;
-  color: var(--state-playing);
+  color: var(--color-text-primary);
 }
 
 .playlist-item.is-paused > .item-content .item-name {
@@ -1492,8 +1517,9 @@ button.item-name {
   font-size: var(--cue-text-size);
   font-weight: 700;
   letter-spacing: 0.04em;
-  color: var(--color-danger);
-  border-color: color-mix(in srgb, var(--color-danger) 70%, var(--color-border));
+  /* Neutral: red on a row means it is live. Only a failed check turns red. */
+  color: var(--color-text-secondary);
+  border-color: var(--color-border-strong);
   flex-shrink: 0;
   cursor: default;
   line-height: 1;
@@ -1501,6 +1527,7 @@ button.item-name {
 .video-badge-icon--failed {
   background: color-mix(in srgb, var(--color-danger) 20%, var(--color-control));
   border-color: var(--color-danger);
+  color: var(--color-danger);
 }
 
 .item-state {
@@ -1563,8 +1590,11 @@ button.item-name {
 
   &.playing {
     background-color: var(--state-playing);
-    color: black;
+    color: var(--state-playing-on);
   }
+
+  /* A countdown band paints the pill in its own (bright) colour. */
+  &.status-pill--banded { color: black; }
 
 
   &.paused {

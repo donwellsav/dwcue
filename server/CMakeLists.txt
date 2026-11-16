@@ -170,6 +170,7 @@ add_executable(liveplay-server
     src/core/project_state.cpp
     src/core/project_file.cpp
     src/core/backup_manager.cpp
+    src/core/show_backups.cpp
     src/net/control_server.cpp
     src/net/project_archive.cpp
     src/net/discovery.cpp
@@ -266,6 +267,7 @@ if(LIVEPLAY_BUILD_TESTS)
     add_executable(liveplay-project-format-tests
         tests/project_format_test.cpp
         src/core/project_file.cpp
+        src/core/show_backups.cpp
         src/net/project_archive.cpp
         src/logger.cpp
     )
@@ -279,6 +281,17 @@ if(LIVEPLAY_BUILD_TESTS)
             miniz::miniz
     )
     add_test(NAME project-format COMMAND liveplay-project-format-tests)
+
+    # Automatic show-file backups: naming, the five-minute rule, pruning,
+    # identical-content skip and hostile restore names.
+    add_executable(liveplay-show-backups-tests
+        tests/show_backups_test.cpp
+        src/core/show_backups.cpp
+    )
+    target_include_directories(liveplay-show-backups-tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    add_test(NAME show-backups COMMAND liveplay-show-backups-tests)
 
     add_executable(liveplay-meter-tests
         tests/meter_test.cpp
@@ -415,6 +428,7 @@ if(LIVEPLAY_BUILD_TESTS)
         src/audio/engine.cpp
         src/core/project_state.cpp
         src/core/backup_manager.cpp
+        src/core/show_backups.cpp
         src/core/project_file.cpp
         src/meta/metadata.cpp
         src/meta/waveform.cpp

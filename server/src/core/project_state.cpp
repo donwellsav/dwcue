@@ -12,10 +12,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <ctime>
 #include <fstream>
 #include <functional>
 #include <future>
+#include <iterator>
 #include <limits>
 #include <random>
 #include <system_error>
@@ -2154,6 +2156,9 @@ bool ProjectState::save(const std::filesystem::path& requested_path,
         }
         // Rename may itself wait on storage. The admitted write owns only its captured path.
         operation_lock.unlock();
+        // The new document is complete in `tmp`; keep a copy of the file it is
+        // about to replace. Runs under save_mutex_ with no project lock held.
+        backup_show_file_before_overwrite(path, open_revision);
         if (!util::replace_file_atomically(tmp, path, ec)) {
             Logger::error("ProjectState::save: rename '{}' -> '{}' failed: {} — previous file left untouched",
                           util::path_to_utf8(tmp), util::path_to_utf8(path), ec.message());
@@ -2177,6 +2182,293 @@ bool ProjectState::save(const std::filesystem::path& requested_path,
     } catch (const std::exception& ex) {
         Logger::error("ProjectState::save failed: {}", ex.what());
         return false;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Automatic show-file backups (naming, rules and file work: show_backups.cpp)
+// ---------------------------------------------------------------------------
+namespace {
+std::optional<std::string> read_file_bytes(const std::filesystem::path& path) {
+    std::ifstream input{path, std::ios::binary};
+    if (!input) return std::nullopt;
+    std::string bytes{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
+    if (input.bad()) return std::nullopt;
+    return bytes;
+}
+
+// Same publication as save(): complete sibling file, then atomic replace.
+bool write_file_atomically(const std::filesystem::path& path, const std::string& bytes,
+                           std::string& error) {
+    std::filesystem::path tmp = path;
+    tmp += ".tmp";
+    {
+        std::ofstream output{tmp, std::ios::binary | std::ios::trunc};
+        if (output) output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        output.flush();
+        output.close();
+        if (!output.good()) {
+            std::error_code remove_error;
+            std::filesystem::remove(tmp, remove_error);
+            error = "cannot write '" + util::path_to_utf8(tmp) + "'";
+            return false;
+        }
+    }
+    std::error_code ec;
+    if (!util::replace_file_atomically(tmp, path, ec)) {
+        std::error_code remove_error;
+        std::filesystem::remove(tmp, remove_error);
+        error = ec.message();
+        return false;
+    }
+    return true;
+}
+
+#ifdef LIVEPLAY_TEST_HOOKS
+// Holds a restore between replacing the show file and reloading it, so a test
+// can start a cue in the gap the idle check under the lifecycle lock closes.
+void hold_backup_restore_for_test() {
+    const char* gate = std::getenv("DWCUE_TEST_BACKUP_RESTORE_GATE");
+    std::error_code ec;
+    if (!gate || !*gate || !std::filesystem::exists(gate, ec)) return;
+    std::ofstream{std::string{gate} + ".entered"};
+    const auto release = std::chrono::steady_clock::now() + std::chrono::seconds{3};
+    while (std::filesystem::exists(gate, ec) && std::chrono::steady_clock::now() < release)
+        std::this_thread::sleep_for(std::chrono::milliseconds{5});
+}
+#endif
+} // namespace
+
+void ProjectState::backup_show_file_before_overwrite(const std::filesystem::path& path,
+                                                     std::uint64_t open_revision) noexcept {
+    try {
+        const bool baseline_kept = backup_baseline_known_ &&
+            backup_baseline_revision_ == open_revision && backup_baseline_path_ == path;
+        show_backups::BackupTiming timing;
+        timing.first_save_since_open = !baseline_kept;
+        if (baseline_kept && last_show_backup_at_) {
+            timing.seconds_since_last_made = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - *last_show_backup_at_).count();
+        }
+        const auto backup = show_backups::backup_before_overwrite(path, timing);
+        using Outcome = show_backups::BackupOutcome;
+        if (backup.outcome == Outcome::Failed) {
+            // The save goes ahead; the next one tries the backup again. The
+            // same failure is reported once per interval, not once per autosave.
+            const auto now = std::chrono::steady_clock::now();
+            std::string failure = "'" + util::path_to_utf8(path) + "': " + backup.detail;
+            if (failure != last_show_backup_failure_ || !last_show_backup_failure_at_ ||
+                now - *last_show_backup_failure_at_ >=
+                    std::chrono::seconds{show_backups::kMinBackupIntervalSeconds}) {
+                Logger::warn("Show backup: skipped for {}", failure);
+                last_show_backup_failure_ = std::move(failure);
+                last_show_backup_failure_at_ = now;
+            }
+            return;
+        }
+        last_show_backup_failure_.clear();
+        last_show_backup_failure_at_.reset();
+        if (backup.outcome == Outcome::Created) {
+            Logger::info("Show backup saved: {}", backup.name);
+            if (!backup.detail.empty()) Logger::warn("Show backup: {}", backup.detail);
+        }
+        if (!baseline_kept || backup.outcome == Outcome::Created)
+            last_show_backup_at_.reset();
+        if (backup.outcome == Outcome::Created)
+            last_show_backup_at_ = std::chrono::steady_clock::now();
+        backup_baseline_known_ = true;
+        backup_baseline_revision_ = open_revision;
+        backup_baseline_path_ = path;
+    } catch (const std::exception& ex) {
+        Logger::warn("Show backup: skipped (exception: {})", ex.what());
+    } catch (...) {
+        Logger::warn("Show backup: skipped (unknown exception)");
+    }
+}
+
+std::vector<show_backups::BackupEntry> ProjectState::list_show_backups() const {
+    return show_backups::list_backups(project_file_path());
+}
+
+bool ProjectState::playback_active(bool include_preview) {
+    std::vector<audio::CueId> cues;
+    {
+        std::lock_guard lock{mutex_};
+        cues.reserve(cues_.size() + item_uuid_to_cue_.size() + 1);
+        for (const auto& [_, cue] : cues_) cues.push_back(cue.id);
+        for (const auto& [_, id] : item_uuid_to_cue_) cues.push_back(id);
+        if (include_preview && !preview_cue_.empty()) cues.push_back(preview_cue_);
+    }
+    {
+        // Covers a pass whose item mapping has already moved on to a replay.
+        std::lock_guard slock{sequencer_mutex_};
+        for (const auto& item : sequenced_items_) cues.push_back(item.cue_id);
+    }
+    for (const auto& id : cues) {
+        const auto cue = engine_.find_cue(id);
+        if (cue && cue->stats().transport != audio::TransportState::Stopped) return true;
+    }
+    return false;
+}
+
+std::string ProjectState::restore_blocker() {
+    if (playback_active(/*include_preview=*/false))
+        return "A cue is playing. Stop playback before restoring a backup.";
+    if (playback_active(/*include_preview=*/true))
+        return "A preview is playing. Stop it before restoring a backup.";
+    bool loading = loading_audio_.load(std::memory_order_acquire);
+    if (!loading) {
+        std::lock_guard qlock{loader_mutex_};
+        loading = !pending_load_uuids_.empty();
+    }
+    if (loading)
+        return "Audio is still loading. Restore the backup when the show has finished loading.";
+    return {};
+}
+
+ProjectState::RestoreBackupResult ProjectState::restore_show_backup(
+    const std::string& backup_name, const std::string& expected_session) {
+    using Status = RestoreBackupStatus;
+    RestoreBackupResult result;
+    const auto refuse = [&](Status status, std::string message) {
+        result.status = status;
+        result.message = std::move(message);
+        return result;
+    };
+    try {
+        // A restore is one more write of the show file: take its turn in the
+        // save order, so no save can land between the copy and the reload.
+        std::lock_guard save_lock{save_mutex_};
+        std::filesystem::path path;
+        std::string session;
+        {
+            auto operation_lock = lock_project_session(expected_session);
+            if (!operation_lock.owns_lock())
+                return refuse(Status::SessionChanged, "project session changed; reload before restoring a backup");
+            std::lock_guard lock{mutex_};
+            path = project_file_path_;
+            session = project_session_id_;
+        }
+        if (path.empty() || !project_file::is_native_project(path))
+            return refuse(Status::InvalidName, "No saved show is open, so there is no backup to restore.");
+
+        // The client's text is only ever compared with names read from the
+        // show's own Backups folder; it is never turned into a path.
+        std::filesystem::path backup_file;
+        if (show_backups::parse_backup_file_name(backup_name)) {
+            for (const auto& entry : show_backups::list_backups(path)) {
+                if (entry.name == backup_name) backup_file = entry.path;
+            }
+        }
+        if (backup_file.empty())
+            return refuse(Status::InvalidName, "That is not one of this show's backups. Refresh the list and choose again.");
+
+        if (auto blocker = restore_blocker(); !blocker.empty())
+            return refuse(Status::Busy, std::move(blocker));
+
+        // Prove the backup opens as a show before anything is touched.
+        const auto backup_bytes = read_file_bytes(backup_file);
+        bool valid = backup_bytes.has_value();
+        if (valid) {
+            try {
+                const json document = json::parse(*backup_bytes);
+                valid = is_supported_show_document(document);
+                if (valid && project_file::is_client_document(document)) {
+                    project_file::PreparedDocument prepared;
+                    std::string preparation_error;
+                    valid = project_file::prepare_client_document(
+                        document, path.parent_path(), prepared, preparation_error);
+                }
+            } catch (const std::exception&) {
+                valid = false;
+            }
+        }
+        if (!valid) {
+            Logger::warn("Show backup: '{}' cannot be read as a show; restore refused", backup_name);
+            return refuse(Status::InvalidBackup, "That backup cannot be read as a show. Nothing was changed.");
+        }
+
+        // Keep the file as it is now, whatever was backed up recently, so the
+        // restore itself can be undone. Without that copy the restore stops.
+        std::error_code ec;
+        std::optional<std::string> previous_bytes;
+        if (std::filesystem::is_regular_file(std::filesystem::status(path, ec))) {
+            show_backups::BackupTiming timing;
+            timing.force = true;
+            const auto undo = show_backups::backup_before_overwrite(path, timing);
+            using Outcome = show_backups::BackupOutcome;
+            if (undo.outcome == Outcome::Created) {
+                Logger::info("Show backup saved before restore: {}", undo.name);
+                if (!undo.detail.empty()) Logger::warn("Show backup: {}", undo.detail);
+            }
+            if (undo.outcome != Outcome::Created && undo.outcome != Outcome::SkippedIdentical) {
+                Logger::warn("Show backup: restore of '{}' refused, the current show could not be backed up: {}",
+                             backup_name, undo.detail);
+                return refuse(Status::Failed, "The current show could not be backed up first, so nothing was changed.");
+            }
+            result.undo_backup = undo.name;
+            previous_bytes = read_file_bytes(path);
+            if (!previous_bytes)
+                return refuse(Status::Failed, "The current show file could not be read, so nothing was changed.");
+        }
+
+        std::string write_error;
+        if (!write_file_atomically(path, *backup_bytes, write_error)) {
+            Logger::error("Show backup: could not write '{}' while restoring '{}': {}",
+                          util::path_to_utf8(path), backup_name, write_error);
+            return refuse(Status::Failed, "The show file could not be replaced. Nothing was changed.");
+        }
+
+#ifdef LIVEPLAY_TEST_HOOKS
+        hold_backup_restore_for_test();
+#endif
+        // Reload exactly as Open does. If a cue started or the show changed in
+        // the meantime, put the file back: a refused restore changes nothing.
+        json header;
+        if (!load(path, std::chrono::steady_clock::time_point::max(), session, &header,
+                  /*require_idle=*/true)) {
+            std::string rollback_error;
+            bool rolled_back = false;
+            if (previous_bytes) {
+                rolled_back = write_file_atomically(path, *previous_bytes, rollback_error);
+            } else {
+                std::error_code remove_error;
+                std::filesystem::remove(path, remove_error);
+                rolled_back = !remove_error;
+                rollback_error = remove_error.message();
+            }
+            if (!rolled_back) {
+                Logger::error("Show backup: restore of '{}' was refused and '{}' could not be put back: {}. "
+                              "Its previous contents are in backup '{}'.",
+                              backup_name, util::path_to_utf8(path), rollback_error, result.undo_backup);
+            }
+            if (auto blocker = restore_blocker(); !blocker.empty())
+                return refuse(Status::Busy, std::move(blocker));
+            if (project_session_id() != session)
+                return refuse(Status::SessionChanged, "project session changed before the backup could be restored");
+            Logger::error("Show backup: '{}' was restored to disk but could not be opened", backup_name);
+            return refuse(Status::Failed, "The backup could not be opened. Nothing was changed.");
+        }
+
+        // The restored file equals a backup that is still kept, and the undo
+        // copy was made a moment ago: the next save follows the normal interval.
+        std::uint64_t open_revision;
+        {
+            std::lock_guard lock{mutex_};
+            open_revision = project_open_revision_;
+        }
+        backup_baseline_known_ = true;
+        backup_baseline_revision_ = open_revision;
+        backup_baseline_path_ = path;
+        last_show_backup_at_ = std::chrono::steady_clock::now();
+
+        Logger::info("Show backup restored: {}", backup_name);
+        result.status = Status::Restored;
+        result.header = std::move(header);
+        return result;
+    } catch (const std::exception& ex) {
+        Logger::error("ProjectState::restore_show_backup failed: {}", ex.what());
+        return refuse(Status::Failed, "The backup could not be restored.");
     }
 }
 
@@ -5583,7 +5875,8 @@ json ProjectState::upgrade_legacy_document(const json& legacy) const {
 
 bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::path& project_path,
                                   std::chrono::steady_clock::time_point deadline,
-                                  const std::string& expected_session, json* loaded_header) {
+                                  const std::string& expected_session, json* loaded_header,
+                                  bool require_idle) {
     std::optional<project_file::PreparedDocument> client_document;
     if (project_file::is_client_document(doc_in)) {
         project_file::PreparedDocument prepared;
@@ -5696,7 +5989,10 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
     // operations are serialized by project_operation_mutex_, and the mirror's
     // document generation check fences stale publication.
     const bool timed_open = deadline != std::chrono::steady_clock::time_point::max();
-    if (!timed_open) {
+    // A conditional open may still be refused below; it must not cancel
+    // playback intents until it is certain to go ahead.
+    const bool conditional_open = timed_open || require_idle;
+    if (!conditional_open) {
         std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
         ++playback_intent_revision_;
     }
@@ -5712,11 +6008,14 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
     std::scoped_lock preparation_lock{playback_preparation_mutex_, preview_preparation_mutex_};
     std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
     // An expired request may have waited for preparation or the old mirror.
-    if (std::chrono::steady_clock::now() >= deadline) {
+    // With the lifecycle lock held no cue can start, so an idle show stays
+    // idle until the switch below; a busy one is left exactly as it was.
+    if (std::chrono::steady_clock::now() >= deadline ||
+        (require_idle && (resume_old_mirror || playback_active()))) {
         if (resume_old_mirror) start_async_mirror();
         return false;
     }
-    if (timed_open) ++playback_intent_revision_;
+    if (conditional_open) ++playback_intent_revision_;
     {
         std::lock_guard slock{sequencer_mutex_};
         sequenced_items_.clear();
@@ -5812,9 +6111,21 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
     return true;
 }
 
+bool ProjectState::is_supported_show_document(const json& doc) const {
+    const auto has_array = [&doc](const char* key) {
+        const auto field = doc.find(key);
+        return field != doc.end() && field->is_array();
+    };
+    if (!doc.is_object()) return false;
+    const bool legacy = is_legacy_document(doc) &&
+        (has_array("carts") || has_array("playlist") || has_array("cues_legacy"));
+    return project_file::is_client_document(doc) || has_array("cues") || legacy;
+}
+
 bool ProjectState::load(const std::filesystem::path& path,
                         std::chrono::steady_clock::time_point deadline,
-                        const std::string& expected_session, json* loaded_header) {
+                        const std::string& expected_session, json* loaded_header,
+                        bool require_idle) {
     if (std::chrono::steady_clock::now() >= deadline) return false;
     const auto session = expected_session.empty() ? project_session_id() : expected_session;
     if (!project_file::is_native_project(path)) {
@@ -5831,13 +6142,7 @@ bool ProjectState::load(const std::filesystem::path& path,
         json doc;
         f >> doc;
         if (std::chrono::steady_clock::now() >= deadline) return false;
-        const auto has_array = [&doc](const char* key) {
-            const auto field = doc.find(key);
-            return field != doc.end() && field->is_array();
-        };
-        const bool legacy = is_legacy_document(doc) &&
-            (has_array("carts") || has_array("playlist") || has_array("cues_legacy"));
-        if (!project_file::is_client_document(doc) && !has_array("cues") && !legacy) {
+        if (!is_supported_show_document(doc)) {
             Logger::error("ProjectState::load: unsupported show document in '{}'", util::path_to_utf8(path));
             return false;
         }
@@ -5853,7 +6158,7 @@ bool ProjectState::load(const std::filesystem::path& path,
         if (path.has_parent_path() && doc.is_object()) {
             doc["folderPath"] = util::path_to_utf8(path.parent_path());
         }
-        return load_from_json(doc, path, deadline, session, loaded_header);
+        return load_from_json(doc, path, deadline, session, loaded_header, require_idle);
     } catch (const std::exception& ex) {
         Logger::error("ProjectState::load failed: {}", ex.what());
         return false;

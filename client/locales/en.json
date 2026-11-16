@@ -1364,5 +1364,109 @@
     "untitledShow": "Untitled show",
     "exported": "Cue sheet saved as {name}",
     "exportFailed": "Could not export the cue sheet: {error}"
+  },
+  "backups": {
+    "title": "Show backups",
+    "help": "The show file is copied automatically before it is overwritten, at most once every five minutes. The ten most recent copies are kept.",
+    "none": "No backups yet. The first is made the next time this show is saved.",
+    "restore": "Restore",
+    "restoreFrom": "Restore the backup of {when}",
+    "confirm": "Replace the open show with this copy? The show as it is now is backed up first.",
+    "restored": "Show restored from the backup of {when}",
+    "restoreFailed": "The backup was not restored: {reason}",
+    "listFailed": "The backups could not be read: {reason}"
+  },
+  "showCheck": {
+    "title": "Pre-show check",
+    "hint": "Checks the audio engine, outputs, cue media and show file. Starts nothing.",
+    "again": "Check again",
+    "checking": "Checking…",
+    "outdated": "The show changed since this check.",
+    "checkedAt": "Checked {time}",
+    "selectCue": "Select this cue in the playlist",
+    "cueNumber": "Cue {number}",
+    "quickPlayNumber": "QuickPlay {number}",
+    "status": {
+      "pass": "OK",
+      "attention": "Needs attention",
+      "unchecked": "Not checked"
+    },
+    "verdict": {
+      "ready": "Ready",
+      "attentionOne": "{count} thing needs attention",
+      "attention": "{count} things need attention",
+      "incomplete": "No problems found, but not everything could be checked",
+      "notChecked": "{count} not checked"
+    },
+    "engine": {
+      "title": "Audio engine",
+      "ok": "Running and answering · version {version}",
+      "disconnected": "This window is not connected to the audio engine.",
+      "noAnswer": "The audio engine did not answer.",
+      "startsHeld": "Connected, but cue starts are on hold while the show is confirmed with the engine.",
+      "versionMismatch": "Running, but it is version {engine} and this app is version {app}.",
+      "versionNotReported": "Running and answering. It did not report a version, so it was not compared with the app.",
+      "appVersionUnknown": "Running and answering, version {engine}. This window does not know the app version, so the two were not compared."
+    },
+    "output": {
+      "title": "Output device",
+      "mainOk": "Main output {name} is connected.",
+      "defaultOk": "Using the system default output, {name}.",
+      "mainMissing": "Main output {name} is not connected to the engine computer.",
+      "mainStalled": "Main output {name} is connected, but its audio has stalled.",
+      "mainAmbiguous": "More than one output is named {name}, so the engine cannot choose between them.",
+      "defaultMissing": "No system default output was found on the engine computer.",
+      "noList": "The audio engine did not return its list of outputs, so they were not checked.",
+      "preview": "Preview output",
+      "ltc": "LTC output",
+      "ok": "Connected.",
+      "missing": "Not connected to the engine computer.",
+      "stalled": "Connected, but its audio has stalled.",
+      "ambiguous": "More than one output has this name, so the engine cannot choose between them.",
+      "cue": {
+        "missing": "Routed to {device}, which is not connected to the engine computer.",
+        "stalled": "Routed to {device}, which is connected but its audio has stalled.",
+        "ambiguous": "Routed to {device}, but more than one output has that name."
+      }
+    },
+    "media": {
+      "title": "Media",
+      "ready": "{ready} of {total} cues ready.",
+      "none": "No audio cues in this show.",
+      "listLoading": "The cue list is still loading in this window, so media was not checked.",
+      "noReport": "The audio engine did not report on cue media, so it was not checked.",
+      "notListed": "This audio engine does not list the cues it has loaded, so the {total} cues were not confirmed.",
+      "problemsOnly": "{count} of {total} cues reported a problem. This audio engine does not list the cues it has loaded.",
+      "reason": {
+        "noFile": "No media file is set.",
+        "unreadable": "File is missing or could not be decoded.",
+        "loadFailed": "File could not be loaded.",
+        "changed": "File changed or was removed after it was loaded.",
+        "loading": "Still loading.",
+        "notLoaded": "Not loaded in the audio engine.",
+        "failed": "Not ready ({code})."
+      }
+    },
+    "file": {
+      "title": "Show file",
+      "saved": "All changes are saved.",
+      "savedAutosaveOff": "All changes are saved. Autosave is off.",
+      "saving": "Changes are still being saved.",
+      "unsaved": "There are unsaved changes. Autosave is off.",
+      "saveFailed": "The last save did not finish. The show file is older than what is on screen.",
+      "repairPending": "The show opened with repairs that have not been saved.",
+      "noFile": "This show has not been saved to a file."
+    },
+    "video": {
+      "title": "Video",
+      "open": "Open video check",
+      "passed": "{checked} checked · All pictures decoded",
+      "issues": "{checked} checked · {count} need attention",
+      "notRun": "Video cues in this show: {count}. The video check has not been run for them.",
+      "running": "The video check is running · {checked}/{total}",
+      "stale": "Video cues changed since the last video check.",
+      "incomplete": "The last video check did not finish · {checked}/{total} checked",
+      "unavailable": "Video cues in this show: {count}. The video check cannot run in this window."
+    }
   }
 }

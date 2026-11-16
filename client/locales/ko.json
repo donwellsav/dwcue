@@ -1364,5 +1364,109 @@
     "untitledShow": "제목 없는 공연",
     "exported": "큐 시트를 {name}(으)로 저장했습니다",
     "exportFailed": "큐 시트를 내보내지 못했습니다: {error}"
+  },
+  "backups": {
+    "title": "프로젝트 백업",
+    "help": "프로젝트 파일은 덮어쓰기 전에 자동으로 복사되며, 5분에 한 번까지만 복사됩니다. 최근 복사본 10개를 보관합니다.",
+    "none": "아직 백업이 없습니다. 이 프로젝트를 다음에 저장할 때 첫 백업이 만들어집니다.",
+    "restore": "복원",
+    "restoreFrom": "{when} 백업 복원",
+    "confirm": "열린 프로젝트를 이 복사본으로 바꿀까요? 현재 프로젝트는 먼저 백업됩니다.",
+    "restored": "{when} 백업에서 프로젝트를 복원했습니다",
+    "restoreFailed": "백업을 복원하지 못했습니다: {reason}",
+    "listFailed": "백업을 읽지 못했습니다: {reason}"
+  },
+  "showCheck": {
+    "title": "쇼 전 점검",
+    "hint": "오디오 엔진, 출력, 큐 미디어, 프로젝트 파일을 점검합니다. 아무것도 시작하지 않습니다.",
+    "again": "다시 점검",
+    "checking": "점검 중…",
+    "outdated": "이 점검 이후 프로젝트가 변경되었습니다.",
+    "checkedAt": "점검 시각 {time}",
+    "selectCue": "재생 목록에서 이 큐 선택",
+    "cueNumber": "큐 {number}",
+    "quickPlayNumber": "QuickPlay {number}",
+    "status": {
+      "pass": "정상",
+      "attention": "확인 필요",
+      "unchecked": "점검 안 됨"
+    },
+    "verdict": {
+      "ready": "준비 완료",
+      "attentionOne": "확인 필요 {count}건",
+      "attention": "확인 필요 {count}건",
+      "incomplete": "문제는 없지만 일부는 점검하지 못했습니다",
+      "notChecked": "{count}건 점검 안 됨"
+    },
+    "engine": {
+      "title": "오디오 엔진",
+      "ok": "실행 중, 응답함 · 버전 {version}",
+      "disconnected": "이 창이 오디오 엔진에 연결되어 있지 않습니다.",
+      "noAnswer": "오디오 엔진이 응답하지 않았습니다.",
+      "startsHeld": "연결되었지만, 엔진과 프로젝트를 확인하는 동안 큐 시작이 보류되어 있습니다.",
+      "versionMismatch": "실행 중이지만 엔진은 버전 {engine}, 앱은 버전 {app}입니다.",
+      "versionNotReported": "실행 중, 응답함. 버전을 알리지 않아 앱과 비교하지 못했습니다.",
+      "appVersionUnknown": "실행 중, 응답함, 버전 {engine}. 이 창이 앱 버전을 알지 못해 둘을 비교하지 못했습니다."
+    },
+    "output": {
+      "title": "출력 장치",
+      "mainOk": "메인 출력 {name}에 연결되어 있습니다.",
+      "defaultOk": "시스템 기본 출력 {name}을(를) 사용 중입니다.",
+      "mainMissing": "메인 출력 {name}이(가) 엔진 컴퓨터에 연결되어 있지 않습니다.",
+      "mainStalled": "메인 출력 {name}에 연결되어 있지만 오디오가 멈췄습니다.",
+      "mainAmbiguous": "이름이 {name}인 출력이 둘 이상이라 엔진이 고를 수 없습니다.",
+      "defaultMissing": "엔진 컴퓨터에서 시스템 기본 출력을 찾지 못했습니다.",
+      "noList": "오디오 엔진이 출력 목록을 보내지 않아 출력을 점검하지 못했습니다.",
+      "preview": "미리 듣기 출력",
+      "ltc": "LTC 출력",
+      "ok": "연결됨.",
+      "missing": "엔진 컴퓨터에 연결되어 있지 않습니다.",
+      "stalled": "연결되어 있지만 오디오가 멈췄습니다.",
+      "ambiguous": "이 이름의 출력이 둘 이상이라 엔진이 고를 수 없습니다.",
+      "cue": {
+        "missing": "{device}(으)로 라우팅됨. 엔진 컴퓨터에 연결되어 있지 않습니다.",
+        "stalled": "{device}(으)로 라우팅됨. 연결되어 있지만 오디오가 멈췄습니다.",
+        "ambiguous": "{device}(으)로 라우팅되었지만 같은 이름의 출력이 둘 이상입니다."
+      }
+    },
+    "media": {
+      "title": "미디어",
+      "ready": "큐 {total}개 중 {ready}개 준비됨.",
+      "none": "이 프로젝트에 오디오 큐가 없습니다.",
+      "listLoading": "이 창에서 큐 목록을 아직 불러오는 중이라 미디어를 점검하지 못했습니다.",
+      "noReport": "오디오 엔진이 큐 미디어 상태를 보내지 않아 점검하지 못했습니다.",
+      "notListed": "이 오디오 엔진은 불러온 큐 목록을 제공하지 않아 큐 {total}개를 확인하지 못했습니다.",
+      "problemsOnly": "큐 {total}개 중 {count}개에 문제가 있습니다. 이 오디오 엔진은 불러온 큐 목록을 제공하지 않습니다.",
+      "reason": {
+        "noFile": "미디어 파일이 지정되지 않았습니다.",
+        "unreadable": "파일이 없거나 디코딩할 수 없습니다.",
+        "loadFailed": "파일을 불러오지 못했습니다.",
+        "changed": "불러온 뒤 파일이 변경되었거나 삭제되었습니다.",
+        "loading": "아직 불러오는 중입니다.",
+        "notLoaded": "오디오 엔진에 불러오지 않았습니다.",
+        "failed": "준비되지 않음 ({code})."
+      }
+    },
+    "file": {
+      "title": "프로젝트 파일",
+      "saved": "모든 변경 사항이 저장되었습니다.",
+      "savedAutosaveOff": "모든 변경 사항이 저장되었습니다. 자동 저장이 꺼져 있습니다.",
+      "saving": "변경 사항을 저장하는 중입니다.",
+      "unsaved": "저장되지 않은 변경 사항이 있습니다. 자동 저장이 꺼져 있습니다.",
+      "saveFailed": "마지막 저장이 끝나지 않았습니다. 프로젝트 파일이 화면의 내용보다 오래되었습니다.",
+      "repairPending": "수정된 상태로 열린 프로젝트의 수정 내용이 아직 저장되지 않았습니다.",
+      "noFile": "이 프로젝트는 아직 파일로 저장되지 않았습니다."
+    },
+    "video": {
+      "title": "비디오",
+      "open": "비디오 점검 열기",
+      "passed": "{checked}개 점검 · 모든 화면 디코딩됨",
+      "issues": "{checked}개 점검 · {count}개 확인 필요",
+      "notRun": "이 프로젝트의 비디오 큐: {count}개. 비디오 점검을 아직 실행하지 않았습니다.",
+      "running": "비디오 점검 실행 중 · {checked}/{total}",
+      "stale": "마지막 비디오 점검 이후 비디오 큐가 변경되었습니다.",
+      "incomplete": "마지막 비디오 점검이 끝나지 않았습니다 · {checked}/{total} 점검됨",
+      "unavailable": "이 프로젝트의 비디오 큐: {count}개. 이 창에서는 비디오 점검을 실행할 수 없습니다."
+    }
   }
 }

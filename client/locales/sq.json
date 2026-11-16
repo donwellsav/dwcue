@@ -1364,5 +1364,109 @@
     "untitledShow": "Shfaqje pa titull",
     "exported": "Fleta e cue-ve u ruajt si {name}",
     "exportFailed": "Fleta e cue-ve nuk u eksportua: {error}"
+  },
+  "backups": {
+    "title": "Kopjet rezervë të shfaqjes",
+    "help": "Skedari i shfaqjes kopjohet automatikisht para se të mbishkruhet, më së shumti një herë në pesë minuta. Ruhen dhjetë kopjet më të fundit.",
+    "none": "Ende nuk ka kopje rezervë. E para krijohet herën tjetër që ruhet kjo shfaqje.",
+    "restore": "Rikthe",
+    "restoreFrom": "Rikthe kopjen rezervë të {when}",
+    "confirm": "Ta zëvendësoj shfaqjen e hapur me këtë kopje? Shfaqja siç është tani ruhet më parë si kopje rezervë.",
+    "restored": "Shfaqja u rikthye nga kopja rezervë e {when}",
+    "restoreFailed": "Kopja rezervë nuk u rikthye: {reason}",
+    "listFailed": "Kopjet rezervë nuk mund të lexoheshin: {reason}"
+  },
+  "showCheck": {
+    "title": "Kontrolli para shfaqjes",
+    "hint": "Kontrollon motorin audio, daljet, media e cue-ve dhe skedarin e shfaqjes. Nuk nis asgjë.",
+    "again": "Kontrollo përsëri",
+    "checking": "Po kontrollohet…",
+    "outdated": "Shfaqja ka ndryshuar që nga ky kontroll.",
+    "checkedAt": "Kontrolluar {time}",
+    "selectCue": "Zgjidh këtë cue në listën e luajtjes",
+    "cueNumber": "Cue {number}",
+    "quickPlayNumber": "QuickPlay {number}",
+    "status": {
+      "pass": "OK",
+      "attention": "Kërkon vëmendje",
+      "unchecked": "Pa kontrolluar"
+    },
+    "verdict": {
+      "ready": "Gati",
+      "attentionOne": "{count} gjë kërkon vëmendje",
+      "attention": "{count} gjëra kërkojnë vëmendje",
+      "incomplete": "Nuk u gjetën probleme, por jo gjithçka mund të kontrollohej",
+      "notChecked": "{count} pa kontrolluar"
+    },
+    "engine": {
+      "title": "Motori audio",
+      "ok": "Në punë dhe përgjigjet · versioni {version}",
+      "disconnected": "Kjo dritare nuk është lidhur me motorin audio.",
+      "noAnswer": "Motori audio nuk u përgjigj.",
+      "startsHeld": "I lidhur, por nisjet e cue-ve janë në pritje derisa shfaqja të konfirmohet me motorin.",
+      "versionMismatch": "Në punë, por është versioni {engine} dhe aplikacioni është versioni {app}.",
+      "versionNotReported": "Në punë dhe përgjigjet. Nuk raportoi versionin, ndaj nuk u krahasua me aplikacionin.",
+      "appVersionUnknown": "Në punë dhe përgjigjet, versioni {engine}. Kjo dritare nuk e di versionin e aplikacionit, ndaj të dyja nuk u krahasuan."
+    },
+    "output": {
+      "title": "Pajisja e daljes",
+      "mainOk": "Dalja kryesore {name} është e lidhur.",
+      "defaultOk": "Po përdoret dalja e parazgjedhur e sistemit, {name}.",
+      "mainMissing": "Dalja kryesore {name} nuk është e lidhur me kompjuterin e motorit.",
+      "mainStalled": "Dalja kryesore {name} është e lidhur, por audioja e saj është ndalur.",
+      "mainAmbiguous": "Më shumë se një dalje quhet {name}, ndaj motori nuk mund të zgjedhë mes tyre.",
+      "defaultMissing": "Në kompjuterin e motorit nuk u gjet dalje e parazgjedhur e sistemit.",
+      "noList": "Motori audio nuk ktheu listën e daljeve, ndaj ato nuk u kontrolluan.",
+      "preview": "Dalja e paraafishimit",
+      "ltc": "Dalja LTC",
+      "ok": "I lidhur.",
+      "missing": "Nuk është i lidhur me kompjuterin e motorit.",
+      "stalled": "I lidhur, por audioja e tij është ndalur.",
+      "ambiguous": "Më shumë se një dalje ka këtë emër, ndaj motori nuk mund të zgjedhë mes tyre.",
+      "cue": {
+        "missing": "Drejtuar te {device}, e cila nuk është e lidhur me kompjuterin e motorit.",
+        "stalled": "Drejtuar te {device}, e cila është e lidhur, por audioja e saj është ndalur.",
+        "ambiguous": "Drejtuar te {device}, por më shumë se një dalje ka atë emër."
+      }
+    },
+    "media": {
+      "title": "Media",
+      "ready": "{ready} nga {total} cue gati.",
+      "none": "Nuk ka cue audio në këtë shfaqje.",
+      "listLoading": "Lista e cue-ve ende po ngarkohet në këtë dritare, ndaj media nuk u kontrollua.",
+      "noReport": "Motori audio nuk raportoi për media e cue-ve, ndaj nuk u kontrollua.",
+      "notListed": "Ky motor audio nuk liston cue-t që ka ngarkuar, ndaj {total} cue nuk u konfirmuan.",
+      "problemsOnly": "{count} nga {total} cue raportuan problem. Ky motor audio nuk liston cue-t që ka ngarkuar.",
+      "reason": {
+        "noFile": "Nuk është caktuar skedar media.",
+        "unreadable": "Skedari mungon ose nuk u dekodua.",
+        "loadFailed": "Skedari nuk u ngarkua.",
+        "changed": "Skedari ndryshoi ose u hoq pasi u ngarkua.",
+        "loading": "Ende po ngarkohet.",
+        "notLoaded": "Nuk është ngarkuar në motorin audio.",
+        "failed": "Nuk është gati ({code})."
+      }
+    },
+    "file": {
+      "title": "Skedari i shfaqjes",
+      "saved": "Të gjitha ndryshimet janë ruajtur.",
+      "savedAutosaveOff": "Të gjitha ndryshimet janë ruajtur. Ruajtja automatike është e fikur.",
+      "saving": "Ndryshimet ende po ruhen.",
+      "unsaved": "Ka ndryshime të paruajtura. Ruajtja automatike është e fikur.",
+      "saveFailed": "Ruajtja e fundit nuk përfundoi. Skedari i shfaqjes është më i vjetër se ç'shihet në ekran.",
+      "repairPending": "Shfaqja u hap me riparime që nuk janë ruajtur.",
+      "noFile": "Kjo shfaqje nuk është ruajtur në skedar."
+    },
+    "video": {
+      "title": "Video",
+      "open": "Hap kontrollin e videos",
+      "passed": "{checked} të kontrolluara · Të gjitha figurat u dekoduan",
+      "issues": "{checked} të kontrolluara · {count} kërkojnë vëmendje",
+      "notRun": "Cue video në këtë shfaqje: {count}. Kontrolli i videos nuk është ekzekutuar për to.",
+      "running": "Kontrolli i videos po ekzekutohet · {checked}/{total}",
+      "stale": "Cue-t e videos kanë ndryshuar që nga kontrolli i fundit i videos.",
+      "incomplete": "Kontrolli i fundit i videos nuk përfundoi · {checked}/{total} të kontrolluara",
+      "unavailable": "Cue video në këtë shfaqje: {count}. Kontrolli i videos nuk mund të ekzekutohet në këtë dritare."
+    }
   }
 }

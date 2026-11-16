@@ -210,7 +210,7 @@ const openExternal = (url: string) => {
 }
 
 .about-update-actions strong {
-  color: var(--state-up-next);
+  color: var(--color-warning);
 }
 
 .about-progress,

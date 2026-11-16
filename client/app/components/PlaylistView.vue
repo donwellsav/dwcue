@@ -1382,8 +1382,8 @@ const handleDrop = async (e: DragEvent) => {
 }
 
 .music-toggle[aria-pressed='true'] {
-  border-color: var(--state-playing);
-  color: var(--state-playing);
+  border-color: var(--state-ready);
+  color: var(--state-ready);
 }
 
 @container playlist-actions (max-width: 640px) {

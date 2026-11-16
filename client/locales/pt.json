@@ -1364,5 +1364,109 @@
     "untitledShow": "Show sem título",
     "exported": "Folha de cues salva como {name}",
     "exportFailed": "Não foi possível exportar a folha de cues: {error}"
+  },
+  "backups": {
+    "title": "Backups do projeto",
+    "help": "O arquivo do projeto é copiado automaticamente antes de ser sobrescrito, no máximo uma vez a cada cinco minutos. As dez cópias mais recentes são mantidas.",
+    "none": "Nenhum backup ainda. O primeiro será feito na próxima vez que este projeto for salvo.",
+    "restore": "Restaurar",
+    "restoreFrom": "Restaurar o backup de {when}",
+    "confirm": "Substituir o projeto aberto por esta cópia? Antes, é feito um backup do projeto atual.",
+    "restored": "Projeto restaurado do backup de {when}",
+    "restoreFailed": "O backup não foi restaurado: {reason}",
+    "listFailed": "Não foi possível ler os backups: {reason}"
+  },
+  "showCheck": {
+    "title": "Verificação pré-show",
+    "hint": "Verifica o motor de áudio, as saídas, a mídia dos cues e o arquivo do projeto. Não inicia nada.",
+    "again": "Verificar novamente",
+    "checking": "Verificando…",
+    "outdated": "O projeto mudou desde esta verificação.",
+    "checkedAt": "Verificado {time}",
+    "selectCue": "Selecionar este cue na playlist",
+    "cueNumber": "Cue {number}",
+    "quickPlayNumber": "QuickPlay {number}",
+    "status": {
+      "pass": "OK",
+      "attention": "Requer atenção",
+      "unchecked": "Não verificado"
+    },
+    "verdict": {
+      "ready": "Pronto",
+      "attentionOne": "{count} item requer atenção",
+      "attention": "{count} itens requerem atenção",
+      "incomplete": "Nenhum problema encontrado, mas nem tudo pôde ser verificado",
+      "notChecked": "{count} não verificados"
+    },
+    "engine": {
+      "title": "Motor de áudio",
+      "ok": "Em execução e respondendo · versão {version}",
+      "disconnected": "Esta janela não está conectada ao motor de áudio.",
+      "noAnswer": "O motor de áudio não respondeu.",
+      "startsHeld": "Conectado, mas o início dos cues está em espera enquanto o projeto é confirmado com o motor.",
+      "versionMismatch": "Em execução, mas o motor está na versão {engine} e este app na versão {app}.",
+      "versionNotReported": "Em execução e respondendo. Não informou a versão, então não foi comparado com o app.",
+      "appVersionUnknown": "Em execução e respondendo, versão {engine}. Esta janela não sabe a versão do app, então os dois não foram comparados."
+    },
+    "output": {
+      "title": "Dispositivo de saída",
+      "mainOk": "A saída principal {name} está conectada.",
+      "defaultOk": "Usando a saída padrão do sistema, {name}.",
+      "mainMissing": "A saída principal {name} não está conectada ao computador do motor.",
+      "mainStalled": "A saída principal {name} está conectada, mas o áudio travou.",
+      "mainAmbiguous": "Há mais de uma saída chamada {name}, então o motor não consegue escolher.",
+      "defaultMissing": "Nenhuma saída padrão do sistema foi encontrada no computador do motor.",
+      "noList": "O motor de áudio não enviou a lista de saídas, então elas não foram verificadas.",
+      "preview": "Saída de pré-escuta",
+      "ltc": "Saída LTC",
+      "ok": "Conectada.",
+      "missing": "Não conectada ao computador do motor.",
+      "stalled": "Conectada, mas o áudio travou.",
+      "ambiguous": "Há mais de uma saída com este nome, então o motor não consegue escolher.",
+      "cue": {
+        "missing": "Roteado para {device}, que não está conectado ao computador do motor.",
+        "stalled": "Roteado para {device}, que está conectado, mas o áudio travou.",
+        "ambiguous": "Roteado para {device}, mas há mais de uma saída com esse nome."
+      }
+    },
+    "media": {
+      "title": "Mídia",
+      "ready": "{ready} de {total} cues prontos.",
+      "none": "Nenhum cue de áudio neste projeto.",
+      "listLoading": "A lista de cues ainda está carregando nesta janela, então a mídia não foi verificada.",
+      "noReport": "O motor de áudio não informou sobre a mídia dos cues, então ela não foi verificada.",
+      "notListed": "Este motor de áudio não lista os cues carregados, então os {total} cues não foram confirmados.",
+      "problemsOnly": "{count} de {total} cues apresentaram problema. Este motor de áudio não lista os cues carregados.",
+      "reason": {
+        "noFile": "Nenhum arquivo de mídia definido.",
+        "unreadable": "O arquivo não existe ou não pôde ser decodificado.",
+        "loadFailed": "Não foi possível carregar o arquivo.",
+        "changed": "O arquivo foi alterado ou removido após ser carregado.",
+        "loading": "Ainda carregando.",
+        "notLoaded": "Não carregado no motor de áudio.",
+        "failed": "Não pronto ({code})."
+      }
+    },
+    "file": {
+      "title": "Arquivo do projeto",
+      "saved": "Todas as alterações foram salvas.",
+      "savedAutosaveOff": "Todas as alterações foram salvas. O salvamento automático está desativado.",
+      "saving": "As alterações ainda estão sendo salvas.",
+      "unsaved": "Há alterações não salvas. O salvamento automático está desativado.",
+      "saveFailed": "O último salvamento não foi concluído. O arquivo do projeto está mais antigo que o exibido na tela.",
+      "repairPending": "O projeto foi aberto com reparos que ainda não foram salvos.",
+      "noFile": "Este projeto ainda não foi salvo em um arquivo."
+    },
+    "video": {
+      "title": "Vídeo",
+      "open": "Abrir verificação de vídeo",
+      "passed": "{checked} verificados · Todas as imagens decodificadas",
+      "issues": "{checked} verificados · {count} requerem atenção",
+      "notRun": "Cues de vídeo neste projeto: {count}. A verificação de vídeo ainda não foi executada para eles.",
+      "running": "Verificação de vídeo em andamento · {checked}/{total}",
+      "stale": "Os cues de vídeo mudaram desde a última verificação de vídeo.",
+      "incomplete": "A última verificação de vídeo não foi concluída · {checked}/{total} verificados",
+      "unavailable": "Cues de vídeo neste projeto: {count}. A verificação de vídeo não pode ser executada nesta janela."
+    }
   }
 }

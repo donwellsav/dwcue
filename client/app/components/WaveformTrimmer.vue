@@ -1627,7 +1627,7 @@ const drawWaveform = () => {
     // Start Next marker — the same warning/next colour used throughout the app.
     if (props.audioItem.startNextEnabled && startNextTime.value > 0) {
       const markerTime = startNextTime.value;
-      const markerColor = rootStyle.getPropertyValue('--state-up-next').trim() || '#d8ad35';
+      const markerColor = rootStyle.getPropertyValue('--state-up-next').trim() || '#3ecf7a';
       if (markerTime >= visibleStart.value && markerTime <= visibleEnd.value) {
         const markerX = (markerTime - visibleStart.value) * pixelsPerSecond;
         ctx.strokeStyle = markerColor;
@@ -1697,7 +1697,7 @@ const drawWaveform = () => {
 
   drawPlayheadMarker(
     mainPlayheadPosition.value,
-    rootStyle.getPropertyValue('--state-playing').trim() || '#35a96b',
+    rootStyle.getPropertyValue('--state-playing').trim() || '#ff5a5f',
     false,
   );
   drawPlayheadMarker(

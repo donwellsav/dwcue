@@ -18,6 +18,7 @@
 
 #include "liveplay/audio/engine.hpp"
 #include "liveplay/audio/types.hpp"
+#include "liveplay/core/show_backups.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -182,19 +183,55 @@ public:
     ~ProjectState();
 
     // Load a canonical project file (.dwcue JSON). Returns true on success. On
-    // failure, the previous state is preserved.
+    // failure, the previous state is preserved. `require_idle` additionally
+    // refuses, without disturbing anything, while a cue is on air or audio is
+    // still loading; the check is made under the playback lifecycle lock, so
+    // no cue can start between the check and the switch.
     bool load(const std::filesystem::path& path,
               std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max(),
-              const std::string& expected_session = {}, json* loaded_header = nullptr);
+              const std::string& expected_session = {}, json* loaded_header = nullptr,
+              bool require_idle = false);
     // Order all writes, but leave playback and other show operations unlocked
     // during disk I/O. A stale save cannot change the current show's metadata.
+    // The file about to be overwritten is first copied into the show's Backups
+    // folder when the automatic-backup rules call for it (show_backups.hpp); a
+    // failed backup is logged and never fails the save.
     bool save(const std::filesystem::path& path, const json* replacement = nullptr,
               std::filesystem::path* published_path = nullptr, const std::string& expected_session = {});
 
     // Replace state from an in-memory JSON document. Same semantics as load.
     bool load_from_json(const json& doc, const std::filesystem::path& project_path = {},
                         std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max(),
-                        const std::string& expected_session = {}, json* loaded_header = nullptr);
+                        const std::string& expected_session = {}, json* loaded_header = nullptr,
+                        bool require_idle = false);
+
+    // ---- Automatic show-file backups (core/show_backups.hpp) --------------
+    // The open show's backups, newest first. Empty when no saved show is open.
+    std::vector<show_backups::BackupEntry> list_show_backups() const;
+
+    enum class RestoreBackupStatus {
+        Restored,
+        SessionChanged,  // another show was opened meanwhile
+        InvalidName,     // not one of this show's backups
+        Busy,            // a cue is on air or audio is still loading
+        InvalidBackup,   // the backup cannot be read as a show
+        Failed,          // storage error; the show is unchanged
+    };
+    struct RestoreBackupResult {
+        RestoreBackupStatus status = RestoreBackupStatus::Failed;
+        std::string message;      // plain text for the operator when not Restored
+        json header;              // header_document() of the reloaded show
+        std::string undo_backup;  // backup holding the show file as it was before
+    };
+    // Replace the open show file with one of its backups and reload it through
+    // load(). The current file is backed up first, whatever the five-minute
+    // rule says, so the restore can be undone. Refused while the show is busy.
+    // Ordered with save() by the save mutex; on any failure nothing changes.
+    RestoreBackupResult restore_show_backup(const std::string& backup_name,
+                                            const std::string& expected_session = {});
+    // Why a backup cannot be restored right now, in plain words; empty when
+    // nothing is on air and audio has finished loading.
+    std::string restore_blocker();
 
     // Returns and clears any repair info recorded during the last load /
     // load_from_json call. The repair has already been applied in memory;
@@ -786,6 +823,19 @@ private:
     // Serializes snapshot through atomic replace. mutex_ remains brief and is
     // never held during filesystem I/O.
     mutable std::mutex           save_mutex_;
+    // Automatic backups; all guarded by save_mutex_. The baseline identifies
+    // the open (revision + file) whose on-disk "as opened" copy is already
+    // safe, so only the first save after an open bypasses the interval.
+    bool                         backup_baseline_known_ = false;
+    std::uint64_t                backup_baseline_revision_ = 0;
+    std::filesystem::path        backup_baseline_path_;
+    std::optional<std::chrono::steady_clock::time_point> last_show_backup_at_;
+    std::string                  last_show_backup_failure_;
+    std::optional<std::chrono::steady_clock::time_point> last_show_backup_failure_at_;
+    // Called by save() just before the atomic replace, with save_mutex_ held
+    // and no project lock held. Never throws.
+    void backup_show_file_before_overwrite(const std::filesystem::path& path,
+                                           std::uint64_t open_revision) noexcept;
     detail::PlaybackGenerationFence playback_generations_;
     std::thread                sequencer_thread_;
     std::atomic<bool>          sequencer_running_{false};
@@ -862,6 +912,9 @@ private:
     // end-behaviour "next") use this to avoid restarting a next item the
     // operator already started manually. Groups have no cue → false.
     bool item_on_air(const std::string& uuid);
+    // True while any Program cue, or the preview when `include_preview`, is
+    // not fully stopped (playing, fading or paused).
+    bool playback_active(bool include_preview = true);
 
 public:
     // The control server queues HTTP custom actions on its single bounded
@@ -885,6 +938,8 @@ private:
     // produces a v2-flavoured one with the equivalent routing matrix.
     json upgrade_legacy_document(const json& legacy) const;
     bool is_legacy_document(const json& doc) const;
+    // The schemas load() accepts from a .dwcue file.
+    bool is_supported_show_document(const json& doc) const;
 
 
     // Build an initial empty document with default theme + empty sections.

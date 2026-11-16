@@ -3274,6 +3274,11 @@ void test_backup_retention() {
         std::ofstream(newest) << "newer-history";
         fs::last_write_time(newest, now - 1h);
         existing.push_back(newest);
+        // A save-time backup (show_backups.hpp) shares the folder on Windows
+        // and macOS. Even as the oldest file it is not this cap's to count.
+        const auto save_time = history / "Show 2020-01-01 00.00.00.dwcue";
+        std::ofstream(save_time) << "save-time-backup";
+        fs::last_write_time(save_time, now - 100h);
         const auto source = folder / "Show.dwcue";
         if (fail_copy) fs::create_directory(source); // Deterministic failure, including elevated test runs.
         else {
@@ -3288,7 +3293,7 @@ void test_backup_retention() {
         for (const auto& entry : fs::directory_iterator(history)) {
             if (!entry.is_regular_file()) continue;
             partial_left |= entry.path().extension() != ".dwcue";
-            if (entry.path().extension() != ".dwcue") continue;
+            if (entry.path().extension() != ".dwcue" || entry.path() == save_time) continue;
             ++files;
             if (entry.path().filename().string().starts_with("Show_backup_")) {
                 std::ifstream in(entry.path());
@@ -3307,6 +3312,7 @@ void test_backup_retention() {
             check(complete_copy, "backup: publishes a complete copy before retaining the cap");
         }
         check(!partial_left, "backup: no partial publication file remains");
+        check(fs::exists(save_time), "backup: the periodic cap never counts or deletes a save-time backup");
     }
     fs::remove_all(root);
 }

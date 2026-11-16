@@ -206,7 +206,7 @@ export const useProject = () => {
   // openItemProperties() (the gear button).
   const propertiesPanelOpen = useState<boolean>('propertiesPanelOpen', () => false);
   const showProjectSettings = useState('showProjectSettings', () => false);
-  const workspaceImportPanel = useState<'import-choice' | 'media' | 'youtube' | 'spotify' | 'archive-import' | 'archive-export' | 'quickplay' | 'delete-selection' | 'repair' | null>(
+  const workspaceImportPanel = useState<'import-choice' | 'media' | 'youtube' | 'spotify' | 'archive-import' | 'archive-export' | 'quickplay' | 'delete-selection' | 'repair' | 'show-check' | null>(
     'workspaceImportPanel', () => null,
   );
   const quickPlayEditor = useState<{ uuid: string; remove: boolean } | null>('quickPlayEditor', () => null);

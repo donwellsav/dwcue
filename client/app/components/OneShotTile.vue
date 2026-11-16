@@ -575,10 +575,9 @@ onUnmounted(() => {
 /* On air: a bright edge, a glow and a tinted tile, found without reading. */
 .one-shot-tile.is-playing {
   border-color: var(--state-playing-edge);
-  background-color: color-mix(in srgb, var(--state-playing) 16%, var(--color-surface));
   box-shadow:
     inset 0 0 0 3px var(--state-playing-edge),
-    0 0 18px color-mix(in srgb, var(--state-playing-edge) 60%, transparent);
+    0 0 12px color-mix(in srgb, var(--state-playing-edge) 45%, transparent);
   z-index: 1;
 }
 
@@ -665,14 +664,22 @@ onUnmounted(() => {
   min-width: 0;
   overflow: hidden;
   align-self: start;
+  justify-self: start;
+  max-width: 100%;
+  padding: 1px 6px;
+  border-radius: var(--pill-radius);
+  /* A solid red badge with dark words, like the one on a playlist row. */
+  background: var(--state-playing);
   font: 600 calc(11px * var(--one-shot-font-scale, 1)) / 1.2 var(--font-mono);
-  color: var(--state-playing);
+  color: var(--state-playing-on);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .one-shot-runtime-state.is-paused {
-  color: var(--color-text-secondary);
+  background: var(--color-control);
+  box-shadow: inset 0 0 0 1px var(--color-text-tertiary);
+  color: var(--color-text-primary);
 }
 
 .one-shot-video-issue {
@@ -774,17 +781,18 @@ onUnmounted(() => {
 }
 
 .one-shot-actions .one-shot-transport {
-  background-color: color-mix(in srgb, var(--state-playing) 9%, var(--color-control));
-  color: var(--state-playing);
+  background-color: color-mix(in srgb, var(--state-ready) 9%, var(--color-control));
+  color: var(--state-ready);
 }
 
 .one-shot-actions .one-shot-transport:hover {
-  background-color: color-mix(in srgb, var(--state-playing) 17%, var(--color-control));
+  background-color: color-mix(in srgb, var(--state-ready) 17%, var(--color-control));
 }
 
 .one-shot-actions .one-shot-transport.is-stop {
-  background-color: var(--color-danger);
-  color: var(--color-text-on-accent);
+  border: var(--stop-button-border);
+  background: var(--stop-button-background);
+  color: var(--stop-edge);
 }
 
 /* Lit in the Up Next colour: this QuickPlay hands over to Up Next when it ends. */

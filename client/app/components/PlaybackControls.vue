@@ -788,21 +788,31 @@ const handlePlayNext = async () => {
   border-right: 1px solid var(--color-border);
 }
 
+/* Stop All is not red: red means live. A black face in a frame of diagonal
+   yellow-and-black stripes, with the label in white so it stays readable. */
 .panic-btn {
-  background-color: #d71920;
-  border-color: #d71920;
-  color: white;
+  --stop-face: var(--stop-ground);
+  border: var(--stop-frame) solid transparent;
+  background:
+    linear-gradient(var(--stop-face), var(--stop-face)) padding-box,
+    var(--stop-stripes) border-box;
+  box-shadow: 0 0 0 1px var(--stop-edge);
+  color: var(--stop-label);
   font-weight: 700;
 }
 
 .panic-btn:hover:not(:disabled) {
-  background-color: #b51219;
-  border-color: #b51219;
-  filter: brightness(0.9);
+  --stop-face: #2a2a32;
+}
+
+.panic-btn:active:not(:disabled) {
+  --stop-face: var(--stop-ink);
+  color: var(--stop-ground);
 }
 
 .panic-btn:disabled {
   opacity: 1;
+  background-image: none;
   background-color: var(--color-control);
   border-color: var(--color-border);
   color: var(--color-text-disabled);
@@ -1053,9 +1063,9 @@ const handlePlayNext = async () => {
 }
 
 .preview-stop-btn {
-  background-color: var(--color-danger);
-  border-color: var(--color-danger);
-  color: white;
+  border: var(--stop-button-border);
+  background: var(--stop-button-background);
+  color: var(--stop-edge);
 }
 
 .preview-cue-meter {

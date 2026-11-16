@@ -149,6 +149,13 @@
                 </label>
               </section>
             </div>
+            <div class="settings-rows settings-rows--wide">
+              <h3 class="settings-section-title">{{ t('backups.title') }}</h3>
+              <section class="settings-field">
+                <p class="settings-help">{{ t('backups.help') }}</p>
+                <ShowBackupsList />
+              </section>
+            </div>
           </template>
 
           <!-- ================= User Interface ================= -->
@@ -681,6 +688,7 @@ import {
 import { normalizeIndexDisplayStart } from '~/utils/indexDisplay';
 import { HEADER_WARNING_TIMING, type HeaderWarningTiming } from '~/utils/headerWarnings';
 import AboutContent from './AboutContent.vue';
+import ShowBackupsList from './ShowBackupsList.vue';
 import ControlConfigModal from './ControlConfigModal.vue';
 import TestCardControls from './TestCardControls.vue';
 import { createTestCardConfig, type TestCardConfig } from '../../electron/test-card-config.mjs';
@@ -1559,6 +1567,19 @@ function close() {
   grid-template-rows: subgrid;
 }
 
+/* Show backups sits under both columns: its list needs the width, and a fifth
+   row in one column would break the row alignment between the two above. */
+.settings-content--playback > .settings-rows--wide {
+  display: block;
+  grid-column: 1 / -1;
+  grid-row: auto;
+  margin-top: var(--spacing-sm);
+}
+
+.settings-content--playback .settings-rows--wide > .settings-field {
+  padding-block: var(--spacing-xs);
+}
+
 .settings-test-card { grid-column: span 2; }
 
 .video-check { grid-column: 1 / -1; }
@@ -2045,7 +2066,7 @@ function close() {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--state-up-next);
+  background: var(--color-warning);
 }
 
 .modal-btn {

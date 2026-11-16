@@ -1364,5 +1364,109 @@
     "untitledShow": "未命名演出",
     "exported": "信号单已保存为 {name}",
     "exportFailed": "无法导出信号单：{error}"
+  },
+  "backups": {
+    "title": "演出备份",
+    "help": "演出文件在被覆盖前会自动复制，最多每五分钟一次。保留最近十份副本。",
+    "none": "还没有备份。下次保存此演出时会生成第一份。",
+    "restore": "恢复",
+    "restoreFrom": "恢复 {when} 的备份",
+    "confirm": "用此副本替换当前打开的演出？现有演出会先备份。",
+    "restored": "已从 {when} 的备份恢复演出",
+    "restoreFailed": "备份未能恢复：{reason}",
+    "listFailed": "无法读取备份：{reason}"
+  },
+  "showCheck": {
+    "title": "演出前检查",
+    "hint": "检查音频引擎、输出、信号媒体和演出文件。不会启动任何内容。",
+    "again": "重新检查",
+    "checking": "检查中…",
+    "outdated": "此次检查后演出已更改。",
+    "checkedAt": "检查时间：{time}",
+    "selectCue": "在播放列表中选择此信号",
+    "cueNumber": "信号 {number}",
+    "quickPlayNumber": "QuickPlay {number}",
+    "status": {
+      "pass": "正常",
+      "attention": "需要处理",
+      "unchecked": "未检查"
+    },
+    "verdict": {
+      "ready": "就绪",
+      "attentionOne": "{count} 项需要处理",
+      "attention": "{count} 项需要处理",
+      "incomplete": "未发现问题，但并非所有项目都能检查",
+      "notChecked": "{count} 项未检查"
+    },
+    "engine": {
+      "title": "音频引擎",
+      "ok": "正在运行并有响应 · 版本 {version}",
+      "disconnected": "此窗口未连接到音频引擎。",
+      "noAnswer": "音频引擎没有响应。",
+      "startsHeld": "已连接，但正在与引擎确认演出，信号启动暂时被挂起。",
+      "versionMismatch": "正在运行，但版本为 {engine}，而应用版本为 {app}。",
+      "versionNotReported": "正在运行并有响应。它未报告版本，因此未与应用比较。",
+      "appVersionUnknown": "正在运行并有响应，版本 {engine}。此窗口不知道应用版本，因此未作比较。"
+    },
+    "output": {
+      "title": "输出设备",
+      "mainOk": "主输出 {name} 已连接。",
+      "defaultOk": "正在使用系统默认输出 {name}。",
+      "mainMissing": "主输出 {name} 未连接到引擎电脑。",
+      "mainStalled": "主输出 {name} 已连接，但音频已停滞。",
+      "mainAmbiguous": "有多个输出名为 {name}，引擎无法选择。",
+      "defaultMissing": "在引擎电脑上未找到系统默认输出。",
+      "noList": "音频引擎没有返回输出列表，因此未检查输出。",
+      "preview": "预览输出",
+      "ltc": "LTC 输出",
+      "ok": "已连接。",
+      "missing": "未连接到引擎电脑。",
+      "stalled": "已连接，但音频已停滞。",
+      "ambiguous": "有多个输出同名，引擎无法选择。",
+      "cue": {
+        "missing": "路由到 {device}，该设备未连接到引擎电脑。",
+        "stalled": "路由到 {device}，该设备已连接，但音频已停滞。",
+        "ambiguous": "路由到 {device}，但有多个输出同名。"
+      }
+    },
+    "media": {
+      "title": "媒体",
+      "ready": "{total} 个信号中 {ready} 个就绪。",
+      "none": "此演出中没有音频信号。",
+      "listLoading": "此窗口仍在加载信号列表，因此未检查媒体。",
+      "noReport": "音频引擎没有报告信号媒体情况，因此未检查。",
+      "notListed": "此音频引擎不列出已加载的信号，因此 {total} 个信号未获确认。",
+      "problemsOnly": "{total} 个信号中有 {count} 个报告了问题。此音频引擎不列出已加载的信号。",
+      "reason": {
+        "noFile": "未设置媒体文件。",
+        "unreadable": "文件缺失或无法解码。",
+        "loadFailed": "文件无法加载。",
+        "changed": "文件在加载后被更改或移除。",
+        "loading": "仍在加载。",
+        "notLoaded": "未加载到音频引擎中。",
+        "failed": "未就绪（{code}）。"
+      }
+    },
+    "file": {
+      "title": "演出文件",
+      "saved": "所有更改均已保存。",
+      "savedAutosaveOff": "所有更改均已保存。自动保存已关闭。",
+      "saving": "更改仍在保存中。",
+      "unsaved": "有未保存的更改。自动保存已关闭。",
+      "saveFailed": "上次保存未完成。演出文件比屏幕上的内容旧。",
+      "repairPending": "演出打开时做过修复，但尚未保存。",
+      "noFile": "此演出尚未保存为文件。"
+    },
+    "video": {
+      "title": "视频",
+      "open": "打开视频检查",
+      "passed": "已检查 {checked} · 所有画面均已解码",
+      "issues": "已检查 {checked} · {count} 项需要处理",
+      "notRun": "此演出中的视频信号：{count}。尚未对它们运行视频检查。",
+      "running": "视频检查正在运行 · {checked}/{total}",
+      "stale": "自上次视频检查后，视频信号已更改。",
+      "incomplete": "上次视频检查未完成 · 已检查 {checked}/{total}",
+      "unavailable": "此演出中的视频信号：{count}。此窗口无法运行视频检查。"
+    }
   }
 }

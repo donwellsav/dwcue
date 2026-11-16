@@ -1364,5 +1364,109 @@
     "untitledShow": "Espectáculo sin título",
     "exported": "Hoja de cues guardada como {name}",
     "exportFailed": "No se pudo exportar la hoja de cues: {error}"
+  },
+  "backups": {
+    "title": "Copias de seguridad del espectáculo",
+    "help": "El archivo del espectáculo se copia automáticamente antes de sobrescribirse, como máximo una vez cada cinco minutos. Se conservan las diez copias más recientes.",
+    "none": "Aún no hay copias. La primera se hará la próxima vez que se guarde este espectáculo.",
+    "restore": "Restaurar",
+    "restoreFrom": "Restaurar la copia del {when}",
+    "confirm": "¿Reemplazar el espectáculo abierto por esta copia? El espectáculo actual se guarda antes.",
+    "restored": "Espectáculo restaurado desde la copia del {when}",
+    "restoreFailed": "No se restauró la copia: {reason}",
+    "listFailed": "No se pudieron leer las copias: {reason}"
+  },
+  "showCheck": {
+    "title": "Revisión previa al show",
+    "hint": "Revisa el motor de audio, las salidas, los medios de los cues y el archivo del espectáculo. No inicia nada.",
+    "again": "Revisar de nuevo",
+    "checking": "Revisando…",
+    "outdated": "El espectáculo cambió desde esta revisión.",
+    "checkedAt": "Revisado {time}",
+    "selectCue": "Seleccionar este cue en la playlist",
+    "cueNumber": "Cue {number}",
+    "quickPlayNumber": "QuickPlay {number}",
+    "status": {
+      "pass": "OK",
+      "attention": "Requiere atención",
+      "unchecked": "Sin revisar"
+    },
+    "verdict": {
+      "ready": "Listo",
+      "attentionOne": "{count} punto requiere atención",
+      "attention": "{count} puntos requieren atención",
+      "incomplete": "No se encontraron problemas, pero no se pudo revisar todo",
+      "notChecked": "{count} sin revisar"
+    },
+    "engine": {
+      "title": "Motor de audio",
+      "ok": "En marcha y respondiendo · versión {version}",
+      "disconnected": "Esta ventana no está conectada al motor de audio.",
+      "noAnswer": "El motor de audio no respondió.",
+      "startsHeld": "Conectado, pero los inicios de cue están en pausa mientras se confirma el espectáculo con el motor.",
+      "versionMismatch": "En marcha, pero es la versión {engine} y esta app es la versión {app}.",
+      "versionNotReported": "En marcha y respondiendo. No informó su versión, así que no se comparó con la app.",
+      "appVersionUnknown": "En marcha y respondiendo, versión {engine}. Esta ventana no conoce la versión de la app, así que no se compararon."
+    },
+    "output": {
+      "title": "Dispositivo de salida",
+      "mainOk": "La salida principal {name} está conectada.",
+      "defaultOk": "Se usa la salida predeterminada del sistema, {name}.",
+      "mainMissing": "La salida principal {name} no está conectada al equipo del motor.",
+      "mainStalled": "La salida principal {name} está conectada, pero su audio se ha detenido.",
+      "mainAmbiguous": "Hay más de una salida llamada {name}, así que el motor no puede elegir.",
+      "defaultMissing": "No se encontró ninguna salida predeterminada del sistema en el equipo del motor.",
+      "noList": "El motor de audio no devolvió su lista de salidas, así que no se revisaron.",
+      "preview": "Salida de preescucha",
+      "ltc": "Salida LTC",
+      "ok": "Conectada.",
+      "missing": "No conectada al equipo del motor.",
+      "stalled": "Conectada, pero su audio se ha detenido.",
+      "ambiguous": "Hay más de una salida con este nombre, así que el motor no puede elegir.",
+      "cue": {
+        "missing": "Enrutado a {device}, que no está conectado al equipo del motor.",
+        "stalled": "Enrutado a {device}, que está conectado, pero su audio se ha detenido.",
+        "ambiguous": "Enrutado a {device}, pero hay más de una salida con ese nombre."
+      }
+    },
+    "media": {
+      "title": "Medios",
+      "ready": "{ready} de {total} cues listos.",
+      "none": "No hay cues de audio en este espectáculo.",
+      "listLoading": "La lista de cues aún se está cargando en esta ventana, así que no se revisaron los medios.",
+      "noReport": "El motor de audio no informó sobre los medios de los cues, así que no se revisaron.",
+      "notListed": "Este motor de audio no lista los cues que ha cargado, así que los {total} cues no se confirmaron.",
+      "problemsOnly": "{count} de {total} cues informaron un problema. Este motor de audio no lista los cues que ha cargado.",
+      "reason": {
+        "noFile": "No hay archivo de medios asignado.",
+        "unreadable": "Falta el archivo o no se pudo decodificar.",
+        "loadFailed": "No se pudo cargar el archivo.",
+        "changed": "El archivo cambió o se eliminó después de cargarse.",
+        "loading": "Aún cargando.",
+        "notLoaded": "No cargado en el motor de audio.",
+        "failed": "No está listo ({code})."
+      }
+    },
+    "file": {
+      "title": "Archivo del espectáculo",
+      "saved": "Todos los cambios están guardados.",
+      "savedAutosaveOff": "Todos los cambios están guardados. El autoguardado está desactivado.",
+      "saving": "Los cambios aún se están guardando.",
+      "unsaved": "Hay cambios sin guardar. El autoguardado está desactivado.",
+      "saveFailed": "El último guardado no terminó. El archivo del espectáculo es anterior a lo que se ve en pantalla.",
+      "repairPending": "El espectáculo se abrió con reparaciones que no se han guardado.",
+      "noFile": "Este espectáculo no se ha guardado en un archivo."
+    },
+    "video": {
+      "title": "Vídeo",
+      "open": "Abrir revisión de vídeo",
+      "passed": "{checked} revisados · Todas las imágenes decodificadas",
+      "issues": "{checked} revisados · {count} requieren atención",
+      "notRun": "Cues de vídeo en este espectáculo: {count}. No se ha ejecutado la revisión de vídeo para ellos.",
+      "running": "Revisión de vídeo en curso · {checked}/{total}",
+      "stale": "Los cues de vídeo cambiaron desde la última revisión de vídeo.",
+      "incomplete": "La última revisión de vídeo no terminó · {checked}/{total} revisados",
+      "unavailable": "Cues de vídeo en este espectáculo: {count}. La revisión de vídeo no se puede ejecutar en esta ventana."
+    }
   }
 }

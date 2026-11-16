@@ -343,8 +343,8 @@ assert.match(
 assert.match(playlistItem, /'is-up-next': isQueuedNext/, 'queued-next state must remain on the playlist row');
 assert.match(
   playlistItem,
-  /\.item-name\s*\{[\s\S]{0,260}color:\s*var\(--color-text-primary\);[\s\S]*\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]{0,180}color:\s*var\(--state-playing\);[\s\S]*\.playlist-item\.is-paused > \.item-content \.item-name\s*\{[\s\S]{0,120}color:\s*var\(--color-text-primary\);/,
-  'playing cue titles must carry playing-state color while paused titles return to neutral',
+  /\.item-name\s*\{[\s\S]{0,260}color:\s*var\(--color-text-primary\);[\s\S]*\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]{0,180}color:\s*var\(--color-text-primary\);[\s\S]*\.playlist-item\.is-paused > \.item-content \.item-name\s*\{[\s\S]{0,120}color:\s*var\(--color-text-primary\);/,
+  'cue titles stay white for reading whether playing or paused; solid colour carries the state',
 );
 assert.match(
   playlistItem,
@@ -404,9 +404,10 @@ assert.equal(
   'the playlist stop button must keep the standard unfilled control appearance',
 );
 assert.equal(
-  playlistItem.includes(":highlight-color=\"isPlaying ? 'var(--color-danger)' :"),
+  playlistItem.includes(":highlight-color=\"isPlaying ? 'var(--stop-edge)' :")
+    && /\.play-action\.is-stop\.is-stop\s*\{[^}]*background:\s*var\(--stop-button-background\)/.test(playlistItem),
   true,
-  'the active playlist stop button must use the danger red control tint',
+  'Stop wears the yellow-and-black stripes and never the live red',
 );
 assert.equal(
   playlistItem.includes('width: fit-content;') && playlistItem.includes('justify-self: start;'),
@@ -441,6 +442,16 @@ assert.match(
 const mainWorkspace = read('client/app/components/MainWorkspace.vue');
 const playbackControls = read('client/app/components/PlaybackControls.vue');
 const activeCueItem = read('client/app/components/ActiveCueItem.vue');
+assert.equal(
+  /\.(?:panic-btn|stop-btn|preview-stop-btn)\s*\{[^}]*(?:#d71920|--color-danger|--state-playing)/.test(playbackControls + activeCueItem),
+  false,
+  'Stop All and the live-card Stop buttons wear the stripes; red is kept for what is live',
+);
+assert.match(
+  playbackControls,
+  /\.panic-btn\s*\{[^}]*border:\s*var\(--stop-frame\) solid transparent;[^}]*var\(--stop-stripes\) border-box;[^}]*color:\s*var\(--stop-label\);/,
+  'Stop All keeps a readable white label on a black face inside the striped frame',
+);
 const canvasFader = read('client/app/components/CanvasFader.vue');
 const stereoMeter = read('client/app/components/StereoMeter.vue');
 const volumeSlider = read('client/app/components/VolumeSlider.vue');
@@ -985,7 +996,7 @@ assert.equal(normalizeCartSlotCount(4, [{ slot: 31 }]), 32);
 assert.equal(normalizeCartSlotCount(4, [], { 31: {} }), 32);
 assert.equal(normalizeCartSlotCount(4, [{ slot: -1 }, { slot: 1.5 }, { slot: 63 }]), 64);
 assert.deepEqual(DEFAULT_COUNTDOWN_COLOR_BANDS, [
-  { startSeconds: 11, color: '#35A96B' },
+  { startSeconds: 11, color: '#FF5A5F' },
   { startSeconds: 6, color: '#D8AD35' },
   { startSeconds: 0, color: '#E54855' },
 ]);
@@ -1004,12 +1015,21 @@ assert.deepEqual(
   normalizeCountdownColorBands([{ startSeconds: 'bad', color: 'red' }]),
   DEFAULT_COUNTDOWN_COLOR_BANDS,
 );
-assert.equal(countdownColorForSeconds(11, undefined), '#35A96B');
+// Tally colours: with time in hand a live cue has no warning colour of its
+// own (null), so each view shows it in the live red. The old default green
+// band is treated the same; a colour the operator chose is kept.
+assert.equal(countdownColorForSeconds(11, undefined), null);
+assert.equal(countdownColorForSeconds(30, [
+  { startSeconds: 11, color: '#35A96B' }, { startSeconds: 6, color: '#D8AD35' }, { startSeconds: 0, color: '#E54855' },
+]), null);
+assert.equal(countdownColorForSeconds(30, [
+  { startSeconds: 11, color: '#123456' }, { startSeconds: 0, color: '#E54855' },
+]), '#123456');
 assert.equal(countdownColorForSeconds(10, undefined), '#D8AD35');
 assert.equal(countdownColorForSeconds(6, undefined), '#D8AD35');
 assert.equal(countdownColorForSeconds(5, undefined), '#E54855');
 assert.equal(countdownColorForSeconds(0, undefined), '#E54855');
-assert.equal(countdownColorForSeconds(10.1, undefined), '#35A96B');
+assert.equal(countdownColorForSeconds(10.1, undefined), null);
 assert.equal(countdownColorForSeconds(null, undefined), null);
 
 const transpiledAudio = ts.transpileModule(
@@ -1993,8 +2013,8 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]{0,100}justify-self:\s*start;[\s\S]{0,100}max-width:\s*100%;[\s\S]{0,100}box-sizing:\s*border-box;[\s\S]{0,100}color:\s*var\(--state-playing\);\s*\}/,
-  'the playing title must retain the shared identity axis while its text conveys state',
+  /\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]{0,100}justify-self:\s*start;[\s\S]{0,100}max-width:\s*100%;[\s\S]{0,100}box-sizing:\s*border-box;[\s\S]{0,100}color:\s*var\(--color-text-primary\);\s*\}/,
+  'the playing title must retain the shared identity axis and stay white for reading',
 );
 assert.doesNotMatch(
   playlistItem,
@@ -2389,6 +2409,20 @@ assert.doesNotMatch(playlistView.slice(0, playlistView.indexOf('<Teleport defer 
 assert.match(playlistView,
   /handleImportButton = \(\) => \{\s*if \(!currentProject\.value\) return;\s*if \(!canOnlineImport\.value\) return handleImport\(\);/,
   'with only one import source the Import button must go straight to it');
+// Keep-awake: the computer must not sleep during a show.
+assert.match(electron,
+  /ipcMain\.handle\('power:keep-awake', \(event, state\) => \{\s*requireTrustedIpc\(event\);\s*requireBoundedIpcObject\(state, 'keep-awake state', 1024\);[\s\S]{0,260}if \(!mainWindow \|\| event\.sender !== mainWindow\.webContents\) return false;\s*applyKeepAwake\(powerSaveBlocker, keepAwakeHolds, keepAwakePlan\(state\)\);/,
+  'only the operator window may set the keep-awake holds, through a validated request');
+assert.match(electron,
+  /mainWindow\.on\('closed', \(\) => \{\s*mainWindow = null;[\s\S]{0,120}releaseKeepAwake\(\);/,
+  'closing the operator window must let the computer sleep again');
+assert.match(read('client/electron/keep-awake.js'),
+  /system: showOpen \|\| playing,\s*display: \(showOpen && showMode\) \|\| playing,/,
+  'an open show must hold off system sleep, and Show Mode or playback must keep the screen on');
+assert.match(read('client/app/app.vue'),
+  /if \(!isCartWindow && !isVideoOutputWindow\) useKeepAwake\(\);/,
+  'the operator window must report the show state for keep-awake');
+
 // Cue sheet export: a read-only PDF of the open show.
 const cueSheetModule = read('client/electron/cue-sheet.js');
 assert.match(electron,

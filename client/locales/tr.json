@@ -1364,5 +1364,109 @@
     "untitledShow": "Adsız gösteri",
     "exported": "Cue listesi {name} olarak kaydedildi",
     "exportFailed": "Cue listesi dışa aktarılamadı: {error}"
+  },
+  "backups": {
+    "title": "Gösteri yedekleri",
+    "help": "Gösteri dosyası, üzerine yazılmadan önce otomatik olarak kopyalanır; en fazla beş dakikada bir. En son on kopya saklanır.",
+    "none": "Henüz yedek yok. İlki bu gösteri bir sonraki kaydedilişinde alınır.",
+    "restore": "Geri yükle",
+    "restoreFrom": "{when} tarihli yedeği geri yükle",
+    "confirm": "Açık gösteri bu kopyayla değiştirilsin mi? Gösterinin şu anki hâli önce yedeklenir.",
+    "restored": "Gösteri, {when} tarihli yedekten geri yüklendi",
+    "restoreFailed": "Yedek geri yüklenemedi: {reason}",
+    "listFailed": "Yedekler okunamadı: {reason}"
+  },
+  "showCheck": {
+    "title": "Gösteri öncesi kontrol",
+    "hint": "Ses motorunu, çıkışları, cue medyasını ve gösteri dosyasını denetler. Hiçbir şey başlatmaz.",
+    "again": "Yeniden kontrol et",
+    "checking": "Kontrol ediliyor…",
+    "outdated": "Bu kontrolden sonra gösteri değişti.",
+    "checkedAt": "Kontrol: {time}",
+    "selectCue": "Bu cue'yu çalma listesinde seç",
+    "cueNumber": "Cue {number}",
+    "quickPlayNumber": "QuickPlay {number}",
+    "status": {
+      "pass": "Tamam",
+      "attention": "Dikkat gerekiyor",
+      "unchecked": "Kontrol edilmedi"
+    },
+    "verdict": {
+      "ready": "Hazır",
+      "attentionOne": "{count} öğe dikkat gerektiriyor",
+      "attention": "{count} öğe dikkat gerektiriyor",
+      "incomplete": "Sorun bulunmadı, ancak her şey kontrol edilemedi",
+      "notChecked": "{count} kontrol edilmedi"
+    },
+    "engine": {
+      "title": "Ses motoru",
+      "ok": "Çalışıyor ve yanıt veriyor · sürüm {version}",
+      "disconnected": "Bu pencere ses motoruna bağlı değil.",
+      "noAnswer": "Ses motoru yanıt vermedi.",
+      "startsHeld": "Bağlı, ancak gösteri motorla onaylanırken cue başlatmaları beklemede.",
+      "versionMismatch": "Çalışıyor, ancak sürümü {engine}; uygulamanın sürümü {app}.",
+      "versionNotReported": "Çalışıyor ve yanıt veriyor. Sürüm bildirmedi, bu yüzden uygulamayla karşılaştırılmadı.",
+      "appVersionUnknown": "Çalışıyor ve yanıt veriyor, sürüm {engine}. Bu pencere uygulama sürümünü bilmiyor, bu yüzden ikisi karşılaştırılmadı."
+    },
+    "output": {
+      "title": "Çıkış cihazı",
+      "mainOk": "Ana çıkış {name} bağlı.",
+      "defaultOk": "Sistem varsayılan çıkışı kullanılıyor: {name}.",
+      "mainMissing": "Ana çıkış {name}, motor bilgisayarına bağlı değil.",
+      "mainStalled": "Ana çıkış {name} bağlı, ancak sesi durdu.",
+      "mainAmbiguous": "Birden fazla çıkışın adı {name}; motor aralarından seçim yapamıyor.",
+      "defaultMissing": "Motor bilgisayarında sistem varsayılan çıkışı bulunamadı.",
+      "noList": "Ses motoru çıkış listesini döndürmedi, bu yüzden çıkışlar kontrol edilmedi.",
+      "preview": "Ön izleme çıkışı",
+      "ltc": "LTC çıkışı",
+      "ok": "Bağlı.",
+      "missing": "Motor bilgisayarına bağlı değil.",
+      "stalled": "Bağlı, ancak sesi durdu.",
+      "ambiguous": "Birden fazla çıkışın adı aynı; motor aralarından seçim yapamıyor.",
+      "cue": {
+        "missing": "{device} cihazına yönlendirildi; bu cihaz motor bilgisayarına bağlı değil.",
+        "stalled": "{device} cihazına yönlendirildi; cihaz bağlı ama sesi durdu.",
+        "ambiguous": "{device} cihazına yönlendirildi, ancak birden fazla çıkışın adı aynı."
+      }
+    },
+    "media": {
+      "title": "Medya",
+      "ready": "{total} cue'dan {ready} tanesi hazır.",
+      "none": "Bu gösteride ses cue'su yok.",
+      "listLoading": "Cue listesi bu pencerede hâlâ yükleniyor, bu yüzden medya kontrol edilmedi.",
+      "noReport": "Ses motoru cue medyası hakkında bilgi vermedi, bu yüzden kontrol edilmedi.",
+      "notListed": "Bu ses motoru yüklediği cue'ları listelemiyor, bu yüzden {total} cue doğrulanamadı.",
+      "problemsOnly": "{total} cue'dan {count} tanesi sorun bildirdi. Bu ses motoru yüklediği cue'ları listelemiyor.",
+      "reason": {
+        "noFile": "Medya dosyası ayarlanmamış.",
+        "unreadable": "Dosya yok veya çözülemedi.",
+        "loadFailed": "Dosya yüklenemedi.",
+        "changed": "Dosya yüklendikten sonra değişti veya kaldırıldı.",
+        "loading": "Hâlâ yükleniyor.",
+        "notLoaded": "Ses motorunda yüklü değil.",
+        "failed": "Hazır değil ({code})."
+      }
+    },
+    "file": {
+      "title": "Gösteri dosyası",
+      "saved": "Tüm değişiklikler kaydedildi.",
+      "savedAutosaveOff": "Tüm değişiklikler kaydedildi. Otomatik kaydet kapalı.",
+      "saving": "Değişiklikler hâlâ kaydediliyor.",
+      "unsaved": "Kaydedilmemiş değişiklikler var. Otomatik kaydet kapalı.",
+      "saveFailed": "Son kayıt tamamlanmadı. Gösteri dosyası ekrandakinden daha eski.",
+      "repairPending": "Gösteri, kaydedilmemiş onarımlarla açıldı.",
+      "noFile": "Bu gösteri bir dosyaya kaydedilmedi."
+    },
+    "video": {
+      "title": "Video",
+      "open": "Video kontrolünü aç",
+      "passed": "{checked} kontrol edildi · Tüm görüntülerin kodu çözüldü",
+      "issues": "{checked} kontrol edildi · {count} öğe dikkat gerektiriyor",
+      "notRun": "Bu gösterideki video cue'ları: {count}. Video kontrolü bunlar için çalıştırılmadı.",
+      "running": "Video kontrolü çalışıyor · {checked}/{total}",
+      "stale": "Video cue'ları son video kontrolünden sonra değişti.",
+      "incomplete": "Son video kontrolü tamamlanmadı · {checked}/{total} kontrol edildi",
+      "unavailable": "Bu gösterideki video cue'ları: {count}. Video kontrolü bu pencerede çalıştırılamıyor."
+    }
   }
 }

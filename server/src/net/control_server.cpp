@@ -185,7 +185,7 @@ struct ControlSecurityMiddleware {
             req.url.starts_with("/api/fs/") || req.url.starts_with("/api/upload") ||
             req.url == "/api/file/download" || req.url == "/api/project/load" ||
             req.url == "/api/project/save" || req.url == "/api/project/import" ||
-            req.url == "/api/project/export" ||
+            req.url == "/api/project/export" || req.url.starts_with("/api/project/backups") ||
             (req.url != "/ws" && !req.url.starts_with("/api/"));
     }
 
@@ -4029,6 +4029,92 @@ void ControlServer::install_routes() {
             } catch (const std::exception& e) {
                 Logger::error("POST /api/project/save threw: {}", e.what());
                 return json_err(400, e.what());
+            }
+        });
+
+    // ---- Automatic show-file backups (core/show_backups.hpp) ----
+    // The engine copies the show file into "<show folder>/Backups" before a
+    // save overwrites it. List those copies for the open show, newest first.
+    // Response: { "ok": true, "backups": [ { "name": "<file name>",
+    //             "savedAt": <epoch milliseconds>, "size": <bytes> }, ... ] }
+    // The list is empty when no saved show is open or it has no backups.
+    CROW_ROUTE(app, "/api/project/backups").methods(crow::HTTPMethod::Get)
+        ([this](const crow::request& req){
+            try {
+                {
+                    auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
+                    if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before listing backups");
+                }
+                json backups = json::array();
+                for (const auto& backup : state_.list_show_backups()) {
+                    backups.push_back(json{
+                        {"name",    backup.name},
+                        {"savedAt", backup.saved_at_ms},
+                        {"size",    static_cast<std::uint64_t>(backup.size)},
+                    });
+                }
+                return json_ok(json{{"ok", true}, {"backups", std::move(backups)}});
+            } catch (const std::exception& e) {
+                Logger::error("GET /api/project/backups threw: {}", e.what());
+                return json_err(500, "could not list the show's backups");
+            }
+        });
+
+    // Put one of the open show's backups back in place of the show file and
+    // reload it, exactly as an Open of that file would.
+    // Body: { "name": "<file name from GET /api/project/backups>" }
+    // The file as it is now is backed up first, so the restore can be undone.
+    // Response: the same header /api/project/load returns, plus
+    //   { "ok": true, "restoredFrom": "<name>", "undoBackup": "<name>" | null }
+    // Errors ({ "error": "<plain message>" }):
+    //   400  name is not one of this show's backups (or no saved show is open)
+    //   409  a cue is playing, audio is still loading, or the show changed
+    //   422  the backup cannot be read as a show
+    //   500  storage failure
+    // In every error case the show file and the open show are left unchanged.
+    CROW_ROUTE(app, "/api/project/backups/restore").methods(crow::HTTPMethod::Post)
+        ([this](const crow::request& req){
+            try {
+                const json body = json::parse(req.body, nullptr, /*allow_exceptions=*/false);
+                const auto requested = body.is_object() ? body.find("name") : body.end();
+                if (!body.is_object() || requested == body.end() || !requested->is_string())
+                    return json_err(400, "expected 'name': a backup file name from the list");
+                const std::string name = requested->get<std::string>();
+                Logger::api_request("Client ({}) -> Server ({}) : POST /api/project/backups/restore name='{}'",
+                                    req.remote_ip_address, impl_->server_addr, name);
+                const auto restored = state_.restore_show_backup(
+                    name, req.get_header_value("X-DWCUE-Project-Session"));
+                using Status = core::ProjectState::RestoreBackupStatus;
+                if (restored.status != Status::Restored) {
+                    int status = 500;
+                    switch (restored.status) {
+                    case Status::InvalidName:    status = 400; break;
+                    case Status::Busy:
+                    case Status::SessionChanged: status = 409; break;
+                    case Status::InvalidBackup:  status = 422; break;
+                    case Status::Restored:
+                    case Status::Failed:         break;
+                    }
+                    Logger::warn("POST /api/project/backups/restore refused ({}): {}", status, restored.message);
+                    return json_err(status, restored.message);
+                }
+                json response = restored.header;
+                response["ok"] = true;
+                response["restoredFrom"] = name;
+                response["undoBackup"] = restored.undo_backup.empty()
+                    ? json(nullptr) : json(restored.undo_backup);
+                Logger::api_response("Client ({}) <- Server ({}) : POST /api/project/backups/restore OK — '{}' ({} items)",
+                                     req.remote_ip_address, impl_->server_addr,
+                                     response.value("name", "?"),
+                                     response.value("itemCount", (std::size_t)0));
+                // The open show was replaced: tell every client, as a load does.
+                broadcast_doc_patch(json{
+                    {"type", "doc_patch"}, {"op", "project_changed"},
+                });
+                return json_ok(response);
+            } catch (const std::exception& e) {
+                Logger::error("POST /api/project/backups/restore threw: {}", e.what());
+                return json_err(500, "the backup could not be restored");
             }
         });
 

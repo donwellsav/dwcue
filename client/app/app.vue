@@ -406,6 +406,8 @@ const isCartWindow = import.meta.client
 const isVideoOutputWindow = import.meta.client
   ? new URLSearchParams(window.location.search).get('videoOutput') === '1'
   : false;
+// The operator window alone reports for the show (see useKeepAwake).
+if (!isCartWindow && !isVideoOutputWindow) useKeepAwake();
 watch(() => isVideoOutputWindow || !showTooltips.value, (suppressed, _previous, onCleanup) => {
   if (import.meta.client && suppressed) onCleanup(suppressTooltips(document.body));
 }, { immediate: true, flush: 'post' });

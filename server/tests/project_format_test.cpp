@@ -182,7 +182,15 @@ void test_native_archive_round_trip(const fs::path& base) {
     write_text(project_folder / "Old.liveplay", "other-legacy");
     write_text(project_folder / "media" / "song.wav", "media-bytes");
     write_text(project_folder / "notes.txt", "notes");
-    write_text(project_folder / "backups" / "Old.liveplay", "nested-backup");
+    write_text(project_folder / "old-versions" / "Old.liveplay", "nested-legacy");
+    // The show's local backup history stays out of the archive, whatever the
+    // folder's letter case; only the folder beside the show is special.
+    write_text(project_folder / "Backups" / "Current 2026-01-02 03.04.05.dwcue",
+               "automatic-backup");
+    write_text(project_folder / "Backups" / "Current_backup_2026-01-02_03-04.dwcue",
+               "periodic-backup");
+    write_text(project_folder / "Backups" / "nested" / "notes.txt", "backup-notes");
+    write_text(project_folder / "media" / "Backups" / "stem.wav", "media-named-backups");
 
     const fs::path archive = base / "Current.dwcuepack";
     const auto exported =
@@ -201,8 +209,12 @@ void test_native_archive_round_trip(const fs::path& base) {
     assert(!fs::exists(destination / "Old.liveplay"));
     assert(read_text(destination / "media" / "song.wav") == "media-bytes");
     assert(read_text(destination / "notes.txt") == "notes");
-    assert(read_text(destination / "backups" / "Old.liveplay") ==
-           "nested-backup");
+    assert(read_text(destination / "old-versions" / "Old.liveplay") ==
+           "nested-legacy");
+    assert(!fs::exists(destination / "Backups"));
+    assert(!fs::exists(destination / "backups"));
+    assert(read_text(destination / "media" / "Backups" / "stem.wav") ==
+           "media-named-backups");
     assert(read_text(archive) == archive_bytes);
 
     const fs::path collision = base / "non-empty-target";

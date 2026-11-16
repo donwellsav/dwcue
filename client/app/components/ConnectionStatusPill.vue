@@ -56,8 +56,10 @@ const title = computed(() =>
   background: rgba(218, 30, 40, 0.12);
   border-color: rgba(218, 30, 40, 0.5);
 }
-:global([data-theme='dark']) .conn-pill { color: #f1c21b; }
-:global([data-theme='dark']) .conn-pill--lost { color: #ff8389; }
+/* Plain ancestor selectors: `:global(x) .y` in a scoped block compiles to
+   just `x`, which painted the whole dark theme's default text this colour. */
+[data-theme='dark'] .conn-pill { color: #f1c21b; }
+[data-theme='dark'] .conn-pill--lost { color: #ff8389; }
 
 .conn-pill__icon {
   font-size: 15px;

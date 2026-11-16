@@ -1364,5 +1364,109 @@
     "untitledShow": "Spectacle sans titre",
     "exported": "Feuille de signaux enregistrée sous {name}",
     "exportFailed": "Impossible d’exporter la feuille de signaux : {error}"
+  },
+  "backups": {
+    "title": "Sauvegardes du spectacle",
+    "help": "Le fichier du spectacle est copié automatiquement avant d’être écrasé, au plus une fois toutes les cinq minutes. Les dix copies les plus récentes sont conservées.",
+    "none": "Aucune sauvegarde pour l’instant. La première sera créée à la prochaine sauvegarde de ce spectacle.",
+    "restore": "Restaurer",
+    "restoreFrom": "Restaurer la sauvegarde du {when}",
+    "confirm": "Remplacer le spectacle ouvert par cette copie ? Le spectacle actuel est d’abord sauvegardé.",
+    "restored": "Spectacle restauré à partir de la sauvegarde du {when}",
+    "restoreFailed": "La sauvegarde n’a pas été restaurée : {reason}",
+    "listFailed": "Impossible de lire les sauvegardes : {reason}"
+  },
+  "showCheck": {
+    "title": "Vérification avant spectacle",
+    "hint": "Vérifie le moteur audio, les sorties, les médias des signaux et le fichier du spectacle. Ne lance rien.",
+    "again": "Vérifier à nouveau",
+    "checking": "Vérification…",
+    "outdated": "Le spectacle a changé depuis cette vérification.",
+    "checkedAt": "Vérifié à {time}",
+    "selectCue": "Sélectionner ce signal dans la playlist",
+    "cueNumber": "Signal {number}",
+    "quickPlayNumber": "QuickPlay {number}",
+    "status": {
+      "pass": "OK",
+      "attention": "À vérifier",
+      "unchecked": "Non vérifié"
+    },
+    "verdict": {
+      "ready": "Prêt",
+      "attentionOne": "{count} point à vérifier",
+      "attention": "{count} points à vérifier",
+      "incomplete": "Aucun problème trouvé, mais tout n’a pas pu être vérifié",
+      "notChecked": "{count} non vérifié(s)"
+    },
+    "engine": {
+      "title": "Moteur audio",
+      "ok": "En marche et réactif · version {version}",
+      "disconnected": "Cette fenêtre n’est pas connectée au moteur audio.",
+      "noAnswer": "Le moteur audio n’a pas répondu.",
+      "startsHeld": "Connecté, mais les départs de signaux sont suspendus pendant la confirmation du spectacle auprès du moteur.",
+      "versionMismatch": "En marche, mais en version {engine} alors que l’application est en version {app}.",
+      "versionNotReported": "En marche et réactif. Il n’a pas indiqué de version, elle n’a donc pas été comparée à celle de l’application.",
+      "appVersionUnknown": "En marche et réactif, version {engine}. Cette fenêtre ignore la version de l’application, les deux n’ont donc pas été comparées."
+    },
+    "output": {
+      "title": "Sortie audio",
+      "mainOk": "La sortie principale {name} est connectée.",
+      "defaultOk": "Utilisation de la sortie par défaut du système, {name}.",
+      "mainMissing": "La sortie principale {name} n’est pas connectée à l’ordinateur du moteur.",
+      "mainStalled": "La sortie principale {name} est connectée, mais son audio est bloqué.",
+      "mainAmbiguous": "Plusieurs sorties portent le nom {name} ; le moteur ne peut pas choisir.",
+      "defaultMissing": "Aucune sortie par défaut du système sur l’ordinateur du moteur.",
+      "noList": "Le moteur audio n’a pas renvoyé sa liste de sorties ; elles n’ont pas été vérifiées.",
+      "preview": "Sortie de préécoute",
+      "ltc": "Sortie LTC",
+      "ok": "Connectée.",
+      "missing": "Non connectée à l’ordinateur du moteur.",
+      "stalled": "Connectée, mais son audio est bloqué.",
+      "ambiguous": "Plusieurs sorties portent ce nom ; le moteur ne peut pas choisir.",
+      "cue": {
+        "missing": "Routé vers {device}, non connecté à l’ordinateur du moteur.",
+        "stalled": "Routé vers {device}, connecté mais son audio est bloqué.",
+        "ambiguous": "Routé vers {device}, mais plusieurs sorties portent ce nom."
+      }
+    },
+    "media": {
+      "title": "Médias",
+      "ready": "{ready} signaux prêts sur {total}.",
+      "none": "Aucun signal audio dans ce spectacle.",
+      "listLoading": "La liste des signaux se charge encore dans cette fenêtre ; les médias n’ont pas été vérifiés.",
+      "noReport": "Le moteur audio n’a rien indiqué sur les médias des signaux ; ils n’ont pas été vérifiés.",
+      "notListed": "Ce moteur audio ne liste pas les signaux chargés ; les {total} signaux n’ont pas été confirmés.",
+      "problemsOnly": "{count} signaux sur {total} signalent un problème. Ce moteur audio ne liste pas les signaux chargés.",
+      "reason": {
+        "noFile": "Aucun fichier média défini.",
+        "unreadable": "Fichier introuvable ou impossible à décoder.",
+        "loadFailed": "Impossible de charger le fichier.",
+        "changed": "Fichier modifié ou supprimé après son chargement.",
+        "loading": "Chargement en cours.",
+        "notLoaded": "Non chargé dans le moteur audio.",
+        "failed": "Pas prêt ({code})."
+      }
+    },
+    "file": {
+      "title": "Fichier du spectacle",
+      "saved": "Toutes les modifications sont enregistrées.",
+      "savedAutosaveOff": "Toutes les modifications sont enregistrées. La sauvegarde auto est désactivée.",
+      "saving": "Enregistrement des modifications en cours.",
+      "unsaved": "Des modifications ne sont pas enregistrées. La sauvegarde auto est désactivée.",
+      "saveFailed": "La dernière sauvegarde n’a pas abouti. Le fichier du spectacle est plus ancien que ce qui est à l’écran.",
+      "repairPending": "Le spectacle s’est ouvert avec des réparations non enregistrées.",
+      "noFile": "Ce spectacle n’a pas été enregistré dans un fichier."
+    },
+    "video": {
+      "title": "Vidéo",
+      "open": "Ouvrir la vérification vidéo",
+      "passed": "{checked} vérifiés · Toutes les images décodées",
+      "issues": "{checked} vérifiés · {count} à vérifier",
+      "notRun": "Signaux vidéo dans ce spectacle : {count}. La vérification vidéo n’a pas été lancée pour eux.",
+      "running": "Vérification vidéo en cours · {checked}/{total}",
+      "stale": "Les signaux vidéo ont changé depuis la dernière vérification vidéo.",
+      "incomplete": "La dernière vérification vidéo n’a pas abouti · {checked}/{total} vérifiés",
+      "unavailable": "Signaux vidéo dans ce spectacle : {count}. La vérification vidéo ne peut pas s’exécuter dans cette fenêtre."
+    }
   }
 }

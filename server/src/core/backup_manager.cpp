@@ -1,5 +1,6 @@
 #include "liveplay/core/backup_manager.hpp"
 #include "liveplay/core/project_file.hpp"
+#include "liveplay/core/show_backups.hpp"
 #include "liveplay/logger.hpp"
 #include "liveplay/util/atomic_file.hpp"
 
@@ -123,7 +124,11 @@ void BackupManager::do_backup() {
         for (const auto& entry : fs::directory_iterator(backup_dir, ec)) {
             if (!ec && entry.is_regular_file(ec)) {
                 const auto& p = entry.path();
-                if (project_file::is_native_project(p)) {
+                // Save-time backups (show_backups.hpp) share this folder on
+                // Windows and macOS but keep their own history of ten per
+                // show; this periodic cap must never count or delete them.
+                if (project_file::is_native_project(p) &&
+                    !show_backups::parse_backup_file_name(path_to_utf8(p.filename()))) {
                     const auto modified = entry.last_write_time(ec);
                     if (ec) break;
                     existing.emplace_back(modified, p);

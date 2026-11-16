@@ -1364,5 +1364,109 @@
     "untitledShow": "Spectacol fără titlu",
     "exported": "Fișa de cue-uri a fost salvată ca {name}",
     "exportFailed": "Fișa de cue-uri nu a putut fi exportată: {error}"
+  },
+  "backups": {
+    "title": "Copii de siguranță ale proiectului",
+    "help": "Fișierul proiectului este copiat automat înainte de a fi suprascris, cel mult o dată la cinci minute. Se păstrează ultimele zece copii.",
+    "none": "Nicio copie de siguranță încă. Prima se face la următoarea salvare a proiectului.",
+    "restore": "Restaurează",
+    "restoreFrom": "Restaurează copia din {when}",
+    "confirm": "Înlocuiești proiectul deschis cu această copie? Proiectul actual este salvat mai întâi într-o copie de siguranță.",
+    "restored": "Proiect restaurat din copia din {when}",
+    "restoreFailed": "Copia nu a fost restaurată: {reason}",
+    "listFailed": "Copiile nu au putut fi citite: {reason}"
+  },
+  "showCheck": {
+    "title": "Verificare înainte de show",
+    "hint": "Verifică motorul audio, ieșirile, media cue-urilor și fișierul proiectului. Nu pornește nimic.",
+    "again": "Verifică din nou",
+    "checking": "Se verifică…",
+    "outdated": "Proiectul s-a schimbat de la această verificare.",
+    "checkedAt": "Verificat {time}",
+    "selectCue": "Selectează acest cue în playlist",
+    "cueNumber": "Cue {number}",
+    "quickPlayNumber": "QuickPlay {number}",
+    "status": {
+      "pass": "OK",
+      "attention": "Necesită atenție",
+      "unchecked": "Neverificat"
+    },
+    "verdict": {
+      "ready": "Gata",
+      "attentionOne": "{count} element necesită atenție",
+      "attention": "{count} elemente necesită atenție",
+      "incomplete": "Nicio problemă găsită, dar nu s-a putut verifica totul",
+      "notChecked": "{count} neverificate"
+    },
+    "engine": {
+      "title": "Motor audio",
+      "ok": "Rulează și răspunde · versiunea {version}",
+      "disconnected": "Această fereastră nu este conectată la motorul audio.",
+      "noAnswer": "Motorul audio nu a răspuns.",
+      "startsHeld": "Conectat, dar pornirea cue-urilor este oprită temporar cât timp proiectul este confirmat cu motorul.",
+      "versionMismatch": "Rulează, dar motorul are versiunea {engine}, iar aplicația versiunea {app}.",
+      "versionNotReported": "Rulează și răspunde. Nu a raportat versiunea, deci nu a fost comparat cu aplicația.",
+      "appVersionUnknown": "Rulează și răspunde, versiunea {engine}. Această fereastră nu știe versiunea aplicației, deci cele două nu au fost comparate."
+    },
+    "output": {
+      "title": "Dispozitiv de ieșire",
+      "mainOk": "Ieșirea principală {name} este conectată.",
+      "defaultOk": "Se folosește ieșirea implicită a sistemului, {name}.",
+      "mainMissing": "Ieșirea principală {name} nu este conectată la computerul motorului.",
+      "mainStalled": "Ieșirea principală {name} este conectată, dar audio s-a blocat.",
+      "mainAmbiguous": "Mai multe ieșiri se numesc {name}, deci motorul nu poate alege.",
+      "defaultMissing": "Nu a fost găsită nicio ieșire implicită a sistemului pe computerul motorului.",
+      "noList": "Motorul audio nu a trimis lista ieșirilor, deci ele nu au fost verificate.",
+      "preview": "Ieșire de preascultare",
+      "ltc": "Ieșire LTC",
+      "ok": "Conectată.",
+      "missing": "Neconectată la computerul motorului.",
+      "stalled": "Conectată, dar audio s-a blocat.",
+      "ambiguous": "Mai multe ieșiri au acest nume, deci motorul nu poate alege.",
+      "cue": {
+        "missing": "Direcționat către {device}, care nu este conectat la computerul motorului.",
+        "stalled": "Direcționat către {device}, care este conectat, dar audio s-a blocat.",
+        "ambiguous": "Direcționat către {device}, dar mai multe ieșiri au acest nume."
+      }
+    },
+    "media": {
+      "title": "Media",
+      "ready": "{ready} din {total} cue-uri pregătite.",
+      "none": "Niciun cue audio în acest proiect.",
+      "listLoading": "Lista de cue-uri se încarcă încă în această fereastră, deci media nu a fost verificată.",
+      "noReport": "Motorul audio nu a raportat despre media cue-urilor, deci nu a fost verificată.",
+      "notListed": "Acest motor audio nu listează cue-urile încărcate, deci cele {total} cue-uri nu au fost confirmate.",
+      "problemsOnly": "{count} din {total} cue-uri au raportat o problemă. Acest motor audio nu listează cue-urile încărcate.",
+      "reason": {
+        "noFile": "Niciun fișier media setat.",
+        "unreadable": "Fișierul lipsește sau nu a putut fi decodat.",
+        "loadFailed": "Fișierul nu a putut fi încărcat.",
+        "changed": "Fișierul a fost modificat sau eliminat după încărcare.",
+        "loading": "Se încarcă încă.",
+        "notLoaded": "Neîncărcat în motorul audio.",
+        "failed": "Nepregătit ({code})."
+      }
+    },
+    "file": {
+      "title": "Fișierul proiectului",
+      "saved": "Toate modificările sunt salvate.",
+      "savedAutosaveOff": "Toate modificările sunt salvate. Salvarea automată este dezactivată.",
+      "saving": "Modificările se mai salvează.",
+      "unsaved": "Există modificări nesalvate. Salvarea automată este dezactivată.",
+      "saveFailed": "Ultima salvare nu s-a încheiat. Fișierul proiectului este mai vechi decât ce se vede pe ecran.",
+      "repairPending": "Proiectul s-a deschis cu reparații care nu au fost salvate.",
+      "noFile": "Acest proiect nu a fost salvat într-un fișier."
+    },
+    "video": {
+      "title": "Video",
+      "open": "Deschide verificarea video",
+      "passed": "{checked} verificate · Toate imaginile decodate",
+      "issues": "{checked} verificate · {count} necesită atenție",
+      "notRun": "Cue-uri video în acest proiect: {count}. Verificarea video nu a fost rulată pentru ele.",
+      "running": "Verificarea video rulează · {checked}/{total}",
+      "stale": "Cue-urile video s-au schimbat de la ultima verificare video.",
+      "incomplete": "Ultima verificare video nu s-a încheiat · {checked}/{total} verificate",
+      "unavailable": "Cue-uri video în acest proiect: {count}. Verificarea video nu poate rula în această fereastră."
+    }
   }
 }

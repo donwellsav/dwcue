@@ -1364,5 +1364,109 @@
     "untitledShow": "Show uten navn",
     "exported": "Cuelisten ble lagret som {name}",
     "exportFailed": "Kunne ikke eksportere cuelisten: {error}"
+  },
+  "backups": {
+    "title": "Sikkerhetskopier av prosjektet",
+    "help": "Prosjektfilen kopieres automatisk før den overskrives, høyst én gang hvert femte minutt. De ti nyeste kopiene beholdes.",
+    "none": "Ingen sikkerhetskopier ennå. Den første lages neste gang prosjektet lagres.",
+    "restore": "Gjenopprett",
+    "restoreFrom": "Gjenopprett sikkerhetskopien fra {when}",
+    "confirm": "Erstatte det åpne prosjektet med denne kopien? Prosjektet slik det er nå, sikkerhetskopieres først.",
+    "restored": "Prosjektet er gjenopprettet fra sikkerhetskopien fra {when}",
+    "restoreFailed": "Sikkerhetskopien ble ikke gjenopprettet: {reason}",
+    "listFailed": "Sikkerhetskopiene kunne ikke leses: {reason}"
+  },
+  "showCheck": {
+    "title": "Sjekk før show",
+    "hint": "Sjekker lydmotor, utganger, cuemedia og prosjektfil. Starter ingenting.",
+    "again": "Sjekk på nytt",
+    "checking": "Sjekker…",
+    "outdated": "Prosjektet er endret siden denne sjekken.",
+    "checkedAt": "Sjekket {time}",
+    "selectCue": "Velg denne cuen i spillelisten",
+    "cueNumber": "Cue {number}",
+    "quickPlayNumber": "QuickPlay {number}",
+    "status": {
+      "pass": "OK",
+      "attention": "Trenger oppmerksomhet",
+      "unchecked": "Ikke sjekket"
+    },
+    "verdict": {
+      "ready": "Klar",
+      "attentionOne": "{count} ting trenger oppmerksomhet",
+      "attention": "{count} ting trenger oppmerksomhet",
+      "incomplete": "Ingen problemer funnet, men ikke alt kunne sjekkes",
+      "notChecked": "{count} ikke sjekket"
+    },
+    "engine": {
+      "title": "Lydmotor",
+      "ok": "Kjører og svarer · versjon {version}",
+      "disconnected": "Dette vinduet er ikke koblet til lydmotoren.",
+      "noAnswer": "Lydmotoren svarte ikke.",
+      "startsHeld": "Tilkoblet, men cuestart er satt på vent mens prosjektet bekreftes med motoren.",
+      "versionMismatch": "Kjører, men motoren er versjon {engine} og appen er versjon {app}.",
+      "versionNotReported": "Kjører og svarer. Den oppga ingen versjon, så den ble ikke sammenlignet med appen.",
+      "appVersionUnknown": "Kjører og svarer, versjon {engine}. Dette vinduet kjenner ikke appversjonen, så de to ble ikke sammenlignet."
+    },
+    "output": {
+      "title": "Utgangsenhet",
+      "mainOk": "Hovedutgang {name} er tilkoblet.",
+      "defaultOk": "Bruker systemets standardutgang, {name}.",
+      "mainMissing": "Hovedutgang {name} er ikke koblet til motordatamaskinen.",
+      "mainStalled": "Hovedutgang {name} er tilkoblet, men lyden har stoppet.",
+      "mainAmbiguous": "Mer enn én utgang heter {name}, så motoren kan ikke velge.",
+      "defaultMissing": "Fant ingen standardutgang for systemet på motordatamaskinen.",
+      "noList": "Lydmotoren sendte ikke listen over utganger, så de ble ikke sjekket.",
+      "preview": "Forhåndslyttingsutgang",
+      "ltc": "LTC-utgang",
+      "ok": "Tilkoblet.",
+      "missing": "Ikke koblet til motordatamaskinen.",
+      "stalled": "Tilkoblet, men lyden har stoppet.",
+      "ambiguous": "Mer enn én utgang har dette navnet, så motoren kan ikke velge.",
+      "cue": {
+        "missing": "Rutet til {device}, som ikke er koblet til motordatamaskinen.",
+        "stalled": "Rutet til {device}, som er tilkoblet, men lyden har stoppet.",
+        "ambiguous": "Rutet til {device}, men mer enn én utgang har det navnet."
+      }
+    },
+    "media": {
+      "title": "Media",
+      "ready": "{ready} av {total} cuer klare.",
+      "none": "Ingen lydcuer i dette prosjektet.",
+      "listLoading": "Cuelisten laster fortsatt i dette vinduet, så media ble ikke sjekket.",
+      "noReport": "Lydmotoren rapporterte ikke om cuemedia, så det ble ikke sjekket.",
+      "notListed": "Denne lydmotoren lister ikke opp innlastede cuer, så {total} cuer ble ikke bekreftet.",
+      "problemsOnly": "{count} av {total} cuer rapporterte et problem. Denne lydmotoren lister ikke opp innlastede cuer.",
+      "reason": {
+        "noFile": "Ingen mediefil er angitt.",
+        "unreadable": "Filen mangler eller kunne ikke dekodes.",
+        "loadFailed": "Filen kunne ikke lastes.",
+        "changed": "Filen er endret eller fjernet etter at den ble lastet.",
+        "loading": "Laster fortsatt.",
+        "notLoaded": "Ikke lastet i lydmotoren.",
+        "failed": "Ikke klar ({code})."
+      }
+    },
+    "file": {
+      "title": "Prosjektfil",
+      "saved": "Alle endringer er lagret.",
+      "savedAutosaveOff": "Alle endringer er lagret. Autolagring er av.",
+      "saving": "Endringer lagres fortsatt.",
+      "unsaved": "Det finnes ulagrede endringer. Autolagring er av.",
+      "saveFailed": "Siste lagring ble ikke fullført. Prosjektfilen er eldre enn det som vises på skjermen.",
+      "repairPending": "Prosjektet ble åpnet med reparasjoner som ikke er lagret.",
+      "noFile": "Dette prosjektet er ikke lagret i en fil."
+    },
+    "video": {
+      "title": "Video",
+      "open": "Åpne videosjekk",
+      "passed": "{checked} sjekket · Alle bilder dekodet",
+      "issues": "{checked} sjekket · {count} trenger oppmerksomhet",
+      "notRun": "Videocuer i dette prosjektet: {count}. Videosjekken er ikke kjørt for dem.",
+      "running": "Videosjekken kjører · {checked}/{total}",
+      "stale": "Videocuer er endret siden forrige videosjekk.",
+      "incomplete": "Forrige videosjekk ble ikke fullført · {checked}/{total} sjekket",
+      "unavailable": "Videocuer i dette prosjektet: {count}. Videosjekken kan ikke kjøres i dette vinduet."
+    }
   }
 }

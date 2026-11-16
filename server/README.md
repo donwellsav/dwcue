@@ -73,7 +73,8 @@ server/
 │   │   └── engine.hpp         Tier 3: master bus + device fan-out
 │   ├── core/
 │   │   ├── project_state.hpp  v2 project model + legacy 1.x upgrade
-│   │   └── backup_manager.hpp periodic rotating backups
+│   │   ├── backup_manager.hpp periodic rotating backups
+│   │   └── show_backups.hpp   save-time backups: naming, rules, restore
 │   ├── meta/
 │   │   ├── metadata.hpp       TagLib wrapper
 │   │   └── waveform.hpp       offline downsample → peak JSON
@@ -460,6 +461,8 @@ Plays an item on `settings.previewDevice` without routing through the live mixer
 | `PUT /api/project/document`     | full project JSON document | header object | Replaces the entire in-memory document. Broadcasts `project_changed`. |
 | `POST /api/project/save`        | `{ "path": "/abs/file.dwcue" (optional), "document": { … } (optional) }` | `{ "ok": true, "path": "…" }` | Serialized snapshot + atomic sibling-temp publication to the supplied canonical path or current path. `400` if neither is set; failure leaves the previous file and project identity unchanged. |
 | `POST /api/project/repair`      | — | `{ "repaired": bool, "issues": [string], "saved": bool }` | Forces a re-save of the (already auto-repaired on load) in-memory document. |
+| `GET /api/project/backups`      | — | `{ "ok": true, "backups": [ { "name": "<file name>", "savedAt": <epoch ms>, "size": <bytes> } ] }` | The open show's save-time backups, newest first. Empty when no saved show is open. |
+| `POST /api/project/backups/restore` | `{ "name": "<file name from the list>" }` | header object as for load, plus `"ok": true`, `"restoredFrom"`, `"undoBackup"` (name or `null`) | Backs up the current file first, replaces the show file with the backup and reloads it through the normal load; broadcasts `project_changed`. `400` name is not one of this show's backups, `409` a cue is playing / audio is loading / session changed, `422` the backup is not a readable show, `500` storage failure. Every error leaves the file and the open show unchanged. |
 Project load returns its header while media readiness continues asynchronously; callers use `/api/project/progress` and per-item errors rather than blocking all transport. Play/GO reject an unready selected target without consuming the operator override. Group Play All performs its all-or-nothing readiness preflight, while Stop All/Panic stay callable regardless of loader failures.
 
 Get `/api/project/header?open_deadline=1` immediately before a switch request. Use the returned `openDeadlineMs` as-is and bind the request to the expected show using `X-DWCUE-Project-Session`. The controller requires `createDeadlineSupported: true` before sending New Show. If an older controller calls New Show without a deadline, the engine rejects the request before writing.
@@ -502,7 +505,7 @@ event names retain `cart` for compatibility with saved projects and external cli
 
 #### Project export / import (`.dwcuepack` archives)
 
-A `.dwcuepack` is a raw ZIP of the active `.dwcue` project's folder; it does not add a second manifest or wrapper schema.
+A `.dwcuepack` is a raw ZIP of the active `.dwcue` project's folder; it does not add a second manifest or wrapper schema. The `Backups` folder beside the show (any letter case) is local history and is not packed.
 
 | Method · Path | Body | Response |
 |---------------|------|----------|
@@ -649,6 +652,8 @@ The upgrade reconstructs cues and baseline routes for older native shows. Verify
 ### Backups
 
 `BackupManager` ([`core/backup_manager.hpp`](include/liveplay/core/backup_manager.hpp)) copies the saved project file every ten minutes. It publishes a complete copy before pruning the oldest backups to the existing cap of 20 in the adjacent `backups` folder; a failed copy retains the previous history. Unsaved edits are not included in these periodic copies.
+
+Save-time backups ([`core/show_backups.hpp`](include/liveplay/core/show_backups.hpp)) are separate: just before `ProjectState::save()` replaces an existing show file (Save, Save As onto an existing file, autosave and repair all go through it), the file on disk is copied to `<show folder>/Backups/<show stem> <YYYY-MM-DD HH.MM.SS>.dwcue` (local time). At most one is made per five minutes, except on the first save after a show is opened; a copy identical to the newest backup is skipped; the newest ten per show are kept. The copy runs under the save mutex with no project lock held, and a failure is logged and never fails the save. `GET /api/project/backups` and `POST /api/project/backups/restore` list and restore them. On Windows and macOS `Backups` and the periodic `backups` are the same folder; each mechanism lists and prunes only its own file names. The folder is left out of `.dwcuepack` exports.
 
 Native saves are serialized under the project save mutex. The target path and complete document snapshot are resolved under that serialization boundary, written to a sibling temporary file and atomically published. A failed Save As does not adopt the requested path; a pathless save resolves the current canonical path while holding the same lock.
 

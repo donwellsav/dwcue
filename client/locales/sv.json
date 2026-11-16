@@ -1364,5 +1364,109 @@
     "untitledShow": "Namnlös föreställning",
     "exported": "Cuelistan sparades som {name}",
     "exportFailed": "Det gick inte att exportera cuelistan: {error}"
+  },
+  "backups": {
+    "title": "Säkerhetskopior av föreställningen",
+    "help": "Föreställningsfilen kopieras automatiskt innan den skrivs över, högst en gång var femte minut. De tio senaste kopiorna sparas.",
+    "none": "Inga säkerhetskopior än. Den första skapas nästa gång föreställningen sparas.",
+    "restore": "Återställ",
+    "restoreFrom": "Återställ säkerhetskopian från {when}",
+    "confirm": "Ersätta den öppna föreställningen med den här kopian? Föreställningen som den är nu säkerhetskopieras först.",
+    "restored": "Föreställningen återställdes från säkerhetskopian från {when}",
+    "restoreFailed": "Säkerhetskopian återställdes inte: {reason}",
+    "listFailed": "Säkerhetskopiorna kunde inte läsas: {reason}"
+  },
+  "showCheck": {
+    "title": "Kontroll före föreställning",
+    "hint": "Kontrollerar ljudmotor, utgångar, cuemedia och föreställningsfil. Startar ingenting.",
+    "again": "Kontrollera igen",
+    "checking": "Kontrollerar…",
+    "outdated": "Föreställningen har ändrats sedan den här kontrollen.",
+    "checkedAt": "Kontrollerad {time}",
+    "selectCue": "Markera den här cuen i spellistan",
+    "cueNumber": "Cue {number}",
+    "quickPlayNumber": "QuickPlay {number}",
+    "status": {
+      "pass": "OK",
+      "attention": "Behöver åtgärdas",
+      "unchecked": "Ej kontrollerad"
+    },
+    "verdict": {
+      "ready": "Klar",
+      "attentionOne": "{count} sak behöver åtgärdas",
+      "attention": "{count} saker behöver åtgärdas",
+      "incomplete": "Inga problem hittades, men allt kunde inte kontrolleras",
+      "notChecked": "{count} ej kontrollerade"
+    },
+    "engine": {
+      "title": "Ljudmotor",
+      "ok": "Igång och svarar · version {version}",
+      "disconnected": "Det här fönstret är inte anslutet till ljudmotorn.",
+      "noAnswer": "Ljudmotorn svarade inte.",
+      "startsHeld": "Ansluten, men cuestarter är pausade medan föreställningen bekräftas med motorn.",
+      "versionMismatch": "Igång, men det är version {engine} och appen är version {app}.",
+      "versionNotReported": "Igång och svarar. Den rapporterade ingen version och jämfördes därför inte med appen.",
+      "appVersionUnknown": "Igång och svarar, version {engine}. Det här fönstret känner inte till appens version, så de två jämfördes inte."
+    },
+    "output": {
+      "title": "Utgångsenhet",
+      "mainOk": "Huvudutgången {name} är ansluten.",
+      "defaultOk": "Använder systemets standardutgång, {name}.",
+      "mainMissing": "Huvudutgången {name} är inte ansluten till motordatorn.",
+      "mainStalled": "Huvudutgången {name} är ansluten, men ljudet har stannat.",
+      "mainAmbiguous": "Fler än en utgång heter {name}, så motorn kan inte välja mellan dem.",
+      "defaultMissing": "Ingen standardutgång för systemet hittades på motordatorn.",
+      "noList": "Ljudmotorn returnerade ingen lista över utgångar, så de kontrollerades inte.",
+      "preview": "Förhandsvisningsutgång",
+      "ltc": "LTC-utgång",
+      "ok": "Ansluten.",
+      "missing": "Inte ansluten till motordatorn.",
+      "stalled": "Ansluten, men ljudet har stannat.",
+      "ambiguous": "Fler än en utgång har det här namnet, så motorn kan inte välja mellan dem.",
+      "cue": {
+        "missing": "Dirigerad till {device}, som inte är ansluten till motordatorn.",
+        "stalled": "Dirigerad till {device}, som är ansluten men vars ljud har stannat.",
+        "ambiguous": "Dirigerad till {device}, men fler än en utgång har det namnet."
+      }
+    },
+    "media": {
+      "title": "Media",
+      "ready": "{ready} av {total} cuer klara.",
+      "none": "Inga ljudcuer i den här föreställningen.",
+      "listLoading": "Cuelistan laddas fortfarande i det här fönstret, så medierna kontrollerades inte.",
+      "noReport": "Ljudmotorn rapporterade inget om cuemedia, så de kontrollerades inte.",
+      "notListed": "Den här ljudmotorn listar inte de cuer den har laddat, så de {total} cuerna bekräftades inte.",
+      "problemsOnly": "{count} av {total} cuer rapporterade problem. Den här ljudmotorn listar inte de cuer den har laddat.",
+      "reason": {
+        "noFile": "Ingen mediefil är vald.",
+        "unreadable": "Filen saknas eller kunde inte avkodas.",
+        "loadFailed": "Filen kunde inte läsas in.",
+        "changed": "Filen ändrades eller togs bort efter inläsning.",
+        "loading": "Läses fortfarande in.",
+        "notLoaded": "Inte inläst i ljudmotorn.",
+        "failed": "Inte klar ({code})."
+      }
+    },
+    "file": {
+      "title": "Föreställningsfil",
+      "saved": "Alla ändringar är sparade.",
+      "savedAutosaveOff": "Alla ändringar är sparade. Autospara är av.",
+      "saving": "Ändringar sparas fortfarande.",
+      "unsaved": "Det finns osparade ändringar. Autospara är av.",
+      "saveFailed": "Den senaste sparningen slutfördes inte. Föreställningsfilen är äldre än det som visas på skärmen.",
+      "repairPending": "Föreställningen öppnades med reparationer som inte har sparats.",
+      "noFile": "Den här föreställningen har inte sparats till en fil."
+    },
+    "video": {
+      "title": "Video",
+      "open": "Öppna videokontroll",
+      "passed": "{checked} kontrollerade · Alla bilder avkodades",
+      "issues": "{checked} kontrollerade · {count} behöver åtgärdas",
+      "notRun": "Videocuer i den här föreställningen: {count}. Videokontrollen har inte körts för dem.",
+      "running": "Videokontrollen pågår · {checked}/{total}",
+      "stale": "Videocuer har ändrats sedan den senaste videokontrollen.",
+      "incomplete": "Den senaste videokontrollen slutfördes inte · {checked}/{total} kontrollerade",
+      "unavailable": "Videocuer i den här föreställningen: {count}. Videokontrollen kan inte köras i det här fönstret."
+    }
   }
 }

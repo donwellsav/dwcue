@@ -9,6 +9,13 @@ export function useVideoPreflightIssues() {
   return useState<Map<string, VideoCheckIssue>>('videoPreflight.issues', () => new Map());
 }
 
+// Where the last video check got to, for readers outside the Video tab (the
+// Pre-show check reports it). Written only by useVideoPreflight below.
+export function useVideoPreflightSummary() {
+  return useState<{ phase: Phase | null; checked: number; total: number }>(
+    'videoPreflight.summary', () => ({ phase: null, checked: 0, total: 0 }));
+}
+
 export function useVideoPreflight(visible: Readonly<Ref<boolean>>) {
   const server = useLiveplayServer();
   const { currentProject, getAllItemsFlat, formatItemIndex, projectEpoch, projectHydrationStatus, previewItemUuid } = useProject();
@@ -20,6 +27,10 @@ export function useVideoPreflight(visible: Readonly<Ref<boolean>>) {
   const checked = ref(0);
   const total = ref(0);
   const busy = ref(false);
+  const summary = useVideoPreflightSummary();
+  watch([phase, checked, total], () => {
+    summary.value = { phase: phase.value, checked: checked.value, total: total.value };
+  }, { flush: 'sync', immediate: true });
   let run: AbortController | null = null;
 
   const candidates = computed(() => {
@@ -108,6 +119,7 @@ export function useVideoPreflight(visible: Readonly<Ref<boolean>>) {
     offCue();
     offPatch();
     issues.value.clear();
+    summary.value = { phase: null, checked: 0, total: 0 };
   });
 
   async function start() {

@@ -156,7 +156,7 @@ onBeforeUnmount(() => {
   padding-inline: var(--spacing-xs);
   border: 1px solid currentColor;
   border-radius: var(--control-radius);
-  color: var(--state-up-next);
+  color: var(--color-warning);
   background: var(--color-surface-raised);
   font-size: 12px;
   line-height: 16px;

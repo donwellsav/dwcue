@@ -86,6 +86,7 @@ declare global {
       setCurrentProject: (projectPath: string) => Promise<{ success: boolean }>;
       // File > Export Cue Sheet (PDF): main asks where to save and writes the file.
       exportCueSheet: (sheet: CueSheetPayload) => Promise<CueSheetExportResult>;
+      keepAwake: (state: { showOpen: boolean; showMode: boolean; playing: boolean }) => Promise<boolean>;
       getFilePath: (file: File) => string | null;
       searchYouTube: (query: string) => Promise<Array<{
         id: string;

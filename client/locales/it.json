@@ -1364,5 +1364,109 @@
     "untitledShow": "Spettacolo senza titolo",
     "exported": "Foglio dei segnali salvato come {name}",
     "exportFailed": "Impossibile esportare il foglio dei segnali: {error}"
+  },
+  "backups": {
+    "title": "Backup dello spettacolo",
+    "help": "Il file dello spettacolo viene copiato automaticamente prima di essere sovrascritto, al massimo una volta ogni cinque minuti. Vengono conservate le dieci copie più recenti.",
+    "none": "Nessun backup per ora. Il primo verrà creato al prossimo salvataggio di questo spettacolo.",
+    "restore": "Ripristina",
+    "restoreFrom": "Ripristina il backup del {when}",
+    "confirm": "Sostituire lo spettacolo aperto con questa copia? Lo spettacolo attuale viene prima salvato in un backup.",
+    "restored": "Spettacolo ripristinato dal backup del {when}",
+    "restoreFailed": "Il backup non è stato ripristinato: {reason}",
+    "listFailed": "Impossibile leggere i backup: {reason}"
+  },
+  "showCheck": {
+    "title": "Controllo pre-spettacolo",
+    "hint": "Controlla motore audio, uscite, media dei segnali e file dello spettacolo. Non avvia nulla.",
+    "again": "Ricontrolla",
+    "checking": "Controllo in corso…",
+    "outdated": "Lo spettacolo è cambiato dopo questo controllo.",
+    "checkedAt": "Controllato alle {time}",
+    "selectCue": "Seleziona questo segnale nella playlist",
+    "cueNumber": "Segnale {number}",
+    "quickPlayNumber": "QuickPlay {number}",
+    "status": {
+      "pass": "OK",
+      "attention": "Richiede attenzione",
+      "unchecked": "Non controllato"
+    },
+    "verdict": {
+      "ready": "Pronto",
+      "attentionOne": "{count} elemento richiede attenzione",
+      "attention": "{count} elementi richiedono attenzione",
+      "incomplete": "Nessun problema trovato, ma non tutto è stato controllato",
+      "notChecked": "{count} non controllati"
+    },
+    "engine": {
+      "title": "Motore audio",
+      "ok": "In funzione e risponde · versione {version}",
+      "disconnected": "Questa finestra non è collegata al motore audio.",
+      "noAnswer": "Il motore audio non ha risposto.",
+      "startsHeld": "Collegato, ma l’avvio dei segnali è sospeso finché lo spettacolo non viene confermato con il motore.",
+      "versionMismatch": "In funzione, ma è la versione {engine} mentre l’app è la versione {app}.",
+      "versionNotReported": "In funzione e risponde. Non ha indicato la versione, quindi non è stata confrontata con l’app.",
+      "appVersionUnknown": "In funzione e risponde, versione {engine}. Questa finestra non conosce la versione dell’app, quindi non sono state confrontate."
+    },
+    "output": {
+      "title": "Uscita audio",
+      "mainOk": "L’uscita principale {name} è collegata.",
+      "defaultOk": "Uso dell’uscita predefinita del sistema, {name}.",
+      "mainMissing": "L’uscita principale {name} non è collegata al computer del motore.",
+      "mainStalled": "L’uscita principale {name} è collegata, ma il suo audio si è bloccato.",
+      "mainAmbiguous": "Più uscite si chiamano {name}: il motore non può scegliere.",
+      "defaultMissing": "Nessuna uscita predefinita del sistema sul computer del motore.",
+      "noList": "Il motore audio non ha restituito l’elenco delle uscite, quindi non sono state controllate.",
+      "preview": "Uscita di ascolto",
+      "ltc": "Uscita LTC",
+      "ok": "Collegata.",
+      "missing": "Non collegata al computer del motore.",
+      "stalled": "Collegata, ma il suo audio si è bloccato.",
+      "ambiguous": "Più uscite hanno questo nome: il motore non può scegliere.",
+      "cue": {
+        "missing": "Instradato su {device}, che non è collegato al computer del motore.",
+        "stalled": "Instradato su {device}, collegato ma con audio bloccato.",
+        "ambiguous": "Instradato su {device}, ma più uscite hanno quel nome."
+      }
+    },
+    "media": {
+      "title": "Media",
+      "ready": "{ready} segnali pronti su {total}.",
+      "none": "Nessun segnale audio in questo spettacolo.",
+      "listLoading": "L’elenco dei segnali è ancora in caricamento in questa finestra, quindi i media non sono stati controllati.",
+      "noReport": "Il motore audio non ha riferito sui media dei segnali, quindi non sono stati controllati.",
+      "notListed": "Questo motore audio non elenca i segnali caricati, quindi i {total} segnali non sono stati confermati.",
+      "problemsOnly": "{count} segnali su {total} segnalano un problema. Questo motore audio non elenca i segnali caricati.",
+      "reason": {
+        "noFile": "Nessun file media impostato.",
+        "unreadable": "File mancante o non decodificabile.",
+        "loadFailed": "Impossibile caricare il file.",
+        "changed": "File modificato o rimosso dopo il caricamento.",
+        "loading": "Caricamento in corso.",
+        "notLoaded": "Non caricato nel motore audio.",
+        "failed": "Non pronto ({code})."
+      }
+    },
+    "file": {
+      "title": "File dello spettacolo",
+      "saved": "Tutte le modifiche sono salvate.",
+      "savedAutosaveOff": "Tutte le modifiche sono salvate. Il salvataggio automatico è disattivato.",
+      "saving": "Salvataggio delle modifiche in corso.",
+      "unsaved": "Ci sono modifiche non salvate. Il salvataggio automatico è disattivato.",
+      "saveFailed": "L’ultimo salvataggio non è stato completato. Il file dello spettacolo è più vecchio di ciò che è a schermo.",
+      "repairPending": "Lo spettacolo è stato aperto con riparazioni non ancora salvate.",
+      "noFile": "Questo spettacolo non è stato salvato in un file."
+    },
+    "video": {
+      "title": "Video",
+      "open": "Apri controllo video",
+      "passed": "{checked} controllati · Tutte le immagini decodificate",
+      "issues": "{checked} controllati · {count} richiedono attenzione",
+      "notRun": "Segnali video in questo spettacolo: {count}. Il controllo video non è stato eseguito per questi.",
+      "running": "Controllo video in corso · {checked}/{total}",
+      "stale": "I segnali video sono cambiati dopo l’ultimo controllo video.",
+      "incomplete": "L’ultimo controllo video non è terminato · {checked}/{total} controllati",
+      "unavailable": "Segnali video in questo spettacolo: {count}. Il controllo video non può essere eseguito in questa finestra."
+    }
   }
 }

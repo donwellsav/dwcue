@@ -142,18 +142,49 @@ button > .material-symbols-rounded {
   --color-text: var(--color-text-primary);
   --color-focus-ring: #91bdd5;
 
-  --state-playing: var(--color-success);
-  // The edge and glow of whatever is on air: brighter than the state colour
-  // so it is found at a glance, without reading.
-  --state-playing-edge: color-mix(in srgb, var(--state-playing) 62%, #ffffff);
-  --state-up-next: var(--color-warning);
-  --state-up-next-text: #171b25;
+  // Tally colours, as on a vision mixer: red is live (on air), green is next.
+  // Amber is left to warnings, and the headphones preview keeps the accent so
+  // "preview" is never mistaken for "next". The colours are used as solid
+  // blocks and edges; words stay white, or dark on a solid block, because
+  // coloured words on a dark row are hard to read.
+  --state-playing: #ff5a5f;
+  // The edge of whatever is on air.
+  --state-playing-edge: #ff5a5f;
+  // Words on a solid live-red block.
+  --state-playing-on: #14090a;
+  --state-up-next: #3ecf7a;
+  --state-up-next-text: #0c1a11;
+  // Ready to go: Play buttons and switches that are on. Never the live red.
+  --state-ready: var(--color-success);
   --state-preview: var(--color-accent);
+  // Text on a solid warning-coloured pill.
+  --color-warning-text: #171b25;
+
+  // Stop is never red, because red means live. It wears the yellow-and-black
+  // diagonal stripes of hazard tape: a striped frame around Stop All and a
+  // fine striped edge on each cue's own Stop button. Yellow already means
+  // "take care" everywhere else in the app.
+  --stop-ink: #ffd000;
+  --stop-ground: #0b0b0e;
+  --stop-label: #ffffff;
+  --stop-edge: var(--stop-ink);
+  // The frame around Stop All, and the edge of a cue's own Stop button.
+  --stop-frame: 16px;
+  --stop-stripes: repeating-linear-gradient(-45deg, var(--stop-ink) 0 11px, var(--stop-ground) 11px 22px);
+  --stop-button-border: 6px solid transparent;
+  --stop-button-background:
+    linear-gradient(var(--color-control), var(--color-control)) padding-box,
+    repeating-linear-gradient(-45deg, var(--stop-ink) 0 5px, var(--stop-ground) 5px 10px) border-box;
 }
 
 // Light console: the same hierarchy without forcing a dark work surface.
 [data-theme='light'] {
-  --state-playing-edge: color-mix(in srgb, var(--state-playing) 82%, #000000);
+  --state-playing: #d0142c;
+  --state-playing-edge: #d0142c;
+  --state-playing-on: #ffffff;
+  --stop-edge: var(--stop-ground);
+  --state-up-next: #17803f;
+  --state-up-next-text: #ffffff;
   --color-background: #e6ecef;
   --color-surface: #f5f8f9;
   --color-surface-raised: #ffffff;
@@ -172,7 +203,7 @@ button > .material-symbols-rounded {
   --color-danger: #b62f3e;
   --color-success: #186d4c;
   --color-warning: #8c6416;
-  --state-up-next-text: var(--color-text-on-accent);
+  --color-warning-text: var(--color-text-on-accent);
 }
 
 // Neutral chrome shares the #16161d hue; colour is reserved for cue data and

@@ -28,7 +28,7 @@ The Video Output window is a separate picture renderer on the desktop computer. 
 1. **Confirm the next target before GO.** Read the cue name beside **Play Next** and look for the **Up Next** marker. Selection, an armed target, and a playing cue are different states.
 2. **Rehearse what happens at the end.** Imported cues can have **Play Next** end behavior and **Stop All Other Cues** ducking. Do not assume every new cue stops and waits, or that firing a sting leaves a bed running.
 3. **Treat Preview as a real output.** Choose a separate headphone or monitor output. Sending Preview to the same physical speakers as Main makes it audible to the audience even though its device ownership is safely shared.
-4. **Preserve a known-good show.** Save a rehearsal copy, keep the media with it, and test the exported copy before travel. Autosave is not a versioned backup.
+4. **Preserve a known-good show.** Save a rehearsal copy, keep the media with it, and test the exported copy before travel. Autosave is not a versioned backup. The automatic **Show backups** hold recent copies of the show file only, not its media.
 
 > **CAUTION — Stop is not necessarily instant.** The **Stop All Cues** button and the default **Escape** shortcut use the project's Stop All fade. The default is 1 second; 0 means immediate. Rehearse the configured behavior and know the venue's independent console mute or other emergency-silence procedure.
 
@@ -59,7 +59,7 @@ The Linux x86_64 packages require glibc 2.43 or newer. They were tested on Ubunt
 
 When a newer release is available, the desktop app shows a five-second header notice and leaves an **Update Available** indicator. Open **Settings → About** to check for updates or choose **Download Update**. On the welcome screen, choose **Update Available** or use **Help → Check for Updates**. About opens below the welcome screen. macOS, Windows, and Linux AppImage builds can install in place. DEB and RPM builds open the downloads page. After download, stop playback and Preview and exit Show Mode to use **Install Now**. Choose **Install on Exit** to apply the update on the next app quit. Download and installation each require an operator action.
 
-Connect the audio interface before opening the show. Confirm the correct outputs at the sound console, start with a conservative listening level, connect mains power, and disable sleep for the performance using the operating system's controls. Prevent notification sounds from reaching the audience. Keep a separate copy of the show and its media on reliable storage.
+Connect the audio interface before opening the show. Confirm the correct outputs at the sound console, start with a conservative listening level, and connect mains power. DonWells Cue keeps the computer awake while a show is open, and keeps the display on in Show Mode and while a cue is playing. Closing a laptop lid can still put the computer to sleep. Prevent notification sounds from reaching the audience. Keep a separate copy of the show and its media on reliable storage.
 
 On launch, the desktop normally starts its managed local server automatically. The welcome screen indicates **Using the audio engine on this computer** once connected. If the engine is starting, wait for connection rather than repeatedly reopening the app. The **Connect to a server on the network…** option reveals remote setup; see chapter 10 before using it.
 
@@ -108,7 +108,7 @@ DonWells Cue creates `<show name>.dwcue` and `media/` in the selected folder; po
 
 ### Edit Mode
 
-Use Edit Mode to import, organize, and configure the show. The top bar contains Settings, Video Output, Level Check, Autosave, and the Show Mode switch. Open **Settings → Shortcuts** for the keyboard reference and editor. While a Settings tab has focus, Left and Right move between tabs and Enter opens the focused tab. Transport sits below the top bar with **Stop All Cues**, the active-cue area, and **Play Next**. The button shows the cue name on multiple lines, its number, and the playable duration. A wider window has room for cue type, group, and loop or group start behavior where applicable. Hover for the full name. The output strip shows the selected device, main level, meters, and true-peak limiter.
+Use Edit Mode to import, organize, and configure the show. The top bar contains Settings, Video Output, Level Check, Pre-show check, Autosave, and the Show Mode switch. Open **Settings → Shortcuts** for the keyboard reference and editor. While a Settings tab has focus, Left and Right move between tabs and Enter opens the focused tab. Transport sits below the top bar with **Stop All Cues** in its yellow-and-black striped frame, the active-cue area, and the green **Play Next**. The button shows the cue name on multiple lines, its number, and the playable duration. A wider window has room for cue type, group, and loop or group start behavior where applicable. Hover for the full name. The output strip shows the selected device, main level, meters, and true-peak limiter.
 
 ![Current Edit Mode with the playlist, acknowledged Up Next target, Basic Info and output console.](manual-assets/edit-workspace.png)
 
@@ -309,9 +309,15 @@ Choose **File → Export Cue Sheet (PDF)…** to save a printable summary of the
 
 The headphones (preview) button appears on cue rows only when a **Preview Device** is chosen in **Settings → Audio Routing**; without one, the title uses that space. The output meters on the right can be folded to a slim rail with the arrow beside **TP Limiter** and brought back with the arrow on the rail; the limiter keeps working while they are folded, and the choice is remembered.
 
-### Finding what is on air
+### Red is live, green is next
 
-The cue that is playing has a bright edge and a tinted row in the playlist, and a playing QuickPlay has the same bright edge on its tile, so it can be found at a glance. A paused cue keeps the edge in grey. The end-of-cue warning border still takes over as a cue approaches its end.
+The colors follow the tally lights of a vision mixer.
+
+- **Red is live.** The cue that is playing has a red edge, a red number and a red **Playing** badge in the playlist. A playing QuickPlay has the same red edge and badge on its tile. A paused cue keeps its edge in grey.
+- **Green is next.** The **Up Next** cue has a green edge and a green number. **Play Next** and the Play buttons are green.
+- **Stop is never red.** **Stop All Cues** sits in a frame of yellow-and-black stripes, and each cue's own Stop button has the same striped edge.
+- **Yellow and amber are warnings**, such as the end-of-cue border that takes over as a cue approaches its end.
+- **Words stay white.** Titles and times are not colored, because white is the easiest to read in a dark room. **Time Left** turns to its warning colors only as a cue nears its end.
 
 ### Notes on the playlist
 
@@ -434,6 +440,18 @@ An LTC edit takes effect immediately when the output is ready. If the driver nee
 Keep the LTC destination separate from the audience audio path. Do not enable timecode on a cue merely because the checkbox is available. Record the device assignment and frame rate on the show handover sheet.
 
 ## 7. Run the show
+
+### Pre-show check
+
+Choose **Pre-show check** in the top bar before doors and after any change to the rig. It reads the state of the system and starts nothing: no cue plays and no output is opened. Each line reports **OK**, **Needs attention** or **Not checked**.
+
+- **Audio engine:** running, answering, and the same version as the app.
+- **Output device:** the main output is connected and its audio is running, and so are the Preview, LTC and per-cue outputs the show uses.
+- **Media:** every audio cue and QuickPlay is loaded and ready. A cue with a problem is listed by its number and can be selected from the list.
+- **Show file:** all changes are saved.
+- **Video:** the result of **Check Videos**, when the show has video cues.
+
+The line at the top reads **Ready** when nothing needs attention. If the show changes afterwards the panel says so; choose **Check again**. A pass describes that moment only, and it is not a sound check: confirm actual sound with **Level Check** and at the console.
 
 ### A repeatable GO procedure
 
@@ -772,7 +790,13 @@ A failed autosave or manual save leaves **Save failed** and **Retry** in the hea
 
 Saves run in order. Each captures one document and destination, then writes through a sibling temporary file before atomically replacing the saved show. Slow storage can delay a save or another save behind it. GO and Stop All remain available while the write waits. A failed Save As leaves the active path unchanged. If another controller switches shows during a write, the old save cannot change the new show's path or clear its pending edits. Wait for a save to finish before opening the file you just saved.
 
-The server makes background copies of the existing disk project every 10 minutes into a **backups** folder beside it, retaining at most 20. Those are project-file backups, not full media packages, and they cannot capture unsaved edits that never reached disk. Keep a separate known-good full-show copy as well.
+### Show backups
+
+Before a save replaces the show file, the engine keeps a copy of the file it is about to replace in a **Backups** folder beside the show. It makes at most one copy every five minutes, skips a copy identical to the last one, and keeps the ten most recent.
+
+**Settings → Playback Behaviour → Show backups** lists the copies by date and time. Choose **Restore**, then confirm, to replace the open show with that copy. The show as it is now is backed up first, so a restore can itself be undone from the same list. A restore is refused while a cue or Preview is playing.
+
+The engine also still copies the saved show file into a **backups** folder beside it every 10 minutes, retaining at most 20 of those copies; they are not shown in the list. All of these are project-file backups, not full media packages, and they cannot capture unsaved edits that never reached disk. Keep a separate known-good full-show copy as well.
 
 ### Export a portable show
 
@@ -966,6 +990,7 @@ Share a minimal sample only with permission. Remove tokens, personal paths, priv
 - [ ] Cue gains, overlap/ducking behavior, limiter, and transitions rehearsed.
 - [ ] Loop continuation, Jump Cue, and the configured Stop All fade rehearsed.
 - [ ] Group exits use explicit, checked targets where needed.
+- [ ] **Pre-show check** reads **Ready**, or every flagged line is understood.
 - [ ] Correct GO target is visible; shortcuts checked against this project.
 - [ ] Required QuickPlays and their Play/Stop, keyboard and MIDI controls checked.
 - [ ] MIDI mappings checked on this machine; unused controllers disconnected or filtered.

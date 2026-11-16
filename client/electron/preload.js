@@ -67,6 +67,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setCurrentProject: (projectPath) => ipcRenderer.invoke('set-current-project', projectPath),
   // Printable summary of the open show; main picks the file and writes the PDF.
   exportCueSheet: (sheet) => ipcRenderer.invoke('export-cue-sheet', sheet),
+  keepAwake: (state) => ipcRenderer.invoke('power:keep-awake', state),
 
   // Waveform generation
 

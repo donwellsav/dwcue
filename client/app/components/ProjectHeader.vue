@@ -56,6 +56,16 @@
         :title="levelCheckCount === 0 ? t('levelCheck.unavailable') : t('levelCheck.hint')"
         @click="toggleLevelCheck"
       />
+      <!-- Read-only audio readiness report in the lower panel; starts no cue. -->
+      <Btn
+        :text="t('showCheck.title')"
+        :class="{ 'show-check-toggle--active': showCheckOpen }"
+        :disabled="!currentProject"
+        :title="t('showCheck.hint')"
+        :aria-expanded="showCheckOpen"
+        aria-controls="workspace-import-host"
+        @click="toggleShowCheck"
+      />
 
       <!-- Autosave toggle: on by default; when off the project is only saved
            via File > Save and an "Unsaved Changes" pill appears by the title. -->
@@ -120,6 +130,7 @@
 import Btn from './Btn.vue';
 import VideoConfidenceChip from './VideoConfidenceChip.vue';
 import { useVideoOutputToggle } from '~/composables/useCartHotkeys';
+import { usePreShowCheck } from '~/composables/usePreShowCheck';
 import { countdownColorForSeconds, type AudioItem } from '~/types/project';
 
 const { currentProject, findItemByUuid, findItemByIndex, autoSaveEnabled, hasUnsavedChanges, saveFailed, saveProject, setAutoSave } = useProject();
@@ -335,6 +346,9 @@ const toggleLevelCheck = () => {
   else startLevelCheck();
 };
 
+// Pre-show check: opens the lower-panel report, which runs the check itself.
+const { isOpen: showCheckOpen, toggle: toggleShowCheck } = usePreShowCheck();
+
 onMounted(async () => {
   if (!import.meta.client || !(window as any).electronAPI?.videoOutput) return;
   const api = (window as any).electronAPI.videoOutput;
@@ -447,12 +461,13 @@ onMounted(() => {
 }
 
 .header-right :deep(.video-toggle--active),
-.header-right :deep(.level-check-toggle--active) {
+.header-right :deep(.level-check-toggle--active),
+.header-right :deep(.show-check-toggle--active) {
   color: var(--color-accent-text);
 }
 
 .header-right :deep(.update-indicator) {
-  color: var(--state-up-next);
+  color: var(--color-warning);
 }
 
 .header-right :deep(.btn:hover:not(:disabled)),
@@ -474,8 +489,8 @@ onMounted(() => {
   font-weight: 600;
   white-space: nowrap;
   flex-shrink: 0;
-  background-color: var(--state-up-next);
-  color: var(--state-up-next-text);
+  background-color: var(--color-warning);
+  color: var(--color-warning-text);
 }
 
 .save-failure {
@@ -593,8 +608,10 @@ onMounted(() => {
   color: color-mix(in srgb, var(--color-accent) 72%, var(--color-text-primary));
 }
 
+/* White while there is time in hand; the countdown colours take over near
+   the end. */
 .clock--time-left.clock--active .clock-value {
-  color: var(--state-playing);
+  color: var(--color-text-primary);
 }
 
 .clock--inactive {
@@ -637,13 +654,13 @@ onMounted(() => {
   box-sizing: border-box;
   max-width: 100%;
   padding: var(--spacing-xs) var(--spacing-sm);
-  border: 2px solid var(--state-up-next);
+  border: 2px solid var(--color-warning);
   border-radius: var(--control-radius);
   background-color: var(--color-surface-raised);
   font-weight: 700;
   font-size: 14px;
   line-height: 1.25;
-  color: var(--state-up-next);
+  color: var(--color-warning);
 }
 
 .silence-warning__seconds {

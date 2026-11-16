@@ -17,7 +17,8 @@ struct ImportResult : OperationResult {
 
 // Writes a raw ZIP containing the active canonical root project exactly once,
 // plus the rest of the project folder. Other root .dwcue/.liveplay documents
-// are excluded; nested content and media keep their relative paths.
+// and the root "Backups" folder (any letter case; see core/show_backups.hpp)
+// are excluded; other nested content and media keep their relative paths.
 OperationResult export_project(
     const std::filesystem::path& project_folder,
     const std::filesystem::path& active_project,

@@ -51,6 +51,7 @@ const {
   normalizeCueSheet,
   normalizeCueSheetLabels,
 } = require('./cue-sheet');
+const { applyKeepAwake, keepAwakePlan } = require('./keep-awake');
 const {
   SPOTIFY_AUDIO_PROVIDERS,
   normalizeSpotifyBitrate,
@@ -2664,6 +2665,8 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+    // Nothing reports for the show any more: let the computer sleep again.
+    releaseKeepAwake();
   });
 
 
@@ -4594,6 +4597,26 @@ async function renderCueSheetPdf(html, pdfOptions) {
     await fs.promises.rm(folder, { recursive: true, force: true, maxRetries: 3 }).catch(() => {});
   }
 }
+
+// Keep the computer awake during a show. The operator window reports whether
+// a show is open, whether it is in Show Mode and whether anything is playing;
+// keep-awake.js turns that into the holds to take. Independent of the Video
+// Output's own hold, which exists while that window does.
+const keepAwakeHolds = { system: null, display: null };
+
+function releaseKeepAwake() {
+  applyKeepAwake(powerSaveBlocker, keepAwakeHolds, { system: false, display: false });
+}
+
+ipcMain.handle('power:keep-awake', (event, state) => {
+  requireTrustedIpc(event);
+  requireBoundedIpcObject(state, 'keep-awake state', 1024);
+  // Only the operator window speaks for the show; the QuickPlays and Video
+  // Output windows see the same project and would only repeat it.
+  if (!mainWindow || event.sender !== mainWindow.webContents) return false;
+  applyKeepAwake(powerSaveBlocker, keepAwakeHolds, keepAwakePlan(state));
+  return true;
+});
 
 ipcMain.handle('export-cue-sheet', async (event, payload) => {
   requireTrustedIpc(event);

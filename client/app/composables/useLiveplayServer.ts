@@ -820,6 +820,15 @@ function createClient() {
   async function repairProject(): Promise<{ repaired: boolean; issues: string[] }> {
     return rest<any>('/api/project/repair', { method: 'POST', body: '{}' });
   }
+  // Automatic copies of the show file, kept by the engine beside the show.
+  async function listShowBackups(): Promise<{ name: string; savedAt: number; size: number }[]> {
+    const result = await rest<any>('/api/project/backups');
+    return Array.isArray(result?.backups) ? result.backups : [];
+  }
+  // The engine backs up the show as it is now, then reloads it from `name`.
+  async function restoreShowBackup(name: string): Promise<void> {
+    await rest<any>('/api/project/backups/restore', { method: 'POST', body: JSON.stringify({ name }) });
+  }
   // Close the project on the server (reset to no-project state). Mirrors the
   // local closeProject() in useProject so the server doesn't keep playing /
   // holding a project we've dismissed.
@@ -1591,6 +1600,8 @@ function createClient() {
     replaceProjectDocument,
     saveProjectTo,
     repairProject,
+    listShowBackups,
+    restoreShowBackup,
     closeProjectOnServer,
     isLocalServer,
     refreshIsLocalServer,
