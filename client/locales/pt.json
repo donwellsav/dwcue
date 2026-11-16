@@ -424,7 +424,7 @@
     "title": "Verificação de vídeo pré-show",
     "start": "Verificar vídeos",
     "cancel": "Cancelar verificação",
-    "help": "Verifica cada cue de vídeo no ponto de entrada, no meio e perto do fim.",
+    "help": "Os vídeos são verificados automaticamente enquanto nada está em reprodução: no ponto de entrada, no meio e perto do fim. Um vídeo que este computador não consegue exibir é convertido em uma cópia que ele consegue exibir, ao lado do original.",
     "waitForIdle": "Disponível quando a reprodução e a pré-visualização estão paradas.",
     "running": "Verificando vídeos · {checked}/{total}",
     "empty": "Nenhum cue de vídeo neste show.",
@@ -443,7 +443,14 @@
     "in-point": "O ponto de entrada do cue está além do fim do vídeo.",
     "duration": "Não foi possível determinar o fim do vídeo.",
     "timeout": "A verificação do vídeo excedeu o limite de 8 segundos.",
-    "probe-error": "O renderizador da verificação de vídeo parou."
+    "probe-error": "O renderizador da verificação de vídeo parou.",
+    "convertingStatus": "Convertendo {name} · {percent}%",
+    "converting": "Sendo convertido para que este computador possa exibi-lo · {percent}%",
+    "converted": "{name} foi convertido para que este computador possa exibi-lo",
+    "convertFailed": "Não foi possível converter. O arquivo original não foi alterado.",
+    "convertFailedRemote": "Não convertido: o motor de áudio é executado em outro computador.",
+    "convertFailedMissing": "Não convertido: o arquivo não foi encontrado neste computador.",
+    "convertFailedConverter": "Não convertido: não foi possível baixar o conversor."
   },
   "shuffle": {
     "label": "Embaralhar Playlist",

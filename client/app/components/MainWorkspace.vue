@@ -383,6 +383,9 @@ if (import.meta.client) {
   });
 }
 const noteEditRequest = useState<string | null>('playlistNoteEditRequest', () => null);
+// The video check works in the background from the moment a show is open (see
+// useVideoPreflight): it needs an owner that is always there.
+if (import.meta.client && window.electronAPI?.videoOutput?.checkFrame) useVideoPreflight();
 const playlistSearchFocusRequest = useState<number>('playlistSearchFocusRequest', () => 0);
 const importExpanded = useState<boolean>('ImportPanel.expanded', () => false);
 const tallImportPanel = computed(() => !showProjectSettings.value && !!visibleImportPanel.value && !autoSizeImportPanel.value

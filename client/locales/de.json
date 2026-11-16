@@ -424,7 +424,7 @@
     "title": "Video-Check vor der Show",
     "start": "Videos prüfen",
     "cancel": "Prüfung abbrechen",
-    "help": "Prüft jeden Video-Cue am Einstiegspunkt, in der Mitte und kurz vor dem Ende.",
+    "help": "Videos werden automatisch geprüft, solange nichts abgespielt wird: am Einstiegspunkt, in der Mitte und kurz vor dem Ende. Ein Video, das dieser Computer nicht anzeigen kann, wird neben dem Original in eine Kopie umgewandelt, die er anzeigen kann.",
     "waitForIdle": "Verfügbar, wenn Wiedergabe und Vorschau gestoppt sind.",
     "running": "Videos werden geprüft · {checked}/{total}",
     "empty": "Keine Video-Cues in dieser Show.",
@@ -443,7 +443,14 @@
     "in-point": "Der Einstiegspunkt des Cues liegt hinter dem Ende des Videos.",
     "duration": "Das Ende des Videos konnte nicht ermittelt werden.",
     "timeout": "Zeitüberschreitung der Videoprüfung nach 8 Sekunden.",
-    "probe-error": "Der Renderer der Videoprüfung wurde beendet."
+    "probe-error": "Der Renderer der Videoprüfung wurde beendet.",
+    "convertingStatus": "{name} wird umgewandelt · {percent}%",
+    "converting": "Wird umgewandelt, damit dieser Computer es anzeigen kann · {percent}%",
+    "converted": "{name} wurde umgewandelt, damit dieser Computer es anzeigen kann",
+    "convertFailed": "Konnte nicht umgewandelt werden. Die Originaldatei ist unverändert.",
+    "convertFailedRemote": "Nicht umgewandelt: Die Audio-Engine läuft auf einem anderen Computer.",
+    "convertFailedMissing": "Nicht umgewandelt: Die Datei wurde auf diesem Computer nicht gefunden.",
+    "convertFailedConverter": "Nicht umgewandelt: Der Konverter konnte nicht heruntergeladen werden."
   },
   "shuffle": {
     "label": "Wiedergabeliste mischen",

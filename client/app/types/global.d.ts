@@ -257,6 +257,11 @@ declare global {
           uuid: string; fileRevision: string | null; inPoint: number; outPoint: number | null;
         }) => Promise<VideoFrameCheckResult | 'canceled'>;
         cancelFrameCheck: (id: string) => void;
+        // Make an H.264 copy of a cue's video beside the original. `path` is
+        // the copy; `reason` says why there is none.
+        convertCue: (request: { id: string; sessionId: string; uuid: string }) => Promise<VideoConvertResult>;
+        cancelConvert: (id: string) => void;
+        onConvertProgress: (callback: (progress: { id: string; uuid: string; percent: number }) => void) => () => void;
         setCaptureSettings: (displayId: string | null, target: VideoStandbyDestination) => Promise<VideoOutputStatus>;
         captureStandby: (source: 'output' | 'display', target: VideoStandbyTarget) => Promise<void>;
         clearStandbyCapture: (target: VideoStandbyTarget) => Promise<void>;
@@ -274,6 +279,11 @@ declare global {
     };
   }
   type VideoFrameCheckResult = 'ok' | 'unreadable' | 'decode' | 'no-frame' | 'in-point' | 'duration' | 'timeout' | 'probe-error';
+  type VideoConvertResult =
+    | { status: 'converted' | 'reused'; path: string }
+    | { status: 'failed' | 'canceled'; reason: VideoConvertFailure | null };
+  type VideoConvertFailure = 'remote' | 'missing' | 'no-converter' | 'no-encoder' | 'no-picture'
+    | 'already-converted' | 'converter' | 'stalled' | 'write';
   interface VideoOutputShortcut {
     key: string;
     code: string;

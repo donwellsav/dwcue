@@ -451,6 +451,35 @@ assert.match(
 );
 const mainWorkspace = read('client/app/components/MainWorkspace.vue');
 const playbackControls = read('client/app/components/PlaybackControls.vue');
+
+// The background video check and its conversions must never compete with a show.
+const videoPreflight = read('client/app/composables/useVideoPreflight.ts');
+const videoConvert = read('client/electron/video-convert.js');
+assert.match(
+  videoPreflight,
+  /watch\(\[ready, transportActive\], \(\[isReady, active\]\) => \{\s*if \(!isReady \|\| active\) cancel\(\);[\s\S]*server\.onCueState\(\(\{ transport \}\) => \{ if \(transport !== 0\) cancel\(\); \}\);/,
+  'anything that plays stops the video check and any conversion at once',
+);
+assert.match(
+  videoPreflight,
+  /const stop = \(\) => api\.cancelConvert\(id\);\s*signal\.addEventListener\('abort', stop, \{ once: true \}\);[\s\S]*if \(busy\.value \|\| !ready\.value \|\| transportActive\.value\) return;[\s\S]*const wanted = computed\(\(\) => ready\.value && !transportActive\.value && !busy\.value && !resting\.value &&/,
+  'stopping the check stops the converter, and neither starts while a cue or Preview is running',
+);
+assert.match(
+  videoPreflight,
+  /stalls = result === 'timeout' \|\| result === 'probe-error' \? stalls \+ 1 : 0;\s*if \(stalls >= 2\) \{\s*phase\.value = 'interrupted';/,
+  'one slow video is flagged and passed over; two in a row end the run rather than queue more disk reads',
+);
+assert.match(
+  videoConvert,
+  /if \(!parsed\.name \|\| parsed\.name\.endsWith\(CONVERTED_SUFFIX\)\) return null;[\s\S]*const partial = `\$\{output\}\.part`;[\s\S]*PRIORITY_BELOW_NORMAL[\s\S]*if \(result\.status !== 'converted'\) fs\.rmSync\(partial, \{ force: true \}\);[\s\S]*fs\.renameSync\(partial, output\);/,
+  'a conversion writes a new copy beside the original at low priority, leaves nothing half-made, and never converts a copy again',
+);
+assert.doesNotMatch(
+  videoConvert,
+  /fs\.(?:rmSync|unlinkSync|writeFileSync|renameSync)\(\s*sourcePath|'-avoid_negative_ts'/,
+  'the original video is never written to, and nothing shifts the copy\'s first picture away from zero',
+);
 const activeCueItem = read('client/app/components/ActiveCueItem.vue');
 assert.equal(
   /\.(?:panic-btn|stop-btn|preview-stop-btn)\s*\{[^}]*(?:#d71920|--color-danger|--state-playing)/.test(playbackControls + activeCueItem),
@@ -2485,6 +2514,11 @@ assert.doesNotMatch(spotifyImportModal + youtubeImportModal, /aria-modal|--dialo
   'online imports must not block the playlist or transport with a modal');
 
 const electronMain = read('client/electron/main.js');
+assert.match(
+  electronMain,
+  /ipcMain\.handle\('video-output:convert-cue', async \(event, request\) => \{\s*requireVideoCheckOwner\(event\);[\s\S]{0,700}if \(readLiveplayConfig\(\)\.mode === 'remote'\) return \{ status: 'failed', reason: 'remote' \};\s*const sourcePath = cueSourcePath\(currentProjectData\?\.folderPath, cue\);[\s\S]{0,700}if \(!await setupFfmpeg\(\) \|\| !ffmpegPath\) return \{ status: 'failed', reason: 'no-converter' \};/,
+  'only the main workspace can ask for a conversion; the file is looked up here, never taken from the request, and only on this computer',
+);
 const electronPreload = read('client/electron/preload.js');
 assert.match(
   electronMain,

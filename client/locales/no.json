@@ -424,7 +424,7 @@
     "title": "Videosjekk før show",
     "start": "Sjekk videoer",
     "cancel": "Avbryt sjekk",
-    "help": "Sjekker hver videocue ved inngangspunktet, midtpunktet og nær slutten.",
+    "help": "Videoer sjekkes automatisk når ingenting spilles av: ved inngangspunktet, midtpunktet og nær slutten. En video som denne datamaskinen ikke kan vise, konverteres til en kopi den kan vise, ved siden av originalen.",
     "waitForIdle": "Tilgjengelig når avspilling og forhåndsvisning er stoppet.",
     "running": "Sjekker videoer · {checked}/{total}",
     "empty": "Ingen videocuer i dette showet.",
@@ -443,7 +443,14 @@
     "in-point": "Cuens inngangspunkt ligger etter slutten av videoen.",
     "duration": "Kunne ikke fastslå slutten på videoen.",
     "timeout": "Videosjekken ble tidsavbrutt etter 8 sekunder.",
-    "probe-error": "Videosjekkens gjengiver stoppet."
+    "probe-error": "Videosjekkens gjengiver stoppet.",
+    "convertingStatus": "Konverterer {name} · {percent}%",
+    "converting": "Konverteres slik at denne datamaskinen kan vise den · {percent}%",
+    "converted": "{name} ble konvertert slik at denne datamaskinen kan vise den",
+    "convertFailed": "Kunne ikke konverteres. Originalfilen er uendret.",
+    "convertFailedRemote": "Ikke konvertert: Lydmotoren kjører på en annen datamaskin.",
+    "convertFailedMissing": "Ikke konvertert: Filen ble ikke funnet på denne datamaskinen.",
+    "convertFailedConverter": "Ikke konvertert: Konverteringsprogrammet kunne ikke lastes ned."
   },
   "shuffle": {
     "label": "Bland spilleliste",

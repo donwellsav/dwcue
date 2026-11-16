@@ -424,7 +424,7 @@
     "title": "演出前视频检查",
     "start": "检查视频",
     "cancel": "取消检查",
-    "help": "检查每个视频信号的入点、中点和接近结尾处。",
+    "help": "在没有播放时会自动检查视频：检查入点、中点和接近结尾处。本计算机无法显示的视频，会在原文件旁转换为可以显示的副本。",
     "waitForIdle": "播放和预听停止后可用。",
     "running": "正在检查视频 · {checked}/{total}",
     "empty": "此演出中没有视频信号。",
@@ -443,7 +443,14 @@
     "in-point": "信号入点超出视频范围。",
     "duration": "无法确定视频的结尾。",
     "timeout": "视频检查在 8 秒后超时。",
-    "probe-error": "视频检查渲染器已停止。"
+    "probe-error": "视频检查渲染器已停止。",
+    "convertingStatus": "正在转换 {name} · {percent}%",
+    "converting": "正在转换，以便本计算机能够显示 · {percent}%",
+    "converted": "已转换 {name}，本计算机现在可以显示",
+    "convertFailed": "无法转换。原文件未更改。",
+    "convertFailedRemote": "未转换：音频引擎运行在另一台计算机上。",
+    "convertFailedMissing": "未转换：在本计算机上找不到该文件。",
+    "convertFailedConverter": "未转换：无法下载转换器。"
   },
   "shuffle": {
     "label": "随机播放列表",

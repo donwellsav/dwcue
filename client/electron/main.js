@@ -40,6 +40,7 @@ const { createStandbyCaptureStore, findCaptureCue, captureImageUrl } = require('
 const { DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameCaptureRect } = require('./video-output-framing.mjs');
 const { planGeometryCorrection, readViewportReport } = require('./video-output-geometry');
 const { checkVideoFrame } = require('./video-frame-check');
+const { convertVideoForOutput, cueSourcePath } = require('./video-convert');
 const { createAppLifecycleActions, createWillQuitHandler } = require('./terminal-action');
 const { createOperatorManual } = require('./operator-manual');
 const {
@@ -3771,6 +3772,63 @@ ipcMain.handle('video-output:check-frame', async (event, request) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Converting a video this machine cannot show
+// ---------------------------------------------------------------------------
+// The renderer names the cue; where its file is comes from the project data
+// held here. The copy is made beside the original with the converter the app
+// already downloads for online imports (see video-convert.js).
+let videoConversion = null;
+
+ipcMain.on('video-output:cancel-convert', (event, conversionId) => {
+  if (event.sender !== mainWindow?.webContents || !event.senderFrame || event.senderFrame !== event.sender.mainFrame) return;
+  if (videoConversion?.id === conversionId) videoConversion.controller.abort();
+});
+
+ipcMain.handle('video-output:convert-cue', async (event, request) => {
+  requireVideoCheckOwner(event);
+  requireBoundedIpcObject(request, 'video conversion', 4096);
+  const id = requireIpcString(request?.id, 'conversionId', 64);
+  const sessionId = requireIpcString(request.sessionId, 'sessionId', 256);
+  const uuid = requireIpcString(request.uuid, 'itemUuid', 256);
+  const cue = sessionId === currentCaptureSession ? findCaptureCue(currentProjectData, uuid) : null;
+  if (!cue?.hasVideo) throw new Error('The video cue is no longer in the current show.');
+  if (videoConversion) throw new Error('A video conversion is already running.');
+  // The show's files are on this computer only when the engine is.
+  if (readLiveplayConfig().mode === 'remote') return { status: 'failed', reason: 'remote' };
+  const sourcePath = cueSourcePath(currentProjectData?.folderPath, cue);
+  if (!sourcePath) return { status: 'failed', reason: 'missing' };
+
+  const owner = event.sender;
+  const controller = new AbortController();
+  videoConversion = { id, controller };
+  const cancel = () => controller.abort();
+  owner.once('destroyed', cancel);
+  owner.once('render-process-gone', cancel);
+  try {
+    if (!await setupFfmpeg() || !ffmpegPath) return { status: 'failed', reason: 'no-converter' };
+    let reported = -1;
+    const result = await convertVideoForOutput({
+      ffmpegPath, sourcePath, signal: controller.signal,
+      onProgress: (value) => {
+        const percent = Math.floor(value * 100);
+        if (percent === reported || owner.isDestroyed()) return;
+        reported = percent;
+        owner.send('video-output:convert-progress', { id, uuid, percent });
+      },
+    });
+    if (result.status === 'converted' || result.status === 'reused') return { status: result.status, path: result.path };
+    if (result.status === 'failed') console.warn('[video-convert]', path.basename(sourcePath), result.reason, result.detail ?? '');
+    return { status: result.status, reason: result.reason ?? null };
+  } finally {
+    videoConversion = null;
+    if (!owner.isDestroyed()) {
+      owner.removeListener('destroyed', cancel);
+      owner.removeListener('render-process-gone', cancel);
+    }
+  }
+});
+
 ipcMain.handle('video-output:set-capture-settings', (event, displayId, target) => {
   requireCaptureOwner(event);
   if (target !== 'session' && target !== 'cue') throw new TypeError('Invalid standby capture destination.');
@@ -5173,6 +5231,7 @@ ipcMain.on('sync-project-data', (event, projectData, identity, captureSession = 
   const nextCaptureSession = projectData ? captureSession : null;
   if (nextCaptureSession !== currentCaptureSession || (identity && !sameIdentity(identity, currentProjectIdentity))) {
     videoFrameProbe?.controller.abort();
+    videoConversion?.controller.abort();
     videoStandbyCaptures.reset();
     notifyStandbyCaptureChanged();
   }

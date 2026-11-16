@@ -288,6 +288,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setFraming:   (framing)    => ipcRenderer.invoke('video-output:set-framing', framing),
     checkFrame: (request) => ipcRenderer.invoke('video-output:check-frame', request),
     cancelFrameCheck: (id) => ipcRenderer.send('video-output:cancel-frame-check', id),
+    convertCue: (request) => ipcRenderer.invoke('video-output:convert-cue', request),
+    cancelConvert: (id) => ipcRenderer.send('video-output:cancel-convert', id),
+    onConvertProgress: (callback) => {
+      const listener = (_event, progress) => callback(progress);
+      ipcRenderer.on('video-output:convert-progress', listener);
+      return () => ipcRenderer.removeListener('video-output:convert-progress', listener);
+    },
     setCaptureSettings: (displayId, target) => ipcRenderer.invoke('video-output:set-capture-settings', displayId, target),
     captureStandby: (source, target) => ipcRenderer.invoke('video-output:capture-standby', source, target),
     clearStandbyCapture: (target) => ipcRenderer.invoke('video-output:clear-standby-capture', target),

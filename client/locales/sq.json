@@ -424,7 +424,7 @@
     "title": "Kontrolli i videove para shfaqjes",
     "start": "Kontrollo videot",
     "cancel": "Anulo kontrollin",
-    "help": "Kontrollon çdo video cue në pikën e hyrjes, në mes dhe afër fundit.",
+    "help": "Videot kontrollohen automatikisht kur nuk po luan asgjë: në pikën e hyrjes, në mes dhe afër fundit. Një video që ky kompjuter nuk mund ta shfaqë konvertohet në një kopje që ai mund ta shfaqë, pranë origjinalit.",
     "waitForIdle": "Disponueshme kur luajtja dhe Paraparimi janë ndalur.",
     "running": "Po kontrollohen videot · {checked}/{total}",
     "empty": "Nuk ka video cue në këtë shfaqje.",
@@ -443,7 +443,14 @@
     "in-point": "Pika e hyrjes së cue-së është përtej videos.",
     "duration": "Fundi i videos nuk mund të përcaktohej.",
     "timeout": "Kontrolli i videos skadoi pas 8 sekondash.",
-    "probe-error": "Procesi i kontrollit të videos u ndal."
+    "probe-error": "Procesi i kontrollit të videos u ndal.",
+    "convertingStatus": "Po konvertohet {name} · {percent}%",
+    "converting": "Po konvertohet që ky kompjuter ta shfaqë · {percent}%",
+    "converted": "{name} u konvertua që ky kompjuter ta shfaqë",
+    "convertFailed": "Nuk u konvertua dot. Skedari origjinal nuk është ndryshuar.",
+    "convertFailedRemote": "Nuk u konvertua: motori audio xhiron në një kompjuter tjetër.",
+    "convertFailedMissing": "Nuk u konvertua: skedari nuk u gjet në këtë kompjuter.",
+    "convertFailedConverter": "Nuk u konvertua: konvertuesi nuk u shkarkua dot."
   },
   "shuffle": {
     "label": "Përziej listën",

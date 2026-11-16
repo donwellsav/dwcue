@@ -424,7 +424,7 @@
     "title": "Videokontroll före showen",
     "start": "Kontrollera videor",
     "cancel": "Avbryt kontroll",
-    "help": "Kontrollerar varje videocue vid ingångspunkten, mitten och nära slutet.",
+    "help": "Videor kontrolleras automatiskt när inget spelas upp: vid ingångspunkten, mitten och nära slutet. En video som den här datorn inte kan visa konverteras till en kopia som den kan visa, bredvid originalet.",
     "waitForIdle": "Tillgänglig när uppspelning och förhandsgranskning är stoppade.",
     "running": "Kontrollerar videor · {checked}/{total}",
     "empty": "Inga videocuer i den här föreställningen.",
@@ -443,7 +443,14 @@
     "in-point": "Cuens ingångspunkt ligger efter videons slut.",
     "duration": "Videons slut kunde inte fastställas.",
     "timeout": "Videokontrollen översteg tidsgränsen på 8 sekunder.",
-    "probe-error": "Videokontrollens renderare stoppades."
+    "probe-error": "Videokontrollens renderare stoppades.",
+    "convertingStatus": "Konverterar {name} · {percent}%",
+    "converting": "Konverteras så att den här datorn kan visa den · {percent}%",
+    "converted": "{name} konverterades så att den här datorn kan visa den",
+    "convertFailed": "Kunde inte konverteras. Originalfilen är oförändrad.",
+    "convertFailedRemote": "Inte konverterad: ljudmotorn körs på en annan dator.",
+    "convertFailedMissing": "Inte konverterad: filen hittades inte på den här datorn.",
+    "convertFailedConverter": "Inte konverterad: konverteraren kunde inte laddas ner."
   },
   "shuffle": {
     "label": "Blanda spellistan",

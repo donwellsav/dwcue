@@ -452,7 +452,7 @@
               <ul v-if="videoCheckFindings.length" class="video-check-findings" :aria-label="t('videoCheck.findings')">
                 <li v-for="finding in videoCheckFindings" :key="finding.uuid">
                   <strong>{{ finding.label }}{{ finding.label ? ' · ' : '' }}{{ finding.name }}</strong>
-                  <span>{{ t(`videoCheck.${finding.reason}`) }}</span>
+                  <span>{{ finding.detail }}</span>
                 </li>
               </ul>
             </div>
@@ -828,7 +828,7 @@ const {
   busy: videoCheckBusy, phase: videoCheckPhase, ready: videoCheckReady,
   transportActive: videoCheckTransportActive, findings: videoCheckFindings, message: videoCheckMessage,
   start: startVideoCheck, cancel: cancelVideoCheck,
-} = useVideoPreflight(computed(() => props.open && activeTab.value === 'video'));
+} = useVideoPreflight();
 const tabs = computed<SettingsTab[]>(() => [
   { id: 'audio', icon: 'graphic_eq', label: t('settings.tabAudioRouting') },
   { id: 'playback', icon: 'play_circle', label: t('settings.tabPlaybackBehaviour') },

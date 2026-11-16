@@ -424,7 +424,7 @@
     "title": "Pre-show video check",
     "start": "Check Videos",
     "cancel": "Cancel Check",
-    "help": "Checks each video cue at its In point, midpoint, and near its end.",
+    "help": "Videos are checked automatically while nothing is playing: at the In point, the midpoint and near the end. A video this computer cannot show is converted to a copy it can show, beside the original.",
     "waitForIdle": "Available when playback and Preview are stopped.",
     "running": "Checking videos · {checked}/{total}",
     "empty": "No video cues in this show.",
@@ -443,7 +443,14 @@
     "in-point": "Cue In point is beyond the video.",
     "duration": "Could not determine the video’s end.",
     "timeout": "Video check timed out after 8 seconds.",
-    "probe-error": "Video check renderer stopped."
+    "probe-error": "Video check renderer stopped.",
+    "convertingStatus": "Converting {name} · {percent}%",
+    "converting": "Being converted so this computer can show it · {percent}%",
+    "converted": "Converted {name} so this computer can show it",
+    "convertFailed": "Could not be converted. The original file is unchanged.",
+    "convertFailedRemote": "Not converted: the audio engine runs on another computer.",
+    "convertFailedMissing": "Not converted: the file was not found on this computer.",
+    "convertFailedConverter": "Not converted: the converter could not be downloaded."
   },
   "shuffle": {
     "label": "Shuffle Playlist",

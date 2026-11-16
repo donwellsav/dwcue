@@ -676,11 +676,19 @@ Use H.264 or HEVC media for this source edition. ProRes and other production cod
 
 ### Check videos before the show
 
-1. With playback and Preview stopped, open **Settings → Video Output** and choose **Check Videos**. The check silently samples each video cue at its **In** point, midpoint, and just before its **Out** point. It uses the end of the video if there’s no valid Out point. It includes cues inside groups and video QuickPlays. Video Output can stay closed.
-2. Read the count and cue names in the dock. Cues that need attention are marked **VIDEO !** on the playlist or QuickPlay tile. For a missing or unreadable clip, check the media location and replace or restore the file. For a decode failure, verify the source or use a compatible copy, then run **Check Videos** again.
-3. Use **Cancel Check** to end the scan. Playback, Stop All, or leaving the panel also ends it. If a clip times out, the scan flags it and ends the run. The status shows how many cues were checked.
+While nothing is playing, the app checks every video cue by itself: when a show opens, after an import, and again when a cue's file or trim changes. It silently samples each video at its **In** point, midpoint, and just before its **Out** point, or the end of the video if there is no valid Out point. It includes cues inside groups and video QuickPlays. Video Output can stay closed.
 
-The check is advisory and keeps the playlist and transport available. Run it again after changing the In or Out point or replacing a video. A pass covers the sampled pictures. Decode errors between those samples can still occur.
+H.264, HEVC (H.265), VP8, VP9 and AV1 play as they are. A video whose picture this computer cannot show is converted automatically, for example ProRes, DNxHD and DNxHR, MPEG-2, Xvid or DivX AVI, Motion JPEG, camera AVCHD (.mts) and WMV. HEVC depends on the computer; where it cannot be shown it is converted too.
+
+- The app makes an H.264 copy beside the original, named with **(converted)**, points the cue at the copy and checks the copy. The original file is never changed. The cue keeps its name, level and trim, and the top bar names each cue as it is converted.
+- The first conversion downloads the converter, the same one the online imports use, so the computer needs the internet once.
+- A conversion works at low priority and stops the moment a cue or Preview starts. It starts again by itself when the show is idle. A long film takes minutes: let it finish before doors.
+- The copy takes disk space beside the original, and a picture with a transparent background loses its transparency.
+- Conversion needs the files on this computer. When the audio engine runs on another computer, nothing is converted and the cue stays marked.
+
+Cues that still need attention are marked **VIDEO !** on the playlist or QuickPlay tile, and **Settings → Video Output** lists them with the reason. For a missing or unreadable clip, restore or replace the file. **Check Videos** checks every video again and tries the conversions again; **Cancel Check** ends a run, and so does playback or Stop All. One clip that times out is flagged and the check moves on. Two in a row end the run, because that points at storage that has stopped answering.
+
+The check is advisory and keeps the playlist and transport available. A pass covers the sampled pictures. Decode errors between those samples can still occur.
 
 ### Set picture framing
 
@@ -1003,7 +1011,7 @@ Share a minimal sample only with permission. Remove tokens, personal paths, priv
 - [ ] Correct GO target is visible; shortcuts checked against this project.
 - [ ] Required QuickPlays and their Play/Stop, keyboard and MIDI controls checked.
 - [ ] MIDI mappings checked on this machine; unused controllers disconnected or filtered.
-- [ ] **Check Videos** completed and flagged cues resolved before rehearsal.
+- [ ] Video check reads **All pictures decoded**: conversions finished and flagged cues resolved before rehearsal.
 - [ ] Video Output opened, display verified, and first frame/standby/fallback checked.
 - [ ] Independent audio emergency-silence and video-blackout procedures agreed.
 - [ ] Mains power, sleep policy, notifications, cables, and spare media ready.

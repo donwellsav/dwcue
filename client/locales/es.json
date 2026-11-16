@@ -424,7 +424,7 @@
     "title": "Comprobación de vídeo previa al espectáculo",
     "start": "Comprobar vídeos",
     "cancel": "Cancelar comprobación",
-    "help": "Comprueba cada cue de vídeo en su punto de entrada, en el punto medio y cerca del final.",
+    "help": "Los vídeos se comprueban automáticamente mientras no se reproduce nada: en el punto de entrada, en el punto medio y cerca del final. Un vídeo que este ordenador no puede mostrar se convierte en una copia que sí puede mostrar, junto al original.",
     "waitForIdle": "Disponible cuando la reproducción y la vista previa están detenidas.",
     "running": "Comprobando vídeos · {checked}/{total}",
     "empty": "No hay cues de vídeo en este espectáculo.",
@@ -443,7 +443,14 @@
     "in-point": "El punto de entrada del cue está más allá del vídeo.",
     "duration": "No se pudo determinar el final del vídeo.",
     "timeout": "La comprobación de vídeo agotó el tiempo tras 8 segundos.",
-    "probe-error": "El renderizador de comprobación de vídeo se detuvo."
+    "probe-error": "El renderizador de comprobación de vídeo se detuvo.",
+    "convertingStatus": "Convirtiendo {name} · {percent}%",
+    "converting": "Se está convirtiendo para que este ordenador pueda mostrarlo · {percent}%",
+    "converted": "Se convirtió {name} para que este ordenador pueda mostrarlo",
+    "convertFailed": "No se pudo convertir. El archivo original no ha cambiado.",
+    "convertFailedRemote": "No convertido: el motor de audio se ejecuta en otro ordenador.",
+    "convertFailedMissing": "No convertido: no se encontró el archivo en este ordenador.",
+    "convertFailedConverter": "No convertido: no se pudo descargar el conversor."
   },
   "shuffle": {
     "label": "Mezclar playlist",

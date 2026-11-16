@@ -424,7 +424,7 @@
     "title": "Vérification vidéo avant spectacle",
     "start": "Vérifier les vidéos",
     "cancel": "Annuler la vérification",
-    "help": "Vérifie chaque signal vidéo à son point d’entrée, à mi-parcours et près de sa fin.",
+    "help": "Les vidéos sont vérifiées automatiquement lorsque rien n’est en lecture : au point d’entrée, à mi-parcours et près de la fin. Une vidéo que cet ordinateur ne peut pas afficher est convertie en une copie qu’il peut afficher, à côté de l’original.",
     "waitForIdle": "Disponible lorsque la lecture et l’aperçu sont arrêtés.",
     "running": "Vérification des vidéos · {checked}/{total}",
     "empty": "Aucun signal vidéo dans ce spectacle.",
@@ -443,7 +443,14 @@
     "in-point": "Le point d’entrée du signal dépasse la vidéo.",
     "duration": "Impossible de déterminer la fin de la vidéo.",
     "timeout": "La vérification vidéo a expiré après 8 secondes.",
-    "probe-error": "Le moteur de vérification vidéo s’est arrêté."
+    "probe-error": "Le moteur de vérification vidéo s’est arrêté.",
+    "convertingStatus": "Conversion de {name} · {percent}%",
+    "converting": "Conversion en cours pour que cet ordinateur puisse l’afficher · {percent}%",
+    "converted": "{name} a été converti pour que cet ordinateur puisse l’afficher",
+    "convertFailed": "La conversion a échoué. Le fichier d’origine n’a pas été modifié.",
+    "convertFailedRemote": "Non converti : le moteur audio fonctionne sur un autre ordinateur.",
+    "convertFailedMissing": "Non converti : le fichier est introuvable sur cet ordinateur.",
+    "convertFailedConverter": "Non converti : le convertisseur n’a pas pu être téléchargé."
   },
   "shuffle": {
     "label": "Mélanger la playlist",

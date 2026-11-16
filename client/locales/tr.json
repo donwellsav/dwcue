@@ -424,7 +424,7 @@
     "title": "Gösteri öncesi video kontrolü",
     "start": "Videoları Kontrol Et",
     "cancel": "Kontrolü İptal Et",
-    "help": "Her video cue'yu Giriş noktasında, ortasında ve sonuna yakın bir noktada kontrol eder.",
+    "help": "Videolar, hiçbir şey oynatılmazken otomatik olarak kontrol edilir: Giriş noktasında, ortasında ve sonuna yakın bir noktada. Bu bilgisayarın gösteremediği bir video, orijinalin yanında gösterebileceği bir kopyaya dönüştürülür.",
     "waitForIdle": "Oynatma ve Ön İzleme durduğunda kullanılabilir.",
     "running": "Videolar kontrol ediliyor · {checked}/{total}",
     "empty": "Bu gösteride video cue yok.",
@@ -443,7 +443,14 @@
     "in-point": "Cue Giriş noktası videonun ötesinde.",
     "duration": "Videonun sonu belirlenemedi.",
     "timeout": "Video kontrolü 8 saniye sonra zaman aşımına uğradı.",
-    "probe-error": "Video kontrol işleyicisi durdu."
+    "probe-error": "Video kontrol işleyicisi durdu.",
+    "convertingStatus": "{name} dönüştürülüyor · %{percent}",
+    "converting": "Bu bilgisayarın gösterebilmesi için dönüştürülüyor · %{percent}",
+    "converted": "{name}, bu bilgisayarın gösterebilmesi için dönüştürüldü",
+    "convertFailed": "Dönüştürülemedi. Orijinal dosya değişmedi.",
+    "convertFailedRemote": "Dönüştürülmedi: Ses motoru başka bir bilgisayarda çalışıyor.",
+    "convertFailedMissing": "Dönüştürülmedi: Dosya bu bilgisayarda bulunamadı.",
+    "convertFailedConverter": "Dönüştürülmedi: Dönüştürücü indirilemedi."
   },
   "shuffle": {
     "label": "Çalma Listesini Karıştır",

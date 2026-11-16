@@ -424,7 +424,7 @@
     "title": "Controllo video pre-show",
     "start": "Controlla video",
     "cancel": "Annulla controllo",
-    "help": "Controlla ogni segnale video al punto di ingresso, a metà e verso la fine.",
+    "help": "I video vengono controllati automaticamente quando nulla è in riproduzione: al punto di ingresso, a metà e verso la fine. Un video che questo computer non riesce a mostrare viene convertito in una copia che può mostrare, accanto all’originale.",
     "waitForIdle": "Disponibile quando riproduzione e anteprima sono ferme.",
     "running": "Controllo video · {checked}/{total}",
     "empty": "Nessun segnale video in questo spettacolo.",
@@ -443,7 +443,14 @@
     "in-point": "Il punto di ingresso del segnale è oltre la fine del video.",
     "duration": "Impossibile determinare la fine del video.",
     "timeout": "Controllo video scaduto dopo 8 secondi.",
-    "probe-error": "Il renderer del controllo video si è arrestato."
+    "probe-error": "Il renderer del controllo video si è arrestato.",
+    "convertingStatus": "Conversione di {name} · {percent}%",
+    "converting": "In conversione per permettere a questo computer di mostrarlo · {percent}%",
+    "converted": "{name} convertito per permettere a questo computer di mostrarlo",
+    "convertFailed": "Impossibile convertire. Il file originale non è stato modificato.",
+    "convertFailedRemote": "Non convertito: il motore audio è in esecuzione su un altro computer.",
+    "convertFailedMissing": "Non convertito: il file non è stato trovato su questo computer.",
+    "convertFailedConverter": "Non convertito: impossibile scaricare il convertitore."
   },
   "shuffle": {
     "label": "Mescola playlist",

@@ -424,7 +424,7 @@
     "title": "Verificare video înainte de spectacol",
     "start": "Verifică videoclipurile",
     "cancel": "Anulează verificarea",
-    "help": "Verifică fiecare cue video la punctul de intrare, la mijloc și aproape de final.",
+    "help": "Videoclipurile sunt verificate automat cât timp nu se redă nimic: la punctul de intrare, la mijloc și aproape de final. Un videoclip pe care acest computer nu îl poate afișa este convertit într-o copie pe care o poate afișa, lângă original.",
     "waitForIdle": "Disponibil când redarea și previzualizarea sunt oprite.",
     "running": "Se verifică videoclipurile · {checked}/{total}",
     "empty": "Niciun cue video în acest spectacol.",
@@ -443,7 +443,14 @@
     "in-point": "Punctul de intrare al cue-ului depășește videoclipul.",
     "duration": "Sfârșitul videoclipului nu a putut fi determinat.",
     "timeout": "Verificarea videoclipului a expirat după 8 secunde.",
-    "probe-error": "Procesul de verificare video s-a oprit."
+    "probe-error": "Procesul de verificare video s-a oprit.",
+    "convertingStatus": "Se convertește {name} · {percent}%",
+    "converting": "Se convertește pentru ca acest computer să îl poată afișa · {percent}%",
+    "converted": "{name} a fost convertit pentru ca acest computer să îl poată afișa",
+    "convertFailed": "Conversia nu a reușit. Fișierul original este neschimbat.",
+    "convertFailedRemote": "Neconvertit: motorul audio rulează pe alt computer.",
+    "convertFailedMissing": "Neconvertit: fișierul nu a fost găsit pe acest computer.",
+    "convertFailedConverter": "Neconvertit: convertorul nu a putut fi descărcat."
   },
   "shuffle": {
     "label": "Amestecă playlist-ul",
