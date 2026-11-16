@@ -383,6 +383,7 @@ if (import.meta.client) {
   });
 }
 const noteEditRequest = useState<string | null>('playlistNoteEditRequest', () => null);
+const playlistSearchFocusRequest = useState<number>('playlistSearchFocusRequest', () => 0);
 const importExpanded = useState<boolean>('ImportPanel.expanded', () => false);
 const tallImportPanel = computed(() => !showProjectSettings.value && !!visibleImportPanel.value && !autoSizeImportPanel.value
   && !compactShowCheck.value);
@@ -933,6 +934,10 @@ const handleKeydown = (e: KeyboardEvent) => {
   } else if (key === 'v') {
     e.preventDefault();
     void pasteItemsFromClipboard();
+  } else if (key === 'f' && !e.shiftKey && !isForwardedFromVideoOutput(e)) {
+    // Find: put the cursor in the playlist search field (see PlaylistSearch).
+    e.preventDefault();
+    playlistSearchFocusRequest.value++;
   }
 };
 

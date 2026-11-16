@@ -387,6 +387,8 @@
     "seconds": "秒",
     "clock": "时钟",
     "timeLeft": "剩余时间",
+    "listLeft": "列表剩余",
+    "listLeftHint": "从此处到播放列表结束的总时间：当前播放信号的剩余部分，加上下一个及其后的所有信号。等待 GO 的时间不计算在内。",
     "autosave": "自动保存",
     "unsavedChanges": "未保存的更改",
     "saveFailed": "保存失败",
@@ -409,6 +411,14 @@
     "importAudio": "导入媒体",
     "importHint": "使用导入按钮或将文件拖到此处 — 音频和视频均可",
     "videoCue": "视频信号 — 画面在视频输出上播放"
+  },
+  "playlistSearch": {
+    "placeholder": "查找信号",
+    "label": "在播放列表中查找信号",
+    "tooltip": "输入信号标题、备注或编号的一部分即可跳转。Enter 跳到下一个匹配项，Shift+Enter 跳到上一个。Ctrl/Cmd+F 将光标移到此处。",
+    "clear": "清除搜索",
+    "counter": "{current} / {total}",
+    "noMatch": "无匹配项"
   },
   "videoCheck": {
     "title": "演出前视频检查",

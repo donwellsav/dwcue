@@ -387,6 +387,8 @@
     "seconds": "SEGUNDOS",
     "clock": "Reloj",
     "timeLeft": "Tiempo restante",
+    "listLeft": "Lista restante",
+    "listLeftHint": "Tiempo acumulado desde aquí hasta el final de la lista de reproducción: lo que queda del cue en reproducción, luego «A continuación» y todos los cues siguientes. El tiempo de espera de GO no se cuenta.",
     "autosave": "Autoguardado",
     "unsavedChanges": "Cambios sin guardar",
     "saveFailed": "Error al guardar",
@@ -409,6 +411,14 @@
     "importAudio": "Importar medios",
     "importHint": "Use los botones de importación o arrastre archivos aquí — audio y vídeo funcionan",
     "videoCue": "Cue de vídeo: la imagen se reproduce en la salida de vídeo"
+  },
+  "playlistSearch": {
+    "placeholder": "Buscar cue",
+    "label": "Buscar un cue en la lista de reproducción",
+    "tooltip": "Escriba parte del título, la nota o el número de un cue para ir a él. Enter va a la siguiente coincidencia y Shift+Enter a la anterior. Ctrl/Cmd+F coloca el cursor aquí.",
+    "clear": "Borrar búsqueda",
+    "counter": "{current} de {total}",
+    "noMatch": "Sin resultados"
   },
   "videoCheck": {
     "title": "Comprobación de vídeo previa al espectáculo",

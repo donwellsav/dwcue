@@ -387,6 +387,8 @@
     "seconds": "SECONDI",
     "clock": "Orologio",
     "timeLeft": "Time Left",
+    "listLeft": "Lista rimasta",
+    "listLeftHint": "Tempo totale da qui alla fine della playlist: il resto del segnale in riproduzione, poi «Prossimo» e ogni segnale successivo. Il tempo di attesa del GO non viene conteggiato.",
     "autosave": "Salvataggio automatico",
     "unsavedChanges": "Modifiche non salvate",
     "saveFailed": "Salvataggio non riuscito",
@@ -409,6 +411,14 @@
     "importAudio": "Importa media",
     "importHint": "Usa i pulsanti di import o trascina i file qui — audio e video funzionano",
     "videoCue": "Segnale video — l’immagine va sull’uscita video"
+  },
+  "playlistSearch": {
+    "placeholder": "Trova segnale",
+    "label": "Trova un segnale nella playlist",
+    "tooltip": "Digita una parte del titolo, della nota o del numero di un segnale per passare a esso. Enter va alla corrispondenza successiva, Shift+Enter alla precedente. Ctrl/Cmd+F porta il cursore qui.",
+    "clear": "Cancella ricerca",
+    "counter": "{current} di {total}",
+    "noMatch": "Nessun risultato"
   },
   "videoCheck": {
     "title": "Controllo video pre-show",

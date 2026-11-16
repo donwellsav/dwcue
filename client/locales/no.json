@@ -387,6 +387,8 @@
     "seconds": "SEKUNDER",
     "clock": "Klokke",
     "timeLeft": "Tid igjen",
+    "listLeft": "Liste igjen",
+    "listLeftHint": "Samlet tid herfra til slutten av spillelisten: resten av cuen som spilles, deretter Neste og hver cue etter den. Tid brukt på å vente på GO regnes ikke med.",
     "autosave": "Autolagring",
     "unsavedChanges": "Ulagrede endringer",
     "saveFailed": "Lagring mislyktes",
@@ -409,6 +411,14 @@
     "importAudio": "Importer media",
     "importHint": "Bruk importknappene eller dra filer hit — lyd og video fungerer begge",
     "videoCue": "Videocue — bildet spilles av på videoutgangen"
+  },
+  "playlistSearch": {
+    "placeholder": "Finn cue",
+    "label": "Finn en cue i spillelisten",
+    "tooltip": "Skriv en del av en cues tittel, notat eller nummer for å hoppe til den. Enter går til neste treff, Shift+Enter til forrige. Ctrl/Cmd+F setter markøren her.",
+    "clear": "Tøm søk",
+    "counter": "{current} av {total}",
+    "noMatch": "Ingen treff"
   },
   "videoCheck": {
     "title": "Videosjekk før show",

@@ -387,6 +387,8 @@
     "seconds": "秒",
     "clock": "時計",
     "timeLeft": "残り時間",
+    "listLeft": "リスト残り",
+    "listLeftHint": "ここからプレイリストの最後までの合計時間です。再生中のキューの残り、次へ、そしてそれ以降のすべてのキューを含みます。GO を待つ時間は含まれません。",
     "autosave": "自動保存",
     "unsavedChanges": "未保存の変更",
     "saveFailed": "保存に失敗しました",
@@ -409,6 +411,14 @@
     "importAudio": "メディアをインポート",
     "importHint": "インポートボタンを使うか、ここにファイルをドロップ — 音声も動画も対応",
     "videoCue": "ビデオキュー — 映像は映像出力に表示されます"
+  },
+  "playlistSearch": {
+    "placeholder": "キューを検索",
+    "label": "プレイリスト内のキューを検索",
+    "tooltip": "キューのタイトル、メモ、番号の一部を入力すると、そのキューに移動します。Enter で次の一致、Shift+Enter で前の一致に移動します。Ctrl/Cmd+F でカーソルをここに置きます。",
+    "clear": "検索をクリア",
+    "counter": "{current} / {total}",
+    "noMatch": "一致なし"
   },
   "videoCheck": {
     "title": "本番前ビデオチェック",

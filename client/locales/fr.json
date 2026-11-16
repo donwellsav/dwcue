@@ -387,6 +387,8 @@
     "seconds": "SECONDES",
     "clock": "Horloge",
     "timeLeft": "Temps restant",
+    "listLeft": "Liste restante",
+    "listLeftHint": "Durée cumulée d'ici à la fin de la liste de lecture : le reste du signal en cours, puis « Suivant » et chaque signal qui suit. Le temps d'attente de GO n'est pas compté.",
     "autosave": "Sauvegarde auto",
     "unsavedChanges": "Modifications non enregistrées",
     "saveFailed": "Échec de l’enregistrement",
@@ -409,6 +411,14 @@
     "importAudio": "Importer des médias",
     "importHint": "Utilisez les boutons d'import ou glissez des fichiers ici — audio et vidéo fonctionnent",
     "videoCue": "Signal vidéo — l’image est lue sur la sortie vidéo"
+  },
+  "playlistSearch": {
+    "placeholder": "Trouver un signal",
+    "label": "Trouver un signal dans la liste de lecture",
+    "tooltip": "Saisissez une partie du titre, de la note ou du numéro d'un signal pour y accéder. Enter passe à la correspondance suivante, Shift+Enter à la précédente. Ctrl/Cmd+F place le curseur ici.",
+    "clear": "Effacer la recherche",
+    "counter": "{current} sur {total}",
+    "noMatch": "Aucun résultat"
   },
   "videoCheck": {
     "title": "Vérification vidéo avant spectacle",

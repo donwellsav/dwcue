@@ -14,6 +14,7 @@
       'is-paused': isPaused,
       'is-up-next': isQueuedNext,
       'show-mode': showMode,
+      'is-search-hit': isSearchHit,
       'drag-over-top': dragPosition === 'top',
       'drag-over-bottom': dragPosition === 'bottom',
       'drag-over-group': dragPosition === 'group',
@@ -135,12 +136,10 @@
             class="item-name"
             :aria-pressed="showFileName"
             :title="[visibleTitle, item.note, t(showFileName ? 'actions.showCueTitle' : 'actions.showMediaFilename'), showMode ? '' : t('playlist.noteHint')].filter(Boolean).join('\n')"
-            :style="{ color: durationColor ?? undefined }"
             @click="toggleFileName"
             @dblclick.stop="startNote"
           >{{ visibleTitle }}<span v-if="item.note" class="item-note">{{ item.note }}</span></button>
-          <span v-else class="item-name" :title="[item.displayName, item.note, showMode ? '' : t('playlist.noteHint')].filter(Boolean).join('\n')"
-            :style="{ color: durationColor ?? undefined }" @dblclick.stop="startNote">{{ item.displayName }}<span v-if="item.note" class="item-note">{{ item.note }}</span></span>
+          <span v-else class="item-name" :title="[item.displayName, item.note, showMode ? '' : t('playlist.noteHint')].filter(Boolean).join('\n')" @dblclick.stop="startNote">{{ item.displayName }}<span v-if="item.note" class="item-note">{{ item.note }}</span></span>
           <span
             v-if="isPeaking"
             class="material-symbols-rounded peak-warning-icon"
@@ -154,7 +153,7 @@
 
         <div class="item-state">
           <span v-if="isPaused" class="status-pill paused">{{ t('status.paused') }}</span>
-          <span v-else-if="isPlaying" class="status-pill playing" :class="{ 'status-pill--banded': !!durationColor }" :style="{ backgroundColor: durationColor ?? undefined }">{{ t('status.playing') }}</span>
+          <span v-else-if="isPlaying" class="status-pill playing">{{ t('status.playing') }}</span>
           <span v-if="isPreviewing" class="status-pill preview">{{ t('status.previewing') }}</span>
 
           <!-- Behavior indicators (for audio items) -->
@@ -375,6 +374,10 @@ const { uiMode } = useUiMode();
 // and warnings identical to edit mode.
 const showMode = computed(() => uiMode.value === 'playback');
 const projectControlsReady = computed(() => projectHydrationStatus.value === 'ready');
+
+// The row the playlist search jumped to (see PlaylistSearch).
+const searchHit = useState<string | null>('playlistSearchHit', () => null);
+const isSearchHit = computed(() => searchHit.value === props.item.uuid);
 
 // Playlist note: an optional line beside the title. It is its own field, so
 // the cue's title and the media file's name stay exactly as they are.
@@ -1181,6 +1184,28 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   color: var(--state-up-next-text);
 }
 
+/* A shape as well as a colour, for anyone who cannot tell red from green: a
+   play arrow on the live chip, and on the chip of what is next the same
+   double arrow as the Play Next button. */
+.playlist-item.is-playing:not(.is-paused) > .item-content .item-index::before,
+.playlist-item.is-up-next:not(.is-playing) > .item-content .item-index::before {
+  content: 'play_arrow' / '';
+  flex: none;
+  margin-inline: -3px 1px;
+  font-family: 'Material Symbols Rounded';
+  font-size: 16px;
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  font-variation-settings: 'FILL' 1;
+  font-feature-settings: 'liga';
+}
+
+.playlist-item.is-up-next:not(.is-playing) > .item-content .item-index::before {
+  content: 'fast_forward' / '';
+}
+
 .playlist-item.is-playing.is-paused {
   border-color: var(--color-text-tertiary);
   background: var(--color-surface);
@@ -1593,9 +1618,6 @@ button.item-name {
     color: var(--state-playing-on);
   }
 
-  /* A countdown band paints the pill in its own (bright) colour. */
-  &.status-pill--banded { color: black; }
-
 
   &.paused {
     border: 1px solid var(--color-text-tertiary);
@@ -1652,6 +1674,14 @@ button.item-name {
   margin-left: calc(-1 * var(--freed-lane));
   width: calc(100% + var(--freed-lane));
   max-width: none;
+}
+
+/* In Show Mode a cue inside a group is not indented, but its colour rail is,
+   and the rail stands in that lane: slide the number only as far as the rail. */
+.playlist-item.show-mode.no-preview-lane > .item-content .item-identity {
+  --freed-lane: calc(
+    var(--cue-leading-width, 34px) + var(--row-lane-gap, var(--spacing-sm)) - var(--item-depth-offset, 0px)
+  );
 }
 .group-shuffle-action {
   grid-area: video;
@@ -1711,6 +1741,15 @@ button.item-name {
 .item-name--editing:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 1px;
+}
+
+/* Search hit: a ring just inside the row's own edge, so the red of a live row
+   and the green of Up Next still show around it. The focus-ring colour, not the
+   accent: an operator may pick a red, green or yellow accent, and those colours
+   mean live, Up Next and warning here. */
+.playlist-item.is-search-hit > .item-content {
+  outline: 3px solid var(--color-focus-ring);
+  outline-offset: -6px;
 }
 
 .playlist-item:not(.show-mode) .item-actions,

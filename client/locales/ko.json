@@ -387,6 +387,8 @@
     "seconds": "초",
     "clock": "시계",
     "timeLeft": "남은 시간",
+    "listLeft": "목록 남음",
+    "listLeftHint": "여기서 재생 목록 끝까지의 누적 시간입니다. 재생 중인 큐의 남은 부분, 다음, 그리고 이후의 모든 큐를 포함합니다. GO를 기다리는 시간은 포함되지 않습니다.",
     "autosave": "자동 저장",
     "unsavedChanges": "저장되지 않은 변경 사항",
     "saveFailed": "저장 실패",
@@ -409,6 +411,14 @@
     "importAudio": "미디어 가져오기",
     "importHint": "가져오기 버튼을 사용하거나 파일을 여기로 드래그 — 오디오와 비디오 모두 지원",
     "videoCue": "비디오 큐 — 영상이 비디오 출력에 재생됩니다"
+  },
+  "playlistSearch": {
+    "placeholder": "큐 찾기",
+    "label": "재생 목록에서 큐 찾기",
+    "tooltip": "큐의 제목, 메모 또는 번호의 일부를 입력하면 해당 큐로 이동합니다. Enter는 다음 일치 항목으로, Shift+Enter는 이전 항목으로 이동합니다. Ctrl/Cmd+F는 커서를 여기로 옮깁니다.",
+    "clear": "검색 지우기",
+    "counter": "{current} / {total}",
+    "noMatch": "일치 항목 없음"
   },
   "videoCheck": {
     "title": "공연 전 비디오 점검",

@@ -387,6 +387,8 @@
     "seconds": "SECONDS",
     "clock": "Clock",
     "timeLeft": "Time Left",
+    "listLeft": "List Left",
+    "listLeftHint": "Running time from here to the end of the playlist: the rest of the cue that is playing, then Up Next and every cue after it. Time spent waiting for GO is not counted.",
     "autosave": "Autosave",
     "unsavedChanges": "Unsaved Changes",
     "saveFailed": "Save failed",
@@ -409,6 +411,14 @@
     "importAudio": "Import Media",
     "importHint": "Use the import buttons or drag files here — audio and video both work",
     "videoCue": "Video cue — picture plays on the Video Output"
+  },
+  "playlistSearch": {
+    "placeholder": "Find cue",
+    "label": "Find a cue in the playlist",
+    "tooltip": "Type part of a cue's title, note or number to jump to it. Enter goes to the next match, Shift+Enter to the previous one. Ctrl/Cmd+F puts the cursor here.",
+    "clear": "Clear search",
+    "counter": "{current} of {total}",
+    "noMatch": "No match"
   },
   "videoCheck": {
     "title": "Pre-show video check",

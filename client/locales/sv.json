@@ -387,6 +387,8 @@
     "seconds": "SEKUNDER",
     "clock": "Klocka",
     "timeLeft": "Återstående tid",
+    "listLeft": "Lista kvar",
+    "listLeftHint": "Total tid härifrån till slutet av spellistan: resten av cuen som spelas, sedan Nästa och varje cue efter den. Tid som går åt till att vänta på GO räknas inte.",
     "autosave": "Autospara",
     "unsavedChanges": "Osparade ändringar",
     "saveFailed": "Det gick inte att spara",
@@ -409,6 +411,14 @@
     "importAudio": "Importera media",
     "importHint": "Använd importknapparna eller dra filer hit — ljud och video fungerar båda",
     "videoCue": "Videocue — bilden spelas på videoutgången"
+  },
+  "playlistSearch": {
+    "placeholder": "Hitta cue",
+    "label": "Hitta en cue i spellistan",
+    "tooltip": "Skriv en del av en cues titel, anteckning eller nummer för att hoppa till den. Enter går till nästa träff, Shift+Enter till föregående. Ctrl/Cmd+F placerar markören här.",
+    "clear": "Rensa sökning",
+    "counter": "{current} av {total}",
+    "noMatch": "Ingen träff"
   },
   "videoCheck": {
     "title": "Videokontroll före showen",

@@ -7,6 +7,9 @@
         <Btn type="button" class="locate-next" icon="my_location" text=""
           :title="t('actions.locateUpNext')" :aria-label="t('actions.locateUpNext')"
           :disabled="readOnly || !locatableNextUuid" @click="locateUpNext" />
+        <!-- Shown in Edit Mode and Show Mode alike. It jumps to a row; it never
+             filters or reorders the list. -->
+        <PlaylistSearch :disabled="readOnly || projectHydrationStatus !== 'ready'" @jump="jumpToSearchHit" />
         <Btn v-if="backupMusicGroup?.type === 'group' || currentProject?.settings?.keepMusicGoing"
           type="button" class="music-toggle" icon="music_note" text=""
           :title="musicContinuityTitle" :aria-label="t('musicContinuity.toggle')"
@@ -106,6 +109,7 @@ import YouTubeImportModal from './YouTubeImportModal.vue';
 import AudioImportModal from './AudioImportModal.vue';
 import SpotifyImportModal from './SpotifyImportModal.vue';
 import Btn from './Btn.vue';
+import PlaylistSearch from './PlaylistSearch.vue';
 import type { AudioItem, GroupItem, Project, ProjectSettings } from '~/types/project';
 import {
   DEFAULT_AUDIO_ITEM,
@@ -131,6 +135,7 @@ const {
   saveProject,
   getAllItemsFlat,
   findItemByUuid,
+  toggleItemSelection,
   projectEpoch,
   workspaceImportPanel,
   projectHydrationStatus,
@@ -176,6 +181,9 @@ const server = useLiveplayServer();
 // the `selectedItem` computed) means we react to the selection MOVING, not to
 // the item object being rebuilt by a server-pushed document.
 const selectedItemUuid = useState<string | null>('selectedItemUuid', () => null);
+// The row the playlist search is pointing at (see PlaylistSearch). Its groups
+// are held open with the selection's for as long as it is outlined.
+const searchHitUuid = useState<string | null>('playlistSearchHit', () => null);
 const showMode = computed(() => uiMode.value === 'playback');
 // The time lane is as wide as this show's longest cue needs: 96px fits an
 // hour-long countdown, but a show of short cues gives the difference to titles.
@@ -301,9 +309,22 @@ function scrollItemIntoView(uuid: string, block: ScrollLogicalPosition = 'center
 function locateUpNext() {
   const uuid = locatableNextUuid.value;
   if (!uuid) return;
-  revealItems(selectedItemUuid.value, uuid);
+  revealItems(selectedItemUuid.value, searchHitUuid.value, uuid);
   nextTick(() => {
     if (locatableNextUuid.value === uuid) scrollItemIntoView(uuid, 'end');
+  });
+}
+
+// The search field found a row. It is reached the way Up Next is located: hold
+// open the groups that hide it, then scroll. Nothing is filtered or reordered.
+function jumpToSearchHit(uuid: string) {
+  // Edit Mode selects the row as a click would. Show Mode rows cannot be
+  // selected, so there the row is only scrolled to and outlined.
+  if (!showMode.value) toggleItemSelection(uuid, false, false);
+  revealItems(selectedItemUuid.value, uuid);
+  nextTick(() => {
+    // Centred, so the cues around the hit can be read as well.
+    if (searchHitUuid.value === uuid) scrollItemIntoView(uuid, 'center');
   });
 }
 
@@ -327,7 +348,7 @@ watch(
 // already fully visible, so ordinary mouse clicks never jerk the list around,
 // and an off-screen selection is brought in with the smallest move that works.
 watch(selectedItemUuid, (uuid) => {
-  revealItems(uuid);
+  revealItems(uuid, searchHitUuid.value);
   if (!uuid) return;
   // A revealed group renders its children on the next flush, so the row we
   // want to scroll to does not exist yet at this point.
@@ -1327,7 +1348,8 @@ const handleDrop = async (e: DragEvent) => {
 
 <style scoped>
 .playlist-view {
-  --cue-number-width: 36px;
+  /* Room for the cue number and the live / next shape beside it. */
+  --cue-number-width: 46px;
   --cue-state-width: 108px;
   --cue-time-width: 96px;
   width: 100%;
@@ -1339,7 +1361,7 @@ const handleDrop = async (e: DragEvent) => {
 }
 
 .playlist-view.show-mode {
-  --cue-number-width: 40px;
+  --cue-number-width: 52px;
 }
 
 .playlist-actions {
@@ -1386,7 +1408,9 @@ const handleDrop = async (e: DragEvent) => {
   color: var(--state-ready);
 }
 
-@container playlist-actions (max-width: 640px) {
+/* Import, Add Group and Shuffle (and Results while an import is open) need
+   about 480px with their labels; below this they become icon buttons. */
+@container playlist-actions (max-width: 500px) {
   .playlist-actions :deep(.btn) {
     flex: 0 0 var(--panel-control-height);
     justify-content: center;

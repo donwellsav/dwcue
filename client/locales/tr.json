@@ -387,6 +387,8 @@
     "seconds": "SANİYE",
     "clock": "Saat",
     "timeLeft": "Kalan Süre",
+    "listLeft": "Liste Kalan",
+    "listLeftHint": "Buradan çalma listesinin sonuna kadar toplam süre: çalan cue'nun kalanı, ardından Sıradaki ve sonrasındaki her cue. GO beklerken geçen süre sayılmaz.",
     "autosave": "Otomatik kaydet",
     "unsavedChanges": "Kaydedilmemiş değişiklikler",
     "saveFailed": "Kaydedilemedi",
@@ -409,6 +411,14 @@
     "importAudio": "Medya içe aktar",
     "importHint": "İçe aktarma düğmelerini kullanın veya dosyaları buraya sürükleyin — ses ve video ikisi de çalışır",
     "videoCue": "Video cue — görüntü Video Çıkışında oynar"
+  },
+  "playlistSearch": {
+    "placeholder": "Cue bul",
+    "label": "Çalma listesinde cue bul",
+    "tooltip": "Bir cue'nun başlığının, notunun veya numarasının bir bölümünü yazarak ona gidin. Enter sonraki eşleşmeye, Shift+Enter öncekine gider. Ctrl/Cmd+F imleci buraya getirir.",
+    "clear": "Aramayı temizle",
+    "counter": "{current} / {total}",
+    "noMatch": "Eşleşme yok"
   },
   "videoCheck": {
     "title": "Gösteri öncesi video kontrolü",

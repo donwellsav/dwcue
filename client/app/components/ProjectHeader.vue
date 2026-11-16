@@ -1,5 +1,5 @@
 <template>
-  <div class="project-header">
+  <div class="project-header" :class="{ 'project-header--show': uiMode === 'playback' }">
     <div class="header-left">
       <img
         :src="isDark ? './assets/icons/SVG/app_icon_darkmode@web.svg' : './assets/icons/SVG/app_icon_lightmode@web.svg'"
@@ -112,6 +112,12 @@
           <span class="clock-label">{{ t('project.timeLeft') }}</span>
           <span class="clock-value" :style="{ color: timeLeftColor ?? undefined }">{{ timeLeft }}</span>
         </div>
+        <!-- Running time from here to the end of the playlist. -->
+        <div class="digital-clock clock--list-left" :class="listLeftSeconds === null ? 'clock--inactive' : 'clock--active'"
+          :title="t('project.listLeftHint')">
+          <span class="clock-label">{{ t('project.listLeft') }}</span>
+          <span class="clock-value">{{ listLeft }}</span>
+        </div>
         <div class="digital-clock clock--large clock--wall">
           <span class="clock-label">{{ t('project.clock') }}</span>
           <span class="clock-value">{{ currentTime }}</span>
@@ -132,10 +138,11 @@ import VideoConfidenceChip from './VideoConfidenceChip.vue';
 import { useVideoOutputToggle } from '~/composables/useCartHotkeys';
 import { usePreShowCheck } from '~/composables/usePreShowCheck';
 import { countdownColorForSeconds, type AudioItem } from '~/types/project';
+import { formatClockSeconds, playlistRemainingSeconds } from '~/utils/playlistRemaining';
 
-const { currentProject, findItemByUuid, findItemByIndex, autoSaveEnabled, hasUnsavedChanges, saveFailed, saveProject, setAutoSave } = useProject();
+const { currentProject, findItemByUuid, findItemByIndex, getAllItemsFlat, autoSaveEnabled, hasUnsavedChanges, saveFailed, saveProject, setAutoSave } = useProject();
 const { t } = useLocalization();
-const { activeCues } = useAudioEngine();
+const { activeCues, effectiveNextUuid } = useAudioEngine();
 const { uiMode, toggleUiMode } = useUiMode();
 const { warning, silenceRemaining } = useHeaderWarnings();
 
@@ -177,6 +184,14 @@ const timeLeft = computed(() => {
     ? `${hours}:${String(minutes).padStart(2, '0')}:${seconds}`
     : `${String(minutes).padStart(2, '0')}:${seconds}`;
 });
+// List Left: the rest of the playing cue plus Up Next and all after it.
+const playlistFlat = computed(() => (currentProject.value ? getAllItemsFlat() : []));
+const listLeftSeconds = computed(() => playlistRemainingSeconds(
+  playlistFlat.value as AudioItem[],
+  [...activeCues.value.values()],
+  effectiveNextUuid.value,
+));
+const listLeft = computed(() => formatClockSeconds(listLeftSeconds.value));
 const timeLeftColor = computed(() => countdownColorForSeconds(
   displayedRemainingSeconds.value,
   (currentProject.value as any)?.settings?.countdownColorBands,
@@ -596,6 +611,28 @@ onMounted(() => {
   width: clamp(104px, 9vw, 120px);
 }
 
+/* A smaller clock than Time Left: it is for planning, not for the next GO. */
+.clock--list-left .clock-value {
+  font-size: 18px;
+}
+
+.clock--list-left.clock--active .clock-value {
+  color: var(--color-text-primary);
+}
+
+/* A longer label in another language may widen the box a little, no more. */
+.clock--list-left {
+  max-width: 132px;
+}
+
+.clock--list-left .clock-label {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .clock--wall {
   color: var(--color-text-primary);
 }
@@ -668,6 +705,28 @@ onMounted(() => {
   inline-size: 2ch;
   text-align: center;
   font-variant-numeric: tabular-nums;
+}
+
+/* List Left needs room. A mid-width window trims the two big clocks for it;
+   below that it is hidden, so the bar stays on one line with the clocks a
+   show cannot run without. Show Mode's bigger buttons need the room sooner. */
+@media (max-width: 1480px) {
+  .digital-clock.clock--large {
+    width: 160px;
+    min-width: 160px;
+  }
+}
+
+@media (max-width: 1424px) {
+  .project-header--show .clock--list-left {
+    display: none;
+  }
+}
+
+@media (max-width: 1376px) {
+  .clock--list-left {
+    display: none;
+  }
 }
 
 @media (max-width: 1320px) {

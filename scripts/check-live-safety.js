@@ -996,7 +996,7 @@ assert.equal(normalizeCartSlotCount(4, [{ slot: 31 }]), 32);
 assert.equal(normalizeCartSlotCount(4, [], { 31: {} }), 32);
 assert.equal(normalizeCartSlotCount(4, [{ slot: -1 }, { slot: 1.5 }, { slot: 63 }]), 64);
 assert.deepEqual(DEFAULT_COUNTDOWN_COLOR_BANDS, [
-  { startSeconds: 11, color: '#FF5A5F' },
+  { startSeconds: 11, color: '#35A96B' },
   { startSeconds: 6, color: '#D8AD35' },
   { startSeconds: 0, color: '#E54855' },
 ]);
@@ -1015,13 +1015,8 @@ assert.deepEqual(
   normalizeCountdownColorBands([{ startSeconds: 'bad', color: 'red' }]),
   DEFAULT_COUNTDOWN_COLOR_BANDS,
 );
-// Tally colours: with time in hand a live cue has no warning colour of its
-// own (null), so each view shows it in the live red. The old default green
-// band is treated the same; a colour the operator chose is kept.
-assert.equal(countdownColorForSeconds(11, undefined), null);
-assert.equal(countdownColorForSeconds(30, [
-  { startSeconds: 11, color: '#35A96B' }, { startSeconds: 6, color: '#D8AD35' }, { startSeconds: 0, color: '#E54855' },
-]), null);
+// The countdown is a stop light of its own: green, then yellow, then red.
+assert.equal(countdownColorForSeconds(11, undefined), '#35A96B');
 assert.equal(countdownColorForSeconds(30, [
   { startSeconds: 11, color: '#123456' }, { startSeconds: 0, color: '#E54855' },
 ]), '#123456');
@@ -1029,7 +1024,7 @@ assert.equal(countdownColorForSeconds(10, undefined), '#D8AD35');
 assert.equal(countdownColorForSeconds(6, undefined), '#D8AD35');
 assert.equal(countdownColorForSeconds(5, undefined), '#E54855');
 assert.equal(countdownColorForSeconds(0, undefined), '#E54855');
-assert.equal(countdownColorForSeconds(10.1, undefined), null);
+assert.equal(countdownColorForSeconds(10.1, undefined), '#35A96B');
 assert.equal(countdownColorForSeconds(null, undefined), null);
 
 const transpiledAudio = ts.transpileModule(
@@ -1983,7 +1978,7 @@ assert.match(
 );
 assert.match(
   playlistView,
-  /\.playlist-actions\s*\{[^}]*flex:\s*1 1 auto;[^}]*overflow-x:\s*auto;[^}]*container:\s*playlist-actions \/ inline-size;[\s\S]*@container playlist-actions \(max-width: 640px\)/,
+  /\.playlist-actions\s*\{[^}]*flex:\s*1 1 auto;[^}]*overflow-x:\s*auto;[^}]*container:\s*playlist-actions \/ inline-size;[\s\S]*@container playlist-actions \(max-width: 500px\)/,
   'playlist actions must stay bounded by the shared header at every supported width',
 );
 assert.match(
@@ -2801,6 +2796,14 @@ assert.doesNotMatch(
     + read('client/app/components/ServerFileBrowser.vue'),
   /#(?:16161d|1a1a1a|1d1d1d|202020|202027|2a2a2a|353535)\b/i,
   'import and server dialogs must not bypass the app surface tokens',
+);
+// Escape is Stop All, and it must work while the operator is typing in the
+// playlist search field. The field may bind Enter (next match) and Shift+Enter
+// (previous match) and nothing else: it never binds, cancels or swallows Escape.
+assert.doesNotMatch(
+  read('client/app/components/PlaylistSearch.vue') + read('client/app/utils/playlistSearch.ts'),
+  /(['"`])Esc(?:ape)?\1|(?:@|v-on:)key(?:down|up|press)(?!\.enter\.(?:shift\.)?exact\.prevent=)|keyCode|preventDefault|stop(?:Immediate)?Propagation|addEventListener/,
+  'the playlist search must never bind Escape or stop a key from reaching Stop All',
 );
 
 checkSpotifyCopyTransaction()

@@ -387,6 +387,8 @@
     "seconds": "SECUNDE",
     "clock": "Ceas",
     "timeLeft": "Timp rămas",
+    "listLeft": "Listă rămasă",
+    "listLeftHint": "Timpul total de aici până la sfârșitul listei de redare: restul cue-ului care rulează, apoi «Următor» și fiecare cue de după el. Timpul de așteptare pentru GO nu este numărat.",
     "autosave": "Salvare automată",
     "unsavedChanges": "Modificări nesalvate",
     "saveFailed": "Salvarea a eșuat",
@@ -409,6 +411,14 @@
     "importAudio": "Importă media",
     "importHint": "Folosiți butoanele de import sau trageți fișiere aici — audio și video funcționează",
     "videoCue": "Cue video — imaginea se redă pe ieșirea video"
+  },
+  "playlistSearch": {
+    "placeholder": "Caută cue",
+    "label": "Caută un cue în lista de redare",
+    "tooltip": "Tastează o parte din titlul, nota sau numărul unui cue pentru a sări la el. Enter merge la următoarea potrivire, Shift+Enter la cea anterioară. Ctrl/Cmd+F așază cursorul aici.",
+    "clear": "Șterge căutarea",
+    "counter": "{current} din {total}",
+    "noMatch": "Nicio potrivire"
   },
   "videoCheck": {
     "title": "Verificare video înainte de spectacol",

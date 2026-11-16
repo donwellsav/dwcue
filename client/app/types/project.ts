@@ -358,13 +358,11 @@ export const DEFAULT_THEME: Theme = {
   accentColor: '#315FCF'
 };
 
-// The first band is "plenty of time". It used to be green, but green now
-// means Up Next (tally colours: red live, green next), so a cue with time in
-// hand is simply shown in the live colour. Both the new default and the old
-// green one are treated that way; a colour the operator chose is kept.
-export const NORMAL_COUNTDOWN_COLORS: readonly string[] = ['#FF5A5F', '#35A96B'];
+// The countdown is a stop light of its own: green with time in hand, then
+// yellow, then red. It is the one place where green and red do not mean
+// "next" and "live", so only the countdown digits take these colours.
 export const DEFAULT_COUNTDOWN_COLOR_BANDS: CountdownColorBand[] = [
-  { startSeconds: 11, color: '#FF5A5F' },
+  { startSeconds: 11, color: '#35A96B' },
   { startSeconds: 6, color: '#D8AD35' },
   { startSeconds: 0, color: '#E54855' },
 ];
@@ -403,11 +401,8 @@ export function countdownColorForSeconds(
 ): string | null {
   if (seconds === null || !Number.isFinite(seconds)) return null;
   const displayedSeconds = Math.max(0, Math.ceil(seconds));
-  const bands = normalizeCountdownColorBands(value);
-  const band = bands.find(candidate => displayedSeconds >= candidate.startSeconds)!;
-  // No warning yet: null lets each view use its own live colour for the theme.
-  if (band === bands[0] && NORMAL_COUNTDOWN_COLORS.includes(band.color)) return null;
-  return band.color;
+  return normalizeCountdownColorBands(value)
+    .find(band => displayedSeconds >= band.startSeconds)!.color;
 }
 
 export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {

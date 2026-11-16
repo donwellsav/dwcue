@@ -48,7 +48,7 @@
     "localModeDescription": "Ekzekuto motorin audio në këtë kompjuter.",
     "startingLocalServer": "Po niset motori audio…",
     "engineStartFailed": "Motori audio nuk mund të niset: {reason}",
-    "engineNoAccess": "Motori audio u nis, por nuk mund të arrihej. Zgjidh «Ky kompjuter» për të provuar përsëri.",
+    "engineNoAccess": "Motori audio u nis, por nuk mund të arrihej. Zgjidh Këtë kompjuter për të provuar përsëri.",
     "engineUnavailable": "Kjo dritare nuk mund të nisë motorin audio.",
     "remoteMode": "I Largët",
     "remoteModeDescription": "Lidhu me një server DonWells Cue në rrjet.",
@@ -387,6 +387,8 @@
     "seconds": "SEKONDA",
     "clock": "Orë",
     "timeLeft": "Koha e mbetur",
+    "listLeft": "Lista e mbetur",
+    "listLeftHint": "Koha e përgjithshme nga këtu deri në fund të listës së luajtjes: pjesa e mbetur e cue-së që po luhet, pastaj «Tjetri» dhe çdo cue pas tij. Koha e pritjes për GO nuk numërohet.",
     "autosave": "Ruajtje automatike",
     "unsavedChanges": "Ndryshime të paruajtura",
     "saveFailed": "Ruajtja dështoi",
@@ -409,6 +411,14 @@
     "importAudio": "Importo media",
     "importHint": "Përdor butonat e importit ose tërhiq skedarët këtu — audio dhe video funksionojnë",
     "videoCue": "Video cue — figura luhet në Daljen e videos"
+  },
+  "playlistSearch": {
+    "placeholder": "Gjej cue",
+    "label": "Gjej një cue në listën e luajtjes",
+    "tooltip": "Shkruani një pjesë të titullit, shënimit ose numrit të një cue-je për të shkuar tek ajo. Enter shkon te përputhja tjetër, Shift+Enter te e mëparshmja. Ctrl/Cmd+F e vendos kursorin këtu.",
+    "clear": "Pastro kërkimin",
+    "counter": "{current} nga {total}",
+    "noMatch": "Nuk ka përputhje"
   },
   "videoCheck": {
     "title": "Kontrolli i videove para shfaqjes",

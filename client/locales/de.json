@@ -48,7 +48,7 @@
     "localModeDescription": "Audio-Engine auf diesem Computer ausführen.",
     "startingLocalServer": "Audio-Engine wird gestartet…",
     "engineStartFailed": "Die Audio-Engine konnte nicht gestartet werden: {reason}",
-    "engineNoAccess": "Die Audio-Engine wurde gestartet, ist aber nicht erreichbar. Wählen Sie „Dieser Computer“, um es erneut zu versuchen.",
+    "engineNoAccess": "Die Audio-Engine wurde gestartet, ist aber nicht erreichbar. Wählen Sie „Lokal“, um es erneut zu versuchen.",
     "engineUnavailable": "Dieses Fenster kann die Audio-Engine nicht starten.",
     "remoteMode": "Remote",
     "remoteModeDescription": "Mit einem DonWells Cue-Server im Netzwerk verbinden.",
@@ -387,6 +387,8 @@
     "seconds": "SEKUNDEN",
     "clock": "Uhr",
     "timeLeft": "Restzeit",
+    "listLeft": "Liste Rest",
+    "listLeftHint": "Laufzeit von hier bis zum Ende der Wiedergabeliste: der Rest des laufenden Cues, dann „Als Nächstes“ und jeder weitere Cue. Die Wartezeit auf GO wird nicht mitgezählt.",
     "autosave": "Automatisch speichern",
     "unsavedChanges": "Ungespeicherte Änderungen",
     "saveFailed": "Speichern fehlgeschlagen",
@@ -409,6 +411,14 @@
     "importAudio": "Medien importieren",
     "importHint": "Nutzen Sie die Import-Buttons oder ziehen Sie Dateien hierher — Audio und Video funktionieren beide",
     "videoCue": "Video-Cue – das Bild wird auf der Videoausgabe wiedergegeben"
+  },
+  "playlistSearch": {
+    "placeholder": "Cue suchen",
+    "label": "Cue in der Wiedergabeliste suchen",
+    "tooltip": "Geben Sie einen Teil von Titel, Notiz oder Nummer eines Cues ein, um dorthin zu springen. Enter springt zum nächsten Treffer, Shift+Enter zum vorherigen. Ctrl/Cmd+F setzt den Cursor hierher.",
+    "clear": "Suche löschen",
+    "counter": "{current} von {total}",
+    "noMatch": "Kein Treffer"
   },
   "videoCheck": {
     "title": "Video-Check vor der Show",

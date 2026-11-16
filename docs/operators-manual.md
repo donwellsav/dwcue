@@ -108,7 +108,7 @@ DonWells Cue creates `<show name>.dwcue` and `media/` in the selected folder; po
 
 ### Edit Mode
 
-Use Edit Mode to import, organize, and configure the show. The top bar contains Settings, Video Output, Level Check, Pre-show check, Autosave, and the Show Mode switch. Open **Settings → Shortcuts** for the keyboard reference and editor. While a Settings tab has focus, Left and Right move between tabs and Enter opens the focused tab. Transport sits below the top bar with **Stop All Cues** in its yellow-and-black striped frame, the active-cue area, and the green **Play Next**. The button shows the cue name on multiple lines, its number, and the playable duration. A wider window has room for cue type, group, and loop or group start behavior where applicable. Hover for the full name. The output strip shows the selected device, main level, meters, and true-peak limiter.
+Use Edit Mode to import, organize, and configure the show. The top bar contains Settings, Video Output, Level Check, Pre-show check, Autosave, and the Show Mode switch. Open **Settings → Shortcuts** for the keyboard reference and editor. While a Settings tab has focus, Left and Right move between tabs and Enter opens the focused tab. Transport sits below the top bar with **Stop All Cues** in its yellow-and-black striped frame, the active-cue area, and the green **Play Next**. The button shows the cue name on multiple lines, its number, and the playable duration. A wider window has room for cue type, group, and loop or group start behavior where applicable. Hover for the full name. The output strip shows the selected device, main level, meters, and true-peak limiter. The clocks at the right of the top bar are **Time Left** for the cue that is playing, **List Left**, and the time of day. **List Left** is the running time from here to the end of the playlist: the rest of the playing cue, then **Up Next** and every cue after it. Time spent waiting for GO is not counted. A narrow window hides List Left to keep the other two clocks.
 
 ![Current Edit Mode with the playlist, acknowledged Up Next target, Basic Info and output console.](manual-assets/edit-workspace.png)
 
@@ -313,11 +313,18 @@ The headphones (preview) button appears on cue rows only when a **Preview Device
 
 The colors follow the tally lights of a vision mixer.
 
-- **Red is live.** The cue that is playing has a red edge, a red number and a red **Playing** badge in the playlist. A playing QuickPlay has the same red edge and badge on its tile. A paused cue keeps its edge in grey.
-- **Green is next.** The **Up Next** cue has a green edge and a green number. **Play Next** and the Play buttons are green.
+- **Red is live.** The cue that is playing has a red edge, a red number with a play arrow, and a red **Playing** badge in the playlist. A playing QuickPlay has the same red edge and badge on its tile. A paused cue keeps its edge in grey.
+- **Green is next.** The **Up Next** cue has a green edge and a green number with the same double arrow as **Play Next**. **Play Next** and the Play buttons are green. The arrows mean the two can be told apart without relying on color.
 - **Stop is never red.** **Stop All Cues** sits in a frame of yellow-and-black stripes, and each cue's own Stop button has the same striped edge.
 - **Yellow and amber are warnings**, such as the end-of-cue border that takes over as a cue approaches its end.
-- **Words stay white.** Titles and times are not colored, because white is the easiest to read in a dark room. **Time Left** turns to its warning colors only as a cue nears its end.
+- **Words stay white.** Titles are not colored, because white is the easiest to read in a dark room.
+- **The countdown is a stop light of its own.** The time on the live row and **Time Left** in the top bar run green, then yellow, then red as the cue nears its end. It is the one place where green and red do not mean next and live. Change the ranges in **Settings → User Interface → Time Left colors**.
+
+### Find a cue
+
+Type part of a cue's title, note or number in **Find cue** at the top of the playlist, or press **Ctrl+F** (**Cmd+F** on a Mac) to put the cursor there. The playlist jumps to the first match, opens the group that holds it, and outlines the row. **Enter** goes to the next match and **Shift+Enter** to the previous one, and the field shows which match you are on. The list is never filtered or reordered. In Edit Mode the match is also selected. The search works the same way in Show Mode.
+
+> **SAFETY — Escape is still Stop All.** While the cursor is in **Find cue**, **Space** types a space instead of starting the next cue, as in any text field. **Escape** still stops every cue. Use the **×** button in the field to clear the search.
 
 ### Notes on the playlist
 
@@ -1061,6 +1068,7 @@ These are source defaults, not a promise about a project's customized assignment
 | J | Jump Cue immediately |
 | 1 through 9, then 0 | Fire QuickPlay slots 1 through 10 in either mode |
 | Shift+1 through Shift+9, then Shift+0 | Fire QuickPlay slots 11 through 20 in either mode |
+| Cmd/Ctrl+F | Put the cursor in **Find cue** on the playlist |
 | Cmd/Ctrl+S | Save Project |
 | Cmd/Ctrl+O | Open Project |
 | Cmd/Ctrl+N | New Project |
