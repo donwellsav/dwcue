@@ -55,6 +55,7 @@ function createClient() {
   const currentProjectForImport = useState<{ folderPath: string } | null>('currentProject', () => null);
   const projectPathForImport = useState<string>('useProject.projectFilePath', () => '');
   const projectSessionId = useState<string>('useProject.serverSessionId', () => '');
+  const projectLoad = useState<'create' | 'open' | null>('useProject.projectLoad', () => null);
   const sessionLost = useState<boolean>('connectionGuard.sessionLost', () => false);
   const detachedProjectForImport = useState<OneShotMutationIdentity | null>('oneShots.detachedProjectIdentity', () => null);
   // ---- Server URL config (persisted via localStorage) ---------------
@@ -226,7 +227,9 @@ function createClient() {
   const connectionLost = ref(false);
   const showVerification = ref<'checking' | 'failed' | null>(null);
   const cueStartsBlocked = computed(() =>
-    connectionLost.value || showVerification.value !== null || sessionLost.value || awaitingStopRevision.value);
+    connectionLost.value || showVerification.value !== null || sessionLost.value || awaitingStopRevision.value ||
+    // The engine can switch before its Open reply reaches the old workspace.
+    projectLoad.value === 'open');
   let socketLifetime: AbortController | null = null;
   // Grace period before we shout about it. A WS bounce that heals inside this
   // window is invisible to the operator; anything longer gets the modal.
@@ -697,8 +700,10 @@ function createClient() {
   async function fetchDevices() {
     devices.value = await rest<ServerDeviceInfo[]>('/api/devices');
   }
-  async function fetchProject() {
-    return rest<any>('/api/project');
+  async function fetchProject(signal?: AbortSignal) {
+    return rest<any>('/api/project', {
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : undefined,
+    });
   }
   // Lightweight header — everything except the items tree. Used by the
   // "open project" flow so the workspace shell paints before the items
@@ -727,11 +732,12 @@ function createClient() {
   }
   // Paged items. Caller drives the loop; we keep this stateless so it
   // composes with the open-project streaming logic in useProject.
-  async function fetchProjectItemsPage(offset = 0, limit = 100, signal?: AbortSignal) {
+  async function fetchProjectItemsPage(offset = 0, limit = 100, signal?: AbortSignal, expectedSessionId?: string) {
     return rest<{
       offset: number; limit: number; total: number; items: any[];
     }>(`/api/project/items?offset=${offset}&limit=${limit}`, {
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : undefined,
+      headers: expectedSessionId === undefined ? undefined : { 'X-DWCUE-Project-Session': expectedSessionId },
     });
   }
   async function fetchProjectProgress(signal?: AbortSignal) {
@@ -879,7 +885,7 @@ function createClient() {
 
   // Stream the archive in Electron's main process so large shows never cross
   // the renderer IPC boundary as one giant ArrayBuffer.
-  async function downloadArchiveToFile(token: string, destination: string) {
+  async function downloadArchiveToFile(token: string, folder: string, filename: string) {
     const api = window.electronAPI;
     if (!api?.downloadArchiveToFile) {
       throw new Error('Local archive download is unavailable');
@@ -887,10 +893,12 @@ function createClient() {
     const result = await api.downloadArchiveToFile({
       baseUrl: httpBase.value,
       token,
-      destination,
+      folder,
+      filename,
       accessToken: effectiveAccessToken.value,
     });
-    if (!result.success) throw new Error(result.error || 'download failed');
+    if (result.success === false) throw new Error(result.error || 'download failed');
+    return result.path;
   }
 
   // Upload a .dwcuepack archive and have the server extract it
@@ -996,7 +1004,7 @@ function createClient() {
     });
   }
   function shuffleProjectItems(before: string[], parentUuid: string, expectedSessionId: string) {
-    return rest<{ status: 'ok'; uuids: string[] } | { status: 'playing' | 'changed' | 'tooFew' | 'linked' }>('/api/project/items/shuffle', {
+    return rest<{ status: 'ok'; uuids: string[] } | { status: 'playing' | 'changed' | 'tooFew' | 'linked' | 'upcoming' }>('/api/project/items/shuffle', {
       method: 'POST',
       headers: { 'X-DWCUE-Project-Session': expectedSessionId },
       body: JSON.stringify({ before, parentUuid }),

@@ -1,6 +1,6 @@
 # DonWells Cue
 
-DonWells Cue **2.6.23** adds shuffle for the playlist and individual groups, plus optional backup music when a cue ends without a follow. Video Output holds the outgoing picture until the incoming video has a frame ready. **Settings → User Interface → Show tooltips** controls operator hover hints.
+DonWells Cue **2.6.24** adds live playlist and group shuffle, group level control, and QuickPlay continuation into Up Next. Import, show management, routing, and recovery controls use the lower panel. Video Output can recover picture during the active cue, and the pre-show check samples the authored cue range.
 
 **Enter** sets Up Next and **Space** runs it after the engine confirms the target. **Q** toggles QuickPlays and **Shift+Q** toggles the detached window. The number row triggers slots **1–10**, and holding **Shift** triggers **11–20**. **S** opens Settings, **Shift+S** opens Properties, and **V** toggles Video Output. The [workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification and the deferred line-level audio and 1080p HDMI checks.
 
@@ -10,7 +10,7 @@ You build a **show** as a list of cues plus a grid of one-touch buttons, then tr
 
 This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. Published macOS packages are Developer ID signed, notarized, and package-validated.
 
-> The current source builds **v2.6.23**. Match the installed About version to the release notes before rehearsal.
+> The current source builds **v2.6.24**. Match the installed About version to the release notes before rehearsal.
 
 > **Operating a show?** Use the [operator manual (PDF)](docs/operators-manual.pdf) or its [Markdown source](docs/operators-manual.md). Those instructions track the current source. The client and server READMEs linked later are developer references, not show-day instructions.
 
@@ -35,7 +35,7 @@ The screenshots in this README are representative captures and may lag the newes
 - **🎚 Choose show outputs** — configure program and Preview devices in Settings, then choose an output device (and LTC routing when needed) per cue in Properties. The server exposes a richer multi-device routing API, but the current client does not mount its Routing Matrix component as an operator screen.
 - **🎬 Timecode** — send SMPTE LTC timecode from a cue to keep lighting, video or other systems in sync.
 - **🎞 Play video cues** — H.264/HEVC media shows a picture on a dedicated fullscreen output (projector, LED wall, confidence monitor) while the audio plays through the normal engine path and mixer.
-- **📥 Bring in audio easily** — drag and drop local files or open **Import Media**, where **Choose files** is the primary local action. Advanced/server browsing stays collapsed until needed, and unsupported non-media entries are disabled. You can also download from YouTube or review and import selected Spotify tracks into a project folder.
+- **📥 Bring in audio easily** — drop local files onto the playlist or use **Import Media** to select files and folders in the lower panel. Review the selection, copy or link the files, and optionally import a folder as a group. You can also download from YouTube or review and import selected Spotify tracks.
 - **🎹 Trigger it your way** — click, tap, keyboard hotkeys (with an on-screen shortcuts bar, shown by default), MIDI controllers, or automation over the network (HTTP / WebSocket).
 - **🔠 Read it your size** — scale the interface text and the QuickPlay cell text independently from Settings → User Interface; the video output window is never scaled.
 - **🌍 Speak your language** — choose any of the app's **21 languages** from Settings → User Interface, including full right-to-left support for Arabic, Persian and Urdu.
@@ -54,6 +54,7 @@ Video cues are ordinary audio cues whose media file also carries a picture (H.26
 - **Open it for each session** from the toolbar **Video Output** button or Project Settings → **Video Output**. The app always launches with Video Output closed; it remembers the assigned display but never reopens the output automatically.
 - **Identify the physical screens** before assigning one: click **Identify displays** to show a large number, OS display name and resolution on every connected screen for five seconds. You can choose the display while the output is closed. If no independent display is assigned, DonWells Cue opens a normal preview window rather than taking over the control screen with fullscreen black.
 - **Picture framing** — 16:9 Full HD is the default. **Settings → Video Output** offers common HD, UHD, projector, stage and signage sizes, plus custom dimensions. Fit to display or cap the frame at its selected size and scale it proportionally. Choose the HDMI resolution and refresh rate in the operating system.
+- **Output display, Canvas, and Scaling** expand in the lower panel. The playlist and **GO** stay available. **Escape** runs Stop All even if you changed its shortcut. Use **Apply framing** to save the Canvas and Scaling changes.
 - **Recover from the output itself** by right-clicking it. The context menu can enter or leave fullscreen, show the test card, or **Exit Video Output**. On Windows, **Alt+F4** also closes only the Video Output window; **Esc** leaves fullscreen. Closing it disarms the output for the rest of the session until you open it again.
 - **Keep using shortcuts** even if the Video Output window owns keyboard focus. DonWells Cue forwards application and QuickPlay shortcuts to the control window while preserving operating-system and native app shortcuts such as Windows Alt+F4 and the normal Ctrl/Cmd file commands.
 - **Standby stills** — press **G** to capture Video Output or **Shift+G** to capture the display chosen in **Settings → Video Output**. Capture for the selected cue or use a session-wide fallback. Clicking the confidence thumbnail captures Video Output for the selected cue. The picture falls back through assigned cue art, captured cue art, captured session standby, saved project standby and black.
@@ -125,22 +126,56 @@ DonWells Cue writes native show documents as `.dwcue` files and portable exports
 1. Install the [latest release](https://github.com/donwellsav/dwcue/releases/latest), or build DonWells Cue from source, and launch it.
 2. Choose **New Show**, enter its name, use **Choose…** to select the read-only Location, and create it — DonWells Cue writes `<show name>.dwcue` and a `media/` sub-folder there.
 3. In **Project Settings**, choose the program output, Output Target, and—if you need private auditioning—the Preview output.
-4. Drop audio or video files onto the playlist, or use **Import Media → Choose files**. Expand the advanced/server browser only when the media lives on the server; unsupported non-media entries cannot be selected.
+4. Drop audio or video files onto the playlist, or use **Import Media → Choose files…** or **Choose folder…**. On a local engine, both choices open in the lower panel. Review the batch before choosing **Import selected**.
 5. Open a cue's **Properties** to set markers, fades, normalization, volume, ducking, its output device, and Start/End Behaviors. Rehearse group and cross-group sequencing before show day.
 6. Drag frequently used playlist cues into QuickPlay cells for one-touch playback. The copy leaves the playlist cue unchanged.
 7. Audition on the Preview output, set the named **Play Next** cue, and verify the program and monitor meters.
 8. If the show uses video, open Project Settings → **Video Output**, click **Identify displays**, assign the projector/switcher display, then manually open the output and verify the test card.
 9. Switch on **Show Mode** for the live performance.
 
+With a remote engine, open **Import Media → From This Computer** and drop files or one folder in the lower panel. You can paste files there if your clipboard supplies them. After upload, review the selection and choose **Import selected**.
+
 Use **File → Open Project** for a `.dwcue` show and **File → Import Project…** for a `.dwcuepack` archive. Each archive must contain exactly one `.dwcue` at its root. The app refuses upstream LivePlay `.liveplay` and `.lpa` files. Previously converted `.dwcue` shows open as native projects.
 
+For remote archives, select **From This Computer** to drop a `.dwcuepack` into the lower panel. In **File → Export Project…**, **Download Here** saves to the controller's Downloads folder by default. Drop a different destination folder into that panel if needed. Progress stays in the dock and **Escape** runs Stop All.
+
 The file browsers remember the last successfully visited folder separately for each server and picker purpose. Use the Favorites sidebar to add, revisit, or remove frequent folders. If the configured starting location is available, a missing remembered folder falls back there with a notice. Failed navigation clears the selection and disables Open. Native desktop choosers also remember their last selected folder by purpose.
+
+In the current source, New Show, Open Project, Open Recent, direct `.dwcue` opens, Quit, and Unsaved Changes use the lower panel. The playlist, GO, and Stop All stay available while you fill in the form, browse, or decide. Escape runs Stop All and leaves the panel open. While an existing show loads, the playlist stays visible and cue starts wait for the controller to finish opening the show.
+
+Once the playlist is ready, the status area below it shows background audio loading and unavailable files. Select **Review Repairs** there to inspect or save a repaired show in the lower panel. You can still fire ready cues with **GO**, and **Escape** runs Stop All while either status or review is visible.
+
+The Cue Image picker in **Properties → Basic Info** and the Standby Image picker in **Settings → Video Output** also use the lower panel. Escape runs Stop All while you browse.
+
+In **Settings → Video Output**, drop or paste Test Card logos and masks. Each has a preview and a **Clear** button. Escape runs Stop All while an image loads.
+
+Open a Test Card or Time Left color swatch to choose a preset or enter a hex color. Both color editors stay in Settings.
+
+Click the current **Test Card Type**, **Start Behavior**, or **End Behavior** to show the choices in the lower panel. The playlist and **GO** remain available. **Escape** runs Stop All while the choices are open, even if you changed the Stop All shortcut.
+
+**Backup music group** in Playback Behaviour and **Continue with** in group Properties also expand their choices in place. Choose **Use show backup** to clear a group override. The playlist, **GO**, and **Stop All** stay available, including **Escape** while the choices are open.
+
+In **Settings → Audio Routing**, the Audio, Preview and LTC device choices and Output Target open in the lower panel. **Group Level** in group Properties uses a fader with a dB readout for shared attenuation.
+
+The cue’s **Output device** and **Ducking** choices open inside Properties. The playlist and **GO** stay usable, and **Escape** runs Stop All while either list is open.
+
+**QuickPlay Settings** expands Playback, Retrigger, Ending, and Output choices inside the panel, attached or detached. **Escape** runs Stop All with a list open, and the detached settings header has a **Stop All** button. During reconnect, the detached window shows the notice below the tiles and **Stop All** in the window header. QuickPlay starts wait for show verification. If the engine has no show or a different show, restore or open it in the main window. The detached bank unlocks when it receives the fresh, verified show.
+
+Video Capture, Test Card options, cue LTC frame rate, the file type filter, import options, and the remaining Settings choices also expand in place. Normalize and Reduce Peaks share one section, and MIDI reassignment stays in the MIDI panel. About opens below the welcome screen during startup.
+
+In **Properties → Basic Info → Media**, use **Replace or relink media** beside **File** to pick and verify a replacement in the lower panel. Cancel or a failed file check leaves the original media assigned.
+
+For a QuickPlay, click **+** in an empty slot or **Replace audio** in its settings to browse a single file in the lower panel. The panel uses the engine computer's folders. To import a file from the controller when the engine is on another computer, drop it directly on the slot.
+
+In **Spotify**, **Choose Folder** opens the destination inside the panel. To use a new folder outside the show, drop it from Finder or File Explorer. **View → Change Accent Color** opens the current show's swatches in **Settings → User Interface**.
 
 Full-document saves wait until all project cue pages have loaded; a failed, closed, or replaced load cannot authorize a partial save. A page failure leaves the loaded workspace visibly read-only with **Retry** and keeps Stop All available. Retry rejoins the server's current header/pages instead of reopening the old file, so live playhead state and unsaved server-accepted edits survive. Changing Autosave either on or off force-saves the current document and the new preference. Afterward, edits persist automatically while it is on; while it is off, later edits only mark the project dirty. The unsaved badge is shown only when Autosave is off and the project is dirty, so enabling Autosave hides the badge even if that forced save fails; the project nevertheless remains dirty. Save As is serialized by the server and publishes a complete snapshot atomically; failure leaves the existing file and current project path unchanged. The time-of-day clock uses the neutral text color, independently of the countdown's configured warning colors.
 
 **Running on a separate machine?** Start the stage-side server with `dwcue-server --bind 0.0.0.0`. Set `LIVEPLAY_ACCESS_TOKEN` to at least 16 characters, or leave it unset/empty so the server generates a token and prints it once. A non-empty shorter value refuses startup. On the control laptop, open **Server Settings**, choose the discovered server or enter `http://<server-host>:4480`, and enter that token. See [Network ports](#network-ports) below for firewall details.
 
 Every local and remote control request requires a token; only `GET /api/health` is public. The desktop app provisions its managed local token automatically through trusted Electron IPC rather than browser storage. If a dirty local project meets a changed server project after reconnect, choose **Use server project** to discard the local edits and adopt the server copy, or **Restore local project** to replace the server copy and keep the local state dirty.
+
+Connection loss, show verification, and session recovery use the main window's lower panel. The last verified playlist stays visible for reference while cue starts wait. Stop All and Escape remain available, including when the Stop All shortcut is remapped.
 
 ---
 
@@ -354,7 +389,7 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.23**. Find published artefacts and checksums on the release page.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.24**. Find published artefacts and checksums on the release page.
 
 ### Triggering a release
 

@@ -4,10 +4,8 @@ function createAppLifecycleActions({
   prepare,
   relaunch,
   exit,
-  quit,
   stopServer,
   installUpdate,
-  confirmQuit,
 }) {
   return {
     relaunch: async () => {
@@ -29,8 +27,7 @@ function createAppLifecycleActions({
       if (options?.stopServer === true && !(await stopServer())) {
         throw new Error('The managed audio server could not be stopped.');
       }
-      confirmQuit();
-      quit();
+      exit(0);
       return true;
     },
   };

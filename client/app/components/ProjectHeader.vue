@@ -18,15 +18,19 @@
             class="silence-warning"
             :title="`${t('project.silenceWarning')} ${silenceSeconds} ${t('project.seconds')}`"
           >
-            <span class="silence-warning__label">{{ t('project.silenceWarning') }}</span>
-            <bdi class="silence-warning__seconds">{{ silenceSeconds }}</bdi>
-            <span class="silence-warning__label">{{ t('project.seconds') }}</span>
+            {{ t('project.silenceWarning') + ' ' }}
+            <bdi class="silence-warning__seconds">{{ silenceSeconds }}</bdi>{{ ' ' + t('project.seconds') }}
           </div>
           <div id="project-header-warnings" class="header-warning-slot"></div>
         </div>
       </div>
+      <div v-if="currentProject && saveFailed" class="save-failure">
+        <span role="status">{{ t('project.saveFailed') }}</span>
+        <Btn type="button" :text="t('project.retrySave')" :disabled="retryingSave"
+          :aria-busy="retryingSave" @click="retrySave" />
+      </div>
       <span
-        v-if="currentProject && !autoSaveEnabled && hasUnsavedChanges"
+        v-else-if="currentProject && !autoSaveEnabled && hasUnsavedChanges"
         class="unsaved-pill"
       >{{ t('project.unsavedChanges') }}</span>
     </div>
@@ -117,7 +121,7 @@ import VideoConfidenceChip from './VideoConfidenceChip.vue';
 import { useVideoOutputToggle } from '~/composables/useCartHotkeys';
 import { countdownColorForSeconds, type AudioItem } from '~/types/project';
 
-const { currentProject, findItemByUuid, findItemByIndex, autoSaveEnabled, hasUnsavedChanges, setAutoSave } = useProject();
+const { currentProject, findItemByUuid, findItemByIndex, autoSaveEnabled, hasUnsavedChanges, saveFailed, saveProject, setAutoSave } = useProject();
 const { t } = useLocalization();
 const { activeCues } = useAudioEngine();
 const { uiMode, toggleUiMode } = useUiMode();
@@ -129,6 +133,14 @@ const showProjectSettings = useState('showProjectSettings', () => false);
 
 const isDark = computed(() => currentProject.value?.theme.mode === 'dark');
 const currentTime = ref('00:00:00');
+const retryingSave = ref(false);
+
+async function retrySave() {
+  if (retryingSave.value) return;
+  retryingSave.value = true;
+  try { await saveProject({ force: true }); }
+  finally { retryingSave.value = false; }
+}
 
 // Match PlaylistView's primary-cue convention: during a seamless advance the
 // newest cue is the one the operator is now following.
@@ -347,11 +359,12 @@ onMounted(() => {
 .project-header {
   position: relative;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-sm);
-  flex: 0 0 var(--app-header-height);
-  height: var(--app-header-height);
+  flex: 0 0 auto;
+  min-height: var(--app-header-height);
   padding: var(--spacing-xs) var(--workspace-gutter);
   background-color: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
@@ -360,7 +373,7 @@ onMounted(() => {
 .header-left {
   display: flex;
   align-items: center;
-  flex: 1;
+  flex: 1 0 min(18rem, 100%);
   min-width: 0;
   gap: var(--spacing-sm);
 }
@@ -383,6 +396,12 @@ onMounted(() => {
 
 .header-warning-slot {
   min-width: 0;
+  max-width: 100%;
+}
+
+.header-warning-line {
+  flex-wrap: wrap;
+  row-gap: 2px;
 }
 
 .header-warning-slot:empty {
@@ -405,8 +424,11 @@ onMounted(() => {
 
 .header-right {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
-  flex: 0 0 auto;
+  max-width: 100%;
+  margin-inline-start: auto;
   gap: 6px;
 }
 
@@ -452,6 +474,17 @@ onMounted(() => {
   flex-shrink: 0;
   background-color: var(--state-up-next);
   color: var(--state-up-next-text);
+}
+
+.save-failure {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex: 0 0 auto;
+  color: var(--color-danger);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 /* Autosave toggle switch */
@@ -592,29 +625,20 @@ onMounted(() => {
 }
 
 .silence-warning {
-  flex: none;
-  display: flex;
-  align-items: center;
   box-sizing: border-box;
-  max-width: calc(100% - 60px);
-  white-space: nowrap;
-  gap: var(--spacing-xs);
-  padding: var(--spacing-xs) var(--spacing-lg);
+  max-width: 100%;
+  padding: var(--spacing-xs) var(--spacing-sm);
   border: 2px solid var(--state-up-next);
   border-radius: var(--control-radius);
   background-color: var(--color-surface-raised);
   font-weight: 700;
   font-size: 14px;
+  line-height: 1.25;
   color: var(--state-up-next);
 }
 
-.silence-warning__label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .silence-warning__seconds {
-  flex: none;
+  display: inline-block;
   inline-size: 2ch;
   text-align: center;
   font-variant-numeric: tabular-nums;

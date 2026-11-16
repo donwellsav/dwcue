@@ -45,6 +45,7 @@ export interface OneShotMutationResult {
 export interface OneShotProjectEnvelope {
   project: import('./project').Project | null;
   identity: OneShotMutationIdentity | null;
+  projectSessionId: string | null;
 }
 
 export const sameOneShotMutationIdentity = (
@@ -54,3 +55,9 @@ export const sameOneShotMutationIdentity = (
   && left.projectPath === right.projectPath
   && left.projectEpoch === right.projectEpoch
   && left.ownerSessionId === right.ownerSessionId;
+
+export const isNewerOneShotProject = (
+  incoming: OneShotMutationIdentity,
+  previous: OneShotMutationIdentity | null,
+): boolean => !previous || incoming.ownerSessionId !== previous.ownerSessionId
+  || incoming.projectEpoch > previous.projectEpoch;

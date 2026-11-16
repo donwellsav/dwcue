@@ -119,19 +119,26 @@ detail::MediaPaths media_paths(const json& item, const std::string& folder) {
     return {util::utf8_to_path(relative), util::utf8_to_path(server)};
 }
 
+#ifdef LIVEPLAY_TEST_HOOKS
+void hold_path_probe_for_test(const std::filesystem::path& path) {
+    if (const char* value = std::getenv("DWCUE_TEST_PATH_PROBE_GATE"); value && *value) {
+        std::error_code ec;
+        const std::filesystem::path gate{value};
+        std::filesystem::path target;
+        std::ifstream{gate} >> target;
+        if (target == path && std::filesystem::exists(gate, ec)) {
+            std::ofstream{gate.string() + ".entered"} << path;
+            while (std::filesystem::exists(gate, ec)) std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        }
+    }
+}
+#endif
+
 std::filesystem::path resolve_media_path(const detail::MediaPaths& paths) {
     if (paths.fallback.empty() || paths.preferred == paths.fallback) return paths.preferred;
     std::error_code ec;
 #ifdef LIVEPLAY_TEST_HOOKS
-    if (const char* value = std::getenv("DWCUE_TEST_PATH_PROBE_GATE"); value && *value) {
-        const std::filesystem::path gate{value};
-        std::filesystem::path target;
-        std::ifstream{gate} >> target;
-        if (target == paths.preferred && std::filesystem::exists(gate, ec)) {
-            std::ofstream{gate.string() + ".entered"} << paths.preferred;
-            while (std::filesystem::exists(gate, ec)) std::this_thread::sleep_for(std::chrono::milliseconds{1});
-        }
-    }
+    hold_path_probe_for_test(paths.preferred);
 #endif
     if (!std::filesystem::exists(paths.preferred, ec) && std::filesystem::exists(paths.fallback, ec))
         return paths.fallback;
@@ -1457,6 +1464,7 @@ void ProjectState::reset() {
     mixer_routes_.clear();
     master_assignments_.clear();
     item_uuid_to_cue_.clear();
+    group_gains_.clear();
     audio_load_failures_.clear();
     // The selection and the trigger-order stamps belong to the project that is
     // going away; carrying them into the next one would leave control surfaces
@@ -1469,6 +1477,7 @@ void ProjectState::reset() {
     document_ = default_empty_document();
     pending_repair_info_ = {};
     ++document_generation_;
+    ++project_open_revision_;
     project_session_id_ = engine_.new_cue_id().value;
     apply_audio_settings(engine_, document_["settings"]);
     apply_to_engine_locked();
@@ -1575,6 +1584,7 @@ std::vector<audio::CueId> ProjectState::retire_missing_item_cues_locked() {
 void ProjectState::apply_item_properties_locked(const json& item,
                                                 const std::shared_ptr<audio::PlaybackItem>& cue) {
     apply_audio_item_properties(item, cue);
+    cue->set_group_gain_linear(group_gain_locked(item.value("uuid", std::string{})));
     const bool ltc_on = item.value("ltcEnabled", false);
     const std::string tc_str = item.value("ltcStartTimecode", std::string{"00:00:00:00"});
     const int fps_idx = item.value("ltcFrameRate", 4);
@@ -1591,37 +1601,82 @@ void ProjectState::apply_item_properties_locked(const json& item,
 }
 
 // ---------------------------------------------------------------------------
+float ProjectState::group_gain_locked(const std::string& uuid) const {
+    const auto level = group_gains_.find(uuid);
+    return level == group_gains_.end() ? 1.0f : level->second;
+}
+
+void ProjectState::cache_group_gains_locked(const json& items, float parent_gain) {
+    if (!items.is_array()) return;
+    for (const auto& item : items) {
+        const auto type = json_get_or(item, "type", std::string{});
+        const auto uuid = json_get_or(item, "uuid", std::string{});
+        if (type == "group") {
+            const auto saved_db = json_get_or(item, "groupGainDb", 0.0);
+            const auto db = std::isfinite(saved_db) ? static_cast<float>(std::clamp(saved_db, -60.0, 0.0)) : 0.0f;
+            const float gain = parent_gain * audio::db_to_linear_precise(db);
+            if (gain != 1.0f) group_gains_.insert_or_assign(uuid, gain);
+            if (item.contains("children")) cache_group_gains_locked(item["children"], gain);
+        } else if (type == "audio" && parent_gain != 1.0f) {
+            group_gains_.insert_or_assign(uuid, parent_gain);
+        }
+    }
+}
+
+void ProjectState::refresh_group_gains_locked() {
+    const auto previous = std::move(group_gains_);
+    group_gains_.clear();
+    if (document_.contains("items")) cache_group_gains_locked(document_["items"], 1.0f);
+    for (const auto& [uuid, id] : item_uuid_to_cue_) {
+        const auto old = previous.find(uuid);
+        const auto gain = group_gain_locked(uuid);
+        if (gain != (old == previous.end() ? 1.0f : old->second))
+            if (auto cue = engine_.find_cue(id)) cue->set_group_gain_linear(gain);
+    }
+    if (auto preview = engine_.find_cue(preview_cue_))
+        preview->set_group_gain_linear(group_gain_locked(preview_item_uuid_));
+}
+
+// ---------------------------------------------------------------------------
 // Cue mutations (control thread)
 // ---------------------------------------------------------------------------
 audio::CueId ProjectState::add_cue_from_file(const std::filesystem::path& file,
                                              std::string display_name) {
-    // De-dupe: if a cue is already loaded for this file path (typical case
-    // is the project mirror loading every item up front), reuse it instead
-    // of creating a parallel engine cue. Without this, the legacy
-    // ServerHowl path creates a *second* cue for every project item, and
-    // play(cue_id) on that orphan bypasses ProjectState::play_item — which
-    // is what carries duckingBehavior / inPoint / fades / endBehavior into
-    // the engine. The user-visible symptom is in/out points and Up Next
-    // not firing.
+    std::string session;
+    std::vector<std::pair<std::string, std::filesystem::path>> candidates;
     {
-        std::error_code ec;
-        const auto canonical = std::filesystem::weakly_canonical(file, ec);
-        const auto& want = ec ? file : canonical;
         std::lock_guard lock{mutex_};
-        for (auto& [id, c] : cues_) {
-            std::error_code ec2;
-            const auto have = std::filesystem::weakly_canonical(c.file_path, ec2);
-            const auto& cmp = ec2 ? c.file_path : have;
-            if (cmp == want) return audio::CueId{id};
+        session = project_session_id_;
+        candidates.reserve(cues_.size());
+        for (const auto& [id, cue] : cues_) {
+            if (cue.file_path == file) return audio::CueId{id};
+            candidates.emplace_back(id, cue.file_path);
         }
     }
+    // Reuse the mirrored cue, including path aliases, without probing under Stop All's lock.
+    const auto canonicalize = [](const std::filesystem::path& path) {
+#ifdef LIVEPLAY_TEST_HOOKS
+        hold_path_probe_for_test(path);
+#endif
+        std::error_code ec;
+        const auto canonical = std::filesystem::weakly_canonical(path, ec);
+        return ec ? path : canonical;
+    };
+    const auto want = canonicalize(file);
+    for (const auto& [id, path] : candidates) {
+        if (canonicalize(path) != want) continue;
+        std::lock_guard lock{mutex_};
+        if (project_session_id_ != session) return {};
+        const auto cue = cues_.find(id);
+        if (cue != cues_.end() && cue->second.file_path == path) return audio::CueId{id};
+    }
+    if (project_session_id() != session) return {};
     const auto cue_id = engine_.load_cue(file);
     if (cue_id.empty()) return {};
 
     // Populate artist/title/duration via TagLib (best-effort; never fatal).
     const auto md = meta::read_metadata(file);
 
-    std::lock_guard lock{mutex_};
     CueMeta meta;
     meta.id           = cue_id;
     meta.display_name = display_name.empty()
@@ -1631,8 +1686,15 @@ audio::CueId ProjectState::add_cue_from_file(const std::filesystem::path& file,
     meta.artist       = md.artist;
     meta.title        = md.title;
     meta.duration_seconds = static_cast<double>(md.duration.count()) / 1000.0;
-    cues_.emplace(cue_id.value, std::move(meta));
-    return cue_id;
+    {
+        std::lock_guard lock{mutex_};
+        if (project_session_id_ == session) {
+            cues_.emplace(cue_id.value, std::move(meta));
+            return cue_id;
+        }
+    }
+    engine_.unload_cue(cue_id);
+    return {};
 }
 
 DiagnosticCueResult ProjectState::add_av_sync_diagnostic_cue(
@@ -2029,14 +2091,24 @@ json ProjectState::to_json() const {
 
 bool ProjectState::save(const std::filesystem::path& requested_path,
                         const json* replacement,
-                        std::filesystem::path* published_path) {
-    std::lock_guard operation_lock{project_operation_mutex_};
-    std::lock_guard save_lock{save_mutex_};
+                        std::filesystem::path* published_path,
+                        const std::string& expected_session) {
     if (published_path) published_path->clear();
-    std::filesystem::path path = requested_path;
-    if (path.empty()) {
+    std::uint64_t open_revision;
+    {
         std::lock_guard lock{mutex_};
-        path = project_file_path_;
+        open_revision = project_open_revision_;
+    }
+    std::lock_guard save_lock{save_mutex_};
+    auto operation_lock = lock_project_session(expected_session);
+    if (!operation_lock.owns_lock()) return false;
+    std::filesystem::path path = requested_path;
+    std::string session;
+    {
+        std::lock_guard lock{mutex_};
+        if (project_open_revision_ != open_revision) return false;
+        session = project_session_id_;
+        if (path.empty()) path = project_file_path_;
     }
     if (!project_file::is_native_project(path)) {
         Logger::error("ProjectState::save: project path must use .dwcue: '{}'",
@@ -2052,6 +2124,7 @@ bool ProjectState::save(const std::filesystem::path& requested_path,
             doc["lastModified"] = now_iso();
             doc["folderPath"] = util::path_to_utf8(path.parent_path());
         }
+        operation_lock.unlock();
         relativize_media_paths(doc);
         std::filesystem::path tmp = path;
         tmp += ".tmp";
@@ -2074,6 +2147,13 @@ bool ProjectState::save(const std::filesystem::path& requested_path,
             }
         }
         std::error_code ec;
+        operation_lock = lock_project_session(session);
+        if (!operation_lock.owns_lock()) {
+            std::filesystem::remove(tmp, ec);
+            return false;
+        }
+        // Rename may itself wait on storage. The admitted write owns only its captured path.
+        operation_lock.unlock();
         if (!util::replace_file_atomically(tmp, path, ec)) {
             Logger::error("ProjectState::save: rename '{}' -> '{}' failed: {} — previous file left untouched",
                           util::path_to_utf8(tmp), util::path_to_utf8(path), ec.message());
@@ -2082,12 +2162,15 @@ bool ProjectState::save(const std::filesystem::path& requested_path,
             return false;
         }
         {
-            std::lock_guard lock{mutex_};
-            if (project_file_path_ != path) project_session_id_ = engine_.new_cue_id().value;
-            project_file_path_ = path;
-            document_["folderPath"] = util::path_to_utf8(path.parent_path());
-            pending_repair_info_ = {};
-            update_media_root_from_folder_locked();
+            operation_lock = lock_project_session(session);
+            if (operation_lock.owns_lock()) {
+                std::lock_guard lock{mutex_};
+                if (project_file_path_ != path) project_session_id_ = engine_.new_cue_id().value;
+                project_file_path_ = path;
+                document_["folderPath"] = util::path_to_utf8(path.parent_path());
+                pending_repair_info_ = {};
+                update_media_root_from_folder_locked();
+            }
         }
         if (published_path) *published_path = path;
         return true;
@@ -2314,8 +2397,10 @@ bool ProjectState::replace_full_document(const json& doc, bool new_session) {
             invalidated_playbacks.insert(uuid);
         }
         document_ = std::move(migrated);
+        refresh_group_gains_locked();
         ++document_generation_;
         if (new_session) {
+            ++project_open_revision_;
             project_session_id_ = engine_.new_cue_id().value;
             pending_repair_info_ = {prepared.repair.repaired, std::move(prepared.repair.issues)};
         }
@@ -2418,6 +2503,7 @@ audio::CueId ProjectState::add_item(const json& item, const std::string& parent_
             return it != item_uuid_to_cue_.end() ? it->second : audio::CueId{};
         }
 
+        float parent_gain = 1.0f;
         if (cart_only) {
             // Cart-bound cue: lives in the separate cartOnlyItems array so it
             // is mirrored to the engine (cart hotkeys can trigger it) without
@@ -2444,6 +2530,7 @@ audio::CueId ProjectState::add_item(const json& item, const std::string& parent_
                             it["children"] = json::array();
                         }
                         it["children"].push_back(item);
+                        parent_gain = group_gain_locked(parent_uuid);
                         found = true;
                     }
                 });
@@ -2456,6 +2543,7 @@ audio::CueId ProjectState::add_item(const json& item, const std::string& parent_
         // Queue this import and its children. The mirror owns existing items,
         // and retrying one of them here can put a stalled path ahead of the import.
         json inserted{{"items", json::array({item})}};
+        if (!cart_only) cache_group_gains_locked(inserted["items"], parent_gain);
         for_each_item(inserted, [&](json& it, const std::string&) {
             if (it.value("type", std::string{}) != "audio") return;
             const std::string u = it.value("uuid", std::string{});
@@ -2472,6 +2560,11 @@ audio::CueId ProjectState::add_item(const json& item, const std::string& parent_
 bool ProjectState::update_item(const std::string& uuid, const json& patch_in,
                                std::unique_lock<std::recursive_mutex>* project_lock) {
     if (!patch_in.is_object()) return false;
+    if (const auto level = patch_in.find("groupGainDb"); level != patch_in.end()) {
+        if (!level->is_number()) return false;
+        const auto db = level->get<double>();
+        if (!std::isfinite(db) || db < -60.0 || db > 0.0) return false;
+    }
     std::unique_lock preparation_lock{playback_preparation_mutex_};
     std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
     json patch = patch_in;
@@ -2598,6 +2691,8 @@ bool ProjectState::update_item(const std::string& uuid, const json& patch_in,
                 updated_item = &it;
             });
 
+        if (touched && (patch.contains("groupGainDb") || patch.contains("children") || patch.contains("type")))
+            refresh_group_gains_locked();
         if (touched && media_path_changed && updated_item &&
             updated_item->value("type", std::string{}) == "audio") {
             // The media file behind this item changed: retire the old cue and
@@ -2804,7 +2899,10 @@ bool ProjectState::remove_item(const std::string& uuid) {
                                      }),
                       arr.end());
         }
-        if (removed) retiring_cues = retire_missing_item_cues_locked();
+        if (removed) {
+            retiring_cues = retire_missing_item_cues_locked();
+            refresh_group_gains_locked();
+        }
     }
     if (removed) {
         std::vector<SequencedItem> removed_items;
@@ -2883,18 +2981,35 @@ bool ProjectState::reorder_items(const std::vector<std::string>& uuids,
 json ProjectState::shuffle_items(const std::vector<std::string>& before,
                                  const std::string& parent_uuid) {
     std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
+    const bool whole_playlist = parent_uuid.empty();
+    std::unordered_set<std::string> in_use;
+    std::vector<json> live_index_paths;
     {
         std::lock_guard lock{sequencer_mutex_};
-        if (!sequenced_items_.empty() || !group_runs_.empty()) return {{"status", "playing"}};
+        for (const auto& item : sequenced_items_) {
+            in_use.insert(item.uuid);
+            if (item.prepared_follow) in_use.insert(item.prepared_target_uuid);
+            if (item.continue_armed && !item.continue_target_uuid.empty())
+                in_use.insert(item.continue_target_uuid);
+            for (const auto& entry : item.custom_actions) {
+                if (!entry.action.is_object() || json_get_or(entry.action, "type", std::string{}) != "play-index")
+                    continue;
+                if (const auto path = entry.action.find("index"); path != entry.action.end())
+                    live_index_paths.push_back(*path);
+            }
+        }
+        for (const auto& run : group_runs_) {
+            in_use.insert(run.group_uuid);
+            if (run.end_action == "goto-index") live_index_paths.emplace_back(run.target_index);
+        }
     }
     std::optional<std::string> rearm;
     auto order = before;
     {
         std::lock_guard lock{mutex_};
-        for (const auto& [_, id] : item_uuid_to_cue_) {
+        for (const auto& [uuid, id] : item_uuid_to_cue_) {
             const auto cue = engine_.find_cue(id);
-            if (cue && cue->stats().transport != audio::TransportState::Stopped)
-                return {{"status", "playing"}};
+            if (cue && cue->stats().transport != audio::TransportState::Stopped) in_use.insert(uuid);
         }
         auto* target = playlist_siblings_locked(parent_uuid);
         if (!target || before.size() != target->size()) return {{"status", "changed"}};
@@ -2903,9 +3018,24 @@ json ProjectState::shuffle_items(const std::vector<std::string>& before,
                 return {{"status", "changed"}};
         }
 
+        std::vector<bool> fixed(before.size());
+        // Keep the played prefix and committed handoff together. Moving either
+        // across the current cue could replay a cue or skip it on the next advance.
+        const auto branch_in_use = [&](const auto& self, const json& item) -> bool {
+            if (in_use.contains(item.value("uuid", std::string{}))) return true;
+            const auto children = item.find("children");
+            return children != item.end() && children->is_array() &&
+                std::any_of(children->begin(), children->end(), [&](const json& child) {
+                    return child.is_object() && self(self, child);
+                });
+        };
+        std::size_t fixed_prefix = in_use.empty() ? 0 : before.size();
+        while (fixed_prefix > 0 && !branch_in_use(branch_in_use, (*target)[fixed_prefix - 1]))
+            --fixed_prefix;
+        std::fill_n(fixed.begin(), fixed_prefix, true);
+
         // A position-based action follows its cue number. Leave its branch
         // in place at this level so the shuffle can't change what it fires.
-        std::vector<bool> fixed(before.size());
         const auto hold_target = [&](const json& path) {
             if (!path.is_array() || !std::all_of(path.begin(), path.end(), [](const json& n) {
                 return n.is_number_integer() && n >= 0 && n <= std::numeric_limits<int>::max();
@@ -2921,6 +3051,8 @@ json ProjectState::shuffle_items(const std::vector<std::string>& before,
                 ancestors.push_back(position);
             }
         };
+        // Live actions may still use the path captured before a Properties edit.
+        for (const auto& path : live_index_paths) hold_target(path);
         for_each_item(document_, [&](json& item, const std::string&) {
             for (const auto* key : {"startBehavior", "endBehavior"}) {
                 const auto behavior = item.find(key);
@@ -2947,14 +3079,16 @@ json ProjectState::shuffle_items(const std::vector<std::string>& before,
         std::vector<std::size_t> positions;
         for (std::size_t i = 0; i < fixed.size(); ++i)
             if (!fixed[i]) positions.push_back(i);
-        if (positions.size() < 2) return {{"status", before.size() < 2 ? "tooFew" : "linked"}};
+        if (positions.size() < 2)
+            return {{"status", before.size() < 2 ? "tooFew" : fixed_prefix > 0 ? "upcoming" : "linked"}};
 
         auto permutation = positions;
         static thread_local std::mt19937 rng{std::random_device{}()};
         std::shuffle(permutation.begin(), permutation.end(), rng);
         if (permutation == positions) std::swap(permutation[0], permutation[1]);
 
-        const bool was_initial = !next_item_override_manual_ && !next_item_override_.empty() &&
+        const bool was_initial = in_use.empty() && !next_item_for_go_only_ &&
+                                 !next_item_override_manual_ && !next_item_override_.empty() &&
                                  next_item_override_ == first_playable_item_uuid_locked(target);
         json moved = json::array();
         moved.get_ref<json::array_t&>().reserve(permutation.size());
@@ -2963,8 +3097,8 @@ json ProjectState::shuffle_items(const std::vector<std::string>& before,
         for (std::size_t i = 0; i < positions.size(); ++i)
             (*target)[positions[i]] = std::move(moved[i]);
         if (was_initial) rearm = first_playable_item_uuid_locked(target);
-        // Reject pending starts whose target was chosen from the old order.
-        ++playback_intent_revision_;
+        // A new first cue supersedes the old automatic target on an idle list.
+        if (whole_playlist && was_initial) ++playback_intent_revision_;
     }
     if (rearm) (void)set_next_item_override(*rearm, /*manual=*/false);
     prepare_music_backups();
@@ -3796,21 +3930,28 @@ bool ProjectState::cue_to_continue(const std::string& uuid,
     std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
     if (uuid.empty() || (expected_stop_revision && *expected_stop_revision != stop_revision())) return false;
 
+    bool quick_play = false;
     std::string target_uuid;
     {
         std::lock_guard lock{mutex_};
-        target_uuid = resolve_loop_continuation_target_locked(uuid);
+        for_each_item(document_, [&](json& item, const std::string&) {
+            if (item.value("uuid", std::string{}) == uuid) quick_play = is_one_shot_cue(item);
+        });
+        if (!quick_play) target_uuid = resolve_loop_continuation_target_locked(uuid);
     }
+    if (quick_play && play_next_playlist_target(uuid).empty()) return false;
 
     audio::CueId cue_id;
+    bool looping = false;
     {
         std::lock_guard slock{sequencer_mutex_};
         const auto it = std::find_if(
             sequenced_items_.begin(), sequenced_items_.end(),
             [&](const SequencedItem& item) { return item.uuid == uuid; });
-        if (it == sequenced_items_.end() || it->end_action != "loop" ||
+        if (it == sequenced_items_.end() || (!quick_play && it->end_action != "loop") ||
             it->continue_armed) return false;
         cue_id = it->cue_id;
+        looping = it->end_action == "loop";
     }
 
     const auto cue = engine_.find_cue(cue_id);
@@ -3829,27 +3970,41 @@ bool ProjectState::cue_to_continue(const std::string& uuid,
             [&](const SequencedItem& item) {
                 return item.uuid == uuid && item.cue_id == cue_id;
             });
-        if (it == sequenced_items_.end() || it->end_action != "loop" ||
-            it->continue_armed) return false;
+        if (it == sequenced_items_.end() || it->continue_armed || it->start_next_triggered ||
+            it->crossfade_triggered) return false;
+        if (it->prepared_follow) {
+            using FollowState = audio::PreparedFollow::State;
+            auto status = FollowState::Armed;
+            if (!it->prepared_follow->status.compare_exchange_strong(
+                    status, FollowState::Cancelled, std::memory_order_acq_rel) &&
+                status != FollowState::Cancelled) return false;
+        }
         // Publish the runtime decision before disabling the decoder loop. Once
         // looping is off, the decode worker may produce NaturalEnd immediately.
         it->continue_target_uuid = target_uuid;
         it->continue_armed = true;
+        it->continue_to_play_next = quick_play;
         it->crossfade_sec = 0.0;
-        it->stop_fade_sec = 0.0;
         it->start_next_time = 0.0;
         it->start_next_fade_sec = 0.0;
-        it->effective_end = 0.0;
-        it->end_frame = 0;
     }
 
     // set_loop flushes stale read-ahead and seeks the decoder back to the
     // audible playhead. It runs on this control thread, never the audio callback.
-    lifecycle_lock.unlock();
-    cue->set_loop(false);
+    if (looping) {
+        lifecycle_lock.unlock();
+        cue->set_loop(false);
+    }
     Logger::playback("CUE TO CONTINUE: item '{}' target='{}'", uuid,
                      target_uuid);
     return true;
+}
+
+std::string ProjectState::play_next_playlist_target(const std::string& source_uuid) {
+    const auto next = state_summary()["next"];
+    if (!next.is_object() || !next.contains("index")) return {};
+    const auto target = next.value("itemUuid", std::string{});
+    return target == source_uuid ? std::string{} : target;
 }
 
 void ProjectState::stop_all_cues(std::optional<long long> fade_ms) {
@@ -4987,14 +5142,14 @@ bool ProjectState::start_preview(const std::string& item_uuid, json* result) {
         engine_.unload_cue(cue_id);
         return false;
     }
-    engine_.play(cue_id);
-
     {
         std::lock_guard lock{mutex_};
+        pi->set_group_gain_linear(group_gain_locked(item_uuid));
         preview_cue_       = cue_id;
         preview_item_uuid_ = item_uuid;
         ++preview_state_revision_;
     }
+    engine_.play(cue_id);
     if (result) *result = preview_state();
     Logger::info("preview: started for item '{}' on '{}'", item_uuid, preview_device_name);
     return true;
@@ -5285,7 +5440,8 @@ json ProjectState::upgrade_legacy_document(const json& legacy) const {
 }
 
 bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::path& project_path,
-                                  std::chrono::steady_clock::time_point deadline) {
+                                  std::chrono::steady_clock::time_point deadline,
+                                  const std::string& expected_session, json* loaded_header) {
     std::optional<project_file::PreparedDocument> client_document;
     if (project_file::is_client_document(doc_in)) {
         project_file::PreparedDocument prepared;
@@ -5299,7 +5455,6 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
         client_document = std::move(prepared);
     }
 
-    std::lock_guard operation_lock{project_operation_mutex_};
     std::string loaded_name;
     std::optional<std::filesystem::path> loaded_media_root;
     decltype(cues_) loaded_cues;
@@ -5308,7 +5463,6 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
     decltype(mixer_routes_) loaded_mixer_routes;
     decltype(master_assignments_) loaded_master_assignments;
     if (!client_document) {
-        std::lock_guard lock{mutex_};
         try {
             json doc = doc_in;
             if (is_legacy_document(doc)) {
@@ -5393,6 +5547,8 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
             return false;
         }
     }
+    auto operation_lock = lock_project_session(expected_session);
+    if (!operation_lock.owns_lock()) return false;
     if (std::chrono::steady_clock::now() >= deadline) return false;
     // Quiesce the old mirror without blocking transport control. Project
     // operations are serialized by project_operation_mutex_, and the mirror's
@@ -5463,9 +5619,11 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
             master_assignments_.clear();
 
             ++document_generation_;
+            ++project_open_revision_;
             project_session_id_ = engine_.new_cue_id().value;
             project_file_path_ = project_path;
             document_ = std::move(client_document->document);
+            refresh_group_gains_locked();
             project_name_ = document_.value("name", std::string{"Untitled"});
             update_media_root_from_folder_locked();
             pending_repair_info_ = std::move(repair);
@@ -5482,34 +5640,41 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
         // async mirror kickoff — cues_ is empty at this instant, so the "nothing
         // on air" guard passes on a fresh open.
         arm_first_item_on_open();
+        if (loaded_header) *loaded_header = header_document();
         return true;
     }
 
-    std::lock_guard lock{mutex_};
-    for (auto& [_, id] : item_uuid_to_cue_) engine_.unload_cue(id);
-    item_uuid_to_cue_.clear();
-    cues_ = std::move(loaded_cues);
-    mixers_ = std::move(loaded_mixers);
-    item_routes_ = std::move(loaded_item_routes);
-    mixer_routes_ = std::move(loaded_mixer_routes);
-    master_assignments_ = std::move(loaded_master_assignments);
-    project_name_ = std::move(loaded_name);
-    if (loaded_media_root) media_root_ = std::move(*loaded_media_root);
-    ++document_generation_;
-    project_session_id_ = engine_.new_cue_id().value;
-    project_file_path_ = project_path;
-    document_ = default_empty_document();
-    pending_repair_info_ = {};
-    apply_audio_settings(engine_, document_["settings"]);
-
-    apply_to_engine_locked();
+    {
+        std::lock_guard lock{mutex_};
+        for (auto& [_, id] : item_uuid_to_cue_) engine_.unload_cue(id);
+        item_uuid_to_cue_.clear();
+        group_gains_.clear();
+        cues_ = std::move(loaded_cues);
+        mixers_ = std::move(loaded_mixers);
+        item_routes_ = std::move(loaded_item_routes);
+        mixer_routes_ = std::move(loaded_mixer_routes);
+        master_assignments_ = std::move(loaded_master_assignments);
+        project_name_ = std::move(loaded_name);
+        if (loaded_media_root) media_root_ = std::move(*loaded_media_root);
+        ++document_generation_;
+        ++project_open_revision_;
+        project_session_id_ = engine_.new_cue_id().value;
+        project_file_path_ = project_path;
+        document_ = default_empty_document();
+        if (project_path.has_parent_path()) document_["folderPath"] = util::path_to_utf8(project_path.parent_path());
+        pending_repair_info_ = {};
+        apply_audio_settings(engine_, document_["settings"]);
+        apply_to_engine_locked();
+    }
+    if (loaded_header) *loaded_header = header_document();
     return true;
 }
 
 bool ProjectState::load(const std::filesystem::path& path,
-                        std::chrono::steady_clock::time_point deadline) {
-    std::lock_guard operation_lock{project_operation_mutex_};
+                        std::chrono::steady_clock::time_point deadline,
+                        const std::string& expected_session, json* loaded_header) {
     if (std::chrono::steady_clock::now() >= deadline) return false;
+    const auto session = expected_session.empty() ? project_session_id() : expected_session;
     if (!project_file::is_native_project(path)) {
         Logger::error("ProjectState::load: native project path must use .dwcue: '{}'",
                       util::path_to_utf8(path));
@@ -5546,12 +5711,7 @@ bool ProjectState::load(const std::filesystem::path& path,
         if (path.has_parent_path() && doc.is_object()) {
             doc["folderPath"] = util::path_to_utf8(path.parent_path());
         }
-        const bool ok = load_from_json(doc, path, deadline);
-        if (ok && !project_file::is_client_document(doc) && path.has_parent_path()) {
-            std::lock_guard lock{mutex_};
-            document_["folderPath"] = util::path_to_utf8(path.parent_path());
-        }
-        return ok;
+        return load_from_json(doc, path, deadline, session, loaded_header);
     } catch (const std::exception& ex) {
         Logger::error("ProjectState::load failed: {}", ex.what());
         return false;
@@ -5569,6 +5729,7 @@ RepairInfo ProjectState::repair_project() {
     if (info.repaired) {
         std::lock_guard lock{mutex_};
         document_ = std::move(doc);
+        refresh_group_gains_locked();
         Logger::info("ProjectState::repair_project: {} issue(s) repaired.", info.issues.size());
     }
     return info;
@@ -5782,7 +5943,7 @@ void ProjectState::sequencer_loop() {
                     si.stop_fade_sec <= 0.0 && si.start_next_time <= 0.0;
                 const double until_next = si.start_next_time > 0.0 ? si.start_next_time - pos
                                                                   : remaining - si.crossfade_sec;
-                if (!si.advance_triggered && !si.start_next_triggered && remaining > 0.0 &&
+                if (!si.continue_armed && !si.advance_triggered && !si.start_next_triggered && remaining > 0.0 &&
                     until_next <= kPrepareFollowSec &&
                     (si.end_action == "next" ||
                      (plain_follow && (si.end_action == "goto-item" || si.end_action == "goto-index")))) {
@@ -5807,7 +5968,7 @@ void ProjectState::sequencer_loop() {
         // Execute pending actions with the sequencer lock released. Playback
         // lifecycle serialization below fences each copied action from replay
         // and cancellation; exceptions remain isolated per action.
-        for (const auto& p : pending) {
+        for (auto& p : pending) {
             // A replay/stop/remove may have replaced or cancelled this source
             // after the action was copied above. Serialize validation and the
             // complete side effect against those lifecycle changes so stale
@@ -5832,6 +5993,17 @@ void ProjectState::sequencer_loop() {
                 if (terminal) {
                     if (!playback_generations_.claim_terminal(
                             p.item.uuid, p.item.playback_generation)) continue;
+                    // A continuation may have been armed after collecting EOF.
+                    const auto current = std::find_if(sequenced_items_.begin(), sequenced_items_.end(),
+                        [&](const SequencedItem& item) {
+                            return item.uuid == p.item.uuid &&
+                                   item.playback_generation == p.item.playback_generation;
+                        });
+                    if (current != sequenced_items_.end() && current->continue_armed) {
+                        p.item.continue_armed = true;
+                        p.item.continue_to_play_next = current->continue_to_play_next;
+                        p.item.continue_target_uuid = current->continue_target_uuid;
+                    }
                     std::erase_if(sequenced_items_, [&](const SequencedItem& item) {
                         return item.uuid == p.item.uuid &&
                                item.playback_generation == p.item.playback_generation;
@@ -5961,6 +6133,14 @@ void ProjectState::sequencer_loop() {
             }
 
             case PendingAction::Kind::PrepareFollow: {
+                const auto source_still_follows = [&] {
+                    std::lock_guard slock{sequencer_mutex_};
+                    return std::any_of(sequenced_items_.begin(), sequenced_items_.end(), [&](const SequencedItem& item) {
+                        return item.uuid == p.item.uuid && item.playback_generation == p.item.playback_generation &&
+                               !item.continue_armed;
+                    });
+                };
+                if (!source_still_follows()) break;
                 const auto backup = p.item.end_action == "next" ? music_backup_for(p.item.uuid) : std::string{};
                 const bool buffered = !backup.empty();
                 const auto next_uuid = resolve_advance_target(p.item.uuid, buffered);
@@ -5977,7 +6157,7 @@ void ProjectState::sequencer_loop() {
                     if (const auto target_id = item_to_cue_id(next_uuid);
                         target_id && play_item_impl(lifecycle_lock, next_uuid, -1.0, p.item.cue_id, -1.0,
                             buffered ? ItemPlayPhase::PrepareBuffered : ItemPlayPhase::Prepare) &&
-                        resolve_advance_target(p.item.uuid, buffered) == next_uuid) {
+                        resolve_advance_target(p.item.uuid, buffered) == next_uuid && source_still_follows()) {
                         follow = engine_.schedule_follow(p.item.cue_id, *target_id, p.item.end_frame);
                     }
                 }
@@ -6544,6 +6724,7 @@ void ProjectState::handle_item_ended(std::unique_lock<std::recursive_mutex>& lif
     const auto trigger_follow = [&](const std::string& target, bool allow_music_backup, bool buffered) {
         const auto target_is_current = [&] {
             if (item.continue_armed) {
+                if (item.continue_to_play_next) return target == play_next_playlist_target(item.uuid);
                 std::lock_guard lock{mutex_};
                 return target == (next_item_override_manual_ && !next_item_for_go_only_
                     ? next_item_override_ : item.continue_target_uuid);
@@ -6582,7 +6763,9 @@ void ProjectState::handle_item_ended(std::unique_lock<std::recursive_mutex>& lif
 
     if (item.continue_armed) {
         auto target = item.continue_target_uuid;
-        {
+        if (item.continue_to_play_next) {
+            target = play_next_playlist_target(item.uuid);
+        } else {
             std::lock_guard lock{mutex_};
             if (next_item_override_manual_ && !next_item_for_go_only_) target = next_item_override_;
         }

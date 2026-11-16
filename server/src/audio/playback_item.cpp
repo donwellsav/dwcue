@@ -495,6 +495,7 @@ void PlaybackItem::seek_seconds(double seconds) {
             if (playback_revision() != revision) return;
             was_stopped = transport_.load(std::memory_order_acquire) == TransportState::Stopped;
             reset_read_ahead_locked(playhead_frames_.load(std::memory_order_acquire));
+            seek_pending_ = true;
             rewind_on_play_.store(true, std::memory_order_release);
         }
         if (decoder_) {
@@ -540,6 +541,12 @@ void PlaybackItem::set_gain_db(float db) noexcept {
         gain_current_linear_.store(lin, std::memory_order_release);
     }
 }
+void PlaybackItem::set_group_gain_linear(float linear) noexcept {
+    group_gain_target_.store(linear, std::memory_order_release);
+    if (transport_.load(std::memory_order_acquire) == TransportState::Stopped)
+        group_gain_current_.store(linear, std::memory_order_release);
+}
+
 void PlaybackItem::set_duck_gain_linear(
     float linear, std::chrono::milliseconds duration, bool active) noexcept {
     linear = std::clamp(linear, 0.0f, 1.0f);
@@ -842,6 +849,7 @@ void PlaybackItem::reset_read_ahead_locked(std::uint64_t frame) noexcept {
     read_ahead_write_.store(0, std::memory_order_release);
     read_ahead_offset_ = 0;
     starved_frames_ = 0;
+    seek_pending_ = false;
     decode_cursor_frame_ = frame;
     decode_out_point_passed_ = false;
     decode_terminal_.store(false, std::memory_order_release);
@@ -1158,13 +1166,15 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
                     (slot.loop_end_frame - loop_in);
         }
     }
-    if (frames_read < frame_count && !natural_end && !rewind_on_play_.load(std::memory_order_acquire) &&
+    if (frames_read < frame_count && !natural_end &&
+        (seek_pending_ || !rewind_on_play_.load(std::memory_order_acquire)) &&
         !decode_terminal_.load(std::memory_order_acquire)) {
         read_ahead_underruns_.fetch_add(1, std::memory_order_relaxed);
         // Let brief gaps recover; a sustained 250 ms gap must never re-enter late.
         if (st != TransportState::FadingOut) {
             starved_frames_ += frame_count - frames_read;
             if (starved_frames_ >= std::max<std::uint64_t>(1, desc_.mix_sample_rate / 4)) {
+                if (seek_pending_) playback_revision_.fetch_add(1, std::memory_order_acq_rel);
                 stop_for_decode_error(MA_TIMEOUT);
                 for (ChannelCount c = 0; c < out_channel_count; ++c)
                     std::memset(out_channel_buffers[c], 0, frame_count * sizeof(Sample));
@@ -1311,15 +1321,20 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
     // smoother but per-block linear is inaudible at the fade durations we use
     // and saves CPU.
     if (frames_read > 0) {
+        const auto group_target = group_gain_target_.load(std::memory_order_acquire);
+        const auto group_start = group_gain_current_.load(std::memory_order_relaxed);
+        group_gain_current_.store(group_target, std::memory_order_release);
+        const auto output_start = output_gain_now * group_start;
+        const auto output_end = output_gain_end * group_target;
         for (ChannelCount c = 0;
              c < std::min<ChannelCount>(out_channel_count, file_channels);
              ++c) {
             Sample* buf = out_channel_buffers[c];
             const std::size_t n = static_cast<std::size_t>(frames_read);
             if (n == 0) continue;
-            const float dg = (output_gain_end - output_gain_now) /
+            const float dg = (output_end - output_start) /
                 static_cast<float>(std::max<std::size_t>(n, 1));
-            float g = output_gain_now;
+            float g = output_start;
             for (std::size_t i = 0; i < n; ++i) {
                 buf[i] *= g;
                 g += dg;

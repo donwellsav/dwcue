@@ -247,6 +247,42 @@ test('failed preference writes keep the selected Spotify destination and the lat
   assert.equal(preferences.spotifyRecovery, null);
 });
 
+test('Spotify destination browsing keeps the directory authorization check', async (t) => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'dwcue-spotify-destination-'));
+  t.after(() => fs.rmSync(folder, { recursive: true, force: true }));
+  const child = path.join(folder, 'Music');
+  fs.mkdirSync(child);
+  const file = path.join(folder, 'cue.wav');
+  fs.writeFileSync(file, '');
+  const { PathCapabilityRegistry } = require('../client/electron/path-capabilities.js');
+  const pathCapabilities = new PathCapabilityRegistry();
+  const handlers = spotifyHandler(['authorize-dropped-spotify-folder', 'set-spotify-import-destination'], {
+    fs, pathCapabilities, requireAbsoluteIpcPath(value) {
+      if (!path.isAbsolute(value)) throw new Error('Expected an absolute path');
+      return value;
+    },
+    requireAuthorizedIpcPath: value => pathCapabilities.require(value),
+    readImportPreferences: () => ({}), writeImportPreferences: () => true,
+  });
+  const choose = handlers['set-spotify-import-destination'];
+  assert.throws(() => choose({}, child), /outside the user-authorized/);
+  assert.throws(() => handlers['authorize-dropped-spotify-folder']({}, file), /not a directory/);
+  let bridge;
+  const dropped = {};
+  vm.runInNewContext(fs.readFileSync(path.join(root, 'client/electron/preload.js'), 'utf8'), {
+    console, require: () => ({
+      webUtils: { getPathForFile: file => file === dropped ? child : '' },
+      ipcRenderer: { invoke: (channel, value) => Promise.resolve(handlers[channel]({}, value)) },
+      contextBridge: { exposeInMainWorld: (_name, api) => { bridge = api; } },
+    }),
+  });
+  assert.equal(await bridge.authorizeDroppedSpotifyFolder({ path: child }), '');
+  assert.throws(() => choose({}, child), /outside the user-authorized/);
+  const authorized = await bridge.authorizeDroppedSpotifyFolder(dropped);
+  assert.equal(choose({}, authorized), true);
+  assert.equal(pathCapabilities.allows(file), false);
+});
+
 function youtubeDownloadHarness(overrides = {}) {
   const sender = new EventEmitter();
   sender.id = 17;

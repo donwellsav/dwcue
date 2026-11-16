@@ -1174,10 +1174,8 @@ const appLifecycleActions = createAppLifecycleActions({
   prepare: prepareForTerminalAction,
   relaunch: () => app.relaunch(),
   exit: (code) => app.exit(code),
-  quit: () => app.quit(),
   stopServer: stopLiveplayServer,
   installUpdate: installDownloadedUpdate,
-  confirmQuit: () => { quitConfirmed = true; },
 });
 
 function sendMainHeaderWarning(message) {
@@ -1935,9 +1933,7 @@ void initializeYtDlp();
 const denoInitialization = initializeDeno();
 
 let mainWindow = null;
-// Set once the renderer-driven quit confirmation has resolved, so the
-// next main-window `close` is allowed through instead of being vetoed
-// to re-show the dialogs. See the `close` handler in createWindow().
+// Set by the updater after it completes shutdown preparation.
 let quitConfirmed = false;
 let currentProject = null;
 let currentProjectData = null; // Full project data synced between Electron windows
@@ -2149,11 +2145,13 @@ function createWindow() {
 
   // Veto the first close so the renderer can run its quit-confirmation
   // flow (unsaved changes → optionally shut the local audio server down).
-  // The renderer responds via `app:confirm-quit`, which sets quitConfirmed
-  // and calls app.quit() — re-entering here with the veto lifted. If the
-  // renderer is gone (crash / already destroyed) we let the close proceed.
+  // Confirmed quits exit after cleanup. An unresponsive renderer cannot
+  // present the prompt, so leave that window's native close available.
+  let responsive = true;
+  mainWindow.on('unresponsive', () => { responsive = false; });
+  mainWindow.on('responsive', () => { responsive = true; });
   mainWindow.on('close', (e) => {
-    if (quitConfirmed) return;
+    if (quitConfirmed || !responsive) return;
     if (!mainWindow || mainWindow.webContents.isDestroyed() || mainWindow.webContents.isCrashed()) return;
     // Packaged-app smoke test launches with --smoke-quit: no human is
     // present to answer the quit-confirmation dialogs, so skip the veto.
@@ -3059,8 +3057,11 @@ ipcMain.handle('video-output:check-frame', async (event, request) => {
   const uuid = requireIpcString(request.uuid, 'itemUuid', 256);
   const fileRevision = request.fileRevision === null ? null
     : requireIpcString(request.fileRevision, 'fileRevision', 1024);
-  const { inPoint, accessToken } = request;
+  const { inPoint, outPoint = null, accessToken } = request;
   if (!Number.isFinite(inPoint) || inPoint < 0) throw new TypeError('Invalid video cue in point.');
+  if (outPoint !== null && (!Number.isFinite(outPoint) || outPoint <= inPoint)) {
+    throw new TypeError('Invalid video cue out point.');
+  }
   if (typeof accessToken !== 'string' || accessToken.length > 8192 || /[\0\r\n]/.test(accessToken)) {
     throw new TypeError('Invalid server credential.');
   }
@@ -3092,7 +3093,7 @@ ipcMain.handle('video-output:check-frame', async (event, request) => {
   owner.once('render-process-gone', cancel);
   owner.on('did-start-navigation', onNavigate);
   try {
-    return await checkVideoFrame(`${base}/api/media?${params}`, inPoint, controller.signal);
+    return await checkVideoFrame(`${base}/api/media?${params}`, { inPoint, outPoint }, controller.signal);
   } finally {
     videoFrameProbe = null;
     if (!owner.isDestroyed()) {
@@ -3666,10 +3667,11 @@ function buildRecentProjectsSubmenu(t) {
 function createMenu(locale = 'en', isDev = false) {
   currentLocale = locale;
   const t = menuTranslations[locale] || menuTranslations.en;
-  
+  const appMenu = process.platform === 'darwin' ? [{ role: 'appMenu' }] : [];
 
   if (operatorManual.owns(BrowserWindow.getFocusedWindow()?.webContents)) {
     Menu.setApplicationMenu(Menu.buildFromTemplate([
+      ...appMenu,
       { label: t.file, submenu: [{ role: 'close' }] },
       { role: 'editMenu' },
       { label: t.help, submenu: [{ label: t.operatorManual, click: () => void operatorManual.open(mainWindow, t.operatorManual) }] },
@@ -3677,6 +3679,7 @@ function createMenu(locale = 'en', isDev = false) {
     return;
   }
   const template = [
+    ...appMenu,
     {
       label: t.file,
       submenu: [
@@ -3759,6 +3762,7 @@ function createMenu(locale = 'en', isDev = false) {
         },
         {
           label: t.changeAccentColor,
+          enabled: !!currentProject,
           click: () => {
             mainWindow.webContents.send('menu-change-accent-color');
           }
@@ -3876,28 +3880,40 @@ ipcMain.handle('select-project-file', async (event) => {
   return authorizeOpenableFilePath(selectedPath);
 });
 
-ipcMain.handle('select-audio-files', async (event) => {
-  requireTrustedIpc(event);
-  const result = await showNativeFilePicker(() => dialog.showOpenDialog({
-    defaultPath: nativePickerFolder('media'),
-    properties: ['openFile', 'multiSelections'],
-    // Audio plus the video containers the engine decodes (H.264/HEVC tracks);
-    // imported video cues play their audio through the engine and drive the
-    // Video Output window.
-    filters: [{
-      name: 'Audio & video',
-      extensions: [
-        'mp3', 'wav', 'aiff', 'aif', 'flac', 'ogg', 'oga', 'm4a', 'aac', 'mp2',
-        'wma', 'opus', 'ac3', 'amr', 'au', 'caf',
-        'mp4', 'm4v', 'mov', 'mkv', 'webm', 'avi', 'mpg', 'mpeg', 'm2ts', 'mts',
-        'wmv', 'flv', '3gp',
-      ],
-    }],
-  }));
+const mediaPickerExtensions = [
+  'mp3', 'wav', 'aiff', 'aif', 'flac', 'ogg', 'oga', 'm4a', 'aac', 'mp2',
+  'wma', 'opus', 'ac3', 'amr', 'au', 'caf',
+  'mp4', 'm4v', 'mov', 'mkv', 'webm', 'avi', 'mpg', 'mpeg', 'm2ts', 'mts',
+  'wmv', 'flv', '3gp',
+];
 
-  if (result.canceled || result.filePaths.length === 0) return null;
-  rememberNativePickerFolder('media', path.dirname(result.filePaths[0]));
-  return result.filePaths.map(filePath => pathCapabilities.authorizeFile(filePath));
+ipcMain.handle('scan-media-folder', async (event, input) => {
+  requireTrustedIpc(event);
+  if (readLiveplayConfig().mode !== 'local') throw new Error('Folder scan requires the local audio engine');
+  const folder = requireAbsoluteIpcPath(input, 'folder');
+  const remaining = [folder];
+  const files = [];
+  const skippedFolders = [];
+  while (remaining.length) {
+    const dir = remaining.pop();
+    let entries;
+    try {
+      entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    } catch (error) {
+      if (dir === folder) throw error;
+      skippedFolders.push(path.relative(folder, dir));
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue;
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) remaining.push(fullPath);
+      else if (entry.isFile() && mediaPickerExtensions.includes(path.extname(entry.name).slice(1).toLowerCase()))
+        files.push(fullPath);
+    }
+  }
+  files.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  return { name: path.basename(folder) || folder, files, skippedFolders: skippedFolders.sort() };
 });
 
 ipcMain.handle('get-import-preferences', (event) => {
@@ -3936,6 +3952,12 @@ ipcMain.handle('get-import-preferences', (event) => {
     }
   }
   return { ...response, preferencesSaved: !unsavedImportPreferences };
+});
+
+// The preload only calls this with a path extracted from an OS-backed File.
+ipcMain.handle('authorize-dropped-spotify-folder', (event, folder) => {
+  requireTrustedIpc(event);
+  return pathCapabilities.authorizeRoot(requireAbsoluteIpcPath(folder, 'folder'));
 });
 
 ipcMain.handle('set-spotify-import-destination', (event, destination) => {
@@ -4069,50 +4091,34 @@ ipcMain.handle('write-file', async (event, filePath, data) => {
   }
 });
 
-// Save dialog for the canonical archive download flow. Returns the chosen
-// absolute .dwcuepack path or null on cancel.
-ipcMain.handle('show-save-archive-dialog', async (event, defaultName) => {
+const archiveDownloadFolders = new Set();
+ipcMain.handle('archive-download-folder', async (event, droppedPath) => {
   requireTrustedIpc(event);
-  const requestedName = typeof defaultName === 'string' && defaultName.length <= 255
-    ? path.basename(defaultName)
-    : 'project.dwcuepack';
-  const result = await showNativeFilePicker(() => dialog.showSaveDialog({
-    title: 'Save DonWells Cue Show Archive',
-    defaultPath: path.join(nativePickerFolder('archive-export') || '', canonicalArchivePath(requestedName)),
-    filters: [{ name: 'DonWells Cue Show Archive', extensions: ['dwcuepack'] }],
-  }));
-  if (result.canceled || !result.filePath) return null;
-  rememberNativePickerFolder('archive-export', path.dirname(result.filePath));
-  return pathCapabilities.authorizeFile(
-    canonicalArchivePath(result.filePath), { allowMissing: true });
+  const selected = requireAbsoluteIpcPath(droppedPath ?? app.getPath('downloads'), 'folder');
+  const folder = await fs.promises.realpath(selected);
+  if (!(await fs.promises.stat(folder)).isDirectory()) throw new Error('Choose a folder.');
+  archiveDownloadFolders.add(folder);
+  return folder;
 });
 
-// Choose a DonWells Cue archive.
-ipcMain.handle('show-open-archive-dialog', async (event) => {
-  requireTrustedIpc(event);
-  const result = await showNativeFilePicker(() => dialog.showOpenDialog({
-    defaultPath: nativePickerFolder('archive-import'),
-    title: 'Choose DonWells Cue Show Archive',
-    properties: ['openFile'],
-    filters: [{ name: 'DonWells Cue Show Archive', extensions: ['dwcuepack'] }],
-  }));
-  if (result.canceled || result.filePaths.length === 0) return null;
-  const selectedPath = result.filePaths[0];
-  if (fileKindFor(selectedPath) !== ProjectFileKind.NativeArchive) return null;
-  rememberNativePickerFolder('archive-import', path.dirname(selectedPath));
-  return pathCapabilities.authorizeFile(selectedPath);
-});
-
-// Stream a one-shot server archive directly to an authorized local path.
-// The renderer never holds the archive in memory, and the destination is
-// replaced only after the complete response reaches a sibling temp file.
+// Stage the stream next to its destination so an incomplete transfer cannot replace a backup.
 ipcMain.handle('download-archive-to-file', async (event, request) => {
   let tempPath = '';
   try {
     requireTrustedIpc(event);
     const checked = requireBoundedIpcObject(request, 'request', 16 * 1024);
-    const destination = requireAuthorizedIpcPath(
-      checked.destination, 'destination', true);
+    const folder = requireAbsoluteIpcPath(checked.folder, 'folder');
+    if (!archiveDownloadFolders.has(folder) || await fs.promises.realpath(folder) !== folder) {
+      throw new Error('Choose a download folder first.');
+    }
+    const name = requireIpcString(checked.filename, 'filename', 255).trim();
+    const filename = canonicalArchivePath(name);
+    if (!name || name.startsWith('.') || /[<>:"/\\|?*\x00-\x1f]/.test(name) ||
+        /^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³]) *\./i.test(filename) ||
+        Buffer.byteLength(filename, 'utf8') > 255) {
+      throw new Error('Enter a valid archive filename.');
+    }
+    const destination = path.join(folder, filename);
     const token = requireIpcString(checked.token, 'token', 64);
     if (!/^[0-9a-f]{64}$/.test(token)) {
       throw new TypeError('token must be 64 lowercase hexadecimal characters');
@@ -4166,17 +4172,28 @@ ipcMain.handle('download-archive-to-file', async (event, request) => {
       Readable.fromWeb(response.body),
       sizeLimit,
       fs.createWriteStream(tempPath, { flags: 'wx', mode: 0o600 }));
-    await fs.promises.rename(tempPath, destination);
-    tempPath = '';
+    if (declaredLength !== null && Number(declaredLength) !== received) {
+      throw new Error('The archive download was incomplete.');
+    }
+    try {
+      await fs.promises.link(tempPath, destination);
+    } catch (error) {
+      if (!['ENOTSUP', 'EOPNOTSUPP', 'ENOSYS', 'EPERM', 'EXDEV'].includes(error.code)) throw error;
+      // shortcut: On filesystems without hard links, copy once more. Use a no-replace rename if large copies become a bottleneck.
+      await fs.promises.copyFile(tempPath, destination, fs.constants.COPYFILE_EXCL);
+    }
 
     await fetch(endpoint, {
       method: 'DELETE',
       headers,
       redirect: 'error',
+      signal: AbortSignal.timeout(3000),
     }).catch(() => undefined);
-    return { success: true };
+    return { success: true, path: destination };
   } catch (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: error.code === 'EEXIST'
+      ? 'An archive with that name already exists. Enter a different filename.'
+      : error.message };
   } finally {
     if (tempPath) await fs.promises.unlink(tempPath).catch(() => {});
   }
@@ -4412,6 +4429,7 @@ ipcMain.on('sync-project-data', (event, projectData, identity, captureSession = 
     cartPlayerWindow.webContents.send('cart-window-project-update', {
       project: currentProjectData,
       identity: currentProjectIdentity,
+      projectSessionId: currentCaptureSession,
     });
   }
 });
@@ -4482,7 +4500,7 @@ ipcMain.on('cart-grid-layouts-changed', (event, layouts) => {
 
 ipcMain.handle('get-cart-window-project-data', (event) => {
   requireTrustedIpc(event);
-  return { project: currentProjectData, identity: currentProjectIdentity };
+  return { project: currentProjectData, identity: currentProjectIdentity, projectSessionId: currentCaptureSession };
 });
 
 ipcMain.handle('one-shot-mutation:request', (event, request) => {

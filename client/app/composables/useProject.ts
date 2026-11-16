@@ -78,6 +78,7 @@ interface ProjectSaveRequest {
   project: Project;
   path: string;
   epoch: number;
+  signal?: AbortSignal;
   write: () => Promise<boolean>;
 }
 const _projectSaveQueue = createLatestWriteQueue<ProjectSaveRequest>();
@@ -91,7 +92,7 @@ type ProjectHydrationLoad = ReturnType<typeof _projectHydration.begin>;
 const _ownerSessionId = globalThis.crypto?.randomUUID?.()
   ?? 'dwcue-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
 let _hydrationRequestRevision = 0;
-let _openOverlayRevision = 0;
+let _openLoadRevision = 0;
 const _hydrationRetry = createProjectHydrationRetry();
 
 const createItemPatchMutationIdentity = (clientId: string) => {
@@ -152,6 +153,9 @@ const restoreWaveform = (item: any): void => {
 let selectionAnchorUuid: string | null = null;
 
 const repairNotice = ref<{ serverUrl: string; session: string; issues: string[]; saving: boolean; failed: boolean } | null>(null);
+const EMPTY_AUDIO_READINESS: ServerAudioReadiness = {
+  ready: true, loading: false, loaded: 0, total: 0, failedCount: 0, failures: [],
+};
 
 // ---- Unsaved-changes dialog state (module-scoped, shared across calls) ----
 // Shown when the user tries to leave the current project (New / Open / Close)
@@ -162,20 +166,13 @@ const unsavedDialogReason = ref<'project' | 'quit'>('project');
 const unsavedDialogBlocked = ref(false);
 let _unsavedPromiseResolve: ((choice: 'save' | 'discard' | 'cancel') => Promise<void>) | null = null;
 
-// ---- Delete-selection dialog state (module-scoped, shared across calls) ----
-// Shown when a delete is triggered while more than one item is selected, so a
-// single trash-button click can't silently wipe the whole selection. The
-// keyboard DEL variant omits the "Delete Only" choice (firmer intent).
-const deleteDialogVisible = ref(false);
-const deleteDialogCount = ref(0);
-const deleteDialogName = ref('');
-const deleteDialogAllowOnly = ref(true);
-// When opened from a specific item's trash button, the UUID "Delete Only"
-// should target.
-let _deleteOnlyUuid: string | null = null;
-// Which delete path the dialog's buttons should take, captured when the dialog
-// opens so it can't drift if the selection changes underneath it.
-let _deleteContext: 'playlist' | 'cart' = 'playlist';
+const deleteRequest = shallowRef<{
+  uuids: string[];
+  onlyUuid?: string;
+  name: string;
+  context: 'playlist' | 'cart';
+  epoch: number;
+} | null>(null);
 
 export const useProject = () => {
   const currentProject = useState<Project | null>('currentProject', () => null);
@@ -209,9 +206,10 @@ export const useProject = () => {
   // openItemProperties() (the gear button).
   const propertiesPanelOpen = useState<boolean>('propertiesPanelOpen', () => false);
   const showProjectSettings = useState('showProjectSettings', () => false);
-  const workspaceImportPanel = useState<'media' | 'youtube' | 'spotify' | 'archive-import' | 'archive-export' | null>(
+  const workspaceImportPanel = useState<'media' | 'youtube' | 'spotify' | 'archive-import' | 'archive-export' | 'quickplay' | 'delete-selection' | 'repair' | null>(
     'workspaceImportPanel', () => null,
   );
+  const quickPlayEditor = useState<{ uuid: string; remove: boolean } | null>('quickPlayEditor', () => null);
   // NB: activeCues is owned by useAudioEngine (it's the server projection).
   // useProject only clears it on closeProject; we re-use the same useState key.
   const activeCues = useState<Map<string, any>>('activeCues', () => new Map());
@@ -274,23 +272,12 @@ export const useProject = () => {
   const shufflePending = useState<boolean>('useProject.shufflePending', () => false);
   const musicContinuityPending = useState<Set<string>>('useProject.musicContinuityPending', () => new Set());
 
-  // Loading state — set true during open/create/save so the UI can render a
-  // loading overlay. `loadingMessage` is the title shown in the overlay.
-  const isLoading = useState<boolean>('useProject.isLoading', () => false);
-  const loadingMessage = useState<string>('useProject.loadingMessage', () => '');
-  // Background audio-loading progress (polled while the server is still
-  // mirroring cues into the engine in a worker thread). loading=false means
-  // every audio cue is ready to play.
+  // Tracks project loading for the progress display and cue-start guards.
+  const projectLoad = useState<'create' | 'open' | null>('useProject.projectLoad', () => null);
+  // Keep the final report so files that failed to load remain visible.
   const audioLoadingProgress = useState<ServerAudioReadiness>(
     'useProject.audioLoadingProgress',
-    () => ({
-      ready: true,
-      loading: false,
-      loaded: 0,
-      total: 0,
-      failedCount: 0,
-      failures: [],
-    }),
+    () => EMPTY_AUDIO_READINESS,
   );
   // Server-owned preview state: at most one item is "being previewed" at a
   // time (DJ pre-listen on settings.previewDevice). Empty string = no
@@ -311,6 +298,7 @@ export const useProject = () => {
   // in-memory document is still kept current by the granular sync watchers, so
   // only the canonical .dwcue file on disk lags until an explicit save flushes it.
   const hasUnsavedChanges = useState<boolean>('useProject.hasUnsavedChanges', () => false);
+  const saveFailed = useState<boolean>('useProject.saveFailed', () => false);
   // Autosave is on unless the project explicitly opted out (older projects
   // without the key default to on).
   const autoSaveEnabled = computed<boolean>(
@@ -460,6 +448,7 @@ export const useProject = () => {
       }
       showProjectSettings.value = false;
       workspaceImportPanel.value = null;
+      quickPlayEditor.value = null;
       propertiesPanelOpen.value = true;
     }
   };
@@ -649,8 +638,7 @@ export const useProject = () => {
   // ----------------------------------------------------------------------
   // Create and save the canonical show before the server switches to it.
   const createNewProject = async (name: string, folderPath: string): Promise<boolean> => {
-    isLoading.value = true;
-    loadingMessage.value = 'Creating project…';
+    projectLoad.value = 'create';
     try {
       const server = useLiveplayServer();
       // Ensure server is reachable; without it we can't actually own state.
@@ -672,10 +660,10 @@ export const useProject = () => {
         lastModified: new Date().toISOString()
       };
 
+      const projectFilePath = projectPathInFolder(folderPath, name);
+      const header = await server.loadProjectDocument(newProject, projectFilePath);
       isHydrating.value = true;
       try {
-        const projectFilePath = projectPathInFolder(folderPath, name);
-        const header = await server.loadProjectDocument(newProject, projectFilePath);
         const hydration = applyServerHeader(header);
         if (!hydration) throw new Error('Server did not open the new project');
         hydration.finish(true);
@@ -705,7 +693,7 @@ export const useProject = () => {
       console.error('Error creating project:', error);
       return false;
     } finally {
-      isLoading.value = false;
+      projectLoad.value = null;
     }
   };
 
@@ -717,8 +705,9 @@ export const useProject = () => {
   const tryRejoinExistingProject = async (existingHeader?: any, signal?: AbortSignal): Promise<boolean> => {
     // A welcome probe must yield to an explicit Open or New. Reconnect
     // verification supplies its own server header and can still proceed.
-    if (signal?.aborted || (isLoading.value && !existingHeader)) return false;
+    if (signal?.aborted || (projectLoad.value && !existingHeader)) return false;
     const requestRevision = ++_hydrationRequestRevision;
+    const isCurrent = () => !signal?.aborted && requestRevision === _hydrationRequestRevision;
     _hydrationRetry.set(() => tryRejoinExistingProject());
     try {
       const server = useLiveplayServer();
@@ -726,13 +715,25 @@ export const useProject = () => {
         try { server.connect(); } catch { /* noop */ }
       }
       const header = existingHeader ?? await server.fetchProjectHeader(signal);
-      if (signal?.aborted || requestRevision !== _hydrationRequestRevision) return false;
+      if (!isCurrent()) return false;
       if (!header || !header.hasOpenProject) return false;
+
+      // Keep the last verified show readable until the replacement can be installed whole.
+      const retainPlaylist = !isCartWindowMode && !isVideoOutputWindowMode && currentProject.value &&
+        projectHydrationStatus.value === 'ready' && (server.showVerification === 'checking' || recoveringProject.value);
+      const items: Project['items'] | undefined = retainPlaylist ? [] : undefined;
+      if (items) {
+        const session = header.server?.projectSessionId;
+        if (typeof session !== 'string' || !session) throw new Error('The server did not identify the show');
+        if (!await readProjectItemPages(server, header.itemCount, isCurrent, page => { items.push(...page); }, signal, session)) return false;
+        if (!isCurrent()) return false;
+        if (items.length !== header.itemCount) throw new Error('The cue list changed while verifying the show');
+      }
 
       isHydrating.value = true;
       let hydration: ProjectHydrationLoad | false = false;
       try {
-        hydration = applyServerHeader(header);
+        hydration = applyServerHeader(header, items);
       } finally {
         await nextTick();
         isHydrating.value = false;
@@ -748,8 +749,7 @@ export const useProject = () => {
       const cartOnly = currentProject.value?.cartOnlyItems ?? [];
       for (const item of cartOnly) addCartOnlyItem(item);
 
-      if (!await streamItemPages(server, header.itemCount ?? 0, hydration, signal)) return false;
-      void pollLoadingProgress(server);
+      if (!await streamItemPages(server, header.itemCount ?? 0, hydration, signal, items !== undefined) || !isCurrent()) return false;
       return true;
     } catch (error) {
       if (requestRevision === _hydrationRequestRevision) _projectHydration.current()?.finish(false, error);
@@ -762,12 +762,11 @@ export const useProject = () => {
     loadHeader: (server: any) => Promise<any>,
   ): Promise<boolean> => {
     const requestRevision = ++_hydrationRequestRevision;
-    const overlayRevision = ++_openOverlayRevision;
+    const loadRevision = ++_openLoadRevision;
     if (projectHydrationStatus.value !== 'failed') {
       _hydrationRetry.set(() => hydrateProjectFrom(loadHeader));
     }
-    isLoading.value = true;
-    loadingMessage.value = 'Loading project…';
+    projectLoad.value = 'open';
     try {
       const server = useLiveplayServer();
       if (!server.connected) {
@@ -796,7 +795,6 @@ export const useProject = () => {
       for (const item of cartOnly) addCartOnlyItem(item);
 
       if (!hydration || !await streamItemPages(server, header?.itemCount ?? 0, hydration)) return false;
-      void pollLoadingProgress(server);
       recordRecentProject(projectFilePathRef.value);
       return true;
     } catch (error) {
@@ -804,7 +802,7 @@ export const useProject = () => {
       console.error('Error opening project:', error);
       return false;
     } finally {
-      if (overlayRevision === _openOverlayRevision) isLoading.value = false;
+      if (loadRevision === _openLoadRevision) projectLoad.value = null;
     }
   };
 
@@ -816,58 +814,54 @@ export const useProject = () => {
     return hydrateProjectFrom(server => server.loadProjectFromPath(projectFilePath));
   };
 
-  // Stream paged items from the server into currentProject.items. Yields
-  // to the renderer between pages via requestAnimationFrame so the
-  // playlist paints incrementally rather than blocking on one giant tick.
-  // Safe to call multiple times — bails if currentProject becomes null.
+  // Ordinary opens paint each page as it arrives. Recovery collects the same
+  // pages against the new show identity before replacing the visible list.
+  async function readProjectItemPages(
+    server: ReturnType<typeof useLiveplayServer>, totalHint: number, isCurrent: () => boolean,
+    receive: (items: Project['items']) => void | Promise<void>, signal?: AbortSignal, session?: string,
+  ): Promise<boolean> {
+    let offset = 0;
+    while (isCurrent() && !signal?.aborted) {
+      const page = await server.fetchProjectItemsPage(offset, 100, signal, session);
+      if (!isCurrent() || signal?.aborted) return false;
+      if (!Array.isArray(page.items)) throw new Error('Server returned an invalid project page');
+      if (page.items.length === 0) {
+        if (offset < Math.max(totalHint, page.total)) throw new Error('Project item stream ended before all items arrived');
+        return true;
+      }
+
+      // Waveforms are read-only and expensive to track deeply. Reuse cached
+      // peaks on a reconnect or a reload of the same show.
+      for (const item of page.items) {
+        if (item?.waveform) item.waveform = markRaw(item.waveform);
+        restoreWaveform(item);
+      }
+      await receive(page.items);
+      offset += page.items.length;
+      if (offset >= page.total) return isCurrent() && !signal?.aborted;
+      await new Promise<void>(resolve => {
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
+        else setTimeout(resolve, 0);
+      });
+    }
+    return false;
+  }
+
   async function streamItemPages(
-    server: any, totalHint: number, hydration: ProjectHydrationLoad, signal?: AbortSignal,
+    server: ReturnType<typeof useLiveplayServer>, totalHint: number, hydration: ProjectHydrationLoad,
+    signal?: AbortSignal, pagesAlreadyLoaded = false,
   ): Promise<boolean> {
     const project = hydration.project;
     const isCurrent = () => _projectHydration.current() === hydration && currentProject.value === project;
     let complete = false;
     let failure: unknown = null;
-    const PAGE = 100;
-    let offset = 0;
     try {
-      while (true) {
-        // Abort if another openProject started, or the project was closed.
-        if (signal?.aborted || !isCurrent()) return false;
-        let page: { offset: number; limit: number; total: number; items: any[] };
-        try { page = await server.fetchProjectItemsPage(offset, PAGE, signal); }
-        catch (error) {
-          failure = error;
-          console.warn('[useProject] item page fetch failed:', error);
-          return false;
-        }
-        if (signal?.aborted || !isCurrent()) return false;
-        if (!Array.isArray(page.items)) {
-          failure = new Error('Server returned an invalid project page');
-          return false;
-        }
-        if (page.items.length === 0) {
-          if (offset < Math.max(totalHint, page.total)) {
-            failure = new Error('Project item stream ended before all items arrived');
-            return false;
-          }
-          break;
-        }
-
+      if (!pagesAlreadyLoaded && !await readProjectItemPages(server, totalHint, isCurrent, async page => {
         // Push under the hydrating flag so the diff-watcher doesn't echo
         // these items right back to the server as "client adds".
         isHydrating.value = true;
         try {
-          // Prevent Vue from deeply tracking waveform peaks arrays — they are
-          // read-only server data (thousands of floats per item) and making
-          // them reactive freezes the UI when the deep watcher is installed.
-          // Pages from the server are waveform-less; re-attach any waveform we
-          // already cached this session so a project_changed restream (another
-          // client reloaded) doesn't blank waveforms we already have.
-          for (const it of page.items) {
-            if (it?.waveform) it.waveform = markRaw(it.waveform);
-            restoreWaveform(it);
-          }
-          project.items.push(...page.items);
+          project.items.push(...page);
           updateIndices(project.items);
         } finally {
           // Defer clearing the flag until after Vue flushes its watcher
@@ -878,19 +872,7 @@ export const useProject = () => {
           if (isCurrent()) isHydrating.value = false;
         }
 
-        offset += page.items.length;
-        if (offset >= page.total) break;
-
-        // Yield so Vue paints the freshly-pushed rows before we fetch
-        // the next page.
-        await new Promise<void>(r => {
-          if (typeof requestAnimationFrame === 'function') {
-            requestAnimationFrame(() => r());
-          } else {
-            setTimeout(r, 0);
-          }
-        });
-      }
+      }, signal)) return false;
       if (signal?.aborted || !isCurrent()) return false;
       // One-time repair for projects corrupted by an earlier bug where a
       // cart-only item leaked into the playlist tree (the same uuid ended up
@@ -932,6 +914,7 @@ export const useProject = () => {
       if (signal?.aborted || !isCurrent()) return false;
       installItemsWatcherFn();
       complete = true;
+      void pollLoadingProgress(server, isCurrent);
       return true;
     } catch (error) {
       failure = error;
@@ -946,8 +929,8 @@ export const useProject = () => {
   // empty for streamItemPages() to populate.
   const clearLocalProjectMirror = () => {
     ++_hydrationRequestRevision;
-    ++_openOverlayRevision;
-    isLoading.value = false;
+    ++_openLoadRevision;
+    projectLoad.value = null;
     _projectHydration.invalidate();
     const hadIdentity = currentProject.value !== null || projectFilePathRef.value !== '';
     _uninstallItemsWatcherFn?.();
@@ -967,17 +950,11 @@ export const useProject = () => {
     previewCueId.value = '';
     previewStateRevision.value = -1;
     previewStateSession.value = '';
-    audioLoadingProgress.value = {
-      ready: true,
-      loading: false,
-      loaded: 0,
-      total: 0,
-      failedCount: 0,
-      failures: [],
-    };
+    audioLoadingProgress.value = EMPTY_AUDIO_READINESS;
     _waveformCache.clear();
     useCartItems().clearCartOnlyItems();
     hasUnsavedChanges.value = false;
+    saveFailed.value = false;
     if (hadIdentity) projectEpoch.value++;
     try {
       if (import.meta.client && window.electronAPI?.syncProjectData) {
@@ -986,7 +963,7 @@ export const useProject = () => {
     } catch { /* noop */ }
   };
 
-  const applyServerHeader = (header: any): ProjectHydrationLoad | false => {
+  const applyServerHeader = (header: any, items: Project['items'] = []): ProjectHydrationLoad | false => {
     if (!header || typeof header !== 'object') return false;
     if (header.hasOpenProject !== true) {
       clearLocalProjectMirror();
@@ -1003,6 +980,7 @@ export const useProject = () => {
     }
     projectFilePathRef.value = nextProjectPath;
     serverProjectSessionId.value = typeof header.server?.projectSessionId === 'string' ? header.server.projectSessionId : '';
+    audioLoadingProgress.value = EMPTY_AUDIO_READINESS;
     const serverUrl = useLiveplayServer().serverUrl;
     if (header.needsRepair === true) {
       repairNotice.value = {
@@ -1018,7 +996,7 @@ export const useProject = () => {
       name:           header.name ?? 'Untitled',
       version:        header.version ?? '2.0.0',
       folderPath:     header.folderPath ?? '',
-      items:          [],
+      items,
       cartItems:      header.cartItems ?? [],
       cartSlotKeys:   header.cartSlotKeys ?? { ...DEFAULT_CART_SLOT_KEYS },
       playbackKeys:   header.playbackKeys,
@@ -1033,6 +1011,7 @@ export const useProject = () => {
     updateIndices(project.items);
     projectEpoch.value++;
     hasUnsavedChanges.value = false;
+    saveFailed.value = false;
     return _projectHydration.begin(currentProject.value);
   };
 
@@ -1043,28 +1022,15 @@ export const useProject = () => {
   const installItemsWatcherFn   = () => _installItemsWatcherFn?.();
   const uninstallItemsWatcherFn = () => _uninstallItemsWatcherFn?.();
 
-  // Background poll of audio-loading progress. Updates `audioLoadingProgress`
-  // until the server reports loading=false, then clears it. Safe to call
-  // multiple times — only one poll runs at a time. Bails out fast when the
-  // first poll already shows loading=false (e.g. small projects that finish
-  // mirroring before the client even asks), avoiding a second HTTP call.
-  let progressPolling = false;
-  async function pollLoadingProgress(server: any) {
-    if (progressPolling) return;
-    progressPolling = true;
-    try {
-      while (true) {
-        let p: ServerAudioReadiness;
-        try { p = await server.fetchProjectProgress(); }
-        catch { break; }
-        audioLoadingProgress.value = p;
-        if (!p.loading) break;
-        await new Promise(r => setTimeout(r, 400));
-      }
-    } finally {
-      // Preserve the final readiness report so missing/failed media stays
-      // visible after loading finishes instead of disappearing with the spinner.
-      progressPolling = false;
+  async function pollLoadingProgress(server: ReturnType<typeof useLiveplayServer>, isCurrent: () => boolean) {
+    while (isCurrent()) {
+      let report: ServerAudioReadiness;
+      try { report = await server.fetchProjectProgress(); }
+      catch { break; }
+      if (!isCurrent()) break;
+      audioLoadingProgress.value = report;
+      if (!report.loading) break;
+      await new Promise(resolve => setTimeout(resolve, 400));
     }
   }
 
@@ -1119,6 +1085,7 @@ export const useProject = () => {
       // Capture before anything reloads — re-hydration overwrites the
       // in-memory project, and unsaved edits exist nowhere else.
       const unsaved = hasUnsavedChanges.value ? buildDocumentSnapshot() : null;
+      const failure = saveFailed.value;
 
       const currentHeader = await server.fetchProjectHeader();
       let expectedSessionId = currentHeader?.server?.projectSessionId;
@@ -1146,10 +1113,11 @@ export const useProject = () => {
       // trusting the pre-disconnect in-memory copy: cue ids are regenerated by
       // the reload, and stale ones would break waveform and meter lookups.
       const ok = await tryRejoinExistingProject();
-      if (ok) {
+      if (ok && unsaved) {
         // The overlay went to the server's memory, not to disk — the file is
         // still behind, so the unsaved marker has to survive the rejoin.
-        if (unsaved) hasUnsavedChanges.value = true;
+        hasUnsavedChanges.value = true;
+        saveFailed.value = failure;
       }
       return ok;
     } catch (e) {
@@ -1177,9 +1145,14 @@ export const useProject = () => {
     const epoch = projectEpoch.value;
     const session = serverProjectSessionId.value;
     const serverUrl = server.serverUrl;
+    const isCurrent = () => isCurrentSaveIdentity(
+      project, path, epoch, currentProject.value, projectFilePathRef.value, projectEpoch.value,
+    );
     if (!isNativeProjectPath(path) || !server.connected ||
-        sessionLost.value || recoveringProject.value) return false;
-    if (!await _projectHydration.wait(project) || opts?.signal?.aborted) return false;
+        sessionLost.value || recoveringProject.value || !await _projectHydration.wait(project)) {
+      if (!opts?.signal?.aborted && isCurrent() && hasUnsavedChanges.value) saveFailed.value = true;
+      return false;
+    }
 
     // The full-document POST is authoritative. Drain every queued item PATCH
     // first so no older granular write can land after this snapshot.
@@ -1188,14 +1161,7 @@ export const useProject = () => {
     } catch (error) {
       console.warn('[useProject] item diff before save failed:', error);
     }
-    if (!isCurrentSaveIdentity(
-      project,
-      path,
-      epoch,
-      currentProject.value,
-      projectFilePathRef.value,
-      projectEpoch.value,
-    )) return false;
+    if (opts?.signal?.aborted || !isCurrent()) return false;
 
     project.lastModified = new Date().toISOString();
     const docSnapshot = buildDocumentSnapshot();
@@ -1204,16 +1170,10 @@ export const useProject = () => {
       project,
       path,
       epoch,
+      signal: opts?.signal,
       write: async () => {
         if (!await _projectHydration.wait(project)) return false;
-        if (!isCurrentSaveIdentity(
-          project,
-          path,
-          epoch,
-          currentProject.value,
-          projectFilePathRef.value,
-          projectEpoch.value,
-        )) return false;
+        if (opts?.signal?.aborted || !isCurrent()) return false;
         if (server.serverUrl !== serverUrl || server.projectSessionId !== session) return false;
         const response = await server.saveProjectTo(path, docSnapshot, opts?.signal, session);
         if (response?.ok && server.serverUrl === serverUrl && server.projectSessionId === session &&
@@ -1231,8 +1191,13 @@ export const useProject = () => {
       projectEpoch.value,
     );
     const savedLatestRevision = result.request.revision === saveRevision.value;
-    if (!opts?.signal?.aborted && resultIsCurrent && savedLatestRevision) {
-      hasUnsavedChanges.value = !result.ok;
+    if (!result.request.signal?.aborted && resultIsCurrent) {
+      if (savedLatestRevision) {
+        hasUnsavedChanges.value = !result.ok;
+        saveFailed.value = !result.ok;
+      } else if (!result.ok && hasUnsavedChanges.value) {
+        saveFailed.value = true;
+      }
     }
     if (result.error) console.error('Error saving project:', result.error);
     return !opts?.signal?.aborted && resultIsCurrent && savedLatestRevision && result.ok;
@@ -1341,72 +1306,48 @@ export const useProject = () => {
     saveProject();
   };
 
-  // Remove every selected item via the path appropriate to where the selection
-  // lives. Playlist deletes pull items from the tree; cart deletes only
-  // unassign slots. The set is snapshotted first because both paths mutate it.
-  const deleteSelection = (context: 'playlist' | 'cart' = selectionContext.value) => {
-    const uuids = Array.from(selectedItems.value);
-    if (context === 'cart') {
-      deleteCartItems(uuids);
-    } else {
-      for (const u of uuids) removeItem(u);
-    }
-    selectedItems.value.clear();
-    selectedItem.value = null;
+  const pendingDelete = computed(() => deleteRequest.value?.epoch === projectEpoch.value ? deleteRequest.value : null);
+
+  const showDeleteConfirmation = (uuids: string[], context: 'playlist' | 'cart', clickedUuid?: string) => {
+    // Cue selection stays live while the confirmation is open.
+    deleteRequest.value = {
+      uuids, context, epoch: projectEpoch.value,
+      onlyUuid: uuids.length > 1 ? clickedUuid : undefined,
+      name: clickedUuid ? findItemByUuid(clickedUuid)?.displayName ?? '' : '',
+    };
+    showProjectSettings.value = false;
+    workspaceImportPanel.value = 'delete-selection';
   };
 
-  // Entry point from an item's trash button. When the clicked item is part of
-  // a multi-selection, open the confirm dialog and return true so the caller
-  // leaves the deletion to the dialog. Returns false for the simple
-  // single-item case, which the caller handles itself. `context` reflects which
-  // panel the button lives in (cart vs playlist).
   const requestDeleteFromButton = (uuid: string, context: 'playlist' | 'cart' = 'playlist'): boolean => {
-    if (selectedItems.value.has(uuid) && selectedItems.value.size > 1) {
-      _deleteOnlyUuid = uuid;
-      _deleteContext = context;
-      deleteDialogName.value = findItemByUuid(uuid)?.displayName ?? '';
-      deleteDialogCount.value = selectedItems.value.size;
-      deleteDialogAllowOnly.value = true;
-      deleteDialogVisible.value = true;
-      return true;
-    }
-    return false;
-  };
-
-  // Entry point from the keyboard DEL key. A single selected item is removed
-  // outright; a multi-selection opens the confirm dialog without the "Delete
-  // Only" choice. The active selectionContext decides playlist vs cart.
-  const requestDeleteFromKeyboard = (): boolean => {
-    const size = selectedItems.value.size;
-    if (size === 0) return false;
-    if (size === 1) {
-      deleteSelection(selectionContext.value);
-      return true;
-    }
-    _deleteOnlyUuid = null;
-    _deleteContext = selectionContext.value;
-    deleteDialogName.value = '';
-    deleteDialogCount.value = size;
-    deleteDialogAllowOnly.value = false;
-    deleteDialogVisible.value = true;
+    const uuids = selectionContext.value === context && selectedItems.value.has(uuid)
+      ? [...selectedItems.value] : [uuid];
+    if (context === 'cart' && uuids.length === 1) return false;
+    showDeleteConfirmation(uuids, context, uuid);
     return true;
   };
 
-  const deleteDialogConfirmAll = () => {
-    deleteDialogVisible.value = false;
-    deleteSelection(_deleteContext);
+  const requestDeleteFromKeyboard = (): boolean => {
+    const uuids = [...selectedItems.value];
+    if (uuids.length === 0) return false;
+    const context = selectionContext.value;
+    if (uuids.length > 1) showDeleteConfirmation(uuids, context);
+    else if (context === 'cart') deleteCartItems(uuids);
+    else removeItem(uuids[0]!);
+    return true;
   };
-  const deleteDialogConfirmOnly = () => {
-    deleteDialogVisible.value = false;
-    if (_deleteOnlyUuid) {
-      if (_deleteContext === 'cart') deleteCartItems([_deleteOnlyUuid]);
-      else removeItem(_deleteOnlyUuid);
-    }
-    _deleteOnlyUuid = null;
+
+  const cancelDelete = () => {
+    deleteRequest.value = null;
+    if (workspaceImportPanel.value === 'delete-selection') workspaceImportPanel.value = null;
   };
-  const deleteDialogCancel = () => {
-    deleteDialogVisible.value = false;
-    _deleteOnlyUuid = null;
+  const confirmDelete = (only: boolean) => {
+    const request = pendingDelete.value;
+    cancelDelete();
+    if (!request || (only && !request.onlyUuid)) return;
+    const uuids = only ? [request.onlyUuid!] : request.uuids;
+    if (request.context === 'cart') deleteCartItems(uuids);
+    else for (const uuid of uuids) removeItem(uuid);
   };
 
   // Find item by UUID
@@ -1832,7 +1773,12 @@ export const useProject = () => {
             _hydrationRetry.set(() => tryRejoinExistingProject());
             // Local open/create and recovery own their returned header; ignore
             // their echo so one transition cannot hydrate twice.
-            if (isLoading.value || recoveringProject.value) break;
+            if (projectLoad.value || recoveringProject.value) break;
+            if (server().showVerification) {
+              // A late page from the old session cannot finish this check.
+              ++_hydrationRequestRevision;
+              break;
+            }
             void (async () => {
               try {
                 const header = await server().fetchProjectHeader();
@@ -2158,7 +2104,7 @@ export const useProject = () => {
 
   // Guard an action that can discard current project state (New / Open /
   // Close / update install). Resolves true when there are no pending edits.
-  // When edits are pending it pops the unsaved-changes modal and acts on the
+  // When edits are pending it opens the unsaved-changes panel and acts on the
   // choice: "save" force-saves first, "discard" proceeds without saving,
   // "cancel" aborts. This also catches an autosave failure, which marks the
   // project dirty even when autosave is on.
@@ -2305,6 +2251,7 @@ export const useProject = () => {
     selectedItems,
     propertiesPanelOpen,
     workspaceImportPanel,
+    quickPlayEditor,
     activeCues,
     waveformUpdateKey,
     triggerWaveformUpdate,
@@ -2327,6 +2274,8 @@ export const useProject = () => {
     retryProjectHydration,
     projectSyncIdentity,
     hasUnsavedChanges,
+    saveRevision,
+    saveFailed,
     autoSaveEnabled,
     indexDisplayStart,
     formatItemIndex,
@@ -2341,8 +2290,7 @@ export const useProject = () => {
     updateIndices,
     projectFilePath: projectFilePathRef,
     projectEpoch,
-    isLoading,
-    loadingMessage,
+    projectLoad,
     audioLoadingProgress,
     previewItemUuid,
     previewCueId,
@@ -2358,17 +2306,12 @@ export const useProject = () => {
     unsavedDiscard,
     unsavedCancel,
     selectionContext,
-    deleteSelection,
     deleteCartItems,
     requestDeleteFromButton,
     requestDeleteFromKeyboard,
-    deleteDialogVisible,
-    deleteDialogCount,
-    deleteDialogName,
-    deleteDialogAllowOnly,
-    deleteDialogConfirmAll,
-    deleteDialogConfirmOnly,
-    deleteDialogCancel,
+    pendingDelete,
+    confirmDelete,
+    cancelDelete,
     beginItemBatch,
     endItemBatch,
     shuffleItems,

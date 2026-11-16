@@ -7,7 +7,70 @@ import { compile, NodeTypes, parse as parseTemplate } from '@vue/compiler-dom';
 import * as Vue from 'vue';
 import ts from 'typescript';
 
+import { DEFAULT_VIDEO_FRAMING, VIDEO_FRAME_PRESETS } from '../electron/video-output-framing.mjs';
 import { formatDisplayIndexPath, parseDisplayIndexPath } from '../app/utils/indexDisplay.ts';
+
+test('the inline Canvas chooser updates the draft and keeps it when switching to Custom', () => {
+  const source = readFileSync(new URL('../app/components/ProjectSettingsModal.vue', import.meta.url), 'utf8');
+  const start = source.indexOf('function selectVideoFramePreset(');
+  const end = source.indexOf('\n}', start);
+  assert.ok(start >= 0 && end > start);
+  const code = ts.transpileModule(source.slice(start, end + 2), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const preset = { value: '1080p' };
+  const draft = { value: { ...DEFAULT_VIDEO_FRAMING, scale: 80, scaling: 'limit' } };
+  const choose = Function('VIDEO_FRAME_PRESETS', 'voFramePreset', 'voFraming',
+    `${code}\nreturn selectVideoFramePreset;`)(VIDEO_FRAME_PRESETS, preset, draft);
+  choose('720p');
+  assert.equal(preset.value, '720p');
+  assert.deepEqual(draft.value, { width: 1280, height: 720, scale: 80, scaling: 'limit' });
+  choose('custom');
+  assert.equal(preset.value, 'custom');
+  assert.deepEqual(draft.value, { width: 1280, height: 720, scale: 80, scaling: 'limit' });
+});
+
+test('the inline color editor reads shorthand and full hex while fencing transparency to Test Cards', () => {
+  const source = readFileSync(new URL('../app/components/InlineColorPicker.vue', import.meta.url), 'utf8');
+  const start = source.indexOf('function readHexColor(');
+  const end = source.indexOf('function applyColor(', start);
+  assert.ok(start >= 0 && end > start);
+  const code = ts.transpileModule(source.slice(start, end), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+  }).outputText;
+  const read = Function(code + '\nreturn readHexColor;')();
+  assert.equal(read(' #36a ', true), '#3366AA');
+  assert.equal(read('3E159C', true), '#3E159C');
+  assert.equal(read('#3698', false), '#33669988');
+  assert.equal(read('#33669988', false), '#33669988');
+  assert.equal(read('#33669988', true), null);
+  assert.equal(read('#3698', true), null);
+  assert.equal(read('red', false), null);
+  assert.equal(read('#12Z', false), null);
+});
+
+test('the Settings accent applies to the current show and saves only an actual change', () => {
+  const source = readFileSync(new URL('../app/components/ProjectSettingsModal.vue', import.meta.url), 'utf8');
+  const start = source.indexOf('function setAccentColor(');
+  const end = source.indexOf('\n}', start);
+  assert.ok(start >= 0 && end > start);
+  const code = ts.transpileModule(source.slice(start, end + 2), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+  }).outputText;
+  const currentProject = Vue.ref({ theme: { accentColor: '#315fcf', mode: 'dark' } });
+  const hydration = Vue.ref('loading');
+  const selectedAccent = Vue.computed(() => currentProject.value.theme.accentColor);
+  const saves: string[] = [];
+  const select = Function('currentProject', 'projectHydrationStatus', 'selectedAccent', 'saveProject',
+    `${code}; return setAccentColor;`)(currentProject, hydration, selectedAccent,
+    () => saves.push(selectedAccent.value));
+  select('#24a148');
+  hydration.value = 'ready';
+  select('#24a148');
+  select('#24a148');
+  assert.deepEqual(saves, ['#24a148']);
+  assert.deepEqual(currentProject.value.theme, { accentColor: '#24a148', mode: 'dark' });
+});
 
 test('playlist numbering starts at one for new shows and saved zero starts', () => {
   for (const start of [undefined, null, 0, '0', -1, '']) {
@@ -56,13 +119,20 @@ test('invalid cue number edits preserve the previously saved target', () => {
 });
 
 test('project and cue output choices persist hardware names instead of opened-session IDs', () => {
-  const device = { id: 'ephemeral-opened-device-id', display_name: 'Stage USB output' };
-  for (const [component, handler] of [['ProjectSettingsModal', 'onAudioDeviceChange'], ['ProjectSettingsModal', 'onLtcDeviceChange'], ['PropertiesPanel', 'onDeviceOverrideChange']]) {
+  const device = { id: 'ephemeral-opened-device-id', display_name: 'Stage USB output', is_default: true };
+  for (const [component, handler] of [
+    ['ProjectSettingsModal', 'onAudioDeviceChange'], ['ProjectSettingsModal', 'onPreviewDeviceChange'],
+    ['ProjectSettingsModal', 'onLtcDeviceChange'], ['PropertiesPanel', 'onDeviceOverrideChange'],
+  ]) {
     const filename = new URL(`../app/components/${component}.vue`, import.meta.url);
-    const template = parse(readFileSync(filename, 'utf8')).descriptor.template!;
-    const ast = parseTemplate(template.content);
+    const { template, scriptSetup } = parse(readFileSync(filename, 'utf8')).descriptor;
+    const ast = parseTemplate(template!.content);
+    const cue = component === 'PropertiesPanel';
+    const optionList = cue ? 'deviceOverrideOptions' : 'audioDeviceOptions';
+    const t = (key: string) => key;
     const find = (node: any): any => {
-      if (node.type === NodeTypes.ELEMENT && node.tag === 'select' && node.loc.source.includes(`@change="${handler}"`)) return node;
+      if (node.type === NodeTypes.ELEMENT && node.tag === 'InlineChoicePicker' &&
+          node.loc.source.includes(`@change="${handler}"`)) return node;
       for (const child of node.children ?? []) {
         const found = find(child);
         if (found) return found;
@@ -73,21 +143,21 @@ test('project and cue output choices persist hardware names instead of opened-se
     const code = ts.transpileModule(compile(select.loc.source, { mode: 'function', isTS: true }).code, {
       compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
     }).outputText;
-    const render = Function('Vue', `${code}; return render;`)(Vue);
+    const script = scriptSetup!.content;
+    const start = script.indexOf(`const ${optionList} =`);
+    const end = script.indexOf('\n});', start);
+    assert.ok(start >= 0 && end > start);
+    const options = Function('computed', cue ? 'devicesList' : 'devices', 't',
+      `${script.slice(start, end + 4)}\nreturn ${optionList}.value;`)(Vue.computed, { value: [device] }, t);
+    const render = Function('Vue', `${code}; return render;`)({ ...Vue, resolveComponent: (name: string) => name });
     const node = render({
-      devices: [device], devicesList: [device], audioDeviceId: device.display_name,
-      ltcDeviceId: device.display_name,
-      audioItem: { deviceOverride: device.display_name }, audioDeviceOverride: device.display_name,
+      [optionList]: options, audioDeviceId: device.display_name,
+      previewDeviceId: device.display_name, ltcDeviceId: device.display_name,
+      audioDeviceOverride: device.display_name,
       deviceOverrideEditPending: false,
-      t: (key: string) => key, [handler]() {},
+      t, [handler]() {},
     }, []);
-    const options: any[] = [];
-    const walk = (value: any) => {
-      if (value?.type === 'option') options.push(value);
-      if (Array.isArray(value?.children)) value.children.forEach(walk);
-    };
-    walk(node);
-    assert.equal(options.find(option => option.key === device.id)?.props.value, device.display_name);
+    assert.deepEqual(node.props.options.map((option: {value: string}) => option.value), ['', device.display_name]);
   }
 });
 
@@ -129,7 +199,9 @@ function loadApplyPatch(dependencies: Record<string, unknown>) {
     compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const buildApplyPatch = Function(`${compiled}; return buildApplyPatch;`)();
-  return buildApplyPatch(dependencies) as (patch: Record<string, unknown>) => Promise<string>;
+  type SettingsPatch = Record<string, unknown>;
+  return buildApplyPatch(dependencies) as
+    (request: SettingsPatch | ((settings: SettingsPatch) => SettingsPatch | null)) => Promise<string>;
 }
 
 function settingsHarness(initialSettings: Record<string, unknown>) {
@@ -192,6 +264,32 @@ test('serializes same-key edits so two rejected patches restore the acknowledged
   assert.equal(harness.settingsError.value, 'second rejected');
 });
 
+test('queued countdown color edits preserve other bands and ignore a rejected optimistic value', async () => {
+  type Band = { startSeconds: number; color: string };
+  const initial = [{ startSeconds: 6, color: '#004488' }, { startSeconds: 0, color: '#993311' }];
+  const harness = settingsHarness({ countdownColorBands: initial });
+  const setColor = (seconds: number, color: string) => harness.applyPatch(settings => ({
+    countdownColorBands: (settings.countdownColorBands as Band[]).map(band =>
+      band.startSeconds === seconds ? { ...band, color } : band),
+  }));
+  const first = setColor(6, '#111111');
+  const second = setColor(0, '#222222');
+  const third = setColor(6, '#333333');
+  await Promise.resolve();
+  harness.patchRequests[0]!.pending.reject(new Error('refused'));
+  assert.equal(await first, 'failed');
+  await Promise.resolve();
+  assert.deepEqual(harness.patchRequests[1]!.patch.countdownColorBands,
+    [initial[0], { ...initial[1], color: '#222222' }]);
+  harness.patchRequests[1]!.pending.resolve();
+  assert.equal(await second, 'saved');
+  await Promise.resolve();
+  harness.patchRequests[2]!.pending.resolve();
+  assert.equal(await third, 'saved');
+  assert.deepEqual(harness.project.settings.countdownColorBands,
+    [{ ...initial[0], color: '#333333' }, { ...initial[1], color: '#222222' }]);
+});
+
 test('device edits keep the acknowledged project setting until the engine accepts the new route', async () => {
   const harness = settingsHarness({ defaultOutputDevice: 'Running output' });
   const pending = harness.applyPatch({ defaultOutputDevice: 'Cold output' });
@@ -223,27 +321,35 @@ test('a refused cue device change preserves the running route and skips the save
   const cue = { uuid: 'cue', deviceOverride: 'Running output' };
   const pending = deferred<void>();
   let saves = 0;
+  const editPending = { value: false };
   const factory = Function('deps', `
-    const { audioItem, currentProject, audioDeviceOverride, deviceOverrideEditPending,
-      _server, t, endItemBatch, persistPropertyChanges, handleSave } = deps;
+    const { audioItem, currentProject, deviceOverrideEditPending,
+      _server, t, endItemBatch, persistPropertyChanges } = deps;
     ${code}
     return onDeviceOverrideChange;
   `);
-  const server = { updateProjectItem: () => pending.promise, lastError: '' };
+  const server = {
+    updateProjectItem: (uuid: string, patch: object) => {
+      assert.equal(uuid, cue.uuid);
+      assert.deepEqual(patch, { deviceOverride: 'Cold output' });
+      return pending.promise;
+    },
+    lastError: '',
+  };
   const change = factory({
     audioItem: { value: cue }, currentProject: { value: {} },
-    audioDeviceOverride: { value: cue.deviceOverride }, deviceOverrideEditPending: { value: false },
+    deviceOverrideEditPending: editPending,
     _server: server, t: (key: string) => key,
-    endItemBatch: async () => {}, persistPropertyChanges: () => { ++saves; }, handleSave: () => { ++saves; },
+    endItemBatch: async () => {}, persistPropertyChanges: () => { ++saves; },
   });
-  const select = { value: 'Cold output' };
-  const result = change({ target: select });
+  const result = change('Cold output');
+  assert.equal(editPending.value, true);
   assert.equal(cue.deviceOverride, 'Running output');
   assert.equal(saves, 0);
   pending.reject(new Error('Device open canceled'));
   await result;
   assert.equal(cue.deviceOverride, 'Running output');
-  assert.equal(select.value, 'Running output');
+  assert.equal(editPending.value, false);
   assert.equal(saves, 0);
   assert.equal(server.lastError, 'properties.deviceOverrideFailed');
 });

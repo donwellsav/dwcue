@@ -12,6 +12,7 @@ const section = (source, start, end) => {
 };
 
 const engine = read('server/src/audio/engine.cpp');
+const engineHeader = read('server/include/liveplay/audio/engine.hpp');
 const callback = section(
   engine,
   'void AudioEngine::ma_data_callback',
@@ -75,8 +76,12 @@ assert.match(deviceReset, /ma_pcm_rb_reset/,
   'hard re-lock must explicitly reset stale device-ring state');
 assert.match(renderLoop, /reset_device_if_requested\(\*clock_master\)/,
   'clock master must complete a pending reset before advancing the timeline');
-assert.match(engine, /render_block \* 4\)/,
-  'device output ring must remain four render blocks');
+assert.match(engineHeader, /kDeviceRingBlocks = 8;/,
+  'device ring capacity must stay within eight render blocks');
+assert.match(openDevice, /render_block \* kDeviceRingBlocks\)/,
+  'device output must allocate the bounded ring capacity');
+assert.match(renderBlock, /kMasterQueueBlocks\s*:\s*dev->clock_controller\.target_frames\(\)/,
+  'secondary recovery must refill to its clock target while the master uses its own queue');
 assert.match(engine, /notificationCallback\s*=\s*&AudioEngine::ma_notification_callback/,
   'device loss/reroute/interruption notifications must be wired');
 assert.match(
@@ -98,8 +103,10 @@ assert.match(
 );
 assert.match(renderLoop, /ma_device_get_state/,
   'render loop must reconcile backends that omit stop notifications');
-assert.match(renderLoop, /const auto target = cfg_\.render_block \* 3;/,
-  'clock-master production must keep its three-block target independent of drift correction');
+assert.match(engineHeader, /kMasterQueueBlocks = 3;/,
+  'clock-master production must keep its three-block target');
+assert.match(renderLoop, /const auto target = cfg_\.render_block \* kMasterQueueBlocks;/,
+  'the render loop must pace against the master target independently of drift correction');
 assert.match(decodeLoop, /service_read_ahead\(1,\s*\/\*wait_for_decoder=\*\/false\)/,
   'the shared decode worker must skip a busy cue instead of waiting behind control I/O');
 assert.match(

@@ -1,6 +1,7 @@
 <template>
   <Teleport to="body" :disabled="docked">
-    <div v-if="open" :class="docked ? 'picker-dock' : 'picker-backdrop'" @click.self="!docked && cancel()">
+    <div v-if="open" v-show="docked || !projectPanelOpen"
+      :class="docked ? 'picker-dock' : 'picker-backdrop'" @click.self="!docked && cancel()">
       <div class="picker">
         <!-- Top toolbar: navigation + breadcrumb path -->
         <header class="toolbar">
@@ -84,12 +85,9 @@
             <button class="btn small" @click="cancelNewFolder">Cancel</button>
           </div>
           <div class="filter-row">
-            <select v-if="mode === 'file' && filterOptions.length > 1" v-model="filter" @change="reload" class="filter">
-              <option v-if="filterOptions.includes('audio')" value="audio">Audio files</option>
-              <option v-for="opt in filterOptions.filter(o => o !== 'audio' && o !== 'all')"
-                      :key="opt" :value="opt">{{ filterDisplay(opt) }}</option>
-              <option v-if="filterOptions.includes('all')" value="all">All files</option>
-            </select>
+            <InlineChoicePicker v-if="mode === 'file' && filterOptions.length > 1"
+              class="filter" label="File type" :value="filter" :options="fileTypeOptions"
+              @change="changeFilter" />
             <button
               v-if="!isRoot"
               class="btn"
@@ -168,6 +166,7 @@ const emit = defineEmits<{
 }>();
 
 const server = useLiveplayServer();
+const projectPanelOpen = useState('projectPanelOpen', () => false);
 const pickerContext = computed(() => props.locationContext ?? pickerLocationContext(props.mode, props.filter));
 const pickerLocations = useFilePickerLocations(
   () => String(server.serverUrl),
@@ -245,6 +244,11 @@ const canConfirm = computed(() => {
 });
 
 const filterLabel = computed(() => filterDisplay(filter.value));
+const fileTypeOptions = computed(() => [
+  ...props.filterOptions.filter(option => option === 'audio'),
+  ...props.filterOptions.filter(option => option !== 'audio' && option !== 'all'),
+  ...props.filterOptions.filter(option => option === 'all'),
+].map(value => ({ value, label: filterDisplay(value) })));
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -300,13 +304,13 @@ async function navigate(path: string, recordHistory = true, fallbackPath?: strin
       historyBack.value.push(previousPath);
     }
     listing.value = next;
-    pathDraft.value = next.path;
+    if (pathDraft.value === path) pathDraft.value = next.path;
     pickerLocations.rememberFolder(next.path);
     return true;
   } catch (cause) {
     if (!isCurrent()) return false;
     const message = cause instanceof Error ? cause.message : String(cause);
-    if (fallbackPath !== undefined && /^404(?:\s|$)/.test(message)) {
+    if (fallbackPath !== undefined && pathDraft.value === path && /^404(?:\s|$)/.test(message)) {
       const recovered = await navigate(fallbackPath, false);
       if (recovered) notice.value = t('filePicker.unavailableFolder', { path });
       return recovered;
@@ -318,7 +322,10 @@ async function navigate(path: string, recordHistory = true, fallbackPath?: strin
   }
 }
 
-function reload() { void navigate(currentPath.value, false); }
+function changeFilter(value: string) {
+  filter.value = value;
+  void navigate(currentPath.value, false);
+}
 
 function goUp() {
   if (!listing.value) return;
@@ -561,11 +568,8 @@ watch([() => props.open, () => String(server.serverUrl), () => server.effectiveA
   }
 }
 .filter-row {
-  display: flex; align-items: center; gap: 8px;
-  .filter {
-    background: var(--color-control); border: 1px solid var(--color-border); color: var(--color-text-primary);
-    padding: 4px 8px; border-radius: var(--control-radius);
-  }
+  display: flex; align-items: flex-start; flex-wrap: wrap; gap: 8px;
+  .filter { width: min(100%, 220px); }
   .spacer { flex: 1; }
   .btn {
     min-height: var(--panel-control-height);

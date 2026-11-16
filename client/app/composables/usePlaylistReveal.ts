@@ -9,7 +9,7 @@
 // scroll to at all.
 //
 // This composable owns the second half of that problem: which groups are held
-// open to expose the selection. (The scrolling itself lives in PlaylistView,
+// open to expose the selection or Up Next target. (Scrolling lives in PlaylistView,
 // which owns the scroll container.)
 //
 // A reveal is deliberately kept OUT of `group.isExpanded`: that field is
@@ -28,7 +28,7 @@ import type { AudioItem, GroupItem } from '~/types/project';
 export const usePlaylistReveal = () => {
   const { currentProject } = useProject();
 
-  // Groups forced open only to expose the current selection. Never persisted.
+  // Groups forced open to expose a cue. Never persisted.
   const revealedGroups = useState<Set<string>>('playlistRevealedGroups', () => new Set());
 
   // Every group between the playlist root and `itemUuid`, outermost first.
@@ -61,13 +61,11 @@ export const usePlaylistReveal = () => {
   const isRevealed = (groupUuid: string): boolean => revealedGroups.value.has(groupUuid);
 
   /**
-   * Hold open whatever groups the selection now sits inside, and let go of the
-   * ones it has moved out of — arrowing past a group opens it on the way in
-   * and closes it again on the way out. Groups the operator had already
-   * expanded are left untouched: they were never ours to close.
+   * Hold open the groups that contain the requested cues. Groups the operator
+   * had already expanded are left untouched.
    */
-  const revealSelection = (itemUuid: string | null) => {
-    const ancestors = itemUuid ? ancestorGroupsOf(itemUuid) : [];
+  const revealItems = (...itemUuids: (string | null)[]) => {
+    const ancestors = itemUuids.flatMap(uuid => uuid ? ancestorGroupsOf(uuid) : []);
     const keep = new Set(ancestors.map(g => g.uuid));
 
     for (const uuid of [...revealedGroups.value]) {
@@ -102,5 +100,5 @@ export const usePlaylistReveal = () => {
     revealedGroups.value.clear();
   };
 
-  return { revealedGroups, isRevealed, revealSelection, commitReveal, forgetReveal, clearReveals };
+  return { isRevealed, revealItems, commitReveal, forgetReveal, clearReveals };
 };

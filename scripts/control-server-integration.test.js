@@ -16,13 +16,14 @@ const accessToken = 'integration-test-token-1234';
 test('project session preconditions reject delayed edits after switching or reopening a show', { timeout: 30000 }, async t => {
   const folder = await mkdtemp(path.join(os.tmpdir(), 'dwcue-project-session-'));
   const writeGate = path.join(folder, 'new-show-write.gate');
+  const pathGate = path.join(folder, 'save-path.gate');
   const port = await unusedPort();
   const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(serverBinary, ['--bind', '127.0.0.1', '--port', String(port)], {
     cwd: folder,
     env: { ...process.env, LIVEPLAY_STATE_DIR: path.join(folder, 'state'),
       LIVEPLAY_ACCESS_TOKEN: accessToken, LIVEPLAY_ALLOWED_ORIGINS: baseUrl,
-      DWCUE_TEST_NEW_SHOW_WRITE_GATE: writeGate },
+      DWCUE_TEST_NEW_SHOW_WRITE_GATE: writeGate, DWCUE_TEST_PATH_PROBE_GATE: pathGate },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let diagnostics = '';
@@ -181,6 +182,16 @@ test('project session preconditions reject delayed edits after switching or reop
         assert.equal(createDeadlineSupported, true);
         return openDeadlineMs;
       };
+      const fifoWriter = async delayed => {
+        for (let attempt = 0; attempt < 80; ++attempt) {
+          try { return await open(delayed, constants.O_WRONLY | constants.O_NONBLOCK); }
+          catch (error) {
+            if (error.code !== 'ENXIO') throw error;
+            await new Promise(resolve => setTimeout(resolve, 10));
+          }
+        }
+        assert.fail('the engine must be reading the delayed file');
+      };
       const openDeadlineMs = await lease();
       for (const [route, body, status] of [
         ['load', { path: broken }, 400],
@@ -227,20 +238,14 @@ test('project session preconditions reject delayed edits after switching or reop
         assert.equal(await new Promise(resolve => fifo.once('exit', resolve)), 0);
         // Shorten the engine's 25-second lease to hold a real file read past expiry.
         const pending = change('load', { path: delayed, openDeadlineMs: await lease() - 24_000 });
-        let writer;
+        const writer = await fifoWriter(delayed);
         try {
-          for (let attempt = 0; attempt < 80 && !writer; ++attempt) {
-            try { writer = await open(delayed, constants.O_WRONLY | constants.O_NONBLOCK); }
-            catch (error) {
-              if (error.code !== 'ENXIO') throw error;
-              await new Promise(resolve => setTimeout(resolve, 10));
-            }
-          }
-          assert.ok(writer, 'the engine must be reading the delayed file');
+          const page = await request(baseUrl, '/api/project/items', { signal: AbortSignal.timeout(750) });
+          assert.equal(page.status, 200, 'a held Open must not lock show control requests');
           await new Promise(resolve => setTimeout(resolve, 1100));
           assert.deepEqual(await playing(), ['show-bed']);
           await writer.writeFile(JSON.stringify(newShow));
-        } finally { await writer?.close(); }
+        } finally { await writer.close(); }
         const rejected = await pending;
         assert.equal(rejected.status, 410, await rejected.text());
         assert.deepEqual(await current(), before);
@@ -315,6 +320,126 @@ test('project session preconditions reject delayed edits after switching or reop
       assert.equal(savedSuperseded.status, 410, await savedSuperseded.text());
       assert.equal(JSON.parse(await readFile(supersededPath, 'utf8')).name, 'New');
       assert.equal((await current()).session, replacement.server.projectSessionId);
+      if (process.platform !== 'win32') {
+        await load(p);
+        await current();
+        const program = await request(baseUrl, '/api/project/items/show-bed/play', { method: 'POST', body: '{}' });
+        assert.equal(program.status, 200, await program.text());
+        const delayed = path.join(folder, 'Delayed.dwcue');
+        const stale = request(baseUrl, '/api/project/load', {
+          method: 'POST', body: JSON.stringify({ path: delayed, openDeadlineMs: await lease() }),
+        });
+        const writer = await fifoWriter(delayed);
+        try {
+          const stop = await request(baseUrl, '/api/transport/stop_all', {
+            method: 'POST', body: '{}', signal: AbortSignal.timeout(750),
+          });
+          assert.equal(stop.status, 200, await stop.text());
+          const newer = await request(baseUrl, '/api/project/load', {
+            method: 'POST', signal: AbortSignal.timeout(750), body: JSON.stringify({ path: q }),
+          });
+          assert.equal(newer.status, 200, await newer.text());
+          await writer.writeFile(JSON.stringify({ ...newShow, name: 'Stale file' }));
+        } finally { await writer.close(); }
+        const rejected = await stale;
+        assert.equal(rejected.status, 409, await rejected.text());
+        assert.equal((await current()).path, q);
+      }
+
+    });
+    await t.test('held Save keeps Stop All and show edits live, orders writes and rejects an old Save As', async () => {
+      const showFolder = path.join(folder, 'save-source');
+      const outputFolder = path.join(folder, 'save-destination');
+      await Promise.all([mkdir(showFolder), mkdir(outputFolder)]);
+      const media = path.join(folder, 'save-bed.wav');
+      const file = path.join(showFolder, 'Save.dwcue');
+      const alternate = path.join(outputFolder, 'Save As.dwcue');
+      await writeFile(media, silentWav(10));
+      await writeFile(file, JSON.stringify({ ...project('Save'), settings: { stopAllFadeMs: 0 }, items: [{
+        uuid: 'save-bed', type: 'audio', displayName: 'Bed', mediaPath: 'missing.wav',
+        mediaServerPath: media, duration: 10, endBehavior: { action: 'loop' },
+      }] }));
+      const header = await load(file);
+      await current();
+      const headers = { 'X-DWCUE-Project-Session': header.server.projectSessionId };
+      const save = body => request(baseUrl, '/api/project/save', { method: 'POST', body: JSON.stringify(body), headers });
+      const waitForSave = async () => {
+        for (let attempt = 0; attempt < 80; ++attempt) {
+          if (await stat(pathGate + '.entered').then(() => true, () => false)) return;
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
+        assert.fail('Save did not enter the held filesystem probe');
+      };
+      const play = await request(baseUrl, '/api/project/items/save-bed/play', { method: 'POST', body: '{}' });
+      assert.equal(play.status, 200, await play.text());
+      await writeFile(pathGate, JSON.stringify(path.join(showFolder, 'missing.wav')));
+      const first = save({});
+      let second;
+      try {
+        await waitForSave();
+        const stop = await request(baseUrl, '/api/transport/stop_all', {
+          method: 'POST', body: '{}', signal: AbortSignal.timeout(750),
+        });
+        assert.equal(stop.status, 200, await stop.text());
+        assert.deepEqual((await (await request(baseUrl, '/api/state/summary')).json()).playing, []);
+        const edit = await request(baseUrl, '/api/project/items/save-bed', {
+          method: 'PATCH', body: JSON.stringify({ displayName: 'Edited while saving' }),
+          headers, signal: AbortSignal.timeout(750),
+        });
+        assert.equal(edit.status, 200, await edit.text());
+        second = save({});
+      } finally { await rm(pathGate, { force: true }); }
+      for (const result of await Promise.all([first, second])) assert.equal(result.status, 200, await result.text());
+      assert.equal(JSON.parse(await readFile(file, 'utf8')).items[0].displayName, 'Edited while saving');
+
+      await rm(pathGate + '.entered');
+      await writeFile(pathGate, JSON.stringify(path.join(outputFolder, 'missing.wav')));
+      const stale = save({ path: alternate });
+      let replacement;
+      try {
+        await waitForSave();
+        replacement = await load(q);
+      } finally { await rm(pathGate, { force: true }); }
+      const result = await stale;
+      assert.equal(result.status, 409, await result.text());
+      assert.equal((await current()).session, replacement.server.projectSessionId);
+      await assert.rejects(stat(alternate), { code: 'ENOENT' });
+    });
+    await t.test('held cue registration leaves Stop All and Open responsive and cannot leak into another show', async () => {
+      const media = path.join(folder, 'registration.wav');
+      await writeFile(media, silentWav(10));
+      await writeFile(p, JSON.stringify({ ...project('Registration'), settings: { stopAllFadeMs: 0 }, items: [{
+        uuid: 'bed', type: 'audio', displayName: 'Bed', mediaServerPath: media,
+        duration: 10, endBehavior: { action: 'loop' },
+      }] }));
+      await load(p);
+      const active = await current();
+      const play = await request(baseUrl, '/api/project/items/bed/play', { method: 'POST', body: '{}' });
+      assert.equal(play.status, 200, await play.text());
+      for (const switchShow of [false, true]) {
+        await rm(pathGate + '.entered', { force: true });
+        await writeFile(pathGate, JSON.stringify(media));
+        const registration = request(baseUrl, '/api/cues', { method: 'POST',
+          body: JSON.stringify({ file_path: `${folder}/./registration.wav` }) });
+        try {
+          for (let attempt = 0; attempt < 80; ++attempt) {
+            if (await stat(pathGate + '.entered').then(() => true, () => false)) break;
+            await new Promise(resolve => setTimeout(resolve, 10));
+          }
+          assert.ok(await stat(pathGate + '.entered'), 'the old path probe must be in progress');
+          const stop = await request(baseUrl, '/api/transport/stop_all', {
+            method: 'POST', body: '{}', signal: AbortSignal.timeout(750),
+          });
+          assert.equal(stop.status, 200, await stop.text());
+          assert.deepEqual((await (await request(baseUrl, '/api/state/summary')).json()).playing, []);
+          if (switchShow) await load(q);
+        } finally { await rm(pathGate, { force: true }); }
+        const response = await registration;
+        assert.equal(response.status, switchShow ? 400 : 200, await response.clone().text());
+        if (!switchShow) assert.equal((await response.json()).id, active.items[0].cueId);
+      }
+      assert.equal((await current()).path, q);
+      assert.deepEqual(await (await request(baseUrl, '/api/cues')).json(), []);
     });
     await t.test('a repaired show stays usable and reports its repairs until the file is saved', async () => {
       const file = path.join(folder, 'Repair.dwcue');
@@ -738,7 +863,7 @@ function openEventStream(url) {
 async function request(baseUrl, pathname, options = {}) {
   return fetch(`${baseUrl}${pathname}`, {
     ...options,
-    signal: AbortSignal.timeout(2000),
+    signal: options.signal ?? AbortSignal.timeout(2000),
     headers: {
       Authorization: `Bearer ${accessToken}`,
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),

@@ -1,7 +1,12 @@
 <template>
   <div class="properties-panel" :class="{ 'properties-panel--group': selectedItem.type === 'group' }">
     <div class="properties-header workspace-panel-header">
-      <h3 class="workspace-panel-header__title" :title="selectedItem?.displayName">{{ selectedItems.size > 1 ? t('properties.multipleItemsSelected', { count: selectedItems.size }) : (t('properties.title') + ': ' + (selectedItem?.displayName || '')) }}</h3>
+      <h3 class="workspace-panel-header__title" :title="selectedItem?.displayName">
+        {{ filePicker === 'cue' ? `${t('properties.cueImage')} · ${selectedItem.displayName}`
+          : filePicker === 'replace-media' ? `${t('properties.replaceMedia')} · ${selectedItem.displayName}`
+          : selectedItems.size > 1 ? t('properties.multipleItemsSelected', { count: selectedItems.size })
+          : `${t('properties.title')}: ${selectedItem.displayName}` }}
+      </h3>
       <div v-if="selectedItem.type === 'audio'" class="properties-tabs" :aria-label="t('properties.title')">
         <button
           v-for="tab in audioTabs"
@@ -19,7 +24,21 @@
       </button>
     </div>
 
-    <div class="properties-content" :class="{ 'properties-content--audio': selectedItem.type === 'audio' }">
+    <ServerFilePickerModal v-if="filePicker === 'cue'" docked :open="true"
+      filter=".png,.jpg,.jpeg,.webp,.gif,.svg" :filter-options="[]"
+      :fallback-start-path="currentProject?.folderPath" location-context="cue-image"
+      @pick="handleCueImagePicked" @close="closePropertiesFilePicker" />
+    <template v-else-if="filePicker === 'replace-media'">
+      <div v-if="replaceMediaStatus" class="replace-media-feedback">
+        <p class="property-help" :class="{ 'property-help--error': replaceMediaError }" role="status">{{ replaceMediaStatus }}</p>
+        <Btn v-if="replacementCheck" type="button" :text="t('common.cancel')" @click="closePropertiesFilePicker" />
+      </div>
+      <ServerFilePickerModal v-if="!isReplacingMedia" docked :open="true"
+        :filter="MEDIA_FILE_ACCEPT" :filter-options="[]" :confirm-label="t('properties.replaceMedia')"
+        :fallback-start-path="currentProject?.folderPath" location-context="replace-media"
+        @pick="handleReplaceMedia" @close="closePropertiesFilePicker" />
+    </template>
+    <div v-else class="properties-content" :class="{ 'properties-content--audio': selectedItem.type === 'audio' }">
       <!-- Basic Info Tab -->
       <div v-if="activeTab === 'basic'" class="tab-panel basic-panel">
         <section class="property-column">
@@ -35,6 +54,17 @@
           <div class="property-field">
             <label for="cue-property-index">{{ t('properties.index') }}</label>
             <input id="cue-property-index" :value="formatItemIndex(selectedItem.index)" readonly />
+          </div>
+          <div v-if="selectedItem.type === 'group'" class="property-field group-level">
+            <label for="group-level">{{ t('properties.groupLevel') }}</label>
+            <div class="group-level-control">
+              <input id="group-level" class="app-range" type="range" min="-60" max="0" step="0.5"
+                :value="groupLevel" :aria-valuetext="groupLevelLabel"
+                :disabled="projectHydrationStatus !== 'ready'"
+                @input="groupItem.groupGainDb = Number(($event.target as HTMLInputElement).value)"
+                @change="handleSave" />
+              <output for="group-level">{{ groupLevelLabel }}</output>
+            </div>
           </div>
           <div v-if="selectedItem.type === 'group'" class="property-field">
             <label for="group-property-uuid">{{ t('properties.uuid') }}</label>
@@ -80,7 +110,7 @@
             <label for="cue-property-file">{{ t('properties.file') }}</label>
             <div class="input-with-btn">
               <input id="cue-property-file" :value="audioItem.mediaFileName" readonly />
-              <button class="icon-btn" :disabled="isReplacingMedia" @click="handleReplaceMedia"
+              <button type="button" class="icon-btn" :disabled="isReplacingMedia" @click="openReplaceMediaPicker"
                 :title="t('properties.replaceMedia')" :aria-label="t('properties.replaceMedia')">
                 <span class="material-symbols-rounded">swap_horiz</span>
               </button>
@@ -98,7 +128,7 @@
                 class="icon-btn"
                 :title="t('properties.cueImageChoose')"
                 :aria-label="t('properties.cueImageChoose')"
-                @click="cueImagePickerOpen = true"
+                @click="filePicker = 'cue'"
               >
                 <span class="material-symbols-rounded">image</span>
               </button>
@@ -214,21 +244,11 @@
         <section class="property-column">
           <h4>{{ t('properties.output') }}</h4>
           <div class="property-field">
-            <label for="cue-output-device">{{ t('properties.deviceOverride') }}</label>
-            <select id="cue-output-device"
-              :value="audioDeviceOverride"
+            <span class="property-label">{{ t('properties.deviceOverride') }}</span>
+            <InlineChoicePicker id="cue-output-device" :label="t('properties.deviceOverride')"
+              :value="audioDeviceOverride" :options="deviceOverrideOptions"
               :disabled="deviceOverrideEditPending"
-              @change="onDeviceOverrideChange"
-            >
-              <option value="">{{ t('settings.useProjectDefault') }}</option>
-              <option
-                v-for="d in devicesList"
-                :key="d.id"
-                :value="d.display_name"
-              >
-                {{ d.display_name }}{{ d.is_default ? ' (' + t('common.default') + ')' : '' }}
-              </option>
-            </select>
+              @change="onDeviceOverrideChange" />
           </div>
           <p class="property-help">{{ t('properties.deviceOverrideHelp') }}</p>
         </section>
@@ -262,16 +282,10 @@
             </p>
           </div>
           <div class="property-field" :class="{ 'field-disabled': !(audioItem.ltcEnabled ?? false) }">
-            <label for="cue-output-rate">{{ t('properties.ltcFrameRate') }}</label>
-            <select id="cue-output-rate"
-              :value="audioItem.ltcFrameRate ?? 4"
-              :disabled="!(audioItem.ltcEnabled ?? false)"
-              @change="onLtcFrameRateChange"
-            >
-              <option v-for="opt in ltcFrameRateOptions" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
+            <span class="property-label">{{ t('properties.ltcFrameRate') }}</span>
+            <InlineChoicePicker id="cue-output-rate" :label="t('properties.ltcFrameRate')"
+              :value="audioItem.ltcFrameRate ?? 4" :options="ltcFrameRateOptions"
+              :disabled="!audioItem.ltcEnabled" @change="onLtcFrameRateChange" />
           </div>
           <p class="property-help">{{ t(ltcDeviceConfigured ? 'properties.ltcOutputTimecodeHelp' : 'properties.ltcRequiresDevice') }}</p>
         </section>
@@ -284,12 +298,10 @@
           class="playback-behavior playback-behavior--ducking"
         >
           <div class="property-field">
-            <label for="cue-property-ducking">{{ t('properties.ducking') }}</label>
-            <select id="cue-property-ducking" v-model="duckingMode" @change="handleSave">
-              <option value="stop-all">{{ t('duckingBehavior.stopAll') }}</option>
-              <option value="no-ducking">{{ t('duckingBehavior.noDucking') }}</option>
-              <option value="duck-others">{{ t('duckingBehavior.duckOthers') }}</option>
-            </select>
+            <span class="property-label">{{ t('properties.ducking') }}</span>
+            <InlineChoicePicker id="cue-property-ducking" :label="t('properties.ducking')"
+              :value="duckingMode" :options="duckingOptions"
+              @change="duckingMode = $event; handleSave()" />
           </div>
 
           <div class="property-field" v-if="duckingMode === 'duck-others'">
@@ -312,15 +324,10 @@
 
         <div class="playback-behavior playback-behavior--start">
           <div class="property-field">
-            <label for="cue-property-startBehavior">{{ t('properties.startBehavior') }}</label>
-            <select id="cue-property-startBehavior" v-model="startBehaviorAction" @change="handleSave">
-              <option v-if="selectedItem.type === 'audio'" value="nothing">{{ t('startBehavior.nothing') }}</option>
-              <option v-if="selectedItem.type === 'audio'" value="play-next">{{ t('startBehavior.playNext') }}</option>
-              <option v-if="selectedItem.type === 'audio'" value="play-item">{{ t('startBehavior.playItem') }}</option>
-              <option v-if="selectedItem.type === 'audio'" value="play-index">{{ t('startBehavior.playIndex') }}</option>
-              <option v-if="selectedItem.type === 'group'" value="play-first">{{ t('startBehavior.playFirst') }}</option>
-              <option v-if="selectedItem.type === 'group'" value="play-all">{{ t('startBehavior.playAll') }}</option>
-            </select>
+            <span class="property-label">{{ t('properties.startBehavior') }}</span>
+            <InlineChoicePicker id="cue-property-startBehavior" :label="t('properties.startBehavior')"
+              :value="startBehaviorAction" :options="startBehaviorOptions"
+              @change="startBehaviorAction = $event; handleSave()" />
           </div>
 
           <div class="property-field" v-if="startBehaviorAction === 'play-item'">
@@ -344,14 +351,10 @@
 
         <div class="playback-behavior playback-behavior--end">
           <div class="property-field">
-            <label for="cue-property-endBehavior">{{ t('properties.endBehavior') }}</label>
-            <select id="cue-property-endBehavior" v-model="endBehaviorAction" @change="handleSave">
-              <option value="nothing">{{ t('endBehavior.nothing') }}</option>
-              <option value="next">{{ t('endBehavior.next') }}</option>
-              <option value="goto-item">{{ t('endBehavior.gotoItem') }}</option>
-              <option value="goto-index">{{ t('endBehavior.gotoIndex') }}</option>
-              <option v-if="selectedItem.type === 'audio'" value="loop">{{ t('endBehavior.loop') }}</option>
-            </select>
+            <span class="property-label">{{ t('properties.endBehavior') }}</span>
+            <InlineChoicePicker id="cue-property-endBehavior" :label="t('properties.endBehavior')"
+              :value="endBehaviorAction" :options="endBehaviorOptions"
+              @change="endBehaviorAction = $event; handleSave()" />
           </div>
 
           <div class="property-field" v-if="endBehaviorAction === 'goto-item'">
@@ -373,18 +376,11 @@
           </div>
         </div>
         <div v-if="selectedItem.type === 'group'" class="property-field">
-          <label for="cue-property-music-backup">{{ t('musicContinuity.continueWith') }}</label>
-          <select id="cue-property-music-backup"
-            :value="groupItem.backupMusicGroup ?? ''"
+          <span class="property-label">{{ t('musicContinuity.continueWith') }}</span>
+          <InlineChoicePicker id="cue-property-music-backup" :label="t('musicContinuity.continueWith')"
+            :value="configuredGroupBackup" :options="groupBackupOptions"
             :disabled="projectHydrationStatus !== 'ready' || musicContinuityPending.has(groupItem.uuid)"
-            @change="changeGroupBackup">
-            <option value="">{{ t('musicContinuity.useDefault') }}</option>
-            <option v-if="groupItem.backupMusicGroup && !groupBackupOptions.some(group => group.uuid === groupItem.backupMusicGroup)"
-              :value="groupItem.backupMusicGroup" disabled>{{ t('musicContinuity.missing') }}</option>
-            <option v-for="group in groupBackupOptions" :key="group.uuid" :value="group.uuid">
-              {{ formatItemIndex(group.index) }} · {{ group.displayName }}
-            </option>
-          </select>
+            @change="changeGroupBackup" />
         </div>
         <div v-if="selectedItem.type === 'group' && uiMode !== 'playback'" class="property-field">
           <button type="button" class="icon-btn regen-btn group-shuffle"
@@ -396,16 +392,6 @@
         </div>
       </section>
     </div>
-
-    <ServerFilePickerModal
-      :open="cueImagePickerOpen"
-      mode="file"
-      filter=".png,.jpg,.jpeg,.webp,.gif,.svg"
-      :fallback-start-path="cueImagePickerStart"
-      location-context="cue-image"
-      @pick="handleCueImagePicked"
-      @close="cueImagePickerOpen = false"
-    />
   </div>
 </template>
 
@@ -416,6 +402,7 @@ import {
   applyLoudnessMatch,
   applyTruePeakCeiling,
   buildWaveformFromChannels,
+  MEDIA_FILE_ACCEPT,
   trimSilence,
   type MeasuredLoudness,
 } from '~/utils/audio';
@@ -433,6 +420,8 @@ const {
   getSelectedItems,
   saveProject,
   currentProject,
+  projectEpoch,
+  findItemByUuid,
   beginItemBatch,
   endItemBatch,
   formatItemIndex,
@@ -455,23 +444,36 @@ let propertySaveAttempt = 0;
 
 const audioItem = computed(() => selectedItem.value as AudioItem);
 
-// Per-cue still image for the video output. The picked file is copied into
-// the project media folder and stored relative, same portability rule as
-// mediaPath and the global standby image.
-const cueImagePickerOpen = ref(false);
-const cueImagePickerStart = computed(() => currentProject.value?.folderPath || '');
+const filePicker = useState<'cue' | 'standby' | 'replace-media' | null>('workspaceFilePicker', () => null);
+const isReplacingMedia = useState('PropertiesPanel.replacingMedia', () => false);
+const replaceMediaStatus = ref('');
+const replaceMediaError = ref(false);
+const replacementCheck = shallowRef<AbortController | null>(null);
+const closePropertiesFilePicker = () => {
+  replacementCheck.value?.abort();
+  if (filePicker.value === 'replace-media') replaceMediaStatus.value = '';
+  if (filePicker.value === 'cue' || filePicker.value === 'replace-media') filePicker.value = null;
+};
+onScopeDispose(closePropertiesFilePicker);
 
 const handleCueImagePicked = async (path: string) => {
-  cueImagePickerOpen.value = false;
-  const item = audioItem.value;
-  if (!item || item.type !== 'audio') return;
+  closePropertiesFilePicker();
+  const project = currentProject.value;
+  const epoch = projectEpoch.value;
+  const uuid = selectedItem.value?.uuid;
+  const isCurrent = () => currentProject.value === project && projectEpoch.value === epoch;
+  if (!project || !uuid || selectedItem.value?.type !== 'audio' || _server.cueStartsBlocked) return;
   try {
     const dest = await _server.copyToMedia(path);
-    const folder = currentProject.value?.folderPath || '';
+    if (!isCurrent() || _server.cueStartsBlocked) return;
+    const item = findItemByUuid(uuid);
+    if (item?.type !== 'audio') return;
+    const folder = project.folderPath;
     item.imagePath = folder && dest.startsWith(folder)
       ? dest.slice(folder.length).replace(/^[\\/]+/, '').replace(/\\/g, '/')
       : dest;
-    await handleSave();
+    await endItemBatch();
+    if (isCurrent()) await persistPropertyChanges();
   } catch (e) {
     console.warn('[PropertiesPanel] cue image copy failed:', e);
   }
@@ -544,6 +546,13 @@ const ltcDeviceConfigured = computed(() => {
 // shared server state — populated once on connect.
 const _server = useLiveplayServer();
 const devicesList = computed(() => _server.devices ?? []);
+const deviceOverrideOptions = computed(() => {
+  const options = new Map(devicesList.value.map(device => [device.display_name, {
+    value: device.display_name,
+    label: device.is_default ? `${device.display_name} (${t('common.default')})` : device.display_name,
+  }]));
+  return [{ value: '', label: t('settings.useProjectDefault') }, ...options.values()];
+});
 const audioDeviceOverride = computed(() => {
   const selected = (audioItem.value as any)?.deviceOverride || '';
   return devicesList.value.find(device => device.id === selected)?.display_name ?? selected;
@@ -557,12 +566,9 @@ const apiTriggerUrl = computed(() => {
   const base = (_server.serverUrl ?? 'http://127.0.0.1:4480').replace(/\/+$/, '');
   return `${base}/api/project/items/${selectedItem.value?.uuid}/play`;
 });
-const onDeviceOverrideChange = async (e: Event) => {
-  const input = e.target as HTMLSelectElement;
-  const value = input.value;
+const onDeviceOverrideChange = async (value: string) => {
   const project = currentProject.value;
   const item = audioItem.value;
-  input.value = audioDeviceOverride.value;
   if (!project || !item || deviceOverrideEditPending.value) return;
   const previous = item.deviceOverride;
   deviceOverrideEditPending.value = true;
@@ -622,22 +628,31 @@ const onLtcTimecodeChange = (e: Event) => {
   }
 };
 
-const onLtcFrameRateChange = (e: Event) => {
-  audioItem.value.ltcFrameRate = parseInt((e.target as HTMLSelectElement).value, 10);
+const onLtcFrameRateChange = (value: number) => {
+  audioItem.value.ltcFrameRate = value;
   handleSave();
 };
 const groupItem = computed(() => selectedItem.value as GroupItem);
+const groupLevel = computed(() => {
+  const db = groupItem.value.groupGainDb;
+  return typeof db === 'number' && Number.isFinite(db) ? Math.min(0, Math.max(-60, db)) : 0;
+});
+const groupLevelLabel = computed(() => `${groupLevel.value.toFixed(1)} dB`);
+const configuredGroupBackup = computed(() => groupItem.value?.backupMusicGroup ?? '');
 const groupBackupOptions = computed(() => {
   const source = groupItem.value?.index;
-  if (!source?.length) return [];
-  return getAllItemsFlat().filter(item => item.type === 'group' &&
-    item.index.slice(0, source.length).some((position, depth) => depth < source.length && position !== source[depth]));
+  const groups = source?.length ? getAllItemsFlat().filter(item => item.type === 'group' &&
+    item.index.slice(0, source.length).some((position, depth) => position !== source[depth])) : [];
+  const selected = configuredGroupBackup.value;
+  return [
+    { value: '', label: t('musicContinuity.useDefault') },
+    ...groups.map(group => ({ value: group.uuid, label: `${formatItemIndex(group.index)} · ${group.displayName}` })),
+    ...(selected && !groups.some(group => group.uuid === selected)
+      ? [{ value: selected, label: t('musicContinuity.missing'), disabled: true }] : []),
+  ];
 });
-const changeGroupBackup = (event: Event) => {
-  const input = event.target as HTMLSelectElement;
-  const backupMusicGroup = input.value || null;
-  input.value = groupItem.value.backupMusicGroup ?? '';
-  return setMusicContinuity(groupItem.value, { backupMusicGroup },
+const changeGroupBackup = (value: string) => {
+  return setMusicContinuity(groupItem.value, { backupMusicGroup: value || null },
     status => showHeaderWarning(t(`musicContinuity.${status}`)));
 };
 
@@ -654,6 +669,7 @@ const isCartItem = computed(() => {
 const activeTab = ref<'basic' | 'playback' | 'output'>(uiMode.value === 'playback' && selectedItem.value?.type === 'audio'
   ? 'playback'
   : 'basic');
+watch([selectedItem, projectEpoch, activeTab], closePropertiesFilePicker, { flush: 'sync' });
 
 const audioTabs = computed(() => [
   { id: 'basic', label: t('properties.basicInfo'), icon: 'info' },
@@ -662,6 +678,26 @@ const audioTabs = computed(() => [
 ] as const);
 
 // Computed properties for behavior fields
+const startBehaviorOptions = computed(() => selectedItem.value?.type === 'group' ? [
+  { value: 'play-first', label: t('startBehavior.playFirst') },
+  { value: 'play-all', label: t('startBehavior.playAll') },
+] as const : [
+  { value: 'nothing', label: t('startBehavior.nothing') },
+  { value: 'play-next', label: t('startBehavior.playNext') },
+  { value: 'play-item', label: t('startBehavior.playItem') },
+  { value: 'play-index', label: t('startBehavior.playIndex') },
+] as const);
+const endBehaviorOptions = computed(() => {
+  const options: { value: AudioItem['endBehavior']['action']; label: string }[] = [
+    { value: 'nothing', label: t('endBehavior.nothing') },
+    { value: 'next', label: t('endBehavior.next') },
+    { value: 'goto-item', label: t('endBehavior.gotoItem') },
+    { value: 'goto-index', label: t('endBehavior.gotoIndex') },
+  ];
+  if (selectedItem.value?.type === 'audio') options.push({ value: 'loop', label: t('endBehavior.loop') });
+  return options;
+});
+
 const endBehaviorAction = computed({
   get: () => {
     if (selectedItem.value?.type === 'audio') {
@@ -781,6 +817,12 @@ const handleStartBehaviorIndexChange = (e: Event) => {
   handleSave();
 };
 
+const duckingOptions = computed(() => [
+  { value: 'stop-all', label: t('duckingBehavior.stopAll') },
+  { value: 'no-ducking', label: t('duckingBehavior.noDucking') },
+  { value: 'duck-others', label: t('duckingBehavior.duckOthers') },
+] as const);
+
 const duckingMode = computed({
   get: () => audioItem.value.duckingBehavior?.mode ?? 'stop-all',
   set: (mode: AudioItem['duckingBehavior']['mode']) => {
@@ -839,6 +881,7 @@ watch(selectedItem, (newItem, oldItem) => {
 const handleClose = () => {
   // Close the panel but leave the current selection intact so the highlighted
   // rows stay highlighted. Only the panel's visibility is toggled here.
+  closePropertiesFilePicker();
   propertiesPanelOpen.value = false;
   propertySaveAttempt += 1;
   propertySaveFailed.value = false;
@@ -1107,11 +1150,8 @@ const handleStartNextFadeOutUpdate = (value: boolean) => {
 };
 
 const isRegenerating = ref(false);
-const isReplacingMedia = ref(false);
-const replaceMediaStatus = ref('');
-const replaceMediaError = ref(false);
-watch(() => selectedItem.value?.uuid, () => {
-  if (!isReplacingMedia.value) replaceMediaStatus.value = '';
+watch([() => selectedItem.value?.uuid, projectEpoch], () => {
+  replaceMediaStatus.value = '';
 });
 
 const handleRegenerateWaveform = async () => {
@@ -1143,45 +1183,57 @@ const handleRegenerateWaveform = async () => {
   }
 };
 
-const handleReplaceMedia = async () => {
-  if (!import.meta.client || !window.electronAPI || isReplacingMedia.value) return;
+const openReplaceMediaPicker = () => {
+  replaceMediaStatus.value = '';
+  filePicker.value = 'replace-media';
+};
+
+const handleReplaceMedia = async (sourcePath: string) => {
+  if (filePicker.value !== 'replace-media' || isReplacingMedia.value) return;
   const project = currentProject.value;
+  const epoch = projectEpoch.value;
   const item = audioItem.value;
-  if (!item || item.type !== 'audio') return;
-  const isCurrent = () => currentProject.value === project && audioItem.value === item;
+  if (!project || item?.type !== 'audio') return;
+  const check = new AbortController();
+  const { signal } = check;
+  const isCurrentShow = () => currentProject.value === project && projectEpoch.value === epoch;
+  const isCurrent = () => !signal.aborted && isCurrentShow() && audioItem.value === item && filePicker.value === 'replace-media';
 
-  const files = await window.electronAPI.selectAudioFiles();
-  const sourcePath = files?.[0];
-  if (!sourcePath || !isCurrent()) return;
-
-  const snapshot = JSON.parse(JSON.stringify(item));
-  let mutated = false;
+  replacementCheck.value = check;
   isReplacingMedia.value = true;
   replaceMediaError.value = false;
   replaceMediaStatus.value = t('properties.verifyingReplacement');
   try {
     const [metadata, serverWaveform] = await Promise.all([
-      _server.fetchMetadata(sourcePath),
-      _server.fetchWaveformByPath(sourcePath),
-    ]);
+      _server.fetchMetadata(sourcePath, signal),
+      _server.fetchWaveformByPath(sourcePath, 1000, undefined, signal),
+    ]).catch(() => { throw new Error(t('properties.replacementDecodeFailed')); });
     if (!isCurrent()) return;
-    const metadataDuration = Number((metadata as any)?.duration_ms);
+    const metadataDuration = Number(metadata?.duration_ms);
     const durationMs = Number.isFinite(metadataDuration) && metadataDuration > 0
       ? metadataDuration
       : Number(serverWaveform.duration_ms);
     const duration = durationMs / 1000;
     const waveform = buildWaveformFromChannels(serverWaveform.channels, duration, serverWaveform);
-    if ((metadata as any)?.valid !== true || !Number.isFinite(duration) || duration <= 0 || !waveform) {
+    if (metadata?.valid !== true || !Number.isFinite(duration) || duration <= 0 || !waveform) {
       throw new Error(t('properties.replacementDecodeFailed'));
     }
 
-    const linked = !snapshot.mediaPath;
-    const mediaServerPath = linked ? sourcePath : await _server.copyToMedia(sourcePath);
+    if (_server.cueStartsBlocked) throw new Error(t('properties.replacementFailed'));
+    const linked = !item.mediaPath;
+    const mediaServerPath = linked ? sourcePath : await _server.copyToMedia(sourcePath, signal);
     if (!isCurrent()) return;
+    if (_server.cueStartsBlocked) throw new Error(t('properties.replacementFailed'));
     const fileName = mediaServerPath.split(/[\\/]/).pop() || sourcePath.split(/[\\/]/).pop() || 'audio';
+    const snapshot = {
+      mediaFileName: item.mediaFileName, mediaPath: item.mediaPath, mediaServerPath: item.mediaServerPath,
+      waveform: item.waveform, duration: item.duration, inPoint: item.inPoint, outPoint: item.outPoint,
+      hasVideo: item.hasVideo, startNextTime: item.startNextTime,
+    };
     const usedWholeFile = snapshot.inPoint <= 0 && Math.abs(snapshot.outPoint - snapshot.duration) < 0.01;
 
-    mutated = true;
+    replacementCheck.value = null;
+    replaceMediaStatus.value = t('archive.savingShow');
     item.mediaFileName = fileName;
     item.mediaServerPath = mediaServerPath;
     item.mediaPath = linked ? '' : `media/${fileName}`;
@@ -1190,24 +1242,35 @@ const handleReplaceMedia = async () => {
     item.inPoint = usedWholeFile ? 0 : Math.min(snapshot.inPoint, Math.max(0, duration - 0.01));
     item.outPoint = usedWholeFile ? duration : Math.min(duration, Math.max(item.inPoint + Math.min(0.01, duration), Math.min(snapshot.outPoint, duration)));
     // Re-probe: swapping media can add or remove the video stream.
-    if ((metadata as any)?.has_video === true) item.hasVideo = true;
+    if (metadata?.has_video === true) item.hasVideo = true;
     else delete item.hasVideo;
     if (typeof item.startNextTime === 'number') {
       item.startNextTime = Math.max(item.inPoint, Math.min(item.startNextTime, item.outPoint));
     }
 
-    if (!await saveProject()) throw new Error(t('properties.replacementSaveFailed'));
-    originalSnapshot.value = JSON.parse(JSON.stringify(item));
-    replaceMediaStatus.value = t('properties.replacementComplete');
-    void _server.requestWaveformGeneration(mediaServerPath, item.uuid, true).catch(() => {});
-  } catch (error: any) {
-    if (mutated) {
+    if (!await saveProject().catch(() => false)) {
       Object.assign(item, snapshot);
-      if (currentProject.value === project) await saveProject();
+      for (const key of ['mediaServerPath', 'waveform', 'hasVideo', 'startNextTime'] as const) {
+        if (snapshot[key] === undefined) delete item[key];
+      }
+      if (isCurrentShow()) await saveProject().catch(() => false);
+      throw new Error(t('properties.replacementSaveFailed'));
     }
-    replaceMediaError.value = true;
-    replaceMediaStatus.value = error?.message || t('properties.replacementFailed');
+    if (isCurrentShow()) {
+      void _server.requestWaveformGeneration(mediaServerPath, item.uuid, true).catch(() => {});
+    }
+    if (isCurrent()) {
+      originalSnapshot.value = JSON.parse(JSON.stringify(item));
+      replaceMediaStatus.value = t('properties.replacementComplete');
+      filePicker.value = null;
+    }
+  } catch (error: unknown) {
+    if (isCurrent()) {
+      replaceMediaError.value = true;
+      replaceMediaStatus.value = error instanceof Error ? error.message : t('properties.replacementFailed');
+    }
   } finally {
+    replacementCheck.value = null;
     isReplacingMedia.value = false;
   }
 };
@@ -1244,10 +1307,13 @@ const formatTime = (seconds: number): string => {
 }
 
 .properties-header {
+  order: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) var(--panel-control-height);
   justify-content: stretch;
   gap: var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
+  border-bottom: 0;
 }
 
 .properties-panel--group .properties-header {
@@ -1358,6 +1424,64 @@ const formatTime = (seconds: number): string => {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.group-level-control {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.group-level-control input {
+  flex: 1;
+  min-width: 0;
+  min-height: max(24px, var(--settings-control-height));
+  margin: 0;
+}
+
+.group-level-control input:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+  border-radius: var(--control-radius);
+}
+
+.group-level-control input::-webkit-slider-runnable-track {
+  height: 6px;
+  background: var(--color-background);
+}
+
+.group-level-control input::-webkit-slider-thumb {
+  width: 23px;
+  height: 16px;
+  margin-top: -6px;
+  background: linear-gradient(90deg, var(--color-accent), var(--color-accent)) center / 2px 65% no-repeat,
+    var(--color-surface-raised);
+}
+
+.group-level-control input::-moz-range-track {
+  height: 6px;
+  background: var(--color-background);
+}
+
+.group-level-control input::-moz-range-thumb {
+  width: 21px;
+  height: 14px;
+  background: linear-gradient(90deg, var(--color-accent), var(--color-accent)) center / 2px 65% no-repeat,
+    var(--color-surface-raised);
+}
+
+.group-level-control input:disabled { opacity: .5; }
+
+.group-level-control output {
+  min-width: 9ch;
+  padding: 2px var(--spacing-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  background: var(--color-control);
+  color: var(--color-text-primary);
+  text-align: end;
+  font: var(--type-metadata-size) var(--font-mono);
+  white-space: nowrap;
+}
+
 .properties-content:has(.playback-panel) {
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(min-content, 1fr);
@@ -1432,6 +1556,13 @@ const formatTime = (seconds: number): string => {
 .property-field > .one-shot-designation__toggle,
 .property-field > .ltc-checkbox-label {
   grid-column: 1 / -1;
+}
+
+.property-field:has(> .inline-choice-picker[open]) { align-items: start; }
+.property-field:has(> .inline-choice-picker) > .property-label {
+  display: flex;
+  align-items: center;
+  min-height: var(--settings-control-height);
 }
 
 .properties-content--audio .property-field:has(.color-picker) {
@@ -1657,6 +1788,14 @@ const formatTime = (seconds: number): string => {
 
 .property-help--error {
   color: var(--color-danger);
+}
+
+.replace-media-feedback {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--workspace-gutter);
 }
 
 .trim-save-feedback {

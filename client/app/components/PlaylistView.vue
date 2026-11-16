@@ -4,6 +4,9 @@
       <div class="workspace-panel-header__leading">
         <slot name="header-leading" />
         <h2 class="workspace-panel-header__title">{{ t('playlist.title') }}</h2>
+        <Btn type="button" class="locate-next" icon="my_location" text=""
+          :title="t('actions.locateUpNext')" :aria-label="t('actions.locateUpNext')"
+          :disabled="readOnly || !locatableNextUuid" @click="locateUpNext" />
         <Btn v-if="backupMusicGroup?.type === 'group' || currentProject?.settings?.keepMusicGoing"
           type="button" class="music-toggle" icon="music_note" text=""
           :title="musicContinuityTitle" :aria-label="t('musicContinuity.toggle')"
@@ -12,7 +15,7 @@
           @click="toggleMusicContinuity" />
       </div>
       <!-- Import / add-group are edit actions — hidden in Show Mode. -->
-      <div v-if="!showMode" class="playlist-actions">
+      <div v-if="!showMode" class="playlist-actions" :inert="readOnly">
         <Btn icon="audio_file" :text="t('playlist.importAudio')" :title="t('playlist.importAudio')"
           :aria-label="t('playlist.importAudio')" :disabled="!currentProject" @click="handleImport" />
         <Btn v-if="importReviewAvailable" icon="list_alt" :text="t('importAudio.resultsTitle')"
@@ -30,7 +33,9 @@
       </div>
     </div>
     
-    <div ref="scrollContainer" class="playlist-content" @drop="handleDrop" @dragover="handleDragOver">
+    <div ref="scrollContainer" class="playlist-content"
+      @drop="readOnly ? $event.preventDefault() : handleDrop($event)"
+      @dragover="readOnly ? $event.preventDefault() : handleDragOver($event)">
       <div v-if="currentProject?.items.length === 0" class="empty-state">
         <img
           :src="isDark ? './assets/icons/SVG/app_icon_darkmode@web.svg' : './assets/icons/SVG/app_icon_lightmode@web.svg'"
@@ -42,7 +47,7 @@
         <p class="hint">{{ t('playlist.importHint') }}</p>
       </div>
       
-      <div v-else class="item-list">
+      <div v-else class="item-list" :inert="readOnly">
         <PlaylistItem
           v-for="item in visibleItems"
           :key="item.uuid"
@@ -110,6 +115,7 @@ import { canonicalSpotifyMediaReference } from '~/utils/spotifyImport';
 import { cloneAsPlaylistItem } from '~/utils/oneShots';
 import { projectPathInFolder } from '~/utils/projectFileFormats';
 
+const { readOnly } = defineProps<{ readOnly: boolean }>();
 const {
   currentProject,
   addItem,
@@ -143,7 +149,12 @@ const toggleMusicContinuity = () => {
 };
 const theme = useState('theme', () => 'dark');
 const isDark = computed(() => theme.value === 'dark');
-const { activeCues, nextItemOverrideUuid } = useAudioEngine();
+const { activeCues, nextItemOverrideUuid, effectiveNextUuid, setNextItemPending } = useAudioEngine();
+const locatableNextUuid = computed(() => {
+  if (projectHydrationStatus.value !== 'ready' || setNextItemPending.value || !effectiveNextUuid.value) return null;
+  const item = findItemByUuid(effectiveNextUuid.value);
+  return item && (item.index?.[0] ?? -1) >= 0 ? item.uuid : null;
+});
 const {
   uiMode,
   regularPlaylistRowHeight,
@@ -151,7 +162,7 @@ const {
   folderPlaylistRowHeight,
   waveformOpacity,
 } = useUiMode();
-const { revealSelection, commitReveal, clearReveals } = usePlaylistReveal();
+const { revealItems, commitReveal, clearReveals } = usePlaylistReveal();
 const server = useLiveplayServer();
 // Same useState key useProject/useShowControl bind to — watching the uuid (not
 // the `selectedItem` computed) means we react to the selection MOVING, not to
@@ -248,7 +259,7 @@ const primaryPlayingUuid = computed<string | null>(() => {
 function scrollItemIntoView(uuid: string, block: ScrollLogicalPosition = 'center') {
   const container = scrollContainer.value;
   if (!container) return;
-  const el = container.querySelector<HTMLElement>(`[data-item-uuid="${uuid}"]`);
+  const el = container.querySelector<HTMLElement>(`[data-item-uuid="${CSS.escape(uuid)}"] > .item-content`);
   if (el) {
     el.scrollIntoView({ block, behavior: 'smooth' });
     return;
@@ -261,6 +272,15 @@ function scrollItemIntoView(uuid: string, block: ScrollLogicalPosition = 'center
     renderLimit.value = topIndex + 1;
     nextTick(() => scrollItemIntoView(uuid, block));
   }
+}
+
+function locateUpNext() {
+  const uuid = locatableNextUuid.value;
+  if (!uuid) return;
+  revealItems(selectedItemUuid.value, uuid);
+  nextTick(() => {
+    if (locatableNextUuid.value === uuid) scrollItemIntoView(uuid, 'end');
+  });
 }
 
 watch(
@@ -283,7 +303,7 @@ watch(
 // already fully visible, so ordinary mouse clicks never jerk the list around,
 // and an off-screen selection is brought in with the smallest move that works.
 watch(selectedItemUuid, (uuid) => {
-  revealSelection(uuid);
+  revealItems(uuid);
   if (!uuid) return;
   // A revealed group renders its children on the next flush, so the row we
   // want to scroll to does not exist yet at this point.
@@ -1084,20 +1104,33 @@ const importFromServerPaths = async (
     };
   }
 
-  for (const [offset, entry] of prepared.entries()) {
-    entry.audioItem.index = [project.items.length + offset];
-    addItem(entry.audioItem);
+  const target = options?.groupName && options.existingGroupUuid
+    ? findItemByUuid(options.existingGroupUuid)
+    : undefined;
+  const existingGroup = target?.type === 'group' ? target : undefined;
+  const newGroup: GroupItem | undefined = options?.groupName && !existingGroup ? {
+    ...DEFAULT_GROUP_ITEM,
+    uuid: crypto.randomUUID(),
+    index: [project.items.length],
+    displayName: options.groupName,
+    type: 'group',
+    children: prepared.map(entry => entry.audioItem),
+  } : undefined;
+  if (newGroup) addItem(newGroup);
+  else {
+    for (const entry of prepared) addItem(entry.audioItem, existingGroup?.index);
   }
+  const addedUuids = newGroup ? [newGroup.uuid] : prepared.map(entry => entry.audioItem.uuid);
 
   if (signal?.aborted) {
-    for (const entry of prepared) removeItem(entry.audioItem.uuid);
+    for (const uuid of addedUuids) removeItem(uuid);
     return { success: false, imported: 0, error: t('spotifyImport.cancelled'), results };
   }
 
   const saved = await saveProject({ signal });
   if (!saved) {
     if (currentProject.value === project && projectEpoch.value === epoch) {
-      for (const entry of prepared) removeItem(entry.audioItem.uuid);
+      for (const uuid of addedUuids) removeItem(uuid);
     }
     return {
       success: false,
@@ -1125,6 +1158,7 @@ const importFromServerPaths = async (
   return {
     success: !failed,
     imported: prepared.length,
+    groupUuid: (newGroup ?? existingGroup)?.uuid,
     error: failed ? t('importAudio.partialFailure') : undefined,
     results,
   };
@@ -1143,6 +1177,7 @@ const handleAddGroup = () => {
   } as GroupItem;
 
   addItem(groupItem);
+  void saveProject();
 };
 
 const handleDragOver = (e: DragEvent) => {
@@ -1277,20 +1312,27 @@ const handleDrop = async (e: DragEvent) => {
 
 .playlist-actions {
   display: flex;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   align-items: center;
+  justify-content: safe flex-end;
   min-width: 0;
-  margin-inline-start: auto;
   gap: var(--spacing-sm);
   overflow-x: auto;
+  container: playlist-actions / inline-size;
 }
 
 .playlist-header .workspace-panel-header__leading {
   flex: 0 0 auto;
 }
 
-.music-toggle {
+.music-toggle,
+.locate-next {
   padding-inline: var(--spacing-xs);
+}
+
+.locate-next {
+  min-width: var(--panel-control-height);
+  justify-content: center;
 }
 
 .music-toggle[aria-pressed='true'] {
@@ -1298,18 +1340,17 @@ const handleDrop = async (e: DragEvent) => {
   color: var(--state-playing);
 }
 
-@container (max-width: 580px) {
-  .playlist-actions {
-    gap: var(--spacing-xs);
-  }
-
+@container playlist-actions (max-width: 640px) {
   .playlist-actions :deep(.btn) {
     flex: 0 0 var(--panel-control-height);
     justify-content: center;
     padding: 0;
   }
 
-  .playlist-actions :deep(.btn__text),
+  .playlist-actions :deep(.btn__text) { display: none; }
+}
+
+@container (max-width: 580px) {
   .playlist-header :deep(.cart-toggle__label) { display: none; }
 }
 
@@ -1324,6 +1365,7 @@ const handleDrop = async (e: DragEvent) => {
 
 .playlist-content {
   flex: 1;
+  container: playlist-scroll / size;
   overflow-y: auto;
   padding: 0 var(--workspace-gutter) var(--workspace-gutter);
   scrollbar-color: var(--color-border-strong) transparent;

@@ -3,7 +3,7 @@
 const { BrowserWindow } = require('electron');
 
 // This function runs in the sandboxed probe renderer.
-function decodeFrame(url, inPoint) {
+function decodeFrame(url, { inPoint, outPoint }) {
   return new Promise(resolve => {
     const video = document.createElement('video');
     video.muted = true;
@@ -23,33 +23,48 @@ function decodeFrame(url, inPoint) {
       resolve(result);
     };
     video.onerror = () => finish(video.error?.code === 2 ? 'unreadable' : 'decode');
-    let metadataReady = false;
+    const sampleTimes = [];
+    let sample = 0;
     let checking = false;
     const checkFrame = async () => {
-      if (!metadataReady || checking || video.seeking || video.readyState < video.HAVE_CURRENT_DATA) return;
+      const target = sampleTimes[sample];
+      if (settled || target === undefined || checking || video.seeking ||
+          Math.abs(video.currentTime - target) > 0.001 || video.readyState < video.HAVE_CURRENT_DATA) return;
       checking = true;
       try {
         // Require an actual picture even if only the audio track can supply current data.
         const picture = await createImageBitmap(video, { resizeWidth: 2, resizeHeight: 2 });
         picture.close();
-        finish('ok');
       } catch {
         finish('no-frame');
+        return;
       }
+      if (settled) return;
+      const next = sampleTimes[++sample];
+      if (next === undefined) return finish('ok');
+      video.currentTime = next;
+      checking = false;
     };
     video.onloadeddata = video.onseeked = checkFrame;
     video.onloadedmetadata = () => {
       if (!video.videoWidth || !video.videoHeight) return finish('no-frame');
       if (inPoint > 0 && inPoint >= video.duration) return finish('in-point');
+      sampleTimes.push(inPoint);
+      const end = Number.isFinite(video.duration) ? Math.min(outPoint ?? Infinity, video.duration) : outPoint;
+      if (end === null) return finish('duration');
+      const span = end - inPoint;
+      // shortcut: spot samples cover the cue range; detecting every bad frame needs full decode.
+      if (Number.isFinite(span) && span >= 0.004) {
+        sampleTimes.push(inPoint + span / 2, end - Math.min(0.04, span / 4));
+      }
       if (inPoint !== video.currentTime) video.currentTime = inPoint;
-      metadataReady = true;
       void checkFrame();
     };
     video.src = url;
   });
 }
 
-function checkVideoFrame(url, inPoint, signal, timeoutMs = 8000) {
+function checkVideoFrame(url, range, signal, timeoutMs = 8000) {
   if (signal.aborted) return Promise.resolve('canceled');
   const probe = new BrowserWindow({
     width: 320, height: 180, show: false, focusable: false, skipTaskbar: true,
@@ -77,7 +92,7 @@ function checkVideoFrame(url, inPoint, signal, timeoutMs = 8000) {
     const csp = `default-src 'none'; media-src ${new URL(url).origin}; base-uri 'none'`;
     const page = `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><body></body>`;
     probe.loadURL(`data:text/html;charset=UTF-8,${encodeURIComponent(page)}`)
-      .then(() => contents.executeJavaScript(`(${decodeFrame})(${JSON.stringify(url)}, ${inPoint})`))
+      .then(() => contents.executeJavaScript(`(${decodeFrame})(${JSON.stringify(url)}, ${JSON.stringify(range)})`))
       .then(finish, () => finish('probe-error'));
   });
 }

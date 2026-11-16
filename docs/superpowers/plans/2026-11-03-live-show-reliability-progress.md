@@ -569,3 +569,65 @@ The visible name changed in `22e72d2`, the shifted defaults in `bf196c6`, and th
 ## 13 November — Packaged review and picture framing
 
 `3b69f60` adds Full HD by default with selectable professional canvas presets, editable dimensions, a fit or pixel-cap choice, and 25–100% centered scaling. Apply framing saves to the machine profile and updates the current output. Invalid framing and stale captures are rejected. Settings stays docked with the playlist, GO and Stop All available. The packaged Apple Silicon review cold-opened an isolated landscape sample with 23 ready cues, checked shifted QuickPlays in both modes, rendered the 1080p pattern with all edges visible, and verified custom, wide, optional portrait, Retina pixel cap and persistence. Native 13/13, isolated API 69/69, client 266/266, typecheck, production renderer, and Electron transition and recovery checks passed. The manual includes refreshed screenshots from the packaged review. Physical HDMI, PA and cross-platform acceptance remain in T24.
+
+## 14 November — Dock, group levels, and QuickPlay handoff
+
+`8b743a2` and `b8a2c9b` fix the Cueing row overlap and dock the Settings, Properties, and remote Import Media tabs along the bottom. Chromium checked the default fit, pointer and keyboard resizing, scrolling with tabs pinned, and live GO and Stop All using an isolated NULL audio engine. The checks covered 1471 × 868 at 90% scaling and 1200 × 668 at 110%.
+
+`039dede` shuffles upcoming group children while preserving the current playback, prepared handoff, and explicit Up Next. `fafc2fc` adds Group Level. Native PCM tests verify nested attenuation, independent cue gain, unchanged audio outside the group, and live edits without retriggering. `9b97613` follows the latest Up Next after the QuickPlay's current pass. Native checks cover stop, loop, and authored jump endings. `fd3644c` puts QuickPlay Settings and edit actions inside the dock. Chromium checked both workspace modes and the detached window with its Stop All shortcut.
+
+`c812393` passes 200 callback bursts that reset the old four-block ring. The secondary uses an eight-block ring and roughly 11 ms more nominal buffering at 48 kHz. The master still uses a three-block queue. The reported hardware stutter still needs a physical retest under T24.
+
+The application checkpoint passed all 13 native suites, 72 isolated API checks, 271 client checks, typecheck, and production renderer generation. The operator manual and affected screenshots describe this development build.
+
+`206d69b` makes the follow target visible in the playlist and gives GO readable waiting and idle labels. An isolated renderer check held the cue change confirmation, confirmed Stop All stayed enabled, and exercised GO and Stop All in Show Mode with Settings open at 1200 × 700 and 110% text size. Typecheck, renderer generation, and live safety checks passed.
+
+## 14 November — Operator blockers and import panels
+
+The Escape check stopped native software playback from the limiter field and a Preview edit (`7229cc8`). A lower delete confirmation left GO and both Stop All paths reachable and retained the original selection (`a73de33`). A denied child folder left readable media staged, with the skipped path visible and group import and retry still working (`582a5ee`).
+
+T48d reproduced lockups with a held project-file read and held filesystem probes. Open keeps the original session and deadline (`9c3d761`). Save keeps its own writer order and gives up show ownership during disk I/O (`c4ee00f`); concurrent Save As calls for the same show retain separate snapshots, while direct cue registration verifies the session after its unlocked path comparison (`7c233a9`). Native 13/13 and API 74/74 passed with software audio. The tests do not cancel OS storage waits.
+
+The import panel review used 1200 × 700 and 845 × 690 Chromium viewports at 110% text with simulated providers and the NULL playback device. Media staging, Spotify selection and Cancel, YouTube progress and completion, GO, and Escape passed. Client checks, type checking, and production renderer generation passed (`89d574e`). Updated the manual and affected captures. Physical PA and HDMI acceptance remains deferred.
+
+## 14 November — Quit and unsaved changes
+
+Quit uses the lower panel for both the save decision and the local engine choice (`c43b68e`). The Chromium and NULL audio check kept playlist arming, GO, pointer Stop All, and the first Escape usable at 1200 × 700 and 110% text. It also covered restoring the Settings tab, requesting client-only or server shutdown through the renderer, late edits that require another save decision, and returning to Welcome. The key routing check covered Escape with a remapped Stop All.
+
+Unsaved Changes for New, Open, and Close uses the same lower panel (`5ad46ba`). Software checks exercised Show Mode, an 845 × 690 viewport, Cancel and restoration of the New Show form, opening after Save or Don't Save, and a held save that let GO and Escape work before an injected write failure. The current show stayed loaded on failure.
+
+Both scenarios passed against the generated renderer. All 275 client tests, type checking, renderer generation, and the manual checks passed. Physical output acceptance remains in T24.
+
+## 14 November — New Show and Open Project
+
+New Show, its folder picker, and create progress use the lower panel (`7c0d18b`). Chromium with the NULL audio engine verified both workspace modes at 1200 × 700 and 845 × 690 with 110% text. Escape stopped playback from the form and path field with Stop All assigned to F9. Cancel kept the show and restored the previous panel or the form draft. GO and Stop All worked while a create request was held.
+
+Open Project uses the same browser from the workspace or Welcome (`534615e`). Cancel, invalid files, and a canceled save decision left the playing cue intact. A response held after engine acceptance reproduced a GO from the old workspace starting a cue in the replacement show. The submitted Open now holds cue starts until loading ends. A repeat with the reply held verified that the old workspace could not start the new cue. The held request kept the playlist visible and both Stop All controls available.
+
+All three Chromium scenarios passed against the generated renderer. The 275 client tests, type checking, and renderer generation passed. The manual includes the new form and explains when GO waits. Physical output acceptance remains in T24.
+
+## 14 November — Open Recent and direct show opens
+
+Open Recent and direct `.dwcue` opens now use the existing lower panel and the same cue-start guard as the Open Project picker (`adc3bc8`). Holding Open before the engine accepted it kept the old playlist visible. The Stop All button and Escape each stopped a playing cue with Stop All remapped to F9. A refused file left the cue playing. Holding the reply after the engine switched shows verified that GO from the old workspace could not start a cue in the replacement show.
+
+The generated renderer and native NULL audio engine passed menu, warm file delivery, and pending launch file tests. The launch panel sent both Stop All commands before the workspace loaded. The New Show and Open Project picker checks also passed. All 275 client tests, type checking, and renderer generation passed. Physical output acceptance remains in T24.
+
+## 14 November — Reconnect and session recovery
+
+The main window uses the lower panel for connection loss, show verification, and recovery choices (`7d68e57`). The workspace displays the last verified playlist while the controller checks the show and reads every page of its replacement. GO and editing wait for verification. Stop All remains usable by click, focused Space, the assigned shortcut, and Escape. If HTTP cannot reach the engine, the lower panel reports Stop All as unconfirmed.
+
+In Edit and Show Mode, the generated renderer and NULL audio engine kept the playlist visible through a failed second page and another disconnect. A show switch invalidated a response held after the old page was read. Failed recovery kept unsaved edits, and an explicit retry restored the verified show. Continue session on an empty engine restored the show without replaying a cue. The New Show and Open Project checks, 276 client tests, type checking, and renderer generation passed. Physical output acceptance remains in T24.
+
+## 15 November — Cue and standby image pickers
+
+Cue Image in Properties and Standby Image in Video Output settings use the existing lower file browser (`e47b31a`). Chromium and the NULL audio engine verified both at 1200 × 700 and 845 × 690 with 110% text. Playlist arming, GO by click and Space, Stop All by click, and Escape from the path field worked with Stop All assigned to F9. Cancel returned to the editor and the browser remembered its folder.
+
+Picking a different cue closes an unconfirmed cue image browser. Once confirmed, a held copy updates its original cue even if the playlist selection changes. Opening another show while a standby copy is pending leaves the new show's standby unchanged. Both accepted images were byte-identical in the project media folder.
+
+The shared browser preserves a path entered while the initial folder is loading (`ac515e2`). Software tests held both a successful listing and a missing remembered folder until after path entry, then used Enter to open the typed folder. The New Show folder picker, 276 client tests, type checking, and renderer generation passed.
+
+## 15 November — QuickPlay import
+
+The empty slot button and **Replace audio** open the single-file browser in the dock (`7336b29`). It shows the destination slot, copy or link options, and preparation or failure status. A different slot starts with a fresh selection. Show Mode closes an unconfirmed import.
+
+Chromium and the NULL audio engine exercised the playlist, GO by click and Space, Stop All by click, and Escape from the folder field with Stop All assigned to F9. At 845 × 690 and 1200 × 700 with 110% text, Cancel and a failed decode kept the slot intact, and a held preparation left transport active. Copy preserved the file bytes and Link replaced only the original slot. The detached picker applied the import using the main-project mutation contract. A simulated remote client browsed server folders and uploaded a dropped local file byte-for-byte. All 276 client tests, type checking, and the generated renderer passed.

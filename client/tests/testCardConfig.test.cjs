@@ -215,3 +215,51 @@ test('allows bounded raster data URLs and trusted bundled assets only', () => {
     assert.equal(createTestCardConfig({ mask: { image } }).mask.image, '', image);
   }
 });
+
+test('Test Card image loading preserves existing previews and lets Clear win over a pending decode', async () => {
+  const { readFileSync } = require('node:fs');
+  const path = require('node:path');
+  const ts = require('typescript');
+  const source = readFileSync(path.join(__dirname, '../app/components/TestCardControls.vue'), 'utf8');
+  const handlers = source.slice(source.indexOf('function clearImage('), source.indexOf('</script>'));
+  const code = ts.transpileModule(handlers, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const data = character => 'data:image/png;base64,' + Buffer.from(character).toString('base64');
+  const props = { disabled: false, config: createTestCardConfig({ alteka: { logo: data('a'), showLogo: true } }) };
+  const requests = { logo: 0, mask: 0 };
+  const status = { logo: null, mask: null };
+  let resumeDecode;
+  const held = new Promise(resolve => { resumeDecode = resolve; });
+  const emit = (_event, config) => { props.config = config; };
+  const updateAlteka = patch => emit('change', { ...props.config, alteka: { ...props.config.alteka, ...patch } });
+  const updateMask = patch => emit('change', { ...props.config, mask: { ...props.config.mask, ...patch } });
+  class FileReader {
+    addEventListener(event, callback) { if (event === 'load') this.onLoad = callback; }
+    readAsDataURL(file) { this.result = file.data; this.onLoad(); }
+  }
+  class Image {
+    async decode() {
+      if (this.src === data('x')) throw new Error('corrupt raster');
+      if (this.src === data('b')) await held;
+    }
+  }
+  const { pickImage, clearImage } = Function('props', 'imageRequest', 'imageStatus', 'emit',
+    'updateAlteka', 'updateMask', 'createTestCardConfig', 'FileReader', 'Image',
+    code + '\nreturn { pickImage, clearImage };')(
+    props, requests, status, emit, updateAlteka, updateMask, createTestCardConfig, FileReader, Image);
+  const files = character => [{ type: 'image/png', size: 12, data: data(character) }];
+  await pickImage(files('x'), 'logo');
+  assert.equal(status.logo, 'invalid');
+  assert.equal(props.config.alteka.logo, data('a'));
+  const stale = pickImage(files('b'), 'logo');
+  assert.equal(status.logo, 'reading');
+  await pickImage(files('c'), 'mask');
+  assert.deepEqual(props.config.mask, { image: data('c'), enabled: true, applyBounds: false });
+  clearImage('logo');
+  resumeDecode();
+  await stale;
+  assert.equal(props.config.alteka.logo, '');
+  assert.equal(props.config.alteka.showLogo, true);
+  clearImage('mask');
+  assert.deepEqual(props.config.mask, { image: '', enabled: false, applyBounds: false });
+  assert.deepEqual(status, { logo: null, mask: null });
+});

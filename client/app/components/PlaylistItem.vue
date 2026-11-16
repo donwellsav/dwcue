@@ -75,7 +75,7 @@
         <div class="item-arm">
           <ActionButton
             class="set-next-action"
-            icon="fast_forward"
+            :icon="isQueuedNext ? undefined : 'fast_forward'"
             :highlight-color="item.type === 'group' ? 'var(--folder-next-action)' : 'var(--state-up-next)'"
             active-text-color="var(--state-up-next-text)"
             :is-active="isManuallyQueued"
@@ -83,9 +83,10 @@
             context="Playlist"
             @click.stop="handleSetAsNext"
             :label="t('status.upNext')"
-            :hover-label="isManuallyQueued ? t('status.upNext') : t('controls.playNext')"
-            :title="isManuallyQueued ? t('status.upNext') : t('controls.playNext')"
-            :aria-label="isManuallyQueued ? t('status.upNext') : t('controls.playNext')"
+            :hover-label="isQueuedNext ? undefined : t('controls.playNext')"
+            :title="isManuallyQueued ? t('status.upNext') : t('actions.setAsNext')"
+            :aria-label="isQueuedNext ? t('status.upNext') : t('actions.setAsNext')"
+            :aria-current="isQueuedNext ? 'true' : undefined"
             :aria-pressed="isManuallyQueued"
           />
         </div>
@@ -108,7 +109,16 @@
             <span class="material-symbols-rounded" aria-hidden="true">folder</span>
           </span>
 
-          <span class="item-name" :title="item.displayName" :style="{ color: durationColor ?? undefined }">{{ item.displayName }}</span>
+          <button
+            v-if="mediaFileName && mediaFileName !== item.displayName"
+            type="button"
+            class="item-name"
+            :aria-pressed="showFileName"
+            :title="[visibleTitle, t(showFileName ? 'actions.showCueTitle' : 'actions.showMediaFilename')].join('\n')"
+            :style="{ color: durationColor ?? undefined }"
+            @click="toggleFileName"
+          >{{ visibleTitle }}</button>
+          <span v-else class="item-name" :title="item.displayName" :style="{ color: durationColor ?? undefined }">{{ item.displayName }}</span>
           <span
             v-if="isPeaking"
             class="material-symbols-rounded peak-warning-icon"
@@ -239,9 +249,8 @@
         <!-- Keep transport beside the clock, with Play Next in the far-right
              arm lane; preview remains beside the cue number and edit/delete
              stay hidden in Show Mode. -->
-        <div class="item-actions">
+        <div v-if="!showMode" class="item-actions">
           <ActionButton
-            v-if="!showMode"
             class="edit-action"
             icon="settings"
             highlight-color="var(--color-accent)"
@@ -250,7 +259,6 @@
             :title="t('actions.edit')"
           />
           <ActionButton
-            v-if="!showMode"
             class="delete-action"
             icon="delete"
             highlight-color="var(--color-danger)"
@@ -356,13 +364,24 @@ const groupToggleLabel = computed(() =>
 const waveformCanvas = ref<HTMLCanvasElement | null>(null);
 const dragPosition = ref<'top' | 'bottom' | 'group' | null>(null);
 const isDragging = ref(false);
+const showFileName = ref(false);
+const mediaFileName = computed(() => {
+  const item = props.item;
+  if (item.type !== 'audio') return '';
+  return item.mediaFileName || (item.mediaServerPath || item.mediaPath || '').split(/[\\/]/).pop() || '';
+});
+const visibleTitle = computed(() => showFileName.value && mediaFileName.value ? mediaFileName.value : props.item.displayName);
+
+function toggleFileName(event: MouseEvent) {
+  if (!event.ctrlKey && !event.metaKey && !event.shiftKey) showFileName.value = !showFileName.value;
+}
 
 const isSelected = computed(() => selectedItems.value.has(props.item.uuid));
 const isPlaying = computed(() => activeCues.value.has(props.item.uuid));
 const isPaused = computed(() =>
   props.item.type === 'audio' && activeCues.value.get(props.item.uuid)?.isPaused === true,
 );
-// Manual override — drives the button highlight and toggle behaviour
+// The stored override drives the filled button and toggle behaviour.
 const isManuallyQueued = computed(() => nextItemOverrideUuid.value === props.item.uuid);
 // Effective "up next" — manual override wins; falls back to auto-derived from end behavior
 const isQueuedNext = computed(() => {
@@ -685,13 +704,7 @@ const handleSetAsNext = (): Promise<boolean> =>
   setNextItem(isManuallyQueued.value ? null : props.item.uuid);
 
 const handleDelete = () => {
-  // When this item is part of a multi-selection, defer to the confirm dialog
-  // (Delete N Selected / Delete Only this / Cancel). Otherwise fall back to
-  // the simple single-item confirmation.
-  if (requestDeleteFromButton(props.item.uuid)) return;
-  if (confirm(t('actions.confirmDelete', { name: props.item.displayName }))) {
-    removeItem(props.item.uuid);
-  }
+  requestDeleteFromButton(props.item.uuid);
 };
 
 const toggleExpand = () => {
@@ -998,7 +1011,6 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
     background-color var(--transition-fast),
     border-color var(--transition-fast),
     box-shadow var(--transition-fast);
-  scroll-margin-top: var(--current-playlist-row-height);
 
   /* Native sticky positioning keeps every open folder's collapse control in
      reach. Expanded group wrappers must not become overflow ancestors or the
@@ -1155,6 +1167,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   justify-content: space-between;
   padding: 6px var(--spacing-md);
   min-height: var(--current-playlist-row-height);
+  scroll-margin-top: var(--current-playlist-row-height);
   position: relative;
   z-index: 5;
   cursor: pointer;
@@ -1311,15 +1324,21 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .item-name {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
+  display: block;
+  align-content: center;
   min-height: 26px;
   height: var(--cue-cell-height);
   width: fit-content;
   max-width: 100%;
   justify-self: start;
   padding: 2px 6px;
+}
+
+button.item-name {
+  font-family: inherit;
+  text-align: start;
+  cursor: pointer;
+  &:hover { border-color: var(--color-border-strong); }
 }
 
 .item-duration {
@@ -1517,8 +1536,11 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 
-.item-left :deep(.set-next-action.action-btn--active .material-symbols-rounded) {
-  display: none;
+.item-left :deep(.set-next-action[aria-current='true']:not(.action-btn--active)) {
+  border-color: var(--state-up-next);
+  color: var(--color-text-primary);
+
+  .action-label-default { display: inline; }
 }
 
 .preview-action { grid-area: expand; }
@@ -1580,23 +1602,6 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   transform: translateX(min(10px, calc(2px + var(--folder-column-gap, var(--spacing-sm)))));
 }
 
-/* Keep identity and status above the controls when both side rails are open. */
-@container (max-width: 560px) {
-  .item-left {
-    --folder-column-gap: var(--spacing-xs);
-    grid-template-columns: 34px minmax(0, 1fr) 68px max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
-    grid-template-areas:
-      'expand identity identity identity state video'
-      '. . actions transport duration arm';
-    column-gap: var(--spacing-xs);
-    row-gap: var(--spacing-xs);
-  }
-
-  .item-actions {
-    width: 68px;
-  }
-}
-
 /* ------------------------------------------------------------------ */
 /* Show Mode — larger, touch-friendly rows. Same operator information, */
 /* bigger hit areas: taller rows, stable number/time lanes, and chunky */
@@ -1605,6 +1610,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 /* ------------------------------------------------------------------ */
 .playlist-item.show-mode {
   --current-playlist-row-height: var(--show-playlist-row-height, 68px);
+  --cue-leading-width: 44px;
 
   .item-content {
     padding: 6px var(--spacing-md);
@@ -1657,6 +1663,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
+    height: auto;
     line-height: 1.12;
     white-space: normal;
   }
@@ -1722,13 +1729,35 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   }
 }
 
-@container (max-width: 620px) {
-  .playlist-item.show-mode .item-left {
-    grid-template-columns: 44px minmax(0, 1fr) var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
+/* Keep a full title lane when the side panels leave less room for the playlist. */
+@container (max-width: 700px) {
+  .playlist-item > .item-content .item-left {
+    --folder-column-gap: var(--spacing-xs);
+    grid-template-columns: var(--cue-leading-width, 34px) minmax(0, 1fr) max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
     grid-template-areas:
-      'expand identity identity video'
-      'state transport duration arm';
+      'expand identity identity identity identity state video'
+      '. . shuffle actions transport duration arm';
     gap: var(--spacing-xs);
+  }
+
+  .group-shuffle-action { grid-area: shuffle; }
+  .video-badge-icon { justify-self: end; }
+
+  .item-state,
+  .behavior-indicators {
+    flex-wrap: wrap;
+  }
+
+  .behavior-indicators {
+    max-width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+@container playlist-scroll (max-height: 220px) {
+  /* A pinned group would cover most of a short playlist. */
+  .playlist-item.is-sticky-group > .item-content {
+    position: relative;
   }
 }
 </style>

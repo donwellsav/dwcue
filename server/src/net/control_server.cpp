@@ -3537,8 +3537,11 @@ void ControlServer::install_routes() {
         ([this](const crow::request& req){
             auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
             if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
+            const auto session = state_.project_session_id();
+            project_lock.unlock();
             try {
                 auto j = json::parse(req.body);
+                json header;
                 auto deadline = std::chrono::steady_clock::time_point::max();
                 if (const auto expires = j.find("openDeadlineMs"); expires != j.end()) {
                     const auto latest = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -3553,8 +3556,6 @@ void ControlServer::install_routes() {
                         return json_err(400, "New Show requires a switch deadline");
                     if (std::chrono::steady_clock::now() >= deadline)
                         return json_err(412, "New Show expired before writing the file");
-                    const auto session = state_.project_session_id();
-                    project_lock.unlock();
                     const auto path_string = create->at("path").get<std::string>();
                     const auto path = liveplay::util::utf8_to_path(path_string);
                     if (!path.is_absolute() || !core::project_file::is_native_project(path))
@@ -3584,10 +3585,9 @@ void ControlServer::install_routes() {
                         return json_err(410, "the new show was saved without opening: " + path_string);
                     };
                     if (std::chrono::steady_clock::now() >= deadline) return saved_without_open();
-                    project_lock = state_.lock_project_session(session);
-                    if (!project_lock.owns_lock()) return saved_without_open();
-                    if (!state_.load_from_json(prepared.document, path, deadline)) {
-                        if (std::chrono::steady_clock::now() >= deadline) return saved_without_open();
+                    if (!state_.load_from_json(prepared.document, path, deadline, session, &header)) {
+                        if (std::chrono::steady_clock::now() >= deadline ||
+                            state_.project_session_id() != session) return saved_without_open();
                         return json_err(400, "the new show was saved but could not be opened");
                     }
                 } else if (j.contains("path")) {
@@ -3597,23 +3597,26 @@ void ControlServer::install_routes() {
                     const fs::path p = liveplay::util::utf8_to_path(path_str);
                     if (!core::project_file::is_native_project(p))
                         return json_err(400, "project path must use .dwcue");
-                    if (!state_.load(p, deadline)) {
+                    if (!state_.load(p, deadline, session, &header)) {
                         if (std::chrono::steady_clock::now() >= deadline)
                             return json_err(410, "Open expired before switching shows");
+                        if (state_.project_session_id() != session)
+                            return json_err(409, "project session changed before Open finished");
                         Logger::error("POST /api/project/load FAILED — load returned false for '{}'", path_str);
                         return json_err(400, "load failed");
                     }
                 } else if (j.contains("document")) {
                     Logger::api_request("Client ({}) -> Server ({}) : POST /api/project/load (from document)",
                                         req.remote_ip_address, impl_->server_addr);
-                    if (!state_.load_from_json(j["document"])) {
+                    if (!state_.load_from_json(j["document"], {}, deadline, session, &header)) {
+                        if (state_.project_session_id() != session)
+                            return json_err(409, "project session changed before Open finished");
                         Logger::error("POST /api/project/load FAILED — document rejected");
                         return json_err(400, "load failed");
                     }
                 } else {
                     return json_err(400, "expected 'path', 'document', or 'create'");
                 }
-                auto header = state_.header_document();
                 const std::size_t item_count = header.value("itemCount", (std::size_t)0);
                 Logger::api_response("Client ({}) <- Server ({}) : POST /api/project/load OK — '{}' ({} items){}",
                                      req.remote_ip_address, impl_->server_addr,
@@ -3941,9 +3944,13 @@ void ControlServer::install_routes() {
                 // the repair persisted.
                 const auto repair = state_.repair_project();
                 const auto path = state_.project_file_path();
+                const auto session = state_.project_session_id();
+                project_lock.unlock();
                 bool saved = false;
                 if (!path.empty()) {
-                    if (!state_.save(path)) {
+                    if (!state_.save(path, nullptr, nullptr, session)) {
+                        if (state_.project_session_id() != session)
+                            return json_err(409, "project session changed before repair could be saved");
                         Logger::error("POST /api/project/repair — save failed for '{}'",
                                       liveplay::util::path_to_utf8(path));
                         return json_err(500, "repair succeeded but save failed");
@@ -3964,7 +3971,8 @@ void ControlServer::install_routes() {
 
     CROW_ROUTE(app, "/api/project/save").methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req){
-            auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
+            const auto& expected_session = req.get_header_value("X-DWCUE-Project-Session");
+            auto project_lock = state_.lock_project_session(expected_session);
             if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
             try {
                 auto j = json::parse(req.body);
@@ -3991,7 +3999,11 @@ void ControlServer::install_routes() {
                                         ? liveplay::util::path_to_utf8(requested_path)
                                         : std::string{"<current>"});
                 fs::path published_path;
-                if (!state_.save(requested_path, replacement, &published_path)) {
+                const auto session = state_.project_session_id();
+                project_lock.unlock();
+                if (!state_.save(requested_path, replacement, &published_path, expected_session)) {
+                    if (state_.project_session_id() != session)
+                        return json_err(409, "project session changed before save could finish");
                     Logger::error("POST /api/project/save FAILED for '{}'",
                                   path_provided
                                       ? liveplay::util::path_to_utf8(requested_path)

@@ -497,6 +497,9 @@ test('project REST calls carry the bound session while chained creation uses its
     assert.equal(scoped.length, 15);
     assert.deepEqual(scoped.map(call => call.session), Array(13).fill('bound-show-session').concat(['creation-session', 'creation-session']));
     assert.equal(scoped[0].mutation, 'owner:7', 'session tagging preserves the item mutation echo identity');
+    await server.fetchProjectItemsPage(0, 100, undefined, 'unverified-show-session');
+    assert.equal(calls.at(-1)!.session, 'unverified-show-session');
+    assert.equal(server.projectSessionId, 'bound-show-session', 'reading recovery pages must keep the existing show binding');
     server.projectSessionId = 'newer-show-session';
     await server.closeProjectOnServer('captured-closing-session');
     assert.equal(calls.at(-1)!.session, 'captured-closing-session', 'late close cannot adopt the newer current session');
@@ -659,6 +662,18 @@ test('cue starts wait for show verification and explicit session recovery', asyn
     assert.equal(await server.go(), false);
     assert.deepEqual(next.sent, []);
     sessionLost.value = false;
+    const projectLoad = nuxtState.get('useProject.projectLoad')!;
+    assert.equal(server.cueStartsBlocked, false, 'the save decision before Open must leave live transport available');
+    projectLoad.value = 'create';
+    assert.equal(server.cueStartsBlocked, false, 'creating an empty show must leave GO available');
+    projectLoad.value = 'open';
+    try {
+      assert.equal(await server.go(), false);
+      assert.equal(await server.playItem('old-cue'), false);
+      assert.deepEqual(next.sent, [], 'a submitted Open must not send cue starts into a possibly different show');
+    } finally {
+      projectLoad.value = null;
+    }
     const started = server.go();
     const command = JSON.parse(next.sent[0]!);
     assert.equal(command.type, 'go');

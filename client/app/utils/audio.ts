@@ -10,6 +10,12 @@
  * We use -60 dB to +10 dB range in UI (-∞ to 0 dB in Howler, with +10dB headroom)
  */
 
+export const MEDIA_FILE_ACCEPT = [
+  'mp3', 'wav', 'aiff', 'aif', 'flac', 'ogg', 'oga', 'm4a', 'aac', 'mp2',
+  'wma', 'opus', 'ac3', 'amr', 'au', 'caf', 'mp4', 'm4v', 'mov', 'mkv',
+  'webm', 'avi', 'mpg', 'mpeg', 'm2ts', 'mts', 'wmv', 'flv', '3gp',
+].map(extension => '.' + extension).join(',');
+
 /**
  * Convert decibels to linear volume
  * Formula: linear = 10^(dB/20)

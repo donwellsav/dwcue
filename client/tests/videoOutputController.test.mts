@@ -142,7 +142,7 @@ function createHarness(initialProject: unknown, connected = true, captureApi = {
   const snapshotHandlers = new Set<(value: unknown) => void>();
   const patchHandlers = new Set<(value: unknown) => void>();
   const reports: Array<{ itemUuid: string | null; message: string } | null> = [];
-  let fetchProject = async () => initialProject;
+  let fetchProject = async (_signal?: AbortSignal) => initialProject;
 
   const server = reactive({
     connected,
@@ -155,7 +155,7 @@ function createHarness(initialProject: unknown, connected = true, captureApi = {
     }],
     serverUrl: 'http://127.0.0.1:4480',
     effectiveAccessToken: 'secret-token',
-    fetchProject: () => fetchProject(),
+    fetchProject: (signal?: AbortSignal) => fetchProject(signal),
     onCueState(handler: (value: unknown) => void) {
       cueStateHandlers.add(handler);
       return () => cueStateHandlers.delete(handler);
@@ -202,7 +202,7 @@ function createHarness(initialProject: unknown, connected = true, captureApi = {
     element,
     reports,
     server,
-    setFetchProject(next: () => Promise<unknown>) {
+    setFetchProject(next: (signal?: AbortSignal) => Promise<unknown>) {
       fetchProject = next;
     },
     emitCue(value: unknown) {
@@ -473,6 +473,58 @@ test('an unknown newest cue blanks old media until its document arrives', async 
   assert.equal(h.controller.showVideo.value, false);
   assert.equal(h.element.paused, true);
   h.stop();
+});
+
+test('repeated metadata failures recover the same on-air video at its current playhead', { timeout: 4000 }, async () => {
+  const h = createHarness(project([]));
+  try {
+    await flush();
+    const retry = deferred<void>();
+    let requests = 0;
+    h.setFetchProject(async () => {
+      if (++requests <= 2) throw new Error('Temporary project read failure');
+      retry.resolve();
+      return project([audioItem('late-video', { hasVideo: true })]);
+    });
+    h.emitCue(snapshotCue('late-video', 'late-cue', 1));
+    h.emitMeters({ items: [{ cue_id: 'late-cue', transport: 1, playhead_seconds: 1.25 }] });
+    assert.equal(h.controller.showVideo.value, false);
+    await flush();
+    assert.match(h.reports.at(-1)?.message ?? '', /Video Output is retrying/);
+
+    await retry.promise;
+    await flush();
+    assert.equal(requests, 3);
+    assert.equal(h.reports.at(-1), null);
+    const source = h.controller.videoSrc.value;
+    assert.ok(source);
+    assert.equal(new URL(source).searchParams.get('item_uuid'), 'late-video');
+    h.element.currentSrc = source;
+    h.controller.onVideoLoadedMetadata();
+    h.controller.onVideoCanPlay();
+    assert.equal(h.element.currentTime, 1.25);
+    assert.equal(h.controller.showVideo.value, true);
+  } finally { h.stop(); }
+});
+
+test('Stop All aborts an unresolved cue lookup and rejects late picture', async () => {
+  const h = createHarness(project([]));
+  try {
+    await flush();
+    h.emitMeters({ stop_revision: 0, items: [] });
+    const pending = deferred<unknown>();
+    let requestSignal: AbortSignal | undefined;
+    h.setFetchProject(signal => { requestSignal = signal; return pending.promise; });
+    h.emitCue(snapshotCue('late-video', 'late-cue', 1));
+    assert.equal(requestSignal?.aborted, false);
+
+    h.emitMeters({ stop_revision: 1, items: [{ cue_id: 'late-cue', transport: 3, playhead_seconds: 1 }] });
+    assert.equal(requestSignal?.aborted, true);
+    pending.resolve(project([audioItem('late-video', { hasVideo: true })]));
+    await flush();
+    assert.equal(h.controller.showVideo.value, false);
+    assert.equal(h.controller.videoSrc.value, null);
+  } finally { h.stop(); }
 });
 
 test('project lifecycle changes clear audience media before the new document arrives', async () => {
@@ -884,7 +936,35 @@ test('a new server snapshot resets Preview ordering and refuses an older server 
       item_uuid: 'preview', cue_id: 'preview-cue', revision: 1, project_session_id: 'new-server' } });
     h.emitPatch({ op: 'preview_stopped', revision: 51, project_session_id: 'old-server' });
     h.emitCue(snapshotCue('preview', 'preview-cue', 99));
+    await flush();
     assert.equal(new URL(h.controller.videoSrc.value!).searchParams.get('item_uuid'), 'program');
+  } finally { h.stop(); }
+});
+
+test('a replacement engine can show its first cue after Stop All on the old engine', async () => {
+  const items = [audioItem('film', { hasVideo: true })];
+  const show = (projectSessionId: string) => ({ ...project(items), server: { projectSessionId } });
+  const h = createHarness(show('old-show'));
+  try {
+    await flush();
+    h.emitSnapshot({ cues: [snapshotCue('film', 'old-cue', 9)], stop_revision: 0,
+      preview: { project_session_id: 'old-show', revision: 0 } });
+    h.emitMeters({ items: [{ cue_id: 'old-cue', transport: 0, playhead_seconds: 0 }], stop_revision: 1 });
+    h.server.connected = false;
+    await flush();
+
+    h.setFetchProject(async () => show('new-show'));
+    h.server.connected = true;
+    h.emitSnapshot({ cues: [snapshotCue('film', 'new-cue', 1, 1.25)], stop_revision: 0,
+      preview: { project_session_id: 'new-show', revision: 0 } });
+    await flush();
+    const src = h.controller.videoSrc.value;
+    assert.ok(src);
+    assert.equal(new URL(src).searchParams.get('project_session_id'), 'new-show');
+    h.element.currentSrc = src;
+    h.controller.onVideoCanPlay();
+    assert.equal(h.controller.showVideo.value, true);
+    assert.equal(h.element.currentTime, 1.25);
   } finally { h.stop(); }
 });
 
@@ -917,6 +997,9 @@ test('unknown cue edges survive document loading and stale fetches cannot restor
   const unknown = createHarness(project([]), false);
   unknown.setFetchProject(async () => project([audioItem('late-item', { hasVideo: true })]));
   unknown.emitCue(snapshotCue('late-item', 'late-cue', 20, 4));
+  await flush();
+  assert.equal(unknown.controller.videoSrc.value, null, 'cue recovery waits for the connection');
+  unknown.server.connected = true;
   await flush();
   assert.equal(new URL(unknown.controller.videoSrc.value!).searchParams.get('item_uuid'), 'late-item');
   unknown.stop();

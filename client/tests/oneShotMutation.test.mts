@@ -3,6 +3,7 @@ import test from 'node:test';
 import { reactive } from 'vue';
 import type { AudioItem, Project } from '../app/types/project';
 import type { OneShotMutationIdentity, OneShotMutationRequest } from '../app/types/oneShotMutation';
+import { isNewerOneShotProject } from '../app/types/oneShotMutation';
 import type { OneShotMutationDraft } from '../app/utils/oneShotMutation';
 import { applyOneShotMutation, createDetachedOneShotMutationClient } from '../app/utils/oneShotMutation';
 import { cloneAsIndependentOneShot } from '../app/utils/oneShots';
@@ -10,6 +11,13 @@ import { cloneAsIndependentOneShot } from '../app/utils/oneShots';
 const identity: OneShotMutationIdentity = {
   projectPath: '/shows/a.dwcue', projectEpoch: 7, ownerSessionId: 'primary-1',
 };
+
+test('a detached recovery requires a newer primary show identity', () => {
+  assert.equal(isNewerOneShotProject(identity, identity), false);
+  assert.equal(isNewerOneShotProject({ ...identity, projectPath: '/shows/old.dwcue', projectEpoch: 6 }, identity), false);
+  assert.equal(isNewerOneShotProject({ ...identity, projectEpoch: 8 }, identity), true);
+  assert.equal(isNewerOneShotProject({ ...identity, ownerSessionId: 'primary-2', projectEpoch: 0 }, identity), true);
+});
 const audio = (uuid: string, order: number): AudioItem => ({
   uuid, index: [-1, order], displayName: uuid, color: '#00cc99', type: 'audio',
   mediaFileName: `${uuid}.wav`, mediaPath: `media/${uuid}.wav`, waveformPath: '',
@@ -53,11 +61,14 @@ test('applies every allowed detached field and rejects arbitrary patch keys', ()
   assert.equal(state.standalone.oneShot?.armed, true, 'existing project metadata is preserved');
   assert.deepEqual(state.standalone.oneShot?.hotkey, { key: 'F1' });
   assert.equal(state.standalone.endBehavior.action, 'loop');
+  assert.equal(state.standalone.deviceOverride, 'out-2');
   const cleared = applyOneShotMutation(state, request({
-    kind: 'set-fields', itemUuid: 'standalone', payload: { fields: { hotkey: null } },
+    kind: 'set-fields', itemUuid: 'standalone', payload: { fields: { hotkey: null, deviceOverride: null } },
   }));
   assert.equal(cleared.accepted, true);
-  assert.equal(JSON.parse(JSON.stringify(state.standalone)).oneShot.hotkey, null);
+  const patch = JSON.parse(JSON.stringify(state.standalone));
+  assert.equal(patch.oneShot.hotkey, null);
+  assert.equal(patch.deviceOverride, null, 'the serialized patch must explicitly clear the old route');
   const rejected = applyOneShotMutation(state, request({
     kind: 'set-fields', itemUuid: 'standalone',
     payload: { fields: { server: { projectFilePath: '/evil' } } },

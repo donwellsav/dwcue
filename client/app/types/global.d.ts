@@ -14,11 +14,10 @@ declare global {
     electronAPI: {
       selectProjectFolder: () => Promise<string | null>;
       selectProjectFile: () => Promise<string | null>;
-      selectAudioFiles: () => Promise<string[] | null>;
+      scanMediaFolder: (folder: string) => Promise<{ name: string; files: string[]; skippedFolders: string[] }>;
       readFile: (filePath: string) => Promise<{ success: boolean; data?: string; error?: string }>;
       writeFile: (filePath: string, data: string) => Promise<{ success: boolean; error?: string }>;
-      showSaveArchiveDialog: (defaultName?: string) => Promise<string | null>;
-      showOpenArchiveDialog: () => Promise<string | null>;
+      getArchiveDownloadFolder: (file?: File) => Promise<string>;
       getBinaryFileInfo: (filePath: string) => Promise<{
         success: boolean;
         size?: number;
@@ -33,9 +32,10 @@ declare global {
       downloadArchiveToFile: (request: {
         baseUrl: string;
         token: string;
-        destination: string;
+        folder: string;
+        filename: string;
         accessToken?: string;
-      }) => Promise<{ success: boolean; error?: string }>;
+      }) => Promise<{ success: true; path: string } | { success: false; error?: string }>;
       copyFile: (source: string, destination: string) => Promise<{ success: boolean; error?: string }>;
       ensureDirectory: (dirPath: string) => Promise<{ success: boolean; error?: string }>;
       generateWaveform: (audioPath: string, outputPath: string) => Promise<{ success: boolean; error?: string }>;
@@ -62,6 +62,7 @@ declare global {
           updatedAt: number;
         } | null;
       }>;
+      authorizeDroppedSpotifyFolder: (file: File) => Promise<string>;
       setSpotifyImportDestination: (destination: string) => Promise<boolean>;
       setSpotifyImportRecovery: (recovery: {
         version: 1;
@@ -246,7 +247,7 @@ declare global {
         setFraming: (framing: VideoFraming) => Promise<VideoOutputStatus>;
         checkFrame: (request: {
           id: string; serverUrl: string; accessToken: string; sessionId: string;
-          uuid: string; fileRevision: string | null; inPoint: number;
+          uuid: string; fileRevision: string | null; inPoint: number; outPoint: number | null;
         }) => Promise<VideoFrameCheckResult | 'canceled'>;
         cancelFrameCheck: (id: string) => void;
         setCaptureSettings: (displayId: string | null, target: VideoStandbyDestination) => Promise<VideoOutputStatus>;
@@ -265,7 +266,7 @@ declare global {
       };
     };
   }
-  type VideoFrameCheckResult = 'ok' | 'unreadable' | 'decode' | 'no-frame' | 'in-point' | 'timeout' | 'probe-error';
+  type VideoFrameCheckResult = 'ok' | 'unreadable' | 'decode' | 'no-frame' | 'in-point' | 'duration' | 'timeout' | 'probe-error';
   interface VideoOutputShortcut {
     key: string;
     code: string;

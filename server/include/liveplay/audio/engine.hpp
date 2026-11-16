@@ -428,6 +428,9 @@ public:
 #ifndef LIVEPLAY_TEST_ACCESS
 private:
 #endif
+    static constexpr FrameCount kDeviceRingBlocks = 8;
+    static constexpr FrameCount kMasterQueueBlocks = 3;
+
     struct OutputChannelState {
         std::unique_ptr<Limiter> limiter;
         std::unique_ptr<Meter>   meter;
@@ -485,6 +488,8 @@ private:
         std::atomic<DeviceRuntimeState> runtime_state{
             DeviceRuntimeState::Starting};
         CallbackEntryCounter        callback_entries;
+        std::uint64_t               render_observed_entries = 0; // render thread only
+        CallbackLivenessMonitor::TimePoint render_callback_progress{}; // render thread only
         CallbackLivenessMonitor     callback_liveness; // watchdog thread only
         std::atomic<std::uint64_t>  liveness_epoch{0};
         std::uint64_t               observed_liveness_epoch = 0; // watchdog only

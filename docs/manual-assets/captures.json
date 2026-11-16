@@ -1,25 +1,25 @@
 {
   "application": "DonWells Cue",
-  "sourceRevision": "bc3fee61f364ccb81d4e81b2c1bf2c0b2a6cb6d3",
-  "packageVersion": "2.6.22 development",
-  "edition": "14 November 2026 development review with group cueing, shuffle and QuickPlays window controls",
+  "sourceRevision": "30dd3c4c82bb5e07bf74fd907f5e7557187e68b1",
+  "packageVersion": "2.6.23 development",
+  "edition": "15 November 2026 development review of operator controls, imports, and project panels",
   "images": [
     {
       "file": "music-continuity-current.png",
-      "view": "Playlist and group Shuffle controls beside Keep Music Going and the aligned group identity.",
-      "version": "2.6.22 development",
-      "sourceRevision": "bc3fee61f364ccb81d4e81b2c1bf2c0b2a6cb6d3",
-      "nativeSourceRevision": "355b93aecaee0320bfb960fd8342fdc01417fc52",
+      "view": "Playlist and group Shuffle, Locate Up Next, and Keep Music Going beside the Walk-in tracks group.",
+      "version": "2.6.23 development",
+      "sourceRevision": "74811e4b0b19c3fd2d4806cf4549a55735cb3928",
+      "nativeSourceRevision": "9b976139d3524a330299e6c19dcae47a48e34b29",
       "capturedOn": "2026-11-14",
-      "surface": "Compiled DonWells Cue workspace in Chromium at 1440 CSS pixels wide.",
+      "surface": "Production DonWells Cue renderer in Chromium, 1400 × 868 at 90% interface scale.",
       "dimensions": [
-        1251,
+        940,
         102
       ],
-      "sha256": "4646f31ffae56af8f64e0e63eded1022c1e1b78720189d90ec48d96b0b97f3e4",
-      "fixture": "Disposable Corporate show review using generated WAV files and a native software audio output.",
-      "captureMethod": "Playwright screenshot of the rendered playlist toolbar and group row.",
-      "presentation": "Original UI crop."
+      "sha256": "749607a8c8ff3c1257fb8af43feed66414b8e752111977d4b92042a965fabdbe",
+      "fixture": "Disposable Conference rehearsal with generated WAV files and the native NULL audio output.",
+      "captureMethod": "Playwright screenshot of the current renderer with fixture Electron methods.",
+      "presentation": "Crop of the playlist toolbar and first group row."
     },
     {
       "file": "welcome-current.png",
@@ -40,139 +40,139 @@
     },
     {
       "file": "new-show-current.png",
-      "view": "New Show form with a practice name and disposable destination selected.",
-      "version": "2.6.17",
-      "sourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "nativeSourceRevision": "a9a86a39b0f8b75cea7a022548ab2b6a76c17256",
-      "capturedOn": "2026-11-03",
-      "surface": "Fresh static build of current Vue UI in an isolated Chromium context; Electron bridge methods use fixture locale/display/MIDI responses.",
+      "view": "New Show in the lower panel with a practice name and disposable destination selected.",
+      "version": "2.6.23 development",
+      "sourceRevision": "534615e1ce656d849e886cacba121fbe3d986020",
+      "nativeSourceRevision": "7c233a943f4c9ec42b6008fb3ffea09729429b84",
+      "capturedOn": "2026-11-14",
+      "surface": "Production DonWells Cue renderer in Chromium, 1040 × 700 at 110% interface scale.",
       "dimensions": [
-        480,
-        272
+        1040,
+        129
       ],
-      "sha256": "839b3a6d64f983449c40bc6e0d89f2bef16113e3a2bd292ad3b5c2d3316d212b",
-      "fixture": "Disposable Conference rehearsal with generated WAV tones. Native engine uses NULL software output inside audio-service-denial sandbox; no user media, live app or physical outputs.",
-      "captureMethod": "Playwright screenshot of the actual rendered page or control panel; no UI controls redrawn.",
-      "presentation": "Context-preserving page/panel crop; no numbered callouts, altered values or composite UI."
+      "sha256": "be006455ddf00fb3f902f865959ba9a95a05c0bbec3a0054ad415efbfbb08d37",
+      "fixture": "Disposable rehearsal with generated WAV media and the native NULL playback device. The form was left unsubmitted.",
+      "captureMethod": "Playwright screenshot of the rendered lower panel with fixture Electron methods.",
+      "presentation": "Crop of the New Show panel."
     },
     {
       "file": "edit-workspace.png",
-      "view": "Edit Mode with the QuickPlays bank, playlist, armed 1080p cue, transport, Properties, and output console.",
-      "version": "2.6.21",
-      "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
-      "nativeSourceRevision": "b96070379c7305bbb3af6e95d2d869aa9f9fe13b",
-      "capturedOn": "2026-11-13",
-      "surface": "Packaged macOS Apple Silicon review app with a dedicated profile.",
+      "view": "Edit Mode with Locate Up Next, the queued walk-on, the shortcut reference, and Basic Info open for a different cue.",
+      "version": "2.6.23 development",
+      "sourceRevision": "74811e4b0b19c3fd2d4806cf4549a55735cb3928",
+      "nativeSourceRevision": "9b976139d3524a330299e6c19dcae47a48e34b29",
+      "capturedOn": "2026-11-14",
+      "surface": "Production DonWells Cue renderer in Chromium, 1400 × 868 at 90% interface scale.",
       "dimensions": [
         1400,
         868
       ],
-      "sha256": "cf36037234c260ecdf754296b5d88a94cf16049801961184ca27f6104ac24aaa",
-      "fixture": "Isolated Local review sample with generated audio and a silent 1080p clip. The bundled native engine uses its software NULL backend.",
-      "captureMethod": "Actual Electron renderer screenshot at CSS pixel dimensions. Whole workspace or a single panel or tile.",
-      "presentation": "Rendered UI with its actual settings and cue state."
+      "sha256": "512e8764be01d79985a8bca31be71bdc98484cc5373d16a4aa3ca74b098c4f26",
+      "fixture": "Disposable Conference rehearsal with generated WAV files and the native NULL audio output.",
+      "captureMethod": "Playwright screenshot of the current renderer with fixture Electron methods.",
+      "presentation": "Full renderer screenshot."
     },
     {
       "file": "cue-basic-current.png",
       "view": "Aligned Basic Info, Media, Identifiers, and Cueing columns for the selected framing cue.",
-      "version": "2.6.21",
-      "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
-      "nativeSourceRevision": "b96070379c7305bbb3af6e95d2d869aa9f9fe13b",
-      "capturedOn": "2026-11-13",
-      "surface": "Packaged macOS Apple Silicon review app with a dedicated profile.",
+      "version": "2.6.23 development",
+      "sourceRevision": "fd3644cbada93c60b4e4fb1138743caa394553d5",
+      "nativeSourceRevision": "9b976139d3524a330299e6c19dcae47a48e34b29",
+      "capturedOn": "2026-11-14",
+      "surface": "Production DonWells Cue renderer in Chromium, 1200 CSS pixels wide at 110% interface zoom.",
       "dimensions": [
-        1400,
-        246
+        1200,
+        332
       ],
-      "sha256": "e7c19727919da71a524afaa2d69b61fa1db37013265b2abd024d3ef23fe4aca5",
-      "fixture": "Isolated Local review sample with generated audio and a silent 1080p clip. The bundled native engine uses its software NULL backend.",
-      "captureMethod": "Actual Electron renderer screenshot at CSS pixel dimensions. Whole workspace or a single panel or tile.",
-      "presentation": "Rendered UI with its actual settings and cue state."
+      "sha256": "ee8fa50c826fd5ccf552a6289da5694aaf9d11e504076350fb68cdc02f1777a6",
+      "fixture": "Disposable Running sample show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright element screenshot of the compiled interface.",
+      "presentation": "Original panel or QuickPlay tile crop."
     },
     {
       "file": "show-mode.png",
-      "view": "Show Mode with QuickPlays and the two default number-key ranges.",
-      "version": "2.6.21",
-      "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
-      "nativeSourceRevision": "b96070379c7305bbb3af6e95d2d869aa9f9fe13b",
-      "capturedOn": "2026-11-13",
-      "surface": "Packaged macOS Apple Silicon review app with a dedicated profile.",
+      "view": "Compact Show Mode with a full silence warning, a playing cue, the queued walk-on, and one-line shortcuts.",
+      "version": "2.6.23 development",
+      "sourceRevision": "74811e4b0b19c3fd2d4806cf4549a55735cb3928",
+      "nativeSourceRevision": "9b976139d3524a330299e6c19dcae47a48e34b29",
+      "capturedOn": "2026-11-14",
+      "surface": "Production DonWells Cue renderer in Chromium, 1200 × 700 at 110% interface scale.",
       "dimensions": [
-        1400,
-        868
+        1200,
+        700
       ],
-      "sha256": "915451ab1f3343e7150ec01b2fc6dcedfb527b4fc75b4ff855b499dd58ba5ed8",
-      "fixture": "Isolated Local review sample with generated audio and a silent 1080p clip. The bundled native engine uses its software NULL backend.",
-      "captureMethod": "Actual Electron renderer screenshot at CSS pixel dimensions. Whole workspace or a single panel or tile.",
-      "presentation": "Rendered UI with its actual settings and cue state."
+      "sha256": "3c7ddf777a7d3875a316b0d1f7bf8e2cbd34d22d8c19c57079b449aa81a716a9",
+      "fixture": "Disposable Conference rehearsal with generated WAV files and the native NULL audio output.",
+      "captureMethod": "Playwright screenshot of the current renderer with fixture Electron methods.",
+      "presentation": "Full renderer screenshot."
     },
     {
       "file": "import-media.png",
-      "view": "Lower Import Media panel with the local file chooser and import plan.",
-      "version": "2.6.21 development",
-      "sourceRevision": "0b1b7bad54a980c830ba23d2a5ab50af82dfeb36",
-      "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
-      "capturedOn": "2026-11-13",
-      "surface": "Fresh static build of the Vue UI in isolated Chromium with fixture Electron methods.",
+      "view": "Local Import Media actions and the import plan.",
+      "version": "2.6.23 development",
+      "sourceRevision": "03ef672ee4940bee44a6f8260825242fbc867fcd",
+      "nativeSourceRevision": "7c233a943f4c9ec42b6008fb3ffea09729429b84",
+      "capturedOn": "2026-11-15",
+      "surface": "DonWells Cue development renderer in isolated Chromium at 110% interface scale.",
       "dimensions": [
         1200,
-        225
+        259
       ],
-      "sha256": "582fc10adf3fbbc620fab05df95ea4f2ca4aef63eccfb7a4033bf6e684ea067a",
-      "fixture": "Disposable Running show with generated WAV files and a native NULL software output.",
-      "captureMethod": "Playwright screenshot at the rendered CSS pixel size.",
-      "presentation": "Workspace or panel crop with original UI values."
+      "sha256": "d52120fbda96ff75eeea91183c988a359f70f8812c6cdb63f3bb43c3d4f11d72",
+      "fixture": "Disposable rehearsal show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright lower-panel screenshot with a fixture Electron folder scan.",
+      "presentation": "Full lower Import Media panel at its fitted height."
     },
     {
       "file": "server-picker-current.png",
-      "view": "Browse Server inside the lower Import Media panel with generated files.",
-      "version": "2.6.21 development",
-      "sourceRevision": "0b1b7bad54a980c830ba23d2a5ab50af82dfeb36",
-      "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
-      "capturedOn": "2026-11-13",
-      "surface": "Fresh static build of the Vue UI in isolated Chromium with fixture Electron methods.",
+      "view": "Docked multi-file selection with Select All, Select None, Cancel and Add.",
+      "version": "2.6.23 development",
+      "sourceRevision": "03ef672ee4940bee44a6f8260825242fbc867fcd",
+      "nativeSourceRevision": "7c233a943f4c9ec42b6008fb3ffea09729429b84",
+      "capturedOn": "2026-11-15",
+      "surface": "DonWells Cue development renderer in isolated Chromium at 110% interface scale.",
       "dimensions": [
         1200,
-        397
+        298
       ],
-      "sha256": "2f4f4944ec9acc6606d07736687709bfd8e8d31f5c86b40db813832947994c49",
-      "fixture": "Disposable Running show with generated WAV files and a native NULL software output.",
-      "captureMethod": "Playwright screenshot at the rendered CSS pixel size.",
-      "presentation": "Workspace or panel crop with original UI values."
+      "sha256": "69bf4f2cb34eb5009f8e79e1f9faabf61e55c021e706cb61896078d1b237ecdc",
+      "fixture": "Disposable rehearsal show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright lower-panel screenshot with a fixture Electron folder scan.",
+      "presentation": "Full lower Import Media panel at its fitted height."
     },
     {
       "file": "import-options-current.png",
-      "view": "Lower Import Media panel with a staged practice file and the import plan.",
-      "version": "2.6.21 development",
-      "sourceRevision": "0b1b7bad54a980c830ba23d2a5ab50af82dfeb36",
-      "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
-      "capturedOn": "2026-11-13",
-      "surface": "Fresh static build of the Vue UI in isolated Chromium with fixture Electron methods.",
+      "view": "Staged nested-folder batch with group import and duplicate handling.",
+      "version": "2.6.23 development",
+      "sourceRevision": "03ef672ee4940bee44a6f8260825242fbc867fcd",
+      "nativeSourceRevision": "7c233a943f4c9ec42b6008fb3ffea09729429b84",
+      "capturedOn": "2026-11-15",
+      "surface": "DonWells Cue development renderer in isolated Chromium at 110% interface scale.",
       "dimensions": [
         1200,
-        257
+        259
       ],
-      "sha256": "5ae8f06e47058e5267c590aecb5196d235a27b20a2ebaec3a7c457ea8b159638",
-      "fixture": "Disposable Running show with generated WAV files and a native NULL software output.",
-      "captureMethod": "Playwright screenshot at the rendered CSS pixel size.",
-      "presentation": "Workspace or panel crop with original UI values."
+      "sha256": "f8589d93d21d6ff522b81807d088bdf9570bd8c65d50442ad7c7b26f4f7e46f7",
+      "fixture": "Disposable rehearsal show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright lower-panel screenshot with a fixture Electron folder scan.",
+      "presentation": "Full lower Import Media panel at its fitted height."
     },
     {
       "file": "cue-playback-current.png",
       "view": "Playback with the waveform, audition transport, and aligned timing, fade, and transition controls.",
-      "version": "2.6.21 development",
-      "sourceRevision": "0b1b7bad54a980c830ba23d2a5ab50af82dfeb36",
-      "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
-      "capturedOn": "2026-11-13",
-      "surface": "Fresh static build of the Vue UI in isolated Chromium with fixture Electron methods.",
+      "version": "2.6.23 development",
+      "sourceRevision": "fd3644cbada93c60b4e4fb1138743caa394553d5",
+      "nativeSourceRevision": "9b976139d3524a330299e6c19dcae47a48e34b29",
+      "capturedOn": "2026-11-14",
+      "surface": "Production DonWells Cue renderer in Chromium, 1200 CSS pixels wide at 110% interface zoom.",
       "dimensions": [
-        1600,
-        284
+        1200,
+        313
       ],
-      "sha256": "532b41ca2d0f97276d5226e664eaa69da939dd2368b774cb98edc1aaaec9170a",
-      "fixture": "Disposable Running show with generated WAV files and a native NULL software output.",
-      "captureMethod": "Playwright screenshot at the rendered CSS pixel size.",
-      "presentation": "Workspace or panel crop with original UI values."
+      "sha256": "00c82b45e198908c0c78b215afcbdc8852f59c3b73e2b31e68afe0a694bc1c89",
+      "fixture": "Disposable Running sample show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright element screenshot of the compiled interface.",
+      "presentation": "Original panel or QuickPlay tile crop."
     },
     {
       "file": "cue-end-detail-current.png",
@@ -193,54 +193,54 @@
     },
     {
       "file": "group-current.png",
-      "view": "Group Properties with Play All, End Behavior, backup selection, and Shuffle on the same panel.",
-      "version": "2.6.22 development",
-      "sourceRevision": "bc3fee61f364ccb81d4e81b2c1bf2c0b2a6cb6d3",
-      "nativeSourceRevision": "355b93aecaee0320bfb960fd8342fdc01417fc52",
+      "view": "Group Level and cueing controls with the Properties footer.",
+      "version": "2.6.23 development",
+      "sourceRevision": "fd3644cbada93c60b4e4fb1138743caa394553d5",
+      "nativeSourceRevision": "9b976139d3524a330299e6c19dcae47a48e34b29",
       "capturedOn": "2026-11-14",
-      "surface": "Packaged Electron renderer at 1200 CSS pixels wide.",
+      "surface": "Production DonWells Cue renderer in Chromium, 1200 CSS pixels wide at 110% interface zoom.",
       "dimensions": [
-        1008,
-        202
+        1200,
+        280
       ],
-      "sha256": "63f5ef644a6a0bbcd4f9d1e89968be57691ea4ea5b8bcec85e59560a2ca1a6da",
-      "fixture": "Disposable Summit music review project with generated media and native NULL software output.",
-      "captureMethod": "Playwright screenshot cropped to the group controls.",
-      "presentation": "Original UI crop."
+      "sha256": "14bfa62ecc6f037cbb4de59ff0734f952b9c772bc141dc0a790c178470bb3a4f",
+      "fixture": "Disposable Running sample show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright element screenshot of the compiled interface.",
+      "presentation": "Original panel or QuickPlay tile crop."
     },
     {
       "file": "audio-settings-current.png",
       "view": "Audio Routing in the aligned docked Settings tabs.",
-      "version": "2.6.21",
-      "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
-      "nativeSourceRevision": "b96070379c7305bbb3af6e95d2d869aa9f9fe13b",
-      "capturedOn": "2026-11-13",
-      "surface": "Packaged macOS Apple Silicon review app with a dedicated profile.",
+      "version": "2.6.23 development",
+      "sourceRevision": "fd3644cbada93c60b4e4fb1138743caa394553d5",
+      "nativeSourceRevision": "9b976139d3524a330299e6c19dcae47a48e34b29",
+      "capturedOn": "2026-11-14",
+      "surface": "Production DonWells Cue renderer in Chromium, 1200 CSS pixels wide at 110% interface zoom.",
       "dimensions": [
-        1400,
-        315
+        1200,
+        172
       ],
-      "sha256": "00be0a90e375da6d179ad54ff9bb55815cd621c7f33d91c0ec4a25bb8cdd5953",
-      "fixture": "Isolated Local review sample with generated audio and a silent 1080p clip. The bundled native engine uses its software NULL backend.",
-      "captureMethod": "Actual Electron renderer screenshot at CSS pixel dimensions. Whole workspace or a single panel or tile.",
-      "presentation": "Rendered UI with its actual settings and cue state."
+      "sha256": "762224c723843edb9b7ca04b3e0b7f1142d294664b01f1a8079b66fd20fcb5e1",
+      "fixture": "Disposable Running sample show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright element screenshot of the compiled interface.",
+      "presentation": "Original panel or QuickPlay tile crop."
     },
     {
       "file": "output-routing-current.png",
       "view": "Cue Output with the per-cue output device and LTC timecode controls.",
-      "version": "2.6.21 development",
-      "sourceRevision": "0b1b7bad54a980c830ba23d2a5ab50af82dfeb36",
-      "nativeSourceRevision": "889abd569da10a32d6cd0edb75b029b436e5cf42",
-      "capturedOn": "2026-11-13",
-      "surface": "Fresh static build of the Vue UI in isolated Chromium with fixture Electron methods.",
+      "version": "2.6.23 development",
+      "sourceRevision": "fd3644cbada93c60b4e4fb1138743caa394553d5",
+      "nativeSourceRevision": "9b976139d3524a330299e6c19dcae47a48e34b29",
+      "capturedOn": "2026-11-14",
+      "surface": "Production DonWells Cue renderer in Chromium, 1200 CSS pixels wide at 110% interface zoom.",
       "dimensions": [
-        1600,
-        193
+        1200,
+        226
       ],
-      "sha256": "a3f72b20ff88a25cf6d493b462aa038592e9f2940fb6932dc2ce4060fa723cd6",
-      "fixture": "Disposable Running show with generated WAV files and a native NULL software output.",
-      "captureMethod": "Playwright screenshot at the rendered CSS pixel size.",
-      "presentation": "Workspace or panel crop with original UI values."
+      "sha256": "a2b02b4d6d06109e0e92b6950c85803e0bcb8ca69422506679af0aa075de0416",
+      "fixture": "Disposable Running sample show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright element screenshot of the compiled interface.",
+      "presentation": "Original panel or QuickPlay tile crop."
     },
     {
       "file": "output-console-current.png",
@@ -278,88 +278,88 @@
     },
     {
       "file": "one-shot-settings-current.png",
-      "view": "QuickPlay settings with playback, retrigger, ending, gain, and fade controls.",
-      "version": "2.6.21",
-      "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
-      "nativeSourceRevision": "b96070379c7305bbb3af6e95d2d869aa9f9fe13b",
-      "capturedOn": "2026-11-13",
-      "surface": "Packaged macOS Apple Silicon review app with a dedicated profile.",
+      "view": "Docked QuickPlay settings with playback, retrigger, ending, gain, fades, output, and shortcut.",
+      "version": "2.6.23 development",
+      "sourceRevision": "fd3644cbada93c60b4e4fb1138743caa394553d5",
+      "nativeSourceRevision": "9b976139d3524a330299e6c19dcae47a48e34b29",
+      "capturedOn": "2026-11-14",
+      "surface": "Production DonWells Cue renderer in Chromium, 1200 CSS pixels wide at 110% interface zoom.",
       "dimensions": [
-        311,
-        595
+        1200,
+        280
       ],
-      "sha256": "30ad5cd5956b8b524bc9645eb26c7f9561d9c419375227121d69b5ab0153d74f",
-      "fixture": "Isolated Local review sample with generated audio and a silent 1080p clip. The bundled native engine uses its software NULL backend.",
-      "captureMethod": "Actual Electron renderer screenshot at CSS pixel dimensions. Whole workspace or a single panel or tile.",
-      "presentation": "Rendered UI with its actual settings and cue state."
+      "sha256": "87b454c8229b2c6e7a93e694972c4e1ba2a3b0a5a78fa920955259fb9b87158a",
+      "fixture": "Disposable Running sample show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright element screenshot of the compiled interface.",
+      "presentation": "Original panel or QuickPlay tile crop."
     },
     {
       "file": "one-shot-show-mode.png",
-      "view": "QuickPlay 11 in Show Mode with a direct Play button and Shift+1 shortcut.",
-      "version": "2.6.21",
-      "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
-      "nativeSourceRevision": "b96070379c7305bbb3af6e95d2d869aa9f9fe13b",
-      "capturedOn": "2026-11-13",
-      "surface": "Packaged macOS Apple Silicon review app with a dedicated profile.",
+      "view": "QuickPlay 11 in Show Mode with play, settings, and the Shift+1 shortcut.",
+      "version": "2.6.23 development",
+      "sourceRevision": "fd3644cbada93c60b4e4fb1138743caa394553d5",
+      "nativeSourceRevision": "9b976139d3524a330299e6c19dcae47a48e34b29",
+      "capturedOn": "2026-11-14",
+      "surface": "Production DonWells Cue renderer in Chromium, 1200 CSS pixels wide at 110% interface zoom.",
       "dimensions": [
-        120,
-        110
+        142,
+        134
       ],
-      "sha256": "7eece1c92e691a40645c6676bf480350e76bb0574b040671d28ffee56eed276c",
-      "fixture": "Isolated Local review sample with generated audio and a silent 1080p clip. The bundled native engine uses its software NULL backend.",
-      "captureMethod": "Actual Electron renderer screenshot at CSS pixel dimensions. Whole workspace or a single panel or tile.",
-      "presentation": "Rendered UI with its actual settings and cue state."
+      "sha256": "b74662633ab398b0f4a9eb8036e1379d9b10e685aab1dfd411d5c5fa6bd627d0",
+      "fixture": "Disposable Running sample show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright element screenshot of the compiled interface.",
+      "presentation": "Original panel or QuickPlay tile crop."
     },
     {
       "file": "shortcuts-current.png",
       "view": "Docked Shortcuts with Q for QuickPlays and Shift+Q for the detached window.",
-      "version": "2.6.22 development",
-      "sourceRevision": "bc3fee61f364ccb81d4e81b2c1bf2c0b2a6cb6d3",
-      "nativeSourceRevision": "355b93aecaee0320bfb960fd8342fdc01417fc52",
+      "version": "2.6.23 development",
+      "sourceRevision": "fd3644cbada93c60b4e4fb1138743caa394553d5",
+      "nativeSourceRevision": "9b976139d3524a330299e6c19dcae47a48e34b29",
       "capturedOn": "2026-11-14",
-      "surface": "Packaged Electron renderer at 1200 CSS pixels wide.",
+      "surface": "Production DonWells Cue renderer in Chromium, 1200 CSS pixels wide at 110% interface zoom.",
       "dimensions": [
         1200,
-        225
+        343
       ],
-      "sha256": "8a052b0f87df057945abc08c7913b984e70c6d75d0d0b87767c15a1fe4de624a",
-      "fixture": "Disposable Summit music review project with generated media and native NULL software output.",
-      "captureMethod": "Playwright screenshot of the docked Shortcuts tab.",
-      "presentation": "Actual default shortcuts."
+      "sha256": "fd51a27b6b6fa2c92290da93b10dff8bbb4a802765a63aeae9f4bf2c2998bf20",
+      "fixture": "Disposable Running sample show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright element screenshot of the compiled interface.",
+      "presentation": "Original panel or QuickPlay tile crop."
     },
     {
       "file": "midi-current.png",
       "view": "Docked MIDI configuration and device controls.",
-      "version": "2.6.21",
-      "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
-      "nativeSourceRevision": "b96070379c7305bbb3af6e95d2d869aa9f9fe13b",
-      "capturedOn": "2026-11-13",
-      "surface": "Packaged macOS Apple Silicon review app with a dedicated profile.",
+      "version": "2.6.23 development",
+      "sourceRevision": "fd3644cbada93c60b4e4fb1138743caa394553d5",
+      "nativeSourceRevision": "9b976139d3524a330299e6c19dcae47a48e34b29",
+      "capturedOn": "2026-11-14",
+      "surface": "Production DonWells Cue renderer in Chromium, 1200 CSS pixels wide at 110% interface zoom.",
       "dimensions": [
-        1400,
-        315
+        1200,
+        271
       ],
-      "sha256": "d96a65d644726d261ec6abd472295be5e07fe1fe5883988b80a9ecde305631d8",
-      "fixture": "Isolated Local review sample with generated audio and a silent 1080p clip. The bundled native engine uses its software NULL backend.",
-      "captureMethod": "Actual Electron renderer screenshot at CSS pixel dimensions. Whole workspace or a single panel or tile.",
-      "presentation": "Rendered UI with its actual settings and cue state."
+      "sha256": "1e3cf8c93168944e71eab40684760fa4e68537970b001c54e82e05ca50e8b22e",
+      "fixture": "Disposable Running sample show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright element screenshot of the compiled interface.",
+      "presentation": "Original panel or QuickPlay tile crop."
     },
     {
       "file": "video-settings-current.png",
       "view": "Docked Video Output with Picture framing, standby capture, and test card controls.",
-      "version": "2.6.21",
-      "sourceRevision": "3b69f60eab3ef8d16be081f722d08dd3a578bcd2",
-      "nativeSourceRevision": "b96070379c7305bbb3af6e95d2d869aa9f9fe13b",
-      "capturedOn": "2026-11-13",
-      "surface": "Packaged macOS Apple Silicon review app with a dedicated profile.",
+      "version": "2.6.23 development",
+      "sourceRevision": "fd3644cbada93c60b4e4fb1138743caa394553d5",
+      "nativeSourceRevision": "9b976139d3524a330299e6c19dcae47a48e34b29",
+      "capturedOn": "2026-11-14",
+      "surface": "Production DonWells Cue renderer in Chromium, 1200 CSS pixels wide at 110% interface zoom.",
       "dimensions": [
-        1400,
-        315
+        1200,
+        391
       ],
-      "sha256": "9d3eebf9a1ffb7404750be7cc38401a38c4f550b8299bb835ad5658cdf651ad0",
-      "fixture": "Isolated Local review sample with generated audio and a silent 1080p clip. The bundled native engine uses its software NULL backend.",
-      "captureMethod": "Actual Electron renderer screenshot at CSS pixel dimensions. Whole workspace or a single panel or tile.",
-      "presentation": "Rendered UI with its actual settings and cue state."
+      "sha256": "4b5c625e642b8186f2f176514b245782738c3d5114a065e95f2d4a828a0a113f",
+      "fixture": "Disposable Running sample show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright element screenshot of the compiled interface.",
+      "presentation": "Original panel or QuickPlay tile crop."
     },
     {
       "file": "server-connection-current.png",
@@ -411,6 +411,23 @@
       "fixture": "Isolated Local review sample with generated audio and a silent 1080p clip. The bundled native engine uses its software NULL backend.",
       "captureMethod": "Actual Electron renderer screenshot at CSS pixel dimensions. Whole workspace or a single panel or tile.",
       "presentation": "Rendered UI with its actual settings and cue state."
+    },
+    {
+      "file": "import-progress.png",
+      "view": "Media verification progress showing the current file, batch count, and Cancel import.",
+      "version": "2.6.23 development",
+      "sourceRevision": "89d574e9ddc709e54f286e134416b7b189528947",
+      "nativeSourceRevision": "7c233a943f4c9ec42b6008fb3ffea09729429b84",
+      "capturedOn": "2026-11-14",
+      "surface": "DonWells Cue development renderer in isolated Chromium at 110% interface scale.",
+      "dimensions": [
+        1200,
+        132
+      ],
+      "sha256": "d6bcb77a7bc7ced4282190615f269dcd796bd8df5914147a28058d07fc289f37",
+      "fixture": "Disposable rehearsal show with generated WAV files and a native NULL software output.",
+      "captureMethod": "Playwright panel screenshot with fixture Electron picker methods.",
+      "presentation": "Full lower Import Media panel at its fitted height."
     }
   ],
   "photos": [
@@ -458,11 +475,11 @@
     "duckEnvelope": "Schematic explanation, not a measured response plot",
     "gainStages": "Schematic: final physical sum and secondary-clock adaptation precede the attenuation-only limiter and device output."
   },
-  "uiBuildRevision": "79ed56ede6a5362885750367f02ff35ce443be0f",
-  "manualSourceRevision": "79ed56ede6a5362885750367f02ff35ce443be0f",
+  "uiBuildRevision": "534615e1ce656d849e886cacba121fbe3d986020",
+  "manualSourceRevision": "30dd3c4c82bb5e07bf74fd907f5e7557187e68b1",
   "visualCompatibility": {
-    "checkedOn": "2026-11-14",
-    "revision": "79ed56ede6a5362885750367f02ff35ce443be0f",
-    "basis": "The new playlist and group controls were captured in the compiled renderer. Earlier examples retain their original capture details."
+    "checkedOn": "2026-11-15",
+    "revision": "618e07dae60c32bdf267305738af1d92b740ca49",
+    "basis": "The packaged arm64 Mac app was checked with the QuickPlay Settings choices open in attached and detached windows. Figures retain their capture revisions."
   }
 }

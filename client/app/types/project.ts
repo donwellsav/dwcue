@@ -86,6 +86,7 @@ export interface GroupItem extends BaseItem {
   startBehavior: GroupStartBehavior;
   endBehavior: EndBehavior;
   keepMusicGoing?: boolean;
+  groupGainDb?: number;
   backupMusicGroup?: string | null;
   isExpanded: boolean; // UI state
 }
@@ -453,13 +454,13 @@ export const DEFAULT_CART_AUDIO_ITEM: Partial<AudioItem> = {
   startNextFadeOut: false
 };
 
-export const DEFAULT_GROUP_ITEM: Partial<GroupItem> = {
+export const DEFAULT_GROUP_ITEM = {
   color: PRESET_COLORS[7],
   startBehavior: { action: 'play-first' },
   endBehavior: { action: 'nothing' },
   isExpanded: true,
   children: []
-};
+} satisfies Partial<GroupItem>;
 
 // Cart slots have no default key bindings — user assigns them manually
 export const DEFAULT_CART_SLOT_KEYS: Record<number, CartSlotKeyBinding> = {};

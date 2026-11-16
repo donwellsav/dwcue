@@ -142,7 +142,10 @@ assert.match(
   /std::shared_ptr<MixerChannel> AudioEngine::find_mixer_channel\(\s*const MixerChannelId& id\) const\s*{\s*std::lock_guard lock\{mutex_\};\s*auto it = mixers_\./,
   'engine mixer lookup must return shared_ptr lifetimes',
 );
-assert.match(engine, /render_block \* 4\)/, 'output ring must not add hundreds of milliseconds of latency');
+assert.match(read('server/include/liveplay/audio/engine.hpp'), /kMasterQueueBlocks = 3;/,
+  'the master output stays at a three-block queue');
+assert.match(engine, /const auto target = cfg_\.render_block \* kMasterQueueBlocks;/,
+  'the render loop must pace against the master queue rather than total ring capacity');
 assert.match(engine, /info\.id = dev\.id;/,
   'opened device rows must expose the instance id accepted by close');
 assert.match(engine,
@@ -182,12 +185,11 @@ assert.match(
 );
 assert.match(
   appVue,
-  /class="name-dialog(?: [^"]*)?"[\s\S]*role="dialog"[\s\S]*aria-modal="true"[\s\S]*aria-labelledby=/,
-  'the new-project prompt must expose native dialog semantics',
+  /<section v-else class="project-file-panel"[\s\S]*?aria-labelledby="project-file-panel-title"[\s\S]*?<h2 id="project-file-panel-title"/,
+  'the project file panel must expose its heading as the region name',
 );
 const playlistItem = read('client/app/components/PlaylistItem.vue');
-const quitConfirmModal = read('client/app/components/QuitConfirmModal.vue');
-const deleteSelectionModal = read('client/app/components/DeleteSelectionModal.vue');
+const projectDecisionPanel = read('client/app/components/ProjectDecisionPanel.vue');
 const waveformTrimmer = read('client/app/components/WaveformTrimmer.vue');
 const waveformTypes = read('client/app/types/project.ts');
 const audioUtils = read('client/app/utils/audio.ts');
@@ -197,7 +199,7 @@ const liveMeters = read('client/app/composables/useLiveMeters.ts');
 const uiMode = read('client/app/composables/useUiMode.ts');
 assert.match(
   waveformTrimmer,
-  /class="normalize-menu"[\s\S]*<summary class="normalize-btn"[\s\S]*properties\.normalize[\s\S]*class="normalize-popover"[\s\S]*v-model="normalizationMode"[\s\S]*value="loudness"[\s\S]*value="truePeak"[\s\S]*v-model\.number\.lazy="normalizationTarget"[\s\S]*type="number"[\s\S]*step="0\.1"[\s\S]*normalizationUnit/,
+  /class="normalize-menu"[\s\S]*<summary class="normalize-btn"[\s\S]*properties\.normalize[\s\S]*class="normalize-popover"[\s\S]*normalizationMode = 'loudness'[\s\S]*normalizationMode = 'truePeak'[\s\S]*v-model\.number\.lazy="normalizationTarget"[\s\S]*type="number"[\s\S]*step="0\.1"[\s\S]*normalizationUnit/,
   'Properties must expose manual loudness matching and peak reduction with editable 0.1-step levels',
 );
 assert.match(
@@ -334,7 +336,7 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /<span class="item-color-rail" :style="\{ backgroundColor: item\.color \}" aria-hidden="true"><\/span>[\s\S]*<span class="item-name"[^>]*>\{\{ item\.displayName \}\}<\/span>[\s\S]*v-if="isPaused" class="status-pill paused"[\s\S]*v-else-if="isPlaying" class="status-pill playing"/,
+  /<span class="item-color-rail" :style="\{ backgroundColor: item\.color \}" aria-hidden="true"><\/span>[\s\S]*<button[\s\S]*?class="item-name"[\s\S]*?@click="toggleFileName"[\s\S]*?\{\{ visibleTitle \}\}<\/button>[\s\S]*v-if="isPaused" class="status-pill paused"[\s\S]*v-else-if="isPlaying" class="status-pill playing"/,
   'cue colour must remain an independent rail while paused and playing states retain explicit priority',
 );
 assert.match(playlistItem, /'is-up-next': isQueuedNext/, 'queued-next state must remain on the playlist row');
@@ -427,7 +429,7 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /--current-playlist-row-height:\s*var\(--playlist-row-height, 44px\)[\s\S]*scroll-margin-top:\s*var\(--current-playlist-row-height\)[\s\S]*--current-playlist-row-height:\s*var\(--folder-playlist-row-height, 60px\)[\s\S]*min-height:\s*var\(--current-playlist-row-height\)[\s\S]*--current-playlist-row-height:\s*var\(--show-playlist-row-height, 68px\)[\s\S]*@container \(max-width: 620px\)/,
+  /--current-playlist-row-height:\s*var\(--playlist-row-height, 44px\)[\s\S]*--current-playlist-row-height:\s*var\(--folder-playlist-row-height, 60px\)[\s\S]*min-height:\s*var\(--current-playlist-row-height\)[\s\S]*scroll-margin-top:\s*var\(--current-playlist-row-height\)[\s\S]*--current-playlist-row-height:\s*var\(--show-playlist-row-height, 68px\)[\s\S]*@container \(max-width: 700px\)/,
   'regular, Show Mode, and folder row heights must control geometry while preserving usable title space',
 );
 assert.match(
@@ -507,7 +509,8 @@ assert.match(
 );
 assert.equal(
   projectSettingsModal.includes('Preview stores the stable hardware name') &&
-    projectSettingsModal.includes(':value="d.display_name"'),
+    projectSettingsModal.includes(':value="previewDeviceId" :options="audioDeviceOptions"') &&
+    projectSettingsModal.includes('value: d.display_name'),
   true,
   'preview device settings must persist stable hardware names instead of opened-device ids',
 );
@@ -538,7 +541,7 @@ assert.match(
 );
 const workspaceOrder = [
   mainWorkspace.indexOf('<OneShotPanel>'),
-  mainWorkspace.indexOf('<PlaylistView>'),
+  mainWorkspace.indexOf('<PlaylistView '),
   mainWorkspace.indexOf('class="output-console"'),
 ];
 assert.ok(
@@ -563,7 +566,7 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /class="workspace-panels"[\s\S]*id="cart-player-panel"[\s\S]*<OneShotPanel>[\s\S]*#header-leading[\s\S]*class="cart-toggle cart-toggle--open"[\s\S]*t\('oneShots\.hide'\)[\s\S]*@click="toggleCart"[\s\S]*<PlaylistView>[\s\S]*#header-leading[\s\S]*v-if="cartClosed && !cartDetached"[\s\S]*class="cart-toggle(?: [^"]*)?"[\s\S]*t\('oneShots\.show'\)[\s\S]*@click="toggleCart"[\s\S]*function toggleCart\(\)[\s\S]*cartClosed\.value = !cartClosed\.value[\s\S]*cartFullscreen\.value = false/,
+  /class="workspace-panels"[\s\S]*id="cart-player-panel"[\s\S]*<OneShotPanel>[\s\S]*#header-leading[\s\S]*class="cart-toggle cart-toggle--open"[\s\S]*t\('oneShots\.hide'\)[\s\S]*@click="toggleCart"[\s\S]*<PlaylistView\b[^>]*>[\s\S]*#header-leading[\s\S]*v-if="cartClosed && !cartDetached"[\s\S]*class="cart-toggle(?: [^"]*)?"[\s\S]*t\('oneShots\.show'\)[\s\S]*@click="toggleCart"[\s\S]*function toggleCart\(\)[\s\S]*cartClosed\.value = !cartClosed\.value[\s\S]*cartFullscreen\.value = false/,
   'the One Shots toggle must stay in the active panel header and leave resizing to the splitter',
 );
 assert.match(
@@ -588,7 +591,7 @@ assert.doesNotMatch(
 );
 assert.match(
   mainWorkspace,
-  /v-show="!cartFullscreen \|\| cartDetached" class="playlist-section"/,
+  /v-show="recoveryOpen \|\| !cartFullscreen \|\| cartDetached" class="playlist-section"/,
   'detaching a fullscreen cart must reveal the playlist',
 );
 assert.match(
@@ -703,9 +706,12 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /settingsHeight = useState<number \| null>\('ProjectSettingsPanel.height', \(\) => null\);[\s\S]*panelHeight = computed\(\(\) => showProjectSettings\.value \? settingsHeight\.value\s*: visibleImportPanel\.value \? importHeight\.value : propertiesHeight\.value\);/,
+  /settingsHeight = useState<number \| null>\('ProjectSettingsPanel.height', \(\) => null\);[\s\S]*autoSizeImportPanel = computed\(\(\) => visibleImportPanel\.value === 'delete-selection' \|\| visibleImportPanel\.value === 'repair'\);[\s\S]*panelHeight = computed\(\(\) => showProjectSettings\.value \? settingsHeight\.value\s*: autoSizeImportPanel\.value \? null\s*: visibleImportPanel\.value \? importHeight\.value : propertiesHeight\.value\);/,
   'each lower panel must fit its contents until the operator resizes it',
 );
+assert.ok(mainWorkspace.includes('<DeleteSelectionPanel v-if="visibleImportPanel === \'delete-selection\'" />')
+  && !/\bconfirm\(t\('actions\.confirmDelete'/.test(playlistItem),
+  'playlist deletes must use the lower panel instead of a blocking native confirmation');
 assert.match(
   mainWorkspace,
   /\.workspace-content\s*\{[^}]*min-height:\s*calc\(var\(--panel-header-height\) \+ var\(--reserved-playlist-row-height\)[^}]*\}[\s\S]*\.lower-workspace-panel\s*\{[^}]*flex:\s*0 1 auto;/,
@@ -897,9 +903,12 @@ assert.match(
 );
 assert.match(
   projectSettingsModal,
-  /addCountdownBand[\s\S]*countdownColorBands[\s\S]*type="number"[\s\S]*type="color"[\s\S]*removeCountdownBand[\s\S]*saveProject/,
+  /addCountdownBand[\s\S]*countdownColorBands[\s\S]*type="number"[\s\S]*<InlineColorPicker[\s\S]*removeCountdownBand[\s\S]*saveProject/,
   'countdown colour thresholds must be editable, addable, removable, and saved with the project',
 );
+assert.doesNotMatch(projectSettingsModal + read('client/app/components/TestCardControls.vue'),
+  /type\s*[:=]\s*['"]color['"]/,
+  'Time Left and Test Card colors must not open native color dialogs');
 assert.match(
   projectSettingsModal,
   /regular-playlist-row-height[\s\S]*type="range"[\s\S]*PLAYLIST_ROW_HEIGHTS\.regular[\s\S]*show-playlist-row-height[\s\S]*type="range"[\s\S]*PLAYLIST_ROW_HEIGHTS\.show[\s\S]*folder-playlist-row-height[\s\S]*type="range"[\s\S]*PLAYLIST_ROW_HEIGHTS\.folder[\s\S]*onPlaylistRowHeightInput/,
@@ -1285,18 +1294,18 @@ assert.match(
   'packaged renderer CSP must include hashes from its exact generated HTML',
 );
 assert.match(
-  deleteSelectionModal,
-  /\.ds-modal\s*\{[\s\S]{0,260}width:\s*min\(440px, calc\(100vw - 32px\)\);/,
-  'the delete dialog must fit the supported 380px detached-cart window',
-);
-assert.match(
   audioImportModal,
   /\.modal\s*\{[\s\S]{0,140}max-height:\s*calc\(100vh - 32px\);[\s\S]{0,60}overflow-y:\s*auto;/,
-  'the audio import header and close control must remain reachable in the detached cart window',
+  'the standalone audio import header and close control must remain reachable',
 );
 assert.match(
   audioImportModal,
-  /class="import-plan"[\s\S]*mediaDestination[\s\S]*destinationFallback[\s\S]*importSettings[\s\S]*knownSelectionCount[\s\S]*uploadedSizes/,
+  /v-if="singleFile">\s*<ServerFilePickerModal docked[\s\S]*?@pick="onServerPick\(\[\$event\]\)"[\s\S]*?<template v-else-if="server\.isLocalServer && hasElectron">/,
+  'single-file import must browse in the dock instead of opening the native chooser',
+);
+assert.match(
+  audioImportModal,
+  /selectedOfTotal[\s\S]*uploadedSizes[\s\S]*class="import-plan"[\s\S]*mediaDestination[\s\S]*importSettings/,
   'local imports must show their destination, processing, selection count, and uploaded file sizes',
 );
 assert.match(
@@ -1326,8 +1335,13 @@ assert.match(
 );
 assert.match(
   audioImportModal,
-  /type="file"[\s\S]*multiple[\s\S]*@change="uploadSelectedFiles"/,
-  'remote audio import must use the browser file picker instead of whole-file IPC',
+  /class="upload-drop"[^>]*@drop\.stop\.prevent="selectForUpload\(\$event\.dataTransfer\)"[\s\S]*webkitGetAsEntry[\s\S]*server\.uploadFile\(file, file\.name, session\)/,
+  'remote audio import must accept file-backed files and folders in the dock',
+);
+assert.doesNotMatch(
+  audioImportModal,
+  /type="file"|show(OpenFile|Directory)Picker/,
+  'remote audio import must keep selection inside the dock',
 );
 assert.match(
   electron,
@@ -1468,8 +1482,8 @@ assert.match(
 );
 assert.match(
   electron,
-  /download-archive-to-file[\s\S]*pipeline\([\s\S]*Readable\.fromWeb[\s\S]*fs\.promises\.rename/,
-  'archive downloads must stream to a temp file before atomic replacement',
+  /download-archive-to-file[\s\S]*pipeline\([\s\S]*Readable\.fromWeb[\s\S]*fs\.promises\.link/,
+  'archive downloads must stream to a temp file before publishing without replacing an existing file',
 );
 assert.doesNotMatch(
   electron,
@@ -1673,12 +1687,12 @@ assert.match(
 );
 assert.match(
   spotifyModal,
-  /await api\.selectProjectFolder\(\)[\s\S]*destinationParentPath[\s\S]*api\.downloadSpotifyAudio\([\s\S]*destinationParentPath/,
-  'Spotify imports must let the operator choose the template parent folder',
+  /<ServerFilePickerModal[^>]*\bdocked\b[^>]*mode="directory"[^>]*@pick="saveDestination"[\s\S]*api\.setSpotifyImportDestination\(selected\)[\s\S]*api\.downloadSpotifyAudio\([\s\S]*destinationParentPath/,
+  'Spotify imports must use the docked browser and keep the authorized destination in the job',
 );
 assert.match(
   spotifyModal,
-  /sourceTypeText[\s\S]*v-model="audioBitrate"[\s\S]*destinationParentPath[\s\S]*cueProcessingSettings/,
+  /sourceTypeText[\s\S]*:value="audioBitrate"[\s\S]*destinationParentPath[\s\S]*cueProcessingSettings/,
   'Spotify imports must disclose their source and let operators edit bitrate, destination, and cue processing',
 );
 assert.match(
@@ -1716,7 +1730,7 @@ assert.match(
 );
 assert.match(
   projectHeader,
-  /flex:\s*0 0 var\(--app-header-height\);[\s\S]{0,100}height:\s*var\(--app-header-height\);[\s\S]*\.header-right\s*\{[\s\S]{0,160}gap:\s*6px;[\s\S]*\.autosave-toggle\s*\{[\s\S]{0,260}min-height:\s*32px;[\s\S]{0,180}padding:\s*4px var\(--spacing-sm\);/,
+  /min-height:\s*var\(--app-header-height\);[\s\S]*\.header-right\s*\{[^}]*gap:\s*6px;[\s\S]*\.autosave-toggle\s*\{[\s\S]{0,260}min-height:\s*32px;[\s\S]{0,180}padding:\s*4px var\(--spacing-sm\);/,
   'header controls must use a compact aligned rhythm inside a band tall enough for the clocks',
 );
 assert.match(
@@ -1816,8 +1830,13 @@ assert.match(
 );
 assert.match(
   oneShotTile,
-  /v-if="!showMode"[\s\S]*class="one-shot-control one-shot-remove"[\s\S]*v-if="removeOpen"[\s\S]*role="alertdialog"/,
-  'One Shot removal must remain an explicit regular-mode-only confirmation',
+  /v-if="!showMode"[\s\S]*class="one-shot-control one-shot-remove"[\s\S]*<Teleport defer :to="[^"]*#workspace-import-host[^"]*">[\s\S]*v-if="menuOpen"\s*class="quickplay-settings"[\s\S]*v-if="removeOpen"\s*class="quickplay-remove"[\s\S]*@click="confirmRemove"/,
+  'QuickPlay settings and the edit-mode removal confirmation must share the nonmodal dock',
+);
+assert.match(
+  oneShotPanel,
+  /defer :to="isDetachedWindow \? '#detached-quickplay-dock' : '#workspace-import-host'"[\s\S]*?<AudioImportModal :key="importSlot" docked single-file/,
+  'QuickPlay import must use the single-file dock in either window',
 );
 assert.match(
   propertiesPanel,
@@ -1851,7 +1870,7 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /<ShortcutsBar :compact="lowerPanelOpen" \/>[\s\S]*<ProjectSettingsModal :open="showProjectSettings"[\s\S]*<PropertiesPanel v-if="showCueProperties"[\s\S]*id="workspace-import-host"[\s\S]*const showCueProperties = computed\(\(\) =>\s*!showProjectSettings\.value && !visibleImportPanel\.value/,
+  /<ShortcutsBar\b[^>]*>[\s\S]*<ProjectSettingsModal :open="showProjectSettings"[\s\S]*<PropertiesPanel v-if="showCueProperties"[\s\S]*id="workspace-import-host"[\s\S]*const showCueProperties = computed\(\(\) =>\s*!showProjectSettings\.value && !visibleImportPanel\.value/,
   'Settings, cue Properties, and imports must share the lower workspace without stacking',
 );
 assert.match(
@@ -1896,7 +1915,7 @@ assert.match(
 );
 assert.match(
   playlistView,
-  /\.playlist-actions\s*\{[\s\S]{0,160}flex:\s*0 1 auto;[\s\S]{0,120}margin-inline-start:\s*auto;[\s\S]{0,120}overflow-x:\s*auto;[\s\S]*\.playlist-header \.workspace-panel-header__leading\s*\{[\s\S]{0,80}flex:\s*0 0 auto;/,
+  /\.playlist-actions\s*\{[^}]*flex:\s*1 1 auto;[^}]*overflow-x:\s*auto;[^}]*container:\s*playlist-actions \/ inline-size;[\s\S]*@container playlist-actions \(max-width: 640px\)/,
   'playlist actions must stay bounded by the shared header at every supported width',
 );
 assert.match(
@@ -1921,7 +1940,7 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.group-children\s*\{[\s\S]{0,180}gap:\s*2px;[\s\S]{0,100}padding-top:\s*2px;[\s\S]*@container \(max-width: 560px\)/,
+  /\.group-children\s*\{[\s\S]{0,180}gap:\s*2px;[\s\S]{0,100}padding-top:\s*2px;/,
   'folder children must keep the same row rhythm and only wrap when the wide grid no longer fits',
 );
 assert.match(
@@ -1941,8 +1960,8 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.item-left\s*\{[\s\S]{0,100}grid-template-columns:\s*34px minmax\(0, 1fr\)[\s\S]*@container \(max-width: 560px\)\s*\{[\s\S]{0,100}\.item-left\s*\{[\s\S]{0,100}grid-template-columns:\s*34px minmax\(0, 1fr\)/,
-  'Regular Mode disclosure hitboxes must end before the dynamic identity lane at every width',
+  /@container \(max-width: 700px\)\s*\{\s*\.playlist-item > \.item-content \.item-left\s*\{[^}]*grid-template-columns:\s*var\(--cue-leading-width, 34px\) minmax\(0, 1fr\)[^}]*'expand identity identity identity identity state video'\s*'\. \. shuffle actions transport duration arm'/,
+  'the compact cue layout must retain a disclosure lane and give the title its own line above transport',
 );
 assert.match(
   playlistItem,
@@ -1984,10 +2003,16 @@ assert.doesNotMatch(
   /importDownloadedFile|new Audio\(|DEFAULT_AUDIO_ITEM|addItem\(/,
   'YouTube imports must not bypass the shared metadata, waveform, color, or save path',
 );
-for (const mode of ['source', 'mp3', 'video']) {
-  assert.ok(youtubeImport.includes('<option value="' + mode + '">'),
-    'YouTube imports must retain the explicit ' + mode + ' format choice');
-}
+assert.match(
+  youtubeImport,
+  /const outputFormatOptions = computed\(\(\) => \(\['source', 'mp3', 'video'\] as const\)\.map\(value => \(\{\s*value, label: formatLabels\.value\[value\]/,
+  'YouTube imports must retain all three labelled format choices',
+);
+assert.match(
+  youtubeImport,
+  /<InlineChoicePicker[^>]*:value="outputMode"[^>]*:options="outputFormatOptions"[^>]*@change="outputMode = \$event"/,
+  'YouTube imports must bind their docked format selector to the download mode',
+);
 assert.match(
   youtubeImport,
   /v-if="video\.isLive"[\s\S]*:disabled="video\.isLive \|\| isDownloading\(video\.id\)"[\s\S]*v-if="download\.savedPath"[\s\S]*openDownloadFolder/,
@@ -2259,7 +2284,7 @@ assert.doesNotMatch(
   /onTriggerItem|onStopItem|onTriggerCartSlot|onStopAllCues|onApiUpdateItem|onApiUpdateCartItem|sendApiResponse/,
   'workspace startup must not call retired preload APIs',
 );
-assert.match(appVue, /downloadArchiveToFile\(result\.downloadToken, opts\.downloadTo\)/,
+assert.match(appVue, /downloadArchiveToFile\(result\.downloadToken, opts\.downloadTo\.folder,/,
   'remote archive exports must bypass renderer memory');
 assert.match(
   appVue,
@@ -2274,13 +2299,15 @@ assert.match(
 );
 assert.match(
   appVue,
-  /runImport\(source: \{ path: string; client: boolean \}[\s\S]*importProjectArchiveFromClientPath\(source\.path/,
-  'remote archive imports must preserve a file path until chunked upload',
+  /runImport\(source: ArchiveSource[\s\S]*importProjectArchiveUpload\(source\.file[\s\S]*importProjectArchiveFromClientPath\(source\.path/,
+  'remote archives from the dock and from file associations must both use chunked upload',
 );
 assert.match(appVue, /defer to="#workspace-import-host"[\s\S]*class="archive-panel"[\s\S]*<progress[\s\S]*<ServerFilePickerModal [^>]*docked/,
   'archive destination, progress and results must share the lower workspace');
 assert.doesNotMatch(appVue + workspace, /<(?:LocationChoiceModal|ProgressModal|ProjectSelectionModal)/,
   'archive operations must not mount the old blocking dialogs');
+assert.doesNotMatch(appVue + electron, /show(Open|Save)ArchiveDialog|show-(open|save)-archive-dialog/,
+  'remote archive actions must stay in the dock');
 assert.match(appVue, /function showArchiveFailure[\s\S]*phase: 'failed', message[\s\S]*showHeaderWarning\(message, 'urgent'\)/,
   'archive failures must appear in the dock and header');
 assert.equal((appVue.match(/openImportedArchive\(/g) ?? []).length, 2,
@@ -2382,7 +2409,7 @@ assert.match(
 );
 assert.match(
   audioImportModal,
-  /copyFiles[\s\S]*linkFiles[\s\S]*retryFailed[\s\S]*result\.results[\s\S]*const fileMode[\s\S]*const duplicatePolicy[\s\S]*function retryFailed/,
+  /:value="fileMode" :options="fileModeOptions"[\s\S]*:value="duplicatePolicy" :options="duplicatePolicyOptions"[\s\S]*retryFailed[\s\S]*result\.results[\s\S]*const fileMode[\s\S]*const duplicatePolicy[\s\S]*copyFiles[\s\S]*linkFiles[\s\S]*function retryFailed/,
   'local import must preserve source controls while exposing Copy, Link, duplicates, and per-file results',
 );
 assert.match(
@@ -2397,8 +2424,8 @@ assert.match(
 );
 assert.match(
   propertiesPanel,
-  /buildWaveformFromChannels[\s\S]*handleReplaceMedia[\s\S]*const snapshot = JSON\.parse\(JSON\.stringify\(item\)\)[\s\S]*Object\.assign\(item, snapshot\)/,
-  'media replacement must decode first and restore the original cue when replacement fails',
+  /<ServerFilePickerModal [^>]*\bdocked\b[^>]*location-context="replace-media"\s+@pick="handleReplaceMedia"[\s\S]*const handleReplaceMedia = [\s\S]*buildWaveformFromChannels[\s\S]*const snapshot = [\s\S]*await saveProject\(\)[\s\S]*Object\.assign\(item, snapshot\)/,
+  'media replacement must stay docked, decode first, and restore the original cue if saving fails',
 );
 assert.match(
   controlServer,
@@ -2463,10 +2490,18 @@ assert.match(
   'keyboard and MIDI configuration must follow the configured One Shot cells',
 );
 assert.match(
-  quitConfirmModal,
-  /\.qm-modal\s*\{[\s\S]{0,220}border-radius:\s*var\(--dialog-radius\);[\s\S]{0,100}width:\s*min\(var\(--modal-width, 560px\), 92vw\);[\s\S]{0,80}padding:\s*var\(--dialog-padding\);/,
-  'quit confirmation must use the main modal shell geometry',
+  appVue + mainWorkspace,
+  /<MainWorkspace v-else :decision-open="projectPanelOpen"[\s\S]*?to="#workspace-project-decision"[\s\S]*?<ProjectDecisionPanel[\s\S]*?class="lower-workspace-panel"[\s\S]*?id="workspace-project-decision"/,
+  'Quit and unsaved changes must use the lower workspace panel',
 );
+assert.doesNotMatch(projectDecisionPanel, /aria-modal|position:\s*fixed|keydown|Teleport/,
+  'project decisions must leave pointer and keyboard transport available');
+assert.match(appVue, /to="#workspace-project-decision"[\s\S]*?<ProjectDecisionPanel v-else-if="projectDecision"[\s\S]*?class="project-file-panel"[\s\S]*?role="status"[\s\S]*?<ServerFilePickerModal v-else-if="projectPicker" docked[\s\S]*?class="new-show-form" @submit.prevent="createNewShow"[\s\S]*?<\/Teleport>/,
+  'New Show, Open Project, their progress and the save decision must share the lower panel');
+assert.match(appVue, /to="#workspace-project-decision"[\s\S]*?data-recovery-panel[\s\S]*?<ConnectionLostModal v-if="reconnectPanelOpen" docked[\s\S]*?<SessionRecoveryModal v-else[\s\S]*?<\/Teleport>/,
+  'reconnect and session recovery must share the lower panel in the operator window');
+assert.doesNotMatch(appVue, /<LoadingOverlay\b/,
+  'show loads must leave the playlist and transport visible');
 assert.match(
   midiController,
   /`trigger-slot-\$\{number\}`[\s\S]*length:\s*CART_SLOT_COUNT_LIMITS\.max/,
@@ -2606,18 +2641,12 @@ assert.match(
   'dialogs must share one backdrop, surface, corner, and elevation system',
 );
 for (const file of [
-  'AboutModal.vue',
   'AudioImportModal.vue',
   'CartHotkeyConfig.vue',
   'ConnectionLostModal.vue',
-  'DeleteSelectionModal.vue',
-  'LoadingOverlay.vue',
-  'QuitConfirmModal.vue',
   'ServerFilePickerModal.vue',
   'ServerSettingsModal.vue',
-  'SessionRecoveryModal.vue',
-  'UnsavedChangesModal.vue',
-].map(file => `client/app/components/${file}`).concat('client/app/app.vue')) {
+].map(file => `client/app/components/${file}`)) {
   const dialog = read(file);
   for (const token of ['backdrop', 'surface', 'radius', 'shadow']) {
     assert.match(dialog, new RegExp(`var\\(--dialog-${token}\\)`),

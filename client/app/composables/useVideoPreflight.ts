@@ -23,14 +23,16 @@ export function useVideoPreflight(visible: Readonly<Ref<boolean>>) {
   let run: AbortController | null = null;
 
   const candidates = computed(() => {
-    const videos = new Map<string, { item: AudioItem; inPoint: number; source: string }>();
+    const videos = new Map<string, { item: AudioItem; inPoint: number; outPoint: number | null; source: string }>();
     for (const item of [...getAllItemsFlat(), ...cartOnlyItems.value.values()]) {
       if (item.type !== 'audio' || !(item as AudioItem).hasVideo || videos.has(item.uuid)) continue;
       const audio = item as AudioItem;
       const inPoint = Number.isFinite(audio.inPoint) ? Math.max(0, audio.inPoint) : 0;
+      const outPoint = typeof audio.outPoint === 'number' && Number.isFinite(audio.outPoint)
+        && audio.outPoint > inPoint ? audio.outPoint : null;
       videos.set(item.uuid, {
-        item: audio, inPoint,
-        source: JSON.stringify([audio.mediaPath, audio.mediaServerPath, inPoint]),
+        item: audio, inPoint, outPoint,
+        source: JSON.stringify([audio.mediaPath, audio.mediaServerPath, inPoint, outPoint]),
       });
     }
     return videos;
@@ -131,11 +133,10 @@ export function useVideoPreflight(visible: Readonly<Ref<boolean>>) {
     phase.value = 'running';
     try {
       const progress = await server.fetchProjectProgress(AbortSignal.any([signal, AbortSignal.timeout(5000)]));
-      // ponytail: sample the In point only. Rehearse the full cue for errors later in the file.
-      for (const { item, inPoint } of queue) {
+      for (const { item, inPoint, outPoint } of queue) {
         if (signal.aborted) return;
         const result = await api.checkFrame({
-          id, serverUrl, accessToken, sessionId, uuid: item.uuid, inPoint,
+          id, serverUrl, accessToken, sessionId, uuid: item.uuid, inPoint, outPoint,
           fileRevision: progress.fileRevisions?.[item.uuid] ?? null,
         });
         if (signal.aborted) return;

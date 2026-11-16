@@ -737,11 +737,6 @@ void AudioEngine::ma_data_callback(ma_device* dev,
         device->underrun_count.fetch_add(1, std::memory_order_relaxed);
         device->underrun_frames.fetch_add(
             remaining, std::memory_order_relaxed);
-        if (!device->reset_requested.exchange(
-                true, std::memory_order_acq_rel)) {
-            device->hard_resync_count.fetch_add(
-                1, std::memory_order_relaxed);
-        }
     }
 
     // Protect the physical sum after clock resampling. Moving the existing
@@ -792,9 +787,8 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
     dev->ring         = std::make_unique<ma_pcm_rb>();
     dev->callback_state = callback_state_;
 
-    // Keep enough headroom for the render thread without queueing stopped-cue
-    // silence hundreds of milliseconds ahead of a transport command.
-    const ma_uint32 ring_frames = static_cast<ma_uint32>(cfg_.render_block * 4);
+    // Secondary outputs need headroom for bursts from independently scheduled callbacks.
+    const ma_uint32 ring_frames = static_cast<ma_uint32>(cfg_.render_block * kDeviceRingBlocks);
     if (ma_pcm_rb_init(ma_format_f32, output_channels, ring_frames,
                        nullptr, nullptr, dev->ring.get()) != MA_SUCCESS) {
         Logger::error("Failed to allocate ring buffer for device '{}'", dev->display_name);
@@ -1944,11 +1938,10 @@ bool AudioEngine::reset_device_if_requested(Device& device) noexcept {
 // bounded amount to hold their own ring occupancy against that timeline.
 //
 // Invariants:
-//   * The existing healthy master remains master until it closes/fails.
+//   * The existing master stays in charge while it can keep other outputs fed.
 //   * A failed master cannot stall another healthy device; election happens
 //     here without waiting for control-thread intervention.
-//   * Production stops at the master's target occupancy, preserving one block
-//     of ring headroom instead of filling the ring and adding latency.
+//   * Production stops at the master's target occupancy for low transport latency.
 //   * When no healthy device exists we use a coarse timer so stopped-device
 //     state and later native recovery are still observed.
 void AudioEngine::render_loop() {
@@ -2027,8 +2020,9 @@ void AudioEngine::render_loop() {
                     }
                 }
 
-                // Preserve the current healthy master. A reconnected former
-                // master stays secondary until the active master goes away.
+                const auto now = CallbackLivenessMonitor::Clock::now();
+                const auto callback_grace = block_duration * 2;
+                std::shared_ptr<Device> first_healthy, draining_secondary;
                 for (const auto& dev : *device_snap) {
                     const bool healthy =
                         dev->ring &&
@@ -2036,23 +2030,30 @@ void AudioEngine::render_loop() {
                         dev->runtime_state.load(
                             std::memory_order_acquire) ==
                             DeviceRuntimeState::Running;
-                    if (healthy &&
-                        dev->clock_master.load(std::memory_order_acquire)) {
+                    if (!healthy) continue;
+                    if (!first_healthy) first_healthy = dev;
+                    const auto entries = dev->callback_entries.value();
+                    if (entries != dev->render_observed_entries) {
+                        dev->render_observed_entries = entries;
+                        dev->render_callback_progress = now;
+                    }
+                    if (dev->clock_master.load(std::memory_order_acquire)) {
                         clock_master = dev;
-                        break;
+                    } else if (!draining_secondary &&
+                               now - dev->render_callback_progress < callback_grace &&
+                               !dev->reset_requested.load(std::memory_order_acquire) &&
+                               dev->ring_occupancy_frames.load(std::memory_order_relaxed) <=
+                                   cfg_.render_block * 2) {
+                        draining_secondary = dev;
                     }
                 }
+                // The watchdog diagnoses a lost device. A live secondary
+                // needs a new clock before it runs out of buffered audio.
                 if (!clock_master) {
-                    for (const auto& dev : *device_snap) {
-                        if (dev->ring &&
-                            !dev->closing.load(std::memory_order_acquire) &&
-                            dev->runtime_state.load(
-                                std::memory_order_acquire) ==
-                                DeviceRuntimeState::Running) {
-                            clock_master = dev;
-                            break;
-                        }
-                    }
+                    clock_master = first_healthy;
+                } else if (draining_secondary &&
+                           now - clock_master->render_callback_progress >= callback_grace) {
+                    clock_master = draining_secondary;
                 }
 
                 for (const auto& dev : *device_snap) {
@@ -2100,7 +2101,7 @@ void AudioEngine::render_loop() {
                     reset_device_if_requested(*clock_master);
                 if (master_ready) {
                     // Master latency is independent of secondary clock headroom.
-                    const auto target = cfg_.render_block * 3;
+                    const auto target = cfg_.render_block * kMasterQueueBlocks;
                     can_render =
                         ma_pcm_rb_available_read(
                             clock_master->ring.get()) +
@@ -2415,11 +2416,14 @@ void AudioEngine::render_one_block(const Topology& topo) {
             continue;
         }
 
-        if (dev->reset_applied &&
-            occupancy >= cfg_.render_block * 3) {
-            dev->reset_applied = false;
-            dev->reset_requested.store(
-                false, std::memory_order_release);
+        if (dev->reset_applied) {
+            const auto target = dev->clock_master.load(std::memory_order_acquire)
+                ? cfg_.render_block * kMasterQueueBlocks
+                : dev->clock_controller.target_frames();
+            if (occupancy >= target) {
+                dev->reset_applied = false;
+                dev->reset_requested.store(false, std::memory_order_release);
+            }
         }
     }
 }

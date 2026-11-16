@@ -35,6 +35,19 @@ function elementSource(component: string, tag: string, className?: string): stri
   return element.loc.source;
 }
 
+test('Inline choices show a missing saved backup as selected but disabled', () => {
+  const code = compile(elementSource('InlineChoicePicker', 'div', 'inline-choice-options'), { mode: 'function' }).code;
+  const render = Function('Vue', `${code}; return render;`)(Vue);
+  const region = render({
+    label: 'Backup music group', value: 'missing', disabled: false, choose() {},
+    options: [{ value: '', label: 'None' }, { value: 'missing', label: 'Missing group', disabled: true }],
+  }, []);
+  const [none, missing] = region.children[0].children;
+  assert.equal(none.props.disabled, undefined);
+  assert.equal(missing.props.disabled, true);
+  assert.equal(missing.props['aria-pressed'], true);
+});
+
 test('Stop All remains clickable when no project-backed cue is active', () => {
   const code = compile(elementSource('PlaybackControls', 'button', 'panic-btn'), { mode: 'function' }).code;
   const render = Function('Vue', `${code}; return render;`)(Vue);
@@ -51,12 +64,28 @@ test('Stop All remains clickable when no project-backed cue is active', () => {
   assert.equal(panicCalls, 1);
 });
 
+test('Detached QuickPlay Settings expose the normal Stop All action', () => {
+  const code = compile(elementSource('OneShotPanel', 'Btn', 'detached-quickplay-stop'), { mode: 'function' }).code;
+  const render = Function('Vue', `${code}; return render;`)({ ...Vue, resolveComponent: () => 'button' });
+  const calls: unknown[][] = [];
+  const context = {
+    quickPlayEditor: { remove: false },
+    t: (key: string) => key,
+    server: { stopAll: (...args: unknown[]) => calls.push(args) },
+  };
+  const button = render(context, []);
+  assert.equal(button.props.type, 'button');
+  assert.equal(button.props.text, 'controls.stopAll');
+  button.props.onClick();
+  assert.deepEqual(calls, [[]]);
+  assert.deepEqual(context.quickPlayEditor, { remove: false });
+});
+
 test('Stop All sends the normal command from remaining blocking dialogs', () => {
   const dialogs = [
     ['AudioImportModal', 'header'],
     ['ServerFilePickerModal', 'header', 'toolbar'],
     ['ConnectionLostModal', 'div', 'clm-dialog'],
-    ['LoadingOverlay', 'div', 'loading-panel'],
   ];
   for (const [component, tag, className] of dialogs) {
     const code = compile(elementSource(component, tag, className), { mode: 'function' }).code;
@@ -69,6 +98,7 @@ test('Stop All sends the normal command from remaining blocking dialogs', () => 
       $slots: {},
       t: (key: string) => key,
       docked: false, busy: true, visible: true, background: false, percentage: 50, attempts: 0, actionError: '', verifying: false,
+      showStopAll: true,
       titleId: 'import-test', title: 'Working', message: 'Working', isDark: true, subtitle: '',
       pickingLocal: true,
       historyBack: [], canGoUp: false, pathDraft: '', goBack() {}, goUp() {}, navigate() {}, cancelLabel: 'Cancel',
@@ -120,7 +150,7 @@ test('Stop All remains available inside the recovery prompt while a recovery cho
   const render = Function('Vue', `${code}; return render;`)({ ...Vue, resolveComponent: (name: string) => name });
   const stopCalls: unknown[][] = [];
   const server = { connected: true, stopAll: (...args: unknown[]) => stopCalls.push(args) };
-  const context = { t: (key: string) => key, projectChanged: true, recovering: true, server,
+  const context = { t: (key: string) => key, projectChanged: true, recovering: true, server, showStopAll: true,
     currentProject: { name: 'Local show' }, serverProjectName: 'Server show', actionFailed: false };
   const findStop = () => render(context, []).children.find((child: Vue.VNode) =>
     child.props?.text === 'controls.stopAll');
@@ -131,9 +161,11 @@ test('Stop All remains available inside the recovery prompt while a recovery cho
   assert.deepEqual(stopCalls, [[]], 'recovery uses the normal server fade');
   server.connected = false;
   assert.ok(findStop(), 'the HTTP stop must remain available during a second disconnect');
+  context.showStopAll = false;
+  assert.equal(findStop(), undefined, 'the workspace supplies the button when the panel is docked');
 });
 
-test('the configured Stop All shortcut works during recovery and project loading', () => {
+test('Stop All takes priority in editors, recovery and project loading', () => {
   const source = readFileSync(new URL('../app/composables/useConnectionGuard.ts', import.meta.url), 'utf8');
   const start = source.indexOf('  const trapKeydown =');
   const end = source.indexOf('  window.addEventListener', start);
@@ -143,15 +175,30 @@ test('the configured Stop All shortcut works during recovery and project loading
   }).outputText;
   const calls: unknown[][] = [];
   const sessionLost = { value: true };
-  const projectLoading = { value: false };
+  const projectLoad = { value: null as 'open' | 'create' | null };
+  const projectPanelOpen = { value: false };
+  const filePicker = { value: null as 'cue' | 'standby' | 'replace-media' | null };
+  const quickPlayImportSlot = { value: null as number | null };
+  const importPanel = { value: null as string | null };
+  const showProjectSettings = { value: false };
+  const settingsTab = { value: 'audio' };
+  let choiceOpen = false;
+  let loadingStatusVisible = false;
+  const document = { querySelector: (selector: string) =>
+    (choiceOpen && selector.includes('.inline-choice-picker[open]')) ||
+    (loadingStatusVisible && selector.includes('.workspace-status .audio-load-progress')) };
   const server = {
     connected: true, connectionLost: false, showVerification: false,
-    get cueStartsBlocked() { return this.connectionLost || this.showVerification || sessionLost.value; },
+    get cueStartsBlocked() { return this.connectionLost || this.showVerification || sessionLost.value || projectLoad.value === 'open'; },
     stopAll: (...args: unknown[]) => calls.push(args),
   };
   const currentProject = { value: { playbackKeys: {} as Record<string, unknown> } };
-  const trap = Function('server', 'projectLoading', 'currentProject', 'DEFAULT_PLAYBACK_KEYS', 'bindingsMatch', 'eventToBinding',
-    `${code}\nreturn trapKeydown;`)(server, projectLoading, currentProject, DEFAULT_PLAYBACK_KEYS, bindingsMatch, eventToBinding);
+  const trap = Function('server', 'projectLoad', 'projectPanelOpen', 'filePicker', 'quickPlayImportSlot', 'importPanel',
+    'showProjectSettings', 'settingsTab', 'document',
+    'currentProject', 'DEFAULT_PLAYBACK_KEYS', 'bindingsMatch', 'eventToBinding', `${code}\nreturn trapKeydown;`)(
+    server, projectLoad, projectPanelOpen, filePicker, quickPlayImportSlot, importPanel,
+    showProjectSettings, settingsTab, document, currentProject,
+    DEFAULT_PLAYBACK_KEYS, bindingsMatch, eventToBinding);
   const press = (key: string, opts = {}) => {
     let swallowed = false;
     trap({ key, target: { closest: () => null }, ctrlKey: false, metaKey: false, shiftKey: false,
@@ -166,7 +213,7 @@ test('the configured Stop All shortcut works during recovery and project loading
   assert.deepEqual(calls, [[]]);
   currentProject.value.playbackKeys['stop-all'] = { key: 'k', ctrlKey: true, shiftKey: false, altKey: false };
   press('Escape');
-  assert.equal(press('K', { metaKey: true, target: { closest: (selector: string) => selector.includes('.srm-overlay') } }), true);
+  assert.equal(press('K', { metaKey: true, target: { closest: (selector: string) => selector.includes('[data-recovery-panel]') } }), true);
   currentProject.value.playbackKeys['stop-all'] = null;
   press('Escape');
   assert.deepEqual(calls, [[], []]);
@@ -183,13 +230,112 @@ test('the configured Stop All shortcut works during recovery and project loading
   assert.equal(press('Escape'), true);
   assert.deepEqual(calls, [[], [], [], []]);
   server.showVerification = false;
-  projectLoading.value = true;
+  projectLoad.value = 'create';
   currentProject.value.playbackKeys['stop-all'] = { key: 'F9', ctrlKey: false, shiftKey: false, altKey: false };
   assert.equal(press('F9'), true, 'loading captures Stop All without the One Shots panel');
-  assert.equal(press(' '), false, 'loading leaves other shortcuts to their usual handlers');
-  projectLoading.value = false;
+  assert.equal(press(' '), false, 'New Show leaves other shortcuts to their usual handlers');
+  projectLoad.value = null;
   assert.equal(press('F9'), false, 'the trap defers to normal routing after loading');
   assert.deepEqual(calls, [[], [], [], [], []]);
+
+  const editor = { closest: (selector: string) => selector.startsWith('input, textarea') ? {} : null };
+  currentProject.value.playbackKeys = {};
+  assert.equal(press('Escape', { target: editor }), true, 'Stop All must run before the active editor handles Escape');
+  press('Escape', { target: editor, repeat: true });
+  assert.equal(press('Escape', { target: editor, isComposing: true }), false, 'allow IME cancellation');
+  assert.equal(press(' ', { target: editor }), false, 'space must reach the editor');
+  assert.equal(press('Tab', { target: editor }), false);
+  currentProject.value.playbackKeys['stop-all'] = { key: 'k', ctrlKey: false, shiftKey: false, altKey: false };
+  assert.equal(press('k', { target: editor }), false, 'typing cannot fire a bare-letter binding');
+  currentProject.value.playbackKeys['stop-all'] = { key: 'F9', ctrlKey: false, shiftKey: false, altKey: false };
+  assert.equal(press('F9', { target: editor }), true);
+  sessionLost.value = true;
+  assert.equal(press('F9', { target: editor }), true, 'Stop All also reaches the engine from a focused editor during recovery');
+  assert.deepEqual(calls.slice(5), [[], [], []]);
+
+  sessionLost.value = false;
+  projectPanelOpen.value = true;
+  assert.equal(press('Escape'), true, 'Escape stops even with a remapped Stop All in the project panel');
+  assert.equal(press('Escape', { repeat: true }), true);
+  assert.equal(press('Escape', { ctrlKey: true }), false);
+  assert.equal(press(' '), false, 'the project panel must leave GO available');
+  assert.deepEqual(calls.slice(8), [[]]);
+
+  sessionLost.value = true;
+  const recoveryButton = { closest: (selector: string) => selector.includes('[data-recovery-panel]') ? {} : null };
+  const mainStopButton = { closest: (selector: string) => selector === '.panic-btn' ? {} : null };
+  assert.equal(press('Escape', { target: recoveryButton }), true, 'Escape stops even with a remap during docked recovery');
+  assert.equal(press('Enter', { target: recoveryButton }), false, 'keyboard recovery choices are reachable');
+  assert.equal(press(' ', { target: mainStopButton }), false, 'focused Stop All is reachable by keyboard');
+  assert.equal(press(' '), true, 'Space elsewhere still cannot start a cue');
+  assert.deepEqual(calls.slice(9), [[]]);
+
+  sessionLost.value = false;
+  projectPanelOpen.value = false;
+  for (const picker of ['cue', 'standby', 'replace-media'] as const) {
+    filePicker.value = picker;
+    assert.equal(press('Escape', { target: editor }), true, `${picker} file browsing gives Escape to Stop All`);
+    assert.equal(filePicker.value, picker);
+    assert.equal(press(' '), false, 'GO still reaches the workspace');
+    assert.equal(press('Enter', { target: editor }), false, 'Enter still reaches the path field');
+  }
+  filePicker.value = null;
+  assert.equal(press('Escape', { target: editor }), false, 'the picker fallback ends on close');
+  assert.deepEqual(calls.slice(10), [[], [], []]);
+
+  quickPlayImportSlot.value = 0;
+  assert.equal(press('Escape', { target: editor }), true, 'QuickPlay slot 1 also routes Escape to Stop All');
+  assert.equal(press('Escape', { target: editor, repeat: true }), true);
+  assert.equal(quickPlayImportSlot.value, 0, 'Stop All leaves QuickPlay import open');
+  assert.equal(press(' '), false, 'QuickPlay import leaves GO available');
+  assert.equal(press('Enter', { target: editor }), false, 'Enter still reaches the folder field');
+  quickPlayImportSlot.value = null;
+  assert.equal(press('Escape', { target: editor }), false, 'closing the import restores the normal mapping');
+  assert.deepEqual(calls.slice(13), [[]]);
+
+  for (const panel of ['media', 'spotify', 'archive-import', 'archive-export']) {
+    importPanel.value = panel;
+    assert.equal(press('Escape', { target: editor }), true, `${panel} gives Escape to Stop All`);
+    assert.equal(press(' '), false, 'import leaves GO available');
+    assert.equal(press('Enter', { target: editor }), false, 'the path field keeps Enter');
+  }
+  assert.deepEqual(calls.slice(14), [[], [], [], []]);
+
+  importPanel.value = null;
+  settingsTab.value = 'video';
+  assert.equal(press('Escape'), false, 'a remembered Video Output tab does not claim Escape when closed');
+  showProjectSettings.value = true;
+  assert.equal(press('Escape'), true, 'Video Output routes Escape to Stop All with a remapped shortcut');
+  assert.equal(press('Escape', { repeat: true }), true);
+  assert.equal(press(' '), false, 'the image drop target leaves GO available');
+  settingsTab.value = 'ui';
+  assert.equal(press('Escape', { target: editor }), true, 'Time Left color editing reserves Escape for Stop All');
+  assert.equal(press(' '), false, 'the settings continue to leave GO available');
+  assert.equal(press('Escape', { target: editor, isComposing: true }), false);
+  assert.deepEqual(calls.slice(18), [[], []]);
+
+  showProjectSettings.value = false;
+  choiceOpen = true;
+  assert.equal(press('Escape'), true, 'Escape stops with a docked choice open even when focus is outside it');
+  assert.equal(press('Escape', { repeat: true }), true);
+  assert.equal(press('Escape', { shiftKey: true }), false);
+  assert.equal(press(' '), false, 'the choice leaves GO available');
+  choiceOpen = false;
+  assert.equal(press('Escape'), false, 'closing the choice restores the normal mapping');
+  assert.deepEqual(calls.slice(20), [[]]);
+
+  loadingStatusVisible = true;
+  assert.equal(press('Escape'), true, 'the audio status gives Escape to Stop All');
+  assert.equal(press(' '), false, 'the audio status leaves GO available');
+  loadingStatusVisible = false;
+  importPanel.value = 'repair';
+  assert.equal(press('Escape'), true, 'the repair panel gives Escape to Stop All');
+  assert.equal(press('Escape', { repeat: true }), true);
+  assert.equal(press(' '), false, 'the repair panel leaves GO available');
+  assert.equal(press('Enter'), false, 'the repair action keeps Enter');
+  importPanel.value = null;
+  assert.equal(press('Escape'), false, 'the fallback ends when neither surface is open');
+  assert.deepEqual(calls.slice(21), [[], []]);
 });
 
 function loadHandleKeydown(dependencies: Record<string, unknown>) {
@@ -290,6 +436,26 @@ test('workspace shortcuts keep Stop All, repeat suppression, and text focus beha
   press('1');
   press('F9');
   assert.deepEqual(actions, ['play-next', 'one-shot', 'stop-all', 'stop-all', 'play-next', 'one-shot', 'stop-all']);
+});
+
+test('assigned show shortcuts keep priority after Tab focuses a workspace button', () => {
+  const actions: string[] = [];
+  const assigned: Record<string, string> = { Enter: 'set-up-next', ' ': 'play-next', Escape: 'stop-all' };
+  const handleKeydown = loadHandleKeydown({
+    currentProject: { value: {} }, projectHydrationStatus: { value: 'ready' },
+    dispatchPlaybackAction: (action: string) => actions.push(action),
+    findPlaybackActionForEvent: ({ key }: { key: string }) => assigned[key] ?? null,
+    findSlotForEvent: () => -1,
+    isForwardedFromVideoOutput: () => false,
+    isTextInputFocused: () => false,
+  });
+  for (const key of ['Enter', ' ', 'Escape']) {
+    let prevented = false;
+    handleKeydown({ key, target: { matches: () => true },
+      preventDefault() { prevented = true; }, stopPropagation() {} });
+    assert.equal(prevented, true);
+  }
+  assert.deepEqual(actions, ['set-up-next', 'play-next', 'stop-all']);
 });
 
 test('Shift+Q can close focused QuickPlays without relaxing the hydration guard for GO', () => {

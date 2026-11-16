@@ -9,9 +9,7 @@
 // fetch — and the operator finds out at the worst possible moment, mid-show.
 // So while the connection is lost we:
 //
-//   * freeze input      — a capture-phase keydown trap plus the modal's own
-//                         full-screen overlay for pointer events, so no UI
-//                         state can drift away from the server's copy
+//   * freeze edits and cue starts until the current server show is verified
 //   * say so, loudly    — ConnectionLostModal + the animated header pill
 //   * keep retrying     — useLiveplayServer's backoff loop never stops
 //
@@ -114,25 +112,34 @@ export const useConnectionGuard = () => {
   }
   _wired = true;
   const currentProject = useState<Project | null>('currentProject', () => null);
-  const projectLoading = useState<boolean>('useProject.isLoading', () => false);
+  const projectLoad = useState<'create' | 'open' | null>('useProject.projectLoad', () => null);
+  const projectPanelOpen = useState('projectPanelOpen', () => false);
+  const filePicker = useState<'cue' | 'standby' | 'replace-media' | null>('workspaceFilePicker', () => null);
+  const quickPlayImportSlot = useState<number | null>('quickPlayImportSlot', () => null);
+  const importPanel = useState<string | null>('workspaceImportPanel', () => null);
+  const showProjectSettings = useState('showProjectSettings', () => false);
+  const settingsTab = useState('projectSettingsTab', () => 'audio');
 
-  // ---- Input freeze --------------------------------------------------
-  // Capture phase on `window` runs before every other listener in the app
-  // (MainWorkspace, useCartHotkeys and the playback keys all listen in the
-  // bubble phase), so one trap here covers all of them without each handler
-  // needing its own check. Keys inside the dialogs themselves are exempt, so
-  // the operator can always drive the recovery UI.
+  // Capture Stop All before an editor can consume it, and guard cue starts during recovery.
   const trapKeydown = (e: KeyboardEvent) => {
     const blocked = server.cueStartsBlocked;
-    if (!blocked && !projectLoading.value) return;
-    // Tab still moves focus, so the dialog is reachable from anywhere.
+    // Tab still moves focus, so recovery actions and Stop All are reachable.
     if (e.key === 'Tab') return;
     const el = e.target as HTMLElement | null;
-    if (!e.isComposing &&
-        !el?.closest?.('input, textarea, [contenteditable]:not([contenteditable="false"])')) {
+    const editing = el?.closest?.('input, textarea, [contenteditable]:not([contenteditable="false"])');
+    const panelEscape = e.key === 'Escape' && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey &&
+      (projectPanelOpen.value || filePicker.value !== null ||
+      quickPlayImportSlot.value !== null || importPanel.value === 'media' || importPanel.value === 'spotify' ||
+      importPanel.value === 'archive-import' || importPanel.value === 'archive-export' || importPanel.value === 'repair' ||
+      (showProjectSettings.value && ['video', 'ui'].includes(settingsTab.value)) ||
+      document.querySelector('[data-recovery-panel], .inline-choice-picker[open], .normalize-menu[open], .midi-conflict, .workspace-status .audio-load-progress'));
+    if (!panelEscape && !blocked && !projectLoad.value && !(currentProject.value && editing)) return;
+    const typing = e.isComposing ||
+        (editing && e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey);
+    if (!typing) {
       const saved = currentProject.value?.playbackKeys?.['stop-all'];
       const binding = saved === undefined ? DEFAULT_PLAYBACK_KEYS['stop-all'] : saved;
-      if (binding && bindingsMatch(binding, eventToBinding(e))) {
+      if (panelEscape || (binding && bindingsMatch(binding, eventToBinding(e)))) {
         e.preventDefault();
         e.stopImmediatePropagation();
         if (!e.repeat) void server.stopAll();
@@ -140,9 +147,8 @@ export const useConnectionGuard = () => {
       }
     }
     if (!blocked) return;
-    // Keys aimed at the recovery dialogs — or at Server Settings, which stacks
-    // above them so the URL can be retargeted — go through untouched.
-    if (el?.closest?.('.clm-overlay, .srm-overlay, .modal-backdrop')) return;
+    if (el?.closest?.('[data-recovery-panel], .clm-overlay, .modal-backdrop')) return;
+    if (el?.closest?.('.panic-btn') && (e.key === 'Enter' || e.key === ' ')) return;
     e.preventDefault();
     e.stopImmediatePropagation();
   };
@@ -156,6 +162,7 @@ export const useConnectionGuard = () => {
   // The callback fires from a WebSocket event, outside any Nuxt context, so
   // useState/useProject would throw there — runWithContext restores it.
   const nuxtApp = useNuxtApp();
+  const isDetachedWindow = import.meta.client && new URLSearchParams(window.location.search).get('cartWindow') === '1';
   server.onReconnected((signal) => {
     void nuxtApp.runWithContext(async () => {
       if (signal.aborted) return;
@@ -171,6 +178,14 @@ export const useConnectionGuard = () => {
         if (typeof header?.hasOpenProject !== 'boolean' ||
             (header.hasOpenProject && !header.server?.projectSessionId)) {
           throw new Error('Server returned an invalid show identity');
+        }
+        if (isDetachedWindow) {
+          // The primary window owns the document. A new or missing engine
+          // session can only be adopted through its verified snapshot.
+          if (server.showVerification !== 'checking') return;
+          sessionLost.value = !header.hasOpenProject || header.server.projectSessionId !== server.projectSessionId;
+          verified = true;
+          return;
         }
         if (!header.hasOpenProject) {
           projectChanged.value = false;
@@ -197,7 +212,9 @@ export const useConnectionGuard = () => {
       } catch (e) {
         if (!signal.aborted) console.warn('[connectionGuard] post-reconnect project probe failed:', e);
       } finally {
-        if (!signal.aborted) server.showVerification = verified ? null : 'failed';
+        if (!signal.aborted && (!isDetachedWindow || server.showVerification === 'checking')) {
+          server.showVerification = verified ? null : 'failed';
+        }
       }
     });
   });

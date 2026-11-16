@@ -5,9 +5,8 @@
     role="complementary"
     :aria-label="t('settings.helpShortcutsTitle')"
   >
-    <span v-if="!compact" class="shortcuts-bar__title">{{ t('settings.helpShortcutsTitle') }}</span>
     <div class="shortcuts-bar__items">
-      <span v-for="action in displayedActions" :key="action.id" class="shortcuts-bar__item">
+      <span v-for="action in transportActions" :key="action.id" class="shortcuts-bar__item" :title="t(action.labelKey)">
         <span class="shortcuts-bar__action">{{ t(action.labelKey) }}</span>
         <kbd class="shortcuts-bar__key">{{ playbackKeyLabel(action.id) || '—' }}</kbd>
       </span>
@@ -37,10 +36,8 @@
 // full editor is available under Settings → Shortcuts and from Customize.
 import { PLAYBACK_ACTIONS, useCartHotkeys } from '~/composables/useCartHotkeys';
 
-const props = defineProps<{ compact: boolean }>();
 const transportActions = PLAYBACK_ACTIONS.filter(({ id }) =>
   ['play-next', 'stop-all', 'pause-resume', 'set-up-next'].includes(id));
-const displayedActions = computed(() => props.compact ? transportActions : PLAYBACK_ACTIONS);
 
 const { t } = useLocalization();
 const { playbackKeyLabel } = useCartHotkeys();
@@ -66,38 +63,32 @@ const openEditor = () => {
   flex: 0 0 auto;
 }
 
-.shortcuts-bar__title {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--color-text-secondary);
-  white-space: nowrap;
-}
-
 .shortcuts-bar__items {
   display: flex;
   align-items: center;
-  gap: 2px var(--spacing-sm);
+  gap: var(--spacing-sm);
   flex: 1 1 auto;
   min-width: 0;
-  flex-wrap: wrap;
+  overflow: hidden;
 }
 
 .shortcuts-bar__item {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   white-space: nowrap;
 }
 
 .shortcuts-bar__action {
   font-size: 11px;
   color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .shortcuts-bar__key {
+  flex: none;
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
@@ -110,6 +101,7 @@ const openEditor = () => {
 }
 
 .shortcuts-bar__edit {
+  flex: none;
   font-size: 11px;
   font-weight: 600;
   color: var(--color-accent);
@@ -125,6 +117,7 @@ const openEditor = () => {
 }
 
 .shortcuts-bar__close {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;

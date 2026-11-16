@@ -2,25 +2,26 @@
   <section class="control-config-panel" :aria-label="t('controls.title')" @keydown.capture="handleKeydown">
       <div class="config-toolbar">
         <div v-if="mode === 'midi'" class="device-row">
-          <label for="shortcut-midi-device" class="device-label">{{ t('controls.midiDevice') }}</label>
-          <select
-            id="shortcut-midi-device"
-            class="device-select"
-            :value="preferredDevice ?? ''"
-            @change="handleDeviceChange"
-          >
-            <option value="">{{ t('controls.allDevices') }}</option>
-            <option v-for="dev in connectedDevices" :key="dev" :value="dev">{{ dev }}</option>
-          </select>
+          <span class="device-label">{{ t('controls.midiDevice') }}</span>
+          <InlineChoicePicker id="shortcut-midi-device" class="device-choice" :label="t('controls.midiDevice')"
+            :value="preferredDevice ?? ''" :options="midiDeviceOptions" @change="setPreferredDevice($event || null)" />
           <span v-if="connectedDevices.length === 0" class="no-device-hint">{{ t('controls.noDevices') }}</span>
         </div>
         <label class="shortcut-bar-toggle">
           <input v-model="showShortcutsBar" type="checkbox" />
           {{ t('settings.showShortcutsBar') }}
         </label>
-        <button class="reset-btn" @click="handleReset">
+        <button class="reset-btn" type="button" @click="handleReset">
           {{ mode === 'keyboard' ? t('controls.resetKeyboard') : t('controls.resetMidi') }}
         </button>
+      </div>
+
+      <div v-if="midiConflictInfo" class="midi-conflict">
+        <p role="status">{{ midiConflictMessage }}</p>
+        <div class="conflict-buttons">
+          <button type="button" class="cancel-btn" @click="midiConflictInfo = null">{{ t('controls.cancel') }}</button>
+          <button type="button" class="confirm-btn" @click="resolveMidiConflict">{{ t('controls.reassign') }}</button>
+        </div>
       </div>
 
       <!-- Keyboard tab -->
@@ -128,16 +129,6 @@
         </template>
       </div>
 
-      <!-- MIDI Conflict dialog -->
-      <div v-if="midiConflictInfo" class="conflict-overlay" @click.self="midiConflictInfo = null">
-        <div class="conflict-dialog">
-          <p>{{ midiConflictMessage }}</p>
-          <div class="conflict-buttons">
-            <button class="cancel-btn" @click="midiConflictInfo = null">{{ t('controls.cancel') }}</button>
-            <button class="confirm-btn" @click="resolveMidiConflict">{{ t('controls.reassign') }}</button>
-          </div>
-        </div>
-      </div>
   </section>
 </template>
 
@@ -200,6 +191,10 @@ const {
   setMasterVolumeMultiplier,
 } = useMidiController();
 
+const midiDeviceOptions = computed(() => [
+  { value: '', label: t('controls.allDevices') },
+  ...connectedDevices.value.map(device => ({ value: device, label: device })),
+]);
 const masterVolumeMultiplier = computed(
   () => midiConfig.value.masterVolumeMultiplier ?? DEFAULT_MASTER_VOLUME_MULTIPLIER,
 );
@@ -403,11 +398,6 @@ const resolveMidiConflict = () => {
 };
 
 const handleMidiClear = (actionId: MidiActionId) => clearMidiBinding(actionId);
-
-const handleDeviceChange = (e: Event) => {
-  const val = (e.target as HTMLSelectElement).value;
-  setPreferredDevice(val || null);
-};
 
 // --- Shared ---
 
@@ -628,16 +618,8 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.device-select {
-  width: clamp(100px, 13vw, 176px);
-  font-size: 12px;
-  min-height: var(--settings-control-height);
-  padding: 2px 8px;
-  border-radius: var(--control-radius);
-  border: 1px solid var(--color-border);
-  background: var(--color-background);
-  color: var(--color-text-primary);
-  cursor: pointer;
+.device-choice {
+  width: clamp(110px, 16vw, 230px);
 }
 
 .no-device-hint {
@@ -697,36 +679,23 @@ onUnmounted(() => {
   outline-offset: 1px;
 }
 
-/* Conflict dialog */
-.conflict-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+.midi-conflict {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
   align-items: center;
-  justify-content: center;
-  border-radius: 8px;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--workspace-gutter);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  font-size: var(--type-metadata-size);
 }
 
-.conflict-dialog {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 20px;
-  max-width: 300px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-}
-
-.conflict-dialog p {
-  font-size: 13px;
-  color: var(--color-text-primary);
-  margin-bottom: 16px;
-}
+.midi-conflict p { margin: 0; }
 
 .conflict-buttons {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  gap: var(--spacing-xs);
 }
 
 .cancel-btn,

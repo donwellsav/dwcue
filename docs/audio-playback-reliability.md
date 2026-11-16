@@ -95,6 +95,16 @@ The original T30 evidence covered both nominal-speed crossings and six clock/pha
 
 Exploratory ±4,000 ppm cases with the same delivery variation can still exhaust headroom. The original real-media secondary-output burst is not uniquely attributed or physically confirmed resolved. Hardware acceptance remains deferred. No controller redesign or widened safety limit is implied by this bounded repair.
 
+### 14 November secondary callback bursts
+
+With a Bluetooth device as master, the built-in secondary reported ten new ring resyncs in two seconds while paused. The active media reported zero decoder read-ahead underruns. A software fixture with equal average rates and four consecutive secondary reads reproduced a PCM dropout and ring reset with the four-block capacity.
+
+The output ring now holds eight blocks. Secondary recovery primes to its occupancy target of 4.5 blocks, rounded up to five whole writes. The master still paces and primes at three blocks. This gives the secondary roughly 11 ms more queue headroom at 48 kHz with a 256-frame block. The same 200 software bursts pass with continuous PCM and zero ring underruns, overruns, or resyncs. The audible incident and output alignment still need physical rehearsal at the actual destinations.
+
+
+### Clock handoff and short underruns
+
+When a secondary is still calling back and has two blocks or less queued, the renderer can switch to its clock after two render-block durations without progress on the old clock. The selected output keeps its queued audio. The one-second watchdog still tracks device liveness. An underrun counts and zero-fills only the missing frames. Overruns and explicit device recovery still reset and re-prime the ring.
 
 ## Ordered storage repair (T38)
 
@@ -150,7 +160,7 @@ The software matrix uses actual backend-read gates and the real render/ring/devi
 
 The shared finite pool was still a show-wide failure path. An I/O-free dispatcher now assigns one worker to each live cue; idle library cues own no thread. Each cue retains at most its own outstanding worker across stop/start, including a stalled call. Actual native backend gates with four and twelve held sources leave healthy PCM running beyond resident buffering. Thread/resource use follows live and still-blocked cues; the OS call itself is not forcibly canceled or reclaimed.
 
-After 250 ms of missing decoded PCM on the render timeline, only the affected cue stops with MA_TIMEOUT through the existing playback-error path. Brief gaps can recover; full PCM resets the budget. Digital silence is valid content. Pause, deliberate repositioning and stop-fades retain their semantics. This threshold is an application policy, not an external standard. Late data cannot resume a failed cue, execute a follow or advance an enclosing group. An explicit retry is required; a failed read still owning its decoder is refused before Program preparation, leaving other GO available. Successful preparation after return clears the old error.
+After 250 ms of missing decoded PCM on the render timeline, only the affected cue stops with MA_TIMEOUT through the existing playback-error path. This includes an on-air seek that has emptied the queue and is still waiting on storage. Brief gaps can recover and full PCM resets the budget. Digital silence is valid content. Pause, authored trim and loop edits, and stop-fades retain their semantics. Late data cannot resume a failed cue, publish a pending seek, or advance an enclosing group. An explicit retry is required. Program preparation refuses a failed cue while its decoder is still busy. Successful preparation after return clears the old error.
 
 Engine removal of an active-worker cue revokes readiness and returns; that worker closes its decoder after its current call finishes, outside engine/dispatch locks. At the T46 checkpoint, explicit unload without an active worker and separate loader/project/new-preparation/metadata/driver operations retained their completion behavior. T47-T50 below supersede the repaired boundaries. The held-read tests establish this worker boundary, not universal application/platform fault isolation.
 

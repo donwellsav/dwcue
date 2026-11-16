@@ -184,16 +184,17 @@ public:
     // Load a canonical project file (.dwcue JSON). Returns true on success. On
     // failure, the previous state is preserved.
     bool load(const std::filesystem::path& path,
-              std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max());
-    // Serialize saves and optional document replacement as one operation. An
-    // empty path resolves to the current project path while holding save_mutex_;
-    // identity/folder metadata commit only after atomic publication succeeds.
+              std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max(),
+              const std::string& expected_session = {}, json* loaded_header = nullptr);
+    // Order all writes, but leave playback and other show operations unlocked
+    // during disk I/O. A stale save cannot change the current show's metadata.
     bool save(const std::filesystem::path& path, const json* replacement = nullptr,
-              std::filesystem::path* published_path = nullptr);
+              std::filesystem::path* published_path = nullptr, const std::string& expected_session = {});
 
     // Replace state from an in-memory JSON document. Same semantics as load.
     bool load_from_json(const json& doc, const std::filesystem::path& project_path = {},
-                        std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max());
+                        std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max(),
+                        const std::string& expected_session = {}, json* loaded_header = nullptr);
 
     // Returns and clears any repair info recorded during the last load /
     // load_from_json call. The repair has already been applied in memory;
@@ -557,6 +558,7 @@ private:
     // Incremented whenever the complete project document is replaced. Async
     // decoder publication must match the generation it snapshotted.
     std::uint64_t              document_generation_ = 0;
+    std::uint64_t              project_open_revision_ = 0; // Save As keeps the same show.
     std::string                project_session_id_;
 
     std::unordered_map<std::string, CueMeta>          cues_;
@@ -580,6 +582,7 @@ private:
 
     // uuid → engine cue id, for audio items currently loaded.
     std::unordered_map<std::string, audio::CueId> item_uuid_to_cue_;
+    std::unordered_map<std::string, float> group_gains_;
     // Runtime-only diagnostic cue id -> uploaded temp file. An empty path
     // identifies a server-local file that this state does not own.
     std::unordered_map<std::string, std::filesystem::path> diagnostic_cues_;
@@ -728,6 +731,7 @@ private:
         // Runtime-only Cue to Continue state. The resolved target is captured
         // when the operator arms the current pass; it is never serialized.
         bool                     continue_armed       = false;
+        bool                     continue_to_play_next = false;
         std::string              continue_target_uuid;
         std::vector<DuckedEntry> ducked;
         double                   duck_release_sec = 1.0;
@@ -897,6 +901,9 @@ private:
     // out point, LTC) to its PlaybackItem during loader publication.
     // Caller must hold mutex_.
     void apply_item_properties_locked(const json& item, const std::shared_ptr<audio::PlaybackItem>& cue);
+    float group_gain_locked(const std::string& uuid) const;
+    void cache_group_gains_locked(const json& items, float parent_gain);
+    void refresh_group_gains_locked();
 
     // Playback commands only inspect the pending set and published engine cue;
     // decoder completion is never awaited by a transport request.
@@ -950,6 +957,7 @@ private:
     // groups), or empty if the playlist has no audio items. Caller must hold
     // mutex_. Used by the server-side "Up Next" arming.
     std::string first_playable_item_uuid_locked(const json* scope = nullptr) const;
+    std::string play_next_playlist_target(const std::string& source_uuid);
     json* playlist_siblings_locked(const std::string& parent_uuid);
 
     // Every playlist item uuid in the client's flat selection order: each node

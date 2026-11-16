@@ -127,6 +127,7 @@ public:
 
     // ---- Mutators --------------------------------------------------------
     void set_gain_db(float db) noexcept;
+    void set_group_gain_linear(float linear) noexcept;
     // Absolute Duck Level ceiling, independent of the saved fader. Set active
     // false to release it; an active level of 1 still caps boosts at 0 dB.
     void set_duck_gain_linear(float linear,
@@ -306,6 +307,7 @@ private:
     std::atomic<bool>           decode_terminal_{false};
     std::atomic<std::uint64_t>  read_ahead_underruns_{0};
     std::uint64_t               starved_frames_ = 0; // render_exclusion_
+    bool                        seek_pending_ = false; // render_exclusion_
 
     // Control operations occasionally replace queue/meter/LTC storage. One
     // lock-free gate gives those operations exclusive access; render_block()
@@ -320,6 +322,8 @@ private:
     TransportState             paused_transport_ = TransportState::Playing; // render_exclusion_
     std::atomic<float>          gain_target_linear_{1.0f};
     std::atomic<float>          gain_current_linear_{1.0f};     // smoothed
+    std::atomic<float>          group_gain_target_{1.0f};
+    std::atomic<float>          group_gain_current_{1.0f};
     std::atomic<float>          duck_current_linear_{1.0f};
     // Control writers serialize briefly; render takes one revision-validated
     // snapshot and never waits or spins. Target and duration are therefore

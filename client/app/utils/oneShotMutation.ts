@@ -183,11 +183,8 @@ const applyFields = (item: AudioItem, fields: OneShotMutableFields): void => {
   if ('duckLevel' in fields) item.duckingBehavior.duckLevel = fields.duckLevel!;
   if ('duckFadeIn' in fields) item.duckingBehavior.duckFadeIn = fields.duckFadeIn!;
   if ('duckFadeOut' in fields) item.duckingBehavior.duckFadeOut = fields.duckFadeOut!;
-  if ('deviceOverride' in fields) {
-    const routedItem = item as AudioItem & { deviceOverride?: string };
-    if (fields.deviceOverride) routedItem.deviceOverride = fields.deviceOverride;
-    else delete routedItem.deviceOverride;
-  }
+  // Keep null in the serialized item patch so the engine clears its old route.
+  if ('deviceOverride' in fields) item.deviceOverride = fields.deviceOverride || null;
   if ('retrigger' in fields) item.oneShot!.retrigger = fields.retrigger!;
   if ('hotkey' in fields) {
     item.oneShot!.hotkey = fields.hotkey ? structuredClone(fields.hotkey) : null;

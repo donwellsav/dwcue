@@ -18,14 +18,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // File dialogs
   selectProjectFolder: () => ipcRenderer.invoke('select-project-folder'),
   selectProjectFile: () => ipcRenderer.invoke('select-project-file'),
-  selectAudioFiles: () => ipcRenderer.invoke('select-audio-files'),
+  scanMediaFolder: (folder) => ipcRenderer.invoke('scan-media-folder', folder),
 
   // File operations
   readFile: (filePath) => ipcRenderer.invoke('read-file', filePath),
   writeFile: (filePath, data) => ipcRenderer.invoke('write-file', filePath, data),
-  // Dialogs + binary helpers used by the dual-dialog import/export flows.
-  showSaveArchiveDialog: (defaultName) => ipcRenderer.invoke('show-save-archive-dialog', defaultName),
-  showOpenArchiveDialog: () => ipcRenderer.invoke('show-open-archive-dialog'),
+  getArchiveDownloadFolder: (file) => {
+    if (file === undefined) return ipcRenderer.invoke('archive-download-folder');
+    const folder = webUtils.getPathForFile(file);
+    return folder ? ipcRenderer.invoke('archive-download-folder', folder) : Promise.resolve('');
+  },
   getBinaryFileInfo: (filePath) => ipcRenderer.invoke('get-binary-file-info', filePath),
   readBinaryFileChunk: (filePath, offset, length) =>
     ipcRenderer.invoke('read-binary-file-chunk', filePath, offset, length),
@@ -35,6 +37,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ensureDirectory: (dirPath) => ipcRenderer.invoke('ensure-directory', dirPath),
   openFolder: (folderPath) => ipcRenderer.invoke('open-folder', folderPath),
   getImportPreferences: () => ipcRenderer.invoke('get-import-preferences'),
+  authorizeDroppedSpotifyFolder: (file) => {
+    const folder = webUtils?.getPathForFile(file);
+    return folder ? ipcRenderer.invoke('authorize-dropped-spotify-folder', folder) : Promise.resolve('');
+  },
   setSpotifyImportDestination: (destination) =>
     ipcRenderer.invoke('set-spotify-import-destination', destination),
   setSpotifyImportRecovery: (recovery) =>

@@ -33,6 +33,34 @@ const playlist = read('components/PlaylistView.vue');
 const projectSource = read('composables/useProject.ts');
 const serverSource = read('composables/useLiveplayServer.ts');
 
+test('cancelling a held folder scan preserves the staged files and their selection', async () => {
+  let finish!: (value: { name: string; files: string[]; skippedFolders: string[] }) => void;
+  const pending = new Promise<Parameters<typeof finish>[0]>(resolve => { finish = resolve; });
+  const localPicked = ref(['/media/first.wav', '/media/second.wav']);
+  const selectedLocal = ref(['/media/second.wav']);
+  const localFolder = ref('Original batch');
+  const importAsGroup = ref(true);
+  const localPicker = ref('folder');
+  const { stageLocalFolder, cancelLocalPicker } = compile(
+    section(read('components/AudioImportModal.vue'), 'function cancelLocalPicker(', 'const uploadExtensions ='),
+    {
+      window: { electronAPI: { scanMediaFolder: () => pending } },
+      folderScan: 0, localPicker, localPicked, selectedLocal, localFolder, importAsGroup,
+      pickingLocal: ref(false), localPickerError: ref(''), localSkippedFolders: ref([]),
+      localAnchor: { i: -1 }, props: { busy: false }, t: (key: string) => key,
+    }, '{ stageLocalFolder, cancelLocalPicker }',
+  );
+  const scan = stageLocalFolder('/new');
+  cancelLocalPicker();
+  finish({ name: 'New batch', files: ['/new/late.wav'], skippedFolders: [] });
+  await scan;
+  assert.equal(localPicker.value, null);
+  assert.deepEqual(localPicked.value, ['/media/first.wav', '/media/second.wav']);
+  assert.deepEqual(selectedLocal.value, ['/media/second.wav']);
+  assert.equal(localFolder.value, 'Original batch');
+  assert.equal(importAsGroup.value, true);
+});
+
 test('manual loudness normalization uses its LUFS target without a peak-ceiling input', () => {
   const item = { volume: 1 };
   assert.equal(audio.applyLoudnessMatch(item, {
@@ -177,6 +205,96 @@ test('missing waveform admits only decoder-verified media at the same file revis
   await assert.rejects(build('/show/clip.wav', {}, 0));
   probe = { ...probe, verified: false, file_revision: 'exact' };
   await assert.rejects(build('/show/clip.wav', {}, 0));
+});
+
+test('folder imports group only prepared files, append retries and roll back failed saves', async () => {
+  const items: any[] = [];
+  let bad = true;
+  let saved = true;
+  const runImport = compile(section(playlist, 'const importFromServerPaths =', 'const handleAddGroup ='), {
+    ...project,
+    currentProject: { value: { items } }, projectEpoch: { value: 2 }, crypto,
+    t: (key: string) => key, getAllItemsFlat: () => items,
+    findItemByUuid: (uuid: string) => items.find(item => item.uuid === uuid),
+    addItem: (item: any, parent?: number[]) => {
+      (parent ? items[parent[0]!]!.children : items).push(item);
+    },
+    removeItem: (uuid: string) => { items.splice(items.findIndex(item => item.uuid === uuid), 1); },
+    prepareImportFromServerPath: async (path: string, _signal: unknown, _offset: number, _name: string,
+      _mode: string, _policy: string, resultIndex: number) => {
+      const failed = bad && path === 'missing.wav';
+      const result = { sourcePath: path, status: failed ? 'failed' : 'ready' };
+      return failed ? { result } : {
+        result, prepared: { audioItem: { uuid: path, waveform: {} }, resultIndex },
+      };
+    },
+    saveProject: async () => saved,
+  }, 'importFromServerPaths');
+  const first = await runImport(['intro.wav', 'missing.wav'], undefined, { groupName: 'Walk-in' });
+  assert.equal(first.imported, 1);
+  assert.equal(items[0]?.displayName, 'Walk-in');
+  assert.equal(items[0]?.children[0]?.uuid, 'intro.wav');
+  assert.equal(items[0]?.uuid, first.groupUuid);
+  bad = false;
+  await runImport(['missing.wav'], undefined, { groupName: 'Walk-in', existingGroupUuid: first.groupUuid });
+  assert.equal(items.length, 1);
+  assert.deepEqual(items[0].children.map((item: any) => item.uuid), ['intro.wav', 'missing.wav']);
+  saved = false;
+  await runImport(['outro.wav'], undefined, { groupName: 'Other' });
+  assert.equal(items.length, 1);
+});
+
+test('remote folder selection reads each batch, skips unreadable entries and discards a cancelled scan', async () => {
+  const file = (name: string, folder = '/Walk-in') => ({
+    name, fullPath: `${folder}/${name}`, isFile: true,
+    file: (resolve: (file: File) => void) => resolve(new File(['audio'], name)),
+  });
+  const directory = (name: string, fullPath: string, batches: unknown[][]) => ({
+    name, fullPath, isDirectory: true,
+    createReader() {
+      let index = 0;
+      return { readEntries: (resolve: (entries: unknown[]) => void) => resolve(batches[index++] ?? []) };
+    },
+  });
+  const root = directory('Walk-in', '/Walk-in', [
+    [file('Cue 10.wav'), file('.Hidden.wav'), file('notes.txt')],
+    [file('Cue 2.wav'), directory('Nested', '/Walk-in/Nested', [[file('Bumper.mp4', '/Walk-in/Nested')]]),
+      { name: 'Unreadable', fullPath: '/Walk-in/Unreadable', isDirectory: true,
+        createReader() { throw new Error('Could not read'); } }],
+  ]);
+  const uploadedFolder = ref('');
+  const staged = ref<string[]>(['/engine/previous.wav']);
+  const selected = ref<string[]>(['/engine/previous.wav']);
+  const skippedUploadEntries = ref<string[]>([]);
+  const sent: string[][] = [];
+  const { selectForUpload, cancelUploadFolderRead } = compile(
+    section(read('components/AudioImportModal.vue'), 'const uploadExtensions =', 'async function uploadFiles('),
+    {
+      MEDIA_FILE_ACCEPT: audio.MEDIA_FILE_ACCEPT,
+      currentProject: ref({}), stagingBusy: ref(false),
+      uploadBatch: 0, readingUploadFolder: ref(false), uploadStatus: ref(''), skippedUploadEntries,
+      uploadedFolder, importAsGroup: ref(true), uploadedAnchor: { i: -1 }, failedUploads: ref([]),
+      uploadedThisSession: staged, selectedUploaded: selected, uploadedSizes: ref({}),
+      uploadFiles: async (files: File[]) => { sent.push(files.map(file => file.name)); },
+      t: (key: string) => key,
+    }, '{ selectForUpload, cancelUploadFolderRead }',
+  );
+  const transfer = (entry: unknown) => ({ items: [{ kind: 'file', webkitGetAsEntry: () => entry }], files: [] });
+  let release!: (entries: unknown[]) => void;
+  const cancelled = selectForUpload(transfer({
+    ...root, createReader: () => ({ readEntries: (resolve: typeof release) => { release = resolve; } }),
+  }));
+  cancelUploadFolderRead();
+  release([file('Late.wav')]);
+  await cancelled;
+  assert.deepEqual(staged.value, ['/engine/previous.wav']);
+  assert.deepEqual(selected.value, ['/engine/previous.wav']);
+  assert.deepEqual(sent, []);
+
+  await selectForUpload(transfer(root));
+  assert.equal(uploadedFolder.value, 'Walk-in');
+  assert.deepEqual(sent, [['Cue 2.wav', 'Cue 10.wav', 'Bumper.mp4']]);
+  assert.deepEqual(skippedUploadEntries.value, ['Unreadable']);
 });
 
 test('upload continues after a failed file and retries only the failed selection', async () => {

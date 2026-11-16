@@ -76,15 +76,42 @@ test('waveform delivery preserves the full-file timing sentinel and explicit tri
   }
 });
 
+test('audio readiness drops a late response from the previous show', async () => {
+  const source = readFileSync(new URL('../app/composables/useProject.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('  async function pollLoadingProgress(');
+  const end = source.indexOf('\n  }', start);
+  assert.ok(start >= 0 && end > start);
+  const code = ts.transpileModule(source.slice(start, end + 4), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const progress = { value: null };
+  const poll = Function('audioLoadingProgress', `${code}\nreturn pollLoadingProgress;`)(progress);
+  let release!: (report: unknown) => void;
+  const pending = new Promise(resolve => { release = resolve; });
+  let current = true;
+  const old = poll({ fetchProjectProgress: () => pending }, () => current);
+  current = false;
+  release({ loading: false, failedCount: 1 });
+  await old;
+  assert.equal(progress.value, null);
+  const report = { loading: false, failedCount: 1 };
+  await poll({ fetchProjectProgress: async () => report }, () => true);
+  assert.equal(progress.value, report);
+});
+
 test('an owned project header commits its server session together with the local identity', () => {
   const session = { value: 'old-session' };
   const currentProject = { value: null as any };
   const path = { value: '' };
   const repairNotice = { value: null as any };
+  const saveFailed = { value: true };
+  const emptyReadiness = { loading: false, failedCount: 0 };
+  const audioLoadingProgress = { value: { loading: true, failedCount: 1 } };
   const apply = projectFunction('applyServerHeader', {
     currentProject, projectFilePathRef: path, serverProjectSessionId: session,
-    projectEpoch: { value: 0 }, hasUnsavedChanges: { value: false },
-    repairNotice, useLiveplayServer: () => ({ serverUrl: 'http://engine' }),
+    projectEpoch: { value: 0 }, hasUnsavedChanges: { value: false }, saveFailed,
+    repairNotice, audioLoadingProgress, EMPTY_AUDIO_READINESS: emptyReadiness,
+    useLiveplayServer: () => ({ serverUrl: 'http://engine' }),
     projectPathFromHeader: (h: any) => h.server.projectFilePath,
     isNativeProjectPath: (p: string) => p.endsWith('.dwcue'),
     reportOpenProjectPath() {}, updateIndices() {}, _uninstallItemsWatcherFn() {},
@@ -97,6 +124,8 @@ test('an owned project header commits its server session together with the local
   assert.equal(currentProject.value.name, 'New');
   assert.equal(path.value, '/new.dwcue');
   assert.equal(session.value, 'new-session');
+  assert.equal(saveFailed.value, false);
+  assert.equal(audioLoadingProgress.value, emptyReadiness);
   assert.equal(repairNotice.value.session, 'new-session');
   assert.deepEqual(repairNotice.value.issues, ['duplicate cue']);
   apply({ hasOpenProject: false, server: { projectFilePath: '', projectSessionId: 'closed-session' } });
@@ -107,29 +136,40 @@ test('an owned project header commits its server session together with the local
 test('New Show opens the header from the server operation that saves before switching', async () => {
   const calls: unknown[][] = [];
   const header = { hasOpenProject: true, server: { projectFilePath: '/show/New.dwcue', projectSessionId: 'created-session' } };
+  const isHydrating = { value: false };
+  const projectLoad = { value: null };
+  let acknowledge!: (value: typeof header) => void;
+  const accepted = new Promise<typeof header>(resolve => { acknowledge = resolve; });
   const server = { connected: true,
     loadProjectDocument: async (document: { name: string }, createPath?: string) => {
       calls.push([document.name, createPath]);
-      return header;
+      return accepted;
     },
     saveProjectTo: async () => { calls.push(['separate save']); return { ok: true }; },
     fetchProjectHeader: async () => header,
   };
   const create = projectFunction('createNewProject', {
-    isLoading: { value: false }, loadingMessage: { value: '' }, isHydrating: { value: false },
+    projectLoad, isHydrating,
     useLiveplayServer: () => server, DEFAULT_CART_SLOT_KEYS: {}, DEFAULT_THEME: {}, DEFAULT_PROJECT_SETTINGS: {},
     projectPathInFolder: (folder: string, name: string) => `${folder}/${name}.dwcue`,
     applyServerHeader: (accepted: unknown) => { calls.push(['accepted', accepted]); return { finish() {} }; }, nextTick: async () => {},
     refreshItemsBaselineAfterHydrate() {}, installItemsWatcherFn() {}, recordRecentProject() {},
     projectFilePathRef: { value: '/show/New.dwcue' },
   });
-  assert.equal(await create('New', '/show'), true);
+  const creating = create('New', '/show');
+  assert.deepEqual(calls, [['New', '/show/New.dwcue']]);
+  assert.equal(projectLoad.value, 'create');
+  assert.equal(isHydrating.value, false, 'the current show must still sync its edits while create waits for storage');
+  acknowledge(header);
+  assert.equal(await creating, true);
+  assert.equal(projectLoad.value, null);
   assert.deepEqual(calls, [['New', '/show/New.dwcue'], ['accepted', header]]);
 });
 
 test('explicit session recovery uses fresh server and load identities for its chained writes', async () => {
   const calls: any[][] = [];
   const project = { name: 'Local', items: [], cartOnlyItems: [] };
+  const saveFailed = { value: true };
   const server = {
     fetchProjectHeader: async () => ({ server: { projectSessionId: 'fresh-server-session' } }),
     loadProjectFromPath: async (...args: any[]) => { calls.push(['load', ...args]); return { server: { projectSessionId: 'loaded-session' } }; },
@@ -139,12 +179,13 @@ test('explicit session recovery uses fresh server and load identities for its ch
     currentProject: { value: project }, _projectHydration: { wait: async () => true },
     useLiveplayServer: () => server, projectFilePathRef: { value: '/show/Local.dwcue' },
     isNativeProjectPath: () => true, useCartItems: () => ({ cartOnlyItems: { value: new Map() } }),
-    hasUnsavedChanges: { value: true }, buildDocumentSnapshot: () => ({ ...project }),
-    uninstallItemsWatcherFn() {}, tryRejoinExistingProject: async () => true,
+    hasUnsavedChanges: { value: true }, saveFailed, buildDocumentSnapshot: () => ({ ...project }),
+    uninstallItemsWatcherFn() {}, tryRejoinExistingProject: async () => { saveFailed.value = false; return true; },
   });
   assert.equal(await resume(), true);
   assert.equal(calls[0][2], 'fresh-server-session');
   assert.equal(calls[1][2], 'loaded-session');
+  assert.equal(saveFailed.value, true);
 });
 
 import {
@@ -287,7 +328,7 @@ test('closing keeps the old server session after clearing the local mirror and c
   assert.equal(session.value, 'new-session');
 });
 
-test('cold Open owns the loading overlay while the welcome screen probes for an existing show', async () => {
+test('cold Open owns the loading panel while the welcome screen probes for an existing show', async () => {
   const source = readFileSync(new URL('../app/composables/useProject.ts', import.meta.url), 'utf8');
   const start = source.indexOf('  const tryRejoinExistingProject =');
   const end = source.indexOf('  const openProject =', start);
@@ -295,15 +336,16 @@ test('cold Open owns the loading overlay while the welcome screen probes for an 
   const code = ts.transpileModule(source.slice(start, end), {
     compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  const isLoading = { value: false };
+  const projectLoad = { value: null };
   const header = { hasOpenProject: true, itemCount: 1 };
   const currentProject = { value: { cartOnlyItems: [] } };
   let headerProbes = 0;
   let pages = 0;
   const deps = {
-    _hydrationRequestRevision: 0, _openOverlayRevision: 0, _hydrationRetry: createProjectHydrationRetry(),
+    _hydrationRequestRevision: 0, _openLoadRevision: 0, _hydrationRetry: createProjectHydrationRetry(),
+    isCartWindowMode: false, isVideoOutputWindowMode: false, recoveringProject: { value: false },
     projectHydrationStatus: { value: 'ready' }, isHydrating: { value: false },
-    isLoading, loadingMessage: { value: '' }, currentProject, projectFilePathRef: { value: '' },
+    projectLoad, currentProject, projectFilePathRef: { value: '' },
     useLiveplayServer: () => ({
       connected: true,
       fetchProjectHeader: async () => { headerProbes++; return header; },
@@ -318,11 +360,11 @@ test('cold Open owns the loading overlay while the welcome screen probes for an 
     `${code}; return { hydrateProjectFrom, tryRejoinExistingProject };`)(...Object.values(deps));
   let loaded!: (header: object) => void;
   const open = hydrateProjectFrom(() => new Promise(resolve => { loaded = resolve; }));
-  assert.equal(isLoading.value, true);
+  assert.equal(projectLoad.value, 'open');
   const rejoined = await tryRejoinExistingProject();
   loaded(header);
   const opened = await open;
-  assert.equal(isLoading.value, false, 'a welcome rejoin left the loading overlay visible');
+  assert.equal(projectLoad.value, null, 'a welcome rejoin left the loading panel visible');
   assert.equal(rejoined, false);
   assert.equal(opened, true);
   assert.equal(headerProbes, 0);
@@ -331,19 +373,118 @@ test('cold Open owns the loading overlay while the welcome screen probes for an 
 
   const interrupted = hydrateProjectFrom(() => new Promise(resolve => { loaded = resolve; }));
   assert.equal(await tryRejoinExistingProject(header), true, 'reconnect still verifies during an Open');
-  assert.equal(isLoading.value, true, 'reconnect must not dismiss the in-flight Open');
+  assert.equal(projectLoad.value, 'open', 'reconnect must not dismiss the in-flight Open');
   const newer = hydrateProjectFrom(async () => header);
   loaded(header);
   assert.equal(await interrupted, false);
-  assert.equal(isLoading.value, true, 'an older Open must not dismiss the newer overlay');
+  assert.equal(projectLoad.value, 'open', 'an older Open must not dismiss the newer panel');
   assert.equal(await newer, true);
-  assert.equal(isLoading.value, false);
+  assert.equal(projectLoad.value, null);
 
   const superseded = hydrateProjectFrom(() => new Promise(resolve => { loaded = resolve; }));
   assert.equal(await tryRejoinExistingProject(header), true);
   loaded(header);
   assert.equal(await superseded, false);
-  assert.equal(isLoading.value, false, 'an Open must release its overlay after reconnect verification');
+  assert.equal(projectLoad.value, null, 'an Open must release its panel after reconnect verification');
+});
+
+test('reconnect retains the verified playlist through a failed page and replaces it only on success', async () => {
+  const previous = { items: ['verified cue'], cartOnlyItems: [] };
+  const currentProject = { value: previous };
+  const header = { hasOpenProject: true, itemCount: 2, server: { projectSessionId: 'new-show' } };
+  let finishPages!: (loaded: boolean) => void;
+  const rejoin = projectFunction('tryRejoinExistingProject', {
+    currentProject, _hydrationRequestRevision: 0, projectLoad: { value: null }, _hydrationRetry: createProjectHydrationRetry(),
+    isCartWindowMode: false, isVideoOutputWindowMode: false, recoveringProject: { value: false },
+    projectHydrationStatus: { value: 'ready' }, isHydrating: { value: false },
+    useLiveplayServer: () => ({ connected: true, showVerification: 'checking' }),
+    async readProjectItemPages(_: unknown, count: number, isCurrent: () => boolean,
+      receive: (items: string[]) => void, _signal: unknown, session: string) {
+      assert.equal(count, 2);
+      assert.equal(session, 'new-show');
+      receive(['first incoming cue']);
+      const accepted = await new Promise<boolean>(resolve => { finishPages = resolve; });
+      if (accepted) receive(['last incoming cue']);
+      return accepted && isCurrent();
+    },
+    applyServerHeader(_header: unknown, items: string[]) {
+      currentProject.value = { items, cartOnlyItems: [] };
+      return {};
+    },
+    nextTick: async () => {},
+    useCartItems: () => ({ clearCartOnlyItems() {}, addCartOnlyItem() {} }),
+    async streamItemPages(_: unknown, _count: number, _load: unknown, _signal: unknown, pagesLoaded: boolean) {
+      assert.equal(pagesLoaded, true, 'verification pages must be applied only once');
+      return true;
+    },
+    pollLoadingProgress() {},
+  });
+  const refused = rejoin(header);
+  assert.equal(currentProject.value, previous);
+  finishPages(false);
+  assert.equal(await refused, false);
+  assert.equal(currentProject.value, previous);
+  const accepted = rejoin(header);
+  assert.equal(currentProject.value, previous);
+  finishPages(true);
+  assert.equal(await accepted, true);
+  assert.deepEqual(currentProject.value.items, ['first incoming cue', 'last incoming cue']);
+});
+
+test('save failure persists through edits and pending retries until the current show is saved', async () => {
+  const currentProject = { value: { name: 'Show' } };
+  const saveFailed = { value: false };
+  const hasUnsavedChanges = { value: false };
+  const autoSaveEnabled = { value: false };
+  let complete!: (result: { ok: boolean }) => void;
+  const server = {
+    serverUrl: 'local', projectSessionId: 'session', connected: true,
+    saveProjectTo: () => new Promise(resolve => { complete = resolve; }),
+  };
+  const save = projectFunction('saveProject', {
+    currentProject, saveFailed, hasUnsavedChanges, autoSaveEnabled, saveRevision: { value: 0 },
+    useCartItems: () => ({ cartOnlyItems: { value: new Map() } }),
+    useLiveplayServer: () => server, projectFilePathRef: { value: '/show.dwcue' },
+    projectEpoch: { value: 0 }, serverProjectSessionId: { value: 'session' },
+    sessionLost: { value: false }, recoveringProject: { value: false }, repairNotice: { value: null },
+    isNativeProjectPath: () => true, isCurrentSaveIdentity,
+    _projectHydration: { wait: async () => true }, _syncItemsDiffFn: async () => {},
+    _projectSaveQueue: createLatestWriteQueue(), buildDocumentSnapshot: () => ({ ...currentProject.value }),
+  });
+  const started = () => new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(await save(), true);
+  assert.equal(hasUnsavedChanges.value, true);
+  assert.equal(saveFailed.value, false);
+  const forcedSave = save({ force: true });
+  await started();
+  assert.equal(await save(), true);
+  complete({ ok: false });
+  assert.equal(await forcedSave, false);
+  assert.equal(saveFailed.value, true);
+
+  const retry = save({ force: true });
+  await started();
+  assert.equal(saveFailed.value, true);
+  complete({ ok: true });
+  assert.equal(await retry, true);
+  assert.equal(hasUnsavedChanges.value, false);
+  assert.equal(saveFailed.value, false);
+
+  const cancellation = new AbortController();
+  const canceled = save({ force: true, signal: cancellation.signal });
+  await started();
+  cancellation.abort();
+  complete({ ok: false });
+  assert.equal(await canceled, false);
+  assert.equal(saveFailed.value, false);
+
+  const stale = save({ force: true });
+  await started();
+  currentProject.value = { name: 'Replacement' };
+  complete({ ok: false });
+  assert.equal(await stale, false);
+  assert.equal(saveFailed.value, false);
 });
 
 test('Retry still recovers the current cue list after a replacement show is refused', async () => {
@@ -351,9 +492,9 @@ test('Retry still recovers the current cue list after a replacement show is refu
   const attempts: string[] = [];
   retry.set(async () => { attempts.push('current show'); return true; });
   const open = projectFunction('hydrateProjectFrom', {
-    _hydrationRequestRevision: 0, _openOverlayRevision: 0, _hydrationRetry: retry,
+    _hydrationRequestRevision: 0, _openLoadRevision: 0, _hydrationRetry: retry,
     projectHydrationStatus: { value: 'failed' },
-    isLoading: { value: false }, loadingMessage: { value: '' },
+    projectLoad: { value: null },
     useLiveplayServer: () => ({ connected: true }),
     _projectHydration: { current: () => null }, console: { error() {} },
   });

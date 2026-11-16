@@ -17,38 +17,29 @@
           />
           <span class="cart-brand-wordmark">DONWELLS CUE</span>
           <div id="cart-header-warnings" class="cart-header-warnings"></div>
-          <span class="cart-brand-url">dwcue.com</span>
+          <Btn v-if="detachedRecoveryOpen" class="cart-recovery-stop" data-recovery-panel type="button"
+            icon="stop_circle" :text="t('controls.stopAll')" @click="stopAllCues()" @keydown.enter.space.stop />
+          <span v-else class="cart-brand-url">dwcue.com</span>
         </header>
         <template v-if="currentProject && detachedProjectIdentity">
           <p v-if="detachedProjectError" class="cart-window-error" role="alert">{{ detachedProjectError }}</p>
-          <OneShotPanel :is-detached-window="true" />
+          <OneShotPanel :is-detached-window="true" :inert="detachedRecoveryOpen" />
+          <DeleteSelectionPanel v-if="!detachedRecoveryOpen" />
         </template>
         <div v-else class="cart-window-loading">
           <CueSymbol name="one-shots" />
           <p v-if="detachedProjectError">{{ detachedProjectError }}</p>
         </div>
+        <div v-if="detachedRecoveryOpen" class="cart-recovery-panel" data-recovery-panel>
+          <ConnectionLostModal v-if="reconnectPanelOpen" docked :show-stop-all="false" />
+          <p v-else class="cart-recovery-wait" role="status">{{ t('oneShots.detachedWaitingForShow') }}</p>
+        </div>
       </div>
-
-      <!-- The detached cart window fires cues too, so it needs the same
-           lockout: without it, cart pads here would keep accepting presses
-           that silently never reach the server. -->
-      <ConnectionLostModal />
-
-      <!-- Multi-item delete confirm, also needed in the detached cart window -->
-      <DeleteSelectionModal
-        :visible="deleteDialogVisible"
-        :count="deleteDialogCount"
-        :name="deleteDialogName"
-        :allow-only="deleteDialogAllowOnly"
-        @delete-all="deleteDialogConfirmAll"
-        @delete-only="deleteDialogConfirmOnly"
-        @cancel="deleteDialogCancel"
-      />
     </template>
 
     <!-- Normal mode -->
     <template v-else>
-      <div v-if="!hasWorkspace" class="startup-workspace">
+      <div v-if="!hasWorkspace" class="startup-workspace" :inert="recoveryPanelOpen">
         <div id="startup-header-warnings" class="startup-header-warnings"></div>
         <WelcomeScreen
           v-if="!currentProject"
@@ -65,17 +56,74 @@
           <button type="button" data-testid="project-hydration-stop-all" @click="stopAllCues()">
             {{ t('controls.stopAll') }}
           </button>
-          <button type="button" @click="retryProjectHydration">{{ t('projectHydration.retry') }}</button>
+          <button type="button" :disabled="!!projectLoad" @click="retryProjectHydration">{{ t('projectHydration.retry') }}</button>
           <button type="button" @click="showOpenProjectPicker(currentProject.folderPath)">
             {{ t('projectHydration.chooseAnotherShow') }}
           </button>
         </div>
       </div>
-      <MainWorkspace v-else />
+      <MainWorkspace v-else :decision-open="projectPanelOpen" :recovery-open="recoveryPanelOpen" />
+      <Teleport v-if="projectPanelOpen" :key="hasWorkspace ? 'decision-dock' : 'decision-startup'"
+        defer to="#workspace-project-decision" :disabled="!hasWorkspace">
+        <div v-if="recoveryPanelOpen" data-recovery-panel>
+          <ConnectionLostModal v-if="reconnectPanelOpen" docked :show-stop-all="!hasWorkspace" />
+          <SessionRecoveryModal v-else :show-stop-all="!hasWorkspace" />
+        </div>
+        <ProjectDecisionPanel v-else-if="projectDecision" :title="projectDecision.title" :message="projectDecision.message"
+          :buttons="projectDecision.buttons" @pick="projectDecision.pick" />
+        <section v-else class="project-file-panel"
+          :class="{ 'project-file-panel--startup': !hasWorkspace, 'project-file-panel--browse': projectPicker && !projectFileBusy }"
+          aria-labelledby="project-file-panel-title">
+          <header class="workspace-panel-header">
+            <h2 id="project-file-panel-title" class="workspace-panel-header__title">
+              {{ t(projectLoad === 'open' || projectPicker === 'open' ? 'menu.openProject' : 'project.newShow') }}
+            </h2>
+            <Btn v-if="!hasWorkspace" type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="stopAllCues()" />
+          </header>
+          <p v-if="projectFileBusy" class="project-file-status" role="status">{{ projectFileStatus }}</p>
+          <ServerFilePickerModal v-else-if="projectPicker" docked :open="true"
+            :mode="projectPicker === 'open' ? 'file' : 'directory'"
+            :filter="projectPicker === 'open' ? '.dwcue' : 'all'"
+            :filter-options="projectPicker === 'open' ? ['.dwcue', 'all'] : ['all']"
+            :location-context="projectPicker === 'open' ? 'project-open' : 'project-create'"
+            :cancel-label="t(projectPicker === 'open' ? 'common.cancel' : 'common.back')"
+            :fallback-start-path="projectPickerFallback"
+            @pick="onProjectPickerPick" @close="closeProjectPicker" />
+          <form v-else class="new-show-form" @submit.prevent="createNewShow">
+            <label class="new-show-field" for="welcome-new-show-name">
+              <span>{{ t('project.showName') }}</span>
+              <input id="welcome-new-show-name" ref="newShowNameInput" v-model="newShowName"
+                :placeholder="t('project.placeholder')" autocomplete="off" />
+            </label>
+            <div class="new-show-field new-show-field--location">
+              <label for="welcome-new-show-location">{{ t('project.location') }}</label>
+              <div class="new-show-location">
+                <input id="welcome-new-show-location" :value="newShowLocation" readonly />
+                <button ref="newShowBrowseButton" type="button" @click="browseNewShowLocation">{{ t('project.chooseLocation') }}</button>
+              </div>
+            </div>
+            <div class="new-show-actions">
+              <Btn type="button" :text="t('common.cancel')" @click="cancelNewShowDialog" />
+              <Btn type="submit" class="new-show-create" :text="t('project.createShow')" :disabled="!canCreateNewShow" />
+            </div>
+            <p v-if="newShowError" class="new-show-error" role="alert">{{ newShowError }}</p>
+          </form>
+        </section>
+      </Teleport>
+      <section v-if="!hasWorkspace && showStartupAbout && !projectPanelOpen && !archivePanel"
+        class="project-file-panel project-file-panel--startup startup-about-panel" aria-labelledby="startup-about-title">
+        <header class="workspace-panel-header">
+          <h2 id="startup-about-title" class="workspace-panel-header__title">{{ t('settings.tabAbout') }}</h2>
+          <Btn type="button" icon="close" :text="t('actions.close')" @click="showStartupAbout = false" />
+        </header>
+        <div class="startup-about-content">
+          <AboutContent />
+        </div>
+      </section>
       <Teleport v-if="archivePanel" :key="hasWorkspace ? 'workspace' : 'startup'"
         defer to="#workspace-import-host" :disabled="!hasWorkspace">
-        <section class="archive-panel"
-          :class="{ 'archive-panel--startup': !hasWorkspace, 'archive-panel--browse': !archiveStatus }"
+        <section v-show="hasWorkspace || !projectPanelOpen" class="archive-panel"
+          :class="{ 'archive-panel--startup': !hasWorkspace, 'archive-panel--browse': !archiveStatus && !controllerArchivePicker }"
           :aria-label="archiveTitle">
           <header v-if="!hasWorkspace" class="workspace-panel-header">
             <h2 class="workspace-panel-header__title">{{ archiveTitle }}</h2>
@@ -94,8 +142,39 @@
                   :disabled="archiveOpening" @click="resetArchivePanel" />
               </div>
             </div>
-            <progress v-if="archiveStatus.phase === 'working'" class="archive-progress" :aria-label="archiveTitle" />
+            <progress v-if="archiveStatus.phase === 'working'" class="workspace-import-progress" :aria-label="archiveTitle" />
           </template>
+          <div v-else-if="server.connected && controllerArchivePicker && archivePanel === 'archive-import'" class="archive-controller">
+            <div class="archive-row">
+              <div class="archive-drop" role="group" tabindex="0" :aria-label="t('archive.dropSource')"
+                @dragover.prevent @drop.stop.prevent="chooseControllerArchive($event.dataTransfer?.files)"
+                @paste.stop.prevent="chooseControllerArchive($event.clipboardData?.files)">
+                {{ t('archive.dropSource') }}
+              </div>
+              <Btn type="button" :text="t('common.back')" @click="closeControllerArchivePicker" />
+            </div>
+            <p v-if="controllerArchiveError" class="archive-error" role="alert">{{ controllerArchiveError }}</p>
+          </div>
+          <form v-else-if="server.connected && controllerArchivePicker" class="archive-controller" @submit.prevent="downloadControllerArchive">
+            <div class="archive-row">
+              <div class="archive-drop" :aria-busy="archiveFolderPending" @dragover.prevent @drop.stop.prevent="dropArchiveDownloadFolder">
+                <strong :title="archiveDownloadFolder">{{ archiveDownloadFolder || t('archive.downloadFolder') }}</strong>
+                <span>{{ t('archive.dropDownloadFolder') }}</span>
+              </div>
+            </div>
+            <div class="archive-row">
+              <label class="archive-name">
+                {{ t('archive.downloadName') }}
+                <input v-model.trim="archiveDownloadName" type="text" maxlength="255" :placeholder="exportArchiveName">
+              </label>
+              <div class="archive-actions">
+                <Btn type="button" :text="t('common.back')" @click="closeControllerArchivePicker" />
+                <Btn type="submit" class="archive-save" :text="t('archive.saveHere')"
+                  :disabled="!archiveDownloadFolder || archiveFolderPending" />
+              </div>
+            </div>
+            <p v-if="controllerArchiveError" class="archive-error" role="alert">{{ controllerArchiveError }}</p>
+          </form>
           <template v-else>
             <div class="archive-row">
               <p :title="archivePickerCaption">{{ archivePickerCaption }}</p>
@@ -111,144 +190,18 @@
               <template #actions>
                 <Btn v-if="!server.isLocalServer && (archivePanel === 'archive-export' || archiveChoosingSource)" type="button"
                   :text="t(archivePanel === 'archive-export' ? 'exportProject.downloadHere' : 'importProject.fromThisComputer')"
-                  :disabled="nativeArchivePickerOpen" @click="browseControllerArchive" />
+                  @click="browseControllerArchive" />
               </template>
             </ServerFilePickerModal>
             <p v-else class="archive-row" role="status">{{ t('archive.waitingForEngine') }}</p>
           </template>
         </section>
       </Teleport>
-    <!-- Accent Color Picker Modal -->
-    <div v-if="showColorPicker" class="color-picker-overlay" @click="showColorPicker = false">
-      <div class="color-picker-dialog" @click.stop>
-        <h3>{{ t('colors.chooseAccent') }}</h3>
-        <div class="color-grid">
-          <button
-            v-for="color in accentColors"
-            :key="color"
-            class="color-option"
-            :style="{ backgroundColor: color }"
-            @click="changeAccentColor(color)"
-          ></button>
-        </div>
-        <button class="close-dialog" @click="showColorPicker = false">{{ t('common.cancel') }}</button>
-      </div>
-    </div>
-    
-    <!-- About Modal -->
-    <AboutModal v-if="showAboutModal" @close="showAboutModal = false" />
-    
-    <!-- The New Show form owns both values. Browsing for a location temporarily
-         swaps to the server-side picker so remote servers remain supported. -->
-    <ServerFilePickerModal
-      :open="projectPicker !== null"
-      :mode="projectPicker === 'new-location' ? 'directory' : 'file'"
-      :filter="projectPicker === 'new-location' ? 'all' : '.dwcue'"
-      :filter-options="projectPicker === 'new-location' ? ['all'] : ['.dwcue', 'all']"
-      :fallback-start-path="projectPickerFallback"
-      :location-context="projectPicker === 'new-location' ? 'project-create' : 'project-open'"
-      @pick="onProjectPickerPick"
-      @close="closeProjectPicker"
-    />
-
-    <Teleport to="body">
-      <div v-if="showNewShowDialog && !(creatingNewShow && isLoading)" class="name-dialog-backdrop" :data-theme="theme" @click.self="cancelNewShowDialog">
-        <form
-          class="name-dialog new-show-dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="welcome-new-show-title"
-          @submit.prevent="createNewShow"
-          @keydown.stop
-          @keydown.escape.prevent="cancelNewShowDialog"
-        >
-          <h3 id="welcome-new-show-title" class="name-dialog__title">{{ t('project.newShow') }}</h3>
-          <label class="new-show-field" for="welcome-new-show-name">
-            <span>{{ t('project.showName') }}</span>
-            <input
-              id="welcome-new-show-name"
-              ref="newShowNameInput"
-              class="name-dialog__input"
-              v-model="newShowName"
-              :placeholder="t('project.placeholder')"
-              autocomplete="off"
-            />
-          </label>
-          <div class="new-show-field">
-            <label for="welcome-new-show-location">{{ t('project.location') }}</label>
-            <div class="new-show-location">
-              <input id="welcome-new-show-location" class="name-dialog__input" :value="newShowLocation" readonly />
-              <button ref="newShowBrowseButton" type="button" class="name-dialog__btn" @click="browseNewShowLocation">
-                {{ t('project.chooseLocation') }}
-              </button>
-            </div>
-          </div>
-          <p v-if="newShowError" class="new-show-error" role="alert">{{ newShowError }}</p>
-          <div class="name-dialog__actions">
-            <button type="button" class="name-dialog__btn" :disabled="creatingNewShow" @click="cancelNewShowDialog">{{ t('common.cancel') }}</button>
-            <button type="submit" class="name-dialog__btn name-dialog__btn--primary" :disabled="!canCreateNewShow || creatingNewShow">{{ t('project.createShow') }}</button>
-          </div>
-        </form>
-      </div>
-    </Teleport>
-
-    <!-- Loading overlay (project open / create / save) -->
-    <LoadingOverlay :visible="isLoading" :title="loadingMessage" />
-
-    <ProjectRepairNotice v-if="projectRepair" :notice="projectRepair" @save="saveRepairedProject" />
-
-    <!-- Unsaved-changes prompt (shown when leaving a project with autosave off) -->
-    <UnsavedChangesModal
-      :visible="unsavedDialogVisible && unsavedDialogReason === 'project'"
-      :blocked="unsavedDialogBlocked"
-      @save="unsavedSave"
-      @discard="unsavedDiscard"
-      @cancel="unsavedCancel"
-    />
-
-    <!-- Confirm prompt shown when deleting a multi-item selection -->
-    <DeleteSelectionModal
-      :visible="deleteDialogVisible"
-      :count="deleteDialogCount"
-      :name="deleteDialogName"
-      :allow-only="deleteDialogAllowOnly"
-      @delete-all="deleteDialogConfirmAll"
-      @delete-only="deleteDialogConfirmOnly"
-      @cancel="deleteDialogCancel"
-    />
-
-    <!-- Background audio-loading progress (when document already rendered) -->
-    <AudioLoadProgress />
-
     <!-- LocalServerStatus pill intentionally not mounted. The local server
          now runs as a visible application with its own console window /
          taskbar entry, so the user has a direct way to see and stop it.
          Keep the component on disk in case we want to re-enable it later. -->
     <!-- <LocalServerStatus /> -->
-
-    <!-- Persistent disconnect → ask the user how to recover -->
-    <ConnectionLostModal />
-
-    <!-- Reconnected, but the server no longer holds our project (it restarted)
-         → resume from where we left off, or go back to the welcome screen. -->
-    <SessionRecoveryModal />
-
-    <!-- App-quit confirmation: unsaved changes, then (in local mode) whether
-         to also shut the local audio server down. -->
-    <QuitConfirmModal
-      :visible="unsavedDialogVisible && unsavedDialogReason === 'quit'"
-      :title="t('quitModal.unsavedTitle')"
-      :message="t('quitModal.unsavedMessage') + (unsavedDialogBlocked ? ' ' + t('unsavedModal.finishCurrent') : '')"
-      :buttons="quitUnsavedButtons"
-      @pick="onQuitUnsavedPick"
-    />
-    <QuitConfirmModal
-      :visible="quitServerVisible"
-      :title="t('quitModal.serverTitle')"
-      :message="t('quitModal.serverMessage')"
-      :buttons="quitServerButtons"
-      @pick="onQuitServerPick"
-    />
 
     </template>
     <ServerAlert v-if="!isVideoOutputWindow" :target="isCartWindow ? '#cart-header-warnings'
@@ -264,7 +217,7 @@ import WelcomeScreen from './components/WelcomeScreen.vue';
 import type { ProjectFileKind } from '~/utils/projectFileFormats';
 import { PROJECT_FILE_EXTENSIONS, projectFileAction } from '~/utils/projectFileFormats';
 import type { OneShotMutationIdentity, OneShotMutationRequest, OneShotMutationResult, OneShotProjectEnvelope } from '~/types/oneShotMutation';
-import { sameOneShotMutationIdentity } from '~/types/oneShotMutation';
+import { isNewerOneShotProject, sameOneShotMutationIdentity } from '~/types/oneShotMutation';
 import { createProjectOpenGuard } from '~/utils/projectOpenGuard';
 import { runExclusivePendingAction } from '~/utils/acknowledgedAction';
 import { applyOneShotMutation } from '~/utils/oneShotMutation';
@@ -272,21 +225,17 @@ import { suppressTooltips } from '~/utils/tooltips';
 
 const {
   currentProject, projectEpoch, saveProject, createNewProject, openProject, confirmUnsavedChanges, workspaceImportPanel,
-  autoSaveEnabled, projectSyncIdentity,
+  autoSaveEnabled, projectSyncIdentity, saveRevision,
   projectHydrationStatus, projectHydrationError, retryProjectHydration,
-  isLoading, loadingMessage,
-  projectRepair, saveRepairedProject,
+  projectLoad,
   unsavedDialogVisible, unsavedDialogReason, unsavedDialogBlocked, unsavedSave, unsavedDiscard, unsavedCancel,
-  deleteDialogVisible, deleteDialogCount, deleteDialogName, deleteDialogAllowOnly,
-  deleteDialogConfirmAll, deleteDialogConfirmOnly, deleteDialogCancel,
 } = useProject();
 const { stopAllCues } = useAudioEngine();
 const { cartOnlyItems, clearCartOnlyItems, addCartOnlyItem } = useCartItems();
-import LoadingOverlay from './components/LoadingOverlay.vue';
-import AudioLoadProgress from './components/AudioLoadProgress.vue';
 import ServerFilePickerModal from './components/ServerFilePickerModal.vue';
 const { currentLocale, setLocale, getDirection, t } = useLocalization();
 const server = useLiveplayServer();
+const { sessionLost } = useConnectionGuard();
 const hasWorkspace = computed(() => !!currentProject.value && projectHydrationStatus.value !== 'failed');
 const { showHeaderWarning } = useHeaderWarnings();
 let stopHeaderWarnings: (() => void) | undefined;
@@ -322,7 +271,7 @@ const welcomeScreen = ref<InstanceType<typeof WelcomeScreen> | null>(null);
 const projectPicker = ref<'open' | 'new-location' | null>(null);
 const projectPickerFallback = ref('');
 const showNewShowDialog = ref(false);
-const projectFileDialogOpen = computed(() => showNewShowDialog.value || projectPicker.value !== null);
+const projectFileDialogOpen = computed(() => !!projectLoad.value || showNewShowDialog.value || projectPicker.value !== null);
 const newShowName = ref('');
 const newShowLocation = ref('');
 const newShowLocations = useFilePickerLocations(() => String(useLiveplayServer().serverUrl), 'project-create');
@@ -330,11 +279,18 @@ const newShowNameInput = ref<HTMLInputElement | null>(null);
 const newShowBrowseButton = ref<HTMLButtonElement | null>(null);
 const newShowDialogReturnFocus = ref<HTMLElement | null>(null);
 const creatingNewShow = ref(false);
+const openingFromPicker = ref(false);
+const projectFileBusy = computed(() => !!projectLoad.value || creatingNewShow.value || openingFromPicker.value);
+const projectFileStatus = computed(() => {
+  if (projectLoad.value === 'open') return 'Loading project…';
+  if (projectLoad.value === 'create') return 'Creating project…';
+  return t('common.loading');
+});
 const newShowError = ref<string | null>(null);
 const canCreateNewShow = computed(() => !!newShowName.value.trim() && !!newShowLocation.value.trim());
 
 function showNewProjectDialog(fallbackFolder: string) {
-  if (projectFileDialogOpen.value || isLoading.value || unsavedDialogVisible.value) return;
+  if (projectFileDialogOpen.value || unsavedDialogVisible.value) return;
   projectPickerFallback.value = fallbackFolder;
   newShowName.value = '';
   newShowError.value = null;
@@ -345,7 +301,7 @@ function showNewProjectDialog(fallbackFolder: string) {
 }
 
 function showOpenProjectPicker(fallbackFolder: string) {
-  if (projectFileDialogOpen.value || isLoading.value || unsavedDialogVisible.value) return;
+  if (projectFileDialogOpen.value || unsavedDialogVisible.value) return;
   projectPickerFallback.value = fallbackFolder;
   projectPicker.value = 'open';
 }
@@ -363,12 +319,20 @@ function closeProjectPicker() {
   projectPicker.value = null;
 }
 
-function onProjectPickerPick(path: string) {
-  const intent = projectPicker.value;
-  closeProjectPicker();
-  if (!path) return;
-  if (intent === 'new-location') newShowLocation.value = path;
-  else if (intent === 'open') void guardedOpenProject(path);
+async function onProjectPickerPick(path: string) {
+  if (!path || !projectPicker.value || openingFromPicker.value) return;
+  if (projectPicker.value === 'new-location') {
+    newShowLocation.value = path;
+    closeProjectPicker();
+    return;
+  }
+  openingFromPicker.value = true;
+  try {
+    await guardedOpenProject(path);
+  } finally {
+    closeProjectPicker();
+    openingFromPicker.value = false;
+  }
 }
 
 async function createNewShow() {
@@ -456,14 +420,13 @@ onBeforeUnmount(unmountFailedHydrationHotkeys);
 useStateViewer();
 
 // Color picker for accent color
-const showColorPicker = ref(false);
 const DEFAULT_ACCENT = '#315fcf';
 const retiredBrandAccents = new Set(['#a45d00', '#8f5000', '#c47a00', '#ffb000']);
 const displayAccent = (color?: string) =>
   color && !retiredBrandAccents.has(color.toLowerCase()) ? color : DEFAULT_ACCENT;
 
-// About modal
-const showAboutModal = ref(false);
+const showStartupAbout = ref(false);
+watch(hasWorkspace, (ready) => { if (ready) showStartupAbout.value = false; });
 
 const { update, checkForAppUpdate } = useAppUpdate();
 let announcedUpdate = '';
@@ -476,23 +439,13 @@ const showProjectSettings = useState('showProjectSettings', () => false);
 const settingsTab = useState('projectSettingsTab', () => 'audio');
 
 function openAbout() {
-  if (currentProject.value && projectHydrationStatus.value !== 'failed') {
+  if (hasWorkspace.value) {
     settingsTab.value = 'about';
     showProjectSettings.value = true;
   } else {
-    showAboutModal.value = true;
+    showStartupAbout.value = true;
   }
 }
-
-const accentColors = [
-  '#315fcf', '#3c6fe0', '#5a83e8', // DonWells cobalt
-  '#007d79', '#009d9a', '#08bdba', // Teals
-  '#da1e28', '#a2191f', '#750e13', // Reds
-  '#24a148', '#198038', '#0e6027', // Greens
-  '#f1c21b', '#d2a106', '#b28600', // Yellows
-  '#8a3ffc', '#6929c4', '#491d8b', // Purples
-  '#ff7eb6', '#ee5396', '#d02670', // Pinks
-];
 
 const detachedProjectIdentity = useState<OneShotMutationIdentity | null>(
   'oneShots.detachedProjectIdentity', () => null,
@@ -500,23 +453,22 @@ const detachedProjectIdentity = useState<OneShotMutationIdentity | null>(
 const detachedProjectError = useState<string>('oneShots.detachedMutationError', () => '');
 let rejectedDetachedIdentity: OneShotMutationIdentity | null = null;
 
-function applyCartWindowProjectData(envelope: OneShotProjectEnvelope | null) {
+function applyCartWindowProjectData(envelope: OneShotProjectEnvelope | null, liveUpdate = false) {
   if (!isCartWindow) return;
   const projectData = envelope?.project ?? null;
   const identity = envelope?.identity ?? null;
-  if (!projectData || !identity) {
-    rejectedDetachedIdentity = detachedProjectIdentity.value;
+  const projectSessionId = envelope?.projectSessionId;
+  if (!projectData || !identity || !projectSessionId) {
+    rejectedDetachedIdentity = detachedProjectIdentity.value ?? rejectedDetachedIdentity;
     detachedProjectIdentity.value = null;
     currentProject.value = null;
     clearCartOnlyItems();
     detachedProjectError.value = t('oneShots.detachedNoPrimary');
     return;
   }
-  if (rejectedDetachedIdentity && sameOneShotMutationIdentity(identity, rejectedDetachedIdentity)) return;
   const currentIdentity = detachedProjectIdentity.value;
-  if (currentIdentity?.ownerSessionId === identity.ownerSessionId
-    && currentIdentity.projectPath === identity.projectPath
-    && identity.projectEpoch < currentIdentity.projectEpoch) return;
+  const fresh = isNewerOneShotProject(identity, currentIdentity ?? rejectedDetachedIdentity);
+  if (!fresh && !sameOneShotMutationIdentity(identity, currentIdentity)) return;
   detachedProjectIdentity.value = identity;
   detachedProjectError.value = '';
   clearCartOnlyItems();
@@ -524,9 +476,10 @@ function applyCartWindowProjectData(envelope: OneShotProjectEnvelope | null) {
     for (const item of projectData.cartOnlyItems) addCartOnlyItem(item);
   }
   currentProject.value = projectData;
-  if (projectData.theme?.mode) theme.value = projectData.theme.mode;
-  if (projectData.theme?.accentColor) {
-    document.documentElement.style.setProperty('--color-accent-custom', displayAccent(projectData.theme.accentColor));
+  server.projectSessionId = projectSessionId;
+  if (liveUpdate && fresh) {
+    sessionLost.value = false;
+    server.showVerification = null;
   }
 }
 
@@ -587,13 +540,15 @@ onMounted(() => {
       if (el && typeof el.blur === 'function') el.blur();
     }, true);
 
-    // Cart window initialisation: load project data then listen for updates
+    // A delayed cached snapshot must not replace an update from the owner.
     if (isCartWindow) {
-      window.electronAPI.getCartWindowProjectData().then((projectData: any) => {
-        applyCartWindowProjectData(projectData);
-      });
+      let receivedUpdate = false;
       window.electronAPI.onCartWindowProjectUpdate((projectData) => {
-        applyCartWindowProjectData(projectData);
+        receivedUpdate = true;
+        applyCartWindowProjectData(projectData, true);
+      });
+      window.electronAPI.getCartWindowProjectData().then((projectData) => {
+        if (!receivedUpdate) applyCartWindowProjectData(projectData);
       });
       // Apply locale from localStorage (already handled by useLocalization)
       return; // skip main-window-only event listeners below
@@ -620,7 +575,7 @@ onMounted(() => {
     });
 
     // Main pushes this when the window is about to close; we run the
-    // quit-confirmation dialogs then call confirmQuit to actually quit.
+    // lower-panel decisions then call confirmQuit to actually quit.
     (window as any).electronAPI.app?.onRequestQuit?.(() => { void runQuitFlow(); });
 
     window.electronAPI.onMenuToggleDarkMode(() => {
@@ -632,7 +587,9 @@ onMounted(() => {
     });
 
     window.electronAPI.onMenuChangeAccentColor(() => {
-      showColorPicker.value = true;
+      if (!hasWorkspace.value) return;
+      settingsTab.value = 'ui';
+      showProjectSettings.value = true;
     });
 
     window.electronAPI.onMenuChangeLanguage((event: any, locale: string) => {
@@ -700,7 +657,7 @@ onMounted(() => {
 // ---------------------------------------------------------------------------
 // App-quit confirmation flow.
 // Main vetoes the window close and pushes `app:request-quit`; we run a
-// two-step dialog sequence then call confirmQuit (which actually quits):
+// two-step confirmation then call confirmQuit (which actually quits):
 //   1. Unsaved-changes prompt — only when there are pending edits. The user
 //      can save-then-close, close & discard, or return to the project.
 //   2. Local-server prompt — only when the audio server is running locally
@@ -713,18 +670,42 @@ const quitServerVisible  = ref(false);
 let _quitServerResolve:  ((choice: 'server'  | 'client' | 'cancel') => void) | null = null;
 let quitFlowActive = false;
 
-const quitUnsavedButtons = computed(() => [
-  { key: 'cancel',  label: t('quitModal.return'),           variant: 'ghost'   as const },
-  { key: 'discard', label: t('quitModal.unsavedDiscard'),   variant: 'danger'  as const },
-  { key: 'save',    label: t('quitModal.unsavedSaveClose'), variant: 'primary' as const, icon: 'save' },
-]);
-const quitServerButtons = computed(() => [
-  { key: 'cancel', label: t('quitModal.return'),            variant: 'ghost'  as const },
-  { key: 'client', label: t('quitModal.serverCloseClient'), variant: undefined },
-  { key: 'server', label: t('quitModal.serverCloseServer'), variant: 'danger' as const, icon: 'power_settings_new' },
-]);
+const projectDecision = computed(() => {
+  if (unsavedDialogVisible.value) {
+    const quitting = unsavedDialogReason.value === 'quit';
+    return {
+      title: t(quitting ? 'quitModal.unsavedTitle' : 'unsavedModal.title'),
+      message: t(quitting ? 'quitModal.unsavedMessage' : 'unsavedModal.message') +
+        (unsavedDialogBlocked.value ? ' ' + t('unsavedModal.finishCurrent') : ''),
+      buttons: [
+        { key: 'cancel', label: t(quitting ? 'quitModal.return' : 'unsavedModal.cancel') },
+        { key: 'discard', label: t(quitting ? 'quitModal.unsavedDiscard' : 'unsavedModal.discard'), variant: 'danger' as const },
+        { key: 'save', label: t(quitting ? 'quitModal.unsavedSaveClose' : 'unsavedModal.save'), variant: 'primary' as const, icon: 'save' },
+      ],
+      pick: onUnsavedPick,
+    };
+  }
+  if (quitServerVisible.value) return {
+    title: t('quitModal.serverTitle'),
+    message: t('quitModal.serverMessage'),
+    buttons: [
+      { key: 'cancel', label: t('quitModal.return') },
+      { key: 'client', label: t('quitModal.serverCloseClient') },
+      { key: 'server', label: t('quitModal.serverCloseServer'), variant: 'danger' as const, icon: 'power_settings_new' },
+    ],
+    pick: onQuitServerPick,
+  };
+  return null;
+});
+const projectPanelOpen = useState('projectPanelOpen', () => false);
+const reconnectPanelOpen = computed(() => server.connectionLost || !!server.showVerification);
+const detachedRecoveryOpen = computed(() => reconnectPanelOpen.value || sessionLost.value);
+const recoveryPanelOpen = computed(() => !isCartWindow && !isVideoOutputWindow &&
+  (reconnectPanelOpen.value || (sessionLost.value && !!currentProject.value)));
+watch(() => recoveryPanelOpen.value || !!projectDecision.value || projectFileDialogOpen.value,
+  (open) => { projectPanelOpen.value = open; }, { immediate: true });
 
-function onQuitUnsavedPick(choice: string) {
+function onUnsavedPick(choice: string) {
   if (choice === 'save') void unsavedSave();
   else if (choice === 'discard') void unsavedDiscard();
   else void unsavedCancel();
@@ -749,6 +730,8 @@ async function runQuitFlow() {
   try {
     // Step 1 — unsaved changes (including a failed autosave).
     if (!await confirmUnsavedChanges('quit')) return;
+    const confirmedRevision = saveRevision.value;
+    const confirmedEpoch = projectEpoch.value;
     if (update.installOnExit) {
       const accepted = await api?.app?.confirmQuit?.({
         installUpdate: true,
@@ -769,37 +752,32 @@ async function runQuitFlow() {
       console.warn('[quit] could not read server status:', e);
     }
 
-    if (serverIsLocal) {
-      const choice = await askQuitServer();
-      if (choice === 'cancel') return;
-      await api?.app?.confirmQuit?.({ stopServer: choice === 'server' });
-    } else {
-      await api?.app?.confirmQuit?.({ stopServer: false });
-    }
+    const choice = serverIsLocal ? await askQuitServer() : 'client';
+    if (choice === 'cancel') return;
+    // Transport stays available while deciding, so edits made in that time need their own approval.
+    if ((projectEpoch.value !== confirmedEpoch || saveRevision.value !== confirmedRevision) &&
+        !await confirmUnsavedChanges('quit')) return;
+    await api?.app?.confirmQuit?.({ stopServer: choice === 'server' });
   } finally {
     quitFlowActive = false;
   }
 }
-const changeAccentColor = (color: string) => {
-  if (currentProject.value) {
-    currentProject.value.theme.accentColor = color;
-    document.documentElement.style.setProperty('--color-accent-custom', color);
-    saveProject();
-    showColorPicker.value = false;
-  }
-};
-
 type ArchivePanel = 'archive-import' | 'archive-export';
 type ArchiveStatus = { phase: 'working' | 'done' | 'failed'; message: string };
+type ArchiveSource = { path: string; client: boolean } | { file: File };
 
 const importArchiveStatus = ref<ArchiveStatus | null>(null);
 const exportArchiveStatus = ref<ArchiveStatus | null>(null);
-const importArchiveSource = shallowRef<{ path: string; client: boolean } | null>(null);
+const importArchiveSource = shallowRef<ArchiveSource | null>(null);
 const archiveReceipt = shallowRef<{
   serverUrl: string; accessToken: string; extractPath: string; projectFiles: string[];
 } | null>(null);
 const archiveOpening = ref(false);
-const nativeArchivePickerOpen = ref(false);
+const controllerArchivePicker = ref(false);
+const controllerArchiveError = ref('');
+const archiveDownloadFolder = ref('');
+const archiveDownloadName = ref('');
+const archiveFolderPending = ref(false);
 const archivePanel = computed(() => {
   const panel = workspaceImportPanel.value;
   return panel === 'archive-import' || panel === 'archive-export' ? panel : null;
@@ -812,20 +790,22 @@ const archiveCanOpen = computed(() => !!archiveReceipt.value && server.connected
   archiveReceipt.value.serverUrl === server.serverUrl && archiveReceipt.value.accessToken === server.effectiveAccessToken);
 const archiveChoosingSource = computed(() => archivePanel.value === 'archive-import' && !importArchiveSource.value);
 const archiveFilename = (path: string) => path.split(/[\\/]/).pop() || '';
+const archiveSourceName = (source: ArchiveSource) => 'file' in source ? source.file.name : archiveFilename(source.path);
 const exportArchiveName = computed(() => (currentProject.value?.name || 'Project') + PROJECT_FILE_EXTENSIONS.nativeArchive);
 const archivePickerCaption = computed(() => {
   if (archiveChoosingSource.value) return t('archive.chooseSource');
   if (archivePanel.value === 'archive-export') return t('archive.exportDestination', { name: exportArchiveName.value });
-  return t('archive.importDestination', { name: archiveFilename(importArchiveSource.value?.path ?? '') });
+  return t('archive.importDestination', { name: importArchiveSource.value ? archiveSourceName(importArchiveSource.value) : '' });
 });
 
 let archivePickerRevision = 0;
 watch([workspaceImportPanel, showProjectSettings, projectEpoch,
   () => server.serverUrl, () => server.effectiveAccessToken, () => server.projectSessionId], () => {
-  archivePickerRevision++;
+  closeControllerArchivePicker();
 }, { flush: 'sync' });
 watch([() => server.serverUrl, () => server.effectiveAccessToken], () => {
-  if (!importArchiveSource.value?.client) importArchiveSource.value = null;
+  const source = importArchiveSource.value;
+  if (source && 'path' in source && !source.client) importArchiveSource.value = null;
 }, { flush: 'sync' });
 
 function openArchivePanel(panel: ArchivePanel) {
@@ -834,8 +814,10 @@ function openArchivePanel(panel: ArchivePanel) {
 }
 
 function resetArchivePanel() {
-  if (archivePanel.value === 'archive-export') exportArchiveStatus.value = null;
-  else {
+  if (archivePanel.value === 'archive-export') {
+    if (exportArchiveStatus.value?.phase === 'done') closeControllerArchivePicker();
+    exportArchiveStatus.value = null;
+  } else {
     if (importArchiveStatus.value?.phase === 'done') importArchiveSource.value = null;
     importArchiveStatus.value = null;
     archiveReceipt.value = null;
@@ -856,29 +838,56 @@ function showArchiveFailure(panel: ArchivePanel, error: unknown) {
   showHeaderWarning(message, 'urgent');
 }
 
-async function browseControllerArchive() {
-  const panel = archivePanel.value;
-  if (!panel || nativeArchivePickerOpen.value || archiveStatus.value) return;
-  const revision = archivePickerRevision;
-  const source = importArchiveSource.value;
-  const isCurrent = () => archivePickerRevision === revision && !archiveStatus.value &&
-    (panel === 'archive-export' || importArchiveSource.value === source);
-  nativeArchivePickerOpen.value = true;
-  let path: string | null;
+function closeControllerArchivePicker() {
+  archivePickerRevision++;
+  controllerArchivePicker.value = false;
+  controllerArchiveError.value = '';
+  archiveDownloadFolder.value = '';
+  archiveDownloadName.value = '';
+  archiveFolderPending.value = false;
+}
+
+function browseControllerArchive() {
+  if (!archivePanel.value || archiveStatus.value) return;
+  controllerArchivePicker.value = true;
+  if (archivePanel.value === 'archive-export') void chooseArchiveDownloadFolder();
+}
+
+function chooseControllerArchive(files: FileList | undefined) {
+  const file = files?.length === 1 ? files[0] : undefined;
+  if (!file || projectFileAction(file.name) !== 'import-archive' || !file.size) {
+    controllerArchiveError.value = t('archive.unsupported');
+    return;
+  }
+  importArchiveSource.value = { file };
+  closeControllerArchivePicker();
+}
+
+function dropArchiveDownloadFolder(event: DragEvent) {
+  const files = event.dataTransfer?.files;
+  if (files?.length === 1) void chooseArchiveDownloadFolder(files[0]);
+  else controllerArchiveError.value = t('archive.invalidDownloadFolder');
+}
+
+async function chooseArchiveDownloadFolder(file?: File) {
+  const revision = ++archivePickerRevision;
+  archiveFolderPending.value = true;
+  controllerArchiveError.value = '';
   try {
     const api = window.electronAPI;
-    path = panel === 'archive-export'
-      ? await api.showSaveArchiveDialog(exportArchiveName.value)
-      : await api.showOpenArchiveDialog();
-  } catch (error) {
-    if (isCurrent()) showArchiveFailure(panel, error);
-    return;
+    const folder = await api.getArchiveDownloadFolder(file);
+    if (!folder) throw new Error('Folder unavailable');
+    if (archivePickerRevision === revision) archiveDownloadFolder.value = folder;
+  } catch {
+    if (archivePickerRevision === revision) controllerArchiveError.value = t('archive.invalidDownloadFolder');
   } finally {
-    nativeArchivePickerOpen.value = false;
+    if (archivePickerRevision === revision) archiveFolderPending.value = false;
   }
-  if (!path || !isCurrent()) return;
-  if (panel === 'archive-export') await runExport({ outputPath: '', downloadTo: path });
-  else importArchiveSource.value = { path, client: true };
+}
+
+function downloadControllerArchive() {
+  if (!archiveDownloadFolder.value || archiveFolderPending.value) return;
+  void runExport({ outputPath: '', downloadTo: { folder: archiveDownloadFolder.value, name: archiveDownloadName.value } });
 }
 
 async function onArchivePickerPick(path: string) {
@@ -897,7 +906,7 @@ async function onArchivePickerPick(path: string) {
   }
 }
 
-async function runExport(opts: { outputPath: string; downloadTo?: string }) {
+async function runExport(opts: { outputPath: string; downloadTo?: { folder: string; name: string } }) {
   const project = currentProject.value;
   if (!project || exportArchiveStatus.value) return;
   const serverUrl = server.serverUrl;
@@ -913,31 +922,35 @@ async function runExport(opts: { outputPath: string; downloadTo?: string }) {
     }
     exportArchiveStatus.value.message = t('exportProgress.message') + ' ' + name + '…';
     const result = await server.exportProjectArchive(project.folderPath, project.name, opts.outputPath, session);
+    let path = result.archivePath;
     if (opts.downloadTo) {
       if (!result.downloadToken || !sameServer()) throw new Error(t('archive.downloadUnavailable'));
       exportArchiveStatus.value.message = t('exportProgress.downloading') + ' ' + name + '…';
-      await server.downloadArchiveToFile(result.downloadToken, opts.downloadTo);
+      path = await server.downloadArchiveToFile(result.downloadToken, opts.downloadTo.folder,
+        opts.downloadTo.name || result.downloadFilename || name);
     }
     exportArchiveStatus.value = {
-      phase: 'done', message: t('exportProgress.saved', { path: opts.downloadTo || result.archivePath }),
+      phase: 'done', message: t('exportProgress.saved', { path }),
     };
   } catch (error) {
     showArchiveFailure('archive-export', error);
   }
 }
 
-async function runImport(source: { path: string; client: boolean }, destination: string) {
+async function runImport(source: ArchiveSource, destination: string) {
   const serverUrl = server.serverUrl;
   const accessToken = server.effectiveAccessToken;
-  const upload = source.client && !server.isLocalServer;
-  const name = archiveFilename(source.path);
+  const upload = 'file' in source || (source.client && !server.isLocalServer);
+  const name = archiveSourceName(source);
   importArchiveStatus.value = {
     phase: 'working', message: t(upload ? 'archive.uploading' : 'importProgress.message') + ' ' + name + '…',
   };
   try {
-    const result = upload
-      ? await server.importProjectArchiveFromClientPath(source.path, destination, name)
-      : await server.importProjectArchiveFromServer(source.path, destination);
+    const result = 'file' in source
+      ? await server.importProjectArchiveUpload(source.file, destination)
+      : upload
+        ? await server.importProjectArchiveFromClientPath(source.path, destination, name)
+        : await server.importProjectArchiveFromServer(source.path, destination);
     if (result.projectFiles.length === 0) throw new Error(t('importProgress.openFailed'));
     archiveReceipt.value = { ...result, serverUrl, accessToken };
     importArchiveStatus.value = {
@@ -968,18 +981,11 @@ async function openImportedArchive(file: string) {
   }
 }
 
-// Set initial theme from project
-watch(currentProject, (project) => {
-  if (project) {
-    theme.value = project.theme.mode;
-    
-    // Set accent color
-    if (import.meta.client && project.theme.accentColor) {
-      document.documentElement.style.setProperty('--color-accent-custom', displayAccent(project.theme.accentColor));
-    }
-  } else if (import.meta.client) {
-    document.documentElement.style.removeProperty('--color-accent-custom');
-  }
+watch([currentProject, () => currentProject.value?.theme?.accentColor], ([project, color]) => {
+  if (project?.theme?.mode) theme.value = project.theme.mode;
+  if (!import.meta.client) return;
+  if (project) document.documentElement.style.setProperty('--color-accent-custom', displayAccent(color));
+  else document.documentElement.style.removeProperty('--color-accent-custom');
 }, { immediate: true });
 
 // Apply RTL direction when locale changes
@@ -1024,12 +1030,101 @@ onMounted(() => {
   overflow: auto;
 }
 
+.project-file-panel {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-background);
+}
+
+.project-file-panel--startup {
+  max-height: 60%;
+  overflow: auto;
+}
+
+.startup-about-panel { overflow: hidden; }
+.startup-about-content {
+  min-height: 0;
+  overflow: auto;
+  padding: var(--spacing-sm) var(--workspace-gutter);
+}
+
+.project-file-panel--browse {
+  height: clamp(230px, 38vh, 330px);
+}
+
+.new-show-form,
+.new-show-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--spacing-sm);
+}
+
+.new-show-form,
+.project-file-status {
+  margin: 0;
+  padding: var(--spacing-sm) var(--workspace-gutter);
+}
+
+.new-show-field {
+  flex: 1 1 180px;
+  min-width: 0;
+  display: grid;
+  gap: var(--spacing-xs);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.new-show-field--location { flex-basis: 290px; }
+
+.new-show-location {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--spacing-xs);
+}
+
+.new-show-field input,
+.new-show-location button {
+  min-height: var(--panel-control-height);
+  min-width: 0;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  background: var(--color-control);
+  color: var(--color-text-primary);
+  font: inherit;
+}
+
+.new-show-location input { text-overflow: ellipsis; }
+.new-show-location button:hover { background: var(--color-surface-hover); }
+.new-show-actions { margin-inline-start: auto; }
+
+.new-show-actions .new-show-create,
+.archive-actions .archive-save:not(:disabled) {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+}
+
+.new-show-actions .new-show-create:hover:not(:disabled),
+.archive-actions .archive-save:hover:not(:disabled) { filter: brightness(1.1); }
+
+.new-show-error {
+  flex: 0 0 100%;
+  margin: 0;
+  color: var(--color-danger);
+  overflow-wrap: anywhere;
+}
+
 .archive-panel {
   display: flex;
   flex-direction: column;
   width: min(100%, var(--settings-width));
   padding: 0 var(--workspace-gutter) var(--spacing-xs);
   min-width: 0;
+  color: var(--color-text-primary);
 }
 
 .archive-panel--browse {
@@ -1056,6 +1151,7 @@ onMounted(() => {
   flex: 0 0 auto;
   min-height: var(--panel-control-height);
   gap: var(--workspace-gutter);
+  flex-wrap: wrap;
   margin: 0;
   padding: var(--spacing-xs) 0;
   overflow-wrap: anywhere;
@@ -1068,63 +1164,36 @@ onMounted(() => {
   flex-wrap: wrap;
   gap: var(--spacing-xs);
   flex-shrink: 0;
+  max-width: 100%;
+}
+
+.archive-controller p { margin: 0; }
+
+.archive-drop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs) var(--workspace-gutter);
+  flex: 1 1 16rem;
+  min-width: 0;
+  padding: var(--spacing-xs) var(--workspace-gutter);
+  border: 1px dashed var(--color-border);
+  min-height: var(--panel-control-height);
+
+  span { color: var(--color-text-secondary); }
+}
+
+.archive-name {
+  display: flex;
+  flex: 0 1 30rem;
+  align-items: center;
+  gap: var(--workspace-gutter);
+  min-width: 0;
+
+  input { flex: 1; min-width: 0; }
 }
 
 .archive-error { color: var(--color-danger); }
-
-.archive-progress {
-  width: min(24rem, 100%);
-  height: 8px;
-  margin-block: 0 var(--spacing-sm);
-  accent-color: var(--color-accent);
-}
-
-.color-picker-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: var(--z-modal);
-}
-
-.color-picker-dialog {
-  background: var(--color-surface);
-  padding: var(--spacing-xl);
-  border-radius: var(--border-radius-lg);
-  min-width: 400px;
-  color: var(--color-text-primary);
-}
-
-.color-picker-dialog h3 {
-  margin-bottom: var(--spacing-md);
-  color: var(--color-text-primary);
-}
-
-.color-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: var(--spacing-sm);
-  margin-bottom: var(--spacing-md);
-}
-
-.color-option {
-  width: 50px;
-  height: 50px;
-  border: 2px solid var(--color-border);
-  border-radius: var(--border-radius-sm);
-  cursor: pointer;
-  transition: transform var(--transition-fast);
-}
-
-.color-option:hover {
-  transform: scale(1.1);
-  border-color: var(--color-text-primary);
-}
 
 .startup-header-warnings {
   position: fixed;
@@ -1137,20 +1206,6 @@ onMounted(() => {
 .cart-header-warnings {
   min-width: 0;
 }
-
-.close-dialog {
-  width: 100%;
-  padding: var(--spacing-sm) var(--spacing-md);
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-sm);
-  color: var(--color-text-primary);
-}
-
-.close-dialog:hover {
-  background: var(--color-surface-hover);
-}
-
 
 .project-hydration-error {
   height: 100%;
@@ -1218,6 +1273,25 @@ onMounted(() => {
   opacity: 0.7;
 }
 
+.cart-recovery-stop {
+  flex: none;
+  margin-inline-start: auto;
+  color: var(--color-danger);
+}
+
+.cart-recovery-panel {
+  flex: 0 0 auto;
+  max-height: 60%;
+  overflow: auto;
+}
+
+.cart-recovery-wait {
+  margin: 0;
+  padding: var(--spacing-sm) var(--workspace-gutter);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+
 .cart-window-error {
   flex: none;
   margin: 0;
@@ -1241,122 +1315,5 @@ onMounted(() => {
     font-size: 48px;
     opacity: 0.3;
   }
-}
-</style>
-
-<style>
-/* New Show form is teleported to body. */
-.name-dialog-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 9200;
-  background: var(--dialog-backdrop);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.name-dialog {
-  background: var(--dialog-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--dialog-radius);
-  padding: var(--dialog-padding);
-  min-width: 360px;
-  max-width: 480px;
-  width: 90vw;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-md);
-  box-shadow: var(--dialog-shadow);
-}
-
-.name-dialog__title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.name-dialog__input {
-  padding: 10px 12px;
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-md);
-  color: var(--color-text-primary);
-  font-size: 14px;
-  outline: none;
-  transition: border-color var(--transition-fast);
-}
-
-.name-dialog__input:focus { border-color: var(--color-accent); }
-
-.new-show-dialog { width: min(520px, 92vw); }
-
-.new-show-error {
-  margin: 0;
-  color: var(--color-text-primary);
-  overflow-wrap: anywhere;
-}
-
-.new-show-field {
-  display: grid;
-  gap: 6px;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.new-show-location {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--spacing-sm);
-}
-
-.new-show-location .name-dialog__input {
-  min-width: 0;
-  color: var(--color-text-secondary);
-  font-family: var(--font-mono);
-  text-overflow: ellipsis;
-}
-
-.name-dialog__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--spacing-sm);
-}
-
-.name-dialog__btn {
-  min-height: var(--panel-control-height);
-  padding: 6px 12px;
-  border-radius: var(--control-radius);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-raised);
-  color: var(--color-text-primary);
-  transition: background var(--transition-fast), border-color var(--transition-fast);
-}
-
-.name-dialog__btn:hover:not(:disabled) {
-  background: var(--color-surface-hover);
-  border-color: var(--color-accent);
-}
-
-.name-dialog__btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.name-dialog__btn--primary {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-  color: #fff;
-}
-
-.name-dialog__btn--primary:hover:not(:disabled) {
-  filter: brightness(1.1);
-  background: var(--color-accent);
-  border-color: var(--color-accent);
 }
 </style>

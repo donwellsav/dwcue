@@ -5,13 +5,14 @@
          components read useUiMode() and hide their edit affordances + enlarge
          touch targets, so waveforms, colours, durations, behaviour flags and
          warnings all render exactly as in edit mode. -->
-    <ProjectHeader />
+    <ProjectHeader :inert="recoveryOpen" />
     <PlaybackControls />
-    <LevelCheckBar />
+    <LevelCheckBar :inert="recoveryOpen" />
 
     <div ref="workspaceContent" class="workspace-content" :style="{ '--reserved-playlist-row-height': `${reservedPlaylistRowHeight}px` }">
       <aside
         v-if="monitorAssigned"
+        :inert="recoveryOpen"
         class="monitor-console output-console"
         aria-label="Monitor"
       >
@@ -48,6 +49,8 @@
       <div class="workspace-panels">
         <div
           v-if="cartVisible"
+          v-show="!recoveryOpen || !cartFullscreen"
+          :inert="recoveryOpen"
           id="cart-player-panel"
           class="cart-section"
           :class="{ 'cart-section--fullscreen': cartFullscreen }"
@@ -72,17 +75,20 @@
 
         <div
           v-if="!cartDetached"
+          v-show="!recoveryOpen || !cartFullscreen"
+          :inert="recoveryOpen"
           class="resize-handle"
           :class="{ 'collapsed-left': cartClosed, 'collapsed-right': cartFullscreen, dragging: isResizing }"
           @pointerdown="startResize"
         ></div>
 
-        <div v-show="!cartFullscreen || cartDetached" class="playlist-section">
+        <div v-show="recoveryOpen || !cartFullscreen || cartDetached" class="playlist-section">
           <div class="playlist-panel">
-            <PlaylistView>
+            <PlaylistView :read-only="recoveryOpen">
               <template #header-leading>
                 <button
                   v-if="cartClosed && !cartDetached"
+                  :disabled="recoveryOpen"
                   type="button"
                   class="cart-toggle cart-toggle--reveal"
                   :aria-label="t('oneShots.show')"
@@ -99,7 +105,7 @@
         </div>
       </div>
 
-      <aside class="output-console" :aria-label="t('properties.output')">
+      <aside class="output-console" :aria-label="t('properties.output')" :inert="recoveryOpen">
         <div class="output-console__header workspace-panel-header">
           <div class="output-console__header-controls">
 
@@ -196,13 +202,23 @@
 
     <div id="preview-lower-panel" class="preview-lower-panel" aria-live="polite"></div>
 
-    <ShortcutsBar :compact="lowerPanelOpen" />
+    <div v-if="!recoveryOpen" class="workspace-status">
+      <AudioLoadProgress />
+      <div v-if="projectRepair" class="repair-status">
+        <span role="status">{{ t('repair.noticeTitle') }}</span>
+        <Btn class="repair-review" type="button" icon="warning" :text="t('repair.review')" :disabled="decisionOpen"
+          :aria-expanded="visibleImportPanel === 'repair' && !decisionOpen"
+          aria-controls="workspace-import-host" @click="toggleRepairReview" />
+      </div>
+    </div>
+    <ShortcutsBar :inert="recoveryOpen" />
 
     <div v-show="lowerPanelOpen" ref="lowerPanel" class="lower-workspace-panel"
-      :style="{ height: panelHeight === null ? 'auto' : `${panelHeight}px` }"
+      :class="{ 'lower-workspace-panel--deciding': decisionOpen, 'lower-workspace-panel--browsing-files': filePicker }"
+      :style="{ height: decisionOpen || panelHeight === null ? 'auto' : `${panelHeight}px`, maxHeight: `${MAX_PANEL_HEIGHT_PERCENT}%` }"
       @keydown.capture="handlePanelKeydown($event, true)"
       @keydown="handlePanelKeydown">
-      <div class="lower-panel-resize-handle" role="separator" aria-orientation="horizontal"
+      <div v-if="!autoSizeImportPanel" class="lower-panel-resize-handle" role="separator" aria-orientation="horizontal"
         :aria-label="showProjectSettings ? t('settings.title') : importPanelTitle || t('properties.title')"
         :aria-valuemin="MIN_PANEL_HEIGHT" :aria-valuemax="panelMaxHeight"
         :aria-valuenow="visiblePanelHeight || panelHeight || MIN_PANEL_HEIGHT" tabindex="0"
@@ -214,13 +230,17 @@
       <section v-show="visibleImportPanel" class="workspace-import" :aria-label="importPanelTitle">
         <header class="workspace-panel-header">
           <h2 class="workspace-panel-header__title">{{ importPanelTitle }}</h2>
-          <button type="button" class="workspace-import-close" :aria-label="t('actions.close')" @click="workspaceImportPanel = null">
+          <button type="button" class="workspace-import-close" :aria-label="t('actions.close')" @click="closeImportPanel">
             <span class="material-symbols-rounded" aria-hidden="true">close</span>
           </button>
         </header>
         <div id="workspace-import-host" ref="importHost" class="workspace-import-host"
-          :class="{ 'workspace-import-host--archive': visibleImportPanel?.startsWith('archive-') }"></div>
+          :class="{ 'workspace-import-host--archive': visibleImportPanel?.startsWith('archive-') }">
+          <DeleteSelectionPanel v-if="visibleImportPanel === 'delete-selection'" />
+          <ProjectRepairNotice v-else-if="visibleImportPanel === 'repair' && projectRepair" :notice="projectRepair" @save="saveRepairedProject" />
+        </div>
       </section>
+      <div v-show="decisionOpen" id="workspace-project-decision"></div>
     </div>
   </div>
 </template>
@@ -233,12 +253,14 @@ import VolumeSlider from './VolumeSlider.vue';
 import { bindingsMatch, eventToBinding } from '~/composables/useCartHotkeys';
 import { flattenOneShots } from '~/utils/oneShots';
 
+const { decisionOpen, recoveryOpen } = defineProps<{ decisionOpen: boolean; recoveryOpen: boolean }>();
 const {
   selectedItem,
   selectedItems,
   openItemProperties,
   propertiesPanelOpen,
   workspaceImportPanel,
+  quickPlayEditor,
   previewItemUuid,
   saveProject,
   closeProject,
@@ -251,6 +273,10 @@ const {
   copyItemsToClipboard,
   pasteItemsFromClipboard,
   requestDeleteFromKeyboard,
+  pendingDelete,
+  cancelDelete,
+  projectRepair,
+  saveRepairedProject,
 } = useProject();
 const { cartOnlyItems } = useCartItems();
 const { t } = useLocalization();
@@ -258,9 +284,12 @@ const server = useLiveplayServer();
 const { uiMode, uiFontScale, regularPlaylistRowHeight, showPlaylistRowHeight, folderPlaylistRowHeight } = useUiMode();
 const { levels: outputTargetLevels } = useOutputTarget();
 const showProjectSettings = useState('showProjectSettings', () => false);
+const quickPlayImportSlot = useState<number | null>('quickPlayImportSlot', () => null);
 const visibleImportPanel = computed(() => {
   const panel = workspaceImportPanel.value;
-  return !showProjectSettings.value && (uiMode.value !== 'playback' || panel?.startsWith('archive-')) ? panel : null;
+  if (panel === 'delete-selection') return !showProjectSettings.value && pendingDelete.value ? panel : null;
+  if (panel === 'repair') return !showProjectSettings.value && projectRepair.value ? panel : null;
+  return !showProjectSettings.value && (uiMode.value !== 'playback' || panel === 'quickplay' || panel?.startsWith('archive-')) ? panel : null;
 });
 const importPanelTitle = computed(() => {
   if (visibleImportPanel.value === 'media') return t('importAudio.title');
@@ -268,8 +297,23 @@ const importPanelTitle = computed(() => {
   if (visibleImportPanel.value === 'spotify') return t('spotifyImport.title');
   if (visibleImportPanel.value === 'archive-import') return t('importProject.chooseSourceTitle');
   if (visibleImportPanel.value === 'archive-export') return t('exportProject.chooseLocationTitle');
+  if (visibleImportPanel.value === 'delete-selection') return t('deleteSelection.title');
+  if (visibleImportPanel.value === 'repair') return t('repair.noticeTitle');
+  if (visibleImportPanel.value === 'quickplay') return t(quickPlayEditor.value?.remove
+    ? 'oneShots.removeConfirmTitle' : quickPlayEditor.value ? 'oneShots.settings' : 'oneShots.importInto',
+    { number: (quickPlayImportSlot.value ?? 0) + 1 });
   return '';
 });
+function toggleRepairReview() {
+  const open = visibleImportPanel.value === 'repair';
+  showProjectSettings.value = false;
+  workspaceImportPanel.value = open ? null : 'repair';
+}
+function closeImportPanel() {
+  if (workspaceImportPanel.value === 'delete-selection') return cancelDelete();
+  if (workspaceImportPanel.value === 'quickplay') quickPlayEditor.value = null;
+  workspaceImportPanel.value = null;
+}
 const editableSelectedItem = computed(() => {
   if (!selectedItem.value) return null;
   if (uiMode.value !== 'playback' || selectedItem.value.uuid === previewItemUuid.value) return selectedItem.value;
@@ -277,16 +321,20 @@ const editableSelectedItem = computed(() => {
 });
 const showCueProperties = computed(() =>
   !showProjectSettings.value && !visibleImportPanel.value && propertiesPanelOpen.value && !!editableSelectedItem.value);
-const lowerPanelOpen = computed(() => showProjectSettings.value || !!visibleImportPanel.value || !!showCueProperties.value);
+const lowerPanelOpen = computed(() => decisionOpen || showProjectSettings.value || !!visibleImportPanel.value || !!showCueProperties.value);
+const filePicker = useState<'cue' | 'standby' | 'replace-media' | null>('workspaceFilePicker', () => null);
+// Leave room for both lines of a compact cue when the lower panel is maximized.
 const reservedPlaylistRowHeight = computed(() => Math.max(folderPlaylistRowHeight.value,
-  uiMode.value === 'playback' ? showPlaylistRowHeight.value : regularPlaylistRowHeight.value));
+  uiMode.value === 'playback' ? Math.max(showPlaylistRowHeight.value, 108) : Math.max(regularPlaylistRowHeight.value, 84)));
 
 const MIN_PANEL_HEIGHT = 120;
-const MAX_PANEL_HEIGHT = 640;
+const MAX_PANEL_HEIGHT_PERCENT = 60;
 const settingsHeight = useState<number | null>('ProjectSettingsPanel.height', () => null);
 const propertiesHeight = useState<number | null>('PropertiesPanel.height', () => null);
 const importHeight = useState<number | null>('ImportPanel.height', () => null);
+const autoSizeImportPanel = computed(() => visibleImportPanel.value === 'delete-selection' || visibleImportPanel.value === 'repair');
 const panelHeight = computed(() => showProjectSettings.value ? settingsHeight.value
+  : autoSizeImportPanel.value ? null
   : visibleImportPanel.value ? importHeight.value : propertiesHeight.value);
 const workspaceContent = ref<HTMLElement | null>(null);
 const lowerPanel = ref<HTMLElement | null>(null);
@@ -294,17 +342,22 @@ const importHost = ref<HTMLElement | null>(null);
 watch(visibleImportPanel, () => {
   if (importHost.value) importHost.value.scrollTop = 0;
 }, { flush: 'post' });
+watch(projectRepair, (notice) => {
+  if (!notice && workspaceImportPanel.value === 'repair') workspaceImportPanel.value = null;
+});
 const visiblePanelHeight = ref(0);
-const panelMaxHeight = ref(MAX_PANEL_HEIGHT);
+const panelMaxHeight = ref(MIN_PANEL_HEIGHT);
 let panelObserver: ResizeObserver | undefined;
 let panelDrag: { pointerId: number; startY: number; height: number; max: number } | null = null;
 
 function availablePanelHeight() {
   const content = workspaceContent.value;
-  if (!content) return MAX_PANEL_HEIGHT;
+  const panel = lowerPanel.value;
+  if (!content || !panel?.parentElement) return MIN_PANEL_HEIGHT;
   const reserved = parseFloat(getComputedStyle(content).minHeight);
-  return Math.min(MAX_PANEL_HEIGHT, Math.max(MIN_PANEL_HEIGHT,
-    (lowerPanel.value?.offsetHeight ?? MIN_PANEL_HEIGHT) + content.offsetHeight - reserved));
+  return Math.max(MIN_PANEL_HEIGHT, Math.floor(Math.min(
+    panel.parentElement.clientHeight * MAX_PANEL_HEIGHT_PERCENT / 100,
+    panel.offsetHeight + content.offsetHeight - reserved)));
 }
 
 function setPanelHeight(height: number, max: number) {
@@ -693,14 +746,16 @@ const isCartWindowMode = import.meta.client
   : false;
 
 watch(
-  [currentProject, projectSyncIdentity, projectHydrationStatus, () => server.projectSessionId],
-  ([project, identity, hydrationStatus, sessionId]) => {
+  [currentProject, projectSyncIdentity, projectHydrationStatus, () => server.projectSessionId,
+    () => server.connected && !server.cueStartsBlocked],
+  ([project, identity, hydrationStatus, sessionId, verified]) => {
     // Only sync from the main window, not from the detached cart window.
     if (!import.meta.client || !window.electronAPI || isCartWindowMode) return;
     if (!project || !identity || hydrationStatus !== 'ready') {
       window.electronAPI.syncProjectData(null, null);
       return;
     }
+    if (!verified || !sessionId) return;
     const cartReferenced = new Set<string>([
       ...flattenOneShots(project.items || []).map(item => item.uuid),
       ...(project.cartItems || []).map((ci: any) => ci.itemUuid).filter(Boolean),
@@ -712,7 +767,7 @@ watch(
       // needs them and the cart is bounded to 64 slots.
       cartOnlyItems: Array.from(cartOnlyItems.value.values()).map(i => ({ ...i })),
     };
-    window.electronAPI.syncProjectData(JSON.parse(JSON.stringify(data)), identity, sessionId || null);
+    window.electronAPI.syncProjectData(JSON.parse(JSON.stringify(data)), identity, sessionId);
   },
   { deep: true, immediate: true },
 );
@@ -771,7 +826,7 @@ const handleKeydown = (e: KeyboardEvent) => {
   }
 
   // Delete / Backspace removes the current selection. A multi-selection opens
-  // the confirm dialog; a single item is removed outright. Must defer to
+  // the confirmation panel; a single item is removed outright. Must defer to
   // native editing inside text fields.
   if (e.key === 'Delete' || e.key === 'Backspace') {
     if ((!isForwardedFromVideoOutput(e) && isTextInputFocused()) || !currentProject.value) return;
@@ -838,8 +893,7 @@ onUnmounted(() => {
 }
 
 .main-workspace.show-mode {
-  // PlaylistView contributes 16px of horizontal gutters; 637px leaves the
-  // row container at 621px, safely above its 620px compact breakpoint.
+  // Leave room for Show Mode's larger playlist controls beside QuickPlays.
   --playlist-split-min-width: 637px;
 }
 
@@ -865,13 +919,47 @@ onUnmounted(() => {
   display: none;
 }
 
+.workspace-status {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 2px var(--workspace-gutter);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.workspace-status:empty { display: none; }
+.repair-status {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-inline-start: auto;
+  color: var(--color-text-secondary);
+  font-size: var(--type-metadata-size);
+}
+.workspace-status .repair-review { flex: none; color: var(--color-warning); }
+
 .lower-workspace-panel {
   position: relative;
   flex: 0 1 auto;
   min-height: 120px;
-  max-height: 640px;
   display: flex;
   flex-direction: column;
+}
+
+.lower-workspace-panel--deciding {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+
+  > :not(#workspace-project-decision) { display: none; }
+}
+
+.lower-workspace-panel--browsing-files :deep(.picker-dock) {
+  flex-basis: clamp(200px, 30vh, 300px);
+  overflow: auto;
 }
 
 .workspace-import {

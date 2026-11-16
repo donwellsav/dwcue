@@ -985,8 +985,9 @@ void test_cancelled_prime_cache(const std::filesystem::path& wav) {
 
 void test_live_edit_storage_waits(const std::filesystem::path& wav) {
     for (const int operation : {0, 1, 2, 3, 4}) {
-      for (const int mode : {0, 1, 2, 3, 4}) {
+      for (const int mode : {0, 1, 2, 3, 4, 5}) {
         if (operation >= 3 && mode != 0) continue;
+        if (mode == 5 && operation != 0) continue;
         PlaybackItemDesc desc;
         desc.id = CueId{"live-edit-storage"}; desc.file_path = wav;
         desc.mix_sample_rate = kRate; desc.render_block = kBlock;
@@ -1028,6 +1029,23 @@ void test_live_edit_storage_waits(const std::filesystem::path& wav) {
         });
         check(entered.get_future().wait_for(std::chrono::seconds{1}) == std::future_status::ready,
               "live edit stall: actual edit/replay I/O reaches gate");
+        if (mode == 5) {
+            constexpr auto blocks = (kRate / 4 + kBlock - 1) / kBlock;
+            for (unsigned i = 1; i < blocks; ++i)
+                item.render_block(output.channels, 2, kBlock);
+            check(item.stats().transport == TransportState::Playing && !item.had_decode_error(),
+                  "held seek: short seeks keep the existing playback grace");
+            item.render_block(output.channels, 2, kBlock);
+            check(item.stats().transport == TransportState::Stopped &&
+                      item.stats().decoder_result == MA_TIMEOUT && !item.take_natural_end(),
+                  "held seek: missing PCM fails at the playback deadline");
+            release.set_value(); edit.get();
+            backend->vtable = original; seek = {};
+            check(item.stats().transport == TransportState::Stopped &&
+                      item.stats().playhead_frame == kBlock && !item.take_natural_end(),
+                  "held seek: late I/O cannot publish its new position or advance");
+            continue;
+        }
         auto control = std::async(std::launch::async, [&] {
             if (mode == 3) item.pause();
             else if (mode == 4) item.stop_with_fade(std::chrono::milliseconds{20});

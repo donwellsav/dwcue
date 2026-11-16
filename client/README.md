@@ -38,7 +38,7 @@ This developer guide tracks the v2.6.20 client. Match the installed About versio
 | Media tooling    | `@ffmpeg-installer/ffmpeg`, `@ffprobe-installer/ffprobe`        |
 | YouTube import   | `yt-dlp-wrap` + `youtube-search-api`                            |
 | Updates          | `electron-updater` (GitHub Releases feed: `donwellsav/dwcue`)      |
-| File transport   | Server-backed REST upload/download for `.dwcuepack` project archives |
+| File transport   | Chunked uploads for controller media and server-backed REST transfer for `.dwcuepack` project archives |
 
 Audio playback, waveform extraction, metering and routing all live in the C++ server. The renderer never decodes audio.
 
@@ -117,11 +117,14 @@ Key IPC channels (non-exhaustive):
 | `liveplay-server:get-config` / `set-config` | Read/write the persisted server mode, URL, and remote-user connection settings; managed credentials are excluded. |
 | `liveplay-server:get-status` / `ensure-running` / `restart` / `shutdown` / `state` | Manage the bundled server child process. Trusted status/state replies deliver the current managed credential to the renderer. |
 | `liveplay-discovery:start` / `list`   | Browse for `dwcue-server` instances on the LAN. |
-| `select-project-folder` / `select-project-file` / `select-audio-files` | Native file pickers. |
+| `select-project-folder` / `select-project-file` | Native project path pickers. |
+| `scan-media-folder` | Recursively list a folder chosen in the local Import Media panel, reporting unreadable subfolders. |
+| `authorize-dropped-spotify-folder` | Authorize the real local folder passed by the preload from a Spotify destination drop. |
 | `read-file` / `write-file` / `copy-file` | Authorized project filesystem helpers. |
-| `get-binary-file-info` / `read-binary-file-chunk` | Bounded local archive reads for remote imports. |
-| `download-archive-to-file` | Streams a server archive directly to an authorized local destination. |
-| `menu-export-project` / `menu-import-project` (main → renderer) | Menu-triggered `.dwcuepack` export/import. The renderer owns the dialogs. |
+| `get-binary-file-info` / `read-binary-file-chunk` | Bounded local archive reads for remote imports launched by file association. |
+| `archive-download-folder` | Authorizes Downloads or a disk-backed folder dropped in the archive panel for archive downloads. |
+| `download-archive-to-file` | Streams the archive to a temporary file and saves it in the authorized folder without replacing an existing file. |
+| `menu-export-project` / `menu-import-project` (main → renderer) | Opens the docked `.dwcuepack` export or import panel. |
 | `check-for-updates` / `download-update` / `install-update` / `get-update-install-supported` / `get-app-version` | `electron-updater` controls. |
 | `update-available` / `update-up-to-date` / `update-download-progress` / `update-downloaded` / `update-error` / `menu-check-for-updates` (main → renderer) | Update flow events; `menu-check-for-updates` is the Help-menu trigger. |
 | `update-menu-language` / `get-system-locale` / `get-available-locales` / `get-locale-data` | Dynamic menu localisation. |
@@ -148,6 +151,7 @@ New shows and normal saves use the native `.dwcue` JSON document. Portable expor
 
 - The server URL and a remote user's token are stored in `localStorage` under `liveplay.serverUrl` and `liveplay.accessToken`; change them via **Server Settings**. A managed local token is session-only in the renderer and is never written there.
 - Every local and remote control call is authenticated except `GET /api/health`. REST uses `Authorization: Bearer <token>`; bearer-in-query is restricted to browser WebSocket `/ws` and media-element `/api/media` requests.
+- Remote media import reads the controller's dropped folders in the browser and uploads bounded slices of the selected files. [File and Directory Entries API](https://wicg.github.io/entries-api/)
 - Browser origins must exactly match `LIVEPLAY_ALLOWED_ORIGINS`. Source development uses `http://localhost:3000`, not an arbitrary loopback origin. Packaged Electron's opaque `Origin: null` is accepted, but it still requires the token.
 - On boot, the [`app/plugins/liveplay-server.client.ts`](app/plugins/liveplay-server.client.ts) plugin connects. Project hydration streams the current server header and pages. A failed page leaves an explicit read-only workspace with **Retry** and Stop All; Retry rejoins the server's current document rather than reopening the prior file path. If a changed server project meets dirty local edits, `ConnectionLostModal` requires **Use server project** (discard local/adopt server) or **Restore local project** (replace server/keep local dirty) instead of overwriting either side silently.
 - A close-side `project_changed` clears both the renderer's project document and its remembered path. Saves wait for complete hydration and are serialized, revision-fenced and identity-fenced. Toggling Autosave in either direction force-saves the current document plus preference; subsequent edits save while enabled and only mark dirty while disabled. The unsaved badge is conditional on Autosave being off, so enabling hides it even when that forced save fails, while `hasUnsavedChanges` remains true. Save As changes the path only after the server publishes successfully.

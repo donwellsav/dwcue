@@ -2,7 +2,7 @@
   <TabsRoot v-if="open" v-model="activeTab" as="section" activation-mode="manual"
     :dir="getDirection() === 'rtl' ? 'rtl' : 'ltr'" class="project-settings-panel" :aria-label="t('settings.title')">
         <header class="workspace-panel-header settings-header">
-          <h2 class="workspace-panel-header__title">{{ t('settings.title') }}</h2>
+          <h2 class="workspace-panel-header__title">{{ t(filePicker === 'standby' ? 'settings.videoOutputStandbyImage' : 'settings.title') }}</h2>
           <TabsList class="settings-tabs" :aria-label="t('settings.title')">
             <TabsTrigger
               v-for="tab in tabs"
@@ -28,6 +28,10 @@
       <template v-if="tab.id === activeTab">
         <ControlConfigModal v-if="activeTab === 'shortcuts' || activeTab === 'midi'"
           :mode="activeTab === 'midi' ? 'midi' : 'keyboard'" />
+        <ServerFilePickerModal v-else-if="activeTab === 'video' && filePicker === 'standby'" docked :open="true"
+          filter=".png,.jpg,.jpeg,.webp,.gif,.svg" :filter-options="[]"
+          :fallback-start-path="currentProject?.folderPath" location-context="standby-image"
+          @pick="onVideoOutputStandbyPicked" @close="closeStandbyImagePicker" />
         <div v-else :class="['settings-content', `settings-content--${activeTab}`]">
           <p v-if="settingsError" class="settings-error" role="alert">
             {{ settingsError }}
@@ -36,78 +40,42 @@
           <template v-if="activeTab === 'audio'">
             <!-- Audio device (default for cue playback) -->
             <section class="settings-field">
-              <label class="settings-label" for="settings-audio-device">
-                {{ t('settings.audioDevice') }}
-              </label>
-              <select
-                id="settings-audio-device"
-                class="settings-select"
-                :value="audioDeviceId"
-                @change="onAudioDeviceChange"
-              >
-                <option :value="''">{{ t('settings.noneSelected') }}</option>
-                <option v-for="d in devices" :key="d.id" :value="d.display_name">
-                  {{ d.display_name }}{{ d.is_default ? ' (' + t('common.default') + ')' : '' }}
-                </option>
-              </select>
-              <p class="settings-help">{{ t('settings.audioDeviceHelp') }}</p>
+              <span class="settings-label">{{ t('settings.audioDevice') }}</span>
+              <div class="audio-routing-choice">
+                <InlineChoicePicker id="settings-audio-device" :label="t('settings.audioDevice')"
+                  :value="audioDeviceId" :options="audioDeviceOptions" @change="onAudioDeviceChange" />
+                <p class="settings-help">{{ t('settings.audioDeviceHelp') }}</p>
+              </div>
             </section>
 
             <!-- Preview stores the stable hardware name; opened-device ids are session-scoped. -->
             <section class="settings-field">
-              <label class="settings-label" for="settings-preview-device">
-                {{ t('settings.previewDevice') }}
-              </label>
-              <select
-                id="settings-preview-device"
-                class="settings-select"
-                :value="previewDeviceId"
-                @change="onPreviewDeviceChange"
-              >
-                <option :value="''">{{ t('settings.noneSelected') }}</option>
-                <option v-for="d in devices" :key="d.id" :value="d.display_name">
-                  {{ d.display_name }}{{ d.is_default ? ' (' + t('common.default') + ')' : '' }}
-                </option>
-              </select>
-              <p class="settings-help">{{ t('settings.previewDeviceHelp') }}</p>
+              <span class="settings-label">{{ t('settings.previewDevice') }}</span>
+              <div class="audio-routing-choice">
+                <InlineChoicePicker id="settings-preview-device" :label="t('settings.previewDevice')"
+                  :value="previewDeviceId" :options="audioDeviceOptions" @change="onPreviewDeviceChange" />
+                <p class="settings-help">{{ t('settings.previewDeviceHelp') }}</p>
+              </div>
             </section>
 
             <!-- LTC device (timecode output) -->
             <section class="settings-field">
-              <label class="settings-label" for="settings-ltc-device">
-                {{ t('settings.ltcDevice') }}
-              </label>
-              <select
-                id="settings-ltc-device"
-                class="settings-select"
-                :value="ltcDeviceId"
-                @change="onLtcDeviceChange"
-              >
-                <option :value="''">{{ t('settings.noneSelected') }}</option>
-                <option v-for="d in devices" :key="d.id" :value="d.display_name">
-                  {{ d.display_name }}{{ d.is_default ? ' (' + t('common.default') + ')' : '' }}
-                </option>
-              </select>
-              <p class="settings-help">{{ t('settings.ltcDeviceHelp') }}</p>
+              <span class="settings-label">{{ t('settings.ltcDevice') }}</span>
+              <div class="audio-routing-choice">
+                <InlineChoicePicker id="settings-ltc-device" :label="t('settings.ltcDevice')"
+                  :value="ltcDeviceId" :options="audioDeviceOptions" @change="onLtcDeviceChange" />
+                <p class="settings-help">{{ t('settings.ltcDeviceHelp') }}</p>
+              </div>
             </section>
 
             <!-- Output Target (loudness platform standard) -->
             <section class="settings-field">
-              <label class="settings-label" for="settings-output-target">
-                {{ t('settings.outputTarget') }}
-              </label>
-              <select
-                id="settings-output-target" class="settings-select"
-                :value="outputTarget"
-                @change="onOutputTargetChange"
-              >
-                <option value="ebu-r128">{{ t('settings.outputTargetEbuR128') }}</option>
-                <option value="streaming">{{ t('settings.outputTargetStreaming') }}</option>
-                <option value="radio">{{ t('settings.outputTargetRadio') }}</option>
-                <option value="netflix">{{ t('settings.outputTargetNetflix') }}</option>
-                <option value="live">{{ t('settings.outputTargetLive') }}</option>
-              </select>
-              <p class="settings-help">{{ t('settings.outputTargetHelp') }}</p>
+              <span class="settings-label">{{ t('settings.outputTarget') }}</span>
+              <div class="audio-routing-choice">
+                <InlineChoicePicker id="settings-output-target" :label="t('settings.outputTarget')"
+                  :value="outputTarget" :options="outputTargetOptions" @change="onOutputTargetChange" />
+                <p class="settings-help">{{ t('settings.outputTargetHelp') }}</p>
+              </div>
             </section>
           </template>
 
@@ -116,17 +84,11 @@
             <div class="settings-rows">
               <h3 class="settings-section-title">{{ t('settings.cueingSection') }}</h3>
               <section class="settings-field">
-                <label class="settings-label" for="settings-transition">
+                <span class="settings-label">
                   {{ t('settings.transitionMode') }}
-                </label>
-                <select
-                  id="settings-transition" class="settings-select"
-                  :value="defaultTransitionMode"
-                  @change="onDefaultTransitionModeChange"
-                >
-                  <option value="crossfade">{{ t('settings.transitionModeCrossfade') }}</option>
-                  <option value="start-next">{{ t('settings.transitionModeStartNext') }}</option>
-                </select>
+                </span>
+                <InlineChoicePicker id="settings-transition" :label="t('settings.transitionMode')"
+                  :value="defaultTransitionMode" :options="transitionModeOptions" @change="onDefaultTransitionModeChange" />
                 <p class="settings-help">{{ t('settings.transitionModeHelp') }}</p>
               </section>
               <section class="settings-field">
@@ -141,17 +103,11 @@
                 <p class="settings-help">{{ t('settings.autoCueNextHelp') }}</p>
               </section>
               <section class="settings-field">
-                <label class="settings-label" for="settings-music-backup">{{ t('musicContinuity.backup') }}</label>
-                <select id="settings-music-backup" class="settings-select" :value="configuredMusicBackup"
+                <span class="settings-label">{{ t('musicContinuity.backup') }}</span>
+                <InlineChoicePicker id="settings-music-backup" :label="t('musicContinuity.backup')"
+                  :value="configuredMusicBackup" :options="musicBackupOptions"
                   :disabled="projectHydrationStatus !== 'ready' || musicContinuityPending.has('')"
-                  @change="changeMusicBackup">
-                  <option value="">{{ t('musicContinuity.none') }}</option>
-                  <option v-if="configuredMusicBackup && !musicBackupOptions.some(group => group.uuid === configuredMusicBackup)"
-                    :value="configuredMusicBackup" disabled>{{ t('musicContinuity.missing') }}</option>
-                  <option v-for="group in musicBackupOptions" :key="group.uuid" :value="group.uuid">
-                    {{ formatItemIndex(group.index) }} · {{ group.displayName }}
-                  </option>
-                </select>
+                  @change="changeMusicBackup" />
                 <p class="settings-help">{{ t('musicContinuity.help') }}</p>
               </section>
             </div>
@@ -171,18 +127,18 @@
                 />
                 <p class="settings-help">{{ t('settings.stopAllFadeHelp') }}</p>
               </section>
-              <section class="settings-field playback-switches">
-                <div class="settings-field">
-                  <label class="settings-label settings-label--checkbox">
-                    <input
-                      type="checkbox"
-                      :checked="disableLimiter"
-                      @change="onDisableLimiterChange"
-                    />
-                    {{ t('settings.disableLimiter') }}
-                  </label>
-                  <p class="settings-help">{{ t('settings.disableLimiterHelp') }}</p>
-                </div>
+              <section class="settings-field">
+                <label class="settings-label settings-label--checkbox">
+                  <input
+                    type="checkbox"
+                    :checked="disableLimiter"
+                    @change="onDisableLimiterChange"
+                  />
+                  {{ t('settings.disableLimiter') }}
+                </label>
+                <p class="settings-help">{{ t('settings.disableLimiterHelp') }}</p>
+              </section>
+              <section class="settings-field">
                 <label class="settings-label settings-label--checkbox">
                   <input
                     type="checkbox"
@@ -199,6 +155,15 @@
           <template v-else-if="activeTab === 'ui'">
             <div class="settings-rows">
               <h3 class="settings-section-title">{{ t('settings.appearanceSection') }}</h3>
+              <section class="settings-field">
+                <span class="settings-label">{{ t('colors.chooseAccent') }}</span>
+                <div class="accent-swatches" role="group" :aria-label="t('colors.chooseAccent')">
+                  <button v-for="color in accentColors" :key="color" type="button" class="accent-swatch"
+                    :style="{ backgroundColor: color }" :title="color" :aria-label="color"
+                    :aria-pressed="selectedAccent === color"
+                    :disabled="projectHydrationStatus !== 'ready'" @click="setAccentColor(color)" />
+                </div>
+              </section>
               <section class="settings-field track-height-control">
                 <label for="ui-font-scale">{{ t('settings.interfaceFontSize') }}</label>
                 <input
@@ -213,23 +178,11 @@
                 <output for="ui-font-scale">{{ uiFontScale }}%</output>
               </section>
               <section class="settings-field">
-                <label class="settings-label" for="app-language">
+                <span class="settings-label">
                   {{ t('menu.language') }}
-                </label>
-                <select
-                  id="app-language"
-                  class="settings-select"
-                  :value="currentLocale"
-                  @change="onLocaleChange"
-                >
-                  <option
-                    v-for="locale in availableLocales"
-                    :key="locale.code"
-                    :value="locale.code"
-                  >
-                    {{ locale.name }}
-                  </option>
-                </select>
+                </span>
+                <InlineChoicePicker id="app-language" :label="t('menu.language')"
+                  :value="currentLocale" :options="localeOptions" @change="onLocaleChange" />
               </section>
               <section class="settings-field">
                 <label class="settings-label" for="settings-index-start">
@@ -253,35 +206,18 @@
               </section>
               <h3 class="settings-section-title">{{ t('settings.metersSection') }}</h3>
               <section class="settings-field">
-                <label class="settings-label" for="settings-meter-display">
+                <span class="settings-label">
                   {{ t('settings.meterMode') }}
-                </label>
-                <select
-                  id="settings-meter-display" class="settings-select"
-                  :value="meterMode"
-                  @change="onMeterModeChange"
-                >
-                  <option value="LUFS">{{ t('settings.meterModeLufs') }}</option>
-                  <option value="dBFS">{{ t('settings.meterModeDbfs') }}</option>
-                  <option value="dBTP">{{ t('settings.meterModeDbtp') }}</option>
-                  <option value="RMS">{{ t('settings.meterModeRms') }}</option>
-                </select>
+                </span>
+                <InlineChoicePicker id="settings-meter-display" :label="t('settings.meterMode')"
+                  :value="meterMode" :options="meterModeOptions" @change="onMeterModeChange" />
               </section>
               <section class="settings-field">
-                <label class="settings-label" for="settings-meter-ballistics">
+                <span class="settings-label">
                   {{ t('settings.meterBallistics') }}
-                </label>
-                <select
-                  id="settings-meter-ballistics" class="settings-select"
-                  :value="meterBallistics"
-                  @change="onMeterBallisticsChange"
-                >
-                  <option value="digital-ppm">{{ t('settings.meterBallisticsDigitalPpm') }}</option>
-                  <option value="ppm-i">{{ t('settings.meterBallisticsPpmI') }}</option>
-                  <option value="ppm-ii">{{ t('settings.meterBallisticsPpmII') }}</option>
-                  <option value="vu">{{ t('settings.meterBallisticsVu') }}</option>
-                  <option value="instant">{{ t('settings.meterBallisticsInstant') }}</option>
-                </select>
+                </span>
+                <InlineChoicePicker id="settings-meter-ballistics" :label="t('settings.meterBallistics')"
+                  :value="meterBallistics" :options="meterBallisticsOptions" @change="onMeterBallisticsChange" />
               </section>
             </div>
             <div class="settings-rows">
@@ -439,6 +375,7 @@
               <div class="settings-section-title countdown-band-grid countdown-band-heading">
                 <h3>{{ t('settings.countdownColors') }}</h3>
                 <span class="settings-unit">{{ t('settings.countdownStartsAt') }} (s)</span>
+                <span class="settings-unit">{{ t('settings.countdownColor') }}</span>
                 <button type="button" class="modal-btn countdown-band-add"
                   :aria-label="t('settings.countdownAddBand')" :title="t('settings.countdownAddBand')"
                   @click="addCountdownBand">
@@ -462,17 +399,15 @@
                       step="1"
                       :value="band.startSeconds"
                       :aria-label="t('settings.countdownStartsAtFor', { range: countdownBandRange(index) })"
-                      @change="onCountdownBandStartChange(index, $event)"
+                      @change="onCountdownBandStartChange(band.startSeconds, $event)"
                     />
                     <span v-else class="countdown-band-start countdown-band-fixed">0</span>
 
-                    <input
-                      class="countdown-band-color"
-                      type="color"
+                    <InlineColorPicker
+                      hide-label opaque
                       :value="band.color"
-                      :title="band.color"
-                      :aria-label="t('settings.countdownColorFor', { range: countdownBandRange(index) })"
-                      @change="onCountdownBandColorChange(index, $event)"
+                      :label="t('settings.countdownColorFor', { range: countdownBandRange(index) })"
+                      @change="onCountdownBandColorChange(band.startSeconds, $event)"
                     />
 
                     <button
@@ -481,7 +416,7 @@
                       class="countdown-band-remove"
                       :aria-label="t('settings.countdownRemoveFor', { range: countdownBandRange(index) })"
                       :title="t('settings.countdownRemoveFor', { range: countdownBandRange(index) })"
-                      @click="removeCountdownBand(index)"
+                      @click="removeCountdownBand(band.startSeconds)"
                     >
                       <span class="material-symbols-rounded" aria-hidden="true">remove</span>
                     </button>
@@ -515,22 +450,12 @@
               </ul>
             </div>
             <div class="settings-rows">
-              <h3 class="settings-section-title">
-                <label for="settings-output-display">{{ t('settings.videoOutputDisplay') }}</label>
-              </h3>
+              <h3 class="settings-section-title">{{ t('settings.videoOutputDisplay') }}</h3>
               <section class="settings-field">
                 <div class="video-output-display-row">
-                  <select
-                    id="settings-output-display"
-                    class="settings-select"
-                    :value="voStatus?.displayId ?? ''"
-                    @change="onVideoOutputDisplayChange"
-                  >
-                    <option :value="''">{{ t('settings.videoOutputNoDisplay') }}</option>
-                    <option v-for="d in voDisplays" :key="d.id" :value="d.id">
-                      {{ d.index }} — {{ d.label }} — {{ d.width }}×{{ d.height }}{{ d.primary ? ' (' + t('common.default') + ')' : '' }}
-                    </option>
-                  </select>
+                  <InlineChoicePicker id="settings-output-display" :label="t('settings.videoOutputDisplay')"
+                    :value="voStatus?.displayId ?? ''" :options="voDisplayOptions" :disabled="!voStatus"
+                    @change="onVideoOutputDisplayChange" />
                   <button type="button" class="modal-btn" @click="onVideoOutputIdentifyDisplays">
                     {{ t('settings.videoOutputIdentifyDisplays') }}
                   </button>
@@ -577,14 +502,10 @@
               <h3 class="settings-section-title">{{ t('settings.videoFraming.title') }}</h3>
               <section class="settings-field video-framing">
                 <div class="video-framing-row">
-                  <label for="video-frame-preset" class="settings-label">{{ t('settings.videoFraming.preset') }}</label>
-                  <select id="video-frame-preset" class="settings-select" v-model="voFramePreset"
-                    :disabled="!voStatus || voFramingPending" @change="selectVideoFramePreset">
-                    <option v-for="preset in VIDEO_FRAME_PRESETS" :key="preset.id" :value="preset.id">
-                      {{ t(`settings.videoFraming.${preset.id}`) }} · {{ preset.width }}×{{ preset.height }}
-                    </option>
-                    <option value="custom">{{ t('settings.videoFraming.custom') }}</option>
-                  </select>
+                  <span class="settings-label">{{ t('settings.videoFraming.preset') }}</span>
+                  <InlineChoicePicker id="video-frame-preset" :label="t('settings.videoFraming.preset')"
+                    :value="voFramePreset" :options="voFramePresetOptions"
+                    :disabled="!voStatus || voFramingPending" @change="selectVideoFramePreset" />
                 </div>
                 <div v-if="voFramePreset === 'custom'" class="video-framing-dimensions">
                   <label class="settings-field">
@@ -599,11 +520,10 @@
                   </label>
                 </div>
                 <div class="video-framing-row">
-                  <label for="video-frame-scaling" class="settings-label">{{ t('settings.videoFraming.scaling') }}</label>
-                  <select id="video-frame-scaling" v-model="voFraming.scaling" class="settings-select" :disabled="!voStatus || voFramingPending">
-                    <option value="fit">{{ t('settings.videoFraming.fit') }}</option>
-                    <option value="limit">{{ t('settings.videoFraming.limit') }}</option>
-                  </select>
+                  <span class="settings-label">{{ t('settings.videoFraming.scaling') }}</span>
+                  <InlineChoicePicker id="video-frame-scaling" :label="t('settings.videoFraming.scaling')"
+                    :value="voFraming.scaling" :options="voFramingScalingOptions"
+                    :disabled="!voStatus || voFramingPending" @change="voFraming.scaling = $event" />
                 </div>
                 <div class="video-framing-row">
                   <label for="video-frame-scale" class="settings-label">{{ t('settings.videoFraming.size') }}</label>
@@ -628,7 +548,7 @@
                   <span class="video-output-standby-path" :title="voStandbyImage">
                     {{ voStandbyImage || t('settings.videoOutputStandbyNone') }}
                   </span>
-                  <button type="button" class="modal-btn" @click="voStandbyPickerOpen = true">
+                  <button type="button" class="modal-btn" @click="filePicker = 'standby'">
                     {{ t('settings.videoOutputStandbyChoose') }}
                   </button>
                   <button
@@ -643,26 +563,16 @@
               </section>
               <template v-if="voStatus">
                 <section class="settings-field video-capture">
-                  <label for="capture-display" class="settings-label">{{ t('standbyCapture.display') }}</label>
-                  <select id="capture-display" class="settings-select" :value="voStatus.captureDisplayId ?? ''"
-                    :disabled="captureSettingsPending || standbyCapturePending"
-                    @change="onCaptureSettingsChange($event, 'display')">
-                    <option value="">{{ t('standbyCapture.chooseDisplay') }}</option>
-                    <option v-if="voStatus.captureDisplayId && !voDisplays.some(d => d.id === voStatus?.captureDisplayId)"
-                      :value="voStatus.captureDisplayId" disabled>{{ t('standbyCapture.missingDisplay') }}</option>
-                    <option v-for="d in voDisplays" :key="d.id" :value="d.id">
-                      {{ d.index }} · {{ d.label }} ({{ d.width }} × {{ d.height }})
-                    </option>
-                  </select>
+                  <span class="settings-label">{{ t('standbyCapture.display') }}</span>
+                  <InlineChoicePicker id="capture-display" :label="t('standbyCapture.display')"
+                  :value="voStatus.captureDisplayId ?? ''" :options="captureDisplayOptions"
+                  :disabled="captureSettingsPending || standbyCapturePending" @change="onCaptureSettingsChange($event, 'display')" />
                 </section>
                 <section class="settings-field video-capture">
-                  <label for="capture-destination" class="settings-label">{{ t('standbyCapture.destination') }}</label>
-                  <select id="capture-destination" class="settings-select" :value="voStatus.captureTarget ?? 'session'"
-                    :disabled="captureSettingsPending || standbyCapturePending"
-                    @change="onCaptureSettingsChange($event, 'target')">
-                    <option value="session">{{ t('standbyCapture.session') }}</option>
-                    <option value="cue">{{ t('standbyCapture.cue') }}</option>
-                  </select>
+                  <span class="settings-label">{{ t('standbyCapture.destination') }}</span>
+                  <InlineChoicePicker id="capture-destination" :label="t('standbyCapture.destination')"
+                  :value="voStatus.captureTarget ?? 'session'" :options="captureTargetOptions"
+                  :disabled="captureSettingsPending || standbyCapturePending" @change="onCaptureSettingsChange($event, 'target')" />
                 </section>
               </template>
               <section v-if="voStatus" class="settings-field">
@@ -745,16 +655,6 @@
         </div>
       </template>
     </TabsContent>
-
-    <ServerFilePickerModal
-      :open="voStandbyPickerOpen"
-      mode="file"
-      filter=".png,.jpg,.jpeg,.webp,.gif,.svg"
-      :fallback-start-path="voStandbyPickerStart"
-      location-context="standby-image"
-      @pick="onVideoOutputStandbyPicked"
-      @close="voStandbyPickerOpen = false"
-    />
   </TabsRoot>
 </template>
 
@@ -765,6 +665,7 @@ import {
   DEFAULT_COUNTDOWN_COLOR_BANDS,
   normalizeCountdownColorBands,
   type CountdownColorBand,
+  type ProjectSettings,
 } from '~/types/project';
 import {
   CART_GRID_LIMITS,
@@ -799,16 +700,31 @@ const openExternal = (url: string) => {
 const canOpenOperatorManual = import.meta.client && typeof window.electronAPI?.openOperatorManual === 'function';
 const openOperatorManual = () => { void window.electronAPI.openOperatorManual(); };
 
-const onLocaleChange = (event: Event) => {
-  const locale = (event.target as HTMLSelectElement).value;
+const onLocaleChange = (locale: string) => {
   setLocale(locale);
   if (window.electronAPI?.updateMenuLanguage) {
     void window.electronAPI.updateMenuLanguage(locale);
   }
 };
 
-const { currentProject, indexDisplayStart, saveProject, getAllItemsFlat, formatItemIndex,
+const { currentProject, projectEpoch, indexDisplayStart, saveProject, getAllItemsFlat, formatItemIndex,
   projectHydrationStatus, setMusicContinuity, musicContinuityPending } = useProject();
+const accentColors = [
+  '#315fcf', '#3c6fe0', '#5a83e8', // DonWells cobalt
+  '#007d79', '#009d9a', '#08bdba', // Teals
+  '#da1e28', '#a2191f', '#750e13', // Reds
+  '#24a148', '#198038', '#0e6027', // Greens
+  '#f1c21b', '#d2a106', '#b28600', // Yellows
+  '#8a3ffc', '#6929c4', '#491d8b', // Purples
+  '#ff7eb6', '#ee5396', '#d02670', // Pinks
+];
+const selectedAccent = computed(() => currentProject.value?.theme?.accentColor?.toLowerCase() || accentColors[0]);
+function setAccentColor(color: string) {
+  const project = currentProject.value;
+  if (!project || projectHydrationStatus.value !== 'ready' || selectedAccent.value === color) return;
+  project.theme.accentColor = color;
+  void saveProject();
+}
 const {
   regularPlaylistRowHeight,
   showPlaylistRowHeight,
@@ -851,6 +767,38 @@ const cartGridProfileOptions = computed<Array<{ id: CartGridProfile; label: stri
 ]);
 
 const devices = computed(() => server.devices ?? []);
+const audioDeviceOptions = computed(() => {
+  const options = new Map(devices.value.map(d => [d.display_name, {
+    value: d.display_name,
+    label: d.is_default ? `${d.display_name} (${t('common.default')})` : d.display_name,
+  }]));
+  return [{ value: '', label: t('settings.noneSelected') }, ...options.values()];
+});
+const localeOptions = computed(() => availableLocales.value.map(locale => ({ value: locale.code, label: locale.name })));
+const transitionModeOptions = computed(() => [
+  { value: 'crossfade', label: t('settings.transitionModeCrossfade') },
+  { value: 'start-next', label: t('settings.transitionModeStartNext') },
+] as const);
+const meterModeOptions = computed(() => [
+  { value: 'LUFS', label: t('settings.meterModeLufs') },
+  { value: 'dBFS', label: t('settings.meterModeDbfs') },
+  { value: 'dBTP', label: t('settings.meterModeDbtp') },
+  { value: 'RMS', label: t('settings.meterModeRms') },
+] as const);
+const meterBallisticsOptions = computed(() => [
+  { value: 'digital-ppm', label: t('settings.meterBallisticsDigitalPpm') },
+  { value: 'ppm-i', label: t('settings.meterBallisticsPpmI') },
+  { value: 'ppm-ii', label: t('settings.meterBallisticsPpmII') },
+  { value: 'vu', label: t('settings.meterBallisticsVu') },
+  { value: 'instant', label: t('settings.meterBallisticsInstant') },
+] as const);
+const outputTargetOptions = computed(() => [
+  { value: 'ebu-r128', label: t('settings.outputTargetEbuR128') },
+  { value: 'streaming', label: t('settings.outputTargetStreaming') },
+  { value: 'radio', label: t('settings.outputTargetRadio') },
+  { value: 'netflix', label: t('settings.outputTargetNetflix') },
+  { value: 'live', label: t('settings.outputTargetLive') },
+]);
 
 // Tabs mirror the Properties panel's tab styling. Grouping:
 //  - audio    : device routing + loudness target
@@ -903,12 +851,19 @@ const defaultTransitionMode    = computed(() => (currentProject.value as any)?.s
 // Defaults ON (undefined → true) so legacy projects and new projects both
 // arm the next item as "Up Next" for cues without an end behaviour. (#28)
 const autoCueNextWithoutEndBehavior = computed(() => (currentProject.value as any)?.settings?.autoCueNextWithoutEndBehavior !== false);
-const musicBackupOptions = computed(() => getAllItemsFlat().filter(item => item.type === 'group'));
 const configuredMusicBackup = computed(() => currentProject.value?.settings?.backupMusicGroup ?? '');
-const changeMusicBackup = (event: Event) => {
-  const input = event.target as HTMLSelectElement;
-  const backupMusicGroup = input.value || null;
-  input.value = configuredMusicBackup.value;
+const musicBackupOptions = computed(() => {
+  const groups = getAllItemsFlat().filter(item => item.type === 'group');
+  const selected = configuredMusicBackup.value;
+  return [
+    { value: '', label: t('musicContinuity.none') },
+    ...groups.map(group => ({ value: group.uuid, label: `${formatItemIndex(group.index)} · ${group.displayName}` })),
+    ...(selected && !groups.some(group => group.uuid === selected)
+      ? [{ value: selected, label: t('musicContinuity.missing'), disabled: true }] : []),
+  ];
+});
+const changeMusicBackup = (value: string) => {
+  const backupMusicGroup = value || null;
   return setMusicContinuity(undefined, backupMusicGroup ? { backupMusicGroup } : { backupMusicGroup, keepMusicGoing: false },
     status => { settingsError.value = t(`musicContinuity.${status}`); });
 };
@@ -966,6 +921,41 @@ const voTestCardConfig = ref<TestCardConfig>(createTestCardConfig());
 
 const voEnabled  = computed(() => voStatus.value?.enabled === true);
 const voDisplays = computed(() => voStatus.value?.displays ?? []);
+const voDisplayOptions = computed(() => [
+  { value: '', label: t('settings.videoOutputNoDisplay') },
+  ...voDisplays.value.map(d => ({
+    value: d.id,
+    label: `${d.index} — ${d.label} — ${d.width}×${d.height}${d.primary ? ` (${t('common.default')})` : ''}`,
+  })),
+]);
+const captureDisplayOptions = computed(() => {
+  const selected = voStatus.value?.captureDisplayId;
+  const missing = selected && !voDisplays.value.some(display => display.id === selected)
+    ? [{ value: selected, label: t('standbyCapture.missingDisplay'), disabled: true }]
+    : [];
+  return [
+    { value: '', label: t('standbyCapture.chooseDisplay') },
+    ...missing,
+    ...voDisplays.value.map(display => ({
+      value: display.id,
+      label: `${display.index} · ${display.label} (${display.width} × ${display.height})`,
+    })),
+  ];
+});
+const captureTargetOptions = computed(() => [
+  { value: 'session', label: t('standbyCapture.session') },
+  { value: 'cue', label: t('standbyCapture.cue') },
+] as const);
+const voFramePresetOptions = computed(() => [
+  ...VIDEO_FRAME_PRESETS.map(preset => ({
+    value: preset.id, label: `${t(`settings.videoFraming.${preset.id}`)} · ${preset.width}×${preset.height}`,
+  })),
+  { value: 'custom', label: t('settings.videoFraming.custom') },
+]);
+const voFramingScalingOptions = computed(() => [
+  { value: 'fit', label: t('settings.videoFraming.fit') },
+  { value: 'limit', label: t('settings.videoFraming.limit') },
+] as const);
 
 const voTargetDisplay = computed(() =>
   voDisplays.value.find((d) => d.id === voStatus.value?.targetId) ?? null);
@@ -1007,8 +997,9 @@ function receiveVideoOutputStatus(status: VideoOutputStatus, forceConfig = false
   }
 }
 
-function selectVideoFramePreset(): void {
-  const preset = VIDEO_FRAME_PRESETS.find(entry => entry.id === voFramePreset.value);
+function selectVideoFramePreset(value: string): void {
+  voFramePreset.value = value;
+  const preset = VIDEO_FRAME_PRESETS.find(entry => entry.id === value);
   if (preset) {
     voFraming.value.width = preset.width;
     voFraming.value.height = preset.height;
@@ -1042,8 +1033,7 @@ async function onVideoOutputEnableChange(event: Event) {
   }
 }
 
-async function onVideoOutputDisplayChange(event: Event) {
-  const value = (event.target as HTMLSelectElement).value;
+async function onVideoOutputDisplayChange(value: string) {
   const api = window.electronAPI?.videoOutput;
   if (!api) return;
   settingsError.value = '';
@@ -1054,19 +1044,17 @@ async function onVideoOutputDisplayChange(event: Event) {
   }
 }
 
-async function onCaptureSettingsChange(event: Event, field: 'display' | 'target') {
-  const input = event.target as HTMLSelectElement;
+async function onCaptureSettingsChange(value: string, field: 'display' | 'target') {
   const api = window.electronAPI?.videoOutput;
   const status = voStatus.value;
   if (!api?.setCaptureSettings || !status) return;
-  const display = field === 'display' ? input.value || null : status.captureDisplayId;
-  const target = field === 'target' ? (input.value === 'cue' ? 'cue' : 'session') : status.captureTarget;
+  const display = field === 'display' ? value || null : status.captureDisplayId;
+  const target = field === 'target' ? (value === 'cue' ? 'cue' : 'session') : status.captureTarget;
   captureSettingsPending.value = true;
   settingsError.value = '';
   try {
     receiveVideoOutputStatus(await api.setCaptureSettings(display, target));
   } catch (error) {
-    input.value = field === 'display' ? status.captureDisplayId ?? '' : status.captureTarget;
     settingsError.value = describeSettingsError(error);
   } finally {
     captureSettingsPending.value = false;
@@ -1151,16 +1139,23 @@ async function drainVideoOutputTestCardConfig(): Promise<void> {
 // project media folder and stored relative, so the show file stays portable.
 const voStandbyImage = computed(() =>
   (currentProject.value as any)?.settings?.videoStandbyImage || '');
-const voStandbyPickerOpen = ref(false);
-const voStandbyPickerStart = computed(() =>
-  (currentProject.value as any)?.folderPath || '');
+const filePicker = useState<'cue' | 'standby' | 'replace-media' | null>('workspaceFilePicker', () => null);
+const closeStandbyImagePicker = () => {
+  if (filePicker.value === 'standby') filePicker.value = null;
+};
+watch([() => props.open, projectEpoch, activeTab], closeStandbyImagePicker, { flush: 'sync' });
+onScopeDispose(closeStandbyImagePicker);
 
 async function onVideoOutputStandbyPicked(path: string) {
-  voStandbyPickerOpen.value = false;
+  closeStandbyImagePicker();
+  const project = currentProject.value;
+  const epoch = projectEpoch.value;
+  if (!project || server.cueStartsBlocked) return;
   settingsError.value = '';
   try {
     const dest = await server.copyToMedia(path);
-    const folder: string = (currentProject.value as any)?.folderPath || '';
+    if (currentProject.value !== project || projectEpoch.value !== epoch || server.cueStartsBlocked) return;
+    const folder = project.folderPath;
     const relative = folder && dest.startsWith(folder)
       ? dest.slice(folder.length).replace(/^[\\/]+/, '').replace(/\\/g, '/')
       : dest;
@@ -1206,12 +1201,14 @@ type PreviousSetting = { exists: boolean; value: unknown };
 
 let settingsPatchQueue = Promise.resolve();
 
-function applyPatch(patch: Record<string, any>): Promise<PatchResult> {
+function applyPatch(request: Record<string, any> | ((settings: ProjectSettings) => Record<string, any> | null)): Promise<PatchResult> {
   const project = currentProject.value as any;
   const queued = settingsPatchQueue.then(async (): Promise<PatchResult> => {
     if (!project || currentProject.value !== project) return 'saved';
 
     const settings = (project.settings ?? {});
+    const patch = typeof request === 'function' ? request(settings) : request;
+    if (!patch) return 'saved';
     const outputEdit = ['defaultOutputDevice', 'previewDevice', 'ltcDevice'].some(key => key in patch);
     const previousSettings = new Map<string, PreviousSetting>();
     settingsError.value = '';
@@ -1289,11 +1286,13 @@ function countdownBandRange(index: number): string {
 
 let countdownMutationVersion = 0;
 
-async function persistCountdownBands(bands: CountdownColorBand[]) {
+async function persistCountdownBands(edit: (bands: CountdownColorBand[]) => boolean) {
   const mutationVersion = ++countdownMutationVersion;
   countdownBandError.value = '';
-  const next = normalizeCountdownColorBands(bands);
-  const result = await applyPatch({ countdownColorBands: next });
+  const result = await applyPatch(settings => {
+    const bands = normalizeCountdownColorBands(settings.countdownColorBands);
+    return edit(bands) ? { countdownColorBands: normalizeCountdownColorBands(bands) } : null;
+  });
   if (mutationVersion !== countdownMutationVersion || result === 'saved') return;
 
   // applyPatch restores a rejected live change. A disk-save failure leaves the
@@ -1301,76 +1300,66 @@ async function persistCountdownBands(bands: CountdownColorBand[]) {
   countdownBandError.value = t('settings.countdownSaveFailed');
 }
 
-function onCountdownBandStartChange(index: number, e: Event) {
+function onCountdownBandStartChange(startSeconds: number, e: Event) {
   const input = e.target as HTMLInputElement;
-  const bands = countdownColorBands.value.map(band => ({ ...band }));
   const seconds = Number(input.value);
-  const duplicate = bands.some((band, i) => i !== index && band.startSeconds === seconds);
-  if (!Number.isInteger(seconds) || seconds < 1 || duplicate) {
-    countdownBandError.value = t('settings.countdownThresholdInvalid');
-    input.value = String(bands[index]?.startSeconds ?? 1);
-    return;
-  }
-
-  bands[index] = { ...bands[index]!, startSeconds: seconds };
-  void persistCountdownBands(bands);
+  void persistCountdownBands(bands => {
+    const band = bands.find(band => band.startSeconds === startSeconds);
+    if (!band || startSeconds === seconds) return false;
+    if (!Number.isInteger(seconds) || seconds < 1 || bands.some(other => other.startSeconds === seconds)) {
+      countdownBandError.value = t('settings.countdownThresholdInvalid');
+      input.value = String(startSeconds);
+      return false;
+    }
+    band.startSeconds = seconds;
+    return true;
+  });
 }
 
-function onCountdownBandColorChange(index: number, e: Event) {
-  const bands = countdownColorBands.value.map(band => ({ ...band }));
-  bands[index] = {
-    ...bands[index]!,
-    color: (e.target as HTMLInputElement).value.toUpperCase(),
-  };
-  void persistCountdownBands(bands);
+function onCountdownBandColorChange(startSeconds: number, color: string) {
+  void persistCountdownBands(bands => {
+    const band = bands.find(band => band.startSeconds === startSeconds);
+    if (!band || band.color === color) return false;
+    band.color = color;
+    return true;
+  });
 }
 
 function addCountdownBand() {
-  const bands = countdownColorBands.value.map(band => ({ ...band }));
-  const highestStart = bands[0]?.startSeconds ?? 0;
-  bands.push({
-    startSeconds: highestStart + 5,
-    color: DEFAULT_COUNTDOWN_COLOR_BANDS[0]!.color,
+  void persistCountdownBands(bands => {
+    const highestStart = bands[0]?.startSeconds ?? 0;
+    bands.push({ startSeconds: highestStart + 5, color: DEFAULT_COUNTDOWN_COLOR_BANDS[0]!.color });
+    return true;
   });
-  void persistCountdownBands(bands);
 }
 
-function removeCountdownBand(index: number) {
-  const bands = countdownColorBands.value.map(band => ({ ...band }));
-  if (!bands[index] || bands[index]!.startSeconds === 0) return;
-  bands.splice(index, 1);
-  void persistCountdownBands(bands);
+function removeCountdownBand(startSeconds: number) {
+  if (startSeconds === 0) return;
+  void persistCountdownBands(bands => {
+    const index = bands.findIndex(band => band.startSeconds === startSeconds);
+    if (index === -1) return false;
+    bands.splice(index, 1);
+    return true;
+  });
 }
 
-async function onAudioDeviceChange(e: Event) {
-  const input = e.target as HTMLSelectElement;
-  const v = input.value;
-  input.value = audioDeviceId.value;
+async function onAudioDeviceChange(v: string) {
   await applyPatch({ defaultOutputDevice: v || null });
 }
-async function onPreviewDeviceChange(e: Event) {
-  const input = e.target as HTMLSelectElement;
-  const v = input.value;
-  input.value = previewDeviceId.value;
+async function onPreviewDeviceChange(v: string) {
   await applyPatch({ previewDevice: v || null });
 }
-async function onLtcDeviceChange(e: Event) {
-  const input = e.target as HTMLSelectElement;
-  const v = input.value;
-  input.value = ltcDeviceId.value;
+async function onLtcDeviceChange(v: string) {
   await applyPatch({ ltcDevice: v || null });
 }
-async function onOutputTargetChange(e: Event) {
-  const v = (e.target as HTMLSelectElement).value;
+async function onOutputTargetChange(v: string) {
   await applyPatch({ outputTarget: v });
 }
-async function onMeterModeChange(e: Event) {
-  const v = (e.target as HTMLSelectElement).value;
-  await applyPatch({ meterMode: v });
+async function onMeterModeChange(value: string) {
+  await applyPatch({ meterMode: value });
 }
-async function onMeterBallisticsChange(e: Event) {
-  const v = (e.target as HTMLSelectElement).value;
-  await applyPatch({ meterBallistics: v });
+async function onMeterBallisticsChange(value: string) {
+  await applyPatch({ meterBallistics: value });
 }
 async function onCycleTrackColorsChange(e: Event) {
   await applyPatch({ cycleTrackColors: (e.target as HTMLInputElement).checked });
@@ -1381,8 +1370,8 @@ async function onDisableLimiterChange(e: Event) {
 async function onDisableSilenceWarningChange(e: Event) {
   await applyPatch({ disableSilenceWarning: (e.target as HTMLInputElement).checked });
 }
-async function onDefaultTransitionModeChange(e: Event) {
-  await applyPatch({ defaultTransitionMode: (e.target as HTMLSelectElement).value });
+async function onDefaultTransitionModeChange(value: string) {
+  await applyPatch({ defaultTransitionMode: value });
 }
 async function onIndexDisplayStartChange(e: Event) {
   const input = e.target as HTMLInputElement;
@@ -1456,10 +1445,13 @@ function close() {
 }
 
 .settings-header {
+  order: 1;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) var(--panel-control-height);
   gap: var(--spacing-md);
   padding-block: 0;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 0;
 }
 
 .close-x {
@@ -1562,15 +1554,8 @@ function close() {
 
 .settings-content--playback > .settings-rows {
   display: grid;
-  grid-row: span 3;
+  grid-row: span 4;
   grid-template-rows: subgrid;
-}
-
-.settings-rows > .playback-switches {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
-  align-content: center;
 }
 
 .settings-test-card { grid-column: span 2; }
@@ -1678,7 +1663,7 @@ function close() {
 
 .settings-rows > .test-card-heading + .settings-field { border-top: 0; }
 
-.settings-rows > .settings-field:has(> .settings-select, > .settings-input) {
+.settings-rows > .settings-field:has(> :is(.settings-input, .inline-choice-picker)) {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 45%);
   column-gap: var(--spacing-sm);
@@ -1687,28 +1672,30 @@ function close() {
 
 .settings-content--audio > .settings-field {
   display: grid;
-  grid-row: span 3;
+  grid-row: span 2;
   grid-template-rows: subgrid;
   gap: 0;
   padding: 0;
 }
 
-.settings-content--audio > .settings-field > .settings-select {
-  width: calc(100% - 2 * var(--spacing-sm));
-  margin: var(--spacing-xs) var(--spacing-sm) 0;
-}
-
-.settings-content--audio > .settings-field > .settings-help {
-  grid-column: auto;
+.audio-routing-choice {
+  display: grid;
+  align-content: start;
+  gap: var(--spacing-xs);
+  min-width: 0;
   padding: var(--spacing-xs) var(--spacing-sm);
 }
 
 .settings-field > .settings-help { grid-column: 1 / -1; }
 
-.settings-content--playback .settings-field > :is(.settings-input, .settings-select) {
+.settings-content--playback .settings-field > :is(.settings-input, .inline-choice-picker:not([open])) {
   max-width: 180px;
   justify-self: end;
 }
+
+.settings-field > .inline-choice-picker { width: 100%; }
+.settings-field:has(> .inline-choice-picker[open]) { align-items: start; }
+.settings-field:has(> .inline-choice-picker) > .settings-label { min-height: var(--settings-control-height); }
 
 .settings-content--ui .track-height-control {
   grid-template-columns: minmax(0, 1fr) minmax(40px, 0.8fr) 44px;
@@ -1716,6 +1703,27 @@ function close() {
 }
 
 .settings-content--ui .settings-field > .settings-input { text-align: center; }
+
+.accent-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  padding-block: var(--spacing-xs);
+}
+
+.accent-swatch {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  cursor: pointer;
+
+  &[aria-pressed="true"],
+  &:focus-visible {
+    outline: 2px solid var(--color-text-primary);
+    outline-offset: 1px;
+  }
+}
 
 .settings-rows > .settings-field.video-capture {
   grid-template-columns: minmax(0, 1fr) minmax(0, 56%);
@@ -1774,7 +1782,6 @@ function close() {
   color: var(--color-text-primary);
   font-weight: 600;
 }
-.settings-select,
 .settings-input {
   width: 100%;
   min-width: 0;
@@ -1786,7 +1793,6 @@ function close() {
   border-radius: var(--control-radius);
   font-size: 13px;
 }
-.settings-select:focus,
 .settings-input:focus {
   outline: none;
   border-color: var(--color-accent);
@@ -1821,7 +1827,7 @@ function close() {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 4px;
-  align-items: stretch;
+  align-items: start;
 }
 .video-output-display-row .modal-btn,
 .video-output-standby .modal-btn { padding-inline: 6px; }
@@ -1832,6 +1838,10 @@ function close() {
   align-items: center;
   gap: var(--spacing-xs);
 }
+.video-framing-row:has(> #video-frame-preset[open]) { grid-template-columns: minmax(0, 1fr); }
+.video-framing-row:has(> .inline-choice-picker[open]) { align-items: start; }
+.video-framing-row > .settings-label { min-height: var(--settings-control-height); }
+.video-framing-row:has(> #video-frame-preset[open]) > .settings-label { min-height: 0; }
 .video-framing-dimensions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .video-framing-size { display: flex; align-items: center; gap: var(--spacing-xs); }
 .video-framing-size .modal-btn { flex-shrink: 0; }
@@ -1912,7 +1922,7 @@ function close() {
 
 .countdown-band-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 42px 29px 24px;
+  grid-template-columns: minmax(0, 1fr) 42px 100px 24px;
   gap: 4px;
   align-items: center;
 }
@@ -1928,9 +1938,16 @@ function close() {
 .countdown-band-grid--row {
   min-height: var(--settings-row-height);
   padding: 1px 0;
+  align-items: start;
   border-bottom: 1px solid var(--color-border);
 }
 .countdown-band-grid--row:last-child { border-color: transparent; }
+.countdown-band-range,
+.countdown-band-fixed {
+  display: flex;
+  align-items: center;
+  min-height: var(--settings-control-height);
+}
 .countdown-band-range {
   font-size: 12px;
   line-height: 1.25;
@@ -1942,19 +1959,9 @@ function close() {
   text-align: center;
 }
 .countdown-band-fixed {
-  display: grid;
-  place-items: center;
+  justify-content: center;
   font-size: 13px;
   color: var(--color-text-secondary);
-}
-.countdown-band-color {
-  width: 28px;
-  height: var(--settings-control-height);
-  padding: 2px;
-  background: var(--color-control);
-  border: 1px solid var(--color-border);
-  border-radius: var(--control-radius);
-  cursor: pointer;
 }
 .countdown-band-remove {
   display: grid;
@@ -1972,8 +1979,7 @@ function close() {
   border-color: var(--color-danger);
 }
 .countdown-band-remove:focus-visible,
-.countdown-band-start:focus-visible,
-.countdown-band-color:focus-visible {
+.countdown-band-start:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }

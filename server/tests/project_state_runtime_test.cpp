@@ -146,7 +146,7 @@ void render_to_end(liveplay::core::ProjectState& state,
     if (!wait_for_on_air(state, engine, uuid)) return;
     std::array<float, 256> left{}, right{};
     float* channels[]{left.data(), right.data()};
-    for (int i = 0; i < limit && on_air(state, engine, uuid); ++i) {
+    for (int i = 0; i < limit && item->stats().transport != liveplay::audio::TransportState::Stopped; ++i) {
         item->service_read_ahead(1);
         item->render_block(channels, 2, 256);
     }
@@ -1977,12 +1977,12 @@ void test_live_out_point_refreshes_prepared_endpoint() {
 void test_prepared_follow_runtime(const std::filesystem::path& wav) {
     liveplay::audio::AudioEngine engine;
     liveplay::core::ProjectState state(engine);
-    state.replace_full_document(document(json::array({audio("prepared-a", wav, {
+    state.replace_full_document(document(json::array({audio("prepared-bed", wav), audio("prepared-a", wav, {
         {"outPoint", 0.011}, {"endBehavior", {{"action", "next"}}},
         {"duckingBehavior", {{"mode", "no-ducking"}}}}), audio("prepared-b", wav, {
         {"startBehavior", {{"action", "play-item"}, {"targetUuid", "prepared-c"}}}}),
         audio("prepared-c", wav, {{"duckingBehavior", {{"mode", "no-ducking"}}}}),
-        audio("prepared-bed", wav)})));
+        audio("prepared-extra", wav)})));
     check(wait_ready(state), "prepared follow: audio ready"); close_devices(engine);
     // No render thread/device is started. The test drives the real renderer's
     // timeline explicitly while exercising production preparation/bookkeeping.
@@ -1994,6 +1994,13 @@ void test_prepared_follow_runtime(const std::filesystem::path& wav) {
     const auto source = engine.find_cue(*state.item_to_cue_id("prepared-a"));
     const auto follow = wait_prepared_follow(engine, target_id);
     check(static_cast<bool>(follow), "prepared follow: target is primed before source end");
+    const auto shuffled = state.shuffle_items(
+        {"prepared-bed", "prepared-a", "prepared-b", "prepared-c", "prepared-extra"}, "");
+    check(shuffled.value("status", "") == std::string{"ok"} &&
+              shuffled.at("uuids") == json::array({"prepared-bed", "prepared-a", "prepared-b",
+                                                   "prepared-extra", "prepared-c"}) &&
+              follow && follow->status.load() == liveplay::audio::PreparedFollow::State::Armed,
+          "shuffle: active playlist keeps an armed handoff and shuffles following entries");
     check(target->stats().transport == liveplay::audio::TransportState::Stopped &&
           on_air(state, engine, "prepared-bed") && !on_air(state, engine, "prepared-c") &&
           !state.item_trigger_seq("prepared-b"),
@@ -2378,7 +2385,7 @@ void test_shuffle_items(const std::filesystem::path& wav) {
     liveplay::audio::AudioEngine engine;
     liveplay::core::ProjectState state(engine);
     auto group = json{{"uuid", "music"}, {"type", "group"}, {"children", json::array({
-        audio("one", wav), audio("two", wav), audio("three", wav),
+        audio("one", wav), audio("two", wav), audio("three", wav), audio("four", wav),
     })}};
     auto show = document(json::array({group, audio("opener", wav, {
         {"endBehavior", {{"action", "goto-index"}, {"targetIndex", {0, 0}}}},
@@ -2387,22 +2394,107 @@ void test_shuffle_items(const std::filesystem::path& wav) {
     check(wait_ready(state), "shuffle: media ready"); close_devices(engine);
     const auto cue_before = state.item_to_cue_id("one");
     check(state.set_next_item_override("three"), "shuffle: explicit Up Next armed");
-    const auto inside = state.shuffle_items({"one", "two", "three"}, "music");
+    const std::vector<std::string> original{"one", "two", "three", "four"};
+    const auto inside = state.shuffle_items(original, "music");
     check(inside.value("status", "") == std::string{"ok"} &&
-          inside.at("uuids") == json::array({"one", "three", "two"}) &&
+          inside.at("uuids") != original &&
           state.item_uuid_by_index({0, 0}) == "one" && state.next_item_override() == "three",
           "shuffle: numbered target stays fixed, order changes, explicit Up Next survives");
+    const auto order = inside.at("uuids").get<std::vector<std::string>>();
     const auto root = state.shuffle_items({"music", "opener", "closer"}, "");
     check(root.value("status", "") == std::string{"ok"} &&
           root.at("uuids") == json::array({"music", "closer", "opener"}) &&
-          state.item_uuid_by_index({0, 1}) == "three" &&
+          state.item_uuid_by_index({0, 1}) == order.at(1) &&
           cue_before.has_value() && state.item_to_cue_id("one") == cue_before,
           "shuffle: nested group moves only as a unit and keeps loaded cue IDs");
     check(state.shuffle_items({"music", "opener", "closer"}, "").value("status", "") == std::string{"changed"},
           "shuffle: stale order cannot overwrite a newer edit");
-    check(state.go() == "three" &&
-          state.shuffle_items({"one", "three", "two"}, "music").value("status", "") == std::string{"playing"},
-          "shuffle: GO starts the shown cue and active playback rejects shuffle");
+    check(state.set_next_item_override(order[1]) && state.go() == order[1] &&
+          state.set_next_item_override(order[2]), "shuffle: starts a group child and arms a later cue");
+    const auto live_intent = state.playback_intent_revision();
+    const auto live_pass = state.item_trigger_seq(order[1]);
+    const auto live = state.shuffle_items(order, "music");
+    const std::vector<std::string> updated{order[0], order[1], order[3], order[2]};
+    check(live.value("status", "") == std::string{"ok"} && live.at("uuids") == updated &&
+          on_air(state, engine, order[1]) && state.item_trigger_seq(order[1]) == live_pass &&
+          state.playback_intent_revision() == live_intent && state.next_item_override() == order[2],
+          "shuffle: changes the upcoming group order while preserving the active pass and manual Up Next");
+    const auto live_root = state.shuffle_items({"music", "closer", "opener"}, "");
+    check(live_root.value("status", "") == std::string{"ok"} &&
+              live_root.at("uuids") == json::array({"music", "opener", "closer"}) &&
+              state.item_uuid_by_index({0, 0}) == "one" &&
+              on_air(state, engine, order[1]) && state.item_trigger_seq(order[1]) == live_pass &&
+              state.playback_intent_revision() == live_intent && state.next_item_override() == order[2],
+          "shuffle: live playlist preserves the active branch, numbered target, and manual Up Next");
+    check(state.go() == order[2] &&
+          state.shuffle_items(updated, "music").value("status", "") == std::string{"upcoming"},
+          "shuffle: manual GO survives the new order and a group ending stays in place");
+    state.stop_all_cues(0);
+}
+
+void test_quick_play_continuation(const std::filesystem::path& wav) {
+    for (const auto ending : {"nothing", "loop", "goto-item"}) {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        auto show = document(json::array({audio("first", wav), audio("late", wav)}));
+        show["cartOnlyItems"] = json::array({audio("quick-play", wav, {
+            {"oneShot", {{"order", 0}}}, {"endBehavior", {{"action", ending}, {"targetUuid", "first"}}},
+            {"outPoint", 0.08}, {"stopFade", 0.01},
+        })});
+        check(state.load_from_json(show) && wait_ready(state), "QuickPlay follow: project and media load");
+        close_devices(engine);
+        check(state.set_next_item_override("") && state.trigger_item("quick-play") &&
+              !state.cue_to_continue("quick-play"), "QuickPlay follow: needs a playlist target");
+        check(state.set_next_item_override("first") && state.cue_to_continue("quick-play") &&
+              state.set_next_item_override("late") && on_air(state, engine, "quick-play") &&
+              !on_air(state, engine, "first") && !on_air(state, engine, "late"),
+              "QuickPlay follow: arming and changing Up Next do not interrupt playback");
+        render_to_end(state, engine, "quick-play");
+        for (int i = 0; i < 500 && !on_air(state, engine, "late"); ++i)
+            std::this_thread::sleep_for(2ms);
+        check(on_air(state, engine, "late") && !on_air(state, engine, "first") &&
+              state.full_document()["cartOnlyItems"][0]["endBehavior"]["action"] == ending,
+              "QuickPlay follow: natural ending starts the latest Up Next without altering the authored ending");
+        state.stop_all_cues(0);
+    }
+}
+
+void test_group_levels() {
+    const auto wav = make_wav(8192);
+    liveplay::audio::AudioEngine engine;
+    liveplay::core::ProjectState state(engine);
+    const auto cue = [&](const std::string& uuid, double volume = 1.0) {
+        return audio(uuid, wav, {{"volume", volume}, {"duckingBehavior", {{"mode", "no-ducking"}}}});
+    };
+    const json nested{{"uuid", "nested"}, {"type", "group"}, {"groupGainDb", -6.0},
+                      {"children", json::array({cue("bed", 0.5)})}};
+    const json group{{"uuid", "music"}, {"type", "group"}, {"groupGainDb", -6.0},
+                     {"children", json::array({nested})}};
+    check(state.load_from_json(document(json::array({group, cue("walk-on")}))) &&
+          wait_ready(state), "group level: show opens");
+    close_devices(engine);
+    const auto level = [&](const char* uuid) {
+        const auto item = engine.find_cue(*state.item_to_cue_id(uuid));
+        std::array<float, 256> left{}, right{};
+        float* outputs[]{left.data(), right.data()};
+        item->service_read_ahead(1);
+        item->render_block(outputs, 2, left.size());
+        return left[127];
+    };
+    check(state.trigger_item("bed") && state.trigger_item("walk-on"), "group level: both cues start");
+    check(std::abs(level("bed") - 0.125 * std::pow(10.0, -12.0 / 20.0)) < 0.001 &&
+          std::abs(level("walk-on") - 0.25) < 0.001,
+          "group level: nested attenuation combines with cue gain and leaves unrelated playback alone");
+    const auto pass = state.item_trigger_seq("bed");
+    check(state.update_item("music", {{"groupGainDb", -12.0}}) &&
+          !state.update_item("music", {{"groupGainDb", 3.0}}), "group level: valid attenuation only");
+    (void)level("bed");
+    check(std::abs(level("bed") - 0.125 * std::pow(10.0, -18.0 / 20.0)) < 0.001 &&
+          state.item_trigger_seq("bed") == pass && std::abs(level("walk-on") - 0.25) < 0.001,
+          "group level: a live fader edit ramps the same pass without touching another cue");
+    check(!state.add_item(cue("new-bed"), "nested").empty() && wait_ready(state) && state.trigger_item("new-bed") &&
+          std::abs(level("new-bed") - 0.25 * std::pow(10.0, -18.0 / 20.0)) < 0.001,
+          "group level: new group children inherit the current attenuation");
     state.stop_all_cues(0);
 }
 
@@ -3374,6 +3466,8 @@ int main() try {
     test_failed_follow_requires_go(wav);
     test_failed_group_follow_requires_go(wav);
     test_shuffle_items(wav);
+    test_quick_play_continuation(wav);
+    test_group_levels();
     test_music_backup(wav);
     test_manual_go_parity(wav);
     test_replacement_cancels_ownership();
