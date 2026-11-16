@@ -799,6 +799,13 @@ const handlePlayNext = async () => {
   box-shadow: 0 0 0 1px var(--stop-edge);
   color: var(--stop-label);
   font-weight: 700;
+  /* The striped frame is the margin: the label gets the width inside it. */
+  padding-inline: 4px;
+  gap: 6px;
+}
+
+.playback-controls.show-mode .panic-btn {
+  padding-inline: 4px;
 }
 
 .panic-btn:hover:not(:disabled) {

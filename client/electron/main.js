@@ -41,6 +41,9 @@ const { DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameCaptureRect } = requi
 const { planGeometryCorrection, readViewportReport } = require('./video-output-geometry');
 const { checkVideoFrame } = require('./video-frame-check');
 const { convertVideoForOutput, cueSourcePath } = require('./video-convert');
+const {
+  collectReferences, findUnusedMedia, isPlainFileName, isReferenced, isShowDocument, mediaFilePath, mediaFolderFor,
+} = require('./unused-media');
 const { createAppLifecycleActions, createWillQuitHandler } = require('./terminal-action');
 const { createOperatorManual } = require('./operator-manual');
 const {
@@ -3819,6 +3822,196 @@ ipcMain.handle('video-output:convert-cue', async (event, request) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Clean Up Media: files in the show's media folder that nothing uses
+// ---------------------------------------------------------------------------
+// The window names files and nothing more. Which folder, which of its files
+// are unused and where each one is are worked out here, every time, from the
+// show as it is open, the show file, its backups and any other show saved in
+// the same folder (see unused-media.js). A file is only ever moved to the
+// Trash, where it can be put back; nothing here removes or rewrites a file.
+const MAX_CLEANUP_NAMES = 5000;
+const MAX_SHOW_DOCUMENT_BYTES = 64 * 1024 * 1024;
+// Few enough names at a time that a long search never holds this process up.
+const CLEANUP_SEARCH_BATCH = 25;
+let mediaCleanupRunning = false;
+const afterOtherWork = () => new Promise(resolve => setImmediate(resolve));
+
+function requireMediaCleanupOwner(event) {
+  requireTrustedIpc(event);
+  if (event.sender !== mainWindow?.webContents || !event.senderFrame || event.senderFrame !== event.sender.mainFrame) {
+    throw new Error('Media clean-up requires the main workspace.');
+  }
+}
+
+// A show document as parsed JSON. One that will not parse still counts, as
+// plain text: a file named anywhere in it is kept.
+async function readShowDocument(file) {
+  const stat = await fs.promises.stat(file);
+  if (!stat.isFile() || stat.size > MAX_SHOW_DOCUMENT_BYTES) throw new Error('The show document cannot be read.');
+  const text = await fs.promises.readFile(file, 'utf8');
+  // A byte-order mark at the start is not part of the JSON.
+  try { return JSON.parse(text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text); } catch { return text; }
+}
+
+// The show documents in a folder and in the Backups folder inside it
+// ("backups" is the same folder on Windows and macOS).
+async function showDocumentsIn(folder) {
+  const entries = await fs.promises.readdir(folder, { withFileTypes: true });
+  const documents = entries.filter(entry => entry.isFile() && isShowDocument(entry.name))
+    .map(entry => path.join(folder, entry.name));
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.toLowerCase() !== 'backups') continue;
+    const backups = path.join(folder, entry.name);
+    for (const backup of await fs.promises.readdir(backups, { withFileTypes: true })) {
+      if (backup.isFile() && isShowDocument(backup.name)) documents.push(path.join(backups, backup.name));
+    }
+  }
+  return documents;
+}
+
+// What the open show's media folder holds that nothing uses, worked out afresh.
+async function findUnusedShowMedia() {
+  // The show's files are on this computer only when the engine is.
+  if (readLiveplayConfig().mode === 'remote') return { available: false, reason: 'remote' };
+  const identity = currentProjectIdentity;
+  const showFolder = currentProjectData?.folderPath;
+  const showFile = identity?.projectPath;
+  const mediaFolder = mediaFolderFor(showFolder);
+  if (!mediaFolder || typeof showFile !== 'string' || !path.isAbsolute(showFile) ||
+      fileKindFor(showFile) !== ProjectFileKind.NativeProject) {
+    return { available: false, reason: 'no-folder' };
+  }
+
+  // The folder is read before the documents: a file that arrives while this
+  // runs is not in the list at all, and one changed since is too new to list.
+  const now = Date.now();
+  let entries = [];
+  try {
+    entries = await fs.promises.readdir(mediaFolder, { withFileTypes: true });
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+  const files = [];
+  for (const entry of entries) {
+    // A regular file directly in the folder: never a folder, never a link.
+    if (!entry.isFile()) continue;
+    try {
+      const stat = await fs.promises.lstat(path.join(mediaFolder, entry.name));
+      files.push({
+        name: entry.name, size: stat.size, modifiedAt: stat.mtimeMs, isFile: stat.isFile(),
+        changedAt: Math.max(stat.mtimeMs, stat.ctimeMs, stat.birthtimeMs),
+      });
+    } catch { /* gone since the folder was read */ }
+  }
+
+  const references = collectReferences([]);
+  const savedShow = path.resolve(showFile);
+  const unreadable = { available: false, reason: 'unreadable' };
+  try {
+    // Without the show as it was saved, nothing can be called unused.
+    const saved = await readShowDocument(savedShow);
+    if (!saved || typeof saved !== 'object') return unreadable;
+    collectReferences([saved], references);
+    for (const folder of new Set([path.resolve(showFolder), path.dirname(savedShow)])) {
+      for (const file of await showDocumentsIn(folder)) {
+        if (file === savedShow) continue;
+        try {
+          collectReferences([await readShowDocument(file)], references);
+        } catch (error) {
+          // A backup the engine pruned while this ran took its references with it.
+          if (error?.code !== 'ENOENT') throw error;
+        }
+        await afterOtherWork();
+      }
+    }
+  } catch {
+    return unreadable;
+  }
+
+  // The show as it is open now, read last so it is as current as it can be.
+  if (!currentProjectData || !sameIdentity(identity, currentProjectIdentity)) throw new Error('The open show changed.');
+  collectReferences([currentProjectData], references);
+  const unused = [];
+  for (let start = 0; start < files.length; start += CLEANUP_SEARCH_BATCH) {
+    unused.push(...findUnusedMedia({ files: files.slice(start, start + CLEANUP_SEARCH_BATCH), references, now }));
+    await afterOtherWork();
+  }
+  return { available: true, identity, showFolder, files: unused };
+}
+
+ipcMain.handle('media:list-unused', async (event) => {
+  requireMediaCleanupOwner(event);
+  const found = await findUnusedShowMedia();
+  if (!found.available) return found;
+  const files = found.files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+  return { available: true, files, totalBytes: files.reduce((total, file) => total + file.size, 0) };
+});
+
+ipcMain.handle('media:trash-unused', async (event, request) => {
+  requireMediaCleanupOwner(event);
+  requireBoundedIpcObject(request, 'media clean-up', 4 * 1024 * 1024);
+  const names = request?.names;
+  if (!Array.isArray(names) || names.length === 0 || names.length > MAX_CLEANUP_NAMES) {
+    throw new TypeError(`names must list between 1 and ${MAX_CLEANUP_NAMES} files`);
+  }
+  for (const name of names) {
+    requireIpcString(name, 'file name', 255);
+    if (!isPlainFileName(name)) throw new TypeError('A file is named without a folder.');
+  }
+  if (mediaCleanupRunning) throw new Error('A media clean-up is already running.');
+  mediaCleanupRunning = true;
+  try {
+    // What was unused when the window listed it is not trusted: it is worked
+    // out again now, and only a name still on that list is touched.
+    const wanted = [...new Set(names)];
+    const found = await findUnusedShowMedia();
+    const trashed = [];
+    const failed = [];
+    const kept = [];
+    // Not on this computer, no folder, or a show file that cannot be read:
+    // nothing is touched, and the list the window reads next says which.
+    if (!found.available) return { trashed, failed, kept };
+    const unused = new Map(found.files.map(file => [file.name, file]));
+    // The open show has the last word on every file, at the moment it would
+    // be moved, however long the files before it took.
+    let openShow = null;
+    let openShowReferences = null;
+    const openShowUses = (name) => {
+      if (!currentProjectData || !sameIdentity(found.identity, currentProjectIdentity)) return true;
+      if (currentProjectData !== openShow) {
+        openShow = currentProjectData;
+        openShowReferences = collectReferences([openShow]);
+      }
+      return isReferenced(openShowReferences, name);
+    };
+    for (const name of wanted) {
+      const listed = unused.get(name);
+      const target = listed ? mediaFilePath(found.showFolder, name) : null;
+      if (!target || openShowUses(name)) {
+        kept.push(name);
+        continue;
+      }
+      try {
+        const stat = await fs.promises.lstat(target);
+        // Changed since it was looked at a moment ago: something is using it.
+        if (!stat.isFile() || stat.size !== listed.size || stat.mtimeMs !== listed.modifiedAt || openShowUses(name)) {
+          kept.push(name);
+          continue;
+        }
+        await shell.trashItem(target);
+        trashed.push(name);
+      } catch (error) {
+        failed.push(name);
+        console.warn('[media-cleanup] not moved to the Trash:', name, String(error?.message || error).split('\n')[0].slice(0, 200));
+      }
+    }
+    return { trashed, failed, kept };
+  } finally {
+    mediaCleanupRunning = false;
+  }
+});
+
 // Which other screen a capture may be taken from. What a capture is used for is
 // said at the moment it is taken, never remembered here.
 ipcMain.handle('video-output:set-capture-settings', (event, displayId) => {
@@ -4323,6 +4516,7 @@ const menuTranslations = Object.entries(localeFiles).reduce((acc, [code, data]) 
     saveProject: data.menu.saveProject,
     exportProject: data.menu.exportProject,
     exportCueSheet: data.menu.exportCueSheet || 'Export Cue Sheet (PDF)…',
+    cleanUpMedia: data.menu.cleanUpMedia || 'Clean Up Media…',
     importProject: data.menu.importProject,
     closeProject: data.menu.closeProject,
     openProjectFolder: data.menu.openProjectFolder,
@@ -4436,6 +4630,13 @@ function createMenu(locale = 'en', isDev = false) {
           enabled: currentProject !== null,
           click: () => {
             mainWindow.webContents.send('menu-export-cue-sheet');
+          }
+        },
+        {
+          label: t.cleanUpMedia,
+          enabled: currentProject !== null,
+          click: () => {
+            mainWindow.webContents.send('menu-clean-up-media');
           }
         },
         { type: 'separator' },

@@ -34,7 +34,8 @@
     "videoOutputExitFullscreen": "Quitter le plein écran",
     "videoOutputShowTestCard": "Afficher la mire",
     "videoOutputExit": "Quitter la sortie vidéo",
-    "exportCueSheet": "Exporter la Feuille de Signaux (PDF)…"
+    "exportCueSheet": "Exporter la Feuille de Signaux (PDF)…",
+    "cleanUpMedia": "Nettoyer les médias…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -1355,6 +1356,8 @@
   "showMode": {
     "toggle": "Mode Spectacle",
     "toggleHint": "Passer à une vue de lecture simplifiée et tactile pour les spectacles.",
+    "setup": "Réglages",
+    "setupHint": "Paramètres, Sortie vidéo, Contrôle des niveaux, Vérification avant spectacle et Sauvegarde auto",
     "exit": "Quitter",
     "exitHint": "Maintenez appuyé pour quitter le Mode Spectacle",
     "noItems": "Aucun élément dans ce projet",
@@ -1489,5 +1492,30 @@
       "incomplete": "La dernière vérification vidéo n’a pas abouti · {checked}/{total} vérifiés",
       "unavailable": "Signaux vidéo dans ce spectacle : {count}. La vérification vidéo ne peut pas s’exécuter dans cette fenêtre."
     }
+  },
+  "mediaCleanup": {
+    "title": "Nettoyer les médias",
+    "loading": "Vérification du dossier média…",
+    "intro": "Rien n’utilise ces fichiers : ni ce spectacle, ni ses sauvegardes, ni un autre spectacle enregistré dans le même dossier. Ils sont déplacés vers « {bin} », pas supprimés.",
+    "none": "Chaque fichier du dossier média est utilisé par ce spectacle ou l’une de ses sauvegardes.",
+    "remote": "Les médias de ce spectacle se trouvent sur l’ordinateur qui exécute le moteur audio ; ils ne peuvent donc pas être nettoyés depuis celui-ci.",
+    "noFolder": "Ce spectacle n’a pas été enregistré dans un dossier ; il n’a donc pas de dossier média à nettoyer.",
+    "unreadable": "Le fichier du spectacle enregistré ou l’une de ses sauvegardes n’a pas pu être lu ; aucun fichier n’est donc indiqué comme inutilisé.",
+    "listFailed": "Le dossier média n’a pas pu être lu.",
+    "again": "Vérifier à nouveau",
+    "selectAll": "Tout sélectionner",
+    "selectNone": "Ne rien sélectionner",
+    "total": "Fichiers inutilisés : {count} · {size}",
+    "moveOne": "Déplacer {count} fichier vers « {bin} » ({size})",
+    "move": "Déplacer {count} fichiers vers « {bin} » ({size})",
+    "moving": "Déplacement…",
+    "playing": "Les fichiers ne sont déplacés que lorsque rien n’est en lecture.",
+    "moved": "Déplacés vers « {bin} » : {count}",
+    "notMoved": "Impossible de déplacer vers « {bin} » :",
+    "kept": "Laissés en place, car ils sont de nouveau utilisés ou viennent d’être modifiés :",
+    "moveFailed": "Le déplacement des fichiers n’a pas abouti.",
+    "trash": "Corbeille",
+    "recycleBin": "Corbeille",
+    "editModeOnly": "Nettoyer les médias est disponible en Mode Édition."
   }
 }

@@ -260,6 +260,7 @@
           <ProjectRepairNotice v-else-if="visibleImportPanel === 'repair' && projectRepair" :notice="projectRepair" @save="saveRepairedProject" />
           <PreShowCheckPanel v-else-if="visibleImportPanel === 'show-check'" />
           <VideoCaptureControls v-else-if="visibleImportPanel === 'video-capture'" class="workspace-capture" />
+          <MediaCleanupPanel v-else-if="visibleImportPanel === 'media-cleanup'" />
         </div>
       </section>
       <div v-show="decisionOpen" id="workspace-project-decision"></div>
@@ -329,6 +330,7 @@ const importPanelTitle = computed(() => {
   if (visibleImportPanel.value === 'repair') return t('repair.noticeTitle');
   if (visibleImportPanel.value === 'show-check') return t('showCheck.title');
   if (visibleImportPanel.value === 'video-capture') return t('standbyCapture.panelTitle');
+  if (visibleImportPanel.value === 'media-cleanup') return t('mediaCleanup.title');
   if (visibleImportPanel.value === 'quickplay') return t(quickPlayEditor.value?.remove
     ? 'oneShots.removeConfirmTitle' : quickPlayEditor.value ? 'oneShots.settings' : 'oneShots.importInto',
     { number: (quickPlayImportSlot.value ?? 0) + 1 });

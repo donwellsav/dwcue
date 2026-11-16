@@ -2514,6 +2514,16 @@ assert.doesNotMatch(spotifyImportModal + youtubeImportModal, /aria-modal|--dialo
   'online imports must not block the playlist or transport with a modal');
 
 const electronMain = read('client/electron/main.js');
+assert.match(
+  read('client/app/components/ProjectHeader.vue'),
+  /class="header-setup"\s+:class="\{ 'header-setup--folded': showMode, 'header-setup--open': showMode && setupOpen \}"[\s\S]*id="header-setup-items" class="header-setup__items" @click="setupOpen = false"[\s\S]*t\('settings\.title'\)[\s\S]*t\('showCheck\.title'\)[\s\S]*class="autosave-toggle"[\s\S]*<\/div>\s*<\/div>\s*<!-- Show Mode toggle:[\s\S]*\.header-setup,\s*\.header-setup__items \{\s*display: contents;/,
+  'Show Mode folds the setup controls into one menu and keeps the Show Mode switch out of it; Edit Mode lays them out as before',
+);
+assert.doesNotMatch(
+  read('client/app/components/ProjectHeader.vue'),
+  /setupOpen[^\n]*Escape|Escape[^\n]*setupOpen/,
+  'the Setup menu never takes Escape: it is Stop All',
+);
 const stillCapture = read('client/app/composables/useVideoStandbyCapture.ts');
 assert.match(
   stillCapture,
@@ -2540,6 +2550,21 @@ assert.match(
   /ipcMain\.handle\('video-output:convert-cue', async \(event, request\) => \{\s*requireVideoCheckOwner\(event\);[\s\S]{0,700}if \(readLiveplayConfig\(\)\.mode === 'remote'\) return \{ status: 'failed', reason: 'remote' \};\s*const sourcePath = cueSourcePath\(currentProjectData\?\.folderPath, cue\);[\s\S]{0,700}if \(!await setupFfmpeg\(\) \|\| !ffmpegPath\) return \{ status: 'failed', reason: 'no-converter' \};/,
   'only the main workspace can ask for a conversion; the file is looked up here, never taken from the request, and only on this computer',
 );
+// Clean Up Media moves files to the Trash and does nothing else to a file.
+{
+  const mediaCleanup = /\/\/ Clean Up Media: files in the show's media folder that nothing uses[\s\S]*?ipcMain\.handle\('media:trash-unused', async \(event, request\) => \{[\s\S]*?\n\}\);/
+    .exec(electronMain)?.[0] ?? '';
+  assert.match(
+    mediaCleanup,
+    /async function findUnusedShowMedia\(\) \{[\s\S]{0,200}if \(readLiveplayConfig\(\)\.mode === 'remote'\) return \{ available: false, reason: 'remote' \};[\s\S]*ipcMain\.handle\('media:trash-unused', async \(event, request\) => \{\s*requireMediaCleanupOwner\(event\);[\s\S]*if \(!isPlainFileName\(name\)\) throw[\s\S]*const found = await findUnusedShowMedia\(\);[\s\S]*const target = listed \? mediaFilePath\(found\.showFolder, name\) : null;[\s\S]*await shell\.trashItem\(target\);/,
+    'only the main workspace can clean up media, only on this computer; it names files, never paths, and each is found unused again here before it goes to the Trash',
+  );
+  assert.doesNotMatch(
+    mediaCleanup + read('client/electron/unused-media.js'),
+    /\b(?:rm|rmSync|rmdir|rmdirSync|unlink|unlinkSync|rename|renameSync|writeFile|writeFileSync|appendFile|copyFile|truncate)\s*\(|shell\.(?!trashItem\()\w+\(/,
+    'cleaning up media never deletes, renames or writes a file: the Trash is the only place a file goes',
+  );
+}
 const electronPreload = read('client/electron/preload.js');
 assert.match(
   electronMain,

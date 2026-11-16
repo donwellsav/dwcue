@@ -34,7 +34,8 @@
     "videoOutputExitFullscreen": "Vollbild beenden",
     "videoOutputShowTestCard": "Testbild anzeigen",
     "videoOutputExit": "Videoausgabe beenden",
-    "exportCueSheet": "Cue-Liste exportieren (PDF)…"
+    "exportCueSheet": "Cue-Liste exportieren (PDF)…",
+    "cleanUpMedia": "Medien aufräumen…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -1355,6 +1356,8 @@
   "showMode": {
     "toggle": "Show-Modus",
     "toggleHint": "Zu einer vereinfachten, touch-freundlichen Wiedergabeansicht für Shows wechseln.",
+    "setup": "Einrichtung",
+    "setupHint": "Einstellungen, Videoausgabe, Pegelprüfung, Show-Check und Automatisch speichern",
     "exit": "Beenden",
     "exitHint": "Gedrückt halten, um den Show-Modus zu verlassen",
     "noItems": "Keine Elemente in diesem Projekt",
@@ -1489,5 +1492,30 @@
       "incomplete": "Der letzte Video-Check wurde nicht abgeschlossen · {checked}/{total} geprüft",
       "unavailable": "Video-Cues in dieser Show: {count}. Der Video-Check kann in diesem Fenster nicht laufen."
     }
+  },
+  "mediaCleanup": {
+    "title": "Medien aufräumen",
+    "loading": "Medienordner wird geprüft…",
+    "intro": "Diese Dateien werden nicht verwendet: weder von dieser Show noch von ihren Backups noch von einer anderen Show, die im selben Ordner gespeichert ist. Sie werden in den Ordner „{bin}“ verschoben, nicht gelöscht.",
+    "none": "Jede Datei im Medienordner wird von dieser Show oder einem ihrer Backups verwendet.",
+    "remote": "Die Medien dieser Show liegen auf dem Computer, auf dem die Audio-Engine läuft, und können von diesem Computer aus nicht aufgeräumt werden.",
+    "noFolder": "Diese Show wurde nicht in einem Ordner gespeichert und hat daher keinen Medienordner zum Aufräumen.",
+    "unreadable": "Die gespeicherte Show-Datei oder eines ihrer Backups konnte nicht gelesen werden, daher wird keine Datei als unbenutzt aufgeführt.",
+    "listFailed": "Der Medienordner konnte nicht gelesen werden.",
+    "again": "Erneut prüfen",
+    "selectAll": "Alle auswählen",
+    "selectNone": "Keine auswählen",
+    "total": "Unbenutzte Dateien: {count} · {size}",
+    "moveOne": "{count} Datei nach „{bin}“ verschieben ({size})",
+    "move": "{count} Dateien nach „{bin}“ verschieben ({size})",
+    "moving": "Wird verschoben…",
+    "playing": "Dateien werden nur verschoben, solange nichts abgespielt wird.",
+    "moved": "Nach „{bin}“ verschoben: {count}",
+    "notMoved": "Konnte nicht nach „{bin}“ verschoben werden:",
+    "kept": "Bleiben, wo sie sind, weil sie wieder verwendet werden oder sich gerade geändert haben:",
+    "moveFailed": "Das Verschieben der Dateien wurde nicht abgeschlossen.",
+    "trash": "Papierkorb",
+    "recycleBin": "Papierkorb",
+    "editModeOnly": "Medien aufräumen ist im Bearbeitungsmodus verfügbar."
   }
 }

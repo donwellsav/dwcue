@@ -34,7 +34,8 @@
     "videoOutputExitFullscreen": "Esci dallo schermo intero",
     "videoOutputShowTestCard": "Mostra monoscopio",
     "videoOutputExit": "Chiudi uscita video",
-    "exportCueSheet": "Esporta Foglio dei Segnali (PDF)…"
+    "exportCueSheet": "Esporta Foglio dei Segnali (PDF)…",
+    "cleanUpMedia": "Pulisci media…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -1355,6 +1356,8 @@
   "showMode": {
     "toggle": "Modalità Show",
     "toggleHint": "Passa a una vista di riproduzione semplificata e ottimizzata per il tocco, pensata per gli show.",
+    "setup": "Configurazione",
+    "setupHint": "Impostazioni, Uscita video, Controllo livelli, Controllo pre-spettacolo e Salvataggio automatico",
     "exit": "Esci",
     "exitHint": "Tieni premuto per uscire dalla Modalità Show",
     "noItems": "Nessun elemento in questo progetto",
@@ -1489,5 +1492,30 @@
       "incomplete": "L’ultimo controllo video non è terminato · {checked}/{total} controllati",
       "unavailable": "Segnali video in questo spettacolo: {count}. Il controllo video non può essere eseguito in questa finestra."
     }
+  },
+  "mediaCleanup": {
+    "title": "Pulisci media",
+    "loading": "Controllo della cartella media…",
+    "intro": "Nessuno usa questi file: né questo spettacolo, né i suoi backup, né un altro spettacolo salvato nella stessa cartella. Vengono spostati in «{bin}», non eliminati.",
+    "none": "Ogni file nella cartella media è usato da questo spettacolo o da uno dei suoi backup.",
+    "remote": "I media di questo spettacolo si trovano sul computer che esegue il motore audio, quindi non possono essere puliti da questo.",
+    "noFolder": "Questo spettacolo non è stato salvato in una cartella, quindi non ha una cartella media da pulire.",
+    "unreadable": "Non è stato possibile leggere il file dello spettacolo salvato o uno dei suoi backup, quindi nessun file è indicato come inutilizzato.",
+    "listFailed": "Non è stato possibile leggere la cartella media.",
+    "again": "Controlla di nuovo",
+    "selectAll": "Seleziona tutto",
+    "selectNone": "Deseleziona tutto",
+    "total": "File inutilizzati: {count} · {size}",
+    "moveOne": "Sposta {count} file in «{bin}» ({size})",
+    "move": "Sposta {count} file in «{bin}» ({size})",
+    "moving": "Spostamento…",
+    "playing": "I file vengono spostati solo quando nulla è in riproduzione.",
+    "moved": "Spostati in «{bin}»: {count}",
+    "notMoved": "Impossibile spostare in «{bin}»:",
+    "kept": "Lasciati dove sono, perché sono di nuovo in uso o sono appena cambiati:",
+    "moveFailed": "Lo spostamento dei file non è stato completato.",
+    "trash": "Cestino",
+    "recycleBin": "Cestino",
+    "editModeOnly": "Pulisci media è disponibile in Modalità Modifica."
   }
 }

@@ -34,7 +34,8 @@
     "videoOutputExitFullscreen": "Exit Full Screen",
     "videoOutputShowTestCard": "Show Test Card",
     "videoOutputExit": "Exit Video Output",
-    "exportCueSheet": "Export Cue Sheet (PDF)…"
+    "exportCueSheet": "Export Cue Sheet (PDF)…",
+    "cleanUpMedia": "Clean Up Media…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -1355,6 +1356,8 @@
   "showMode": {
     "toggle": "Show Mode",
     "toggleHint": "Switch to a simplified, touch-friendly playback view for shows.",
+    "setup": "Setup",
+    "setupHint": "Settings, Video Output, Level Check, Pre-show check and Autosave",
     "exit": "Exit",
     "exitHint": "Hold to exit Show Mode",
     "noItems": "No items in this project",
@@ -1489,5 +1492,30 @@
       "incomplete": "The last video check did not finish · {checked}/{total} checked",
       "unavailable": "Video cues in this show: {count}. The video check cannot run in this window."
     }
+  },
+  "mediaCleanup": {
+    "title": "Clean Up Media",
+    "loading": "Checking the media folder…",
+    "intro": "Nothing uses these files: not this show, not its backups, not another show saved in the same folder. They are moved to the {bin}, not deleted.",
+    "none": "Every file in the media folder is used by this show or one of its backups.",
+    "remote": "This show's media is on the computer that runs the audio engine, so it cannot be cleaned up from this one.",
+    "noFolder": "This show has not been saved to a folder, so it has no media folder to clean up.",
+    "unreadable": "The saved show file or one of its backups could not be read, so no file is listed as unused.",
+    "listFailed": "The media folder could not be read.",
+    "again": "Check again",
+    "selectAll": "Select all",
+    "selectNone": "Select none",
+    "total": "Unused files: {count} · {size}",
+    "moveOne": "Move {count} file to the {bin} ({size})",
+    "move": "Move {count} files to the {bin} ({size})",
+    "moving": "Moving…",
+    "playing": "Files are moved only while nothing is playing.",
+    "moved": "Moved to the {bin}: {count}",
+    "notMoved": "Could not be moved to the {bin}:",
+    "kept": "Left where they are, because they are in use again or have just changed:",
+    "moveFailed": "Moving the files did not finish.",
+    "trash": "Trash",
+    "recycleBin": "Recycle Bin",
+    "editModeOnly": "Clean Up Media is available in Edit Mode."
   }
 }

@@ -34,7 +34,8 @@
     "videoOutputExitFullscreen": "Sair da Tela Cheia",
     "videoOutputShowTestCard": "Mostrar Cartão de Teste",
     "videoOutputExit": "Sair da Saída de Vídeo",
-    "exportCueSheet": "Exportar Folha de Cues (PDF)…"
+    "exportCueSheet": "Exportar Folha de Cues (PDF)…",
+    "cleanUpMedia": "Limpar mídia…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -1355,6 +1356,8 @@
   "showMode": {
     "toggle": "Modo Show",
     "toggleHint": "Alternar para uma visualização de reprodução simplificada e adequada para toque, feita para shows.",
+    "setup": "Configuração",
+    "setupHint": "Definições, Saída de Vídeo, Verificação de Nível, Verificação pré-show e Salvamento automático",
     "exit": "Sair",
     "exitHint": "Mantenha pressionado para sair do Modo Show",
     "noItems": "Nenhum item neste projeto",
@@ -1489,5 +1492,30 @@
       "incomplete": "A última verificação de vídeo não foi concluída · {checked}/{total} verificados",
       "unavailable": "Cues de vídeo neste projeto: {count}. A verificação de vídeo não pode ser executada nesta janela."
     }
+  },
+  "mediaCleanup": {
+    "title": "Limpar mídia",
+    "loading": "Verificando a pasta de mídia…",
+    "intro": "Nada usa esses arquivos: nem este projeto, nem seus backups, nem outro projeto salvo na mesma pasta. Eles são movidos para \"{bin}\", não excluídos.",
+    "none": "Todos os arquivos da pasta de mídia são usados por este projeto ou por um dos seus backups.",
+    "remote": "A mídia deste projeto está no computador que executa o motor de áudio, por isso não pode ser limpa a partir deste.",
+    "noFolder": "Este projeto não foi salvo em uma pasta, por isso não tem pasta de mídia para limpar.",
+    "unreadable": "Não foi possível ler o arquivo do projeto salvo ou um dos seus backups, por isso nenhum arquivo é listado como não usado.",
+    "listFailed": "Não foi possível ler a pasta de mídia.",
+    "again": "Verificar novamente",
+    "selectAll": "Selecionar tudo",
+    "selectNone": "Não selecionar nada",
+    "total": "Arquivos não usados: {count} · {size}",
+    "moveOne": "Mover {count} arquivo para \"{bin}\" ({size})",
+    "move": "Mover {count} arquivos para \"{bin}\" ({size})",
+    "moving": "Movendo…",
+    "playing": "Os arquivos só são movidos enquanto nada está sendo reproduzido.",
+    "moved": "Movidos para \"{bin}\": {count}",
+    "notMoved": "Não foi possível mover para \"{bin}\":",
+    "kept": "Deixados onde estão, porque voltaram a ser usados ou acabaram de mudar:",
+    "moveFailed": "A movimentação dos arquivos não foi concluída.",
+    "trash": "Lixeira",
+    "recycleBin": "Lixeira",
+    "editModeOnly": "Limpar mídia está disponível no Modo de Edição."
   }
 }

@@ -67,6 +67,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setCurrentProject: (projectPath) => ipcRenderer.invoke('set-current-project', projectPath),
   // Printable summary of the open show; main picks the file and writes the PDF.
   exportCueSheet: (sheet) => ipcRenderer.invoke('export-cue-sheet', sheet),
+  // Clean Up Media. Main works out which files in the show's media folder
+  // nothing uses; the window names the ones to move to the Trash, by file name
+  // only, and main checks every name again before it moves anything.
+  media: {
+    listUnused: () => ipcRenderer.invoke('media:list-unused'),
+    trashUnused: (names) => ipcRenderer.invoke('media:trash-unused', { names }),
+  },
   keepAwake: (state) => ipcRenderer.invoke('power:keep-awake', state),
 
   // Waveform generation
@@ -127,6 +134,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onMenuSaveProject: (callback) => replaceIpcListener('menu-save-project', callback),
   onMenuExportProject: (callback) => replaceIpcListener('menu-export-project', callback),
   onMenuExportCueSheet: (callback) => replaceIpcListener('menu-export-cue-sheet', callback),
+  onMenuCleanUpMedia: (callback) => replaceIpcListener('menu-clean-up-media', callback),
   onMenuImportProject: (callback) => replaceIpcListener('menu-import-project', callback),
   onMenuCloseProject: (callback) => replaceIpcListener('menu-close-project', callback),
   onMenuOpenRecentProject: (callback) => replaceIpcListener('menu-open-recent-project', callback),

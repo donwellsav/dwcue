@@ -34,7 +34,8 @@
     "videoOutputExitFullscreen": "Dil nga ekrani i plotë",
     "videoOutputShowTestCard": "Shfaq kartën e testit",
     "videoOutputExit": "Mbyll daljen e videos",
-    "exportCueSheet": "Eksporto Fletën e Cue-ve (PDF)…"
+    "exportCueSheet": "Eksporto Fletën e Cue-ve (PDF)…",
+    "cleanUpMedia": "Pastro median…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -1355,6 +1356,8 @@
   "showMode": {
     "toggle": "Modaliteti Shfaqje",
     "toggleHint": "Kalo në një pamje riprodhimi të thjeshtuar dhe të përshtatshme për prekje gjatë shfaqjeve.",
+    "setup": "Konfigurimi",
+    "setupHint": "Cilësimet, Dalja e videos, Kontrolli i niveleve, Kontrolli para shfaqjes dhe Ruajtje automatike",
     "exit": "Dil",
     "exitHint": "Mbaje shtypur për të dalë nga Modaliteti Shfaqje",
     "noItems": "Nuk ka asnjë artikull në këtë projekt",
@@ -1489,5 +1492,30 @@
       "incomplete": "Kontrolli i fundit i videos nuk përfundoi · {checked}/{total} të kontrolluara",
       "unavailable": "Cue video në këtë shfaqje: {count}. Kontrolli i videos nuk mund të ekzekutohet në këtë dritare."
     }
+  },
+  "mediaCleanup": {
+    "title": "Pastro median",
+    "loading": "Po kontrollohet dosja e medias…",
+    "intro": "Asgjë nuk i përdor këto skedarë: as kjo shfaqje, as kopjet e saj rezervë, as një shfaqje tjetër e ruajtur në të njëjtën dosje. Zhvendosen te «{bin}», nuk fshihen.",
+    "none": "Çdo skedar në dosjen e medias përdoret nga kjo shfaqje ose nga një prej kopjeve të saj rezervë.",
+    "remote": "Media e kësaj shfaqjeje ndodhet në kompjuterin që ekzekuton motorin audio, ndaj nuk mund të pastrohet nga ky kompjuter.",
+    "noFolder": "Kjo shfaqje nuk është ruajtur në një dosje, ndaj nuk ka dosje media për t'u pastruar.",
+    "unreadable": "Skedari i ruajtur i shfaqjes ose një prej kopjeve të tij rezervë nuk mund të lexohej, ndaj asnjë skedar nuk renditet si i papërdorur.",
+    "listFailed": "Dosja e medias nuk mund të lexohej.",
+    "again": "Kontrollo përsëri",
+    "selectAll": "Zgjidh të gjitha",
+    "selectNone": "Mos zgjidh asnjë",
+    "total": "Skedarë të papërdorur: {count} · {size}",
+    "moveOne": "Zhvendos {count} skedar te «{bin}» ({size})",
+    "move": "Zhvendos {count} skedarë te «{bin}» ({size})",
+    "moving": "Po zhvendoset…",
+    "playing": "Skedarët zhvendosen vetëm kur nuk po luhet asgjë.",
+    "moved": "Të zhvendosur te «{bin}»: {count}",
+    "notMoved": "Nuk mund të zhvendoseshin te «{bin}»:",
+    "kept": "Lanë ku ishin, sepse po përdoren sërish ose sapo kanë ndryshuar:",
+    "moveFailed": "Zhvendosja e skedarëve nuk përfundoi.",
+    "trash": "Koshi i mbeturinave",
+    "recycleBin": "Koshi i riciklimit",
+    "editModeOnly": "Pastrimi i medias është i disponueshëm në modalitetin e redaktimit."
   }
 }

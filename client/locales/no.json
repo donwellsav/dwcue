@@ -34,7 +34,8 @@
     "videoOutputExitFullscreen": "Avslutt fullskjerm",
     "videoOutputShowTestCard": "Vis testbilde",
     "videoOutputExit": "Avslutt videoutgang",
-    "exportCueSheet": "Eksporter Cueliste (PDF)…"
+    "exportCueSheet": "Eksporter Cueliste (PDF)…",
+    "cleanUpMedia": "Rydd opp i medier…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -1355,6 +1356,8 @@
   "showMode": {
     "toggle": "Show-modus",
     "toggleHint": "Bytt til en forenklet, touch-vennlig avspillingsvisning for show.",
+    "setup": "Oppsett",
+    "setupHint": "Innstillinger, Videoutgang, Nivåkontroll, Sjekk før show og Autolagring",
     "exit": "Avslutt",
     "exitHint": "Hold inne for å avslutte Show-modus",
     "noItems": "Ingen elementer i dette prosjektet",
@@ -1489,5 +1492,30 @@
       "incomplete": "Forrige videosjekk ble ikke fullført · {checked}/{total} sjekket",
       "unavailable": "Videocuer i dette prosjektet: {count}. Videosjekken kan ikke kjøres i dette vinduet."
     }
+  },
+  "mediaCleanup": {
+    "title": "Rydd opp i medier",
+    "loading": "Sjekker mediemappen…",
+    "intro": "Ingenting bruker disse filene: verken dette prosjektet, sikkerhetskopiene dets eller et annet prosjekt som er lagret i samme mappe. De flyttes til «{bin}» og slettes ikke.",
+    "none": "Hver fil i mediemappen brukes av dette prosjektet eller en av sikkerhetskopiene dets.",
+    "remote": "Mediene i dette prosjektet ligger på datamaskinen som kjører lydmotoren, så de kan ikke ryddes opp fra denne.",
+    "noFolder": "Dette prosjektet er ikke lagret i en mappe, så det har ingen mediemappe å rydde opp i.",
+    "unreadable": "Den lagrede prosjektfilen eller en av sikkerhetskopiene kunne ikke leses, så ingen fil er oppført som ubrukt.",
+    "listFailed": "Mediemappen kunne ikke leses.",
+    "again": "Sjekk på nytt",
+    "selectAll": "Velg alle",
+    "selectNone": "Velg ingen",
+    "total": "Ubrukte filer: {count} · {size}",
+    "moveOne": "Flytt {count} fil til «{bin}» ({size})",
+    "move": "Flytt {count} filer til «{bin}» ({size})",
+    "moving": "Flytter…",
+    "playing": "Filer flyttes bare mens ingenting spilles av.",
+    "moved": "Flyttet til «{bin}»: {count}",
+    "notMoved": "Kunne ikke flyttes til «{bin}»:",
+    "kept": "Latt ligge, fordi de er i bruk igjen eller nettopp er endret:",
+    "moveFailed": "Flyttingen av filene ble ikke fullført.",
+    "trash": "Papirkurv",
+    "recycleBin": "Papirkurv",
+    "editModeOnly": "Rydd opp i medier er tilgjengelig i redigeringsmodus."
   }
 }

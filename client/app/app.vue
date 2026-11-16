@@ -239,6 +239,7 @@ const { sessionLost } = useConnectionGuard();
 const hasWorkspace = computed(() => !!currentProject.value && projectHydrationStatus.value !== 'failed');
 const { showHeaderWarning } = useHeaderWarnings();
 const { exportCueSheet } = useCueSheetExport();
+const { openMediaCleanup } = useMediaCleanup();
 let stopHeaderWarnings: (() => void) | undefined;
 onMounted(() => {
   if (isCartWindow || isVideoOutputWindow) return;
@@ -620,6 +621,7 @@ onMounted(() => {
       if (currentProject.value) openArchivePanel('archive-export');
     });
     window.electronAPI.onMenuExportCueSheet?.(() => { void exportCueSheet(); });
+    window.electronAPI.onMenuCleanUpMedia?.(() => openMediaCleanup());
 
     const api = window.electronAPI;
     void api.getUpdateInstallSupported?.().then(supported => { update.installSupported = supported; }).catch(() => {});

@@ -34,7 +34,8 @@
     "videoOutputExitFullscreen": "Ieși din ecran complet",
     "videoOutputShowTestCard": "Afișează mira de test",
     "videoOutputExit": "Închide ieșirea video",
-    "exportCueSheet": "Exportă Fișa de Cue-uri (PDF)…"
+    "exportCueSheet": "Exportă Fișa de Cue-uri (PDF)…",
+    "cleanUpMedia": "Curăță media…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -1355,6 +1356,8 @@
   "showMode": {
     "toggle": "Mod Spectacol",
     "toggleHint": "Comută la o vizualizare de redare simplificată, potrivită pentru ecrane tactile, pentru spectacole.",
+    "setup": "Configurare",
+    "setupHint": "Setări, Ieșire video, Verificare nivel, Verificare înainte de show și Salvare automată",
     "exit": "Ieșire",
     "exitHint": "Țineți apăsat pentru a ieși din Modul Spectacol",
     "noItems": "Niciun element în acest proiect",
@@ -1489,5 +1492,30 @@
       "incomplete": "Ultima verificare video nu s-a încheiat · {checked}/{total} verificate",
       "unavailable": "Cue-uri video în acest proiect: {count}. Verificarea video nu poate rula în această fereastră."
     }
+  },
+  "mediaCleanup": {
+    "title": "Curăță media",
+    "loading": "Se verifică folderul media…",
+    "intro": "Nimic nu folosește aceste fișiere: nici acest proiect, nici copiile lui de siguranță, nici alt proiect salvat în același folder. Sunt mutate în „{bin}”, nu șterse.",
+    "none": "Fiecare fișier din folderul media este folosit de acest proiect sau de una dintre copiile lui de siguranță.",
+    "remote": "Fișierele media ale acestui proiect sunt pe computerul care rulează motorul audio, deci nu pot fi curățate de pe acesta.",
+    "noFolder": "Acest proiect nu a fost salvat într-un folder, deci nu are un folder media de curățat.",
+    "unreadable": "Fișierul proiectului salvat sau una dintre copiile lui de siguranță nu a putut fi citit, deci niciun fișier nu este listat ca nefolosit.",
+    "listFailed": "Folderul media nu a putut fi citit.",
+    "again": "Verifică din nou",
+    "selectAll": "Selectează tot",
+    "selectNone": "Nu selecta nimic",
+    "total": "Fișiere nefolosite: {count} · {size}",
+    "moveOne": "Mută {count} fișier în „{bin}” ({size})",
+    "move": "Mută {count} fișiere în „{bin}” ({size})",
+    "moving": "Se mută…",
+    "playing": "Fișierele sunt mutate doar cât timp nu se redă nimic.",
+    "moved": "Mutate în „{bin}”: {count}",
+    "notMoved": "Nu au putut fi mutate în „{bin}”:",
+    "kept": "Lăsate pe loc, deoarece sunt din nou folosite sau tocmai s-au schimbat:",
+    "moveFailed": "Mutarea fișierelor nu s-a finalizat.",
+    "trash": "Coș de gunoi",
+    "recycleBin": "Coș de reciclare",
+    "editModeOnly": "Curățarea media este disponibilă în modul Editare."
   }
 }

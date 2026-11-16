@@ -134,6 +134,8 @@ On narrow playlists, cue names appear above the row controls and the toolbar use
 
 Switch to **Show Mode** for performance after preparation is complete. It simplifies the interface and emphasizes transport and large cue controls. GO and assigned controls remain live. The QuickPlay Play/Stop button and keyboard and MIDI triggers work the same way in both modes. Use Edit Mode to change the bank.
 
+In Show Mode the top bar keeps only what a show needs in view: warnings, the **Show Mode** switch and the clocks. **Settings**, **Video Output**, **Level Check**, **Pre-show check** and **Autosave** fold into one **Setup** button; press it to reach them. The menu closes when you choose something or press anywhere else.
+
 Rehearse at the actual display size and app zoom. Settings, Properties, and imports share the lower panel. It fits the content up to 60% of the window, with room reserved for the playlist. On a short window the panel may scroll sooner. Tabs stay along the bottom while the controls scroll. Drag the top grip down for more playlist room or up for more controls. You can also focus the grip and use **Up/Down**. Each panel remembers its adjusted height while the app is open. GO and Stop All stay at the top and the shortcut bar shows a compact reference. **Customize Shortcuts…** opens the full editor. Settings choices for default transition, language, meter display and meter ballistics expand in the panel.
 
 ![Show Mode at a small window size with the silence countdown, cue names, and one-line QuickPlays shortcut reference.](manual-assets/show-mode.png)
@@ -818,6 +820,12 @@ Before a save replaces the show file, the engine keeps a copy of the file it is 
 **Settings → Playback Behaviour → Show backups** lists the copies by date and time. Choose **Restore**, then confirm, to replace the open show with that copy. The show as it is now is backed up first, so a restore can itself be undone from the same list. A restore is refused while a cue or Preview is playing.
 
 Earlier versions also copied the show file every 10 minutes. That timer is retired: any of its copies already in the folder are left in place, and they are not shown in the list. Show backups are project-file backups, not full media packages, and they cannot capture unsaved edits that never reached disk. Keep a separate known-good full-show copy as well.
+
+### Clean up unused media
+
+**File → Clean Up Media…** lists the files in the show's media folder that nothing uses any more, such as the originals of converted videos and earlier captures. A file counts as used if this show, any of its **Show backups**, or another show saved in the same folder mentions it, so restoring a backup never points at a missing file. A file that was replaced only recently therefore stays off the list until the backups that still mention it have been replaced by newer ones.
+
+Tick the files to remove and choose **Move … to the Trash** (the **Recycle Bin** on Windows). Nothing is deleted outright: the files can be put back from there. Files changed in the last two minutes are never listed, and files are moved only while nothing is playing. The tool works in Edit Mode, on the computer that holds the show's files.
 
 ### Export a portable show
 

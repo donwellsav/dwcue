@@ -34,7 +34,8 @@
     "videoOutputExitFullscreen": "Avsluta helskärm",
     "videoOutputShowTestCard": "Visa testbild",
     "videoOutputExit": "Stäng videoutgång",
-    "exportCueSheet": "Exportera Cuelista (PDF)…"
+    "exportCueSheet": "Exportera Cuelista (PDF)…",
+    "cleanUpMedia": "Rensa media…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -1355,6 +1356,8 @@
   "showMode": {
     "toggle": "Föreställningsläge",
     "toggleHint": "Växla till en förenklad, pekvänlig uppspelningsvy för föreställningar.",
+    "setup": "Inställning",
+    "setupHint": "Inställningar, Videoutgång, Nivåkontroll, Kontroll före föreställning och Autospara",
     "exit": "Avsluta",
     "exitHint": "Håll intryckt för att avsluta föreställningsläget",
     "noItems": "Inga objekt i det här projektet",
@@ -1489,5 +1492,30 @@
       "incomplete": "Den senaste videokontrollen slutfördes inte · {checked}/{total} kontrollerade",
       "unavailable": "Videocuer i den här föreställningen: {count}. Videokontrollen kan inte köras i det här fönstret."
     }
+  },
+  "mediaCleanup": {
+    "title": "Rensa media",
+    "loading": "Kontrollerar mediamappen…",
+    "intro": "Ingenting använder de här filerna: varken den här föreställningen, dess säkerhetskopior eller någon annan föreställning som sparats i samma mapp. De flyttas till ”{bin}” och tas inte bort.",
+    "none": "Varje fil i mediamappen används av den här föreställningen eller någon av dess säkerhetskopior.",
+    "remote": "Den här föreställningens media finns på datorn som kör ljudmotorn och kan därför inte rensas från den här datorn.",
+    "noFolder": "Den här föreställningen har inte sparats i en mapp och har därför ingen mediamapp att rensa.",
+    "unreadable": "Den sparade föreställningsfilen eller någon av dess säkerhetskopior kunde inte läsas, så ingen fil visas som oanvänd.",
+    "listFailed": "Mediamappen kunde inte läsas.",
+    "again": "Kontrollera igen",
+    "selectAll": "Markera alla",
+    "selectNone": "Markera ingen",
+    "total": "Oanvända filer: {count} · {size}",
+    "moveOne": "Flytta {count} fil till ”{bin}” ({size})",
+    "move": "Flytta {count} filer till ”{bin}” ({size})",
+    "moving": "Flyttar…",
+    "playing": "Filer flyttas bara när inget spelas upp.",
+    "moved": "Flyttade till ”{bin}”: {count}",
+    "notMoved": "Kunde inte flyttas till ”{bin}”:",
+    "kept": "Lämnades kvar, eftersom de används igen eller precis har ändrats:",
+    "moveFailed": "Flyttningen av filerna slutfördes inte.",
+    "trash": "Papperskorg",
+    "recycleBin": "Papperskorg",
+    "editModeOnly": "Rensa media är tillgängligt i redigeringsläge."
   }
 }

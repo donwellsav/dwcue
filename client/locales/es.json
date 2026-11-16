@@ -34,7 +34,8 @@
     "videoOutputExitFullscreen": "Salir de pantalla completa",
     "videoOutputShowTestCard": "Mostrar carta de ajuste",
     "videoOutputExit": "Salir de la salida de vídeo",
-    "exportCueSheet": "Exportar Hoja de Cues (PDF)…"
+    "exportCueSheet": "Exportar Hoja de Cues (PDF)…",
+    "cleanUpMedia": "Limpiar medios…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -1355,6 +1356,8 @@
   "showMode": {
     "toggle": "Modo Espectáculo",
     "toggleHint": "Cambiar a una vista de reproducción simplificada y táctil para espectáculos.",
+    "setup": "Configurar",
+    "setupHint": "Configuración, Salida de vídeo, Comprobación de niveles, Revisión previa al show y Autoguardado",
     "exit": "Salir",
     "exitHint": "Mantén pulsado para salir del Modo Espectáculo",
     "noItems": "No hay elementos en este proyecto",
@@ -1489,5 +1492,30 @@
       "incomplete": "La última revisión de vídeo no terminó · {checked}/{total} revisados",
       "unavailable": "Cues de vídeo en este espectáculo: {count}. La revisión de vídeo no se puede ejecutar en esta ventana."
     }
+  },
+  "mediaCleanup": {
+    "title": "Limpiar medios",
+    "loading": "Comprobando la carpeta de medios…",
+    "intro": "Nada usa estos archivos: ni este espectáculo, ni sus copias de seguridad, ni otro espectáculo guardado en la misma carpeta. Se mueven a «{bin}», no se eliminan.",
+    "none": "Todos los archivos de la carpeta de medios los usa este espectáculo o una de sus copias de seguridad.",
+    "remote": "Los medios de este espectáculo están en el ordenador que ejecuta el motor de audio, así que no se pueden limpiar desde este.",
+    "noFolder": "Este espectáculo no se ha guardado en una carpeta, así que no tiene carpeta de medios que limpiar.",
+    "unreadable": "No se pudo leer el archivo del espectáculo guardado o una de sus copias de seguridad, así que no se muestra ningún archivo como sin usar.",
+    "listFailed": "No se pudo leer la carpeta de medios.",
+    "again": "Comprobar de nuevo",
+    "selectAll": "Seleccionar todo",
+    "selectNone": "No seleccionar nada",
+    "total": "Archivos sin usar: {count} · {size}",
+    "moveOne": "Mover {count} archivo a «{bin}» ({size})",
+    "move": "Mover {count} archivos a «{bin}» ({size})",
+    "moving": "Moviendo…",
+    "playing": "Los archivos solo se mueven mientras no se reproduce nada.",
+    "moved": "Movidos a «{bin}»: {count}",
+    "notMoved": "No se pudieron mover a «{bin}»:",
+    "kept": "Se dejaron donde están, porque se usan de nuevo o acaban de cambiar:",
+    "moveFailed": "El movimiento de los archivos no terminó.",
+    "trash": "Papelera",
+    "recycleBin": "Papelera de reciclaje",
+    "editModeOnly": "Limpiar medios está disponible en el Modo Edición."
   }
 }

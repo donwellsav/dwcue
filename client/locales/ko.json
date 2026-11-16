@@ -34,7 +34,8 @@
     "videoOutputExitFullscreen": "전체 화면 종료",
     "videoOutputShowTestCard": "테스트 카드 표시",
     "videoOutputExit": "비디오 출력 종료",
-    "exportCueSheet": "큐 시트 내보내기 (PDF)…"
+    "exportCueSheet": "큐 시트 내보내기 (PDF)…",
+    "cleanUpMedia": "미디어 정리…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -1355,6 +1356,8 @@
   "showMode": {
     "toggle": "쇼 모드",
     "toggleHint": "공연을 위한 단순하고 터치에 최적화된 재생 화면으로 전환합니다.",
+    "setup": "설정 도구",
+    "setupHint": "설정, 비디오 출력, 레벨 체크, 쇼 전 점검, 자동 저장",
     "exit": "종료",
     "exitHint": "길게 눌러 쇼 모드 종료",
     "noItems": "이 프로젝트에 항목이 없습니다",
@@ -1489,5 +1492,30 @@
       "incomplete": "마지막 비디오 점검이 끝나지 않았습니다 · {checked}/{total} 점검됨",
       "unavailable": "이 프로젝트의 비디오 큐: {count}개. 이 창에서는 비디오 점검을 실행할 수 없습니다."
     }
+  },
+  "mediaCleanup": {
+    "title": "미디어 정리",
+    "loading": "미디어 폴더를 확인하는 중…",
+    "intro": "이 파일들은 어디에서도 사용되지 않습니다. 이 프로젝트도, 백업도, 같은 폴더에 저장된 다른 프로젝트도 사용하지 않습니다. 파일은 삭제되지 않고 \"{bin}\"(으)로 이동됩니다.",
+    "none": "미디어 폴더의 모든 파일이 이 프로젝트 또는 백업 중 하나에서 사용되고 있습니다.",
+    "remote": "이 프로젝트의 미디어는 오디오 엔진을 실행하는 컴퓨터에 있어서 이 컴퓨터에서는 정리할 수 없습니다.",
+    "noFolder": "이 프로젝트는 폴더에 저장되지 않아 정리할 미디어 폴더가 없습니다.",
+    "unreadable": "저장된 프로젝트 파일 또는 백업 중 하나를 읽지 못해 사용되지 않는 파일이 표시되지 않습니다.",
+    "listFailed": "미디어 폴더를 읽지 못했습니다.",
+    "again": "다시 확인",
+    "selectAll": "모두 선택",
+    "selectNone": "선택 해제",
+    "total": "사용되지 않는 파일: {count} · {size}",
+    "moveOne": "파일 {count}개를 \"{bin}\"(으)로 이동 ({size})",
+    "move": "파일 {count}개를 \"{bin}\"(으)로 이동 ({size})",
+    "moving": "이동하는 중…",
+    "playing": "파일은 재생 중인 것이 없을 때만 이동됩니다.",
+    "moved": "\"{bin}\"(으)로 이동함: {count}",
+    "notMoved": "\"{bin}\"(으)로 이동하지 못함:",
+    "kept": "다시 사용 중이거나 방금 변경되어 그대로 두었습니다:",
+    "moveFailed": "파일 이동이 완료되지 않았습니다.",
+    "trash": "휴지통",
+    "recycleBin": "휴지통",
+    "editModeOnly": "미디어 정리는 편집 모드에서 사용할 수 있습니다."
   }
 }

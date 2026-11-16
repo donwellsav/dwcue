@@ -86,6 +86,13 @@ declare global {
       setCurrentProject: (projectPath: string) => Promise<{ success: boolean }>;
       // File > Export Cue Sheet (PDF): main asks where to save and writes the file.
       exportCueSheet: (sheet: CueSheetPayload) => Promise<CueSheetExportResult>;
+      // File > Clean Up Media: main lists the files in the show's media folder
+      // that nothing uses and moves the named ones to the Trash. Names only,
+      // never a path; main checks each one again before it moves anything.
+      media?: {
+        listUnused: () => Promise<UnusedMediaList>;
+        trashUnused: (names: string[]) => Promise<UnusedMediaTrashResult>;
+      };
       keepAwake: (state: { showOpen: boolean; showMode: boolean; playing: boolean }) => Promise<boolean>;
       getFilePath: (file: File) => string | null;
       searchYouTube: (query: string) => Promise<Array<{
@@ -170,6 +177,7 @@ declare global {
       onMenuSaveProject: (callback: () => void) => void;
       onMenuExportProject: (callback: () => void) => void;
       onMenuExportCueSheet: (callback: () => void) => void;
+      onMenuCleanUpMedia: (callback: () => void) => void;
       onMenuImportProject: (callback: () => void) => void;
       onMenuCloseProject: (callback: () => void) => void;
       onMenuOpenRecentProject: (callback: (event: any, projectPath: string) => void) => void;
@@ -277,7 +285,25 @@ declare global {
       };
     };
   }
-  type VideoFrameCheckResult = 'ok' | 'unreadable' | 'decode' | 'no-frame' | 'in-point' | 'duration' | 'timeout' | 'probe-error';
+  interface UnusedMediaFile {
+    name: string;
+    size: number;
+    // Milliseconds since the epoch.
+    modifiedAt: number;
+  }
+  // 'remote': the files are on the engine's computer. 'no-folder': the show is
+  // not saved to a folder here. 'unreadable': the show file or a backup could
+  // not be read, so nothing can be called unused.
+  type UnusedMediaList =
+    | { available: true; files: UnusedMediaFile[]; totalBytes: number }
+    | { available: false; reason: 'remote' | 'no-folder' | 'unreadable' };
+  // `kept` were left alone: in use again, changed, or no longer there to list.
+  interface UnusedMediaTrashResult {
+    trashed: string[];
+    failed: string[];
+    kept: string[];
+  }
+  type VideoFrameCheckResult ='ok' | 'unreadable' | 'decode' | 'no-frame' | 'in-point' | 'duration' | 'timeout' | 'probe-error';
   type VideoConvertResult =
     | { status: 'converted' | 'reused'; path: string }
     | { status: 'failed' | 'canceled'; reason: VideoConvertFailure | null };
