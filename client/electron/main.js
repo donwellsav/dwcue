@@ -1174,10 +1174,8 @@ const appLifecycleActions = createAppLifecycleActions({
   prepare: prepareForTerminalAction,
   relaunch: () => app.relaunch(),
   exit: (code) => app.exit(code),
-  quit: () => app.quit(),
   stopServer: stopLiveplayServer,
   installUpdate: installDownloadedUpdate,
-  confirmQuit: () => { quitConfirmed = true; },
 });
 
 function sendMainHeaderWarning(message) {
@@ -1935,9 +1933,7 @@ void initializeYtDlp();
 const denoInitialization = initializeDeno();
 
 let mainWindow = null;
-// Set once the renderer-driven quit confirmation has resolved, so the
-// next main-window `close` is allowed through instead of being vetoed
-// to re-show the dialogs. See the `close` handler in createWindow().
+// Set by the updater after it completes shutdown preparation.
 let quitConfirmed = false;
 let currentProject = null;
 let currentProjectData = null; // Full project data synced between Electron windows
@@ -2149,11 +2145,13 @@ function createWindow() {
 
   // Veto the first close so the renderer can run its quit-confirmation
   // flow (unsaved changes → optionally shut the local audio server down).
-  // The renderer responds via `app:confirm-quit`, which sets quitConfirmed
-  // and calls app.quit() — re-entering here with the veto lifted. If the
-  // renderer is gone (crash / already destroyed) we let the close proceed.
+  // Confirmed quits exit after cleanup. An unresponsive renderer cannot
+  // present the prompt, so leave that window's native close available.
+  let responsive = true;
+  mainWindow.on('unresponsive', () => { responsive = false; });
+  mainWindow.on('responsive', () => { responsive = true; });
   mainWindow.on('close', (e) => {
-    if (quitConfirmed) return;
+    if (quitConfirmed || !responsive) return;
     if (!mainWindow || mainWindow.webContents.isDestroyed() || mainWindow.webContents.isCrashed()) return;
     // Packaged-app smoke test launches with --smoke-quit: no human is
     // present to answer the quit-confirmation dialogs, so skip the veto.
@@ -3669,10 +3667,11 @@ function buildRecentProjectsSubmenu(t) {
 function createMenu(locale = 'en', isDev = false) {
   currentLocale = locale;
   const t = menuTranslations[locale] || menuTranslations.en;
-  
+  const appMenu = process.platform === 'darwin' ? [{ role: 'appMenu' }] : [];
 
   if (operatorManual.owns(BrowserWindow.getFocusedWindow()?.webContents)) {
     Menu.setApplicationMenu(Menu.buildFromTemplate([
+      ...appMenu,
       { label: t.file, submenu: [{ role: 'close' }] },
       { role: 'editMenu' },
       { label: t.help, submenu: [{ label: t.operatorManual, click: () => void operatorManual.open(mainWindow, t.operatorManual) }] },
@@ -3680,6 +3679,7 @@ function createMenu(locale = 'en', isDev = false) {
     return;
   }
   const template = [
+    ...appMenu,
     {
       label: t.file,
       submenu: [

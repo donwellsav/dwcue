@@ -861,6 +861,8 @@ For unsaved edits, New, Open, and Close offer **Save**, **Don't Save**, or **Can
 
 If the managed local engine is running, the next choice distinguishes **Close Client Only** from **Close Server**. **Close Client Only removes client-owned Preview/test-tone resources but leaves the Program mix and engine running. Close Server stops playback and disconnects every connected client.** If you make further unsaved edits while this choice is open, Quit asks what to do with them before closing. A failed AV cleanup retains the owned-resource diagnostic and refuses the terminal action. Closing a controller connected to a remote engine does not shut down that remote engine.
 
+On macOS, **Quit** is in the app menu and **Open Project** and **Open Recent** are in **File**. If the main window becomes unresponsive, its native close control remains available. That window cannot present its unsaved-changes choices while it is unresponsive.
+
 
 **Procedure — end an operating session**
 

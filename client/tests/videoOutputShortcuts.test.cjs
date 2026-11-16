@@ -212,8 +212,8 @@ function productionFunctionSource(name) {
   throw new Error('unterminated '+name+' in Electron main process');
 }
 
-test('control-window close waits for healthy quit confirmation but never for a crashed renderer', () => {
-  for (const state of ['healthy', 'crashed', 'destroyed', 'confirmed']) {
+test('control-window close waits for healthy quit confirmation', () => {
+  for (const state of ['healthy', 'crashed', 'unresponsive', 'destroyed', 'confirmed']) {
     const messages = [], serverStops = [];
     class ControlWindow extends EventEmitter {
       constructor() {
@@ -233,6 +233,7 @@ test('control-window close waits for healthy quit confirmation but never for a c
     };
     vm.runInNewContext(productionFunctionSource('createWindow') + '\ncreateWindow();', context);
     const window = context.mainWindow;
+    if (state === 'unresponsive') window.emit('unresponsive');
     const event = { prevented: false, preventDefault() { this.prevented = true; } };
     window.emit('close', event);
     assert.equal(event.prevented, state === 'healthy', state);
@@ -696,10 +697,8 @@ test('ordinary exit and relaunch preserve the detached server while confirmed st
     },
     relaunch: () => calls.push('relaunch'),
     exit: code => calls.push(`exit:${code}`),
-    quit: () => calls.push('quit'),
     stopServer: async () => { calls.push('server:stop'); return serverStops; },
     installUpdate: async options => { calls.push(`install:${options.runAfterInstall}`); return true; },
-    confirmQuit: () => calls.push('confirmed'),
   });
 
   await actions.exit();
@@ -713,7 +712,7 @@ test('ordinary exit and relaunch preserve the detached server while confirmed st
 
   calls.length = 0;
   await actions.confirm({ stopServer: true });
-  assert.deepEqual(calls, ['prepare', 'server:stop', 'confirmed', 'quit']);
+  assert.deepEqual(calls, ['prepare', 'server:stop', 'exit:0']);
 
   calls.length = 0;
   assert.equal(await actions.confirm({ installUpdate: true, runAfterInstall: false }), true);
