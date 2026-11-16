@@ -737,11 +737,6 @@ void AudioEngine::ma_data_callback(ma_device* dev,
         device->underrun_count.fetch_add(1, std::memory_order_relaxed);
         device->underrun_frames.fetch_add(
             remaining, std::memory_order_relaxed);
-        if (!device->reset_requested.exchange(
-                true, std::memory_order_acq_rel)) {
-            device->hard_resync_count.fetch_add(
-                1, std::memory_order_relaxed);
-        }
     }
 
     // Protect the physical sum after clock resampling. Moving the existing
@@ -1943,7 +1938,7 @@ bool AudioEngine::reset_device_if_requested(Device& device) noexcept {
 // bounded amount to hold their own ring occupancy against that timeline.
 //
 // Invariants:
-//   * The existing healthy master remains master until it closes/fails.
+//   * The existing master stays in charge while it can keep other outputs fed.
 //   * A failed master cannot stall another healthy device; election happens
 //     here without waiting for control-thread intervention.
 //   * Production stops at the master's target occupancy for low transport latency.
@@ -2025,8 +2020,9 @@ void AudioEngine::render_loop() {
                     }
                 }
 
-                // Preserve the current healthy master. A reconnected former
-                // master stays secondary until the active master goes away.
+                const auto now = CallbackLivenessMonitor::Clock::now();
+                const auto callback_grace = block_duration * 2;
+                std::shared_ptr<Device> first_healthy, draining_secondary;
                 for (const auto& dev : *device_snap) {
                     const bool healthy =
                         dev->ring &&
@@ -2034,23 +2030,30 @@ void AudioEngine::render_loop() {
                         dev->runtime_state.load(
                             std::memory_order_acquire) ==
                             DeviceRuntimeState::Running;
-                    if (healthy &&
-                        dev->clock_master.load(std::memory_order_acquire)) {
+                    if (!healthy) continue;
+                    if (!first_healthy) first_healthy = dev;
+                    const auto entries = dev->callback_entries.value();
+                    if (entries != dev->render_observed_entries) {
+                        dev->render_observed_entries = entries;
+                        dev->render_callback_progress = now;
+                    }
+                    if (dev->clock_master.load(std::memory_order_acquire)) {
                         clock_master = dev;
-                        break;
+                    } else if (!draining_secondary &&
+                               now - dev->render_callback_progress < callback_grace &&
+                               !dev->reset_requested.load(std::memory_order_acquire) &&
+                               dev->ring_occupancy_frames.load(std::memory_order_relaxed) <=
+                                   cfg_.render_block * 2) {
+                        draining_secondary = dev;
                     }
                 }
+                // The watchdog diagnoses a lost device. A live secondary
+                // needs a new clock before it runs out of buffered audio.
                 if (!clock_master) {
-                    for (const auto& dev : *device_snap) {
-                        if (dev->ring &&
-                            !dev->closing.load(std::memory_order_acquire) &&
-                            dev->runtime_state.load(
-                                std::memory_order_acquire) ==
-                                DeviceRuntimeState::Running) {
-                            clock_master = dev;
-                            break;
-                        }
-                    }
+                    clock_master = first_healthy;
+                } else if (draining_secondary &&
+                           now - clock_master->render_callback_progress >= callback_grace) {
+                    clock_master = draining_secondary;
                 }
 
                 for (const auto& dev : *device_snap) {

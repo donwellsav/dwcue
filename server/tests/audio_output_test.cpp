@@ -787,6 +787,61 @@ void test_bursty_secondary_output(const std::filesystem::path& tone) {
           f.device->hard_resync_count.load() == 0, "secondary bursts: continuous PCM without a ring reset");
 }
 
+void test_stalled_clock_failover(const std::filesystem::path& tone) {
+    Fixture f(tone, false, true);
+    auto stalled = std::make_shared<AudioEngine::Device>();
+    stalled->id = DeviceId{"stalled-clock"};
+    stalled->channels = 2;
+    stalled->scratch.resize(block * 2);
+    stalled->ring = std::make_unique<ma_pcm_rb>();
+    if (ma_pcm_rb_init(ma_format_f32, 2, AudioEngine::kDeviceRingBlocks * block,
+                       nullptr, nullptr, stalled->ring.get()) != MA_SUCCESS) std::abort();
+    stalled->runtime_state.store(DeviceRuntimeState::Running);
+    stalled->clock_master.store(true);
+    stalled->reset_requested.store(false);
+    const auto now = CallbackLivenessMonitor::Clock::now();
+    stalled->callback_liveness.arm(0, now);
+    f.device->callback_liveness.arm(0, now);
+    stalled->callback_entries.record_entry();
+    f.engine.devices_.push_back(stalled);
+    f.engine.publish_device_snapshot_locked();
+    f.render(3);
+
+    std::promise<void> waiting;
+    bool signalled = false;
+    f.engine.before_render_wait_snapshot_for_test_ = [&] {
+        if (!std::exchange(signalled, true)) waiting.set_value();
+    };
+    f.engine.start(false);
+    check(waiting.get_future().wait_for(std::chrono::seconds{1}) == std::future_status::ready &&
+              stalled->clock_master.load(), "clock failover: the original device initially paces the renderer");
+    std::this_thread::sleep_for(std::chrono::milliseconds{12});
+    f.drain(2 * block);
+    const auto deadline = CallbackLivenessMonitor::Clock::now() + std::chrono::milliseconds{150};
+    while (!f.device->clock_master.load() && CallbackLivenessMonitor::Clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    const bool promoted = f.device->clock_master.load();
+    const auto pcm = f.drain();
+    f.engine.stop();
+    check(promoted && stalled->runtime_state.load() == DeviceRuntimeState::Running &&
+              pcm[pcm.size() - 2] > 0.05f &&
+              f.device->underrun_count.load() == 0,
+          "clock failover: the live secondary keeps PCM before the watchdog marks the clock stalled");
+}
+
+void test_single_output_underrun(const std::filesystem::path& tone) {
+    Fixture f(tone);
+    f.render(2);
+    f.drain(3 * block);
+    f.render();
+    const auto pcm = f.drain();
+    check(f.device->underrun_count.load() == 1 &&
+              f.device->underrun_frames.load() == block &&
+              f.device->hard_resync_count.load() == 0 &&
+              pcm[pcm.size() - 2] > 0.05f,
+          "output underrun: the next callback plays newly queued PCM without a reset");
+}
+
 void test_clock_zero_crossing(const std::filesystem::path& ramp) {
     for (const int direction : {-1, 1}) {
         Fixture f(ramp, false, true);
@@ -1239,6 +1294,8 @@ int main() {
     test_delay_and_bypass(quiet);
     test_live_ceiling(tone);
     test_bursty_secondary_output(quiet);
+    test_stalled_clock_failover(quiet);
+    test_single_output_underrun(quiet);
     test_clock_zero_crossing(ramp);
     test_clock_resync(ramp);
     test_exact_follow(quiet, next, false);

@@ -263,7 +263,7 @@ The waveform's action menu separates **Loudness (LUFS)** from **Reduce peaks (dB
 
 These actions write cue gain, not a rewritten media file. **Trim Silence** adjusts the cue region around digital silence with padding; quiet breaths, ambience and tails are retained rather than treated as a loudness target. Review the resulting Volume and In/Out values and rehearse the entrance and exit.
 
-Stop All remains available during slow seek, trim, loop and cue-removal decoder work. After Stop All, arm a ready backup on a different cue and press GO. If the controller reconnects, wait for it to verify the show. An accepted edit stays saved, a queued seek retains the latest requested position, and canceled playback cannot restart or advance when storage returns.
+Stop All remains available during slow seek, trim, loop and cue-removal decoder work. After Stop All, arm a ready backup on a different cue and press GO. If the controller reconnects, wait for it to verify the show. An accepted edit stays saved, and queued seeks use the latest requested position. If a playing cue runs out of audio for 250 ms while a seek is pending, that cue stops with a playback error. Retry it deliberately after the media responds. Canceled playback cannot restart or advance when storage returns.
 
 ### Choose the end behavior deliberately
 

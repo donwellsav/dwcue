@@ -495,6 +495,7 @@ void PlaybackItem::seek_seconds(double seconds) {
             if (playback_revision() != revision) return;
             was_stopped = transport_.load(std::memory_order_acquire) == TransportState::Stopped;
             reset_read_ahead_locked(playhead_frames_.load(std::memory_order_acquire));
+            seek_pending_ = true;
             rewind_on_play_.store(true, std::memory_order_release);
         }
         if (decoder_) {
@@ -848,6 +849,7 @@ void PlaybackItem::reset_read_ahead_locked(std::uint64_t frame) noexcept {
     read_ahead_write_.store(0, std::memory_order_release);
     read_ahead_offset_ = 0;
     starved_frames_ = 0;
+    seek_pending_ = false;
     decode_cursor_frame_ = frame;
     decode_out_point_passed_ = false;
     decode_terminal_.store(false, std::memory_order_release);
@@ -1164,13 +1166,15 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
                     (slot.loop_end_frame - loop_in);
         }
     }
-    if (frames_read < frame_count && !natural_end && !rewind_on_play_.load(std::memory_order_acquire) &&
+    if (frames_read < frame_count && !natural_end &&
+        (seek_pending_ || !rewind_on_play_.load(std::memory_order_acquire)) &&
         !decode_terminal_.load(std::memory_order_acquire)) {
         read_ahead_underruns_.fetch_add(1, std::memory_order_relaxed);
         // Let brief gaps recover; a sustained 250 ms gap must never re-enter late.
         if (st != TransportState::FadingOut) {
             starved_frames_ += frame_count - frames_read;
             if (starved_frames_ >= std::max<std::uint64_t>(1, desc_.mix_sample_rate / 4)) {
+                if (seek_pending_) playback_revision_.fetch_add(1, std::memory_order_acq_rel);
                 stop_for_decode_error(MA_TIMEOUT);
                 for (ChannelCount c = 0; c < out_channel_count; ++c)
                     std::memset(out_channel_buffers[c], 0, frame_count * sizeof(Sample));
